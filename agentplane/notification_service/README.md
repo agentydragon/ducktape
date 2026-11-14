@@ -59,8 +59,9 @@ Sandbox callers authenticate with the Runner SVID on the shared TLS RPC listener
 Egress routes workload gRPC through an opaque central-proxy CONNECT. Notification verifies the
 certificate chain, explicit clientAuth EKU, expiry, current Sandbox UID and accepted credential ID,
 then resolves the credential's exact live Identity name and UID. Caller headers cannot select another Identity. Native gRPC uses this resolver,
-and watch revalidation repeats the live lookup. Backend/operator callers use the same listener
-with their audience-scoped tokens and existing authorization.
+and watch revalidation repeats the live lookup. Backend and legacy operator callers use the same listener
+with their audience-scoped tokens and existing authorization. An exact configured service SVID may call
+only the namespace diagnostic read methods; it does not become an agent Identity or own an inbox.
 
 ## Running and deployment
 
@@ -130,7 +131,10 @@ that fails validation stops startup without printing its value.
 The native gRPC listener (`rpc.listen_address`) serves `Notifications` and `grpc.health.v1`.
 `rpc.tls` supplies its server certificate and key, and `rpc.auth` explicitly admits SPIFFE and/or
 Kubernetes bearer authentication. Both modes retain the same method and inbox ownership policy.
-A certificate combined with bearer or delegation metadata is refused.
+A certificate combined with bearer or delegation metadata is refused. `operator_reader_services`
+admits exact service SPIFFE IDs to the five diagnostic read methods; it requires SPIFFE client trust
+and can coexist with `operator_reader_account` during a rollout. A service SVID grants neither an
+agent Identity nor inbox ownership, and is not admitted to mutations or other RPCs.
 The HTTP listener (`host`, `http_port`) serves only `POST /v1/webhooks/github` when GitHub is configured; all other
 paths return not found. It has no workload HTTP API or documentation routes. The generated App browser facade dials
 the gRPC listener, and the CLI embeds the workflow guides. Health checks take no bearer: service `""` is readiness (the LISTEN

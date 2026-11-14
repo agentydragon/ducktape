@@ -74,6 +74,8 @@ type Options struct {
 	MessageBodyLimit int
 	// OperatorReader is the name, in Namespace, of the ServiceAccount that can read Session diagnostics for the namespace.
 	OperatorReader string
+	// OperatorReaderServices are exact component SVIDs allowed to read Session diagnostics, independently of agent Identity admission.
+	OperatorReaderServices []string
 	// Debounce is what the worker waits before it announces entries; the operator's reads report it.
 	Debounce store.Debounce
 	// RequestTimeout bounds a call's backend work and each write to a watch stream.
@@ -84,9 +86,9 @@ type Options struct {
 // enforce resource ownership. Passing the listener's source keeps TLS SVID and TokenReview methods on the same
 // method policy without coupling either resolver to the servicers' options. A workload's own inboxes and
 // subscriptions, subscribing and messaging also admit an Identity caller (AnySubject).
-func Methods(options Options, resolver *auth.Resolver) auth.Methods {
+func Methods(options Options, resolver *auth.Resolver) (auth.Methods, error) {
 	owners := auth.AnySubject(resolver)
-	return auth.Methods{
+	methods := auth.Methods{
 		notificationspb.Notifications_CreateSubscription_FullMethodName: owners,
 		notificationspb.Notifications_ListSubscriptions_FullMethodName:  owners,
 		notificationspb.Notifications_GetSubscription_FullMethodName:    owners,
@@ -102,5 +104,16 @@ func Methods(options Options, resolver *auth.Resolver) auth.Methods {
 		notificationspb.Notifications_RetireInbox_FullMethodName:        owners,
 		notificationspb.Notifications_SendMessage_FullMethodName:        owners,
 		notificationspb.Notifications_GetMessage_FullMethodName:         owners,
+	}
+	return methods.WithServiceCallers(operatorReaderMethods(), options.OperatorReaderServices)
+}
+
+func operatorReaderMethods() []string {
+	return []string{
+		notificationspb.Notifications_GetInbox_FullMethodName,
+		notificationspb.Notifications_WatchInbox_FullMethodName,
+		notificationspb.Notifications_WatchInboxEntries_FullMethodName,
+		notificationspb.Notifications_WatchSubscriptions_FullMethodName,
+		notificationspb.Notifications_ReadInbox_FullMethodName,
 	}
 }

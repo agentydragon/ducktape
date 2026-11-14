@@ -298,7 +298,8 @@ type serverConfig struct {
 	debounce       store.Debounce
 	githubDisabled bool
 	// operatorReader is the account allowed to inspect namespace Session diagnostics.
-	operatorReader string
+	operatorReader         string
+	operatorReaderServices []string
 	// messageBodyLimit is in UTF-8 bytes.
 	messageBodyLimit int
 }
@@ -306,6 +307,7 @@ type serverConfig struct {
 type testServer struct {
 	notifications *Notifications
 	client        notificationspb.NotificationsClient
+	serviceClient notificationspb.NotificationsClient
 	clientRoutes  *routedClientConn
 	store         *store.Store
 	hub           *wakeups.Hub
@@ -321,6 +323,7 @@ type testServer struct {
 	workload        *workloadauthtesting.IdentityWorkload
 	ca              *transporttesting.CA
 	identityAddress string
+	serviceAddress  string
 	// kube holds the Sandboxes the service reads.
 	kube   client.Client
 	config serverConfig
@@ -442,7 +445,8 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 	options := Options{
 		Store: server.store, Wakeups: hub, Namespace: testNamespace, Sandboxes: sandboxes,
 		Runner: server.runner, Actions: server.actions, OperatorReader: config.operatorReader,
-		SendPolicy: server.policy, History: server.history, Sessions: server.openings, MessageBodyLimit: config.messageBodyLimit,
+		OperatorReaderServices: config.operatorReaderServices,
+		SendPolicy:             server.policy, History: server.history, Sessions: server.openings, MessageBodyLimit: config.messageBodyLimit,
 		Debounce: config.debounce, RequestTimeout: config.requestTimeout,
 	}
 	if !config.githubDisabled {
@@ -453,7 +457,11 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 	if err != nil {
 		t.Fatal(err)
 	}
-	grpcServer := grpc.NewServer(Methods(options, resolver).ServerOptions(config.requestTimeout)...)
+	methods, err := Methods(options, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grpcServer := grpc.NewServer(methods.ServerOptions(config.requestTimeout)...)
 	notificationspb.RegisterNotificationsServer(grpcServer, server.notifications)
 	go func() { _ = grpcServer.Serve(listener) }()
 	t.Cleanup(grpcServer.Stop)
@@ -483,16 +491,48 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 	if err != nil {
 		t.Fatal(err)
 	}
-	identityGRPCServer := grpc.NewServer(append(Methods(options, identityResolver).ServerOptions(config.requestTimeout), grpc.Creds(credentials.NewTLS(serverTLS)))...)
+	identityMethods, err := Methods(options, identityResolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identityGRPCServer := grpc.NewServer(append(identityMethods.ServerOptions(config.requestTimeout), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	notificationspb.RegisterNotificationsServer(identityGRPCServer, server.notifications)
 	go func() { _ = identityGRPCServer.Serve(identityListener) }()
 	t.Cleanup(identityGRPCServer.Stop)
 	identityConn := connectIdentityClient(t, server.ca, identityWorkload.Workload, identityListener.Addr().String())
 	server.identityAddress = identityListener.Addr().String()
 	server.clientRoutes = &routedClientConn{account: connection, identity: identityConn}
+	var serviceConn *grpc.ClientConn
+	if len(config.operatorReaderServices) > 0 {
+		serviceTLS, err := serving.WorkloadServerTLSConfigWithServices(peertls.NotificationsURI, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		serviceListener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		server.serviceAddress = serviceListener.Addr().String()
+		serviceServer := grpc.NewServer(append(methods.ServerOptions(config.requestTimeout), grpc.Creds(credentials.NewTLS(serviceTLS)))...)
+		notificationspb.RegisterNotificationsServer(serviceServer, server.notifications)
+		go func() { _ = serviceServer.Serve(serviceListener) }()
+		t.Cleanup(serviceServer.Stop)
+		serviceCredentials, err := server.ca.Issue(t, peertls.AppURI).ClientCredentials(peertls.NotificationsURI)
+		if err != nil {
+			t.Fatal(err)
+		}
+		serviceConn, err = grpc.NewClient(serviceListener.Addr().String(), grpc.WithTransportCredentials(serviceCredentials))
+		if err != nil {
+			t.Fatal(err)
+		}
+		server.serviceClient = notificationspb.NewNotificationsClient(serviceConn)
+	}
 	t.Cleanup(func() {
 		_ = connection.Close()
 		_ = identityConn.Close()
+		if serviceConn != nil {
+			_ = serviceConn.Close()
+		}
 	})
 	server.client = notificationspb.NewNotificationsClient(server.clientRoutes)
 	return server

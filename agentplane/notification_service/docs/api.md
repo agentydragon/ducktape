@@ -47,9 +47,9 @@ for the exact original Sandbox UID. Unknown or inconsistent owner identity pause
   or idempotently cancel. Cancelling never cancels an Action or erases accepted entries.
 - `GET /v1/inboxes`: the Identity's qualified session inboxes.
 - `GET /v1/sessions/{session_id}/inbox/entries?after_cursor=0&limit=128`: non-destructive, contiguous paging, prefix
-  metadata, and the latest notice's admission/confirmation state. The configured app account may inspect
-  retained entries by Session ID through its authenticated operator facade, including after the original
-  Sandbox disappears. It cannot acknowledge or retire them. Payloads are stored provider event snapshots,
+  metadata, and the latest notice's admission/confirmation state. The configured operator account and exact
+  service SVID readers may inspect retained entries by Session ID, including after the original Sandbox
+  disappears. Diagnostic readers cannot acknowledge or retire another caller's inbox. Payloads are stored provider event snapshots,
   not fetched at read time or promoted to operator instructions.
 - `PUT /v1/sessions/{session_id}/inbox/acknowledgement` with `through_cursor`: monotonically acknowledge the handled
   prefix. Future cursors are refused. Delivery and reads never acknowledge.
@@ -303,9 +303,10 @@ lifecycle fields; it never returns provider payloads. `WatchSubscriptions` repor
 state. Each watch starts with current state; entry and subscription watches then send changes.
 A missing inbox is a state, since inboxes are created lazily. Reconnecting starts from fresh state.
 Watches send heartbeats and revalidate authorization; they do not end on a fixed lease. Reading
-never acknowledges entries. Workloads can read their own Sandbox incarnation's inbox; the
-configured `operator_reader_account` can inspect Session diagnostics in the namespace but cannot
-read full inbox payloads or mutate another account's inbox.
+never acknowledges entries. Workloads can read their own Sandbox incarnation's inbox; the configured
+`operator_reader_account` and exact `operator_reader_services` SVIDs can inspect Session diagnostics
+in the namespace. Service SVID admission is restricted to these read-only methods and never asserts
+an agent Identity. Diagnostic readers cannot mutate another caller's inbox.
 
 A Session has at most one inbox. The database migration refuses existing collisions rather than
 choosing or discarding records; reconcile any collisions before admitting writes with the new schema.

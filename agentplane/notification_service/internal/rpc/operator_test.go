@@ -5,8 +5,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	pb "github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestOperatorInspectionDoesNotGrantInboxMutation(t *testing.T) {
@@ -59,6 +62,44 @@ func TestOperatorPayloadReadRequiresConfiguredAccount(t *testing.T) {
 	s.record(t, sub, 1)
 	_, err := s.client.ReadInbox(bearing(t, operatorToken), &pb.ReadInboxRequest{SessionId: testSession})
 	requireCode(t, err, codes.NotFound)
+}
+
+func TestAppServiceSVIDCanReadDiagnosticsWithoutBecomingAnIdentity(t *testing.T) {
+	s := newServer(t, func(config *serverConfig) {
+		config.operatorReaderServices = []string{peertls.AppURI}
+	})
+	subscription := s.subscribe(t, "app-svid-reader")
+	s.record(t, subscription, 1)
+
+	page, err := s.serviceClient.ReadInbox(bearing(t, ""), &pb.ReadInboxRequest{SessionId: testSession})
+	if err != nil || len(page.GetEntries()) != 1 || page.GetInbox().GetAcknowledged() != 0 {
+		t.Fatalf("service SVID read = %v, %v", page, err)
+	}
+	_, err = s.serviceClient.AcknowledgeInbox(bearing(t, ""), &pb.AcknowledgeInboxRequest{
+		SessionId: testSession, ThroughCursor: 1,
+	})
+	requireCode(t, err, codes.PermissionDenied)
+	_, err = s.serviceClient.ListInboxes(bearing(t, ""), &pb.ListInboxesRequest{})
+	requireCode(t, err, codes.PermissionDenied)
+
+	legacyPage, err := s.client.ReadInbox(bearing(t, operatorToken), &pb.ReadInboxRequest{SessionId: testSession})
+	if err != nil || len(legacyPage.GetEntries()) != 1 {
+		t.Fatalf("legacy account reader stopped working during overlap = %v, %v", legacyPage, err)
+	}
+
+	wrongCredentials, err := s.ca.Issue(t, peertls.ActionsURI).ClientCredentials(peertls.NotificationsURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongConnection, err := grpc.NewClient(s.serviceAddress, grpc.WithTransportCredentials(wrongCredentials))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = wrongConnection.Close() })
+	_, err = pb.NewNotificationsClient(wrongConnection).ReadInbox(bearing(t, ""), &pb.ReadInboxRequest{SessionId: testSession})
+	if got := status.Code(err); got != codes.PermissionDenied {
+		t.Fatalf("unallowlisted service SVID read status = %v, want %v (%v)", got, codes.PermissionDenied, err)
+	}
 }
 
 func TestSessionInboxReadsAreAuthorizedAndDoNotAcknowledge(t *testing.T) {

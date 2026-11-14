@@ -51,6 +51,26 @@ def test_settings_are_typed_and_include_nested_defaults() -> None:
     assert settings.request_timeout_s == 15
     assert settings.message_body_limit_bytes == 32 * 1024
     assert settings.github_delivery_retention_days == 7
+    assert "operator_reader_services" not in settings.model_dump()
+
+
+def test_operator_reader_account_and_service_svid_can_coexist() -> None:
+    values = static_values()
+    values["operator_reader_account"] = "test-app"
+    values["operator_reader_services"] = ["spiffe://agentplane/app"]
+    values["rpc"] = {
+        "listen_address": "0.0.0.0:8080",
+        "auth": [
+            {"mode": "kubernetes_bearer", "audiences": ["agentplane-notifications"]},
+            {"mode": "spiffe", "ca_file": "/trust/workload-ca.pem"},
+        ],
+        "tls": {"cert_file": "/tls/tls.crt", "key_file": "/tls/tls.key"},
+    }
+
+    settings = Settings.model_validate(values)
+
+    assert settings.operator_reader_account == "test-app"
+    assert settings.operator_reader_services == ["spiffe://agentplane/app"]
 
 
 def test_generic_environment_does_not_override_static_values(monkeypatch: pytest.MonkeyPatch) -> None:
