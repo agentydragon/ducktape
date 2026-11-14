@@ -189,8 +189,6 @@ func (s *Manager) ResumeEnvironment(
 		return resumeResponse(target, assessment.GetTargetGeneration(), environmentpb.ResumeOutcome_RESUME_OUTCOME_REQUESTED, eligibility, assessment), nil
 	case environmentlifecyclepb.WakeState_WAKE_STATE_NOT_NEEDED:
 		return resumeResponse(target, assessment.GetTargetGeneration(), environmentpb.ResumeOutcome_RESUME_OUTCOME_ALREADY_RUNNING, eligibility, assessment), nil
-	case environmentlifecyclepb.WakeState_WAKE_STATE_RATE_LIMITED:
-		return nil, rpcWithAssessment(codes.ResourceExhausted, "resume wake budget exhausted", assessment)
 	case environmentlifecyclepb.WakeState_WAKE_STATE_DENIED:
 		current, err := s.readTarget(ctx, target)
 		if err != nil {
@@ -281,12 +279,14 @@ func (s *Manager) applyResume(
 		}
 
 		nextGeneration := view.Spec.WakeGeneration + 1
-		delay, err := s.wakeBudget.ReserveWakeAttempt(ctx, s.budgetKey(caller), target.Uid, nextGeneration)
-		if err != nil {
-			return failureAssessment(codes.Unavailable, "shared wake budget is unavailable", environmentlifecyclepb.WakeReason_WAKE_REASON_BACKEND_STATE_UNAVAILABLE, view.Spec.WakeGeneration), nil
-		}
-		if delay > 0 {
-			return rateLimited(delay, view.Spec.WakeGeneration), nil
+		if automatic {
+			delay, err := s.wakeBudget.ReserveWakeAttempt(ctx, s.budgetKey(caller), target.Uid, nextGeneration)
+			if err != nil {
+				return failureAssessment(codes.Unavailable, "shared wake budget is unavailable", environmentlifecyclepb.WakeReason_WAKE_REASON_BACKEND_STATE_UNAVAILABLE, view.Spec.WakeGeneration), nil
+			}
+			if delay > 0 {
+				return rateLimited(delay, view.Spec.WakeGeneration), nil
+			}
 		}
 		updated := view.DeepCopy()
 		updated.Spec.Running = true

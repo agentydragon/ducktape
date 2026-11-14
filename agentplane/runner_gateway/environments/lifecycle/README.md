@@ -20,8 +20,9 @@ Resume tokens bind the Sandbox namespace, name, UID and observed wake generation
 preconditions, not capabilities. Writes use resource-version optimistic locking and recheck policy,
 readiness and live Identity incarnations after conflicts. A stale generation returns state changed.
 An error after a patch may have reached the API server is reported as an unknown outcome and is never
-retried by the service. A shared `WakeBudget` reserves a bounded attempt keyed by effective caller
-identity, Sandbox UID and next generation.
+retried by the service. Automatic `RequestWake` reserves a bounded attempt from the shared
+`WakeBudget`, keyed by effective caller identity, Sandbox UID and next generation. Explicit
+`ResumeEnvironment` does not reserve wake budget.
 
 `REQUESTED` reports that desired state was accepted. The Sandbox Controller owns stopping, startup,
 readiness and execution-incarnation transitions; lifecycle acceptance does not imply readiness.

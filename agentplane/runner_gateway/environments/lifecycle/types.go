@@ -45,8 +45,8 @@ type WakeBudgetKey struct {
 	ServiceSPIFFEID      string
 }
 
-// WakeBudget reserves a bounded wake attempt without depending on Dispatcher storage.
-// Implementations share reservations across replicas and explicit and automatic wake paths.
+// WakeBudget reserves a bounded automatic wake attempt without depending on Dispatcher storage.
+// Implementations share reservations across replicas. Explicit resume does not reserve budget.
 type WakeBudget interface {
 	ReserveWakeAttempt(context.Context, WakeBudgetKey, string, int64) (time.Duration, error)
 }

@@ -86,13 +86,10 @@ func (r testReviews) Create(_ context.Context, request *authenticationv1.TokenRe
 }
 
 type testWakeBudget struct {
-	mu      sync.Mutex
-	delay   time.Duration
-	err     error
-	calls   []budgetCall
-	barrier int
-	arrived int
-	release chan struct{}
+	mu    sync.Mutex
+	delay time.Duration
+	err   error
+	calls []budgetCall
 }
 
 type budgetCall struct {
@@ -103,20 +100,9 @@ type budgetCall struct {
 
 func (b *testWakeBudget) ReserveWakeAttempt(_ context.Context, caller lifecycle.WakeBudgetKey, target string, generation int64) (time.Duration, error) {
 	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.calls = append(b.calls, budgetCall{caller: caller, target: target, gen: generation})
-	delay, err := b.delay, b.err
-	if b.barrier == 0 {
-		b.mu.Unlock()
-		return delay, err
-	}
-	b.arrived++
-	if b.arrived == b.barrier {
-		close(b.release)
-	}
-	release := b.release
-	b.mu.Unlock()
-	<-release
-	return delay, err
+	return b.delay, b.err
 }
 
 type testPatchClient struct {
@@ -340,7 +326,7 @@ func TestOwnExecutionAccountCannotResumeIdleSuspendedSandbox(t *testing.T) {
 	}
 }
 
-func TestIdentityGrantCanResumeForeignSandboxAndUsesIdentityBudget(t *testing.T) {
+func TestIdentityGrantCanResumeForeignSandboxWithoutWakeBudget(t *testing.T) {
 	sandbox := suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 4)
 	sandbox.Spec.Identity = &sandboxapi.IdentityRef{Name: "target-agent"}
 	objects := testObjects(t, sandbox, executionUID)
@@ -360,8 +346,8 @@ func TestIdentityGrantCanResumeForeignSandboxAndUsesIdentityBudget(t *testing.T)
 		response.GetEligibility().GetReason() != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_ALLOWED_IDENTITY_GRANT {
 		t.Fatalf("granted foreign resume = %+v, %v", response, err)
 	}
-	if len(h.budget.calls) != 1 || h.budget.calls[0].caller != (lifecycle.WakeBudgetKey{Namespace: testNamespace, Name: executionIdentityName, UID: executionIdentityUID}) {
-		t.Fatalf("resume budget caller = %+v, want effective Identity", h.budget.calls)
+	if len(h.budget.calls) != 0 {
+		t.Fatalf("explicit Identity resume reserved wake budget: %+v", h.budget.calls)
 	}
 }
 
@@ -686,6 +672,35 @@ func TestDirectPodBoundOperatorCanResumeRequestedStopWithoutToken(t *testing.T) 
 	}
 }
 
+func TestExplicitResumeDoesNotReserveWakeBudget(t *testing.T) {
+	for _, operator := range []bool{true, false} {
+		for _, unavailable := range []bool{false, true} {
+			t.Run(fmt.Sprintf("operator=%t/budgetUnavailable=%t", operator, unavailable), func(t *testing.T) {
+				objects := testIdentityObjects(t, suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 4), executionUID)
+				identity := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: executionIdentityName, UID: types.UID(executionIdentityUID)}}
+				rules := identityResumeRules(identity, []policyapi.EnvironmentSelector{{BoundIdentity: &policyapi.BoundIdentitySelector{Self: true}}}, nil)
+				h := newIdentityHarness(t, objects, []auth.Account{operatorAccount}, rules, func() error { return nil })
+				if unavailable {
+					h.budget.err = errors.New("budget storage unavailable")
+				} else {
+					h.budget.delay = 30 * time.Second
+				}
+				ctx := delegatedContext(t)
+				if operator {
+					ctx = directContext(t, "operator")
+				}
+				response, err := environmentpb.NewEnvironmentServiceClient(h.conn).ResumeEnvironment(ctx, resumeRequest(testSandboxUID, 4))
+				if err != nil || response.GetOutcome() != environmentpb.ResumeOutcome_RESUME_OUTCOME_REQUESTED || response.GetWakeGeneration() != 5 {
+					t.Fatalf("explicit resume with exhausted/unavailable budget = %+v, %v", response, err)
+				}
+				if len(h.budget.calls) != 0 {
+					t.Fatalf("explicit resume reserved wake budget: %+v", h.budget.calls)
+				}
+			})
+		}
+	}
+}
+
 func TestIncompleteCurrentGenerationIdleSuspensionIsStillStopping(t *testing.T) {
 	t.Run("current generation is still stopping", func(t *testing.T) {
 		sandbox := suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 4)
@@ -746,17 +761,28 @@ func TestOldGenerationDoesNotAdvanceASecondWakeAndConcurrentConflictRereads(t *t
 		if err != nil || second.GetOutcome() != environmentpb.ResumeOutcome_RESUME_OUTCOME_STATE_CHANGED || second.GetWakeGeneration() != 4 {
 			t.Fatalf("stale resume = %+v, %v", second, err)
 		}
-		if len(h.budget.calls) != 1 {
-			t.Fatalf("old token consumed %d budget reservations, want 1", len(h.budget.calls))
+		if len(h.budget.calls) != 0 {
+			t.Fatalf("explicit resume reserved wake budget: %+v", h.budget.calls)
 		}
 	})
 	t.Run("two simultaneous requests converge on one generation", func(t *testing.T) {
 		sandbox := suspendedSandbox(&sandboxapi.ResumePolicy{AllowOwnServiceAccount: true}, true, sandboxapi.SuspendedByIdle, 8)
 		sandbox.ResourceVersion = "1"
-		objects := testObjects(t, sandbox, executionUID)
+		base := testObjects(t, sandbox, executionUID)
+		var mu sync.Mutex
+		arrived := 0
+		release := make(chan struct{})
+		objects := testPatchClient{WithWatch: base, patch: func(ctx context.Context, object client.Object, patch client.Patch, options ...client.PatchOption) error {
+			mu.Lock()
+			arrived++
+			if arrived == 2 {
+				close(release)
+			}
+			mu.Unlock()
+			<-release
+			return base.Patch(ctx, object, patch, options...)
+		}}
 		h := newHarness(t, objects, []auth.Account{operatorAccount})
-		h.budget.barrier = 2
-		h.budget.release = make(chan struct{})
 		client := environmentpb.NewEnvironmentServiceClient(h.conn)
 		type result struct {
 			response *environmentpb.ResumeEnvironmentResponse
@@ -807,8 +833,8 @@ func TestOldGenerationDoesNotAdvanceASecondWakeAndConcurrentConflictRereads(t *t
 		if err != nil || response.GetOutcome() != environmentpb.ResumeOutcome_RESUME_OUTCOME_REQUESTED || response.GetWakeGeneration() != 6 {
 			t.Fatalf("resume after conflict = %+v, %v", response, err)
 		}
-		if conflicts != 1 || len(h.budget.calls) != 2 || h.budget.calls[0].gen != 6 || h.budget.calls[1].gen != 6 {
-			t.Fatalf("conflict retries=%d, budget calls=%+v; want two reservations for generation 6", conflicts, h.budget.calls)
+		if conflicts != 1 || len(h.budget.calls) != 0 {
+			t.Fatalf("conflict retries=%d, budget calls=%+v; want one conflict and no reservations", conflicts, h.budget.calls)
 		}
 	})
 }

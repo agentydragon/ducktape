@@ -40,11 +40,11 @@ func (c serviceCreateWithUIDClient) Create(ctx context.Context, object client.Ob
 }
 
 type serviceRoleWakeBudget struct {
-	caller lifecycle.WakeBudgetKey
+	calls int
 }
 
-func (b *serviceRoleWakeBudget) ReserveWakeAttempt(_ context.Context, caller lifecycle.WakeBudgetKey, _ string, _ int64) (time.Duration, error) {
-	b.caller = caller
+func (b *serviceRoleWakeBudget) ReserveWakeAttempt(_ context.Context, _ lifecycle.WakeBudgetKey, _ string, _ int64) (time.Duration, error) {
+	b.calls++
 	return 0, nil
 }
 
@@ -166,8 +166,8 @@ func TestEnvironmentServiceServiceRolesStayMethodScoped(t *testing.T) {
 	if err != nil || response.GetOutcome() != environmentpb.ResumeOutcome_RESUME_OUTCOME_REQUESTED {
 		t.Fatalf("service operator resume = %v, %v", response, err)
 	}
-	if budget.caller != (lifecycle.WakeBudgetKey{ServiceSPIFFEID: operatorID}) {
-		t.Fatalf("operator wake budget caller = %+v, want SPIFFE identity only", budget.caller)
+	if budget.calls != 0 {
+		t.Fatalf("explicit service operator resume reserved wake budget %d times", budget.calls)
 	}
 	var updated sandboxapi.Sandbox
 	if err := objects.Get(t.Context(), types.NamespacedName{Namespace: discoveryNamespace, Name: sandboxName}, &updated); err != nil {
