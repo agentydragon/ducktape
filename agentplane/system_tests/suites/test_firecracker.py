@@ -22,7 +22,8 @@ async def test_firecracker_preserves_live_guest(
     sandbox: Sandboxes,
     scripted: ScriptedUpstream,
 ) -> None:
-    await preserves_live_guest(cluster, client, dispatcher, sandbox, scripted)
+    view = await sandbox(f"systest-firecracker-{uuid4().hex[:8]}", template="environment-firecracker")
+    await preserves_live_guest(cluster, client, dispatcher, view, scripted)
 
 
 async def test_a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_guest_runner(

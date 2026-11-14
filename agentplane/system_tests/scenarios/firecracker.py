@@ -10,7 +10,6 @@ import ssl
 import tempfile
 import textwrap
 from pathlib import Path
-from uuid import uuid4
 
 from cryptography import x509
 from cryptography.hazmat.primitives.serialization import Encoding
@@ -27,7 +26,7 @@ from agentplane.system_tests.driver.agent import (
 )
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.offered_models import models_offered_for
-from agentplane.system_tests.driver.sandbox import VM_WORKING_DIRECTORY, Sandboxes, wait_until_running
+from agentplane.system_tests.driver.sandbox import VM_WORKING_DIRECTORY, wait_until_running
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -153,10 +152,9 @@ async def preserves_live_guest(
     cluster: Cluster,
     client: Client,
     dispatcher: SessionDispatcherClient,
-    sandbox: Sandboxes,
+    view: environment_service_pb2.EnvironmentDescriptor,
     scripted: ScriptedUpstream,
 ) -> None:
-    view = await sandbox(f"systest-firecracker-{uuid4().hex[:8]}", template="environment-firecracker")
     pod = view.kubernetes_diagnostics.pod
     assert pod.uid
     harness = session_pb2.HARNESS_CODEX
