@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
@@ -142,5 +144,78 @@ func TestDialRefusesWhatEveryCallNeeds(t *testing.T) {
 		if dial() == nil {
 			t.Errorf("%s: dialing succeeded", name)
 		}
+	}
+}
+
+func TestServiceSVIDCallsHaveNoBearerForUnaryAndStream(t *testing.T) {
+	ca := peertlstesting.NewCA(t)
+	serverConfig := ca.Issue(t, peertls.HistoryIngressURI)
+	serverTLS, err := serverConfig.WorkloadServerTLSConfigWithServices(peertls.HistoryIngressURI, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	credentials, err := peertls.ServerCredentials(serverTLS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := make(chan metadata.MD, 2)
+	inspect := func(ctx context.Context) {
+		t.Helper()
+		uri, err := peertls.PeerIdentity(ctx)
+		if err != nil || uri != peertls.AppURI {
+			t.Errorf("peer = %q, %v", uri, err)
+		}
+		md, _ := metadata.FromIncomingContext(ctx)
+		seen <- md
+	}
+	server := grpc.NewServer(grpc.Creds(credentials),
+		grpc.UnaryInterceptor(func(ctx context.Context, request any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+			inspect(ctx)
+			return handler(ctx, request)
+		}),
+		grpc.StreamInterceptor(func(srv any, stream grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+			inspect(stream.Context())
+			return handler(srv, stream)
+		}))
+	healthpb.RegisterHealthServer(server, health.NewServer())
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go server.Serve(listener)
+	defer server.Stop()
+	leaf := ca.Issue(t, peertls.AppURI)
+	transport := &peertls.ClientTLS{
+		CAFile: ca.RootFile, ServerURI: peertls.HistoryIngressURI,
+		CertFile: leaf.CertFile, KeyFile: leaf.KeyFile, ClientURI: peertls.AppURI,
+	}
+	conn, err := Dial(listener.Addr().String(), "", time.Second, transport)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	client := healthpb.NewHealthClient(conn)
+	if _, err := client.Check(t.Context(), &healthpb.HealthCheckRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	watch, err := client.Watch(ctx, &healthpb.HealthCheckRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := watch.Recv(); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if md := <-seen; len(md.Get("authorization")) != 0 {
+			t.Fatalf("SVID call sent bearer: %v", md)
+		}
+	}
+	if _, err := client.Check(metadata.AppendToOutgoingContext(t.Context(), "authorization", "Bearer forbidden"), &healthpb.HealthCheckRequest{}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("mixed outgoing auth = %v", err)
+	}
+	if _, err := Dial(listener.Addr().String(), "/unused-token", time.Second, transport); err == nil {
+		t.Fatal("accepted configured bearer plus SVID")
 	}
 }
