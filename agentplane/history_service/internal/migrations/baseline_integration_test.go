@@ -29,6 +29,20 @@ func execute(t *testing.T, db *sql.DB, query string, args ...any) {
 	}
 }
 
+// rollbackServiceWriterMigration restores the version-18 schema for tests that exercise its baseline adoption.
+func rollbackServiceWriterMigration(t *testing.T, db *sql.DB) {
+	t.Helper()
+	if count(t, db, `SELECT count(*) FROM session_history WHERE writer_service_uri IS NOT NULL`) != 0 {
+		t.Fatal("cannot roll back service-writer migration with service-owned Sessions")
+	}
+	execute(t, db, `ALTER TABLE session_history DROP CONSTRAINT history_writer_service_uri_valid`)
+	execute(t, db, `ALTER TABLE session_history DROP CONSTRAINT history_writer_one_kind`)
+	execute(t, db, `ALTER TABLE session_history ADD CONSTRAINT history_writer_one_kind
+		CHECK (writer_uid IS NULL OR writer_identity_uid IS NULL)`)
+	execute(t, db, `ALTER TABLE session_history DROP COLUMN writer_service_uri`)
+	execute(t, db, `DELETE FROM history_service_goose_version WHERE version_id=19`)
+}
+
 func count(t *testing.T, db *sql.DB, query string, args ...any) int {
 	t.Helper()
 	var n int
@@ -67,6 +81,9 @@ func TestHistoryBaselineCreatesUsableHistory(t *testing.T) {
 	if count(t, db, `SELECT count(*) FROM history_service_goose_version WHERE version_id=18 AND is_applied`) != 1 {
 		t.Fatal("baseline not recorded")
 	}
+	if count(t, db, `SELECT count(*) FROM history_service_goose_version WHERE version_id=19 AND is_applied`) != 1 {
+		t.Fatal("service-writer migration not recorded")
+	}
 }
 
 func TestHistoryBaselineAdoptsCompletedRewriteWithoutRecreatingTables(t *testing.T) {
@@ -74,6 +91,7 @@ func TestHistoryBaselineAdoptsCompletedRewriteWithoutRecreatingTables(t *testing
 	if err := Up(t.Context(), db); err != nil {
 		t.Fatal(err)
 	}
+	rollbackServiceWriterMigration(t, db)
 	id := uuid.New()
 	execute(t, db, `INSERT INTO session_history(id,last_cursor,source_id) VALUES($1,3,'fixture-source')`, id)
 	execute(t, db, `INSERT INTO session_event(session_id,cursor,payload,kind) VALUES($1,3,$2,31)`, id, []byte("fixture retained event"))
@@ -90,6 +108,9 @@ func TestHistoryBaselineAdoptsCompletedRewriteWithoutRecreatingTables(t *testing
 	}
 	if count(t, db, `SELECT count(*) FROM history_service_goose_version WHERE version_id BETWEEN 1 AND 18 AND is_applied`) != 18 {
 		t.Fatal("adoption rewrote Goose history")
+	}
+	if count(t, db, `SELECT count(*) FROM history_service_goose_version WHERE version_id=19 AND is_applied`) != 1 {
+		t.Fatal("adoption did not apply the service-writer migration")
 	}
 	if count(t, db, `SELECT count(*) FROM pg_class WHERE oid=$1 AND relname='session_event_block'`, relation) != 1 {
 		t.Fatal("adoption recreated blocks")
@@ -109,6 +130,7 @@ func TestHistoryBaselineRejectsIncompletePredecessors(t *testing.T) {
 			if err := Up(t.Context(), db); err != nil {
 				t.Fatal(err)
 			}
+			rollbackServiceWriterMigration(t, db)
 			execute(t, db, `DELETE FROM history_service_goose_version WHERE version_id>0`)
 			if mode != "unmarked" {
 				version := 17
