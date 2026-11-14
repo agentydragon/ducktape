@@ -21,7 +21,13 @@ from pydantic import AnyHttpUrl
 from agentplane.crd_group import GROUP
 from agentplane.identity.auth import listener
 from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from agentplane.net.peertls.config import ACTIONS_URI, HISTORY_SERVICE_URI, NOTIFICATIONS_URI, SESSION_DISPATCHER_URI
+from agentplane.net.peertls.config import (
+    ACTIONS_URI,
+    APP_URI,
+    HISTORY_SERVICE_URI,
+    NOTIFICATIONS_URI,
+    SESSION_DISPATCHER_URI,
+)
 from agentplane.notification_service.settings import (
     TOKEN_AUDIENCE,
     ActionsSettings,
@@ -166,6 +172,7 @@ class Notifications(Construct):
             namespace=env.namespace,
             token_audience=TOKEN_AUDIENCE,
             operator_reader_account="app",
+            operator_reader_services=[APP_URI],
             notice_debounce=env.notifications_debounce,
             actions=ActionsSettings(
                 url=AnyHttpUrl(f"https://{actions.fqdn}:{actions.port.number}"),

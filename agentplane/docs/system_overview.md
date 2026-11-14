@@ -621,10 +621,9 @@ flowchart LR
 Sandboxes keep their existing HTTP service URL. Their sidecar or relay recognizes the exact origin,
 opens CONNECT through the central proxy, and presents the Runner SVID to Notification's shared TLS
 RPC listener. Notification resolves the current Sandbox and its ServiceAccount; inbox ownership and
-send grants are unchanged. Backend and operator callers retain their method-specific bearer
-authorization on that listener. Independently configured service SVIDs may read Session diagnostics
-through the read-only operator methods; that grant never supplies an agent Identity or permits
-inbox mutation. Deployment settings and callers retain their current authentication until cutover.
+send grants are unchanged. The listener keeps its method-specific bearer authorization and accepts
+the exact App service SVID only for read-only Session diagnostics. That service grant never supplies
+an agent Identity or permits inbox mutation.
 
 The Notification service does not call the integration app, which watches subscription and notice
 state over the operator-only `NotificationsOperator` gRPC service. GitHub sends it signed webhooks; it
