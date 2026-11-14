@@ -326,6 +326,7 @@ def test_import_batch_arms_use_fresh_stores_and_warm_repeats(
         "groups": [name for name, _ in groups],
         "input": input_identity,
         "arm_order": order,
+        "disabled_bootstrap_addons": ["coredns", "local-storage"],
         "phases": [],
         "measurement": (
             "Native system_test.image.import spans; source layouts are read before every phase. "
@@ -345,7 +346,13 @@ def test_import_batch_arms_use_fresh_stores_and_warm_repeats(
             process = None
             try:
                 try:
-                    process = k3s.start(layers_in_memory=True, preserve_image_store=False)
+                    # Bootstrap Pods can asynchronously pull layers shared with our inputs
+                    # after NodeReady. This importer-only probe owns no workload Pods.
+                    process = k3s.start(
+                        layers_in_memory=True,
+                        preserve_image_store=False,
+                        additional_disabled_addons=("coredns", "local-storage"),
+                    )
                 except BaseException as error:
                     _capture_start_failure(k3s, arm, error)
                     raise
