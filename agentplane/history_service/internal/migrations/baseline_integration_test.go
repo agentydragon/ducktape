@@ -76,7 +76,7 @@ func TestHistoryBaselineAdoptsCompletedRewriteWithoutRecreatingTables(t *testing
 		t.Fatal(err)
 	}
 	id := uuid.New()
-	execute(t, db, `INSERT INTO session_history(id,last_cursor,source_id) VALUES($1,3,'fixture-source')`, id)
+	execute(t, db, `INSERT INTO session_history(id,last_cursor,source_id,sandbox_uid) VALUES($1,3,'fixture-source','fixture-sandbox-uid')`, id)
 	execute(t, db, `INSERT INTO session_event(session_id,cursor,payload,kind) VALUES($1,3,$2,31)`, id, []byte("fixture retained event"))
 	execute(t, db, `DELETE FROM history_service_goose_version WHERE version_id>=18`)
 	execute(t, db, `INSERT INTO history_service_goose_version(version_id,is_applied) SELECT generate_series(1,17),true`)
