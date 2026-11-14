@@ -1,7 +1,7 @@
 # Agentplane CI architecture: experiment overview
 
 Evidence reviewed on 14 November 2026 UTC. Implementation measurements below
-identify their source; the current frozen graph screen uses `38f6c8e723` on
+identify their source; the historical frozen graph screen uses `38f6c8e723` on
 [draft PR #16102](https://github.com/agentydragon/ducktape/pull/16102).
 Optimization resumed with a 30% median complete-feedback qualification goal and
 no worse p90 or flake rate. This write-up records completed work and outstanding
@@ -69,7 +69,18 @@ Further experiments use `38f6c8e723` plus documented working-tree overlays:
 | Native Session driver                        | One real-process case passes: exact Session admission, setup output, a genuine History read timeout, recovery without accepting an earlier turn, and a third input. Its dependency graph has no App targets.                                       | The native VM/Firecracker migration is now implemented, with 14 caller builds passing; combined validation and physical acceptance are in progress. This is not yet a qualified speedup. [Evidence](common_backend_contracts.md#native-platform-driver-milestone). |
 | Fresh private KVM data                       | The Docker-overlay placement fails during bootstrap. Moving only the fresh store to Bazel's action-owned ext4 workspace passes both ordinary Firecracker cases in one attempt; TestRunner 254.857s, Bazel 290.188s.                                | Working ownership prerequisite, not a matched speed comparison. Retained-state reuse, p90 and flakes remain unqualified; shared-store cleanup remains unexecuted. [Evidence](common_backend_contracts.md#private-fresh-kvm-prerequisite).                          |
 
-The next implementation must make the smaller graph applicable to common real
+The native platform migration now removes the App executable/image and HTTP testing client
+from the required VM/Firecracker graphs. Exact rebased source `fc38753823` passes nine unit/render
+targets and 36 explicit library/aspect checks. At `04cbff4776`, both original Firecracker cases
+and all five migrated MCP Actions cases pass in one attempt. The VM scenarios reach their final
+trace contract, which catches missing Sandbox metadata in the native driver; the correction
+retains that assertion and still needs a physical pass. The
+[current qualification record](common_backend_contracts.md#native-platform-dependency-migration)
+also records the initial fixture/plugin, Actions mount and client-audience failures.
+
+The [actual App-image consumer query](https://app.buildbuddy.io/invocation/ce224205-7707-4240-8c4b-9a5520a3b468)
+leaves Pod and MCP Services among the four platform tails. This proves a dependency cut, not
+ordinary-cache test avoidance or a latency reduction. The next implementation must make the smaller graph applicable to common real
 backend changes with explicit assertion ownership. Do not expand the flat global
 replacement list. Use owner-specific requirements and retained platform witnesses,
 then measure the complete required-check path under ordinary cache conditions.
@@ -88,6 +99,12 @@ remains open at `605da061d5`; its Bazel, pre-commit, artifact/import and visual
 checks pass. It adds ordinary coverage without removing deployed witnesses.
 Its initial failures were fixture setup; the repaired target includes a third
 input after History recovery.
+
+[Actions mount ordering #16386](https://github.com/agentydragon/ducktape/pull/16386) is independently
+open and unmerged at `d34c757904`. The intended missing-settings-mount negative control fails;
+the repaired target passes all 14 cases and generated manifests pass all 25 cases with no staging
+snapshot drift. Its three required hosted checks pass. This fixes a real generator defect exposed
+by omitting optional fixture secrets; no fleet reliability or latency benefit is measured.
 
 Published main source `38f6c8e723` passes Bazel, pre-commit and artifact/import
 checks, including ordinary BuildBuddy invocation `59ee9acc-a353-520b-8bb9-d8e1612771cc`. This full branch check is
