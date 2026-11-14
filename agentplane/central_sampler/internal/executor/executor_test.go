@@ -1608,6 +1608,11 @@ func TestReconcileProcessWaitsForSameSessionAcrossGatewayOutage(t *testing.T) {
 	}
 	client := &fakeExecutionClient{}
 	var reads []*executorpb.ReadProcessRequest
+	var starts atomic.Int32
+	client.start = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+		starts.Add(1)
+		return nil, errors.New("Gateway recovery must not start a process")
+	}
 	client.read = func(_ context.Context, r *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 		reads = append(reads, proto.Clone(r).(*executorpb.ReadProcessRequest))
 		if len(reads) == 1 {
@@ -1618,11 +1623,12 @@ func TestReconcileProcessWaitsForSameSessionAcrossGatewayOutage(t *testing.T) {
 	offline := make(chan struct{})
 	restored := make(chan struct{})
 	var resumes []*executorpb.OpenSessionRequest
+	routeUnavailable := executionEnvironmentStatusError(t, executorpb.ExecutionEnvironmentFailure_STATE_CONTROL_ROUTE_UNAVAILABLE)
 	client.open = func(ctx context.Context, r *executorpb.OpenSessionRequest) (executorSessionStream, error) {
 		resumes = append(resumes, proto.Clone(r).(*executorpb.OpenSessionRequest))
 		if len(resumes) == 1 {
 			close(offline)
-			return nil, status.Error(codes.Unavailable, "Gateway unavailable")
+			return nil, routeUnavailable
 		}
 		select {
 		case <-restored:
@@ -1669,6 +1675,9 @@ func TestReconcileProcessWaitsForSameSessionAcrossGatewayOutage(t *testing.T) {
 	}
 	if process.Status != protocol.ProcessRunning || process.AfterSequence == nil || *process.AfterSequence != 6 || string(process.BufferedOutput) != "before after" {
 		t.Fatalf("reconnected read lost output or handle: %+v", process)
+	}
+	if starts.Load() != 0 {
+		t.Fatalf("Gateway recovery replayed process/start %d times", starts.Load())
 	}
 	if err := e.close(); err != nil {
 		t.Fatal(err)

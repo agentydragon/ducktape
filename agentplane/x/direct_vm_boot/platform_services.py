@@ -50,7 +50,7 @@ class PlatformServices:
     guest_url: str
     proxy_guest_url: str
     notification: NotificationProcess
-    egress_admin_client: egress_admin_pb2_grpc.EgressAdminStub
+    egress_admin_client: egress_admin_pb2_grpc.EgressAdminAsyncStub
     rules_client: egress_rules_pb2_grpc.EgressRulesStub
     notifications_client: notifications_pb2_grpc.NotificationsAsyncStub
 

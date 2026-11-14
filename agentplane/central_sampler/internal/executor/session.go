@@ -540,6 +540,15 @@ func (e *Executor) reconnectLocked(ctx context.Context, notDispatchedProcessID s
 }
 
 func retryableExecutorResumeFailure(err error) bool {
+	var environment *executorEnvironmentFailureError
+	if errors.As(err, &environment) {
+		// The Gateway may be healthy before the Runtime's control route is registered. This
+		// structured refusal proves OpenSession was not dispatched, so retry only the
+		// side-effect-free retained-session resume; other environment states stay terminal.
+		return environment.method == executorMethodInitialize &&
+			environment.state == executorpb.ExecutionEnvironmentFailure_STATE_CONTROL_ROUTE_UNAVAILABLE &&
+			environment.remoteOutcome == sessionstore.NestedNotDispatched
+	}
 	var transport *executorTransportError
 	if !errors.As(err, &transport) || transport.phase != "open" && transport.phase != "receive" {
 		return false
