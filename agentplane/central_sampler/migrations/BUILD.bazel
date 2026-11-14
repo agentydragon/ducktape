@@ -6,6 +6,7 @@ go_library(
     embedsrcs = [
         "schema/0015_baseline.sql",
         "schema/0016_provider_attempts.sql",
+        "schema/0017_delete_pre_identity_sessions.sql",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/migrations",
     visibility = [

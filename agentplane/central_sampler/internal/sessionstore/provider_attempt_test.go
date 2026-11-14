@@ -153,7 +153,7 @@ func TestProviderAttemptMigrationBackfillsUnresolvedIntentWithoutRetryAllowance(
 		t.Fatal(err)
 	}
 
-	// Recreate the committed v15 baseline shape and apply only migration 16 to the live row.
+	// Recreate the committed v15 baseline shape and reapply all later migrations to the live row.
 	migrationExec(t, store.DB(), `DROP INDEX sampler_intent_provider_retry_due_idx`)
 	migrationExec(t, store.DB(), `DROP INDEX sampler_intent_provider_predecessor_idx`)
 	migrationExec(t, store.DB(), `DROP INDEX sampler_intent_provider_attempt_step_idx`)
@@ -164,7 +164,7 @@ func TestProviderAttemptMigrationBackfillsUnresolvedIntentWithoutRetryAllowance(
 		DROP COLUMN provider_step_id, DROP COLUMN provider_attempt_no, DROP COLUMN provider_attempt_budget,
 		DROP COLUMN provider_attempt_lease_until, DROP COLUMN provider_retry_not_before,
 		DROP COLUMN previous_provider_intent_id, DROP COLUMN provider_command_id`)
-	migrationExec(t, store.DB(), `DELETE FROM central_sampler_goose_version WHERE version_id=16 AND is_applied`)
+	migrationExec(t, store.DB(), `DELETE FROM central_sampler_goose_version WHERE version_id>=16 AND is_applied`)
 	if err := migrations.Up(t.Context(), store.DB()); err != nil {
 		t.Fatalf("apply provider-attempt migration to old unresolved intent: %v", err)
 	}

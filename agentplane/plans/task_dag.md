@@ -3635,6 +3635,13 @@ showing exactly the deployed services and the traffic between them in `cluster/c
 Each removal needs its own evidence and any real prerequisite, and is fixed in a PR of its own; this
 node leaves with the last of them.
 
+**Identity cutover residue, 2026-11-14:** Central Sampler migration 17 removes retained session
+configurations without `execution_identity` or with the reserved `execution_principal` field, plus
+their session-owned conversation, event, command and provider state. The staging row count could not
+be obtained because this Identity cannot exec or port-forward to the database Pod. History already
+exported remains in History. The follow-up code PR removes the old retry, provider and export paths.
+Runner Gateway's retained rows and reader cleanup are tracked separately.
+
 #### `ACTION_BOX_RENAME` — Action boxes stop being called sandboxes
 
 **Unscheduled; operator, 2026-10-11 PDT: a later TODO.** Rename what calls an Action Service box a
