@@ -757,11 +757,12 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
     expected_wake_callers = [
         {"namespace": cluster.namespace, "name": "app"},
         {"namespace": cluster.namespace, "name": "notifications"},
+        {"namespace": cluster.namespace, "name": NATIVE_CLIENT_NAME},
         # The k3s fixture offers the orchestration_v1 group, whose sends wake Sandboxes too.
         {"namespace": cluster.namespace, "name": "actions"},
     ]
     accounts = {f"{account['namespace']}/{account['name']}" for account in expected_wake_callers}
-    assert set(gateway_settings["dispatcher_callers"]) == accounts | {f"{cluster.namespace}/{NATIVE_CLIENT_NAME}"}
+    assert set(gateway_settings["dispatcher_callers"]) == accounts
     assert set(gateway_settings["wake_callers"]) == accounts
 
     policies = list(LAUNCH_DEFAULT_POLICY_SETS)
