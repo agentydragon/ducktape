@@ -189,6 +189,8 @@ go_test(
     deps = [
         "//agentplane/central_sampler/api:sampler_go_proto",
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
+        "//agentplane/net/peertls",
+        "//agentplane/net/peertls/testing",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:identity_go_proto",

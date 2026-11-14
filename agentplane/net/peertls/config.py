@@ -7,6 +7,8 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 ACTIONS_URI: Final = "spiffe://agentplane/actions"
+POLICY_CONTROLLER_URI: Final = "spiffe://agentplane/policy-controller"
+CENTRAL_SAMPLER_URI: Final = "spiffe://agentplane/central-sampler"
 EGRESS_PROXY_URI: Final = "spiffe://agentplane/egress-proxy"
 HISTORY_SERVICE_URI: Final = "spiffe://agentplane/history-ingress"
 LLM_INGRESS_URI: Final = "spiffe://agentplane/llm-ingress"
@@ -85,7 +87,7 @@ class ClientTLS(BaseModel):
 
     ca_file: Path
     server_uri: str = Field(
-        pattern=r"^spiffe://agentplane/(runner-gateway|egress-proxy|history-ingress|notifications|llm-ingress|session-dispatcher|actions)$"
+        pattern=r"^spiffe://agentplane/(runner-gateway|egress-proxy|history-ingress|notifications|llm-ingress|session-dispatcher|actions|policy-controller|central-sampler)$"
     )
 
     @model_validator(mode="after")
@@ -93,3 +95,20 @@ class ClientTLS(BaseModel):
         if not self.ca_file.is_absolute():
             raise ValueError("client TLS requires an absolute ca_file")
         return self
+
+
+class ServerTLSListener(BaseModel):
+    """An additional gRPC listener serving a workload-CA server SVID and bearer-authenticated RPCs."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    listen: str = Field(min_length=1)
+    cert_file: Path
+    key_file: Path
+
+    @field_validator("cert_file", "key_file")
+    @classmethod
+    def absolute_path(cls, value: Path) -> Path:
+        if not value.is_absolute():
+            raise ValueError("server TLS certificate and key paths must be absolute")
+        return value

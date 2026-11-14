@@ -7,6 +7,8 @@ from typing import ClassVar, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
+from agentplane.net.peertls.config import ServerTLSListener
+
 
 class Settings(BaseModel):
     """Complete non-secret settings authored in the required YAML file."""
@@ -30,6 +32,9 @@ class Settings(BaseModel):
         default=":8081", min_length=1, description="Where /healthz and /readyz are served."
     )
     grpc_bind_address: str = Field(default=":8082", min_length=1, description="PolicyService gRPC listener.")
+    grpc_tls: ServerTLSListener | None = Field(
+        default=None, description="Optional server-authenticated TLS listener for PolicyService."
+    )
     grpc_audience: str = Field(default="agentplane-policy", min_length=1, description="PolicyService token audience.")
     reader_accounts: Set[str] = Field(
         default_factory=frozenset, description="Accounts allowed to read all policy resources."

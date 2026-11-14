@@ -104,6 +104,9 @@ class Settings(BaseModel):
     history_service_tls: ClientTLS | None = None
     notifications_tls: ClientTLS | None = None
     actions_tls: ClientTLS | None = None
+    policy_service_tls: ClientTLS | None = Field(
+        default=None, description="Verify the Policy Controller server SVID for PolicyService gRPC calls."
+    )
 
     sandbox_namespace: str = Field(
         min_length=1,

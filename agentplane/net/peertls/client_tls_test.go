@@ -18,6 +18,8 @@ func TestClientTLSValidatesSupportedServerURIs(t *testing.T) {
 		peertls.LLMIngressURI,
 		peertls.SessionDispatcherURI,
 		peertls.ActionsURI,
+		peertls.PolicyControllerURI,
+		peertls.CentralSamplerURI,
 	} {
 		t.Run(uri, func(t *testing.T) {
 			if err := (peertls.ClientTLS{CAFile: "/test/ca.pem", ServerURI: uri}).Validate(); err != nil {

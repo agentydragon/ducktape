@@ -51,9 +51,16 @@ const SessionDispatcherURI = "spiffe://agentplane/session-dispatcher"
 // ActionsURI is the Action Service workload listener.
 const ActionsURI = "spiffe://agentplane/actions"
 
+// PolicyControllerURI is the Policy Controller's server-authentication identity.
+const PolicyControllerURI = "spiffe://agentplane/policy-controller"
+
+// CentralSamplerURI is the Central Sampler's server-authentication identity.
+const CentralSamplerURI = "spiffe://agentplane/central-sampler"
+
 func isWorkloadServiceURI(uri string) bool {
 	switch uri {
-	case EgressProxyURI, HistoryIngressURI, NotificationsURI, LLMIngressURI, SessionDispatcherURI, ActionsURI:
+	case EgressProxyURI, HistoryIngressURI, NotificationsURI, LLMIngressURI, SessionDispatcherURI, ActionsURI,
+		PolicyControllerURI, CentralSamplerURI:
 		return true
 	default:
 		return false
@@ -271,6 +278,43 @@ func (c Config) BearerServerTLSConfig(localURI string) (*tls.Config, error) {
 		return nil
 	}
 	return config, nil
+}
+
+// ServerTLSListener describes an additional listener for bearer-authenticated
+// gRPC calls. Its TLS authenticates only the server; callers keep their existing
+// application credentials and do not present a client certificate.
+type ServerTLSListener struct {
+	Listen   string `json:"listen,omitempty" yaml:"listen,omitempty" mapstructure:"listen,omitempty"`
+	CertFile string `json:"cert_file,omitempty" yaml:"cert_file,omitempty" mapstructure:"cert_file,omitempty"`
+	KeyFile  string `json:"key_file,omitempty" yaml:"key_file,omitempty" mapstructure:"key_file,omitempty"`
+}
+
+func (c ServerTLSListener) Validate() error {
+	if c.Listen == "" {
+		return errors.New("server TLS listener requires a listen address")
+	}
+	for _, file := range []struct{ name, path string }{
+		{name: "cert_file", path: c.CertFile},
+		{name: "key_file", path: c.KeyFile},
+	} {
+		if !filepath.IsAbs(file.path) {
+			return fmt.Errorf("server TLS listener %s must be an absolute path", file.name)
+		}
+	}
+	return nil
+}
+
+// Credentials validates and serves the configured service SVID without
+// requesting client certificates.
+func (c ServerTLSListener) Credentials(localURI string) (credentials.TransportCredentials, error) {
+	if err := c.Validate(); err != nil {
+		return nil, err
+	}
+	config, err := (Config{CertFile: c.CertFile, KeyFile: c.KeyFile}).BearerServerTLSConfig(localURI)
+	if err != nil {
+		return nil, err
+	}
+	return credentials.NewTLS(config), nil
 }
 
 // LocalIdentity returns the certificate URI after validating its chain and the

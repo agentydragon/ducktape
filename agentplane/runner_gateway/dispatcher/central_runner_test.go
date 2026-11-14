@@ -2,6 +2,7 @@ package dispatcher
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"net"
 	"os"
@@ -11,6 +12,8 @@ import (
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
@@ -132,5 +135,46 @@ func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
 	runner.Store = openingFixture{&Session{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: placement.CentralSampler, Spec: spec, ExecutionIdentity: execution.Identity}}
 	if err := runner.CreateSession(context.Background(), sandbox, "disabled", spec, nil, SessionExecution{}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("disabled sampler accepted: %v", err)
+	}
+}
+
+func TestCentralSamplerClientVerifiesServerTLSAndKeepsBearerAuthentication(t *testing.T) {
+	ca := environmentruntimetransporttesting.NewCA(t)
+	serverCertificate := ca.IssueWithUsage(t, peertls.CentralSamplerURI, x509.ExtKeyUsageServerAuth)
+	serverCredentials, err := (peertls.ServerTLSListener{
+		Listen: "127.0.0.1:0", CertFile: serverCertificate.CertFile, KeyFile: serverCertificate.KeyFile,
+	}).Credentials(peertls.CentralSamplerURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer(grpc.Creds(serverCredentials))
+	fixture := &centralFixture{}
+	samplerpb.RegisterSamplerServer(server, fixture)
+	go server.Serve(listener)
+	t.Cleanup(server.Stop)
+	tokenFile := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenFile, []byte("projected\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	runner := &RoutingRunner{
+		Target: &CentralTarget{
+			Target: listener.Addr().String(), TokenFile: tokenFile,
+			TLS: &peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.CentralSamplerURI},
+		},
+		Timeout: time.Second,
+	}
+	err = runner.withClient(context.Background(), func(ctx context.Context, client samplerpb.SamplerClient) error {
+		_, err := client.CreateSession(ctx, &samplerpb.CreateSessionRequest{})
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fixture.token != "Bearer projected" {
+		t.Fatalf("sampler bearer authentication = %q", fixture.token)
 	}
 }

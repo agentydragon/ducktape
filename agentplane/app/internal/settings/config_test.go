@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 )
 
@@ -112,6 +113,18 @@ func stringPtr(value string) *string { return &value }
 func TestConfigValidateAcceptsExistingSettingsContract(t *testing.T) {
 	if err := validTestConfig().validate(); err != nil {
 		t.Fatalf("valid config rejected: %v", err)
+	}
+}
+
+func TestPolicyServiceTLSRequiresThePolicyControllerIdentity(t *testing.T) {
+	config := validTestConfig()
+	config.PolicyServiceTLS = &peertls.ClientTLS{CAFile: "/run/agentplane/workload-trust/ca.pem", ServerURI: peertls.PolicyControllerURI}
+	if err := config.validate(); err != nil {
+		t.Fatalf("valid Policy Service TLS rejected: %v", err)
+	}
+	config.PolicyServiceTLS.ServerURI = peertls.CentralSamplerURI
+	if err := config.validate(); err == nil {
+		t.Fatal("accepted TLS for a different service identity")
 	}
 }
 

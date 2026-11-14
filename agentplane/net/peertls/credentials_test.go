@@ -193,6 +193,39 @@ func TestOptionalCertificateTLSStillVerifiesEveryPresentedLeaf(t *testing.T) {
 	}
 }
 
+func TestBearerServerTLSListenerAuthenticatesOnlyTheConfiguredService(t *testing.T) {
+	ca := environmentruntimetransporttesting.NewCA(t)
+	server := ca.IssueWithUsage(t, peertls.PolicyControllerURI, x509.ExtKeyUsageServerAuth)
+	listener := peertls.ServerTLSListener{Listen: "127.0.0.1:0", CertFile: server.CertFile, KeyFile: server.KeyFile}
+	serverCredentials, err := listener.Credentials(peertls.PolicyControllerURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientTLSConfig := &peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.PolicyControllerURI}
+	clientCredentials, err := clientTLSConfig.Credentials()
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientInfo, serverInfo, err := handshake(t, clientCredentials, serverCredentials)
+	if err != nil {
+		t.Fatalf("verified bearer TLS handshake: %v", err)
+	}
+	clientTLS, ok := clientInfo.(credentials.TLSInfo)
+	if !ok || len(clientTLS.State.PeerCertificates) != 1 {
+		t.Fatalf("client transport info = %#v, want one verified server certificate", clientInfo)
+	}
+	if got, err := peertls.PeerIdentity(peer.NewContext(context.Background(), &peer.Peer{AuthInfo: clientInfo})); err != nil || got != peertls.PolicyControllerURI {
+		t.Fatalf("authenticated server identity = %q, error %v", got, err)
+	}
+	serverTLS, ok := serverInfo.(credentials.TLSInfo)
+	if !ok || len(serverTLS.State.PeerCertificates) != 0 {
+		t.Fatalf("server transport info = %#v, want no client certificate", serverInfo)
+	}
+	if _, err := listener.Credentials(peertls.CentralSamplerURI); err == nil {
+		t.Fatal("listener accepted a configured identity different from its certificate")
+	}
+}
+
 func TestClientTLSConfigReloadsSameIdentityAndRejectsChangedIdentity(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
 	runtimeURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()

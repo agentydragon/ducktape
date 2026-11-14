@@ -28,6 +28,7 @@ type Config struct {
 	HistoryServiceTLS                   *peertls.ClientTLS         `mapstructure:"history_service_tls"`
 	SessionDispatcherTLS                *peertls.ClientTLS         `mapstructure:"session_dispatcher_tls"`
 	RunnerGatewayTLS                    *peertls.ClientTLS         `mapstructure:"runner_gateway_tls"`
+	PolicyServiceTLS                    *peertls.ClientTLS         `mapstructure:"policy_service_tls"`
 	Models                              runtimeconfig.ModelCatalog `mapstructure:"models"`
 	ThreadPresets                       map[string]ThreadPreset    `mapstructure:"thread_presets"`
 	SandboxPresets                      map[string]SandboxPreset   `mapstructure:"sandbox_presets"`
@@ -395,6 +396,14 @@ func (c Config) validate() error {
 	} {
 		if strings.TrimSpace(value) == "" {
 			return fmt.Errorf("%s is required", name)
+		}
+	}
+	if c.PolicyServiceTLS != nil {
+		if err := c.PolicyServiceTLS.Validate(); err != nil {
+			return fmt.Errorf("policy_service_tls: %w", err)
+		}
+		if c.PolicyServiceTLS.ServerURI != peertls.PolicyControllerURI {
+			return errors.New("policy_service_tls.server_uri must identify the Policy Controller")
 		}
 	}
 	if strings.TrimSpace(c.ListenAddress) == "" {

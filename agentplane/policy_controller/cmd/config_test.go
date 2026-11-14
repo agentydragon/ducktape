@@ -70,6 +70,33 @@ func TestBindAddressesDefaultWhenOmitted(t *testing.T) {
 	}
 }
 
+func TestOptionalGRPCTLSListenerRequiresSeparateAddressAndAbsoluteFiles(t *testing.T) {
+	settings := requiredSettings()
+	settings["grpc_tls"] = map[string]any{
+		"listen": ":8083", "cert_file": "/run/agentplane/workload-tls/tls.crt", "key_file": "/run/agentplane/workload-tls/tls.key",
+	}
+	writeSettings(t, settings)
+	c, err := loadConfig()
+	if err != nil || c.GRPCTLS == nil || c.GRPCTLS.Listen != ":8083" {
+		t.Fatalf("TLS listener settings = %+v, error %v", c.GRPCTLS, err)
+	}
+
+	for name, tlsSettings := range map[string]map[string]any{
+		"missing key":          {"listen": ":8083", "cert_file": "/run/cert.pem"},
+		"relative certificate": {"listen": ":8083", "cert_file": "cert.pem", "key_file": "/run/key.pem"},
+		"same listener":        {"listen": ":8082", "cert_file": "/run/cert.pem", "key_file": "/run/key.pem"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			settings := requiredSettings()
+			settings["grpc_tls"] = tlsSettings
+			writeSettings(t, settings)
+			if _, err := loadConfig(); err == nil {
+				t.Fatal("accepted invalid TLS listener settings")
+			}
+		})
+	}
+}
+
 func TestEachRequiredSettingIsRequired(t *testing.T) {
 	for omitted := range requiredSettings() {
 		t.Run(omitted, func(t *testing.T) {

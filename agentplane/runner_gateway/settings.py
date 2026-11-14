@@ -22,6 +22,7 @@ class CentralSamplerTarget(BaseModel):
     model_config = ConfigDict(extra="forbid")
     target: str = Field(min_length=1)
     token_file: Path
+    tls: ClientTLS | None = Field(default=None, description="Verify the Central Sampler server SVID.")
 
 
 class DelegationSettings(BaseModel):
