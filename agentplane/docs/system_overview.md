@@ -23,7 +23,7 @@ flowchart LR
         hs[History TLS RPC :8080: readers and JournalIngress]
         notif[Notification TLS RPC :8080; signed webhook HTTP :8081]
         actions[Action TLS RPC :8080]
-        edge[MCP edge]
+        edge["MCP edge<br/>gRPC 8080 + mTLS 8443"]
         egress[Egress proxy]
         egressRules[Rules and EgressAdmin TLS gRPC :8081]
         llm[LLM inference HTTP and ModelConfig RPC over TLS :8080]
@@ -640,7 +640,7 @@ flowchart LR
     github([GitHub / web-push])
     app[Integration app]
     actions[Action Service]
-    edge[MCP edge]
+    edge["MCP edge<br/>gRPC 8080 + mTLS 8443"]
     k8s[Kubernetes API]
     subgraph box[Action box Pod]
         workload[Box workload]
@@ -712,8 +712,9 @@ The app has independent `action_federation.service_url` and `connection_service_
 Both tiers send operator Connection calls and gRPC health probes to the [MCP edge](../mcp_edge/README.md).
 Staging's external MCP/OAuth routes terminate there too, preserving the public issuer/resource URLs.
 Actions retains upstream MCP linkage and its public client metadata. The edge verifies operator OIDC separately from
-external MCP bearers and forwards workload calls under the bound ServiceAccount's token. Its optional TLS gRPC listener
-also checks configured service SVIDs; operator OIDC remains required and determines Connection authority.
+external MCP bearers and forwards workload calls under the bound ServiceAccount's token. Its additional gRPC listener on port 8443
+checks the App service SVID against the workload CA; operator OIDC remains required and determines
+Connection authority. The App still uses port 8080 until its separate caller cutover.
 
 ## Staged Action Service certificate callers
 
