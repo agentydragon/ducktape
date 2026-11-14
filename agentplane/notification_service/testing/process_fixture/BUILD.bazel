@@ -1,0 +1,88 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "process",
+    testonly = True,
+    srcs = ["process.py"],
+    visibility = ["//agentplane/notification_service:__subpackages__"],
+    deps = [
+        "//agentplane/net/peertls:config",
+        "//agentplane/notification_service/api/notifications:notifications_pb2",
+        "//agentplane/notification_service/api/notifications:notifications_pb2_grpc",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "//agentplane/testing:kubernetes_apiserver",
+        "//agentplane/testing:tls",
+        "//devinfra/testing:undeclared_outputs",
+        "//util:db_url",
+        "@pypi//grpcio",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@rules_python//python/runfiles",
+    ],
+)
+
+go_test(
+    name = "process_contract_test",
+    size = "medium",
+    srcs = ["driver_test.go"],
+    args = [
+        "-test.v",
+        "-test.run=TestProductionNotificationProcessListsOwnedSubscription",
+    ],
+    embed = ["//agentplane/notification_service:main_lib"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service",
+    tags = ["requires_docker"],
+    visibility = ["//agentplane/notification_service:__subpackages__"],
+    deps = [
+        "//agentplane/identity/auth/listener",
+        "//agentplane/identity/auth/testing",
+        "//agentplane/kubeclient",
+        "//agentplane/net/peertls",
+        "//agentplane/net/peertls/testing",
+        "//agentplane/notification_service/api/notifications:notifications_go_proto",
+        "//agentplane/notification_service/internal/store",
+        "//agentplane/notification_service/migrations",
+        "//agentplane/notification_service/model",
+        "//agentplane/policy/api/v1alpha1",
+        "//agentplane/sandboxes/api",
+        "//agentplane/testing/kubeapiserver",
+        "//agentplane/testing/postgres",
+        "@com_github_google_uuid//:uuid",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_client_go//kubernetes",
+        "@io_k8s_client_go//rest",
+        "@io_k8s_client_go//tools/clientcmd",
+        "@io_k8s_client_go//tools/clientcmd/api",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+py_test(
+    name = "test_process",
+    size = "medium",
+    srcs = ["test_process.py"],
+    data = [
+        ":process_contract_test",
+        "//agentplane/notification_service:notification-service",
+    ],
+    requires_docker = True,
+    deps = [
+        ":process",
+        "//:conftest",
+        "//agentplane:crd_group",
+        "//agentplane/notification_service/api/notifications:notifications_pb2",
+        "//agentplane/notification_service/api/notifications:notifications_pb2_grpc",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "//agentplane/testing:kubernetes_apiserver",
+        "//agentplane/testing:tls",
+        "//util/testing:postgres",
+        "//util/testing:postgres_fixtures",
+        "@pypi//grpcio",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
