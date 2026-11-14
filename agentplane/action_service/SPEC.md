@@ -140,6 +140,15 @@ whose admitting writer did not store the required incarnation remain explicitly 
 writes by older replicas during a roll. The service never looks up a same-name live subject to fill
 it in, and a caller-delegating executor must refuse requests whose required caller proof is absent.
 
+The optional `session_delegation_service` setting admits only the Central Sampler's exact service
+SVID, `spiffe://agentplane/central-sampler`, on `ListActionGroups`, `SubmitActionRequest`,
+`ListActionRequests`, `GetActionRequest`, and `WatchActionRequest`. These calls require typed Session
+provenance and a live effective Identity; the sampler gains no direct read, caller, or operator role.
+Its admitted service actor and Session UUID are retained as optional receipt attribution, while the
+effective Identity remains the owner and policy subject. The setting is disabled by default and
+requires listener SPIFFE client trust. It is a separate admission map: the MCP edge keeps its
+Connection-only methods and cannot use Session provenance.
+
 An Identity caller is admitted while a live `PolicyBinding` of the policy namespace names its
 Identity incarnation, whether or not the binding grants an Action rule; the index answers only
 while that Identity of that UID exists, and a watch rechecks it before every frame. No Identity is

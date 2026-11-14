@@ -16,6 +16,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/push"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/operator"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 )
 
@@ -64,6 +65,38 @@ func TestConnectionDelegationActorSettingIsOptionalAndAccepted(t *testing.T) {
 	}
 	if got, want := c.ConnectionDelegationActor, (&auth.Account{Namespace: "test-agentplane", Name: "mcp-edge"}); got == nil || *got != *want {
 		t.Fatalf("connection_delegation_actor = %+v, want %+v", got, want)
+	}
+}
+
+func TestSessionDelegationServiceIsOptionalAndNamesOnlyTheCentralSampler(t *testing.T) {
+	c, err := loadTestConfig(t, requiredFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.SessionDelegationService != "" {
+		t.Fatalf("unset session_delegation_service = %q", c.SessionDelegationService)
+	}
+
+	withSPIFFE := strings.Replace(requiredFile, "  auth:\n", "  tls:\n    cert_file: /test/actions.crt\n    key_file: /test/actions.key\n  auth:\n", 1)
+	withSPIFFE = strings.Replace(withSPIFFE, "      audiences: [test-actions]\n", "      audiences: [test-actions]\n    - mode: spiffe\n      ca_file: /test/workload-ca.crt\n", 1)
+	c, err = loadTestConfig(t, withSPIFFE+"session_delegation_service: "+peertls.CentralSamplerURI+"\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.SessionDelegationService != peertls.CentralSamplerURI {
+		t.Fatalf("session_delegation_service = %q", c.SessionDelegationService)
+	}
+
+	for name, file := range map[string]string{
+		"requires SPIFFE listener": requiredFile + "session_delegation_service: " + peertls.CentralSamplerURI + "\n",
+		"another valid service":    withSPIFFE + "session_delegation_service: " + peertls.MCPEdgeURI + "\n",
+		"malformed service":        withSPIFFE + "session_delegation_service: not-a-service\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := loadTestConfig(t, file); err == nil {
+				t.Fatal("accepted")
+			}
+		})
 	}
 }
 

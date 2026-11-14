@@ -79,6 +79,7 @@ go_test(
         "//agentplane/action_service/internal/push",
         "//agentplane/action_service/internal/rpc",
         "//agentplane/identity/auth",
+        "//agentplane/net/peertls",
         "//agentplane/testing/configtest",
     ],
 )

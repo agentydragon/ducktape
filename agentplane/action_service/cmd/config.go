@@ -33,6 +33,7 @@ type config struct {
 	ServiceReaders              []string        `mapstructure:"service_readers"`
 	OperatorServices            []string        `mapstructure:"operator_services"`
 	ConnectionDelegationService string          `mapstructure:"connection_delegation_service"`
+	SessionDelegationService    string          `mapstructure:"session_delegation_service"`
 	DatabaseURL                 string          `mapstructure:"-"`
 	RPC                         listener.Config `mapstructure:"rpc"`
 	// CallerServiceAccountNamespaces hold the ServiceAccounts whose workloads may call; a labeled account outside
@@ -154,7 +155,7 @@ func (c *config) validate() error {
 			return errors.New(required.name + " is required")
 		}
 	}
-	if (len(c.ServiceReaders)+len(c.OperatorServices) > 0 || c.ConnectionDelegationService != "") && !c.RPC.Has(listener.SPIFFE) {
+	if (len(c.ServiceReaders)+len(c.OperatorServices) > 0 || c.ConnectionDelegationService != "" || c.SessionDelegationService != "") && !c.RPC.Has(listener.SPIFFE) {
 		return errors.New("service callers require rpc spiffe client trust")
 	}
 	for _, services := range [][]string{c.ServiceReaders, c.OperatorServices} {
@@ -164,6 +165,14 @@ func (c *config) validate() error {
 	}
 	if c.ConnectionDelegationService != "" {
 		if err := auth.ValidateServiceCallers([]string{c.ConnectionDelegationService}); err != nil {
+			return err
+		}
+	}
+	if c.SessionDelegationService != "" {
+		if c.SessionDelegationService != peertls.CentralSamplerURI {
+			return fmt.Errorf("session_delegation_service must be %s", peertls.CentralSamplerURI)
+		}
+		if err := auth.ValidateServiceCallers([]string{c.SessionDelegationService}); err != nil {
 			return err
 		}
 	}

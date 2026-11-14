@@ -5,6 +5,7 @@ import pytest_bazel
 from pydantic import ValidationError
 
 from agentplane.action_service.settings import ServicePeer, Settings
+from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI
 
 
 def _settings_source() -> dict[str, object]:
@@ -32,6 +33,31 @@ def test_connection_delegation_actor_is_optional_and_accepted() -> None:
     assert settings.connection_delegation_actor is not None
     assert settings.connection_delegation_actor.namespace == "test-agentplane"
     assert settings.connection_delegation_actor.name == "mcp-edge"
+
+
+def test_session_delegation_service_is_optional_and_only_trusts_the_central_sampler() -> None:
+    source = _settings_source()
+    settings = Settings.model_validate(source)
+    assert settings.session_delegation_service == ""
+    assert "session_delegation_service" not in settings.model_dump(mode="json")
+
+    with pytest.raises(ValidationError, match="service callers require rpc spiffe client trust"):
+        Settings.model_validate(source | {"session_delegation_service": CENTRAL_SAMPLER_URI})
+
+    source["rpc"] = {
+        "listen_address": "0.0.0.0:8080",
+        "tls": {"cert_file": "/etc/actions/cert", "key_file": "/etc/actions/key"},
+        "auth": [
+            {"mode": "kubernetes_bearer", "audiences": ["test-actions"]},
+            {"mode": "spiffe", "ca_file": "/etc/actions/ca"},
+        ],
+    }
+    settings = Settings.model_validate(source | {"session_delegation_service": CENTRAL_SAMPLER_URI})
+    assert settings.session_delegation_service == CENTRAL_SAMPLER_URI
+    assert settings.model_dump(mode="json")["session_delegation_service"] == CENTRAL_SAMPLER_URI
+
+    with pytest.raises(ValidationError, match="session_delegation_service must be"):
+        Settings.model_validate(source | {"session_delegation_service": "spiffe://agentplane/mcp-edge"})
 
 
 def test_static_settings_do_not_accept_runtime_credentials() -> None:

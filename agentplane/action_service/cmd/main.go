@@ -338,7 +338,7 @@ func gate(c config, d deps, callers rpc.Callers) (*rpc.Gate, error) {
 		return nil, err
 	}
 	options := rpc.GateOptions{Workloads: workloads, Callers: callers, ReaderAccounts: c.ReaderAccounts, ServiceReaders: c.ServiceReaders, OperatorServices: c.OperatorServices}
-	if c.ConnectionDelegationActor != nil || c.ConnectionDelegationService != "" {
+	if c.ConnectionDelegationActor != nil || c.ConnectionDelegationService != "" || c.SessionDelegationService != "" {
 		scheme := runtime.NewScheme()
 		if err := policyapi.AddToScheme(scheme); err != nil {
 			return nil, fmt.Errorf("register Policy API for delegated Identity checks: %w", err)
@@ -351,9 +351,17 @@ func gate(c config, d deps, callers rpc.Callers) (*rpc.Gate, error) {
 		if err != nil {
 			return nil, fmt.Errorf("configure delegated Identity checks: %w", err)
 		}
-		options.ConnectionDelegation, err = actionConnectionDelegation(workloads, c.ConnectionDelegationActor, c.ConnectionDelegationService, identities)
-		if err != nil {
-			return nil, fmt.Errorf("configure MCP Connection delegation: %w", err)
+		if c.ConnectionDelegationActor != nil || c.ConnectionDelegationService != "" {
+			options.ConnectionDelegation, err = actionConnectionDelegation(workloads, c.ConnectionDelegationActor, c.ConnectionDelegationService, identities)
+			if err != nil {
+				return nil, fmt.Errorf("configure MCP Connection delegation: %w", err)
+			}
+		}
+		if c.SessionDelegationService != "" {
+			options.SessionDelegation, err = actionSessionDelegation(workloads, identities)
+			if err != nil {
+				return nil, fmt.Errorf("configure Central Sampler Session delegation: %w", err)
+			}
 		}
 	}
 	if c.RPC.Has(listener.SPIFFE) {
@@ -406,6 +414,24 @@ func actionConnectionDelegation(
 		rules, err = rules.WithServiceDelegation(methods, []auth.ServiceDelegator{{SPIFFEID: serviceActor, ConnectionProvenance: true}}, identities)
 	}
 	return rules, err
+}
+
+// actionSessionDelegation grants the Central Sampler only the Action calls it needs to submit a
+// Session-attributed request and recover its receipt. Its service certificate, not a bearer,
+// authenticates the actor; the delegated Identity remains subject to the caller's PolicyBindings.
+func actionSessionDelegation(workloads *auth.Resolver, identities auth.IdentityUIDReader) (auth.Methods, error) {
+	methods := []string{
+		action_servicepb.ActionService_ListActionGroups_FullMethodName,
+		action_servicepb.ActionService_SubmitActionRequest_FullMethodName,
+		action_servicepb.ActionService_ListActionRequests_FullMethodName,
+		action_servicepb.ActionService_GetActionRequest_FullMethodName,
+		action_servicepb.ActionService_WatchActionRequest_FullMethodName,
+	}
+	rules := make(auth.Methods, len(methods))
+	for _, method := range methods {
+		rules[method] = auth.ReviewedServiceAccountOrIdentity(workloads)
+	}
+	return rules.WithServiceDelegation(methods, []auth.ServiceDelegator{{SPIFFEID: peertls.CentralSamplerURI}}, identities)
 }
 
 // serve answers gRPC on listener, runs the dispatch worker, supervises the MCP groups' sessions, refreshes the linked

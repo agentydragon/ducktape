@@ -44,6 +44,7 @@ from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
+    CENTRAL_SAMPLER_URI,
     HISTORY_SERVICE_URI,
     MCP_EDGE_URI,
     NOTIFICATIONS_URI,
@@ -51,7 +52,7 @@ from agentplane.net.peertls.config import (
 )
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import database, notifications, workload_tls
+from cluster.cdk8s.agentplane import central_sampler, database, notifications, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment, OrchestrationProps, SessionDelegationProps
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
@@ -426,6 +427,7 @@ class Actions(Construct):
                     policy_namespace=env.namespace,
                     caller_service_account_namespaces=props.caller_service_account_namespaces,
                     connection_delegation_actor=props.connection_delegation_actor,
+                    session_delegation_service=CENTRAL_SAMPLER_URI if props.central_sampler_session_delegation else "",
                     reader_accounts=frozenset({ServiceAccountRef(namespace=env.namespace, name=notifications.NAME)}),
                     operator_oidc=props.operator_oidc,
                     direct_wait_seconds=30,
@@ -724,6 +726,11 @@ class Actions(Construct):
                 # The staged edge has no Pods until the Connection/MCP traffic cutover.
                 IngressRule.from_endpoints(
                     cilium.endpoint_labels(namespace, "mcp-edge"), ports=[self.service.pod_port]
+                ),
+                *(
+                    [central_sampler.service(namespace).pods.admit(self.service.pod_port)]
+                    if self.env.actions.central_sampler_session_delegation
+                    else []
                 ),
             ],
             egress=[
