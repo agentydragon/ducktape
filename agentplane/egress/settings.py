@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_valid
 
 from agentplane.identity.auth.listener import Listener
 from agentplane.log_levels import LogLevels
+from agentplane.net.peertls.config import ServiceSPIFFEID
 
 
 class APIServer(BaseModel):
@@ -75,7 +76,7 @@ class Settings(BaseModel):
         min_length=1,
         description="ServiceAccounts admitted by the admin gRPC API as namespace/name entries; unset disables it.",
     )
-    admin_grpc_service_callers: frozenset[str] = Field(
+    admin_grpc_service_callers: frozenset[ServiceSPIFFEID] = Field(
         exclude_if=lambda value: not value,
         default_factory=frozenset,
         description=(
@@ -111,6 +112,12 @@ class Settings(BaseModel):
 
     @model_validator(mode="after")
     def require_tls(self) -> Settings:
+        if self.admin_grpc_service_callers and (
+            not self.admin_grpc_audience
+            or not self.admin_grpc_callers
+            or not any(auth.mode == "spiffe" for auth in self.forward.auth)
+        ):
+            raise ValueError("admin_grpc_service_callers requires admin settings and forward SPIFFE client trust")
         if self.forward.tls is None:
             raise ValueError("forward listener requires TLS")
         return self

@@ -7,7 +7,7 @@ from typing import ClassVar, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
-from agentplane.net.peertls.config import ServerTLSListener
+from agentplane.net.peertls.config import ServerTLSListener, ServiceSPIFFEID
 
 
 class Settings(BaseModel):
@@ -42,12 +42,12 @@ class Settings(BaseModel):
     writer_accounts: Set[str] = Field(
         default_factory=frozenset, description="Accounts allowed to create and revoke operator PolicyBindings."
     )
-    reader_services: Set[str] = Field(
+    reader_services: Set[ServiceSPIFFEID] = Field(
         exclude_if=lambda value: not value,
         default_factory=frozenset,
         description="Exact service SPIFFE IDs allowed to read all policy resources; requires grpc_tls.client_ca_file.",
     )
-    writer_services: Set[str] = Field(
+    writer_services: Set[ServiceSPIFFEID] = Field(
         exclude_if=lambda value: not value,
         default_factory=frozenset,
         description="Exact service SPIFFE IDs allowed to create and revoke operator policy resources; requires grpc_tls.client_ca_file.",
@@ -72,6 +72,14 @@ class Settings(BaseModel):
     )
     def sorted_names(self, names: Set[str]) -> list[str]:
         return sorted(names)
+
+    @model_validator(mode="after")
+    def service_client_trust(self) -> Self:
+        if (self.reader_services or self.writer_services) and (
+            self.grpc_tls is None or self.grpc_tls.client_ca_file is None
+        ):
+            raise ValueError("PolicyService service allowlists require grpc_tls.client_ca_file")
+        return self
 
     @model_validator(mode="after")
     def _workload_issuance_is_set_together(self) -> Self:
