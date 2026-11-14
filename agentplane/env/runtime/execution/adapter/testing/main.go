@@ -30,7 +30,7 @@ func main() {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
-	adapter, err := execution.New(execution.Config{Context: ctx, Admit: func(ctx context.Context, _ *executorpb.ExecutionScope, _ bool, accept func(context.Context) error) error {
+	executionAdapter, err := adapter.New(adapter.Config{Context: ctx, Admit: func(ctx context.Context, _ *executorpb.ExecutionScope, _ bool, accept func(context.Context) error) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -39,13 +39,13 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer adapter.Close()
+	defer executionAdapter.Close()
 	listener, err := net.Listen("tcp", *listen)
 	if err != nil {
 		log.Fatal(err)
 	}
 	server := grpc.NewServer()
-	executorpb.RegisterExecutorServer(server, adapter)
+	executorpb.RegisterExecutorServer(server, executionAdapter)
 	go func() { <-ctx.Done(); server.Stop() }()
 	fmt.Println(listener.Addr().String())
 	if err := server.Serve(listener); err != nil {

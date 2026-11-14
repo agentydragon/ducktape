@@ -1,18 +1,15 @@
-package executor
+package companion
 
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -31,51 +28,38 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// Main must be PID 1 in a private container PID namespace.
-// Returning to main exits that namespace, letting the runtime kill even children
-// that escaped their process group. This mode never runs as an ordinary VM child.
-func Main(args []string) int {
-	flags := flag.NewFlagSet("agentplane-execution-service companion", flag.ContinueOnError)
-	flags.SetOutput(io.Discard)
-	socket := flags.String("socket", "", "local ownership socket")
-	listen := flags.String("listen", "", "Codex WebSocket endpoint")
-	binary := flags.String("binary", "", "Codex executable")
-	healthListen := flags.String("health-listen", "", "HTTP health endpoint")
-	if err := flags.Parse(args); err != nil {
-		return 64
+// ErrNotPID1 reports that the companion cannot own its required PID namespace.
+var ErrNotPID1 = errors.New("executor companion must run as PID 1 in a private container PID namespace")
+
+// RequirePID1 rejects execution outside the private container PID namespace.
+func RequirePID1() error {
+	if os.Getpid() != 1 {
+		return ErrNotPID1
 	}
-	if os.Getpid() != 1 || !filepath.IsAbs(*socket) || !filepath.IsAbs(*binary) || *healthListen == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "executor companion requires PID 1, absolute socket and binary paths, an HTTP health address, and a private PID namespace")
-		return 64
-	}
-	if err := validateURL(*listen); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 64
+	return nil
+}
+
+type Config struct {
+	Socket       string
+	Listen       string
+	Binary       string
+	HealthListen string
+}
+
+// Run must own PID 1 in a private container PID namespace. Returning exits that
+// namespace, letting the runtime kill even children that escaped their process
+// group. This mode never runs as an ordinary VM child.
+func Run(config Config) error {
+	if err := RequirePID1(); err != nil {
+		return err
 	}
 	supervisor, err := supervision.NewPID1Supervisor()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return err
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
-	if err := serve(ctx, *socket, *binary, *listen, *healthListen, supervisor); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return 0
-}
-
-func validateURL(value string) error {
-	u, err := url.Parse(value)
-	if err != nil {
-		return err
-	}
-	port, err := strconv.Atoi(u.Port())
-	if err != nil || port < 1 || port > 65535 || u.Scheme != "ws" || u.Hostname() != "127.0.0.1" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
-		return errors.New("executor URL must be ws://127.0.0.1:<nonzero port>")
-	}
-	return nil
+	return serve(ctx, config.Socket, config.Binary, config.Listen, config.HealthListen, supervisor)
 }
 
 func healthHandler(socket string) http.Handler {
