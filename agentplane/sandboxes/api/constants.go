@@ -25,6 +25,7 @@ const (
 	RunnerProxySandboxUIDMetadataKey            = "x-agentplane-sandbox-uid"
 	RunnerProxySandboxOwnerNamespaceMetadataKey = "x-agentplane-sandbox-owner-namespace"
 	RunnerProxySandboxOwnerNameMetadataKey      = "x-agentplane-sandbox-owner-name"
+	RunnerProxyIncarnationUIDMetadataKey        = "x-agentplane-incarnation-uid"
 
 	ControlServiceSuffix   = "-control"
 	ControlServicePortName = "grpc"

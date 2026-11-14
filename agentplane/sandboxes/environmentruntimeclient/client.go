@@ -24,6 +24,7 @@ type Config struct {
 	SandboxName             string
 	SandboxUID              string
 	SandboxNamespace        string
+	ExpectedIncarnationUID  string
 	ReplaceOutgoingMetadata bool
 }
 
@@ -55,6 +56,9 @@ func WithClient(ctx context.Context, config Config, call func(context.Context, e
 		sandboxapi.RunnerProxySandboxUIDMetadataKey, config.SandboxUID,
 		sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey, config.SandboxNamespace,
 		sandboxapi.RunnerProxySandboxOwnerNameMetadataKey, config.SandboxName,
+	}
+	if config.ExpectedIncarnationUID != "" {
+		metadataPairs = append(metadataPairs, sandboxapi.RunnerProxyIncarnationUIDMetadataKey, config.ExpectedIncarnationUID)
 	}
 	if config.ReplaceOutgoingMetadata {
 		ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs(metadataPairs...))

@@ -82,6 +82,52 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	if runner.calls.Load() != 1 {
 		t.Fatal("authorized app call did not reach the direct Runner server")
 	}
+	matchingIncarnationContext := metadata.AppendToOutgoingContext(
+		f.callerContext(f.appToken), sandboxapi.RunnerProxyIncarnationUIDMetadataKey, string(f.pod.UID),
+	)
+	if _, err := client.GetStatus(matchingIncarnationContext, &sessionpb.GetStatusRequest{}); err != nil {
+		t.Fatalf("proxy rejected the expected current incarnation: %v", err)
+	}
+	if runner.calls.Load() != 2 {
+		t.Fatalf("matching incarnation reached Runner %d times, want 2", runner.calls.Load())
+	}
+
+	wrongIncarnationContext := metadata.AppendToOutgoingContext(
+		f.callerContext(f.appToken), sandboxapi.RunnerProxyIncarnationUIDMetadataKey, "replaced-runner-uid",
+	)
+	if _, err := client.GetStatus(wrongIncarnationContext, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Aborted {
+		t.Fatalf("proxy accepted a different expected incarnation: %v", err)
+	}
+	wrongSealContext := metadata.AppendToOutgoingContext(
+		f.callerContext(f.controllerToken), sandboxapi.RunnerProxyIncarnationUIDMetadataKey, "replaced-runner-uid",
+	)
+	if _, err := client.Quiesce(wrongSealContext, &sessionpb.QuiesceRequest{}); status.Code(err) != codes.Aborted {
+		t.Fatalf("controller Quiesce accepted a different incarnation: %v", err)
+	}
+	if got := runner.quiesceCalls.Load(); got != 0 {
+		t.Fatalf("stale incarnation sent %d Quiesce calls to Runner", got)
+	}
+	for _, test := range []struct {
+		name   string
+		values []string
+	}{
+		{name: "duplicate", values: []string{string(f.pod.UID), string(f.pod.UID)}},
+		{name: "empty", values: []string{""}},
+	} {
+		t.Run(test.name+" incarnation header", func(t *testing.T) {
+			pairs := make([]string, 0, 2*len(test.values))
+			for _, value := range test.values {
+				pairs = append(pairs, sandboxapi.RunnerProxyIncarnationUIDMetadataKey, value)
+			}
+			ctx := metadata.AppendToOutgoingContext(f.callerContext(f.appToken), pairs...)
+			if _, err := client.GetStatus(ctx, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.InvalidArgument {
+				t.Fatalf("proxy accepted malformed incarnation header: %v", err)
+			}
+		})
+	}
+	if runner.calls.Load() != 2 {
+		t.Fatalf("rejected incarnation headers reached Runner %d times, want 2", runner.calls.Load())
+	}
 	if _, err := client.GetStatus(f.callerContext(f.executorToken), &sessionpb.GetStatusRequest{}); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("caller outside the Runner proxy allowlist was accepted: %v", err)
 	}

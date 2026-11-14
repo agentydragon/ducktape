@@ -36,6 +36,10 @@ func (p *environmentRuntimeProxy) connection(ctx context.Context, writes, allowS
 	if len(names) != 1 || names[0] == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "exactly one %s header is required", sandboxapi.RunnerProxySandboxMetadataKey)
 	}
+	expectedIncarnationUIDs := metadata.Get(sandboxapi.RunnerProxyIncarnationUIDMetadataKey)
+	if len(expectedIncarnationUIDs) > 1 || len(expectedIncarnationUIDs) == 1 && expectedIncarnationUIDs[0] == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "%s header must be non-empty and appear at most once", sandboxapi.RunnerProxyIncarnationUIDMetadataKey)
+	}
 	values := make(map[string][]string, len(identityMetadataKeys))
 	for _, key := range identityMetadataKeys {
 		values[key] = metadata.Get(key)
@@ -57,6 +61,9 @@ func (p *environmentRuntimeProxy) connection(ctx context.Context, writes, allowS
 	}, writes, allowSuspending)
 	if err != nil {
 		return nil, unavailable(err)
+	}
+	if len(expectedIncarnationUIDs) == 1 && expectedIncarnationUIDs[0] != view.incarnation.UID {
+		return nil, status.Error(codes.Aborted, "Sandbox runner incarnation changed")
 	}
 	connection, err := g.connections.holder(view.identity.Uid)
 	if err != nil {

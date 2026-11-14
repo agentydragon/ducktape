@@ -54,7 +54,10 @@ Gateway token; token contents remain in the rotating read-only projected volume.
   the ingress has not acknowledged it. The controller persists the last request time and runner Pod
   UID in `status.quiesceAttempt` together with `status.stopStage: Quiescing` before calling the runner,
   so watch events and controller restarts cannot bypass its one-minute
-  retry deadline; fresh directly observed Runtime facts can complete the seal sooner. Applies only to a controller configured
+  retry deadline. One handshake makes at most three attempts on `Unavailable` using fresh Gateway
+  connections within its existing 30-second total budget, always requiring the originally requested incarnation Pod UID.
+  An incarnation change or authorization refusal is not retried, and an acknowledged unfinished
+  seal returns to the persisted deadline. Fresh directly observed Runtime facts can complete the seal sooner. Applies only to a controller configured
   to seal.
 - A resumed Sandbox whose Pod is already sealed gets a new incarnation, as a sealed runner takes no
   new Sessions.
