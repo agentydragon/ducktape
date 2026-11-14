@@ -14,7 +14,7 @@ from agentplane.action_service.push_settings import WebPushSettings
 from agentplane.action_service.session_delegation.binding import SessionDelegationExecutorBinding
 from agentplane.identity.auth.listener import Listener
 from agentplane.identity.operator.settings import OperatorOidcSettings
-from agentplane.net.peertls.config import ACTIONS_URI, ClientTLS, ServiceSPIFFEID
+from agentplane.net.peertls.config import ACTIONS_URI, CENTRAL_SAMPLER_URI, ClientTLS, ServiceSPIFFEID
 from agentplane.subjects import ServiceAccountRef
 
 DEFAULT_DIRECT_WAIT_SECONDS = 30.0
@@ -64,6 +64,11 @@ class Settings(BaseModel):
         exclude_if=lambda value: not value,
         default="",
         description="Exact MCP edge service SPIFFE ID allowed to delegate Connection operations.",
+    )
+    session_delegation_service: ServiceSPIFFEID | Literal[""] = Field(
+        exclude_if=lambda value: not value,
+        default="",
+        description="Exact Central Sampler service SPIFFE ID allowed to delegate Session operations.",
     )
     reader_accounts: frozenset[ServiceAccountRef] = frozenset()
     connection_delegation_actor: ServiceAccountRef | None = Field(
@@ -115,9 +120,14 @@ class Settings(BaseModel):
 
     @model_validator(mode="after")
     def validate_service_trust(self) -> Settings:
-        if (self.service_readers or self.operator_services or self.connection_delegation_service) and not any(
-            auth.mode == "spiffe" for auth in self.rpc.auth
-        ):
+        if self.session_delegation_service and self.session_delegation_service != CENTRAL_SAMPLER_URI:
+            raise ValueError(f"session_delegation_service must be {CENTRAL_SAMPLER_URI}")
+        if (
+            self.service_readers
+            or self.operator_services
+            or self.connection_delegation_service
+            or self.session_delegation_service
+        ) and not any(auth.mode == "spiffe" for auth in self.rpc.auth):
             raise ValueError("service callers require rpc spiffe client trust")
         return self
 

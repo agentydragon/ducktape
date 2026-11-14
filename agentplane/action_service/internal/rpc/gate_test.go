@@ -251,6 +251,22 @@ func TestConnectionDelegationUsesAnExactIdentityAndRechecksItOnActionStreams(t *
 	if err != nil {
 		t.Fatal(err)
 	}
+	sessionMethods := []string{
+		action_servicepb.ActionService_ListActionGroups_FullMethodName,
+		action_servicepb.ActionService_SubmitActionRequest_FullMethodName,
+		action_servicepb.ActionService_ListActionRequests_FullMethodName,
+		action_servicepb.ActionService_GetActionRequest_FullMethodName,
+		action_servicepb.ActionService_WatchActionRequest_FullMethodName,
+	}
+	sessionRules := make(auth.Methods, len(sessionMethods))
+	for _, method := range sessionMethods {
+		sessionRules[method] = auth.ReviewedServiceAccountOrIdentity(workloads)
+	}
+	s.gate.sessionDelegation, err = sessionRules.WithServiceDelegation(sessionMethods,
+		[]auth.ServiceDelegator{{SPIFFEID: peertls.CentralSamplerURI}}, identityUIDs)
+	if err != nil {
+		t.Fatal(err)
+	}
 	s.gate.callers = s.index
 	eventually(t, "MCP edge Action caller label", func() bool { return s.index.Admits(actor) })
 	connectionID, grantID := uuid.NewString(), uuid.NewString()
@@ -340,6 +356,61 @@ func TestConnectionDelegationUsesAnExactIdentityAndRechecksItOnActionStreams(t *
 	}
 	_, err = stream.Recv()
 	wantCode(t, "an open Action stream after same-name Identity replacement", err, codes.PermissionDenied)
+
+	// A separately admitted sampler watch also rechecks its exact Session-profile Identity.
+	sessionBinding := &policyapi.PolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{Namespace: s.policy, Name: "session-subject-binding"},
+		Spec: policyapi.PolicyBindingSpec{
+			Subject: policyapi.Subject{Identity: &policyapi.IdentityRef{Name: successor.Name}}, PolicySets: []string{set.Name},
+		},
+	}
+	if err := policyObjects.Create(t.Context(), sessionBinding); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "replacement Identity PolicyBinding", func() bool {
+		return s.index.AdmitsIdentity(auth.Identity{Name: successor.Name, UID: string(successor.UID)})
+	})
+	samplerCA := transporttesting.NewCA(t)
+	samplerLeaf := samplerCA.Issue(t, peertls.CentralSamplerURI)
+	pair, err := tls.LoadX509KeyPair(samplerLeaf.CertFile, samplerLeaf.KeyFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf, err := x509.ParseCertificate(pair.Certificate[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionEnvelope := &delegationpb.Delegation{
+		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: &identitypb.Identity{Name: successor.Name, Uid: string(successor.UID)}},
+		Provenance:      &delegationpb.Delegation_Session{Session: &delegationpb.SessionProvenance{SessionId: uuid.NewString()}},
+	}
+	encoded, err := auth.MarshalDelegation(sessionEnvelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionCtx := peer.NewContext(t.Context(), &peer.Peer{AuthInfo: credentials.TLSInfo{State: tls.ConnectionState{
+		PeerCertificates: []*x509.Certificate{leaf}, VerifiedChains: [][]*x509.Certificate{{leaf}},
+	}}})
+	sessionCtx = metadata.NewIncomingContext(sessionCtx, metadata.Pairs(auth.DelegationMetadataKey, string(encoded)))
+	admittedSession, err := s.gate.admit(sessionCtx, s.gate.authenticateAction(action_servicepb.ActionService_WatchActionRequest_FullMethodName))
+	if err != nil {
+		t.Fatalf("admit Session watch: %v", err)
+	}
+	if err := s.gate.Recheck(admittedSession); err != nil {
+		t.Fatalf("Session watch failed before Identity replacement: %v", err)
+	}
+	if err := policyObjects.Delete(t.Context(), successor); err != nil {
+		t.Fatal(err)
+	}
+	if err := policyObjects.Create(t.Context(), &policyapi.Identity{
+		ObjectMeta: metav1.ObjectMeta{Namespace: s.policy, Name: successor.Name},
+		Spec:       policyapi.IdentitySpec{Description: "second replacement Identity"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.gate.Recheck(admittedSession); err == nil {
+		t.Fatal("Session watch survived same-name Identity replacement")
+	}
 }
 
 // A service certificate proves the app transport actor. Only the separately verified

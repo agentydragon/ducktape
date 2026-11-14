@@ -213,6 +213,7 @@ func TestSVIDIdentityCallerActsByItsIdentityBindings(t *testing.T) {
 	serving := ca.IssueWithUsage(t, peertls.ActionsURI, x509.ExtKeyUsageServerAuth)
 	service := startConfigured(t, kube.Config, groups, func(c *config, _ *deps) {
 		c.ConnectionDelegationService = peertls.MCPEdgeURI
+		c.SessionDelegationService = peertls.CentralSamplerURI
 		c.RPC = listener.Config{
 			ListenAddress: "127.0.0.1:0",
 			TLS:           &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile},
@@ -327,6 +328,138 @@ func TestSVIDIdentityCallerActsByItsIdentityBindings(t *testing.T) {
 		} else if status.Code(err) != codes.Unauthenticated && status.Code(err) != codes.PermissionDenied {
 			t.Fatalf("service actor admitted ungranted/stale Identity: %v", err)
 		}
+	}
+
+	samplerCredentials, err := ca.Issue(t, peertls.CentralSamplerURI).ClientCredentials(peertls.ActionsURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	samplerConn, err := grpc.NewClient(service.address, grpc.WithNoProxy(), grpc.WithTransportCredentials(samplerCredentials))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = samplerConn.Close() })
+	sampler := action_servicepb.NewActionServiceClient(samplerConn)
+	sessionID := uuid.NewString()
+	sessionEnvelope := &delegationpb.Delegation{
+		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: wantCaller},
+		Provenance:      &delegationpb.Delegation_Session{Session: &delegationpb.SessionProvenance{SessionId: sessionID}},
+	}
+	sessionBytes, err := auth.MarshalDelegation(sessionEnvelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionCtx := metadata.AppendToOutgoingContext(ctx, auth.DelegationMetadataKey, string(sessionBytes))
+	if groups, err := sampler.ListActionGroups(sessionCtx, &action_servicepb.ListActionGroupsRequest{}); err != nil || len(groups.GetActionGroups()) == 0 {
+		t.Fatalf("Session-delegated catalog read: groups=%v err=%v", groups, err)
+	}
+	sessionSubmitted, err := sampler.SubmitActionRequest(sessionCtx, &action_servicepb.SubmitActionRequestRequest{
+		IdempotencyKey: "test-sampler-session-submit", Action: &action_servicepb.ActionIdentity{Group: "test-mcp", Name: "test_echo"},
+		Arguments: &structpb.Struct{}, Title: "sampler Session request",
+	})
+	if err != nil {
+		t.Fatalf("Session-delegated submit: %v", err)
+	}
+	sessionReceipt := sessionSubmitted.GetActionRequest()
+	if !proto.Equal(sessionReceipt.GetCallerIdentity(), wantCaller) || sessionReceipt.GetCaller() != nil ||
+		sessionReceipt.GetDelegatingActor().GetServiceSpiffeId() != peertls.CentralSamplerURI ||
+		!proto.Equal(sessionReceipt.GetSessionProvenance(), sessionEnvelope.GetSession()) || sessionReceipt.GetConnectionProvenance() != nil {
+		t.Fatalf("sampler receipt lost effective caller or typed attribution: %v", sessionReceipt)
+	}
+	listedBySampler, err := sampler.ListActionRequests(sessionCtx, &action_servicepb.ListActionRequestsRequest{})
+	if err != nil {
+		t.Fatalf("Session-delegated idempotency recovery: %v", err)
+	}
+	if _, err := sampler.GetActionRequest(sessionCtx, &action_servicepb.GetActionRequestRequest{RequestId: sessionReceipt.GetId()}); err != nil {
+		t.Fatalf("Session-delegated receipt read: %v", err)
+	}
+	foundSessionReceipt := false
+	for _, listed := range listedBySampler.GetActionRequests() {
+		foundSessionReceipt = foundSessionReceipt || listed.GetId() == sessionReceipt.GetId()
+	}
+	if !foundSessionReceipt {
+		t.Fatalf("idempotency recovery omitted Session receipt %s: %v", sessionReceipt.GetId(), listedBySampler.GetActionRequests())
+	}
+	watchCtx, stopWatch := context.WithCancel(sessionCtx)
+	defer stopWatch()
+	sessionWatch, err := sampler.WatchActionRequest(watchCtx, &action_servicepb.WatchActionRequestRequest{RequestId: sessionReceipt.GetId()})
+	if err != nil {
+		t.Fatalf("Session-delegated terminal watch: %v", err)
+	}
+	watched, err := sessionWatch.Recv()
+	if err != nil || !proto.Equal(watched.GetActionRequest().GetSessionProvenance(), sessionEnvelope.GetSession()) {
+		t.Fatalf("Session-delegated watch lost receipt attribution: frame=%v err=%v", watched, err)
+	}
+
+	connectionEnvelope := &delegationpb.Delegation{
+		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: wantCaller},
+		Provenance: &delegationpb.Delegation_Connection{Connection: &delegationpb.ConnectionProvenance{
+			ConnectionId: uuid.NewString(), GrantId: uuid.NewString(),
+		}},
+	}
+	connectionBytes, err := auth.MarshalDelegation(connectionEnvelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sampler.ListActionGroups(metadata.AppendToOutgoingContext(ctx, auth.DelegationMetadataKey, string(connectionBytes)), &action_servicepb.ListActionGroupsRequest{}); err == nil {
+		t.Fatal("Central Sampler used Connection provenance")
+	}
+	actionEnvelope := &delegationpb.Delegation{
+		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: wantCaller},
+		Provenance: &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{
+			RequestId: uuid.NewString(), ExecutionId: uuid.NewString(),
+		}},
+	}
+	actionBytes, err := auth.MarshalDelegation(actionEnvelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sampler.ListActionGroups(metadata.AppendToOutgoingContext(ctx, auth.DelegationMetadataKey, string(actionBytes)), &action_servicepb.ListActionGroupsRequest{}); err == nil {
+		t.Fatal("Central Sampler used Action provenance")
+	}
+	if _, err := sampler.ListActionGroups(ctx, &action_servicepb.ListActionGroupsRequest{}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("Central Sampler acquired direct service-reader access: %v", err)
+	}
+	for name, call := range map[string]func() error{
+		"request history": func() error {
+			_, err := sampler.ListActionRequestHistory(sessionCtx, &action_servicepb.ListActionRequestHistoryRequest{})
+			return err
+		},
+		"cancel": func() error {
+			_, err := sampler.CancelActionRequest(sessionCtx, &action_servicepb.CancelActionRequestRequest{RequestId: sessionReceipt.GetId()})
+			return err
+		},
+		"policy": func() error {
+			_, err := sampler.GetActionPolicy(sessionCtx, &action_servicepb.GetActionPolicyRequest{})
+			return err
+		},
+		"mixed bearer and service certificate": func() error {
+			mixed := metadata.AppendToOutgoingContext(sessionCtx, "authorization", "Bearer "+readerToken)
+			_, err := sampler.ListActionGroups(mixed, &action_servicepb.ListActionGroupsRequest{})
+			return err
+		},
+		"malformed envelope": func() error {
+			malformed := metadata.AppendToOutgoingContext(ctx, auth.DelegationMetadataKey, string([]byte{0xff}))
+			_, err := sampler.ListActionGroups(malformed, &action_servicepb.ListActionGroupsRequest{})
+			return err
+		},
+		"MCP edge Session provenance": func() error {
+			_, err := edgeClient.ListActionGroups(sessionCtx, &action_servicepb.ListActionGroupsRequest{})
+			return err
+		},
+		"operator method": func() error {
+			stream, err := operator_action_servicepb.NewOperatorActionServiceClient(samplerConn).WatchMcpServers(sessionCtx, &operator_action_servicepb.WatchMcpServersRequest{})
+			if err == nil {
+				_, err = stream.Recv()
+			}
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := call(); err == nil {
+				t.Fatal("cross-profile or out-of-scope call was admitted")
+			}
+		})
 	}
 }
 

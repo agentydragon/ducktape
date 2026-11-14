@@ -159,6 +159,8 @@ class ActionsProps:
     action_groups: Mapping[Key, ActionGroup]
     # Optional MCP edge actor trusted to delegate live Connection Identities on Action RPCs.
     connection_delegation_actor: ServiceAccountRef | None = None
+    # Enable only after releasing the matching Action Service receiver image.
+    central_sampler_session_delegation: bool = False
     # Public origin for upstream client metadata; None omits public exposure.
     hostname: str | None = None
     mcp_client_metadata: McpClientMetadataSettings | None = None

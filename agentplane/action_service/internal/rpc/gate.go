@@ -56,6 +56,9 @@ type GateOptions struct {
 	// ConnectionDelegation carries method-scoped authority for the MCP edge. Only the Action
 	// methods listed in this map may receive Connection provenance.
 	ConnectionDelegation auth.Methods
+	// SessionDelegation carries method-scoped authority for the Central Sampler. Only its
+	// explicitly listed Action methods may receive Session provenance.
+	SessionDelegation auth.Methods
 }
 
 // Gate admits only methods its service policy lists. It refuses every call while the service drains, resolves the
@@ -69,6 +72,7 @@ type Gate struct {
 	readers              sets.Set[auth.Account]
 	operators            *operatoroidc.Verifier
 	connectionDelegation auth.Methods
+	sessionDelegation    auth.Methods
 	methods              map[string]func(context.Context) (admission, error)
 	// draining ends when the service stops accepting work; open watches end with it.
 	draining context.Context
@@ -81,6 +85,7 @@ func NewGate(options GateOptions) *Gate {
 		serviceReaders: sets.New(options.ServiceReaders...), operatorServices: sets.New(options.OperatorServices...),
 		workloads: options.Workloads, svid: options.SVID, callers: options.Callers, readers: sets.New(options.ReaderAccounts...), operators: options.Operators,
 		connectionDelegation: options.ConnectionDelegation,
+		sessionDelegation:    options.SessionDelegation,
 		draining:             draining, drain: drain,
 	}
 	g.methods = map[string]func(context.Context) (admission, error){
@@ -121,11 +126,21 @@ func (g *Gate) Drain() { g.drain() }
 
 // admission is the principal a bearer proved.
 type admission struct {
-	principal           store.ReadPrincipal
-	attribution         *store.DelegationAttribution
-	connectionDelegated bool
-	authContext         context.Context
+	principal   store.ReadPrincipal
+	attribution *store.DelegationAttribution
+	delegation  delegationProfile
+	authContext context.Context
 }
+
+// delegationProfile selects the authority and provenance contract for an admitted call.
+// The zero value is a direct call, which keeps ordinary admissions safe by default.
+type delegationProfile uint8
+
+const (
+	directDelegation delegationProfile = iota
+	connectionDelegation
+	sessionDelegation
+)
 
 type admissionKey struct{}
 
@@ -238,7 +253,8 @@ func (g *Gate) DrainingContext() context.Context { return g.draining }
 // Recheck verifies the call's bearer again, as a watch does before every frame: it fails once the bearer is no
 // longer accepted as the principal the call was admitted as.
 func (g *Gate) Recheck(ctx context.Context) error {
-	if admitted(ctx).connectionDelegated {
+	profile := admitted(ctx).delegation
+	if profile != directDelegation {
 		if err := auth.RevalidateStream(ctx); err != nil {
 			return err
 		}
@@ -246,7 +262,15 @@ func (g *Gate) Recheck(ctx context.Context) error {
 		if err != nil {
 			return unauthenticated
 		}
-		identityCaller, err := g.connectionIdentity(verified)
+		var identityCaller auth.Identity
+		switch profile {
+		case sessionDelegation:
+			identityCaller, err = g.sessionIdentity(verified)
+		case connectionDelegation:
+			identityCaller, err = g.connectionIdentity(verified)
+		default:
+			return unauthenticated
+		}
 		if err != nil {
 			return err
 		}
@@ -267,8 +291,9 @@ func (g *Gate) Recheck(ctx context.Context) error {
 	return nil
 }
 
-// authenticateAction accepts Connection delegation only when the full Action RPC method has an
-// explicit delegation Rule. Direct workload/SVID authentication keeps the existing path.
+// authenticateAction accepts Connection delegation only from the existing Connection rules, and
+// Session delegation only from the Central Sampler's separate, narrower rules. Direct
+// workload/SVID authentication keeps the existing path.
 func (g *Gate) authenticateAction(method string) func(context.Context) (admission, error) {
 	return func(ctx context.Context) (admission, error) {
 		md, _ := metadata.FromIncomingContext(ctx)
@@ -286,10 +311,22 @@ func (g *Gate) authenticateAction(method string) func(context.Context) (admissio
 			}
 			return result, nil
 		}
-		if _, configured := g.connectionDelegation[method]; !configured {
+		delegation := g.connectionDelegation
+		profile := connectionDelegation
+		if hasSVIDPeer(ctx) {
+			id, err := peertls.PeerIdentity(ctx)
+			if err != nil {
+				return admission{}, unauthenticated
+			}
+			if id == peertls.CentralSamplerURI {
+				delegation = g.sessionDelegation
+				profile = sessionDelegation
+			}
+		}
+		if _, configured := delegation[method]; !configured {
 			return admission{}, unauthenticated
 		}
-		admittedContext, err := g.connectionDelegation.AdmitContext(ctx, method, 5*time.Second)
+		admittedContext, err := delegation.AdmitContext(ctx, method, 5*time.Second)
 		if err != nil {
 			return admission{}, err
 		}
@@ -297,7 +334,15 @@ func (g *Gate) authenticateAction(method string) func(context.Context) (admissio
 		if err != nil {
 			return admission{}, unauthenticated
 		}
-		effective, err := g.connectionIdentity(verified)
+		var effective auth.Identity
+		switch profile {
+		case sessionDelegation:
+			effective, err = g.sessionIdentity(verified)
+		case connectionDelegation:
+			effective, err = g.connectionIdentity(verified)
+		default:
+			return admission{}, unauthenticated
+		}
 		if err != nil {
 			return admission{}, err
 		}
@@ -308,11 +353,11 @@ func (g *Gate) authenticateAction(method string) func(context.Context) (admissio
 		}
 		return admission{
 			attribution: attribution,
+			delegation:  profile,
 			principal: store.IdentityPrincipal{Identity: store.Identity{
 				Name: effective.Name, UID: effective.UID,
 			}},
-			connectionDelegated: true,
-			authContext:         admittedContext,
+			authContext: admittedContext,
 		}, nil
 	}
 }
@@ -473,6 +518,19 @@ func (g *Gate) connectionIdentity(proof auth.Admission) (auth.Identity, error) {
 		return auth.Identity{}, unauthenticated
 	}
 	return effective, nil
+}
+
+// sessionIdentity accepts only the Central Sampler's typed Session attribution. The service
+// actor is independently scoped by sessionDelegation's full-method rules.
+func (g *Gate) sessionIdentity(proof auth.Admission) (auth.Identity, error) {
+	delegated, ok := proof.(auth.DelegatedServiceIdentityAdmission)
+	if !ok || delegated.Actor.SPIFFEID != peertls.CentralSamplerURI || delegated.Provenance.GetSession() == nil {
+		return auth.Identity{}, unauthenticated
+	}
+	if !g.callers.AdmitsIdentity(delegated.EffectiveCaller) {
+		return auth.Identity{}, unauthenticated
+	}
+	return delegated.EffectiveCaller, nil
 }
 
 func serviceReadMethod(method string) bool {

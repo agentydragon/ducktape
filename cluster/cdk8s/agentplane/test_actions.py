@@ -13,6 +13,7 @@ from more_itertools import one
 
 from agentplane.net.peertls.config import (
     APP_URI,
+    CENTRAL_SAMPLER_URI,
     HISTORY_SERVICE_URI,
     MCP_EDGE_URI,
     NOTIFICATIONS_URI,
@@ -20,6 +21,7 @@ from agentplane.net.peertls.config import (
 )
 from cluster.cdk8s.agentplane import (
     actions,
+    central_sampler,
     history_service,
     mcp_edge,
     session_dispatcher,
@@ -211,6 +213,18 @@ def test_cross_owner_reader_is_explicit_in_static_settings(staging_manifests: li
     )
     settings = yaml.safe_load(config["data"]["settings.yaml"])
     assert settings["reader_accounts"] == [{"namespace": staging.ENV.namespace, "name": "notifications"}]
+    assert "session_delegation_service" not in settings
+    action_policy = one(
+        doc
+        for doc in staging_manifests
+        if doc["kind"] == "CiliumNetworkPolicy" and doc["metadata"]["name"] == actions.NAME
+    )
+    sampler_labels = central_sampler.service(staging.ENV.namespace).pods.cilium
+    assert not any(
+        endpoint.get("matchLabels") == sampler_labels
+        for rule in action_policy["spec"]["ingress"]
+        for endpoint in rule.get("fromEndpoints", [])
+    )
     assert "database_url" not in settings
     assert "private_key_pem" not in settings["web_push"]
     assert settings["mcp_servers"]["github"]["client_id_file"] == "/etc/agentplane-github/client_id"
@@ -312,7 +326,7 @@ def test_session_delegation_offers_all_reviewed_direct_tools(scratch_app: App) -
     )
     env = replace(staging.ENV, actions=replace(staging.ENV.actions, session_delegation=props))
     chart = Chart(scratch_app, "delegation-actions", disable_resource_name_hashes=True)
-    action_component = actions.Actions(
+    actions.Actions(
         chart,
         "actions",
         env,
@@ -322,7 +336,6 @@ def test_session_delegation_offers_all_reviewed_direct_tools(scratch_app: App) -
         dispatcher=session_dispatcher.service(env.namespace),
         dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
     )
-    action_component.add_platform_resources()
     documents = Cdk8sTesting.synth(chart)
     config = one(
         doc for doc in documents if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == f"{actions.NAME}-settings"
@@ -366,6 +379,41 @@ def test_session_delegation_offers_all_reviewed_direct_tools(scratch_app: App) -
     }
     assert tokens["dispatcher"]["audience"] == session_dispatcher.TOKEN_AUDIENCE
     assert tokens["history"]["audience"] == history_service.TOKEN_AUDIENCE
+
+
+def test_central_sampler_session_trust_is_an_explicit_opt_in(scratch_app: App) -> None:
+    env = replace(staging.ENV, actions=replace(staging.ENV.actions, central_sampler_session_delegation=True))
+    chart = Chart(scratch_app, "sampler-delegation-actions", disable_resource_name_hashes=True)
+    action_component = actions.Actions(
+        chart,
+        "actions",
+        env,
+        database_url=EnvValue.from_value("postgres://unused"),
+        history=history_service.service(env.namespace),
+        history_audience=history_service.TOKEN_AUDIENCE,
+        dispatcher=session_dispatcher.service(env.namespace),
+        dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
+    )
+    action_component.add_platform_resources()
+    documents = Cdk8sTesting.synth(chart)
+    config = one(
+        doc for doc in documents if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "actions-settings"
+    )
+    settings = yaml.safe_load(config["data"]["settings.yaml"])
+    assert settings["session_delegation_service"] == CENTRAL_SAMPLER_URI
+    action_policy = one(
+        doc for doc in documents if doc["kind"] == "CiliumNetworkPolicy" and doc["metadata"]["name"] == actions.NAME
+    )
+    sampler_labels = central_sampler.service(env.namespace).pods.cilium
+    action_port = str(actions.service(env.namespace).pod_port)
+    assert any(
+        any(endpoint.get("matchLabels") == sampler_labels for endpoint in rule.get("fromEndpoints", []))
+        and any(
+            any(port["port"] == action_port and port["protocol"] == "TCP" for port in port_rule.get("ports", []))
+            for port_rule in rule.get("toPorts", [])
+        )
+        for rule in action_policy["spec"]["ingress"]
+    )
 
 
 def test_session_delegation_network_caller_requires_the_group() -> None:

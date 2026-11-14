@@ -509,7 +509,14 @@ alone grants no operator authority, and a Kubernetes bearer cannot supply that p
 Connection delegation methods. The live effective Identity's PolicyBindings remain its only Action
 grants. An actor's own bindings or reader role never become the effective caller's grants.
 
-All three settings require the listener's SPIFFE client trust. They default to no service grants;
+The optional `session_delegation_service` setting names only the Central Sampler SVID. It admits
+Session-provenance calls to `ListActionGroups`, `SubmitActionRequest`, `ListActionRequests`,
+`GetActionRequest`, and `WatchActionRequest`; all other methods remain refused. The sampler receives
+no direct service-reader or bearer role, and its effective Identity still needs its own live Action
+PolicyBinding. This receiver setting defaults to disabled. Release and pin the receiver image before
+enabling it or deploying a sampler client that calls these methods.
+
+These settings require the listener's SPIFFE client trust and default to no service grants;
 production settings follow receiver image pins. Existing bearer admission remains during the staged
 cutover. Mixed service/bearer credentials fail closed except the explicit service-plus-operator-OIDC
 path. The listener verifies every presented certificate before method authorization.
