@@ -10,6 +10,7 @@ import "google/protobuf/empty.proto";
 import "google/rpc/code.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
+import "agentplane/proto/delegation.proto";
 import "agentplane/proto/environment_lifecycle.proto";
 import "agentplane/proto/identity.proto";
 
@@ -386,6 +387,31 @@ message ActionRequest {
   optional string caller_uid = 15;
   // The Identity incarnation that submitted it, from a workload whose SVID named it.
   agentplane.proto.Identity caller_identity = 16;
+  // The authenticated delegating actor, separate from the effective caller above. Absent for a
+  // direct call or a receipt whose admitting writer predates actor recording. Never reconstructed.
+  DelegatingActor delegating_actor = 17;
+  // Audit correlation supplied by the admitted actor, never authority or an idempotency key.
+  // Absent for a direct call or a receipt whose admitting writer predates provenance recording.
+  oneof provenance {
+    agentplane.proto.SessionProvenance session_provenance = 18;
+    agentplane.proto.ConnectionProvenance connection_provenance = 19;
+  }
+}
+
+// The authenticated component that submitted a delegated Action request.
+message DelegatingActor {
+  oneof actor {
+    // Exact service identity proven by its client certificate. It confers no Kubernetes Pod proof.
+    string service_spiffe_id = 1;
+    DelegatingServiceAccount service_account = 2;
+  }
+}
+
+// An admitted legacy workload actor's exact account incarnation and independently proven Pod binding.
+message DelegatingServiceAccount {
+  agentplane.proto.ServiceAccountIdentity identity = 1;
+  string pod_name = 2;
+  string pod_uid = 3;
 }
 
 // The Action a request names.

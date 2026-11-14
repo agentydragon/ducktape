@@ -15,6 +15,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
+	"google.golang.org/protobuf/proto"
 )
 
 type querier interface {
@@ -25,7 +26,8 @@ type querier interface {
 type rowScanner interface{ Scan(...any) error }
 
 const requestColumns = `id, idempotency_key, action_group, action_name, arguments, title, description, caller_namespace, caller_name, caller_uid,
-	caller_identity_name, caller_identity_uid, state, version, created_at, updated_at, history_at`
+	caller_identity_name, caller_identity_uid, state, version, created_at, updated_at, history_at,
+	delegation_actor_proto, provenance_session_id, provenance_connection_id, provenance_connection_grant_id`
 
 // requestRow is a request with the position in history its first non-pending Event gave it.
 type requestRow struct {
@@ -58,13 +60,94 @@ func utc(t *time.Time) *time.Time {
 	return &converted
 }
 
+func validateAttribution(attribution *DelegationAttribution) error {
+	if attribution == nil {
+		return nil
+	}
+	if attribution.Actor == nil {
+		return invalid("delegation actor is required")
+	}
+	switch actor := attribution.Actor.GetActor().(type) {
+	case *action_servicepb.DelegatingActor_ServiceSpiffeId:
+		if actor.ServiceSpiffeId == "" {
+			return invalid("delegating service SPIFFE ID is required")
+		}
+	case *action_servicepb.DelegatingActor_ServiceAccount:
+		serviceAccount := actor.ServiceAccount
+		if serviceAccount == nil || serviceAccount.GetIdentity() == nil ||
+			serviceAccount.GetIdentity().GetAccount() == nil || serviceAccount.GetIdentity().GetAccount().GetNamespace() == "" ||
+			serviceAccount.GetIdentity().GetAccount().GetName() == "" || serviceAccount.GetIdentity().GetUid() == "" {
+			return invalid("delegating ServiceAccount actor needs its account identity")
+		}
+	default:
+		return invalid("delegating actor kind is required")
+	}
+	session := attribution.SessionID != nil
+	connection := attribution.ConnectionID != nil && attribution.ConnectionGrantID != nil
+	if session == connection || (attribution.ConnectionID == nil) != (attribution.ConnectionGrantID == nil) {
+		return invalid("delegation attribution needs a Session ID or a Connection and grant ID")
+	}
+	return nil
+}
+
+func encodeAttribution(attribution *DelegationAttribution) (any, any, any, any, error) {
+	if attribution == nil {
+		return nil, nil, nil, nil, nil
+	}
+	if err := validateAttribution(attribution); err != nil {
+		return nil, nil, nil, nil, err
+	}
+	actor, err := proto.Marshal(attribution.Actor)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	var sessionID, connectionID, connectionGrantID any
+	if attribution.SessionID != nil {
+		sessionID = *attribution.SessionID
+	}
+	if attribution.ConnectionID != nil {
+		connectionID, connectionGrantID = *attribution.ConnectionID, *attribution.ConnectionGrantID
+	}
+	return actor, sessionID, connectionID, connectionGrantID, nil
+}
+
+func decodeAttribution(actorProto []byte, sessionID, connectionID, connectionGrantID uuid.NullUUID) (*DelegationAttribution, error) {
+	if actorProto == nil && !sessionID.Valid && !connectionID.Valid && !connectionGrantID.Valid {
+		return nil, nil
+	}
+	if actorProto == nil {
+		return nil, fmt.Errorf("delegation provenance has no actor")
+	}
+	var actor action_servicepb.DelegatingActor
+	if err := proto.Unmarshal(actorProto, &actor); err != nil {
+		return nil, err
+	}
+	attribution := &DelegationAttribution{Actor: &actor}
+	if sessionID.Valid {
+		attribution.SessionID = &sessionID.UUID
+	}
+	if connectionID.Valid {
+		attribution.ConnectionID = &connectionID.UUID
+	}
+	if connectionGrantID.Valid {
+		attribution.ConnectionGrantID = &connectionGrantID.UUID
+	}
+	if err := validateAttribution(attribution); err != nil {
+		return nil, err
+	}
+	return attribution, nil
+}
+
 func scanRequest(row rowScanner) (requestRow, error) {
 	var r requestRow
 	var arguments []byte
 	var callerNamespace, callerName, callerUID, identityName, identityUID sql.NullString
+	var delegationActor []byte
+	var sessionID, connectionID, connectionGrantID uuid.NullUUID
 	var state string
 	if err := row.Scan(&r.ID, &r.IdempotencyKey, &r.Action.Group, &r.Action.Name, &arguments, &r.Title, &r.Description, &callerNamespace,
-		&callerName, &callerUID, &identityName, &identityUID, &state, &r.Version, &r.CreatedAt, &r.UpdatedAt, &r.HistoryAt); err != nil {
+		&callerName, &callerUID, &identityName, &identityUID, &state, &r.Version, &r.CreatedAt, &r.UpdatedAt, &r.HistoryAt,
+		&delegationActor, &sessionID, &connectionID, &connectionGrantID); err != nil {
 		return requestRow{}, err
 	}
 	switch {
@@ -79,6 +162,10 @@ func scanRequest(row rowScanner) (requestRow, error) {
 		r.Caller = IdentityCaller{Identity: Identity{Name: identityName.String, UID: identityUID.String}}
 	default:
 		r.Caller = UnknownCaller{}
+	}
+	var err error
+	if r.Attribution, err = decodeAttribution(delegationActor, sessionID, connectionID, connectionGrantID); err != nil {
+		return requestRow{}, fmt.Errorf("request %s attribution: %w", r.ID, err)
 	}
 	if err := r.Action.Validate(); err != nil {
 		return requestRow{}, fmt.Errorf("request %s typed Action identity: %w", r.ID, err)
@@ -364,18 +451,25 @@ func (s *Store) Submit(ctx context.Context, owner Owner, input ActionRequestInpu
 			return ActionRequest{}, err
 		}
 	}
+	delegationActor, sessionID, connectionID, connectionGrantID, err := encodeAttribution(admission.Attribution)
+	if err != nil {
+		return ActionRequest{}, err
+	}
 	var view ActionRequest
-	err := s.transaction(ctx, func(tx *sql.Tx) error {
+	err = s.transaction(ctx, func(tx *sql.Tx) error {
 		at := now()
 		row, err := scanRequest(tx.QueryRowContext(ctx, `
 			INSERT INTO action_request (id, idempotency_key, action_group, action_name, arguments, title,
 				description, caller_namespace, caller_name, caller_uid, caller_identity_name, caller_identity_uid,
-				state, version, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, 'decision_pending', 1, $13, $13)
+				state, version, created_at, updated_at, delegation_actor_proto, provenance_session_id,
+				provenance_connection_id, provenance_connection_grant_id)
+			VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, 'decision_pending', 1, $13, $13,
+				$14, $15, $16, $17)
 			ON CONFLICT (`+conflict+`) DO NOTHING
 			RETURNING `+requestColumns,
 			admission.RequestID, input.IdempotencyKey, input.Action.Group, input.Action.Name, string(input.Arguments),
-			input.Title, input.Description, namespace, name, uid, identityName, identityUID, at))
+			input.Title, input.Description, namespace, name, uid, identityName, identityUID, at,
+			delegationActor, sessionID, connectionID, connectionGrantID))
 		if errors.Is(err, sql.ErrNoRows) {
 			return &ConflictError{
 				Reason:  ConflictIdempotencyKeyUsed,

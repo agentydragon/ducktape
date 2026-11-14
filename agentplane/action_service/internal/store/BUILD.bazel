@@ -57,6 +57,7 @@ go_test(
     name = "store_integration_test",
     size = "medium",
     srcs = [
+        "attribution_integration_test.go",
         "cancel_integration_test.go",
         "claims_integration_test.go",
         "decisions_integration_test.go",

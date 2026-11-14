@@ -19,6 +19,7 @@ go_test(
     embed = [":migrations"],
     tags = ["requires_docker"],
     deps = [
+        "//agentplane/postgres/migrate",
         "//agentplane/testing/postgres",
         "@com_github_lib_pq//:pq",
     ],

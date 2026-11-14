@@ -4,10 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io/fs"
 	"os"
+	"path"
 	"testing"
+	"testing/fstest"
 	"time"
 
+	postgresmigrate "github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	_ "github.com/lib/pq"
 )
@@ -71,4 +75,80 @@ func TestFreshBaseline(t *testing.T) {
 	if got := count(t, db, `SELECT count(*) FROM action_request WHERE arguments='{"human":true}'::jsonb`); got != 1 {
 		t.Fatalf("request rows = %d", got)
 	}
+}
+
+func TestDelegationAttributionMigrationAndOlderWriterCompatibility(t *testing.T) {
+	db := cloneDatabase(t)
+	exec(t, db, `DROP SCHEMA public CASCADE; CREATE SCHEMA public`)
+	priorSchema := schemaThroughVersion11(t)
+	priorProvider, err := priorSchema.Provider(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := priorProvider.Up(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	seed(t, db)
+
+	if err := Up(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	var key, title, namespace, name, state string
+	var argumentsMatch bool
+	var actor []byte
+	var sessionID, connectionID, grantID sql.NullString
+	if err := db.QueryRowContext(t.Context(), `
+		SELECT idempotency_key, arguments = '{"human":true}'::jsonb, title, caller_namespace, caller_name, state,
+			delegation_actor_proto, provenance_session_id::text, provenance_connection_id::text,
+			provenance_connection_grant_id::text
+		FROM action_request WHERE id = '00000000-0000-0000-0000-000000000001'`).
+		Scan(&key, &argumentsMatch, &title, &namespace, &name, &state, &actor, &sessionID, &connectionID, &grantID); err != nil {
+		t.Fatal(err)
+	}
+	if key != "key" || !argumentsMatch || title != "keep" || namespace != "ns" || name != "name" || state != "denied" {
+		t.Fatalf("existing receipt changed during migration: key=%q arguments_match=%t title=%q caller=%s/%s state=%q",
+			key, argumentsMatch, title, namespace, name, state)
+	}
+	if actor != nil || sessionID.Valid || connectionID.Valid || grantID.Valid {
+		t.Fatalf("existing receipt attribution was inferred: actor=%x session=%v connection=%v grant=%v",
+			actor, sessionID, connectionID, grantID)
+	}
+
+	olderProvider, err := priorSchema.Provider(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := olderProvider.Up(t.Context()); err != nil {
+		t.Fatalf("prior version could not start against the additive schema: %v", err)
+	}
+	exec(t, db, `INSERT INTO action_request (id, idempotency_key, arguments, state, version, created_at, updated_at,
+		title, caller_namespace, caller_name, action_group, action_name)
+		VALUES ('00000000-0000-0000-0000-000000000002', 'old-writer', '{}', 'decision_pending', 1, now(), now(),
+			'old writer', 'ns', 'old-writer', 'group', 'action')`)
+	if got := count(t, db, `SELECT count(*) FROM action_request WHERE id = '00000000-0000-0000-0000-000000000002'
+		AND delegation_actor_proto IS NULL AND provenance_session_id IS NULL
+		AND provenance_connection_id IS NULL AND provenance_connection_grant_id IS NULL`); got != 1 {
+		t.Fatalf("old writer row attribution NULL count = %d, want 1", got)
+	}
+}
+
+func schemaThroughVersion11(t *testing.T) postgresmigrate.Schema {
+	t.Helper()
+	entries, err := fs.ReadDir(scripts, "actions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := fstest.MapFS{}
+	for _, entry := range entries {
+		if entry.Name() >= "00012_" {
+			continue
+		}
+		name := path.Join("actions", entry.Name())
+		content, err := fs.ReadFile(scripts, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[name] = &fstest.MapFile{Data: content, Mode: 0o644}
+	}
+	return postgresmigrate.Schema{Files: files, Dir: "actions", Table: schema.Table, LockID: schema.LockID}
 }

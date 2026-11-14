@@ -54,6 +54,13 @@ still insert NULL; new readers preserve it as unknown. Older and incomplete sche
 existing Goose history remains intact. A database created at version 8 requires a version-8-aware
 rollback image or a coordinated restore.
 
+Version 12 adds nullable delegated actor snapshots and typed Session or Connection/grant UUID
+columns. It does not backfill or refuse existing receipts. Absence denotes a direct call or an
+admitting writer that predates attribution recording, including older replicas writing NULL during a
+roll; readers never infer missing proof. The migration runs at ordinary service startup. Rollback
+uses the prior image against the additive schema and preserves the new columns and receipts; older
+writers continue inserting NULL. No schema downgrade or data deletion is needed.
+
 ## Built-in input contracts
 
 Sandbox and orchestration Action inputs have one Go contract per wire shape. The same typed
@@ -121,8 +128,14 @@ replacement, and no Connection or grant history is deleted.
 
 The core receives either a directly authenticated component ServiceAccount principal or, on the
 delegated MCP path, the edge's component ServiceAccount actor with an effective Identity caller.
-Connection and grant provenance remain typed edge metadata; the core does not resolve or own
-Connections. It stores the verified caller incarnation in receipts and execution payloads. Requests
+The core retains the authenticated delegating actor and typed Connection/grant provenance on
+its admission receipt, alongside the effective caller incarnation. It does not resolve or own
+Connections, and correlation grants no authority. A service actor is its exact certificate SPIFFE ID;
+a legacy workload actor retains its ServiceAccount incarnation and independently proven Pod binding.
+The receipt also supports typed central Session UUID provenance; accepting a Session-delegated call
+requires a separate method grant. The effective caller alone governs policy, ownership and idempotency,
+and is carried into execution payloads. Attribution comes only from the admitted context, never Action
+arguments or the current receipt reader. Direct calls carry no delegated actor or provenance. Requests
 whose admitting writer did not store the required incarnation remain explicitly unknown, including
 writes by older replicas during a roll. The service never looks up a same-name live subject to fill
 it in, and a caller-delegating executor must refuse requests whose required caller proof is absent.
