@@ -149,23 +149,36 @@ func (s *OpenedSecurity) ClientCredentials(expectedPeerURI string) (credentials.
 	return newExpiringCredentials(tlsconfig.MTLSClientConfig(source, source, authorize(expected, x509.ExtKeyUsageServerAuth)), false), nil
 }
 
-// ServerCredentials creates server credentials backed by the shared source.
-func (s *OpenedSecurity) ServerCredentials(expectedPeerURI string) (credentials.TransportCredentials, error) {
+// ServerCredentials creates server credentials backed by the shared source, accepting
+// only the explicitly named client identities. RPC handlers authorize each method.
+func (s *OpenedSecurity) ServerCredentials(expectedPeerURIs ...string) (credentials.TransportCredentials, error) {
 	if s == nil {
 		return nil, errors.New("opened security is required")
 	}
 	if s.security.Mode == Insecure {
 		return insecure.NewCredentials(), nil
 	}
-	expected, err := parseIdentity(expectedPeerURI)
-	if err != nil {
-		return nil, fmt.Errorf("invalid expected peer URI: %w", err)
+	if len(expectedPeerURIs) == 0 {
+		return nil, errors.New("at least one expected client identity is required")
+	}
+	expected := make([]spiffeid.ID, 0, len(expectedPeerURIs))
+	for _, uri := range expectedPeerURIs {
+		id, err := parseIdentity(uri)
+		if err != nil {
+			return nil, fmt.Errorf("invalid expected peer URI: %w", err)
+		}
+		expected = append(expected, id)
 	}
 	source, err := s.purposeSource(x509.ExtKeyUsageServerAuth)
 	if err != nil {
 		return nil, err
 	}
-	return newExpiringCredentials(tlsconfig.MTLSServerConfig(source, s.clients, authorize(expected, x509.ExtKeyUsageClientAuth)), true), nil
+	return newExpiringCredentials(tlsconfig.MTLSServerConfig(source, s.clients, func(id spiffeid.ID, chains [][]*x509.Certificate) error {
+		if err := tlsconfig.AuthorizeOneOf(expected...)(id, chains); err != nil {
+			return err
+		}
+		return requireEKU(chains[0][0], x509.ExtKeyUsageClientAuth)
+	}), true), nil
 }
 
 // AuthorizePeer checks the authenticated peer against the exact configured

@@ -203,7 +203,7 @@ func TestManagerCacheSyncNeedsOnlyGrantedSandboxWatchKinds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &Reconciler{Client: mgr.GetClient(), Objects: mgr.GetAPIReader(), Leases: mgr.GetClient(), Now: time.Now}
+	r := &Reconciler{Client: mgr.GetClient(), Objects: mgr.GetAPIReader(), Leases: mgr.GetClient(), States: NewRuntimeStates(nil, time.Now), Now: time.Now}
 	if err := r.SetupWithManager(mgr); err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +276,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &Reconciler{
 		Client: mgr.GetClient(), Objects: mgr.GetAPIReader(), KubeVirt: false, Leases: mgr.GetClient(),
-		Now: time.Now,
+		States: NewRuntimeStates(nil, time.Now), Now: time.Now,
 	}
 	r.Credentials, err = requester.New(mgr.GetAPIReader(), mgr.GetClient())
 	if err != nil {

@@ -7,7 +7,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agentplane.net.peertls.config import ClientTLS
+from agentplane.net.peertls.config import ClientTLS, Security
 
 
 class Settings(BaseModel):
@@ -17,6 +17,7 @@ class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     runner_gateway_tls: ClientTLS | None = None
+    runner_security: Security
 
     namespace: str = Field(
         min_length=1, description="Namespace where the Sandboxes, their templates, Pods and state PVCs live."

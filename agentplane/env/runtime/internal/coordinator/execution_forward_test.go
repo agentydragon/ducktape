@@ -379,3 +379,54 @@ func TestDirectExecutionAdmissionClosesOnBackendLossBeforeControllerEvent(t *tes
 	default:
 	}
 }
+
+func TestPassiveWatchCancellationPreservesAdmittedExecution(t *testing.T) {
+	// This fixture explicitly selects insecure transport; the mTLS peer separation
+	// is exercised by TestControllerPassiveWatchCoexistsWithGatewayAndCannotControl.
+	executor := &blockingDirectExecutor{started: make(chan struct{}), release: make(chan struct{})}
+	config := executionRuntimeConfig(t, "ws://unused", nil)
+	config.deps.startExecution = func(context.Context, Config, string) (executionHandle, error) {
+		return &executionServiceHandle{executor: executor, fence: func(context.Context) error { return nil }}, nil
+	}
+	r := newLifecycleRuntime(t, config)
+	client := startDirectExecutionTestClient(t, r, "incarnation-1")
+	completed := make(chan error, 1)
+	go func() {
+		_, err := client.executor.StartProcess(client.callCtx, &executorpb.StartProcessRequest{Scope: client.scope("passive-session")})
+		completed <- err
+	}()
+	select {
+	case <-executor.started:
+	case err := <-completed:
+		t.Fatalf("execution ended before dispatch: %v", err)
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("execution did not start")
+	}
+	watchCtx, cancelWatch := context.WithCancel(client.ctx)
+	defer cancelWatch()
+	watch, err := client.runner.WatchState(watchCtx, &environmentruntimepb.WatchStateRequest{
+		SandboxUid: client.identity.UID, IncarnationUid: client.incarnation, ObserveOnly: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot, err := watch.Recv(); err != nil || snapshot.GetConnectionEpoch() != 0 {
+		t.Fatalf("passive watch during execution = %v, error = %v", snapshot, err)
+	}
+	cancelWatch()
+	if _, err := watch.Recv(); status.Code(err) != codes.Canceled {
+		t.Fatalf("passive watch cancellation = %v", err)
+	}
+	close(executor.release)
+	select {
+	case err := <-completed:
+		if err != nil {
+			t.Fatalf("admitted execution after passive cancellation: %v", err)
+		}
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("admitted execution did not complete")
+	}
+	if err := client.replaceWatch(client.incarnation, 2); err != nil {
+		t.Fatalf("Gateway epoch after passive cancellation: %v", err)
+	}
+}

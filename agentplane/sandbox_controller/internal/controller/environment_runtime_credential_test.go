@@ -3,6 +3,7 @@ package sandboxcontroller
 import (
 	"context"
 	"testing"
+	"time"
 
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/issuer"
@@ -117,7 +118,7 @@ func newCredentialReconciler(t *testing.T, objects ...client.Object) (*Reconcile
 		WithStatusSubresource(&sandboxapi.Sandbox{}, &workloadapi.WorkloadCredential{}).
 		WithObjects(append(objects, credentialTestIdentity())...).
 		WithInterceptorFuncs(interceptor.Funcs{Create: fakeCertManagerCreate}).Build()
-	return &Reconciler{Client: c, Objects: c, Credentials: testRequester(t, c)}, c
+	return &Reconciler{Client: c, Objects: c, Credentials: testRequester(t, c), States: NewRuntimeStates(nil, time.Now), Now: time.Now}, c
 }
 
 func credentialTestSandbox() *sandboxapi.Sandbox {

@@ -9,26 +9,24 @@ import (
 	"time"
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
 )
 
 const (
-	EnvironmentBackendLabel           = "agentplane.allegedly.works/environment-backend"
-	FirecrackerRunningAnnotation      = "agentplane.allegedly.works/firecracker-running"
-	FirecrackerSuspendEpochAnnotation = "agentplane.allegedly.works/firecracker-suspend-epoch"
-	FirecrackerIntentMountPath        = "/run/agentplane/firecracker-intent"
-	FirecrackerStateMountPath         = "/var/lib/agentplane/state"
-	FirecrackerWorkspaceMountPath     = "/var/lib/agentplane/workspace"
-	FirecrackerWorkspaceDevicePath    = "/dev/agentplane-workspace"
-	FirecrackerBootMountPath          = "/images/boot"
-	FirecrackerRunnerMountPath        = "/images/runner"
-	firecrackerIntentVolume           = "agentplane-firecracker-intent"
-	firecrackerBootVolume             = "agentplane-firecracker-boot"
-	firecrackerRunnerVolume           = "agentplane-firecracker-runner"
-	firecrackerStatusPort             = "9092"
-	firecrackerStatusReadTimeout      = 5 * time.Second
+	EnvironmentBackendLabel        = "agentplane.allegedly.works/environment-backend"
+	FirecrackerRunningAnnotation   = "agentplane.allegedly.works/firecracker-running"
+	FirecrackerIntentMountPath     = "/run/agentplane/firecracker-intent"
+	FirecrackerStateMountPath      = "/var/lib/agentplane/state"
+	FirecrackerWorkspaceMountPath  = "/var/lib/agentplane/workspace"
+	FirecrackerWorkspaceDevicePath = "/dev/agentplane-workspace"
+	FirecrackerBootMountPath       = "/images/boot"
+	FirecrackerRunnerMountPath     = "/images/runner"
+	firecrackerIntentVolume        = "agentplane-firecracker-intent"
+	firecrackerBootVolume          = "agentplane-firecracker-boot"
+	firecrackerRunnerVolume        = "agentplane-firecracker-runner"
+	firecrackerStatusPort          = "9092"
+	firecrackerStatusReadTimeout   = 5 * time.Second
 )
 
 type FirecrackerState struct {
@@ -64,23 +62,11 @@ func isFirecrackerPod(pod *corev1.Pod) bool {
 	return pod != nil && pod.Labels[EnvironmentBackendLabel] == "firecracker"
 }
 
-// A restored VMM can run before the Gateway has accepted its new WatchState connection.
-// Do not spend the persisted Quiesce attempt on the pre-checkpoint connection or a pending claim.
+// Suspension cancels the Controller observation before checkpoint. A restored
+// guest must publish on the new stream before it can complete quiescence.
 func (r *Reconciler) firecrackerQuiesceReady(ctx context.Context, sandbox *sandboxapi.Sandbox, pod *corev1.Pod) (*unready, error) {
-	lease, err := r.runnerLease(ctx, sandbox)
-	if err != nil {
-		return nil, err
-	}
-	pending := &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: "waiting for the restored Runtime's verified Gateway connection", retryAfter: 2 * time.Second}
-	if value := pod.Annotations[FirecrackerSuspendEpochAnnotation]; value != "" {
-		before, err := strconv.ParseInt(value, 10, 32)
-		if err != nil || before < 0 || leaseTransitions(&lease) <= int32(before) {
-			return pending, nil
-		}
-	}
-	if lease.Annotations[sandboxlease.PodUIDAnnotation] != string(pod.UID) ||
-		lease.Annotations[sandboxlease.EnvironmentRuntimeBootIDAnnotation] == "" || !connectionLive(&lease, r.Now()) {
-		return pending, nil
+	if !r.States.Snapshot(sandbox, string(pod.UID)).fresh(r.Now()) {
+		return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: "waiting for the restored Runtime's verified state", retryAfter: 2 * time.Second}, nil
 	}
 	return nil, nil
 }
@@ -171,18 +157,14 @@ func (r *Reconciler) convergeFirecrackerIntent(ctx context.Context, sandbox *san
 			return &unready{reason: "FirecrackerPending", message: "waiting for the pending suspension before resuming", retryAfter: 2 * time.Second}, nil
 		}
 	}
-	if pod.Annotations[FirecrackerRunningAnnotation] != want || (!running && pod.Annotations[FirecrackerSuspendEpochAnnotation] == "") {
+	if pod.Annotations[FirecrackerRunningAnnotation] != want {
 		updated := pod.DeepCopy()
 		if updated.Annotations == nil {
 			updated.Annotations = map[string]string{}
 		}
 		updated.Annotations[FirecrackerRunningAnnotation] = want
 		if !running {
-			lease, err := r.runnerLease(ctx, sandbox)
-			if err != nil {
-				return &unready{reason: "FirecrackerPending", message: "cannot record the connection epoch before suspension: " + err.Error(), retryAfter: 5 * time.Second}, nil
-			}
-			updated.Annotations[FirecrackerSuspendEpochAnnotation] = strconv.FormatInt(int64(leaseTransitions(&lease)), 10)
+			r.States.Track(sandbox, nil, "")
 		}
 		if err := r.Update(ctx, updated); err != nil {
 			return nil, err

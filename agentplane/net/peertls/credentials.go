@@ -29,6 +29,9 @@ import (
 // control mutual-TLS trust domain.
 const GatewayURI = "spiffe://agentplane/runner-gateway"
 
+// SandboxControllerURI is the Sandbox Controller's passive Runtime observer identity.
+const SandboxControllerURI = "spiffe://agentplane/sandbox-controller"
+
 // EgressProxyURI is the fixed identity of the optional workload-authenticated
 // forward-proxy listener.
 const EgressProxyURI = "spiffe://agentplane/egress-proxy"
@@ -528,9 +531,9 @@ func requireEKU(certificate *x509.Certificate, usage x509.ExtKeyUsage) error {
 	return fmt.Errorf("certificate must explicitly allow extended key usage %s", usage)
 }
 
-// parseIdentity accepts only GatewayURI or a canonical workload URI.
+// parseIdentity accepts fixed service identities or a canonical workload URI.
 func parseIdentity(identity string) (spiffeid.ID, error) {
-	if identity != GatewayURI && !isWorkloadServiceURI(identity) {
+	if identity != GatewayURI && identity != SandboxControllerURI && !isWorkloadServiceURI(identity) {
 		if _, err := workloadid.Parse(identity); err != nil {
 			return spiffeid.ID{}, fmt.Errorf("identity must be GatewayURI or a valid workload URI: %w", err)
 		}

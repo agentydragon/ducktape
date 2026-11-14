@@ -4743,6 +4743,10 @@ spec:
       namespace: agentplane-staging
     - apiVersion: cert-manager.io/v1
       kind: Certificate
+      name: sandbox-controller-client-workload
+      namespace: agentplane-staging
+    - apiVersion: cert-manager.io/v1
+      kind: Certificate
       name: actions-workload
       namespace: agentplane-staging
     - apiVersion: cert-manager.io/v1

@@ -7,10 +7,9 @@ import (
 	"time"
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 	"google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
-	coordinationv1 "k8s.io/api/coordination/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	runtimeschema "k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -48,6 +47,7 @@ func (s *testRuntimeSuspender) Resume(ctx context.Context, sandbox *sandboxapi.S
 func firecrackerIdleController(t *testing.T) (*Reconciler, client.Client, *time.Time, *testFirecrackerStatus, *testRuntimeSuspender) {
 	t.Helper()
 	r, c := newReconciler(t, true, firecrackerTemplate())
+	r.States.Watcher = &controlledRuntimeWatcher{}
 	now := testNow
 	r.Now = func() time.Time { return now }
 	status := &testFirecrackerStatus{state: FirecrackerState{PodUID: "uid-pod", Phase: "running"}}
@@ -64,19 +64,12 @@ func firecrackerIdleController(t *testing.T) (*Reconciler, client.Client, *time.
 	if pod == nil || !isFirecrackerPod(pod) {
 		t.Fatal("Firecracker launcher was not created")
 	}
+	setPodReady(t, c, pod, corev1.ConditionTrue)
+	pod = getPod(t, c)
 	status.state.PodUID = string(pod.UID)
-	connect(t, c, string(pod.UID))
-	var lease coordinationv1.Lease
-	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.EnvironmentRuntimeLeaseSuffix}, &lease); err != nil {
-		t.Fatal(err)
-	}
-	lease.Spec.LeaseDurationSeconds = new(int32)
-	*lease.Spec.LeaseDurationSeconds = 7 * 24 * 3600
-	if err := c.Update(context.Background(), &lease); err != nil {
-		t.Fatal(err)
-	}
+	connect(t, r, string(pod.UID))
 	setIdleSuspendAfter(t, c, durationPtr(idleSuspendAfter))
-	publishIdleSince(t, c, &runnerIdleSince)
+	publishIdleSince(t, r, &runnerIdleSince)
 	reconcileOnce(t, r) // The controller first observes this idle period at its own clock.
 	return r, c, &now, status, suspender
 }
@@ -84,6 +77,7 @@ func firecrackerIdleController(t *testing.T) (*Reconciler, client.Client, *time.
 func firecrackerToResumingAfterWake(t *testing.T, r *Reconciler, c client.Client, now *time.Time, status *testFirecrackerStatus) {
 	t.Helper()
 	*now = now.Add(idleSuspendAfter)
+	publishIdleSince(t, r, &runnerIdleSince)
 	reconcileResult(t, r) // Persist Preparing, call Prepare, and move to Checkpointing.
 	reconcileResult(t, r) // Project the checkpoint intent to the launcher.
 	status.state.Phase = "suspended"
@@ -99,18 +93,19 @@ func firecrackerToResumingAfterWake(t *testing.T, r *Reconciler, c client.Client
 	reconcileResult(t, r) // Finish checkpointing and clear the temporary stop stage.
 }
 
-func TestFirecrackerLateBusyLeaseRefusesIdleSuspendWithoutCheckpointIntent(t *testing.T) {
+func TestFirecrackerLateBusyRuntimeFactRefusesIdleSuspendWithoutCheckpointIntent(t *testing.T) {
 	r, c, now, _, suspender := firecrackerIdleController(t)
 	suspender.prepare = func(_ context.Context, _ *sandboxapi.Sandbox, _ int64, _ time.Time) error {
 		stored := getSandbox(t, c)
 		if attempt := stored.Status.FirecrackerSuspension; attempt == nil || attempt.Phase != sandboxapi.FirecrackerSuspendPreparing || stored.Status.OperatingMode != sandboxapi.OperatingModeSuspended {
 			t.Fatalf("Prepare ran before its admission fence was persisted: attempt=%+v mode=%s", stored.Status.FirecrackerSuspension, stored.Status.OperatingMode)
 		}
-		publishIdleSince(t, c, nil) // The Runtime sees a new busy fact after the controller's idle read.
+		publishIdleSince(t, r, nil) // The Runtime sees a new busy fact after the controller's idle read.
 		return grpcstatus.Error(codes.Aborted, "runner became busy")
 	}
 
 	*now = now.Add(idleSuspendAfter)
+	publishIdleSince(t, r, &runnerIdleSince)
 	reconcileResult(t, r)
 	if got := getSandbox(t, c); got.Status.FirecrackerSuspension == nil || got.Status.FirecrackerSuspension.Phase != sandboxapi.FirecrackerSuspendResuming || got.Status.SuspendedBy != nil {
 		t.Fatalf("busy refusal did not clear the idle reason and enter Resuming: %+v", got.Status)
@@ -140,6 +135,7 @@ func TestFirecrackerLostPrepareReplyRetriesPersistedGenerationAfterControllerRes
 		return nil
 	}
 	*now = now.Add(idleSuspendAfter)
+	publishIdleSince(t, r, &runnerIdleSince)
 	reconcileResult(t, r)
 	if got := getSandbox(t, c).Status.FirecrackerSuspension; got.Phase != sandboxapi.FirecrackerSuspendPreparing {
 		t.Fatalf("lost Prepare reply advanced phase to %s", got.Phase)
@@ -149,6 +145,7 @@ func TestFirecrackerLostPrepareReplyRetriesPersistedGenerationAfterControllerRes
 		Client: r.Client, Objects: r.Objects, KubeVirt: r.KubeVirt,
 		Quiescer: r.Quiescer, Leases: r.Leases, Credentials: r.Credentials,
 		Now: r.Now, FirecrackerStatus: r.FirecrackerStatus, Suspender: suspender,
+		States: NewRuntimeStates(nil, r.Now),
 	}
 	reconcileResult(t, restarted)
 	if len(suspender.prepares) != 2 || suspender.prepares[0].generation != 1 || suspender.prepares[1].generation != 1 ||
@@ -163,6 +160,7 @@ func TestFirecrackerLostPrepareReplyRetriesPersistedGenerationAfterControllerRes
 func TestFirecrackerConcurrentWakeWaitsForCheckpointBeforeResumeAndClearsStopStage(t *testing.T) {
 	r, c, now, status, suspender := firecrackerIdleController(t)
 	*now = now.Add(idleSuspendAfter)
+	publishIdleSince(t, r, &runnerIdleSince)
 	reconcileResult(t, r) // Prepare is acknowledged; the launcher still reports running.
 	if got := getSandbox(t, c); got.Status.FirecrackerSuspension.Phase != sandboxapi.FirecrackerSuspendCheckpointing {
 		t.Fatalf("after Prepare, phase = %s, want Checkpointing", got.Status.FirecrackerSuspension.Phase)
@@ -263,6 +261,7 @@ func TestFirecrackerPrepareIsNotCalledWhenPersistingFenceConflicts(t *testing.T)
 	r, c, now, _, suspender := firecrackerIdleController(t)
 	r.Client = firecrackerStatusConflictClient{Client: r.Client}
 	*now = now.Add(idleSuspendAfter)
+	publishIdleSince(t, r, &runnerIdleSince)
 	_, err := r.Reconcile(context.Background(), request)
 	if !apierrors.IsConflict(err) {
 		t.Fatalf("Reconcile() error = %v, want status conflict", err)

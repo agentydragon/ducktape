@@ -12,6 +12,7 @@ HISTORY_SERVICE_URI: Final = "spiffe://agentplane/history-ingress"
 LLM_INGRESS_URI: Final = "spiffe://agentplane/llm-ingress"
 NOTIFICATIONS_URI: Final = "spiffe://agentplane/notifications"
 SESSION_DISPATCHER_URI: Final = "spiffe://agentplane/session-dispatcher"
+SANDBOX_CONTROLLER_URI: Final = "spiffe://agentplane/sandbox-controller"
 
 
 class TLS(BaseModel):

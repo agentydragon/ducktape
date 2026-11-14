@@ -492,3 +492,192 @@ func TestForwardRunnerBackpressuresExecutorOutputBurst(t *testing.T) {
 func uint64String(value uint64) string {
 	return strconv.FormatUint(value, 10)
 }
+
+func TestControllerPassiveWatchCoexistsWithGatewayAndCannotControl(t *testing.T) {
+	ca := environmentruntimetransporttesting.NewCA(t)
+	runnerURI, err := (workloadid.ID{Namespace: "test", Name: "sandbox", CredentialID: "credential-id"}).URI()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerTLS := ca.Issue(t, runnerURI)
+	config := lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false")
+	config.Control = configuration.EnvironmentRuntimeControlConfiguration{
+		ListenAddress: "127.0.0.1:0",
+		Security:      environmentruntimetransport.Security{Mode: environmentruntimetransport.MutualTLS, TLS: &runnerTLS},
+	}
+	r := newLifecycleRuntime(t, config)
+	listener, server, err := r.control.Listen(r.executorProxy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
+	dial := func(identity string) *grpc.ClientConn {
+		t.Helper()
+		clientTLS := ca.Issue(t, identity)
+		credentials, err := clientTLS.ClientCredentials(runnerURI)
+		if err != nil {
+			t.Fatal(err)
+		}
+		conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(credentials))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = conn.Close() })
+		return conn
+	}
+	controllerConn := dial(environmentruntimetransport.SandboxControllerURI)
+	controller := environmentruntimepb.NewEnvironmentRuntimeClient(controllerConn)
+	gateway := environmentruntimepb.NewEnvironmentRuntimeClient(dial(environmentruntimetransport.GatewayURI))
+	ctx, cancel := context.WithTimeout(t.Context(), lifecycleTestTimeout)
+	defer cancel()
+	passiveCtx, cancelPassive := context.WithCancel(ctx)
+	defer cancelPassive()
+	passiveRequest := &environmentruntimepb.WatchStateRequest{
+		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid", ObserveOnly: true,
+	}
+	passive, err := controller.WatchState(passiveCtx, passiveRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial, err := passive.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if initial.GetConnectionEpoch() != 0 || initial.GetFacts() == nil || initial.GetEnvironmentRuntimeBootId() == "" || initial.GetIncarnationUid() != "pod-uid" {
+		t.Fatalf("passive snapshot = %v", initial)
+	}
+	watch, err := gateway.WatchState(ctx, &environmentruntimepb.WatchStateRequest{
+		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid", ConnectionEpoch: 7,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	active, err := watch.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active.GetConnectionEpoch() != 7 || active.GetEnvironmentRuntimeBootId() != initial.GetEnvironmentRuntimeBootId() {
+		t.Fatalf("Gateway snapshot = %v, passive snapshot = %v", active, initial)
+	}
+	callCtx := metadata.AppendToOutgoingContext(
+		ctx,
+		control.SandboxMetadata, "sandbox-uid", control.IncarnationMetadata, "pod-uid",
+		control.BootMetadata, active.GetEnvironmentRuntimeBootId(), control.EpochMetadata, "7",
+	)
+	for _, test := range []struct {
+		name    string
+		client  environmentruntimepb.EnvironmentRuntimeClient
+		request *environmentruntimepb.WatchStateRequest
+		code    codes.Code
+	}{
+		{name: "Controller cannot claim epoch", client: controller, request: &environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid", ConnectionEpoch: 8}, code: codes.Unauthenticated},
+		{name: "Gateway cannot observe passively", client: gateway, request: passiveRequest, code: codes.Unauthenticated},
+		{name: "foreign Sandbox", client: controller, request: &environmentruntimepb.WatchStateRequest{SandboxUid: "foreign", IncarnationUid: "pod-uid", ObserveOnly: true}, code: codes.PermissionDenied},
+		{name: "missing Sandbox", client: controller, request: &environmentruntimepb.WatchStateRequest{IncarnationUid: "pod-uid", ObserveOnly: true}, code: codes.InvalidArgument},
+		{name: "missing incarnation", client: controller, request: &environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox-uid", ObserveOnly: true}, code: codes.InvalidArgument},
+		{name: "passive epoch must be zero", client: controller, request: &environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid", ConnectionEpoch: 8, ObserveOnly: true}, code: codes.InvalidArgument},
+		{name: "passive cannot replace incarnation", client: controller, request: &environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox-uid", IncarnationUid: "replacement", ObserveOnly: true}, code: codes.FailedPrecondition},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			stream, err := test.client.WatchState(ctx, test.request)
+			if err == nil {
+				_, err = stream.Recv()
+			}
+			if status.Code(err) != test.code {
+				t.Fatalf("WatchState error = %v, want %s", err, test.code)
+			}
+		})
+	}
+	if _, err := controller.GetStatus(callCtx, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("Controller GetStatus with valid Gateway metadata = %v", err)
+	}
+	if _, err := executorpb.NewExecutorClient(controllerConn).StartProcess(callCtx, &executorpb.StartProcessRequest{}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("Controller Executor call with valid Gateway metadata = %v", err)
+	}
+	// Start another passive stream after the exclusive epoch is established.
+	second, err := controller.WatchState(ctx, passiveRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot, err := second.Recv(); err != nil || snapshot.GetConnectionEpoch() != 0 {
+		t.Fatalf("concurrent passive snapshot = %v, error = %v", snapshot, err)
+	}
+	cancelPassive()
+	if _, err := passive.Recv(); status.Code(err) != codes.Canceled {
+		t.Fatalf("canceled passive watch = %v", err)
+	}
+	if _, err := gateway.GetStatus(callCtx, &sessionpb.GetStatusRequest{}); err != nil {
+		t.Fatalf("Gateway epoch after passive cancellation: %v", err)
+	}
+}
+
+func TestPassiveWatchAdoptsReplacementAfterRestoringSealedState(t *testing.T) {
+	config := lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false")
+	_, retained, closeBacking := openPersistentEnvironmentState(t, config.StateDir)
+	if err := retained.AdoptIncarnation("old-pod"); err != nil {
+		t.Fatal(err)
+	}
+	if err := retained.EnterLameduck(); err != nil {
+		t.Fatal(err)
+	}
+	if err := closeBacking(); err != nil {
+		t.Fatal(err)
+	}
+	config.HistoryIngress.Target = startAcknowledgingHistory(t)
+	// Start a fresh Runtime without the fixture's ordinary initial Gateway adoption.
+	// It must restore the seal and let the Controller name the replacement Pod.
+	r, err := newTestRuntime(t, config.Config, nil, config.deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
+		defer cancel()
+		if err := r.Close(ctx); err != nil {
+			t.Errorf("close restored Runtime: %v", err)
+		}
+	})
+	if err := r.startSessions(); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), lifecycleTestTimeout)
+	defer cancel()
+	if err := r.waitForInitialSessions(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if uid, found, err := r.state.SealedUID(); err != nil || !found || uid != "old-pod" {
+		t.Fatalf("restored seal = %q, found=%t, error=%v", uid, found, err)
+	}
+	listener, server, err := r.control.Listen(r.executorProxy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
+	// The fixture explicitly uses insecure transport at both endpoints.
+	credentials, err := r.security.ClientCredentials("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(credentials))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	watch, err := environmentruntimepb.NewEnvironmentRuntimeClient(conn).WatchState(ctx, &environmentruntimepb.WatchStateRequest{
+		SandboxUid: "sandbox-uid", IncarnationUid: "new-pod", ObserveOnly: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response, err := watch.Recv(); err != nil || response.GetIncarnationUid() != "new-pod" || response.GetConnectionEpoch() != 0 || response.GetFacts() == nil {
+		t.Fatalf("replacement passive observation = %v, error=%v", response, err)
+	}
+	if uid, known := r.state.IncarnationUID(); !known || uid != "new-pod" {
+		t.Fatalf("Runtime incarnation = %q, known=%t", uid, known)
+	}
+	if uid, found, err := r.state.SealedUID(); err != nil || found {
+		t.Fatalf("replacement retained prior seal = %q, found=%t, error=%v", uid, found, err)
+	}
+}
