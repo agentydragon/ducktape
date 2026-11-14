@@ -5,21 +5,26 @@
   "observed_at_utc": "2026-11-14T00:48:53+00:00",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "freshness": {
-    "checked_origin_devel": "7d6c386f64390da6eb6bd8677d40ebcc9990fcf9",
-    "checked_at_utc": "2026-11-14T22:05:00+00:00",
-    "previous_pin": "288ca68295acd24917d4f3415c528cc56c19892d",
-    "go_or_proto_delta": "Since 288ca68295, only #16415 changed Go: it moved `central_sampler/protocol/json.go` to `internal/jsonwire/json.go`, added `internal/jsonwire/json_test.go` and edited 28 files.",
+    "checked_origin_devel": "916285311099e47e17d21a7125fc4b8f32bf3975",
+    "checked_at_utc": "2026-11-14T23:45:00+00:00",
+    "previous_pin": "7d6c386f64390da6eb6bd8677d40ebcc9990fcf9",
+    "go_or_proto_delta": "Since 7d6c386f64, #16433 moved the egress sidecar's ten files to `egress/sidecar/internal/relay` and split `main.go` into `relay/runtime.go` and a new `cmd/main.go`; #16435 moved the Firecracker host packages under `firecracker/host` and `env/firecracker`'s guest agent to `firecracker/guest`; #16427 renamed Runtime and Controller identifiers; auth stage 4 service SVID callers and receivers, Action receipt provenance (#16418) and #16411 edited code and added `action_service/internal/rpc/attribution{,_test}.go`, `action_service/internal/store/attribution_integration_test.go`, `env/runtime/execution/service/launch_cancellation_test.go`, `env/runtime/supervision/managed_process_test.go` and `runner_gateway/environments/delegated_resume_envtest_test.go`.",
     "landed": [
       {
-        "track": "sampler-json-contract",
-        "pr": 16415,
-        "result": "The strict decoder lives in `central_sampler/internal/jsonwire` with its tests; trivial JSON copy and membership helpers became standard-library calls; decoding behavior is unchanged."
+        "track": "egress-sidecar-runtime",
+        "pr": 16433,
+        "result": "`egress/sidecar/cmd` wraps `relay.Run` in `egress/sidecar/internal/relay`; executable, image and labels unchanged."
+      },
+      {
+        "track": "firecracker-host-guest",
+        "pr": 16435,
+        "result": "`firecracker/host` (with `cmd/launcher`, `testing/runtime_probe`) and `firecracker/guest` (with `cmd`); the management protobuf stays at `env/firecracker`, and the shared `vsock` and `workloadidentity` stay beside host and guest."
       }
     ],
     "interpretation": "Landed work items are removed, not listed as done. Moved and new files are reclassified at their new paths; packages that no longer hold Go files (`action_service` root, `app/internal/proxy`, `policy` root) left the ledger."
   },
   "inventory": {
-    "source_sha": "7d6c386f64390da6eb6bd8677d40ebcc9990fcf9",
+    "source_sha": "916285311099e47e17d21a7125fc4b8f32bf3975",
     "counts": {
       "files": 1270,
       "directories": 222,
@@ -9923,16 +9928,16 @@
       "Goal trees show the Action Service's cmd package, EnvironmentService's proposed owners under `environments` and no emptied directories."
     ],
     "structural_checks": [
-      "All 1,279 tracked Go files at devel 7d6c386f64 match the ledger's path, blob hash, line count, package and test flags; the 226 directories and package decisions match one to one; every pending track exists.",
+      "All 1,286 tracked Go files at devel 9162853110 match the ledger's path, blob hash, line count, package and test flags; the 227 directories and package decisions match one to one; every pending track exists.",
       "Every non-retained package has a work item; adoption stages cover every work item once; content prerequisites precede dependents; move targets are unique and new.",
-      "Every work item's source, evidence and deletion paths exist at 7d6c386f64, and its validation labels exist in the pinned BUILD files."
+      "Every work item's source, evidence and deletion paths exist at 9162853110, and its validation labels exist in the pinned BUILD files."
     ],
     "visual_review": "Inspected the reworked runtime-facts-off-lease and gateway-replica-ownership cards, the remaining-work queue, adoption order and the action_service and sandbox_controller trees (desktop light, mobile dark). Screenshots were not published.",
     "limits": "Planning/report validation only. No Go behavior changes, Go tests, deployments or live acceptance are claimed."
   },
   "sequence_review": {
     "revised_at_utc": "2026-11-14T01:36:53+00:00",
-    "checked_origin_devel": "7d6c386f64390da6eb6bd8677d40ebcc9990fcf9",
+    "checked_origin_devel": "916285311099e47e17d21a7125fc4b8f32bf3975",
     "purpose": "Reorder the remaining work by certainty so each file moves once: leftover deletions, layout fixes that hold under any service map, operator-agreed service moves, local extractions, moves waiting on open service decisions, deferred contracts.",
     "operator_inputs_2026_11_14": [
       "Python/Go leftovers, dead code and tolerances for things that no longer exist should go.",
@@ -9969,7 +9974,7 @@
     },
     "target_binaries": {
       "reviewed_at_utc": "2026-11-14T05:40:00+00:00",
-      "checked_origin_devel": "7d6c386f64390da6eb6bd8677d40ebcc9990fcf9",
+      "checked_origin_devel": "916285311099e47e17d21a7125fc4b8f32bf3975",
       "agentplane_delta_since_pin": "None: the pin is the checked devel.",
       "operator_inputs": [
         {
