@@ -6,8 +6,8 @@ from typing import Annotated, ClassVar
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, model_validator
 
-from agentplane.identity.auth.listener import KubernetesBearerAuth, Listener
-from agentplane.net.peertls.config import ClientTLS
+from agentplane.identity.auth.listener import KubernetesBearerAuth, Listener, SPIFFEAuth
+from agentplane.net.peertls.config import ClientTLS, ServiceSPIFFEID
 from util.urls import HttpEndpointUrl
 
 TOKEN_AUDIENCE = "agentplane-notifications"
@@ -136,6 +136,11 @@ class Settings(BaseModel):
     operator_reader_account: str | None = Field(
         default=None, description="ServiceAccount name allowed to inspect Session inbox diagnostics and entry payloads."
     )
+    operator_reader_services: list[ServiceSPIFFEID] = Field(
+        default_factory=list,
+        exclude_if=lambda value: not value,
+        description="Exact service SVIDs admitted to read-only Session diagnostics; they do not assert an agent Identity.",
+    )
     quotas: QuotaSettings = Field(default_factory=QuotaSettings)
     notice_debounce: NoticeDebounceSettings = Field(default_factory=NoticeDebounceSettings)
     github_delivery_retention_days: int | None = Field(
@@ -173,6 +178,14 @@ class Settings(BaseModel):
             for method in self.rpc.auth
         ):
             raise ValueError("rpc.auth must allow the configured token_audience")
+        return self
+
+    @model_validator(mode="after")
+    def service_operator_readers(self) -> Settings:
+        if len(set(self.operator_reader_services)) != len(self.operator_reader_services):
+            raise ValueError("operator_reader_services must not contain duplicates")
+        if self.operator_reader_services and not any(isinstance(method, SPIFFEAuth) for method in self.rpc.auth):
+            raise ValueError("operator_reader_services requires rpc SPIFFE client trust")
         return self
 
     github: GitHubSettings | None = Field(

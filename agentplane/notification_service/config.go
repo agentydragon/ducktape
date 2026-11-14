@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/settings"
@@ -36,14 +37,16 @@ type config struct {
 	Namespace     string `mapstructure:"namespace"`
 	TokenAudience string `mapstructure:"token_audience"`
 	// OperatorReaderAccount is the ServiceAccount allowed to inspect Session diagnostics across the namespace.
-	OperatorReaderAccount string       `mapstructure:"operator_reader_account"`
-	Quotas                store.Quotas `mapstructure:"quotas"`
-	worker.Settings       `mapstructure:",squash"`
-	GitHubRetention       settings.Retention `mapstructure:",squash"`
-	Actions               actionPeer         `mapstructure:"actions"`
-	RunnerGateway         runnerGateway      `mapstructure:"runner_gateway"`
-	HistoryService        peer               `mapstructure:"history_service"`
-	SessionDispatcher     peer               `mapstructure:"session_dispatcher"`
+	OperatorReaderAccount string `mapstructure:"operator_reader_account"`
+	// OperatorReaderServices are exact service SVIDs admitted to the same read-only diagnostic methods.
+	OperatorReaderServices []string     `mapstructure:"operator_reader_services"`
+	Quotas                 store.Quotas `mapstructure:"quotas"`
+	worker.Settings        `mapstructure:",squash"`
+	GitHubRetention        settings.Retention `mapstructure:",squash"`
+	Actions                actionPeer         `mapstructure:"actions"`
+	RunnerGateway          runnerGateway      `mapstructure:"runner_gateway"`
+	HistoryService         peer               `mapstructure:"history_service"`
+	SessionDispatcher      peer               `mapstructure:"session_dispatcher"`
 	// GitHub is on when any of its settings is set.
 	GitHub settings.Settings `mapstructure:"github"`
 	// RequestTimeoutSeconds bounds a call's backend work and each write to a watch stream.
@@ -229,6 +232,14 @@ func (c *config) validate() error {
 	}
 	if err := c.RPC.Validate(); err != nil {
 		return fmt.Errorf("rpc listener: %w", err)
+	}
+	if err := auth.ValidateServiceCallers(c.OperatorReaderServices); err != nil {
+		return fmt.Errorf("invalid operator_reader_services: %w", err)
+	}
+	if len(c.OperatorReaderServices) > 0 {
+		if !c.RPC.Has(listener.SPIFFE) {
+			return errors.New("operator_reader_services requires rpc spiffe client trust")
+		}
 	}
 	if !c.RPC.AllowsBearerAudience(c.TokenAudience) {
 		return errors.New("rpc.auth must allow the configured token_audience")

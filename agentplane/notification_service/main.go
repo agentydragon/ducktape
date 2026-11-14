@@ -250,14 +250,19 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 		Actions: actionsSource, GitHub: githubAPI, SendPolicy: sendPolicy, History: history,
 		Sessions:         dispatcherpb.NewSessionDispatcherClient(dispatcherConnection),
 		MessageBodyLimit: c.MessageBodyLimitBytes, OperatorReader: c.OperatorReaderAccount,
-		Debounce:       c.NoticeDebounce.Debounce(),
-		RequestTimeout: seconds(c.RequestTimeoutSeconds),
+		OperatorReaderServices: c.OperatorReaderServices,
+		Debounce:               c.NoticeDebounce.Debounce(),
+		RequestTimeout:         seconds(c.RequestTimeoutSeconds),
 	}
 	// A worker that stops ends the process, so a ready replica's workers are running.
 	health := probes.New(db, hub)
 	methods := auth.HealthMethods()
 	// A watch carries no deadline of its own, so the request timeout bounds its admission.
-	maps.Copy(methods, rpc.Methods(options, callers))
+	notificationMethods, err := rpc.Methods(options, callers)
+	if err != nil {
+		return fmt.Errorf("configure Notification Service methods: %w", err)
+	}
+	maps.Copy(methods, notificationMethods)
 	serverOptions := append(methods.ServerOptions(options.RequestTimeout), observability.GRPCServerOption())
 	security, err := c.RPC.ServerCredentials(peertls.NotificationsURI)
 	if err != nil {

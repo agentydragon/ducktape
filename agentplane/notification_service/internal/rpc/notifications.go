@@ -36,6 +36,7 @@ type Notifications struct {
 	timeout          time.Duration
 	wakeups          *wakeups.Hub
 	operatorReader   string
+	operatorServices map[string]struct{}
 	debounce         store.Debounce
 	draining         context.Context
 	drain            context.CancelFunc
@@ -43,11 +44,15 @@ type Notifications struct {
 
 func NewNotifications(options Options) *Notifications {
 	draining, drain := context.WithCancel(context.Background())
+	operatorServices := make(map[string]struct{}, len(options.OperatorReaderServices))
+	for _, service := range options.OperatorReaderServices {
+		operatorServices[service] = struct{}{}
+	}
 	return &Notifications{
 		store: options.Store, namespace: options.Namespace, sandboxes: options.Sandboxes,
 		runner: options.Runner, actions: options.Actions, github: options.GitHub, policy: options.SendPolicy,
 		history: options.History, sessions: options.Sessions, messageBodyLimit: options.MessageBodyLimit, timeout: options.RequestTimeout,
-		wakeups: options.Wakeups, operatorReader: options.OperatorReader, debounce: options.Debounce,
+		wakeups: options.Wakeups, operatorReader: options.OperatorReader, operatorServices: operatorServices, debounce: options.Debounce,
 		draining: draining, drain: drain,
 	}
 }

@@ -36,7 +36,10 @@ func TestEveryRPCAdmitsOnlyItsCallers(t *testing.T) {
 		{"Notifications", operatorName, notificationspb.Notifications_ServiceDesc, workloads},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			methods := Methods(Options{Namespace: testNamespace, OperatorReader: test.reader}, resolver)
+			methods, err := Methods(Options{Namespace: testNamespace, OperatorReader: test.reader}, resolver)
+			if err != nil {
+				t.Fatal(err)
+			}
 			connection := grpcmethods.Serve(t, methods, registerStandIns)
 			for _, method := range grpcmethods.Of(test.desc) {
 				t.Run(method.Name, func(t *testing.T) {

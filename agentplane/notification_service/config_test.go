@@ -122,6 +122,22 @@ func TestTheSettingsTheDeploymentManifestsSetLoadWithTheirSecretsFromTheEnvironm
 	}
 }
 
+func TestOperatorReaderAccountAndServiceSVIDCanCoexist(t *testing.T) {
+	file := strings.Replace(
+		deploymentFile,
+		"operator_reader_account: test-app\n",
+		"operator_reader_account: test-app\noperator_reader_services: [spiffe://agentplane/app]\n",
+		1,
+	)
+	c, err := loadTestConfig(t, file, webhookSecretEnv, privateKeyEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.OperatorReaderAccount != "test-app" || len(c.OperatorReaderServices) != 1 || c.OperatorReaderServices[0] != "spiffe://agentplane/app" {
+		t.Fatalf("operator readers were not retained together: account=%q services=%v", c.OperatorReaderAccount, c.OperatorReaderServices)
+	}
+}
+
 func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
 	c, err := loadTestConfig(t, requiredFile)
 	if err != nil {

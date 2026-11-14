@@ -48,7 +48,7 @@ func (s *Notifications) currentWorkload(ctx context.Context) (workload, error) {
 	}
 }
 
-// operator reports whether the admitted caller is the configured operator reader, a ServiceAccount.
+// operator reports whether the admitted caller is a configured ServiceAccount or service-SVID diagnostic reader.
 func (s *Notifications) operator(ctx context.Context) (bool, error) {
 	admission, err := auth.Admitted(ctx)
 	if err != nil {
@@ -56,6 +56,10 @@ func (s *Notifications) operator(ctx context.Context) (bool, error) {
 	}
 	if _, ok := admission.(auth.IdentityAdmission); ok {
 		return false, nil
+	}
+	if service, ok := admission.(auth.ServiceAdmission); ok {
+		_, allowed := s.operatorServices[service.Caller.SPIFFEID]
+		return allowed, nil
 	}
 	caller, err := s.caller(ctx)
 	if err != nil {
