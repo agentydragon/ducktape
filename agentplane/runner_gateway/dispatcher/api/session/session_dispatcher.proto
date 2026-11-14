@@ -251,8 +251,7 @@ message Session {
   agentplane.proto.SessionPlacement placement = 12;
   reserved 15;
   reserved "execution_identity";
-  // The Identity incarnation this Session executes as, recorded from its Sandbox's
-  // `spec.identity` at creation; absent for legacy rows without an exact Identity.
+  // The exact Identity incarnation this Session executes as.
   agentplane.proto.Identity identity = 16;
 }
 
