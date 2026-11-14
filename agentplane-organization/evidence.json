@@ -5,21 +5,15 @@
   "observed_at_utc": "2026-11-14T00:48:53+00:00",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "freshness": {
-    "checked_origin_devel": "7867f8178028984cb8d4ff481ed415158c26eca5",
-    "checked_at_utc": "2026-11-14T07:50:00+00:00",
-    "previous_pin": "1f3e26cc58081ce16029b3906710296af9c90842",
-    "go_or_proto_delta": "Since 1f3e26cc58, #16341, #16355, #16360, #16363, #16367 and #16369 edited 44 Go files; none added, removed or moved, and no `.proto` changed. #16369 added History migration `00019_service_writer.sql`.",
-    "landed": [
-      {
-        "track": "transition-tolerance-removal",
-        "pr": 16341,
-        "result": "The Dispatcher no longer reads Sessions without an execution Identity or caller attribution, or dispatch rows without stored attribution; #16340 dropped those rows first."
-      }
-    ],
+    "checked_origin_devel": "1dc2f4b2194f11766c5fc7db6128ac6fa5af3112",
+    "checked_at_utc": "2026-11-14T08:55:00+00:00",
+    "previous_pin": "7867f8178028984cb8d4ff481ed415158c26eca5",
+    "go_or_proto_delta": "Since 7867f81780, #16354, #16357, #16358, #16361, #16364, #16370, #16375, #16378 and #16380 changed Go or protos: 4 Go files added (`runner_gateway/dispatcher/service_attribution.go`, `dispatcher/service_admission_integration_test.go`, `runner_gateway/environments/service_svid_test.go`, `notification_service/testing/process_fixture/driver_test.go` in a new test-only package), 61 edited, none removed or moved; `session_dispatcher.proto` changed one field comment (#16380). #16364 added Dispatcher migration `00019`; #16357 added central sampler migration `0018`. No track landed whole.",
+    "landed": [],
     "interpretation": "Landed work items are removed, not listed as done. Moved and new files are reclassified at their new paths; packages that no longer hold Go files (`action_service` root, `app/internal/proxy`, `policy` root) left the ledger."
   },
   "inventory": {
-    "source_sha": "7867f8178028984cb8d4ff481ed415158c26eca5",
+    "source_sha": "1dc2f4b2194f11766c5fc7db6128ac6fa5af3112",
     "counts": {
       "files": 1270,
       "directories": 222,
@@ -9923,16 +9917,16 @@
       "Goal trees show the Action Service's cmd package, EnvironmentService's proposed owners under the Sandbox Controller and no emptied directories."
     ],
     "structural_checks": [
-      "All 1,275 tracked Go files at devel 7867f81780 match the ledger's path, blob hash, line count, package and test flags; the 223 directories and package decisions match one to one; every pending track exists.",
+      "All 1,279 tracked Go files at devel 1dc2f4b219 match the ledger's path, blob hash, line count, package and test flags; the 224 directories and package decisions match one to one; every pending track exists.",
       "Every non-retained package has a work item; adoption stages cover every work item once; content prerequisites precede dependents; move targets are unique and new.",
-      "Every work item's source, evidence and deletion paths exist at 7867f81780, and its validation labels exist in the pinned BUILD files."
+      "Every work item's source, evidence and deletion paths exist at 1dc2f4b219, and its validation labels exist in the pinned BUILD files."
     ],
     "visual_review": "Inspected the reworked runtime-facts-off-lease and gateway-replica-ownership cards, the remaining-work queue, adoption order and the action_service and sandbox_controller trees (desktop light, mobile dark). Screenshots were not published.",
     "limits": "Planning/report validation only. No Go behavior changes, Go tests, deployments or live acceptance are claimed."
   },
   "sequence_review": {
     "revised_at_utc": "2026-11-14T01:36:53+00:00",
-    "checked_origin_devel": "7867f8178028984cb8d4ff481ed415158c26eca5",
+    "checked_origin_devel": "1dc2f4b2194f11766c5fc7db6128ac6fa5af3112",
     "purpose": "Reorder the remaining work by certainty so each file moves once: leftover deletions, layout fixes that hold under any service map, operator-agreed service moves, local extractions, moves waiting on open service decisions, deferred contracts.",
     "operator_inputs_2026_11_14": [
       "Python/Go leftovers, dead code and tolerances for things that no longer exist should go.",
@@ -9969,7 +9963,7 @@
     },
     "target_binaries": {
       "reviewed_at_utc": "2026-11-14T05:40:00+00:00",
-      "checked_origin_devel": "7867f8178028984cb8d4ff481ed415158c26eca5",
+      "checked_origin_devel": "1dc2f4b2194f11766c5fc7db6128ac6fa5af3112",
       "agentplane_delta_since_pin": "None: the pin is the checked devel.",
       "operator_inputs": [
         {
@@ -10009,7 +10003,7 @@
         "`runner_gateway/main.go` builds the Dispatcher, EnvironmentService, the lifecycle manager, the Runtime proxy and the Executor into one process and registers them on one gRPC server.",
         "`dispatcher.ProxyRunner` dials `sandboxapi.ControlServiceTargetTemplate()` for every Runtime call, including from the same Pod.",
         "`dispatcherAccount` proves the delivery token belongs to the serving Pod (TokenReview Pod name and UID, ServiceAccount); `internal/gateway` admits Runtime mutations only from that account.",
-        "`lifecycle.Manager.applyResume` reserves the Dispatcher-database budget for both explicit and automatic wakes.",
+        "`lifecycle.Manager` reserves the Dispatcher-database budget only for automatic wakes (`RequestWake`); since #16375 explicit resume reserves none (`lifecycle/SPEC.md`).",
         "Automatic wake refuses when `spec.running` is false or `status.suspendedBy` is `Requested`; operator resume may undo a requested stop.",
         "The Sandbox Controller keeps idle timers in memory from its first sighting of the Runtime's `idle-since` and quiesces with `ifIdleSince`; the Runtime aborts if anything arrived since.",
         "Runtime blockers: per Session active turn, pending input and setup; Runtime-wide Admission, ExecutorRelay (open Executor call or session) and Bootstrap.",
@@ -10019,7 +10013,7 @@
         "Outside `runner_gateway/`, only `agentplane/action_service/session_delegation/dispatcher_integration_test.go`, `agentplane/action_service/session_delegation/dispatcher_integration_testmain_test.go` import `dispatcher` or `migrations`, and only `agentplane/action_service/orchestration_v1/fixture_test.go` imports `environments` or `environments/lifecycle`.",
         "At the pin `agentplane/environments/` holds only `v1/environment_service.proto` and its BUILD file; `agentplane/session_dispatcher/` does not exist.",
         "`sandbox_controller` is referenced by Bazel label from `devinfra/ci/image_targets.json`, `agentplane/system_tests/k3s/defs.bzl` and `cluster/cdk8s/agentplane/BUILD.bazel` (`:settings`).",
-        "Since #16346 every explicit resume, including an Identity grant, reserves the Dispatcher-database wake budget; after #16351 the Dispatcher imports `environmentaccess` for `bind_session` (checked on its head).",
+        "After #16351 the Dispatcher imports `environmentaccess` for `bind_session` (checked on its head, still open at 1dc2f4b219).",
         "The Sandbox CRD's CEL rule admits a `spec.identity` change only before the first status report or at `status.stopStage: Stopped` (`sandboxes/api/types.go`); a running incarnation keeps its credential's subject. The Runtime refuses to re-admit a Session with a different execution Identity, but does not compare retained Sessions with its own credential."
       ]
     }
