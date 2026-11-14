@@ -95,3 +95,31 @@ func TestStartupFailurePreservesCancellation(t *testing.T) {
 		t.Fatal("startup stage wrapper hid cancellation")
 	}
 }
+
+func TestOwnershipCommandParsesMaintenanceModesBeforeOpeningDatabase(t *testing.T) {
+	t.Setenv(ownershipDatabaseURLEnv, "")
+	tests := []struct {
+		args []string
+		want string
+	}{
+		{args: []string{"ownership", "unknown"}, want: `unknown ownership mode "unknown"`},
+		{args: []string{"ownership", "inventory"}, want: "--account-uid is required"},
+		{args: []string{"ownership", "forward", "--account-uid", "account-a"}, want: "--manifest is required for forward and reverse"},
+		{args: []string{"ownership", "inventory", "--account-uid", "account-a", "--manifest", "/ids.json"}, want: "inventory does not accept --manifest"},
+	}
+	for _, test := range tests {
+		t.Run(strings.Join(test.args, " "), func(t *testing.T) {
+			var output bytes.Buffer
+			handled, err := runOwnershipCommand(context.Background(), test.args, &output)
+			if !handled {
+				t.Fatal("maintenance command was not handled")
+			}
+			if err == nil || err.Error() != test.want {
+				t.Fatalf("runOwnershipCommand error = %v, want %q", err, test.want)
+			}
+			if output.Len() != 0 {
+				t.Fatalf("invalid maintenance command wrote stdout: %q", output.String())
+			}
+		})
+	}
+}

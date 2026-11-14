@@ -8,13 +8,17 @@ package(default_visibility = ["//visibility:public"])
 
 go_library(
     name = "main_lib",
-    srcs = ["main.go"],
+    srcs = [
+        "main.go",
+        "ownership.go",
+    ],
     importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/cmd",
     visibility = ["//visibility:private"],
     deps = [
         "//agentplane/central_sampler/api:sampler_go_proto",
         "//agentplane/central_sampler/historyexport",
         "//agentplane/central_sampler/internal/actions",
+        "//agentplane/central_sampler/internal/ownershiprewrite",
         "//agentplane/central_sampler/internal/residentruntime",
         "//agentplane/central_sampler/internal/rpc",
         "//agentplane/central_sampler/internal/sessionstore",
@@ -27,6 +31,7 @@ go_library(
         "//agentplane/postgres",
         "//agentplane/postgres/migrate",
         "//agentplane/postgres/wakeups",
+        "@com_github_lib_pq//:pq",
         "@io_k8s_client_go//kubernetes",
         "@io_k8s_client_go//rest",
         "@io_k8s_client_go//tools/clientcmd",
