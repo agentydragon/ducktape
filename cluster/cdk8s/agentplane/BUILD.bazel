@@ -221,6 +221,8 @@ py_library(
     deps = [
         ":environment",
         ":service_workload",
+        ":workload_tls",
+        "//agentplane/net/peertls:config",
         "//agentplane/policy_controller:settings",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:config_format",
@@ -986,6 +988,7 @@ py_test(
         ":conftest",
         ":egress",
         "//:conftest",
+        "//agentplane/net/peertls:config",
         "//cluster/cdk8s:conftest",
         "//cluster/cdk8s/cert_manager:cluster_ca",
         "@pypi//cdk8s",

@@ -9,7 +9,12 @@ import yaml
 from cdk8s import App, Chart, Testing as Cdk8sTesting
 from more_itertools import one
 
-from agentplane.net.peertls.config import SESSION_DISPATCHER_URI
+from agentplane.net.peertls.config import (
+    GATEWAY_ENVIRONMENTS_URI,
+    GATEWAY_RUNTIME_PROXY_URI,
+    GATEWAY_SESSIONS_URI,
+    SESSION_DISPATCHER_URI,
+)
 from agentplane.runner_gateway.settings import Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s.agentplane import (
@@ -76,8 +81,22 @@ def test_environment_provisions_the_gateway_identity_from_the_workload_issuer(
     assert workload_spec["secretName"] == f"{runner_gateway.NAME}-workload-tls"
     assert workload_spec["issuerRef"] == workload_issuer
     assert workload_spec["uris"] == [SESSION_DISPATCHER_URI]
-    assert set(workload_spec["usages"]) == {"digital signature", "server auth"}
+    assert set(workload_spec["usages"]) == {"digital signature", "client auth", "server auth"}
     assert workload_spec["privateKey"]["rotationPolicy"] == "Always"
+
+    for name, uri in (
+        ("sessions", GATEWAY_SESSIONS_URI),
+        ("runtime-proxy", GATEWAY_RUNTIME_PROXY_URI),
+        ("environments", GATEWAY_ENVIRONMENTS_URI),
+    ):
+        client_spec = _resource(staging_manifests, "Certificate", f"{runner_gateway.NAME}-{name}-client-workload")[
+            "spec"
+        ]
+        assert client_spec["secretName"] == f"{runner_gateway.NAME}-{name}-client-workload-tls"
+        assert client_spec["issuerRef"] == workload_issuer
+        assert client_spec["uris"] == [uri]
+        assert set(client_spec["usages"]) == {"digital signature", "client auth", "server auth"}
+        assert client_spec["privateKey"]["rotationPolicy"] == "Always"
 
 
 def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App) -> None:
@@ -288,6 +307,12 @@ def test_the_settings_file_the_gateway_reads_is_mounted_beside_its_token(scratch
     # Runners and the Gateway's own leaf come from the workload CA, so it verifies them alone.
     assert trust_source["name"] == "agentplane-workload-ca-bundle"
     assert trust_source["items"] == [{"key": "ca-certificates.crt", "path": "ca.crt"}]
+    for name in ("sessions", "runtime-proxy", "environments"):
+        mount_path = f"/run/agentplane/{runner_gateway.NAME}-{name}-client-tls"
+        client_certificate_volume = volumes[mounted[mount_path]]
+        assert client_certificate_volume["secret"]["secretName"] == (
+            f"{runner_gateway.NAME}-{name}-client-workload-tls"
+        )
     assert volumes[mounted[str(path.parent)]]["configMap"]["name"] == settings_map["metadata"]["name"]
     assert path.name in settings_map["data"]
     assert "projected" in volumes[mounted["/var/run/secrets/agentplane-runner-gateway"]]

@@ -129,6 +129,15 @@ spec:
             - mountPath: /run/agentplane/workload-trust
               name: workload-trust
               readOnly: true
+            - mountPath: /run/agentplane/runner-gateway-sessions-client-tls
+              name: runner-gateway-sessions-client-workload-tls
+              readOnly: true
+            - mountPath: /run/agentplane/runner-gateway-runtime-proxy-client-tls
+              name: runner-gateway-runtime-proxy-client-workload-tls
+              readOnly: true
+            - mountPath: /run/agentplane/runner-gateway-environments-client-tls
+              name: runner-gateway-environments-client-workload-tls
+              readOnly: true
             - mountPath: /etc/agentplane-runner-gateway/settings
               name: configmap-runner-gateway-settings
               readOnly: true
@@ -164,6 +173,15 @@ spec:
         - configMap:
             name: agentplane-workload-ca-bundle
           name: workload-trust
+        - name: runner-gateway-sessions-client-workload-tls
+          secret:
+            secretName: runner-gateway-sessions-client-workload-tls
+        - name: runner-gateway-runtime-proxy-client-workload-tls
+          secret:
+            secretName: runner-gateway-runtime-proxy-client-workload-tls
+        - name: runner-gateway-environments-client-workload-tls
+          secret:
+            secretName: runner-gateway-environments-client-workload-tls
         - configMap:
             name: runner-gateway-settings
           name: configmap-runner-gateway-settings
@@ -226,6 +244,76 @@ spec:
     - spiffe://agentplane/session-dispatcher
   usages:
     - digital signature
+    - client auth
+    - server auth
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: runner-gateway-sessions-client-workload
+  namespace: agentplane-staging
+spec:
+  duration: 24h
+  issuerRef:
+    kind: ClusterIssuer
+    name: agentplane-workload
+  privateKey:
+    algorithm: ECDSA
+    rotationPolicy: Always
+    size: 256
+  renewBefore: 8h
+  secretName: runner-gateway-sessions-client-workload-tls
+  uris:
+    - spiffe://agentplane/sessions
+  usages:
+    - digital signature
+    - client auth
+    - server auth
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: runner-gateway-runtime-proxy-client-workload
+  namespace: agentplane-staging
+spec:
+  duration: 24h
+  issuerRef:
+    kind: ClusterIssuer
+    name: agentplane-workload
+  privateKey:
+    algorithm: ECDSA
+    rotationPolicy: Always
+    size: 256
+  renewBefore: 8h
+  secretName: runner-gateway-runtime-proxy-client-workload-tls
+  uris:
+    - spiffe://agentplane/runtime-proxy
+  usages:
+    - digital signature
+    - client auth
+    - server auth
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: runner-gateway-environments-client-workload
+  namespace: agentplane-staging
+spec:
+  duration: 24h
+  issuerRef:
+    kind: ClusterIssuer
+    name: agentplane-workload
+  privateKey:
+    algorithm: ECDSA
+    rotationPolicy: Always
+    size: 256
+  renewBefore: 8h
+  secretName: runner-gateway-environments-client-workload-tls
+  uris:
+    - spiffe://agentplane/environments
+  usages:
+    - digital signature
+    - client auth
     - server auth
 ---
 apiVersion: v1

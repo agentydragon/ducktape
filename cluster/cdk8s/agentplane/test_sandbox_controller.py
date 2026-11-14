@@ -46,7 +46,7 @@ def test_controller_settings_are_mounted_and_gateway_token_is_projected(
 
     certificate = _resource(staging_manifests, "Certificate", f"{sandbox_controller.NAME}-client-workload")
     assert certificate["spec"]["uris"] == [SANDBOX_CONTROLLER_URI]
-    assert certificate["spec"]["usages"] == ["digital signature", "client auth"]
+    assert certificate["spec"]["usages"] == ["digital signature", "client auth", "server auth"]
     cert_mount = one(
         mount
         for mount in container["volumeMounts"]

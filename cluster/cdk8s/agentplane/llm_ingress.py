@@ -194,7 +194,7 @@ class LlmIngress(Construct):
                 Volume.from_config_map(self, "codex-models-volume", catalog_map),
                 read_only=True,
             )
-        serving_tls = workload_tls.serving_certificate(
+        serving_tls = workload_tls.service_certificate(
             self, env, container=workload.container, name=_NAME, uri=LLM_INGRESS_URI
         )
         assert serving_tls.cert_file is not None

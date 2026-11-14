@@ -156,7 +156,7 @@ class Notifications(Construct):
             telemetry_enabled=True,
             registry_secret_name=registry_secret_name,
         )
-        serving_tls = workload_tls.serving_certificate(
+        serving_tls = workload_tls.service_certificate(
             self, env, container=workload.container, name=NAME, uri=NOTIFICATIONS_URI
         )
         assert serving_tls.cert_file is not None

@@ -32,7 +32,14 @@ from constructs import Construct
 
 from agentplane.crd_group import GROUP
 from agentplane.identity.auth import listener as workload_listener
-from agentplane.net.peertls.config import MTLS, SESSION_DISPATCHER_URI, TLS
+from agentplane.net.peertls.config import (
+    GATEWAY_ENVIRONMENTS_URI,
+    GATEWAY_RUNTIME_PROXY_URI,
+    GATEWAY_SESSIONS_URI,
+    MTLS,
+    SESSION_DISPATCHER_URI,
+    TLS,
+)
 from agentplane.runner_gateway.settings import CentralSamplerTarget, DelegationSettings, Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
@@ -224,8 +231,25 @@ class RunnerGateway(Construct):
             registry_secret_name=registry_secret_name,
             placement=placement,
         )
-        serving_tls = workload_tls.serving_certificate(
+        serving_tls = workload_tls.service_certificate(
             self, env, container=workload.container, name=runner_gateway.NAME, uri=SESSION_DISPATCHER_URI
+        )
+        workload_tls.client_certificate(
+            self, env, container=workload.container, name=f"{runner_gateway.NAME}-sessions", uri=GATEWAY_SESSIONS_URI
+        )
+        workload_tls.client_certificate(
+            self,
+            env,
+            container=workload.container,
+            name=f"{runner_gateway.NAME}-runtime-proxy",
+            uri=GATEWAY_RUNTIME_PROXY_URI,
+        )
+        workload_tls.client_certificate(
+            self,
+            env,
+            container=workload.container,
+            name=f"{runner_gateway.NAME}-environments",
+            uri=GATEWAY_ENVIRONMENTS_URI,
         )
         assert serving_tls.cert_file is not None
         assert serving_tls.key_file is not None

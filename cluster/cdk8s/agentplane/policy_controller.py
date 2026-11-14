@@ -12,8 +12,10 @@ from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, MemoryResources
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
+from agentplane.net.peertls.config import POLICY_CONTROLLER_URI
 from agentplane.policy_controller.settings import Settings
 from cluster.cdk8s import cilium, node_scheduling
+from cluster.cdk8s.agentplane import workload_tls
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.cert_manager.cluster_ca import WORKLOAD_ISSUER
@@ -111,6 +113,7 @@ class PolicyController(Construct):
             telemetry_enabled=True,
             registry_secret_name=registry_secret_name,
         )
+        workload_tls.service_certificate(self, env, container=workload.container, name=NAME, uri=POLICY_CONTROLLER_URI)
         settings_file.mount_into(workload.container, env=Settings.config_file_env)
         self.account = workload.account
         token_reviewer_cluster_rbac(

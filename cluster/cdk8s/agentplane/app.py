@@ -30,6 +30,7 @@ from agentplane.app.settings import Settings
 from agentplane.crd_group import GROUP
 from agentplane.net.peertls.config import (
     ACTIONS_URI,
+    APP_URI,
     EGRESS_PROXY_URI,
     HISTORY_SERVICE_URI,
     NOTIFICATIONS_URI,
@@ -244,7 +245,7 @@ class App(Construct):
             },
         )
         config.mount_into(workload.container, env=Settings.config_file_env)
-        workload_tls.mount_trust_bundle(self, workload.container)
+        workload_tls.service_certificate(self, self.env, container=workload.container, name=NAME, uri=APP_URI)
         public_roots = ConfigMap.from_config_map_name(self, "public-web-pki-ref", "public-web-pki")
         workload.container.mount(
             "/var/run/public-web-pki",

@@ -184,6 +184,14 @@ through the existing Kyverno injection after a live check that the record has ac
 launcher's VMI for the VM's credential. Staging
 and testing use the SVID hop; TLS mode never falls back to token mode.
 
+The Gateway mounts separate caller-role SVIDs for Sessions (`spiffe://agentplane/sessions`), Runtime
+proxy (`spiffe://agentplane/runtime-proxy`) and Environments (`spiffe://agentplane/environments`). Its
+current listener keeps the `spiffe://agentplane/session-dispatcher` server URI until the API split; the
+`spiffe://agentplane/runner-gateway` Runtime-control client certificate remains separate. These mounts
+do not enable new traffic. In the planned binary split, Sessions takes the Dispatcher and its queue;
+Environments takes the Sandbox Controller, EnvironmentService, Runtime proxy and Executor. The
+Sessions-to-Runtime-proxy hop remains a network edge with its own exact caller grant.
+
 Firecracker Sandboxes use a controller-owned launcher Pod, a separate SVID-authenticated relay and a
 NixOS guest. Their supervisor checkpoints RAM and all disks, then restores the same Runtime and
 processes in the same Pod. Its launcher serves SPIFFE Workload API credentials over vsock to the

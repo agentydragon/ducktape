@@ -27,7 +27,7 @@ from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.crd_group import GROUP
 from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.mcp_edge.settings import Settings
-from agentplane.net.peertls.config import ACTIONS_URI
+from agentplane.net.peertls.config import ACTIONS_URI, MCP_EDGE_URI
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import actions, app as app_component, database, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment
@@ -149,7 +149,7 @@ class McpEdge(Construct):
             )
             workload.container.mount(_SECRET_DIR, oauth_volume, read_only=True)
         settings.mount_into(workload.container, env=Settings.config_file_env)
-        workload_tls.mount_trust_bundle(self, workload.container)
+        workload_tls.service_certificate(self, env, container=workload.container, name=NAME, uri=MCP_EDGE_URI)
         if props.oauth_secret_name is not None:
             workload.project_tokens(
                 "actions-token", "/var/run/secrets/agentplane-mcp", {"actions": WORKLOAD_TOKEN_AUDIENCE}
