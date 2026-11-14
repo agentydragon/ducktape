@@ -326,9 +326,10 @@ because the server receives no `traceparent` for an active driver span. The Disp
 now injects the current context per unary call, retaining rotating bearer credentials and no
 automatic mutation replay. The real trace assertions remain unchanged and require another
 physical pass. The full CI check also
-exposes an old Dispatcher assertion equating all admitted callers with wake callers; it now
-accounts for the explicitly authorized native fixture principal while keeping the wake allowlist
-exactly App, Notification and Actions. These are implementation failures, not measurements of
+exposes Dispatcher assertions whose expected caller lists predate the fixture principal. Both
+lists now explicitly include that native caller beside App, Notification and Actions; native
+test sends need the same opted-in wake behavior as the App sends they replace. The original
+wake/no-wake cases and exact allowlist equality remain. These are implementation failures, not measurements of
 devel's flake rate or evidence of a speedup.
 
 The independent Actions repair is [PR #16386](https://github.com/agentydragon/ducktape/pull/16386),
