@@ -10,6 +10,7 @@ import (
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -68,6 +69,7 @@ func setIdleSuspendAfter(t *testing.T, c client.Client, after *time.Duration) {
 func idleRunner(t *testing.T, after *time.Duration) (r *Reconciler, c client.Client, now *time.Time) {
 	t.Helper()
 	r, c = runningWithRunner(t)
+	setPodReady(t, c, getPod(t, c), corev1.ConditionTrue)
 	now = new(time.Time)
 	*now = testNow
 	r.Now = func() time.Time { return *now }

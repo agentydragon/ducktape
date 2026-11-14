@@ -106,6 +106,7 @@ func TestStateVolumeMismatchRetainsPVCAndRefusesResume(t *testing.T) {
 	retained := getPVC(t, c)
 	setRunning(t, c, false)
 	reconcileOnce(t, r)
+	reconcileOnce(t, r) // Persisted quiescence is observed before the old Pod is removed.
 
 	template.Spec.StateVolume.Layout = sandboxapi.VolumeLayout{Type: sandboxapi.RawDiskImage, Filesystem: "ext4"}
 	replaceTemplate(t, c, template)
@@ -127,6 +128,7 @@ func TestStateVolumeIdentityAndRecordMismatchesFailClosed(t *testing.T) {
 			reconcileOnce(t, r)
 			setRunning(t, c, false)
 			reconcileOnce(t, r)
+			reconcileOnce(t, r) // Persisted quiescence is observed before the old Pod is removed.
 			pvc := getPVC(t, c)
 			switch change {
 			case "replacement UID":

@@ -397,8 +397,9 @@ func TestSwitchToAPodTemplateDeletesTheVMBeforeThePodStarts(t *testing.T) {
 func TestVMDeletionWaitsForTheVMIBeforeTheStateVolume(t *testing.T) {
 	r, c := newReconciler(t, true, testVMTemplate("test-guest:v1"))
 	reconcileOnce(t, r)
-	vmi, _ := startVMI(t, c, kubevirtv1.Running)
-	connect(t, r, "uid-runner")
+	vmi, launcher := startVMI(t, c, kubevirtv1.Running)
+	reconcileOnce(t, r) // Accept the VMI and publish its launcher as the runner incarnation.
+	connect(t, r, string(launcher.UID))
 	r.Quiescer.(*fakeQuiescer).err = errors.New("runner unreachable")
 	deleteSandbox(t, c)
 	reconcileOnce(t, r)
