@@ -7118,6 +7118,11 @@ data:
             - agentplane-egress
         - mode: spiffe
           ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+    service_readers:
+      - spiffe://agentplane/notifications
+    operator_services:
+      - spiffe://agentplane/app
+    connection_delegation_service: spiffe://agentplane/mcp-edge
     reader_accounts:
       - namespace: agentplane-staging
         name: notifications
