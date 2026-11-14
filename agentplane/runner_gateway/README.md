@@ -9,7 +9,12 @@ The Gateway dials each Runner's native gRPC
 server on private port `9090`. One TLS gRPC listener serves Dispatcher, EnvironmentService,
 Gateway proxy, Executor and health methods, with independent per-method authorization.
 Only the Pod-bound Gateway/Dispatcher workload can proxy Runtime Session creation and commands;
-`gateway_callers` grants read-only diagnostics. Startup reviews `runner_token_file` with the Gateway
+`gateway_callers` grants read-only diagnostics. The selected Runtime call contract allows any
+authenticated Gateway replica to connect to and call a Runtime; there is no per-Sandbox connection
+owner or connection epoch in that contract. The Runtime fences calls by Sandbox UID, workload
+incarnation and Runtime boot ID, all bound from a Runtime-trusted source; the shared Gateway SVID
+does not authorize a replica to choose a replacement incarnation. The current image keeps its Lease
+and epoch during the staged migration described below. Startup reviews `runner_token_file` with the Gateway
 audience and verifies its Pod name, current UID and ServiceAccount against Kubernetes before serving.
 The Kubernetes API must answer that TokenReview and Pod read; failure prevents startup.
 See the [proxy contract](internal/gateway/SPEC.md). The Sandbox
@@ -29,8 +34,9 @@ Cluster and k3s Gateways and Runners use certificates from cert-manager and root
 trust-manager. Required `runner_security.mode: mtls` uses a `tls` block naming the Gateway's client
 `cert_file`, `key_file` and `ca_file`. The Gateway identity
 is `spiffe://agentplane/runner-gateway`; runner identities bind the Sandbox UID and its current
-controller-assigned credential ID. Mutual TLS plus Sandbox, incarnation, Runner boot and Lease
-epoch metadata fences every direct Runner RPC.
+controller-assigned credential ID. Mutual TLS plus Sandbox UID, workload incarnation and Runner
+boot ID fence every direct Runner RPC. The Gateway connection Lease and epoch are temporary rollout
+compatibility, not part of the selected Runtime call fence.
 
 Local tests may explicitly select `runner_security: {mode: insecure}`, with the Runner's
 `control.security` set to the same value. This disables transport encryption and peer authentication;
@@ -38,24 +44,33 @@ it preserves workload ownership validation, fencing and public Gateway caller au
 mode has no default; insecure rejects a `tls` block and invalid mTLS never falls back. The Sandbox
 Controller still provisions certificates, so cluster and k3s stacks retain real certificate controllers.
 
+## Replica ownership decision
+
+**Selected by Rai, 2026-11-14 02:36 UTC, relayed by Claude.** Callers route through the stable
+`runner-gateway` Service, so any authenticated Gateway replica may receive the call and connect to
+the current Runtime. Remove the per-Sandbox `<sandbox>-control` EndpointSlice, which currently routes
+to the replica holding the connection Lease. There is no singleton Gateway connection owner or
+connection epoch in the selected contract. Runtime fences each request by Sandbox UID, workload
+incarnation and boot ID, bound from a Runtime-trusted source; the shared Gateway SVID does not let a
+replica choose or advance an incarnation. Per-method caller authorization remains, and uncertain
+mutations are never replayed automatically. The Dispatcher delivery Lease is separate and unchanged.
+The Gateway cutover is pending; the [Runtime state observation plan](../plans/runtime_state_observation.md)
+records the rollout and rollback holds.
+
 The Dispatcher role retains its PostgreSQL queue, command IDs, per-Sandbox delivery Leases
-and database ownership generations. The connection role keeps separate connection Leases and
-EndpointSlices; delivery on one replica routes to the replica holding the runner connection.
-There is no separate Gateway database or Session registry and no History Service client.
-Each Gateway reconciles one Runner observation per Sandbox on Sandbox and runner Pod events, reading
-Sandboxes, Pods and KubeVirt objects from its informer cache; proxied calls and runner heartbeats read
-the same cache, and new proxied calls are refused while it is unsynced or a watch is failing. After
-losing a Runner observation, the owning Gateway retries after one second without waiting for an event.
-Each attempt claims a fresh Lease epoch and validates the current workload and Runner boot before
-serving calls. A replica refused by a foreign Lease holder retries its claim every heartbeat interval.
-When an observer ends, the Gateway first removes its callable connection and closes the direct Runner
-stream, then clears only its exact holder, Lease UID and epoch by a Kubernetes resource-version update.
-This lets another replica claim without waiting 30 seconds after a graceful stop; an ungraceful death
-still uses the conservative locally observed Lease duration. The connection epoch remains monotonic.
-For a RAM-suspended Firecracker launcher, Pod readiness loss ends the observation and proxy calls
-are refused. On resume, the same Pod and Runner boot ID reconnect under a higher Lease epoch;
-the Gateway forwards each execution request only once and does not replay one whose outcome was
-uncertain when the connection ended.
+and database ownership generations. Those delivery Leases are separate from Gateway-to-Runtime
+connections and remain out of scope. There is no separate Gateway database or Session registry and
+no History Service client. The selected Controller ownership has its leader-elected manager observe
+Runtime state directly and keep lifecycle facts in memory. Runtime restart, workload replacement and
+same-name Sandbox replacement invalidate old calls through boot ID, incarnation UID and Sandbox UID.
+Observation loss makes facts stale; they cannot prove connectivity, quiescence or idleness. A fresh
+snapshot restores observation and resets the Controller's idle timer. Current Gateway images still
+use the connection Lease, EndpointSlice and epoch while the selected cutover is pending; rollout
+details are in the [Runtime state observation plan](../plans/runtime_state_observation.md).
+
+Every Gateway forwards an execution mutation at most once. If the direct call loses its connection
+after the Runtime may have acted, its outcome is uncertain and the Gateway does not automatically
+replay it after reconnect or failover. A new call must be explicitly made by the caller.
 [Queue semantics](dispatcher/README.md) remain distinct from History's retained
 conversation and from Runner admission.
 

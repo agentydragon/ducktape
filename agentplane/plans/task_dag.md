@@ -1547,8 +1547,9 @@ environments off Kubernetes are wanted as a product capability, O4 only on measu
 cost. **Question for review:** is the payoff lighter tests (O1 and O2), or environments off
 Kubernetes as a product capability (O3), which changes the
 [principles](../docs/principles.md)' Kubernetes baseline? Implementation waits on the answer;
-`PRIVILEGED_BACKEND_AUTH_DESIGN` and `RUNNER_GATEWAY_REPLICA_OWNERSHIP_DESIGN` stay independently
-decidable.
+`PRIVILEGED_BACKEND_AUTH_DESIGN` remains independently decidable. The selected Gateway replica
+contract and its staged connection-Lease removal are tracked in section 12; they do not decide the
+broader Kubernetes direction.
 
 ### `BUILD_BOX_BAZEL` — build Sandboxes can run Bazel
 
@@ -2030,8 +2031,8 @@ events that start and end idleness), and the app shows it. The notification serv
 when to deliver from its existing quiet window and sends every notice through the Session Dispatcher.
 What remains is a second listener: read the Session summary after each `WatchSessionSummaries` notice
 and choose to deliver after a minute of idleness, at most ten minutes after the first pending entry.
-`idle_since` is display and delivery timing: suspension reads the runner's busy facts (the connection
-Lease facts) and never this field. Per-Session idle times stay out of Kubernetes.
+`idle_since` is display and delivery timing: suspension reads the Sandbox Controller's current
+Runtime busy facts and never this field. Per-Session idle times stay out of Kubernetes.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
@@ -2275,8 +2276,14 @@ after the History representation decision, over journal records?
 
 ## 12. The Runner Gateway serves the runner's own service
 
-The Gateway observes state and proxies the runner's
-`Runner` service with per-method authorization; commands use Dispatcher and typed Runner RPCs.
+The Gateway proxies the runner's `Runner` service with per-method authorization; commands use
+Dispatcher and typed Runner RPCs. The Sandbox Controller observes Runtime state directly. The
+selected replica contract allows any authenticated Gateway replica to connect to and call a Runtime;
+the Runtime fences requests by Sandbox UID, workload incarnation and boot ID, with no connection
+epoch. The [runtime state observation plan](runtime_state_observation.md) records the decision and
+the rollout. The direct Controller reader migration merged in #16324; #16328 removes Lease fact
+publication after the new Controller is running on staging. Gateway connection removal remains
+pending.
 
 The [service-boundary contract](../docs/service_boundaries.md) and [Runner Gateway README](../runner_gateway/README.md)
 describe the current proxy. Live `Runner.ListSessions` remains part of the app and Notification
@@ -2286,8 +2293,11 @@ service caller contract. The separate destination-authority decision
 ```mermaid
 flowchart TD
     RUNNER_OBSERVATION_READINESS_RACE[Candidate: investigate runner readiness and routing race]
-    RUNNER_GATEWAY_REPLICA_OWNERSHIP_DESIGN[Decision: reconsider per-runner Gateway ownership]
-    RUNNER_STATE_OBSERVATION[Unscheduled decision: direct passive Runtime observation by Sandbox Controller]
+    RUNNER_MULTI_REPLICA_WATCHSTATE[Blocked: remove exclusive Runtime WatchState epoch adoption]
+    RUNNER_GATEWAY_CONNECTION_LEASE_REMOVAL[Blocked: remove Gateway connection ownership after receiver image pin]
+    RUNNER_CONNECTION_LEASE_CLEANUP[Blocked: remove final connection-Lease RBAC and epoch protocol after Gateway image pin]
+    RUNNER_MULTI_REPLICA_WATCHSTATE --> RUNNER_GATEWAY_CONNECTION_LEASE_REMOVAL
+    RUNNER_GATEWAY_CONNECTION_LEASE_REMOVAL --> RUNNER_CONNECTION_LEASE_CLEANUP
 ```
 
 ### `RUNNER_OBSERVATION_READINESS_RACE` — resolve intermittent runner readiness diagnostics
@@ -2310,47 +2320,36 @@ replica, Lease epoch and holder, EndpointSlice route, and local connection state
 PR #14851 adds a bounded retry for transient `UNAVAILABLE` in the test's read-only `ListSessions`
 poll. This handles the test poll only; it does not establish that the publication race caused the
 original same-name-replacement failure or prove the underlying failure is fixed. Do not retry
-mutations with uncertain outcomes. Keep this investigation separate from the replica-ownership
-decision below.
+mutations with uncertain outcomes. Keep this investigation separate from the selected replica-ownership
+contract and its follow-on implementation below.
 **Exit:** either capture evidence that distinguishes the remaining failure boundary if the failure
-recurs, or close the incident follow-up if ordinary use shows no recurrence. Preserve UID/incarnation
-and epoch fencing and stale-call denial.
+recurs, or close the incident follow-up if ordinary use shows no recurrence. Preserve UID/incarnation/boot fencing and stale-call denial.
 
-### `RUNNER_GATEWAY_REPLICA_OWNERSHIP_DESIGN` — reconsider per-runner Gateway ownership
+### `RUNNER_MULTI_REPLICA_WATCHSTATE` — remove exclusive Runtime watch adoption
 
-**Decision; no implementation selected.** The Gateway now dials the runner's private gRPC listener,
-but one elected replica owns `WatchState`, publishes the Lease and route, and alone serves proxy
-calls for that runner. Decide whether per-runner replica ownership and its Lease/EndpointSlice
-routing remain necessary. Compare the current design, a single observer with any authenticated
-Gateway replica able to dial and serve calls, and removing or replacing the singleton observation
-mechanism entirely. Prefer separating request serving from observation ownership if it preserves the
-required guarantees; review the alternatives and tradeoffs before selecting it.
+**Blocked on #16328 and the optional-epoch receiver image pin.** The current receiver compatibility
+change allows an absent epoch on proxy and Executor calls but keeps exclusive, epoch-bearing
+`WatchState` adoption. Remove that exclusive adoption while retaining Runtime-trusted
+Sandbox/incarnation/boot binding. Pin the receiver image before Gateway connection ownership changes.
+Exit: authenticated Gateway replicas can observe the same current Runtime without a connection epoch;
+stale identity metadata is rejected.
 
-Specify how callers obtain and validate the current Sandbox UID, workload incarnation, runner boot
-ID and epoch; how facts, readiness, shutdown and reconciliation are owned; and what happens on
-observer loss, stale routes, replica failover, restart and same-name replacement. The reproduced
-publication-order race is fixed, but its causal link to the original intermittent failure is
-unproven. Preserve peer authorization, fencing, session safety and uncertain-outcome handling
-without automatic replay. If this decision selects a new architecture, its implementation depends
-on the reviewed decision.
-**Exit:** reviewed choice, ownership and failure semantics, migration/rollback plan, and
-deterministic multi-replica and race coverage for any selected change.
+### `RUNNER_GATEWAY_CONNECTION_LEASE_REMOVAL` — remove Gateway connection ownership
 
-### `RUNNER_STATE_OBSERVATION` — direct Runtime facts for the Sandbox Controller
+**Blocked on `RUNNER_MULTI_REPLICA_WATCHSTATE` and its receiver image pin.** Route callers through
+the stable `runner-gateway` Service; remove Gateway connection-Lease claims, call-epoch checks and
+the per-Sandbox `<sandbox>-control` EndpointSlice. Preserve per-method authorization and the
+Runtime-trusted identity binding; do not replay mutations with uncertain outcomes. Keep old Lease
+objects and permissions through the Gateway image rollback window. Exit: image rollout and
+deterministic multi-replica coverage of failover, stale callers, Runtime restart, same-name
+replacement and uncertain outcomes.
 
-**Unscheduled decision.** The [runtime state observation proposal](runtime_state_observation.md)
-recommends a leader-elected Sandbox Controller manager watch a passive Runtime state stream directly
-and keep facts in memory by Sandbox UID, runner Pod UID and boot ID. The existing `Runner.WatchState`
-cannot simply be reused: its exclusive `ConnectionEpoch` establishes and fences every proxy and
-Executor call. The proposal requires a separate read-only Controller stream and identity while the
-Gateway keeps its connection Lease, active call epoch and EndpointSlice through reader migration.
+### `RUNNER_CONNECTION_LEASE_CLEANUP` — remove final connection-Lease compatibility
 
-**Review question:** approve the direct passive stream and its dedicated Controller SVID, with the
-Gateway's current proxy ownership retained, or keep Lease facts? The separate
-`RUNNER_GATEWAY_REPLICA_OWNERSHIP_DESIGN` decision must choose a replacement call fence and
-EndpointSlice owner before the connection Lease can be removed. Dispatcher delivery Lease ownership
-remains out of scope pending operator choice. **Exit:** reviewed Runtime RPC and authorization
-contract, freshness and lifecycle semantics, and the staged reader/writer migration.
+**Blocked on `RUNNER_GATEWAY_CONNECTION_LEASE_REMOVAL` and the new Gateway image pin.** Remove the
+remaining connection-Lease RBAC and epoch-protocol fields only after no deployed Gateway references
+them. The Dispatcher delivery Lease and its authorization remain. Exit: obsolete connection-Lease
+permissions and protocol fields are gone.
 
 ## Scope and retirement of stale gates
 

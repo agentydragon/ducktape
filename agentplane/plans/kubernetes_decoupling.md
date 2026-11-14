@@ -70,12 +70,18 @@ own:
    [`PRIVILEGED_BACKEND_AUTH_DESIGN`](task_dag.md#privileged_backend_auth_design--review-privileged-service-authentication-and-transport)),
    with credential resolution through the same reader.
 3. Dispatcher, EnvironmentService and CLI addresses become opaque environment IDs.
-4. The Gateway's per-Sandbox Lease and `<sandbox>-control` EndpointSlice go. They date from the
-   removed Runtime-dials-Gateway mode, when only the replica holding a Runtime's inbound connection
-   could reach it; the operator calls the Lease "no longer particularly useful" (2026-11-14). Now
-   that the Gateway dials, any replica can reach a Runtime, and whatever single-observer fence
-   remains needed moves to `postgres/lease`
-   ([`RUNNER_GATEWAY_REPLICA_OWNERSHIP_DESIGN`](task_dag.md#runner_gateway_replica_ownership_design--reconsider-per-runner-gateway-ownership)).
+4. The Gateway's per-Sandbox connection Lease and connection-owned EndpointSlice are transitional.
+   The selected contract lets any authenticated replica call the Runtime, which fences by Sandbox
+   UID, workload incarnation and boot ID from a Runtime-trusted binding; there is no connection
+   epoch. The direct Controller reader migration merged in #16324; #16328 removes Lease facts after
+   the new Controller runs on staging. The first receiver compatibility image makes epochs optional
+   for proxy/Executor calls but keeps exclusive `WatchState` adoption. After the separate
+   multi-replica `WatchState` receiver change is merged and pinned, remove Gateway connection
+   ownership, route callers through stable `runner-gateway` and remove the per-Sandbox
+   `<sandbox>-control` EndpointSlice. The [runtime state observation plan](runtime_state_observation.md) and
+   [task DAG](task_dag.md#runner_multi_replica_watchstate--remove-exclusive-runtime-watch-adoption)
+   record the rollout and image-pin holds. The Dispatcher delivery Lease is a separate scheduling
+   protocol and remains out of scope.
 
 Service tests could then run against one fake `PolicyService` instead of envtest. The store stays
 an API server.
