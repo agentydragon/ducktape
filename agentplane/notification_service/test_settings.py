@@ -24,10 +24,7 @@ def static_values() -> dict[str, object]:
         },
         "namespace": "test",
         "actions": {"url": "http://actions", "token_file": "/tokens/actions"},
-        "runner_gateway": {
-            "control_target": "{sandbox}-control.{namespace}.test:8080",
-            "token_file": "/tokens/gateway",
-        },
+        "runner_gateway": {"control_target": "runner-gateway.{namespace}.test:8080", "token_file": "/tokens/gateway"},
         "history_service": {"target": "history:8080", "token_file": "/tokens/history"},
         "session_dispatcher": {"target": "dispatcher:8080", "token_file": "/tokens/dispatcher"},
     }

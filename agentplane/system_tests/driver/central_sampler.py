@@ -44,7 +44,7 @@ class CentralStack:
     sandbox: str
     sandbox_uid: str
     incarnation_uid: str
-    control_target: str
+    gateway_target: str
     sampler_pod_name: str
     runner: SandboxRunner
 
@@ -87,23 +87,6 @@ async def _address(cluster: Cluster, core: k8s.CoreV1Api, service: str, port: in
     endpoint = await core.read_namespaced_service(service, cluster.namespace)
     assert endpoint.spec.cluster_ip not in (None, "None"), service
     return f"{endpoint.spec.cluster_ip}:{port}"
-
-
-async def _control_address(cluster: Cluster, connection: k8s.ApiClient, sandbox: str, uid: str) -> str:
-    # The control Service is headless and selector-less. Its Gateway-owned slice names
-    # the Runner observation Lease holder, including after the scenario's Gateway rollout.
-    slices = await k8s.DiscoveryV1Api(connection).list_namespaced_endpoint_slice(
-        cluster.namespace, label_selector=f"kubernetes.io/service-name={sandbox}-control"
-    )
-    (holder,) = slices.items
-    assert holder.metadata.labels["endpointslice.kubernetes.io/managed-by"] == "agentplane-runner-gateway"
-    assert any(owner.uid == uid for owner in holder.metadata.owner_references)
-    (endpoint,) = holder.endpoints
-    assert endpoint.conditions.ready
-    (address,) = endpoint.addresses
-    (port,) = holder.ports
-    assert port.protocol == "TCP"
-    return f"{address}:{port.port}"
 
 
 async def _delete_sandbox(cluster: Cluster, name: str, uid: str) -> None:
@@ -253,26 +236,16 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
             sampler_pod = await _pod(cluster, core, SERVICE)
             stack.push_async_callback(capture_sampler_diagnostics, cluster, core)
             gateway_pod = await _pod(cluster, core, "runner-gateway")
-            # Controller readiness does not wait for legacy Gateway route publication.
-            # Wait for creation and routing within the same existing 60-second budget.
-            async with asyncio.timeout(60):
-                await cluster.kubectl("wait", f"endpointslice/{sandbox}-control", "--for=create", "--timeout=60s")
-                await cluster.kubectl(
-                    "wait",
-                    f"endpointslice/{sandbox}-control",
-                    f"--for=jsonpath={{.endpoints[0].addresses[0]}}={gateway_pod.status.pod_ip}",
-                    "--timeout=60s",
-                )
-            # The per-Sandbox Service selects the replica holding this Sandbox's Runner stream.
-            control_target = await _control_address(cluster, connection, sandbox, uid)
+            # Call through the stable Service so Kubernetes can send every request to any replica.
+            gateway_target = await _address(cluster, core, "runner-gateway", 8080)
             sampler_token = await _bound_token(cluster, core, "runner-gateway", gateway_pod, SERVICE)
             server_credentials = await service_credentials(cluster)
-            # Sandbox Ready proves Controller observation. A claimed EndpointSlice can precede
+            # Sandbox Ready proves Controller observation. Service endpoint readiness can precede
             # the Gateway's first snapshot, so prove the live read route before starting setup.
             gateway_token = directory / "gateway-reader-token"
             gateway_token.write_text(await _bound_token(cluster, core, "app", app, GATEWAY_AUDIENCE))
             gateway = SandboxControlClient(
-                control_target=control_target,
+                control_target=gateway_target,
                 token_file=gateway_token,
                 request_timeout_s=2,
                 channel_credentials=server_credentials,
@@ -309,7 +282,7 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
                 sandbox=sandbox,
                 sandbox_uid=uid,
                 incarnation_uid=incarnation,
-                control_target=control_target,
+                gateway_target=gateway_target,
                 sampler_pod_name=sampler_pod.metadata.name,
                 runner=gateway.runner(destination),
             )

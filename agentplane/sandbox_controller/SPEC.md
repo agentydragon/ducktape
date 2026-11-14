@@ -251,8 +251,9 @@ Gateway token; token contents remain in the rotating read-only projected volume.
 ## Control Service
 
 Every Sandbox has a headless, selector-less `<sandbox>-control` Service on the Runner Gateway's
-public proxy port, 8080. Callers use their workload bearers to reach the connection holder through
-this Service. The Gateway connects directly to the current workload's mTLS runner listener on port 9090. The controller repairs the per-Sandbox Service's managed fields; the Gateway owns its EndpointSlice.
+public proxy port, 8080. Callers use their workload bearers to reach any replica through
+the stable Runner Gateway Service. The per-Sandbox Service remains available for old caller processes
+during rollout. The Gateway connects directly to the current workload's mTLS runner listener on port 9090. The controller repairs the per-Sandbox Service's managed fields; the Gateway owns its EndpointSlice.
 A foreign same-name Service blocks new workload starts.
 
 ## Launch

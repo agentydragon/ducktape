@@ -99,7 +99,7 @@ type delegationConfig struct {
 func defaultConfig() config {
 	return config{
 		ProxyPort:                   sandboxapi.ControlServicePort,
-		RunnerControlTargetTemplate: sandboxapi.ControlServiceTargetTemplate(),
+		RunnerControlTargetTemplate: sandboxapi.RunnerGatewayTargetTemplate(),
 		QueueCap:                    1000, WatchLeaseSeconds: 300, RunnerTimeoutSeconds: 10,
 	}
 }

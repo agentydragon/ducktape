@@ -40,7 +40,8 @@ the incarnation. Observation loss removes that replica's callable connection and
 attempt after one second; it does not revoke another replica's connection. Replacement observers
 wait for their predecessor to exit before publishing their local connection.
 
-Existing callers still use `<sandbox>-control`. The connection Lease and EndpointSlice temporarily
+Callers use the stable `runner-gateway` Service. During their rollout, old callers still use
+`<sandbox>-control`. The connection Lease and EndpointSlice temporarily
 select its destination, independently of Runtime call authority. Each replica attempts route
 publication after becoming callable; a live competing route claim does not block its own calls.
 Route metadata renews on Runtime snapshots and heartbeats. A contender takes over after observing
@@ -71,8 +72,8 @@ runner journal; a repeated ID with a different operation or payload fails `ALREA
 ## Runner proxy
 
 Every Gateway replica serves `agentplane.env.runtime.control.EnvironmentRuntime`
-on its public gRPC port. The Sandbox's `<sandbox>-control` Service temporarily selects one replica
-for existing callers. The proxy forwards
+on its public gRPC port. Callers reach any replica through the stable `runner-gateway` Service.
+The Sandbox's `<sandbox>-control` Service remains available for old caller processes during rollout. The proxy forwards
 unary calls over the runner gRPC connection and returns the runner's status and response.
 
 - **Sandbox.** The caller names it in the `x-agentplane-sandbox` header, the same name its target
@@ -239,7 +240,7 @@ may reach any still-current replica, which can serve independently; a stopped ob
 ## Lifecycle operations
 
 The Runner Gateway makes Session calls over the runner gRPC connection. App and Notification callers
-reach the temporary selected route through the control Service (`control_target`, a required setting).
+reach the stable `runner-gateway` Service (`control_target`, a required setting).
 
 - `ListSessions` reads retained Session inventory.
 - `GetStatus` reads a coherent live snapshot of process incarnations, Session assignments and
@@ -257,8 +258,8 @@ reach the temporary selected route through the control Service (`control_target`
   It waits for preceding admissions; subsequent new-work calls fail `ABORTED`. Final ingress acknowledgement
   is required for `QUIESCED`.
 
-Any replica with a current independent observation may call it. Existing callers reach a selected
-replica through the temporary control Service. Runtime connectivity grants no Dispatcher ownership. Transport reconnect never replays calls; durable command retry uses the
+Any replica with a current independent observation may call it. Callers reach any replica through the stable Service; old caller processes retain their
+per-Sandbox route until rollout completes. Runtime connectivity grants no Dispatcher ownership. Transport reconnect never replays calls; durable command retry uses the
 original command ID. Process identities in diagnostics are per-spawn UUIDs, not command addresses.
 Stored native conversations may be dormant while their store's app server is running. A Session
 becomes ready after its native conversation preparation/reconciliation, without needing a turn.

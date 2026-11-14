@@ -13,21 +13,20 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 )
 
-// ProxyRunner asks a Sandbox's runner through the Sandbox's control Service, as the Session Dispatcher does:
-// every call dials the Service afresh, so it reaches the runner's current connection holder.
+// ProxyRunner asks a Sandbox's runner through the stable Runner Gateway Service, as the Session Dispatcher does.
 type ProxyRunner struct {
 	TLS *peertls.ClientTLS
 	// TokenFile is the projected ServiceAccount token the Runner Gateway proxy admits, read on every call.
 	TokenFile string
 	Timeout   time.Duration
-	// TargetTemplate defaults to the per-Sandbox control Service when empty. A test points it at a fixed server.
+	// TargetTemplate defaults to the stable Runner Gateway Service when empty. A test points it at a fixed server.
 	TargetTemplate string
 }
 
 func (r *ProxyRunner) ListSessions(ctx context.Context, sandbox *sandboxreader.Identity) ([]string, error) {
 	template := r.TargetTemplate
 	if template == "" {
-		template = sandboxapi.ControlServiceTargetTemplate()
+		template = sandboxapi.RunnerGatewayTargetTemplate()
 	}
 	var sessions []string
 	err := environmentruntimeclient.WithClient(ctx, environmentruntimeclient.Config{

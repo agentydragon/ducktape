@@ -11,8 +11,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/environmentruntimeclient"
 )
 
-// GatewayRunnerProxy invokes informational Runner RPCs through the named
-// Sandbox's control Service and supplies its current identity on every call.
+// GatewayRunnerProxy invokes informational Runner RPCs through the stable Runner Gateway Service
+// and supplies the named Sandbox's identity on every call.
 type GatewayRunnerProxy struct{ config RunnerConfig }
 
 // NewGatewayRunnerProxy validates the per-Sandbox runner transport settings.
@@ -21,7 +21,7 @@ func NewGatewayRunnerProxy(config RunnerConfig) (*GatewayRunnerProxy, error) {
 		return nil, errors.New("runner namespace, token file, and positive timeout are required")
 	}
 	if config.TargetTemplate == "" {
-		config.TargetTemplate = sandboxapi.ControlServiceTargetTemplate()
+		config.TargetTemplate = sandboxapi.RunnerGatewayTargetTemplate()
 	}
 	return &GatewayRunnerProxy{config: config}, nil
 }

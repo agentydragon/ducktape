@@ -1,4 +1,4 @@
-"""gRPC client for the Runner proxy reached through each Sandbox's control Service."""
+"""gRPC client for the Runner proxy reached through the stable Runner Gateway Service."""
 
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -23,9 +23,8 @@ from agentplane.runner_gateway.api import (
 
 
 class SandboxControlClient:
-    """Calls only the replica holding a Sandbox's runner connection answers, through the Sandbox's
-    control Service, each on a connection dialed for that call alone: a replica that no longer holds
-    it refuses with UNAVAILABLE, and the caller's retry resolves the control Service again."""
+    """Calls the Runner Gateway Service on a fresh connection for each RPC; the Gateway replica
+    receiving the call uses the Sandbox identity to select its local runner connection."""
 
     def __init__(
         self,
@@ -36,7 +35,7 @@ class SandboxControlClient:
         channel_credentials: grpc.ChannelCredentials | None = None,
         server_name: str | None = None,
     ) -> None:
-        # A template of `{sandbox}` and `{namespace}`: `{sandbox}-control.{namespace}.svc:8080`.
+        # A template of `{namespace}`: `runner-gateway.{namespace}.svc:8080`.
         self.control_target = control_target
         self.token_file = token_file
         self.request_timeout_s = request_timeout_s
@@ -55,7 +54,7 @@ class SandboxControlClient:
         timeout_s: float | None = None,
         expected_incarnation_uid: str | None = None,
     ) -> T:
-        """Call a Runner RPC through its control Service, fenced to the expected Sandbox identity."""
+        """Call a Runner RPC through the shared Gateway Service, fenced to the Sandbox identity."""
         incarnation_metadata = (
             ((INCARNATION_UID_HEADER, expected_incarnation_uid),) if expected_incarnation_uid is not None else ()
         )
@@ -85,7 +84,7 @@ class SandboxControlClient:
     async def list_sessions(
         self, destination: SandboxDestination, *, expected_incarnation_uid: str | None = None
     ) -> list[session_pb2.SessionSummary]:
-        """Read live runner inventory through its proxy, fenced to the expected Sandbox identity."""
+        """Read live runner inventory through the Gateway proxy, fenced to the expected Sandbox identity."""
         response = await self.runner_unary(
             destination,
             lambda stub: stub.ListSessions,
@@ -96,7 +95,7 @@ class SandboxControlClient:
 
 
 class SandboxRunner:
-    """One Sandbox's runner, reached through the replica holding its connection."""
+    """One Sandbox's runner, reached through the shared Runner Gateway Service."""
 
     def __init__(self, control: SandboxControlClient, destination: SandboxDestination) -> None:
         self.control = control

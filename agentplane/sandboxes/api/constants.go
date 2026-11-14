@@ -30,12 +30,13 @@ const (
 	ControlServiceSuffix   = "-control"
 	ControlServicePortName = "grpc"
 	ControlServicePort     = 8080
+	RunnerGatewayService   = "runner-gateway"
 	// EnvironmentRuntimeServicePort is the runner's mTLS listener port in a Pod or KubeVirt guest.
 	EnvironmentRuntimeServicePort           = 9090
 	EnvironmentRuntimeCredentialMetadataKey = "agentplane.allegedly.works/environment-runtime-credential"
 )
 
-// ControlServiceTargetTemplate is the default target used by both the controller and dispatcher.
-func ControlServiceTargetTemplate() string {
-	return fmt.Sprintf("{sandbox}%s.{namespace}.svc:%d", ControlServiceSuffix, ControlServicePort)
+// RunnerGatewayTargetTemplate routes every Sandbox's Runner RPCs through the stable shared Service.
+func RunnerGatewayTargetTemplate() string {
+	return fmt.Sprintf("%s.{namespace}.svc:%d", RunnerGatewayService, ControlServicePort)
 }

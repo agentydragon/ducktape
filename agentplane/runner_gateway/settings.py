@@ -77,9 +77,9 @@ class Settings(BaseModel):
         default=8080, ge=1, le=65535, description="Port advertised in each Sandbox control EndpointSlice."
     )
     runner_control_target_template: str = Field(
-        default="{sandbox}-control.{namespace}.svc:8080",
+        default="runner-gateway.{namespace}.svc:8080",
         min_length=1,
-        description="Target or target template the Dispatcher uses for each Sandbox runner proxy.",
+        description="Stable Runner Gateway Service target or template used for each Sandbox runner proxy.",
     )
     dispatcher_audience: str = Field(min_length=1, description="Dispatcher caller TokenReview audience.")
     gateway_audience: str = Field(min_length=1, description="Gateway caller TokenReview audience.")

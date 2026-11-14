@@ -13,7 +13,7 @@ import (
 const validSettings = `namespace: agentplane
 metrics_bind_address: ":9090"
 health_probe_bind_address: ":9091"
-runner_gateway_target: "{sandbox}-control.{namespace}.svc:8080"
+runner_gateway_target: "runner-gateway.{namespace}.svc:8080"
 runner_gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token
 runner_security:
   mode: mtls
@@ -51,7 +51,7 @@ func TestLoadConfigReadsYAMLAndIgnoresPerSettingEnvironment(t *testing.T) {
 	}
 	want := config{
 		Namespace: "agentplane", MetricsBindAddress: ":9090", HealthProbeBindAddress: ":9091",
-		RunnerGatewayTarget:    "{sandbox}-control.{namespace}.svc:8080",
+		RunnerGatewayTarget:    "runner-gateway.{namespace}.svc:8080",
 		RunnerGatewayTokenFile: "/var/run/secrets/agentplane-runner-gateway/token",
 		RunnerSecurity: peertls.Security{Mode: peertls.MutualTLS, TLS: &peertls.Config{
 			CertFile: "/run/agentplane/sandbox-controller-client-tls/tls.crt",
@@ -95,7 +95,7 @@ func TestBindAddressesDefaultWhenOmittedFromYAML(t *testing.T) {
 func TestLoadConfigRejectsInvalidSettingsFiles(t *testing.T) {
 	missing := map[string]string{
 		"namespace":                 "namespace: agentplane\n",
-		"runner_gateway_target":     "runner_gateway_target: \"{sandbox}-control.{namespace}.svc:8080\"\n",
+		"runner_gateway_target":     "runner_gateway_target: \"runner-gateway.{namespace}.svc:8080\"\n",
 		"runner_gateway_token_file": "runner_gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token\n",
 		"runner_security":           "runner_security:\n  mode: mtls\n  tls:\n    cert_file: /run/agentplane/sandbox-controller-client-tls/tls.crt\n    key_file: /run/agentplane/sandbox-controller-client-tls/tls.key\n    ca_file: /run/agentplane/workload-trust/ca.crt\n",
 	}

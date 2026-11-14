@@ -3440,7 +3440,7 @@ data:
       "logs": "/var/log/central-sampler",
       "history_target": "history-service.agentplane-staging.svc.cluster.local:8080",
       "history_token_file": "/var/run/secrets/central-sampler/history",
-      "gateway_target": "{sandbox}-control.{namespace}.svc:8080",
+      "gateway_target": "runner-gateway.{namespace}.svc:8080",
       "gateway_token_file": "/var/run/secrets/central-sampler/gateway",
       "direct_executor_insecure_localtest": false,
       "max_live_sessions": 32,
@@ -4315,7 +4315,7 @@ data:
     session_dispatcher_target: session-dispatcher.agentplane-staging.svc.cluster.local:8080
     policy_service_target: policy-controller.agentplane-staging.svc.cluster.local:8082
     policy_service_token_file: /var/run/secrets/agentplane-policy/token
-    runner_gateway_control_target: "{sandbox}-control.{namespace}.svc:8080"
+    runner_gateway_control_target: runner-gateway.{namespace}.svc:8080
     history_service_target: history-service.agentplane-staging.svc.cluster.local:8080
     notifications_url: http://notifications.agentplane-staging.svc:8080/
     notifications_token_file: /var/run/secrets/agentplane-notifications/token
@@ -6631,7 +6631,7 @@ data:
     namespace: agentplane-staging
     metrics_bind_address: :8080
     health_probe_bind_address: :8081
-    runner_gateway_target: "{sandbox}-control.{namespace}.svc:8080"
+    runner_gateway_target: runner-gateway.{namespace}.svc:8080
     runner_gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token
 immutable: false
 ---
@@ -8993,7 +8993,7 @@ data:
       tls:
         ca_file: /run/agentplane/workload-trust/ca-certificates.crt
         server_uri: spiffe://agentplane/session-dispatcher
-      control_target: "{sandbox}-control.{namespace}.svc:8080"
+      control_target: runner-gateway.{namespace}.svc:8080
       request_timeout_s: 5
       token_file: /var/run/secrets/notifications/gateway
     session_dispatcher:

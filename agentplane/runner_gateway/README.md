@@ -54,8 +54,8 @@ incarnation and boot ID, bound from a Runtime-trusted source; the shared Gateway
 replica choose or advance an incarnation. Per-method caller authorization remains, and uncertain
 mutations are never replayed automatically. The Dispatcher delivery Lease is separate and unchanged.
 All replicas now independently observe and call the Controller-bound Runtime without a wire epoch.
-The existing per-Sandbox route remains until callers switch to the stable Service after this Gateway
-image is pinned. Its Lease/epoch selects legacy routing only, never Runtime call ownership.
+Callers now use the stable Service. The per-Sandbox route remains until all old caller processes
+have rolled out. Its Lease/epoch selects legacy routing only, never Runtime call ownership.
 
 The Dispatcher role retains its PostgreSQL queue, command IDs, per-Sandbox delivery Leases
 and database ownership generations. Those delivery Leases are separate from Gateway-to-Runtime

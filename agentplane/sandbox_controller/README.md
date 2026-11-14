@@ -13,7 +13,7 @@ through the Sandbox's launch ConfigMap (a Pod mounts it, a VM gets it as a disk)
 defaults live in the app's preset catalog and are resolved before an opening reaches the Dispatcher.
 Deletion first has the runner seal every
 Session: the controller calls `Runner.Quiesce` through the [Runner Gateway](../runner_gateway/README.md)'s
-[runner proxy](../docs/runner_control.md#runner-proxy), at the Sandbox's own control Service, and sets the
+[runner proxy](../docs/runner_control.md#runner-proxy), at the stable Runner Gateway Service, and sets the
 `Quiesced` condition. Suspension seals the same way before the Pod stops, recorded as
 `status.quiescedIncarnation`. `runner_security` selects the Controller's own direct observer credentials;
 `runner_gateway_target` and `runner_gateway_token_file` remain required settings in the mounted YAML file.
