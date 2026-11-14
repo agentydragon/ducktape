@@ -18,12 +18,23 @@ func testPlacement(spec *sessionpb.SessionSpec, sandboxName, sandboxUID string) 
 }
 
 func (s *Store) CreateSession(ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account) (*Session, error) {
-	return s.openSession(ctx, sessionID, sandboxName, sandboxUID, testPlacement(spec, sandboxName, sandboxUID), spec, setupScript, wakeCaller,
-		SessionExecution{Identity: testExecutionIdentity()}, nil, nil)
+	testPlacement(spec, sandboxName, sandboxUID)
+	return s.CreateSessionWithPlacementForCaller(ctx, sessionID, sandboxName, sandboxUID, spec, setupScript, wakeCaller,
+		SessionExecution{Identity: testExecutionIdentity()}, testStoreCaller(wakeCaller))
 }
 
 func testExecutionIdentity() *identitypb.Identity {
 	return &identitypb.Identity{Name: "dispatcher-test-identity", Uid: "00000000-0000-4000-8000-00000000a000"}
+}
+
+func testStoreCaller(wakeCaller *Account) ServiceAccountCaller {
+	actor := serviceAccountIdentityFor(Account{Namespace: "dispatcher-test", Name: "store-fixture"}, "dispatcher-test-actor-uid")
+	effective := actor
+	if wakeCaller != nil {
+		effective = serviceAccountIdentityFor(*wakeCaller, "dispatcher-test-effective-uid")
+	}
+	attribution := &AdmissionAttribution{Actor: actor, EffectiveCaller: effective}
+	return ServiceAccountCaller{ServiceAccountIdentity: effective, Privileged: true, Attribution: attribution}
 }
 
 func (s *Store) CreateSessionForCaller(ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, executionIdentity *identitypb.Identity, caller ServiceAccountCaller) (*Session, error) {

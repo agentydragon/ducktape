@@ -394,23 +394,20 @@ func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) (
 			return err
 		}
 	}
-	// Retained Sessions without an exact Identity remain readable but cannot be newly executed or
-	// attributed to the Sandbox's current Identity. Leave their durable rows and queued effects intact.
-	if !hasExecutionIdentity(principalSession) {
+	// Attributed dispatch rows without a Session are retained as historical receipts, not executable work.
+	if principalSession == nil {
 		return nil
 	}
-	if head != nil && principalSession != nil && principalSession.Placement.RequiresReadyExecutor() &&
+	if head != nil && principalSession.Placement.RequiresReadyExecutor() &&
 		(principalSession.State == SessionFailedState || principalSession.State == SessionUnknownState) {
 		return w.Store.NoteWaiting(ctx, head.CommandID, owner, "session_unconfirmed")
 	}
-	if principalSession != nil {
-		identity, found, err := w.executionIdentity(ctx, sandbox)
-		if err != nil {
-			return err
-		}
-		if !found || !sameIdentity(identity, principalSession.ExecutionIdentity) {
-			return w.failExecutionIdentity(ctx, principalSession, head, owner)
-		}
+	identity, found, err := w.executionIdentity(ctx, sandbox)
+	if err != nil {
+		return err
+	}
+	if !found || !sameIdentity(identity, principalSession.ExecutionIdentity) {
+		return w.failExecutionIdentity(ctx, principalSession, head, owner)
 	}
 	if queuedSession != nil {
 		ready, err := w.prepareSession(ctx, queuedSession, sandbox, owner)
@@ -441,11 +438,8 @@ func (w *DeliveryWorker) executionIdentity(ctx context.Context, sandbox SandboxS
 }
 
 // executionCurrent reports whether the Sandbox still names the exact Identity incarnation recorded
-// for the Session. Legacy rows without one cannot be executed or re-attributed.
+// for the Session.
 func (w *DeliveryWorker) executionCurrent(ctx context.Context, session *Session, sandbox SandboxSnapshot) (bool, error) {
-	if session == nil || session.ExecutionIdentity == nil || session.ExecutionIdentity.GetName() == "" || session.ExecutionIdentity.GetUid() == "" {
-		return false, nil
-	}
 	identity, found, err := w.executionIdentity(ctx, sandbox)
 	if err != nil {
 		return false, err
@@ -579,7 +573,7 @@ func (w *DeliveryWorker) retryStorage(ctx context.Context, fn func() error) {
 }
 
 func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, sandbox SandboxSnapshot, owner Owner, session *Session) bool {
-	if !hasExecutionIdentity(session) {
+	if session == nil {
 		return false
 	}
 	ctx = observability.WithTraceparent(ctx, head.Traceparent)
@@ -655,9 +649,6 @@ func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, san
 }
 
 func (w *DeliveryWorker) deliverSession(ctx context.Context, session *Session, sandbox SandboxSnapshot, owner Owner) bool {
-	if !hasExecutionIdentity(session) {
-		return false
-	}
 	ctx = observability.WithTraceparent(ctx, session.Traceparent)
 	ctx, span := observability.Start(
 		ctx, "Dispatcher Deliver Session",

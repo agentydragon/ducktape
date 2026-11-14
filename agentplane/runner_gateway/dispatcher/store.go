@@ -214,6 +214,9 @@ func callerAttribution(caller Caller) Attribution {
 
 // validateCaller checks the attribution caller will record.
 func validateCaller(caller Caller, wakeCaller *Account) error {
+	if callerAttribution(caller) == nil {
+		return errors.New("caller attribution is required")
+	}
 	switch c := caller.(type) {
 	case ServiceAccountCaller:
 		return validateAttribution(c.Attribution, wakeCaller)
@@ -238,7 +241,7 @@ func validateCaller(caller Caller, wakeCaller *Account) error {
 		}
 		return nil
 	default:
-		return nil
+		return fmt.Errorf("unknown Dispatcher caller %T", caller)
 	}
 }
 
@@ -366,8 +369,7 @@ type Session struct {
 	SessionID, SandboxName, SandboxUID string
 	Placement                          placement.SessionPlacement
 	// ExecutionIdentity is the exact Identity incarnation the Session's Sandbox named at creation.
-	// It is immutable. A legacy row with no Identity is retained for privileged platform reads, never
-	// reassigned to the Sandbox's current Identity.
+	// It is immutable.
 	ExecutionIdentity *identitypb.Identity
 	// Creator records the authenticated actor that brokered the session, separately from its owner
 	// and effective caller. For a delegated session this is the Actions ServiceAccount.
@@ -752,13 +754,10 @@ func scanDispatch(row interface{ Scan(...any) error }, additional ...any) (*Disp
 		}
 		d.Attribution = delegatedIdentity
 	}
+	if d.Attribution == nil && d.WakeCaller == nil {
+		return nil, errors.New("dispatch caller attribution is missing")
+	}
 	return d, nil
-}
-
-// Enqueue commits the complete command and NOTIFY in one transaction. Exact retries
-// return the original row after verifying the retained Session and exact Sandbox UID.
-func (s *Store) Enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID string, command *commandpb.Command, wakeCaller *Account) (*Dispatch, error) {
-	return s.enqueue(ctx, sessionID, sandboxName, sandboxUID, command, wakeCaller, nil)
 }
 
 // EnqueueForCaller applies the Session's retained owner and target binding in the same transaction
@@ -767,15 +766,13 @@ func (s *Store) EnqueueForCaller(ctx context.Context, sessionID, sandboxName, sa
 	return s.enqueue(ctx, sessionID, sandboxName, sandboxUID, command, wakeCaller, caller)
 }
 
-// enqueue appends a command; a nil caller is an internal write.
+// enqueue appends a command for its authenticated caller.
 func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID string, command *commandpb.Command, wakeCaller *Account, caller Caller) (*Dispatch, error) {
 	if command == nil || command.GetCommandId() == "" || sessionID == "" || sandboxName == "" {
 		return nil, errors.New("command_id, session_id and sandbox are required")
 	}
-	if caller != nil {
-		if err := validateCaller(caller, wakeCaller); err != nil {
-			return nil, err
-		}
+	if err := validateCaller(caller, wakeCaller); err != nil {
+		return nil, err
 	}
 	op, err := operation(command)
 	if err != nil {
@@ -797,11 +794,7 @@ func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 		if err := sessionLock(ctx, tx, sessionID); err != nil {
 			return err
 		}
-		query := "SELECT " + sessionColumns + " FROM session WHERE session_id=$1"
-		arguments := []any{sessionID}
-		if caller != nil {
-			query, arguments = sessionForCaller(sessionID, caller)
-		}
+		query, arguments := sessionForCaller(sessionID, caller)
 		session, err := scanSession(tx.QueryRowContext(ctx, query+" FOR SHARE", arguments...))
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
@@ -1028,9 +1021,10 @@ func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 	if identityName.Valid != identityUID.Valid {
 		return nil, errors.New("Session execution identity is incomplete")
 	}
-	if identityName.Valid {
-		o.ExecutionIdentity = &identitypb.Identity{Name: identityName.String, Uid: identityUID.String}
+	if !identityName.Valid || identityName.String == "" || identityUID.String == "" {
+		return nil, errors.New("Session execution identity is missing")
 	}
+	o.ExecutionIdentity = &identitypb.Identity{Name: identityName.String, Uid: identityUID.String}
 	if creatorNS.Valid != creatorName.Valid || creatorNS.Valid != creatorUID.Valid {
 		return nil, errors.New("Session creator association is incomplete")
 	}
@@ -1051,6 +1045,9 @@ func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 	o.Attribution, err = scanAttribution(account, creatorIdentityName, creatorIdentityUID, creatorIdentityPodName, creatorIdentityPodUID)
 	if err != nil {
 		return nil, err
+	}
+	if o.Attribution == nil {
+		return nil, errors.New("Session caller attribution is missing")
 	}
 	if incarnation.Valid {
 		o.WakeFromIncarnation = &incarnation.String
@@ -1126,7 +1123,7 @@ func (o *Session) authorizeRetry(caller Caller) error {
 			return nil
 		}
 	case IdentityCaller:
-		if o.ExecutionIdentity != nil && sameIdentity(o.ExecutionIdentity, c.Identity) {
+		if sameIdentity(o.ExecutionIdentity, c.Identity) {
 			return nil
 		}
 	}
@@ -1155,6 +1152,12 @@ func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandbox
 	if sessionID == "" || sandboxName == "" || spec == nil {
 		return nil, errors.New("session_id, sandbox and spec are required")
 	}
+	if execution.Identity == nil || execution.Identity.GetName() == "" || execution.Identity.GetUid() == "" {
+		return nil, errors.New("new Session requires a complete execution Identity")
+	}
+	if err := validateCaller(caller, wakeCaller); err != nil {
+		return nil, err
+	}
 	if !sessionPlacement.MatchesSpec(spec) {
 		return nil, errors.New("Session placement does not match spec")
 	}
@@ -1180,10 +1183,8 @@ func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandbox
 		}
 		existing, err := scanSession(tx.QueryRowContext(ctx, "SELECT "+sessionColumns+" FROM session WHERE session_id=$1", sessionID))
 		if err == nil {
-			if caller != nil {
-				if err := existing.authorizeRetry(caller); err != nil {
-					return err
-				}
+			if err := existing.authorizeRetry(caller); err != nil {
+				return err
 			}
 			if err := existing.matchRequest(sandboxName, sandboxUID, sessionPlacement, spec, setupScript); err != nil {
 				return err
@@ -1193,9 +1194,6 @@ func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandbox
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
-		}
-		if caller != nil && (execution.Identity == nil || execution.Identity.GetName() == "" || execution.Identity.GetUid() == "") {
-			return errors.New("new Session requires a complete execution Identity")
 		}
 		if check != nil {
 			if err := check(ctx); err != nil {

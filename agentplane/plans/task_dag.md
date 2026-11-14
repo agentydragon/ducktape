@@ -3687,7 +3687,8 @@ all dispatch receipts attached to those Sessions are deleted too. Outside those 
 rows are deleted only when every actor, delegator, caller, Pod, Action and wake-caller attribution
 field is empty, so attributed standalone receipts remain. Current production Session creation
 resolves a complete Sandbox execution Identity and calls the Store with an authenticated caller;
-direct Store creation helpers found are tests. Its reader cleanup follows separately.
+direct Store creation helpers found are tests. The reader cleanup is in review in
+[#16341](https://github.com/agentydragon/ducktape/pull/16341).
 
 The migration selector ran inside `BEGIN READ ONLY ... ROLLBACK` on `session_dispatcher` at
 2026-11-14 06:03 UTC. It selected 15 of 25 Sessions, all terminal
