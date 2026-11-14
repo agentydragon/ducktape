@@ -2,6 +2,7 @@ package dispatcher
 
 import (
 	"context"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environmentaccess"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -48,6 +50,10 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	ownerAccount := serviceAccountIdentityFor(owner.Principal.Account, owner.Principal.ServiceAccountUID)
 	ownerSandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
 	inventory := &authorityInventory{sandbox: ownerSandbox, identity: ownerIdentity}
+	rules := environmentaccess.NewIndex()
+	rules.PutIdentity(owner.Identity)
+	rules.PutIdentity(other.Identity)
+	var policyError error
 
 	actor := auth.Account{Namespace: caller.Namespace, Name: "test-delegating-actions"}
 	resolver, err := auth.NewResolver(tokenReviewStub{"test-actions-token": {account: actor, uid: "test-actions-uid", pod: true}},
@@ -71,7 +77,9 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, connected: true}
 	server := grpc.NewServer(methods.ServerOptions(time.Second)...)
 	dispatcherpb.RegisterSessionDispatcherServer(server, &Service{
-		Store: store, DispatcherCallers: sets.New(actor), Sandboxes: inventory, Hub: hub, WatchLease: 10 * time.Second,
+		Store: store, DispatcherCallers: sets.New(actor), Sandboxes: inventory,
+		EnvironmentRules: rules, PolicyReady: func() error { return policyError },
+		Hub: hub, WatchLease: 10 * time.Second,
 	})
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -170,6 +178,56 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	}); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("delegated Identity CreateSession on its own Sandbox: %v, want PermissionDenied", err)
 	}
+	// A different Identity can create on this Sandbox only under a grant naming its bound Identity.
+	rules.PutPolicySet(&policyapi.PolicySet{
+		ObjectMeta: metav1.ObjectMeta{Name: "delegated-bind-session"},
+		Spec: policyapi.PolicySetSpec{Rules: []policyapi.Rule{{Type: "environment", Operations: []string{"bind_session"}, Environments: []policyapi.EnvironmentSelector{{
+			BoundIdentity: &policyapi.BoundIdentitySelector{Name: ownerIdentity.GetName()},
+		}}}}},
+	})
+	rules.PutBinding(&policyapi.PolicyBinding{ObjectMeta: metav1.ObjectMeta{Name: "delegated-bind-session"}, Spec: policyapi.PolicyBindingSpec{
+		Subject: policyapi.Subject{Identity: &policyapi.IdentityRef{Name: otherIdentity.GetName()}}, PolicySets: []string{"delegated-bind-session"},
+	}})
+	createdID := uuid.NewString()
+	createAsOther := &dispatcherpb.CreateSessionRequest{SessionId: createdID, Spec: &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{
+		Environment: &sessionpb.ExactEnvironment{Name: ownerSandbox.Name, Uid: ownerSandbox.UID}, Harness: sessionpb.Harness_HARNESS_CODEX,
+	}}}}}
+	created, err := client.CreateSession(actingFor(otherIdentity), createAsOther)
+	if err != nil || created.GetSession().GetIdentity().GetName() != ownerIdentity.GetName() {
+		t.Fatalf("delegated named bind_session create = %v, %v", created, err)
+	}
+	createdRow, err := store.GetSession(t.Context(), createdID)
+	if err != nil || !proto.Equal(createdRow.ExecutionIdentity, ownerIdentity) {
+		t.Fatalf("delegated created Session executes as %v, %v", createdRow, err)
+	}
+	creator, ok := createdRow.Attribution.(*DelegatedIdentityAttribution)
+	if !ok || !proto.Equal(creator.Identity, otherIdentity) || creator.Delegation.Actor.GetAccount().GetName() != actor.Name ||
+		creator.Delegation.Action.RequestID != requestID || creator.Delegation.Action.ExecutionID != executionID {
+		t.Fatalf("delegated creator provenance = %#v", createdRow.Attribution)
+	}
+	if _, err := client.CreateSession(actingFor(ownerIdentity), createAsOther); status.Code(err) != codes.NotFound {
+		t.Fatalf("non-creator recovered another Identity's CreateSession receipt: %v", err)
+	}
+	altered := proto.Clone(createAsOther).(*dispatcherpb.CreateSessionRequest)
+	changedSetup := "different setup"
+	altered.SetupScript = &changedSetup
+	if _, err := client.CreateSession(actingFor(otherIdentity), altered); status.Code(err) != codes.AlreadyExists {
+		t.Fatalf("creator altered the retained CreateSession request: %v", err)
+	}
+	if _, err := client.GetSession(actingFor(otherIdentity), &dispatcherpb.GetSessionRequest{SessionId: createdID}); status.Code(err) != codes.NotFound {
+		t.Fatalf("creator received Session ownership from receipt authority: %v", err)
+	}
+	rules.DeleteBinding("delegated-bind-session")
+	policyError = errors.New("environment rule watch unavailable")
+	inventory.mu.Lock()
+	inventory.sandbox = SandboxSnapshot{Name: "replacement-sandbox", Namespace: ownerSandbox.Namespace, UID: uuid.NewString()}
+	inventory.mu.Unlock()
+	if _, err := client.CreateSession(actingFor(otherIdentity), createAsOther); err != nil {
+		t.Fatalf("exact creator receipt retry after revocation and target loss: %v", err)
+	}
+	inventory.mu.Lock()
+	inventory.sandbox = ownerSandbox
+	inventory.mu.Unlock()
 	if _, err := client.CancelDispatch(actingFor(ownerIdentity), &dispatcherpb.CancelDispatchRequest{CommandId: command}); err != nil {
 		t.Fatalf("delegated Identity CancelDispatch of its own command: %v", err)
 	}

@@ -54,7 +54,6 @@ class Settings(BaseModel):
     config_file_env: ClassVar[str] = "AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE"
     dispatcher_database_url_env: ClassVar[str] = "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL"
     pod_name_env: ClassVar[str] = "AGENTPLANE_RUNNER_GATEWAY_POD_NAME"
-    pod_ip_env: ClassVar[str] = "AGENTPLANE_RUNNER_GATEWAY_POD_IP"
     model_config = ConfigDict(extra="forbid")
 
     sandbox_namespace: str = Field(min_length=1, description="Namespace of Agentplane Sandboxes.")
@@ -72,12 +71,6 @@ class Settings(BaseModel):
     rpc: Listener = Field(description="The shared TLS gRPC listener and its explicitly enabled auth modes.")
     gateway_tls: ClientTLS = Field(
         description="Verify the Session Dispatcher SVID on this Gateway's stable-Service calls."
-    )
-    proxy_port: int = Field(
-        default=8080,
-        ge=1,
-        le=65535,
-        description="Legacy control EndpointSlice port, retained until the route-removal image is pinned.",
     )
     runner_control_target_template: str = Field(
         default="runner-gateway.{namespace}.svc:8080",

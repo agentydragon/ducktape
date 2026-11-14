@@ -1,6 +1,8 @@
 package environmentaccess
 
 import (
+	"fmt"
+	"slices"
 	"testing"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -92,7 +94,7 @@ func TestParseRuleRefusesOperationsFieldsAndMalformedSelectors(t *testing.T) {
 	invalid := map[string]policyapi.Rule{
 		"wrong type":            {Type: "session_inbox_access", Operations: []string{resume}, Environments: valid.Environments},
 		"missing operation":     {Type: ruleType, Environments: valid.Environments},
-		"unsupported operation": ruleWithOperations([]string{"bind_session"}, valid.Environments...),
+		"unsupported operation": ruleWithOperations([]string{"read"}, valid.Environments...),
 		"duplicate operation":   ruleWithOperations([]string{resume, resume}, valid.Environments...),
 		"missing selectors":     {Type: ruleType, Operations: []string{resume}},
 		"empty selector":        rule(policyapi.EnvironmentSelector{}),
@@ -119,7 +121,7 @@ func TestUnsupportedRulesAreRefusedByTheSharedReaderAndGrantNothing(t *testing.T
 		ObjectMeta: metav1.ObjectMeta{Name: "test-set"},
 		Spec: policyapi.PolicySetSpec{Rules: []policyapi.Rule{
 			rule(policyapi.EnvironmentSelector{Sandbox: &policyapi.SandboxTarget{Name: "test-target"}}),
-			ruleWithOperations([]string{"bind_session"}, policyapi.EnvironmentSelector{Sandbox: &policyapi.SandboxTarget{Name: "test-target"}}),
+			ruleWithOperations([]string{"delete"}, policyapi.EnvironmentSelector{Sandbox: &policyapi.SandboxTarget{Name: "test-target"}}),
 		}},
 	})
 	index.PutIdentity(&policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Name: testCaller, UID: testUID}})
@@ -171,4 +173,32 @@ func rule(selectors ...policyapi.EnvironmentSelector) policyapi.Rule {
 
 func ruleWithOperations(operations []string, selectors ...policyapi.EnvironmentSelector) policyapi.Rule {
 	return policyapi.Rule{Type: ruleType, Operations: operations, Environments: selectors}
+}
+
+func TestOperationsGrantOnlyTheirNamedCapability(t *testing.T) {
+	for _, operations := range [][]string{{resume}, {bindSession}, {resume, bindSession}} {
+		t.Run(fmt.Sprint(operations), func(t *testing.T) {
+			index := indexFor(t, policyapi.EnvironmentSelector{BoundIdentity: &policyapi.BoundIdentitySelector{Self: true}})
+			index.PutPolicySet(&policyapi.PolicySet{ObjectMeta: metav1.ObjectMeta{Name: "test-set"}, Spec: policyapi.PolicySetSpec{Rules: []policyapi.Rule{ruleWithOperations(operations, policyapi.EnvironmentSelector{BoundIdentity: &policyapi.BoundIdentitySelector{Self: true}})}}})
+			target := sandbox("test-target", testTarget, testCaller)
+			for _, operation := range []string{resume, bindSession} {
+				if got := Allowed(index, caller(), operation, target); got != slices.Contains(operations, operation) {
+					t.Fatalf("%v grants %s = %v", operations, operation, got)
+				}
+			}
+		})
+	}
+}
+
+func TestBindSessionNamedSandboxAlsoPinsBoundIdentity(t *testing.T) {
+	for _, uid := range []types.UID{"", testTarget} {
+		named := policyapi.EnvironmentSelector{Sandbox: &policyapi.SandboxTarget{Name: "test-target", UID: uid}}
+		if _, err := ParseRule(ruleWithOperations([]string{bindSession}, named)); err == nil {
+			t.Fatalf("bind_session accepted a Sandbox without boundIdentity (UID %s)", uid)
+		}
+		named.BoundIdentity = &policyapi.BoundIdentitySelector{Name: "test-worker"}
+		if _, err := ParseRule(ruleWithOperations([]string{resume, bindSession}, named)); err != nil {
+			t.Fatal(err)
+		}
+	}
 }

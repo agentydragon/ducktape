@@ -231,7 +231,6 @@ async def run_gateway(
                 gateway_tls=runtime_transport.ClientTLS(
                     ca_file=environment_runtime_ca_file, server_uri=_SESSION_DISPATCHER_URI
                 ),
-                proxy_port=rpc_listener.port,
                 runner_control_target_template=f"localhost:{rpc_listener.port}",
                 dispatcher_audience=dispatcher_audience,
                 gateway_audience=gateway_audience,
@@ -257,9 +256,6 @@ async def run_gateway(
                 Settings.config_file_env: str(settings_path),
                 Settings.dispatcher_database_url_env: _wire_database_url(database_url),
                 Settings.pod_name_env: workload.name,
-                # Kubernetes rejects loopback EndpointSlice addresses. This advertised test address
-                # is not dialed: this single-replica fixture sends RPCs to its loopback listener.
-                Settings.pod_ip_env: "192.0.2.10",
             }
             credentials = grpc.ssl_channel_credentials(root_certificates=environment_runtime_ca_file.read_bytes())
 

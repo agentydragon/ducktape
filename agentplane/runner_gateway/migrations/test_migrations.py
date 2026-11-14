@@ -41,7 +41,15 @@ def test_fresh_database_and_repeat_are_idempotent(postgres_admin_url: str, datab
         try:
             with engine.connect() as conn:
                 assert conn.scalar(text("SELECT to_regclass('dispatch') IS NOT NULL"))
-                assert conn.scalar(text(f"SELECT max(version_id) FROM {_VERSION}")) == 19
+                assert conn.scalar(
+                    text(
+                        "SELECT EXISTS ("
+                        "SELECT 1 FROM information_schema.columns "
+                        "WHERE table_schema = current_schema() "
+                        "AND table_name = 'session' AND column_name = 'creator_delegator_account_uid'"
+                        ")"
+                    )
+                )
         finally:
             engine.dispose()
 

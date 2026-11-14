@@ -251,7 +251,7 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 			if err := g.config.RunnerSecurity.AuthorizePeer(watch.Context(), destination.peerURI); err != nil {
 				return status.Error(codes.Unauthenticated, "runner certificate is no longer valid")
 			}
-			if response.GetEnvironmentRuntimeBootId() == "" || response.GetSandboxUid() != destination.identity.Uid || response.GetIncarnationUid() != destination.podUID || response.GetConnectionEpoch() != 0 {
+			if response.GetEnvironmentRuntimeBootId() == "" || response.GetSandboxUid() != destination.identity.Uid || response.GetIncarnationUid() != destination.podUID {
 				return status.Error(codes.InvalidArgument, "runner state has invalid identity")
 			}
 			if connection != nil && connection.bootID != response.EnvironmentRuntimeBootId {

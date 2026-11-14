@@ -17,7 +17,6 @@ from cdk8s_plus_34 import (
     Cpu,
     CpuResources,
     DeploymentStrategy,
-    EnvFieldPaths,
     EnvValue,
     IApiResource,
     MemoryResources,
@@ -188,11 +187,7 @@ class RunnerGateway(Construct):
             serves=[proxy],
             container="runner-gateway",
             image=image,
-            env_variables={
-                Settings.dispatcher_database_url_env: database_url,
-                Settings.pod_ip_env: EnvValue.from_field_ref(EnvFieldPaths.POD_IP),
-                **(container_env or {}),
-            },
+            env_variables={Settings.dispatcher_database_url_env: database_url, **(container_env or {})},
             readiness=tls_grpc_probe(
                 port=proxy.pod_port,
                 ca_file=workload_tls.TRUST_BUNDLE_FILE,
@@ -295,7 +290,6 @@ class RunnerGateway(Construct):
                 ],
             ),
             gateway_tls=workload_tls.client_tls(SESSION_DISPATCHER_URI),
-            proxy_port=proxy.pod_port,
             runner_control_target_template=runner_gateway.control_target(namespace),
             dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
             gateway_audience=runner_gateway.TOKEN_AUDIENCE,
@@ -441,12 +435,9 @@ class RunnerGateway(Construct):
                     verbs=["get", "list", "watch"],
                 ),
                 RolePolicyRule(resources=[custom_resource(GROUP, "policybindings/status")], verbs=["patch"]),
+                # Dispatcher delivery ownership uses these Leases for atomic get/create/update operations.
                 RolePolicyRule(
-                    resources=[custom_resource("coordination.k8s.io", "leases")],
-                    verbs=["get", "list", "watch", "create", "update"],
-                ),
-                RolePolicyRule(
-                    resources=[custom_resource("discovery.k8s.io", "endpointslices")], verbs=["get", "create", "update"]
+                    resources=[custom_resource("coordination.k8s.io", "leases")], verbs=["get", "create", "update"]
                 ),
             ],
         )

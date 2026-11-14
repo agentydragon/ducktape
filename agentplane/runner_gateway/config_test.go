@@ -75,11 +75,10 @@ func (configTestTokenReviews) Create(
 	}}, nil
 }
 
-// required includes the explicit database Secret and Pod IP runtime inputs plus the static settings file.
+// required includes the explicit database Secret runtime input plus the static settings file.
 func required(t *testing.T, extra ...string) []string {
 	t.Helper()
 	return append([]string{
-		settingPrefix + "POD_IP=10.0.0.5",
 		settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, requiredFile), databaseURLEnv,
 	}, extra...)
 }
@@ -358,22 +357,15 @@ func TestEmptyWakeCallerListIsAccepted(t *testing.T) {
 	}
 }
 
-func TestHostProcessTargetsAreAcceptedAndTheAdvertisedPortIsBounded(t *testing.T) {
+func TestHostProcessTargetsAreAccepted(t *testing.T) {
 	settings := strings.Replace(requiredFile, "listen_address: ':8080'", "listen_address: 127.0.0.1:41001", 1)
 	settings = strings.Replace(settings, "runner_control_target_template: 'runner-gateway.{namespace}.svc:8080'",
 		"runner_control_target_template: 127.0.0.1:41001", 1) + `
-proxy_port: 42000
 kubeconfig: /tmp/fake-kubeconfig
 `
 	path := configtest.WriteSettings(t, settings)
 	if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path)); err != nil {
 		t.Fatal(err)
-	}
-	for _, port := range []string{"0", "65536"} {
-		invalid := configtest.WriteSettings(t, requiredFile+"proxy_port: "+port+"\n")
-		if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+invalid)); err == nil {
-			t.Fatalf("invalid advertised proxy port %s was accepted", port)
-		}
 	}
 }
 
@@ -431,19 +423,18 @@ users:
 }
 
 func TestSettingsFileValuesIgnoreGenericEnvironmentOverrides(t *testing.T) {
-	settings := strings.Replace(requiredFile, "listen_address: ':8080'", "listen_address: 127.0.0.1:9000", 1) + "proxy_port: 42000\n"
+	settings := strings.Replace(requiredFile, "listen_address: ':8080'", "listen_address: 127.0.0.1:9000", 1)
 	path := configtest.WriteSettings(t, settings)
 	c, err := configtest.Load(t, settingPrefix, loadConfig, required(
 		t,
 		settingPrefix+"CONFIG_FILE="+path,
 		settingPrefix+"RPC__LISTEN_ADDRESS=127.0.0.1:9999",
-		settingPrefix+"PROXY_PORT=43000",
 		settingPrefix+"DISPATCHER_CALLERS=agentplane/attacker",
 	))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.RPC.ListenAddress != "127.0.0.1:9000" || c.ProxyPort != 42000 ||
+	if c.RPC.ListenAddress != "127.0.0.1:9000" ||
 		!slices.Equal(c.DispatcherCallers, []auth.Account{{Namespace: "agentplane", Name: "app"}, {Namespace: "agentplane", Name: "notifications"}}) {
 		t.Fatalf("settings file values changed under environment overrides: %+v", c)
 	}
@@ -451,7 +442,6 @@ func TestSettingsFileValuesIgnoreGenericEnvironmentOverrides(t *testing.T) {
 
 func TestSettingsAreRefusedWithoutEchoingRuntimeSecretValues(t *testing.T) {
 	for _, file := range []string{
-		requiredFile + "proxy_port: not-a-number\n",
 		requiredFile + "max_queued_per_session: 0\n",
 		requiredFile + "unknown_setting: 1\n",
 		requiredFile + "dispatcher_database_url: postgres://file.invalid/dispatcher\n",
@@ -504,7 +494,7 @@ func TestSettingsWithoutADefaultAreRequired(t *testing.T) {
 	if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t)); err != nil {
 		t.Fatal(err)
 	}
-	for _, missing := range []string{"POD_IP", "DISPATCHER_DATABASE_URL"} {
+	for _, missing := range []string{"DISPATCHER_DATABASE_URL"} {
 		rest := slices.DeleteFunc(required(t), func(item string) bool {
 			return strings.HasPrefix(item, settingPrefix+missing+"=")
 		})
@@ -535,11 +525,11 @@ func TestSettingsWithoutADefaultAreRequired(t *testing.T) {
 }
 
 func TestSettingsFilePathIsRequiredAndMustBeReadable(t *testing.T) {
-	if _, err := configtest.Load(t, settingPrefix, loadConfig, []string{databaseURLEnv, settingPrefix + "POD_IP=10.0.0.5"}); err == nil {
+	if _, err := configtest.Load(t, settingPrefix, loadConfig, []string{databaseURLEnv}); err == nil {
 		t.Fatal("started without a settings file path")
 	}
 	if _, err := configtest.Load(t, settingPrefix, loadConfig, []string{
-		settingPrefix + "CONFIG_FILE=/settings/file/does/not/exist", databaseURLEnv, settingPrefix + "POD_IP=10.0.0.5",
+		settingPrefix + "CONFIG_FILE=/settings/file/does/not/exist", databaseURLEnv,
 	}); err == nil {
 		t.Fatal("started without the required settings file")
 	}

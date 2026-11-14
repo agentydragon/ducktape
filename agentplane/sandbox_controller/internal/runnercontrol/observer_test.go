@@ -91,7 +91,7 @@ func TestRuntimeWatcherUsesPassiveWorkloadMTLSAndForwardsFacts(t *testing.T) {
 	select {
 	case request := <-runtime.requests:
 		if request.GetSandboxUid() != string(sandbox.UID) || request.GetIncarnationUid() != string(pod.UID) ||
-			request.GetConnectionEpoch() != 0 || !request.GetObserveOnly() {
+			!request.GetObserveOnly() {
 			t.Fatalf("WatchState request = %v, want passive watch for this Sandbox incarnation", request)
 		}
 	case <-time.After(5 * time.Second):

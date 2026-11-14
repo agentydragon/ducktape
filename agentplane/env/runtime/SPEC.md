@@ -99,7 +99,7 @@ publication succeed for the current Running incarnation; same-incarnation re-ent
 
 External authentication and Sandbox/incarnation/boot authorization remain in `runtime/control`.
 The Sandbox Controller's authenticated `observe_only` state watch is the source of the Runtime's
-workload incarnation UID. It carries epoch zero and must name the current Pod or virt-launcher Pod;
+workload incarnation UID. It must name the current Pod or virt-launcher Pod;
 the Runtime reserves that UID and completes its ordinary lifecycle adoption before sending the
 first facts snapshot. The Runtime listener serves before this observation, and each Runtime
 process creates a fresh boot ID. Once bound, the UID cannot change during that process lifetime,
@@ -110,16 +110,12 @@ identity; every control and Executor call still requires the exact Gateway ident
 role-specific `spiffe://agentplane/runtime-proxy` service SVID. The latter is admitted before its
 separate caller cutover; `spiffe://agentplane/sessions` has no direct Runtime grant.
 
-Gateway calls with an absent or zero connection epoch authorize against the Controller-bound
-incarnation and this Runtime boot, independently of Gateway state-watch lifetime. Any authenticated
-Gateway replica may call; Gateway watch loss and same-incarnation observer replacement do not
-cancel this authority or its active execution streams. A changed Sandbox UID, incarnation UID, or
-boot ID invalidates it. A Gateway `WatchState` request without an epoch or with epoch zero may
-observe only the already-bound incarnation and cannot establish or replace it. Supplied nonzero
-epochs retain the legacy live-watch checks for calls and the Gateway's connection-owner behavior
-for watches, still restricted to the Controller-bound incarnation. The epoch field remains during
-this receiver compatibility step. Direct Session admission uses that authority and Runtime's
-gate. `CreateSession` acknowledges a durable
+Gateway calls authorize against the Controller-bound incarnation and this Runtime boot,
+independently of Gateway state-watch lifetime. Any authenticated Gateway replica may call; Gateway
+watch loss and same-incarnation observer replacement do not revoke that authority or cancel
+Runtime-owned admitted work. A changed Sandbox UID, incarnation UID, or boot ID invalidates it.
+Gateway watches may observe only the already-bound incarnation and cannot establish or replace it.
+Direct Session admission uses that authority and Runtime's gate. `CreateSession` acknowledges a durable
 reservation, without promising process readiness. Model lookup occurs outside the gate; the
 reservation rechecks its authorization and accepted revision before its retained write.
 Claude model lookup uses the local gRPC `model_config_target` without a bearer; the egress
@@ -139,7 +135,7 @@ Adoption and conditional Quiesce pass a typed in-process request to the Runtime-
 coordinator and wait for that operation's completion. Close observes the coordinator's live COSI
 status for its exact closing generation. Transition requests and completions remain private handoffs.
 Each blocking boundary runs in an owned worker so component observation continues.
-A canceled watch epoch ends future adoption stages but does not release a successor until accepted
+A canceled observation stream ends future adoption stages but does not release a successor until accepted
 Execution starts and their fences settle. Repeated Quiesce preserves a healthy desired generation;
 only a failure for that exact generation can trigger retry.
 

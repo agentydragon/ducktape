@@ -6698,16 +6698,6 @@ rules:
   - apiGroups:
       - ""
     resources:
-      - services
-    verbs:
-      - get
-      - list
-      - watch
-      - create
-      - patch
-  - apiGroups:
-      - ""
-    resources:
       - configmaps
     verbs:
       - get
@@ -6729,8 +6719,6 @@ rules:
       - leases
     verbs:
       - get
-      - list
-      - watch
       - create
       - update
   - apiGroups:

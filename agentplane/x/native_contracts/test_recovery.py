@@ -225,7 +225,9 @@ async def test_active_runtime_crash_preserves_history_and_does_not_resubmit_the_
     harness_pids = [row.event.harness_started.pid for row in events.of_kind(retained, "harness_started")]
     assert harness_pids
     await process.crash(harness_pids)
-    assert list((await history_service.reader.read_session_events(session_id, limit=1000)).entries) == retained
+    # Pending harness events may commit between the snapshot and SIGKILL.
+    after_crash = await history_service.reader.read_session_events(session_id, limit=len(retained))
+    assert list(after_crash.entries) == retained
     await start_runtime()
     remote = gateway_service.gateway_client(client_token)
     await runtime_ready(remote, sandbox, session_id)

@@ -382,7 +382,6 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     ][0]["serviceAccountToken"]
     gateway_env = {entry["name"]: entry for entry in container["env"]}
     assert "AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE" in gateway_env
-    assert gateway_env["AGENTPLANE_RUNNER_GATEWAY_POD_IP"]["valueFrom"]["fieldRef"]["fieldPath"] == "status.podIP"
     gateway_config = yaml.safe_load(
         _resource(docs, "ConfigMap", f"{fixture_chart.RUNNER_GATEWAY}-settings")["data"]["settings.yaml"]
     )

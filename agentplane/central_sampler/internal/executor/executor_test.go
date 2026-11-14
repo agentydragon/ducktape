@@ -1592,6 +1592,73 @@ func TestExecutorReconnectsBeforeNextOperationWithoutReplayingMutation(t *testin
 	assertNoUnresolvedNestedIntents(t, store, owner)
 }
 
+func TestRetryableExecutorResumeFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "generic unavailable while opening remains retryable",
+			err:  &executorTransportError{phase: "open", cause: status.Error(codes.Unavailable, "Gateway unavailable")},
+			want: true,
+		},
+		{
+			name: "generic deadline while receiving remains retryable",
+			err:  &executorTransportError{phase: "receive", cause: status.Error(codes.DeadlineExceeded, "resume deadline")},
+			want: true,
+		},
+		{
+			name: "generic refusal after response is terminal",
+			err:  &executorTransportError{phase: "response", cause: status.Error(codes.Unavailable, "resume refused")},
+			want: false,
+		},
+		{
+			name: "non-transient transport status is terminal",
+			err:  &executorTransportError{phase: "open", cause: status.Error(codes.PermissionDenied, "resume denied")},
+			want: false,
+		},
+		{
+			name: "control route unavailable before initialize dispatch",
+			err: &executorEnvironmentFailureError{
+				method: executorMethodInitialize, state: executorpb.ExecutionEnvironmentFailure_STATE_CONTROL_ROUTE_UNAVAILABLE,
+				remoteOutcome: sessionstore.NestedNotDispatched,
+			},
+			want: true,
+		},
+		{
+			name: "control route unavailable for another method is terminal",
+			err: &executorEnvironmentFailureError{
+				method: executorMethodProcessRead, state: executorpb.ExecutionEnvironmentFailure_STATE_CONTROL_ROUTE_UNAVAILABLE,
+				remoteOutcome: sessionstore.NestedNotDispatched,
+			},
+			want: false,
+		},
+		{
+			name: "other environment states remain terminal",
+			err: &executorEnvironmentFailureError{
+				method: executorMethodInitialize, state: executorpb.ExecutionEnvironmentFailure_STATE_NOT_READY,
+				remoteOutcome: sessionstore.NestedNotDispatched,
+			},
+			want: false,
+		},
+		{
+			name: "unknown outcome remains terminal",
+			err: &executorEnvironmentFailureError{
+				method: executorMethodInitialize, state: executorpb.ExecutionEnvironmentFailure_STATE_CONTROL_ROUTE_UNAVAILABLE,
+				remoteOutcome: sessionstore.NestedUnknown,
+			},
+			want: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := retryableExecutorResumeFailure(tc.err); got != tc.want {
+				t.Fatalf("retryableExecutorResumeFailure(%T)=%t, want %t", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestReconcileProcessWaitsForSameSessionAcrossGatewayOutage(t *testing.T) {
 	store, owner, request := resumedExecutorStore(t, protocol.APIStyleResponses)
 	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
@@ -1608,11 +1675,6 @@ func TestReconcileProcessWaitsForSameSessionAcrossGatewayOutage(t *testing.T) {
 	}
 	client := &fakeExecutionClient{}
 	var reads []*executorpb.ReadProcessRequest
-	var starts atomic.Int32
-	client.start = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
-		starts.Add(1)
-		return nil, errors.New("Gateway recovery must not start a process")
-	}
 	client.read = func(_ context.Context, r *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 		reads = append(reads, proto.Clone(r).(*executorpb.ReadProcessRequest))
 		if len(reads) == 1 {
@@ -1620,15 +1682,25 @@ func TestReconcileProcessWaitsForSameSessionAcrossGatewayOutage(t *testing.T) {
 		}
 		return &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executorpb.ExecutionOutputChunk{{Seq: 6, Stream: "stdout", Data: []byte("after")}}, NextSeq: 7}, nil
 	}
-	offline := make(chan struct{})
+	gatewayUnavailable := make(chan struct{})
+	controlRouteUnavailable := make(chan struct{})
 	restored := make(chan struct{})
 	var resumes []*executorpb.OpenSessionRequest
-	routeUnavailable := executionEnvironmentStatusError(t, executorpb.ExecutionEnvironmentFailure_STATE_CONTROL_ROUTE_UNAVAILABLE)
+	var starts atomic.Int32
+	client.start = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+		starts.Add(1)
+		return nil, errors.New("retained-session recovery must not start a process")
+	}
+	routeUnavailableError := executionEnvironmentStatusError(t, executorpb.ExecutionEnvironmentFailure_STATE_CONTROL_ROUTE_UNAVAILABLE)
 	client.open = func(ctx context.Context, r *executorpb.OpenSessionRequest) (executorSessionStream, error) {
 		resumes = append(resumes, proto.Clone(r).(*executorpb.OpenSessionRequest))
 		if len(resumes) == 1 {
-			close(offline)
-			return nil, routeUnavailable
+			close(gatewayUnavailable)
+			return nil, status.Error(codes.Unavailable, "Gateway unavailable")
+		}
+		if len(resumes) == 2 {
+			close(controlRouteUnavailable)
+			return nil, routeUnavailableError
 		}
 		select {
 		case <-restored:
@@ -1646,7 +1718,12 @@ func TestReconcileProcessWaitsForSameSessionAcrossGatewayOutage(t *testing.T) {
 		_, err := e.ReconcileProcesses(t.Context(), 30*time.Millisecond)
 		result <- err
 	}()
-	<-offline
+	<-gatewayUnavailable
+	select {
+	case <-controlRouteUnavailable:
+	case <-time.After(e.reconnectTimeout):
+		t.Fatal("structured control-route refusal was not retried")
+	}
 	process, err := store.Process(t.Context(), owner, "running-process")
 	if err != nil {
 		t.Fatal(err)
@@ -1661,8 +1738,8 @@ func TestReconcileProcessWaitsForSameSessionAcrossGatewayOutage(t *testing.T) {
 	if len(reads) != 2 || !proto.Equal(reads[0], reads[1]) || reads[0].RequestId == "" {
 		t.Fatalf("read intent or cursor changed across reconnect: %+v", reads)
 	}
-	if len(resumes) < 2 {
-		t.Fatalf("Gateway outage was not retried: %+v", resumes)
+	if len(resumes) != 3 {
+		t.Fatalf("expected generic and structured resume refusals followed by one resume: %+v", resumes)
 	}
 	for _, resume := range resumes {
 		if resume.GetResumeSessionId() != "retained-executor" || resume.Scope.GetExpectedIncarnationUid() != "original" || resume.Scope.GetDestination().GetTarget().GetUid() != "sandbox-uid" {

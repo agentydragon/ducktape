@@ -44,7 +44,7 @@ fences. See [supervision](../supervision/docs/supervision.md).
 
 `EnvironmentRuntimeDesiredStates` is the sole environment lifecycle desire. Its mode, incarnation,
 seal UID and generation are distinct from observations. Runtime boot ID fences an external process
-lifetime; Sandbox/incarnation identity and Gateway connection epoch authorize external calls.
+lifetime; Sandbox/incarnation identity and Runtime boot ID authorize external calls.
 Session/app-server `EnvironmentGeneration` records the desired revision their controller observed.
 Session demand, app-server demand, Execution attempt generation, one-off operation ID and native
 process attempt ID retain their separate meanings.

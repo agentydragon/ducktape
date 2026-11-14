@@ -55,7 +55,6 @@ func sessionCallContext(r *Runtime, ctx context.Context) context.Context {
 		control.SandboxMetadata, r.config.Launch.Sandbox.UID,
 		control.IncarnationMetadata, uid,
 		control.BootMetadata, r.bootID,
-		control.EpochMetadata, "1",
 	))
 }
 

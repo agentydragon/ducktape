@@ -93,5 +93,16 @@ def test_controller_settings_are_mounted_and_gateway_token_is_projected(
     )
 
 
+def test_controller_rbac_keeps_only_leader_election_lease_access(staging_manifests: list[dict[str, Any]]) -> None:
+    role = _resource(staging_manifests, "Role", sandbox_controller.NAME.removeprefix("agentplane-"))
+    resources = {resource for rule in role["rules"] for resource in rule["resources"]}
+    assert "services" not in resources
+    assert one(rule for rule in role["rules"] if rule["resources"] == ["leases"])["verbs"] == [
+        "get",
+        "create",
+        "update",
+    ]
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

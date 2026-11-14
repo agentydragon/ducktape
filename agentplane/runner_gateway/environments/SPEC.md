@@ -63,16 +63,13 @@ diagnostics while suspended.
 - Suspend, delete, and policy changes require a complete namespace/name/UID handle and fence writes
   on the live UID and Kubernetes resourceVersion. Delete requires reported suspension. Uncertain
   outcomes stay uncertain; callers reconcile the same intent before deciding whether to retry.
-- A manager may change or clear `spec.identity` only before first status report or while the
-  current Sandbox reports `stopStage: Stopped`; Kubernetes admission is the final stop check.
-  EnvironmentService holds Dispatcher's exclusive per-Sandbox admission lock across a read of
-  retained Sessions and the Kubernetes patch. Any retained Session placed on that exact Sandbox
-  UID whose execution Identity name or UID differs is a refusal. Dispatcher currently has no
-  terminal lifecycle fact that proves a retained Session is no longer resumable, so this may
-  refuse a historical or failed Session. CreateSession holds the shared form of that lock and
-  rechecks the live Sandbox and execution Identity after acquiring it. The selected Identity is
-  revalidated by UID during the patch, but deletion and same-name recreation after that read
-  remain a cross-resource race because the Sandbox spec stores only a name.
+- A manager may change or clear `spec.identity` with an optimistic, UID/resourceVersion-fenced
+  Kubernetes patch. The CRD's CEL admission rule is the only stopped-state gate: the current
+  Sandbox must report `stopStage: Stopped` (or have no first status report). Retained Sessions
+  do not prevent rebinding and keep their recorded Identity. Dispatcher rechecks the live Identity
+  at admission, placement and command delivery; their next command fails `execution_identity_changed`.
+  The selected Identity is revalidated by UID during the patch, but deletion and same-name recreation
+  after that read remain a cross-resource race because the Sandbox spec stores only a name.
 - Get and watch require the complete Sandbox namespace/name/UID handle. Missing, replaced, deleting, or foreign targets are hidden as `NOT_FOUND` for Identity callers.
   Broad readers may see a deleting target and targets whose execution account is not yet present.
 - Ordinary ServiceAccount callers no longer discover Sandboxes through same-name account ownership.

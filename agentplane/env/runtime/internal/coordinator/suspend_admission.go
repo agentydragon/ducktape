@@ -20,9 +20,9 @@ func (r *Runtime) PrepareSuspend(ctx context.Context, request *environmentruntim
 		return nil, status.Error(codes.InvalidArgument, "positive generation and valid if_idle_since are required")
 	}
 	idleSinceMicros := request.IfIdleSince.AsTime().UnixMicro()
-	err := r.control.Admit(ctx, func(epoch *runtimecontrol.Epoch) error {
+	err := r.control.Admit(ctx, func(authorization *runtimecontrol.Authorization) error {
 		r.mu.Lock()
-		if epoch.IncarnationUID() != r.desired.IncarnationUID || r.closing || r.failed || !r.startupComplete || !r.admissionOpen || r.desired.Mode != lifecycle.Running {
+		if authorization.IncarnationUID() != r.desired.IncarnationUID || r.closing || r.failed || !r.startupComplete || !r.admissionOpen || r.desired.Mode != lifecycle.Running {
 			r.mu.Unlock()
 			return status.Error(codes.Unavailable, "environment Runtime is unavailable for suspension")
 		}
@@ -43,7 +43,7 @@ func (r *Runtime) PrepareSuspend(ctx context.Context, request *environmentruntim
 			return status.Error(codes.Aborted, "another suspension is prepared")
 		}
 		r.mu.Unlock()
-		// facts() enters r.mu and may read the lifecycle state. The epoch remains
+		// facts() enters r.mu and may read the lifecycle state. The authorization remains
 		// current through this callback; a new admission still clears idleSince.
 		facts, err := r.facts()
 		if err != nil {
@@ -51,7 +51,7 @@ func (r *Runtime) PrepareSuspend(ctx context.Context, request *environmentruntim
 		}
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		if epoch.IncarnationUID() != r.desired.IncarnationUID || r.closing || r.failed || !r.startupComplete || !r.admissionOpen || r.desired.Mode != lifecycle.Running {
+		if authorization.IncarnationUID() != r.desired.IncarnationUID || r.closing || r.failed || !r.startupComplete || !r.admissionOpen || r.desired.Mode != lifecycle.Running {
 			return status.Error(codes.Unavailable, "environment Runtime is unavailable for suspension")
 		}
 		if request.Generation == r.suspendGeneration && r.suspendPrepared && idleSinceMicros == r.suspendIdleSinceMicros {
@@ -83,10 +83,10 @@ func (r *Runtime) ResumeAdmission(ctx context.Context, request *environmentrunti
 	if request == nil || request.Generation <= 0 {
 		return nil, status.Error(codes.InvalidArgument, "positive generation is required")
 	}
-	err := r.control.Admit(ctx, func(epoch *runtimecontrol.Epoch) error {
+	err := r.control.Admit(ctx, func(authorization *runtimecontrol.Authorization) error {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		if epoch.IncarnationUID() != r.desired.IncarnationUID || r.closing || r.failed || !r.startupComplete {
+		if authorization.IncarnationUID() != r.desired.IncarnationUID || r.closing || r.failed || !r.startupComplete {
 			return status.Error(codes.Unavailable, "environment Runtime is unavailable for admission resume")
 		}
 		if request.Generation < r.suspendGeneration {

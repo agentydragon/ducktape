@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -98,7 +97,7 @@ func testRunnerHealthAndFencing(t *testing.T, mode environmentruntimetransport.S
 	defer controllerConn.Close()
 	bindTestIncarnation(t, environmentruntimepb.NewEnvironmentRuntimeClient(controllerConn), "sandbox-uid", "pod-uid-1")
 	watch, err := environmentruntimepb.NewEnvironmentRuntimeClient(conn).WatchState(ctx, &environmentruntimepb.WatchStateRequest{
-		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid-1", ConnectionEpoch: 1,
+		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid-1",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -107,66 +106,47 @@ func testRunnerHealthAndFencing(t *testing.T, mode environmentruntimetransport.S
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.GetEnvironmentRuntimeBootId() == "" || first.GetSandboxUid() != "sandbox-uid" || first.GetIncarnationUid() != "pod-uid-1" || first.GetConnectionEpoch() != 1 || first.GetFacts() == nil {
+	if first.GetEnvironmentRuntimeBootId() == "" || first.GetSandboxUid() != "sandbox-uid" || first.GetIncarnationUid() != "pod-uid-1" || first.GetFacts() == nil {
 		t.Fatalf("first WatchState response has invalid identity or facts: %v", first)
 	}
 
-	callContext := func(incarnation, bootID string, epoch uint64) context.Context {
+	callContext := func(incarnation, bootID string) context.Context {
 		return metadata.AppendToOutgoingContext(
 			ctx,
 			control.SandboxMetadata, "sandbox-uid",
 			control.IncarnationMetadata, incarnation,
 			control.BootMetadata, bootID,
-			control.EpochMetadata, uint64String(epoch),
 		)
 	}
 	statusClient := environmentruntimepb.NewEnvironmentRuntimeClient(conn)
-	for _, epoch := range []string{"", "0"} {
-		t.Run("epoch="+epoch, func(t *testing.T) {
-			call := func(incarnation, boot string) context.Context {
-				md, _ := metadata.FromOutgoingContext(callContext(incarnation, boot, 1))
-				md = md.Copy()
-				if epoch == "" {
-					md.Delete(control.EpochMetadata)
-				} else {
-					md.Set(control.EpochMetadata, epoch)
-				}
-				return metadata.NewOutgoingContext(ctx, md)
-			}
-			if _, err := statusClient.GetStatus(call("pod-uid-1", first.GetEnvironmentRuntimeBootId()), &sessionpb.GetStatusRequest{}); err != nil {
-				t.Fatalf("epoch-free GetStatus = %v", err)
-			}
-			for _, stale := range []context.Context{call("old-pod", first.GetEnvironmentRuntimeBootId()), call("pod-uid-1", "old-boot")} {
-				if _, err := statusClient.GetStatus(stale, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
-					t.Fatalf("stale epoch-free GetStatus = %v", err)
-				}
-			}
-		})
+	if _, err := statusClient.GetStatus(callContext("pod-uid-1", first.GetEnvironmentRuntimeBootId()), &sessionpb.GetStatusRequest{}); err != nil {
+		t.Fatalf("current GetStatus = %v", err)
+	}
+	for _, stale := range []context.Context{callContext("old-pod", first.GetEnvironmentRuntimeBootId()), callContext("pod-uid-1", "old-boot")} {
+		if _, err := statusClient.GetStatus(stale, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
+			t.Fatalf("stale GetStatus = %v", err)
+		}
 	}
 	if _, err := statusClient.GetStatus(ctx, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("GetStatus without fencing metadata = %v, want Unauthenticated", err)
 	}
-	if _, err := statusClient.GetStatus(callContext("pod-uid-1", "old-runner-boot", 1), &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
+	if _, err := statusClient.GetStatus(callContext("pod-uid-1", "old-runner-boot"), &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("GetStatus for old runner boot = %v, want Unavailable", err)
 	}
-	if _, err := statusClient.SubmitInput(callContext("pod-uid-1", "old-runner-boot", 1), &environmentruntimepb.SubmitInputRequest{
+	if _, err := statusClient.SubmitInput(callContext("pod-uid-1", "old-runner-boot"), &environmentruntimepb.SubmitInputRequest{
 		SessionId: "not-created", CommandId: "stale-boot-input", Text: "must not be admitted",
 	}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("SubmitInput for old runner boot = %v, want retryable rejection before admission", err)
 	}
-	currentStatus, err := statusClient.GetStatus(callContext("pod-uid-1", first.GetEnvironmentRuntimeBootId(), 1), &sessionpb.GetStatusRequest{})
+	currentStatus, err := statusClient.GetStatus(callContext("pod-uid-1", first.GetEnvironmentRuntimeBootId()), &sessionpb.GetStatusRequest{})
 	if err != nil {
 		t.Fatalf("current-epoch GetStatus: %v", err)
 	}
 	if currentStatus.GetEnvironmentRuntimeBootId() != first.GetEnvironmentRuntimeBootId() {
 		t.Fatalf("GetStatus boot ID = %q, WatchState boot ID = %q", currentStatus.GetEnvironmentRuntimeBootId(), first.GetEnvironmentRuntimeBootId())
 	}
-	if _, err := statusClient.GetStatus(callContext("pod-uid-1", first.GetEnvironmentRuntimeBootId(), 2), &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
-		t.Fatalf("stale GetStatus error = %v, want Unavailable", err)
-	}
-
 	newWatch, err := environmentruntimepb.NewEnvironmentRuntimeClient(conn).WatchState(ctx, &environmentruntimepb.WatchStateRequest{
-		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid-1", ConnectionEpoch: 2,
+		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid-1",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -175,14 +155,14 @@ func testRunnerHealthAndFencing(t *testing.T, mode environmentruntimetransport.S
 	if err != nil {
 		t.Fatal(err)
 	}
-	if second.GetIncarnationUid() != "pod-uid-1" || second.GetConnectionEpoch() != 2 {
+	if second.GetIncarnationUid() != "pod-uid-1" || second.GetEnvironmentRuntimeBootId() != first.GetEnvironmentRuntimeBootId() {
 		t.Fatalf("successor WatchState response = %v", second)
 	}
-	if _, err := statusClient.GetStatus(callContext("pod-uid-1", second.GetEnvironmentRuntimeBootId(), 2), &sessionpb.GetStatusRequest{}); err != nil {
-		t.Fatalf("successor watcher was deactivated by its predecessor: %v", err)
+	if _, err := statusClient.GetStatus(callContext("pod-uid-1", second.GetEnvironmentRuntimeBootId()), &sessionpb.GetStatusRequest{}); err != nil {
+		t.Fatalf("independent watcher changed call authorization: %v", err)
 	}
 	staleExecution, err := executorpb.NewExecutorClient(conn).OpenSession(
-		callContext("pod-uid-1", first.GetEnvironmentRuntimeBootId(), 1),
+		callContext("pod-uid-1", first.GetEnvironmentRuntimeBootId()),
 		&executorpb.OpenSessionRequest{
 			Scope: &executorpb.ExecutionScope{
 				Destination: &identitypb.SandboxDestination{
@@ -196,8 +176,8 @@ func testRunnerHealthAndFencing(t *testing.T, mode environmentruntimetransport.S
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := staleExecution.Recv(); status.Code(err) != codes.Unavailable {
-		t.Fatalf("OpenSession on a superseded epoch = %v, want Unavailable", err)
+	if _, err := staleExecution.Recv(); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("OpenSession for a stale incarnation = %v, want FailedPrecondition", err)
 	}
 }
 
@@ -291,7 +271,7 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 	defer controllerConn.Close()
 	bindTestIncarnation(t, environmentruntimepb.NewEnvironmentRuntimeClient(controllerConn), "sandbox-uid", "pod-uid")
 	watch, err := client.WatchState(watchCtx, &environmentruntimepb.WatchStateRequest{
-		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid", ConnectionEpoch: 1,
+		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -300,21 +280,20 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	callContext := func(parent context.Context, epoch uint64, bootID string) context.Context {
+	callContext := func(parent context.Context, bootID string) context.Context {
 		return metadata.AppendToOutgoingContext(
 			parent,
 			control.SandboxMetadata, "sandbox-uid",
 			control.IncarnationMetadata, "pod-uid",
 			control.BootMetadata, bootID,
-			control.EpochMetadata, uint64String(epoch),
 		)
 	}
-	if _, err := client.CreateSession(callContext(ctx, 1, first.GetEnvironmentRuntimeBootId()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := client.CreateSession(callContext(ctx, first.GetEnvironmentRuntimeBootId()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
 	submitCtx, cancelSubmit := context.WithCancel(ctx)
 	cancelFirst = cancelSubmit
-	if _, err := client.SubmitInput(callContext(submitCtx, 1, first.GetEnvironmentRuntimeBootId()), &environmentruntimepb.SubmitInputRequest{
+	if _, err := client.SubmitInput(callContext(submitCtx, first.GetEnvironmentRuntimeBootId()), &environmentruntimepb.SubmitInputRequest{
 		SessionId: "session-1", CommandId: "same-command", Text: "hello",
 	}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("first direct SubmitInput error = %v, want the simulated lost reply", err)
@@ -327,37 +306,36 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 		t.Fatal("lost reply did not carry a durable admission cursor")
 	}
 	cancelWatch()
-	deadline := time.Now().Add(time.Second)
+	var watchErr error
 	for {
-		_, err := client.GetStatus(callContext(ctx, 1, first.GetEnvironmentRuntimeBootId()), &sessionpb.GetStatusRequest{})
-		if status.Code(err) == codes.Unavailable {
+		_, watchErr = watch.Recv()
+		if watchErr != nil {
 			break
 		}
-		if err != nil {
-			t.Fatalf("GetStatus while waiting for canceled WatchState = %v", err)
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("GetStatus remained available after WatchState cancellation")
-		}
 	}
-	watch, err = client.WatchState(ctx, &environmentruntimepb.WatchStateRequest{
-		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid", ConnectionEpoch: 2,
-	})
-	if err != nil {
-		t.Fatal(err)
+	if status.Code(watchErr) != codes.Canceled {
+		t.Fatalf("Gateway watch cancellation = %v, want Canceled", watchErr)
 	}
-	second, err := watch.Recv()
-	if err != nil {
-		t.Fatal(err)
+	if _, err := client.GetStatus(callContext(ctx, first.GetEnvironmentRuntimeBootId()), &sessionpb.GetStatusRequest{}); err != nil {
+		t.Fatalf("GetStatus after canceled WatchState: %v", err)
 	}
-	retry, err := client.SubmitInput(callContext(ctx, 2, second.GetEnvironmentRuntimeBootId()), &environmentruntimepb.SubmitInputRequest{
+	retry, err := client.SubmitInput(callContext(ctx, first.GetEnvironmentRuntimeBootId()), &environmentruntimepb.SubmitInputRequest{
 		SessionId: "session-1", CommandId: "same-command", Text: "hello",
 	})
 	if err != nil {
-		t.Fatalf("retry with the admitted command ID: %v", err)
+		t.Fatalf("retry with the admitted command ID after observer loss: %v", err)
 	}
 	if retry.GetAdmission().GetCursor() != firstCursor {
 		t.Fatalf("retry cursor=%d, want original %d", retry.GetAdmission().GetCursor(), firstCursor)
+	}
+	next, err := client.SubmitInput(callContext(ctx, first.GetEnvironmentRuntimeBootId()), &environmentruntimepb.SubmitInputRequest{
+		SessionId: "session-1", CommandId: "next-command", Text: "world",
+	})
+	if err != nil {
+		t.Fatalf("next input after observer loss: %v", err)
+	}
+	if next.GetAdmission().GetCursor() <= firstCursor {
+		t.Fatalf("next input cursor=%d, want greater than retained cursor %d", next.GetAdmission().GetCursor(), firstCursor)
 	}
 }
 
@@ -404,7 +382,7 @@ func TestForwardRunnerRejectsUnconfiguredExecutionSession(t *testing.T) {
 	defer controllerConn.Close()
 	bindTestIncarnation(t, environmentruntimepb.NewEnvironmentRuntimeClient(controllerConn), "sandbox-uid", "pod-uid")
 	watch, err := environmentruntimepb.NewEnvironmentRuntimeClient(conn).WatchState(ctx, &environmentruntimepb.WatchStateRequest{
-		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid", ConnectionEpoch: 1,
+		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -418,7 +396,6 @@ func TestForwardRunnerRejectsUnconfiguredExecutionSession(t *testing.T) {
 		control.SandboxMetadata, "sandbox-uid",
 		control.IncarnationMetadata, "pod-uid",
 		control.BootMetadata, first.GetEnvironmentRuntimeBootId(),
-		control.EpochMetadata, "1",
 	)
 	executorClient := executorpb.NewExecutorClient(conn)
 	refused, err := executorClient.OpenSession(callContext, &executorpb.OpenSessionRequest{
@@ -545,10 +522,6 @@ func TestForwardRunnerBackpressuresExecutorOutputBurst(t *testing.T) {
 	}
 }
 
-func uint64String(value uint64) string {
-	return strconv.FormatUint(value, 10)
-}
-
 func TestControllerBindsRuntimeForIndependentAuthenticatedGatewayReplicas(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
 	runnerURI, err := (workloadid.ID{Namespace: "test", Name: "sandbox", CredentialID: "credential-id"}).URI()
@@ -593,17 +566,14 @@ func TestControllerBindsRuntimeForIndependentAuthenticatedGatewayReplicas(t *tes
 	passiveRequest := &environmentruntimepb.WatchStateRequest{
 		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid", ObserveOnly: true,
 	}
-	// A Gateway's service identity cannot choose the workload UID, even with a
-	// legacy high epoch. Both replicas wait for the Controller's credential-bound observation.
+	// Gateway replicas cannot choose the workload UID before the Controller binds it.
 	for _, client := range []environmentruntimepb.EnvironmentRuntimeClient{gateway, gatewayB} {
-		for _, epoch := range []uint64{0, 7} {
-			stream, err := client.WatchState(ctx, &environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid", ConnectionEpoch: epoch})
-			if err == nil {
-				_, err = stream.Recv()
-			}
-			if status.Code(err) != codes.Unavailable {
-				t.Fatalf("Gateway established incarnation before Controller: %v", err)
-			}
+		stream, err := client.WatchState(ctx, &environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid"})
+		if err == nil {
+			_, err = stream.Recv()
+		}
+		if status.Code(err) != codes.Unavailable {
+			t.Fatalf("Gateway established incarnation before Controller: %v", err)
 		}
 	}
 	passive, err := controller.WatchState(passiveCtx, passiveRequest)
@@ -614,7 +584,7 @@ func TestControllerBindsRuntimeForIndependentAuthenticatedGatewayReplicas(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if initial.GetConnectionEpoch() != 0 || initial.GetFacts() == nil || initial.GetEnvironmentRuntimeBootId() == "" || initial.GetIncarnationUid() != "pod-uid" {
+	if initial.GetFacts() == nil || initial.GetEnvironmentRuntimeBootId() == "" || initial.GetIncarnationUid() != "pod-uid" {
 		t.Fatalf("passive snapshot = %v", initial)
 	}
 	gatewayWatchCtx, cancelGatewayWatch := context.WithCancel(ctx)
@@ -635,7 +605,7 @@ func TestControllerBindsRuntimeForIndependentAuthenticatedGatewayReplicas(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snapshotA.GetConnectionEpoch() != 0 || snapshotB.GetConnectionEpoch() != 0 || snapshotA.GetEnvironmentRuntimeBootId() != initial.GetEnvironmentRuntimeBootId() || snapshotB.GetEnvironmentRuntimeBootId() != initial.GetEnvironmentRuntimeBootId() {
+	if snapshotA.GetEnvironmentRuntimeBootId() != initial.GetEnvironmentRuntimeBootId() || snapshotB.GetEnvironmentRuntimeBootId() != initial.GetEnvironmentRuntimeBootId() {
 		t.Fatalf("independent Gateway snapshots: %v, %v", snapshotA, snapshotB)
 	}
 	call := func(uid, incarnation, boot string) context.Context {
@@ -663,24 +633,10 @@ func TestControllerBindsRuntimeForIndependentAuthenticatedGatewayReplicas(t *tes
 		t.Fatalf("Gateway A watch cancellation: %v", err)
 	}
 	checkReplicas()
-	// A legacy same-incarnation observer can overlap epochless observers during the roll.
-	watch, err := gateway.WatchState(ctx, &environmentruntimepb.WatchStateRequest{
-		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid", ConnectionEpoch: 7,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	active, err := watch.Recv()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if active.GetConnectionEpoch() != 7 || active.GetEnvironmentRuntimeBootId() != initial.GetEnvironmentRuntimeBootId() {
-		t.Fatalf("Gateway snapshot = %v, passive snapshot = %v", active, initial)
-	}
 	callCtx := metadata.AppendToOutgoingContext(
 		ctx,
 		control.SandboxMetadata, "sandbox-uid", control.IncarnationMetadata, "pod-uid",
-		control.BootMetadata, active.GetEnvironmentRuntimeBootId(), control.EpochMetadata, "7",
+		control.BootMetadata, initial.GetEnvironmentRuntimeBootId(),
 	)
 	for _, test := range []struct {
 		name    string
@@ -688,14 +644,12 @@ func TestControllerBindsRuntimeForIndependentAuthenticatedGatewayReplicas(t *tes
 		request *environmentruntimepb.WatchStateRequest
 		code    codes.Code
 	}{
-		{name: "Controller cannot claim epoch", client: controller, request: &environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid", ConnectionEpoch: 8}, code: codes.Unauthenticated},
 		{name: "Gateway cannot observe passively", client: gateway, request: passiveRequest, code: codes.Unauthenticated},
+		{name: "Controller cannot open Gateway watch", client: controller, request: &environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid"}, code: codes.Unauthenticated},
 		{name: "foreign Sandbox", client: controller, request: &environmentruntimepb.WatchStateRequest{SandboxUid: "foreign", IncarnationUid: "pod-uid", ObserveOnly: true}, code: codes.PermissionDenied},
 		{name: "missing Sandbox", client: controller, request: &environmentruntimepb.WatchStateRequest{IncarnationUid: "pod-uid", ObserveOnly: true}, code: codes.InvalidArgument},
 		{name: "missing incarnation", client: controller, request: &environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox-uid", ObserveOnly: true}, code: codes.InvalidArgument},
-		{name: "passive epoch must be zero", client: controller, request: &environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid", ConnectionEpoch: 8, ObserveOnly: true}, code: codes.InvalidArgument},
-		{name: "Gateway cannot adopt old UID without epoch", client: gateway, request: &environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox-uid", IncarnationUid: "old-pod"}, code: codes.FailedPrecondition},
-		{name: "legacy Gateway cannot adopt old UID with high epoch", client: gatewayB, request: &environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox-uid", IncarnationUid: "old-pod", ConnectionEpoch: 999}, code: codes.FailedPrecondition},
+		{name: "Gateway cannot adopt old UID", client: gateway, request: &environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox-uid", IncarnationUid: "old-pod"}, code: codes.FailedPrecondition},
 		{name: "passive cannot replace incarnation", client: controller, request: &environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox-uid", IncarnationUid: "replacement", ObserveOnly: true}, code: codes.FailedPrecondition},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -729,22 +683,12 @@ func TestControllerBindsRuntimeForIndependentAuthenticatedGatewayReplicas(t *tes
 	if _, err := executorpb.NewExecutorClient(controllerConn).StartProcess(callCtx, &executorpb.StartProcessRequest{}); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("Controller Executor call with valid Gateway metadata = %v", err)
 	}
-	md, _ := metadata.FromOutgoingContext(callCtx)
-	md = md.Copy()
-	md.Delete(control.EpochMetadata)
-	epochFree := metadata.NewOutgoingContext(ctx, md)
-	if _, err := controller.GetStatus(epochFree, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unauthenticated {
-		t.Fatalf("Controller epoch-free GetStatus = %v", err)
-	}
-	if _, err := executorpb.NewExecutorClient(controllerConn).StartProcess(epochFree, &executorpb.StartProcessRequest{}); status.Code(err) != codes.Unauthenticated {
-		t.Fatalf("Controller epoch-free Executor call = %v", err)
-	}
-	// Start another passive stream after the exclusive epoch is established.
+	// Controller observation may overlap Gateway observation without owning its lifetime.
 	second, err := controller.WatchState(ctx, passiveRequest)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snapshot, err := second.Recv(); err != nil || snapshot.GetConnectionEpoch() != 0 {
+	if snapshot, err := second.Recv(); err != nil || snapshot.GetEnvironmentRuntimeBootId() != initial.GetEnvironmentRuntimeBootId() {
 		t.Fatalf("concurrent passive snapshot = %v, error = %v", snapshot, err)
 	}
 	cancelPassive()
@@ -753,7 +697,7 @@ func TestControllerBindsRuntimeForIndependentAuthenticatedGatewayReplicas(t *tes
 	}
 	checkReplicas()
 	if _, err := gateway.GetStatus(callCtx, &sessionpb.GetStatusRequest{}); err != nil {
-		t.Fatalf("Gateway epoch after passive cancellation: %v", err)
+		t.Fatalf("Gateway call after passive cancellation: %v", err)
 	}
 }
 
@@ -816,7 +760,7 @@ func TestPassiveWatchAdoptsReplacementAfterRestoringSealedState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if response, err := watch.Recv(); err != nil || response.GetIncarnationUid() != "new-pod" || response.GetConnectionEpoch() != 0 || response.GetFacts() == nil {
+	if response, err := watch.Recv(); err != nil || response.GetIncarnationUid() != "new-pod" || response.GetFacts() == nil {
 		t.Fatalf("replacement passive observation = %v, error=%v", response, err)
 	}
 	if uid, known := r.state.IncarnationUID(); !known || uid != "new-pod" {

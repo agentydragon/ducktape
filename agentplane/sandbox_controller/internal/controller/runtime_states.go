@@ -18,7 +18,7 @@ import (
 
 const runtimeStateTimeout = 30 * time.Second
 
-// RuntimeWatcher observes facts without acquiring the Gateway's admission epoch.
+// RuntimeWatcher observes facts for one Pod incarnation.
 type RuntimeWatcher interface {
 	Watch(context.Context, *sandboxapi.Sandbox, *corev1.Pod, string, func(*environmentruntimepb.WatchStateResponse) error) error
 }
@@ -164,7 +164,7 @@ func (s *RuntimeStates) observe(ctx context.Context, key types.NamespacedName, o
 		s.mu.Unlock()
 		err := s.Watcher.Watch(ctx, observation.sandbox, observation.pod, observation.credentialID, func(response *environmentruntimepb.WatchStateResponse) error {
 			if response.GetSandboxUid() != string(observation.sandbox.UID) || response.GetIncarnationUid() != string(observation.pod.UID) ||
-				response.GetEnvironmentRuntimeBootId() == "" || response.GetConnectionEpoch() != 0 || response.GetFacts() == nil {
+				response.GetEnvironmentRuntimeBootId() == "" || response.GetFacts() == nil {
 				return fmt.Errorf("Runtime state has invalid incarnation or facts")
 			}
 			facts, err := runtimeFactsFromProto(response.Facts)

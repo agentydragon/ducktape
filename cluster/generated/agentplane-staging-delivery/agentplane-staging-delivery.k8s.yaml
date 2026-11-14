@@ -41,10 +41,6 @@ spec:
                 secretKeyRef:
                   key: uri
                   name: postgres-session-dispatcher
-            - name: AGENTPLANE_RUNNER_GATEWAY_POD_IP
-              valueFrom:
-                fieldRef:
-                  fieldPath: status.podIP
             - name: OTEL_SERVICE_NAME
               value: runner-gateway
             - name: OTEL_RESOURCE_ATTRIBUTES
@@ -342,7 +338,6 @@ data:
     gateway_tls:
       ca_file: /run/agentplane/workload-trust/ca-certificates.crt
       server_uri: spiffe://agentplane/session-dispatcher
-    proxy_port: 8080
     runner_control_target_template: runner-gateway.{namespace}.svc:8080
     dispatcher_audience: session-dispatcher
     gateway_audience: agentplane-runner-gateway
@@ -675,16 +670,6 @@ rules:
       - coordination.k8s.io
     resources:
       - leases
-    verbs:
-      - get
-      - list
-      - watch
-      - create
-      - update
-  - apiGroups:
-      - discovery.k8s.io
-    resources:
-      - endpointslices
     verbs:
       - get
       - create

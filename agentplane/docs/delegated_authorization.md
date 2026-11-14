@@ -152,7 +152,10 @@ trusts the admitted delegator's assertion and applies its own authorization. Act
 correlation, not capabilities or evidence that a human approved anything.
 
 Where a backend durably admits an operation, retain actor, effective caller and provenance with
-that admission. Keep the Session's logical execution principal separate from both its creator and
+that admission. Native `CreateSession` applies the effective Identity's current `bind_session`
+grant; the new Session executes as the placed Sandbox's exact live Identity. Its creator may recover
+only the exact creation receipt after grant removal; creator status grants no Session read, command
+or attachment authority. Keep the Session's logical execution principal separate from both its creator and
 the peer writing evidence. Do not store bearer tokens or Action lease tokens in these records.
 
 Delegation changes neither idempotency nor operation ownership. Existing Session/command IDs,

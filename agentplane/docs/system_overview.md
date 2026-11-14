@@ -133,8 +133,8 @@ flowchart LR
     sidecar -->|OTLP/gRPC| alloy
     guest -.->|OTLP/gRPC telemetry route| relay
     relay -->|OTLP/gRPC| alloy
-    gw -->|mTLS Runner / Executor; zero-epoch WatchState; UID and boot fences| runtime
-    gw -->|mTLS Runner / Executor; zero-epoch WatchState; UID and boot fences| vmruntime
+    gw -->|mTLS Runner / Executor; independent WatchState; UID and boot fences| runtime
+    gw -->|mTLS Runner / Executor; independent WatchState; UID and boot fences| vmruntime
     runner -.->|History mTLS through CONNECT| sidecar
     sidecar -.->|opaque History TLS| egress
     egress -.->|opaque SessionJournalIngress.Push TLS| hs
@@ -208,14 +208,14 @@ embeds files through an embedding endpoint and owns its own PostgreSQL database
   view, folded by the History Service. Runners push Events to the History Service, the only way into
   retained history.
 - **Runner control uses native gRPC.** Every Gateway replica independently dials each current
-  Runtime's private server using mTLS and opens a zero-epoch state watch. Its calls carry the live
+  Runtime's private server using mTLS and opens a state watch. Its calls carry the live
   Sandbox UID, accepted workload Pod UID and observed Runtime boot ID. The Sandbox Controller's
   direct mTLS `observe_only` watch binds the workload UID before the first facts snapshot; the
   Controller keeps those facts in memory per Sandbox, incarnation and boot. Gateway watches cannot
   select or replace that binding. Callers use the stable `runner-gateway` Service; no Gateway
   connection Lease or per-Sandbox `<sandbox>-control` EndpointSlice decides Runtime call ownership.
-  The Runtime protocol retains epoch compatibility for older Gateway images during the rollback
-  window ([runner control](runner_control.md)). History push and ordinary Sandbox egress retain
+  Loss of one observation does not revoke another Gateway replica's calls or Runtime-owned admitted
+  work. History push and ordinary Sandbox egress retain
   their sidecar or VM relay paths; History terminates and verifies the Runtime SVID itself.
 - **Telemetry uses Alloy as its collector.** SDK-instrumented services export OTLP/gRPC to Alloy.
   Browser spans post to the same-origin App relay, which forwards OTLP/HTTP to Alloy. Runner spans use
@@ -285,7 +285,7 @@ flowchart LR
     dispatcher -->|central opens + commands: Sampler gRPC| central
     sandboxctl -->|Quiesce| gateway
     sandboxctl -->|passive WatchState binds workload UID and observes facts: mTLS gRPC| runtime
-    dispatcher -->|Sandbox watch| k8s
+    dispatcher -->|Sandbox + independent environment-policy watches| k8s
     dispatcher -->|automatic wake assessment + request| lifecycle
     lifecycle -->|guarded running + generation update| k8s
     pod -.->|Session and EnvironmentService gRPC over HTTPS_PROXY/CONNECT| sidecar
@@ -309,7 +309,11 @@ continues to use the configured Dispatcher audience and a pod-bound Actions toke
 `EnvironmentService.ResumeEnvironment` method. The receiver applies the caller identity from the
 shared delegation envelope, then checks the current Sandbox and explicit Identity resume grant.
 The lifecycle consumer watches PolicySets, PolicyBindings and Identities through its typed policy index;
-a failed policy watch refuses explicit Identity resume while implied self-reads remain available. The integration app uses its own Pod-bound
+a failed policy watch refuses explicit Identity resume while implied self-reads remain available.
+Dispatcher constructs its own environment-policy index and watches for native Identity `CreateSession`
+with `bind_session`; it records the placed Sandbox's exact live Identity as the Session principal,
+and retains the effective creator and actor separately. These consumers share an evaluator library,
+not an in-process index. The integration app uses its own Pod-bound
 token as a distinct operator broker; it does not forward browser identity. Resume acceptance is not
 readiness, and no resume path replays Session input or creates a grant.
 Dispatcher automatic wake uses the same lifecycle manager with the original effective caller
@@ -444,7 +448,7 @@ flowchart LR
       sessions -->|journal inventory| delivery
     end
     history[History ingress]
-    gateway -->|mTLS Runner / Executor; zero-epoch WatchState; UID and boot fences| runtime
+    gateway -->|mTLS Runner / Executor; independent WatchState; UID and boot fences| runtime
     policy_api[Kubernetes PolicySets / PolicyBindings / Identities]
     gateway -->|list/watch grants; patch EnvironmentReady| policy_api
     sandboxctl[Sandbox Controller] -->|passive WatchState binds workload UID and observes facts: mTLS gRPC| runtime
@@ -452,11 +456,10 @@ flowchart LR
 ```
 
 Runtime owns the components and one desired lifecycle revision. Native Session admission rechecks
-that accepted revision and the public caller epoch before durable work. Component observations
+that accepted revision and the fenced caller identity before durable work. Component observations
 prove native cleanup; Execution fencing precedes journal sealing, and exact durable History ACKs
-precede delivery/journal closure and owner release. The Runtime endpoint still accepts legacy
-nonzero connection epochs for Gateway rollback compatibility; zero-epoch calls use the immutable
-Controller-bound Sandbox and incarnation identity plus the Runtime boot ID. Central sampler remains
+precede delivery/journal closure and owner release. Calls use the immutable Controller-bound
+Sandbox and incarnation identity plus the Runtime boot ID. Central sampler remains
 a separate control-plane process.
 
 ## Codex execution inside a Sandbox
@@ -698,7 +701,8 @@ The app has independent `action_federation.service_url` and `connection_service_
 Both tiers send operator Connection calls and gRPC health probes to the [MCP edge](../mcp_edge/README.md).
 Staging's external MCP/OAuth routes terminate there too, preserving the public issuer/resource URLs.
 Actions retains upstream MCP linkage and its public client metadata. The edge verifies operator OIDC separately from
-external MCP bearers and forwards workload calls under the bound ServiceAccount's token.
+external MCP bearers and forwards workload calls under the bound ServiceAccount's token. Its optional TLS gRPC listener
+also checks configured service SVIDs; operator OIDC remains required and determines Connection authority.
 
 ## Staged Action Service certificate admission
 

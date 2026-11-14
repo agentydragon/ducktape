@@ -52,7 +52,7 @@ type observedRunner struct {
 
 func (r *observedRunner) WatchState(request *environmentruntimepb.WatchStateRequest, stream grpc.ServerStreamingServer[environmentruntimepb.WatchStateResponse]) error {
 	if request.GetSandboxUid() != r.sandboxUID || request.GetIncarnationUid() != r.incarnationUID ||
-		request.GetConnectionEpoch() != 0 || request.GetObserveOnly() {
+		request.GetObserveOnly() {
 		return status.Error(codes.FailedPrecondition, "invalid Runtime observation fence")
 	}
 	if err := stream.Send(&environmentruntimepb.WatchStateResponse{
@@ -80,9 +80,6 @@ func (r *observedRunner) validateFence(ctx context.Context) error {
 		if got[0] != want {
 			return status.Errorf(codes.FailedPrecondition, "Runtime request has stale %s", key)
 		}
-	}
-	if len(md.Get("agentplane-connection-epoch")) != 0 {
-		return status.Error(codes.InvalidArgument, "Runtime request must not carry a connection epoch")
 	}
 	return nil
 }
@@ -629,7 +626,7 @@ type echoForwardExecutor struct {
 func (*echoForwardExecutor) OpenSession(_ *executorpb.OpenSessionRequest, stream grpc.ServerStreamingServer[executorpb.OpenSessionResponse]) error {
 	md, _ := metadata.FromIncomingContext(stream.Context())
 	if len(md.Get("agentplane-environment-runtime-boot-id")) != 1 || len(md.Get("agentplane-sandbox-uid")) != 1 ||
-		len(md.Get("agentplane-incarnation-uid")) != 1 || len(md.Get("agentplane-connection-epoch")) != 0 {
+		len(md.Get("agentplane-incarnation-uid")) != 1 {
 		return status.Error(codes.PermissionDenied, "missing executor fence")
 	}
 	if err := stream.Send(&executorpb.OpenSessionResponse{
@@ -646,7 +643,7 @@ func (*echoForwardExecutor) OpenSession(_ *executorpb.OpenSessionRequest, stream
 func (*echoForwardExecutor) StartProcess(ctx context.Context, request *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
 	if len(md.Get("agentplane-environment-runtime-boot-id")) != 1 || len(md.Get("agentplane-sandbox-uid")) != 1 ||
-		len(md.Get("agentplane-incarnation-uid")) != 1 || len(md.Get("agentplane-connection-epoch")) != 0 {
+		len(md.Get("agentplane-incarnation-uid")) != 1 {
 		return nil, status.Error(codes.PermissionDenied, "missing executor fence")
 	}
 	return &executorpb.StartProcessResponse{
@@ -694,7 +691,7 @@ type reconnectingRunner struct {
 
 func (r *reconnectingRunner) WatchState(request *environmentruntimepb.WatchStateRequest, stream grpc.ServerStreamingServer[environmentruntimepb.WatchStateResponse]) error {
 	if request.GetSandboxUid() != r.sandboxUID || request.GetIncarnationUid() != r.incarnationUID ||
-		request.GetConnectionEpoch() != 0 || request.GetObserveOnly() {
+		request.GetObserveOnly() {
 		return status.Error(codes.FailedPrecondition, "invalid Runtime observation fence")
 	}
 	observation := r.observations.Add(1)
@@ -725,9 +722,8 @@ func (r *reconnectingRunner) GetStatus(ctx context.Context, _ *sessionpb.GetStat
 	if got := md.Get("agentplane-incarnation-uid"); len(got) != 1 || got[0] != r.incarnationUID {
 		return nil, status.Error(codes.FailedPrecondition, "stale Runtime incarnation")
 	}
-	if got := md.Get("agentplane-environment-runtime-boot-id"); len(got) != 1 || got[0] != fmt.Sprintf("boot-%d", r.observations.Load()) ||
-		len(md.Get("agentplane-connection-epoch")) != 0 {
-		return nil, status.Error(codes.Unavailable, "stale Runtime boot or epoch metadata")
+	if got := md.Get("agentplane-environment-runtime-boot-id"); len(got) != 1 || got[0] != fmt.Sprintf("boot-%d", r.observations.Load()) {
+		return nil, status.Error(codes.Unavailable, "stale Runtime boot metadata")
 	}
 	return &sessionpb.EnvironmentRuntimeStatus{}, nil
 }

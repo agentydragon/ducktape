@@ -25,15 +25,14 @@ const (
 	settingPrefix            = "AGENTPLANE_RUNNER_GATEWAY_"
 	dispatcherDatabaseURLEnv = settingPrefix + "DISPATCHER_DATABASE_URL"
 	runnerGatewayPodNameEnv  = settingPrefix + "POD_NAME"
-	runnerGatewayPodIPEnv    = settingPrefix + "POD_IP"
 )
 
 // config is the Gateway's deployment contract: static settings come from the YAML file named by
-// AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE. The database URL, Pod name and Pod IP are explicit runtime inputs.
+// AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE. The database URL and Pod name are explicit runtime inputs.
 // Callers and the controller account are written `namespace/name`.
 //
-// The database URL is a Secret and the Pod IP comes from the Downward API, so both are environment
-// values. Kubernetes sets the Pod hostname to its name unless an explicit hostname is configured.
+// The database URL is a Secret environment value. Kubernetes sets the Pod hostname to its name unless an
+// explicit hostname is configured.
 type config struct {
 	RuntimeProxyReaders           []string         `mapstructure:"runtime_proxy_readers"`
 	RuntimeProxySessionCallers    []string         `mapstructure:"runtime_proxy_session_callers"`
@@ -42,17 +41,14 @@ type config struct {
 	RunnerSecurity                peertls.Security `mapstructure:"runner_security"`
 	Namespace                     string           `mapstructure:"sandbox_namespace"`
 	// PolicyNamespace holds the Identities a workload SVID may name.
-	PolicyNamespace       string             `mapstructure:"policy_namespace"`
-	DispatcherDatabaseURL string             `mapstructure:"-"`
-	PodName               string             `mapstructure:"-"`
-	PodIP                 string             `mapstructure:"-"`
-	RunnerTokenFile       string             `mapstructure:"runner_token_file"`
-	Kubeconfig            string             `mapstructure:"kubeconfig"`
-	KubernetesClientQPS   float32            `mapstructure:"kubernetes_client_qps"`
-	RPC                   listener.Config    `mapstructure:"rpc"`
-	GatewayTLS            *peertls.ClientTLS `mapstructure:"gateway_tls"`
-	// CLEANUP(added 2026-11-14): Remove proxy_port after the route-removal image is pinned.
-	ProxyPort                    int                      `mapstructure:"proxy_port"`
+	PolicyNamespace              string                   `mapstructure:"policy_namespace"`
+	DispatcherDatabaseURL        string                   `mapstructure:"-"`
+	PodName                      string                   `mapstructure:"-"`
+	RunnerTokenFile              string                   `mapstructure:"runner_token_file"`
+	Kubeconfig                   string                   `mapstructure:"kubeconfig"`
+	KubernetesClientQPS          float32                  `mapstructure:"kubernetes_client_qps"`
+	RPC                          listener.Config          `mapstructure:"rpc"`
+	GatewayTLS                   *peertls.ClientTLS       `mapstructure:"gateway_tls"`
 	RunnerControlTargetTemplate  string                   `mapstructure:"runner_control_target_template"`
 	DispatcherAudience           string                   `mapstructure:"dispatcher_audience"`
 	GatewayAudience              string                   `mapstructure:"gateway_audience"`
@@ -99,7 +95,6 @@ type delegationConfig struct {
 
 func defaultConfig() config {
 	return config{
-		ProxyPort:                   sandboxapi.ControlServicePort,
 		RunnerControlTargetTemplate: sandboxapi.RunnerGatewayTargetTemplate(),
 		QueueCap:                    1000, WatchLeaseSeconds: 300, RunnerTimeoutSeconds: 10,
 	}
@@ -143,7 +138,6 @@ func loadConfig() (config, error) {
 	}
 	c.DispatcherDatabaseURL = os.Getenv(dispatcherDatabaseURLEnv)
 	c.PodName = os.Getenv(runnerGatewayPodNameEnv)
-	c.PodIP = os.Getenv(runnerGatewayPodIPEnv)
 	c.RuntimeCatalog.Models.NormalizeHarnessNames()
 	if strings.TrimSpace(c.PodName) == "" {
 		var err error
@@ -232,7 +226,6 @@ func (c *config) validate() error {
 		{"sandbox_namespace", c.Namespace},
 		{"policy_namespace", c.PolicyNamespace},
 		{"dispatcher_database_url", c.DispatcherDatabaseURL},
-		{"pod_ip", c.PodIP},
 		{"runner_token_file", c.RunnerTokenFile},
 		{"dispatcher_audience", c.DispatcherAudience},
 		{"gateway_audience", c.GatewayAudience},
@@ -276,9 +269,6 @@ func (c *config) validate() error {
 	if c.Delegation != nil && (c.Delegation.Actor.Namespace == "" || c.Delegation.Actor.Name == "" ||
 		!c.Delegation.IdentityCallers || len(c.Delegation.Methods) == 0) {
 		return errors.New("delegation requires an actor, identity_callers, and methods")
-	}
-	if c.ProxyPort < 1 || c.ProxyPort > 65535 {
-		return errors.New("proxy_port must be between 1 and 65535")
 	}
 	if math.IsNaN(float64(c.KubernetesClientQPS)) || math.IsInf(float64(c.KubernetesClientQPS), 0) {
 		return errors.New("kubernetes_client_qps must be finite")

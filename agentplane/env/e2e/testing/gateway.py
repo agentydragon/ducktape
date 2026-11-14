@@ -102,11 +102,6 @@ class ControlListener:
         self._watch_task: asyncio.Task[None] | None = None
         self._connected = asyncio.Condition()
         self._ready_connection = 0
-        self._connection_epoch = 0
-
-    @property
-    def connection_epoch(self) -> int:
-        return self._connection_epoch
 
     async def connect(self, endpoint: EnvironmentRuntimeControl, sandbox_uid: str) -> None:
         """Dial the Runner and establish its state watch, retrying until it is ready."""
@@ -114,15 +109,12 @@ class ControlListener:
         await bind_incarnation(endpoint, sandbox_uid, self.incarnation_uid, self._controller_credentials)
         deadline = asyncio.get_running_loop().time() + 30
         while True:
-            self._connection_epoch += 1
             channel = await self._new_channel(endpoint)
             watch: grpc.aio.UnaryStreamCall | None = None
             try:
                 watch = environment_runtime_pb2_grpc.EnvironmentRuntimeStub(channel).WatchState(
                     environment_runtime_pb2.WatchStateRequest(
-                        sandbox_uid=sandbox_uid,
-                        incarnation_uid=self.incarnation_uid,
-                        connection_epoch=self._connection_epoch,
+                        sandbox_uid=sandbox_uid, incarnation_uid=self.incarnation_uid
                     )
                 )
                 first = await asyncio.wait_for(watch.read(), timeout=2)
@@ -145,7 +137,6 @@ class ControlListener:
                 ("agentplane-sandbox-uid", sandbox_uid),
                 ("agentplane-incarnation-uid", self.incarnation_uid),
                 ("agentplane-environment-runtime-boot-id", first.environment_runtime_boot_id),
-                ("agentplane-connection-epoch", str(self._connection_epoch)),
             )
             fenced_channel = await self._new_channel(endpoint, metadata)
             self._channel = fenced_channel

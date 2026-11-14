@@ -50,6 +50,57 @@ func TestLoadConfigReadsDatabaseURLFromExplicitSecretInput(t *testing.T) {
 	}
 }
 
+func TestOperatorServicesRequireAnAdditionalMutualTLSEndpoint(t *testing.T) {
+	validTLS := `rpc_tls:
+  listen: 0.0.0.0:8082
+  cert_file: /etc/agentplane/tls/tls.crt
+  key_file: /etc/agentplane/tls/tls.key
+  client_ca_file: /etc/agentplane/tls/client-ca.crt
+operator_services:
+  - spiffe://agentplane/app
+`
+	t.Run("allowlisted service", func(t *testing.T) {
+		settingsFile(t, testSettings+validTLS)
+		c, err := loadConfig()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.RPCTLS == nil || c.RPCTLS.ClientCAFile == "" || len(c.OperatorServices) != 1 || c.OperatorServices[0] != "spiffe://agentplane/app" {
+			t.Fatalf("operator TLS settings = %+v / %v", c.RPCTLS, c.OperatorServices)
+		}
+	})
+	for name, settings := range map[string]string{
+		"no TLS listener": testSettings + "operator_services: [spiffe://agentplane/app]\n",
+		"no client CA": testSettings + `rpc_tls:
+  listen: 0.0.0.0:8082
+  cert_file: /etc/agentplane/tls/tls.crt
+  key_file: /etc/agentplane/tls/tls.key
+operator_services: [spiffe://agentplane/app]
+`,
+		"unsupported service": testSettings + `rpc_tls:
+  listen: 0.0.0.0:8082
+  cert_file: /etc/agentplane/tls/tls.crt
+  key_file: /etc/agentplane/tls/tls.key
+  client_ca_file: /etc/agentplane/tls/client-ca.crt
+operator_services: [spiffe://agentplane/not-a-service]
+`,
+		"duplicate service": testSettings + validTLS + "  - spiffe://agentplane/app\n",
+		"client CA without allowlist": testSettings + `rpc_tls:
+  listen: 0.0.0.0:8082
+  cert_file: /etc/agentplane/tls/tls.crt
+  key_file: /etc/agentplane/tls/tls.key
+  client_ca_file: /etc/agentplane/tls/client-ca.crt
+`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			settingsFile(t, settings)
+			if _, err := loadConfig(); err == nil {
+				t.Fatal("accepted invalid operator TLS settings")
+			}
+		})
+	}
+}
+
 func TestLoadConfigRequiresSettingsFileAndDatabaseURL(t *testing.T) {
 	t.Run("missing settings file", func(t *testing.T) {
 		clearSettingsEnv(t)
