@@ -43,10 +43,12 @@ class Settings(BaseModel):
         default_factory=frozenset, description="Accounts allowed to create and revoke operator PolicyBindings."
     )
     reader_services: Set[str] = Field(
+        exclude_if=lambda value: not value,
         default_factory=frozenset,
         description="Exact service SPIFFE IDs allowed to read all policy resources; requires grpc_tls.client_ca_file.",
     )
     writer_services: Set[str] = Field(
+        exclude_if=lambda value: not value,
         default_factory=frozenset,
         description="Exact service SPIFFE IDs allowed to create and revoke operator policy resources; requires grpc_tls.client_ca_file.",
     )

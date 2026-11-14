@@ -76,6 +76,7 @@ class Settings(BaseModel):
         description="ServiceAccounts admitted by the admin gRPC API as namespace/name entries; unset disables it.",
     )
     admin_grpc_service_callers: frozenset[str] = Field(
+        exclude_if=lambda value: not value,
         default_factory=frozenset,
         description=(
             "Exact service SPIFFE IDs additionally admitted to EgressAdmin methods. Requires the admin bearer "
