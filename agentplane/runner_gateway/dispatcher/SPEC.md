@@ -23,7 +23,9 @@ It scopes existing Sessions and existing environments; it does not create enviro
   TokenReview also supplies a complete Pod name and Pod UID. An account-only token with a configured backend
   name is still a normal account caller. The generic `auth.Principal` and `auth.Caller` APIs continue to mean
   Pod-bound identity.
-- Creator/broker identity is retained for provenance only. It is never Session authority.
+- Creator/broker identity is retained for provenance, not Session ownership. The exact Identity
+  creator may recover only its matching `CreateSession` receipt; that narrow retry authority does not
+  grant `GetSession`, command, cancellation or watch access to the resulting Session.
 
 ## Service certificate callers during the cutover
 
@@ -61,10 +63,11 @@ an old receiver must precede caller enablement or explicitly assess pending serv
   rewrite its admission evidence.
 - A delegated Identity caller is authorized exactly as that Identity's own workload: it reads, writes, cancels and
   watches only Sessions recorded with its exact Identity incarnation, which middleware checked against the live
-  Identity. It never opens a Session (`CreateSession` is `PERMISSION_DENIED`); its queued work requests a wake as
-  the Identity, under the rule below. Its dispatch rows record the Identity, the actor's ServiceAccount and Pod and
-  the Action correlation in columns of their own, which a replica predating them reads as unattributed.
-  EnvironmentService admits no Identity caller, delegated or direct.
+  Identity. It may also create a native Session when its current `bind_session` grant matches the exact live
+  Sandbox selected by the placement. The Session executes as the Sandbox's current Identity, which may differ from
+  the creator only when that explicit grant allows it. Its Session attribution retains the effective creator
+  Identity separately from the delegating ServiceAccount, Pod and Action correlation. Its queued work requests a
+  wake as the Identity, under the rule below. EnvironmentService admission is unchanged.
 - No credentials or Action lease token are persisted. The Gateway performs no Actions or app lookup. Delegation does not
   alter the Runner transport boundary below.
 
@@ -85,26 +88,29 @@ an old receiver must precede caller enablement or explicitly assess pending serv
   Session. Exact retries and authorized reads still find the record after its required Environment disappears.
   Explicit Session deletion is separate and not yet implemented; callers must not deliberately reuse a Session UUID
   after explicit deletion. No permanent Session UUID marker is planned, and retained History can reject conflicting reuse.
-- A new normal `CreateSession` can target only the current Sandbox-owned ServiceAccount whose namespace, name and UID
-  equal the authenticated caller's reviewed ServiceAccount. The Sandbox and account are read from Kubernetes;
-  callers cannot choose a different principal by supplying strings.
+- A configured Pod-bound Dispatcher backend retains its existing privileged `CreateSession` path. A normal
+  ServiceAccount caller cannot choose a Session execution principal by supplying strings. An Identity caller may
+  create only an `environment_hosted` Session and must have a current `bind_session` grant for the exact live
+  Sandbox named in the placement. Central placement, an unbound Sandbox, and a target with a pending deletion or
+  operator-requested stop remain refused for Identity creation.
 - An existing `CreateSession` request is a read-only idempotent retry. Before comparing its immutable request,
-  Dispatcher checks the same retained owner UID or configured Pod-bound backend authority as receipt reads;
-  an unauthorized caller gets `NOT_FOUND` without conflict details. The comparison is shared with
+  Dispatcher checks the same retained owner UID or configured Pod-bound backend authority as receipt reads; an
+  Identity creator can recover its receipt only when the retained creator Identity name and UID match. An
+  unauthorized caller gets `NOT_FOUND` without conflict details. The comparison is shared with
   transactional creation and includes exact environment name/UID, deterministic spec bytes, and optional
   setup bytes. Matching retries do not consult live environment inventory or change materialization,
   attribution, pending principal binding or wake state. Delegated calls still pass middleware's current
   effective-identity validation and never inherit their actor's privilege. An absent row still requires
   normal fresh admission; this path provides no historical deletion registry.
-- Every new opening retains the target execution ServiceAccount as its immutable logical principal and stores
-  the authenticated caller separately as creator. A normal caller can read that opening only while its
-  authenticated account and UID equal the retained target principal.
+- Every new opening retains the target execution Identity as its immutable logical principal and stores the
+  authenticated creator separately. Ordinary Session reads continue to follow execution ownership; receipt
+  recovery follows only the exact creator check above.
 - Before the controller has created the ServiceAccount, a configured Pod-bound backend may open against the
   expected `<sandbox namespace>/<sandbox name>` account with a pending UID. Reconciliation binds the first UID
   only after reading the exact Sandbox UID and verifying the ServiceAccount's controlling OwnerReference names
   that Sandbox UID. The bind is conditional and cannot overwrite a UID already recorded.
-- Dispatcher is the authority for the Identity a Session executes as. Every new opening also records the
-  Identity its Sandbox names in `spec.identity`, read live with its UID, beside the execution ServiceAccount;
+- Dispatcher is the authority for the Identity a Session executes as. Every new opening records the
+  Identity its Sandbox names in `spec.identity`, read live with its UID, beside any execution ServiceAccount;
   a Sandbox naming an absent Identity cannot open a Session (`FAILED_PRECONDITION`). A Sandbox naming an
   Identity whose managed ServiceAccount is absent opens Identity-run Sessions, which record the Identity and
   no ServiceAccount: only privileged and Identity callers open them, and placement and delivery check only the
@@ -121,8 +127,9 @@ an old receiver must precede caller enablement or explicitly assess pending serv
   `Session.identity` reads that Identity back (absent when the Sandbox named none), beside
   `Session.execution_identity`, the execution ServiceAccount.
 - An Identity caller (a workload SVID naming an Identity, admitted under the Gateway's configured
-  `policy_namespace`) is never privileged and creates no Session (`PermissionDenied`), even on a
-  Sandbox acting as it: creating a Session is lifecycle control, which needs an explicit grant, not acting as the Identity. It reads, writes, cancels and watches only Sessions whose recorded execution
+  `policy_namespace`) is never privileged. A native `CreateSession` requires an explicit `bind_session`
+  grant even on a Sandbox acting as the caller; acting as the Identity alone does not authorize lifecycle control.
+  It reads, writes, cancels and watches only Sessions whose recorded execution
   Identity is that incarnation, never one recorded with only a ServiceAccount; writes and cancellation also
   require the Sandbox to still name it. Its rows record the Identity and its Pod as creator or actor, in
   columns separate from ServiceAccount attribution. Its queued work requests an automatic wake as the Identity,

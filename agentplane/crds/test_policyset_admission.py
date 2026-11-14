@@ -71,6 +71,10 @@ async def test_policyset_admission() -> None:
             ),
             environment([{"boundIdentity": {"name": "worker"}}]),
             environment([{"boundIdentity": {"self": True}}]),
+            environment([{"boundIdentity": {"self": True}}], operations=["bind_session"]),
+            environment(
+                [{"sandbox": pinned, "boundIdentity": {"name": "worker"}}], operations=["resume", "bind_session"]
+            ),
             environment([{"sandbox": {"name": "worker"}}, {"boundIdentity": {"self": True}}]),
         )
         for rule in rules:
@@ -110,6 +114,8 @@ async def test_policyset_admission() -> None:
             {"type": "environment", "environments": [{"sandbox": {"name": "worker"}}]},
             environment([{"sandbox": {"name": "worker"}}], operations=["send_message"]),
             environment([{"sandbox": {"name": "worker"}}], operations=["bind_session"]),
+            environment([{"sandbox": {"name": "worker"}}], operations=["resume", "bind_session"]),
+            environment([{"boundIdentity": {"self": True}}], operations=["read"]),
             environment([{}]),
             environment([{"sandbox": {}}]),
             environment([{"boundIdentity": {}}]),

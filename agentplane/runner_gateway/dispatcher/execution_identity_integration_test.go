@@ -13,9 +13,11 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environmentaccess"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -54,6 +56,17 @@ func (r *placingRunner) CreateSession(_ context.Context, _ SandboxSnapshot, _ st
 // Identity subjects in policyNamespace, and returns its store and a client presenting a certificate
 // for a workload URI.
 func serveIdentitySVIDs(t *testing.T, objects client.Reader, policyNamespace string, inventory *authorityInventory) (*Store, func(uri string) dispatcherpb.SessionDispatcherClient) {
+	return serveIdentitySVIDsWithPolicy(t, objects, policyNamespace, inventory, environmentaccess.NewIndex(), func() error { return nil })
+}
+
+func serveIdentitySVIDsWithPolicy(
+	t *testing.T,
+	objects client.Reader,
+	policyNamespace string,
+	inventory *authorityInventory,
+	rules *reader.Index[environmentaccess.Rule],
+	policyReady func() error,
+) (*Store, func(uri string) dispatcherpb.SessionDispatcherClient) {
 	t.Helper()
 	svids, err := auth.NewSVIDResolver(objects, []string{caller.Namespace}, &resolver.Identities{PolicyNamespace: policyNamespace})
 	if err != nil {
@@ -83,7 +96,7 @@ func serveIdentitySVIDs(t *testing.T, objects client.Reader, policyNamespace str
 	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, connected: true}
 	service := &Service{
 		Store: store, DispatcherCallers: sets.New[auth.Account](),
-		Sandboxes: inventory, Hub: hub, WatchLease: 10 * time.Second,
+		Sandboxes: inventory, EnvironmentRules: rules, PolicyReady: policyReady, Hub: hub, WatchLease: 10 * time.Second,
 	}
 	server := grpc.NewServer(append(Methods(auth.ReviewedServiceAccountOrIdentity(workloadAuth)).ServerOptions(time.Second),
 		grpc.Creds(credentials.NewTLS(serverTLS)))...)

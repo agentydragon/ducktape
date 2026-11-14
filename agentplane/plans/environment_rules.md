@@ -1,12 +1,12 @@
 # The `environment` rule type
 
-Status: **both slices operator-released (2026-11-14 04:58 UTC); implementation in progress, resume first and native bind_session second.** The Identity cutover, #15742
+Status: **both slices operator-released (2026-11-14 04:58 UTC); resume merged in PR #16346, native bind_session in review as PR #16351.** The Identity cutover, #15742
 and #15744, is merged with live acceptance recorded in
 [`sandbox_identity_cutover_2026_11_12`](../docs/sandbox_identity_cutover_2026_11_12/README.md).
 The cutover implements Identity self-read for the four Environment inventory RPCs, but not an
-`environment` policy rule: explicit Identity resume and Identity native `CreateSession` remain
-refused. The implementation slices are explicit `resume`, followed by native `CreateSession`
-`bind_session`. The task DAG tracks both under
+`environment` policy rule: explicit Identity resume and Identity native `CreateSession` were refused
+before these slices. The implementation slices are explicit `resume`, followed by native
+`CreateSession` `bind_session`. The task DAG tracks both under
 [`ENVIRONMENT_LIFECYCLE_RULES`](task_dag.md#environment_lifecycle_rules--explicit-identity-lifecycle-authority). Settled and not reopened here
 ([identity plan](identity_and_kubernetes_accounts.md#identity-lifetime), operator 2026-11-10): acting
 in a workload is implied for its bound Identity, and so are same-Identity messaging and the wake it
@@ -17,8 +17,9 @@ subject by the ordinary `PolicyBinding`. Rebinding stays with configured manager
 not targets: a box is not a Sandbox and has no `spec.identity`, and creating or disposing one stays
 with the Action Service's `sandbox` group under `action_auto_approve`.
 
-The complete operation vocabulary below is the selected target shape; the first implementation slice
-accepts `resume` only. Add each later operation only with its enforcing consumer.
+The complete operation vocabulary below is the selected target shape. The first implementation slice
+accepts `resume` only; the dependent native Session slice adds `bind_session` with its enforcing
+consumer. Other operations remain outside these slices.
 
 ## Schema
 

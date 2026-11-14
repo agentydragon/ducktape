@@ -9,6 +9,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -89,6 +91,26 @@ func (k *KubernetesSandboxes) GetSandbox(ctx context.Context, name string) (disp
 // delivery never authorizes from a stale informer snapshot.
 func (k *KubernetesSandboxes) GetExecutionIdentity(ctx context.Context, sandbox dispatcher.SandboxSnapshot) (*identitypb.Identity, bool, error) {
 	return k.reader.ExecutionIdentity(ctx, &sandboxreader.Identity{Namespace: sandbox.Namespace, Name: sandbox.Name, Uid: sandbox.UID})
+}
+
+// GetEnvironment reads the exact live Sandbox used to evaluate an Identity's bind_session grant.
+// The shared informer remains the inventory for ordinary Dispatcher work; authorization is based
+// on an uncached read and the selected UID.
+func (k *KubernetesSandboxes) GetEnvironment(ctx context.Context, sandbox dispatcher.SandboxSnapshot) (*sandboxapi.Sandbox, bool, error) {
+	if sandbox.Namespace != k.namespace || sandbox.Name == "" || sandbox.UID == "" {
+		return nil, false, errors.New("exact Sandbox identity is required")
+	}
+	view, err := k.reader.Get(ctx, sandbox.Name)
+	if status.Code(err) == codes.NotFound {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if view.Identity.Namespace != sandbox.Namespace || view.Identity.Uid != sandbox.UID {
+		return nil, false, nil
+	}
+	return view.Resource, true, nil
 }
 
 func (k *KubernetesSandboxes) ListSandboxes(ctx context.Context) ([]dispatcher.SandboxSnapshot, error) {
