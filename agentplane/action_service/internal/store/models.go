@@ -222,13 +222,27 @@ type Admission struct {
 }
 
 // DelegationAttribution separates the authenticated delegating component from the effective request caller.
-// Exactly one provenance form is present: SessionID, or the paired ConnectionID and ConnectionGrantID.
 type DelegationAttribution struct {
-	Actor             *action_servicepb.DelegatingActor
-	SessionID         *uuid.UUID
-	ConnectionID      *uuid.UUID
-	ConnectionGrantID *uuid.UUID
+	Actor      action_servicepb.DelegatingActor
+	Provenance DelegationProvenance
 }
+
+type DelegationProvenance interface {
+	delegationProvenance()
+}
+
+type SessionProvenance struct {
+	SessionID uuid.UUID
+}
+
+func (SessionProvenance) delegationProvenance() {}
+
+type ConnectionProvenance struct {
+	ConnectionID uuid.UUID
+	GrantID      uuid.UUID
+}
+
+func (ConnectionProvenance) delegationProvenance() {}
 
 // DecisionInput is a human Decision on a pending request.
 type DecisionInput struct {
