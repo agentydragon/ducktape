@@ -99,7 +99,16 @@ async def test_packaged_runtime_uses_authenticated_gateway_transport(
         outputs=outputs,
         gateway_address=hostfwd_address,
     ) as docker_done:
-        readiness = asyncio.create_task(authenticated_readiness(gateway_service, client_token, api_server, sandbox))
+        readiness = asyncio.create_task(
+            authenticated_readiness(
+                gateway_service,
+                client_token,
+                api_server,
+                sandbox,
+                control=control,
+                controller_credentials=gateway_service.controller_credentials(tmp_path / "controller-transport"),
+            )
+        )
         try:
             done, _ = await asyncio.wait((docker_done, readiness), return_when=asyncio.FIRST_COMPLETED)
             if docker_done in done:

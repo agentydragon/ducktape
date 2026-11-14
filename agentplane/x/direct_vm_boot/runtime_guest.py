@@ -13,10 +13,12 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import UUID
 
+import grpc
 from kubernetes_asyncio import client as k8s_client
 from python.runfiles import Runfiles
 
-from agentplane.env.config import Configuration
+from agentplane.env.config import Configuration, EnvironmentRuntimeControl
+from agentplane.env.e2e.testing.gateway import bind_incarnation
 from agentplane.net.peertls.config import MTLS, TLS
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
@@ -124,8 +126,20 @@ def write_guest_inputs(
 
 
 async def authenticated_readiness(
-    gateway: GatewayProcess, token_file: Path, api_server: KubernetesApiServer, sandbox: SandboxCluster
+    gateway: GatewayProcess,
+    token_file: Path,
+    api_server: KubernetesApiServer,
+    sandbox: SandboxCluster,
+    *,
+    control: EnvironmentRuntimeControl,
+    controller_credentials: grpc.ChannelCredentials,
 ) -> session_pb2.EnvironmentRuntimeStatus:
+    await bind_incarnation(
+        control.model_copy(update={"listen_address": f"{gateway_address(sandbox.uid)}:9090"}),
+        sandbox.uid,
+        sandbox.pod_uid,
+        controller_credentials,
+    )
     remote = gateway.gateway_client(token_file, request_timeout_s=2)
     await gateway.wait_for_runner(remote, sandbox.destination, timeout_s=30)
     status = await remote.runner(sandbox.destination).status()
@@ -254,7 +268,7 @@ def _runtime_guest_script() -> str:
         timeout --signal=TERM --kill-after=10s 120s "$qemu" \
             -machine q35,accel=tcg -cpu max -nodefaults -m 1536M -smp 2 -no-reboot \
             -kernel /inputs/vmlinuz -initrd /inputs/initramfs.cpio \
-            -append "console=ttyS0 net.ifnames=0" \
+            -append "console=ttyS0 net.ifnames=0${GUEST_KERNEL_ARGS:+ $GUEST_KERNEL_ARGS}" \
             -display none -monitor none -serial file:/outputs/runtime.serial.log \
             -object memory-backend-memfd,id=mem,size=1536M,share=on \
             -numa node,memdev=mem \
@@ -296,7 +310,10 @@ async def runtime_guest_container(
     state: Path,
     outputs: Path,
     gateway_address: str,
+    kernel_args: tuple[str, ...] = (),
 ) -> AsyncIterator[asyncio.Task[int]]:
+    if any(not argument or any(character.isspace() for character in argument) for argument in kernel_args):
+        raise ValueError("guest kernel arguments must be nonempty single tokens")
     state_owner = await asyncio.to_thread(state.stat)
     artifacts = undeclared_outputs_dir()
     image = oci.load_oci_image(launcher_tools.LAYOUT_RLOCATION)
@@ -319,6 +336,8 @@ async def runtime_guest_container(
         [
             "--env",
             f"GATEWAY_ADDRESS={gateway_address}",
+            "--env",
+            f"GUEST_KERNEL_ARGS={' '.join(kernel_args)}",
             "--env",
             f"STATE_HOST_UID={state_owner.st_uid}",
             "--env",

@@ -348,7 +348,14 @@ async def test_packaged_codex_session_runs_isolated_shell_and_accepts_next_input
             gateway_address=hostfwd_address,
         ) as docker_done:
             ready_task = asyncio.create_task(
-                authenticated_readiness(gateway_service, client_token, api_server, sandbox)
+                authenticated_readiness(
+                    gateway_service,
+                    client_token,
+                    api_server,
+                    sandbox,
+                    control=control,
+                    controller_credentials=gateway_service.controller_credentials(tmp_path / "controller-transport"),
+                )
             )
             try:
                 done, _ = await asyncio.wait((docker_done, ready_task), return_when=asyncio.FIRST_COMPLETED)
