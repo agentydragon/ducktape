@@ -8,10 +8,12 @@ import signal
 from pathlib import Path
 from typing import Self
 
+import grpc
+
 from agentplane.env.config import Endpoint, EnvironmentRuntimeControl
 from agentplane.env.e2e.testing import launches
 from agentplane.env.e2e.testing.config import RunnerTestConfig
-from agentplane.env.e2e.testing.gateway import Gateway
+from agentplane.env.e2e.testing.gateway import Gateway, bind_incarnation
 from agentplane.env.e2e.testing.model_config import model_config
 from agentplane.env.e2e.testing.process_fixtures import RunnerProcess, pid1_container, wait_for_exit
 from agentplane.env.runtime.control import environment_runtime_pb2_grpc
@@ -29,11 +31,17 @@ class RunningRunner:
         ingress_endpoint: Endpoint,
         control_endpoint: EnvironmentRuntimeControl | None = None,
         observe_control: bool = True,
+        controller_credentials: grpc.ChannelCredentials | None = None,
+        incarnation_uid: str = "test-incarnation",
     ) -> None:
         self.config = config
         self.gateway = gateway
         self.history = history
         self.control_endpoint = control_endpoint or gateway.endpoint
+        if not observe_control and controller_credentials is None:
+            raise ValueError("External Gateway tests must supply distinct Controller observation credentials")
+        self.controller_credentials = controller_credentials
+        self.incarnation_uid = incarnation_uid
         self.observe_control = observe_control
         self.ingress_endpoint = ingress_endpoint
         self.process: RunnerProcess
@@ -85,11 +93,14 @@ class RunningRunner:
         container = await asyncio.to_thread(pid1_container, command, self.state_dir.parent, environment)
         await asyncio.to_thread(container.__enter__)
         self.process = RunnerProcess(container)
-        if not self.observe_control:
-            return
-        connected = asyncio.create_task(
-            self.gateway.control.connect(self.control_endpoint, self.config.launch.sandbox.uid)
+        connection = (
+            bind_incarnation(
+                self.control_endpoint, self.config.launch.sandbox.uid, self.incarnation_uid, self.controller_credentials
+            )
+            if self.controller_credentials is not None
+            else self.gateway.control.connect(self.control_endpoint, self.config.launch.sandbox.uid)
         )
+        connected = asyncio.create_task(connection)
         exited = asyncio.create_task(self.process.wait())
         try:
             done, _ = await asyncio.wait((connected, exited), return_when=asyncio.FIRST_COMPLETED)

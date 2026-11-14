@@ -43,6 +43,46 @@ class _RunnerMetadataInterceptor(grpc.aio.UnaryUnaryClientInterceptor):
         return await continuation(details, request)
 
 
+async def bind_incarnation(
+    endpoint: EnvironmentRuntimeControl, sandbox_uid: str, incarnation_uid: str, credentials: grpc.ChannelCredentials
+) -> None:
+    """Model the Controller's authenticated observation, independent of Gateway ownership."""
+    if isinstance(endpoint.security, Insecure):
+        raise ValueError("the test Runner must present its Sandbox workload SVID")
+    deadline = asyncio.get_running_loop().time() + 30
+    while True:
+        try:
+            async with grpc.aio.secure_channel(
+                endpoint.listen_address,
+                credentials,
+                options=(("grpc.ssl_target_name_override", RUNNER_GATEWAY_TEST_DNS),),
+            ) as channel:
+                watch = environment_runtime_pb2_grpc.EnvironmentRuntimeStub(channel).WatchState(
+                    environment_runtime_pb2.WatchStateRequest(
+                        sandbox_uid=sandbox_uid, incarnation_uid=incarnation_uid, observe_only=True
+                    )
+                )
+                try:
+                    response = await asyncio.wait_for(watch.read(), timeout=2)
+                    if (
+                        not isinstance(response, environment_runtime_pb2.WatchStateResponse)
+                        or not response.environment_runtime_boot_id
+                    ):
+                        raise RuntimeError("Controller observation ended before binding the Runtime incarnation")
+                    return
+                finally:
+                    watch.cancel()
+        except grpc.aio.AioRpcError as error:
+            if error.code() != grpc.StatusCode.UNAVAILABLE:
+                raise
+        except OSError, TimeoutError:
+            pass
+        remaining = deadline - asyncio.get_running_loop().time()
+        if remaining <= 0:
+            raise TimeoutError(f"Controller could not observe Runtime at {endpoint.listen_address}")
+        await asyncio.sleep(min(0.1, remaining))
+
+
 class ControlListener:
     """Observe Runner facts and call its RPCs as the test Gateway workload."""
 
@@ -71,13 +111,13 @@ class ControlListener:
     async def connect(self, endpoint: EnvironmentRuntimeControl, sandbox_uid: str) -> None:
         """Dial the Runner and establish its state watch, retrying until it is ready."""
         await self.disconnect()
+        await bind_incarnation(endpoint, sandbox_uid, self.incarnation_uid, self._controller_credentials)
         deadline = asyncio.get_running_loop().time() + 30
         while True:
             self._connection_epoch += 1
             channel = await self._new_channel(endpoint)
             watch: grpc.aio.UnaryStreamCall | None = None
             try:
-                await self._bind_incarnation(endpoint, sandbox_uid)
                 watch = environment_runtime_pb2_grpc.EnvironmentRuntimeStub(channel).WatchState(
                     environment_runtime_pb2.WatchStateRequest(
                         sandbox_uid=sandbox_uid,
@@ -119,21 +159,6 @@ class ControlListener:
             async with self._connected:
                 self._connected.notify_all()
             return
-
-    async def _bind_incarnation(self, endpoint: EnvironmentRuntimeControl, sandbox_uid: str) -> None:
-        """Model the Controller's authenticated first observation, independently of Gateway ownership."""
-        async with await self._new_channel(endpoint, credentials=self._controller_credentials) as channel:
-            watch = environment_runtime_pb2_grpc.EnvironmentRuntimeStub(channel).WatchState(
-                environment_runtime_pb2.WatchStateRequest(
-                    sandbox_uid=sandbox_uid, incarnation_uid=self.incarnation_uid, observe_only=True
-                )
-            )
-            try:
-                response = await asyncio.wait_for(watch.read(), timeout=2)
-                if not isinstance(response, environment_runtime_pb2.WatchStateResponse):
-                    raise RuntimeError("Controller observation ended before binding the Runtime incarnation")
-            finally:
-                watch.cancel()
 
     async def _new_channel(
         self,

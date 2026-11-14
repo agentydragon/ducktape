@@ -94,6 +94,14 @@ class GatewayProcess:
             cert_file=str(cert_file), key_file=str(key_file), ca_file=str(self.environment_runtime_ca_file)
         )
 
+    def controller_credentials(self, directory: Path) -> grpc.ChannelCredentials:
+        """Issue the separate Controller peer used to bind test Runtime incarnations."""
+        directory.mkdir(parents=True, exist_ok=True)
+        certificate = issue_workload_leaf(
+            self.environment_runtime_ca, "spiffe://agentplane/sandbox-controller", directory
+        )
+        return self.channel_credentials(client_certificate=certificate)
+
     def gateway_client(self, token_file: Path, *, request_timeout_s: float = 20) -> SandboxControlClient:
         return SandboxControlClient(
             control_target=self.target,
