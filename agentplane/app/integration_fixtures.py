@@ -148,12 +148,13 @@ async def _bearer(api_server: KubernetesApiServer, account: ServiceAccountRef) -
 
 
 @pytest.fixture
-def agent(namespace: SandboxNamespace) -> str:
-    return f"system:serviceaccount:{namespace.name}:{_AGENT}"
+async def operator_auth(app: AppProcess) -> dict[str, str]:
+    assert app.operator_id_token is not None
+    return {"Authorization": f"Bearer {app.operator_id_token}"}
 
 
 @pytest.fixture
-async def agent_auth(api_server: KubernetesApiServer, namespace: SandboxNamespace) -> dict[str, str]:
+async def kubernetes_auth(api_server: KubernetesApiServer, namespace: SandboxNamespace) -> dict[str, str]:
     return await _bearer(api_server, namespace.account(_AGENT))
 
 
@@ -169,7 +170,6 @@ async def app(
     sandbox: SandboxCluster,
     gateway_service: GatewayProcess,
     app_token_file: Path,
-    agent: str,
     app_config: dict[str, object],
 ) -> AsyncIterator[AppProcess]:
     async with app_process(
@@ -177,7 +177,7 @@ async def app(
         history_client,
         sandboxes=SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace),
         gateway=GatewayAccess(gateway_service.target, app_token_file, gateway_service.client_tls),
-        config={"token_audience": AUDIENCE, "token_subjects": [agent]} | app_config,
+        config=app_config,
     ) as process:
         yield process
 

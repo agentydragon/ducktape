@@ -25,7 +25,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
     event_logs: SessionHistory,
     content: SessionHistory,
     history: History,
-    agent_auth: dict[str, str],
+    operator_auth: dict[str, str],
 ) -> None:
     source = ReplicationSource()
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
@@ -71,7 +71,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
     async with httpx.AsyncClient(base_url=app.url) as client:
         denied = await client.post(evidence_path, json=params | {"afterCursor": "0", "limit": 2})
         assert denied.status_code == 401
-        first = await client.post(evidence_path, json=params | {"afterCursor": "0", "limit": 2}, headers=agent_auth)
+        first = await client.post(evidence_path, json=params | {"afterCursor": "0", "limit": 2}, headers=operator_auth)
         assert first.status_code == 200, first.text
         assert first.json() == {
             "observations": [
@@ -80,24 +80,32 @@ async def test_lazy_scoped_evidence_and_native_expansion(
             ],
             "nextAfterCursor": "5",
         }
-        remaining = await client.post(evidence_path, json=params | {"afterCursor": "5", "limit": 2}, headers=agent_auth)
+        remaining = await client.post(
+            evidence_path, json=params | {"afterCursor": "5", "limit": 2}, headers=operator_auth
+        )
         assert remaining.json() == {"observations": [{"observationCursor": "8", "hasNative": True}]}
         # The list response contains neither semantic text nor native packet bodies.
         assert "Hello" not in first.text
         assert "second" not in remaining.text
         frames = await client.post(
-            frames_path, json=params | {"observationCursor": "8", "afterSequence": "0", "limit": 2}, headers=agent_auth
+            frames_path,
+            json=params | {"observationCursor": "8", "afterSequence": "0", "limit": 2},
+            headers=operator_auth,
         )
         assert frames.status_code == 200, frames.text
         assert frames.json()["nextAfterSequence"] == "7"
         assert [row["entry"]["event"]["native"]["line"] for row in frames.json()["frames"]] == ["second", "third"]
         missing = await client.post(
-            frames_path, json=params | {"observationCursor": "8", "afterSequence": "7", "limit": 30}, headers=agent_auth
+            frames_path,
+            json=params | {"observationCursor": "8", "afterSequence": "7", "limit": 30},
+            headers=operator_auth,
         )
         assert missing.json()["frames"] == [{"sourceSequence": str(unavailable_sequence), "entry": None}]
         assert "nextAfterSequence" not in missing.json()
         empty = await client.post(
-            frames_path, json=params | {"observationCursor": "5", "afterSequence": "0", "limit": 30}, headers=agent_auth
+            frames_path,
+            json=params | {"observationCursor": "5", "afterSequence": "0", "limit": 30},
+            headers=operator_auth,
         )
         assert empty.json()["frames"] == []
         wrong_entity = await client.post(
@@ -109,13 +117,13 @@ async def test_lazy_scoped_evidence_and_native_expansion(
                 "afterSequence": "0",
                 "limit": 30,
             },
-            headers=agent_auth,
+            headers=operator_auth,
         )
         assert wrong_entity.status_code == 404
         stale = await client.post(
             evidence_path,
             json=params | {"projectionEpoch": "stale", "afterCursor": "0", "limit": 30},
-            headers=agent_auth,
+            headers=operator_auth,
         )
         assert stale.status_code == 400
         lifecycle = await client.post(
@@ -126,27 +134,29 @@ async def test_lazy_scoped_evidence_and_native_expansion(
                 "afterCursor": "0",
                 "limit": 30,
             },
-            headers=agent_auth,
+            headers=operator_auth,
         )
         assert lifecycle.json() == {"observations": [{"observationCursor": "2", "hasNative": False}]}
         for limit in ("0", "201"):
-            response = await client.post(evidence_path, json=params | {"limit": int(limit)}, headers=agent_auth)
+            response = await client.post(evidence_path, json=params | {"limit": int(limit)}, headers=operator_auth)
             assert response.status_code == 400
 
         chronological = f"{path}/observations"
         assert (await client.get(chronological)).status_code == 401
-        tail = await client.get(chronological, params={"limit": "3"}, headers=agent_auth)
+        tail = await client.get(chronological, params={"limit": "3"}, headers=operator_auth)
         assert tail.status_code == 200, tail.text
         assert [row["cursor"] for row in tail.json()["observations"]] == ["7", "8", "9"]
         assert tail.json()["lastCursor"] == "9"
-        previous = await client.get(chronological, params={"before_cursor": "7", "limit": "3"}, headers=agent_auth)
+        previous = await client.get(chronological, params={"before_cursor": "7", "limit": "3"}, headers=operator_auth)
         assert [row["cursor"] for row in previous.json()["observations"]] == ["4", "5", "6"]
         assert previous.json()["lastCursor"] == "9"
-        forward = await client.get(chronological, params={"after_cursor": "6", "limit": "3"}, headers=agent_auth)
+        forward = await client.get(chronological, params={"after_cursor": "6", "limit": "3"}, headers=operator_auth)
         assert [row["cursor"] for row in forward.json()["observations"]] == ["7", "8", "9"]
-        first_archive = await client.get(chronological, params={"after_cursor": "0", "limit": "3"}, headers=agent_auth)
+        first_archive = await client.get(
+            chronological, params={"after_cursor": "0", "limit": "3"}, headers=operator_auth
+        )
         assert [row["cursor"] for row in first_archive.json()["observations"]] == ["1", "2", "3"]
-        empty_archive = await client.get(chronological, params={"before_cursor": "1"}, headers=agent_auth)
+        empty_archive = await client.get(chronological, params={"before_cursor": "1"}, headers=operator_auth)
         assert "observations" not in empty_archive.json() or empty_archive.json()["observations"] == []
         for bounds in (
             {"before_cursor": "7", "after_cursor": "3"},
@@ -155,7 +165,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
             {"limit": "0"},
             {"limit": "201"},
         ):
-            assert (await client.get(chronological, params=bounds, headers=agent_auth)).status_code == 400
+            assert (await client.get(chronological, params=bounds, headers=operator_auth)).status_code == 400
 
         # These retained observations deliberately have no item/native-evidence association.
         # Chronological debug still reaches their complete original bodies, one expansion at a time:
@@ -165,7 +175,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         source.append(event_pb2.Event(harness_stderr=event_pb2.HarnessStderr(text=stderr)))
         source.append(event_pb2.Event(debug_checkpoint=event_pb2.DebugCheckpoint(name="unlinked checkpoint")))
         await history.record(thread, source.entries[-3:])
-        debug_tail = await client.get(chronological, params={"limit": "3"}, headers=agent_auth)
+        debug_tail = await client.get(chronological, params={"limit": "3"}, headers=operator_auth)
         rows = debug_tail.json()["observations"]
         assert [history_service_pb2.EventKind.Value(row["kind"]) for row in rows] == [
             history_service_pb2.EVENT_KIND_NATIVE,
@@ -177,7 +187,9 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         entries = []
         for row in rows:
             entry_page = await client.get(
-                f"{path}/events", params={"after_cursor": str(int(row["cursor"]) - 1), "limit": "1"}, headers=agent_auth
+                f"{path}/events",
+                params={"after_cursor": str(int(row["cursor"]) - 1), "limit": "1"},
+                headers=operator_auth,
             )
             assert entry_page.status_code == 200, entry_page.text
             entries.append(entry_page.json()["entries"][0])
@@ -185,7 +197,9 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         assert entries[0]["event"]["native"]["line"] == "unlinked native packet"
         assert entries[1]["event"]["harnessStderr"]["text"] == stderr
         assert entries[2]["event"]["debugCheckpoint"]["name"] == "unlinked checkpoint"
-        absent = await client.get(f"{path}/events", params={"after_cursor": "99998", "limit": "1"}, headers=agent_auth)
+        absent = await client.get(
+            f"{path}/events", params={"after_cursor": "99998", "limit": "1"}, headers=operator_auth
+        )
         assert absent.status_code == 400, absent.text
 
         for command_id in ("failed-debug", "noop-debug"):
@@ -213,7 +227,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         for command_id, admission_cursor, outcome_cursor in (("failed-debug", "13", "15"), ("noop-debug", "14", "16")):
             command_scope = params | {"entity": entity_key(history_service_pb2.THREAD_ENTITY_KIND_COMMAND, command_id)}
             command_evidence = await client.post(
-                evidence_path, json=command_scope | {"afterCursor": "0", "limit": 30}, headers=agent_auth
+                evidence_path, json=command_scope | {"afterCursor": "0", "limit": 30}, headers=operator_auth
             )
             assert [row["observationCursor"] for row in command_evidence.json()["observations"]] == [
                 admission_cursor,
@@ -222,7 +236,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
             linked = await client.post(
                 frames_path,
                 json=command_scope | {"observationCursor": outcome_cursor, "afterSequence": "0", "limit": 30},
-                headers=agent_auth,
+                headers=operator_auth,
             )
             assert linked.status_code == 200, linked.text
             assert "entry" in linked.json()["frames"][0]

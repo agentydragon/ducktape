@@ -42,7 +42,7 @@ from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.db_url import render_postgresql_url
 from util.net import Listener, listen_tcp
 from util.testing.asgi import serve_app_in_loop
-from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
+from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair, sign_jwt
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -103,6 +103,7 @@ class AppProcess:
     public_url: str | None = None
     login_ca: ssl.SSLContext | None = None
     oidc_issuer: str | None = None
+    operator_id_token: str | None = None
 
     async def replay_held(self) -> ReplayHeld:
         assert self.gate is not None
@@ -342,12 +343,13 @@ class ReadyServer(uvicorn.Server):
 async def oidc_provider(
     directory: Path,
     *,
+    client_id: str = "test-agentplane",
     subject: str = "test-operator",
     extra_claims: dict[str, object] | None = None,
     id_failure: str | None = None,
     reject_token_exchange: bool = False,
     options: OIDCProviderOptions | None = None,
-) -> AsyncIterator[tuple[str, Path]]:
+) -> AsyncIterator[tuple[str, Path, str]]:
     provider_options = options or OIDCProviderOptions()
     certificate = browser_certificate(directory)
     certificate.port_reservation.close()
@@ -448,6 +450,19 @@ async def oidc_provider(
 
             app.routes.insert(0, Route("/token", reject, methods=["POST"]))
         ca = certificate.directory / "certificate.pem"
+        now = int(time.time())
+        operator_id_token = sign_jwt(
+            private,
+            {
+                "iss": url,
+                "aud": client_id,
+                "azp": client_id,
+                "sub": subject,
+                "preferred_username": cast(str, claims["preferred_username"]),
+                "iat": now,
+                "exp": now + 3600,
+            },
+        )
         server = ReadyServer(
             uvicorn.Config(
                 app, log_level="warning", ssl_certfile=str(ca), ssl_keyfile=str(certificate.directory / "key.pem")
@@ -457,7 +472,7 @@ async def oidc_provider(
         try:
             async with asyncio.timeout(10):
                 await server.ready.wait()
-            yield url, ca
+            yield url, ca, operator_id_token
         finally:
             server.should_exit = True
             await task
@@ -576,8 +591,15 @@ async def app_process(
         token.write_text("test-unused-token")
         notices = grpc.aio.server()
         notifications_pb2_grpc.add_NotificationsServicer_to_server(FakeNotifications(), notices)
+        oidc_secrets = OIDCSecretInputs(
+            client_id="test-agentplane", client_secret="test-secret", session_secret="test-session-secret"
+        )
         async with (
-            oidc_provider(Path(directory) / "tls", options=oidc_provider_options) as (issuer, ca),
+            oidc_provider(Path(directory) / "tls", client_id=oidc_secrets.client_id, options=oidc_provider_options) as (
+                issuer,
+                ca,
+                operator_id_token,
+            ),
             serving(notices, "127.0.0.1:0", grace_s=0) as notices_port,
         ):
             settings: dict[str, object] = {
@@ -608,9 +630,6 @@ async def app_process(
                 issuer=issuer,
                 public_base_url=certificate.url if certificate is not None else f"http://127.0.0.1:{port}",
             )
-            oidc_secrets = OIDCSecretInputs(
-                client_id="test-agentplane", client_secret="test-secret", session_secret="test-session-secret"
-            )
             settings["oidc"] = oidc.model_dump(mode="json", exclude_unset=True)
             configured = settings.copy()
 
@@ -631,6 +650,7 @@ async def app_process(
                 app.public_url = oidc.public_base_url
                 app.login_ca = ssl.create_default_context(cafile=str(ca))
                 app.oidc_issuer = issuer
+                app.operator_id_token = operator_id_token
                 if certificate is None:
                     await app.authenticate()
                 else:

@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+go_library(
+    name = "testauth",
+    testonly = True,
+    srcs = ["testauth.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/app/internal/server/testauth",
+    deps = [
+        "//agentplane/app/internal/auth",
+        "@com_github_go_jose_go_jose_v4//:go-jose",
+        "@com_github_go_jose_go_jose_v4//jwt",
+    ],
+)

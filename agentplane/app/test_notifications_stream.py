@@ -101,9 +101,10 @@ async def test_notification_stream_closes_and_cancels_upstream(
             await peer.service.hung_up.wait()
 
 
-async def test_notification_watch_requires_browser_login(app: AppProcess, agent_auth: dict[str, str]) -> None:
-    async with httpx.AsyncClient(base_url=app.url, headers=agent_auth) as workload:
-        response = await workload.get(watch(str(uuid4())))
+async def test_notification_watch_requires_browser_login(app: AppProcess, operator_auth: dict[str, str]) -> None:
+    # A valid operator ID token identifies the caller but does not establish a browser session.
+    async with httpx.AsyncClient(base_url=app.url, headers=operator_auth) as bearer:
+        response = await bearer.get(watch(str(uuid4())))
     assert response.status_code == 403
 
 

@@ -76,7 +76,7 @@ flowchart LR
     responses[Responses API providers]
     anthropic[Anthropic Messages API]
 
-    liveTests -->|HTTPS: caller-supplied operator ID token| app
+    liveTests -->|HTTPS: operator OIDC ID token only| app
     browser -->|HTTPS, one origin| edge
     edge -->|HTML, assets and service worker| frontend
     edge -->|API, auth and streams| app
@@ -556,7 +556,7 @@ flowchart LR
     end
 
     browser -->|HTML, assets and service worker| frontend
-    browser -->|API + shape requests, same origin| app
+    browser -->|operator OIDC cookie: API + shape requests, same origin| app
     browser -->|generated ProtoJSON History reads| app
     app -->|gRPC reads and watch| history
     app -->|proxied shape request| electric

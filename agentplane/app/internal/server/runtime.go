@@ -54,7 +54,6 @@ import (
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-	"k8s.io/client-go/kubernetes"
 )
 
 const systemStatusTimeout = 5 * time.Second
@@ -94,10 +93,6 @@ func Run(ctx context.Context, config settings.Config) error {
 	kubeConfig, err := kubeclient.Config(config.Kubeconfig)
 	if err != nil {
 		return fmt.Errorf("load Kubernetes config: %w", err)
-	}
-	kube, err := kubernetes.NewForConfig(kubeConfig)
-	if err != nil {
-		return fmt.Errorf("create Kubernetes API clients: %w", err)
 	}
 	baseClient := &http.Client{Timeout: 10 * time.Second, Transport: observability.HTTPTransport(http.DefaultTransport)}
 	connectionTarget, err := grpcTargetFromHTTPURL(config.ConnectionServiceURL)
@@ -192,8 +187,7 @@ func Run(ctx context.Context, config settings.Config) error {
 		}
 	}
 	appAuth, err := auth.New(auth.Config{
-		OIDC: oidc, Database: db, TokenReviews: kube.AuthenticationV1().TokenReviews(),
-		TokenAudience: config.TokenAudience, TokenSubjects: config.TokenSubjects,
+		OIDC: oidc, Database: db,
 		StoreFederationTokens: federator != nil, SessionChanges: wakeupHub,
 		HTTPClient: baseClient,
 	})

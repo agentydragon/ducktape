@@ -7,13 +7,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
 	sessionhttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/sessions"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/server/testauth"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	authenticationv1 "k8s.io/api/authentication/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type runnerStatusFake struct {
@@ -25,24 +23,10 @@ func (f runnerStatusFake) EnvironmentRuntimeStatus(context.Context, string, stri
 	return f.status, f.err
 }
 
-type runnerStatusTokenReviewer struct{}
-
-func (runnerStatusTokenReviewer) Create(context.Context, *authenticationv1.TokenReview, metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
-	return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
-		Authenticated: true, Audiences: []string{"agentplane"},
-		User: authenticationv1.UserInfo{Username: "system:serviceaccount:fixture:reader"},
-	}}, nil
-}
-
 // Exercise the generated AppService facade with lifecycle fields and integers beyond JS precision.
 func TestEnvironmentRuntimeStatusServesLifecycleProgressAndExactCursors(t *testing.T) {
-	authentication, err := auth.New(auth.Config{
-		TokenReviews: runnerStatusTokenReviewer{}, TokenAudience: "agentplane",
-		TokenSubjects: []string{"system:serviceaccount:fixture:reader"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	fixture := testauth.New(t)
+	authentication := fixture.Auth
 	server := newHTTPServer(authentication)
 	handler := sessionhttp.NewHandler(sessionhttp.Dependencies{RuntimeStatus: runnerStatusFake{status: &sessionpb.EnvironmentRuntimeStatus{
 		EnvironmentRuntimeBootId: "fixture-boot",
@@ -62,7 +46,7 @@ func TestEnvironmentRuntimeStatusServesLifecycleProgressAndExactCursors(t *testi
 		t.Fatal(err)
 	}
 	request := httptest.NewRequest(http.MethodGet, "/sandboxes/fixture/runner-status?sandbox_uid=uid", nil)
-	request.Header.Set("Authorization", "Bearer fixture-token")
+	fixture.Authorize(request)
 	response := httptest.NewRecorder()
 	server.Handler(authentication).ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
@@ -108,13 +92,8 @@ func TestEnvironmentRuntimeStatusServesLifecycleProgressAndExactCursors(t *testi
 }
 
 func TestRunnerStatusRoutePreservesSandboxErrorsAndCallerAuthentication(t *testing.T) {
-	authentication, err := auth.New(auth.Config{
-		TokenReviews: runnerStatusTokenReviewer{}, TokenAudience: "agentplane",
-		TokenSubjects: []string{"system:serviceaccount:fixture:reader"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	fixture := testauth.New(t)
+	authentication := fixture.Auth
 	server := newHTTPServer(authentication)
 	handler := sessionhttp.NewHandler(sessionhttp.Dependencies{RuntimeStatus: runnerStatusFake{err: status.Error(codes.NotFound, "fixture")}})
 	if err := registerRunnerRoutes(server, &appService{sessions: handler}); err != nil {
@@ -129,7 +108,7 @@ func TestRunnerStatusRoutePreservesSandboxErrorsAndCallerAuthentication(t *testi
 	}
 
 	request = httptest.NewRequest(http.MethodGet, "/sandboxes/fixture/runner-status?sandbox_uid=uid", nil)
-	request.Header.Set("Authorization", "Bearer fixture-token")
+	fixture.Authorize(request)
 	response = httptest.NewRecorder()
 	server.Handler(authentication).ServeHTTP(response, request)
 	if response.Code != http.StatusNotFound {
