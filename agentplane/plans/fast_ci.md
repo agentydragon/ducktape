@@ -18,9 +18,13 @@ measurements. No qualified 30% complete-PR saving has been established.
 Work resumed on 14 November 2026 with this measurable objective. The
 first candidate must change the ordinary selected graph, retain the current
 source in every executed binary, and account for every removed deployed assertion.
-The immediate architecture work removes incidental App dependencies from real
-platform acceptance, then measures common backend changes. Prepared infrastructure
-remains a separate option if the retained deployment work still limits feedback.
+The next architecture experiment compares prepared disposable infrastructure with
+the existing retained-infrastructure path. It must identify work beyond the
+already warm setup before implementation: warm Pod setup is only 27–34 seconds
+in the retained screens, so eliminating cold installation alone cannot establish
+the goal. Combine a useful substrate with coverage-accounted case partitions and
+structural dependency cuts, then measure the complete selected graph. Continue
+the bounded App-free Egress extraction; avoid unrelated fixture optimizations.
 
 ## Candidate architecture
 

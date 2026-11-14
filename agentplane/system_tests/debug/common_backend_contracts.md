@@ -663,3 +663,48 @@ merged on 2026-11-14 at 17:22:30 UTC from `d34c757904475f262cce517503a21d863e466
 All three required hosted checks pass, as do 25 generated-manifest cases with no staging snapshot drift. Its
 [ordinary CI invocation](https://app.buildbuddy.io/invocation/786681d0-1e2e-5bdc-bff1-d58089c715ef)
 passes. That narrow port does not depend on adopting this architecture.
+
+### Stable Gateway rebase qualification
+
+The rebase onto `0dc97aeb45` incorporates devel's stable Gateway Service and removal of
+per-Sandbox control Services/EndpointSlices and Runtime Lease records. Branch-only native
+readiness and direct-guest assertions still expect the removed objects. Ordinary CI
+[c1939149](https://app.buildbuddy.io/invocation/c1939149-a21f-5d05-a14d-18dfca57faa9)
+exposes the stale EndpointSlice wait in VM/Firecracker and the Lease 404 after successful
+authenticated guest status. Raising readiness budgets would not repair either failure.
+
+Source `241e6134` routes native Runner reads through the already forwarded stable Gateway
+Service while retaining exact Sandbox identity. Direct guest readiness now proves a wrong
+incarnation is refused with `ABORTED`, then checks correctly fenced authenticated status,
+boot identity, running lifecycle/progress and empty Sessions. The removed Lease is no longer
+a production boundary. Ordinary budgets, real guests, PKI and scenario assertions remain.
+
+[Focused platform validation](https://app.buildbuddy.io/invocation/b2aa638a-1a48-4e60-962d-57ea312f4d1c)
+runs `b0ca37f6` plus the three-file stable-route overlay. Both Firecracker cases, the managed
+VM aggregate and four native Pod trust cases pass. The aggregate invocation fails because
+the newly changed unit helper omits a required request timeout; that helper is corrected
+in `241e6134`.
+
+[Final guest validation](https://app.buildbuddy.io/invocation/25ad6f90-e553-43a9-a887-7b38f419e33f)
+runs `b0ca37f6` plus the final nine-file overlay subsequently committed as `241e6134`. All four
+test targets pass: native-client units 13.3s, Claude guest 117.7s, Codex guest 190.6s and
+guest transport 64.9s. The aggregate fails a `no-any-return` mypy error in the helper's
+protobuf response. With an explicit result annotation, the named library and its mypy
+aspect pass [01a64ba3](https://app.buildbuddy.io/invocation/01a64ba3-d192-47e3-9b6e-62cfe0fdac7f),
+using source `241e6134` plus that one-line overlay. These focused results establish current
+route/fencing behavior, not a speed improvement against devel
+or a green complete required gate.
+
+The [full-system KVM candidate](https://app.buildbuddy.io/invocation/292cabf2-7824-469a-9a23-7b92f13ecad8)
+was started at `b0ca37f6`, with the ordinary 120-second budget and 49-case composition. It is
+intentionally canceled after identifying the same retired-object readiness regression;
+the planned control arm never starts. The child reports disconnected and the CLI exits one.
+Retain the attempt and its physical costs, but exclude it from paired timing claims. Do not
+resume or replay it as if only log observation failed. A new comparison needs a newly frozen,
+corrected source. The required selection policy and existing broad fallback remain unchanged.
+
+The independent structured resume-refusal repair is
+[PR #16393](https://github.com/agentydragon/ducktape/pull/16393), now merged in devel. Its first
+CI exposure fails during PKI fixture setup; one unchanged-head rerun passes all substantive
+required checks. The failure remains part of the reliability evidence rather than disappearing
+from the denominator. No fleet rerun reduction has been measured.

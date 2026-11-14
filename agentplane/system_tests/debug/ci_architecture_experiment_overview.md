@@ -33,8 +33,25 @@ witness keeps its original App-backed fixture. These are coverage-preserving rep
 not a qualified complete-feedback saving. The current native VM suite also passes on the existing
 KVM worker in 226.691s with both harnesses and real KVM acceleration; this is
 [feasibility evidence](vm_kvm_existing_pool_2026_11_12.md#current-native-fixture-14-november),
-not a matched placement saving or adequate concurrent capacity. The larger untried options
-remain an ordinary contract-owned gate and prepared disposable integration infrastructure.
+not a matched placement saving. A later fixed-source trial passes two VM and two Firecracker
+actions, with real overlap on two distinct KVM workers. Existing autoscaling takes 188 seconds
+from the additional worker's creation to readiness. This establishes concurrent execution,
+not reliable cold/burst capacity, a fleet flake rate or a placement saving; whole-action physical
+CPU/memory remain unknown. [Concurrent trial](vm_kvm_existing_pool_2026_11_12.md#concurrent-native-vm-and-firecracker-trial).
+
+Rebasing exposes branch-only readiness code polling EndpointSlices and Leases removed by
+devel. The branch now uses the stable Gateway Service and tests wrong-incarnation refusal
+followed by correctly fenced Runtime status. Real Firecracker, managed VM and native Pod
+contracts pass the focused validation; the final three direct guest targets and native-client
+unit target also pass, while that invocation fails a type check subsequently corrected.
+The attempted full-system KVM screen is canceled before its control arm rather than timed
+through known source regressions. [Rebase evidence](common_backend_contracts.md#stable-gateway-rebase-qualification).
+
+The next large experiment targets prepared disposable integration infrastructure and the
+ordinary contract-owned gate. Warm retained Pod setup already takes only 27–34 seconds;
+eliminating cold bootstrap by itself is not a 30% complete-feedback case. A useful substrate
+must combine with shorter case tails or broader dependency cuts, preserve fresh identities
+and mutable state, and beat the existing warm path as well as a fresh cluster.
 
 ## What has been tried
 
