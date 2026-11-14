@@ -125,7 +125,7 @@
   },
   "source_devel_commit_scope": "Latest integrated source only; historical measurements retain their own exact tested revisions and original windows.",
   "publication_base_gh_pages_commit": "c8f6801795c2a610a839f356487eadec6474fe79",
-  "root_navigation_sha256": "e8cf00f8f03e8dd0452e21d4e1ec5ce4ba32358f4405a54d1b58d2acde772054",
+  "root_navigation_sha256": "16e72d0e69a454a63563b6c80afbc1c55dde76a1b96658e143bddf65175effad",
   "draft_prepared_at_utc": "2026-11-14T02:32:12.581846+00:00",
   "iteration11": {
     "evidence_file": "iteration11.json",
