@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "source_sha": "55e7df4226dd4d761a72b96ea055a362c953e3ec",
-  "observed_at_utc": "2026-11-14T03:30:00+00:00",
+  "source_sha": "02dc3c7a2e5416922235ee1c4c4c2fe63ca38981",
+  "observed_at_utc": "2026-11-14T06:05:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
     "files": 1270,
@@ -11638,7 +11638,7 @@
     "environments-directory",
     "runner-gateway-command"
   ],
-  "remaining_work_note": "Ordered by certainty (revised 2026-11-14 against devel a2c0b74e3c, which has no Go or protobuf change from the inventory pin). Stages 1 and 2 hold whatever the service map becomes; stage 3 follows directions the operator agreed; stage 4 needs only a local contract; stage 5 waits on open service decisions; stage 6 is deferred. READY records decided exact moves; PLANNED names a concrete boundary; AGREED DIRECTION is an operator-agreed move whose contract is still to be written; HELD is a decided move waiting so its files move once; DESIGN REQUIRED needs a local contract; OPEN DIRECTION waits on an undecided service decision. The tree shows candidates without assigning fictitious final filenames.",
+  "remaining_work_note": "Ordered by certainty (revised 2026-11-14 at the inventory pin, devel 02dc3c7a2e). Stages 1 and 2 hold whatever the service map becomes; stage 3 follows directions the operator agreed; stage 4 needs only a local contract; stage 5 waits on open service decisions; stage 6 is deferred. READY records decided exact moves; PLANNED names a concrete boundary; AGREED DIRECTION is an operator-agreed move whose contract is still to be written; HELD is a decided move waiting so its files move once; DESIGN REQUIRED needs a local contract; OPEN DIRECTION waits on an undecided service decision. The tree shows candidates without assigning fictitious final filenames.",
   "adoption": [
     {
       "stage": 1,
@@ -11729,7 +11729,7 @@
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "55e7df4226dd4d761a72b96ea055a362c953e3ec",
+    "review_source_sha": "02dc3c7a2e5416922235ee1c4c4c2fe63ca38981",
     "review_slices": [
       {
         "slice": "action_service",

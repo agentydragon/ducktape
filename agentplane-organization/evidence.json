@@ -5,66 +5,15 @@
   "observed_at_utc": "2026-11-14T00:48:53+00:00",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "freshness": {
-    "checked_origin_devel": "55e7df4226dd4d761a72b96ea055a362c953e3ec",
-    "checked_at_utc": "2026-11-14T03:30:00+00:00",
-    "previous_pin": "6dfbd741f5ba004f02aba929cadbbd59b6950393",
-    "go_or_proto_delta": "Since 6dfbd741, 19 Go files were removed or moved away, 33 added or moved in and 77 edited, by the landed work below and the backend gRPC TLS support (#16332, outside this plan); every other tracked Go file has the same blob hash.",
-    "landed": [
-      {
-        "track": "app-proxy-owners",
-        "pr": 16309,
-        "result": "`app/internal/proxy` split into `electricproxy` and `upstream`."
-      },
-      {
-        "track": "action-service-cmd-layout",
-        "pr": 16310,
-        "result": "The Action Service package main moved to `action_service/cmd`."
-      },
-      {
-        "track": "policy-controller-rpc-cleanup",
-        "pr": 16313,
-        "result": "`internal/rpc` declares package rpc and is split into service, sandbox-binding, Identity and watch files; `agentplane/policy/errors.go` and the dead Gateway mapping are gone. The planned `policy_sets.go` and `resources.go` were not created; those methods stayed in `service.go`."
-      },
-      {
-        "track": "sampler-provider-io",
-        "pr": 16314,
-        "result": "Provider I/O budgets and errors moved to `central_sampler/internal/providerio`; `protocol` keeps the contracts."
-      },
-      {
-        "track": "app-http-owners (first step; item stays)",
-        "pr": 16320,
-        "result": "Thread read and metadata handling moved to `app/internal/httpapi/threads`; Session/environment routes and streaming facades remain in the aggregate server."
-      },
-      {
-        "track": "settings-viper-removal",
-        "pr": 16315,
-        "result": "The app and Action Service decode their settings files without Viper; no Agentplane Go code imports it."
-      },
-      {
-        "track": "runtime-facts-off-lease",
-        "pr": 16328,
-        "result": "The Sandbox Controller reads Runtime facts itself (#16324); the Gateway's fact publication, the Controller's Lease reads and the `sandboxes/lease` codec are gone (#16328). The Controller's connection-Lease RBAC waits for its image pin and is carried by gateway-connection-lease-removal."
-      },
-      {
-        "track": "transition-tolerance-removal (sampler part; item stays for the Dispatcher)",
-        "pr": 16331,
-        "result": "Pre-Identity sampler Sessions deleted by migration 17 (#16323) and the sampler's fallbacks removed (#16331)."
-      },
-      {
-        "track": "gateway-connection-lease-removal (first step; item stays)",
-        "pr": 16330,
-        "result": "The Runtime accepts calls without a connection epoch."
-      },
-      {
-        "track": "app-http-owners (more steps; item stays)",
-        "pr": 16329,
-        "result": "Session (#16326), config and status (#16329) handlers moved under `app/internal/httpapi`."
-      }
-    ],
+    "checked_origin_devel": "02dc3c7a2e5416922235ee1c4c4c2fe63ca38981",
+    "checked_at_utc": "2026-11-14T06:05:00+00:00",
+    "previous_pin": "55e7df4226dd4d761a72b96ea055a362c953e3ec",
+    "go_or_proto_delta": "Since 55e7df42 only #16344 (retry transient Gateway readiness before delaying quiescence) changed Go: it edited 7 files and added, removed or moved none; no `.proto` changed. No tracked work landed.",
+    "landed": [],
     "interpretation": "Landed work items are removed, not listed as done. Moved and new files are reclassified at their new paths; packages that no longer hold Go files (`action_service` root, `app/internal/proxy`, `policy` root) left the ledger."
   },
   "inventory": {
-    "source_sha": "55e7df4226dd4d761a72b96ea055a362c953e3ec",
+    "source_sha": "02dc3c7a2e5416922235ee1c4c4c2fe63ca38981",
     "counts": {
       "files": 1270,
       "directories": 222,
@@ -9968,16 +9917,16 @@
       "Goal trees show the Action Service's cmd package, EnvironmentService's proposed owners under the Sandbox Controller and no emptied directories."
     ],
     "structural_checks": [
-      "All 1,270 tracked Go files at devel 55e7df4226 match the ledger's path, blob hash, line count, package and test flags; the 222 directories and package decisions match one to one; every pending track exists.",
+      "All 1,270 tracked Go files at devel 02dc3c7a2e match the ledger's path, blob hash, line count, package and test flags; the 222 directories and package decisions match one to one; every pending track exists.",
       "Every non-retained package has a work item; adoption stages cover every work item once; content prerequisites precede dependents; move targets are unique and new.",
-      "Every work item's source, evidence and deletion paths exist at 55e7df4226, and its validation labels exist in the pinned BUILD files."
+      "Every work item's source, evidence and deletion paths exist at 02dc3c7a2e, and its validation labels exist in the pinned BUILD files."
     ],
     "visual_review": "Inspected the reworked runtime-facts-off-lease and gateway-replica-ownership cards, the remaining-work queue, adoption order and the action_service and sandbox_controller trees (desktop light, mobile dark). Screenshots were not published.",
     "limits": "Planning/report validation only. No Go behavior changes, Go tests, deployments or live acceptance are claimed."
   },
   "sequence_review": {
     "revised_at_utc": "2026-11-14T01:36:53+00:00",
-    "checked_origin_devel": "a2c0b74e3cd4a14e2397adb25847665e1a09c094",
+    "checked_origin_devel": "02dc3c7a2e5416922235ee1c4c4c2fe63ca38981",
     "purpose": "Reorder the remaining work by certainty so each file moves once: leftover deletions, layout fixes that hold under any service map, operator-agreed service moves, local extractions, moves waiting on open service decisions, deferred contracts.",
     "operator_inputs_2026_11_14": [
       "Python/Go leftovers, dead code and tolerances for things that no longer exist should go.",
@@ -10013,8 +9962,8 @@
     },
     "target_binaries": {
       "reviewed_at_utc": "2026-11-14T05:40:00+00:00",
-      "checked_origin_devel": "aa8d1061adb9c7f7fec5db27de4341746f76bac5",
-      "agentplane_delta_since_pin": "None: no commit between the plan pin and this devel touches agentplane/.",
+      "checked_origin_devel": "02dc3c7a2e5416922235ee1c4c4c2fe63ca38981",
+      "agentplane_delta_since_pin": "None: the pin is the checked devel.",
       "operator_inputs": [
         {
           "at_utc": "2026-11-14T05:11",
