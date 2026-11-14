@@ -205,10 +205,11 @@ func (c *config) validate() error {
 			"/agentplane.environments.v1.EnvironmentService/WatchEnvironments": {},
 			"/agentplane.environments.v1.EnvironmentService/GetEnvironment":    {},
 			"/agentplane.environments.v1.EnvironmentService/WatchEnvironment":  {},
+			"/agentplane.environments.v1.EnvironmentService/ResumeEnvironment": {},
 		}
 		for _, method := range c.EnvironmentServiceDelegation.Methods {
 			if _, ok := allowed[method]; !ok {
-				return fmt.Errorf("environment_service_delegation method %q is not a read-only EnvironmentService method", method)
+				return fmt.Errorf("environment_service_delegation method %q is not an allowed EnvironmentService delegation method", method)
 			}
 		}
 		var actors []string

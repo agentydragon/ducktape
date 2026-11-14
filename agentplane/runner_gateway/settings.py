@@ -164,7 +164,7 @@ class Settings(BaseModel):
     environment_service_delegation: ServiceDelegation | None = Field(
         default=None,
         exclude_if=lambda value: not value,
-        description="Independent certificate actors allowed to call exact read-only EnvironmentService methods as a live Identity.",
+        description="Independent certificate actors allowed to call exact EnvironmentService read or resume methods as a live Identity.",
     )
     delegation: DelegationSettings | None = Field(
         default=None,
@@ -258,14 +258,17 @@ class Settings(BaseModel):
             if not set(self.dispatcher_service_delegation.methods) <= dispatcher_methods:
                 raise ValueError("dispatcher_service_delegation methods must belong to SessionDispatcher")
         if self.environment_service_delegation is not None:
-            read_methods = {
+            delegated_methods = {
                 "/agentplane.environments.v1.EnvironmentService/ListEnvironments",
                 "/agentplane.environments.v1.EnvironmentService/WatchEnvironments",
                 "/agentplane.environments.v1.EnvironmentService/GetEnvironment",
                 "/agentplane.environments.v1.EnvironmentService/WatchEnvironment",
+                "/agentplane.environments.v1.EnvironmentService/ResumeEnvironment",
             }
-            if not set(self.environment_service_delegation.methods) <= read_methods:
-                raise ValueError("environment_service_delegation methods must be read-only EnvironmentService methods")
+            if not set(self.environment_service_delegation.methods) <= delegated_methods:
+                raise ValueError(
+                    "environment_service_delegation methods must be allowed EnvironmentService delegation methods"
+                )
         return self
 
     @model_validator(mode="after")

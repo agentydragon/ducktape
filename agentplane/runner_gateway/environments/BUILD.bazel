@@ -45,6 +45,7 @@ go_library(
 go_test(
     name = "environments_test",
     srcs = [
+        "delegated_resume_envtest_test.go",
         "environment_grants_test.go",
         "service_svid_test.go",
         "service_test.go",
