@@ -29,6 +29,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/internal/historyclient"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/historywatch"
+	threadhttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/threads"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/migrations"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/status"
@@ -306,10 +307,14 @@ func Run(ctx context.Context, config settings.Config) error {
 	defer closeConnections(healthConnections)
 
 	server := newHTTPServer(appAuth)
+	threadMetadata := threadhttp.NewHandler(threadhttp.Dependencies{
+		Store: threadStore, History: history, SandboxNamespace: config.SandboxNamespace,
+		Environments: environments, EnvironmentRuntime: runner,
+		Updates: wakeupHub, UpdatesConnected: wakeupHub.Connected, DrainDone: server.DrainDone(),
+	})
 	app := &appService{
 		config: config, systemStatus: serviceStatus, policySetNames: policySetNames, environments: environments, bridge: appBridge, runnerStatus: appBridge,
-		threadWriter: threadStore, threadReader: threadStore, threadHistory: history, threadRuntime: runner,
-		updates: wakeupHub, updatesConnected: wakeupHub.Connected, drainDone: server.DrainDone(),
+		threadWriter: threadStore, threadMetadata: threadMetadata,
 	}
 	if err := registerAppConfigRoutes(server, app); err != nil {
 		return fmt.Errorf("register app configuration facade: %w", err)

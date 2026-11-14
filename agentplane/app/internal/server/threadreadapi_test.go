@@ -19,11 +19,11 @@ import (
 
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
+	threadhttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/threads"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/threads"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
-	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -143,7 +143,7 @@ func TestListThreadMetadataScopesPagesAndArchiveCountToSandboxUID(t *testing.T) 
 		sandboxes:   map[uuid.UUID]string{ids[0]: "reused", ids[1]: "reused", ids[2]: "reused", ids[3]: "reused", ids[4]: "reused", ids[5]: "reused"},
 		sandboxUIDs: map[uuid.UUID]string{ids[0]: oldUID, ids[1]: currentUID, ids[2]: currentUID, ids[3]: currentUID, ids[4]: currentUID, ids[5]: currentUID},
 	}
-	service := &appService{threadReader: store, threadHistory: history}
+	service := &appService{threadMetadata: threadhttp.NewHandler(threadhttp.Dependencies{Store: store, History: history})}
 	first, err := service.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: currentUID, Limit: 1, IncludeArchived: true})
 	if err != nil {
 		t.Fatal(err)
@@ -216,7 +216,10 @@ func TestThreadMetadataWatchStreamsUpdatesAndCloses(t *testing.T) {
 			var connected atomic.Bool
 			connected.Store(true)
 			server := newHTTPServer(authentication)
-			if err := registerThreadMetadataGateway(server, &appService{threadReader: &threadReadStoreFake{}, updates: changes, updatesConnected: connected.Load, drainDone: server.DrainDone()}); err != nil {
+			threadMetadata := threadhttp.NewHandler(threadhttp.Dependencies{
+				Store: &threadReadStoreFake{}, Updates: changes, UpdatesConnected: connected.Load, DrainDone: server.DrainDone(),
+			})
+			if err := registerThreadMetadataGateway(server, &appService{threadMetadata: threadMetadata}); err != nil {
 				t.Fatal(err)
 			}
 			httpServer := httptest.NewServer(server.Handler(authentication))
@@ -299,17 +302,6 @@ func (f *threadReadInventoryFake) GetEnvironment(_ context.Context, request *env
 	return f.sandbox, nil
 }
 
-type threadReadEnvironmentRuntimeFake struct {
-	status *sessionpb.EnvironmentRuntimeStatus
-	err    error
-	target *identitypb.EnvironmentTarget
-}
-
-func (f *threadReadEnvironmentRuntimeFake) EnvironmentRuntimeStatus(_ context.Context, sandbox *environmentpb.EnvironmentDescriptor) (*sessionpb.EnvironmentRuntimeStatus, error) {
-	f.target = sandbox.GetTarget()
-	return f.status, f.err
-}
-
 func (f *threadReadHistoryFake) GetSummary(_ context.Context, id uuid.UUID) (*historypb.SessionSummary, error) {
 	return f.summaries[id], nil
 }
@@ -340,81 +332,10 @@ func (f *threadReadHistoryFake) FindSessions(_ context.Context, _, _, sandboxUID
 	return result, nil
 }
 
-func TestThreadSandboxReadinessRequiresRunningReadyPod(t *testing.T) {
-	ready := &environmentpb.EnvironmentDescriptor{
-		ObservedState: &environmentpb.EnvironmentObservedState{
-			OperatingMode: environmentpb.OperatingMode_OPERATING_MODE_RUNNING,
-			Readiness:     &environmentpb.Readiness{State: environmentpb.ReadinessState_READINESS_STATE_READY},
-		},
-	}
-	if !threadSandboxReady(ready) {
-		t.Fatal("running Sandbox with Ready=True was rejected")
-	}
-	if threadSandboxReady(&environmentpb.EnvironmentDescriptor{ObservedState: &environmentpb.EnvironmentObservedState{Readiness: ready.GetObservedState().GetReadiness()}}) {
-		t.Fatal("Ready condition without a reported mode was accepted")
-	}
-	if threadSandboxReady(&environmentpb.EnvironmentDescriptor{
-		ObservedState: &environmentpb.EnvironmentObservedState{
-			OperatingMode: environmentpb.OperatingMode_OPERATING_MODE_SUSPENDED,
-			Readiness:     ready.GetObservedState().GetReadiness(),
-		},
-	}) {
-		t.Fatal("suspended Sandbox was accepted")
-	}
-}
-
-func TestEnsureThreadArchivableRejectsBusyEnvironmentRuntime(t *testing.T) {
-	id := uuid.New()
-	thread := threads.Thread{ID: id}
-	sandbox := &environmentpb.EnvironmentDescriptor{
-		Target: &identitypb.EnvironmentTarget{Namespace: "team", Name: "sandbox", Uid: "sandbox-uid"},
-		ObservedState: &environmentpb.EnvironmentObservedState{
-			OperatingMode: environmentpb.OperatingMode_OPERATING_MODE_RUNNING,
-			Readiness:     &environmentpb.Readiness{State: environmentpb.ReadinessState_READINESS_STATE_READY},
-		},
-		KubernetesDiagnostics: &environmentpb.KubernetesDiagnostics{Pod: &environmentpb.SandboxPod{Name: "environment-runtime-pod"}},
-	}
-	inventory := &threadReadInventoryFake{sandbox: sandbox}
-	environmentRuntime := &threadReadEnvironmentRuntimeFake{status: &sessionpb.EnvironmentRuntimeStatus{Sessions: []*sessionpb.SessionStatus{{SessionId: id.String(), Busy: true}}}}
-	summary := &historypb.SessionSummary{Sandbox: &historypb.SandboxRef{Name: "sandbox", Uid: proto.String("sandbox-uid")}}
-	if err := ensureThreadArchivable(context.Background(), "tools", thread, summary, inventory, environmentRuntime); !errors.Is(err, errThreadBusy) {
-		t.Fatalf("busy Environment Runtime archive check = %v, want errThreadBusy", err)
-	}
-	if inventory.exactName != "sandbox" || inventory.exactUID != "sandbox-uid" {
-		t.Fatalf("archive lookup identity = %q/%q, want exact Sandbox UID", inventory.exactName, inventory.exactUID)
-	}
-	if environmentRuntime.target.GetUid() != "sandbox-uid" {
-		t.Fatalf("runtime status target = %v, want exact Sandbox UID", environmentRuntime.target)
-	}
-	environmentRuntime.status.Sessions[0].Busy = false
-	if err := ensureThreadArchivable(context.Background(), "tools", thread, summary, inventory, environmentRuntime); err != nil {
-		t.Fatalf("idle Environment Runtime archive check = %v, want nil", err)
-	}
-	sandbox.ObservedState.OperatingMode = environmentpb.OperatingMode_OPERATING_MODE_SUSPENDED
-	if err := ensureThreadArchivable(context.Background(), "tools", thread, summary, inventory, environmentRuntime); !errors.Is(err, errThreadEnvironmentRuntimeUnready) {
-		t.Fatalf("unready Environment Runtime archive check = %v, want errThreadEnvironmentRuntimeUnready", err)
-	}
-}
-
-func TestEnsureThreadArchivableRequiresSandboxIdentity(t *testing.T) {
-	thread := threads.Thread{ID: uuid.New()}
-	for _, summary := range []*historypb.SessionSummary{
-		{Sandbox: &historypb.SandboxRef{Uid: proto.String("uid")}},
-		{Sandbox: &historypb.SandboxRef{Name: "sandbox"}},
-	} {
-		inventory := &threadReadInventoryFake{sandbox: &environmentpb.EnvironmentDescriptor{
-			Target: &identitypb.EnvironmentTarget{Name: "sandbox", Uid: "uid"},
-		}}
-		if err := ensureThreadArchivable(context.Background(), "tools", thread, summary, inventory, nil); err == nil || inventory.exactName != "" {
-			t.Fatalf("archive validation for identity %+v = %v, lookup name %q; want rejection before lookup", summary, err, inventory.exactName)
-		}
-	}
-}
-
 func TestRenameThreadReturnsNotFoundWhenHistorySessionIsMissing(t *testing.T) {
 	id := uuid.New()
 	store := &threadReadStoreFake{rows: []threads.Thread{{ID: id}}}
-	service := &appService{threadReader: store, threadHistory: &threadReadHistoryFake{}}
+	service := &appService{threadMetadata: threadhttp.NewHandler(threadhttp.Dependencies{Store: store, History: &threadReadHistoryFake{}})}
 	name := "renamed"
 	_, err := service.RenameThread(context.Background(), &apppb.RenameThreadRequest{ThreadId: id.String(), Name: &name})
 	if status.Code(err) != codes.NotFound {
@@ -428,9 +349,9 @@ func TestRenameThreadReturnsNotFoundWhenHistorySessionIsMissing(t *testing.T) {
 func TestRenameThreadRequiresHistorySessionButNotSandboxIdentity(t *testing.T) {
 	id := uuid.New()
 	store := &threadReadStoreFake{rows: []threads.Thread{{ID: id}}}
-	service := &appService{threadReader: store, threadHistory: &threadReadHistoryFake{
+	service := &appService{threadMetadata: threadhttp.NewHandler(threadhttp.Dependencies{Store: store, History: &threadReadHistoryFake{
 		summaries: map[uuid.UUID]*historypb.SessionSummary{id: {}},
-	}}
+	}})}
 	name := "renamed"
 	metadata, err := service.RenameThread(context.Background(), &apppb.RenameThreadRequest{ThreadId: id.String(), Name: &name})
 	if err != nil || metadata.GetName() != name {
@@ -451,7 +372,8 @@ func TestThreadMutationGateway(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := newHTTPServer(authentication)
-	if err := registerThreadMetadataGateway(server, &appService{threadReader: store, threadHistory: history, environments: inventory}); err != nil {
+	threadMetadata := threadhttp.NewHandler(threadhttp.Dependencies{Store: store, History: history, Environments: inventory})
+	if err := registerThreadMetadataGateway(server, &appService{threadMetadata: threadMetadata}); err != nil {
 		t.Fatal(err)
 	}
 	handler := server.Handler(authentication)

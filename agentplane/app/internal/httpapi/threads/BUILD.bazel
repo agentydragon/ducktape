@@ -1,0 +1,43 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+go_library(
+    name = "threads",
+    srcs = ["handler.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/threads",
+    deps = [
+        "//agentplane/app:app_service_go_proto",
+        "//agentplane/app/internal/historydata",
+        "//agentplane/app/internal/threads",
+        "//agentplane/environments/v1:environment_service_go_proto",
+        "//agentplane/history_service/api/history:history_service_go_proto",
+        "//agentplane/proto:identity_go_proto",
+        "//agentplane/proto:session_go_proto",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
+        "@io_k8s_utils//ptr",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/emptypb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)
+
+go_test(
+    name = "handler_test",
+    srcs = ["handler_test.go"],
+    embed = [":threads"],
+    deps = [
+        "//agentplane/app/internal/threads",
+        "//agentplane/environments/v1:environment_service_go_proto",
+        "//agentplane/history_service/api/history:history_service_go_proto",
+        "//agentplane/proto:identity_go_proto",
+        "//agentplane/proto:session_go_proto",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
