@@ -334,6 +334,8 @@ uses no History bearer credential or projected audience token and adds no `reade
 
 The co-hosted receivers can additionally admit exact service SVIDs when configured.
 Their reader, manager, launcher, operator, Executor and proxy grants remain separate.
+App and Notifications have exact service-SVID automatic wake-broker grants, separately from
+explicit operator resume. Notification wake remains conditional on the target's wake-on-send policy.
 The Sessions, Environments and Runtime-proxy roles can move with the planned binary split.
 No caller or production listener configuration switches in this stage.
 

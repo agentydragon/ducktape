@@ -405,6 +405,7 @@ data:
       - agentplane-staging/notifications
     wake_service_callers:
       - spiffe://agentplane/app
+      - spiffe://agentplane/notifications
     operator_callers:
       - agentplane-staging/app
     sandbox_controller_account: agentplane-staging/sandbox-controller
