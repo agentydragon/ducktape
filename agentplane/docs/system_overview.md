@@ -416,6 +416,20 @@ flowchart LR
     sampler -->|service SPIFFE ID ownership| db[(Sampler PostgreSQL)]
 ```
 
+### Staged LLM ingress certificate admission
+
+Exact service SVID allowlists cover ModelConfig reads and the Central Sampler's typed inference
+calls. A sampler actor must also prove the effective live Identity and Session in the delegation
+envelope. These edges wait for receiver pins and separate caller settings; staging retains its
+current bearer mode until that cutover.
+
+```mermaid
+flowchart LR
+    readers[Configured service SVID readers] -->|mTLS: ModelConfig read methods| llm[LLM ingress]
+    sampler[Central Sampler service SVID] -->|mTLS plus typed Identity and Session delegation| llm
+    llm -->|effective Identity egress grants| provider[Model provider]
+```
+
 ## Environment control and native Sessions
 
 ```mermaid

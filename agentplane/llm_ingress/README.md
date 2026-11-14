@@ -184,3 +184,17 @@ and `pod_uid` the sampler's Pod, the one that made the call, and `agentplane.ses
 the envelope, so a delegated call may not also claim a Session by header. The envelope is stripped
 like every other caller header. A sampler calling for a Session with no Identity keeps using the
 bearer path above. Claiming a Session never implies this grant.
+
+## Service certificate admission during the cutover
+
+`model_config_service_callers` grants exact service SPIFFE IDs access to ModelConfig RPCs.
+`central_sampler_services` grants exact certificate actors typed Identity-and-Session delegation on
+inference, and requires `central_sampler_identity_callers`. Both require listener SPIFFE client trust.
+The actor's certificate proves the sampler; the envelope and a fresh Identity UID lookup prove the
+effective caller. Service delegation records no fabricated ServiceAccount or Pod claims. Duplicate,
+malformed, stale or absent delegation proof, unlisted actors and combined bearer credentials fail closed.
+
+These optional allowlists default empty. Staging currently uses the sampler's projected bearer and
+Session header. Its later caller cutover must select the existing `agentplane_ingress` provider mode
+and enable typed delegation after receiver images are pinned. Existing bearer admission stays until
+all caller images are pinned; there is no certificate failure fallback to it.

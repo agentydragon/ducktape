@@ -74,8 +74,19 @@ func newIngressHandler(c config, resolver *auth.Resolver, identities auth.Identi
 			}
 			delegators = append(delegators, auth.Delegator{Account: account, IdentityCallers: true})
 		}
-		if admission, err = admission.AllowDelegationFrom(delegators, identities); err != nil {
-			return nil, fmt.Errorf("central_sampler_identity_callers: %w", err)
+		if len(delegators) > 0 {
+			if admission, err = admission.AllowDelegationFrom(delegators, identities); err != nil {
+				return nil, fmt.Errorf("central_sampler_identity_callers: %w", err)
+			}
+		}
+		if len(c.CentralSamplerServices) > 0 {
+			actors := make([]auth.ServiceDelegator, 0, len(c.CentralSamplerServices))
+			for _, id := range c.CentralSamplerServices {
+				actors = append(actors, auth.ServiceDelegator{SPIFFEID: id})
+			}
+			if admission, err = admission.AllowServiceDelegationFrom(actors, identities); err != nil {
+				return nil, err
+			}
 		}
 	}
 	transport, ok := http.DefaultTransport.(*http.Transport)
@@ -231,6 +242,12 @@ func admittedCaller(ctx context.Context) (verifiedCaller, error) {
 		return verifiedCaller{claims: subjectClaims(principal), logAttrs: callerLogAttrs(principal), account: &principal}, nil
 	case auth.IdentityAdmission:
 		return verifiedCaller{claims: subjectClaims(admission.Caller), logAttrs: callerLogAttrs(admission.Caller)}, nil
+	case auth.DelegatedServiceIdentityAdmission:
+		session := admission.Provenance.GetSession()
+		if session == nil {
+			return verifiedCaller{}, status.Error(codes.PermissionDenied, "delegated inference requires Session provenance")
+		}
+		return verifiedCaller{claims: map[verifiedClaim]string{verifiedIdentity: admission.EffectiveCaller.Name, verifiedIdentityUID: admission.EffectiveCaller.UID}, logAttrs: []any{"subject_kind", "identity", "subject_name", admission.EffectiveCaller.Name, "actor_spiffe_id", admission.Actor.SPIFFEID}, sessionID: session.GetSessionId()}, nil
 	case auth.DelegatedIdentityAdmission:
 		session := admission.Provenance.GetSession()
 		if session == nil {

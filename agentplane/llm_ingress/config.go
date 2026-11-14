@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/go-viper/mapstructure/v2"
 	"go.opentelemetry.io/otel/baggage"
@@ -68,6 +69,8 @@ type modelConfig struct {
 }
 
 type config struct {
+	ModelConfigServiceCallers []string `mapstructure:"model_config_service_callers"`
+	CentralSamplerServices    []string `mapstructure:"central_sampler_services"`
 	// CentralSamplerAccounts may claim a central Session (`x-agentplane-session-id`) on their own
 	// bearer calls.
 	CentralSamplerAccounts []string `mapstructure:"central_sampler_accounts"`
@@ -141,6 +144,17 @@ func loadConfig() (config, error) {
 }
 
 func validateConfig(c *config) error {
+	for _, callers := range [][]string{c.ModelConfigServiceCallers, c.CentralSamplerServices} {
+		if err := auth.ValidateServiceCallers(callers); err != nil {
+			return err
+		}
+	}
+	if len(c.CentralSamplerServices) > 0 && !c.CentralSamplerIdentityCallers {
+		return errors.New("central_sampler_services requires central_sampler_identity_callers")
+	}
+	if len(c.ModelConfigServiceCallers)+len(c.CentralSamplerServices) > 0 && !c.RPC.Has(listener.SPIFFE) {
+		return errors.New("service callers require rpc spiffe client trust")
+	}
 	if len(c.AllowedServiceAccountNamespaces) == 0 {
 		return errors.New("allowed_service_account_namespaces must be non-empty")
 	}
@@ -169,8 +183,8 @@ func validateConfig(c *config) error {
 	if !attributesIdentity(c.Attribution) {
 		return errors.New("policy_namespace requires every attribution output to carry the identity claim")
 	}
-	if c.CentralSamplerIdentityCallers && len(c.CentralSamplerAccounts) == 0 {
-		return errors.New("central_sampler_identity_callers requires central_sampler_accounts")
+	if c.CentralSamplerIdentityCallers && len(c.CentralSamplerAccounts) == 0 && len(c.CentralSamplerServices) == 0 {
+		return errors.New("central_sampler_identity_callers requires central_sampler_accounts or central_sampler_services")
 	}
 	if err := c.RPC.Validate(); err != nil {
 		return err

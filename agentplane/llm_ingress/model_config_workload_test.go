@@ -35,7 +35,7 @@ func TestWorkloadModelConfigGRPCUsesVerifiedTLSHTTPPeer(t *testing.T) {
 	service := &countedModelConfigService{delegate: &modelConfigService{
 		models: map[string]modelConfig{"configured": {Model: "configured", TotalContextBudgetTokens: 8192}},
 	}}
-	grpcServer := newModelConfigServer(svidCallers(t, resolver, serverCredentials), service)
+	grpcServer := newModelConfigServer(auth.AnySubject(svidCallers(t, resolver, serverCredentials)), service)
 	address := serveWorkloadModelConfigHTTP2(t, grpcServer, serverCredentials)
 	client := newWorkloadModelConfigGRPCClient(t, address, clientCredentials, clientCredentials)
 
@@ -62,7 +62,7 @@ func TestWorkloadModelConfigGRPCServesAnIdentityCaller(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	grpcServer := newModelConfigServer(svidCallers(t, svid, serverCredentials), &modelConfigService{
+	grpcServer := newModelConfigServer(auth.AnySubject(svidCallers(t, svid, serverCredentials)), &modelConfigService{
 		models: map[string]modelConfig{"configured": {Model: "configured", TotalContextBudgetTokens: 8192}},
 	})
 	client := newWorkloadModelConfigGRPCClient(t, serveWorkloadModelConfigHTTP2(t, grpcServer, serverCredentials), clientCredentials, clientCredentials)
@@ -130,7 +130,7 @@ func TestWorkloadModelConfigGRPCRejectsUntrustedExpiredAndUnacceptedLeavesBefore
 			service := &countedModelConfigService{delegate: &modelConfigService{models: map[string]modelConfig{
 				"configured": {Model: "configured", TotalContextBudgetTokens: 8192},
 			}}}
-			grpcServer := newModelConfigServer(svidCallers(t, resolver, serverCredentials), service)
+			grpcServer := newModelConfigServer(auth.AnySubject(svidCallers(t, resolver, serverCredentials)), service)
 			address := serveWorkloadModelConfigHTTP2(t, grpcServer, serverCredentials)
 			client := newWorkloadModelConfigGRPCClient(t, address, trustedClientCredentials, invalidClientCredentials)
 			if test.mutate != nil {

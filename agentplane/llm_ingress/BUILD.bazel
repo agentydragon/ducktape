@@ -27,6 +27,7 @@ py_library(
         ":models",
         "//agentplane:log_levels",
         "//agentplane/identity/auth:listener",
+        "//agentplane/net/peertls:config",
         "//util:urls",
         "@pypi//pydantic",
     ],

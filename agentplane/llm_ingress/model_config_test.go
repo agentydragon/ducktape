@@ -23,7 +23,7 @@ func TestModelConfigGRPC(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := newModelConfigServer(resolver, &modelConfigService{
+	server := newModelConfigServer(auth.AnySubject(resolver), &modelConfigService{
 		models: map[string]modelConfig{"configured": {Model: "configured", TotalContextBudgetTokens: 8192}},
 	})
 	go func() { _ = server.Serve(listener) }()
