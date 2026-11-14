@@ -9,8 +9,9 @@ records source review, actual importers/build targets and report validation.
 These files describe a proposal, not implemented boundaries.
 
 `target_binaries` in `go-plan.json` records the agreed binary shape (an
-Environments binary and a Sessions binary in place of the Runner Gateway and
-Sandbox Controller), the cut line between them with each crossing's status, the
+Environments binary at `agentplane/environments/` and a Sessions binary at
+`agentplane/session_dispatcher/` in place of the Runner Gateway and Sandbox
+Controller), the cut line between them with each crossing's status, the
 keep-alive hold design, and the operator questions still open, asked one at a
 time. Tracks name it where their placement depends on it.
 
