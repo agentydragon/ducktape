@@ -418,6 +418,13 @@ spec:
       name: plaid-mcp
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/roaming-node-controller/**"
+          to: "@artifact/cluster/generated/roaming-node-controller/"
+        - from: "@repo/cluster/k8s/roaming-node-controller-image-pins/**"
+          to: "@artifact/cluster/k8s/roaming-node-controller-image-pins/"
+      name: roaming-node-controller
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/agents/public-coder-agent/access/**"
           to: "@artifact/cluster/generated/agents/public-coder-agent/access/"
       name: public-coder-agent-access

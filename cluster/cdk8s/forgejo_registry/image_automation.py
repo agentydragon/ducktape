@@ -92,6 +92,7 @@ IMAGES = (
     "props-llm-proxy",
     "props-registry-proxy",
     "public-coder-agent",
+    "roaming-node-controller",
     "rtl-tcp",
     "ssh-mcp",
     "stalwart",

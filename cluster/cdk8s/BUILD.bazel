@@ -822,6 +822,23 @@ py_library(
 )
 
 py_library(
+    name = "roaming_node_controller",
+    srcs = ["roaming_node_controller.py"],
+    deps = [
+        ":artifact_generators",
+        ":flux",
+        ":manifest_roots",
+        ":namespaces",
+        ":node_scheduling",
+        ":pod_policy",
+        "//cluster/cdk8s/forgejo_registry:pull_credentials",
+        "//cluster/cdk8s/providers/cilium:network_policy",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
     name = "loki_read_proxy",
     srcs = ["loki_read_proxy.py"],
     deps = [
@@ -1635,6 +1652,7 @@ py_library(
         ":proxmox_proxy",
         ":reflector",
         ":reloader",
+        ":roaming_node_controller",
         ":route53_domain_delegation",
         ":seaweedfs_csi",
         ":session_archive",

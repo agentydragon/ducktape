@@ -35,6 +35,11 @@
       "test": "//third_party/cli_proxy_api_tests:tests",
       "registry": "forgejo"
     },
+    "roaming-node-controller": {
+      "target": "//cluster/roaming_node_controller:image",
+      "test": "//cluster/roaming_node_controller/...",
+      "registry": "forgejo"
+    },
     "loki-read-proxy": {
       "target": "//cluster/proxies/loki_read_proxy:image",
       "test": "//cluster/proxies/loki_read_proxy/...",
