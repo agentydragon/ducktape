@@ -72,11 +72,27 @@ Further experiments use `38f6c8e723` plus documented working-tree overlays:
 The native platform migration now removes the App executable/image and HTTP testing client
 from the required VM/Firecracker graphs. Exact rebased source `fc38753823` passes nine unit/render
 targets and 36 explicit library/aspect checks. At `04cbff4776`, both original Firecracker cases
-and all five migrated MCP Actions cases pass in one attempt. The VM scenarios reach their final
-trace contract, which catches missing Sandbox metadata in the native driver; the correction
-retains that assertion and still needs a physical pass. The
+and all five migrated MCP Actions cases pass in one attempt. At `6c31cfb9f7`, the combined native
+VM/Firecracker/Dispatcher, Session-driver and wire-client check passes all 11 cases in one attempt,
+including the unchanged VM trace contract. Ordinary PR CI at that head passes all 2,005 test targets.
+Its longest fresh target is Pod at 532.0s, versus VM 286.5s and Services 285.3s; these are one-run
+observations, not a baseline/candidate saving. The
 [current qualification record](common_backend_contracts.md#native-platform-dependency-migration)
 also records the initial fixture/plugin, Actions mount and client-audience failures.
+
+Source `f919e2ed22` adds a manual App-free four-case central Services candidate with the same
+scenario assertions and Pod-bound fixture credentials. The original seven-case Services suite
+remains required, including its three App/MCP witnesses. Its four cases, all seven original
+Services cases, 21 render cases and four library/aspect checks pass in one focused invocation;
+the dependency query excludes App serving/client/conftest inputs. Full CI catches the missing
+new variant in the render-determinism expected set, now repaired without weakening byte equality.
+
+The retested balanced Pod split at `6c31cfb9f7` retains the same 40 cases across the competing
+graph and observes native Bazel 495.738s to 429.315s (13.4% lower in one B/A pair). Pod CPU is
+35.8% higher; warmth, two extra candidate build actions and concurrent load differ. It is not
+promoted. A manual four-slot Pod candidate requests one eight-CU action to test shared setup
+without a second cluster, preserving all 21 cases and exclusive storage first. Its capacity,
+timing and reliability remain unqualified. [Detailed evidence](common_backend_contracts.md#pod-partition-and-capacity-screen).
 
 The [actual App-image consumer query](https://app.buildbuddy.io/invocation/ce224205-7707-4240-8c4b-9a5520a3b468)
 leaves Pod and MCP Services among the four platform tails. This proves a dependency cut, not
