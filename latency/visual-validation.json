@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "scope": "Iteration 14 current architecture, latency and reliability sections plus root navigation; desktop/mobile and light/dark; real CDN and live browser theme changes. Original fleet measurements unchanged.",
-  "verified_at_utc": "2026-11-14T05:56:48.260937+00:00",
-  "source_base_gh_pages_commit": "1da78dc71ce2810f26505c0c39569c46f860cb84",
+  "verified_at_utc": "2026-11-14T06:04:27.004781+00:00",
+  "source_base_gh_pages_commit": "55bf71e98c9346db56fd20d80b3a9e7f4a19900c",
   "working_tree_snapshot": true,
-  "source_snapshot_sha256": "b223652640599425a2674d39e53ae36ef420d13f59c4e14124fe615421e92d3e",
-  "invocation_url": "https://app.buildbuddy.io/invocation/576f13b6-4572-4777-bd52-9d7a6ed7594f",
+  "source_snapshot_sha256": "25a4a04f18e8058a3c7c868f6f51053d588a2657c31517cea64ef09841dd6665",
+  "invocation_url": "https://app.buildbuddy.io/invocation/e9b1b428-5680-4432-8f78-540c2a0fb51d",
   "target": "//x/report14_visual_preview:test_report",
   "native_result": {
     "tests": 4,
@@ -13,7 +13,7 @@
     "errors": 0,
     "skipped": 0,
     "status": "PASSED",
-    "native_seconds": 55.355,
+    "native_seconds": 57.701,
     "buildbuddy_invocation_success": true,
     "invocation_status": "COMPLETE_INVOCATION_STATUS",
     "reported_bazel_exit_status": "SUCCESS"
@@ -21,7 +21,7 @@
   "physical_test_runner": {
     "new_records": 1,
     "stage": "COMPLETED",
-    "execution_id_sha256": "cd5d150667e6e50e5f0a8c1f9c1766f81a3bf64fb6c4de07b7680d58848e0e0e"
+    "execution_id_sha256": "8df3ba255d01a605345db0bf8245f5b7115271ae3dfca8170c1832d1479b9aa5"
   },
   "rendered_asset_sha256": {
     "agentplane-test-architecture/accepted-run-observer-binary-build.json": "6ae74edb0e3aa46af04cf2994a7f0896a920073c38453b3b74db003773b37152",
@@ -33,7 +33,7 @@
     "agentplane-test-architecture/app-fixture-selector.json": "f249519b006bbd71fafdcfe04970089c5db61ff32e24e47ab7cdafb81f903b68",
     "agentplane-test-architecture/asgi-mcp-ownership.json": "44b7a1ba7d6e8bf4e69f1b457ff0f786af9cbdbb5862416c83fefa10b6db210d",
     "agentplane-test-architecture/configured-guest-runtime-gateway.json": "52d941e1b26d77c3281e2563b9818fc948c2cf3e849596d18c75a84bb4185938",
-    "agentplane-test-architecture/evidence.json": "f190693328f7743d6cb9d012df8ca69a00f658277908d5fc9168046600161a86",
+    "agentplane-test-architecture/evidence.json": "a11d4e9f94e39c4b0899cb6e23178b939aef86c0cd8bf7b28a3bc1d8743c671a",
     "agentplane-test-architecture/guest-session-contract.json": "3ca543f371c9d92ca8d1b8211c142b71117ae3e124e3deceffdefe89389ea3f4",
     "agentplane-test-architecture/historical-app-cut-cohort-stage.json": "a16cd58c67c460c709f774ace32efb03d1f7c5b6bda1b1c58773afd6d2a742b6",
     "agentplane-test-architecture/historical-app-cut-four-pair-selector.json": "d71917f2e089853877ba5c17d7b34277cfcf81907c0a1c89d0218cfad7a25ed7",
@@ -42,16 +42,16 @@
     "agentplane-test-architecture/historical-app-cut-selector.json": "86555b1d64c998d0ae23dddcb67c6741a9d2725b74d76d955c538d5f7b65a26d",
     "agentplane-test-architecture/historical-app-cut-stage.json": "4e416cb61566a4999cb595056e18e71cfe06dc1bb8606aa939b8f14ebe14e1fa",
     "agentplane-test-architecture/historical-selector-first-pair.json": "52acf259c93e476f05e80e7073fe40a2024bf78507b037372b39215a1417ff8b",
-    "agentplane-test-architecture/index.html": "739e1039a5b381a000af02d0f9166125ea12c58ab029490ad48414c84f21ceb1",
+    "agentplane-test-architecture/index.html": "343ba743916f0b0ea8abf060c088f0bb746c0dc8a6c5c0aaab24ed3f3b47fbe6",
     "agentplane-test-architecture/iteration10.json": "490e4fb5a36103a61116a15a82a422fd37e5a3205360d7c4cf738629418629cc",
     "agentplane-test-architecture/iteration11.json": "bde3219d91558865e4208264be1889077356e0b28e7b6b45012969990e3f94ac",
     "agentplane-test-architecture/iteration12.json": "0111db2d6e25666e76143c54e27d0c3689e15b7b8fcf986a6d624d12066643ee",
     "agentplane-test-architecture/iteration13.json": "a48ad005e894b52a6192bf816be29172fb41f461e5003485572c6edd2a58acae",
-    "agentplane-test-architecture/iteration14.json": "0d8761ce9542009990b8443174598fefb6b6ffd53e028462a593333a36728c16",
+    "agentplane-test-architecture/iteration14.json": "35f6517e5f9a2e3d2c4d921f6ef45af8d08b1e1d23a96a790e78ef4f84a1f82e",
     "agentplane-test-architecture/iteration9.json": "516f6af4e3f3ae857f7c552193a272ff81d4e49975498806e531d959cab779a2",
     "agentplane-test-architecture/kvm-capacity-feasibility.json": "954589a61986dd9303bfbe1cb4141c459937546a1e093f8552eee8c0645e1c77",
     "agentplane-test-architecture/managed-vm-kernel-failure.json": "362cafa84ab380b85a5d58c3f38fdc27bbdd1b84361d851320a77687f73b8232",
-    "agentplane-test-architecture/manifest.json": "7c3e04f64794e16e8fa78142f8ec7d662f342526c2d8f28353ddec02cea001da",
+    "agentplane-test-architecture/manifest.json": "4a2fa7e1ecfeeaff614c3564cc4703a62b4b24576c8d33e902a6c1235b3f0517",
     "agentplane-test-architecture/native-contract-validation.json": "786867a5cb5a0e934261bd0148f29cd8723ecd10d1a4e7b10582d776c237c5ac",
     "agentplane-test-architecture/native-gateway-fixture-split.json": "78850becdca63bc6520d2f04b5e07414acfaf5f8e1647c3d30046df03ccb52ec",
     "agentplane-test-architecture/native-setup-profile.json": "2e3d446b90a0f64a88677fdd463d155566faa8fa2982046034191f060f674cbc",
@@ -72,16 +72,16 @@
     "latency/bridge-sharding-probe.json": "d5558a2fd7de187080650726b950158eae869617de2694e54d73d981545424eb",
     "latency/crd-ordering-spike.patch": "28ab694a4c12c6f1e91de1b91bacfc905c32aebe38b4bb0beba145e0dd1677f5",
     "latency/critical-path-5699.json": "ec3946f448097406d30ce46be879136e9ccb2f95abfa7fb79ff57567895c7f07",
-    "latency/evidence.json": "577d31f7983215f57e816474b07e1f5b68e32b4376c0b70584686cbb1d1fe888",
+    "latency/evidence.json": "b81c16a9138ba9168ee4187979fe9e3be40ccb767bc385f104f207e30615f458",
     "latency/evidence.md": "f56776d75d36cb921821ae96e3a13ce202b993c61a7c70ce8e2cef3d9556e627",
     "latency/index.html": "70cbb0a0ea43e4a5128c7904e9c25e83c720d95c8095c77a8ee3206cfb13de3e",
-    "latency/manifest.json": "99afa3b8ce0d498df62084d83b17ab3c72b6fa1384f910e3ef22ed448171696d",
+    "latency/manifest.json": "dc7d5b7dca424f6cd92f26e4d1370f0eee8ab6456226a40f03c2add0eacfeef3",
     "latency/resource-followup.js": "5d9c207c9d41aa4874accbe422f03de1d4e5cd5f80fe248aabac338d1dfdb870",
     "latency/resource-timeline.png": "93e85c13f3d97684a12cdef44694990a71f283878022c3cc4103ad6afd899a4e",
     "reliability/charts.js": "ee77367c9d8124c2fe1013d341998994edbdce02eb77a3e67ccb0996fda06866",
-    "reliability/evidence.json": "d53dd888853f2c3a8e53a7a8fc1427a737c989491a5a3185e00cb101b13ebaed",
+    "reliability/evidence.json": "85b7556e26185180c9b0f17d1e726934aa9c71a0dc8f7e7d4a72044f496e39f8",
     "reliability/index.html": "4864af4b5293f4079087628ae6d12c09c7513acc9da2d2c319563e3614db9521",
-    "reliability/manifest.json": "9c9c0ace1f51e5e9f6c771e89fdafc6a304d283dc86366e65eca9d51766c1bf0",
+    "reliability/manifest.json": "1556d89684e2aa20397cd34f9c42b7bf869fa5138652e102bb6c2767b0f88c7d",
     "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
     "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
   },
@@ -255,7 +255,7 @@
   ],
   "screenshots": {
     "captured": 74,
-    "manually_inspected": 16,
+    "manually_inspected": 22,
     "inspected": [
       {
         "case": "desktop-light",
@@ -336,12 +336,44 @@
         "case": "mobile-dark",
         "checkpoint": "reliability-current-00",
         "sha256": "373d387313e853374a9d81b61751d523b65b9bec570efb7b3a2abad46771f138"
+      },
+      {
+        "case": "desktop-light",
+        "checkpoint": "architecture-current-02",
+        "sha256": "df9c884f5a76f76ba0c992c5234b92abe08a5a5199f87b8644a94724f80a785b"
+      },
+      {
+        "case": "desktop-dark",
+        "checkpoint": "architecture-current-02",
+        "sha256": "7771902770c701b8f77629f12b5cb8a9fde20292fde77d54a90fe452834dca38"
+      },
+      {
+        "case": "mobile-light",
+        "checkpoint": "architecture-current-05",
+        "sha256": "de9c2a5b3a6e118640a968a440885d3423f6197bfe2c57dfa9ef042d41dce2e4"
+      },
+      {
+        "case": "mobile-dark",
+        "checkpoint": "architecture-current-05",
+        "sha256": "e802def30a1a701196bc369feb5b2e9c58ce485e8d3ded015911b737cbbe16ca"
+      },
+      {
+        "case": "desktop-light",
+        "checkpoint": "architecture-current-01",
+        "sha256": "3e09173d336532c722a9dc81d283553cc2db0d32b8dfddb7a91027d0d0cfa416"
+      },
+      {
+        "case": "mobile-light",
+        "checkpoint": "architecture-current-04",
+        "sha256": "1ab1410dfbb4095f14f4385c353493f10a2f6ed63994833453d9bebe5e602ee0"
       }
     ]
   },
   "screenshot_review": {
     "status": "passed",
-    "finding": "Reviewed root and all three current sections at both widths and themes. Text, tables, labels and light/dark distinctions are readable; wide tables remain inside mobile scroll containers. Corrected stale navigation, omitted second cleanup values and outdated probe status before this final proof."
+    "finding": "Reviewed root and all three current sections at both widths and themes. Text, tables, labels and light/dark distinctions are readable; wide tables remain inside mobile scroll containers. Corrected stale navigation, omitted second cleanup values and outdated probe status before this final proof.",
+    "byte_identical_prior_reviewed_images": 16,
+    "additional_final_images_inspected": 6
   },
   "prior_attempts": [
     {
@@ -355,6 +387,10 @@
     {
       "invocation": "b056623b-8d17-4a5a-aa4e-e0b4707c3759",
       "outcome": "Four passing cases; superseded after screenshot review corrected stale navigation, cleanup table and probe wording."
+    },
+    {
+      "invocation": "576f13b6-4572-4777-bd52-9d7a6ed7594f",
+      "outcome": "Four passing cases, 16 manually inspected screenshots. Superseded solely to replace held-benchmark 18-image assumption with current manifest identity. Those 16 final screenshot PNGs are byte-identical; six additional final images reviewed."
     }
   ],
   "limits": [

@@ -3,8 +3,8 @@
   "audited_at_utc": "2026-11-14T05:43:13.163359+00:00",
   "published_at_utc": null,
   "scope": "Supplemental same-source Firecracker screen, diagnosed transient route failure, validated bounded repair, rebase and next VM-tail probe. Original fleet windows, populations, rates and denominators unchanged.",
-  "report_sha256": "739e1039a5b381a000af02d0f9166125ea12c58ab029490ad48414c84f21ceb1",
-  "evidence_sha256": "f190693328f7743d6cb9d012df8ca69a00f658277908d5fc9168046600161a86",
+  "report_sha256": "343ba743916f0b0ea8abf060c088f0bb746c0dc8a6c5c0aaab24ed3f3b47fbe6",
+  "evidence_sha256": "a11d4e9f94e39c4b0899cb6e23178b939aef86c0cd8bf7b28a3bc1d8743c671a",
   "previous_gh_pages_commit": "beb020013fd5fed19fd0b44b3cc9bfef14835abf",
   "pilot_branch": "agent/test-architecture-pivot",
   "pilot_head_commit": "d642132a68104a4cfe5a76af15bbf7c7272d8591",
@@ -64,7 +64,7 @@
     "required-542-k3s-summary.json": "b97fddfe643484e04ffcf8bb9877618fc4f514b8b22a903dad35aa4a85423a69",
     "iteration12.json": "0111db2d6e25666e76143c54e27d0c3689e15b7b8fcf986a6d624d12066643ee",
     "iteration13.json": "a48ad005e894b52a6192bf816be29172fb41f461e5003485572c6edd2a58acae",
-    "iteration14.json": "0d8761ce9542009990b8443174598fefb6b6ffd53e028462a593333a36728c16"
+    "iteration14.json": "35f6517e5f9a2e3d2c4d921f6ef45af8d08b1e1d23a96a790e78ef4f84a1f82e"
   },
   "previous_live_verified_at_utc": "2026-11-13T15:04:10.895450+00:00",
   "visual_validation_status": "Presentation proof is recorded separately in visual-validation.json; publication requires four desktop/mobile light/dark cases and manual screenshot review.",
@@ -203,7 +203,7 @@
   },
   "iteration14": {
     "evidence_file": "iteration14.json",
-    "evidence_sha256": "0d8761ce9542009990b8443174598fefb6b6ffd53e028462a593333a36728c16",
+    "evidence_sha256": "35f6517e5f9a2e3d2c4d921f6ef45af8d08b1e1d23a96a790e78ef4f84a1f82e",
     "observed_at_utc": "2026-11-14T05:43:13.163359+00:00",
     "source_head": "d642132a68104a4cfe5a76af15bbf7c7272d8591",
     "source_base": "aa8d1061adb9c7f7fec5db27de4341746f76bac5",

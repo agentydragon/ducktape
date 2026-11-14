@@ -4441,7 +4441,7 @@
   },
   "architecture_iteration14": {
     "evidence_file": "../agentplane-test-architecture/iteration14.json",
-    "evidence_sha256": "0d8761ce9542009990b8443174598fefb6b6ffd53e028462a593333a36728c16",
+    "evidence_sha256": "35f6517e5f9a2e3d2c4d921f6ef45af8d08b1e1d23a96a790e78ef4f84a1f82e",
     "observed_at_utc": "2026-11-14T05:43:13.163359+00:00",
     "source_head": "d642132a68104a4cfe5a76af15bbf7c7272d8591",
     "source_base": "aa8d1061adb9c7f7fec5db27de4341746f76bac5",

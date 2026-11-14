@@ -6,7 +6,7 @@
   "attribution": "not collected",
   "previous_report_commit": "8032ec1140281be66ee934b69bb71b25f892be82",
   "report_sha256": "4864af4b5293f4079087628ae6d12c09c7513acc9da2d2c319563e3614db9521",
-  "evidence_sha256": "d53dd888853f2c3a8e53a7a8fc1427a737c989491a5a3185e00cb101b13ebaed",
+  "evidence_sha256": "85b7556e26185180c9b0f17d1e726934aa9c71a0dc8f7e7d4a72044f496e39f8",
   "supplemental_followup_observed_at_utc": "2026-11-12T22:55:00Z",
   "client_admission_source_commit": "28dae5ef3ef397393ed4df7f18425d3502ba9f77",
   "client_admission_scope": "PR #15842 50/100/50-job experiment only; per-workstream source/head commits and invocation IDs are recorded in evidence.json.",
@@ -90,7 +90,7 @@
   },
   "architecture_iteration14": {
     "evidence_file": "../agentplane-test-architecture/iteration14.json",
-    "evidence_sha256": "0d8761ce9542009990b8443174598fefb6b6ffd53e028462a593333a36728c16",
+    "evidence_sha256": "35f6517e5f9a2e3d2c4d921f6ef45af8d08b1e1d23a96a790e78ef4f84a1f82e",
     "observed_at_utc": "2026-11-14T05:43:13.163359+00:00",
     "source_head": "d642132a68104a4cfe5a76af15bbf7c7272d8591",
     "source_base": "aa8d1061adb9c7f7fec5db27de4341746f76bac5",

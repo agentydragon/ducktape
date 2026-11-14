@@ -929,7 +929,7 @@
     "independent_repair": "After #16344 lands, review the first 20 fresh Firecracker actions containing its exact patch. Count first-call Unavailable, within-handshake recoveries, exhausted handshakes, same-incarnation fences, cleanup durations and any failure/retry signatures. Exclude cached results; retain failed/cancelled runs and raw artifacts privately. No scheduled monitor is claimed.",
     "whole_graph": "Compare the repaired unchanged graph with the candidate graph, holding cache/capacity/source exposure visible. Include VM, Pod, Services, Firecracker queues and all required checks; do not add overlapping phase savings.",
     "qualification": "30 qualified matched pairs, 100 fresh contract executions, three busy windows and a four-PR burst remain open. Current gate unchanged; diminishing returns not established.",
-    "import_benchmark": "Repair normal-root cold-store versus warm-repeat measurement over identical 18 image references, preserving current usable-image skip, pin verification and low-disk prune semantics. Earlier figures are confounded.",
+    "import_benchmark": "Repair normal-root cold-store versus warm-repeat measurement over identical current-manifest image references, preserving current usable-image skip, pin verification and low-disk prune semantics. Earlier figures are confounded.",
     "retained_prior_followups": {
       "tracker": "https://github.com/agentydragon/ducktape/issues/16099",
       "qualification": "30 qualified pairs, 100 fresh contract executions, three busy windows, and a four-PR burst remain open. No required owners/frequency changed; diminishing returns not established.",
@@ -941,7 +941,8 @@
       ],
       "storage_limit": "Retain prior stderr/restart evidence; the original controller exit cause remains unknown. No scheduled monitor claimed."
     },
-    "next_bounded_experiment": "Repair and run the normal-root image-import benchmark with the actual serial importer versus a batching candidate, preserving current usable-image skips, pins and pruning."
+    "next_bounded_experiment": "Repair and run the normal-root image-import benchmark with the actual serial importer versus a batching candidate, preserving current usable-image skips, pins and pruning.",
+    "import_input_identity": "Current source-level Pod composition has 12 fixture and four PKI references; record actual compiled manifest identities/counts on execution. The held benchmark used 18 and cannot supply this current-source comparison."
   },
   "privacy": "Raw logs, artifact payloads, host identities and credentials are excluded. Physical identities in supporting summaries are hashes."
 }
