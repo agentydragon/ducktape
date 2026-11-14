@@ -23,7 +23,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/web_push/web_push_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
-	"github.com/agentydragon/ducktape/agentplane/app/internal/bridge"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/electricproxy"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/federation"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/historyclient"
@@ -34,6 +33,7 @@ import (
 	threadhttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/threads"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/migrations"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/sandboxes"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/sessionclient"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/status"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/threads"
 	upstreamproxy "github.com/agentydragon/ducktape/agentplane/app/internal/upstream"
@@ -127,7 +127,7 @@ func Run(ctx context.Context, config settings.Config) error {
 		return err
 	}
 	threadStore := threads.NewStore(db)
-	runner, err := bridge.NewGatewayRunnerProxy(bridge.RunnerConfig{
+	environmentRuntime, err := sessionclient.NewGatewayEnvironmentRuntimeProxy(sessionclient.EnvironmentRuntimeConfig{
 		TLS: config.RunnerGatewayTLS, Namespace: config.SandboxNamespace, TokenFile: config.RunnerGatewayTokenFile,
 		Timeout:        time.Duration(config.RunnerGatewayRequestTimeoutSeconds * float64(time.Second)),
 		TargetTemplate: config.RunnerGatewayControlTarget,
@@ -135,7 +135,7 @@ func Run(ctx context.Context, config settings.Config) error {
 	if err != nil {
 		return fmt.Errorf("configure Runner Gateway: %w", err)
 	}
-	dispatcher, err := bridge.NewDispatcherClient(bridge.DispatcherConfig{
+	dispatcher, err := sessionclient.NewSessionDispatcherClient(sessionclient.SessionDispatcherConfig{
 		TLS: config.SessionDispatcherTLS, Target: config.SessionDispatcherTarget, TokenFile: config.SessionDispatcherTokenFile,
 		Timeout: time.Duration(config.SessionDispatcherRequestTimeoutSecs * float64(time.Second)),
 	})
@@ -152,9 +152,9 @@ func Run(ctx context.Context, config settings.Config) error {
 	if err != nil {
 		return fmt.Errorf("configure Environment Service reader: %w", err)
 	}
-	appBridge, err := bridge.New(config.SandboxNamespace, environments, runner, dispatcher)
+	sessionClient, err := sessionclient.New(config.SandboxNamespace, environments, environmentRuntime, dispatcher)
 	if err != nil {
-		return fmt.Errorf("configure Runner bridge: %w", err)
+		return fmt.Errorf("configure Session client: %w", err)
 	}
 	policyConnection, err := bearer.Dial(
 		config.PolicyServiceTarget, config.PolicyServiceTokenFile, 10*time.Second, config.PolicyServiceTLS,
@@ -311,12 +311,12 @@ func Run(ctx context.Context, config settings.Config) error {
 	server := newHTTPServer(appAuth)
 	sessionHandlers := sessionhttp.NewHandler(sessionhttp.Dependencies{
 		SandboxNamespace: config.SandboxNamespace, SandboxPresets: config.SandboxPresets,
-		ThreadPresets: config.ThreadPresets, Environments: environments, SessionOpener: appBridge,
-		ThreadOpener: threadStore, RuntimeStatus: appBridge,
+		ThreadPresets: config.ThreadPresets, Environments: environments, SessionOpener: sessionClient,
+		ThreadOpener: threadStore, RuntimeStatus: sessionClient,
 	})
 	threadMetadata := threadhttp.NewHandler(threadhttp.Dependencies{
 		Store: threadStore, History: history, SandboxNamespace: config.SandboxNamespace,
-		Environments: environments, EnvironmentRuntime: runner,
+		Environments: environments, EnvironmentRuntime: environmentRuntime,
 		Updates: wakeupHub, UpdatesConnected: wakeupHub.Connected, DrainDone: server.DrainDone(),
 	})
 	app := &appService{
@@ -329,8 +329,8 @@ func Run(ctx context.Context, config settings.Config) error {
 	if err := registerSessionRoutes(server, app); err != nil {
 		return fmt.Errorf("register Session facade: %w", err)
 	}
-	if err := registerRunnerRoutes(server, app); err != nil {
-		return fmt.Errorf("register Runner status facade: %w", err)
+	if err := registerEnvironmentRuntimeRoutes(server, app); err != nil {
+		return fmt.Errorf("register Environment Runtime status facade: %w", err)
 	}
 	if err := registerThreadMetadataGateway(server, app); err != nil {
 		return fmt.Errorf("register Thread metadata facade: %w", err)

@@ -1,4 +1,4 @@
-package bridge
+package sessionclient
 
 import (
 	"context"
@@ -11,22 +11,22 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/environmentruntimeclient"
 )
 
-// GatewayRunnerProxy invokes informational Runner RPCs through the stable Runner Gateway Service
+// GatewayEnvironmentRuntimeProxy invokes Environment Runtime RPCs through the stable Runner Gateway Service
 // and supplies the named Sandbox's identity on every call.
-type GatewayRunnerProxy struct{ config RunnerConfig }
+type GatewayEnvironmentRuntimeProxy struct{ config EnvironmentRuntimeConfig }
 
-// NewGatewayRunnerProxy validates the per-Sandbox runner transport settings.
-func NewGatewayRunnerProxy(config RunnerConfig) (*GatewayRunnerProxy, error) {
+// NewGatewayEnvironmentRuntimeProxy validates the per-Sandbox Environment Runtime transport settings.
+func NewGatewayEnvironmentRuntimeProxy(config EnvironmentRuntimeConfig) (*GatewayEnvironmentRuntimeProxy, error) {
 	if config.Namespace == "" || config.TokenFile == "" || config.Timeout <= 0 {
 		return nil, errors.New("runner namespace, token file, and positive timeout are required")
 	}
 	if config.TargetTemplate == "" {
 		config.TargetTemplate = sandboxapi.RunnerGatewayTargetTemplate()
 	}
-	return &GatewayRunnerProxy{config: config}, nil
+	return &GatewayEnvironmentRuntimeProxy{config: config}, nil
 }
 
-func (r *GatewayRunnerProxy) withClient(ctx context.Context, sandbox *environmentpb.EnvironmentDescriptor, call func(context.Context, environmentruntimepb.EnvironmentRuntimeClient) error) error {
+func (r *GatewayEnvironmentRuntimeProxy) withClient(ctx context.Context, sandbox *environmentpb.EnvironmentDescriptor, call func(context.Context, environmentruntimepb.EnvironmentRuntimeClient) error) error {
 	targetHandle := sandbox.GetTarget()
 	if targetHandle == nil || targetHandle.GetName() == "" || targetHandle.GetUid() == "" || targetHandle.GetNamespace() == "" || targetHandle.GetNamespace() != r.config.Namespace {
 		return errors.New("complete Sandbox identity in the configured namespace is required")
@@ -40,8 +40,8 @@ func (r *GatewayRunnerProxy) withClient(ctx context.Context, sandbox *environmen
 	return translatedRPCError(err)
 }
 
-// ListSessions returns all durable Sessions retained by the connected runner.
-func (r *GatewayRunnerProxy) ListSessions(ctx context.Context, sandbox *environmentpb.EnvironmentDescriptor) (*sessionpb.ListSessionsResponse, error) {
+// ListSessions returns all durable Sessions retained by the connected Environment Runtime.
+func (r *GatewayEnvironmentRuntimeProxy) ListSessions(ctx context.Context, sandbox *environmentpb.EnvironmentDescriptor) (*sessionpb.ListSessionsResponse, error) {
 	var response *sessionpb.ListSessionsResponse
 	err := r.withClient(ctx, sandbox, func(ctx context.Context, client environmentruntimepb.EnvironmentRuntimeClient) error {
 		var err error
@@ -51,8 +51,8 @@ func (r *GatewayRunnerProxy) ListSessions(ctx context.Context, sandbox *environm
 	return response, err
 }
 
-// EnvironmentRuntimeStatus returns the live informational status of the connected runner.
-func (r *GatewayRunnerProxy) EnvironmentRuntimeStatus(ctx context.Context, sandbox *environmentpb.EnvironmentDescriptor) (*sessionpb.EnvironmentRuntimeStatus, error) {
+// EnvironmentRuntimeStatus returns the live informational status of the connected Environment Runtime.
+func (r *GatewayEnvironmentRuntimeProxy) EnvironmentRuntimeStatus(ctx context.Context, sandbox *environmentpb.EnvironmentDescriptor) (*sessionpb.EnvironmentRuntimeStatus, error) {
 	var response *sessionpb.EnvironmentRuntimeStatus
 	err := r.withClient(ctx, sandbox, func(ctx context.Context, client environmentruntimepb.EnvironmentRuntimeClient) error {
 		var err error
@@ -62,4 +62,4 @@ func (r *GatewayRunnerProxy) EnvironmentRuntimeStatus(ctx context.Context, sandb
 	return response, err
 }
 
-var _ RunnerProxy = (*GatewayRunnerProxy)(nil)
+var _ EnvironmentRuntimeProxy = (*GatewayEnvironmentRuntimeProxy)(nil)

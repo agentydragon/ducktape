@@ -6,8 +6,8 @@ go_library(
     name = "server",
     srcs = [
         "appservice.go",
+        "environment_runtime_api.go",
         "operatorapi.go",
-        "runnerapi.go",
         "runtime.go",
         "sandboxapi.go",
         "schema_export.go",
@@ -25,7 +25,6 @@ go_library(
         "//agentplane/action_service/api/web_push:web_push_service_go_proto",
         "//agentplane/app:app_service_go_proto",
         "//agentplane/app/internal/auth",
-        "//agentplane/app/internal/bridge",
         "//agentplane/app/internal/electricproxy",
         "//agentplane/app/internal/federation",
         "//agentplane/app/internal/historyclient",
@@ -37,6 +36,7 @@ go_library(
         "//agentplane/app/internal/httperror",
         "//agentplane/app/internal/migrations",
         "//agentplane/app/internal/sandboxes",
+        "//agentplane/app/internal/sessionclient",
         "//agentplane/app/internal/settings",
         "//agentplane/app/internal/status",
         "//agentplane/app/internal/threads",
@@ -146,8 +146,8 @@ go_test(
 )
 
 go_test(
-    name = "runnerapi_test",
-    srcs = ["runnerapi_test.go"],
+    name = "environment_runtime_api_test",
+    srcs = ["environment_runtime_api_test.go"],
     embed = [":server"],
     deps = [
         "//agentplane/app/internal/httpapi/sessions",
@@ -197,9 +197,9 @@ go_test(
     deps = [
         "//agentplane/app:app_service_go_proto",
         "//agentplane/app/internal/auth",
-        "//agentplane/app/internal/bridge",
         "//agentplane/app/internal/httpapi/sessions",
         "//agentplane/app/internal/server/testauth",
+        "//agentplane/app/internal/sessionclient",
         "//agentplane/app/internal/settings",
         "//agentplane/app/internal/threads",
         "//agentplane/environments/v1:environment_service_go_proto",

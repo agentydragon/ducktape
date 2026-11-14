@@ -9,9 +9,9 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-// registerRunnerRoutes exposes the generated AppService HTTP route through the app's
+// registerEnvironmentRuntimeRoutes exposes the generated AppService HTTP route through the app's
 // authenticated caller boundary. Keep the existing ProtoJSON body for cached browser bundles.
-func registerRunnerRoutes(server *httpServer, service *appService) error {
+func registerEnvironmentRuntimeRoutes(server *httpServer, service *appService) error {
 	mux := runtime.NewServeMux(
 		runtime.WithErrorHandler(sessionGatewayError),
 		runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{

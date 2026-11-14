@@ -42,7 +42,7 @@ func TestEnvironmentRuntimeStatusServesLifecycleProgressAndExactCursors(t *testi
 			},
 		},
 	}}})
-	if err := registerRunnerRoutes(server, &appService{sessions: handler}); err != nil {
+	if err := registerEnvironmentRuntimeRoutes(server, &appService{sessions: handler}); err != nil {
 		t.Fatal(err)
 	}
 	request := httptest.NewRequest(http.MethodGet, "/sandboxes/fixture/runner-status?sandbox_uid=uid", nil)
@@ -50,7 +50,7 @@ func TestEnvironmentRuntimeStatusServesLifecycleProgressAndExactCursors(t *testi
 	response := httptest.NewRecorder()
 	server.Handler(authentication).ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
-		t.Fatalf("runner status = %d: %s", response.Code, response.Body.String())
+		t.Fatalf("Environment Runtime status = %d: %s", response.Code, response.Body.String())
 	}
 	var body struct {
 		EnvironmentRuntimeBootId string `json:"environment_runtime_boot_id"`
@@ -91,12 +91,12 @@ func TestEnvironmentRuntimeStatusServesLifecycleProgressAndExactCursors(t *testi
 	}
 }
 
-func TestRunnerStatusRoutePreservesSandboxErrorsAndCallerAuthentication(t *testing.T) {
+func TestEnvironmentRuntimeStatusRoutePreservesSandboxErrorsAndCallerAuthentication(t *testing.T) {
 	fixture := testauth.New(t)
 	authentication := fixture.Auth
 	server := newHTTPServer(authentication)
 	handler := sessionhttp.NewHandler(sessionhttp.Dependencies{RuntimeStatus: runnerStatusFake{err: status.Error(codes.NotFound, "fixture")}})
-	if err := registerRunnerRoutes(server, &appService{sessions: handler}); err != nil {
+	if err := registerEnvironmentRuntimeRoutes(server, &appService{sessions: handler}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -104,7 +104,7 @@ func TestRunnerStatusRoutePreservesSandboxErrorsAndCallerAuthentication(t *testi
 	response := httptest.NewRecorder()
 	server.Handler(authentication).ServeHTTP(response, request)
 	if response.Code != http.StatusUnauthorized {
-		t.Fatalf("unauthenticated runner status = %d: %s", response.Code, response.Body.String())
+		t.Fatalf("unauthenticated Environment Runtime status = %d: %s", response.Code, response.Body.String())
 	}
 
 	request = httptest.NewRequest(http.MethodGet, "/sandboxes/fixture/runner-status?sandbox_uid=uid", nil)
@@ -112,7 +112,7 @@ func TestRunnerStatusRoutePreservesSandboxErrorsAndCallerAuthentication(t *testi
 	response = httptest.NewRecorder()
 	server.Handler(authentication).ServeHTTP(response, request)
 	if response.Code != http.StatusNotFound {
-		t.Fatalf("missing Sandbox runner status = %d: %s", response.Code, response.Body.String())
+		t.Fatalf("missing Sandbox Environment Runtime status = %d: %s", response.Code, response.Body.String())
 	}
 	var body struct {
 		Detail string `json:"detail"`

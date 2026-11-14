@@ -8,8 +8,8 @@ import (
 	"unicode/utf8"
 
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
-	appbridge "github.com/agentydragon/ducktape/agentplane/app/internal/bridge"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/sandboxes"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/sessionclient"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/settings"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/observability"
@@ -112,11 +112,11 @@ func (h *Handler) CreateSession(ctx context.Context, request *apppb.CreateSessio
 	if err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
-	spec, err := appbridge.ParseSessionSpec(defaults, request.GetSpec().AsMap())
+	spec, err := sessionclient.ParseSessionSpec(defaults, request.GetSpec().AsMap())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	if setupScript != nil && utf8.RuneCountInString(*setupScript) > appbridge.MaxSetupScriptCharacters {
+	if setupScript != nil && utf8.RuneCountInString(*setupScript) > sessionclient.MaxSetupScriptCharacters {
 		return nil, status.Error(codes.InvalidArgument, "setup script exceeds maximum length")
 	}
 	spec.Cwd = replaceSessionID(spec.GetCwd(), id.String())
@@ -126,7 +126,7 @@ func (h *Handler) CreateSession(ctx context.Context, request *apppb.CreateSessio
 	}
 	session, err := h.session.CreateSession(ctx, request.GetName(), request.GetSandboxUid(), id, spec, setupScript)
 	if err != nil {
-		var unconfirmed *appbridge.SessionNotFoundError
+		var unconfirmed *sessionclient.SessionNotFoundError
 		if errors.As(err, &unconfirmed) {
 			slog.ErrorContext(ctx, "Dispatcher session response did not confirm requested identity", "session_id", id, "error", err)
 			return nil, status.Errorf(codes.Unknown, "Dispatcher result for session %s was not confirmed; reconcile this identity", id)
@@ -140,7 +140,7 @@ func (h *Handler) GetEnvironmentRuntimeStatus(
 	ctx context.Context, request *apppb.GetEnvironmentRuntimeStatusRequest,
 ) (*sessionpb.EnvironmentRuntimeStatus, error) {
 	if h.runtime == nil {
-		slog.ErrorContext(ctx, "Runner status proxy is not configured")
+		slog.ErrorContext(ctx, "Environment Runtime status proxy is not configured")
 		return nil, status.Error(codes.Unavailable, "Upstream service unavailable")
 	}
 	if request.GetName() == "" || request.GetSandboxUid() == "" {
@@ -148,16 +148,16 @@ func (h *Handler) GetEnvironmentRuntimeStatus(
 	}
 	runtimeStatus, err := h.runtime.EnvironmentRuntimeStatus(ctx, request.GetName(), request.GetSandboxUid())
 	if err != nil {
-		return nil, runnerStatusRPCError(err)
+		return nil, environmentRuntimeStatusRPCError(err)
 	}
 	return runtimeStatus, nil
 }
 
 func sessionRPCError(err error) error {
-	var timeout *appbridge.DispatcherRequestTimeoutError
-	var missing *appbridge.SessionNotFoundError
-	var service *appbridge.ServiceError
-	var refused *appbridge.RefusedError
+	var timeout *sessionclient.DispatcherRequestTimeoutError
+	var missing *sessionclient.SessionNotFoundError
+	var service *sessionclient.ServiceError
+	var refused *sessionclient.RefusedError
 	var quiescing *sandboxes.SandboxQuiescingError
 	switch {
 	case errors.As(err, &timeout):
@@ -201,9 +201,9 @@ func sessionUpstreamRPCError(code codes.Code, message string, cause error) error
 	}
 }
 
-func runnerStatusRPCError(err error) error {
-	var service *appbridge.ServiceError
-	var refused *appbridge.RefusedError
+func environmentRuntimeStatusRPCError(err error) error {
+	var service *sessionclient.ServiceError
+	var refused *sessionclient.RefusedError
 	if errors.As(err, &service) || errors.As(err, &refused) || errors.Is(err, context.Canceled) {
 		slog.Error("upstream request failed", "status", 503, "response", "Upstream service unavailable", "error", err)
 		return status.Error(codes.Unavailable, "Upstream service unavailable")

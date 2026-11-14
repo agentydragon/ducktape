@@ -18,8 +18,8 @@ import (
 
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
-	"github.com/agentydragon/ducktape/agentplane/app/internal/bridge"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/server/testauth"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/sessionclient"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/threads"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -64,7 +64,7 @@ func TestSessionRoutesRequireCallerAuthentication(t *testing.T) {
 }
 
 var (
-	_ sessionhttp.SessionOpener = (*bridge.RunnerBridge)(nil)
+	_ sessionhttp.SessionOpener = (*sessionclient.SessionClient)(nil)
 	_ sessionhttp.ThreadOpener  = (*threads.Store)(nil)
 )
 
@@ -224,7 +224,7 @@ func TestSessionGatewayRejectsBeforeEffects(t *testing.T) {
 		`{"spec":{"unknown":true},"session_id":"b351b316-fdc4-4f50-a642-758992ae3323","sandbox_uid":"uid"}`,
 		`{"spec":{"model":42},"session_id":"b351b316-fdc4-4f50-a642-758992ae3323","sandbox_uid":"uid"}`,
 		`{"spec":{},"setup_script":false,"session_id":"b351b316-fdc4-4f50-a642-758992ae3323","sandbox_uid":"uid"}`,
-		`{"spec":{},"setup_script":"` + strings.Repeat("x", bridge.MaxSetupScriptCharacters+1) + `","session_id":"b351b316-fdc4-4f50-a642-758992ae3323","sandbox_uid":"uid"}`,
+		`{"spec":{},"setup_script":"` + strings.Repeat("x", sessionclient.MaxSetupScriptCharacters+1) + `","session_id":"b351b316-fdc4-4f50-a642-758992ae3323","sandbox_uid":"uid"}`,
 	} {
 		peer := &sessionTestPeer{sandbox: &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Namespace: "test-sandboxes", Name: "demo", Uid: "uid"}}}
 		handler, fixture := sessionTestGateway(t, peer)
@@ -256,11 +256,11 @@ func TestSessionGatewayPreservesConflictAndUncertainOutcomes(t *testing.T) {
 	}{
 		{"old-uid", false, nil, 404, codes.NotFound, nil},
 		{"uid", true, nil, 503, codes.Unavailable, []string{"thread"}},
-		{"uid", false, &bridge.DispatcherRequestTimeoutError{SessionID: uuid.New()}, 504, codes.DeadlineExceeded, []string{"thread", "dispatch"}},
-		{"uid", false, &bridge.SessionNotFoundError{SessionID: uuid.New(), Sandbox: "demo"}, 500, codes.Unknown, []string{"thread", "dispatch"}},
-		{"uid", false, &bridge.ServiceError{Code: codes.Unavailable, Details: "private-upstream-diagnostic"}, 503, codes.Unavailable, []string{"thread", "dispatch"}},
-		{"uid", false, &bridge.ServiceError{Code: codes.Internal, Details: "private-upstream-diagnostic"}, 500, codes.Internal, []string{"thread", "dispatch"}},
-		{"uid", false, &bridge.ServiceError{Code: codes.AlreadyExists, Details: "conflict"}, 409, codes.AlreadyExists, []string{"thread", "dispatch"}},
+		{"uid", false, &sessionclient.DispatcherRequestTimeoutError{SessionID: uuid.New()}, 504, codes.DeadlineExceeded, []string{"thread", "dispatch"}},
+		{"uid", false, &sessionclient.SessionNotFoundError{SessionID: uuid.New(), Sandbox: "demo"}, 500, codes.Unknown, []string{"thread", "dispatch"}},
+		{"uid", false, &sessionclient.ServiceError{Code: codes.Unavailable, Details: "private-upstream-diagnostic"}, 503, codes.Unavailable, []string{"thread", "dispatch"}},
+		{"uid", false, &sessionclient.ServiceError{Code: codes.Internal, Details: "private-upstream-diagnostic"}, 500, codes.Internal, []string{"thread", "dispatch"}},
+		{"uid", false, &sessionclient.ServiceError{Code: codes.AlreadyExists, Details: "conflict"}, 409, codes.AlreadyExists, []string{"thread", "dispatch"}},
 	} {
 		peer := &sessionTestPeer{sandbox: &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Namespace: "test-sandboxes", Name: "demo", Uid: "uid"}}, failThread: test.failThread, failOpen: test.failOpen}
 		handler, fixture := sessionTestGateway(t, peer)
