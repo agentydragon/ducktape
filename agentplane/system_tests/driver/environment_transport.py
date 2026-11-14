@@ -23,7 +23,7 @@ from agentplane.system_tests.driver.tls import service_credentials
 GATEWAY_SERVICE = "runner-gateway"
 # The shared Gateway/Dispatcher listener serves the fixture's Dispatcher DNS certificate.
 GATEWAY_TLS_SERVICE = "session-dispatcher"
-GATEWAY_AUDIENCE = "agentplane-runner-gateway"
+ENVIRONMENT_AUDIENCE = "session-dispatcher"
 GATEWAY_PORT = 8080
 RECONNECT_PAUSE_SECONDS = 2.0
 REQUEST_TIMEOUT_SECONDS = 30.0
@@ -163,7 +163,7 @@ class EnvironmentServiceClient:
 @asynccontextmanager
 async def native_environment_client(cluster: Cluster, token_file: Path) -> AsyncIterator[EnvironmentServiceClient]:
     """Own a TLS Gateway channel authenticated as the fixture-owned, Pod-bound native caller."""
-    _, _ = await write_bound_fixture_token(cluster, token_file, audience=GATEWAY_AUDIENCE)
+    await write_bound_fixture_token(cluster, token_file, audience=ENVIRONMENT_AUDIENCE)
     server_name = f"{GATEWAY_TLS_SERVICE}.{cluster.namespace}.svc.cluster.local"
     port_forward = PortForward(
         cluster.command("port-forward"),
