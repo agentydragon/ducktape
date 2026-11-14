@@ -10,6 +10,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadgrpc "github.com/agentydragon/ducktape/agentplane/identity/auth/grpc"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"google.golang.org/grpc"
@@ -46,14 +48,44 @@ func (s metadataHealth) Watch(_ *healthpb.HealthCheckRequest, stream grpc.Server
 	return stream.Send(&healthpb.HealthCheckResponse{Status: healthpb.HealthCheckResponse_SERVING})
 }
 
-func TestDialDelegatedInterceptorsUseProjectedTokenForUnaryAndStream(t *testing.T) {
+func TestDialDelegatedInterceptorsUseActorProofForUnaryAndStream(t *testing.T) {
+	for _, svid := range []bool{false, true} {
+		name := "bearer"
+		if svid {
+			name = "svid"
+		}
+		t.Run(name, func(t *testing.T) { testDelegatedActor(t, svid) })
+	}
+}
+
+func testDelegatedActor(t *testing.T, svid bool) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer listener.Close()
 	seen := metadataHealth{checks: make(chan metadata.MD, 1), watches: make(chan metadata.MD, 1)}
-	server := grpc.NewServer()
+	var transport *peertls.ClientTLS
+	var serverOptions []grpc.ServerOption
+	if svid {
+		ca := peertlstesting.NewCA(t)
+		serverConfig := ca.Issue(t, peertls.ActionsURI)
+		serverTLS, err := serverConfig.WorkloadServerTLSConfigWithServices(peertls.ActionsURI, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		creds, err := peertls.ServerCredentials(serverTLS)
+		if err != nil {
+			t.Fatal(err)
+		}
+		serverOptions = append(serverOptions, grpc.Creds(creds))
+		clientConfig := ca.Issue(t, peertls.MCPEdgeURI)
+		transport = &peertls.ClientTLS{
+			CAFile: ca.RootFile, ServerURI: peertls.ActionsURI,
+			CertFile: clientConfig.CertFile, KeyFile: clientConfig.KeyFile, ClientURI: peertls.MCPEdgeURI,
+		}
+	}
+	server := grpc.NewServer(serverOptions...)
 	healthpb.RegisterHealthServer(server, seen)
 	go func() { _ = server.Serve(listener) }()
 	defer server.Stop()
@@ -62,10 +94,13 @@ func TestDialDelegatedInterceptorsUseProjectedTokenForUnaryAndStream(t *testing.
 	if err := os.WriteFile(tokenPath, []byte(delegatedToken), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if svid {
+		tokenPath = ""
+	}
 	attach := func(ctx context.Context) (context.Context, error) {
 		return workloadgrpc.WithDelegation(ctx, connectionDelegation)
 	}
-	connection, err := workloadgrpc.DialDelegated(listener.Addr().String(), tokenPath, time.Second, nil,
+	connection, err := workloadgrpc.DialDelegated(listener.Addr().String(), tokenPath, time.Second, transport,
 		workloadgrpc.ClientInterceptors{
 			Unary: func(ctx context.Context, method string, request, reply any, connection *grpc.ClientConn, invoke grpc.UnaryInvoker, options ...grpc.CallOption) error {
 				delegated, err := attach(ctx)
@@ -87,6 +122,16 @@ func TestDialDelegatedInterceptorsUseProjectedTokenForUnaryAndStream(t *testing.
 	}
 	defer connection.Close()
 	client := healthpb.NewHealthClient(connection)
+	// The connection's interceptor supplies the envelope for these calls; test
+	// the no-interceptor path separately below.
+	bare, err := workloadgrpc.DialDelegated(listener.Addr().String(), tokenPath, time.Second, transport, workloadgrpc.ClientInterceptors{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bare.Close()
+	if _, err := healthpb.NewHealthClient(bare).Check(t.Context(), &healthpb.HealthCheckRequest{}); err == nil {
+		t.Fatal("delegated call without an envelope succeeded")
+	}
 	if _, err := client.Check(context.Background(), &healthpb.HealthCheckRequest{}); err != nil {
 		t.Fatalf("delegated unary call: %v", err)
 	}
@@ -98,7 +143,7 @@ func TestDialDelegatedInterceptorsUseProjectedTokenForUnaryAndStream(t *testing.
 		t.Fatalf("delegated stream response: %v", err)
 	}
 	for name, md := range map[string]metadata.MD{"unary": <-seen.checks, "stream": <-seen.watches} {
-		if got := md.Get("authorization"); len(got) != 1 || got[0] != auth.DelegatedScheme+" "+delegatedToken {
+		if got := md.Get("authorization"); (svid && len(got) != 0) || (!svid && (len(got) != 1 || got[0] != auth.DelegatedScheme+" "+delegatedToken)) {
 			t.Errorf("%s authorization = %v", name, got)
 		}
 		values := md.Get(auth.DelegationMetadataKey)
