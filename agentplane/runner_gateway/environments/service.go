@@ -147,7 +147,7 @@ func WithServiceCallers(
 	}
 	methods, err = methods.WithServiceCallers([]string{
 		environmentpb.EnvironmentService_CreateEnvironment_FullMethodName,
-	}, launchers)
+	}, templateCallers)
 	if err != nil {
 		return nil, err
 	}
