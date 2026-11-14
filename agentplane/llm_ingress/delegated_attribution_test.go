@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -9,6 +10,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
@@ -144,5 +148,94 @@ func TestADelegatingCentralSamplerIsAttributedToTheIdentityItActsFor(t *testing.
 	}
 	if forwarded := backend.snapshotRequests(); len(forwarded) != 1 {
 		t.Fatalf("a refused delegated call reached LiteLLM: %d requests", len(forwarded))
+	}
+}
+
+// A service actor proves only its own service identity. Attribution comes from the
+// live effective Identity and Session envelope; the actor supplies no Pod claims.
+func TestServiceSamplerDelegationOverMTLS(t *testing.T) {
+	backend := newFakeLiteLLM()
+	backendServer := newBackendServer(t, backend)
+	const policyNamespace = "test-service-ingress-policies"
+	named := workloadauthtesting.NewIdentityWorkload(t, api, testNamespace, "service-sampled-owner", policyNamespace)
+	identity := auth.Identity{Name: named.Identity.Name, UID: string(named.Identity.UID)}
+	identities, err := auth.KubernetesIdentityUIDs(named.Objects, policyNamespace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviews := &countingTokenReviews{delegate: api.TokenReviews()}
+	resolver, err := auth.NewResolver(reviews, testAudience, []string{testNamespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := config{LiteLLMURL: backendServer.URL, LiteLLMKey: testBackendKey, Attribution: defaultAttribution(), CentralSamplerIdentityCallers: true, CentralSamplerServices: []string{peertls.CentralSamplerURI}}
+	handler, err := newIngressHandler(c, resolver, identities, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca := transporttesting.NewCA(t)
+	serverFiles := ca.Issue(t, peertls.LLMIngressURI)
+	serverTLS, err := serverFiles.WorkloadServerTLSConfigWithServices(peertls.LLMIngressURI, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pair, err := tls.LoadX509KeyPair(serverFiles.CertFile, serverFiles.KeyFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverTLS.Certificates = []tls.Certificate{pair}
+	server := httptest.NewUnstartedServer(handler)
+	server.TLS = serverTLS
+	server.StartTLS()
+	t.Cleanup(server.Close)
+	headers := delegatedHeaders(t, "unused", identity, sessionProvenance("00000000-0000-4000-8000-000000000077"))
+	headers.Del("Authorization")
+	for _, tc := range []struct {
+		name, actor string
+		bearer      bool
+		want        int
+	}{
+		{name: "allowed sampler", actor: peertls.CentralSamplerURI, want: http.StatusOK},
+		{name: "wrong service", actor: peertls.ActionsURI, want: http.StatusForbidden},
+		{name: "no certificate", want: http.StatusUnauthorized},
+		{name: "bearer ambiguity", actor: peertls.CentralSamplerURI, bearer: true, want: http.StatusUnauthorized},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var clientTLS *tls.Config
+			if tc.actor == "" {
+				clientTLS, err = (peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.LLMIngressURI}).TLSConfig()
+			} else {
+				clientTLS, err = ca.Issue(t, tc.actor).ClientTLSConfig(peertls.LLMIngressURI)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			transport := &http.Transport{TLSClientConfig: clientTLS}
+			t.Cleanup(transport.CloseIdleConnections)
+			client := &http.Client{Transport: transport}
+			callHeaders := headers.Clone()
+			if tc.bearer {
+				callHeaders.Set("Authorization", "Bearer test-token")
+			}
+			response, _ := request(t, client, http.MethodPost, server.URL+"/v1/responses", `{"model":"test"}`, callHeaders)
+			if response.StatusCode != tc.want {
+				t.Fatalf("status=%d,want=%d", response.StatusCode, tc.want)
+			}
+		})
+	}
+	if reviews.calls.Load() != 0 {
+		t.Fatalf("TokenReview fallback calls=%d", reviews.calls.Load())
+	}
+	forwarded := backend.snapshotRequests()
+	if len(forwarded) != 1 {
+		t.Fatalf("forwarded=%d", len(forwarded))
+	}
+	var claims map[string]string
+	if err := json.Unmarshal([]byte(forwarded[0].headers.Get("x-litellm-spend-logs-metadata")), &claims); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"agentplane.identity": identity.Name, "agentplane.identity_uid": identity.UID, "agentplane.session_id": "00000000-0000-4000-8000-000000000077"}
+	if !maps.Equal(claims, want) {
+		t.Fatalf("claims=%v,want=%v", claims, want)
 	}
 }

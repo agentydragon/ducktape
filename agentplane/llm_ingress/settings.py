@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_valid
 from agentplane.identity.auth.listener import Listener
 from agentplane.llm_ingress.models import AttributionConfig, ModelConfig, default_attribution
 from agentplane.log_levels import LogLevels
+from agentplane.net.peertls.config import ServiceSPIFFEID
 from util.urls import HttpEndpointUrl
 
 
@@ -33,6 +34,16 @@ class Settings(BaseModel):
             "Namespace holding the Identities a Sandbox SVID may name. "
             "Every attribution output must then carry the `identity` claim."
         ),
+    )
+    model_config_service_callers: list[ServiceSPIFFEID] = Field(
+        exclude_if=lambda value: not value,
+        default_factory=list,
+        description="Exact service SPIFFE IDs admitted to GetModelConfig.",
+    )
+    central_sampler_services: list[ServiceSPIFFEID] = Field(
+        exclude_if=lambda value: not value,
+        default_factory=list,
+        description="Exact service SPIFFE IDs allowed to delegate Session inference when central_sampler_identity_callers is enabled.",
     )
     central_sampler_accounts: frozenset[str] = Field(
         default_factory=frozenset,
@@ -76,6 +87,18 @@ class Settings(BaseModel):
 
     @model_validator(mode="after")
     def validate_identity_attribution(self) -> Settings:
+        if self.central_sampler_services and not self.central_sampler_identity_callers:
+            raise ValueError("central_sampler_services requires central_sampler_identity_callers")
+        if self.central_sampler_identity_callers and not (
+            self.central_sampler_accounts or self.central_sampler_services
+        ):
+            raise ValueError(
+                "central_sampler_identity_callers requires central_sampler_accounts or central_sampler_services"
+            )
+        if (self.model_config_service_callers or self.central_sampler_services) and not any(
+            auth.mode == "spiffe" for auth in self.rpc.auth
+        ):
+            raise ValueError("service callers require rpc spiffe client trust")
         if not self.attribution.names_identity():
             raise ValueError("policy_namespace requires every attribution output to carry the identity claim")
         return self

@@ -103,7 +103,7 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 		return err
 	}
 	defer handler.transport.CloseIdleConnections()
-	tlsConfig, err := c.RPC.TLSConfig(peertls.LLMIngressURI)
+	tlsConfig, err := c.RPC.TLSConfigWithServices(peertls.LLMIngressURI)
 	if err != nil {
 		return err
 	}
@@ -124,7 +124,11 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 	for _, model := range c.Models {
 		models[model.Model] = model
 	}
-	grpcServer := newModelConfigServer(callers, &modelConfigService{models: models})
+	modelRule, err := auth.AnySubject(callers).AllowServiceCallers(c.ModelConfigServiceCallers)
+	if err != nil {
+		return err
+	}
+	grpcServer := newModelConfigServer(modelRule, &modelConfigService{models: models})
 	server := &http.Server{
 		Handler:           observability.HTTPHandler(rpcHandler(grpcServer, handler)),
 		ReadHeaderTimeout: 10 * time.Second,
@@ -174,9 +178,9 @@ func rpcHandler(grpcServer *grpc.Server, httpHandler http.Handler) http.Handler 
 
 // newModelConfigServer serves budgets to any caller the resolver authenticates; the handler never
 // reads the caller, so an Identity caller is served as a ServiceAccount one is.
-func newModelConfigServer(callers *auth.Resolver, service modelconfigpb.ModelConfigServiceServer) *grpc.Server {
+func newModelConfigServer(rule auth.Rule, service modelconfigpb.ModelConfigServiceServer) *grpc.Server {
 	methods := auth.HealthMethods()
-	methods[modelconfigpb.ModelConfigService_GetModelConfig_FullMethodName] = auth.AnySubject(callers)
+	methods[modelconfigpb.ModelConfigService_GetModelConfig_FullMethodName] = rule
 	server := grpc.NewServer(append(methods.ServerOptions(10*time.Second), observability.GRPCServerOption())...)
 	modelconfigpb.RegisterModelConfigServiceServer(server, service)
 	healthpb.RegisterHealthServer(server, health.NewServer())
