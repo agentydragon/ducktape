@@ -19,18 +19,28 @@ fourteen ordinary targets take **592.550s**, versus **382.619s** for sixteen can
 targets, **35.4% lower once**. All predeclared resource-request screens pass, with
 unknown KVM physical CPU/memory and unequal Pod baseline warmth. This is an adaptive
 single B/A pair, not complete required-PR feedback or median/p90/flake qualification.
-The next gate is a balanced repeat and actual source/test/BUILD selection proof.
 [Current pair and limits](common_backend_contracts.md#corrected-full-system-composition-b7a7).
 
 The reverse-order pair has now completed successfully at the same immutable
-source: 555.785s control versus 360.143s candidate, 35.2% lower once, with the
-detailed artifact/resource audit tracked separately. The branch now implements
+source: 555.785s control versus 360.143s candidate, 35.2% lower once. Its complete
+physical ActionResult/XML audit and declared resource-proxy screens pass. The branch implements
 this composition as [ordinary partitioned targets](ordinary_partition_graph.md):
 disjoint Pod and Services rosters, unchanged VM acceptance on KVM and unchanged
 Firecracker cases without incidental Notification setup. Exact-head ordinary CI
-and representative source/test/BUILD selection are the next qualification gates;
-the journal substitution policy remains shadow-only. No complete PR median,
-p90 or flake-rate improvement is established.
+at `5ffba10981` now passes all three required checks: 2,012 passed targets,
+including 48 fresh deployed cases matching the benchmark and its other two
+unchanged fixture cases passed from cache. The native Gateway module freshly
+passes all 12 cases. Real-path reverse-dependency probes are complete, but actual
+source/test/BUILD base/head replays and representative whole-PR comparisons remain.
+The journal substitution policy stays shadow-only. No complete PR median, p90 or
+flake-rate improvement is established.
+
+That ordinary run exposes a capacity constraint: Firecracker waits 144.641s for
+KVM and finishes about 120s after the last managed test. Its removal alone is
+bounded by that competing tail, holding other work fixed. The live three-worker
+pool uses a 120s scale-up stabilization window and adds at most one worker per
+15 minutes. Diagnose admission and test cold/concurrent behavior before claiming
+the isolated execution gain survives normal PR traffic.
 
 An earlier fixed-source full-system screen was negative: 14 ordinary targets versus a 16-target
 composition pass the same 49 logical JUnit cases, but native elapsed grows from 516.795s to
@@ -67,10 +77,11 @@ through known source regressions. [Rebase evidence](common_backend_contracts.md#
 
 The next architectural slice is real-process Runtime/Gateway execution coverage plus an
 ordinary contract-owned gate for actual common backend edits. The two-Gateway active-work
-contract now passes its focused positive and stale-boot defect control; integrated full-module
-qualification and representative selection are separate gates. The PKI-only prepared seed is
-parked: measured K3s/PKI work is too small to remove the observed Notification readiness tail
-or competing Pod/Services tails. A plain-property build action proves KVM access, but no
+contract passes its focused positive and stale-boot defect control, three fresh
+full-module repetitions and the integrated ordinary run. Representative selected-PR
+qualification remains. The PKI-only prepared seed is parked: measured K3s/PKI
+work lacks enough headroom against the competing tails. The earlier Notification
+readiness delay is not reproduced in either complete paired control. A plain-property build action proves KVM access, but no
 cross-action K3s seed restore or saving is established. Broader prepared infrastructure
 remains an option if it removes enough measured work while preserving fresh identities/state.
 

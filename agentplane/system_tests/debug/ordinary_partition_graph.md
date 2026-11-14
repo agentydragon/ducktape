@@ -1,9 +1,10 @@
 # Ordinary partitioned system-test graph
 
-The architecture branch now implements the tested system-subtree composition as
-ordinary Bazel targets. This is a draft implementation awaiting exact-head CI,
-representative affected-target comparisons, cold/burst capacity and whole-PR
-reliability qualification. It does not establish the 30% complete-feedback goal.
+The architecture branch implements the tested system-subtree composition as
+ordinary Bazel targets. Exact-head ordinary CI passes at `5ffba10981`, including
+the partitioned cases and affected build/aspect checks. Representative PR
+comparisons, cold/burst capacity and whole-PR reliability remain unqualified.
+This does not establish the 30% complete-feedback goal.
 
 ## Coverage and selection
 
@@ -54,10 +55,46 @@ The reversed A/B exposure also completed successfully: control
 [`5950e993`](https://app.buildbuddy.io/invocation/5950e993-0f67-4c8c-acbf-7b90cdd6f328)
 took 555.785s, candidate
 [`f504b2b7`](https://app.buildbuddy.io/invocation/f504b2b7-16c2-4fb7-b5b0-135ce135f748)
-360.143s, 35.2% lower once. Detailed physical-action, case and resource review
-is separate from terminal success. Neither pair measures complete required PR
-checks, representative selection, p90 or flakiness. The current ordinary graph
-also removes duplicate source bindings, so it needs its own execution proof.
+360.143s, 35.2% lower once. Both pairs have matching canonical case/outcome
+multisets and verified ActionResult/XML digests. All declared resource-proxy
+screens pass. Both retain the full 120-second Gateway budget; the separate
+45-second experiment is absent from their commands. Notification readiness is
+about 0.24 seconds in both controls, so removing it does not explain the whole
+improvement. Placement, partitioning, Pod capacity and uncontrolled warmth
+remain material differences. Neither pair measures complete required PR checks,
+representative selection, p90 or flakiness.
+
+## Ordinary CI qualification
+
+At `5ffba10981765cd7b843b85657803cff9282b6ed`,
+[`7246b046`](https://app.buildbuddy.io/invocation/7246b046-25cd-55ff-8375-4b12f100785c)
+tests merge `812a87a701ee2de6877d08946d21576b5e167f8d`, whose parents are devel
+`af13289e463c756664559ee3ac0b73bd585c5fd9` and that branch head. All three
+currently required contexts succeed: Bazel Test & Build, Pre-commit checks and
+Build artifacts + imports check. The Bazel test invocation reports 2,012 passed
+targets: 1,967 cached results and 45 fresh physical TestRunner actions. Target
+summaries record one attempt each; provider-internal retries are unknown.
+
+Fifteen fresh deployed targets produce 48 passing cases, exactly the deployed
+case/outcome multiset from the pinned 50-case benchmark. The benchmark's other
+two cases belong to `suites/live:test_conftest`: unchanged fixture unit tests
+with a cached PASS in ordinary CI, not two fresh deployed exposures. Every
+downloaded deployed XML digest matches its advertised blob and exact physical
+ActionResult. The native Gateway module also freshly passes its 12 cases,
+including the corrected output-drain contracts. The four new devel Sampler
+regression cases, 24 renderer cases and 25 manifest cases pass separately.
+
+The test invocation takes 559.538 seconds; its GitHub Bazel job runs for 654
+seconds. These are different clocks, and this full-sweep architecture PR is not
+a routine affected-target comparison. BuildBuddy's stored creation timestamp is
+ingestion time, later than some action starts, and must not be used as test start.
+
+One read-only current-graph query at this head confirms the six promoted target
+labels and follows real changed paths from three merged PRs. A test-only Sampler
+path has one affected test, production Sampler paths have 21, and mixed Gateway/
+driver paths have 47, including all six partitions. These are reverse-dependency
+closures, not historical base/head Bazel-diff replays or whole-PR target counts.
+The architecture PR itself changes graph-wide inputs and takes the full sweep.
 
 ## Reliability repair
 
@@ -86,21 +123,32 @@ memory and 50 GB disk; Firecracker requests four CPUs, 6 GB memory and 20 GB dis
 Both use `kvm-vm` without recycled K3s state. Requested resources are reservation
 proxies, not physical CPU, concurrent memory or monetary cost.
 
-The inspected autoscaler source caps the KVM pool at three workers. The earlier
-concurrent trial observed 188 seconds from an additional worker's creation to
-readiness. Moving the required VM action into that pool can therefore improve
-isolated execution while worsening busy-period feedback. Do not qualify it
-without real cold/burst measurements and actual queue ownership.
+Source and live state inspected on 14 November show a three-worker KVM maximum,
+three ready workers, a one-worker floor, a 120-second scale-up stabilization
+window and at most one additional worker per 900 seconds. Each live worker
+reserves four CPUs and 8 GiB; the executor advertises one four-CPU/7-GiB slot.
+The earlier concurrent trial's 188-second creation-to-ready measurement excludes
+waiting before worker creation. Three continuously ready workers reserve 12
+CPUs and 24 GiB, compared with four CPUs and 8 GiB at the configured floor;
+this is a capacity reservation, not a billing or utilization estimate.
+
+In ordinary CI `7246b046`, Firecracker waits 144.641 seconds before worker start
+and executes for 271.636 seconds. VM waits 94.300 seconds and executes for
+243.621 seconds. Firecracker finishes at 23:07:13 UTC; the last managed test,
+Gateway budget, finishes at 23:05:13. Removing all KVM waiting would therefore
+save at most about 120 seconds from this observed test tail, holding other work
+fixed: the managed tail would take over. This is a conditional bound, not a
+measured scaling improvement or an explanation of the queue's cause. Cold/burst
+measurements and actual queue ownership remain necessary.
 
 Remaining acceptance requires:
 
-1. Ordinary exact-head CI and artifact review proving the same 50 canonical cases
-   and all affected library/aspect checks pass after partitioning.
-2. Actual source, test, BUILD and mixed-input selection evidence on the new graph,
-   followed by representative PR replays counting conservative fallbacks.
-3. Complete required-check comparisons with normal caching, queues and reruns;
+1. Actual source, test, BUILD and mixed-input Bazel-diff replays on the new graph,
+   counting graph-wide fallbacks and retaining the known package-default
+   fingerprint counterexample.
+2. Complete required-check comparisons with normal caching, queues and reruns;
    cold and concurrent PR exposure; no worse p90 or flake rate.
-4. Reviewed managed/KVM resource use and recurring capacity/maintenance cost.
+3. Reviewed managed/KVM resource use and recurring capacity/maintenance cost.
 
 Maintenance consists of keeping scenario ownership and direct dependencies
 accurate, retaining fresh per-case state, and qualifying KVM capacity. There is
