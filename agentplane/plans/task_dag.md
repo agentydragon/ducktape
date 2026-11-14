@@ -3634,7 +3634,21 @@ follow-up code cleanup is in review in [#16331](https://github.com/agentydragon/
 (2026-11-14 UTC): it removes the old retry, provider and export paths and their pre-cutover fixtures.
 Current Dispatcher writers supply the execution Identity, which Central Sampler now requires and
 retains. History's direct probe ingress remains. Runner Gateway's retained rows and reader cleanup
-are tracked separately.
+are tracked separately. Runner Gateway migration 18 deletes Sessions without an execution Identity,
+including any stored creator attribution, and Sessions with no stored actor or caller attribution;
+all dispatch receipts attached to those Sessions are deleted too. Outside those Sessions, dispatch
+rows are deleted only when every actor, delegator, caller, Pod, Action and wake-caller attribution
+field is empty, so attributed standalone receipts remain. Current production Session creation
+resolves a complete Sandbox execution Identity and calls the Store with an authenticated caller;
+direct Store creation helpers found are tests. Its reader cleanup follows separately.
+
+The migration selector ran inside `BEGIN READ ONLY ... ROLLBACK` on `session_dispatcher` at
+2026-11-14 06:03 UTC. It selected 15 of 25 Sessions, all terminal
+(`ACCEPTED` or `FAILED`), newest created `2026-11-11 02:55:16 UTC`; 0 of 63 dispatch rows were attached
+to those Sessions, and 0 standalone unattributed dispatch rows were selected. The exact loss is 15
+Session rows, including stored creator attribution; no dispatch rows are deleted. A later
+`SubmitInput` to a deleted Session returns gRPC `NOT_FOUND`. The data drop needs operator approval and must never
+auto-merge. No system test covers applying this staging migration.
 
 #### `ACTION_BOX_RENAME` — Action boxes stop being called sandboxes
 
