@@ -23,8 +23,11 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -198,6 +201,109 @@ func TestServiceDelegatedResumeUsesEffectiveIdentityGrant(t *testing.T) {
 			}
 			if current.Spec.WakeGeneration != wantGeneration {
 				t.Fatalf("wake generation = %d, want %d", current.Spec.WakeGeneration, wantGeneration)
+			}
+		})
+	}
+}
+
+// Managers create directly; only launchers may attach an Action launch origin. Both roles
+// must reach the handler over mTLS without acquiring one another's authority.
+func TestServiceManagerCreateAdmission(t *testing.T) {
+	scheme := runtime.NewScheme()
+	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, sandboxapi.AddToScheme, policyapi.AddToScheme} {
+		if err := add(scheme); err != nil {
+			t.Fatal(err)
+		}
+	}
+	objects, err := client.NewWithWatch(watchAPI.Config, client.Options{Scheme: scheme})
+	if err != nil {
+		t.Fatal(err)
+	}
+	namespace := "test-manager-create-" + uuid.NewString()
+	identity := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "owner"}, Spec: policyapi.IdentitySpec{Description: "Service manager create test"}}
+	for _, object := range []client.Object{&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}, identity} {
+		if err := objects.Create(t.Context(), object); err != nil {
+			t.Fatal(err)
+		}
+	}
+	manager, err := lifecycle.NewManager(lifecycle.Options{Namespace: namespace, Objects: objects, WakeBudget: unusedWakeBudget{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(namespace, objects, runtimeconfig.Catalog{}, manager, nil, ManagementOptions{
+		ServiceManagers: sets.New(peertls.AppURI), ServiceLaunchers: sets.New(peertls.ActionsURI),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	methods, err := WithServiceCallers(Methods(nil), []string{peertls.NotificationsURI}, []string{peertls.AppURI}, []string{peertls.ActionsURI}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca := peertlstesting.NewCA(t)
+	serverFiles := ca.Issue(t, peertls.SessionDispatcherURI)
+	serverTLS, err := serverFiles.WorkloadServerTLSConfigWithServices(peertls.SessionDispatcherURI, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
+	environmentpb.RegisterEnvironmentServiceServer(server, service)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	dial := func(serviceID string) environmentpb.EnvironmentServiceClient {
+		t.Helper()
+		files := ca.Issue(t, serviceID)
+		tlsConfig, err := files.ClientTLSConfig(peertls.SessionDispatcherURI)
+		if err != nil {
+			t.Fatal(err)
+		}
+		conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = conn.Close() })
+		return environmentpb.NewEnvironmentServiceClient(conn)
+	}
+	for _, tc := range []struct {
+		name, actor string
+		origin      bool
+		code        codes.Code
+	}{
+		{name: "manager-direct", actor: peertls.AppURI},
+		{name: "manager-action-origin", actor: peertls.AppURI, origin: true, code: codes.PermissionDenied},
+		{name: "launcher-direct", actor: peertls.ActionsURI, code: codes.PermissionDenied},
+		{name: "launcher-action-origin", actor: peertls.ActionsURI, origin: true},
+		{name: "reader-direct", actor: peertls.NotificationsURI, code: codes.PermissionDenied},
+		{name: "ungranted-direct", actor: peertls.CentralSamplerURI, code: codes.PermissionDenied},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			request := &environmentpb.CreateEnvironmentRequest{Name: tc.name, Template: "test", Identity: identity.Name}
+			if tc.origin {
+				request.LaunchOrigin = &environmentpb.EnvironmentLaunchOrigin{CallerIdentity: &identitypb.Identity{Name: identity.Name, Uid: string(identity.UID)}, ActionGroup: "test"}
+			}
+			rpc := dial(tc.actor)
+			created, err := rpc.CreateEnvironment(t.Context(), request)
+			if status.Code(err) != tc.code {
+				t.Fatalf("create = %v, %v; want %v", created, err, tc.code)
+			}
+			var stored sandboxapi.Sandbox
+			readErr := objects.Get(t.Context(), types.NamespacedName{Namespace: namespace, Name: tc.name}, &stored)
+			if tc.code != codes.OK {
+				if !apierrors.IsNotFound(readErr) {
+					t.Fatalf("denied create wrote a Sandbox: %v", readErr)
+				}
+				return
+			}
+			if readErr != nil || created.GetUid() == "" || created.GetUid() != string(stored.UID) {
+				t.Fatalf("persisted create = %v, %v; target %v", stored.UID, readErr, created)
+			}
+			retried, err := rpc.CreateEnvironment(t.Context(), request)
+			if err != nil || !proto.Equal(created, retried) {
+				t.Fatalf("idempotent retry = %v, %v; want %v", retried, err, created)
 			}
 		})
 	}

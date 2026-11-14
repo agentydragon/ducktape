@@ -338,7 +338,7 @@ No caller or production listener configuration switches in this stage.
 
 ```mermaid
 flowchart LR
-    app[App service] -->|service mTLS: independent grants| environments[EnvironmentService]
+    app[App service] -->|service mTLS: read, manage and direct create grants| environments[EnvironmentService]
     actions[Action service] -->|service mTLS + typed Identity envelope| dispatcher[Dispatcher / Sessions role]
     actions -->|service mTLS + typed launch origin| environments
     sessions[Sessions service role] -->|service mTLS: session methods| proxy[Runtime proxy role]

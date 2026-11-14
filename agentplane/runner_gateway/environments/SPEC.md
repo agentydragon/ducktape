@@ -204,7 +204,8 @@ Sandbox Controller remains responsible for startup and readiness.
 
 Direct service SVIDs have independent, exact-SPIFFE-ID grants through
 `environment_service_readers`, `environment_service_managers`,
-`environment_service_launchers`, and `environment_service_operators`. Service operators may
+`environment_service_launchers`, and `environment_service_operators`. Managers may create directly;
+launchers may create only with an Action launch origin. Neither role implies the other. Service operators may
 explicitly resume, including a requested stop; delegated callers never inherit those roles.
 `environment_service_delegation` admits a service actor only for configured read methods and
 `ResumeEnvironment`, using the live effective Identity and its explicit resume grants. Delegation
