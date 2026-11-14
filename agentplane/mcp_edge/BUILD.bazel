@@ -30,6 +30,8 @@ py_test(
     deps = [
         ":settings",
         "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

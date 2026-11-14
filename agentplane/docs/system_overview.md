@@ -649,7 +649,8 @@ The app has independent `action_federation.service_url` and `connection_service_
 Both tiers send operator Connection calls and gRPC health probes to the [MCP edge](../mcp_edge/README.md).
 Staging's external MCP/OAuth routes terminate there too, preserving the public issuer/resource URLs.
 Actions retains upstream MCP linkage and its public client metadata. The edge verifies operator OIDC separately from
-external MCP bearers and forwards workload calls under the bound ServiceAccount's token.
+external MCP bearers and forwards workload calls under the bound ServiceAccount's token. Its optional TLS gRPC listener
+also checks configured service SVIDs; operator OIDC remains required and determines Connection authority.
 
 ## Service definitions
 
