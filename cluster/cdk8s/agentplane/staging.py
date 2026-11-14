@@ -43,7 +43,7 @@ from agentplane.central_sampler.settings import (
 from agentplane.env.config import GuestResources, ResourceLimits
 from agentplane.identity.operator.settings import OperatorOidcSettings
 from agentplane.llm_ingress.models import AttributionConfig, AttributionField, AttributionJsonHeader, VerifiedClaim
-from agentplane.net.peertls.config import LLM_INGRESS_URI
+from agentplane.net.peertls.config import APP_URI, LLM_INGRESS_URI
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
 from agentplane.subjects import ServiceAccountRef
@@ -1036,6 +1036,8 @@ def delivery_chart(app: App, env: Environment = ENV) -> Chart:
                 env.namespace
             ).pods
         },
+        operator_service_callers=frozenset({APP_URI}),
+        wake_service_callers=frozenset({APP_URI}),
         extra_delegated_methods=("/agentplane.environments.v1.EnvironmentService/ResumeEnvironment",),
     )
 

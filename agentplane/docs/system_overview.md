@@ -765,3 +765,19 @@ flowchart LR
     app -->|mTLS: admin read methods| admin[Egress Admin]
     workload[Workload Identity SVID] -.->|existing workload authentication| proxy[Egress forward proxy]
 ```
+
+## Staged Dispatcher and EnvironmentService service grants
+
+The shared Gateway listener admits the exact App and Notifications service SVIDs to the
+Dispatcher while retaining bearer callers. The App SVID separately has EnvironmentService
+inventory and management grants. Staging explicitly grants the App SVID resume and automatic
+wake authority; these grants are independent of delegation and direct Dispatcher admission.
+Caller settings still use bearers until the corresponding receiver grants have applied.
+Actions service grants and delegated Resume require their own reviewed configuration.
+
+```mermaid
+flowchart LR
+    app[App SVID] -->|accepted; caller switch pending| dispatcher[Dispatcher]
+    notifications[Notifications SVID] -->|accepted; caller switch pending| dispatcher
+    app -->|separate inventory, management, resume grants| environments[EnvironmentService]
+```

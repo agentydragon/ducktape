@@ -146,6 +146,11 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
         f"{staging.ENV.namespace}/{actions.NAME}",
     }
     assert settings["operator_callers"] == [f"{staging.ENV.namespace}/{app.NAME}"]
+    assert set(settings["dispatcher_service_callers"]) == {APP_URI, NOTIFICATIONS_URI}
+    assert settings["environment_service_readers"] == [APP_URI]
+    assert settings["environment_service_managers"] == [APP_URI]
+    assert settings["environment_service_operators"] == [APP_URI]
+    assert settings["wake_service_callers"] == [APP_URI]
     assert settings["environment_launchers"] == [f"{staging.ENV.namespace}/{actions.NAME}"]
     assert f"{staging.ENV.namespace}/{runner_gateway.NAME}" in settings["gateway_callers"]
     assert f"{staging.ENV.namespace}/{app.NAME}" in settings["wake_callers"]
@@ -249,6 +254,8 @@ def test_empty_operator_callers_are_omitted(scratch_app: App) -> None:
     settings = yaml.safe_load(_resource(docs, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"])
 
     assert "operator_callers" not in settings
+    assert "environment_service_operators" not in settings
+    assert "wake_service_callers" not in settings
     assert settings["environment_launchers"] == [f"{staging.ENV.namespace}/{actions.NAME}"]
 
 

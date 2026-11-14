@@ -42,6 +42,7 @@ from agentplane.net.peertls.config import (
     SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
     TLS,
+    ServiceSPIFFEID,
 )
 from agentplane.runner_gateway.settings import CentralSamplerTarget, DelegationSettings, Settings
 from agentplane.subjects import ServiceAccountRef
@@ -142,6 +143,8 @@ class RunnerGateway(Construct):
         operator_callers: Mapping[ServiceAccountRef, Pods] | None = None,
         delegation_actor: ServiceAccountRef | None,
         extra_delegated_methods: tuple[str, ...] = (),
+        operator_service_callers: frozenset[ServiceSPIFFEID] = frozenset(),
+        wake_service_callers: frozenset[ServiceSPIFFEID] = frozenset(),
         gateway_callers: Mapping[ServiceAccountRef, Pods],
         wake_callers: frozenset[ServiceAccountRef],
         sandbox_controller: tuple[ServiceAccountRef, Pods],
@@ -301,6 +304,11 @@ class RunnerGateway(Construct):
             runtime_proxy_controller_callers=[SANDBOX_CONTROLLER_URI],
             executor_service_callers=[CENTRAL_SAMPLER_URI] if central_sampler_target is not None else [],
             dispatcher_callers=dispatcher_accounts,
+            dispatcher_service_callers=frozenset({APP_URI, NOTIFICATIONS_URI}),
+            environment_service_readers=frozenset({APP_URI}),
+            environment_service_managers=frozenset({APP_URI}),
+            environment_service_operators=operator_service_callers,
+            wake_service_callers=wake_service_callers,
             environment_readers=frozenset({_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))}),
             environment_managers=frozenset({_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))}),
             environment_launchers=frozenset(map(_account, environment_launchers)),
@@ -461,6 +469,8 @@ def serving_chart(
     env: Environment,
     operator_callers: Mapping[ServiceAccountRef, Pods] | None = None,
     extra_delegated_methods: tuple[str, ...] = (),
+    operator_service_callers: frozenset[ServiceSPIFFEID] = frozenset(),
+    wake_service_callers: frozenset[ServiceSPIFFEID] = frozenset(),
 ) -> Chart:
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
     callers = {
@@ -488,6 +498,8 @@ def serving_chart(
             else None
         ),
         extra_delegated_methods=extra_delegated_methods,
+        operator_service_callers=operator_service_callers,
+        wake_service_callers=wake_service_callers,
         gateway_callers=callers,
         # The orchestration_v1 group sends input that wakes a Sandbox launched with wakeOnSend.
         wake_callers=env.wake_caller_accounts | orchestration.keys(),

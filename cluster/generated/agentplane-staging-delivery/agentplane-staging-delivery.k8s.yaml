@@ -356,6 +356,9 @@ data:
         cert_file: /run/agentplane/runner-tls/tls.crt
         key_file: /run/agentplane/runner-tls/tls.key
         ca_file: /run/agentplane/runner-tls/ca.crt
+    dispatcher_service_callers:
+      - spiffe://agentplane/app
+      - spiffe://agentplane/notifications
     dispatcher_callers:
       - agentplane-staging/actions
       - agentplane-staging/app
@@ -366,6 +369,12 @@ data:
       - agentplane-staging/app
     environment_launchers:
       - agentplane-staging/actions
+    environment_service_readers:
+      - spiffe://agentplane/app
+    environment_service_managers:
+      - spiffe://agentplane/app
+    environment_service_operators:
+      - spiffe://agentplane/app
     delegation:
       actor: agentplane-staging/actions
       identity_callers: true
@@ -392,6 +401,8 @@ data:
       - agentplane-staging/actions
       - agentplane-staging/app
       - agentplane-staging/notifications
+    wake_service_callers:
+      - spiffe://agentplane/app
     operator_callers:
       - agentplane-staging/app
     sandbox_controller_account: agentplane-staging/sandbox-controller
