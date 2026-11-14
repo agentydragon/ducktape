@@ -790,6 +790,29 @@ func TestAServiceWriterKeepsItsCertificateAndExecutionIdentitySeparate(t *testin
 	}
 }
 
+func TestAServiceWriterMayBindWithoutSandboxProvenance(t *testing.T) {
+	store := testStore(t)
+	serviceWriter := ServiceWriter{SPIFFEID: "spiffe://agentplane/central-sampler"}
+	sessionID := uuid.New()
+	for range 2 {
+		if _, err := store.BindServiceWriter(t.Context(), sessionID, serviceWriter, Sandbox{}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var serviceURI string
+	var sandboxNamespace, sandboxName, sandboxUID sql.NullString
+	if err := store.db.QueryRowContext(t.Context(), `SELECT writer_service_uri, sandbox_namespace, sandbox_name, sandbox_uid
+		FROM session_history WHERE id=$1`, sessionID).Scan(&serviceURI, &sandboxNamespace, &sandboxName, &sandboxUID); err != nil {
+		t.Fatal(err)
+	}
+	if serviceURI != serviceWriter.SPIFFEID || sandboxNamespace.Valid || sandboxName.Valid || sandboxUID.Valid {
+		t.Fatalf("service writer=%q sandbox=%v/%v/%v", serviceURI, sandboxNamespace, sandboxName, sandboxUID)
+	}
+	if _, err := store.BindServiceWriter(t.Context(), uuid.New(), serviceWriter, Sandbox{Namespace: "testing"}, nil); !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("incomplete Sandbox attribution: %v", err)
+	}
+}
+
 // A replica predating Identity writers reads an Identity-bound row as unbound; the schema refuses
 // the ServiceAccount bind it would then write.
 func TestAnIdentityBoundRowRefusesAnOlderReplicasServiceAccountBind(t *testing.T) {
