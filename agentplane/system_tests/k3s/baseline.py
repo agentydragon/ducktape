@@ -317,10 +317,6 @@ class K3s:
                 f"api-audiences=https://kubernetes.default.svc.cluster.local,k3s,{KUBERNETES_AUDIENCE}",
                 "--kubelet-arg",
                 "feature-gates=ImageVolume=true",
-                # Preserve real same-Pod Secret projection without a production-length
-                # periodic sync wait. This fixture source is part of the retained-node fingerprint.
-                "--kubelet-arg",
-                "sync-frequency=5s",
             ],
             stdout=log,
             stderr=subprocess.STDOUT,

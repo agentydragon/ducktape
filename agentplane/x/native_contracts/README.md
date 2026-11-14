@@ -1,6 +1,6 @@
 # Native service contracts
 
-Manual experiments composing the production Go Gateway/Dispatcher and History binaries,
+Ordinary CI contracts composing the production Go Gateway/Dispatcher and History binaries,
 Runtime in its PID1 container, PostgreSQL, and the existing envtest Kubernetes API:
 
 ```sh
@@ -21,7 +21,8 @@ The four Claude cases exercise:
   through Dispatcher without duplicate admission or confirmation.
 - History outage: suspend the actual serving process while Runtime completes a turn, observe
   reader unavailability, then resume and verify journal catch-up and a contiguous cursor-resumed
-  stream containing exactly the retained prefix and new entries.
+  stream containing exactly the retained prefix and new entries. A distinct next input then
+  completes with three admissions, model requests and completions and the original prefix intact.
 
 These complement owner tests, including Runtime journal/admission, the native adapter restart
 matrix, Gateway incarnation fencing, History ingress ordering and service authorization. Direct
@@ -44,7 +45,8 @@ inputs; the service OCI graph and K3s are absent. Fresh case-owned databases, AP
 credentials, homes and journals isolate tests; only intentional in-case restarts reuse a journal.
 
 The package lives outside `system_tests/` to avoid its inherited app fixture dependency.
-These manual targets do not change the required gate or prove existing deployment tests redundant.
+These ordinary targets add coverage while the deployed gate remains required. Their presence
+alone does not prove existing deployment tests redundant or qualify a smaller graph.
 
 An opt-in control discards only the completed-turn case's Runtime state before restart. It must
 fail at retained Session inventory, rather than setup:

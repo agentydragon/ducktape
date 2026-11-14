@@ -1,6 +1,5 @@
 """Run one case for each harness within one pytest fixture lifetime."""
 
-import asyncio
 from collections.abc import Awaitable, Callable
 
 from agentplane.app.testing.client import Client
@@ -13,17 +12,6 @@ from agentplane.system_tests.driver.tracing import tracer
 # gazelle:include_dep @pypi//protobuf
 
 
-async def _run_harness(
-    harness: session_pb2.Harness, model: str, run: Callable[[session_pb2.Harness, str], Awaitable[None]]
-) -> None:
-    with tracer.start_as_current_span("system_test.harness", attributes={"harness": session_pb2.Harness.Name(harness)}):
-        try:
-            await run(harness, model)
-        except Exception as error:
-            error.add_note(f"harness={session_pb2.Harness.Name(harness)}")
-            raise
-
-
 async def run_harness_pair(client: Client, run: Callable[[session_pb2.Harness, str], Awaitable[None]]) -> None:
     """Run Claude, then Codex; a failure stops the pair.
 
@@ -33,23 +21,14 @@ async def run_harness_pair(client: Client, run: Callable[[session_pb2.Harness, s
     harnesses = [session_pb2.HARNESS_CLAUDE, session_pb2.HARNESS_CODEX]
     models = await models_offered_for(client, harnesses)
     for harness in harnesses:
-        await _run_harness(harness, models[harness], run)
-
-
-async def run_harness_pair_concurrently(
-    client: Client, run: Callable[[session_pb2.Harness, str], Awaitable[None]]
-) -> None:
-    """Exercise an already reserved pair of independent Sandboxes together.
-
-    The caller owns distinct runners, Sessions and model queues for the two harnesses.
-    This does not provision extra Sandboxes. A failed harness cancels its peer and waits
-    for that peer's cleanup before returning the pair to its owner.
-    """
-    harnesses = [session_pb2.HARNESS_CLAUDE, session_pb2.HARNESS_CODEX]
-    models = await models_offered_for(client, harnesses)
-    async with asyncio.TaskGroup() as tasks:
-        for harness in harnesses:
-            tasks.create_task(_run_harness(harness, models[harness], run), name=session_pb2.Harness.Name(harness))
+        with tracer.start_as_current_span(
+            "system_test.harness", attributes={"harness": session_pb2.Harness.Name(harness)}
+        ):
+            try:
+                await run(harness, models[harness])
+            except Exception as error:
+                error.add_note(f"harness={session_pb2.Harness.Name(harness)}")
+                raise
 
 
 async def run_harness_pair_in_own_sandboxes(

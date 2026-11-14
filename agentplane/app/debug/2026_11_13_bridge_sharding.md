@@ -23,8 +23,10 @@ PostgreSQL containers and overlaps eight workers instead of four. Per-action
 peak memory remained about 1.2GB; summed per-action peaks are not a measured
 simultaneous host peak. Both shard settings varied substantially across runs.
 
-The architecture branch adopts eight as a scheduling candidate with unchanged
-case assertions and fixture isolation. This is no matched complete-CI saving:
+The architecture branch initially adopted eight as a scheduling candidate with
+unchanged case assertions and fixture isolation. On 14 November, the required
+target returned to devel's four shards before the graph comparison: the measured
+CPU increase exceeds the architecture screen's cost ceiling. This is no matched complete-CI saving:
 retained native targets near 90s can become the tail, broad ASGI changes select
 other projects, and busy-window/four-PR capacity qualification remains. Keep it
 on the architecture PR until that resource tradeoff is assessed; do not infer a

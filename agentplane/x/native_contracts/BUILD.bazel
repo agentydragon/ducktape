@@ -27,7 +27,6 @@ py_test(
     env = NATIVE_RUNNER_DOCKER_ENV,
     exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
     requires_docker = True,
-    tags = ["manual"],
     target_compatible_with = [
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
@@ -70,7 +69,6 @@ py_test(
     env = NATIVE_RUNNER_DOCKER_ENV,
     exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
     requires_docker = True,
-    tags = ["manual"],
     target_compatible_with = [
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",

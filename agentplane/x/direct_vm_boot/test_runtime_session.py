@@ -16,6 +16,7 @@ import pytest
 import pytest_bazel
 from grpc_health.v1 import health_pb2, health_pb2_grpc
 
+from agentplane.egress.sidecar_config import WorkloadRoute
 from agentplane.env.config import (
     Configuration,
     Endpoint,
@@ -32,7 +33,13 @@ from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.go_service import GoHistoryService, go_history_service
 from agentplane.native.claude.testing.messages import AnthropicMessages
-from agentplane.net.peertls.config import EGRESS_PROXY_URI, HISTORY_SERVICE_URI, MTLS, NOTIFICATIONS_URI
+from agentplane.net.peertls.config import (
+    EGRESS_PROXY_URI,
+    HISTORY_SERVICE_URI,
+    LLM_INGRESS_URI,
+    MTLS,
+    NOTIFICATIONS_URI,
+)
 from agentplane.proto import event_log_pb2, event_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, accepted_session, admitted
@@ -47,6 +54,7 @@ from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf
 from agentplane.x.direct_vm_boot.platform_services import (
     CLI_PLATFORM_PROBE,
     assert_credential_rotation_refuses_old_svid,
+    assert_model_connect_decision,
     assert_platform_cli_output,
     platform_services,
 )
@@ -254,9 +262,19 @@ def _append_bridge_log(path: Path, event: str) -> None:
 
 
 @pytest.fixture
-async def endpoint() -> AsyncIterator[AnthropicMessages]:
-    server = AnthropicMessages(bind_host="0.0.0.0")
-    await server.start()
+async def endpoint(tmp_path: Path, gateway_service: GatewayProcess) -> AsyncIterator[AnthropicMessages]:
+    server = AnthropicMessages(bind_host="127.0.0.1")
+    server_directory = tmp_path / "scripted-model"
+    server_directory.mkdir()
+    server_certificate, server_key = issue_workload_leaf(
+        gateway_service.environment_runtime_ca, LLM_INGRESS_URI, server_directory, dns_name="localhost"
+    )
+    tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    tls.load_cert_chain(server_certificate, server_key)
+    tls.load_verify_locations(cadata=gateway_service.environment_runtime_ca.cert_pem.decode())
+    tls.verify_mode = ssl.CERT_REQUIRED
+    tls.set_alpn_protocols(["http/1.1"])
+    await server.start(ssl_context=tls)
     try:
         yield server
     finally:
@@ -348,6 +366,10 @@ async def test_packaged_claude_session_runs_shell_and_accepts_next_input(
     resources = RESOURCES.model_copy(update={"executor": None})
     if os.environ.get("DIRECT_VM_SETUP_WRONG_PROCESS_LIMIT_CONTROL") == "1":
         resources = resources.model_copy(update={"process": RESOURCES.process.model_copy(update={"pids_max": 96})})
+    model_port = urlsplit(endpoint.origin).port
+    assert model_port is not None
+    model_upstream = f"localhost:{model_port}"
+    model_origin = "scripted-model.test:8080"
     async with (
         platform_services(
             postgres_admin_url=postgres_admin_url,
@@ -359,6 +381,8 @@ async def test_packaged_claude_session_runs_shell_and_accepts_next_input(
                 if os.environ.get("DIRECT_VM_NOTIFICATION_WRONG_SERVER_IDENTITY_CONTROL") == "1"
                 else NOTIFICATIONS_URI
             ),
+            workload_routes={model_origin: WorkloadRoute(upstream=model_upstream, server_uri=LLM_INGRESS_URI)},
+            tls_passthrough_targets=(model_upstream,),
         ) as platform,
         model_config(listen_host="0.0.0.0", advertised_host="10.0.2.1") as model_config_target,
     ):
@@ -379,13 +403,18 @@ async def test_packaged_claude_session_runs_shell_and_accepts_next_input(
                     "AGENTPLANE_EGRESS_GRPC_CREDENTIAL": "deliberately-forged-caller-token",
                     "AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL": "deliberately-forged-caller-token",
                     "HOME": "/state/home",
+                    "HTTP_PROXY": platform.proxy_guest_url,
+                    "HTTPS_PROXY": platform.proxy_guest_url,
+                    "http_proxy": platform.proxy_guest_url,
+                    "https_proxy": platform.proxy_guest_url,
                     "NO_PROXY": "10.0.2.1,127.0.0.1,localhost",
+                    "no_proxy": "10.0.2.1,127.0.0.1,localhost",
                     "PATH": "/run/current-system/sw/bin:/run/agentplane/environment/bin",
                 }
             ),
             claude=Harness(
                 binary="/run/current-system/sw/bin/claude",
-                base_url=f"http://10.0.2.1:{urlsplit(endpoint.origin).port}",
+                base_url=f"http://{model_origin}",
                 token_env="ANTHROPIC_AUTH_TOKEN",
             ),
             environment=VMEnvironment(
@@ -468,6 +497,7 @@ async def test_packaged_claude_session_runs_shell_and_accepts_next_input(
             assert first_entries
             assert second_entries
             assert_platform_cli_output(platform_output, platform, sandbox)
+            await assert_model_connect_decision(platform, sandbox, host="localhost", port=model_port)
             await assert_guest_setup_is_supervised(dispatcher, history_service.reader, spec)
             assert not docker_done.done(), "QEMU guest exited before both Session turns completed"
             final_status = await wait_for_session_ready(gateway_service, client_token, sandbox, str(session_id))

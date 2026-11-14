@@ -30,7 +30,6 @@ class FixtureVariant(StrEnum):
     LOCAL_MODEL_POD = "local-model-pod"
     LOCAL_MODEL_CENTRAL = "local-model-central"
     LOCAL_MODEL_CENTRAL_SERVICES = "local-model-central-services"
-    LOCAL_MODEL_CENTRAL_BUDGET = "local-model-central-budget"
     LOCAL_MODEL_VM = "local-model-vm"
     LOCAL_MODEL_FIRECRACKER = "local-model-firecracker"
     PUBLIC_LITELLM = "public-litellm"
@@ -60,7 +59,6 @@ def _render(
     firecracker_sandboxes: bool = False,
     central_sampler: bool = False,
     profile: fixture_chart.FixtureProfile = fixture_chart.FixtureProfile.FULL,
-    executor_reconnect_timeout_seconds: int | None = None,
 ) -> None:
     models = MODEL_PLACEHOLDERS[backend]
     fixture = RenderedFixture(
@@ -87,7 +85,6 @@ def _render(
             firecracker_sandboxes=firecracker_sandboxes,
             central_sampler=central_sampler,
             profile=profile,
-            executor_reconnect_timeout_seconds=executor_reconnect_timeout_seconds,
         ),
     )
     write_fixture(output / f"{variant}.json", fixture, models=models, mcp=None)
@@ -115,16 +112,6 @@ def render_variant(output: Path, variant: FixtureVariant) -> None:
                 vm_sandboxes=False,
                 central_sampler=True,
                 profile=fixture_chart.FixtureProfile.NO_MCP_EDGE,
-            )
-        case FixtureVariant.LOCAL_MODEL_CENTRAL_BUDGET:
-            _render(
-                output,
-                variant,
-                Backend.LOCAL_MODEL,
-                vm_sandboxes=False,
-                central_sampler=True,
-                # Allow the native gRPC DNS resolver's 30s refresh interval after Gateway replacement.
-                executor_reconnect_timeout_seconds=45,
             )
         case FixtureVariant.LOCAL_MODEL_VM:
             _render(

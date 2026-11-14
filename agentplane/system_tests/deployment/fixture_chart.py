@@ -193,12 +193,9 @@ def environment(
     app_origin: str = APP_ORIGIN,
     central_sampler: bool = False,
     firecracker_sandboxes: bool = False,
-    executor_reconnect_timeout_seconds: int | None = None,
 ) -> Environment:
     """Build the common fixture settings; MCP renderers add their servers and Dex resources separately.
     With `operator_token_key`, the app's OIDC issuer is `OPERATOR_TOKENS`'s, pinned to that key."""
-    if executor_reconnect_timeout_seconds is not None and not central_sampler:
-        raise ValueError("an executor reconnect timeout requires the central sampler")
     app_login = login_client(app_origin)
     operator_oidc = dex.operator_oidc(issuer=DEX_ISSUER, app_client_id=app_login.id)
     routes = _PUBLIC_LITELLM_MODELS if isinstance(models, PublicLiteLLM) else _LOCAL_MODEL_MODELS
@@ -229,7 +226,6 @@ def environment(
             # Gateway reconnect has a bounded 120s window; a live turn must outlast it.
             rpc_timeout_seconds=10,
             executor_initialize_timeout_seconds=30,
-            executor_reconnect_timeout_seconds=executor_reconnect_timeout_seconds,
             lease_seconds=60,
         )
     if central_sampler:
@@ -399,7 +395,6 @@ def objects(
     firecracker_sandboxes: bool = False,
     central_sampler: bool = False,
     profile: FixtureProfile = FixtureProfile.FULL,
-    executor_reconnect_timeout_seconds: int | None = None,
 ) -> list[dict[str, Any]]:
     """Synthesize the common one-node fixture with optional VM or production Firecracker Sandboxes."""
     if vm_sandboxes and firecracker_sandboxes:
@@ -410,7 +405,6 @@ def objects(
         models=models,
         operator_token_key=operator_token_key,
         central_sampler=central_sampler,
-        executor_reconnect_timeout_seconds=executor_reconnect_timeout_seconds,
     )
     fixture = build_chart(
         ca_cert=ca_cert,

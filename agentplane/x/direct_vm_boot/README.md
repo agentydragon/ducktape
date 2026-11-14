@@ -1,9 +1,13 @@
 # Direct guest contracts
 
-This manual experiment boots the current VM fixture's kernel, initramfs, root
+This package boots the current VM fixture's kernel, initramfs, root
 filesystem and Runtime disk with the pinned KubeVirt launcher image's QEMU and
 virtiofsd. It runs through Docker on managed RBE, using software emulation rather
 than KVM. No K3s cluster or service-image stack is started.
+
+The Claude and Codex Session contracts run in ordinary CI. The boot-only and
+isolated Runtime/Gateway probes remain manual. Deployed acceptance stays required
+while the replacement graph is qualified.
 
 The Runtime contracts bind those four image runfiles into Docker read-only;
 they remain required Bazel inputs. The observed A/B/B/A action timings, CPU and
@@ -84,7 +88,7 @@ bbr test //agentplane/x/direct_vm_boot:test_runtime_gateway --nocache_test_resul
 bbr test //agentplane/x/direct_vm_boot:test_runtime_session --nocache_test_results
 ```
 
-This manual contract starts the real Dispatcher, Gateway and Go History Service against the
+This ordinary contract starts the real Dispatcher, Gateway and Go History Service against the
 fixture Kubernetes API, then starts the packaged Runtime under the guest's production systemd units.
 The guest launches the root image's pinned Claude CLI. Two Dispatcher inputs drive two real
 Claude Shell calls: the first writes a nonce to the workspace and the next reads that same file.
@@ -93,12 +97,16 @@ completed turns under one Runtime boot ID.
 The first turn also runs the shared unprivileged guest probe: UID 107, systemd as PID 1, the Claude
 service cgroup under `agentplane-workloads.slice`, and denial of a `systemctl restart` request.
 
-The guest reaches the fixture model-config endpoint and History through the slirp host address;
-both are real local services. Runtime presents its fixture-issued client SVID, and validates History's
-fixture-issued server SVID against the configured History identity. This target does not create a K3s
-cluster, controller, issued Secret, KubeVirt VM or PVC, and it disables
-the executor resource budget. Those deployment and executor acceptance boundaries remain with the
-existing system tests.
+The guest reaches model-config and History through the slirp host address. The scripted model origin
+is routed through the same Egress sidecar and Go proxy path as a deployed model route: the sidecar
+maps the guest's HTTP proxy request to the scripted model's TLS listener, presents the Sandbox
+Runtime SVID, and verifies the LLM-ingress service identity. The model server requires a client
+certificate, and an EgressAdmin decision filtered to the Sandbox Identity must show the allowed
+CONNECT to that listener before the test passes its two completed turns. Runtime also presents its
+fixture-issued client SVID and validates History's fixture-issued server SVID against the configured
+History identity. This target does not create a K3s cluster, controller, issued Secret, KubeVirt VM
+or PVC, and it disables the executor resource budget. Those deployment and executor acceptance
+boundaries remain with the existing system tests.
 
 The opt-in History identity control adds a test-only TLS relay with the same CA and localhost DNS
 but a different valid service URI. Before the guest starts, a real read-only Health.Check through
@@ -119,11 +127,13 @@ bbr test //agentplane/x/direct_vm_boot:test_runtime_codex_session --nocache_test
 ```
 
 The Codex companion uses the same packaged guest and real Dispatcher, Gateway and History
-composition. The pinned Codex CLI handles two inputs against a scripted Responses endpoint. Its
-production VM executor writes a fresh nonce to the workspace, then reads that file on the next
-input. Assertions require the requested command and tool-call identities, completed native command
-frames with exit zero, two completed History turns, contiguous sourced events and the same Runtime
-boot ID.
+composition. The pinned Codex CLI handles two inputs against a scripted Responses endpoint routed
+through the Egress sidecar and Go proxy. The model server requires a fixture client certificate and
+uses the LLM-ingress service identity; the test requires an allowed EgressAdmin CONNECT decision
+from the Sandbox Identity to that listener alongside two completed turns. Its production VM executor
+writes a fresh nonce to the workspace, then reads that file on the next input. Assertions require
+the requested command and tool-call identities, completed native command frames with exit zero, two
+completed History turns, contiguous sourced events and the same Runtime boot ID.
 
 The first command checks UID 107, systemd as PID 1, denial of a privileged unit restart and membership
 in `agentplane-executors.slice`. It reads its actual leaf cgroup limits: 256 MiB memory and CPU quota

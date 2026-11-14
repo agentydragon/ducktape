@@ -7,6 +7,7 @@ import json
 import os
 import re
 import shlex
+import ssl
 from collections.abc import AsyncIterator
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -17,6 +18,7 @@ import pytest
 import pytest_bazel
 from google.protobuf.json_format import MessageToJson
 
+from agentplane.egress.sidecar_config import WorkloadRoute
 from agentplane.env.config import (
     Codex,
     Configuration,
@@ -38,7 +40,7 @@ from agentplane.native.codex.testing import frames, model_catalog, responses_sse
 from agentplane.native.codex.testing.model import MODEL as CODEX_MODEL
 from agentplane.native.codex.testing.requests import ResponsesRequest
 from agentplane.native.codex.testing.responses import OpenAIResponses
-from agentplane.net.peertls.config import EGRESS_PROXY_URI, HISTORY_SERVICE_URI, NOTIFICATIONS_URI
+from agentplane.net.peertls.config import EGRESS_PROXY_URI, HISTORY_SERVICE_URI, LLM_INGRESS_URI, NOTIFICATIONS_URI
 from agentplane.proto import event_log_pb2, event_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, accepted_session, admitted
@@ -49,9 +51,11 @@ from agentplane.system_tests.vm.guest_supervision_probe import VM_SUPERVISION_PR
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.scripted_model import ModelRequest, Text
+from agentplane.testing.tls import issue_workload_leaf
 from agentplane.x.direct_vm_boot.platform_services import (
     CLI_PLATFORM_PROBE,
     assert_credential_rotation_refuses_old_svid,
+    assert_model_connect_decision,
     assert_platform_cli_output,
     platform_services,
 )
@@ -112,10 +116,20 @@ async def ingress(history_service: GoHistoryService) -> AsyncIterator[Endpoint]:
 
 
 @pytest.fixture
-async def endpoint() -> AsyncIterator[OpenAIResponses]:
-    server = OpenAIResponses(bind_host="0.0.0.0")
+async def endpoint(tmp_path: Path, gateway_service: GatewayProcess) -> AsyncIterator[OpenAIResponses]:
+    server = OpenAIResponses(bind_host="127.0.0.1")
     server.serve_catalog([model_catalog.bundled("gpt-6-luna", slug=CODEX_MODEL)])
-    await server.start()
+    server_directory = tmp_path / "scripted-model"
+    server_directory.mkdir()
+    server_certificate, server_key = issue_workload_leaf(
+        gateway_service.environment_runtime_ca, LLM_INGRESS_URI, server_directory, dns_name="localhost"
+    )
+    tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    tls.load_cert_chain(server_certificate, server_key)
+    tls.load_verify_locations(cadata=gateway_service.environment_runtime_ca.cert_pem.decode())
+    tls.verify_mode = ssl.CERT_REQUIRED
+    tls.set_alpn_protocols(["http/1.1"])
+    await server.start(ssl_context=tls)
     try:
         yield server
     finally:
@@ -275,6 +289,9 @@ async def test_packaged_codex_session_runs_isolated_shell_and_accepts_next_input
     assert history_reader.value.code == grpc.StatusCode.NOT_FOUND
     await history_service.process.health(serving=True)
 
+    model_port = urlsplit(endpoint.origin).port
+    assert model_port is not None
+    model_upstream = f"localhost:{model_port}"
     inputs = tmp_path / "inputs"
     state = tmp_path / "state"
     outputs = tmp_path / "outputs"
@@ -301,6 +318,10 @@ async def test_packaged_codex_session_runs_isolated_shell_and_accepts_next_input
                 if os.environ.get("DIRECT_VM_NOTIFICATION_WRONG_SERVER_IDENTITY_CONTROL") == "1"
                 else NOTIFICATIONS_URI
             ),
+            workload_routes={
+                "scripted-model.test:8080": WorkloadRoute(upstream=model_upstream, server_uri=LLM_INGRESS_URI)
+            },
+            tls_passthrough_targets=(model_upstream,),
         ) as platform,
         model_config(listen_host="0.0.0.0", advertised_host="10.0.2.1") as model_config_target,
     ):
@@ -321,13 +342,18 @@ async def test_packaged_codex_session_runs_isolated_shell_and_accepts_next_input
                     "AGENTPLANE_EGRESS_GRPC_CREDENTIAL": "deliberately-forged-caller-token",
                     "AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL": "deliberately-forged-caller-token",
                     "HOME": "/state/home",
+                    "HTTP_PROXY": platform.proxy_guest_url,
+                    "HTTPS_PROXY": platform.proxy_guest_url,
+                    "http_proxy": platform.proxy_guest_url,
+                    "https_proxy": platform.proxy_guest_url,
                     "NO_PROXY": "10.0.2.1,127.0.0.1,localhost",
+                    "no_proxy": "10.0.2.1,127.0.0.1,localhost",
                     "PATH": "/run/current-system/sw/bin:/run/agentplane/environment/bin",
                 }
             ),
             codex=Codex(
                 binary="/run/current-system/sw/bin/codex",
-                base_url=f"http://10.0.2.1:{urlsplit(endpoint.origin).port}/v1",
+                base_url="http://scripted-model.test:8080/v1",
                 token_env="OPENAI_API_KEY",
             ),
             environment=VMEnvironment(
@@ -431,6 +457,7 @@ async def test_packaged_codex_session_runs_isolated_shell_and_accepts_next_input
             assert write_entries
             assert read_entries
             assert_platform_cli_output(platform_output, platform, sandbox)
+            await assert_model_connect_decision(platform, sandbox, host="localhost", port=model_port)
             await assert_guest_setup_is_supervised(dispatcher, history_service.reader, spec)
             assert not docker_done.done(), "QEMU guest exited before both Session turns completed"
             final_status = await wait_for_session_ready(gateway_service, client_token, sandbox, str(session_id))

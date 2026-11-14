@@ -695,16 +695,9 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: re
     }
 
 
-@pytest.mark.parametrize(
-    ("location", "reconnect_timeout"),
-    [
-        ("K3S_FIXTURE_RLOCATION", None),
-        ("K3S_CENTRAL_FIXTURE_RLOCATION", None),
-        ("K3S_CENTRAL_BUDGET_FIXTURE_RLOCATION", 45),
-    ],
-)
+@pytest.mark.parametrize("location", ["K3S_FIXTURE_RLOCATION", "K3S_CENTRAL_FIXTURE_RLOCATION"])
 def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
-    runfiles: Runfiles, location: str, reconnect_timeout: int | None
+    runfiles: Runfiles, location: str
 ) -> None:
     fixture = _filled_fixture(runfiles, location)
     assert fixture.central_sampler
@@ -737,7 +730,7 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     settings = CentralSamplerSettings.model_validate_json(
         _resource(docs, "ConfigMap", f"{central_sampler.NAME}-settings")["data"]["settings.json"]
     )
-    assert settings.executor_reconnect_timeout_seconds == reconnect_timeout
+    assert settings.executor_reconnect_timeout_seconds is None
     ingress_connection = settings.connections["llm-ingress"]
     assert ingress_connection.base_url == (
         f"https://{llm_ingress.service(NAMESPACE).fqdn}:{llm_ingress.service(NAMESPACE).port.number}"
@@ -857,20 +850,6 @@ def test_central_services_profile_omits_mcp_edge_and_keeps_recovery_workloads(ru
         assert _resource(services.objects, "Deployment", component) == _resource(
             central.objects, "Deployment", component
         )
-
-
-def test_gateway_budget_fixture_changes_only_the_executor_reconnect_deadline(runfiles: Runfiles) -> None:
-    central = _filled_fixture(runfiles, "K3S_CENTRAL_FIXTURE_RLOCATION")
-    budget = _filled_fixture(runfiles, "K3S_CENTRAL_BUDGET_FIXTURE_RLOCATION")
-    central_config = _resource(central.objects, "ConfigMap", "central-sampler-settings")
-    budget_config = _resource(budget.objects, "ConfigMap", "central-sampler-settings")
-    central_settings = json.loads(central_config["data"]["settings.json"])
-    budget_settings = json.loads(budget_config["data"]["settings.json"])
-    assert "executor_reconnect_timeout_seconds" not in central_settings
-    assert CentralSamplerSettings.model_validate(budget_settings).executor_reconnect_timeout_seconds == 45
-    assert budget_settings == central_settings | {"executor_reconnect_timeout_seconds": 45}
-    budget_config["data"] = central_config["data"]
-    assert budget == central
 
 
 def test_firecracker_fixture_uses_production_construct_and_discloses_cilium_boundary(runfiles: Runfiles) -> None:

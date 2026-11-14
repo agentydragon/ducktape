@@ -119,15 +119,13 @@ fixture workloads and images. It does not cover Dex discovery, login callbacks, 
 OAuth or browser acceptance. The other MCP suites keep the `mcp` profile and its real OAuth
 services; app/browser acceptance targets keep their existing profiles.
 
-`mcp:test_gateway_budget` selects the `central_budget` variation,
-`rendered/local-model-central-budget.json`, whose only difference from `central` is an explicit
-45-second `executor_reconnect_timeout_seconds`, leaving room for gRPC's 30-second DNS refresh interval
-after Gateway replacement. This case checks exhaustion semantics through a
-real Gateway outage: unknown remote effect, no replay, a once-only mutation marker, retained History
-and successful next input. It no longer exposes the production default's full 120-second duration.
-The other central recovery suites keep the default reconnect deadline, including the abrupt Gateway
-crash case. The Go settings tests verify the independent 120-second default and configurable override;
-the rendered profile relation checks that the shortened budget changes no other setting or object.
+`mcp:test_gateway_budget` uses the same `central` profile and the production default's
+120-second reconnect deadline. It checks exhaustion through a real Gateway outage:
+unknown remote effect, no replay, a once-only mutation marker, retained History and
+successful next input. The architecture branch previously tried a 45-second profile;
+that profile and its configuration plumbing were removed before the graph comparison.
+The [experiment overview](../debug/ci_architecture_experiment_overview.md) retains its
+results and coverage tradeoff.
 
 A suite using the MCP fixture stack takes the `rendered/local-model-mcp-fixtures.json`
 rendering and also imports and runs Dex, `mcp-everything` and the OAuth MCP fixture, with

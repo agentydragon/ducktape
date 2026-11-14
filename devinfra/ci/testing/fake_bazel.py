@@ -1,4 +1,5 @@
 #!/bin/python
+import json
 import os
 import re
 import sys
@@ -25,13 +26,33 @@ def main() -> None:
             labels = [
                 label for label in labels if not label.endswith(":manual_test") and not label.endswith(":source.py")
             ]
-            print("\n".join(sorted(labels)))
+            if labels:
+                print("\n".join(sorted(labels)))
         elif query_arg.endswith("test-query.txt"):
             if os.environ.get("FAKE_SELECTION_SNAPSHOT_WRITE_FAIL") == "1":
                 Path(query_arg.split("=", 1)[1]).with_name("selected-test-labels.json").mkdir()
             tests = os.environ.get("FAKE_TESTS", "//ci:normal_test")
             if tests:
                 print(tests)
+        elif query_arg.endswith("runnable-tests-query.txt"):
+            (log_dir / "runnable-tests-query.log").write_text(query)
+            tag_filter = re.search(r'attr\("tags", ("(?:[^"\\]|\\.)*"),', query)
+            if tag_filter is None:
+                raise SystemExit("CI tag exclusion missing")
+            excluded = json.loads(tag_filter.group(1))
+            tags = json.loads(os.environ.get("FAKE_TEST_TAGS", "{}"))
+            runnable = [
+                label for label in labels if not re.search(excluded, "[" + ", ".join(tags.get(label, [])) + "]")
+            ]
+            if runnable:
+                print("\n".join(runnable))
+        elif query_arg.endswith("contract-sources-query.txt"):
+            print(os.environ.get("FAKE_CONTRACT_SOURCES", "//agentplane/env/runtime/journal:journal.go"))
+        elif query_arg.endswith("contract-owners-query.txt"):
+            print(os.environ.get("FAKE_CONTRACT_OWNERS", "//agentplane/env/runtime/journal:journal"))
+        elif query_arg.endswith("contract-required-query.txt"):
+            tags = json.loads(os.environ.get("FAKE_TEST_TAGS", "{}"))
+            print("\n".join(label for label in labels if not {"manual", "live_openai_api"} & set(tags.get(label, []))))
         else:
             raise SystemExit(f"unexpected query file: {query_arg}")
     elif args and args[0] in {"test", "build"}:
@@ -42,9 +63,12 @@ def main() -> None:
             (log_dir / "test-args.log").write_text("\n".join(args))
             target_file = next((arg.split("=", 1)[1] for arg in args if arg.startswith("--target_pattern_file=")), None)
             if target_file:
-                (log_dir / "affected-targets.log").write_text(Path(target_file).read_text())
+                (log_dir / "test-targets.log").write_text(Path(target_file).read_text())
         else:
             (log_dir / "build-args.log").write_text("\n".join(args))
+            target_file = next((arg.split("=", 1)[1] for arg in args if arg.startswith("--target_pattern_file=")), None)
+            if target_file:
+                (log_dir / "affected-targets.log").write_text(Path(target_file).read_text())
         generated_lockfile = os.environ.get("FAKE_GENERATE_LOCKFILE")
         if generated_lockfile:
             lockfile.write_text(generated_lockfile)

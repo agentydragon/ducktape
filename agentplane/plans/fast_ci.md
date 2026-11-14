@@ -6,16 +6,20 @@ Architecture milestones stay on [draft PR #16102](https://github.com/agentydrago
 Independent bugfixes and clear improvements that already apply to devel may be
 backported through separate PRs after validation.
 
-Reduce the physical work and dependency graph needed to establish each guarantee.
-Keep the current required gate while the replacement graph is proved. Desired routine
-backend feedback is mean <4 minutes and p90 <8 minutes, including reruns and all
-required checks. These are targets, not measured improvements.
+Implement and qualify a required test graph that makes routine Agentplane backend
+PRs reach trustworthy green at least 30% faster in median elapsed time, including
+reruns, with no worse p90 or flake rate. Preserve important behavior, security and
+platform coverage, and document resource and maintenance cost. Keep the existing
+required gate until the candidate has the coverage and outcome evidence below.
 
 The [experiment overview](../system_tests/debug/ci_architecture_experiment_overview.md)
 records the completed attempts, negative results, ports and source-specific
 measurements. No qualified 30% complete-PR saving has been established.
-Optimization is paused; the following larger experiments are proposals for a
-future resumption, not dispatched work.
+Work resumed on 14 November 2026 with this measurable objective. The
+first candidate must change the ordinary selected graph, retain the current
+source in every executed binary, and account for every removed deployed assertion.
+Prepared infrastructure is the next architecture option if retained deployment
+work prevents the required improvement.
 
 ## Candidate architecture
 
@@ -49,10 +53,16 @@ they are not summed measurements or promised fleet savings.
 
 ### A. Make the smaller contract graph the actual ordinary backend gate
 
-The current branch builds and validates candidate contracts, but the ordinary
-Runtime selector still retains the expensive deployed graph. The historical
-replay selected the same 51 tests because replacement contracts remained manual.
-This major step has not been implemented or measured.
+The branch now has a shadow selector and four ordinary native/direct contracts.
+The selector resolves exact Bazel source ownership, retains the full affected
+build graph, and archives proposed and actually submitted test labels. Initial
+eligibility is limited to the Runtime journal; mixed, unknown, platform and
+security inputs keep broad acceptance. The current required graph is unchanged.
+See [the implementation and source checks](../system_tests/debug/ordinary_contract_graph.md).
+
+The earlier historical replay selected the same 51 tests because replacement
+contracts remained manual. The new graph has not yet been qualified by a timed
+whole-graph screen or complete required-check comparison.
 
 Assign Runtime journal/admission, History retention/cursors and native transport
 to real-process contracts. Assign packaged kernel/Runtime/CLI/setup behavior to
@@ -78,6 +88,10 @@ assertion inventory and seeded defects. Compare whole required feedback, not a
 manual target against a larger unrelated suite. Then use the 30 matched pairs,
 100 fresh contract executions and busy/burst exposure below. Independent coverage
 ports #16370/#16374 are foundations; landing them alone does not do this migration.
+For the initial architecture screen, allow at most 10% more total test CPU and
+requested CU-min and 20% more peak requested CU; report memory and disk separately.
+There is no persistent infrastructure allowance. These are screening ceilings,
+not a claim of cost neutrality or a substitute for the requested latency result.
 
 ### B. Amortize integration infrastructure and partition its long cases
 
@@ -184,7 +198,7 @@ as evidence that the larger architecture options are exhausted.
   collection-only runs are not contract exposures or complete-feedback timings.
   A source-pinned 4/8/8/4 Bridge probe passes the same 24 cases in all four runs.
   Eight shards lower mean selected-target elapsed by 24.9% while using 62.8% more
-  measured worker CPU. The branch uses eight as a scheduling candidate; assess
+  measured worker CPU. The branch previously used eight as a scheduling candidate; assess
   its mixed workload and busy-window cost before a devel backport.
   A full-body bytecode A/B/B/A passes all 24 Bridge cases in every arm, with 32
   NEW shard actions. Mean selected-target elapsed falls 9.840s and TestRunner CPU
@@ -290,19 +304,21 @@ as evidence that the larger architecture options are exhausted.
   for wrong-issuer to valid mounted Secret recovery before changing waits. Measure
   setup amortization, slowest action and CPU when regrouping cases.
   A Pod annotation spike did not improve the observed wrong-issuer recovery pair
-  and was withdrawn. The retry-budget case now uses a separate 45-second
+  and was withdrawn. The retry-budget case trial used a separate 45-second
   reconnect deadline; ordinary production and the other recovery cases retain the
   120-second default. This trades default-duration exposure for a shorter real
   exhaustion test, without dropping unknown-effect, no-replay, session-recovery or
   next-input assertions. A five-second trial failed real post-roll recovery and
-  remains recorded as a failed experiment, not a passing retry. The 45-second
+  remains recorded as a failed experiment, not a passing retry. The historical 45-second
   candidate passed the unchanged real recovery scenario and rendering checks.
-  Four cases now overlap pre-reserved independent harness pairs without adding
+  The required case returned to 120 seconds before the graph comparison.
+  Four cases trialed overlapping pre-reserved independent harness pairs without adding
   Sandboxes. Their first full-suite screen is mixed and does not establish a suite
   saving. The unchanged same-Pod Secret-recovery case varied13–109s; an experimental
   5s kubelet cadence produced 23–29s in three selected-case executions versus
   22/29/91s control. Real Secret projection and the >=60s idle timer remain. Node
-  configz confirms both cadences; candidate baselines rebuilt cold, so repeat
+  configz confirms both cadences; the required fixture returned to default cadence
+  before the graph comparison. Candidate baselines rebuilt cold, so repeat
   counterbalanced load/cost exposure before adoption claims. Live policy grant
   now also requires the original Pod UID.
 - **P5, shadow/replay:** compose the candidate graph, replay >=30 pinned base/head
@@ -473,8 +489,8 @@ their negative evidence and follow-up triggers rather than manufacturing more wo
   History cursor gap, unauthorized delegation and browser reconnect. Negative
   controls reject the defect; healthy positive controls pass. The native cases alone do
   not establish the complete matrix or platform equivalence.
-- Initial speed screen: >=25% lower median complete required feedback with p90 no
-  more than 5% worse across the matched sample. Include pre-commit and artifact/import
+- Qualification: >=30% lower median complete required feedback with no worse p90
+  or flake rate across the matched sample. Include pre-commit and artifact/import
   checks, rerun-inclusive time and failed/cancelled heads; do not infer savings by
   subtracting one small pilot from a broader suite or summing overlapping spans.
 - Report physical failure exposure, result-stream false reds, cached results,

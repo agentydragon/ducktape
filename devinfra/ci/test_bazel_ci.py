@@ -80,6 +80,10 @@ def run_ci(tmp_path: Path) -> Callable[[dict[str, str]], subprocess.CompletedPro
             }
         )
         env.update(overrides)
+        if policy := env.get("FAKE_CONTRACT_POLICY"):
+            path = workspace / "agentplane/system_tests/ci_contracts.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(policy)
         return subprocess.run(
             [sys.executable, str(BAZEL_CI)], cwd=workspace, env=env, capture_output=True, text=True, check=False
         )
@@ -146,8 +150,164 @@ def test_pr_target_selection(
     # this invocation when the run is cancelled before `bb remote` returns.
     assert "--invocation_id=11111111-1111-1111-1111-111111111111" in test_args
     build_args = (tmp_path / "build-args.log").read_text().splitlines()
+    if graph_wide:
+        assert "//..." in build_args
     assert "--invocation_id=22222222-2222-2222-2222-222222222222" in build_args
     assert "--@io_bazel_rules_go//go/config:race" not in build_args
+
+
+def test_test_graph_does_not_change_affected_build_graph(
+    tmp_path: Path, run_ci: Callable[[dict[str, str]], subprocess.CompletedProcess[str]]
+) -> None:
+    result = run_ci(
+        {
+            "GITHUB_EVENT_NAME": "pull_request",
+            "PR_HEAD_SHA": "pr-head",
+            "CHANGED_FILE": "agentplane/env/runtime/journal/journal.go",
+            "FAKE_TESTS": "//agentplane/x/native_contracts:test_recovery",
+        }
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert (tmp_path / "test-targets.log").read_text() == "//agentplane/x/native_contracts:test_recovery\n"
+    assert "//:.aspect_rules_js/node_modules/@lezer+json@1.0.3/dir" in (tmp_path / "affected-targets.log").read_text()
+    assert (tmp_path / "test-targets.log").read_text() != (tmp_path / "affected-targets.log").read_text()
+
+
+@pytest.mark.parametrize("only_excluded", [False, True])
+def test_materialized_test_suite_preserves_ci_tag_exclusions(
+    tmp_path: Path, run_ci: Callable[[dict[str, str]], subprocess.CompletedProcess[str]], only_excluded: bool
+) -> None:
+    tags = {
+        "//ci:spike": ["manual", "requires_docker"],
+        "//ci:credentialed": ["requires_docker", "live_openai_api"],
+        "//ci:ordinary": ["manual_fixture_contract"],
+    }
+    labels = list(tags)[:2] if only_excluded else list(tags)
+    result = run_ci(
+        {
+            "GITHUB_EVENT_NAME": "pull_request",
+            "PR_HEAD_SHA": "pr-head",
+            "CHANGED_FILE": "devinfra/ci/test_bazel_ci.py",
+            "FAKE_TESTS": "\n".join(labels),
+            "FAKE_TEST_TAGS": json.dumps(tags),
+        }
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    if only_excluded:
+        assert (tmp_path / "phases.log").read_text().splitlines() == ["build"]
+    else:
+        assert (tmp_path / "test-targets.log").read_text() == "//ci:ordinary\n"
+
+
+@pytest.mark.parametrize(
+    ("mode", "changed_file", "owners", "replaced"),
+    [
+        ("required", "agentplane/env/runtime/journal/journal.go", "//agentplane/env/runtime/journal:journal", True),
+        ("shadow", "agentplane/env/runtime/journal/journal.go", "//agentplane/env/runtime/journal:journal", False),
+        ("required", "agentplane/proto/session.proto", "//agentplane/env/runtime/journal:journal", False),
+        ("required", "agentplane/env/runtime/journal/BUILD.bazel", "//agentplane/env/runtime/journal:journal", False),
+        ("required", "agentplane/env/runtime/journal/journal.go", "//agentplane/identity/auth:auth", False),
+    ],
+)
+def test_contract_graph_requires_accounted_source_owners_and_keeps_builds(
+    tmp_path: Path,
+    run_ci: Callable[[dict[str, str]], subprocess.CompletedProcess[str]],
+    mode: str,
+    changed_file: str,
+    owners: str,
+    replaced: bool,
+) -> None:
+    result = run_ci(
+        {
+            "GITHUB_EVENT_NAME": "pull_request",
+            "PR_HEAD_SHA": "pr-head",
+            "CHANGED_FILE": changed_file,
+            "FAKE_TESTS": "//ci:deployment_test\n//ci:owner_test",
+            "FAKE_CONTRACT_OWNERS": owners,
+            "FAKE_CONTRACT_POLICY": json.dumps(
+                {
+                    "schema": "ducktape.agentplane_test_contracts.v1",
+                    "mode": mode,
+                    "implementations": ["//agentplane/env/runtime/journal:journal"],
+                    "replaces": ["//ci:deployment_test"],
+                    "requires": ["//ci:process_contract", "//ci:guest_contract"],
+                }
+            ),
+        }
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    executed = set((tmp_path / "test-targets.log").read_text().splitlines())
+    expected = (
+        {"//ci:owner_test", "//ci:process_contract", "//ci:guest_contract"}
+        if replaced
+        else {"//ci:deployment_test", "//ci:owner_test"}
+    )
+    assert executed == expected
+    assert "//:.aspect_rules_js/node_modules/@lezer+json@1.0.3/dir" in (tmp_path / "affected-targets.log").read_text()
+
+
+def test_manual_replacement_contract_cannot_silently_leave_a_coverage_gap(
+    run_ci: Callable[[dict[str, str]], subprocess.CompletedProcess[str]],
+) -> None:
+    result = run_ci(
+        {
+            "GITHUB_EVENT_NAME": "pull_request",
+            "PR_HEAD_SHA": "pr-head",
+            "CHANGED_FILE": "agentplane/env/runtime/journal/journal.go",
+            "FAKE_TESTS": "//ci:deployment_test",
+            "FAKE_TEST_TAGS": json.dumps({"//ci:process_contract": ["manual"]}),
+            "FAKE_CONTRACT_POLICY": json.dumps(
+                {
+                    "schema": "ducktape.agentplane_test_contracts.v1",
+                    "mode": "required",
+                    "implementations": ["//agentplane/env/runtime/journal:journal"],
+                    "replaces": ["//ci:deployment_test"],
+                    "requires": ["//ci:process_contract"],
+                }
+            ),
+        }
+    )
+    assert result.returncode != 0
+    assert "Every Agentplane replacement must be an ordinary, runnable test target" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("mode", "test_exit", "expected", "phases"),
+    [("required", "0", 0, ["test"]), ("required", "4", 4, ["test"]), ("shadow", "0", 0, [])],
+)
+def test_declared_contracts_are_checked_when_bazel_diff_finds_no_targets(
+    tmp_path: Path,
+    run_ci: Callable[[dict[str, str]], subprocess.CompletedProcess[str]],
+    mode: str,
+    test_exit: str,
+    expected: int,
+    phases: list[str],
+) -> None:
+    result = run_ci(
+        {
+            "GITHUB_EVENT_NAME": "pull_request",
+            "PR_HEAD_SHA": "pr-head",
+            "CHANGED_FILE": "agentplane/env/runtime/journal/journal.go",
+            "FAKE_IMPACTED_TARGETS": "",
+            "FAKE_TESTS": "",
+            "FAKE_TEST_EXIT": test_exit,
+            "FAKE_CONTRACT_POLICY": json.dumps(
+                {
+                    "schema": "ducktape.agentplane_test_contracts.v1",
+                    "mode": mode,
+                    "implementations": ["//agentplane/env/runtime/journal:journal"],
+                    "replaces": ["//ci:deployment_test"],
+                    "requires": ["//ci:process_contract"],
+                }
+            ),
+        }
+    )
+    assert result.returncode == expected, result.stderr + result.stdout
+    phase_log = tmp_path / "phases.log"
+    assert (phase_log.read_text().splitlines() if phase_log.exists() else []) == phases
+    if mode == "required":
+        assert (tmp_path / "test-targets.log").read_text() == "//ci:process_contract\n"
+    assert not (tmp_path / "build-args.log").exists()
 
 
 @pytest.mark.parametrize(
@@ -274,6 +434,7 @@ def test_selected_test_labels_are_archived_with_source_and_invocation_identity(
             "PR_BASE_SHA": "base",
             "CHANGED_FILE": "devinfra/ci/test_bazel_ci.py",
             "FAKE_TESTS": "//ci:first_test\n//ci:second_test",
+            "FAKE_TEST_TAGS": json.dumps({"//ci:second_test": ["live_openai_api"]}),
             "BUILDBUDDY_API_KEY": "test-secret-not-for-snapshot",
         }
     )
@@ -293,6 +454,7 @@ def test_selected_test_labels_are_archived_with_source_and_invocation_identity(
             "full_sweep": False,
             "labels": ["//ci:first_test", "//ci:second_test"],
         },
+        "submission": {"stage": "test-label-file-after-ci-tag-filter", "labels": ["//ci:first_test"]},
         "source": {
             "commit_sha": "merge",
             "base_sha": "base",

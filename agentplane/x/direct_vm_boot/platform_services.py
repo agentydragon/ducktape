@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from ipaddress import ip_network
@@ -17,14 +17,15 @@ from kubernetes_asyncio import client as k8s_client
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.crd_group import GROUP, VERSION
+from agentplane.egress.api.admin import egress_admin_pb2, egress_admin_pb2_grpc
 from agentplane.egress.api.rules import egress_rules_pb2, egress_rules_pb2_grpc
 from agentplane.egress.platform_routes import PlatformRoute, PlatformRoutes, TLSConnectRouteTransport
 from agentplane.egress.settings import Settings
-from agentplane.egress.sidecar_config import Proxy, SpiffeProxyAuth, TLSProxyTransport
+from agentplane.egress.sidecar_config import Proxy, SpiffeProxyAuth, TLSProxyTransport, WorkloadRoute
 from agentplane.egress.testing.go_replica import go_replica
 from agentplane.egress.testing.sidecar_process import SidecarProcess
 from agentplane.identity.auth import listener
-from agentplane.net.peertls.config import EGRESS_PROXY_URI
+from agentplane.net.peertls.config import APP_URI, EGRESS_PROXY_URI
 from agentplane.notification_service.api.notifications import notifications_pb2, notifications_pb2_grpc
 from agentplane.notification_service.testing.process_fixture.process import NotificationProcess, notification_process
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
@@ -47,7 +48,9 @@ CLI_PLATFORM_PROBE = (
 @dataclass(frozen=True)
 class PlatformServices:
     guest_url: str
+    proxy_guest_url: str
     notification: NotificationProcess
+    egress_admin_client: egress_admin_pb2_grpc.EgressAdminStub
     rules_client: egress_rules_pb2_grpc.EgressRulesStub
     notifications_client: notifications_pb2_grpc.NotificationsAsyncStub
 
@@ -60,6 +63,8 @@ async def platform_services(
     ca: CertificateAuthority,
     directory: Path,
     notifications_server_uri: str,
+    workload_routes: Mapping[str, WorkloadRoute] | None = None,
+    tls_passthrough_targets: tuple[str, ...] = (),
 ) -> AsyncIterator[PlatformServices]:
     await asyncio.to_thread(directory.mkdir, parents=True)
     runtime_root, _ = write_ca(ca, directory, "runtime")
@@ -70,11 +75,20 @@ async def platform_services(
     client_directory = directory / "sidecar-client"
     await asyncio.to_thread(client_directory.mkdir)
     certificate, key = issue_workload_leaf(ca, sandbox.environment_runtime_identity_uri, client_directory)
+    admin_client_directory = directory / "admin-client"
+    await asyncio.to_thread(admin_client_directory.mkdir)
+    admin_certificate, admin_key = issue_workload_leaf(ca, APP_URI, admin_client_directory)
     private_key, certificate_chain = await asyncio.gather(
         asyncio.to_thread(key.read_bytes), asyncio.to_thread(certificate.read_bytes)
     )
     credentials = grpc.ssl_channel_credentials(
         root_certificates=ca.cert_pem, private_key=private_key, certificate_chain=certificate_chain
+    )
+    admin_private_key, admin_certificate_chain = await asyncio.gather(
+        asyncio.to_thread(admin_key.read_bytes), asyncio.to_thread(admin_certificate.read_bytes)
+    )
+    admin_credentials = grpc.ssl_channel_credentials(
+        root_certificates=ca.cert_pem, private_key=admin_private_key, certificate_chain=admin_certificate_chain
     )
     with (
         create_temporary_database(postgres_admin_url, f"guest_notifications_{uuid4().hex}") as notifications_database,
@@ -96,7 +110,10 @@ async def platform_services(
                 ca_cert=interception[0],
                 ca_key=interception[1],
                 upstream_ca_file=runtime_root,
-                tls_passthrough_targets=[notification.address],
+                tls_passthrough_targets=[notification.address, *tls_passthrough_targets],
+                admin_grpc_audience="direct-vm-admin",
+                admin_grpc_callers=[f"{sandbox.namespace}/direct-vm-test-reader"],
+                admin_grpc_service_callers=frozenset({APP_URI}),
                 forward=listener.Listener(
                     listen_address="127.0.0.1:0",
                     tls=listener.TLS(cert_file=server_certificate, key_file=server_key),
@@ -116,6 +133,7 @@ async def platform_services(
                                 ca_file=runtime_root, auth=SpiffeProxyAuth(cert_file=certificate, key_file=key)
                             ),
                         ),
+                        workload_routes=workload_routes or {},
                         platform_routes=PlatformRoutes(
                             listen_address="127.0.0.1:0",
                             routes={
@@ -135,13 +153,43 @@ async def platform_services(
                     ) as sidecar,
                     grpc.aio.secure_channel(rules_address, credentials) as rules_channel,
                     grpc.aio.secure_channel(notification.address, credentials) as notification_channel,
+                    grpc.aio.secure_channel(rules_address, admin_credentials) as admin_channel,
                 ):
                     yield PlatformServices(
                         guest_url=f"http://10.0.2.1:{sidecar.platform_route_listener.port}",
+                        proxy_guest_url=f"http://10.0.2.1:{sidecar.proxy_listener.port}",
                         notification=notification,
+                        egress_admin_client=egress_admin_pb2_grpc.EgressAdminStub(admin_channel),
                         rules_client=egress_rules_pb2_grpc.EgressRulesStub(rules_channel),
                         notifications_client=notifications_pb2_grpc.NotificationsStub(notification_channel),
                     )
+
+
+async def assert_model_connect_decision(
+    services: PlatformServices, sandbox: SandboxCluster, *, host: str, port: int
+) -> None:
+    request = egress_admin_pb2.ListDecisionsRequest(
+        filter=egress_admin_pb2.DecisionFilter(
+            identity=egress_rules_pb2.IdentitySubject(name=sandbox.execution_identity_name)
+        )
+    )
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(5), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError), reraise=True
+    ):
+        with attempt:
+            response = await services.egress_admin_client.ListDecisions(request, timeout=2)
+            matching = [
+                decision
+                for decision in response.decisions
+                if decision.method == "CONNECT" and decision.host == host and decision.port == port
+            ]
+            assert matching, (
+                f"Egress recorded no CONNECT to {host}:{port} for Sandbox Identity "
+                f"{sandbox.execution_identity_name}: {response.decisions!r}"
+            )
+            for decision in matching:
+                assert decision.outcome == egress_admin_pb2.Decision.OUTCOME_ALLOW, decision
+                assert not decision.policy, f"the exact SVID route unexpectedly used a policy: {decision}"
 
 
 def assert_platform_cli_output(stdout: str, services: PlatformServices, sandbox: SandboxCluster) -> None:
