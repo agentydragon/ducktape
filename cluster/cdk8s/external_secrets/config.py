@@ -150,6 +150,7 @@ def chart(app: App) -> Chart:
             "props",
             "public-coder-agent",
             "quest-diagnostics",  # gaffer-private; ESO lives in that repo's k8s/
+            "roaming-node-controller",
             "sdr",
             "session-backup",
             "ssh-mcp",

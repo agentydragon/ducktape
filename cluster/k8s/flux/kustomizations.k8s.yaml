@@ -3535,6 +3535,28 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
+    description: Marks roaming laptop nodes out of service while their kubelet is silent, so offline laptops stop blocking DaemonSet rollouts, Helm waits and pod alerts.
+  name: roaming-node-controller
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: external-secrets-operator
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/roaming-node-controller
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: roaming-node-controller
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
     description: Reconciles the private Finance spend-policy Secret into the isolated finance-spend-config namespace. The impersonated service account can create Secrets of any name there and can get, patch, or update only the named policy Secret; it cannot delete resources, create namespaces, or manage other resource kinds. Ducktape owns the namespace and the Secret copy consumed by the app.
   name: plaid-spend-policy
   namespace: ducktape-flux

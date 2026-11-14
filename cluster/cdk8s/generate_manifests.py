@@ -65,6 +65,7 @@ from cluster.cdk8s import (
     proxmox_proxy,
     reflector,
     reloader,
+    roaming_node_controller,
     route53_domain_delegation,
     seaweedfs_csi,
     session_archive,
@@ -1497,6 +1498,19 @@ def generate_manifests(root: Path) -> None:
         ),
         external_secrets_operator_kustomization,
     )
+    roaming_node_controller_artifact = artifact(
+        "roaming-node-controller", roaming_node_controller.OUTPUT_DIR, roaming_node_controller.PINS_DIR
+    )
+    roaming_node_controller.roaming_node_controller(
+        flux_chart,
+        write_directory(
+            root,
+            roaming_node_controller_artifact,
+            roaming_node_controller.chart,
+            components=[posixpath.relpath(roaming_node_controller.PINS_DIR, roaming_node_controller.OUTPUT_DIR)],
+        ),
+        external_secrets_operator_kustomization,
+    )
     agents_flux_kustomizations.plaid_spend_policy(flux_chart)
     plaid_mcp_artifact = artifact("plaid-mcp", plaid_mcp_component.OUTPUT_DIR)
     plaid_mcp_directory = plaid_mcp_component.write_directory(root, plaid_mcp_artifact)
@@ -2119,6 +2133,7 @@ def generate_manifests(root: Path) -> None:
             kubectl_passthrough_mcp_artifact,
             loki_read_proxy_artifact,
             plaid_mcp_artifact,
+            roaming_node_controller_artifact,
             public_coder_agent_access_artifact,
             session_archive_artifact,
             session_backup_artifact,

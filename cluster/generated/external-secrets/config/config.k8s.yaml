@@ -156,6 +156,7 @@ spec:
         - props
         - public-coder-agent
         - quest-diagnostics
+        - roaming-node-controller
         - sdr
         - session-backup
         - ssh-mcp
