@@ -173,6 +173,21 @@ Sessions. Readers keep getting it from History. Whether the Dispatch record also
 notices and `observe_input` stop scanning History, stays with
 [`DISPATCHER_HARNESS_CONFIRMATION`](task_dag.md#dispatcher_harness_confirmation--settle-admitted-inputs-on-a-canonical-confirmation).
 
+Option 2 stands alone: it needs neither per-kind commands nor native content, and changes no
+meaning, because `CommandSettled` fires where the Runtime already sets the journal's terminal cursor
+and where the sampler sets a command's outcome. It replaces `CommandFailed`, `CommandNoop` and the
+command IDs on `ModelChanged`, `ReasoningEffortChanged` and `TurnCompleted`.
+`HarnessUserMessageConfirmed` stays as the input fact, since transcript inputs and `read_turns` use
+its harness-coalesced text and grouping, but stops settling. One behavior changes: when a sampler
+Session blocks, the sampler fails inputs it had already confirmed and the fold skips that failure
+(`blockedInputFailureReason`); instead the sampler settles an input at confirmation, and the block
+stays on the failed turn. It does not set the Dispatcher's `HARNESS_CONFIRMED`, because the
+Dispatcher reads no Events; the writerless `HARNESS_CONFIRMED` and `NO_OP` states can be deleted on
+their own. Rollout: readers (History fold, notices, `session_client`, `orchestration_v1`) accept
+`CommandSettled` first and keep the old signals while any Sandbox runs an older Runtime image, since
+a Sandbox reads its template's image only when it starts; then the sampler and the template image;
+then the old reads go.
+
 ## Options
 
 - **A. Grow the neutral surface.** Add per-harness operations to the common set as `Compact` was,
