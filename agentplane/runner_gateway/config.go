@@ -25,15 +25,14 @@ const (
 	settingPrefix            = "AGENTPLANE_RUNNER_GATEWAY_"
 	dispatcherDatabaseURLEnv = settingPrefix + "DISPATCHER_DATABASE_URL"
 	runnerGatewayPodNameEnv  = settingPrefix + "POD_NAME"
-	runnerGatewayPodIPEnv    = settingPrefix + "POD_IP"
 )
 
 // config is the Gateway's deployment contract: static settings come from the YAML file named by
-// AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE. The database URL, Pod name and Pod IP are explicit runtime inputs.
+// AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE. The database URL and Pod name are explicit runtime inputs.
 // Callers and the controller account are written `namespace/name`.
 //
-// The database URL is a Secret and the Pod IP comes from the Downward API, so both are environment
-// values. Kubernetes sets the Pod hostname to its name unless an explicit hostname is configured.
+// The database URL is a Secret environment value. Kubernetes sets the Pod hostname to its name unless an
+// explicit hostname is configured.
 type config struct {
 	RuntimeProxyReaders           []string         `mapstructure:"runtime_proxy_readers"`
 	RuntimeProxySessionCallers    []string         `mapstructure:"runtime_proxy_session_callers"`
@@ -45,13 +44,12 @@ type config struct {
 	PolicyNamespace       string             `mapstructure:"policy_namespace"`
 	DispatcherDatabaseURL string             `mapstructure:"-"`
 	PodName               string             `mapstructure:"-"`
-	PodIP                 string             `mapstructure:"-"`
 	RunnerTokenFile       string             `mapstructure:"runner_token_file"`
 	Kubeconfig            string             `mapstructure:"kubeconfig"`
 	KubernetesClientQPS   float32            `mapstructure:"kubernetes_client_qps"`
 	RPC                   listener.Config    `mapstructure:"rpc"`
 	GatewayTLS            *peertls.ClientTLS `mapstructure:"gateway_tls"`
-	// CLEANUP(added 2026-11-14): Remove proxy_port after the route-removal image is pinned.
+	// CLEANUP(added 2026-11-14): Remove after no deployed Gateway config emits proxy_port.
 	ProxyPort                    int                      `mapstructure:"proxy_port"`
 	RunnerControlTargetTemplate  string                   `mapstructure:"runner_control_target_template"`
 	DispatcherAudience           string                   `mapstructure:"dispatcher_audience"`
@@ -143,7 +141,6 @@ func loadConfig() (config, error) {
 	}
 	c.DispatcherDatabaseURL = os.Getenv(dispatcherDatabaseURLEnv)
 	c.PodName = os.Getenv(runnerGatewayPodNameEnv)
-	c.PodIP = os.Getenv(runnerGatewayPodIPEnv)
 	c.RuntimeCatalog.Models.NormalizeHarnessNames()
 	if strings.TrimSpace(c.PodName) == "" {
 		var err error
@@ -232,7 +229,6 @@ func (c *config) validate() error {
 		{"sandbox_namespace", c.Namespace},
 		{"policy_namespace", c.PolicyNamespace},
 		{"dispatcher_database_url", c.DispatcherDatabaseURL},
-		{"pod_ip", c.PodIP},
 		{"runner_token_file", c.RunnerTokenFile},
 		{"dispatcher_audience", c.DispatcherAudience},
 		{"gateway_audience", c.GatewayAudience},

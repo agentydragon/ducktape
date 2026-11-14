@@ -3,12 +3,13 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -45,7 +46,6 @@ func run() error {
 	sandboxName := flag.String("sandbox-name", "proof-sandbox", "Sandbox name, which its WorkloadCredential and Runtime URI take")
 	pod := flag.String("pod-uid", "proof-pod", "unchanged launcher Pod UID")
 	credential := flag.String("credential-id", "proof-credential", "Runtime credential ID")
-	epoch := flag.Uint64("epoch", 1, "strictly increasing connection epoch")
 	expectedBoot := flag.String("expected-boot-id", "", "require this Runtime process identity after resume")
 	execution := flag.String("execution", "", "optional Executor probe mode: start or resume")
 	executionSessionID := flag.String("execution-session-id", "", "native execution session ID to resume")
@@ -102,8 +102,8 @@ func run() error {
 	defer connection.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	// WatchState owns the active epoch for the entire execution proof. Bound only
-	// connection setup; expiring this context during --hold would fence our own RPCs.
+	// Keep the caller context alive for calls that may run through --hold; only
+	// bound setup, and give the state observer its own lifetime.
 	setupTimer := time.AfterFunc(probeCallTimeout, cancel)
 	defer setupTimer.Stop()
 	controllerSecurity := transport.Security{Mode: transport.MutualTLS, TLS: &transport.Config{
@@ -126,7 +126,9 @@ func run() error {
 		return fmt.Errorf("Controller incarnation binding: %w", err)
 	}
 	client := pb.NewEnvironmentRuntimeClient(connection)
-	watch, err := client.WatchState(ctx, &pb.WatchStateRequest{SandboxUid: *sandbox, IncarnationUid: *pod, ConnectionEpoch: *epoch})
+	observerCtx, cancelObserver := context.WithCancel(ctx)
+	defer cancelObserver()
+	watch, err := client.WatchState(observerCtx, &pb.WatchStateRequest{SandboxUid: *sandbox, IncarnationUid: *pod})
 	if err != nil {
 		return err
 	}
@@ -138,10 +140,16 @@ func run() error {
 	if boot == "" || (*expectedBoot != "" && boot != *expectedBoot) {
 		return fmt.Errorf("Runtime boot ID %q differs from expected %q", boot, *expectedBoot)
 	}
-	if first.GetIncarnationUid() != *pod || first.GetConnectionEpoch() != *epoch {
-		return fmt.Errorf("Runtime returned a different incarnation or connection epoch")
+	if first.GetIncarnationUid() != *pod {
+		return fmt.Errorf("Runtime returned a different incarnation")
 	}
-	call := metadata.AppendToOutgoingContext(ctx, control.SandboxMetadata, *sandbox, control.IncarnationMetadata, *pod, control.BootMetadata, boot, control.EpochMetadata, strconv.FormatUint(*epoch, 10))
+	cancelObserver()
+	for {
+		if _, err := watch.Recv(); err != nil {
+			break
+		}
+	}
+	call := metadata.AppendToOutgoingContext(ctx, control.SandboxMetadata, *sandbox, control.IncarnationMetadata, *pod, control.BootMetadata, boot)
 	status, err := client.GetStatus(call, &sessionpb.GetStatusRequest{})
 	if err != nil {
 		return err
@@ -153,15 +161,20 @@ func run() error {
 		return fmt.Errorf("Runtime setup exceeded %s", probeCallTimeout)
 	}
 	if *execution == "" {
-		return json.NewEncoder(os.Stdout).Encode(map[string]any{"runtime_boot_id": boot, "pod_uid": *pod, "connection_epoch": *epoch, "status": "passed"})
+		return json.NewEncoder(os.Stdout).Encode(map[string]any{"runtime_boot_id": boot, "pod_uid": *pod, "status": "passed"})
 	}
-	return runExecution(*execution, *executionSessionID, *processID, *hold, afterSeqSet, *afterSeq, boot, *namespace, *sandbox, *pod, *epoch, connection)
+	var runIDBytes [16]byte
+	if _, err := rand.Read(runIDBytes[:]); err != nil {
+		return fmt.Errorf("generate probe request ID: %w", err)
+	}
+	runID := hex.EncodeToString(runIDBytes[:])
+	return runExecution(*execution, *executionSessionID, *processID, *hold, afterSeqSet, *afterSeq, boot, *namespace, *sandbox, *pod, runID, connection)
 }
 
-func runExecution(mode, nativeSessionID, processID string, hold time.Duration, afterSeqSet bool, afterSeq uint64, bootID, namespace, sandboxUID, podUID string, epoch uint64, connection *grpc.ClientConn) error {
+func runExecution(mode, nativeSessionID, processID string, hold time.Duration, afterSeqSet bool, afterSeq uint64, bootID, namespace, sandboxUID, podUID, runID string, connection *grpc.ClientConn) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	call := metadata.AppendToOutgoingContext(ctx, control.SandboxMetadata, sandboxUID, control.IncarnationMetadata, podUID, control.BootMetadata, bootID, control.EpochMetadata, strconv.FormatUint(epoch, 10))
+	call := metadata.AppendToOutgoingContext(ctx, control.SandboxMetadata, sandboxUID, control.IncarnationMetadata, podUID, control.BootMetadata, bootID)
 	client := executorpb.NewExecutorClient(connection)
 	scope := &executorpb.ExecutionScope{
 		Destination: &identitypb.SandboxDestination{
@@ -177,7 +190,7 @@ func runExecution(mode, nativeSessionID, processID string, hold time.Duration, a
 	}
 	openCtx, cancelOpen := context.WithCancel(call)
 	stream, err := client.OpenSession(openCtx, &executorpb.OpenSessionRequest{
-		Scope: scope, RequestId: fmt.Sprintf("runtime-probe-open-%d", epoch), ResumeSessionId: resumeID,
+		Scope: scope, RequestId: fmt.Sprintf("runtime-probe-open-%s-%s", runID, mode), ResumeSessionId: resumeID,
 	})
 	if err != nil {
 		cancelOpen()
@@ -203,7 +216,7 @@ func runExecution(mode, nativeSessionID, processID string, hold time.Duration, a
 		return fmt.Errorf("Executor resumed native session %q as %q", nativeSessionID, openedID)
 	}
 	if err := emitEvidence(map[string]any{
-		"event": "execution_session_opened", "runtime_boot_id": bootID, "connection_epoch": epoch,
+		"event": "execution_session_opened", "runtime_boot_id": bootID,
 		"execution_session_id": openedID, "sampler_session_id": scope.GetSessionId(),
 		"process_id": processID, "mode": mode, "native_shell_path": firstResponse.GetShell().GetPath(),
 	}); err != nil {
@@ -214,7 +227,7 @@ func runExecution(mode, nativeSessionID, processID string, hold time.Duration, a
 		startCtx, cancelStart := context.WithTimeout(call, probeCallTimeout)
 		started, startErr := client.StartProcess(startCtx, &executorpb.StartProcessRequest{
 			Scope: scope, ExecutionSessionId: openedID,
-			RequestId: fmt.Sprintf("runtime-probe-start-%d", epoch), ProcessId: processID,
+			RequestId: fmt.Sprintf("runtime-probe-start-%s", runID), ProcessId: processID,
 			Argv: []string{"/run/current-system/sw/bin/bash", "-c", longLivedProcessScript},
 			Cwd:  "file:///state/workspaces", PipeStdin: true,
 		})
@@ -232,7 +245,7 @@ func runExecution(mode, nativeSessionID, processID string, hold time.Duration, a
 			return fmt.Errorf("Executor started process %q, expected %q", started.GetProcessId(), processID)
 		}
 		if err := emitEvidence(map[string]any{
-			"event": "process_started", "runtime_boot_id": bootID, "connection_epoch": epoch,
+			"event": "process_started", "runtime_boot_id": bootID,
 			"execution_session_id": openedID, "process_id": processID,
 		}); err != nil {
 			cancelOpen()
@@ -250,7 +263,7 @@ func runExecution(mode, nativeSessionID, processID string, hold time.Duration, a
 		cursor = &afterSeq
 	}
 	readCtx, cancelRead := context.WithTimeout(call, probeCallTimeout)
-	read, nextCursor, err := readProcessOutput(readCtx, client, scope, openedID, processID, epoch, cursor)
+	read, nextCursor, err := readProcessOutput(readCtx, client, scope, openedID, processID, runID, cursor)
 	cancelRead()
 	if err != nil {
 		return err
@@ -271,7 +284,7 @@ func runExecution(mode, nativeSessionID, processID string, hold time.Duration, a
 		return fmt.Errorf("Executor ReadProcess returned output without a usable sequence cursor")
 	}
 	evidence := map[string]any{
-		"event": "execution_probe_ready", "runtime_boot_id": bootID, "connection_epoch": epoch,
+		"event": "execution_probe_ready", "runtime_boot_id": bootID,
 		"execution_session_id": openedID, "process_id": processID,
 		"chunks": chunks, "next_seq": read.GetNextSeq(), "after_seq": *nextCursor,
 		"exited": read.GetExited(), "closed": read.GetClosed(), "hold": hold.String(),
@@ -287,7 +300,7 @@ func runExecution(mode, nativeSessionID, processID string, hold time.Duration, a
 		if closed {
 			if err := emitEvidence(map[string]any{
 				"event": "execution_session_stream_closed_during_hold", "runtime_boot_id": bootID,
-				"connection_epoch": epoch, "execution_session_id": openedID, "process_id": processID, "mode": mode,
+				"execution_session_id": openedID, "process_id": processID, "mode": mode,
 			}); err != nil {
 				return err
 			}
@@ -340,12 +353,12 @@ func drainNotifications(stream executorpb.Executor_OpenSessionClient) <-chan str
 	return done
 }
 
-func readProcessOutput(ctx context.Context, client executorpb.ExecutorClient, scope *executorpb.ExecutionScope, executionSessionID, processID string, epoch uint64, afterSeq *uint64) (*executorpb.ReadProcessResponse, *uint64, error) {
+func readProcessOutput(ctx context.Context, client executorpb.ExecutorClient, scope *executorpb.ExecutionScope, executionSessionID, processID, runID string, afterSeq *uint64) (*executorpb.ReadProcessResponse, *uint64, error) {
 	for attempt := uint64(1); ; attempt++ {
 		callCtx, cancel := context.WithTimeout(ctx, probeCallTimeout)
 		response, err := client.ReadProcess(callCtx, &executorpb.ReadProcessRequest{
 			Scope: scope, ExecutionSessionId: executionSessionID,
-			RequestId: fmt.Sprintf("runtime-probe-read-%d-%d", epoch, attempt), ProcessId: processID,
+			RequestId: fmt.Sprintf("runtime-probe-read-%s-%d", runID, attempt), ProcessId: processID,
 			AfterSeq: afterSeq, MaxBytes: 65536, WaitMs: 1000,
 		})
 		cancel()

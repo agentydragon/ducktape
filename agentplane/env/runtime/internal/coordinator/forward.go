@@ -26,7 +26,7 @@ func (r *Runtime) admitExecutionCall(ctx context.Context, scope *executorpb.Exec
 	var cancel context.CancelFunc
 	var callID uint64
 	var admitted bool
-	err := r.control.Admit(ctx, func(epoch *runtimecontrol.Epoch) error {
+	err := r.control.Admit(ctx, func(authorization *runtimecontrol.Authorization) error {
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		if r.closing || r.failed || r.suspendPrepared || r.executionOwner.recovering() ||
@@ -41,7 +41,7 @@ func (r *Runtime) admitExecutionCall(ctx context.Context, scope *executorpb.Exec
 		if found && progress.Generation == r.desired.Generation && progress.NativeStopped {
 			return status.Error(codes.FailedPrecondition, "environment native work has stopped")
 		}
-		if err := validateExecutionScope(scope, r.config.Launch.Sandbox, epoch.SandboxUID(), epoch.IncarnationUID()); err != nil {
+		if err := validateExecutionScope(scope, r.config.Launch.Sandbox, authorization.SandboxUID(), authorization.IncarnationUID()); err != nil {
 			return err
 		}
 		client = r.executionOwner.executor(scope.ExpectedIncarnationUid)
@@ -125,13 +125,13 @@ func (p *executionProxy) OpenSession(request *executorpb.OpenSessionRequest, str
 	var cancel context.CancelFunc
 	var streamID uint64
 	var unconfigured bool
-	err := r.control.Admit(stream.Context(), func(epoch *runtimecontrol.Epoch) error {
+	err := r.control.Admit(stream.Context(), func(authorization *runtimecontrol.Authorization) error {
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		if r.closing || r.failed || r.executionOwner.recovering() || !r.acceptingLocked() {
 			return status.Error(codes.Unavailable, "execution admission is closed")
 		}
-		if err := validateExecutionScope(request.GetScope(), r.config.Launch.Sandbox, epoch.SandboxUID(), epoch.IncarnationUID()); err != nil {
+		if err := validateExecutionScope(request.GetScope(), r.config.Launch.Sandbox, authorization.SandboxUID(), authorization.IncarnationUID()); err != nil {
 			return err
 		}
 		client = r.executionOwner.executor(request.GetScope().ExpectedIncarnationUid)
@@ -150,9 +150,9 @@ func (p *executionProxy) OpenSession(request *executorpb.OpenSessionRequest, str
 			return status.Error(codes.FailedPrecondition, "environment native work has stopped")
 		}
 		streamCtx, cancel = context.WithCancel(stream.Context())
-		stopEpoch := context.AfterFunc(epoch.Context(), cancel)
+		stopIdentity := context.AfterFunc(authorization.Context(), cancel)
 		oldCancel := cancel
-		cancel = func() { stopEpoch(); oldCancel() }
+		cancel = func() { stopIdentity(); oldCancel() }
 		r.execStreamID++
 		streamID = r.execStreamID
 		r.execStreams[streamID] = cancel

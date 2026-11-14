@@ -155,11 +155,6 @@ class SandboxController(Construct):
                     resources=[custom_resource("kubevirt.io", "virtualmachineinstances")],
                     verbs=["get", "list", "watch"],
                 ),
-                # CLEANUP(added 2026-11-14): Remove after the Controller image that stops
-                # creating per-Sandbox control Services is pinned and all old Pods have left.
-                RolePolicyRule(
-                    resources=[custom_resource("", "services")], verbs=["get", "list", "watch", "create", "patch"]
-                ),
                 # Each Sandbox's launch ConfigMap (its identity and bootstrap), kept current while it lives.
                 RolePolicyRule(
                     resources=[custom_resource("", "configmaps")], verbs=["get", "list", "watch", "create", "patch"]
@@ -167,10 +162,9 @@ class SandboxController(Construct):
                 # The Identity each Sandbox acts as, read live before a start; a watch retries the
                 # Sandboxes naming one that appears or goes.
                 RolePolicyRule(resources=[custom_resource(_GROUP, "identities")], verbs=["get", "list", "watch"]),
-                # Leader election; connection Lease permissions await the Controller image pin.
+                # Controller-runtime leader election reads, creates, and updates its coordination Lease.
                 RolePolicyRule(
-                    resources=[custom_resource("coordination.k8s.io", "leases")],
-                    verbs=["get", "list", "watch", "create", "update"],
+                    resources=[custom_resource("coordination.k8s.io", "leases")], verbs=["get", "create", "update"]
                 ),
                 # Records its own Events, and watches those about Sandbox Pods for what a starting one waits on.
                 RolePolicyRule(

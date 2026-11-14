@@ -31,8 +31,8 @@ type stateWatchResult struct {
 }
 
 // Watch follows one current Pod incarnation until the stream ends, becomes unhealthy,
-// or its context is cancelled. The Sandbox Controller's observe-only request does not
-// claim or supersede the Gateway's execution epoch.
+// or its context is cancelled. The Controller binds the Runtime incarnation without
+// owning Gateway admission or executor lifetimes.
 func (w RuntimeWatcher) Watch(
 	ctx context.Context,
 	sandbox *sandboxapi.Sandbox,
@@ -75,7 +75,7 @@ func (w RuntimeWatcher) Watch(
 	watchCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	watch, err := environmentruntimepb.NewEnvironmentRuntimeClient(conn).WatchState(watchCtx, &environmentruntimepb.WatchStateRequest{
-		SandboxUid: string(sandbox.UID), IncarnationUid: string(pod.UID), ConnectionEpoch: 0, ObserveOnly: true,
+		SandboxUid: string(sandbox.UID), IncarnationUid: string(pod.UID), ObserveOnly: true,
 	})
 	if err != nil {
 		return fmt.Errorf("start observe-only Runtime state watch: %w", err)
@@ -116,7 +116,7 @@ func (w RuntimeWatcher) Watch(
 			}
 			response := received.response
 			if response == nil || response.GetSandboxUid() != string(sandbox.UID) ||
-				response.GetIncarnationUid() != string(pod.UID) || response.GetConnectionEpoch() != 0 || response.GetFacts() == nil {
+				response.GetIncarnationUid() != string(pod.UID) || response.GetFacts() == nil {
 				return errors.New("Environment Runtime state has invalid identity or facts")
 			}
 			if err := receive(response); err != nil {

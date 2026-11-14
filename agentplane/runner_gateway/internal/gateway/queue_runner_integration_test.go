@@ -81,8 +81,8 @@ type queueRunner struct {
 }
 
 func (r *queueRunner) WatchState(request *environmentruntimepb.WatchStateRequest, stream grpc.ServerStreamingServer[environmentruntimepb.WatchStateResponse]) error {
-	if request.GetConnectionEpoch() != 0 || request.GetObserveOnly() {
-		return status.Error(codes.FailedPrecondition, "Gateway request must use an independent zero-epoch observation")
+	if request.GetObserveOnly() {
+		return status.Error(codes.FailedPrecondition, "Gateway request must use an independent observation")
 	}
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -245,9 +245,6 @@ func TestQueuedDeliveryThroughGatewayRunnerRPC(t *testing.T) {
 		}
 		if got := received.metadata.Get("agentplane-environment-runtime-boot-id"); len(got) != 1 || got[0] != runner.bootID {
 			t.Fatalf("Gateway omitted the Runner boot fence: %v", received.metadata)
-		}
-		if got := received.metadata.Get("agentplane-connection-epoch"); len(got) != 0 {
-			t.Fatalf("Gateway sent a removed connection epoch: %v", received.metadata)
 		}
 	case <-ctx.Done():
 		t.Fatal("queued command did not reach Runner")

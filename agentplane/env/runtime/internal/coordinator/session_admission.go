@@ -257,10 +257,10 @@ func (r *Runtime) authorizeSession(ctx context.Context, running bool) (lifecycle
 }
 
 func (r *Runtime) withSessionAdmission(ctx context.Context, running bool, expected *lifecycle.EnvironmentDesired, admit func() error) error {
-	return r.control.Admit(ctx, func(epoch *runtimecontrol.Epoch) error {
+	return r.control.Admit(ctx, func(authorization *runtimecontrol.Authorization) error {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		if err := r.authorizeSessionEpochLocked(epoch, running); err != nil {
+		if err := r.authorizeSessionIdentityLocked(authorization, running); err != nil {
 			return err
 		}
 		if expected != nil && r.desired != *expected {
@@ -272,7 +272,7 @@ func (r *Runtime) withSessionAdmission(ctx context.Context, running bool, expect
 	})
 }
 
-func (r *Runtime) authorizeSessionEpochLocked(epoch *runtimecontrol.Epoch, running bool) error {
+func (r *Runtime) authorizeSessionIdentityLocked(authorization *runtimecontrol.Authorization, running bool) error {
 	if r.closing || r.failed || !r.startupComplete {
 		return status.Error(codes.Unavailable, "environment Runtime is unavailable")
 	}
@@ -285,8 +285,8 @@ func (r *Runtime) authorizeSessionEpochLocked(epoch *runtimecontrol.Epoch, runni
 	if r.desired.Mode != lifecycle.Running && r.desired.Mode != lifecycle.Quiescing {
 		return status.Error(codes.Unavailable, "environment is not serving Session calls")
 	}
-	if epoch.IncarnationUID() != r.desired.IncarnationUID {
-		return status.Error(codes.Aborted, "control epoch does not match the active incarnation")
+	if authorization.IncarnationUID() != r.desired.IncarnationUID {
+		return status.Error(codes.Aborted, "control authorization does not match the active incarnation")
 	}
 	return nil
 }

@@ -8,7 +8,7 @@ and `GET /readyz` on Pod port `9092`. Readiness requires the `running` phase and
 Runtime on port `9090`.
 Once suspension is requested, resume or deletion waits for a matching supervisor's `suspended`
 acknowledgement before requesting a running VM. This ensures the projected intent cannot skip a
-checkpoint while deletion waits for the post-restore Gateway connection epoch.
+checkpoint while deletion waits for post-restore Runtime observation.
 
 The launcher reads strict JSON configuration from `/run/agentplane/firecracker/config.json`.
 Pod environment supplies `POD_UID`, `SANDBOX_UID`, `FIRECRACKER_VCPU_COUNT`,

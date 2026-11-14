@@ -6,9 +6,9 @@ Reconciles `Sandbox` into retained state and optional workspace PVCs and, while 
 operator grants through the Kubernetes API; this controller reconciles each Sandbox and owns its
 status. Each runner serves mTLS on its workload network, and the Runner Gateway connects to the
 current incarnation using its per-incarnation certificate. The elected Controller observes Runtime
-facts directly with a narrow SVID; a compatible Runtime uses that authenticated watch to bind the
-current workload UID before publishing facts, while Gateway watches cannot select or replace the
-binding. History and telemetry use the egress sidecar's platform routes. `spec.bootstrap` and the Sandbox's identity reach its runner
+facts directly with a narrow SVID; that authenticated watch binds the current workload UID before
+publishing facts, while Gateway watches cannot select or replace the binding. History and telemetry
+use the egress sidecar's platform routes. `spec.bootstrap` and the Sandbox's identity reach its runner
 through the Sandbox's launch ConfigMap (a Pod mounts it, a VM gets it as a disk). Session launch
 defaults live in the app's preset catalog and are resolved before an opening reaches the Dispatcher.
 Deletion first has the runner seal every
@@ -56,10 +56,9 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
 - [`cmd/main.go`](cmd/main.go): the manager, its cache limited to one namespace.
 - [`cache.go`](internal/controller/cache.go): the cache holds only objects carrying the Sandbox label (ConfigMaps,
   and the other kinds it creates or watches), every Identity and WorkloadCredential in the
-  namespace and Pod Events. Runtime facts come only from direct in-memory observation.
-  Connection Lease reads are no longer cached. Lease RBAC is retained through the Gateway routing
-  cutover and removed in a follow-up after the final Gateway image pin; leader election continues
-  to use its own Lease.
+  namespace and Pod Events. Runtime facts come only from direct in-memory observation. The
+  Controller does not read per-Sandbox connection Leases or create per-Sandbox routing Services or
+  EndpointSlices; its Lease permission is for leader election.
   RBAC cannot select by label, so the Role
   still grants `list`/`watch` on those kinds.
 
@@ -118,7 +117,7 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   recorded cause; the Sandbox is to run, so the stop path seals it and replaces the incarnation.
   A restart between the call and the write ends the same way, at the cost of one incarnation.
 - **The elected leader watches Runtime directly.** `WatchState(observe_only=true)` uses the
-  Controller's own SVID and grants no Gateway command authority. On a compatible Runtime, this
+  Controller's own SVID and grants no Gateway command authority. This
   authenticated request binds the current workload UID for that Runtime process before facts are
   published; reconnects may retry only that UID. `runtime_states.go` keeps snapshots in memory by
   Sandbox UID and Pod UID, with boot ID and a local stream generation. A replacement fences late
@@ -129,7 +128,7 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   full idle timer, including when `idle-since` is unchanged. Quiesce retry deadlines remain durable;
   only fresh observed quiescence or an acknowledged quiesce RPC completes a seal. Bootstrap failure
   stays terminal for that incarnation. Every Gateway replica independently observes the
-  Controller-bound Runtime UID with a zero-epoch watch and may call using the current Sandbox UID,
+  Controller-bound Runtime UID and may call using the current Sandbox UID,
   workload UID and Runtime boot ID.
 - **Gotcha:** a deleted Sandbox whose runner cannot seal stays in `Quiescing`. To give up on the seal,
   remove the finalizer by hand: the PVC is owned, so it goes with the Sandbox, and the Pod or VM

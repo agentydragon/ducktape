@@ -181,14 +181,14 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
     }
     assert (runner_label, str(environment_sandbox.ENVIRONMENT_RUNTIME_SERVICE_PORT)) in runner_egress
     role = _resource(docs, "Role", runner_gateway.NAME.removeprefix("agentplane-"))
-    assert {resource for rule in role["rules"] for resource in rule["resources"]} >= {
-        "pods",
-        "sandboxes",
-        "leases",
-        "endpointslices",
-        "virtualmachines",
-        "virtualmachineinstances",
-    }
+    resources = {resource for rule in role["rules"] for resource in rule["resources"]}
+    assert resources >= {"pods", "sandboxes", "leases", "virtualmachines", "virtualmachineinstances"}
+    assert "endpointslices" not in resources
+    assert one(rule for rule in role["rules"] if rule["resources"] == ["leases"])["verbs"] == [
+        "get",
+        "create",
+        "update",
+    ]
     assert "patch" in one(rule for rule in role["rules"] if rule["resources"] == ["sandboxes"])["verbs"]
 
 

@@ -112,16 +112,16 @@ with `workload_api_socket`. Missing, malformed or expired credentials fail; they
 Tests may explicitly select `"security": {"mode": "insecure"}` and omit `tls`.
 This serves plaintext without peer authentication. An insecure configuration containing a `tls`
 block is rejected. The Gateway selects the same mode through `runner_security`. Sandbox,
-incarnation, boot-ID and epoch fencing still apply; that metadata is not an authenticated identity.
+incarnation and boot-ID fencing still apply; that metadata is not an authenticated identity.
 Sandbox Controller provisioning continues to require cert-manager-issued credentials in every
 cluster/k3s stack. Environment Runtime control has no bearer credential; `ingress.bearer` remains scoped to History ingress.
 
 The control listener serves the standard gRPC health API and reports `SERVING` once local Environment Runtime
 startup completes, before a Gateway state watch connects. The Gateway starts
-`Environment Runtime.WatchState` with the Sandbox UID, current workload incarnation UID and Lease connection epoch.
+`Environment Runtime.WatchState` with the Sandbox UID and current workload incarnation UID.
 The Environment Runtime adopts that incarnation before sending facts, then sends changed state and a ten-second
-heartbeat. Unary calls and executor streams carry the Sandbox UID, incarnation UID, Environment Runtime boot ID
-and connection epoch; a stale epoch is rejected. `Executor.OpenSession` owns one local Codex
+heartbeat. Unary calls and executor streams carry the Sandbox UID, incarnation UID and Environment Runtime boot ID.
+`Executor.OpenSession` owns one local Codex
 connection per server stream. Typed unary process and file calls use the returned session ID.
 The adapter retains the existing per-Environment Runtime open-connection and per-native-frame limits, without adding
 persistence, operation receipts or execution configuration.

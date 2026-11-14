@@ -73,12 +73,6 @@ class Settings(BaseModel):
     gateway_tls: ClientTLS = Field(
         description="Verify the Session Dispatcher SVID on this Gateway's stable-Service calls."
     )
-    proxy_port: int = Field(
-        default=8080,
-        ge=1,
-        le=65535,
-        description="Legacy control EndpointSlice port, retained until the route-removal image is pinned.",
-    )
     runner_control_target_template: str = Field(
         default="runner-gateway.{namespace}.svc:8080",
         min_length=1,
