@@ -18,31 +18,31 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// providerAttribution is what a provider call is attributed to: the Session, and the Identity the
-// Dispatcher recorded it as executing as, when it did.
+// providerAttribution is what a provider call is attributed to: the Session and the Identity the
+// Dispatcher recorded it as executing as.
 type providerAttribution struct {
 	SessionID string
 	Identity  *identitypb.Identity
 }
 
-// executionIdentity is the Identity the Dispatcher recorded the Session as executing as, or nil for
-// a Session whose Sandbox named none.
+// executionIdentity is the exact Identity the Dispatcher recorded for the Session.
 func executionIdentity(session *sessionstore.Session) (*identitypb.Identity, error) {
 	return session.ExecutionIdentity()
 }
 
 // providerAuthorization is the Authorization value and the attribution headers of one provider
-// call. Agentplane's LLM ingress is called as a delegating actor for a Session executing as an
-// Identity, which the ingress then attributes the call to. A Session without an Identity, on any
-// connection, is called as the sampler itself with the Session claimed by header, exactly as before
-// Identities existed; a bearer connection is never delegated to.
+// call. Agentplane's LLM ingress is called as a delegating actor for the Session's execution
+// Identity. A bearer connection is never delegated to.
 func providerAuthorization(connection samplersettings.ConnectionConfig, attribution providerAttribution) (string, map[string]string, error) {
 	credential, err := readProviderCredential(connection)
 	if err != nil {
 		return "", nil, err
 	}
-	if connection.Auth.Type != samplersettings.AuthTypeAgentplaneIngress || attribution.Identity == nil {
+	if connection.Auth.Type != samplersettings.AuthTypeAgentplaneIngress {
 		return "Bearer " + credential, map[string]string{"x-agentplane-session-id": attribution.SessionID}, nil
+	}
+	if attribution.Identity == nil || attribution.Identity.GetName() == "" || attribution.Identity.GetUid() == "" {
+		return "", nil, protocol.ErrInvalid
 	}
 	encoded, err := auth.EncodeDelegationHeader(&delegationpb.Delegation{
 		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: attribution.Identity},

@@ -11,12 +11,12 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
-	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
 	workloadgrpc "github.com/agentydragon/ducktape/agentplane/identity/auth/grpc"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"k8s.io/client-go/util/workqueue"
@@ -40,42 +40,33 @@ type Outbox interface {
 	PendingSessionIDs(context.Context, string, string, int) ([]string, error)
 }
 
-// exportChannels are the exporter's two connections to History, both authenticated by the
-// sampler's own token: delegated carries the Identity a Session executes as in each call's
-// envelope, and direct is the sampler calling as itself.
+// exportChannels carries the sampler's own token while delegating each History push to the
+// Identity the Session executes as.
 type exportChannels struct {
-	direct, delegated *grpc.ClientConn
+	delegated *grpc.ClientConn
 }
 
 func dialExportChannels(target, tokenFile string, tls *peertls.ClientTLS) (exportChannels, error) {
-	direct, err := bearer.Dial(target, tokenFile, 30*time.Second, tls)
-	if err != nil {
-		return exportChannels{}, err
-	}
 	delegated, err := workloadgrpc.DialDelegated(target, tokenFile, 30*time.Second, tls, workloadgrpc.ClientInterceptors{})
 	if err != nil {
-		direct.Close()
 		return exportChannels{}, err
 	}
-	return exportChannels{direct: direct, delegated: delegated}, nil
+	return exportChannels{delegated: delegated}, nil
 }
 
 func (c exportChannels) close() {
-	c.direct.Close()
 	c.delegated.Close()
 }
 
-// pushContext is the call context and connection for one Session's push: a Session the Dispatcher
-// recorded as executing as an Identity is pushed as a delegating actor for that Identity, and a
-// Session whose Sandbox named none as the sampler itself, exactly as before Identities existed.
-func (c exportChannels) pushContext(ctx context.Context, snapshot *samplerpb.GetSessionResponse) (context.Context, *grpc.ClientConn, error) {
-	identity := snapshot.GetAttached().GetExecutionIdentity()
-	if identity == nil {
-		return ctx, c.direct, nil
+// pushContext delegates one Session's push to the exact Identity recorded at admission.
+func (c exportChannels) pushContext(ctx context.Context, session *sessionpb.Attached) (context.Context, *grpc.ClientConn, error) {
+	identity := session.GetExecutionIdentity()
+	if identity == nil || identity.GetName() == "" || identity.GetUid() == "" {
+		return nil, nil, errors.New("History export Session has no execution Identity")
 	}
 	delegated, err := workloadgrpc.WithDelegation(ctx, &delegationpb.Delegation{
 		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: identity},
-		Provenance:      &delegationpb.Delegation_Session{Session: &delegationpb.SessionProvenance{SessionId: snapshot.GetAttached().GetSessionId()}},
+		Provenance:      &delegationpb.Delegation_Session{Session: &delegationpb.SessionProvenance{SessionId: session.GetSessionId()}},
 	})
 	if err != nil {
 		return nil, nil, err
@@ -112,7 +103,7 @@ func exportSession(ctx context.Context, outbox Outbox, sessionID, target string,
 		}
 		callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		err = func() error {
-			pushCtx, channel, err := channels.pushContext(callCtx, session.Description)
+			pushCtx, channel, err := channels.pushContext(callCtx, session.Description.GetAttached())
 			if err != nil {
 				return err
 			}

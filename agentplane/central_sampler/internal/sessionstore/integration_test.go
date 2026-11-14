@@ -193,9 +193,8 @@ func TestStoreSessionFreezesPlatformGuidanceAndRetainsRawBriefing(t *testing.T) 
 	}
 	olderRetry := proto.Clone(request).(*samplerpb.CreateSessionRequest)
 	olderRetry.ExecutionIdentity = nil
-	olderDispatcherRetry, err := store.CreateSession(t.Context(), olderRetry, "fixture-caller-uid", protocol.APIStyleResponses, &guideB)
-	if err != nil || olderDispatcherRetry.ConversationID != opened.ConversationID || !bytes.Equal(olderDispatcherRetry.Configuration, opened.Configuration) {
-		t.Fatalf("retained opening rejected an older retry without Identity or rewrote configuration: session=%+v err=%v", olderDispatcherRetry, err)
+	if _, err := store.CreateSession(t.Context(), olderRetry, "fixture-caller-uid", protocol.APIStyleResponses, &guideB); !errors.Is(err, protocol.ErrInvalid) {
+		t.Fatalf("retry without execution Identity error=%v, want invalid", err)
 	}
 	after, err := store.Read(t.Context(), owner)
 	if err != nil {
@@ -2285,7 +2284,7 @@ func TestPendingInterruptTakesPrecedenceOverSteering(t *testing.T) {
 	}
 }
 
-func TestStoreRequiresIdentityForNewSessionAndDoesNotBackfillRetainedSession(t *testing.T) {
+func TestStoreRequiresIdentityForEveryCreateAndDoesNotRewriteSession(t *testing.T) {
 	store := newTestStore(t)
 	target := &identitypb.EnvironmentTarget{Namespace: "fixture", Name: "identity-contract-sandbox", Uid: "identity-contract-sandbox-uid"}
 	request := &samplerpb.CreateSessionRequest{
@@ -2313,25 +2312,18 @@ func TestStoreRequiresIdentityForNewSessionAndDoesNotBackfillRetainedSession(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacyRequest := proto.Clone(request).(*samplerpb.CreateSessionRequest)
-	legacyRequest.ExecutionIdentity = nil
-	legacyConfiguration, err := proto.MarshalOptions{Deterministic: true}.Marshal(legacyRequest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.DB().ExecContext(t.Context(), "UPDATE sampler_session SET configuration=$2 WHERE id=$1", opened.ID, legacyConfiguration); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.CreateSession(t.Context(), request, "fixture-owner-uid", protocol.APIStyleResponses, nil); !errors.Is(err, ErrConflict) {
-		t.Fatalf("Identity retry silently backfilled retained legacy configuration: %v", err)
+	missingIdentityRetry := proto.Clone(request).(*samplerpb.CreateSessionRequest)
+	missingIdentityRetry.ExecutionIdentity = nil
+	if _, err := store.CreateSession(t.Context(), missingIdentityRetry, "fixture-owner-uid", protocol.APIStyleResponses, nil); !errors.Is(err, protocol.ErrInvalid) {
+		t.Fatalf("retry without execution Identity error=%v, want invalid", err)
 	}
 	var retained []byte
-	if err := store.DB().QueryRowContext(t.Context(), "SELECT configuration FROM sampler_session WHERE id=$1", opened.ID).Scan(&retained); err != nil || !bytes.Equal(retained, legacyConfiguration) {
-		t.Fatalf("legacy configuration changed after retry: equal=%t err=%v", bytes.Equal(retained, legacyConfiguration), err)
+	if err := store.DB().QueryRowContext(t.Context(), "SELECT configuration FROM sampler_session WHERE id=$1", opened.ID).Scan(&retained); err != nil || !bytes.Equal(retained, opened.Configuration) {
+		t.Fatalf("configuration changed after invalid retry: equal=%t err=%v", bytes.Equal(retained, opened.Configuration), err)
 	}
 }
 
-func TestStoreRetryIgnoresRetiredExecutionPrincipalWithoutRewritingLegacyConfiguration(t *testing.T) {
+func TestStoreRetryConflictsOnRetiredExecutionPrincipal(t *testing.T) {
 	store := newTestStore(t)
 	target := &identitypb.EnvironmentTarget{Namespace: "fixture", Name: "retired-principal-sandbox", Uid: "retired-principal-sandbox-uid"}
 	request := &samplerpb.CreateSessionRequest{
@@ -2353,22 +2345,13 @@ func TestStoreRetryIgnoresRetiredExecutionPrincipalWithoutRewritingLegacyConfigu
 	}
 
 	legacyRetry := proto.Clone(request).(*samplerpb.CreateSessionRequest)
-	legacyRetry.ExecutionIdentity = nil
 	legacyRetry.ProtoReflect().SetUnknown(retiredExecutionPrincipalWire())
-	legacyConfiguration, err := proto.MarshalOptions{Deterministic: true}.Marshal(legacyRetry)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.DB().ExecContext(t.Context(), "UPDATE sampler_session SET configuration=$2 WHERE id=$1", opened.ID, legacyConfiguration); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := store.CreateSession(t.Context(), legacyRetry, "fixture-owner-uid", protocol.APIStyleResponses, nil); err != nil {
-		t.Fatalf("retired ServiceAccount principal prevented an idempotent old retry: %v", err)
+	if _, err := store.CreateSession(t.Context(), legacyRetry, "fixture-owner-uid", protocol.APIStyleResponses, nil); !errors.Is(err, ErrConflict) {
+		t.Fatalf("retired execution_principal retry error=%v, want conflict", err)
 	}
 	var retained []byte
-	if err := store.DB().QueryRowContext(t.Context(), "SELECT configuration FROM sampler_session WHERE id=$1", opened.ID).Scan(&retained); err != nil || !bytes.Equal(retained, legacyConfiguration) {
-		t.Fatalf("retry rewrote retained legacy configuration: equal=%t err=%v", bytes.Equal(retained, legacyConfiguration), err)
+	if err := store.DB().QueryRowContext(t.Context(), "SELECT configuration FROM sampler_session WHERE id=$1", opened.ID).Scan(&retained); err != nil || !bytes.Equal(retained, opened.Configuration) {
+		t.Fatalf("conflicting retry rewrote configuration: equal=%t err=%v", bytes.Equal(retained, opened.Configuration), err)
 	}
 }
 
@@ -2385,19 +2368,23 @@ func retiredExecutionPrincipalWire() []byte {
 	return protowire.AppendBytes(field, principal)
 }
 
-func TestStoreReopeningIgnoresRetiredSessionRouting(t *testing.T) {
+func TestStoreRetryConflictsOnRetiredSessionRouting(t *testing.T) {
 	store := newTestStore(t)
 	request := &samplerpb.CreateSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"}}
-	legacy := proto.Clone(request).(*samplerpb.CreateSessionRequest)
-	legacy.Spec.ProtoReflect().SetUnknown([]byte{0x32, 0x00})
-	if _, err := openStoreSession(t, store, legacy, "fixture-account", protocol.APIStyleResponses); err != nil {
+	opened, err := openStoreSession(t, store, request, "fixture-account", protocol.APIStyleResponses)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := openStoreSession(t, store, request, "fixture-account", protocol.APIStyleResponses); err != nil {
-		t.Fatalf("reopening with retired metadata: %v", err)
+	retiredRouting := proto.Clone(request).(*samplerpb.CreateSessionRequest)
+	retiredRouting.Spec.ProtoReflect().SetUnknown([]byte{0x32, 0x00})
+	if _, err := openStoreSession(t, store, retiredRouting, "fixture-account", protocol.APIStyleResponses); !errors.Is(err, ErrConflict) {
+		t.Fatalf("retry with retired routing metadata error=%v, want conflict", err)
 	}
 	request.Spec.Model = "different"
 	if _, err := openStoreSession(t, store, request, "fixture-account", protocol.APIStyleResponses); !errors.Is(err, ErrConflict) {
 		t.Fatalf("changed session spec accepted: %v", err)
+	}
+	if _, err := store.GetSession(t.Context(), opened.ID, "fixture-account"); err != nil {
+		t.Fatalf("conflicting retries damaged the retained Session: %v", err)
 	}
 }
