@@ -83,6 +83,7 @@ _POD_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-pod.js
 _FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model.json"
 _CENTRAL_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-central.json"
 _CENTRAL_SERVICES_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-central-services.json"
+_CENTRAL_SERVICES_NATIVE_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-central-services-native.json"
 _CENTRAL_BUDGET_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-central-budget.json"
 _MCP_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-mcp-fixtures.json"
 _VM_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-vm.json"
@@ -190,6 +191,7 @@ _STACKS = {
     "pod_scenarios": struct(native_fixtures = False, service_images = _COMMON_SERVICE_IMAGES, fixture = _POD_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
     "central": struct(native_fixtures = False, service_images = _SERVICE_IMAGES, fixture = _CENTRAL_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
     "central_services": struct(native_fixtures = False, service_images = _COMMON_SERVICE_IMAGES, fixture = _CENTRAL_SERVICES_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
+    "central_services_native": struct(native_fixtures = True, service_images = _APP_FREE_SERVICE_IMAGES, fixture = _CENTRAL_SERVICES_NATIVE_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
     "central_budget": struct(native_fixtures = False, service_images = _SERVICE_IMAGES, fixture = _CENTRAL_BUDGET_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
     # Deletion keeps its dedicated runner disk but does not exercise external MCP Connections.
     "deletion": struct(native_fixtures = False, service_images = _COMMON_SERVICE_IMAGES, fixture = _POD_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),

@@ -56,7 +56,6 @@ py_library(
     name = "central_sampler",
     srcs = ["central_sampler.py"],
     deps = [
-        "//agentplane/app/testing:client",
         "//agentplane/central_sampler/api:sampler_pb2",
         "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/grpc:calls",
