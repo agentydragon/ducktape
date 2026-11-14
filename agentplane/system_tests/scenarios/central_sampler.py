@@ -15,7 +15,6 @@ import pytest
 from google.protobuf.json_format import ParseDict
 
 from agentplane.action_service.api.contracts import action_service_pb2
-from agentplane.app.testing.client import Client
 from agentplane.central_sampler.api import sampler_pb2
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.grpc.calls import ServiceError

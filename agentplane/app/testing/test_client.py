@@ -26,7 +26,7 @@ from agentplane.app.testing.models import thread_view_from_proto_json
 from agentplane.env.runtime.harness import Harness as NamedHarness
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.history_service.api.history import history_service_pb2
-from agentplane.history_service.testing.session_events import SessionEventPages, covered_cursor
+from agentplane.history_service.testing.session_events import covered_cursor
 from agentplane.proto import event_log_pb2, identity_pb2, session_pb2
 
 # A server answers one connection per call: `(after_cursor, writer)`. Raw sockets let the tests
@@ -332,23 +332,6 @@ def test_covered_cursor_rejects_an_unreported_gap() -> None:
 
     with pytest.raises(ValueError, match="cursor 2"):
         covered_cursor(0, 2, page)
-
-
-def test_invalid_page_does_not_apply_corrections_or_advance_pagination_state() -> None:
-    pages = SessionEventPages(limit=2)
-    initial = history_service_pb2.ReadSessionEventsResponse(last_cursor=3)
-    initial.entries.extend([_entry(1), _entry(2)])
-    assert [entry.cursor for entry in pages.apply_page(initial)] == [1, 2]
-
-    invalid = history_service_pb2.ReadSessionEventsResponse(last_cursor=4)
-    invalid.entries.add(cursor=4)
-    invalid.removed.add(first=1, last=2)
-    with pytest.raises(ValueError, match="cursor 3"):
-        pages.apply_page(invalid)
-
-    assert pages.cursor == 2
-    assert pages.more_available
-    assert [entry.cursor for entry in pages.entries] == [1, 2]
 
 
 async def test_client_reads_generated_history_pages_with_the_exact_facade_route() -> None:

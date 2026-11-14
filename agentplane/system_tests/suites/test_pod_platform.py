@@ -1,4 +1,4 @@
-"""Seven unchanged Pod scenario bodies on native App-free fixture identities.
+"""Pod workload trust and Egress credentials with native fixture identities.
 
 The four workload-trust and certificate cases need no Session. The three Egress credential cases
 use Environment-created Sandbox descriptors and retain their real controller and proxy checks.

@@ -3,607 +3,132 @@
 Tracker: [#16099](https://github.com/agentydragon/ducktape/issues/16099).
 Experiment branch: `agent/test-architecture-pivot`.
 Architecture milestones stay on [draft PR #16102](https://github.com/agentydragon/ducktape/pull/16102).
-Independent bugfixes and clear improvements that already apply to devel may be
-backported through separate PRs after validation.
+The broader optimization work is paused. Branch cleanup and maintenance continue;
+the work below is a resumption plan, not authorization to launch more experiments.
 
-Implement and qualify a required test graph that makes routine Agentplane backend
-PRs reach trustworthy green at least 30% faster in median elapsed time, including
-reruns, with no worse p90 or flake rate. Preserve important behavior, security and
-platform coverage, and document resource and maintenance cost. Keep the existing
-required gate until the candidate has the coverage and outcome evidence below.
+## Goal and present boundary
 
-The [experiment overview](../system_tests/debug/ci_architecture_experiment_overview.md)
-records the completed attempts, negative results, ports and source-specific
-measurements. No qualified 30% complete-PR saving has been established.
-Work resumed on 14 November 2026 with this measurable objective. The
-first candidate must change the ordinary selected graph, retain the current
-source in every executed binary, and account for every removed deployed assertion.
-The corrected B7/A7 system-subtree comparison at immutable `22014e7b` passes all
-fifty identical cases: 592.550s control to 382.619s candidate, 35.4% lower once.
-All declared resource-request screens pass; actual KVM CPU/memory and unequal Pod
-baseline warmth limit interpretation. This is not complete PR feedback or median/p90
-qualification. Preserve this positive screen alongside all failed attempts.
+Make routine Agentplane backend PRs reach trustworthy green at least 30% faster
+in median complete feedback, including reruns, with no worse p90 or flake rate.
+Preserve important behavior, security and platform coverage; document resource
+and maintenance cost. Keep the PR draft until its gate changes are qualified.
 
-The immediate work is a reversed-order repeat of that frozen composition, then
-one real-process Runtime/Gateway execution slice with demonstrated eligibility for
-actual backend source-plus-regression-test changes. The new two-Gateway contract
-passes active work through A, recovery through B, exact cursor/process continuity,
-fresh work and stale-identity denials. Its deliberate stale-boot guard defect fails
-the intended assertion. Integrated full-module checks precede selector changes.
-Keep the broad required graph as fallback and the replacement policy shadow-only
-until every removed assertion has a retained owner and actual selected labels prove
-the intended graph. Kubernetes/PKI/guest/App guarantees keep their real witnesses.
+The [experiment index](../system_tests/debug/ci_architecture_experiment_overview.md)
+is the canonical status/results inventory. Detailed notes preserve failed
+attempts, negative controls, cache/resource limits and immutable invocation/source
+links. The [pre-cleanup plan](https://github.com/agentydragon/ducktape/blob/7114637397306a4883eeacedf0bb0a7e20817179/agentplane/plans/fast_ci.md)
+retains the former chronological log; it is historical, not the current work queue.
 
-The source audit narrows the stopped-seed option: the hosted non-KVM route already supports
-remote snapshots and live retained K3s, while self-hosted VM/Firecracker Docker actions use
-`recycle-runner=false` and fresh private K3s data. Do not assume snapshot support transfers
-between them. A stopped hosted Pod seed would add restart work to the current warm path;
-defer that low-headroom mode. The plain-property KVM build probe passes, but the PKI-only seed
-is parked: K3s start is 10.139s and PKI controller setup is 15.178s in the diagnosed action,
-while Notifications readiness is a separate 135.918s span. Broader prepared infrastructure
-needs an actual action-owned disk/volume producer and isolated clones, plus enough remaining
-critical-path work to justify its complexity. No cross-action seed restore is qualified.
+The branch implements the [ordinary partitioned graph](../system_tests/debug/ordinary_partition_graph.md):
+disjoint App/native Pod and MCP/native Services cases, unchanged complete VM
+acceptance on KVM, and unchanged Firecracker cases without incidental Notification
+setup. Devel's newer delegated-Action case remains on its full App-backed fixture.
+Ordinary Bazel dependencies select tests. No source directory exemption is added;
+the old journal substitution selector stays shadow-only. The full Gateway budget
+and App-dependent History-outage witness remain.
 
-## Candidate architecture
+Two fixed-source 50-case system-subtree comparisons are 35.4% and 35.2% lower,
+with matching cases and passing declared resource proxies. They do not qualify
+representative whole-PR median/p90, flakiness or actual KVM cost. Earlier negative
+compositions and the additional current Action case remain in the evidence record.
+No qualified 30% complete-feedback improvement has been established.
 
-1. Owner tests cover state machines, authorization rules and injected-clock timing.
-2. Real service contracts compose production binaries, real databases, native gRPC
-   and mTLS. Runtime keeps its PID1 container. Script external model/provider behavior
-   explicitly; never describe a fake service as the real boundary.
-3. Focused deployment acceptance owns packaged images, controllers, PKI, RBAC,
-   Secret projection, scheduling, storage and Pod/VM/Firecracker lifecycle.
-4. App, browser and MCP journeys retain actual client, login, projection, approval
-   and routing guarantees. Direct gRPC does not replace an app-owned contract.
+## Architecture and coverage contract
 
-Each target declares the binaries, images and artifacts needed by its guarantees.
-The existing `bazel-diff` selector follows those dependencies; do not add a blind
-path filter. Unknown mappings retain the broad test. Infrastructure/schema/auth
-changes select their affected real deployment contracts before merge.
+1. Owner tests cover state machines, authorization and injected-clock timing.
+2. Real service contracts compose production binaries, databases, native gRPC
+   and mTLS. Runtime keeps PID 1. Model/provider behavior is explicitly scripted.
+3. Deployment acceptance retains packaged images, controllers, PKI, RBAC, Secret
+   projection, scheduling, storage and Pod/VM/Firecracker lifecycle guarantees.
+4. App/browser/MCP journeys retain actual client, login, projection, approval and
+   routing guarantees. Direct gRPC does not replace App-owned behavior.
 
-Fresh case-owned databases, Sandbox UIDs, identities, credentials, Runtime homes
-and journals isolate state. Only an intentional in-case restart retains its journal.
-Read-only artifacts and certified infrastructure baselines may be reused under
-explicit compatibility keys. Setup failure and injected-fault cleanup have owners.
+Each target declares the binaries/images/artifacts needed by its guarantees.
+Bazel-diff follows those dependencies; unknown ownership and graph-wide changes
+retain broad fallback. Implementation-plus-owner-test changes retain their owner
+tests. Shared, test-only, BUILD, protocol, auth and packaging inputs never gain
+replacement eligibility merely from their path. Preserve the known package-default
+fingerprint counterexample during selection qualification.
 
-## Untried changes with a plausible 30% budget
+Cases own fresh databases, namespaces, Sandbox UIDs, identities, credentials,
+Runtime homes and journals. Only an intentional restart retains its journal.
+Read-only artifacts or certified infrastructure may be shared with explicit
+compatibility and isolation. Setup failures and injected-fault cleanup have owners.
+The [assertion inventory](../system_tests/debug/test_architecture_contract_ownership.md)
+records the deployed witnesses that direct/native tests do not replace.
 
-Prioritize removing whole categories of repeated validation or setup. The
-reference graph has 578.721s native Bazel time and 650s GitHub Bazel-job occupancy,
-with competing VM/Pod/Services/Firecracker tails. A 30% improvement means roughly
-174s on the first clock or 195s on the second. Neither clock is a complete
-rerun-inclusive PR feedback distribution. The budgets below are hypotheses;
-they are not summed measurements or promised fleet savings.
+## On resumption: qualification first
 
-### A. Make the smaller contract graph the actual ordinary backend gate
+1. **Replay actual selected graphs.** Use the pinned 30 distinct tested base/head
+   pairs and all 40 workflow attempts, retaining failed/cancelled heads. Run source,
+   regression-test, BUILD and mixed-input selection on control/candidate trees;
+   archive actual submitted leaf labels after tag filtering. Count broad fallbacks
+   in the denominator. The old Runtime replay selected the same 51 tests and the
+   journal policy matched 0/30 changes; neither demonstrates broad applicability.
+2. **Run the complete required gate.** Counterbalance control/candidate order at
+   fixed sources, retain current binaries, and include unaffected required tests,
+   pre-commit and artifact/import checks. Compare normal caching and all reruns,
+   not isolated target times or sums of overlapping phase spans.
+3. **Exercise reliability and capacity.** Include at least three busy windows,
+   cold/warm and four-PR bursts, and at least 100 fresh contract executions.
+   Preserve physical failures, provider retries, cancellations, result-stream
+   false reds, cleanup and signatures separately. A zero-failure 100-run screen
+   still permits roughly a 3% one-sided 95% upper failure bound.
+4. **Review resources and admission.** Account for managed and KVM physical CPU,
+   concurrent memory/disk and recurring reservations. Requested CUs are proxies.
+   For the next architecture screen predeclare at most 10% extra total CPU and
+   CU-min and 20% extra peak requested CUs; disclose unknowns and any changed caps.
+   There is no unmeasured persistent-infrastructure allowance.
 
-The branch now has a shadow selector and four ordinary native/direct contracts.
-The selector resolves exact Bazel source ownership, retains the full affected
-build graph, and archives proposed and actually submitted test labels. Initial
-eligibility is limited to the Runtime journal; mixed, unknown, platform and
-security inputs keep broad acceptance. The current required graph is unchanged.
-See [the implementation and source checks](../system_tests/debug/ordinary_contract_graph.md).
+Promotion requires at least 30% lower median complete feedback, no worse p90 or
+flake rate, retained assertion ownership and effective seeded-defect controls.
+Unknown coverage, state leaks, vacuous controls, unexplained failures or unmatched
+capacity/cache exposure stop promotion. Do not expand the flat replacement list
+to manufacture eligible PRs. Revert a promoted selection boundary on an escaped
+contract or reliability regression.
 
-The earlier historical replay selected the same 51 tests because replacement
-contracts remained manual. A four-arm, fresh-test screen now exercises the
-different 40-label graphs at one source; complete required-check qualification
-remains pending. The policy is still shadow-only. Its journal-only eligibility
-matches none of the 30 recorded historical change sets, so a synthetic speedup
-cannot establish the routine-backend goal.
+## Larger remaining levers, if qualification exposes a gap
 
-The immediate milestone is a broadly applicable, coverage-accounted improvement
-with complete feedback measurements. The real shutdown/seal/successor contract
-now passes a focused run. Dispatcher sharding duplicates setup without a clear
-wall-time win; reject its promotion. A shorter exhaustion budget changes coverage
-and remains manual. One prepared KVM cold/warm pair saves 8.79% native time but
-exposes unsafe shared-data ownership; private-data v2 remains unmeasured. These
-results prioritize owner-specific graph selection and retained case witnesses.
-The [current backend applicability audit](../system_tests/debug/common_backend_contracts.md)
-finds BUILD edits in 33 of 46 recent backend-input PRs. Its first concrete class
-is App handler/server changes, with direct route tests and real App/Dispatcher/
-History witnesses. That class is only 3/46 PRs; qualify broader applicability
-and the complete required gate before claiming the median goal.
-The App-free native Session driver passes a real-process History outage/recovery
-proof, but does not by itself remove platform inputs. Fresh action-private K3s
-storage now passes both ordinary Firecracker cases on the action's ext4 workspace;
-this is an ownership prerequisite, not a matched timing result. Native Environment/Runner
-control, fixture-bound identity, separate rendered profiles and image maps are implemented for
-Firecracker and required VM acceptance. Fourteen affected caller targets build with lint/type
-checks. The App-free Firecracker target passes both original cases, and all five migrated MCP
-Actions cases pass. Exact source `6c31cfb9f7` passes the combined 11-case native platform/client
-qualification, including VM's unchanged process-trace contract; ordinary CI passes all 2,005
-test targets. Keep their guest,
-controller, PKI, identity, setup, checkpoint and storage assertions. The earlier dependency query
-removes App serving/client inputs while retaining shared configuration types. A query on pushed
-source confirms only Pod and MCP Services among the four platform tails still consume the App image.
-The manual App-free central Services candidate passes all four scenarios beside the seven original
-Services cases, 21 render cases and four library/aspect checks; its three App/MCP witnesses stay
-required. The retested balanced Pod graph retains all 40 cases but observes only 13.4% lower native
-elapsed in one cache-confounded pair with 35.8% higher Pod CPU. Keep it manual. The next capacity
-candidate passes all 21 Pod cases with four slots on one requested eight-CU action, retaining
-exclusive storage first, but the first cold exposure exceeds CPU and compute-time caps and proves
-no large elapsed saving. The shared-module six-slot/eight-CU configuration subsequently passes a
-same-source 21-case pair: physical execution 513.545s to 313.609s (38.9% lower), CPU 7.4% lower,
-requested CU execution 22.1% higher. Both infrastructures are warm; actual allocatable capacity is
-seven versus eleven CPUs. The whole seven-target comparison then passes the same 40 cases in both
-arms: 489.497s to 373.066s native Bazel elapsed (23.8% lower), with known CPU 1.0% lower but
-requested-CU execution 10.35% higher, above its predeclared 10% cap. Pod remains the last finisher.
-Keep six slots manual. At exact `9b330689`, retained action results establish all 59 cases in the
-Pod17+native4 and MCP3+native4 qualification, despite the aggregate provider-disconnected outcome.
-A healthy follow-up passes the 20 Pod17/MCP3 cases and eight named libraries/aspects. The logical
-case unions match their original 21/7 controls; native dependency queries pass. Required checks
-for that head pass on synthetic merge `2aec7a80` after one provider-failed attempt and a rerun.
-These are coverage/correctness results, not a complete-PR saving. The Pod-only split then passes
-the same 40 cases in both arms: 516.925s to 384.420s native elapsed (25.63% lower once), below the
-30% screen threshold. Its CPU/compute-time/peak-request ratios pass 1.15/1.20/1.30 caps narrowly,
-with unequal warmth and node shapes. Services becomes the last target. The combined 14-versus-16
-ordinary-system-suite screen then passes 49 JUnit cases per arm but finishes 11.2% slower:
-516.795s to 574.657s. A provider-kernel panic precedes a second successful VM execution; both
-physical executions count. Known managed CPU and requested-CU execution ratios, 1.1530 and
-1.2350, fail their 1.15/1.20 caps. The short budget also removes 75 seconds of default-duration
-exposure. Keep these arrangements manual. Next identify the retained namespace deletion holder,
-qualify reliable VM execution/capacity and test prepared disposable infrastructure. The ordinary
-source-plus-BUILD selection and complete-feedback qualification remain required; no roster
-promotion follows from component correctness. The cleanup observer subsequently identifies a
-branch-introduced idle PID 1 that ignores TERM and consumes its full 30-second Pod grace. The
-corrected client exits promptly on normal TERM; one retained fixture's cleanup falls from
-65.057s to 26.884s with unchanged cleanup/grace assertions. Three ordinary recovery scenarios
-pass on App-free fixtures. Keep the History-outage suite App-backed: its attempted migration
-exposes an explicit App-Pod-stability assertion. Measure these implemented changes as one
-complete graph before deciding on further environment work or promotion.
-[Current source and focused evidence](../system_tests/debug/common_backend_contracts.md).
-Do not expand a global replacement list just to make more historical PRs
-eligible. Implementation-plus-owner-test changes must be accounted
-for structurally, and their owner tests must remain required. Test-only, shared
-or unknown inputs do not justify deployment replacement.
+**KVM admission and concurrency.** In pinned ordinary CI `7246b046`, Firecracker
+waits 144.641s and VM 94.300s while all three compatible workers are occupied at
+the configured maximum. The last managed test bounds eliminating all KVM wait
+to about 120s in that run, holding other work fixed. Test eligible added capacity
+or measured per-worker concurrency, isolation and actual resource use. Faster
+cold scale-up is a separate problem: 120s stabilization, at most +1 worker per
+15 minutes, and an observed 188s creation-to-ready interval. An idle-floor change
+cannot fix a saturated pool. Do not add traffic without busy/burst evidence.
 
-Assign Runtime journal/admission, History retention/cursors and native transport
-to real-process contracts. Assign packaged kernel/Runtime/CLI/setup behavior to
-direct guests. Retain controller/issuer/Kubernetes/KubeVirt/PVC/App witnesses for
-the changes that can affect those boundaries, including protocol, authentication,
-packaging and deployment changes. Unknown coverage keeps the broad witness.
-Ordinary implementation changes then need fewer orchestration layers to prove
-their guarantees. Use explicit contract/dependency ownership; a blind directory
-filter or a last-green production binary is not an equivalent witness.
+**Prepared disposable integration infrastructure.** Compare compatible disk
+clones with leased prepared infrastructure. Every lease keeps fresh workload
+state/credentials, cross-lease denial, fault containment, dirty-state rejection
+and cleanup. Cluster-wide faults require exclusive disposable leases. The full
+end-to-end substrate has not been exercised. Shared-data v1 has an ownership gap;
+fresh action-private ext4 storage passes but does not prove retained-state reuse.
+PKI-only preparation lacks measured headroom, and a stopped hosted seed adds
+restart work to an already warm path. First prove two simultaneous isolated
+leases on unchanged real contracts; then test full feedback and recurring idle
+cost before expanding. No silent reduction of fresh-cluster coverage.
 
-An illustrative budget is a 200–240s longest selected action, versus 435.681s
-today. Holding the other observed clocks fixed gives about 343–383s native time
-and 415–455s GitHub job occupancy: approximately 30–36% less on the latter clock.
-This requires every competing selected path to fit, including existing native
-and App tests. It is most plausible for ordinary backend implementation PRs;
-platform/auth/schema PRs may still need the broad graph. Actual PR feedback must
-also include GitHub waiting, other gates and reruns.
+**Broader owner-specific gates.** If ordinary dependencies still overselect,
+map each removed deployment assertion to a real retained owner before changing
+selection. The App handler class was only 3/46 sampled backend PRs and journal-only
+eligibility was 0/30. Qualify broad real applicability, including BUILD edits,
+rather than narrowing the goal to an eligible-only population. Retain real
+controller/issuer/KubeVirt/PVC/App and Firecracker checkpoint witnesses.
 
-First experiment after resumption: wire the candidate selector at one fixed
-source and run all labels it actually selects for representative Runtime,
-History, MCP, App and protocol/platform changes. Preserve the complete retained
-assertion inventory and seeded defects. Compare whole required feedback, not a
-manual target against a larger unrelated suite. Then use the 30 matched pairs,
-100 fresh contract executions and busy/burst exposure below. Independent coverage
-ports #16370/#16374 are foundations; landing them alone does not do this migration.
-For the initial architecture screen, allow at most 10% more total test CPU and
-requested CU-min and 20% more peak requested CU; report memory and disk separately.
-There is no persistent infrastructure allowance. These are screening ceilings,
-not a claim of cost neutrality or a substitute for the requested latency result.
+These are conditional 30% hypotheses, not additive savings. Import batching,
+smaller roots, Bridge shards and private-fixture relocation remain component
+options with bounded or confounded results; see the index before repeating them.
+The held image split #15214 still needs its own demonstrated saving.
 
-### B. Amortize integration infrastructure and partition its long cases
-
-Run fresh test leases on certified prepared infrastructure, or clone a
-Bazel-produced compatible infrastructure disk/snapshot into a fresh execution
-unit. Keep K3s/KubeVirt/PKI controllers and read-only OCI content out of ordinary
-per-action bootstrap. Every lease still gets fresh databases, namespaces,
-identities, credentials, Sandbox state, homes and Runtime journals. Cluster-wide
-fault tests need exclusive disposable leases. Corrupt/dirty/unknown-compatible
-state must fail qualification rather than become an implicit cache hit.
-
-This is beyond the retained infrastructure baselines already implemented. The
-parked shared-cluster prototype does not wire the application deployment and
-driver handoff, or prove concurrent end-to-end isolation. No live trial of this
-complete architecture has run. Compare disposable disk clones with a persistent
-cluster instead of assuming that sharing one privileged cluster is necessary.
-Changing execution service/placement to prepared isolated workers is another
-implementation option; requested compute units alone are not observed capacity.
-
-Warm infrastructure alone is insufficient: Pod and Firecracker can become the
-tail. Combine it with the already prototyped Pod/Services case partitions and
-enough compatible worker capacity to avoid moving saved time into admission.
-Illustrative whole-action budgets are VM about 225s (small setup plus retained
-case/cleanup), Pod and Services partitions about 200s, and Firecracker about
-220–240s including queue. Those are design targets, not sums of independent
-savings. If all selected paths fit 240s and other clocks stay comparable, the
-same 415–455s GitHub-job budget is a plausible 30%+ hypothesis.
-
-First experiment after resumption: run the unchanged real Pod, Services, VM and
-Firecracker contracts on the prepared substrate with two simultaneous leases.
-Prove current credentials, fresh state, cross-lease denial, fault containment,
-cleanup and dirty-lease rejection before timing adoption. Repeat cold/busy and
-four-PR bursts; account for persistent idle cost, CPU, memory, disk and an
-explicit infrastructure owner. A lower fresh-cluster frequency is a coverage
-tradeoff requiring a decision; do not silently move that guarantee to a schedule.
-
-### What does not qualify as a new 30% bet
-
-VM importer batching now has a useful four-action 18.0% import-test execution
-screen, but no deployed/full-graph result. Reduced roots, private-fixture moves,
-render batching, additional Bridge shards and another KVM worker alone do not
-have a 30% complete-feedback case from the observed graph. A capacity trial may
-matter greatly in saturated windows; it saves nothing when its queue is not the
-critical path. Treat these as components or separately justified repairs, not
-as evidence that the larger architecture options are exhausted.
-
-## Work lanes and prior milestones
-
-- **P1, recovery pilot:** `//agentplane/x/native_contracts:test_recovery` composes
-  production Gateway and History processes, Runtime PID1 and PostgreSQL containers,
-  envtest API and scripted model. Exercise first turn, real listener outage,
-  independent retained History, same-journal restart, Dispatcher receipt replay and
-  fresh input with two admissions/completions. Inspect the actual failure of an
-  opt-in discarded-journal control. Keep it manual during the spike.
-- **P2, reusable contract fixtures:** remove app ownership from shared backend test
-  support, then add independently reviewable Gateway reconnect/fencing, Runtime
-  journal, History outage/cursor and authority contracts. Avoid the inherited
-  `system_tests/conftest` app dependency. Start with named callers rather than a
-  general fixture framework.
-  The reused launch helper now leaves CLI artifacts to its callers. The Claude-only
-  pilot retains Claude and has zero Codex input paths (previously 86); the Codex
-  companion declares its own bundle. These counts are not transferred bytes.
-  Representative Claude/Codex consumers and the discarded-journal control were
-  exercised; this does not finish reusable fixture extraction or the contract matrix.
-  Iteration 3 moves the unchanged backend composition to
-  `testing/native_service_fixtures.py`, with explicit pytest imports. The healthy
-  recovery passes and discarded-journal control rejects the missing retained
-  Session. Iteration 4 adds direct Runtime admission/deduplication across restart,
-  active Runtime SIGKILL with interrupted-turn recovery and next input, and History
-  process unavailability with retained-cursor replay. All four manual contracts
-  passed in 25 fresh actions (100 case exposures, 25 per contract); these are not
-  100 independent trials or low-flake-rate proof. Discarding the journal and
-  disabling its collision guard both fail the intended assertions. A separate
-  manual admission-reply-loss target now observes the actual Dispatcher retry:
-  a test-only Runtime interceptor discards one successful admission response as
-  `UNAVAILABLE`, then the real journal returns the same receipt. One submission
-  causes two handler calls and one History admission; fresh next input completes.
-  Rejecting a valid identical-command journal replay fails the contract. This models a post-handler
-  error, not a raw socket reset. The existing Central Sampler native integration
-  now uses real TokenReview with wrong-audience and unauthorized-account
-  negatives that leave no session, then composes a real History process pause,
-  completion into the Sampler journal, exact contiguous backfill and next input.
-  It preserves its shell/patch/image, stale-incarnation and lease-release assertions.
-  This is an envtest-backed process contract; deployed controller, identity and
-  storage acceptance remains. The ownership inventory below identifies the
-  complete retained witnesses before any gate promotion.
-  Gateway/envtest/PostgreSQL and Sandbox fixtures are now reusable independently
-  of History, harness/model fixtures and host Runtime startup. The existing
-  recovery and admission-reply-loss targets pass after extraction. The configured
-  guest uses that narrow plugin and an explicitly unused ingress endpoint; it
-  creates no Session and starts no History service. Packaged guest Runtime and
-  harness inputs remain required.
-  Apply the same ownership rule to App integration support: tests that author
-  History retain the real App, Gateway, History and Kubernetes API fixtures,
-  without inheriting an unused Runtime executable and harness closure. The
-  bridge and history-gateway targets explicitly opt into the production Runtime
-  composition and keep their restart, recovery and next-input assertions. Prove
-  both removed and retained graph edges; removing an unused input is not evidence
-  of a complete-feedback saving.
-  Generic ASGI serving also no longer imports MCP support: the MCP-specific
-  helper and existing endpoint case move to their owning test module. All 14
-  focused ASGI/MCP cases pass, including a real client cancellation/retry. One
-  CPython profile collects the same 24 Bridge cases with no MCP imports;
-  collection-only runs are not contract exposures or complete-feedback timings.
-  A source-pinned 4/8/8/4 Bridge probe passes the same 24 cases in all four runs.
-  Eight shards lower mean selected-target elapsed by 24.9% while using 62.8% more
-  measured worker CPU. The branch previously used eight as a scheduling candidate; assess
-  its mixed workload and busy-window cost before a devel backport.
-  A full-body bytecode A/B/B/A passes all 24 Bridge cases in every arm, with 32
-  NEW shard actions. Mean selected-target elapsed falls 9.840s and TestRunner CPU
-  14.2%, but cache/action states differ and the earlier cold compile required
-  4,202.992 CPU seconds. Keep bytecode collection unchanged until full-workload
-  exposure justifies that cost; preserve the screen in
-  `app/debug/2026_11_13_bridge_bytecode.md`.
-- **P3, deployment slices:** replace the common 12-service-image map applied to
-  all 13 ordinary CI-eligible K3s suites with explicit backend/app/MCP/platform
-  compositions. Inventory each unique assertion before removing a dependency.
-  Inspect the configured closure and run retained real packaged-image acceptance.
-  The branch now selects a central recovery profile for MCP Gateway crash,
-  retry-budget, sampler-roll and History-outage targets. All four fault contracts
-  remain separate with unchanged scenario assertions. The rendered closure omits
-  only Dex, MCP Everything and the OAuth fixture: 175 to 162 objects and 15 to 12
-  Deployments. Real packaged services, Kubernetes faults and Pod-bound client
-  credentials remain. Other MCP/OAuth and app/browser targets keep their profiles.
-  Broader per-contract ownership of the common service image graph remains open.
-  Iteration 4 splits the unchanged seven services cases into manual 3-case MCP and
-  4-case central-services targets. The latter retains the real app, Actions, PKI,
-  controllers and backend, with no MCP edge or external OAuth fixture images. Its
-  configured closure has no path to the MCP edge image. The current required
-  seven-case target stays intact. Compare both slices together with unchanged Pod
-  and VM suites; a quicker isolated slice alone cannot establish quicker PR feedback.
-  A separate manual VM boot candidate exercises the real guest, issued SVID and
-  authenticated app/Gateway/Runtime status. It does not replace the existing VM
-  harness, systemd, cgroup, egress, notification or post-operation credential checks.
-  The full existing VM and Firecracker fixtures also omit their unused MCP edge image/deployment;
-  every retained rendered resource and scenario assertion is unchanged. Its full
-  real VM scenario and both Firecracker cases pass; this proves retained behavior and graph selectivity,
-  not a matched timing improvement.
-  A separate app-free direct-boot experiment now starts the current kernel,
-  initramfs, root and Runtime disk through pinned QEMU/virtiofsd on managed RBE.
-  Its test-only systemd service proves PID1, cgroup v2, seven real mounts, a fresh
-  nonce written through virtiofs and orderly poweroff. Empty configuration ISOs
-  mean Runtime health and authenticated requests are outside this contract.
-  Keep it manual; the wrong-config-serial control must fail guest readiness.
-  This isolates generic guest packaging from K3s/KubeVirt acceptance without
-  asserting that the broader deployment scenarios are redundant.
-  A separate manual `test_runtime_gateway` now boots the unmodified fixture guest root
-  and Runtime disk with fixture-issued TLS/configuration. Its healthy run
-  passed authenticated Gateway status, running lifecycle and exact Sandbox/Pod/
-  boot identity with a positive Lease epoch. The wrong-client-CA control reached
-  the same readiness assertion and failed after a real TLS rejection. Both paths
-  verified container removal, listener closure and restored state ownership.
-  No Session or supervised executor is created. This adds a
-  packaged Runtime transport witness; controller-issued credentials, KubeVirt,
-  PVC, executor operations and App acceptance remain separate.
-  A separate manual `test_runtime_session` now drives the packaged Claude CLI
-  through two real Shell turns, retaining a workspace nonce, original command IDs,
-  contiguous sourced History and one Runtime boot. Its first turn also shares the
-  VM shell probe for UID, PID1, the Claude service cgroup and systemd denial. The
-  shared probe passes in a fresh direct Session, and the full deployed VM scenario
-  passes with the extracted assertions. Both healthy targets retain separate
-  guest-boot and authenticated-RPC readiness. The wrong-URI
-  History control first proves a healthy service through a real mTLS Health.Check,
-  then reaches the ordinary History assertion after Runtime rejects the SPIFFE URI.
-  The fixture disables executor resource enforcement; the cgroup probe establishes
-  placement only, not an executor budget. The target does not establish Codex,
-  controller-issued credentials, KubeVirt, storage or App acceptance. Physical
-  attempts, startup failures and the invalid first control are preserved in
-  `system_tests/debug/test_architecture_guest_session.md`; this is feasibility,
-  not an end-to-end CI saving or gate promotion. The latest full VM validation
-  preserves a managed action-VM kernel panic and automatic retry in #16222.
-  Read-only image binds replace eager copies in this manual launcher. A/B/B/A
-  passes both unchanged targets in all four arms; candidate action times and CPU
-  are lower, but first-arm input warming confounds transfer/command comparisons.
-  Inputs and deployment coverage are unchanged. Details and limits are in
-  `system_tests/debug/2026_11_13_guest_mounts.md`.
-  The separate manual Codex guest contract now completes two real commands through
-  the packaged VM executor, checking its actual memory/CPU limits and executor
-  slice. Removing the executor fails the unchanged slice assertion. Gateway,
-  Claude and Codex passed together in three fresh actions at the `2196229`
-  milestone; actual OOM enforcement remains a deployed acceptance boundary.
-  Session setup is a further obligation: fresh nested workspace and HOME ownership,
-  process/aggregate/service budgets, privilege restrictions and detached-descendant
-  fencing. Both direct guests and the full deployed VM passed with the same probe
-  and assertions. A wrong-process-limit control fails the shared assertion after
-  both original Shell turns. The deployed probe and the wrong-History control's
-  original failure boundary remain intact. This proves assertion transfer, not a
-  required-CI saving.
-  Egress already has a real subprocess seam with caller-owned settings/API/CA;
-  its own-SVID and credential-revocation case passes. The Notification subprocess
-  driver passes with the caller's API/CA/database: it returns a seeded owned
-  subscription and rejects an unrecorded trusted SVID. Same-workload credential
-  revocation and real sidecar/packaged CLI composition remain before replacing
-  deployed assertions. An empty subscription list is insufficient.
-  Pod scenarios now have their own profile omitting only the MCP edge construct
-  and image input. Actions remains required by command-box acceptance. All 21 Pod
-  cases passed unchanged across source-pinned control/concurrency/profile runs;
-  configured graph queries prove the image edge is absent. Unused app Connection
-  routes remain unavailable in this profile, so external connections retain their
-  separate MCP/app witnesses. Dispatcher and Session-deletion scenarios now use
-  the same existing composition without MCP Edge; App, Actions, notification,
-  controller and storage services remain. Deletion keeps its dedicated runner
-  disk. Configured closure checks retain all 11 common service images and both
-  required runner disks. Required CI at a69 passes both fresh deployment actions
-  and all five unchanged cases; the input cut is not a latency measurement. Probe and default/MCP profiles
-  retain their previous image ownership.
-- **P4, compound scenarios:** separate idle authorization, failed-turn retention,
-  timer, resume and identity contracts. Preserve the real >=60-second idle/resume
-  acceptance and existing controller fake-clock matrix. Trace producer/watch timing
-  for wrong-issuer to valid mounted Secret recovery before changing waits. Measure
-  setup amortization, slowest action and CPU when regrouping cases.
-  A Pod annotation spike did not improve the observed wrong-issuer recovery pair
-  and was withdrawn. The retry-budget case trial used a separate 45-second
-  reconnect deadline; ordinary production and the other recovery cases retain the
-  120-second default. This trades default-duration exposure for a shorter real
-  exhaustion test, without dropping unknown-effect, no-replay, session-recovery or
-  next-input assertions. A five-second trial failed real post-roll recovery and
-  remains recorded as a failed experiment, not a passing retry. The historical 45-second
-  candidate passed the unchanged real recovery scenario and rendering checks.
-  The required case returned to 120 seconds before the graph comparison.
-  Four cases trialed overlapping pre-reserved independent harness pairs without adding
-  Sandboxes. Their first full-suite screen is mixed and does not establish a suite
-  saving. The unchanged same-Pod Secret-recovery case varied13–109s; an experimental
-  5s kubelet cadence produced 23–29s in three selected-case executions versus
-  22/29/91s control. Real Secret projection and the >=60s idle timer remain. Node
-  configz confirms both cadences; the required fixture returned to default cadence
-  before the graph comparison. Candidate baselines rebuilt cold, so repeat
-  counterbalanced load/cost exposure before adoption claims. Live policy grant
-  now also requires the original Pod UID.
-- **P5, shadow/replay:** compose the candidate graph, replay >=30 pinned base/head
-  pairs spanning Runtime/app/MCP/platform and three busy windows; collect >=100
-  fresh contract executions. Include cold/warm and four-PR burst exposure. Pin both
-  architecture trees and merge provenance, counterbalance order, preserve all
-  failures/cancellations/retries, source/CAS identities, CPU and cleanup. Replay
-  measures graph behavior; live PR shadows establish GitHub feedback clocks.
-  Actual CI now archives the existing selected-label query with merge/base/head
-  and invocation provenance, before runtime tag filtering, through its existing
-  best-effort diagnostics. The real archive round trip is verified. Four selected
-  graph launches preserve an automatic infrastructure re-execution and a VM
-  fixture teardown error; this is neither 30 PR pairs nor a qualified speedup.
-  The historical replay cohort now resolves 30 distinct tested base/head pairs
-  from job-log source SHAs, matching BuildBuddy commit metadata and immutable
-  merge parents. It retains failed/cancelled heads and all 40 workflow attempts.
-  The first compatible historical replay, Runtime cleanup PR #15687, completed
-  with the pinned d717 overlay and two audited pair-era BUILD/helper adaptations.
-  Control selects 117 affected targets and candidate selects 124; both select the
-  same 51 tests before runtime tag filtering. The seven extra candidate targets
-  are image manifests and native fixture libraries. Manual contracts remain
-  excluded, so this arrangement does not shorten Runtime PR selection. No selected
-  tests ran in that replay; it proves neither timing nor coverage equivalence.
-  The other 29 pairs remain unexecuted. Current PR API bases are recorded
-  separately from tested bases.
-  A separate synthetic MCP-edge-only selector probe at literal 91f compares full
-  Pod/VM/Firecracker ownership with the candidate, holding architecture constant
-  within each pair. Actual CI hashing selects 18 versus 15 tests; exactly those
-  three unrelated suites disappear and all MCP acceptance stays selected. This
-  proves the input cut, not a historical workload frequency or feedback saving.
-  The full 15-head historical MCP frame contains no isolated MCP-edge-only PR.
-  Required CI at d717 also queued its Firecracker action for 310.328s while all
-  three registered compatible workers were occupied at the configured maximum.
-  Removing only that queue has 153.499s of conditional test-tail headroom before
-  VM becomes last. Compare narrower validated KVM ownership with bounded
-  horizontal capacity under burst load; account for registration, cache,
-  host/SSD eligibility and recurring reservations. An idle-floor change alone
-  cannot remove this saturated-window wait; do not add VM traffic to that pool
-  without capacity evidence. See the iteration 4 investigation for provenance.
-- **P6, adoption:** make reviewable milestone commits on the existing branch/PR.
-  Change a gate boundary only after the evidence below supports that boundary.
-  Revert that selection change on an escaped contract or reliability regression.
-
-The next complete-graph screen combines both critical tails: the existing two
-manual balanced Pod slices retain all 21 cases; a smaller deployed VM witness must
-retain issued identity, real launcher/mount/relay configuration and post-operation
-identity checks, while the packaged guest contracts own setup/tool/supervision
-assertions. The current full VM stays required until that ownership and its
-controls are proved. Run the candidate graph with all other selected required
-tests, counterbalanced against the unchanged graph, before expanding to the full
-30-pair cohort. Measure the last gate and added setup/CPU, not a sum of isolated
-contract gains. At the `bedb9a5` checkpoint Pod ended only 9.412 seconds after VM;
-improving only one cannot establish a large full-feedback saving.
-
-The later 542e615 checkpoint has 13 K3s target summaries, with Pod finishing
-51.265 seconds after VM. This is still a two-tail problem; these summary clocks
-do not cover the complete gate or qualify physical execution. The next guest
-composition adds actual CLI routes through Egress/sidecar/Notification and
-same-credential revocation, while the deployed candidate retains both real
-guest boots, issued identity, private supervision, workspace work and unchanged
-trace assertions. Both packaged guest compositions pass after repairing the
-fixture's nested Go test-wrapper lifetime. The deployed candidate also passes
-Egress Identity and Notification CLI checks inside its existing tool turn. The
-wrong Notification peer-URI control fails the owned-data contract. These are
-focused positive/negative proofs, without a matched complete-CI saving. Their
-implementation failures and remaining controls are in
-[`test_architecture_iteration6.md`](../system_tests/debug/test_architecture_iteration6.md).
-
-P2, P3 and P4 diagnosis can proceed independently. P5 depends on their candidate
-graph. Seven-day recurrence follow-ups in #16034 continue alongside this work.
-
-The first historical-population A/B/B/A screen at `376f8ae` now passes all four
-arms: 562 fresh physical test launches, exact retained Pod/unchanged-case
-identities and no failures, errors, skips or retries. Native invocation elapsed
-averages 442.484s for the full Pod/VM composition and 365.475s for the candidate
-(17.4% lower), with 5.4% more reported CPU and one unknown CPU record per arm.
-This is not complete required feedback or a branch-versus-devel saving.
-Importantly, the smaller VM body does not shorten measured case work: 171.775s
-full versus 173.669s candidate. Both full baselines were cold while both candidate
-VM baselines were warm, dominating the apparent VM process reduction. Do not
-promote that witness as a speed optimization.
-
-The manual single-VM platform witness now passes its first physical execution
-without any model requests. Ordinary Session setup retains issuer/Pod binding,
-authenticated Runtime readiness, workspace execution, actual kernel supervision
-and real CLI routing without new execution privileges. Its case span is 152.462s,
-including 112.454s waiting for the Sandbox; the cold physical action is 356.510s.
-This is a different source/cache exposure from the earlier graph, so no speed
-saving is established. The readiness audit finds guest startup and the private
-systemd fixture on this path. A manual root retaining Codex but omitting Claude
-is 26.2% smaller; one same-source B/A pair reduces root import by 23.650s but
-physical execution by only 11.086s (4.0%), with worse readiness in the smaller arm.
-The rejected no-harness root cannot start embedded Execution, which needs Codex.
-These are image-screen results, not complete-feedback savings.
-
-The existing direct Claude guest now also runs the unchanged private systemd
-fixture within its existing 120s QEMU bound. A same-source positive passes both
-turns, exact History, setup/fence, CLI, credential revocation and cleanup; omitting
-the fixture fails while waiting for its unchanged receipt. No permission was
-relaxed and no VM was added. Both packaged guests retain their harness ownership.
-Next, assign that private proof to the candidate graph and test whether removing
-its duplicate from the manual platform witness shortens the combined graph.
-Launcher, mount and issuer/Pod-binding defects still need controls against the
-new composition before any required gate changes. The deployed witness and MCP Services nearly
-tie in the warm candidate, with Pod next; measure the combined graph rather than
-extrapolating an isolated improvement. The existing importer draft #15126 remains
-unproven and should be revisited only through a repaired matched benchmark.
-See [`test_architecture_iteration7.md`](../system_tests/debug/test_architecture_iteration7.md)
-for the complete screen, cache limits and next experiment.
-The implemented platform composition and first proof are in
-[`test_architecture_iteration8.md`](../system_tests/debug/test_architecture_iteration8.md).
-The completed manual ownership comparison explicitly assigns private supervision
-to the direct Claude guest, checks admitted VMI arguments and runs both targets
-fresh in each arm. Eight fresh actions/cases pass, but warm candidate mean
-200.769s versus warm control 202.192s is below readiness variation; the initial
-control also has unmatched image imports. Keep the option manual. Default
-deployed supervision and every required owner remain.
-The experiment and bounded graph hypothesis are in
-[`test_architecture_iteration9.md`](../system_tests/debug/test_architecture_iteration9.md).
-
-Next, compare the existing two-guest Firecracker acceptance with a manual
-one-guest composition. Run the unchanged trust helper before any live-state
-mutation, then the same Session/certificate/suspend/resume scenario. This could
-remove about 32.2 seconds of repeated guest setup and cleanup from an observed
-required tail. It trades a separately clean second fixture for two scenario
-owners on one fresh guest; retain every assertion and the real one-minute idle
-interval. First compare physical action and phase costs, then the full selected
-graph if the result warrants it. The experiment contract is in
-[`test_architecture_firecracker_guest_reuse.md`](../system_tests/debug/test_architecture_firecracker_guest_reuse.md).
-
-The storage startup race found in subsequent required CI is repaired on this
-branch with a bounded readiness wait; both real-cluster recovery/non-recovery
-controls and all 21 required Pod cases pass. The narrow devel port is
-[#16299](https://github.com/agentydragon/ducktape/pull/16299). Controller exit cause
-and fleet recurrence remain open; see
-[`storage_controller_startup.md`](../system_tests/debug/storage_controller_startup.md).
-
-The independent selected-label diagnostic archive
-[#16316](https://github.com/agentydragon/ducktape/pull/16316) and two-file Sampler
-TokenReview/History-outage coverage port
-[#16317](https://github.com/agentydragon/ducktape/pull/16317) are merged into devel.
-The archive changes neither selection nor verdicts. Neither port is a
-latency reduction claim; the latter adds real failure-path coverage.
-
-Iteration evidence and the remaining coverage boundaries are recorded in
-[`system_tests/debug/test_architecture_iteration2.md`](../system_tests/debug/test_architecture_iteration2.md).
-The next implementation screen and its coverage/measurement limits are in
-[`system_tests/debug/test_architecture_iteration3.md`](../system_tests/debug/test_architecture_iteration3.md).
-Native recovery controls, MCP/VM image ownership and actual selection artifacts are in
-[`system_tests/debug/test_architecture_iteration4.md`](../system_tests/debug/test_architecture_iteration4.md).
-
-The case-level ownership index is in
-[`test_architecture_contract_ownership.md`](../system_tests/debug/test_architecture_contract_ownership.md).
-It distinguishes owner/native coverage from the real controller, issuer, App, storage
-and guest assertions that remain deployed acceptance.
+## Economic stopping rule
 
 Four minutes is an intermediate budget, not a floor. After each measured change,
-rank the next probes by likely complete-feedback or reliability benefit against
-implementation, review, maintenance and developer disruption. Pursue candidates
-with a credible payback within roughly one quarter. Stop dedicated optimization
-when no such candidate remains and the two best remaining probes fail; preserve
-their negative evidence and follow-up triggers rather than manufacturing more work.
-
-## Admission evidence for a smaller gate
-
-- Assign every unique assertion to a retained witness. Review historical fixes and
-  seeded defects: lost journal, duplicate admission, stale incarnation, wrong issuer,
-  History cursor gap, unauthorized delegation and browser reconnect. Negative
-  controls reject the defect; healthy positive controls pass. The native cases alone do
-  not establish the complete matrix or platform equivalence.
-- Qualification: >=30% lower median complete required feedback with no worse p90
-  or flake rate across the matched sample. Include pre-commit and artifact/import
-  checks, rerun-inclusive time and failed/cancelled heads; do not infer savings by
-  subtracting one small pilot from a broader suite or summing overlapping spans.
-- Report physical failure exposure, result-stream false reds, cached results,
-  signatures, denominators and intervals separately. No new unexplained failure or
-  cleanup signature. Zero failures in 100 runs still permits about a 3% one-sided
-  95% upper failure bound; repeatability screening is not proof of a low flake rate.
-- Unknown coverage, vacuous controls, state leaks or unmatched capacity/cache
-  exposure stop promotion. Preserve the current gate until those gaps are resolved.
-
-The pilot authors controller-produced status in envtest. It cannot establish real
-controller reconciliation, scheduling, Secret projection, service discovery, image
-packaging, network policy, VM boot or app behavior. Those acceptance paths remain.
-
-The existing image split #15214 stays held pending its own saving. Import usability
-#16028 is a separate promising setup optimization. Earlier KVM, MCP overlap and
-harness-mount experiments establish no complete-CI win and do not rule out different
-graphs or adequately provisioned capacity. Retained infrastructure and Pod runner
-pooling already exist; a parked shared-cluster spike is not a working prerequisite.
-
-A seven-profile render batch with two full VM/Firecracker controls passed the
-existing render assertions but did not shorten its observed render window or test
-action. It also broadened a VM-only consumer to all nine outputs. The patch was
-withdrawn; retain its aggregate CPU reduction as a revisit trigger only if renderer
-capacity becomes a measured feedback bottleneck.
+rank the next probes by likely complete-feedback/reliability benefit against
+implementation, review, maintenance and developer disruption. Pursue credible
+payback within roughly one quarter. Stop dedicated optimization when no such
+candidate remains and the two best remaining probes fail; retain negative evidence
+and explicit revisit triggers. The current evidence has not established that point.
+Keep subsequent architecture work on this branch/PR. Independent, clearly useful
+repairs may be ported after validation; merged ports belong in the experiment index,
+not in this plan's remaining work queue.
