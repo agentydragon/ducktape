@@ -8,8 +8,8 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/sessions",
     deps = [
         "//agentplane/app:app_service_go_proto",
-        "//agentplane/app/internal/bridge",
         "//agentplane/app/internal/sandboxes",
+        "//agentplane/app/internal/sessionclient",
         "//agentplane/app/internal/settings",
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/observability",
@@ -31,8 +31,8 @@ go_test(
     srcs = ["handler_test.go"],
     embed = [":sessions"],
     deps = [
-        "//agentplane/app/internal/bridge",
         "//agentplane/app/internal/sandboxes",
+        "//agentplane/app/internal/sessionclient",
         "//agentplane/app/internal/settings",
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/proto:identity_go_proto",

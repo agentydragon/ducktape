@@ -1,4 +1,4 @@
-package bridge
+package sessionclient
 
 import (
 	"context"
@@ -37,13 +37,13 @@ func (f *fakeSandboxGetter) GetEnvironment(_ context.Context, request *environme
 	return f.sandbox, f.err
 }
 
-type fakeDispatcher struct {
+type fakeSessionDispatcher struct {
 	openRequest *dispatcherpb.CreateSessionRequest
 	opening     *dispatcherpb.Session
 	err         error
 }
 
-func (f *fakeDispatcher) CreateSession(_ context.Context, request *dispatcherpb.CreateSessionRequest) (*dispatcherpb.CreateSessionResponse, error) {
+func (f *fakeSessionDispatcher) CreateSession(_ context.Context, request *dispatcherpb.CreateSessionRequest) (*dispatcherpb.CreateSessionResponse, error) {
 	f.openRequest = proto.Clone(request).(*dispatcherpb.CreateSessionRequest)
 	if f.err != nil {
 		return nil, f.err
@@ -51,31 +51,31 @@ func (f *fakeDispatcher) CreateSession(_ context.Context, request *dispatcherpb.
 	return &dispatcherpb.CreateSessionResponse{Session: f.opening}, nil
 }
 
-type fakeRunner struct {
+type fakeEnvironmentRuntime struct {
 	list   *sessionpb.ListSessionsResponse
 	status *sessionpb.EnvironmentRuntimeStatus
 	err    error
 	got    *environmentpb.EnvironmentDescriptor
 }
 
-func (f *fakeRunner) ListSessions(_ context.Context, sandbox *environmentpb.EnvironmentDescriptor) (*sessionpb.ListSessionsResponse, error) {
+func (f *fakeEnvironmentRuntime) ListSessions(_ context.Context, sandbox *environmentpb.EnvironmentDescriptor) (*sessionpb.ListSessionsResponse, error) {
 	f.got = sandbox
 	return f.list, f.err
 }
 
-func (f *fakeRunner) EnvironmentRuntimeStatus(_ context.Context, sandbox *environmentpb.EnvironmentDescriptor) (*sessionpb.EnvironmentRuntimeStatus, error) {
+func (f *fakeEnvironmentRuntime) EnvironmentRuntimeStatus(_ context.Context, sandbox *environmentpb.EnvironmentDescriptor) (*sessionpb.EnvironmentRuntimeStatus, error) {
 	f.got = sandbox
 	return f.status, f.err
 }
 
-func bridgeTestSpec() *sessionpb.SessionSpec {
+func sessionClientTestSpec() *sessionpb.SessionSpec {
 	return &sessionpb.SessionSpec{Cwd: "/workspace", Model: "model", Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{
 		Environment: &sessionpb.ExactEnvironment{Name: "operator-sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CODEX,
 	}}}}
 }
 
-func bridgeTestRequest(id string) *dispatcherpb.CreateSessionRequest {
-	return &dispatcherpb.CreateSessionRequest{SessionId: id, Spec: bridgeTestSpec()}
+func sessionClientTestRequest(id string) *dispatcherpb.CreateSessionRequest {
+	return &dispatcherpb.CreateSessionRequest{SessionId: id, Spec: sessionClientTestSpec()}
 }
 
 func TestParseSessionSpecOverlaysDefaultsAndRejectsUnknownFields(t *testing.T) {
@@ -101,16 +101,16 @@ func TestParseSessionSpecOverlaysDefaultsAndRejectsUnknownFields(t *testing.T) {
 
 func TestCreateSessionPreservesIdentitySpecAndOptionalSetupScript(t *testing.T) {
 	sessionID := uuid.MustParse("0a27b278-a057-48c5-8c46-10765b069e39")
-	spec := bridgeTestSpec()
+	spec := sessionClientTestSpec()
 	setup := ""
-	dispatcher := &fakeDispatcher{opening: &dispatcherpb.Session{
+	dispatcher := &fakeSessionDispatcher{opening: &dispatcherpb.Session{
 		SessionId: sessionID.String(), Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: spec.GetPlacement().GetEnvironmentHosted()}},
 	}}
-	bridge, err := New("operators", &fakeSandboxGetter{}, nil, dispatcher)
+	client, err := New("operators", &fakeSandboxGetter{}, nil, dispatcher)
 	if err != nil {
 		t.Fatal(err)
 	}
-	opening, err := bridge.CreateSession(context.Background(), "operator-sandbox", "sandbox-uid", sessionID, spec, &setup)
+	opening, err := client.CreateSession(context.Background(), "operator-sandbox", "sandbox-uid", sessionID, spec, &setup)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestCreateSessionPreservesIdentitySpecAndOptionalSetupScript(t *testing.T) 
 	}
 
 	dispatcher.opening = nil
-	if _, err := bridge.CreateSession(context.Background(), "operator-sandbox", "sandbox-uid", sessionID, spec, nil); err == nil {
+	if _, err := client.CreateSession(context.Background(), "operator-sandbox", "sandbox-uid", sessionID, spec, nil); err == nil {
 		t.Fatal("missing or mismatched opening identity was accepted")
 	} else {
 		var notFound *SessionNotFoundError
@@ -140,20 +140,20 @@ func TestCreateSessionPreservesIdentitySpecAndOptionalSetupScript(t *testing.T) 
 		t.Fatalf("absent setup script should stay absent: %v", dispatcher.openRequest)
 	}
 	longScript := strings.Repeat("界", MaxSetupScriptCharacters+1)
-	if _, err := bridge.CreateSession(context.Background(), "operator-sandbox", "sandbox-uid", sessionID, spec, &longScript); err == nil {
+	if _, err := client.CreateSession(context.Background(), "operator-sandbox", "sandbox-uid", sessionID, spec, &longScript); err == nil {
 		t.Fatal("overlong setup script was accepted")
 	}
 }
 
 func TestCreateSessionForwardsNilUUIDLikePythonRoute(t *testing.T) {
-	dispatcher := &fakeDispatcher{opening: &dispatcherpb.Session{
-		SessionId: uuid.Nil.String(), Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: bridgeTestSpec().GetPlacement().GetEnvironmentHosted()}},
+	dispatcher := &fakeSessionDispatcher{opening: &dispatcherpb.Session{
+		SessionId: uuid.Nil.String(), Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: sessionClientTestSpec().GetPlacement().GetEnvironmentHosted()}},
 	}}
-	bridge, err := New("operators", &fakeSandboxGetter{}, nil, dispatcher)
+	client, err := New("operators", &fakeSandboxGetter{}, nil, dispatcher)
 	if err != nil {
 		t.Fatal(err)
 	}
-	opening, err := bridge.CreateSession(context.Background(), "operator-sandbox", "sandbox-uid", uuid.Nil, bridgeTestSpec(), nil)
+	opening, err := client.CreateSession(context.Background(), "operator-sandbox", "sandbox-uid", uuid.Nil, sessionClientTestSpec(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,48 +165,48 @@ func TestCreateSessionForwardsNilUUIDLikePythonRoute(t *testing.T) {
 
 func TestCreateSessionTimeoutCarriesStableIdempotencyKey(t *testing.T) {
 	sessionID := uuid.New()
-	dispatcher := &fakeDispatcher{err: &RequestTimeoutError{Cause: context.DeadlineExceeded}}
-	bridge, err := New("operators", &fakeSandboxGetter{}, nil, dispatcher)
+	dispatcher := &fakeSessionDispatcher{err: &RequestTimeoutError{Cause: context.DeadlineExceeded}}
+	client, err := New("operators", &fakeSandboxGetter{}, nil, dispatcher)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = bridge.CreateSession(context.Background(), "operator-sandbox", "sandbox-uid", sessionID, bridgeTestSpec(), nil)
+	_, err = client.CreateSession(context.Background(), "operator-sandbox", "sandbox-uid", sessionID, sessionClientTestSpec(), nil)
 	var timeout *DispatcherRequestTimeoutError
 	if !errors.As(err, &timeout) || timeout.SessionID != sessionID || !strings.Contains(err.Error(), sessionID.String()) {
 		t.Fatalf("timeout = %#v, error = %v", timeout, err)
 	}
 }
 
-func TestRunnerRoutesUseCurrentSandboxIdentityAndReturnProxiedValues(t *testing.T) {
+func TestEnvironmentRuntimeRoutesUseCurrentSandboxIdentityAndReturnProxiedValues(t *testing.T) {
 	sandbox := &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Name: "operator-sandbox", Uid: "sandbox-uid", Namespace: "operators"}}
 	list := &sessionpb.ListSessionsResponse{Sessions: []*sessionpb.SessionSummary{{SessionId: uuid.NewString()}}}
 	status := &sessionpb.EnvironmentRuntimeStatus{EnvironmentRuntimeBootId: "boot-1"}
-	runner := &fakeRunner{list: list, status: status}
+	environmentRuntime := &fakeEnvironmentRuntime{list: list, status: status}
 	getter := &fakeSandboxGetter{sandbox: sandbox}
-	bridge, err := New("operators", getter, runner, &fakeDispatcher{})
+	client, err := New("operators", getter, environmentRuntime, &fakeSessionDispatcher{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sessions, err := bridge.ListSessions(context.Background(), sandbox.GetTarget().GetName(), sandbox.GetTarget().GetUid())
+	sessions, err := client.ListSessions(context.Background(), sandbox.GetTarget().GetName(), sandbox.GetTarget().GetUid())
 	if err != nil || !proto.Equal(&sessionpb.ListSessionsResponse{Sessions: sessions}, list) {
 		t.Fatalf("ListSessions = %v, %v", sessions, err)
 	}
-	if getter.name != sandbox.GetTarget().GetName() || runner.got != sandbox {
-		t.Fatalf("sandbox lookup/proxy identity = %q / %p, want %q / %p", getter.name, runner.got, sandbox.GetTarget().GetName(), sandbox)
+	if getter.name != sandbox.GetTarget().GetName() || environmentRuntime.got != sandbox {
+		t.Fatalf("sandbox lookup/proxy identity = %q / %p, want %q / %p", getter.name, environmentRuntime.got, sandbox.GetTarget().GetName(), sandbox)
 	}
-	gotStatus, err := bridge.EnvironmentRuntimeStatus(context.Background(), sandbox.GetTarget().GetName(), sandbox.GetTarget().GetUid())
+	gotStatus, err := client.EnvironmentRuntimeStatus(context.Background(), sandbox.GetTarget().GetName(), sandbox.GetTarget().GetUid())
 	if err != nil || !proto.Equal(gotStatus, status) {
 		t.Fatalf("EnvironmentRuntimeStatus = %v, %v", gotStatus, err)
 	}
-	if getter.uid != "sandbox-uid" || runner.got.GetTarget().GetUid() != "sandbox-uid" {
-		t.Fatalf("runtime status lost UID: lookup=%q target=%v", getter.uid, runner.got.GetTarget())
+	if getter.uid != "sandbox-uid" || environmentRuntime.got.GetTarget().GetUid() != "sandbox-uid" {
+		t.Fatalf("runtime status lost UID: lookup=%q target=%v", getter.uid, environmentRuntime.got.GetTarget())
 	}
 	getter.sandbox = &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Name: sandbox.GetTarget().GetName(), Uid: "replacement", Namespace: sandbox.GetTarget().GetNamespace()}}
-	if _, err := bridge.EnvironmentRuntimeStatus(context.Background(), sandbox.GetTarget().GetName(), sandbox.GetTarget().GetUid()); err == nil {
+	if _, err := client.EnvironmentRuntimeStatus(context.Background(), sandbox.GetTarget().GetName(), sandbox.GetTarget().GetUid()); err == nil {
 		t.Fatal("same-name replacement was proxied")
 	}
 	getter.sandbox = &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Name: sandbox.GetTarget().GetName(), Namespace: sandbox.GetTarget().GetNamespace()}}
-	if _, err := bridge.ListSessions(context.Background(), sandbox.GetTarget().GetName(), sandbox.GetTarget().GetUid()); err == nil {
+	if _, err := client.ListSessions(context.Background(), sandbox.GetTarget().GetName(), sandbox.GetTarget().GetUid()); err == nil {
 		t.Fatal("Sandbox without UID was proxied")
 	}
 }
@@ -231,7 +231,7 @@ func (s *identityEnvironmentRuntimeServer) capture(ctx context.Context) {
 	s.t.Helper()
 	values, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
-		s.t.Fatal("runner call has no metadata")
+		s.t.Fatal("environmentRuntime call has no metadata")
 	}
 	for _, key := range []string{
 		"authorization", sandboxapi.RunnerProxySandboxMetadataKey,
@@ -247,7 +247,7 @@ func (s *identityEnvironmentRuntimeServer) capture(ctx context.Context) {
 	}
 }
 
-func TestGatewayRunnerProxyBindsCurrentSandboxMetadata(t *testing.T) {
+func TestGatewayEnvironmentRuntimeProxyBindsCurrentSandboxMetadata(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -259,10 +259,10 @@ func TestGatewayRunnerProxyBindsCurrentSandboxMetadata(t *testing.T) {
 	t.Cleanup(server.Stop)
 
 	tokenFile := t.TempDir() + "/token"
-	if err := os.WriteFile(tokenFile, []byte("rotated-runner-token\n"), 0o600); err != nil {
+	if err := os.WriteFile(tokenFile, []byte("rotated-environmentRuntime-token\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	proxy, err := NewGatewayRunnerProxy(RunnerConfig{
+	proxy, err := NewGatewayEnvironmentRuntimeProxy(EnvironmentRuntimeConfig{
 		Namespace: "operators", TokenFile: tokenFile, Timeout: time.Second,
 		TargetTemplate: listener.Addr().String(),
 	})
@@ -274,12 +274,12 @@ func TestGatewayRunnerProxyBindsCurrentSandboxMetadata(t *testing.T) {
 	if err != nil || listed.GetSessions()[0].GetSessionId() != "durable-session" {
 		t.Fatalf("ListSessions = %v, %v", listed, err)
 	}
-	runnerStatus, err := proxy.EnvironmentRuntimeStatus(context.Background(), sandbox)
-	if err != nil || runnerStatus.GetEnvironmentRuntimeBootId() != "live-boot" {
-		t.Fatalf("EnvironmentRuntimeStatus = %v, %v", runnerStatus, err)
+	environmentRuntimeStatus, err := proxy.EnvironmentRuntimeStatus(context.Background(), sandbox)
+	if err != nil || environmentRuntimeStatus.GetEnvironmentRuntimeBootId() != "live-boot" {
+		t.Fatalf("EnvironmentRuntimeStatus = %v, %v", environmentRuntimeStatus, err)
 	}
 	want := map[string]string{
-		"authorization":                                        "Bearer rotated-runner-token",
+		"authorization":                                        "Bearer rotated-environmentRuntime-token",
 		sandboxapi.RunnerProxySandboxMetadataKey:               "operator-sandbox",
 		sandboxapi.RunnerProxySandboxNamespaceMetadataKey:      "operators",
 		sandboxapi.RunnerProxySandboxUIDMetadataKey:            "sandbox-uid",
@@ -324,7 +324,7 @@ func (s *dispatcherTestServer) CreateSession(ctx context.Context, request *dispa
 	}}, nil
 }
 
-func TestDispatcherClientUsesRotatingBearerAndMapsDeadline(t *testing.T) {
+func TestSessionDispatcherClientUsesRotatingBearerAndMapsDeadline(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -339,18 +339,18 @@ func TestDispatcherClientUsesRotatingBearerAndMapsDeadline(t *testing.T) {
 	if err := os.WriteFile(tokenFile, []byte("token-one\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	client, err := NewDispatcherClient(DispatcherConfig{Target: listener.Addr().String(), TokenFile: tokenFile, Timeout: time.Second})
+	client, err := NewSessionDispatcherClient(SessionDispatcherConfig{Target: listener.Addr().String(), TokenFile: tokenFile, Timeout: time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
 	id := uuid.NewString()
-	if _, err := client.CreateSession(context.Background(), bridgeTestRequest(id)); err != nil {
+	if _, err := client.CreateSession(context.Background(), sessionClientTestRequest(id)); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(tokenFile, []byte("token-two\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.CreateSession(context.Background(), bridgeTestRequest(id)); err != nil {
+	if _, err := client.CreateSession(context.Background(), sessionClientTestRequest(id)); err != nil {
 		t.Fatal(err)
 	}
 	if len(service.seenBearer) != 2 || service.seenBearer[0] != "Bearer token-one" || service.seenBearer[1] != "Bearer token-two" {
@@ -358,11 +358,11 @@ func TestDispatcherClientUsesRotatingBearerAndMapsDeadline(t *testing.T) {
 	}
 
 	service.blockOpen = true
-	slowClient, err := NewDispatcherClient(DispatcherConfig{Target: listener.Addr().String(), TokenFile: tokenFile, Timeout: 20 * time.Millisecond})
+	slowClient, err := NewSessionDispatcherClient(SessionDispatcherConfig{Target: listener.Addr().String(), TokenFile: tokenFile, Timeout: 20 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = slowClient.CreateSession(context.Background(), bridgeTestRequest(id))
+	_, err = slowClient.CreateSession(context.Background(), sessionClientTestRequest(id))
 	var timeout *RequestTimeoutError
 	if !errors.As(err, &timeout) {
 		t.Fatalf("deadline error = %T %v, want RequestTimeoutError", err, err)

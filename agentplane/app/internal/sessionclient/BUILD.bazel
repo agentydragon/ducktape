@@ -3,14 +3,14 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 package(default_visibility = ["//agentplane/app:__subpackages__"])
 
 go_library(
-    name = "bridge",
+    name = "sessionclient",
     srcs = [
-        "bridge.go",
-        "dispatcher.go",
+        "environment_runtime.go",
         "errors.go",
-        "runner.go",
+        "session_client.go",
+        "session_dispatcher.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/app/internal/bridge",
+    importpath = "github.com/agentydragon/ducktape/agentplane/app/internal/sessionclient",
     deps = [
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/environments/v1:environment_service_go_proto",
@@ -34,8 +34,8 @@ go_library(
 
 go_test(
     name = "unit_test",
-    srcs = ["bridge_test.go"],
-    embed = [":bridge"],
+    srcs = ["session_client_test.go"],
+    embed = [":sessionclient"],
     deps = [
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/environments/v1:environment_service_go_proto",

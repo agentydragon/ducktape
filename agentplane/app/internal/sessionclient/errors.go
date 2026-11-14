@@ -1,4 +1,4 @@
-package bridge
+package sessionclient
 
 import (
 	"fmt"
@@ -36,7 +36,7 @@ func (e *ThreadNotFoundError) Error() string {
 	return fmt.Sprintf("thread %s was not found", e.ThreadID)
 }
 
-// ThreadStateError means the History feed rejected the runner state.
+// ThreadStateError means the History feed rejected the Environment Runtime state.
 type ThreadStateError struct{ Message string }
 
 func (e *ThreadStateError) Error() string { return e.Message }
@@ -55,7 +55,7 @@ func (e *RequestTimeoutError) Error() string {
 func (e *RequestTimeoutError) Unwrap() error { return e.Cause }
 
 // DispatcherRequestTimeoutError carries the idempotency key needed to
-// reconcile or retry a timed-out Dispatcher mutation.
+// reconcile or retry a timed-out Session Dispatcher mutation.
 type DispatcherRequestTimeoutError struct {
 	SessionID uuid.UUID
 	Cause     error

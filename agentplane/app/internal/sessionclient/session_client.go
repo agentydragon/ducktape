@@ -1,6 +1,5 @@
-// Package bridge adapts the app's named Sandbox and thread contracts to the
-// Session Dispatcher and the Runner Gateway's Sandbox proxy.
-package bridge
+// Package sessionclient adapts app Session operations to the Dispatcher and Environment Runtime.
+package sessionclient
 
 import (
 	"context"
@@ -31,39 +30,39 @@ type SandboxGetter interface {
 	GetEnvironment(context.Context, *environmentpb.GetEnvironmentRequest, ...grpc.CallOption) (*environmentpb.EnvironmentDescriptor, error)
 }
 
-// Dispatcher is the narrow unary surface used by the RunnerBridge.
-type Dispatcher interface {
+// SessionDispatcher is the narrow unary surface used by the SessionClient.
+type SessionDispatcher interface {
 	CreateSession(context.Context, *dispatcherpb.CreateSessionRequest) (*dispatcherpb.CreateSessionResponse, error)
 }
 
-// RunnerProxy performs informational calls through the Sandbox's control
-// Service. The concrete GatewayRunnerProxy binds all four identity values on
+// EnvironmentRuntimeProxy performs informational calls through the Sandbox's control
+// Service. The concrete GatewayEnvironmentRuntimeProxy binds all four identity values on
 // every call.
-type RunnerProxy interface {
+type EnvironmentRuntimeProxy interface {
 	ListSessions(context.Context, *environmentpb.EnvironmentDescriptor) (*sessionpb.ListSessionsResponse, error)
 	EnvironmentRuntimeStatus(context.Context, *environmentpb.EnvironmentDescriptor) (*sessionpb.EnvironmentRuntimeStatus, error)
 }
 
-// RunnerBridge joins the app's Sandbox identity, Dispatcher and Runner services.
-type RunnerBridge struct {
-	namespace  string
-	sandboxes  SandboxGetter
-	runner     RunnerProxy
-	dispatcher Dispatcher
+// SessionClient adapts app Session operations to the Session Dispatcher and Environment Runtime.
+type SessionClient struct {
+	namespace          string
+	sandboxes          SandboxGetter
+	environmentRuntime EnvironmentRuntimeProxy
+	dispatcher         SessionDispatcher
 }
 
-// New constructs the bridge. Runner may be nil for callers using only Sessions.
-func New(namespace string, sandboxes SandboxGetter, runner RunnerProxy, dispatcher Dispatcher) (*RunnerBridge, error) {
+// New creates the app Session client. The Environment Runtime proxy may be nil when only Session calls are used.
+func New(namespace string, sandboxes SandboxGetter, environmentRuntime EnvironmentRuntimeProxy, dispatcher SessionDispatcher) (*SessionClient, error) {
 	if namespace == "" || sandboxes == nil || dispatcher == nil {
 		return nil, errors.New("Sandbox getter and Session Dispatcher are required")
 	}
-	return &RunnerBridge{namespace: namespace, sandboxes: sandboxes, runner: runner, dispatcher: dispatcher}, nil
+	return &SessionClient{namespace: namespace, sandboxes: sandboxes, environmentRuntime: environmentRuntime, dispatcher: dispatcher}, nil
 }
 
 // CreateSession queues one immutable Session specification. The caller-minted
 // UUID is the dispatcher's idempotency key, so a timeout is returned with that
 // same ID for reconciliation or retry.
-func (b *RunnerBridge) CreateSession(
+func (c *SessionClient) CreateSession(
 	ctx context.Context, sandbox, sandboxUID string, sessionID uuid.UUID, spec *sessionpb.SessionSpec, setupScript *string,
 ) (*dispatcherpb.Session, error) {
 	if sandbox == "" || sandboxUID == "" || spec == nil {
@@ -87,7 +86,7 @@ func (b *RunnerBridge) CreateSession(
 		request.SetupScript = &value
 	}
 	ctx, span := observability.Start(ctx, "agentplane.dispatcher.create_session")
-	response, err := b.dispatcher.CreateSession(ctx, request)
+	response, err := c.dispatcher.CreateSession(ctx, request)
 	observability.End(span, err)
 	if err != nil {
 		var timeout *RequestTimeoutError
@@ -111,16 +110,16 @@ func (b *RunnerBridge) CreateSession(
 	return session, nil
 }
 
-// ListSessions proxies the live runner's durable Session inventory through the requested Sandbox incarnation.
-func (b *RunnerBridge) ListSessions(ctx context.Context, sandboxName, sandboxUID string) ([]*sessionpb.SessionSummary, error) {
-	if b.runner == nil {
+// ListSessions proxies the live Environment Runtime's durable Session inventory through the requested Sandbox incarnation.
+func (c *SessionClient) ListSessions(ctx context.Context, sandboxName, sandboxUID string) ([]*sessionpb.SessionSummary, error) {
+	if c.environmentRuntime == nil {
 		return nil, errors.New("Runner proxy is not configured")
 	}
-	sandbox, err := b.currentSandbox(ctx, sandboxName, sandboxUID)
+	sandbox, err := c.currentSandbox(ctx, sandboxName, sandboxUID)
 	if err != nil {
 		return nil, err
 	}
-	response, err := b.runner.ListSessions(ctx, sandbox)
+	response, err := c.environmentRuntime.ListSessions(ctx, sandbox)
 	if err != nil {
 		return nil, err
 	}
@@ -129,27 +128,27 @@ func (b *RunnerBridge) ListSessions(ctx context.Context, sandboxName, sandboxUID
 
 // EnvironmentRuntimeStatus returns the live status snapshot for the requested Sandbox
 // incarnation. The snapshot is informational and does not wake the Sandbox.
-func (b *RunnerBridge) EnvironmentRuntimeStatus(ctx context.Context, sandboxName, sandboxUID string) (*sessionpb.EnvironmentRuntimeStatus, error) {
-	if b.runner == nil {
+func (c *SessionClient) EnvironmentRuntimeStatus(ctx context.Context, sandboxName, sandboxUID string) (*sessionpb.EnvironmentRuntimeStatus, error) {
+	if c.environmentRuntime == nil {
 		return nil, errors.New("Runner proxy is not configured")
 	}
-	sandbox, err := b.currentSandbox(ctx, sandboxName, sandboxUID)
+	sandbox, err := c.currentSandbox(ctx, sandboxName, sandboxUID)
 	if err != nil {
 		return nil, err
 	}
-	return b.runner.EnvironmentRuntimeStatus(ctx, sandbox)
+	return c.environmentRuntime.EnvironmentRuntimeStatus(ctx, sandbox)
 }
 
-func (b *RunnerBridge) currentSandbox(ctx context.Context, name, uid string) (*environmentpb.EnvironmentDescriptor, error) {
+func (c *SessionClient) currentSandbox(ctx context.Context, name, uid string) (*environmentpb.EnvironmentDescriptor, error) {
 	if name == "" || uid == "" {
 		return nil, errors.New("Sandbox name and UID are required")
 	}
-	sandbox, err := b.sandboxes.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: &identitypb.EnvironmentTarget{Namespace: b.namespace, Name: name, Uid: uid}})
+	sandbox, err := c.sandboxes.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: &identitypb.EnvironmentTarget{Namespace: c.namespace, Name: name, Uid: uid}})
 	if err != nil {
 		return nil, err
 	}
 	if sandbox == nil || sandbox.GetTarget() == nil || sandbox.GetTarget().GetName() != name ||
-		sandbox.GetTarget().GetUid() != uid || sandbox.GetTarget().GetNamespace() != b.namespace {
+		sandbox.GetTarget().GetUid() != uid || sandbox.GetTarget().GetNamespace() != c.namespace {
 		return nil, fmt.Errorf("Sandbox %q has incomplete or mismatched identity", name)
 	}
 	return sandbox, nil
@@ -186,8 +185,8 @@ func ParseSessionSpec(defaults *sessionpb.SessionSpec, fields map[string]any) (*
 	return merged, nil
 }
 
-// RunnerConfig configures per-call connections to the Runner Gateway's Sandbox proxy.
-type RunnerConfig struct {
+// EnvironmentRuntimeConfig configures per-call connections to the Runner Gateway Service's Sandbox proxy.
+type EnvironmentRuntimeConfig struct {
 	TLS            *peertls.ClientTLS
 	Namespace      string
 	TokenFile      string

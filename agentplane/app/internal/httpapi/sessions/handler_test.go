@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	appbridge "github.com/agentydragon/ducktape/agentplane/app/internal/bridge"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/sandboxes"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/sessionclient"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/settings"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
@@ -36,7 +36,7 @@ func TestSessionDefaultsMergeExplicitFieldsAndHonorSetupPresence(t *testing.T) {
 	if defaults.GetPlacement().GetEnvironmentHosted().GetHarness() != sessionpb.Harness_HARNESS_CODEX || defaults.GetModel() != "model-a" || defaults.GetReasoningEffort() != "high" || setup == nil || *setup != "setup" {
 		t.Fatalf("unexpected preset defaults: spec=%v setup=%v", defaults, setup)
 	}
-	merged, err := appbridge.ParseSessionSpec(defaults, map[string]any{"model": "", "instructions": "request"})
+	merged, err := sessionclient.ParseSessionSpec(defaults, map[string]any{"model": "", "instructions": "request"})
 	if err != nil {
 		t.Fatal(err)
 	}

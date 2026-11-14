@@ -1,4 +1,4 @@
-package bridge
+package sessionclient
 
 import (
 	"context"
@@ -11,28 +11,28 @@ import (
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
 )
 
-// DispatcherConfig controls one fresh, non-retrying connection per unary
+// SessionDispatcherConfig controls one fresh, non-retrying connection per unary
 // Session Dispatcher call. Projected bearer tokens are read by bearer.Dial for
 // each RPC, so kubelet token rotation is observed without restarting the app.
-type DispatcherConfig struct {
+type SessionDispatcherConfig struct {
 	TLS       *peertls.ClientTLS
 	Target    string
 	TokenFile string
 	Timeout   time.Duration
 }
 
-// DispatcherClient is the generated Session Dispatcher transport adapter.
-type DispatcherClient struct{ config DispatcherConfig }
+// SessionDispatcherClient is the generated Session Dispatcher transport adapter.
+type SessionDispatcherClient struct{ config SessionDispatcherConfig }
 
-// NewDispatcherClient validates a dispatcher transport configuration.
-func NewDispatcherClient(config DispatcherConfig) (*DispatcherClient, error) {
+// NewSessionDispatcherClient validates a Session Dispatcher transport configuration.
+func NewSessionDispatcherClient(config SessionDispatcherConfig) (*SessionDispatcherClient, error) {
 	if config.Target == "" || config.TokenFile == "" || config.Timeout <= 0 {
 		return nil, errors.New("Session Dispatcher target, token file, and positive timeout are required")
 	}
-	return &DispatcherClient{config: config}, nil
+	return &SessionDispatcherClient{config: config}, nil
 }
 
-func (c *DispatcherClient) connection(ctx context.Context, call func(context.Context, dispatcherpb.SessionDispatcherClient) error) error {
+func (c *SessionDispatcherClient) connection(ctx context.Context, call func(context.Context, dispatcherpb.SessionDispatcherClient) error) error {
 	conn, err := bearer.Dial(c.config.Target, c.config.TokenFile, c.config.Timeout, c.config.TLS)
 	if err != nil {
 		return err
@@ -41,10 +41,10 @@ func (c *DispatcherClient) connection(ctx context.Context, call func(context.Con
 	return translatedRPCError(call(ctx, dispatcherpb.NewSessionDispatcherClient(conn)))
 }
 
-// CreateSession calls the durable, idempotent Session-session RPC exactly once.
+// CreateSession calls the durable, idempotent Session RPC exactly once.
 // A RequestTimeoutError indicates that callers must reconcile or retry with
 // the same Session ID.
-func (c *DispatcherClient) CreateSession(ctx context.Context, request *dispatcherpb.CreateSessionRequest) (*dispatcherpb.CreateSessionResponse, error) {
+func (c *SessionDispatcherClient) CreateSession(ctx context.Context, request *dispatcherpb.CreateSessionRequest) (*dispatcherpb.CreateSessionResponse, error) {
 	var response *dispatcherpb.CreateSessionResponse
 	err := c.connection(ctx, func(ctx context.Context, client dispatcherpb.SessionDispatcherClient) error {
 		var err error
@@ -54,4 +54,4 @@ func (c *DispatcherClient) CreateSession(ctx context.Context, request *dispatche
 	return response, err
 }
 
-var _ Dispatcher = (*DispatcherClient)(nil)
+var _ SessionDispatcher = (*SessionDispatcherClient)(nil)
