@@ -505,7 +505,8 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
         )
     for instance in PROVIDERS:
         _add_provider(chart, instance)
-        _provider_workload(chart, instance, record_upstream_traffic=record_upstream_traffic)
+        # Interactive MyQuest sign-in may contain passwords and MFA; never record it.
+        _provider_workload(chart, instance, record_upstream_traffic=record_upstream_traffic and instance != "myquest")
     for image in PROVIDER_IMAGES:
         _image_policy(chart, image)
     Certificate(
