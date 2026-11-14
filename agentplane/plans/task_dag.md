@@ -3637,11 +3637,12 @@ and 44 `sampler_model_request` rows (grouped by conversation). Counts for cell, 
 interrupt, notification, export checkpoint and conversation rows were not collected. The migration
 deletes those Sessions and their sampler-owned conversation, event, command, export checkpoint,
 notification, intent/provider-attempt, process, cell, interrupt and model-request state; unexported
-sampler events are lost. History rows already exported and shared content/context blobs remain. This
-PR removes the old retry, provider and export paths and their pre-cutover fixtures. Current Dispatcher
-writers supply the execution Identity, which Central Sampler now requires and retains. History's
-direct probe ingress remains. Runner Gateway's retained rows and reader cleanup are tracked
-separately.
+sampler events are lost. History rows already exported and shared content/context blobs remain. The
+follow-up code cleanup is in review in [#16331](https://github.com/agentydragon/ducktape/pull/16331)
+(2026-11-14 UTC): it removes the old retry, provider and export paths and their pre-cutover fixtures.
+Current Dispatcher writers supply the execution Identity, which Central Sampler now requires and
+retains. History's direct probe ingress remains. Runner Gateway's retained rows and reader cleanup
+are tracked separately.
 
 #### `ACTION_BOX_RENAME` — Action boxes stop being called sandboxes
 
