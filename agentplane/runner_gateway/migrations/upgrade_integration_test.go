@@ -23,6 +23,106 @@ func TestBaselineCreatesFinalSchema(t *testing.T) {
 	assertRetainedEvidence(t, db)
 }
 
+func TestCutoverRemovesSessionsAndCommandsWithoutIdentityOrAttribution(t *testing.T) {
+	db := openMigrationDatabase(t)
+	if err := Up(t.Context(), db); err != nil {
+		t.Fatal("create final schema:", err)
+	}
+	const sandboxUID = "00000000-0000-0000-0000-000000000018"
+	const executionIdentityUID = "00000000-0000-4000-8000-000000000018"
+	insertSession := func(sessionID string, identityName, identityUID any, actorKind string) {
+		t.Helper()
+		var creatorAccountNamespace, creatorAccountName, creatorAccountUID any
+		var effectiveAccountNamespace, effectiveAccountName, effectiveAccountUID any
+		var creatorIdentityName, creatorIdentityUID any
+		switch actorKind {
+		case "service_account":
+			creatorAccountNamespace, creatorAccountName, creatorAccountUID = "test", "actor", "actor-uid"
+			effectiveAccountNamespace, effectiveAccountName, effectiveAccountUID = "test", "actor", "actor-uid"
+		case "identity":
+			creatorIdentityName, creatorIdentityUID = "creator", "creator-uid"
+		case "none":
+		default:
+			t.Fatalf("unknown actor kind %q", actorKind)
+		}
+		_, err := db.ExecContext(t.Context(), `INSERT INTO session
+			(session_id,sandbox_name,sandbox_uid,spec,state,created_at,updated_at,
+			 creator_account_namespace,creator_account_name,creator_account_uid,
+			 effective_caller_account_namespace,effective_caller_account_name,effective_caller_account_uid,
+			 creator_identity_name,creator_identity_uid,execution_identity_name,execution_identity_uid)
+			VALUES ($1,'test-sandbox',$2,$3,'WAITING',now(),now(),$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+			sessionID, sandboxUID, []byte{0x08, 0x01}, creatorAccountNamespace, creatorAccountName, creatorAccountUID,
+			effectiveAccountNamespace, effectiveAccountName, effectiveAccountUID, creatorIdentityName, creatorIdentityUID,
+			identityName, identityUID)
+		if err != nil {
+			t.Fatalf("insert Session %q: %v", sessionID, err)
+		}
+	}
+	insertDispatch := func(commandID, sessionID, actorKind string) {
+		t.Helper()
+		var actorNamespace, actorName, actorUID, actorIdentityName, actorIdentityUID any
+		switch actorKind {
+		case "service_account":
+			actorNamespace, actorName, actorUID = "test", "actor", "actor-uid"
+		case "identity":
+			actorIdentityName, actorIdentityUID = "actor", "actor-uid"
+		case "none":
+		default:
+			t.Fatalf("unknown actor kind %q", actorKind)
+		}
+		_, err := db.ExecContext(t.Context(), `INSERT INTO dispatch
+			(command_id,session_id,sandbox_name,sandbox_uid,operation,command,state,created_at,updated_at,
+			 actor_account_namespace,actor_account_name,actor_account_uid,actor_identity_name,actor_identity_uid)
+			VALUES ($1,$2,'test-sandbox',$3,'submit_input',$4,'QUEUED',now(),now(),$5,$6,$7,$8,$9)`,
+			commandID, sessionID, sandboxUID, []byte{0x08, 0x01}, actorNamespace, actorName, actorUID, actorIdentityName, actorIdentityUID)
+		if err != nil {
+			t.Fatalf("insert dispatch %q: %v", commandID, err)
+		}
+	}
+
+	insertSession("pre-identity-session", nil, nil, "service_account")
+	insertDispatch("pre-identity-command", "pre-identity-session", "service_account")
+	insertSession("unattributed-session", "execution", executionIdentityUID, "none")
+	insertDispatch("unattributed-session-command", "unattributed-session", "service_account")
+	insertSession("current-session", "execution", executionIdentityUID, "service_account")
+	insertDispatch("current-command", "current-session", "service_account")
+	insertDispatch("unattributed-command", "current-session", "none")
+	insertSession("identity-attributed-session", "execution", executionIdentityUID, "identity")
+	insertDispatch("identity-attributed-command", "identity-attributed-session", "identity")
+
+	if _, err := db.ExecContext(t.Context(), "DELETE FROM "+gooseTable+" WHERE version_id=18"); err != nil {
+		t.Fatal("reset migration 18 version:", err)
+	}
+	if err := Up(t.Context(), db); err != nil {
+		t.Fatal("apply cutover migration:", err)
+	}
+
+	for _, query := range []string{
+		`SELECT count(*) FROM session WHERE session_id IN ('pre-identity-session','unattributed-session')`,
+		`SELECT count(*) FROM dispatch WHERE command_id IN ('pre-identity-command','unattributed-session-command','unattributed-command')`,
+	} {
+		var count int
+		if err := db.QueryRowContext(t.Context(), query).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 0 {
+			t.Fatalf("cutover retained %d rows for %s", count, query)
+		}
+	}
+	for _, query := range []string{
+		`SELECT count(*) FROM session WHERE session_id IN ('current-session','identity-attributed-session')`,
+		`SELECT count(*) FROM dispatch WHERE command_id IN ('current-command','identity-attributed-command')`,
+	} {
+		var count int
+		if err := db.QueryRowContext(t.Context(), query).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 2 {
+			t.Fatalf("cutover lost attributed evidence: count=%d for %s", count, query)
+		}
+	}
+}
+
 func TestBaselineRejectsUnknownObjectsInFreshDatabase(t *testing.T) {
 	db := openMigrationDatabase(t)
 	if _, err := db.ExecContext(t.Context(), `CREATE TABLE unrecognized_data (value text); INSERT INTO unrecognized_data VALUES ('keep')`); err != nil {
@@ -56,14 +156,22 @@ func insertRetainedEvidence(t *testing.T, db *sql.DB) {
 	ctx := t.Context()
 	const uid = "00000000-0000-0000-0000-000000000001"
 	_, err := db.ExecContext(ctx, `INSERT INTO session
-        (session_id,sandbox_name,sandbox_uid,spec,state,reason,created_at,updated_at,creator_account_namespace,creator_account_name,creator_account_uid,environment_deleted_at)
-        VALUES ('retained-session','deleted-environment',$1,$2,'UNKNOWN','effect_unconfirmed',now(),now(),'test','owner','old-service-account-uid',now())`, uid, []byte{0x08, 0x01})
+	    (session_id,sandbox_name,sandbox_uid,spec,state,reason,created_at,updated_at,
+	     creator_account_namespace,creator_account_name,creator_account_uid,
+	     effective_caller_account_namespace,effective_caller_account_name,effective_caller_account_uid,
+	     execution_identity_name,execution_identity_uid,environment_deleted_at)
+	    VALUES ('retained-session','deleted-environment',$1,$2,'UNKNOWN','effect_unconfirmed',now(),now(),
+	     'test','owner','old-service-account-uid','test','owner','old-service-account-uid',
+	     'retained-identity','00000000-0000-4000-8000-000000000001',now())`, uid, []byte{0x08, 0x01})
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = db.ExecContext(ctx, `INSERT INTO dispatch
-        (command_id,session_id,sandbox_name,sandbox_uid,operation,command,state,reason,admission,delivery_attempted,created_at,updated_at)
-        VALUES ('uncertain-command','retained-session','deleted-environment',$1,'submit_input',$2,'UNKNOWN','effect_unconfirmed',$3,true,now(),now())`,
+	    (command_id,session_id,sandbox_name,sandbox_uid,operation,command,state,reason,admission,delivery_attempted,created_at,updated_at,
+	     actor_account_namespace,actor_account_name,actor_account_uid,
+	     effective_caller_account_namespace,effective_caller_account_name,effective_caller_account_uid)
+	    VALUES ('uncertain-command','retained-session','deleted-environment',$1,'submit_input',$2,'UNKNOWN','effect_unconfirmed',$3,true,now(),now(),
+	     'test','owner','old-service-account-uid','test','owner','old-service-account-uid')`,
 		uid, []byte{0x08, 0x01}, []byte{0x08, 0x02})
 	if err != nil {
 		t.Fatal(err)
@@ -83,13 +191,13 @@ func insertRetainedEvidence(t *testing.T, db *sql.DB) {
 func assertRetainedEvidence(t *testing.T, db *sql.DB) {
 	t.Helper()
 	var spec, command, admission []byte
-	var ownerUID, reason string
+	var ownerUID, identityName, reason string
 	var deletedAt sql.NullTime
-	if err := db.QueryRowContext(t.Context(), `SELECT spec,creator_account_uid,environment_deleted_at FROM session WHERE session_id='retained-session'`).Scan(&spec, &ownerUID, &deletedAt); err != nil {
+	if err := db.QueryRowContext(t.Context(), `SELECT spec,creator_account_uid,execution_identity_name,environment_deleted_at FROM session WHERE session_id='retained-session'`).Scan(&spec, &ownerUID, &identityName, &deletedAt); err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(spec, []byte{0x08, 0x01}) || ownerUID != "old-service-account-uid" || !deletedAt.Valid {
-		t.Fatalf("Session evidence changed: spec=%x owner=%q deletion=%v", spec, ownerUID, deletedAt)
+	if !bytes.Equal(spec, []byte{0x08, 0x01}) || ownerUID != "old-service-account-uid" || identityName != "retained-identity" || !deletedAt.Valid {
+		t.Fatalf("Session evidence changed: spec=%x owner=%q identity=%q deletion=%v", spec, ownerUID, identityName, deletedAt)
 	}
 	if err := db.QueryRowContext(t.Context(), `SELECT command,admission,reason FROM dispatch WHERE command_id='uncertain-command'`).Scan(&command, &admission, &reason); err != nil {
 		t.Fatal(err)
