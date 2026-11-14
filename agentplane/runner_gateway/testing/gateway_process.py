@@ -166,6 +166,7 @@ async def run_gateway(
     dispatcher_callers: Sequence[ServiceAccountRef],
     gateway_callers: Sequence[ServiceAccountRef],
     workload: ServiceAccountRef,
+    sandbox_controller_account: ServiceAccountRef | None = None,
     executor_callers: Sequence[ServiceAccountRef] = (),
     environment_readers: Sequence[ServiceAccountRef] = (),
     environment_managers: Sequence[ServiceAccountRef] = (),
@@ -237,6 +238,11 @@ async def run_gateway(
                 runner_security=runner_security,
                 dispatcher_callers={f"{account.namespace}/{account.name}" for account in dispatcher_callers},
                 gateway_callers={f"{account.namespace}/{account.name}" for account in gateway_callers},
+                sandbox_controller_account=(
+                    f"{sandbox_controller_account.namespace}/{sandbox_controller_account.name}"
+                    if sandbox_controller_account is not None
+                    else None
+                ),
                 executor_callers={f"{account.namespace}/{account.name}" for account in executor_callers},
                 environment_readers={f"{account.namespace}/{account.name}" for account in environment_readers},
                 environment_managers={f"{account.namespace}/{account.name}" for account in environment_managers},

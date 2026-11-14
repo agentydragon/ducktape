@@ -2,7 +2,7 @@
 # gazelle:resolve py cert_manager_clusterissuer_crds //cluster/cdk8s/providers/cert_manager:clusterissuer
 # gazelle:resolve py trust_manager_crds //cluster/cdk8s/providers/cert_manager:bundle
 load("@rules_oci//oci:defs.bzl", "oci_image")
-load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_EXEC_PROPERTIES", "K3S_PERSISTENCE_PROPERTIES", "K3S_TAGS", "image_manifest")
+load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_EXEC_PROPERTIES", "K3S_PERSISTENCE_PROPERTIES", "K3S_TAGS", "KVM_EXEC_PROPERTIES", "image_manifest", "k3s_firecracker_recycling_key")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_testonly = True)
@@ -74,6 +74,35 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/deployment:stack",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# The first prepared Firecracker trial used the v1 shared data mount. This one-shot target must
+# reuse that exact recyclable runner and check its receipt before stopping the recorded process.
+py_test(
+    name = "test_cleanup_prepared_firecracker_baseline_v1",
+    size = "enormous",
+    srcs = ["test_cleanup_prepared_firecracker_baseline_v1.py"],
+    env = {"AGENTPLANE_K3S_REQUIRE_KVM": "1"},
+    env_inherit = ["AGENTPLANE_EXPECTED_PERSISTENCE_RECEIPT"],
+    exec_properties = KVM_EXEC_PROPERTIES | {
+        "dockerNetwork": "bridge",
+        "test.EstimatedCPU": "4",
+        "test.EstimatedFreeDiskBytes": "20GB",
+        "test.EstimatedMemory": "6GB",
+        "test.env-overrides": "AGENTPLANE_K3S_EXECUTOR_PERSISTENCE=1",
+        "test.recycle-runner": "true",
+        "test.runner-recycling-key": k3s_firecracker_recycling_key(),
+    },
+    main = "test_cleanup_prepared_firecracker_baseline_v1.py",
+    tags = K3S_TAGS + ["manual"],
+    deps = [
+        ":baseline",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//devinfra/testing:undeclared_outputs",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
