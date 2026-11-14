@@ -199,9 +199,7 @@ def settings(
         session_dispatcher_target=(
             f"{session_dispatcher.service(namespace).fqdn}:{session_dispatcher.service(namespace).port.number}"
         ),
-        policy_service_target=(
-            f"{policy_controller.service(namespace).fqdn}:{policy_controller.service(namespace).port.number}"
-        ),
+        policy_service_target=policy_controller.tls_target(namespace),
         runner_gateway_control_target=runner_gateway.control_target(namespace),
         history_service_target=(
             f"{history_service.service(namespace).fqdn}:{history_service.service(namespace).port.number}"

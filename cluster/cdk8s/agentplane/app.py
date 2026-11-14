@@ -33,6 +33,7 @@ from agentplane.net.peertls.config import (
     EGRESS_PROXY_URI,
     HISTORY_SERVICE_URI,
     NOTIFICATIONS_URI,
+    POLICY_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
 )
 from cluster.cdk8s import cilium, node_scheduling
@@ -121,6 +122,7 @@ class App(Construct):
         settings.history_service_tls = workload_tls.client_tls(HISTORY_SERVICE_URI)
         settings.notifications_tls = workload_tls.client_tls(NOTIFICATIONS_URI)
         settings.actions_tls = workload_tls.client_tls(ACTIONS_URI)
+        settings.policy_service_tls = workload_tls.client_tls(POLICY_CONTROLLER_URI)
         config = SettingsFile(
             self,
             "config",
@@ -305,7 +307,7 @@ class App(Construct):
                 session_dispatcher.service(namespace).egress(),
                 history_service.service(namespace).egress(),
                 notifications.service(namespace).egress(),
-                policy_controller.service(namespace).egress(),
+                policy_controller.tls_service(namespace).egress(),
                 egress.admin(namespace).egress(),
                 # Separate BFF/operator transport boundary. The Action Service
                 # still requires its own configured operator authenticator;

@@ -83,6 +83,7 @@ flowchart LR
     app --> hs
     app -->|gRPC operator watches + health| notif
     app -->|Action and MCP Linkage RPCs: gRPC| actions
+    app -->|PolicyService gRPC: bearer over verified server TLS| policy
     app -->|ConnectionService RPCs and health: gRPC| edge
     edge -->|authenticated ActionService gRPC| actions
     edge -->|public MCP client metadata: gRPC| actions
@@ -96,7 +97,7 @@ flowchart LR
     sdk_services -->|OTLP/gRPC| alloy
     app -->|browser trace relay: OTLP/HTTP| alloy
 
-    gw -->|central Session commands: Sampler gRPC| sampler
+    gw -->|central Session commands: bearer over verified server TLS| sampler
     sampler -->|continuation, commands and ownership leases| samplerdb
     samplerdb -->|NOTIFY: central_sampler_work| sampler
     samplerdb -->|NOTIFY: central_sampler_outbox| sampler
@@ -270,7 +271,7 @@ flowchart LR
     environments -->|resume + eligibility| lifecycle
     app -->|per-Sandbox Runner Proxy: live inventory + diagnostics| gateway
     dispatcher -->|Pod-bound workload token: wrapped Codex and Claude opens + commands| gateway
-    dispatcher -->|central opens + commands: Sampler gRPC| central
+    dispatcher -->|central opens + commands: bearer over verified server TLS| central
     sandboxctl -->|Quiesce| gateway
     sandboxctl -->|passive WatchState: mTLS gRPC| runtime
     dispatcher -->|Sandbox watch| k8s
