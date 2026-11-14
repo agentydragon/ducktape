@@ -45,14 +45,19 @@ class Settings(BaseModel):
 
     rpc: Listener = Field(description="The single gRPC listener and its explicitly enabled authentication methods.")
     service_readers: list[ServiceSPIFFEID] = Field(
-        default_factory=list, description="Exact service SPIFFE IDs granted read-only request access."
+        exclude_if=lambda value: not value,
+        default_factory=list,
+        description="Exact service SPIFFE IDs granted read-only request access.",
     )
     operator_services: list[ServiceSPIFFEID] = Field(
+        exclude_if=lambda value: not value,
         default_factory=list,
         description="Exact service SPIFFE IDs allowed to carry separately verified operator ID tokens.",
     )
     connection_delegation_service: ServiceSPIFFEID | Literal[""] = Field(
-        default="", description="Exact MCP edge service SPIFFE ID allowed to delegate Connection operations."
+        exclude_if=lambda value: not value,
+        default="",
+        description="Exact MCP edge service SPIFFE ID allowed to delegate Connection operations.",
     )
     reader_accounts: frozenset[ServiceAccountRef] = frozenset()
     connection_delegation_actor: ServiceAccountRef | None = Field(

@@ -22,6 +22,10 @@ def test_connection_delegation_actor_is_optional_and_accepted() -> None:
     source = _settings_source()
     settings = Settings.model_validate(source)
     assert settings.connection_delegation_actor is None
+    rendered = settings.model_dump(mode="json")
+    assert "service_readers" not in rendered
+    assert "operator_services" not in rendered
+    assert "connection_delegation_service" not in rendered
 
     source["connection_delegation_actor"] = {"namespace": "test-agentplane", "name": "mcp-edge"}
     settings = Settings.model_validate(source)
