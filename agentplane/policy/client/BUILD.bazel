@@ -7,8 +7,10 @@ kubernetes_clients(
     api = "//agentplane/policy/api/v1alpha1",
     apply_configuration_types = [
         "ActionPolicy",
+        "BoundIdentitySelector",
         "CreatedServiceAccount",
         "CredentialRef",
+        "EnvironmentSelector",
         "Identity",
         "IdentityRef",
         "IdentitySpec",

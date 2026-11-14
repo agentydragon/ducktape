@@ -37,6 +37,9 @@ async def test_policyset_admission() -> None:
         def inbox(targets: dict[str, Any], **fields: Any) -> dict[str, Any]:
             return {"type": "session_inbox_access", "operations": ["send_message"], "targets": targets, **fields}
 
+        def environment(environments: list[dict[str, Any]], **fields: Any) -> dict[str, Any]:
+            return {"type": "environment", "operations": ["resume"], "environments": environments, **fields}
+
         pinned = {"name": "dev-1", "uid": "3b1c0f1e-7a52-4f0c-9d52-2d7a54f0b2a1"}
 
         rules: tuple[dict[str, Any], ...] = (
@@ -57,6 +60,18 @@ async def test_policyset_admission() -> None:
             inbox({"sandboxes": [{"name": "coordinator"}, pinned]}),
             inbox({"allSandboxes": True}),
             inbox({"inboxTags": ["test-group"], "sandboxes": [{"name": "coordinator"}]}),
+            environment([{"sandbox": {"name": "worker"}}]),
+            environment(
+                [
+                    {
+                        "sandbox": {"name": "worker", "uid": "3b1c0f1e-7a52-4f0c-9d52-2d7a54f0b2a1"},
+                        "boundIdentity": {"name": "worker"},
+                    }
+                ]
+            ),
+            environment([{"boundIdentity": {"name": "worker"}}]),
+            environment([{"boundIdentity": {"self": True}}]),
+            environment([{"sandbox": {"name": "worker"}}, {"boundIdentity": {"self": True}}]),
         )
         for rule in rules:
             created = await create(rule)
@@ -91,6 +106,15 @@ async def test_policyset_admission() -> None:
             {"type": "session_inbox_access", "targets": {"allSandboxes": True}},
             {"type": "egress", "hosts": ["api.example.com"], "operations": ["send_message"]},
             {**action("exact_actions"), "targets": {"allSandboxes": True}},
+            {"type": "environment", "operations": ["resume"]},
+            {"type": "environment", "environments": [{"sandbox": {"name": "worker"}}]},
+            environment([{"sandbox": {"name": "worker"}}], operations=["send_message"]),
+            environment([{"sandbox": {"name": "worker"}}], operations=["bind_session"]),
+            environment([{}]),
+            environment([{"sandbox": {}}]),
+            environment([{"boundIdentity": {}}]),
+            environment([{"boundIdentity": {"name": "worker", "self": True}}]),
+            environment([{"sandbox": {"name": "worker"}}], targets={"allSandboxes": True}),
         )
         for rule in invalid_rules:
             with pytest.raises(ApiException) as rejected:

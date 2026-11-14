@@ -430,7 +430,15 @@ func serveIdentityDiscovery(
 	readers sets.Set[auth.Account],
 ) environmentpb.EnvironmentServiceClient {
 	t.Helper()
-	service, err := New(discoveryNamespace, objects, catalog, discoveryLifecycle(t, objects, nil), readers, ManagementOptions{})
+	return serveIdentityDiscoveryWithLifecycle(t, objects, catalog, readers, discoveryLifecycle(t, objects, nil))
+}
+
+func serveIdentityDiscoveryWithLifecycle(
+	t *testing.T, objects client.WithWatch, catalog runtimeconfig.Catalog,
+	readers sets.Set[auth.Account], manager *lifecycle.Manager,
+) environmentpb.EnvironmentServiceClient {
+	t.Helper()
+	service, err := New(discoveryNamespace, objects, catalog, manager, readers, ManagementOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -446,6 +454,7 @@ func serveIdentityDiscovery(
 		[]string{
 			environmentpb.EnvironmentService_ListEnvironments_FullMethodName,
 			environmentpb.EnvironmentService_GetEnvironment_FullMethodName,
+			environmentpb.EnvironmentService_ResumeEnvironment_FullMethodName,
 		},
 		[]auth.Delegator{{Account: auth.Account{Namespace: discoveryNamespace, Name: "actions"}, IdentityCallers: true}},
 		identities,

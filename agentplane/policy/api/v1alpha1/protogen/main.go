@@ -16,7 +16,7 @@ import (
 )
 
 var types = []string{
-	"RoleRef", "Rule", "SandboxTargets", "SandboxTarget", "CredentialRef", "ActionPolicy", "PolicySetSpec", "MissingRole", "Status", "IdentityRef", "Subject", "PolicyBindingSpec",
+	"RoleRef", "Rule", "SandboxTargets", "SandboxTarget", "EnvironmentSelector", "BoundIdentitySelector", "CredentialRef", "ActionPolicy", "PolicySetSpec", "MissingRole", "Status", "IdentityRef", "Subject", "PolicyBindingSpec",
 	"IdentitySpec", "KubernetesRule", "KubernetesRoleSetSpec", "ServiceAccountTarget",
 	"ServiceAccountGrantSpec", "ServiceAccountGrantStatus", "ManagedServiceAccountSpec", "CreatedServiceAccount",
 	"ManagedServiceAccountStatus",

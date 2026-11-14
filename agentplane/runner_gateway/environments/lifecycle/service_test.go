@@ -13,8 +13,10 @@ import (
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environmentaccess"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -137,12 +139,34 @@ type lifecycleHarness struct {
 }
 
 func newHarness(t *testing.T, object client.WithWatch, operatorCallers []auth.Account) lifecycleHarness {
+	return newConfiguredHarness(t, object, operatorCallers, nil, nil, false)
+}
+
+func newIdentityHarness(
+	t *testing.T,
+	object client.WithWatch,
+	operatorCallers []auth.Account,
+	rules *reader.Index[environmentaccess.Rule],
+	policyReady func() error,
+) lifecycleHarness {
+	return newConfiguredHarness(t, object, operatorCallers, rules, policyReady, true)
+}
+
+func newConfiguredHarness(
+	t *testing.T,
+	object client.WithWatch,
+	operatorCallers []auth.Account,
+	rules *reader.Index[environmentaccess.Rule],
+	policyReady func() error,
+	identityDelegation bool,
+) lifecycleHarness {
 	t.Helper()
 	budget := &testWakeBudget{}
 	service, err := lifecycle.NewManager(lifecycle.Options{
 		Namespace: testNamespace, Objects: object, WakeBudget: budget,
-		WakeCallers:     []auth.Account{{Namespace: testNamespace, Name: "notifications"}},
-		OperatorCallers: operatorCallers,
+		WakeCallers:      []auth.Account{{Namespace: testNamespace, Name: "notifications"}},
+		OperatorCallers:  operatorCallers,
+		EnvironmentRules: rules, PolicyReady: policyReady,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -159,6 +183,19 @@ func newHarness(t *testing.T, object client.WithWatch, operatorCallers []auth.Ac
 		t.Fatal(err)
 	}
 	methods := environments.Methods(resolver)
+	if identityDelegation {
+		identities, err := auth.KubernetesIdentityUIDs(object, testNamespace)
+		if err != nil {
+			t.Fatal(err)
+		}
+		methods, err = methods.WithDelegation(
+			[]string{environmentpb.EnvironmentService_ResumeEnvironment_FullMethodName},
+			[]auth.Delegator{{Account: actorAccount, IdentityCallers: true}}, identities,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	apiService, err := environments.New(testNamespace, object, runtimeconfig.Catalog{}, service, nil, environments.ManagementOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -232,6 +269,25 @@ func testIdentityObjects(t *testing.T, sandbox *sandboxapi.Sandbox, executionUID
 	return objects
 }
 
+func identityResumeRules(identity *policyapi.Identity, selectors []policyapi.EnvironmentSelector, expiresAt *metav1.Time) *reader.Index[environmentaccess.Rule] {
+	rules := environmentaccess.NewIndex()
+	rules.PutIdentity(identity)
+	rules.PutPolicySet(&policyapi.PolicySet{
+		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: "resume-targets"},
+		Spec: policyapi.PolicySetSpec{Rules: []policyapi.Rule{{
+			Type: "environment", Operations: []string{"resume"}, Environments: selectors,
+		}}},
+	})
+	rules.PutBinding(&policyapi.PolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: "resume-grant"},
+		Spec: policyapi.PolicyBindingSpec{
+			Subject:    policyapi.Subject{Identity: &policyapi.IdentityRef{Name: identity.Name}},
+			PolicySets: []string{"resume-targets"}, ExpiresAt: expiresAt,
+		},
+	})
+	return rules
+}
+
 func targetHandle(uid string) *identitypb.EnvironmentTarget {
 	return &identitypb.EnvironmentTarget{Namespace: testNamespace, Name: testSandbox, Uid: uid}
 }
@@ -246,9 +302,13 @@ func directContext(t *testing.T, token string) context.Context {
 }
 
 func delegatedContext(t *testing.T) context.Context {
+	return delegatedContextFor(t, auth.Identity{Name: executionIdentityName, UID: executionIdentityUID})
+}
+
+func delegatedContextFor(t *testing.T, identity auth.Identity) context.Context {
 	t.Helper()
 	envelope := &delegationpb.Delegation{
-		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: &identitypb.Identity{Name: executionIdentityName, Uid: executionIdentityUID}},
+		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: &identitypb.Identity{Name: identity.Name, Uid: identity.UID}},
 		Provenance:      &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: uuid.NewString(), ExecutionId: uuid.NewString()}},
 	}
 	encoded, err := auth.MarshalDelegation(envelope)
@@ -278,6 +338,261 @@ func TestOwnExecutionAccountCannotResumeIdleSuspendedSandbox(t *testing.T) {
 	if !got.Spec.Running || got.Spec.WakeGeneration != 4 {
 		t.Fatalf("denied same-name ServiceAccount changed Sandbox spec = %+v", got.Spec)
 	}
+}
+
+func TestIdentityGrantCanResumeForeignSandboxAndUsesIdentityBudget(t *testing.T) {
+	sandbox := suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 4)
+	sandbox.Spec.Identity = &sandboxapi.IdentityRef{Name: "target-agent"}
+	objects := testObjects(t, sandbox, executionUID)
+	callerIdentity := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: executionIdentityName, UID: types.UID(executionIdentityUID)}}
+	targetIdentity := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: "target-agent", UID: "target-agent-uid"}}
+	for _, identity := range []*policyapi.Identity{callerIdentity, targetIdentity} {
+		if err := objects.Create(t.Context(), identity); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rules := identityResumeRules(callerIdentity, []policyapi.EnvironmentSelector{{Sandbox: &policyapi.SandboxTarget{Name: testSandbox}}}, nil)
+	h := newIdentityHarness(t, objects, nil, rules, func() error { return nil })
+	response, err := environmentpb.NewEnvironmentServiceClient(h.conn).ResumeEnvironment(
+		delegatedContext(t), resumeRequest(testSandboxUID, 4),
+	)
+	if err != nil || response.GetOutcome() != environmentpb.ResumeOutcome_RESUME_OUTCOME_REQUESTED ||
+		response.GetEligibility().GetReason() != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_ALLOWED_IDENTITY_GRANT {
+		t.Fatalf("granted foreign resume = %+v, %v", response, err)
+	}
+	if len(h.budget.calls) != 1 || h.budget.calls[0].caller != (lifecycle.WakeBudgetKey{Namespace: testNamespace, Name: executionIdentityName, UID: executionIdentityUID}) {
+		t.Fatalf("resume budget caller = %+v, want effective Identity", h.budget.calls)
+	}
+}
+
+func TestIdentityResumeHidesForeignTargetWithoutGrant(t *testing.T) {
+	sandbox := suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 3)
+	sandbox.Spec.Identity = &sandboxapi.IdentityRef{Name: "another-agent"}
+	objects := testObjects(t, sandbox, executionUID)
+	callerIdentity := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: executionIdentityName, UID: types.UID(executionIdentityUID)}}
+	targetIdentity := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: "another-agent", UID: "another-agent-uid"}}
+	for _, identity := range []*policyapi.Identity{callerIdentity, targetIdentity} {
+		if err := objects.Create(t.Context(), identity); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h := newIdentityHarness(t, objects, nil, environmentaccess.NewIndex(), func() error { return nil })
+	_, err := environmentpb.NewEnvironmentServiceClient(h.conn).ResumeEnvironment(
+		delegatedContext(t), resumeRequest(testSandboxUID, 3),
+	)
+	if status.Code(err) != codes.NotFound {
+		t.Fatalf("ungranted foreign resume returned %v, want NotFound", err)
+	}
+}
+
+func TestIdentityGrantSubjectUIDAndExpiryAreChecked(t *testing.T) {
+	t.Run("stale indexed Identity UID", func(t *testing.T) {
+		sandbox := suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 2)
+		sandbox.Spec.Identity = &sandboxapi.IdentityRef{Name: executionIdentityName}
+		objects := testObjects(t, sandbox, executionUID)
+		current := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: executionIdentityName, UID: types.UID("current-identity-uid")}}
+		if err := objects.Create(t.Context(), current); err != nil {
+			t.Fatal(err)
+		}
+		indexed := current.DeepCopy()
+		indexed.UID = "old-identity-uid"
+		rules := identityResumeRules(indexed, []policyapi.EnvironmentSelector{{BoundIdentity: &policyapi.BoundIdentitySelector{Self: true}}}, nil)
+		h := newIdentityHarness(t, objects, nil, rules, func() error { return nil })
+		ctx := delegatedContextFor(t, auth.Identity{Name: executionIdentityName, UID: string(current.UID)})
+		_, err := environmentpb.NewEnvironmentServiceClient(h.conn).ResumeEnvironment(ctx, resumeRequest(testSandboxUID, 2))
+		if status.Code(err) != codes.PermissionDenied {
+			t.Fatalf("stale indexed Identity grant returned %v, want PermissionDenied", err)
+		}
+	})
+
+	t.Run("expired binding", func(t *testing.T) {
+		sandbox := suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 2)
+		objects := testIdentityObjects(t, sandbox, executionUID)
+		identity := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: executionIdentityName, UID: types.UID(executionIdentityUID)}}
+		expiresAt := metav1.NewTime(time.Now().Add(-time.Second))
+		rules := identityResumeRules(identity, []policyapi.EnvironmentSelector{{BoundIdentity: &policyapi.BoundIdentitySelector{Self: true}}}, &expiresAt)
+		h := newIdentityHarness(t, objects, nil, rules, func() error { return nil })
+		_, err := environmentpb.NewEnvironmentServiceClient(h.conn).ResumeEnvironment(
+			delegatedContext(t), resumeRequest(testSandboxUID, 2),
+		)
+		if status.Code(err) != codes.PermissionDenied {
+			t.Fatalf("expired grant returned %v, want PermissionDenied", err)
+		}
+	})
+}
+
+func TestIdentityGrantNeverOverridesRequestedStop(t *testing.T) {
+	sandbox := suspendedSandbox(&sandboxapi.ResumePolicy{}, false, sandboxapi.SuspendedByRequested, 6)
+	objects := testIdentityObjects(t, sandbox, executionUID)
+	identity := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: executionIdentityName, UID: types.UID(executionIdentityUID)}}
+	rules := identityResumeRules(identity, []policyapi.EnvironmentSelector{{BoundIdentity: &policyapi.BoundIdentitySelector{Self: true}}}, nil)
+	h := newIdentityHarness(t, objects, nil, rules, func() error { return nil })
+	_, err := environmentpb.NewEnvironmentServiceClient(h.conn).ResumeEnvironment(
+		delegatedContext(t), resumeRequest(testSandboxUID, 6),
+	)
+	if status.Code(err) != codes.PermissionDenied || len(h.budget.calls) != 0 {
+		t.Fatalf("requested-stop resume = %v, budget %+v; want PermissionDenied without reservation", err, h.budget.calls)
+	}
+	st, _ := status.FromError(err)
+	eligibility, ok := st.Details()[0].(*environmentlifecyclepb.ResumeEligibility)
+	if !ok || eligibility.GetReason() != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_OPERATOR_REQUESTED_STOP {
+		t.Fatalf("requested-stop denial details = %v", st.Details())
+	}
+}
+
+func TestIdentityResumeFailsClosedWithoutPolicyReadiness(t *testing.T) {
+	sandbox := suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 6)
+	objects := testIdentityObjects(t, sandbox, executionUID)
+	identity := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: executionIdentityName, UID: types.UID(executionIdentityUID)}}
+	rules := identityResumeRules(identity, []policyapi.EnvironmentSelector{{BoundIdentity: &policyapi.BoundIdentitySelector{Self: true}}}, nil)
+	h := newIdentityHarness(t, objects, nil, rules, nil)
+	_, err := environmentpb.NewEnvironmentServiceClient(h.conn).ResumeEnvironment(
+		delegatedContext(t), resumeRequest(testSandboxUID, 6),
+	)
+	if status.Code(err) != codes.Unavailable || len(h.budget.calls) != 0 {
+		t.Fatalf("resume without policy readiness = %v, budget %+v; want Unavailable without reservation", err, h.budget.calls)
+	}
+}
+
+func TestDelegatedActorDoesNotAuthorizeIdentityResume(t *testing.T) {
+	sandbox := suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 2)
+	objects := testIdentityObjects(t, sandbox, executionUID)
+	h := newIdentityHarness(t, objects, []auth.Account{actorAccount}, environmentaccess.NewIndex(), func() error { return nil })
+	_, err := environmentpb.NewEnvironmentServiceClient(h.conn).ResumeEnvironment(
+		delegatedContext(t), resumeRequest(testSandboxUID, 2),
+	)
+	if status.Code(err) != codes.PermissionDenied || len(h.budget.calls) != 0 {
+		t.Fatalf("delegated actor authorization = %v, budget %+v; want effective Identity denial", err, h.budget.calls)
+	}
+}
+
+func TestIdentityResumeRechecksPolicyAndTargetIdentityAfterConflict(t *testing.T) {
+	t.Run("grant revocation", func(t *testing.T) {
+		sandbox := suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 5)
+		objects := testIdentityObjects(t, sandbox, executionUID)
+		identity := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: executionIdentityName, UID: types.UID(executionIdentityUID)}}
+		rules := identityResumeRules(identity, []policyapi.EnvironmentSelector{{BoundIdentity: &policyapi.BoundIdentitySelector{Self: true}}}, nil)
+		patches := 0
+		object := testPatchClient{WithWatch: objects, patch: func(_ context.Context, object client.Object, _ client.Patch, _ ...client.PatchOption) error {
+			patches++
+			rules.DeleteBinding("resume-grant")
+			return apierrors.NewConflict(schema.GroupResource{Resource: "sandboxes"}, object.GetName(), errors.New("policy changed during resume"))
+		}}
+		h := newIdentityHarness(t, object, nil, rules, func() error { return nil })
+		_, err := environmentpb.NewEnvironmentServiceClient(h.conn).ResumeEnvironment(
+			delegatedContext(t), resumeRequest(testSandboxUID, 5),
+		)
+		if status.Code(err) != codes.PermissionDenied || patches != 1 {
+			t.Fatalf("revoked resume = %v after %d patches, want one attempt and denial", err, patches)
+		}
+	})
+
+	t.Run("bound target Identity is deleted", func(t *testing.T) {
+		sandbox := suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 5)
+		sandbox.Spec.Identity = &sandboxapi.IdentityRef{Name: "target-agent"}
+		objects := testObjects(t, sandbox, executionUID)
+		callerIdentity := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: executionIdentityName, UID: types.UID(executionIdentityUID)}}
+		targetIdentity := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: "target-agent", UID: "target-agent-uid"}}
+		for _, identity := range []*policyapi.Identity{callerIdentity, targetIdentity} {
+			if err := objects.Create(t.Context(), identity); err != nil {
+				t.Fatal(err)
+			}
+		}
+		rules := identityResumeRules(callerIdentity, []policyapi.EnvironmentSelector{{BoundIdentity: &policyapi.BoundIdentitySelector{Name: "target-agent"}}}, nil)
+		patches := 0
+		object := testPatchClient{WithWatch: objects, patch: func(ctx context.Context, object client.Object, _ client.Patch, _ ...client.PatchOption) error {
+			patches++
+			if err := objects.Delete(ctx, targetIdentity); err != nil {
+				t.Fatal(err)
+			}
+			return apierrors.NewConflict(schema.GroupResource{Resource: "sandboxes"}, object.GetName(), errors.New("target Identity changed during resume"))
+		}}
+		h := newIdentityHarness(t, object, nil, rules, func() error { return nil })
+		_, err := environmentpb.NewEnvironmentServiceClient(h.conn).ResumeEnvironment(
+			delegatedContext(t), resumeRequest(testSandboxUID, 5),
+		)
+		if status.Code(err) != codes.NotFound || patches != 1 {
+			t.Fatalf("stale target Identity resume = %v after %d patches, want NotFound after one attempt", err, patches)
+		}
+	})
+
+	t.Run("bound target is rebound", func(t *testing.T) {
+		sandbox := suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 5)
+		sandbox.Spec.Identity = &sandboxapi.IdentityRef{Name: "target-agent"}
+		objects := testObjects(t, sandbox, executionUID)
+		callerIdentity := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: executionIdentityName, UID: types.UID(executionIdentityUID)}}
+		targetIdentity := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: "target-agent", UID: "target-agent-uid"}}
+		replacement := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: "replacement-agent", UID: "replacement-agent-uid"}}
+		for _, identity := range []*policyapi.Identity{callerIdentity, targetIdentity, replacement} {
+			if err := objects.Create(t.Context(), identity); err != nil {
+				t.Fatal(err)
+			}
+		}
+		rules := identityResumeRules(callerIdentity, []policyapi.EnvironmentSelector{{BoundIdentity: &policyapi.BoundIdentitySelector{Name: "target-agent"}}}, nil)
+		patches := 0
+		object := testPatchClient{WithWatch: objects, patch: func(ctx context.Context, object client.Object, _ client.Patch, _ ...client.PatchOption) error {
+			patches++
+			var current sandboxapi.Sandbox
+			if err := objects.Get(ctx, types.NamespacedName{Namespace: testNamespace, Name: testSandbox}, &current); err != nil {
+				t.Fatal(err)
+			}
+			current.Spec.Identity = &sandboxapi.IdentityRef{Name: replacement.Name}
+			if err := objects.Update(ctx, &current); err != nil {
+				t.Fatal(err)
+			}
+			return apierrors.NewConflict(schema.GroupResource{Resource: "sandboxes"}, object.GetName(), errors.New("target rebound during resume"))
+		}}
+		h := newIdentityHarness(t, object, nil, rules, func() error { return nil })
+		_, err := environmentpb.NewEnvironmentServiceClient(h.conn).ResumeEnvironment(
+			delegatedContext(t), resumeRequest(testSandboxUID, 5),
+		)
+		if status.Code(err) != codes.NotFound || patches != 1 {
+			t.Fatalf("rebound target resume = %v after %d patches, want NotFound after one attempt", err, patches)
+		}
+	})
+
+	t.Run("caller Identity is deleted", func(t *testing.T) {
+		sandbox := suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 5)
+		objects := testIdentityObjects(t, sandbox, executionUID)
+		identity := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: executionIdentityName, UID: types.UID(executionIdentityUID)}}
+		rules := identityResumeRules(identity, []policyapi.EnvironmentSelector{{BoundIdentity: &policyapi.BoundIdentitySelector{Self: true}}}, nil)
+		patches := 0
+		object := testPatchClient{WithWatch: objects, patch: func(ctx context.Context, object client.Object, _ client.Patch, _ ...client.PatchOption) error {
+			patches++
+			if err := objects.Delete(ctx, identity); err != nil {
+				t.Fatal(err)
+			}
+			return apierrors.NewConflict(schema.GroupResource{Resource: "sandboxes"}, object.GetName(), errors.New("caller Identity changed during resume"))
+		}}
+		h := newIdentityHarness(t, object, nil, rules, func() error { return nil })
+		_, err := environmentpb.NewEnvironmentServiceClient(h.conn).ResumeEnvironment(
+			delegatedContext(t), resumeRequest(testSandboxUID, 5),
+		)
+		if status.Code(err) != codes.NotFound || patches != 1 {
+			t.Fatalf("deleted caller Identity resume = %v after %d patches, want NotFound after one attempt", err, patches)
+		}
+	})
+
+	t.Run("policy readiness changes", func(t *testing.T) {
+		sandbox := suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 5)
+		objects := testIdentityObjects(t, sandbox, executionUID)
+		identity := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: executionIdentityName, UID: types.UID(executionIdentityUID)}}
+		rules := identityResumeRules(identity, []policyapi.EnvironmentSelector{{BoundIdentity: &policyapi.BoundIdentitySelector{Self: true}}}, nil)
+		var policyErr error
+		patches := 0
+		object := testPatchClient{WithWatch: objects, patch: func(_ context.Context, object client.Object, _ client.Patch, _ ...client.PatchOption) error {
+			patches++
+			policyErr = errors.New("policy reader became unavailable")
+			return apierrors.NewConflict(schema.GroupResource{Resource: "sandboxes"}, object.GetName(), errors.New("Sandbox changed during resume"))
+		}}
+		h := newIdentityHarness(t, object, nil, rules, func() error { return policyErr })
+		_, err := environmentpb.NewEnvironmentServiceClient(h.conn).ResumeEnvironment(
+			delegatedContext(t), resumeRequest(testSandboxUID, 5),
+		)
+		if status.Code(err) != codes.Unavailable || patches != 1 {
+			t.Fatalf("unready policy retry = %v after %d patches, want Unavailable after one attempt", err, patches)
+		}
+	})
 }
 
 func TestDelegatedActorDoesNotInheritOperatorAuthority(t *testing.T) {

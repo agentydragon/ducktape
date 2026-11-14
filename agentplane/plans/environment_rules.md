@@ -1,6 +1,6 @@
 # The `environment` rule type
 
-Status: **operator-selected design; implementation remains open.** The Identity cutover, #15742
+Status: **both slices operator-released (2026-11-14 04:58 UTC); implementation in progress, resume first and native bind_session second.** The Identity cutover, #15742
 and #15744, is merged with live acceptance recorded in
 [`sandbox_identity_cutover_2026_11_12`](../docs/sandbox_identity_cutover_2026_11_12/README.md).
 The cutover implements Identity self-read for the four Environment inventory RPCs, but not an
@@ -182,10 +182,12 @@ Rules for the operations:
 Current state: `Rule.Type` has no `environment`; `operations` and `targets` are used by
 `session_inbox_access`. The reusable `policy/reader.Index[R]` and `WatchRules` can supply a shared
 Identity name+UID index and watch readiness, but there is no environment parser, index or
-`EnvironmentReady` condition yet. EnvironmentService, the lifecycle manager and Dispatcher share
-the Runner Gateway process, so the planned implementation uses one index and passes it to each.
+`EnvironmentReady` condition yet. The environment evaluator is a library, with each consumer
+constructing its own index and watches. The operator-selected binary split (2026-11-14, #16343) places
+explicit resume admission in Environments and native placement admission in Sessions; sharing today's
+Runner Gateway process does not require sharing their reader instances.
 
-All proposed grant points read that shared index: `policy/reader`'s `Index[R]` with an environment
+All proposed grant points reuse the typed reader: `policy/reader`'s `Index[R]` with an environment
 parser beside the evaluator (as `inboxaccess.ParseRule`), `Grants(reader.Identity{Name, UID})` for
 the subject, and an `EnvironmentReady` binding condition through `WatchRules`.
 
@@ -195,11 +197,11 @@ contract is unavailable. Sandbox UID/RV fencing does not atomically serialize a 
 Identity change with a Sandbox patch; document the accepted observation bound and error behavior,
 without global locking or a promise of instantaneous revocation.
 
-| Evaluator                                                 | Caller it evaluates                                                                                                                     | Reads                                                                                                      |
-| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| EnvironmentService (`runner_gateway/environments/`)       | direct Identity or delegated Identity effective caller for existing reads; Identity admission is a planned addition for explicit resume | current self-read checks Sandbox name/UID/spec binding and live Identity; planned resume adds shared index |
-| Dispatcher `CreateSession`                                | existing Identity admission is followed by an explicit Identity rejection; grant is planned for new environment placement               | planned shared index plus exact selected Sandbox and its current bound Identity                            |
-| Action Service (`session_delegation`, `orchestration_v1`) | nothing itself: it forwards the request's caller as the effective caller and the backend evaluates                                      | `action_auto_approve` only, for the Action request itself                                                  |
+| Evaluator                                                 | Caller it evaluates                                                                                                                     | Reads                                                                                                               |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| EnvironmentService (`runner_gateway/environments/`)       | direct Identity or delegated Identity effective caller for existing reads; Identity admission is a planned addition for explicit resume | current self-read checks Sandbox name/UID/spec binding and live Identity; planned resume adds its environment index |
+| Dispatcher `CreateSession`                                | existing Identity admission is followed by an explicit Identity rejection; grant is planned for new environment placement               | its environment index plus exact selected Sandbox and its current bound Identity                                    |
+| Action Service (`session_delegation`, `orchestration_v1`) | nothing itself: it forwards the request's caller as the effective caller and the backend evaluates                                      | `action_auto_approve` only, for the Action request itself                                                           |
 
 Platform components stay authorized by role
 ([delegated authorization](../docs/delegated_authorization.md)): the app and system-test driver as
@@ -222,7 +224,7 @@ confirm existence), else `PermissionDenied`.
    resume precondition only while currently authorized. Do not restore
    `ALLOWED_OWN_SERVICE_ACCOUNT`.
 2. Add `bind_session` to the accepted operation vocabulary with its selector constraints and native
-   Dispatcher consumer in the same dependent PR. Reuse the same index. Permit only a new
+   Dispatcher consumer in the same dependent PR. Reuse the evaluator library with an independent index. Permit only a new
    environment-hosted Identity creation with a matching grant; preserve ServiceAccount privileges,
    receipt/idempotency and identity-change admission behavior. Do not add AttachEnvironment. P2
    depends on P1; if P1 is still open, stack it using native GitHub Stacks.

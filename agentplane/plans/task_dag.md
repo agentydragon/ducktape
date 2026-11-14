@@ -3331,25 +3331,24 @@ explicit waiver.
 
 ### `ENVIRONMENT_RULE_TYPE_DESIGN` — explicit environment lifecycle rules
 
-**Design note merged; operator review and concrete scope selection remain.** The reviewed
-[`environment` rule note](environment_rules.md) records the current serving boundary and proposes
-two ordered slices: explicit `resume`, then native `CreateSession` `bind_session`. Identity inventory
-self-reads already work; direct explicit resume is still ServiceAccount/operator-only, and automatic
-Identity wake remains under the existing target `resumePolicy`, outside this rule. The operator must
-review the note and select the concrete implementation boundaries before either source slice starts.
-No grant or schema change is part of this docs cleanup.
+**Selected by the operator, 2026-11-14 04:58 UTC:** “Okay this sounds good to me (these environment rules)”.
+The [`environment` rule design](environment_rules.md) is released as two ordered source slices:
+explicit `resume`, then native `CreateSession` `bind_session`. Grants are explicit, add no implied
+capability, and include no parent-over-child grant. `ORCHESTRATION_V1_BACKEND_GRANTS` (a launch
+writing a grant) and retiring `orchestration_v1` are not released. The Action Service launcher
+admission policy remains unchanged.
 
 ### `ENVIRONMENT_LIFECYCLE_RULES` — explicit Identity lifecycle authority
 
 The reviewed design maps to two implementation slices, in order: explicit `resume`, then native
 `bind_session`. Identity inventory self-reads already work; automatic Identity wake remains under
-the existing target `resumePolicy`, and Identity `CreateSession` remains denied under the separate
-`SESSION_SUBAGENT_DELEGATION` design. This umbrella node preserves the design link; the two source
+the existing target `resumePolicy`, and Identity native `CreateSession` is the second explicit-grant slice.
+No parent-over-child authority is implied. This umbrella node preserves the design link; the two source
 outcomes are tracked below.
 
 ### `ENVIRONMENT_IDENTITY_RESUME` — grant explicit Identity resume
 
-**First implementation slice; blocked on `ENVIRONMENT_RULE_TYPE_DESIGN` review and scope selection.** Add the reviewed
+**In progress (coding agent, 2026-11-14); first implementation slice, operator-released.** Add the reviewed
 explicit `resume` operation for an Identity on its selected Sandbox target. Keep current inventory
 self-reads, automatic target-policy wake, direct configured Pod-bound operator resume, and
 Identity `CreateSession` behavior unchanged. **Exit:** a matching grant admits only explicit resume
@@ -3358,7 +3357,7 @@ automatic wake retain their serving behavior.
 
 ### `ENVIRONMENT_IDENTITY_BIND_SESSION` — grant native `bind_session`
 
-**Second implementation slice; follows `ENVIRONMENT_IDENTITY_RESUME`.** Add the reviewed
+**In progress (coding agent, 2026-11-14); second implementation slice, follows `ENVIRONMENT_IDENTITY_RESUME`.** Add the reviewed
 `bind_session` operation as the target grant for native `CreateSession` on an exact Environment,
 including environment-hosted child use. This grants the Session–Environment relation; it does not
 authorize environment-free Session creation or other Session management. Keep the Sandbox's exact
@@ -3679,11 +3678,6 @@ a specific stopping condition.
   network-policy identities. The remaining check is the staging proxy decision log naming the
   `haku-ci` relay's Identity for the expected egress decision; this does not imply that rollout is
   blocked today.
-- **`ENVIRONMENT_RULE_TYPE_DESIGN` / `ENVIRONMENT_LIFECYCLE_RULES`:** review the existing
-  [`environment` rule design](environment_rules.md) and select concrete implementation scopes.
-  `ENVIRONMENT_IDENTITY_RESUME` is first; native `CreateSession` `bind_session` follows. Inventory
-  self-reads already admit the exact Identity, explicit resume remains ServiceAccount/operator-only,
-  and automatic Identity wake remains on the existing target `resumePolicy`.
 - **The Action Service's rollout that stops writing `action_execution.heartbeat_at`** (2026-11-10;
   nothing reads it): drop the column in a new Action Service migration once no older replica runs, so
   none writes it mid-roll.

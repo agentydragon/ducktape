@@ -298,8 +298,9 @@ object UID remain authoritative; network reachability grants no Session authorit
 continues to use the configured Dispatcher audience and a pod-bound Actions token on the opted-in
 `EnvironmentService` list/get methods and its separately configured
 `EnvironmentService.ResumeEnvironment` method. The receiver applies the caller identity from the
-shared delegation envelope, then checks the current Sandbox and
-execution-ServiceAccount identity and resume policy. The integration app uses its own Pod-bound
+shared delegation envelope, then checks the current Sandbox and explicit Identity resume grant.
+The lifecycle consumer watches PolicySets, PolicyBindings and Identities through its typed policy index;
+a failed policy watch refuses explicit Identity resume while implied self-reads remain available. The integration app uses its own Pod-bound
 token as a distinct operator broker; it does not forward browser identity. Resume acceptance is not
 readiness, and no resume path replays Session input or creates a grant.
 Dispatcher automatic wake uses the same lifecycle manager with the original effective caller
@@ -390,6 +391,8 @@ flowchart LR
     end
     history[History ingress]
     gateway -->|mTLS Runner / Executor; bound-UID zero-epoch calls and WatchState; legacy nonzero epochs| runtime
+    policy_api[Kubernetes PolicySets / PolicyBindings / Identities]
+    gateway -->|list/watch grants; patch EnvironmentReady| policy_api
     sandboxctl[Sandbox Controller] -->|passive WatchState binds workload UID and observes facts: mTLS gRPC| runtime
     delivery -.->|durable journal push and ACK| history
 ```

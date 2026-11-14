@@ -158,7 +158,7 @@ async def operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_c
     sandbox: Sandboxes,
     scripted: ScriptedUpstream,
 ) -> None:
-    """Its Identity has no explicit-resume authority; an operator resumes it without replaying work."""
+    """An explicit grant controls Identity resume; an operator later resumes without replaying work."""
     view = await sandbox(
         f"systest-explicit-resume-{uuid4().hex[:8]}", template=POD_TEMPLATE, idle_suspend_after_seconds=60
     )
@@ -201,7 +201,59 @@ async def operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_c
     start = denied_output.find("{")
     assert start >= 0, denied_turn.transcript
     denied, _ = json.JSONDecoder().raw_decode(denied_output[start:])
-    assert denied["error"]["code"] == "UNAUTHENTICATED", denied_turn.transcript
+    assert denied["error"]["code"] == "PERMISSION_DENIED", denied_turn.transcript
+    grant_name = f"{target.name}-resume"
+    # This fixture writes an explicit grant; a launch still grants no lifecycle capability.
+    await cluster.kubectl(
+        "create",
+        "-f",
+        "-",
+        body={
+            "apiVersion": "v1",
+            "kind": "List",
+            "items": [
+                {
+                    "apiVersion": "agentplane.allegedly.works/v1alpha1",
+                    "kind": "PolicySet",
+                    "metadata": {"name": grant_name, "namespace": cluster.namespace},
+                    "spec": {
+                        "rules": [
+                            {
+                                "type": "environment",
+                                "operations": ["resume"],
+                                "environments": [
+                                    {
+                                        "sandbox": {"name": target.name, "uid": target.uid},
+                                        "boundIdentity": {"self": True},
+                                    }
+                                ],
+                            }
+                        ]
+                    },
+                },
+                {
+                    "apiVersion": "agentplane.allegedly.works/v1alpha1",
+                    "kind": "PolicyBinding",
+                    "metadata": {"name": grant_name, "namespace": cluster.namespace},
+                    "spec": {"subject": {"identity": {"name": view.identity_name}}, "policySets": [grant_name]},
+                },
+            ],
+        },
+    )
+    try:
+        await cluster.kubectl(
+            "wait", f"policybinding/{grant_name}", "--for=condition=EnvironmentReady=True", "--timeout=60s"
+        )
+        granted_turn = await agent.run_shell(model, resume_command)
+        granted_output = "\n".join(granted_turn.tool_outputs)
+        granted_start = granted_output.find("{")
+        assert granted_start >= 0, granted_turn.transcript
+        granted, _ = json.JSONDecoder().raw_decode(granted_output[granted_start:])
+        assert granted["outcome"] == "RESUME_OUTCOME_ALREADY_RUNNING", granted_turn.transcript
+        assert granted["eligibility"]["reason"] == "RESUME_ELIGIBILITY_REASON_ALLOWED_IDENTITY_GRANT", granted
+    finally:
+        await cluster.kubectl("delete", "policybinding", grant_name, "--ignore-not-found")
+        await cluster.kubectl("delete", "policyset", grant_name, "--ignore-not-found")
     failed_prompt = "Reply with exactly MODEL_HTTP_ERROR."
     failed_task = asyncio.create_task(agent.run(failed_prompt))
     for _ in range(3):
@@ -216,7 +268,7 @@ async def operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_c
     else:
         raise AssertionError("the scripted upstream errors did not fail the original command")
 
-    failed_history = await _history(client, agent.thread_id, completed_turns=2)
+    failed_history = await _history(client, agent.thread_id, completed_turns=3)
     failed_entry = [entry for entry in failed_history if entry.event.HasField("command_admitted")][-1]
     failed_command_id = failed_entry.event.command_admitted.command.command_id
     (failed_turn_entry,) = [
@@ -245,16 +297,18 @@ async def operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_c
     assert fresh_turn.resumed
     assert any("EXPLICIT_RESUME_EXEC_OK" in output for output in fresh_turn.tool_outputs), fresh_turn.transcript
 
-    resumed_history = await _history(client, agent.thread_id, completed_turns=3)
+    resumed_history = await _history(client, agent.thread_id, completed_turns=4)
     _assert_prefix(failed_history, resumed_history)
     admitted = [
         entry.event.command_admitted.command.command_id
         for entry in resumed_history
         if entry.event.HasField("command_admitted")
     ]
-    assert len(admitted) == 3, f"expected the denied lifecycle probe, failed command and fresh command, got {admitted}"
-    assert admitted[1] == failed_command_id
-    fresh_turn_command_id = admitted[2]
+    assert len(admitted) == 4, (
+        f"expected denied and granted lifecycle probes, failed command and fresh command, got {admitted}"
+    )
+    assert admitted[2] == failed_command_id
+    fresh_turn_command_id = admitted[3]
     assert fresh_turn_command_id != failed_command_id
     (retained_failed_turn,) = [
         entry
@@ -269,6 +323,7 @@ async def operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_c
                 "sandbox": MessageToDict(target, preserving_proto_field_name=True),
                 "identity_name": view.identity_name,
                 "identity_resume_denial": denied["error"],
+                "explicit_identity_grant": granted,
                 "old_pod_uid": old_pod.uid,
                 "new_pod_uid": resumed.kubernetes_diagnostics.pod.uid,
                 "resumed_by": "operator",

@@ -100,7 +100,7 @@ func Methods(resolver *auth.Resolver) auth.Methods {
 		environmentpb.EnvironmentService_GetEnvironment_FullMethodName:               identityRead,
 		environmentpb.EnvironmentService_GetEnvironmentIdentityRecord_FullMethodName: rule,
 		environmentpb.EnvironmentService_WatchEnvironment_FullMethodName:             identityRead,
-		environmentpb.EnvironmentService_ResumeEnvironment_FullMethodName:            rule,
+		environmentpb.EnvironmentService_ResumeEnvironment_FullMethodName:            identityRead,
 		environmentpb.EnvironmentService_SuspendEnvironment_FullMethodName:           rule,
 		environmentpb.EnvironmentService_DeleteEnvironment_FullMethodName:            rule,
 		environmentpb.EnvironmentService_SetEnvironmentWakeOnSend_FullMethodName:     rule,
@@ -505,13 +505,22 @@ func (s *Service) describe(
 	target := &lifecycle.Target{Namespace: object.Namespace, Name: object.Name, Uid: string(object.UID)}
 	var eligibility *environmentlifecyclepb.ResumeEligibility
 	generation := object.Spec.WakeGeneration
-	if !caller.isIdentity() && !deleting(object) {
+	if !deleting(object) {
 		var err error
 		eligibility, generation, err = s.lifecycle.Eligibility(ctx, target)
-		if err != nil {
+		if caller.isIdentity() {
+			// Self-read is implied even when policy watches cannot currently authorize a mutation.
+			if err != nil && status.Code(err) != codes.Unavailable {
+				return nil, err
+			}
+			if err != nil || eligibility.GetState() != environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_AVAILABLE {
+				eligibility = nil
+				generation = 0
+			}
+		} else if err != nil {
 			return nil, err
 		}
-		if object.Status.OperatingMode == api.OperatingModeSuspended {
+		if !caller.isIdentity() && object.Status.OperatingMode == api.OperatingModeSuspended {
 			wake, err := s.lifecycle.AssessAutomaticWake(ctx, target, lifecycle.AccountWakeCaller{Account: caller.serviceAccount})
 			if err != nil {
 				return nil, status.Error(codes.Unavailable, "automatic wake eligibility is unavailable")
@@ -524,7 +533,9 @@ func (s *Service) describe(
 	if caller.isIdentity() {
 		automaticWake = environmentpb.AutomaticWakeState_AUTOMATIC_WAKE_STATE_NOT_AVAILABLE
 		descriptor.ExecutionAccount = nil
-		generation = 0
+		if eligibility == nil {
+			generation = 0
+		}
 	} else {
 		descriptor.ExecutionAccount = execution
 	}
