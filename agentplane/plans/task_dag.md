@@ -2452,10 +2452,11 @@ the same `UNAVAILABLE` symptom by pausing after the first ready Lease update, th
 publication-before-local-installation window by installing the fenced connection first. This proves
 that ordering could cause the symptom, but does not prove it caused the original same-name-replacement
 failure. Readiness remains a recent observation and cannot guarantee a later call after connection
-loss. The Gateway error now reports local connection availability unless Lease ownership is known.
+loss. The Gateway error now reports local connection availability; connection-Lease ownership no longer
+participates in Runtime routing.
 
 If the system-test failure recurs, capture the Sandbox UID, runner incarnation and boot ID, Gateway
-replica, Lease epoch and holder, EndpointSlice route, and local connection state at the failed poll.
+replica, selected Service endpoint, and local observer/connection state at the failed poll.
 PR #14851 adds a bounded retry for transient `UNAVAILABLE` in the test's read-only `ListSessions`
 poll. This handles the test poll only; it does not establish that the publication race caused the
 original same-name-replacement failure or prove the underlying failure is fixed. Do not retry
