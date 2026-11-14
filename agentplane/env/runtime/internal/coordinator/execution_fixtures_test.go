@@ -5,13 +5,13 @@ import (
 	"sync"
 	"testing"
 
-	execution "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/adapter"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/adapter"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 )
 
 type localExecutionHandle struct {
-	adapter  *execution.Adapter
+	adapter  *adapter.Adapter
 	mu       sync.Mutex
 	exited   chan childExit
 	expected bool
@@ -67,13 +67,13 @@ func executionRuntimeConfig(t *testing.T, url string, acquire func(context.Conte
 		acquire = func(context.Context) (string, error) { return url, nil }
 	}
 	config.deps.startExecution = func(_ context.Context, config Config, _ string) (executionHandle, error) {
-		adapter, err := execution.New(execution.Config{Context: context.Background(), Admit: func(ctx context.Context, _ *executorpb.ExecutionScope, _ bool, accept func(context.Context) error) error {
+		localAdapter, err := adapter.New(adapter.Config{Context: context.Background(), Admit: func(ctx context.Context, _ *executorpb.ExecutionScope, _ bool, accept func(context.Context) error) error {
 			return accept(ctx)
 		}, Acquire: acquire})
 		if err != nil {
 			return nil, err
 		}
-		return &localExecutionHandle{adapter: adapter}, nil
+		return &localExecutionHandle{adapter: localAdapter}, nil
 	}
 	return config
 }

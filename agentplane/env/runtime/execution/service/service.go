@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	execution "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/adapter"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/adapter"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
@@ -134,14 +134,14 @@ func runWithReady(ctx context.Context, config Config, start codexexecserver.Star
 			cancel()
 		}
 	}()
-	adapter, err := execution.New(execution.Config{
+	executionAdapter, err := adapter.New(adapter.Config{
 		Context: lifetime, Admit: config.admit,
 		Acquire: func(context.Context) (string, error) { return config.ExecutorURL, nil },
 	})
 	if err != nil {
 		return err
 	}
-	defer adapter.Close()
+	defer executionAdapter.Close()
 	// A lost backend must not be published as ready. Its stop still has to
 	// prove the process-domain fence before this service returns.
 	if lifetime.Err() != nil {
@@ -158,7 +158,7 @@ func runWithReady(ctx context.Context, config Config, start codexexecserver.Star
 			}
 		}
 	} else {
-		ready(adapter, lifetime)
+		ready(executionAdapter, lifetime)
 	}
 	if err == nil {
 		<-lifetime.Done()

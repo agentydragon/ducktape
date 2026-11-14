@@ -1,5 +1,5 @@
 // Package execution translates typed Executor RPCs to the local Codex exec-server protocol.
-package execution
+package adapter
 
 import (
 	"context"
