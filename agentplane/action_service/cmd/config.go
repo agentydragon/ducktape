@@ -240,13 +240,11 @@ func (c *config) validateSessionDelegation() error {
 		case !delegated && p != nil:
 			return fmt.Errorf("%s is set, but no session_delegation group calls it", called.key)
 		case p != nil:
-			if p.Target == "" || p.TokenFile == "" || !(p.RequestTimeoutSeconds > 0) || math.IsInf(p.RequestTimeoutSeconds, 0) {
-				return fmt.Errorf("%s requires target, token_file and a finite positive request_timeout_s", called.key)
+			if p.Target == "" || !(p.RequestTimeoutSeconds > 0) || math.IsInf(p.RequestTimeoutSeconds, 0) {
+				return fmt.Errorf("%s requires target and a finite positive request_timeout_s", called.key)
 			}
-			if p.TLS != nil {
-				if err := p.TLS.Validate(); err != nil {
-					return fmt.Errorf("%s tls: %w", called.key, err)
-				}
+			if err := p.TLS.ValidateCaller(p.TokenFile, peertls.ActionsURI); err != nil {
+				return fmt.Errorf("%s authentication: %w", called.key, err)
 			}
 		}
 	}
@@ -275,13 +273,11 @@ func (c *config) validateOrchestration() error {
 		case !orchestration && p != nil:
 			return fmt.Errorf("%s is set, but no orchestration_v1 group calls it", called.key)
 		case p != nil:
-			if p.Target == "" || p.TokenFile == "" || !(p.RequestTimeoutSeconds > 0) || math.IsInf(p.RequestTimeoutSeconds, 0) {
-				return fmt.Errorf("%s requires target, token_file and a finite positive request_timeout_s", called.key)
+			if p.Target == "" || !(p.RequestTimeoutSeconds > 0) || math.IsInf(p.RequestTimeoutSeconds, 0) {
+				return fmt.Errorf("%s requires target and a finite positive request_timeout_s", called.key)
 			}
-			if p.TLS != nil {
-				if err := p.TLS.Validate(); err != nil {
-					return fmt.Errorf("%s tls: %w", called.key, err)
-				}
+			if err := p.TLS.ValidateCaller(p.TokenFile, peertls.ActionsURI); err != nil {
+				return fmt.Errorf("%s authentication: %w", called.key, err)
 			}
 		}
 	}

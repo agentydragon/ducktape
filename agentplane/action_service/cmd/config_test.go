@@ -454,3 +454,44 @@ func TestMCPClientIDCanComeFromItsProjectedSecretFile(t *testing.T) {
 		}
 	}
 }
+
+func TestActionsPeersAcceptOwnSVIDInsteadOfToken(t *testing.T) {
+	const group = `action_groups:
+  environments:
+    title: Environments
+    description: same-principal environments
+    executor: {kind: session_delegation, description: forwards the caller}
+`
+	const peer = `
+  target: peer:8443
+  request_timeout_s: 10
+  tls:
+    ca_file: /trust/ca.pem
+    server_uri: spiffe://agentplane/session-dispatcher
+    cert_file: /svid/tls.crt
+    key_file: /svid/tls.key
+    client_uri: spiffe://agentplane/actions
+`
+	source := requiredFile + group + "session_delegation_dispatcher:" + peer + "session_delegation_history:" + peer
+	if _, err := loadTestConfig(t, source); err != nil {
+		t.Fatal(err)
+	}
+	for name, invalid := range map[string]string{
+		"mixed":      strings.Replace(source, "  target: peer:8443", "  token_file: /token\n  target: peer:8443", 1),
+		"wrong role": strings.Replace(source, "client_uri: spiffe://agentplane/actions", "client_uri: spiffe://agentplane/app", 1),
+		"partial":    strings.Replace(source, "    key_file: /svid/tls.key\n", "", 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := loadTestConfig(t, invalid); err == nil {
+				t.Fatal("accepted invalid caller authentication")
+			}
+		})
+	}
+	// Orchestration peers share the same validation and service role.
+	source = strings.ReplaceAll(source, "session_delegation_dispatcher:", "session_dispatcher:")
+	source = strings.ReplaceAll(source, "session_delegation_history:", "history_service:")
+	source = strings.Replace(source, "kind: session_delegation, description: forwards the caller", "kind: orchestration_v1, description: test executor, namespace: test-agentplane", 1)
+	if _, err := loadTestConfig(t, source); err != nil {
+		t.Fatal(err)
+	}
+}

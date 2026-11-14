@@ -4,7 +4,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from agentplane.action_service.settings import Settings
+from agentplane.action_service.settings import ServicePeer, Settings
 
 
 def _settings_source() -> dict[str, object]:
@@ -50,6 +50,30 @@ def test_static_settings_do_not_accept_runtime_credentials() -> None:
                 }
             }
         )
+
+
+@pytest.mark.parametrize(
+    "server_uri", ["spiffe://agentplane/session-dispatcher", "spiffe://agentplane/history-ingress"]
+)
+def test_service_peer_accepts_only_the_actions_svid(server_uri: str) -> None:
+    tls = {
+        "ca_file": "/trust/ca.pem",
+        "server_uri": server_uri,
+        "cert_file": "/svid/tls.crt",
+        "key_file": "/svid/tls.key",
+        "client_uri": "spiffe://agentplane/actions",
+    }
+    source = {"target": "peer:8443", "request_timeout_s": 10, "tls": tls}
+    peer = ServicePeer.model_validate(source)
+    assert peer.token_file == ""
+    assert peer.tls is not None
+    assert peer.tls.uses_svid
+    with pytest.raises(ValidationError, match="cannot be combined"):
+        ServicePeer.model_validate(source | {"token_file": "/token"})
+    with pytest.raises(ValidationError, match="client_uri must be"):
+        ServicePeer.model_validate(source | {"tls": tls | {"client_uri": "spiffe://agentplane/app"}})
+    with pytest.raises(ValidationError, match="service SVID requires"):
+        ServicePeer.model_validate(source | {"tls": tls | {"key_file": None}})
 
 
 if __name__ == "__main__":
