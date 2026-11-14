@@ -84,6 +84,7 @@ def test_app_uses_dispatcher_grpc_target(staging_manifests: list[dict[str, Any]]
         doc for doc in staging_manifests if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "app-config"
     )
     app_config = yaml.safe_load(app_config_map["data"]["config.yaml"])
+    assert "token_subjects" not in app_config
     assert app_config["session_dispatcher_target"] == endpoint
     assert app_container.get("args", []) == []
 

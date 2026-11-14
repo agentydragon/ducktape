@@ -209,7 +209,6 @@ def settings(
         notifications_url=AnyHttpUrl(notifications.service(namespace).url),
         listen_address="0.0.0.0:8080",
         electric_url=electric_url,
-        token_subjects=frozenset({f"system:serviceaccount:{namespace}:agentplane-agent"}),
         oidc=OIDCSettings(issuer=oidc_issuer, public_base_url=app_origin),
     )
     if frontend_config is not None:
