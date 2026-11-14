@@ -10035,6 +10035,10 @@
         {
           "at_utc": "2026-11-14T05:29",
           "text": "Operator, 2026-11-14 05:29 UTC, card \"Adopt the two-binary shape as the agreed reorg direction?\": \"Adopt it\"."
+        },
+        {
+          "at_utc": "2026-11-14T05:49",
+          "text": "Operator, 2026-11-14 05:49 UTC, card \"Choose directory names for the Sessions and Environments binaries\": \"session_dispatcher + environments\"."
         }
       ],
       "verified": [
@@ -10046,7 +10050,11 @@
         "The Sandbox Controller keeps idle timers in memory from its first sighting of the Runtime's `idle-since` and quiesces with `ifIdleSince`; the Runtime aborts if anything arrived since.",
         "Runtime blockers: per Session active turn, pending input and setup; Runtime-wide Admission, ExecutorRelay (open Executor call or session) and Bootstrap.",
         "The Dispatcher README states a central sampler Session bypasses execution-Sandbox readiness and wake; `central_sampler` has no resume or wake call, and its executor retries `Unavailable` until a deadline.",
-        "#16311 (draft, plans/environment_service_controller_merge.md) kept the Gateway for Dispatcher and proxy and had the controller call back for the budget; #16318 (draft, stacked on it) added that controller-only budget RPC."
+        "#16311 (draft, plans/environment_service_controller_merge.md) kept the Gateway for Dispatcher and proxy and had the controller call back for the budget; #16318 (draft, stacked on it) added that controller-only budget RPC.",
+        "Outside `runner_gateway/`, 43 Go files import the generated `dispatcher/api/session` package and 14 TypeScript files import its generated code; `agentplane/app/app_service.proto` imports the `.proto` file. The proto package is `agentplane.runner_gateway.dispatcher`.",
+        "Outside `runner_gateway/`, only `agentplane/action_service/session_delegation/dispatcher_integration_test.go`, `agentplane/action_service/session_delegation/dispatcher_integration_testmain_test.go` import `dispatcher` or `migrations`, and only `agentplane/action_service/orchestration_v1/fixture_test.go` imports `environments` or `environments/lifecycle`.",
+        "At the pin `agentplane/environments/` holds only `v1/environment_service.proto` and its BUILD file; `agentplane/session_dispatcher/` does not exist.",
+        "`sandbox_controller` is referenced by Bazel label from `devinfra/ci/image_targets.json`, `agentplane/system_tests/k3s/defs.bzl` and `cluster/cdk8s/agentplane/BUILD.bazel` (`:settings`)."
       ]
     }
   }

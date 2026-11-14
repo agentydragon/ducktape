@@ -509,7 +509,7 @@
               >
               <${Title} order=${3}>${"Proposed"}<//>
               <${SimpleGrid} cols=${{ base: 1, sm: 2 }}
-                >${plan.target_binaries.binaries.map((b) => html`<${Paper} key=${b.name} withBorder p="md" style=${{ minWidth: 0, overflowWrap: "anywhere" }}><${Title} order=${4}>${b.name}<//><${Text} size="sm" c="dimmed">${b.text}<//><${List} size="sm" mt="xs" spacing="xs">${b.owns.map((item) => html`<${List.Item} key=${item}>${item}<//>`)}<//><${Text} size="sm" mt="xs">${"Callers: " + b.callers}<//><${Text} size="xs" c="dimmed" mt="xs">${"From: " + b.from_paths.join(" · ")}<//><//>`)}<//
+                >${plan.target_binaries.binaries.map((b) => html`<${Paper} key=${b.name} withBorder p="md" style=${{ minWidth: 0, overflowWrap: "anywhere" }}><${Title} order=${4}>${b.name}<//><${Text} size="sm" ff="monospace">${b.directory}<//><${Text} size="sm" c="dimmed">${b.text}<//><${List} size="sm" mt="xs" spacing="xs">${b.owns.map((item) => html`<${List.Item} key=${item}>${item}<//>`)}<//><${Text} size="sm" mt="xs">${"Callers: " + b.callers}<//><${Text} size="xs" c="dimmed" mt="xs">${"From: " + b.from_paths.join(" · ")}<//><//>`)}<//
               >
               <${Title} order=${3}>${"Cut line"}<//>
               ${plan.target_binaries.cut_line.map(

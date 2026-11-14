@@ -22970,7 +22970,7 @@
       "lines": 278,
       "sha256": "9d140cb54372d27656795fa259a9bde6fe8899518a121b5150bc867e641a38ce",
       "planned_path": null,
-      "planned_parts": ["agentplane/runner_gateway/internal/app/config.go"],
+      "planned_parts": ["agentplane/session_dispatcher/internal/app/config.go"],
       "planned_package": null,
       "goal_path_status": "split responsibility",
       "candidate_owners": [],
@@ -22991,7 +22991,7 @@
       "sha256": "3acb965e6b16ae2f99b8b742863f62901a23fdc089fb5b16cb832e4d93b64b09",
       "planned_path": null,
       "planned_parts": [
-        "agentplane/runner_gateway/internal/app/config_test.go"
+        "agentplane/session_dispatcher/internal/app/config_test.go"
       ],
       "planned_package": null,
       "goal_path_status": "split responsibility",
@@ -23012,8 +23012,8 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/dispatcher",
-        "agentplane/runner_gateway/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher",
+        "agentplane/session_dispatcher/dispatcher/internal/store"
       ],
       "pending_tracks": [
         "runner-gateway-command",
@@ -23034,8 +23034,8 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/dispatcher",
-        "agentplane/runner_gateway/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher",
+        "agentplane/session_dispatcher/dispatcher/internal/store"
       ],
       "pending_tracks": [
         "runner-gateway-command",
@@ -23056,8 +23056,8 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/dispatcher",
-        "agentplane/runner_gateway/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher",
+        "agentplane/session_dispatcher/dispatcher/internal/store"
       ],
       "pending_tracks": [
         "runner-gateway-command",
@@ -23078,8 +23078,8 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/dispatcher",
-        "agentplane/runner_gateway/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher",
+        "agentplane/session_dispatcher/dispatcher/internal/store"
       ],
       "pending_tracks": [
         "runner-gateway-command",
@@ -23100,8 +23100,8 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/dispatcher",
-        "agentplane/runner_gateway/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher",
+        "agentplane/session_dispatcher/dispatcher/internal/store"
       ],
       "pending_tracks": [
         "runner-gateway-command",
@@ -23122,8 +23122,8 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/dispatcher",
-        "agentplane/runner_gateway/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher",
+        "agentplane/session_dispatcher/dispatcher/internal/store"
       ],
       "pending_tracks": [
         "transition-tolerance-removal",
@@ -23146,8 +23146,8 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/dispatcher",
-        "agentplane/runner_gateway/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher",
+        "agentplane/session_dispatcher/dispatcher/internal/store"
       ],
       "pending_tracks": [
         "transition-tolerance-removal",
@@ -23170,8 +23170,8 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/dispatcher",
-        "agentplane/runner_gateway/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher",
+        "agentplane/session_dispatcher/dispatcher/internal/store"
       ],
       "pending_tracks": [
         "runner-gateway-command",
@@ -23192,8 +23192,8 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/dispatcher",
-        "agentplane/runner_gateway/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher",
+        "agentplane/session_dispatcher/dispatcher/internal/store"
       ],
       "pending_tracks": [
         "runner-gateway-command",
@@ -23209,16 +23209,16 @@
       "generated": false,
       "lines": 75,
       "sha256": "73a63316a679b05804eacbb759b4d95cac98fafc30a75bb38326792053d460fc",
-      "planned_path": "agentplane/runner_gateway/dispatcher/internal/placement/placement.go",
+      "planned_path": "agentplane/session_dispatcher/dispatcher/internal/placement/placement.go",
       "planned_parts": [],
       "planned_package": "placement",
-      "goal_path_status": "retain owner",
+      "goal_path_status": "exact move",
       "candidate_owners": [],
       "pending_tracks": [
         "runner-gateway-command",
         "runner-gateway-dispatcher-store"
       ],
-      "disposition": "retain owner",
+      "disposition": "exact move",
       "package_decision": "agentplane/runner_gateway/dispatcher/internal/placement"
     },
     {
@@ -23228,16 +23228,16 @@
       "generated": false,
       "lines": 67,
       "sha256": "84f3ea6f5183f87b5ddeee02aacf621c90029158cd4313f7e33f2953b6dc6fe6",
-      "planned_path": "agentplane/runner_gateway/dispatcher/internal/placement/placement_test.go",
+      "planned_path": "agentplane/session_dispatcher/dispatcher/internal/placement/placement_test.go",
       "planned_parts": [],
       "planned_package": "placement_test",
-      "goal_path_status": "retain owner",
+      "goal_path_status": "exact move",
       "candidate_owners": [],
       "pending_tracks": [
         "runner-gateway-command",
         "runner-gateway-dispatcher-store"
       ],
-      "disposition": "retain owner",
+      "disposition": "exact move",
       "package_decision": "agentplane/runner_gateway/dispatcher/internal/placement"
     },
     {
@@ -23247,16 +23247,16 @@
       "generated": false,
       "lines": 179,
       "sha256": "ca443d2c6f4b1148a13293c23163c8b2df91ea89d41b2e6e75a1a40eede2f33e",
-      "planned_path": "agentplane/runner_gateway/dispatcher/internal/terminalnotice/terminalnotice.go",
+      "planned_path": "agentplane/session_dispatcher/dispatcher/internal/terminalnotice/terminalnotice.go",
       "planned_parts": [],
       "planned_package": "terminalnotice",
-      "goal_path_status": "retain owner",
+      "goal_path_status": "exact move",
       "candidate_owners": [],
       "pending_tracks": [
         "runner-gateway-command",
         "runner-gateway-dispatcher-store"
       ],
-      "disposition": "retain owner",
+      "disposition": "exact move",
       "package_decision": "agentplane/runner_gateway/dispatcher/internal/terminalnotice"
     },
     {
@@ -23271,8 +23271,8 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/dispatcher",
-        "agentplane/runner_gateway/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher",
+        "agentplane/session_dispatcher/dispatcher/internal/store"
       ],
       "pending_tracks": [
         "runner-gateway-command",
@@ -23293,8 +23293,8 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/dispatcher",
-        "agentplane/runner_gateway/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher",
+        "agentplane/session_dispatcher/dispatcher/internal/store"
       ],
       "pending_tracks": [
         "runner-gateway-command",
@@ -23316,8 +23316,8 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/dispatcher",
-        "agentplane/runner_gateway/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher",
+        "agentplane/session_dispatcher/dispatcher/internal/store"
       ],
       "pending_tracks": [
         "runner-gateway-command",
@@ -23338,8 +23338,8 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/dispatcher",
-        "agentplane/runner_gateway/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher",
+        "agentplane/session_dispatcher/dispatcher/internal/store"
       ],
       "pending_tracks": [
         "runner-gateway-command",
@@ -23360,8 +23360,8 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/dispatcher",
-        "agentplane/runner_gateway/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher",
+        "agentplane/session_dispatcher/dispatcher/internal/store"
       ],
       "pending_tracks": [
         "runner-gateway-command",
@@ -23383,8 +23383,8 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/dispatcher",
-        "agentplane/runner_gateway/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher",
+        "agentplane/session_dispatcher/dispatcher/internal/store"
       ],
       "pending_tracks": [
         "runner-gateway-command",
@@ -23405,8 +23405,8 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/dispatcher",
-        "agentplane/runner_gateway/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher",
+        "agentplane/session_dispatcher/dispatcher/internal/store"
       ],
       "pending_tracks": [
         "transition-tolerance-removal",
@@ -23429,8 +23429,8 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/dispatcher",
-        "agentplane/runner_gateway/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher",
+        "agentplane/session_dispatcher/dispatcher/internal/store"
       ],
       "pending_tracks": [
         "runner-gateway-command",
@@ -23451,8 +23451,8 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/dispatcher",
-        "agentplane/runner_gateway/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher",
+        "agentplane/session_dispatcher/dispatcher/internal/store"
       ],
       "pending_tracks": [
         "runner-gateway-command",
@@ -23473,8 +23473,8 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/dispatcher",
-        "agentplane/runner_gateway/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher",
+        "agentplane/session_dispatcher/dispatcher/internal/store"
       ],
       "pending_tracks": [
         "runner-gateway-command",
@@ -23495,8 +23495,8 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/dispatcher",
-        "agentplane/runner_gateway/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher",
+        "agentplane/session_dispatcher/dispatcher/internal/store"
       ],
       "pending_tracks": [
         "runner-gateway-command",
@@ -23517,8 +23517,8 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/dispatcher",
-        "agentplane/runner_gateway/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher",
+        "agentplane/session_dispatcher/dispatcher/internal/store"
       ],
       "pending_tracks": [
         "environment-service-to-sandbox-controller",
@@ -23540,8 +23540,8 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/dispatcher",
-        "agentplane/runner_gateway/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher",
+        "agentplane/session_dispatcher/dispatcher/internal/store"
       ],
       "pending_tracks": [
         "runner-gateway-command",
@@ -23562,8 +23562,8 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/dispatcher",
-        "agentplane/runner_gateway/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher",
+        "agentplane/session_dispatcher/dispatcher/internal/store"
       ],
       "pending_tracks": [
         "runner-gateway-command",
@@ -23584,8 +23584,8 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/dispatcher",
-        "agentplane/runner_gateway/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher",
+        "agentplane/session_dispatcher/dispatcher/internal/store"
       ],
       "pending_tracks": [
         "runner-gateway-command",
@@ -23605,9 +23605,7 @@
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/sandbox_controller/internal/environments"
-      ],
+      "candidate_owners": ["agentplane/environments/internal/service"],
       "pending_tracks": ["environment-service-to-sandbox-controller"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/environments"
@@ -23624,7 +23622,7 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/environments/management"
+        "agentplane/environments/internal/service/management"
       ],
       "pending_tracks": ["environment-service-to-sandbox-controller"],
       "disposition": "candidate boundary",
@@ -23642,7 +23640,7 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/environments/management"
+        "agentplane/environments/internal/service/management"
       ],
       "pending_tracks": ["environment-service-to-sandbox-controller"],
       "disposition": "candidate boundary",
@@ -23660,7 +23658,7 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/environments/management"
+        "agentplane/environments/internal/service/management"
       ],
       "pending_tracks": ["environment-service-to-sandbox-controller"],
       "disposition": "candidate boundary",
@@ -23677,9 +23675,7 @@
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/sandbox_controller/internal/environments/view"
-      ],
+      "candidate_owners": ["agentplane/environments/internal/service/view"],
       "pending_tracks": ["environment-service-to-sandbox-controller"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/environments/internal/view"
@@ -23695,9 +23691,7 @@
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/sandbox_controller/internal/environments/view"
-      ],
+      "candidate_owners": ["agentplane/environments/internal/service/view"],
       "pending_tracks": ["environment-service-to-sandbox-controller"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/environments/internal/view"
@@ -23714,7 +23708,7 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/environments/lifecycle"
+        "agentplane/environments/internal/service/lifecycle"
       ],
       "pending_tracks": ["environment-service-to-sandbox-controller"],
       "disposition": "candidate boundary",
@@ -23732,7 +23726,7 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/environments/lifecycle"
+        "agentplane/environments/internal/service/lifecycle"
       ],
       "pending_tracks": ["environment-service-to-sandbox-controller"],
       "disposition": "candidate boundary",
@@ -23750,7 +23744,7 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/environments/lifecycle"
+        "agentplane/environments/internal/service/lifecycle"
       ],
       "pending_tracks": ["environment-service-to-sandbox-controller"],
       "disposition": "candidate boundary",
@@ -23767,9 +23761,7 @@
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/sandbox_controller/internal/environments"
-      ],
+      "candidate_owners": ["agentplane/environments/internal/service"],
       "pending_tracks": ["environment-service-to-sandbox-controller"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/environments"
@@ -23785,9 +23777,7 @@
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/sandbox_controller/internal/environments"
-      ],
+      "candidate_owners": ["agentplane/environments/internal/service"],
       "pending_tracks": ["environment-service-to-sandbox-controller"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/environments"
@@ -23803,9 +23793,7 @@
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/sandbox_controller/internal/environments"
-      ],
+      "candidate_owners": ["agentplane/environments/internal/service"],
       "pending_tracks": [
         "environment-service-to-sandbox-controller",
         "orchestration-v1-retirement"
@@ -23824,9 +23812,7 @@
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/sandbox_controller/internal/environments"
-      ],
+      "candidate_owners": ["agentplane/environments/internal/service"],
       "pending_tracks": ["environment-service-to-sandbox-controller"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/environments"
@@ -23842,9 +23828,7 @@
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/sandbox_controller/internal/environments"
-      ],
+      "candidate_owners": ["agentplane/environments/internal/service"],
       "pending_tracks": ["environment-service-to-sandbox-controller"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/environments"
@@ -23860,11 +23844,8 @@
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/sandbox_controller/internal/runtimeproxy"
-      ],
+      "candidate_owners": ["agentplane/environments/internal/runtimeproxy"],
       "pending_tracks": [
-        "runner-gateway-command",
         "runner-gateway-connections-proxy",
         "gateway-connection-lease-removal"
       ],
@@ -23882,13 +23863,8 @@
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/sandbox_controller/internal/runtimeproxy"
-      ],
-      "pending_tracks": [
-        "runner-gateway-command",
-        "runner-gateway-connections-proxy"
-      ],
+      "candidate_owners": ["agentplane/environments/internal/runtimeproxy"],
+      "pending_tracks": ["runner-gateway-connections-proxy"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/internal/gateway"
     },
@@ -23903,13 +23879,8 @@
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/sandbox_controller/internal/runtimeproxy"
-      ],
-      "pending_tracks": [
-        "runner-gateway-command",
-        "runner-gateway-connections-proxy"
-      ],
+      "candidate_owners": ["agentplane/environments/internal/runtimeproxy"],
+      "pending_tracks": ["runner-gateway-connections-proxy"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/internal/gateway"
     },
@@ -23924,13 +23895,8 @@
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/sandbox_controller/internal/runtimeproxy"
-      ],
-      "pending_tracks": [
-        "runner-gateway-command",
-        "runner-gateway-connections-proxy"
-      ],
+      "candidate_owners": ["agentplane/environments/internal/runtimeproxy"],
+      "pending_tracks": ["runner-gateway-connections-proxy"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/internal/gateway"
     },
@@ -23945,13 +23911,8 @@
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/sandbox_controller/internal/runtimeproxy"
-      ],
-      "pending_tracks": [
-        "runner-gateway-command",
-        "runner-gateway-connections-proxy"
-      ],
+      "candidate_owners": ["agentplane/environments/internal/runtimeproxy"],
+      "pending_tracks": ["runner-gateway-connections-proxy"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/internal/gateway"
     },
@@ -23966,13 +23927,8 @@
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/sandbox_controller/internal/runtimeproxy"
-      ],
-      "pending_tracks": [
-        "runner-gateway-command",
-        "runner-gateway-connections-proxy"
-      ],
+      "candidate_owners": ["agentplane/environments/internal/runtimeproxy"],
+      "pending_tracks": ["runner-gateway-connections-proxy"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/internal/gateway"
     },
@@ -23987,13 +23943,8 @@
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/sandbox_controller/internal/runtimeproxy"
-      ],
-      "pending_tracks": [
-        "runner-gateway-command",
-        "runner-gateway-connections-proxy"
-      ],
+      "candidate_owners": ["agentplane/environments/internal/runtimeproxy"],
+      "pending_tracks": ["runner-gateway-connections-proxy"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/internal/gateway"
     },
@@ -24008,13 +23959,8 @@
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/sandbox_controller/internal/runtimeproxy"
-      ],
-      "pending_tracks": [
-        "runner-gateway-command",
-        "runner-gateway-connections-proxy"
-      ],
+      "candidate_owners": ["agentplane/environments/internal/runtimeproxy"],
+      "pending_tracks": ["runner-gateway-connections-proxy"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/internal/gateway"
     },
@@ -24029,13 +23975,8 @@
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/sandbox_controller/internal/runtimeproxy"
-      ],
-      "pending_tracks": [
-        "runner-gateway-command",
-        "runner-gateway-connections-proxy"
-      ],
+      "candidate_owners": ["agentplane/environments/internal/runtimeproxy"],
+      "pending_tracks": ["runner-gateway-connections-proxy"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/internal/gateway"
     },
@@ -24050,13 +23991,8 @@
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/sandbox_controller/internal/runtimeproxy"
-      ],
-      "pending_tracks": [
-        "runner-gateway-command",
-        "runner-gateway-connections-proxy"
-      ],
+      "candidate_owners": ["agentplane/environments/internal/runtimeproxy"],
+      "pending_tracks": ["runner-gateway-connections-proxy"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/internal/gateway"
     },
@@ -24071,13 +24007,8 @@
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/sandbox_controller/internal/runtimeproxy"
-      ],
-      "pending_tracks": [
-        "runner-gateway-command",
-        "runner-gateway-connections-proxy"
-      ],
+      "candidate_owners": ["agentplane/environments/internal/runtimeproxy"],
+      "pending_tracks": ["runner-gateway-connections-proxy"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/internal/gateway"
     },
@@ -24092,13 +24023,8 @@
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/sandbox_controller/internal/runtimeproxy"
-      ],
-      "pending_tracks": [
-        "runner-gateway-command",
-        "runner-gateway-connections-proxy"
-      ],
+      "candidate_owners": ["agentplane/environments/internal/runtimeproxy"],
+      "pending_tracks": ["runner-gateway-connections-proxy"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/internal/gateway"
     },
@@ -24113,13 +24039,8 @@
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/sandbox_controller/internal/runtimeproxy"
-      ],
-      "pending_tracks": [
-        "runner-gateway-command",
-        "runner-gateway-connections-proxy"
-      ],
+      "candidate_owners": ["agentplane/environments/internal/runtimeproxy"],
+      "pending_tracks": ["runner-gateway-connections-proxy"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/internal/gateway"
     },
@@ -24134,11 +24055,8 @@
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/sandbox_controller/internal/runtimeproxy"
-      ],
+      "candidate_owners": ["agentplane/environments/internal/runtimeproxy"],
       "pending_tracks": [
-        "runner-gateway-command",
         "runner-gateway-connections-proxy",
         "gateway-connection-lease-removal"
       ],
@@ -24156,13 +24074,8 @@
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/sandbox_controller/internal/runtimeproxy"
-      ],
-      "pending_tracks": [
-        "runner-gateway-command",
-        "runner-gateway-connections-proxy"
-      ],
+      "candidate_owners": ["agentplane/environments/internal/runtimeproxy"],
+      "pending_tracks": ["runner-gateway-connections-proxy"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/internal/gateway"
     },
@@ -24177,11 +24090,8 @@
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/sandbox_controller/internal/runtimeproxy"
-      ],
+      "candidate_owners": ["agentplane/environments/internal/runtimeproxy"],
       "pending_tracks": [
-        "runner-gateway-command",
         "runner-gateway-connections-proxy",
         "gateway-connection-lease-removal"
       ],
@@ -24199,13 +24109,8 @@
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/sandbox_controller/internal/runtimeproxy"
-      ],
-      "pending_tracks": [
-        "runner-gateway-command",
-        "runner-gateway-connections-proxy"
-      ],
+      "candidate_owners": ["agentplane/environments/internal/runtimeproxy"],
+      "pending_tracks": ["runner-gateway-connections-proxy"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/internal/gateway"
     },
@@ -24220,13 +24125,8 @@
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/sandbox_controller/internal/runtimeproxy"
-      ],
-      "pending_tracks": [
-        "runner-gateway-command",
-        "runner-gateway-connections-proxy"
-      ],
+      "candidate_owners": ["agentplane/environments/internal/runtimeproxy"],
+      "pending_tracks": ["runner-gateway-connections-proxy"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/internal/gateway"
     },
@@ -24237,13 +24137,13 @@
       "generated": false,
       "lines": 160,
       "sha256": "fd31a7b68341312fb413998b1e780fe8b74d2414d5171bc99342ed8b8adf07d4",
-      "planned_path": "agentplane/runner_gateway/internal/sandboxinventory/sandbox_kubernetes.go",
+      "planned_path": "agentplane/session_dispatcher/internal/sandboxinventory/sandbox_kubernetes.go",
       "planned_parts": [],
       "planned_package": "sandboxinventory",
-      "goal_path_status": "retain owner",
+      "goal_path_status": "exact move",
       "candidate_owners": [],
       "pending_tracks": ["runner-gateway-command"],
-      "disposition": "retain owner",
+      "disposition": "exact move",
       "package_decision": "agentplane/runner_gateway/internal/sandboxinventory"
     },
     {
@@ -24253,13 +24153,13 @@
       "generated": false,
       "lines": 47,
       "sha256": "267ed87fa07a0775754a1b1006f0b338d94d52415acc34f8d1dad6e5dda11312",
-      "planned_path": "agentplane/runner_gateway/internal/sandboxinventory/sandbox_kubernetes_test.go",
+      "planned_path": "agentplane/session_dispatcher/internal/sandboxinventory/sandbox_kubernetes_test.go",
       "planned_parts": [],
       "planned_package": "sandboxinventory",
-      "goal_path_status": "retain owner",
+      "goal_path_status": "exact move",
       "candidate_owners": [],
       "pending_tracks": ["runner-gateway-command"],
-      "disposition": "retain owner",
+      "disposition": "exact move",
       "package_decision": "agentplane/runner_gateway/internal/sandboxinventory"
     },
     {
@@ -24271,8 +24171,8 @@
       "sha256": "5c98473275a9eace592281687056f56176265a2dd60695e58e15b15a2e76f8a3",
       "planned_path": null,
       "planned_parts": [
-        "agentplane/runner_gateway/internal/app/server.go",
-        "agentplane/runner_gateway/cmd/main.go"
+        "agentplane/session_dispatcher/internal/app/server.go",
+        "agentplane/session_dispatcher/cmd/main.go"
       ],
       "planned_package": null,
       "goal_path_status": "split responsibility",
@@ -24292,13 +24192,13 @@
       "generated": false,
       "lines": 22,
       "sha256": "83aff240ebb4edc6a83ddbcefa8c429ba0bd34ee736c2b454fd6ac77b185bc70",
-      "planned_path": "agentplane/runner_gateway/migrations/integration_testmain_test.go",
+      "planned_path": "agentplane/session_dispatcher/migrations/integration_testmain_test.go",
       "planned_parts": [],
       "planned_package": "migrations",
-      "goal_path_status": "retain owner",
+      "goal_path_status": "exact move",
       "candidate_owners": [],
       "pending_tracks": ["runner-gateway-command"],
-      "disposition": "retain owner",
+      "disposition": "exact move",
       "package_decision": "agentplane/runner_gateway/migrations"
     },
     {
@@ -24308,13 +24208,13 @@
       "generated": false,
       "lines": 20,
       "sha256": "f087b6ef87c2862b67f4aab991d9961535564c578bccf7eb888989f8059a8adb",
-      "planned_path": "agentplane/runner_gateway/migrations/migrations.go",
+      "planned_path": "agentplane/session_dispatcher/migrations/migrations.go",
       "planned_parts": [],
       "planned_package": "migrations",
-      "goal_path_status": "retain owner",
+      "goal_path_status": "exact move",
       "candidate_owners": [],
       "pending_tracks": ["runner-gateway-command"],
-      "disposition": "retain owner",
+      "disposition": "exact move",
       "package_decision": "agentplane/runner_gateway/migrations"
     },
     {
@@ -24324,13 +24224,13 @@
       "generated": false,
       "lines": 126,
       "sha256": "b11dafde40cbecc6a9fefb4d55b6d76737e082ce3e5a4510baaf7ec777c52509",
-      "planned_path": "agentplane/runner_gateway/migrations/upgrade_integration_test.go",
+      "planned_path": "agentplane/session_dispatcher/migrations/upgrade_integration_test.go",
       "planned_parts": [],
       "planned_package": "migrations",
-      "goal_path_status": "retain owner",
+      "goal_path_status": "exact move",
       "candidate_owners": [],
       "pending_tracks": ["runner-gateway-command"],
-      "disposition": "retain owner",
+      "disposition": "exact move",
       "package_decision": "agentplane/runner_gateway/migrations"
     },
     {
@@ -24340,13 +24240,16 @@
       "generated": false,
       "lines": 84,
       "sha256": "437f56b962c216fb1e00a06bdc92acc25aecc1e46dff85521bc878addab0411f",
-      "planned_path": "agentplane/sandbox_controller/cmd/config.go",
+      "planned_path": "agentplane/environments/cmd/config.go",
       "planned_parts": [],
       "planned_package": "main",
-      "goal_path_status": "retain owner",
+      "goal_path_status": "exact move",
       "candidate_owners": [],
-      "pending_tracks": ["environment-service-to-sandbox-controller"],
-      "disposition": "retain owner",
+      "pending_tracks": [
+        "environments-directory",
+        "environment-service-to-sandbox-controller"
+      ],
+      "disposition": "exact move",
       "package_decision": "agentplane/sandbox_controller/cmd"
     },
     {
@@ -24356,13 +24259,16 @@
       "generated": false,
       "lines": 166,
       "sha256": "d73283fd40717a758a2f271a08939f28e13698ba223702ab2bb21e6d90c44161",
-      "planned_path": "agentplane/sandbox_controller/cmd/config_test.go",
+      "planned_path": "agentplane/environments/cmd/config_test.go",
       "planned_parts": [],
       "planned_package": "main",
-      "goal_path_status": "retain owner",
+      "goal_path_status": "exact move",
       "candidate_owners": [],
-      "pending_tracks": ["environment-service-to-sandbox-controller"],
-      "disposition": "retain owner",
+      "pending_tracks": [
+        "environments-directory",
+        "environment-service-to-sandbox-controller"
+      ],
+      "disposition": "exact move",
       "package_decision": "agentplane/sandbox_controller/cmd"
     },
     {
@@ -24372,13 +24278,16 @@
       "generated": false,
       "lines": 138,
       "sha256": "e959038b461bf5740427c310fd1e724ae03e9a8749ec128d4774a11980225568",
-      "planned_path": "agentplane/sandbox_controller/cmd/main.go",
+      "planned_path": "agentplane/environments/cmd/main.go",
       "planned_parts": [],
       "planned_package": "main",
-      "goal_path_status": "retain owner",
+      "goal_path_status": "exact move",
       "candidate_owners": [],
-      "pending_tracks": ["environment-service-to-sandbox-controller"],
-      "disposition": "retain owner",
+      "pending_tracks": [
+        "environments-directory",
+        "environment-service-to-sandbox-controller"
+      ],
+      "disposition": "exact move",
       "package_decision": "agentplane/sandbox_controller/cmd"
     },
     {
@@ -24393,11 +24302,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24413,11 +24325,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24433,11 +24348,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24453,11 +24371,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24473,11 +24394,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24493,9 +24417,9 @@
       "planned_package": null,
       "goal_path_status": "delete",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
       "pending_tracks": [
         "sandbox-controller-lifecycle",
@@ -24516,11 +24440,12 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
       "pending_tracks": [
+        "environments-directory",
         "sandbox-controller-lifecycle",
         "gateway-connection-lease-removal"
       ],
@@ -24539,11 +24464,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24559,11 +24487,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24579,11 +24510,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24599,11 +24533,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24619,11 +24556,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24639,11 +24579,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24659,11 +24602,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24679,11 +24625,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24699,11 +24648,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24719,11 +24671,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24739,11 +24694,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24759,11 +24717,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24779,11 +24740,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24799,11 +24763,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24819,11 +24786,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24839,11 +24809,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24859,11 +24832,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24879,11 +24855,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24899,11 +24878,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24919,11 +24901,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24939,11 +24924,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24959,11 +24947,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24979,11 +24970,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24999,11 +24993,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -25019,11 +25016,14 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/sandbox_controller/internal/controller",
-        "agentplane/sandbox_controller/internal/runtimecredentials",
-        "agentplane/sandbox_controller/internal/vm"
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "environments-directory",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -25034,12 +25034,12 @@
       "generated": false,
       "lines": 134,
       "sha256": "a3eabe97a5db8d04898016cf6a378438863a1ee04dd11b50ba304461a4471bd5",
-      "planned_path": "agentplane/sandbox_controller/internal/runtimecontrol/observer.go",
+      "planned_path": "agentplane/environments/internal/runtimecontrol/observer.go",
       "planned_parts": [],
       "planned_package": "runtimecontrol",
       "goal_path_status": "package name alignment",
       "candidate_owners": [],
-      "pending_tracks": ["runner-era-names"],
+      "pending_tracks": ["environments-directory"],
       "disposition": "package name alignment",
       "package_decision": "agentplane/sandbox_controller/internal/runnercontrol"
     },
@@ -25050,12 +25050,12 @@
       "generated": false,
       "lines": 118,
       "sha256": "4ded434c7712de120d703c4897bcbff9b3b796e6bb25e822ace6cad8595678f6",
-      "planned_path": "agentplane/sandbox_controller/internal/runtimecontrol/observer_test.go",
+      "planned_path": "agentplane/environments/internal/runtimecontrol/observer_test.go",
       "planned_parts": [],
       "planned_package": "runtimecontrol",
       "goal_path_status": "package name alignment",
       "candidate_owners": [],
-      "pending_tracks": ["runner-era-names"],
+      "pending_tracks": ["environments-directory"],
       "disposition": "package name alignment",
       "package_decision": "agentplane/sandbox_controller/internal/runnercontrol"
     },
@@ -25066,13 +25066,13 @@
       "generated": false,
       "lines": 73,
       "sha256": "d40aadb4fbe3154ac75384fedc1dc2a1042ccc79507e1ba4c7032baf38d86d53",
-      "planned_path": "agentplane/sandbox_controller/internal/runtimecontrol/quiescer.go",
+      "planned_path": "agentplane/environments/internal/runtimecontrol/quiescer.go",
       "planned_parts": [],
       "planned_package": "runtimecontrol",
       "goal_path_status": "package name alignment",
       "candidate_owners": [],
       "pending_tracks": [
-        "runner-era-names",
+        "environments-directory",
         "gateway-connection-lease-removal"
       ],
       "disposition": "package name alignment",
@@ -25085,12 +25085,12 @@
       "generated": false,
       "lines": 47,
       "sha256": "0bb56d1c4407793d290ced0aeda33c429104c590ff5215b4f1cf289b953f0870",
-      "planned_path": "agentplane/sandbox_controller/internal/runtimecontrol/quiescer_test.go",
+      "planned_path": "agentplane/environments/internal/runtimecontrol/quiescer_test.go",
       "planned_parts": [],
       "planned_package": "runtimecontrol",
       "goal_path_status": "package name alignment",
       "candidate_owners": [],
-      "pending_tracks": ["runner-era-names"],
+      "pending_tracks": ["environments-directory"],
       "disposition": "package name alignment",
       "package_decision": "agentplane/sandbox_controller/internal/runnercontrol"
     },
@@ -25101,12 +25101,12 @@
       "generated": false,
       "lines": 44,
       "sha256": "f178e2ab0da50f96793ccdf6b9b9cc8c18d317469f6e2d855907fff4ec130902",
-      "planned_path": "agentplane/sandbox_controller/internal/runtimecontrol/suspender.go",
+      "planned_path": "agentplane/environments/internal/runtimecontrol/suspender.go",
       "planned_parts": [],
       "planned_package": "runtimecontrol",
       "goal_path_status": "package name alignment",
       "candidate_owners": [],
-      "pending_tracks": ["runner-era-names"],
+      "pending_tracks": ["environments-directory"],
       "disposition": "package name alignment",
       "package_decision": "agentplane/sandbox_controller/internal/runnercontrol"
     },
