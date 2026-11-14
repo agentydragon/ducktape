@@ -87,8 +87,8 @@ def _candidate_import_images(k3s: K3s, images: dict[str, Path]) -> None:
 
 def _arm_order() -> list[str]:
     order = os.environ.get("K3S_IMPORT_BENCHMARK_ORDER", DEFAULT_ORDER).split(",")
-    if len(order) != 2 or set(order) != IMPORT_ARMS:
-        raise ValueError(f"expected both import arms once, got {order}")
+    if not set(order) <= IMPORT_ARMS or len(order) != len(set(order)):
+        raise ValueError(f"expected one or both distinct import arms, got {order}")
     return order
 
 

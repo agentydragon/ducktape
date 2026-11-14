@@ -75,7 +75,7 @@ py_test(
         "K3S_BINARY_RLOCATION": "$(rlocationpath " + K3S_BINARY + ")",
         "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :test_pod_image_manifest)",
     },
-    exec_properties = K3S_EXEC_PROPERTIES,
+    exec_properties = K3S_EXEC_PROPERTIES | {"test.recycle-runner": "false"},
     tags = K3S_TAGS + ["manual"],
     deps = [
         "//:conftest",
