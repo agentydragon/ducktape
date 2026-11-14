@@ -182,6 +182,14 @@ fresh in each comparison arm. This is a manual candidate assignment, not a
 required-gate owner transfer. The controls and measurement boundaries are in
 [iteration 9](test_architecture_iteration9.md).
 
+The manual `test_firecracker_shared_guest_candidate` composes the existing
+Gateway-issuer trust helper and live-state acceptance on one fresh guest. Trust
+runs before Session creation, credential rotation and autosuspend. Both owners'
+assertions and the real one-minute idle interval remain; the required two-guest
+control stays unchanged. The explicit tradeoff is losing a separately clean
+second guest fixture. This is not a selector change or an equivalence claim;
+see [the experiment contract](test_architecture_firecracker_guest_reuse.md).
+
 The smallest faithful future contracts are the existing Go owner tests for pure
 state transitions, the current native process fixtures for Runtime/History
 restart semantics, and K3s tests for controller-produced identities, issuer and
