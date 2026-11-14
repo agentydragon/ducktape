@@ -347,6 +347,7 @@ async def test_history_outage_replays_the_runtime_journal_and_resumes_the_reader
 
     final_entries = list((await history_service.reader.read_session_events(session_id, limit=1000)).entries)
     assert [*prefix, *resumed] == complete
+    assert final_entries[: len(complete)] == complete
     assert [
         row.event.command_admitted.command.command_id for row in events.of_kind(final_entries, "command_admitted")
     ] == [first_id, second_id, third_id]

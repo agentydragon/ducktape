@@ -193,7 +193,6 @@ py_test(
     },
     exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
     requires_docker = True,
-    tags = ["manual"],
     target_compatible_with = [
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
@@ -203,6 +202,7 @@ py_test(
         ":runtime_guest",
         ":session_helpers",
         "//:conftest",
+        "//agentplane/egress:sidecar_config",
         "//agentplane/env:config",
         "//agentplane/env/e2e/testing:events",
         "//agentplane/env/e2e/testing:history_tunnel",
@@ -259,7 +259,6 @@ py_test(
     },
     exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
     requires_docker = True,
-    tags = ["manual"],
     target_compatible_with = [
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
@@ -269,6 +268,7 @@ py_test(
         ":runtime_guest",
         ":session_helpers",
         "//:conftest",
+        "//agentplane/egress:sidecar_config",
         "//agentplane/env:config",
         "//agentplane/env/e2e/testing:events",
         "//agentplane/env/e2e/testing:history_tunnel",
@@ -299,6 +299,7 @@ py_test(
         "//agentplane/testing:kubernetes_apiserver",
         "//agentplane/testing:native_gateway_fixtures",
         "//agentplane/testing:scripted_model",
+        "//agentplane/testing:tls",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//grpcio",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
@@ -316,6 +317,8 @@ py_library(
         "//agentplane/egress:platform_routes",
         "//agentplane/egress:settings",
         "//agentplane/egress:sidecar_config",
+        "//agentplane/egress/api/admin:egress_admin_pb2",
+        "//agentplane/egress/api/admin:egress_admin_pb2_grpc",
         "//agentplane/egress/api/rules:egress_rules_pb2",
         "//agentplane/egress/api/rules:egress_rules_pb2_grpc",
         "//agentplane/egress/testing:go_replica",
