@@ -1,14 +1,14 @@
 {
   "schema_version": 3,
   "artifact_kind": "source-grounded organization proposal and file ledger",
-  "source_sha": "749fda99a200b5a60b21c0af343074c5e4fd3ac9",
+  "source_sha": "ce53bc8c8552d3f469343c73b441e27ace268edf",
   "observed_at_utc": "2026-11-14T00:48:53+00:00",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "freshness": {
-    "checked_origin_devel": "749fda99a200b5a60b21c0af343074c5e4fd3ac9",
-    "checked_at_utc": "2026-11-14T02:20:00+00:00",
+    "checked_origin_devel": "ce53bc8c8552d3f469343c73b441e27ace268edf",
+    "checked_at_utc": "2026-11-14T02:45:00+00:00",
     "previous_pin": "6dfbd741f5ba004f02aba929cadbbd59b6950393",
-    "go_or_proto_delta": "51 Go files changed between the pins, all from four landed work items; every other tracked Go file has the same blob hash.",
+    "go_or_proto_delta": "Since 6dfbd741, 15 Go files were removed or moved away, 22 added or moved in and 19 edited, all by the landed work below; every other tracked Go file has the same blob hash.",
     "landed": [
       {
         "track": "app-proxy-owners",
@@ -29,17 +29,22 @@
         "track": "sampler-provider-io",
         "pr": 16314,
         "result": "Provider I/O budgets and errors moved to `central_sampler/internal/providerio`; `protocol` keeps the contracts."
+      },
+      {
+        "track": "app-http-owners (first step; item stays)",
+        "pr": 16320,
+        "result": "Thread read and metadata handling moved to `app/internal/httpapi/threads`; Session/environment routes and streaming facades remain in the aggregate server."
       }
     ],
     "interpretation": "Landed work items are removed, not listed as done. Moved and new files are reclassified at their new paths; packages that no longer hold Go files (`action_service` root, `app/internal/proxy`, `policy` root) left the ledger."
   },
   "inventory": {
-    "source_sha": "749fda99a200b5a60b21c0af343074c5e4fd3ac9",
+    "source_sha": "ce53bc8c8552d3f469343c73b441e27ace268edf",
     "counts": {
-      "files": 1261,
-      "directories": 220,
-      "production": 695,
-      "tests": 566
+      "files": 1263,
+      "directories": 221,
+      "production": 696,
+      "tests": 567
     },
     "all_tracked_go_files_included": true,
     "manifest_path": "agentplane-organization/go-files.json"
@@ -9938,9 +9943,9 @@
       "Goal trees show the Action Service's cmd package, EnvironmentService's proposed owners under the Sandbox Controller and no emptied directories."
     ],
     "structural_checks": [
-      "All 1,261 tracked Go files at devel 749fda99a2 match the ledger's path, blob hash, line count, package and test flags; the 220 directories and package decisions match one to one; every pending track exists.",
+      "All 1,263 tracked Go files at devel ce53bc8c85 match the ledger's path, blob hash, line count, package and test flags; the 221 directories and package decisions match one to one; every pending track exists.",
       "Every non-retained package has a work item; adoption stages cover every work item once; content prerequisites precede dependents; move targets are unique and new.",
-      "Every work item's source, evidence and deletion paths exist at 749fda99a2, and its validation labels exist in the pinned BUILD files."
+      "Every work item's source, evidence and deletion paths exist at ce53bc8c85, and its validation labels exist in the pinned BUILD files."
     ],
     "visual_review": "Inspected the reworked runtime-facts-off-lease and gateway-replica-ownership cards, the remaining-work queue, adoption order and the action_service and sandbox_controller trees (desktop light, mobile dark). Screenshots were not published.",
     "limits": "Planning/report validation only. No Go behavior changes, Go tests, deployments or live acceptance are claimed."
@@ -9978,7 +9983,8 @@
     "runtime_facts_split": {
       "source": "agentplane/plans/runtime_state_observation.md (#16312, merged 2026-11-14 02:11 UTC)",
       "finding": "The per-Sandbox Lease is also the Gateway's connection Lease: claiming it allocates the ConnectionEpoch that fences Gateway unary, admission and Executor calls and guards EndpointSlice publication. Calling the current WatchState from the Controller would replace the Gateway's epoch.",
-      "plan_change": "gateway-runtime-lease-removal became runtime-facts-off-lease (stage 1: move fact readers, then delete fact publication and the codec). Deleting the connection Lease moved to gateway-replica-ownership (stage 5), which must name the replacement call fence and EndpointSlice owner."
+      "plan_change": "gateway-runtime-lease-removal became runtime-facts-off-lease (stage 1: move fact readers, then delete fact publication and the codec). Deleting the connection Lease moved to gateway-replica-ownership (stage 5), which must name the replacement call fence and EndpointSlice owner.",
+      "operator_decision": "2026-11-14 02:36 UTC, on the card \"Let any Gateway replica call a Runtime, dropping the Lease's call epoch?\" the operator chose \"Any replica, no epoch\": the Runtime fences only by incarnation and boot ID; the connection Lease, its epoch and the -control EndpointSlice go; callers use the Gateway Service. Plan: new stage 1 item gateway-connection-lease-removal; gateway-replica-ownership narrows to the Dispatcher's ownership Lease and the Gateway's name."
     }
   }
 }
