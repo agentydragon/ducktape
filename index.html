@@ -111,7 +111,7 @@
                 <//>
               <//>
               <${Text} component="p" my="sm">
-                ${"Iteration 13: rebased source ff06b22d passes all required checks. Eight fresh manual cases pass, but relocating duplicate systemd proof shows no convincing warm speedup. A saturated KVM pool and a proposed shared-guest Firecracker check are the next measured leads. Required gates and qualification remain unchanged."}
+                ${"Iteration 14: real Firecracker validation reproduces a transient Gateway rejection and recovers for the same incarnation in 1.008s, avoiding a minute-delayed retry. Independent PR #16344 is ready with passing checks. Shared-guest results remain unqualified; the measured VM startup tail guides the next probe. Required gates and fleet windows remain unchanged."}
               <//>
               <${ManifestStamp}
                 src=${"agentplane-test-architecture/manifest.json"}
@@ -147,7 +147,7 @@
                 <${Anchor} href=${"latency/"}> ${"Latency"} <//>
               <//>
               <${Text} component="p" my="sm">
-                ${" Devel-base feedback retains its original window; iteration 13 adds the completed ownership experiment and KVM queue diagnosis without a whole-CI saving claim. "}
+                ${" Original backend feedback windows remain; iteration 14 adds a reproduced Gateway readiness repair, the unqualified shared-guest screen and measured VM-tail phases. No whole-CI saving is claimed. "}
               <//>
               <${ManifestStamp} src=${"latency/manifest.json"} />
               <${Text} component="p" my="sm">
@@ -161,7 +161,7 @@
                 <${Anchor} href=${"reliability/"}> ${"Reliability"} <//>
               <//>
               <${Text} component="p" my="sm">
-                ${" Historical failure populations retain their original denominators; iteration 13 adds the recovery-prefix repair and eight fresh passing ownership cases, without a refreshed failure rate. "}
+                ${" Historical failure populations retain their original denominators; iteration 14 adds a reproduced transient-rejection repair, 335 focused passing JUnit records and two fresh Firecracker cases. No refreshed fleet failure rate is claimed. "}
               <//>
               <${ManifestStamp} src=${"reliability/manifest.json"} />
               <${Text} component="p" my="sm">

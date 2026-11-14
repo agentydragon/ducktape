@@ -1,0 +1,947 @@
+{
+  "schema_version": 1,
+  "observed_at_utc": "2026-11-14T05:43:13.163359+00:00",
+  "scope": "Supplemental same-source Firecracker screen, diagnosed transient route failure, validated bounded repair, rebase and next VM-tail probe. Original fleet windows, populations, rates and denominators unchanged.",
+  "source": {
+    "repository": "https://github.com/agentydragon/ducktape",
+    "architecture_pr": 16102,
+    "branch": "agent/test-architecture-pivot",
+    "head": "d642132a68104a4cfe5a76af15bbf7c7272d8591",
+    "devel_base": "aa8d1061adb9c7f7fec5db27de4341746f76bac5",
+    "main_checks": [
+      {
+        "name": "bazel-ci / Test & Build",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-11-14T05:36:20Z",
+        "completedAt": "2026-11-14T05:39:14Z",
+        "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43562340422/job/132348560768"
+      },
+      {
+        "name": "Build artifacts + imports check",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-11-14T05:36:20Z",
+        "completedAt": "2026-11-14T05:37:48Z",
+        "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43562340656/job/132348561463"
+      },
+      {
+        "name": "Pre-commit checks",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-11-14T05:36:20Z",
+        "completedAt": "2026-11-14T05:37:26Z",
+        "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43562340492/job/132348562205"
+      }
+    ],
+    "rebase_audit": {
+      "old_head": "458e22a74523d49e80034eb3475f6c9f79c370f0",
+      "old_base": "4538c2afee75382f6cbeeb92e2850d03c62666e9",
+      "replayed_commits": 48,
+      "identical_patch_entries": 48,
+      "conflicts": 0
+    },
+    "independent_port": {
+      "pr": 16344,
+      "head": "c323fc94ebda3e12aa798ee70665e5417875a6ce",
+      "base": "aa8d1061adb9c7f7fec5db27de4341746f76bac5",
+      "state": "OPEN, ready for review",
+      "checks": [
+        {
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "startedAt": "2026-11-14T05:29:05Z",
+          "completedAt": "2026-11-14T05:37:42Z",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43561737297/job/132346743466"
+        },
+        {
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "startedAt": "2026-11-14T05:29:05Z",
+          "completedAt": "2026-11-14T05:30:24Z",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43561737260/job/132346743047"
+        },
+        {
+          "name": "Pre-commit checks",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "startedAt": "2026-11-14T05:29:05Z",
+          "completedAt": "2026-11-14T05:30:08Z",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43561737236/job/132346742925"
+        }
+      ],
+      "scope": "Production retry, optional incarnation fence, regression tests and contract docs. Architecture experiments and extra tracing excluded."
+    }
+  },
+  "shared_guest_screen": {
+    "source": "6bebe271d89a2eac6a41fd76125137c0cdca70c2",
+    "arm_order": ["A1", "B1", "B2", "A2"],
+    "required_control": "Two independently fresh guests; unchanged trust and live-state cases.",
+    "manual_candidate": "One fresh guest runs trust before live-state mutation.",
+    "arms": [
+      {
+        "arm": "A1",
+        "source": "6bebe271d89a2eac6a41fd76125137c0cdca70c2",
+        "invocation": "572ec341-d887-49e7-9a5d-27c090a1a7c3",
+        "native_elapsed_seconds": 343.286,
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "physical_execution_sha256": "c1f07893f3217aaa27a358ccecb80b8df9a3ad79866efb19ffbba1bfa4331a67",
+        "worker_sha256": "a1fc7770daccce435730b6392022f6319f6dd94573f4ea38ea1428b516400650",
+        "fresh_physical_actions": 1,
+        "junit": {
+          "cases": 2,
+          "failure": 0,
+          "error": 0,
+          "skip": 0,
+          "identities": [
+            [
+              "agentplane.system_tests.suites.test_firecracker",
+              "test_firecracker_preserves_live_guest"
+            ],
+            [
+              "agentplane.system_tests.suites.test_firecracker",
+              "test_a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_guest_runner"
+            ]
+          ],
+          "case_seconds": [183.262, 106.232]
+        },
+        "queue_seconds": null,
+        "preparation_seconds": 1.364016,
+        "execution_seconds": 300.021882,
+        "output_upload_seconds": 0.646228,
+        "cpu_seconds": null,
+        "peak_memory_bytes": null,
+        "phases": {
+          "system_test.stack.setup": [
+            {
+              "seconds": 60.103343,
+              "pytest_nodeid": null,
+              "status": {
+                "status_code": "UNSET"
+              }
+            }
+          ],
+          "system_test.sandbox.create": [
+            {
+              "seconds": 0.306174,
+              "pytest_nodeid": null,
+              "status": {
+                "status_code": "UNSET"
+              }
+            },
+            {
+              "seconds": 0.391661,
+              "pytest_nodeid": null,
+              "status": {
+                "status_code": "UNSET"
+              }
+            }
+          ],
+          "system_test.sandbox.ready": [
+            {
+              "seconds": 15.454112,
+              "pytest_nodeid": null,
+              "status": {
+                "status_code": "UNSET"
+              }
+            },
+            {
+              "seconds": 5.20085,
+              "pytest_nodeid": null,
+              "status": {
+                "status_code": "UNSET"
+              }
+            },
+            {
+              "seconds": 17.14471,
+              "pytest_nodeid": null,
+              "status": {
+                "status_code": "UNSET"
+              }
+            }
+          ],
+          "system_test.scenario": [
+            {
+              "seconds": 101.25361,
+              "pytest_nodeid": "agentplane/system_tests/suites/test_firecracker.py::test_firecracker_preserves_live_guest",
+              "status": {
+                "status_code": "UNSET"
+              }
+            },
+            {
+              "seconds": 18.799066,
+              "pytest_nodeid": "agentplane/system_tests/suites/test_firecracker.py::test_a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_guest_runner",
+              "status": {
+                "status_code": "UNSET"
+              }
+            }
+          ],
+          "system_test.sandbox.cleanup": [
+            {
+              "seconds": 20.968475,
+              "pytest_nodeid": null,
+              "status": {
+                "status_code": "UNSET"
+              }
+            },
+            {
+              "seconds": 76.358416,
+              "pytest_nodeid": null,
+              "status": {
+                "status_code": "UNSET"
+              }
+            }
+          ],
+          "system_test.case": [
+            {
+              "seconds": 123.093807,
+              "pytest_nodeid": "agentplane/system_tests/suites/test_firecracker.py::test_firecracker_preserves_live_guest",
+              "status": {
+                "status_code": "UNSET"
+              }
+            },
+            {
+              "seconds": 95.500116,
+              "pytest_nodeid": "agentplane/system_tests/suites/test_firecracker.py::test_a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_guest_runner",
+              "status": {
+                "status_code": "UNSET"
+              }
+            }
+          ]
+        },
+        "imports": {
+          "count": 19,
+          "not_skipped": 4,
+          "span_seconds": 16.889178
+        },
+        "persistence": null,
+        "continuation": {
+          "same_kernel_process_identity": {
+            "boot_id": true,
+            "pid": true,
+            "start_ticks": true,
+            "marker": true
+          },
+          "forward_progress": true,
+          "systemd_before_after": true,
+          "no_projected_sa_token_before_after": true,
+          "checkpointed_launcher_phase": "suspended",
+          "runtime_boot_session_process_ids_present": true,
+          "raw_artifact_sha256": "9bc3fef04cd9593b2da230e9659e3c511a55da9a6acf5ee012339121d1b40949"
+        },
+        "coverage": {
+          "scenario_owners": [
+            "Gateway certificate trust",
+            "live guest Session/certificate/RAM suspension"
+          ],
+          "guest_fixtures": 2,
+          "isolation_tradeoff": "Independent fresh fixtures"
+        }
+      },
+      {
+        "arm": "B1",
+        "source": "6bebe271d89a2eac6a41fd76125137c0cdca70c2",
+        "invocation": "21b2e916-d0d0-45ab-b2ba-9e878fc2844c",
+        "native_elapsed_seconds": 424.462,
+        "target": "//agentplane/system_tests/suites:test_firecracker_shared_guest_candidate",
+        "physical_execution_sha256": "dd8780601a230dadea362d1fb11f2a9a3e11f92bd0f4933eb7519ae6d7f2afbf",
+        "worker_sha256": "a1fc7770daccce435730b6392022f6319f6dd94573f4ea38ea1428b516400650",
+        "fresh_physical_actions": 1,
+        "junit": {
+          "cases": 1,
+          "failure": 0,
+          "error": 0,
+          "skip": 0,
+          "identities": [
+            [
+              "agentplane.system_tests.suites.test_firecracker_shared_guest",
+              "test_gateway_issuer_and_live_state_share_one_fresh_firecracker_guest"
+            ]
+          ],
+          "case_seconds": [259.804]
+        },
+        "queue_seconds": 94.704083,
+        "preparation_seconds": 0.688742,
+        "execution_seconds": 270.135676,
+        "output_upload_seconds": 0.611077,
+        "cpu_seconds": null,
+        "peak_memory_bytes": null,
+        "phases": {
+          "system_test.stack.setup": [
+            {
+              "seconds": 62.020014,
+              "pytest_nodeid": null,
+              "status": {
+                "status_code": "UNSET"
+              }
+            }
+          ],
+          "system_test.sandbox.create": [
+            {
+              "seconds": 0.31135,
+              "pytest_nodeid": null,
+              "status": {
+                "status_code": "UNSET"
+              }
+            }
+          ],
+          "system_test.sandbox.ready": [
+            {
+              "seconds": 16.847147,
+              "pytest_nodeid": null,
+              "status": {
+                "status_code": "UNSET"
+              }
+            },
+            {
+              "seconds": 4.349517,
+              "pytest_nodeid": null,
+              "status": {
+                "status_code": "UNSET"
+              }
+            }
+          ],
+          "system_test.scenario": [
+            {
+              "seconds": 104.056377,
+              "pytest_nodeid": "agentplane/system_tests/suites/test_firecracker_shared_guest.py::test_gateway_issuer_and_live_state_share_one_fresh_firecracker_guest",
+              "status": {
+                "status_code": "UNSET"
+              }
+            }
+          ],
+          "system_test.sandbox.cleanup": [
+            {
+              "seconds": 81.449116,
+              "pytest_nodeid": null,
+              "status": {
+                "status_code": "UNSET"
+              }
+            }
+          ],
+          "system_test.case": [
+            {
+              "seconds": 186.494066,
+              "pytest_nodeid": "agentplane/system_tests/suites/test_firecracker_shared_guest.py::test_gateway_issuer_and_live_state_share_one_fresh_firecracker_guest",
+              "status": {
+                "status_code": "UNSET"
+              }
+            }
+          ]
+        },
+        "imports": {
+          "count": 19,
+          "not_skipped": 12,
+          "span_seconds": 32.005522
+        },
+        "persistence": null,
+        "continuation": {
+          "same_kernel_process_identity": {
+            "boot_id": true,
+            "pid": true,
+            "start_ticks": true,
+            "marker": true
+          },
+          "forward_progress": true,
+          "systemd_before_after": true,
+          "no_projected_sa_token_before_after": true,
+          "checkpointed_launcher_phase": "suspended",
+          "runtime_boot_session_process_ids_present": true,
+          "raw_artifact_sha256": "cb80d3fe0b3ce47fb4e652232544cc778c2145b67e1a9362f69984fbdd2592a0"
+        },
+        "coverage": {
+          "scenario_owners": [
+            "Gateway certificate trust",
+            "live guest Session/certificate/RAM suspension"
+          ],
+          "guest_fixtures": 1,
+          "isolation_tradeoff": "Trust runs first on the same fresh guest, then live-state acceptance"
+        }
+      },
+      {
+        "arm": "B2",
+        "source": "6bebe271d89a2eac6a41fd76125137c0cdca70c2",
+        "invocation": "a9b44bc7-d5af-47b3-8e6d-06df1835b983",
+        "native_elapsed_seconds": 246.365,
+        "target": "//agentplane/system_tests/suites:test_firecracker_shared_guest_candidate",
+        "physical_execution_sha256": "d9f71916ca8510b281d05f4fe32426be4fabf665fd8e429af1ae530ea6f92fd7",
+        "worker_sha256": "43732af92071a9c184e3232c3a8bc27c9b76ac7853f3d56187e1a0050a9c4714",
+        "fresh_physical_actions": 1,
+        "junit": {
+          "cases": 1,
+          "failure": 0,
+          "error": 0,
+          "skip": 0,
+          "identities": [
+            [
+              "agentplane.system_tests.suites.test_firecracker_shared_guest",
+              "test_gateway_issuer_and_live_state_share_one_fresh_firecracker_guest"
+            ]
+          ],
+          "case_seconds": [190.465]
+        },
+        "queue_seconds": null,
+        "preparation_seconds": 2.620954,
+        "execution_seconds": 199.252506,
+        "output_upload_seconds": 0.665192,
+        "cpu_seconds": null,
+        "peak_memory_bytes": null,
+        "phases": {
+          "system_test.stack.setup": [
+            {
+              "seconds": 70.022913,
+              "pytest_nodeid": null,
+              "status": {
+                "status_code": "UNSET"
+              }
+            }
+          ],
+          "system_test.sandbox.create": [
+            {
+              "seconds": 0.28341,
+              "pytest_nodeid": null,
+              "status": {
+                "status_code": "UNSET"
+              }
+            }
+          ],
+          "system_test.sandbox.ready": [
+            {
+              "seconds": 13.514569,
+              "pytest_nodeid": null,
+              "status": {
+                "status_code": "UNSET"
+              }
+            },
+            {
+              "seconds": 4.244851,
+              "pytest_nodeid": null,
+              "status": {
+                "status_code": "UNSET"
+              }
+            }
+          ],
+          "system_test.scenario": [
+            {
+              "seconds": 95.289974,
+              "pytest_nodeid": "agentplane/system_tests/suites/test_firecracker_shared_guest.py::test_gateway_issuer_and_live_state_share_one_fresh_firecracker_guest",
+              "status": {
+                "status_code": "UNSET"
+              }
+            }
+          ],
+          "system_test.sandbox.cleanup": [
+            {
+              "seconds": 13.85496,
+              "pytest_nodeid": null,
+              "status": {
+                "status_code": "UNSET"
+              }
+            }
+          ],
+          "system_test.case": [
+            {
+              "seconds": 109.944391,
+              "pytest_nodeid": "agentplane/system_tests/suites/test_firecracker_shared_guest.py::test_gateway_issuer_and_live_state_share_one_fresh_firecracker_guest",
+              "status": {
+                "status_code": "UNSET"
+              }
+            }
+          ]
+        },
+        "imports": {
+          "count": 19,
+          "not_skipped": 12,
+          "span_seconds": 25.894602
+        },
+        "persistence": null,
+        "continuation": {
+          "same_kernel_process_identity": {
+            "boot_id": true,
+            "pid": true,
+            "start_ticks": true,
+            "marker": true
+          },
+          "forward_progress": true,
+          "systemd_before_after": true,
+          "no_projected_sa_token_before_after": true,
+          "checkpointed_launcher_phase": "suspended",
+          "runtime_boot_session_process_ids_present": true,
+          "raw_artifact_sha256": "12685b308394b27124c5619c11bea74c321661b6bc4fff6a73f0c189c2295936"
+        },
+        "coverage": {
+          "scenario_owners": [
+            "Gateway certificate trust",
+            "live guest Session/certificate/RAM suspension"
+          ],
+          "guest_fixtures": 1,
+          "isolation_tradeoff": "Trust runs first on the same fresh guest, then live-state acceptance"
+        }
+      },
+      {
+        "arm": "A2",
+        "source": "6bebe271d89a2eac6a41fd76125137c0cdca70c2",
+        "invocation": "289fcb99-c6ef-477e-9d88-034263b14a29",
+        "native_elapsed_seconds": 357.14,
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "physical_execution_sha256": "d266645e12e66c8ff7943ef5060193464f30086ab99f8e1f2245c3f9e5b4c85c",
+        "worker_sha256": "43732af92071a9c184e3232c3a8bc27c9b76ac7853f3d56187e1a0050a9c4714",
+        "fresh_physical_actions": 1,
+        "junit": {
+          "cases": 2,
+          "failure": 0,
+          "error": 0,
+          "skip": 0,
+          "identities": [
+            [
+              "agentplane.system_tests.suites.test_firecracker",
+              "test_firecracker_preserves_live_guest"
+            ],
+            [
+              "agentplane.system_tests.suites.test_firecracker",
+              "test_a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_guest_runner"
+            ]
+          ],
+          "case_seconds": [209.268, 95.06]
+        },
+        "queue_seconds": null,
+        "preparation_seconds": 0.631733,
+        "execution_seconds": 313.951183,
+        "output_upload_seconds": 0.796983,
+        "cpu_seconds": null,
+        "peak_memory_bytes": null,
+        "phases": {
+          "system_test.stack.setup": [
+            {
+              "seconds": 45.264935,
+              "pytest_nodeid": null,
+              "status": {
+                "status_code": "UNSET"
+              }
+            }
+          ],
+          "system_test.sandbox.create": [
+            {
+              "seconds": 0.243321,
+              "pytest_nodeid": null,
+              "status": {
+                "status_code": "UNSET"
+              }
+            },
+            {
+              "seconds": 0.36389,
+              "pytest_nodeid": null,
+              "status": {
+                "status_code": "UNSET"
+              }
+            }
+          ],
+          "system_test.sandbox.ready": [
+            {
+              "seconds": 14.306073,
+              "pytest_nodeid": null,
+              "status": {
+                "status_code": "UNSET"
+              }
+            },
+            {
+              "seconds": 4.214886,
+              "pytest_nodeid": null,
+              "status": {
+                "status_code": "UNSET"
+              }
+            },
+            {
+              "seconds": 15.059972,
+              "pytest_nodeid": null,
+              "status": {
+                "status_code": "UNSET"
+              }
+            }
+          ],
+          "system_test.scenario": [
+            {
+              "seconds": 93.786859,
+              "pytest_nodeid": "agentplane/system_tests/suites/test_firecracker.py::test_firecracker_preserves_live_guest",
+              "status": {
+                "status_code": "UNSET"
+              }
+            },
+            {
+              "seconds": 16.732461,
+              "pytest_nodeid": "agentplane/system_tests/suites/test_firecracker.py::test_a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_guest_runner",
+              "status": {
+                "status_code": "UNSET"
+              }
+            }
+          ],
+          "system_test.sandbox.cleanup": [
+            {
+              "seconds": 69.360931,
+              "pytest_nodeid": null,
+              "status": {
+                "status_code": "UNSET"
+              }
+            },
+            {
+              "seconds": 67.363305,
+              "pytest_nodeid": null,
+              "status": {
+                "status_code": "UNSET"
+              }
+            }
+          ],
+          "system_test.case": [
+            {
+              "seconds": 163.94598,
+              "pytest_nodeid": "agentplane/system_tests/suites/test_firecracker.py::test_firecracker_preserves_live_guest",
+              "status": {
+                "status_code": "UNSET"
+              }
+            },
+            {
+              "seconds": 84.454744,
+              "pytest_nodeid": "agentplane/system_tests/suites/test_firecracker.py::test_a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_guest_runner",
+              "status": {
+                "status_code": "UNSET"
+              }
+            }
+          ]
+        },
+        "imports": {
+          "count": 19,
+          "not_skipped": 0,
+          "span_seconds": 0.000239
+        },
+        "persistence": null,
+        "continuation": {
+          "same_kernel_process_identity": {
+            "boot_id": true,
+            "pid": true,
+            "start_ticks": true,
+            "marker": true
+          },
+          "forward_progress": true,
+          "systemd_before_after": true,
+          "no_projected_sa_token_before_after": true,
+          "checkpointed_launcher_phase": "suspended",
+          "runtime_boot_session_process_ids_present": true,
+          "raw_artifact_sha256": "b87ef9cad476bba18697201d8a4441b86fb7d321174257bda4625bb5fe5895ed"
+        },
+        "coverage": {
+          "scenario_owners": [
+            "Gateway certificate trust",
+            "live guest Session/certificate/RAM suspension"
+          ],
+          "guest_fixtures": 2,
+          "isolation_tradeoff": "Independent fresh fixtures"
+        }
+      }
+    ],
+    "fresh_physical_actions": 4,
+    "nonempty_junit_cases": 6,
+    "failures_errors_skips_retries": 0,
+    "qualification": "Not qualified. Queue/import exposure differs, CPU is unknown, and sharing loses one independent fresh fixture. Retain required control."
+  },
+  "diagnosed_failure": {
+    "invocation": "9e943df5-9491-5e9a-9df7-1e35e45c734d",
+    "tested_merge": "056bd735bed2302f520a84c6b924b9bfe6149a9f",
+    "branch_source_present": "6aae2a61a5deb14876bcad019ba7c86a40bfb634",
+    "timeline_utc": [
+      {
+        "time": "2026-11-14T05:04:57.834698Z",
+        "event": "Gateway rejects Quiesce: phase Quiescing, expected current incarnation, PodReady=false, destination_unavailable; no Runtime forward."
+      },
+      {
+        "time": "2026-11-14T05:04:58.786487Z",
+        "event": "Verified Gateway control ready for the same Pod/boot."
+      },
+      {
+        "time": "2026-11-14T05:05:57.015297Z",
+        "event": "Controller retries; Gateway forwards with PodReady=true."
+      }
+    ],
+    "cleanup_seconds": [70.269963, 17.083294],
+    "mechanism": "Direct Runtime WatchState becomes fresh before Gateway Pod inventory/control routing. A persisted QuiesceAttempt turns transient Unavailable into the one-minute durable retry cooldown.",
+    "privacy": "Only reviewed enum/boolean/state/timing summaries; no free-form payloads, credentials or raw host identities."
+  },
+  "repair": {
+    "source": "458e22a74523d49e80034eb3475f6c9f79c370f0",
+    "behavior": "At most three attempts, one second apart, on gRPC Unavailable within one existing 30-second handshake budget. Re-resolve elected control Service with a fresh connection each attempt; pin original incarnation UID.",
+    "retained_invariants": [
+      "Gateway Pod readiness",
+      "caller authentication and authorization",
+      "current incarnation",
+      "Lease and Runtime connection fences",
+      "durable controller cooldown",
+      "successful unfinished seal stops inner retries",
+      "authorization and Aborted refusals stop inner retries",
+      "context cancellation",
+      "no retry against successor incarnation"
+    ],
+    "negative_probe": {
+      "arm": "negative",
+      "invocation": "baed436b-71df-4d42-a798-59ec5d452f2b",
+      "native_seconds": 74.816,
+      "status": "TESTS_FAILED",
+      "base_source": "6aae2a61a5deb14876bcad019ba7c86a40bfb634",
+      "working_tree_probe": true,
+      "fresh_physical_actions": 2,
+      "JUnit": [
+        {
+          "target": "gateway_test",
+          "cases": 124,
+          "failed": 1,
+          "errors": 0,
+          "skipped": 0,
+          "failed_names": [
+            "TestRunnerProxyAuthenticatesCallerAndSandboxIdentity"
+          ]
+        },
+        {
+          "target": "runnercontrol_test",
+          "cases": 14,
+          "failed": 2,
+          "errors": 0,
+          "skipped": 0,
+          "failed_names": [
+            "TestGatewayQuiescerBoundsUnavailableRetries",
+            "TestGatewayQuiescerRetriesUnavailableForPinnedIncarnation"
+          ]
+        }
+      ],
+      "execution_id_sha256": [
+        "0be7b3953fe4774061058f18c21681970800d891fe1b5e5a7bf12f05bca23bc0",
+        "6ddcaa2fa5f5a1e42800785c6112476260f685b63054b8b4fa498de1dd4689c4"
+      ]
+    },
+    "focused_validation": {
+      "arm": "focused",
+      "invocation": "36520d5d-7f17-4881-9140-55df5709e645",
+      "native_seconds": 65.131,
+      "status": "SUCCESS",
+      "base_source": "6aae2a61a5deb14876bcad019ba7c86a40bfb634",
+      "working_tree_probe": true,
+      "fresh_physical_actions": 4,
+      "JUnit": [
+        {
+          "target": "controller_test",
+          "cases": 192,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failed_names": []
+        },
+        {
+          "target": "environmentruntimeclient_test",
+          "cases": 3,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failed_names": []
+        },
+        {
+          "target": "gateway_test",
+          "cases": 126,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failed_names": []
+        },
+        {
+          "target": "runnercontrol_test",
+          "cases": 14,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failed_names": []
+        }
+      ],
+      "execution_id_sha256": [
+        "40279e762dd71c97018f26c782a72a8c663c8a24373de54ab780b8a4ee0ef990",
+        "94b7447ebec37456088432190f95dfb8993883f9e65e13879df712c00c03fbca",
+        "ae6e1f017cbc3ba8ad2c2365f721ced64f605537d7963e0ef60fd754a6e3fa58",
+        "4fc577694fe7a16737288801e8820cb899780d0f773983e012a7a7991f9ad9b5"
+      ]
+    },
+    "real_firecracker_validation": {
+      "invocation": "772f9305-8a5d-4c60-9f01-f52580d26799",
+      "source": "458e22a74523d49e80034eb3475f6c9f79c370f0",
+      "status": "SUCCESS",
+      "native_seconds": 658.54,
+      "fresh_physical_actions": 1,
+      "execution_seconds": 284.170552,
+      "queue_seconds": 253.777823,
+      "junit_cases": 2,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "attempts": 1,
+      "cleanup_seconds": [43.819487, 14.563674],
+      "same_incarnation_transient_rejection_recovery_seconds": 1.008148829,
+      "live_process_continuation_verified": true,
+      "whole_PR_speedup_established": false,
+      "execution_id_sha256": "e28dc2c0ddfb34c9577e2ce14fee1e65daaa507e17973f520abc946699b392f4"
+    },
+    "causal_reproduction": "First trust-guest Quiesce rejected for PodReady=false; second request forwarded successfully for the identical incarnation 1.008148829s later. Other guest first call succeeds. Live-process continuation separately verified across suspend/resume.",
+    "limits": "One reproduced successful repair exposure. Removed retry penalty is mechanism-level evidence, not a matched whole-PR improvement or fleet failure-rate reduction."
+  },
+  "latest_reviewed_required_tail": {
+    "invocation": "9e943df5-9491-5e9a-9df7-1e35e45c734d",
+    "tested_merge": "056bd735bed2302f520a84c6b924b9bfe6149a9f",
+    "native_seconds": 532.813,
+    "status": "SUCCESS",
+    "fresh_test_execution_ranking": [
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "seconds": 425.037,
+        "queue_seconds": 0.063,
+        "finished": "2026-11-14T05:06:51.772519Z"
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_pod",
+        "seconds": 312.127,
+        "queue_seconds": 0.062,
+        "finished": "2026-11-14T05:05:01.845637Z"
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "seconds": 274.942,
+        "queue_seconds": 106.276,
+        "finished": "2026-11-14T05:06:10.952736Z"
+      },
+      {
+        "target": "//agentplane/system_tests/suites/mcp:test_services",
+        "seconds": 241.136,
+        "queue_seconds": 0.062,
+        "finished": "2026-11-14T05:03:51.509534Z"
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_dispatcher",
+        "seconds": 209.969,
+        "queue_seconds": 0.059,
+        "finished": "2026-11-14T05:03:17.850179Z"
+      },
+      {
+        "target": "//agentplane/system_tests/suites/mcp:test_gateway_crash",
+        "seconds": 195.784,
+        "queue_seconds": 0.06,
+        "finished": "2026-11-14T05:03:06.005808Z"
+      },
+      {
+        "target": "//agentplane/system_tests/suites/mcp:test_actions",
+        "seconds": 193.96,
+        "queue_seconds": 0.062,
+        "finished": "2026-11-14T05:03:03.346648Z"
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_session_deletion",
+        "seconds": 177.543,
+        "queue_seconds": 0.063,
+        "finished": "2026-11-14T05:02:46.992595Z"
+      },
+      {
+        "target": "//agentplane/system_tests/suites/mcp:test_gateway_budget",
+        "seconds": 157.829,
+        "queue_seconds": 0.062,
+        "finished": "2026-11-14T05:02:27.466768Z"
+      },
+      {
+        "target": "//agentplane/system_tests/suites/mcp:test_parent_delegation",
+        "seconds": 148.205,
+        "queue_seconds": 0.062,
+        "finished": "2026-11-14T05:02:17.740798Z"
+      },
+      {
+        "target": "//agentplane/system_tests/suites/mcp:test_sampler_roll",
+        "seconds": 146.483,
+        "queue_seconds": 0.06,
+        "finished": "2026-11-14T05:02:16.428195Z"
+      },
+      {
+        "target": "//agentplane/system_tests/suites/mcp:test_history_outage",
+        "seconds": 133.219,
+        "queue_seconds": 0.06,
+        "finished": "2026-11-14T05:02:03.698954Z"
+      },
+      {
+        "target": "//agentplane/system_tests/suites/mcp:test_delegation",
+        "seconds": 129.219,
+        "queue_seconds": 0.058,
+        "finished": "2026-11-14T05:01:58.117203Z"
+      },
+      {
+        "target": "//agentplane/system_tests/deployment:test_pki_lifecycle",
+        "seconds": 74.689,
+        "queue_seconds": 0.059,
+        "finished": "2026-11-14T05:00:53.272845Z"
+      },
+      {
+        "target": "//agentplane/system_tests/vm:test_runtime",
+        "seconds": 14.409,
+        "queue_seconds": 0.06,
+        "finished": "2026-11-14T04:59:53.231434Z"
+      },
+      {
+        "target": "//agentplane/system_tests/deployment:test_stack",
+        "seconds": 11.772,
+        "queue_seconds": 0.061,
+        "finished": "2026-11-14T04:59:49.079712Z"
+      },
+      {
+        "target": "//agentplane/system_tests/deployment:test_process_traces",
+        "seconds": 10.2,
+        "queue_seconds": 0.058,
+        "finished": "2026-11-14T04:59:47.869056Z"
+      },
+      {
+        "target": "//agentplane/system_tests/k3s:test_executor_persistence",
+        "seconds": 8.678,
+        "queue_seconds": 0.061,
+        "finished": "2026-11-14T04:59:49.591741Z"
+      }
+    ],
+    "limits": "Ranking contains 18 reviewed NEW TestRunner records, not every cached target or all workflow gates. VM was last; improving Firecracker alone need not move this graph completion.",
+    "vm_phase_diagnosis": {
+      "physical_seconds": 425.037,
+      "junit_cases": 1,
+      "junit_case_seconds": 393.615,
+      "stack_setup_seconds": 127.76,
+      "guest_image_import_seconds": 64.65,
+      "baseline": "cold, fingerprint_mismatch",
+      "case_envelope_seconds": 227.9,
+      "stack_cleanup_seconds": 31.49,
+      "baseline_clean_seconds": 25.85,
+      "claude_ready_seconds": 116.99,
+      "codex_ready_seconds": 94.26,
+      "concurrent_guests": true,
+      "claude_synchronous_systemd_fixture_seconds": 22.51,
+      "mechanism": "Claude-only private kernel fixture runs synchronously before Runtime exec; concurrent Codex guest omits it and reaches Ready about 23 seconds earlier. Both retain similar PodReady-to-first-journal and service-job-start delays.",
+      "next_probe": "The simple separate-oneshot arrangement is ruled out by source: fixture requires the actual Runtime INVOCATION_ID, RuntimeDirectory and owner BindsTo/After; Runtime is transitively after guest/network/home preparation. Retain these contracts. Revisit only with a design preserving real invocation ownership and measured independent work to overlap.",
+      "limits": "Inclusive phases overlap; do not sum. Source/journals explain the 23-second guest difference, not all readiness or wrapper time. Earlier scheduling benefit remains unmeasured.",
+      "probe_disposition": "Source-level rejection of the simple earlier-oneshot arrangement; no execution test or blanket rejection of other scheduling designs. Replacing declarative ordering with shell gates is not justified by this partial tail."
+    }
+  },
+  "followups": {
+    "tracker": "https://github.com/agentydragon/ducktape/issues/16099",
+    "independent_repair": "After #16344 lands, review the first 20 fresh Firecracker actions containing its exact patch. Count first-call Unavailable, within-handshake recoveries, exhausted handshakes, same-incarnation fences, cleanup durations and any failure/retry signatures. Exclude cached results; retain failed/cancelled runs and raw artifacts privately. No scheduled monitor is claimed.",
+    "whole_graph": "Compare the repaired unchanged graph with the candidate graph, holding cache/capacity/source exposure visible. Include VM, Pod, Services, Firecracker queues and all required checks; do not add overlapping phase savings.",
+    "qualification": "30 qualified matched pairs, 100 fresh contract executions, three busy windows and a four-PR burst remain open. Current gate unchanged; diminishing returns not established.",
+    "import_benchmark": "Repair normal-root cold-store versus warm-repeat measurement over identical 18 image references, preserving current usable-image skip, pin verification and low-disk prune semantics. Earlier figures are confounded.",
+    "retained_prior_followups": {
+      "tracker": "https://github.com/agentydragon/ducktape/issues/16099",
+      "qualification": "30 qualified pairs, 100 fresh contract executions, three busy windows, and a four-PR burst remain open. No required owners/frequency changed; diminishing returns not established.",
+      "selection_archive": "Inspect the next three natural backend heads for identity/result-stream completeness.",
+      "sampler_port": "Inspect the first ten fresh integration actions after merged #16317; cached checks do not count as exposures.",
+      "storage_16299_window_utc": [
+        "2026-11-14T00:50:49Z",
+        "2026-11-21T00:50:49Z"
+      ],
+      "storage_limit": "Retain prior stderr/restart evidence; the original controller exit cause remains unknown. No scheduled monitor claimed."
+    },
+    "next_bounded_experiment": "Repair and run the normal-root image-import benchmark with the actual serial importer versus a batching candidate, preserving current usable-image skips, pins and pruning."
+  },
+  "privacy": "Raw logs, artifact payloads, host identities and credentials are excluded. Physical identities in supporting summaries are hashes."
+}

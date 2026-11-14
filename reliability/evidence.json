@@ -4438,5 +4438,13 @@
     "source_head": "ff06b22d196eca2bd3c477e94e62b3e141336f1a",
     "source_base": "a4785875d139241007d18377a9c2d70a9881ae1f",
     "scope": "Supplemental architecture experiment, rebase validation, and selected critical-tail diagnosis. Original fleet populations, windows, source pins, denominators and rates unchanged."
+  },
+  "architecture_iteration14": {
+    "evidence_file": "../agentplane-test-architecture/iteration14.json",
+    "evidence_sha256": "0d8761ce9542009990b8443174598fefb6b6ffd53e028462a593333a36728c16",
+    "observed_at_utc": "2026-11-14T05:43:13.163359+00:00",
+    "source_head": "d642132a68104a4cfe5a76af15bbf7c7272d8591",
+    "source_base": "aa8d1061adb9c7f7fec5db27de4341746f76bac5",
+    "scope": "Supplemental same-source Firecracker screen, diagnosed transient route failure, validated bounded repair, rebase and next VM-tail probe. Original fleet windows, populations, rates and denominators unchanged."
   }
 }
