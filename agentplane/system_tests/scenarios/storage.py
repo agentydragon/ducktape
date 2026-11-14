@@ -41,6 +41,66 @@ async def _object(cluster: Cluster, kind: str, name: str) -> dict:
     return decoded
 
 
+async def _ready_controller(cluster: Cluster, *, case: str) -> dict:
+    """Wait for the storage precondition and retain startup failures before Sandbox creation."""
+    evidence: dict = {}
+    try:
+        with tracer.start_as_current_span("system_test.storage.controller_ready", attributes={"storage.case": case}):
+            # Deployment availability during stack setup is a past observation: the
+            # controller may restart before this exclusive case begins. A CI restart
+            # recovered in 11s; bound this precondition independently of storage work.
+            controller = json.loads(
+                await cluster.kubectl(
+                    "wait",
+                    "deployment/sandbox-controller",
+                    "--for=jsonpath={.status.readyReplicas}=1",
+                    "--timeout=30s",
+                    "-o",
+                    "json",
+                    timeout_s=40,
+                )
+            )
+        assert isinstance(controller, dict)
+        assert controller["status"].get("readyReplicas") == 1
+        evidence["deployment"] = controller
+        return controller
+    finally:
+        # Recovery must not erase the controller crash. Capture previous stderr
+        # even on success; these artifacts stay private, like other fixture logs.
+        try:
+            async with asyncio.timeout(15):
+                deployment = await _object(cluster, "deployment", "sandbox-controller")
+                evidence.setdefault("deployment", deployment)
+                selector = ",".join(
+                    f"{key}={value}" for key, value in deployment["spec"]["selector"]["matchLabels"].items()
+                )
+                pods = json.loads(await cluster.kubectl("get", "pods", f"--selector={selector}", "-o", "json"))["items"]
+                evidence["pods"] = pods
+                for pod in pods:
+                    for status in pod.get("status", {}).get("containerStatuses", []):
+                        if not status.get("restartCount"):
+                            continue
+                        key = f"{pod['metadata']['name']}/{status['name']}"
+                        try:
+                            logs = await cluster.kubectl(
+                                "logs",
+                                pod["metadata"]["name"],
+                                "-c",
+                                status["name"],
+                                "--previous",
+                                "--tail=200",
+                                timeout_s=10,
+                            )
+                        except Exception as error:
+                            logs = f"read_error: {error}"
+                        evidence.setdefault("previous_logs", {})[key] = logs
+        except Exception as error:
+            evidence["diagnostic_error"] = str(error)
+        (undeclared_outputs_dir() / f"storage-{case}-controller-startup.json").write_text(
+            json.dumps(evidence, indent=2) + "\n"
+        )
+
+
 async def _condition(cluster: Cluster, name: str, condition: str, *, check_boot: Callable[[], None] | None) -> None:
     await cluster.kubectl(
         "wait",
@@ -295,8 +355,7 @@ async def fresh_workspace_storage_survives_replacement(
     vm = vm_storage is not None
     check_boot = vm_storage.check_boot if vm_storage is not None else None
     case = "vm-raw" if vm else "pod-directory"
-    controller = await _object(cluster, "deployment", "sandbox-controller")
-    assert controller["status"].get("readyReplicas") == 1
+    controller = await _ready_controller(cluster, case=case)
     controller_image = controller["spec"]["template"]["spec"]["containers"][0]["image"]
     existing = json.loads(await cluster.kubectl("get", f"sandboxes.{GROUP}", "-o", "json"))["items"]
     assert not existing, "serialize this scenario with the deployment's other Sandbox users"

@@ -132,6 +132,27 @@ k3s_suite(
     ],
 )
 
+# Manual controls: a recovered controller still runs every storage assertion;
+# a controller that remains unavailable must fail the bounded startup wait.
+k3s_suite(
+    name = "test_storage_startup",
+    srcs = ["test_storage_startup.py"],
+    stack = "pod_scenarios",
+    tags = ["manual"],
+    deps = [
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:executor",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/scenarios:storage",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 # Manual comparison: historical case spans put about 212s here and 228s in the
 # complementary lane. Storage still runs exclusively first. Each target owns a
 # fresh stack; case ordering and the two-slot runner pool remain unchanged.
