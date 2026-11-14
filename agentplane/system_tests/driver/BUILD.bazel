@@ -147,6 +147,7 @@ py_test(
         "//agentplane/grpc:calls",
         "//agentplane/history_service:client",
         "//agentplane/proto:identity_pb2",
+        "//agentplane/runner_gateway:client",
         "//agentplane/runner_gateway/dispatcher:testing_client",
         "@pypi//grpcio",
         "@pypi//protobuf",

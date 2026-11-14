@@ -25,6 +25,7 @@ py_library(
     deps = [
         "//agentplane/env:config",
         "//agentplane/env/e2e/testing:gateway",
+        "//agentplane/grpc:calls",
         "//agentplane/net/peertls:config",
         "//agentplane/proto:session_pb2",
         "//agentplane/runner_gateway/testing:gateway_process",
@@ -37,6 +38,7 @@ py_library(
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@pypi//pytest",
         "@rules_python//python/runfiles",
     ],
 )

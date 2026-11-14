@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -15,15 +14,11 @@ import pytest_bazel
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto import identity_pb2
-from agentplane.runner_gateway.client import SandboxRunner
+from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.environment_transport import EnvironmentServiceClient
-from agentplane.system_tests.driver.native_platform import (
-    NativePlatformClients,
-    RunnerEndpointNotReadyError,
-    sandbox_control_endpoint,
-)
+from agentplane.system_tests.driver.native_platform import NativePlatformClients
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -38,8 +33,9 @@ def _clients() -> NativePlatformClients:
         environment=cast(EnvironmentServiceClient, object()),
         dispatcher=cast(SessionDispatcherClient, object()),
         history=cast(HistoryServiceClient, object()),
-        gateway_token_file=Path("unused-token"),
-        credentials=grpc.ssl_channel_credentials(),
+        control=SandboxControlClient(
+            control_target="127.0.0.1:8080", token_file=Path("unused-token"), request_timeout_s=2
+        ),
     )
 
 
@@ -56,30 +52,36 @@ class _Runner:
         return result
 
 
-async def test_control_endpoint_rejects_a_different_sandbox_uid() -> None:
+async def test_stable_gateway_route_preserves_exact_sandbox_destination_without_endpoint_slices() -> None:
+    clients = _clients()
     target = _target()
-    endpoint_slice = {
-        "metadata": {
-            "labels": {"endpointslice.kubernetes.io/managed-by": "agentplane-runner-gateway"},
-            "ownerReferences": [{"kind": "Sandbox", "name": target.name, "uid": "replacement-uid"}],
-        },
-        "endpoints": [{"addresses": ["192.0.2.10"], "conditions": {"ready": True}}],
-        "ports": [{"port": 8080, "protocol": "TCP"}],
-    }
-
-    class _Cluster:
-        namespace = "test"
-
-        async def kubectl(self, *_args: str) -> str:
-            return json.dumps({"items": [endpoint_slice]})
-
-    with pytest.raises(RuntimeError, match="exact Sandbox"):
-        await sandbox_control_endpoint(cast(Cluster, _Cluster()), target)
+    runner = await clients.runner(target)
+    assert runner.control is clients.control
+    assert runner.control.control_target == "127.0.0.1:8080"
+    assert runner.destination == identity_pb2.SandboxDestination(
+        owner=identity_pb2.ServiceAccount(namespace=target.namespace, name=target.name), target=target
+    )
+    replacement = identity_pb2.EnvironmentTarget(namespace=target.namespace, name=target.name, uid="replacement-uid")
+    successor = await clients.runner(replacement)
+    assert successor.control is runner.control
+    assert successor.destination.target.uid == "replacement-uid"
+    assert runner.destination.target.uid == "sandbox-uid"
 
 
-async def test_ready_runner_retries_only_missing_endpoint_and_unavailable_reads(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+@pytest.mark.parametrize(
+    "target",
+    [
+        identity_pb2.EnvironmentTarget(namespace="other", name="native", uid="sandbox-uid"),
+        identity_pb2.EnvironmentTarget(namespace="test", name="", uid="sandbox-uid"),
+        identity_pb2.EnvironmentTarget(namespace="test", name="native", uid=""),
+    ],
+)
+async def test_stable_gateway_route_requires_a_complete_local_sandbox(target: identity_pb2.EnvironmentTarget) -> None:
+    with pytest.raises(ValueError, match="complete Environment target"):
+        await _clients().runner(target)
+
+
+async def test_ready_runner_retries_only_unavailable_status_reads(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _clients()
     runner = _Runner(ServiceError(grpc.StatusCode.UNAVAILABLE, "control route is starting"), object())
     resolutions = 0
@@ -87,14 +89,12 @@ async def test_ready_runner_retries_only_missing_endpoint_and_unavailable_reads(
     async def resolve(_self: NativePlatformClients, _target: identity_pb2.EnvironmentTarget) -> _Runner:
         nonlocal resolutions
         resolutions += 1
-        if resolutions == 1:
-            raise RunnerEndpointNotReadyError("Gateway has not published the endpoint")
         return runner
 
     monkeypatch.setattr(NativePlatformClients, "runner", resolve)
 
     assert await client.ready_runner(_target(), timeout_s=2) is cast(SandboxRunner, runner)
-    assert resolutions == 3
+    assert resolutions == 2
     assert runner.status_calls == 2
 
 
