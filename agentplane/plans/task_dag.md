@@ -3352,7 +3352,7 @@ flowchart LR
     CENTRAL_SESSION_DELEGATED_ACTING[Remaining code-mode tools-as-Actions slice]
     CENTRAL_SESSION_ACTING_DESIGN --> CENTRAL_SESSION_DELEGATED_ACTING
     STANDING_WORKLOAD_IDENTITY[Standing workloads run as Identities; proxy observation remains]
-    ENVIRONMENT_LIFECYCLE_RULES[Selected; explicit resume landed]
+    ENVIRONMENT_LIFECYCLE_RULES[In flight: explicit resume landed, bind_session in review]
     ENVIRONMENT_IDENTITY_BIND_SESSION[In review: native CreateSession bind_session]
     ENVIRONMENT_LIFECYCLE_RULES --> ENVIRONMENT_IDENTITY_BIND_SESSION
     APP_IDENTITIES_UI[Paused: remaining identity slices in the app]
