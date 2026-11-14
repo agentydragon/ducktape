@@ -121,7 +121,7 @@ func (s *httpServer) ProtectedAPI() *huma.Group {
 }
 
 // OperatorAPI groups endpoints that additionally require the browser OIDC login, as opposed to
-// workload-token caller authentication.
+// operator ID-token bearer authentication.
 func (s *httpServer) OperatorAPI() *huma.Group {
 	group := huma.NewGroup(s.ProtectedAPI())
 	group.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
@@ -137,7 +137,7 @@ func (s *httpServer) OperatorAPI() *huma.Group {
 }
 
 // RegisterRawRoute mounts a non-JSON or streaming endpoint on the same mux as Huma. Caller routes
-// use the app's cookie-or-TokenReview boundary; operator routes additionally require an OIDC login.
+// use the app's OIDC cookie-or-ID-token boundary; operator routes additionally require a browser login.
 func (s *httpServer) RegisterRawRoute(pattern string, handler http.Handler, operatorOnly bool) {
 	if s.authentication == nil {
 		handler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
