@@ -9971,7 +9971,8 @@
     "corrections_to_earlier_findings": [
       "agentplane/indexing is not used only by x/indexing: haku/console's migrations import its vector_type (haku/console/BUILD.bazel, migrations/versions/0135_final_schema.py). It is Python and outside this Go plan.",
       "The twelve Python settings.py models are live cdk8s authoring schemas and fixture inputs, not dead code; making settings single-source is an open mechanism choice (settings-single-source).",
-      "The Lease facts' Unrecognised variants are STYLE.md's roll-safety deviation, not a tolerance for removed state; they go with the Lease."
+      "The Lease facts' Unrecognised variants are STYLE.md's roll-safety deviation, not a tolerance for removed state; they go with the Lease.",
+      "History's empty Sandbox UID is not a legacy-writer tolerance: `BindWriter` takes it for a ServiceAccount writer whose account has no Sandbox controller owner (`history_service/internal/ingress/sandbox_uid.go`), a live path, so it left transition-tolerance-removal."
     ],
     "limits": "Planning only. No Go code moved, no Go tests run, nothing deployed.",
     "runtime_facts_split": {

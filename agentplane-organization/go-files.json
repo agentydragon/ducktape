@@ -16583,7 +16583,7 @@
       "planned_package": "storage",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["transition-tolerance-removal", "history-journals"],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/storage"
     },

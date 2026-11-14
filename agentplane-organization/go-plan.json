@@ -4489,7 +4489,6 @@
         "agentplane/history_service/api/ingress/session_ingress.proto"
       ],
       "pending_tracks": [
-        "transition-tolerance-removal",
         "history-journals",
         "settings-single-source",
         "protobuf-alignment"
@@ -4694,10 +4693,7 @@
             "agentplane/history_service/internal/storage/compact_history.go"
           ],
           "declared_packages": ["storage"],
-          "pending_tracks": [
-            "transition-tolerance-removal",
-            "history-journals"
-          ],
+          "pending_tracks": ["history-journals"],
           "counts": {
             "non_test": 6,
             "tests": 9
@@ -8498,8 +8494,7 @@
         "agentplane/central_sampler/testing/exportfixture/source.go",
         "agentplane/runner_gateway/dispatcher/store.go",
         "agentplane/runner_gateway/dispatcher/delivery.go",
-        "agentplane/runner_gateway/dispatcher/delivery_wake.go",
-        "agentplane/history_service/internal/storage/store.go"
+        "agentplane/runner_gateway/dispatcher/delivery_wake.go"
       ],
       "target_paths": [],
       "dependencies": [],
@@ -8510,24 +8505,23 @@
       "source_owner": null,
       "id": "transition-tolerance-removal",
       "title": "Delete code kept for writers and rows from before finished cutovers",
-      "components": ["central_sampler", "runner_gateway", "history_service"],
+      "components": ["central_sampler", "runner_gateway"],
       "status": "PLANNED",
       "kind": "deletion",
       "stage": 1,
       "priority": 1,
-      "summary": "Agentplane's deployed state is disposable (agentplane/AGENTS.md), so code that exists only to accept messages or rows written before a finished cutover goes before anything moves the files that hold it. A search at the pin found these sites: the sampler's Session-creation idempotency check ignores `execution_principal` from pre-cutover Dispatchers (`sessionstore/sessions.go`) and its export fixture keeps a pre-cutover configuration shape for legacy Sessions (`testing/exportfixture/source.go`); the Dispatcher keeps branches for Session rows with no execution Identity or attribution (`dispatcher/store.go`, `delivery.go`, `delivery_wake.go`); History accepts an empty Sandbox UID from a legacy writer (`internal/storage/store.go`). The line-level census and per-item gates stay in DAG section 15 (`REFACTOR_COHERENCE_AUDIT`); this track only puts those removals first.",
+      "summary": "Agentplane's deployed state is disposable (agentplane/AGENTS.md), so code that exists only to accept messages or rows written before a finished cutover goes before anything moves the files that hold it. A search at the pin found these sites: the sampler's Session-creation idempotency check ignores `execution_principal` from pre-cutover Dispatchers (`sessionstore/sessions.go`) and its export fixture keeps a pre-cutover configuration shape for legacy Sessions (`testing/exportfixture/source.go`); the Dispatcher keeps branches for Session rows with no execution Identity or attribution (`dispatcher/store.go`, `delivery.go`, `delivery_wake.go`). History's empty Sandbox UID is not one: a ServiceAccount writer whose account has no Sandbox owner binds without one (`history_service/internal/ingress/sandbox_uid.go`), a live path. The line-level census and per-item gates stay in DAG section 15 (`REFACTOR_COHERENCE_AUDIT`); this track only puts those removals first.",
       "how": [
         "For each site, find every reader and confirm no current writer produces the old shape.",
         "Remove code-only tolerances first, with their tests, one PR per owner.",
-        "Where retained rows still carry the old shape (Dispatcher Sessions without an execution Identity, History rows without a Sandbox UID, stored sampler configurations), deleting those rows is a data change: its own PR, with the exact loss stated and operator approval before merge. The code branch goes after the rows are gone.",
-        "Leave the Lease facts' `Unrecognised` variants (`sandboxes/lease/facts.go`): they are STYLE.md's roll-safety deviation for a newer writer, not a leftover, and go with the Lease in gateway-runtime-lease-removal."
+        "Where retained rows still carry the old shape (Dispatcher Sessions without an execution Identity, stored sampler configurations), deleting those rows is a data change: its own PR, with the exact loss stated and operator approval before merge. The code branch goes after the rows are gone.",
+        "Leave the Lease facts' `Unrecognised` variants (`sandboxes/lease/facts.go`): they are STYLE.md's roll-safety deviation for a newer writer, not a leftover, and go with the codec in runtime-facts-off-lease."
       ],
       "gate": "Per site: no live writer of the old shape, and no retained row that needs the branch (or that row's deletion approved and merged first). Historical actor, writer and sender attribution stays, as DAG section 15 keeps it. The Session-opening facade's rollback-window fallbacks in `app/internal/server/runnerapi.go` have their own DAG gate and are not in this track.",
       "preserve": "Historical attribution; current Identity fencing and refusals; protobuf field numbers (reserve removed fields).",
       "validation": [
         "//agentplane/central_sampler/internal/sessionstore:sessionstore_test",
-        "//agentplane/runner_gateway/dispatcher:store_integration_test",
-        "//agentplane/history_service/internal/storage:store_integration_test"
+        "//agentplane/runner_gateway/dispatcher:store_integration_test"
       ],
       "evidence_paths": [
         "agentplane/central_sampler/internal/sessionstore/sessions.go",
@@ -8535,10 +8529,10 @@
         "agentplane/runner_gateway/dispatcher/store.go",
         "agentplane/runner_gateway/dispatcher/delivery.go",
         "agentplane/runner_gateway/dispatcher/delivery_wake.go",
-        "agentplane/history_service/internal/storage/store.go",
         "agentplane/AGENTS.md",
         "agentplane/plans/task_dag.md",
-        "agentplane/sandboxes/lease/facts.go"
+        "agentplane/sandboxes/lease/facts.go",
+        "agentplane/history_service/internal/ingress/sandbox_uid.go"
       ],
       "review_size": "One PR per owner; row deletions are separate PRs."
     },
@@ -10815,7 +10809,7 @@
         "Do not rename the aggregate to proxy based on one role among several.",
         "Probe whether independent APIs can separate proxy calls from connection/watch lifetime; if not, keep the cohesive gateway package."
       ],
-      "gate": "No package split until an owner map and race tests prove close-before-release, observer join and generation fencing. Candidate paths are provisional; require narrow APIs and race-tested close-before-release before creating them. The runtime Lease this package writes goes first (gateway-runtime-lease-removal) and the control EndpointSlice may follow (gateway-replica-ownership); split only what remains.",
+      "gate": "No package split until an owner map and race tests prove close-before-release, observer join and generation fencing. Candidate paths are provisional; require narrow APIs and race-tested close-before-release before creating them. The Runtime facts this package publishes on the Lease go first (runtime-facts-off-lease); the connection Lease and control EndpointSlice follow in gateway-replica-ownership. Split only what remains.",
       "preserve": "Peer authentication; Connection/observer lifetime and lease release ordering; Generation fences",
       "validation": [
         "//agentplane/runner_gateway/internal/gateway:gateway_test",
