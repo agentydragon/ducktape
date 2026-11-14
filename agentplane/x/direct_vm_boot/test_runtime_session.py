@@ -38,7 +38,7 @@ from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, accepted_session, admitted
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
-from agentplane.system_tests.vm.configuration import RESOURCES
+from agentplane.system_tests.vm.configuration import RESOURCES, SUPERVISION_KERNEL_ARG
 from agentplane.system_tests.vm.guest_supervision_probe import VM_SUPERVISION_PROBE, assert_vm_supervision_probe
 from agentplane.testing.claude_model import ClaudeModel
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
@@ -266,6 +266,23 @@ def model(endpoint: AnthropicMessages) -> ClaudeModel:
     return ClaudeModel(endpoint)
 
 
+async def assert_guest_systemd_supervision_passed(state: Path, outputs: Path, docker_done: asyncio.Task[int]) -> None:
+    expected_receipt = '{"real_systemd_supervision":"passed"}\n'
+    expected_marker = f"AGENTPLANE_GUEST_SUPERVISION_PASSED {expected_receipt.rstrip()}"
+    # The start wrapper emits serial records before its private checks finish.
+    # The existing QEMU lifetime bounds this wait, including a wedged fixture.
+    while True:
+        serial = await asyncio.to_thread((outputs / "runtime.serial.log").read_text, errors="replace")
+        assert "AGENTPLANE_GUEST_SUPERVISION_FAILED" not in serial, "guest systemd supervision failed"
+        if expected_marker in serial.splitlines():
+            break
+        assert not docker_done.done(), "QEMU guest exited before the supervision pass receipt"
+        await asyncio.sleep(0.05)
+    result = (state / "testing/supervision/result.json").read_text()
+    assert result == expected_receipt, "guest supervision result did not match the exact pass receipt"
+    assert serial.count("--- PASS: TestSystemdKernelFixture ") == 1, "guest serial lacks the parent Go test pass"
+
+
 async def _run_shell_turn(
     *,
     dispatcher: SessionDispatcherClient,
@@ -384,7 +401,9 @@ async def test_packaged_claude_session_runs_shell_and_accepts_next_input(
             state=state,
             outputs=outputs,
             gateway_address=hostfwd_address,
+            kernel_args=(SUPERVISION_KERNEL_ARG,),
         ) as docker_done:
+            await assert_guest_systemd_supervision_passed(state, outputs, docker_done)
             ready_task = asyncio.create_task(
                 authenticated_readiness(gateway_service, client_token, api_server, sandbox)
             )

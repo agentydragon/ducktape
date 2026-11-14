@@ -254,7 +254,7 @@ def _runtime_guest_script() -> str:
         timeout --signal=TERM --kill-after=10s 120s "$qemu" \
             -machine q35,accel=tcg -cpu max -nodefaults -m 1536M -smp 2 -no-reboot \
             -kernel /inputs/vmlinuz -initrd /inputs/initramfs.cpio \
-            -append "console=ttyS0 net.ifnames=0" \
+            -append "console=ttyS0 net.ifnames=0${GUEST_KERNEL_ARGS:+ $GUEST_KERNEL_ARGS}" \
             -display none -monitor none -serial file:/outputs/runtime.serial.log \
             -object memory-backend-memfd,id=mem,size=1536M,share=on \
             -numa node,memdev=mem \
@@ -296,7 +296,10 @@ async def runtime_guest_container(
     state: Path,
     outputs: Path,
     gateway_address: str,
+    kernel_args: tuple[str, ...] = (),
 ) -> AsyncIterator[asyncio.Task[int]]:
+    if any(not argument or any(character.isspace() for character in argument) for argument in kernel_args):
+        raise ValueError("guest kernel arguments must be nonempty single tokens")
     state_owner = await asyncio.to_thread(state.stat)
     artifacts = undeclared_outputs_dir()
     image = oci.load_oci_image(launcher_tools.LAYOUT_RLOCATION)
@@ -319,6 +322,8 @@ async def runtime_guest_container(
         [
             "--env",
             f"GATEWAY_ADDRESS={gateway_address}",
+            "--env",
+            f"GUEST_KERNEL_ARGS={' '.join(kernel_args)}",
             "--env",
             f"STATE_HOST_UID={state_owner.st_uid}",
             "--env",
