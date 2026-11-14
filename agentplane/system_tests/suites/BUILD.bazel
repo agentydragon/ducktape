@@ -271,6 +271,28 @@ k3s_suite(
     ],
 )
 
+# Native fixture profile replaces the App-backed conftest for this manual four-case cut candidate.
+# It preserves the existing App-owned cases on the required `test_pod` target.
+# gazelle:ignore
+k3s_suite(
+    name = "test_pod_trust_native_candidate",
+    srcs = ["test_pod_trust_native_candidate.py"],
+    main = "test_pod_trust_native_candidate.py",
+    stack = "pod_scenarios_native",
+    tags = ["manual"],
+    deps = [
+        "//:conftest",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:native_platform",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/scenarios:cert_manager_reissue",
+        "//agentplane/system_tests/scenarios:workload_trust",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 # Manual controls: a recovered controller still runs every storage assertion;
 # a controller that remains unavailable must fail the bounded startup wait.
 k3s_suite(
@@ -653,6 +675,7 @@ py_library(
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/driver:tracing",
         "//agentplane/system_tests/scenarios:agent_messaging",
+        "//agentplane/system_tests/scenarios:cert_manager_reissue",
         "//agentplane/system_tests/scenarios:dispatcher_workload",
         "//agentplane/system_tests/scenarios:egress",
         "//agentplane/system_tests/scenarios:launch_presets",

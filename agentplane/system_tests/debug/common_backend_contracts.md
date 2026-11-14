@@ -381,6 +381,25 @@ retains only five App configuration modules; App executable/image, HTTP client a
 conftests are absent. The full PR check catches an omitted expected output in render determinism:
 the new variant is now included, retaining both independent-render and byte-equality assertions.
 
+The three-case `test_services_mcp_candidate` now has its own entrypoint instead of deselecting
+four tests from the combined module. Its DCR and policy wrappers retain their bodies; the full
+consented-identity body moves to the focused `scenarios:external_connection` library, called by
+both the original and candidate wrappers. The shared MCP scenario library gains no dependencies.
+This removes central-only imports/dependencies from the candidate without duplicating assertions.
+The original seven-case target remains required; dependency and physical union qualification of
+the structurally separate three-plus-four graph is pending.
+
+The manual `test_pod_trust_native_candidate` exposes four unchanged scenario bodies: certificate
+reissue and the three wrong-issuer trust cases. It uses a Pod-only App-free fixture, retaining
+real Kubernetes, PKI, issuer reconciliation, Runner and Gateway paths, with no unused central
+sampler. Certificate reissue moves unchanged to an App-free scenario library with the original
+30-second bound. The trust scenarios already used only one descriptor from the original pair;
+the candidate creates one Ready Pod and verifies its exact Environment and Pod UID. Its logical
+case names are preserved. Render invariants and independent-render byte equality include the
+new profile. Dependency inspection and physical qualification remain pending; all original 21
+Pod cases stay required. App Thread/feed/projection, model/preset and HTTP error assertions are
+explicitly retained with their App-backed owners.
+
 ### Pod partition and capacity screen
 
 At frozen source `6c31cfb9f7`, the existing balanced Pod split is screened with all six competing
@@ -425,12 +444,37 @@ versus 321.105s in the earlier two-slot control, but setup is 130.737s versus 33
 the control skips already-usable imports. Sources and warmth differ, so this is mechanism evidence,
 not a causal timing result. The same important case assertions and storage exclusivity pass.
 
-The next manual variant tests six slots under the same eight-compute-unit request, based on the
-observed capacity. It consolidates the candidates onto the ordinary Pod module rather than keeping
-copied fixtures. It is unmeasured; capacity does not prove every concurrent workload fits. Preserve
-the first cold exposure and its failed resource screen. A matching-source, warmth-accounted control
-and complete competing graph are still needed before promotion, followed by representative
-ordinary-cache required-check and rerun/p90/flake qualification.
+Source `8c097bae2b14fb158910958917f236c69d54c9c7` consolidates the four/six-slot candidates onto
+the ordinary Pod module; both original fixture/test function ASTs are preserved. The first
+same-source capacity pair runs [six slots](https://app.buildbuddy.io/invocation/f87c7963-0e50-4d47-9fac-1a6e2dd0311d)
+before [ordinary two slots](https://app.buildbuddy.io/invocation/9cae6b36-68c0-47fd-9e79-2847e5ff2be6).
+Both execute the same 21 cases fresh, once, without failures, errors or skips; retained baseline
+evidence reports warm infrastructure and complete cleanup in both arms.
+
+| Measurement                          | Ordinary two slots / four requested CU | Six slots / eight requested CU |
+| ------------------------------------ | -------------------------------------: | -----------------------------: |
+| Pod physical execution               |                               513.545s |                       313.609s |
+| TestRunner CPU                       |                             1,093.896s |                     1,012.582s |
+| Peak action memory                   |                    5,540,950,016 bytes |            5,968,359,424 bytes |
+| Stack setup / cleanup                |                      34.407s / 64.197s |              27.137s / 62.427s |
+| Actual node allocatable CPU / memory |                      7 / 9,957,952 KiB |            11 / 20,012,876 KiB |
+
+Physical execution is 38.9% lower and CPU 7.4% lower in this single configuration comparison.
+Requested compute-unit times execution is 22.1% higher; peak action memory is 7.7% higher. CPU,
+compute-time and memory ratios pass the predeclared 1.5 / 1.5 / 2.0 screening caps. Increased slots
+and node capacity are the intended combined treatment, so this does not isolate either effect.
+Specific workers, arm order and ambient load remain uncontrolled. Preserve the earlier cold
+four-slot exposure and its failed screen; this result does not supersede that observation.
+
+The next screen compares all seven competing targets at the same frozen source, control first,
+then six-slot candidate. [Control A2](https://app.buildbuddy.io/invocation/88db0989-55ba-40f8-8a9a-94e87fb95a54)
+is submitted; outcomes are pending. Require the same 40-case multiset, report unknown Firecracker
+CPU separately, and screen whole-graph known CPU/requested CU execution at no more than 1.10 times
+control and peak requested managed CU at 1.20 times. This graph requests at most 28 managed CU in
+control and 32 in candidate, with the unchanged KVM action's explicit CPU/memory accounted separately.
+The ordinary two-slot target remains required until complete-graph and representative ordinary-cache
+required-check, rerun, p90 and flake qualification support adoption. Exact `8c097bae` passes all
+three required checks; that correctness result does not establish the performance goal.
 
 The independent Actions repair is [PR #16386](https://github.com/agentydragon/ducktape/pull/16386),
 open and unmerged at `d34c757904475f262cce517503a21d863e466684`. All three required hosted checks
