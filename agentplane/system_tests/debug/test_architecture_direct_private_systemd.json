@@ -9,7 +9,12 @@
   "new_physical_test_actions": 1,
   "physical_execution_seconds": 188.694214,
   "reported_test_cpu_seconds": 309.78432,
-  "junit": { "tests": 1, "failures": 0, "errors": 0, "skipped": 0 },
+  "junit": {
+    "tests": 1,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
   "run": 1,
   "attempt": 1,
   "private_go_parent": "TestSystemdKernelFixture",
@@ -33,7 +38,12 @@
     "outcome": "TESTS_FAILED",
     "native_elapsed_seconds": 175.663,
     "new_physical_test_actions": 1,
-    "junit": { "tests": 1, "failures": 1, "errors": 0, "skipped": 0 },
+    "junit": {
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
     "private_go_parent_pass_seconds": 8.16,
     "failure": "The new host read of the guest result file raised PermissionError while the guest owned state. Serial already contained the real private fixture pass.",
     "repair": "Require the exact serial receipt and Go parent pass before readiness; check the actual result file after existing teardown restores the host owner. No permission or lifetime change."
@@ -43,5 +53,65 @@
     "No private proof was removed from the required full VM suite or the manual platform candidate.",
     "The two attempts use different source revisions; their durations are not a performance comparison.",
     "Seeded controls and a complete graph comparison remain prerequisites to ownership transfer or promotion."
-  ]
+  ],
+  "same_source_receipt_control_pair": {
+    "source": "fa9094cd8ad82ec9ac4f7496ab864e50cf9767f3",
+    "purpose": "Reject omission of the private fixture without changing the receipt or Go-parent assertions; correctness screen only.",
+    "healthy": {
+      "invocation_id": "6cb56451-51b4-4719-ac77-9f1b4e00ba91",
+      "outcome": "SUCCESS",
+      "native_elapsed_seconds": 168.422,
+      "new_physical_test_actions": 1,
+      "physical_execution_seconds": 138.218478,
+      "reported_test_cpu_seconds": 235.913499,
+      "inner_queue_seconds": 0.058728,
+      "junit": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "junit_seconds": 114.696,
+      "private_go_parent_pass_seconds": 12.15,
+      "private_go_child_passes": 11,
+      "exact_private_serial_receipt": true,
+      "container_exit": 143,
+      "container_remove_exit": 0,
+      "host_owner_restoration_confirmed": true,
+      "cleanup_assertions_passed": true
+    },
+    "omitted_fixture": {
+      "invocation_id": "8c097f7b-302a-4fc8-b5ca-6ac9b8b7e6c0",
+      "outcome": "TESTS_FAILED",
+      "environment": {
+        "DIRECT_VM_OMIT_PRIVATE_SUPERVISION_CONTROL": "1"
+      },
+      "native_elapsed_seconds": 207.436,
+      "new_physical_test_actions": 1,
+      "physical_execution_seconds": 176.572867,
+      "reported_test_cpu_seconds": 124.583857,
+      "inner_queue_seconds": 0.059147,
+      "junit": {
+        "tests": 1,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      "junit_seconds": 147.422,
+      "guest_kernel_argument_absent": true,
+      "real_runtime_lifecycle_observed": true,
+      "private_serial_receipt_absent": true,
+      "private_go_parent_pass_absent": true,
+      "failure": "The unchanged receipt wait never completes. The existing 120-second QEMU bound exits 124 and the live-guest watcher fails the contract.",
+      "container_exit": 124,
+      "container_remove_exit": 0,
+      "host_owner_restoration_confirmed": true,
+      "cleanup_error": false
+    },
+    "limits": [
+      "The negative run omits fixture startup; it is not a mutation of an individual private invariant.",
+      "The two different behaviors are not a timing comparison or a reliability-rate denominator.",
+      "Both invocations use first run/attempt and one unique NEW physical action. No required owner or test frequency changed."
+    ]
+  }
 }

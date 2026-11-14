@@ -299,11 +299,22 @@ authenticated Runtime readiness, workspace execution, actual kernel supervision
 and real CLI routing without new execution privileges. Its case span is 152.462s,
 including 112.454s waiting for the Sandbox; the cold physical action is 356.510s.
 This is a different source/cache exposure from the earlier graph, so no speed
-saving is established. Inspect the existing launcher/boot/Runtime artifacts for
-that readiness phase before expanding comparisons. Both packaged guest contracts
-retain harness setup/fence, two-turn and History ownership. Private kernel,
-launcher, mounts and supervision still need seeded controls against the new
-composition before any gate changes. The deployed witness and MCP Services nearly
+saving is established. The readiness audit finds guest startup and the private
+systemd fixture on this path. A manual root retaining Codex but omitting Claude
+is 26.2% smaller; one same-source B/A pair reduces root import by 23.650s but
+physical execution by only 11.086s (4.0%), with worse readiness in the smaller arm.
+The rejected no-harness root cannot start embedded Execution, which needs Codex.
+These are image-screen results, not complete-feedback savings.
+
+The existing direct Claude guest now also runs the unchanged private systemd
+fixture within its existing 120s QEMU bound. A same-source positive passes both
+turns, exact History, setup/fence, CLI, credential revocation and cleanup; omitting
+the fixture fails while waiting for its unchanged receipt. No permission was
+relaxed and no VM was added. Both packaged guests retain their harness ownership.
+Next, assign that private proof to the candidate graph and test whether removing
+its duplicate from the manual platform witness shortens the combined graph.
+Launcher, mount and issuer/Pod-binding defects still need controls against the
+new composition before any required gate changes. The deployed witness and MCP Services nearly
 tie in the warm candidate, with Pod next; measure the combined graph rather than
 extrapolating an isolated improvement. The existing importer draft #15126 remains
 unproven and should be revisited only through a repaired matched benchmark.
@@ -318,6 +329,13 @@ controls and all 21 required Pod cases pass. The narrow devel port is
 [#16299](https://github.com/agentydragon/ducktape/pull/16299). Controller exit cause
 and fleet recurrence remain open; see
 [`storage_controller_startup.md`](../system_tests/debug/storage_controller_startup.md).
+
+The independent selected-label diagnostic archive
+[#16316](https://github.com/agentydragon/ducktape/pull/16316) and two-file Sampler
+TokenReview/History-outage coverage port
+[#16317](https://github.com/agentydragon/ducktape/pull/16317) are merged into devel.
+The archive changes neither selection nor verdicts. Neither port is a
+latency reduction claim; the latter adds real failure-path coverage.
 
 Iteration evidence and the remaining coverage boundaries are recorded in
 [`system_tests/debug/test_architecture_iteration2.md`](../system_tests/debug/test_architecture_iteration2.md).
