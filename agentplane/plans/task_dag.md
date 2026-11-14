@@ -2362,8 +2362,8 @@ per-kind rendering on read, and with what common surface?
 **Decision, unscheduled; operator, 2026-11-14 20:34 UTC:** considering whether the Environment Runtime
 should expose Codex's and Claude's interfaces, input and output, more directly instead of translating
 to neutral projections and from generic commands. [`native_harness_interfaces.md`](native_harness_interfaces.md)
-maps today's translations and their consumers. **Recommendation:** keep a neutral control floor
-(command outcomes, input confirmation, turn boundaries, applied settings, lifecycle, native frames);
+maps today's translations and their consumers. **Recommendation:** keep a neutral floor (command
+admission and one settlement fact, turn boundaries, applied settings, lifecycle, native frames);
 add per-kind typed commands that `session_dispatcher` checks against the Session's harness and the
 Runtime frames; leave content native for readers to render. The output half lands after
 [`JOURNAL_REPRESENTATION_DESIGN`](#journal_representation_design--history-as-stored-journals)'s
