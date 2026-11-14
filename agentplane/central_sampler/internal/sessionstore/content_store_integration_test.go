@@ -337,12 +337,3 @@ func responseContextForTest(t *testing.T, items []responses.Item) *responses.Con
 	}
 	return state
 }
-
-func mustMarshalJSON(t *testing.T, value any) []byte {
-	t.Helper()
-	data, err := json.Marshal(value)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return data
-}

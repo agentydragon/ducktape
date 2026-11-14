@@ -13,7 +13,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
