@@ -162,7 +162,6 @@ func TestManagerCacheSyncNeedsOnlyGrantedSandboxWatchKinds(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "sandbox-controller"},
 		Rules: []rbacv1.PolicyRule{
 			{APIGroups: []string{""}, Resources: []string{"pods", "persistentvolumeclaims", "configmaps", "services", "events"}, Verbs: []string{"get", "list", "watch"}},
-			{APIGroups: []string{"coordination.k8s.io"}, Resources: []string{"leases"}, Verbs: []string{"get", "list", "watch"}},
 			{APIGroups: []string{sandboxapi.GroupVersion.Group}, Resources: []string{"sandboxes", "sandboxtemplates"}, Verbs: []string{"get", "list", "watch"}},
 			{APIGroups: []string{policyapi.SchemeGroupVersion.Group}, Resources: []string{"identities", "workloadcredentials"}, Verbs: []string{"get", "list", "watch"}},
 		},
@@ -203,7 +202,7 @@ func TestManagerCacheSyncNeedsOnlyGrantedSandboxWatchKinds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &Reconciler{Client: mgr.GetClient(), Objects: mgr.GetAPIReader(), Leases: mgr.GetClient(), States: NewRuntimeStates(nil, time.Now), Now: time.Now}
+	r := &Reconciler{Client: mgr.GetClient(), Objects: mgr.GetAPIReader(), States: NewRuntimeStates(nil, time.Now), Now: time.Now}
 	if err := r.SetupWithManager(mgr); err != nil {
 		t.Fatal(err)
 	}
@@ -275,7 +274,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &Reconciler{
-		Client: mgr.GetClient(), Objects: mgr.GetAPIReader(), KubeVirt: false, Leases: mgr.GetClient(),
+		Client: mgr.GetClient(), Objects: mgr.GetAPIReader(), KubeVirt: false,
 		States: NewRuntimeStates(nil, time.Now), Now: time.Now,
 	}
 	r.Credentials, err = requester.New(mgr.GetAPIReader(), mgr.GetClient())

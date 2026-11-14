@@ -9,7 +9,6 @@ import (
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -32,7 +31,7 @@ type RuntimeSnapshot struct {
 	LastSeen   time.Time
 	Connected  bool
 	Generation uint64
-	Facts      sandboxlease.EnvironmentRuntimeFacts
+	Facts      EnvironmentRuntimeFacts
 }
 
 func (s RuntimeSnapshot) fresh(now time.Time) bool {
@@ -113,7 +112,7 @@ func (s *RuntimeStates) Track(sandbox *sandboxapi.Sandbox, pod *corev1.Pod, cred
 	// Address and credential changes reset connection/idle evidence, but cannot
 	// undo a terminal bootstrap result for the same Sandbox incarnation.
 	if current != nil && current.sandbox.UID == sandbox.UID && current.pod.UID == pod.UID &&
-		(current.snapshot.Facts.Bootstrap == sandboxlease.BootstrapFailed || current.snapshot.Facts.Bootstrap == sandboxlease.BootstrapInterrupted) {
+		(current.snapshot.Facts.Bootstrap == BootstrapFailed || current.snapshot.Facts.Bootstrap == BootstrapInterrupted) {
 		observation.snapshot.Facts.Bootstrap = current.snapshot.Facts.Bootstrap
 	}
 	s.active[key] = observation
@@ -168,7 +167,7 @@ func (s *RuntimeStates) observe(ctx context.Context, key types.NamespacedName, o
 				response.GetEnvironmentRuntimeBootId() == "" || response.GetConnectionEpoch() != 0 || response.GetFacts() == nil {
 				return fmt.Errorf("Runtime state has invalid incarnation or facts")
 			}
-			facts, err := sandboxlease.FromProto(response.Facts)
+			facts, err := runtimeFactsFromProto(response.Facts)
 			if err != nil {
 				return err
 			}
@@ -179,7 +178,7 @@ func (s *RuntimeStates) observe(ctx context.Context, key types.NamespacedName, o
 			}
 			previous := observation.snapshot
 			// Bootstrap failure is terminal for an incarnation, including across a Runtime restart.
-			if previous.Facts.Bootstrap == sandboxlease.BootstrapFailed || previous.Facts.Bootstrap == sandboxlease.BootstrapInterrupted {
+			if previous.Facts.Bootstrap == BootstrapFailed || previous.Facts.Bootstrap == BootstrapInterrupted {
 				facts.Bootstrap = previous.Facts.Bootstrap
 			}
 			observation.snapshot = RuntimeSnapshot{

@@ -216,7 +216,7 @@ type AutosuspendBlocker struct {
 	SessionID *string                  `json:"sessionId,omitempty"`
 }
 
-// ValidateAutosuspendBlockers rejects malformed and duplicate runner Lease facts.
+// ValidateAutosuspendBlockers rejects malformed and duplicate Runtime facts.
 func ValidateAutosuspendBlockers(blockers []AutosuspendBlocker) error {
 	seen := make(map[string]struct{}, len(blockers))
 	for _, blocker := range blockers {

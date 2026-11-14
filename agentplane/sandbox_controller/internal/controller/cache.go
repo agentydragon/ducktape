@@ -1,7 +1,6 @@
 package sandboxcontroller
 
 import (
-	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
@@ -11,15 +10,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 )
 
 // CacheByObject restricts the manager's cache. Of the kinds the controller creates or watches by the
 // Sandbox label (Pods, PVCs, ConfigMaps, Services and, with KubeVirt, VMs and VMIs) it holds only
 // objects carrying the label, so an unrelated object in the namespace is neither stored nor enqueued.
-// Events carry no labels: it holds those about any Pod. Of Leases it holds the Runner Gateway's
-// connection Leases, not the leader election Lease. It holds every Identity and WorkloadCredential
-// in the namespace, which are watched by identity or owner reference.
+// Events carry no labels: it holds those about any Pod. It holds every Identity and
+// WorkloadCredential in the namespace, watched by identity or owner reference.
 //
 // Every controller-created object filtered by the Sandbox label carries it.
 func CacheByObject(kubeVirt bool) (map[client.Object]cache.ByObject, error) {
@@ -39,10 +36,5 @@ func CacheByObject(kubeVirt bool) (map[client.Object]cache.ByObject, error) {
 		byObject[&kubevirtv1.VirtualMachine{}] = cache.ByObject{Label: ours}
 		byObject[&kubevirtv1.VirtualMachineInstance{}] = cache.ByObject{Label: ours}
 	}
-	connection, err := labels.NewRequirement(sandboxlease.EnvironmentRuntimeConnectionLabel, selection.Equals, []string{"true"})
-	if err != nil {
-		return nil, err
-	}
-	byObject[&coordinationv1.Lease{}] = cache.ByObject{Label: labels.NewSelector().Add(*connection)}
 	return byObject, nil
 }

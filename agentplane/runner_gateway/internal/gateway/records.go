@@ -9,7 +9,6 @@ import (
 	"time"
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -108,7 +107,7 @@ func newConnectionRecords(
 }
 
 func (r *connectionRecords) claim(ctx context.Context, sandbox *sandboxreader.Identity, podUID string) (uint64, types.UID, error) {
-	leaseName := sandbox.Name + sandboxlease.EnvironmentRuntimeLeaseSuffix
+	leaseName := sandbox.Name + environmentRuntimeLeaseSuffix
 	var epoch uint64
 	var leaseUID types.UID
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -147,8 +146,8 @@ func (r *connectionRecords) claim(ctx context.Context, sandbox *sandboxreader.Id
 			TypeMeta: metav1.TypeMeta{APIVersion: "coordination.k8s.io/v1", Kind: "Lease"},
 			ObjectMeta: metav1.ObjectMeta{
 				Name: leaseName, Namespace: r.namespace,
-				Labels:          map[string]string{sandboxlease.EnvironmentRuntimeConnectionLabel: "true"},
-				Annotations:     map[string]string{sandboxlease.PodUIDAnnotation: podUID},
+				Labels:          map[string]string{environmentRuntimeConnectionLabel: "true"},
+				Annotations:     map[string]string{podUIDAnnotation: podUID},
 				OwnerReferences: []metav1.OwnerReference{sandboxOwnerReference(sandbox)},
 			},
 			Spec: coordinationv1.LeaseSpec{
@@ -163,8 +162,8 @@ func (r *connectionRecords) claim(ctx context.Context, sandbox *sandboxreader.Id
 		} else {
 			lease.ResourceVersion = current.ResourceVersion
 			lease.UID = current.UID
-			if uid := sandboxlease.LastConnectedPodUID(current.Annotations); uid != "" {
-				lease.Annotations[sandboxlease.LastConnectedPodUIDAnnotation] = uid
+			if uid := lastConnectedPodUID(current.Annotations); uid != "" {
+				lease.Annotations[lastConnectedPodUIDAnnotation] = uid
 			}
 			lease, err = r.coordination.Leases(r.namespace).Update(ctx, lease, metav1.UpdateOptions{})
 		}
@@ -194,7 +193,7 @@ func (r *connectionRecords) claim(ctx context.Context, sandbox *sandboxreader.Id
 // connection have stopped. A resource-version update and a fresh holder/UID/epoch check on every
 // conflict prevent a delayed release from clearing a successor's claim.
 func (r *connectionRecords) release(ctx context.Context, sandbox *sandboxreader.Identity, leaseUID types.UID, epoch uint64) error {
-	name := sandbox.Name + sandboxlease.EnvironmentRuntimeLeaseSuffix
+	name := sandbox.Name + environmentRuntimeLeaseSuffix
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		lease, err := r.coordination.Leases(r.namespace).Get(ctx, name, metav1.GetOptions{})
 		if apierrors.IsNotFound(err) {
@@ -210,13 +209,7 @@ func (r *connectionRecords) release(ctx context.Context, sandbox *sandboxreader.
 		}
 		lease.Spec.HolderIdentity = nil
 		lease.Spec.RenewTime = nil
-		for _, key := range []string{
-			sandboxlease.EnvironmentRuntimeBootIDAnnotation, sandboxlease.QuiesceStageAnnotation,
-			sandboxlease.IdleSinceAnnotation, sandboxlease.BootstrapAnnotation,
-			sandboxlease.SetupsRunningAnnotation, sandboxlease.AutosuspendBlockersAnnotation,
-		} {
-			delete(lease.Annotations, key)
-		}
+		delete(lease.Annotations, environmentRuntimeBootIDAnnotation)
 		_, err = r.coordination.Leases(r.namespace).Update(ctx, lease, metav1.UpdateOptions{})
 		return err
 	})
@@ -224,7 +217,7 @@ func (r *connectionRecords) release(ctx context.Context, sandbox *sandboxreader.
 
 func (r *connectionRecords) recordBootID(ctx context.Context, sandbox *sandboxreader.Identity, epoch uint64, bootID string) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		lease, err := r.coordination.Leases(r.namespace).Get(ctx, sandbox.Name+sandboxlease.EnvironmentRuntimeLeaseSuffix, metav1.GetOptions{})
+		lease, err := r.coordination.Leases(r.namespace).Get(ctx, sandbox.Name+environmentRuntimeLeaseSuffix, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
@@ -235,8 +228,8 @@ func (r *connectionRecords) recordBootID(ctx context.Context, sandbox *sandboxre
 		if lease.Annotations == nil {
 			lease.Annotations = make(map[string]string)
 		}
-		lease.Annotations[sandboxlease.EnvironmentRuntimeBootIDAnnotation] = bootID
-		lease.Annotations[sandboxlease.LastConnectedPodUIDAnnotation] = lease.Annotations[sandboxlease.PodUIDAnnotation]
+		lease.Annotations[environmentRuntimeBootIDAnnotation] = bootID
+		lease.Annotations[lastConnectedPodUIDAnnotation] = lease.Annotations[podUIDAnnotation]
 		_, err = r.coordination.Leases(r.namespace).Update(ctx, lease, metav1.UpdateOptions{})
 		return err
 	})
@@ -247,9 +240,8 @@ func (r *connectionRecords) renew(
 	sandbox *sandboxreader.Identity,
 	epoch uint64,
 	seenAt time.Time,
-	facts *sandboxlease.EnvironmentRuntimeFacts,
 ) error {
-	name := sandbox.Name + sandboxlease.EnvironmentRuntimeLeaseSuffix
+	name := sandbox.Name + environmentRuntimeLeaseSuffix
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		lease, err := r.coordination.Leases(r.namespace).Get(ctx, name, metav1.GetOptions{})
 		if apierrors.IsNotFound(err) {
@@ -263,25 +255,7 @@ func (r *connectionRecords) renew(
 			!ownsSandbox(lease.OwnerReferences, sandbox) {
 			return errSupersededConnection
 		}
-		if lease.Annotations == nil {
-			lease.Annotations = make(map[string]string)
-		}
-		for _, key := range []string{
-			sandboxlease.QuiesceStageAnnotation, sandboxlease.IdleSinceAnnotation, sandboxlease.BootstrapAnnotation,
-			sandboxlease.SetupsRunningAnnotation, sandboxlease.AutosuspendBlockersAnnotation,
-		} {
-			delete(lease.Annotations, key)
-		}
 		lease.Spec.RenewTime = &metav1.MicroTime{Time: seenAt.UTC()}
-		if facts != nil {
-			annotations, err := facts.Annotations()
-			if err != nil {
-				return err
-			}
-			for key, value := range annotations {
-				lease.Annotations[key] = value
-			}
-		}
 		_, err = r.coordination.Leases(r.namespace).Update(ctx, lease, metav1.UpdateOptions{})
 		return err
 	})
@@ -315,7 +289,7 @@ func (r *connectionRecords) controlRouteEpoch(ctx context.Context, sandbox *sand
 
 func (r *connectionRecords) pointControlEndpoints(ctx context.Context, sandbox *sandboxreader.Identity, leaseUID types.UID, epoch uint64) error {
 	name := sandbox.Name + sandboxapi.ControlServiceSuffix
-	leaseName := sandbox.Name + sandboxlease.EnvironmentRuntimeLeaseSuffix
+	leaseName := sandbox.Name + environmentRuntimeLeaseSuffix
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		lease, err := r.coordination.Leases(r.namespace).Get(ctx, leaseName, metav1.GetOptions{})
 		if apierrors.IsNotFound(err) {
@@ -358,8 +332,8 @@ func (r *connectionRecords) pointControlEndpoints(ctx context.Context, sandbox *
 					"endpointslice.kubernetes.io/managed-by": endpointSliceManager,
 				},
 				Annotations: map[string]string{
-					sandboxlease.ConnectionEpochAnnotation:    strconv.FormatUint(epoch, 10),
-					sandboxlease.ConnectionLeaseUIDAnnotation: string(leaseUID),
+					connectionEpochAnnotation:    strconv.FormatUint(epoch, 10),
+					connectionLeaseUIDAnnotation: string(leaseUID),
 				},
 				OwnerReferences: []metav1.OwnerReference{sandboxOwnerReference(sandbox)},
 			},
@@ -385,7 +359,7 @@ func (r *connectionRecords) pointControlEndpoints(ctx context.Context, sandbox *
 // An EndpointSlice created before connection epochs were recorded has no prior high-water mark.
 // Preserve that legacy baseline, but never overwrite a present malformed value.
 func parseControlRouteEpoch(slice *discoveryv1.EndpointSlice) (uint64, error) {
-	annotation := slice.Annotations[sandboxlease.ConnectionEpochAnnotation]
+	annotation := slice.Annotations[connectionEpochAnnotation]
 	if annotation == "" {
 		return 0, nil
 	}
@@ -412,7 +386,7 @@ func protocolPointer(value corev1.Protocol) *corev1.Protocol { return &value }
 
 func watchConnectionLeases(ctx context.Context, client kubernetes.Interface, namespace string, local *connections) error {
 	informer := coordinationinformers.NewTypedFilteredLeaseInformer(client, namespace, 0, nil, func(options *metav1.ListOptions) {
-		options.LabelSelector = sandboxlease.EnvironmentRuntimeConnectionLabel + "=true"
+		options.LabelSelector = environmentRuntimeConnectionLabel + "=true"
 	})
 	leaseUID := func(lease *coordinationv1.Lease) (string, uint64) {
 		if lease == nil || lease.Spec.LeaseTransitions == nil || len(lease.OwnerReferences) != 1 || lease.OwnerReferences[0].Kind != sandboxapi.SandboxKind {

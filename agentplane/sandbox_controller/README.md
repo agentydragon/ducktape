@@ -54,8 +54,9 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
 - [`cmd/main.go`](cmd/main.go): the manager, its cache limited to one namespace.
 - [`cache.go`](internal/controller/cache.go): the cache holds only objects carrying the Sandbox label (ConfigMaps,
   Services and the other kinds it creates or watches), every Identity and WorkloadCredential in the
-  namespace, Pod Events and (until the writer cleanup) the Gateway's connection Leases. Runtime facts come from direct
-  in-memory observation, not those Leases. RBAC cannot select by label, so the Role
+  namespace and Pod Events. Runtime facts come only from direct in-memory observation.
+  Connection Lease reads are no longer cached; their RBAC awaits the deployed image pin.
+  RBAC cannot select by label, so the Role
   still grants `list`/`watch` on those kinds.
 
 Ordinary child resources use narrow server-side apply updates after an uncached ownership

@@ -34,11 +34,7 @@ from agentplane.system_tests.driver.identity import (
     delete_scenario_identity,
     scenario_identity,
 )
-from agentplane.system_tests.driver.sandbox import (
-    ENVIRONMENT_RUNTIME_CONTAINER,
-    ENVIRONMENT_RUNTIME_LEASE_SUFFIX,
-    POD_TEMPLATE,
-)
+from agentplane.system_tests.driver.sandbox import ENVIRONMENT_RUNTIME_CONTAINER, POD_TEMPLATE
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tls import service_credentials
 from agentplane.system_tests.scenarios.dispatcher import container_mount_sources, session_until
@@ -422,15 +418,20 @@ async def deployed_session_command_cannot_cross_deletion(
                             )
                         assert refused.value.code() == grpc.StatusCode.FAILED_PRECONDITION
                 evidence["gateway_observed_deletion"] = True
-                lease_name = name + ENVIRONMENT_RUNTIME_LEASE_SUFFIX
-                await cluster.kubectl(
-                    "wait",
-                    f"lease/{lease_name}",
-                    "--for=jsonpath={.metadata.annotations.agentplane\\.allegedly\\.works/quiesce-stage}=quiesced",
-                    "--timeout=90s",
-                )
-                lease = json.loads(await cluster.kubectl("get", "lease", lease_name, "-o", "json"))
-                assert lease["metadata"]["annotations"]["agentplane.allegedly.works/pod-uid"] == incarnation["uid"]
+                async with cluster.api_client() as client:
+                    objects = k8s.CustomObjectsApi(client)
+                    async for attempt in AsyncRetrying(
+                        stop=stop_after_delay(90), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
+                    ):
+                        with attempt:
+                            sandbox = await objects.get_namespaced_custom_object(
+                                GROUP, VERSION, cluster.namespace, "sandboxes", name
+                            )
+                            assert sandbox["metadata"]["uid"] == uid
+                            assert sandbox["metadata"].get("deletionTimestamp") == evidence["deletion_timestamp"]
+                            assert sandbox.get("status", {}).get("quiescedIncarnation") == incarnation["uid"]
+                sandbox_status = sandbox.get("status", {})
+                (artifact / "quiesced-sandbox-status.json").write_text(json.dumps(sandbox_status, indent=2) + "\n")
                 pod = json.loads(await cluster.kubectl("get", "pod", incarnation["name"], "-o", "json"))
                 assert pod["metadata"]["uid"] == incarnation["uid"]
                 assert not pod["metadata"].get("deletionTimestamp")
@@ -439,7 +440,7 @@ async def deployed_session_command_cannot_cross_deletion(
                 assert delayed not in before[1]
                 assert turn_id in before[2]
                 assert not call.done()
-                evidence["quiesced_before_release"] = lease
+                evidence["quiesced_before_release"] = {"sandbox_uid": uid, "status": sandbox_status}
                 persist()
                 (gate / "release").touch()
                 with pytest.raises(grpc.aio.AioRpcError) as refused:

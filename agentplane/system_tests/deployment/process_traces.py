@@ -42,13 +42,7 @@ _SAFE_ATTRIBUTES = frozenset(
         "agentplane.environment_runtime.quiesce.stage",
     }
 )
-_SAFE_EVENTS = frozenset(
-    {
-        "agentplane.environment_runtime.quiesce_stage",
-        "agentplane.gateway.runner.quiesce_stage_observed",
-        "agentplane.gateway.runner.quiesce_stage_published",
-    }
-)
+_SAFE_EVENTS = frozenset({"agentplane.environment_runtime.quiesce_stage"})
 _SAFE_QUIESCE_STAGES = frozenset({"none", "draining", "flushing", "quiesced"})
 _QUIESCE_STAGE_ATTRIBUTE = "agentplane.environment_runtime.quiesce.stage"
 

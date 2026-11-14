@@ -7,7 +7,6 @@ import (
 	"time"
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -116,7 +115,7 @@ func (r *Reconciler) suspendIfIdle(ctx context.Context, sandbox *sandboxapi.Sand
 		}
 	}
 	facts := snapshot.Facts
-	if facts.Stage != sandboxlease.QuiesceNone {
+	if facts.Stage != QuiesceNone {
 		r.idle.forget(key)
 		return idleCheck{lameduck: true}, nil
 	}

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -73,7 +72,7 @@ func (f recordsFixture) recordsWith(
 }
 
 func (f recordsFixture) leaseName() string {
-	return f.identity.Name + sandboxlease.EnvironmentRuntimeLeaseSuffix
+	return f.identity.Name + environmentRuntimeLeaseSuffix
 }
 
 func (f recordsFixture) routeName() string { return f.identity.Name + sandboxapi.ControlServiceSuffix }
@@ -294,7 +293,7 @@ func TestConnectionReleaseAllowsImmediateTakeover(t *testing.T) {
 	}
 	lease := f.readLease()
 	if lease.Spec.HolderIdentity != nil || lease.Spec.RenewTime != nil || *lease.Spec.LeaseTransitions != int32(epoch) ||
-		lease.Annotations[sandboxlease.EnvironmentRuntimeBootIDAnnotation] != "" || sandboxlease.LastConnectedPodUID(lease.Annotations) != testPodUID {
+		lease.Annotations[environmentRuntimeBootIDAnnotation] != "" || lastConnectedPodUID(lease.Annotations) != testPodUID {
 		t.Fatalf("release erased history or retained a live claim: %+v", lease)
 	}
 	newEpoch, _, err := next.claim(ctx, f.identity, testPodUID)
@@ -408,7 +407,7 @@ func TestConnectionReleaseRechecksClaimAfterUpdateConflict(t *testing.T) {
 	}
 }
 
-func TestConnectionRenewPublishesAndClearsAutosuspendBlockers(t *testing.T) {
+func TestConnectionRenewPreservesOwnershipAndVerifiedIdentity(t *testing.T) {
 	ctx := t.Context()
 	f := newRecordsFixture(t)
 	records := f.records(connectionHolder{name: "test-gateway", ip: "192.0.2.10", port: sandboxapi.ControlServicePort})
@@ -416,21 +415,19 @@ func TestConnectionRenewPublishesAndClearsAutosuspendBlockers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sessionID := "session-a"
-	busy := &sandboxlease.EnvironmentRuntimeFacts{AutosuspendBlockers: []sandboxapi.AutosuspendBlocker{{
-		Reason: sandboxapi.AutosuspendBlockerActiveTurn, SessionID: &sessionID,
-	}}}
-	if err := records.renew(ctx, f.identity, epoch, time.Now(), busy); err != nil {
+	if err := records.recordBootID(ctx, f.identity, epoch, "verified-boot"); err != nil {
 		t.Fatal(err)
 	}
-	if f.readLease().Annotations[sandboxlease.AutosuspendBlockersAnnotation] == "" {
-		t.Fatal("busy runner facts were not published on the connection Lease")
-	}
-	if err := records.renew(ctx, f.identity, epoch, time.Now(), &sandboxlease.EnvironmentRuntimeFacts{}); err != nil {
+	before := f.readLease()
+	seenAt := before.Spec.RenewTime.Add(time.Second)
+	if err := records.renew(ctx, f.identity, epoch, seenAt); err != nil {
 		t.Fatal(err)
 	}
-	if blockers, exists := f.readLease().Annotations[sandboxlease.AutosuspendBlockersAnnotation]; exists {
-		t.Fatalf("idle runner retained blocker annotation: %s", blockers)
+	after := f.readLease()
+	if after.UID != before.UID || *after.Spec.HolderIdentity != *before.Spec.HolderIdentity ||
+		*after.Spec.LeaseTransitions != *before.Spec.LeaseTransitions || !maps.Equal(after.Annotations, before.Annotations) ||
+		!after.Spec.RenewTime.Time.Equal(seenAt) {
+		t.Fatalf("renewal changed ownership or identity: before=%+v after=%+v", before, after)
 	}
 }
 
@@ -442,7 +439,7 @@ func TestObservationClaimsPreserveVerifiedContact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sandboxlease.LastConnectedPodUID(f.readLease().Annotations) != "" {
+	if lastConnectedPodUID(f.readLease().Annotations) != "" {
 		t.Fatal("claim counted as contact")
 	}
 	if err := records.recordBootID(ctx, f.identity, epoch, "boot"); err != nil {
@@ -454,17 +451,17 @@ func TestObservationClaimsPreserveVerifiedContact(t *testing.T) {
 			t.Fatal(err)
 		}
 		lease := f.readLease()
-		if lease.Annotations[sandboxlease.EnvironmentRuntimeBootIDAnnotation] != "" {
+		if lease.Annotations[environmentRuntimeBootIDAnnotation] != "" {
 			t.Fatal("claim retained current boot ID")
 		}
-		if sandboxlease.LastConnectedPodUID(lease.Annotations) != testPodUID {
+		if lastConnectedPodUID(lease.Annotations) != testPodUID {
 			t.Fatal("claim erased verified contact")
 		}
 	}
 	if err := records.recordBootID(ctx, f.identity, epoch, "replacement-boot"); err != nil {
 		t.Fatal(err)
 	}
-	if sandboxlease.LastConnectedPodUID(f.readLease().Annotations) != "replacement-pod" {
+	if lastConnectedPodUID(f.readLease().Annotations) != "replacement-pod" {
 		t.Fatal("verified replacement did not update contact")
 	}
 }
@@ -476,8 +473,8 @@ func TestControlRouteRecoversAfterLeaseRecreation(t *testing.T) {
 		HolderIdentity: stringPointer("test-old-gateway"), LeaseTransitions: int32Pointer(9),
 	}})
 	f.createRoute(f.route("192.0.2.40", map[string]string{
-		sandboxlease.ConnectionEpochAnnotation:    "9",
-		sandboxlease.ConnectionLeaseUIDAnnotation: string(oldLease.UID),
+		connectionEpochAnnotation:    "9",
+		connectionLeaseUIDAnnotation: string(oldLease.UID),
 	}))
 	if err := f.leases().Delete(ctx, oldLease.Name, metav1.DeleteOptions{}); err != nil {
 		t.Fatal(err)
@@ -498,8 +495,8 @@ func TestControlRouteRecoversAfterLeaseRecreation(t *testing.T) {
 		t.Fatalf("old Lease publication error = %v, want superseded", err)
 	}
 	updated := f.readRoute()
-	if updated.Annotations[sandboxlease.ConnectionEpochAnnotation] != "10" ||
-		updated.Annotations[sandboxlease.ConnectionLeaseUIDAnnotation] != string(lease.UID) ||
+	if updated.Annotations[connectionEpochAnnotation] != "10" ||
+		updated.Annotations[connectionLeaseUIDAnnotation] != string(lease.UID) ||
 		len(updated.Endpoints) != 1 || updated.Endpoints[0].Addresses[0] != "192.0.2.41" {
 		t.Fatalf("control route after Lease recreation = %+v", updated)
 	}
@@ -521,7 +518,7 @@ func TestControlRouteEpochUsesLegacyBaselineAndRejectsInvalidValues(t *testing.T
 			f := newRecordsFixture(t)
 			var annotations map[string]string
 			if test.annotation != "" {
-				annotations = map[string]string{sandboxlease.ConnectionEpochAnnotation: test.annotation}
+				annotations = map[string]string{connectionEpochAnnotation: test.annotation}
 			}
 			f.createRoute(f.route("192.0.2.60", annotations))
 			records := f.records(connectionHolder{name: "gateway", ip: "192.0.2.60", port: sandboxapi.ControlServicePort})
@@ -567,8 +564,8 @@ func TestDelayedRoutePublicationCannotRegressRecreatedLeaseRoute(t *testing.T) {
 		HolderIdentity: stringPointer("test-old-gateway"), LeaseTransitions: int32Pointer(2),
 	}})
 	f.createRoute(f.route("192.0.2.50", map[string]string{
-		sandboxlease.ConnectionEpochAnnotation:    "1",
-		sandboxlease.ConnectionLeaseUIDAnnotation: string(oldLease.UID),
+		connectionEpochAnnotation:    "1",
+		connectionLeaseUIDAnnotation: string(oldLease.UID),
 	}))
 	// While the old Gateway's publication is in flight, a new Gateway recreates the Lease and publishes its route.
 	var newLease *coordinationv1.Lease
@@ -588,8 +585,8 @@ func TestDelayedRoutePublicationCannotRegressRecreatedLeaseRoute(t *testing.T) {
 			}})
 			route := f.readRoute()
 			route.Annotations = map[string]string{
-				sandboxlease.ConnectionEpochAnnotation:    "2",
-				sandboxlease.ConnectionLeaseUIDAnnotation: string(newLease.UID),
+				connectionEpochAnnotation:    "2",
+				connectionLeaseUIDAnnotation: string(newLease.UID),
 			}
 			route.Endpoints[0].Addresses[0] = "192.0.2.51"
 			if _, err := f.endpointSlices().Update(ctx, route, metav1.UpdateOptions{}); err != nil {
@@ -604,8 +601,8 @@ func TestDelayedRoutePublicationCannotRegressRecreatedLeaseRoute(t *testing.T) {
 		t.Fatal("the old publication never reached its update")
 	}
 	updated := f.readRoute()
-	if updated.Annotations[sandboxlease.ConnectionLeaseUIDAnnotation] != string(newLease.UID) ||
-		updated.Annotations[sandboxlease.ConnectionEpochAnnotation] != "2" ||
+	if updated.Annotations[connectionLeaseUIDAnnotation] != string(newLease.UID) ||
+		updated.Annotations[connectionEpochAnnotation] != "2" ||
 		updated.Endpoints[0].Addresses[0] != "192.0.2.51" {
 		t.Fatalf("delayed old publication regressed control route: %+v", updated)
 	}

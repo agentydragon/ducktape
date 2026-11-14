@@ -10,7 +10,6 @@ import (
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -257,9 +256,9 @@ func TestRuntimeStatesBootstrapFailureIsTerminalUntilPodReplacement(t *testing.T
 				time.Sleep(time.Second)
 				second := <-watcher.calls
 				publishRuntimeState(t, second, runtimeStateResponse(second, "boot-2"))
-				want := sandboxlease.BootstrapFailed
+				want := BootstrapFailed
 				if terminal == environmentruntimestatepb.EnvironmentRuntimeFacts_BOOTSTRAP_INTERRUPTED {
-					want = sandboxlease.BootstrapInterrupted
+					want = BootstrapInterrupted
 				}
 				if snapshot := states.Snapshot(sandbox, string(pod.UID)); snapshot.Facts.Bootstrap != want || snapshot.BootID != "boot-2" {
 					t.Fatalf("Runtime restart cleared terminal bootstrap: %+v", snapshot)
@@ -269,7 +268,7 @@ func TestRuntimeStatesBootstrapFailureIsTerminalUntilPodReplacement(t *testing.T
 				states.Track(sandbox, replacement, "new-credential")
 				third := <-watcher.calls
 				publishRuntimeState(t, third, runtimeStateResponse(third, "boot-3"))
-				if snapshot := states.Snapshot(sandbox, string(replacement.UID)); snapshot.Facts.Bootstrap != sandboxlease.BootstrapSucceeded {
+				if snapshot := states.Snapshot(sandbox, string(replacement.UID)); snapshot.Facts.Bootstrap != BootstrapSucceeded {
 					t.Fatalf("replacement inherited terminal bootstrap: %+v", snapshot)
 				}
 			})
@@ -321,7 +320,7 @@ func TestRuntimeStatesAddressChangePreservesTerminalBootstrapButResetsConnection
 			t.Fatalf("address change retained connection/idle evidence: %+v", snapshot)
 		}
 		publishRuntimeState(t, second, runtimeStateResponse(second, "boot-2"))
-		if snapshot := states.Snapshot(sandbox, string(pod.UID)); snapshot.Facts.Bootstrap != sandboxlease.BootstrapFailed || snapshot.Generation <= before.Generation {
+		if snapshot := states.Snapshot(sandbox, string(pod.UID)); snapshot.Facts.Bootstrap != BootstrapFailed || snapshot.Generation <= before.Generation {
 			t.Fatalf("address change cleared terminal bootstrap or reused attempt: %+v", snapshot)
 		}
 	})

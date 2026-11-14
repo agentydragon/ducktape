@@ -166,7 +166,7 @@ class SandboxController(Construct):
                 # The Identity each Sandbox acts as, read live before a start; a watch retries the
                 # Sandboxes naming one that appears or goes.
                 RolePolicyRule(resources=[custom_resource(_GROUP, "identities")], verbs=["get", "list", "watch"]),
-                # Leader election, and the Runner Gateway's connection Leases, which the controller watches.
+                # Leader election; connection Lease permissions await the Controller image pin.
                 RolePolicyRule(
                     resources=[custom_resource("coordination.k8s.io", "leases")],
                     verbs=["get", "list", "watch", "create", "update"],
