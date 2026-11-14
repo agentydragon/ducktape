@@ -223,3 +223,101 @@ func TestPassiveWatchCannotUndoPartiallyCompletedGatewayAdoption(t *testing.T) {
 		t.Fatalf("passive watch changed Runtime incarnation to %q", backendIncarnation)
 	}
 }
+
+func TestEpochFreeCallsRemainBoundToIncarnationAcrossGatewayWatches(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		security, err := (environmentruntimetransport.Security{Mode: environmentruntimetransport.Insecure}).Open(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = security.Close() })
+		changed := make(chan struct{})
+		server := New(Config{
+			Security: security, SandboxUID: "sandbox", BootID: "boot", IsClosing: func() bool { return false },
+			AdoptIncarnation: func(context.Context, string) error { return nil },
+			Facts: func() (*environmentruntimestatepb.EnvironmentRuntimeFacts, error) {
+				return &environmentruntimestatepb.EnvironmentRuntimeFacts{}, nil
+			},
+			Changes: func() <-chan struct{} { return changed },
+		}, nil)
+		callContext := func(incarnation, boot string, epoch ...string) context.Context {
+			md := metadata.Pairs(SandboxMetadata, "sandbox", IncarnationMetadata, incarnation, BootMetadata, boot)
+			if epoch != nil {
+				md[EpochMetadata] = epoch
+			}
+			return metadata.NewIncomingContext(t.Context(), md)
+		}
+		if _, err := server.Authorize(callContext("pod", "boot")); status.Code(err) != codes.Unavailable {
+			t.Fatalf("call before incarnation adoption = %v", err)
+		}
+		start := func(incarnation string, epoch uint64) (context.CancelFunc, <-chan error) {
+			t.Helper()
+			ctx, cancel := context.WithCancel(t.Context())
+			stream := &watchStateTestStream{ctx: ctx, responses: make(chan *environmentruntimepb.WatchStateResponse, 1)}
+			done := make(chan error, 1)
+			go func() {
+				done <- server.WatchState(&environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox", IncarnationUid: incarnation, ConnectionEpoch: epoch}, stream)
+			}()
+			select {
+			case <-stream.responses:
+			case err := <-done:
+				t.Fatalf("watch ended before snapshot: %v", err)
+			}
+			return cancel, done
+		}
+		cancelFirst, firstDone := start("pod", 1)
+		var admissions []*Epoch
+		for _, ctx := range []context.Context{callContext("pod", "boot"), callContext("pod", "boot", "0")} {
+			if err := server.Admit(ctx, func(epoch *Epoch) error { admissions = append(admissions, epoch); return nil }); err != nil {
+				t.Fatalf("epoch-free admission = %v", err)
+			}
+		}
+		cancelFirst()
+		if err := <-firstDone; status.Code(err) != codes.Canceled {
+			t.Fatalf("watch cancellation = %v", err)
+		}
+		if _, err := server.Authorize(callContext("pod", "boot", "1")); status.Code(err) != codes.Unavailable {
+			t.Fatalf("legacy call after watch cancellation = %v", err)
+		}
+		if _, err := server.Authorize(callContext("pod", "boot")); err != nil {
+			t.Fatalf("epoch-free call after watch cancellation = %v", err)
+		}
+		cancelSecond, secondDone := start("pod", 2)
+		defer cancelSecond()
+		cancelThird, thirdDone := start("pod", 3)
+		defer cancelThird()
+		if err := <-secondDone; status.Code(err) != codes.Canceled {
+			t.Fatalf("legacy watch replacement = %v", err)
+		}
+		for _, epoch := range admissions {
+			if err := server.Validate(epoch); err != nil || epoch.Context().Err() != nil {
+				t.Fatalf("Gateway watch change ended epoch-free admission: validation=%v context=%v", err, epoch.Context().Err())
+			}
+		}
+		for _, epoch := range [][]string{{"invalid"}, {""}, {"0", "0"}} {
+			if _, err := server.Authorize(callContext("pod", "boot", epoch...)); status.Code(err) != codes.Unauthenticated {
+				t.Fatalf("malformed epoch %v = %v", epoch, err)
+			}
+		}
+		cancelReplacement, replacementDone := start("new-pod", 4)
+		defer cancelReplacement()
+		if err := <-thirdDone; status.Code(err) != codes.Canceled {
+			t.Fatalf("incarnation watch replacement = %v", err)
+		}
+		for _, epoch := range admissions {
+			if err := server.Validate(epoch); status.Code(err) != codes.Aborted || epoch.Context().Err() == nil {
+				t.Fatalf("old incarnation admission survived adoption: validation=%v context=%v", err, epoch.Context().Err())
+			}
+		}
+		for _, ctx := range []context.Context{callContext("pod", "boot"), callContext("new-pod", "old-boot", "0")} {
+			if _, err := server.Authorize(ctx); status.Code(err) != codes.Unavailable {
+				t.Fatalf("stale epoch-free identity = %v", err)
+			}
+		}
+		if _, err := server.Authorize(callContext("new-pod", "boot")); err != nil {
+			t.Fatalf("current epoch-free identity = %v", err)
+		}
+		cancelReplacement()
+		<-replacementDone
+	})
+}

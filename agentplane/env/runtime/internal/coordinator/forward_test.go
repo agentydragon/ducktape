@@ -109,6 +109,28 @@ func testRunnerHealthAndFencing(t *testing.T, mode environmentruntimetransport.S
 		)
 	}
 	statusClient := environmentruntimepb.NewEnvironmentRuntimeClient(conn)
+	for _, epoch := range []string{"", "0"} {
+		t.Run("epoch="+epoch, func(t *testing.T) {
+			call := func(incarnation, boot string) context.Context {
+				md, _ := metadata.FromOutgoingContext(callContext(incarnation, boot, 1))
+				md = md.Copy()
+				if epoch == "" {
+					md.Delete(control.EpochMetadata)
+				} else {
+					md.Set(control.EpochMetadata, epoch)
+				}
+				return metadata.NewOutgoingContext(ctx, md)
+			}
+			if _, err := statusClient.GetStatus(call("pod-uid-1", first.GetEnvironmentRuntimeBootId()), &sessionpb.GetStatusRequest{}); err != nil {
+				t.Fatalf("epoch-free GetStatus = %v", err)
+			}
+			for _, stale := range []context.Context{call("old-pod", first.GetEnvironmentRuntimeBootId()), call("pod-uid-1", "old-boot")} {
+				if _, err := statusClient.GetStatus(stale, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
+					t.Fatalf("stale epoch-free GetStatus = %v", err)
+				}
+			}
+		})
+	}
 	if _, err := statusClient.GetStatus(ctx, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("GetStatus without fencing metadata = %v, want Unauthenticated", err)
 	}
@@ -594,6 +616,16 @@ func TestControllerPassiveWatchCoexistsWithGatewayAndCannotControl(t *testing.T)
 	}
 	if _, err := executorpb.NewExecutorClient(controllerConn).StartProcess(callCtx, &executorpb.StartProcessRequest{}); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("Controller Executor call with valid Gateway metadata = %v", err)
+	}
+	md, _ := metadata.FromOutgoingContext(callCtx)
+	md = md.Copy()
+	md.Delete(control.EpochMetadata)
+	epochFree := metadata.NewOutgoingContext(ctx, md)
+	if _, err := controller.GetStatus(epochFree, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("Controller epoch-free GetStatus = %v", err)
+	}
+	if _, err := executorpb.NewExecutorClient(controllerConn).StartProcess(epochFree, &executorpb.StartProcessRequest{}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("Controller epoch-free Executor call = %v", err)
 	}
 	// Start another passive stream after the exclusive epoch is established.
 	second, err := controller.WatchState(ctx, passiveRequest)

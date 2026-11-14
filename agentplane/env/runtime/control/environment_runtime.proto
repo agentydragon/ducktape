@@ -16,7 +16,9 @@ import "google/protobuf/timestamp.proto";
 // process startup, native readiness and reconciliation are owned by the environment services.
 service EnvironmentRuntime {
   // Liveness and state watch. The Gateway supplies the current Sandbox and workload
-  // incarnation and its Lease epoch. The Runner adopts that incarnation before publishing facts.
+  // incarnation and its nonzero Lease epoch. The Runner adopts that incarnation before publishing facts.
+  // Control/Executor call metadata separately accepts an absent or zero epoch after adoption;
+  // nonzero call epochs retain the legacy live-watch checks during the receiver-first rollout.
   rpc WatchState(WatchStateRequest) returns (stream WatchStateResponse);
   rpc ListSessions(agentplane.proto.ListSessionsRequest)
       returns (agentplane.proto.ListSessionsResponse);
