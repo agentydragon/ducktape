@@ -14,7 +14,7 @@ from more_itertools import one
 
 from agentplane.env.runtime.harness import Harness
 from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from agentplane.net.peertls.config import LLM_INGRESS_URI
+from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, LLM_INGRESS_URI
 from cluster.cdk8s.agentplane import (
     central_sampler,
     history_service,
@@ -168,6 +168,7 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     assert history["policy_namespace"] == namespace
     assert history["ingress"]["sampler_accounts"] == [{"namespace": namespace, "name": central_sampler.NAME}]
     assert history["ingress"]["sampler_identity_callers"] is True
+    assert history["ingress"]["sampler_service_actor"] == CENTRAL_SAMPLER_URI
     llm = yaml.safe_load(_resource(staging_manifests, "ConfigMap", "llm-ingress-settings")["data"]["settings.yaml"])
     assert llm["policy_namespace"] == namespace
     assert llm["central_sampler_accounts"] == [f"{namespace}/{central_sampler.NAME}"]
