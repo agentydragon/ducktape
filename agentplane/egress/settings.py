@@ -52,6 +52,10 @@ class Settings(BaseModel):
     def sort_allowed_service_account_namespaces(self, value: frozenset[str]) -> list[str]:
         return sorted(value)
 
+    @field_serializer("admin_grpc_service_callers")
+    def sort_admin_grpc_service_callers(self, value: frozenset[str]) -> list[str]:
+        return sorted(value)
+
     tls_passthrough_targets: list[str] = Field(
         default_factory=list,
         description="Exact service authorities carried as opaque TLS; each destination verifies its caller.",
@@ -70,6 +74,13 @@ class Settings(BaseModel):
         default=None,
         min_length=1,
         description="ServiceAccounts admitted by the admin gRPC API as namespace/name entries; unset disables it.",
+    )
+    admin_grpc_service_callers: frozenset[str] = Field(
+        default_factory=frozenset,
+        description=(
+            "Exact service SPIFFE IDs additionally admitted to EgressAdmin methods. Requires the admin bearer "
+            "settings and the forward listener's SPIFFE client CA."
+        ),
     )
     ca_cert: Path = Field(description="PEM certificate of the interception CA the runner containers trust.")
     ca_key: Path = Field(description="PEM private key of the interception CA.")

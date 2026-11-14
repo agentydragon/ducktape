@@ -2,17 +2,21 @@ package rpc
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"reflect"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
@@ -20,6 +24,7 @@ import (
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -117,7 +122,7 @@ func fixtureWithWriters(t *testing.T, writers []auth.Account, objects ...client.
 	}
 	kube := &serviceTestClient{WithWatch: fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()}
 	readers := []auth.Account{{Namespace: "tools", Name: "app"}}
-	service, err := New("policies", []string{"policies", "fake-workloads"}, kube, readers, writers)
+	service, err := New("policies", []string{"policies", "fake-workloads"}, kube, readers, writers, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +139,11 @@ func fixtureWithWriters(t *testing.T, writers []auth.Account, objects ...client.
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := grpc.NewServer(service.Methods(readResolver, writeResolver).ServerOptions(time.Second)...)
+	methods, err := service.Methods(readResolver, writeResolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer(methods.ServerOptions(time.Second)...)
 	policypb.RegisterPolicyServiceServer(server, service)
 	go server.Serve(listener)
 	t.Cleanup(server.Stop)
@@ -144,6 +153,114 @@ func fixtureWithWriters(t *testing.T, writers []auth.Account, objects ...client.
 	}
 	t.Cleanup(func() { conn.Close() })
 	return policypb.NewPolicyServiceClient(conn), kube, reviews
+}
+
+func TestPolicyServicePeerTLSUsesSeparateReadAndWriteAllowlists(t *testing.T) {
+	scheme := runtime.NewScheme()
+	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, policyapi.AddToScheme, sandboxapi.AddToScheme, workloadapi.AddToScheme} {
+		if err := add(scheme); err != nil {
+			t.Fatal(err)
+		}
+	}
+	kube := &serviceTestClient{WithWatch: fake.NewClientBuilder().WithScheme(scheme).WithObjects(policySet("base")).Build()}
+	reader := auth.Account{Namespace: "tools", Name: "app"}
+	service, err := New("policies", []string{"policies", "fake-workloads"}, kube, []auth.Account{reader}, []auth.Account{reader},
+		[]string{peertls.ActionsURI}, []string{peertls.EgressProxyURI})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviews := &reviews{}
+	readResolver, err := auth.NewResolver(reviews, "policy", []string{"tools"}, auth.WithVerdictTTL(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeResolver, err := auth.NewResolver(reviews, "policy", []string{"tools"}, auth.WithVerdictTTL(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	methods, err := service.Methods(readResolver, writeResolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ca := transporttesting.NewCA(t)
+	serverSVID := ca.Issue(t, peertls.PolicyControllerURI)
+	serverCredentials, err := (peertls.ServerTLSListener{
+		Listen: ":0", CertFile: serverSVID.CertFile, KeyFile: serverSVID.KeyFile, ClientCAFile: ca.RootFile,
+	}).Credentials(peertls.PolicyControllerURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(serverCredentials))...)
+	policypb.RegisterPolicyServiceServer(server, service)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+
+	dial := func(t *testing.T, tlsConfig *tls.Config) policypb.PolicyServiceClient {
+		t.Helper()
+		connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = connection.Close() })
+		return policypb.NewPolicyServiceClient(connection)
+	}
+	clientTLS := func(serviceID string) *tls.Config {
+		clientSVID := ca.Issue(t, serviceID)
+		config, err := clientSVID.ClientTLSConfig(peertls.PolicyControllerURI)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return config
+	}
+	readerClient := dial(t, clientTLS(peertls.ActionsURI))
+	names, err := readerClient.ListPolicySetNames(context.Background(), &policypb.ListPolicySetNamesRequest{})
+	if err != nil || !slices.Equal(names.GetNames(), []string{"base"}) {
+		t.Fatalf("allowlisted service reader: names=%v, error=%v", names.GetNames(), err)
+	}
+	if _, err := readerClient.CreateIdentity(context.Background(), &policypb.CreateIdentityRequest{Name: "service-created", Description: "test"}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("read-only service caller created an Identity: %v", err)
+	}
+
+	writerClient := dial(t, clientTLS(peertls.EgressProxyURI))
+	if _, err := writerClient.CreateIdentity(context.Background(), &policypb.CreateIdentityRequest{Name: "service-created", Description: "test"}); err != nil {
+		t.Fatalf("allowlisted service writer: %v", err)
+	}
+	if _, err := writerClient.ListPolicySetNames(context.Background(), &policypb.ListPolicySetNamesRequest{}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("write-only service caller read PolicySets: %v", err)
+	}
+
+	wrongClient := dial(t, clientTLS(peertls.NotificationsURI))
+	if _, err := wrongClient.ListPolicySetNames(context.Background(), &policypb.ListPolicySetNamesRequest{}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("unlisted service caller read PolicySets: %v", err)
+	}
+	if _, err := readerClient.ListPolicySetNames(tokenContext(t, "app"), &policypb.ListPolicySetNamesRequest{}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("service certificate was combined with a bearer: %v", err)
+	}
+
+	bearerTLS, err := (peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.PolicyControllerURI}).TLSConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bearerClient := dial(t, bearerTLS)
+	if _, err := bearerClient.ListPolicySetNames(tokenContext(t, "app"), &policypb.ListPolicySetNamesRequest{}); err != nil {
+		t.Fatalf("legacy bearer read over TLS: %v", err)
+	}
+
+	untrustedCA := transporttesting.NewCA(t)
+	untrustedSVID := untrustedCA.Issue(t, peertls.ActionsURI)
+	untrustedTLS, err := untrustedSVID.ClientTLSConfig(peertls.PolicyControllerURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	untrustedClient := dial(t, untrustedTLS)
+	if _, err := untrustedClient.ListPolicySetNames(context.Background(), &policypb.ListPolicySetNamesRequest{}); err == nil {
+		t.Fatal("service certificate from an untrusted CA was admitted")
+	}
 }
 
 func tokenContext(t *testing.T, token string) context.Context {

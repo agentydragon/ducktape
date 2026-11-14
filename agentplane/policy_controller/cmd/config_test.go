@@ -97,6 +97,46 @@ func TestOptionalGRPCTLSListenerRequiresSeparateAddressAndAbsoluteFiles(t *testi
 	}
 }
 
+func TestPolicyServiceServiceAllowlistRequiresExplicitClientCA(t *testing.T) {
+	for name, tlsSettings := range map[string]map[string]any{
+		"no TLS listener": nil,
+		"no client CA": {
+			"listen": ":8083", "cert_file": "/run/server/tls.crt", "key_file": "/run/server/tls.key",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			settings := requiredSettings()
+			settings["reader_services"] = []string{"spiffe://agentplane/actions"}
+			if tlsSettings != nil {
+				settings["grpc_tls"] = tlsSettings
+			}
+			writeSettings(t, settings)
+			if _, err := loadConfig(); err == nil {
+				t.Fatal("accepted service callers without grpc_tls.client_ca_file")
+			}
+		})
+	}
+
+	settings := requiredSettings()
+	settings["reader_services"] = []string{"spiffe://agentplane/actions"}
+	settings["writer_services"] = []string{"spiffe://agentplane/egress-proxy"}
+	settings["grpc_tls"] = map[string]any{
+		"listen": ":8083", "cert_file": "/run/server/tls.crt", "key_file": "/run/server/tls.key",
+		"client_ca_file": "/run/client-ca/ca.crt",
+	}
+	writeSettings(t, settings)
+	c, err := loadConfig()
+	if err != nil || c.GRPCTLS == nil || c.GRPCTLS.ClientCAFile != "/run/client-ca/ca.crt" {
+		t.Fatalf("service caller settings = %+v, error %v", c, err)
+	}
+
+	settings["reader_services"] = []string{"spiffe://agentplane/agents/worker"}
+	writeSettings(t, settings)
+	if _, err := loadConfig(); err == nil {
+		t.Fatal("accepted a workload ID in the service caller allowlist")
+	}
+}
+
 func TestEachRequiredSettingIsRequired(t *testing.T) {
 	for omitted := range requiredSettings() {
 		t.Run(omitted, func(t *testing.T) {

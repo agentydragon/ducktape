@@ -159,11 +159,15 @@ func run(c config) error {
 	if err != nil {
 		return err
 	}
-	api, err := policyrpc.New(c.PolicyNamespace, c.WorkloadNamespaces, objects, readers, writers)
+	api, err := policyrpc.New(c.PolicyNamespace, c.WorkloadNamespaces, objects, readers, writers, c.ReaderServices, c.WriterServices)
 	if err != nil {
 		return err
 	}
-	serverOptions := api.Methods(readResolver, writeResolver).ServerOptions(0)
+	methods, err := api.Methods(readResolver, writeResolver)
+	if err != nil {
+		return err
+	}
+	serverOptions := methods.ServerOptions(0)
 	register := func(server *grpc.Server) {
 		policypb.RegisterPolicyServiceServer(server, api)
 	}

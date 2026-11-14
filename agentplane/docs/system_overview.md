@@ -671,3 +671,16 @@ flowchart LR
     proxy -->|mTLS: runtime-proxy or current runner-gateway SVID| runtime[Environment Runtime]
     controller[Sandbox Controller SVID] -->|mTLS: passive WatchState only| runtime
 ```
+
+## Staged Policy and Egress Admin certificate admission
+
+Receiver code supports exact service SVID allowlists alongside current bearer accounts. Deployment
+settings and callers wait for receiver image pins. Policy readers and writers have separate grants;
+the forward proxy continues to authenticate workload Identities independently of its admin API.
+
+```mermaid
+flowchart LR
+    app[App service SVID] -->|mTLS: explicit reader or writer grant| policy[Policy Service]
+    app -->|mTLS: admin read methods| admin[Egress Admin]
+    workload[Workload Identity SVID] -.->|existing workload authentication| proxy[Egress forward proxy]
+```

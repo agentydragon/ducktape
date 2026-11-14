@@ -187,11 +187,14 @@ The shared port serves native gRPC over TLS; Rules accepts the same SVID authent
 operator bearer methods use the same verified TLS listener with their own method policy. On shutdown it ends the open watches, then stops gracefully: the
 other calls in flight finish within the drain deadline.
 
-Every `EgressAdmin` call admits only the ServiceAccounts in `admin_grpc_callers`, each proving itself by
+Every `EgressAdmin` call admits the ServiceAccounts in `admin_grpc_callers`, each proving itself by
 a bearer of audience `admin_grpc_audience` that is reviewed for every call (an acceptance is reused
-for 30 s), before anything is read
-(<../docs/grpc_services.md>). Watches periodically revalidate authorization and end on revocation or when the proxy drains;
-reconnecting callers are admitted afresh.
+for 30 s), before anything is read. `admin_grpc_service_callers` may additionally list exact service
+SPIFFE IDs for these methods. It requires the existing admin bearer settings and the forward
+listener's SPIFFE client CA; service certificates cannot be combined with bearer metadata. This
+service allowlist grants no access to the separate Rules API. Watches periodically revalidate bearer
+authorization and end on revocation or when the proxy drains; reconnecting callers are admitted
+afresh. See <../docs/grpc_services.md>.
 
 The health service is always mounted. `EgressAdmin` is mounted only when `admin_grpc_audience` and
 `admin_grpc_callers` (`namespace/name` entries) are both set. Health is always served; Rules admission follows the workload transport policy above.

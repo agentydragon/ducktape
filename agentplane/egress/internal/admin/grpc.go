@@ -78,15 +78,21 @@ type ServiceOptions struct {
 	Credentials   *policy.Index
 }
 
-// Methods admits callers to every EgressAdmin RPC: each proves, by a bearer resolver reviews, one of callers.
-func Methods(resolver *auth.Resolver, callers []auth.Account) auth.Methods {
+// Methods admits configured bearer accounts and exact service peers to EgressAdmin's read methods.
+func Methods(resolver *auth.Resolver, callers []auth.Account, serviceCallers []string) (auth.Methods, error) {
 	rule := auth.Accounts(resolver, callers)
-	return auth.Methods{
+	methods := auth.Methods{
 		egressadminpb.EgressAdmin_ListDecisions_FullMethodName:    rule,
 		egressadminpb.EgressAdmin_WatchDecisions_FullMethodName:   rule,
 		egressadminpb.EgressAdmin_GetHealth_FullMethodName:        rule,
 		egressadminpb.EgressAdmin_WatchCredentials_FullMethodName: rule,
 	}
+	return methods.WithServiceCallers([]string{
+		egressadminpb.EgressAdmin_ListDecisions_FullMethodName,
+		egressadminpb.EgressAdmin_WatchDecisions_FullMethodName,
+		egressadminpb.EgressAdmin_GetHealth_FullMethodName,
+		egressadminpb.EgressAdmin_WatchCredentials_FullMethodName,
+	}, serviceCallers)
 }
 
 func NewService(options ServiceOptions) *Service {

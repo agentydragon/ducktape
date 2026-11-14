@@ -42,6 +42,14 @@ class Settings(BaseModel):
     writer_accounts: Set[str] = Field(
         default_factory=frozenset, description="Accounts allowed to create and revoke operator PolicyBindings."
     )
+    reader_services: Set[str] = Field(
+        default_factory=frozenset,
+        description="Exact service SPIFFE IDs allowed to read all policy resources; requires grpc_tls.client_ca_file.",
+    )
+    writer_services: Set[str] = Field(
+        default_factory=frozenset,
+        description="Exact service SPIFFE IDs allowed to create and revoke operator policy resources; requires grpc_tls.client_ca_file.",
+    )
     workload_issuer: str | None = Field(
         default=None,
         min_length=1,
@@ -52,7 +60,14 @@ class Settings(BaseModel):
         description="Namespaces whose WorkloadCredentials this controller issues; empty issues none.",
     )
 
-    @field_serializer("subject_namespaces", "reader_accounts", "writer_accounts", "workload_namespaces")
+    @field_serializer(
+        "subject_namespaces",
+        "reader_accounts",
+        "writer_accounts",
+        "reader_services",
+        "writer_services",
+        "workload_namespaces",
+    )
     def sorted_names(self, names: Set[str]) -> list[str]:
         return sorted(names)
 

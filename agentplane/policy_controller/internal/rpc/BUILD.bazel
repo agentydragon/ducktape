@@ -45,6 +45,8 @@ go_test(
     deps = [
         "//agentplane/identity/auth",
         "//agentplane/identity/credentials/api/v1alpha1",
+        "//agentplane/net/peertls",
+        "//agentplane/net/peertls/testing",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/policy/v1:policy_service_go_proto",
         "//agentplane/proto:identity_go_proto",
@@ -61,6 +63,7 @@ go_test(
         "@org_golang_google_genproto_googleapis_rpc//errdetails",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials",
         "@org_golang_google_grpc//credentials/insecure",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",

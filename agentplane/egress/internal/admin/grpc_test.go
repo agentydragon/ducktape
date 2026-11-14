@@ -127,7 +127,11 @@ func serveGRPC(t *testing.T, options ServiceOptions) (egressadminpb.EgressAdminC
 	}
 	service := NewService(options)
 	listener := bufconn.Listen(1 << 20)
-	server := grpc.NewServer(Methods(resolver, []auth.Account{{Namespace: callerNamespace, Name: "test-reader"}}).ServerOptions(0)...)
+	methods, err := Methods(resolver, []auth.Account{{Namespace: callerNamespace, Name: "test-reader"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer(methods.ServerOptions(0)...)
 	egressadminpb.RegisterEgressAdminServer(server, service)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
@@ -168,7 +172,10 @@ func TestEveryRPCAdmitsOnlyAllowedCallers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	methods := Methods(resolver, []auth.Account{{Namespace: callerNamespace, Name: "test-reader"}})
+	methods, err := Methods(resolver, []auth.Account{{Namespace: callerNamespace, Name: "test-reader"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	register := func(server *grpc.Server) {
 		egressadminpb.RegisterEgressAdminServer(server, egressadminpb.UnimplementedEgressAdminServer{})
 	}
