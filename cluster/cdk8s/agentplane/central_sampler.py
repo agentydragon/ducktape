@@ -30,3 +30,8 @@ def pods(namespace: str) -> Pods:
 def target(namespace: str) -> str:
     endpoint = service(namespace)
     return f"{endpoint.fqdn}:{endpoint.pod_port}"
+
+
+def tls_target(namespace: str) -> str:
+    endpoint = tls_service(namespace)
+    return f"{endpoint.fqdn}:{endpoint.pod_port}"

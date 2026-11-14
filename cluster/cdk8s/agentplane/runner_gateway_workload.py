@@ -188,8 +188,9 @@ class RunnerGateway(Construct):
         central_sampler_account = ServiceAccountRef(namespace=namespace, name=central_sampler.NAME)
         central_sampler_target = (
             CentralSamplerTarget(
-                target=central_sampler.target(namespace),
+                target=central_sampler.tls_target(namespace),
                 token_file=Path("/var/run/secrets/agentplane-runner-gateway/central-sampler"),
+                tls=workload_tls.client_tls(CENTRAL_SAMPLER_URI),
             )
             if env.central_sampler is not None
             else None
@@ -437,7 +438,7 @@ class RunnerGateway(Construct):
                 EgressRule.to_endpoints(
                     environment_sandbox.pods(namespace).cilium, environment_sandbox.ENVIRONMENT_RUNTIME_SERVICE_PORT
                 ),
-                *([central_sampler.service(namespace).egress()] if self.env.central_sampler is not None else []),
+                *([central_sampler.tls_service(namespace).egress()] if self.env.central_sampler is not None else []),
             ],
         )
 
