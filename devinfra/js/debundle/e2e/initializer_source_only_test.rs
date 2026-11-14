@@ -70,6 +70,49 @@ fn encoder_initializer_contract_rejects_observed_application_state_writes() {
     );
 }
 
+#[test]
+fn encoder_initializers_commute_with_independent_allocations() {
+    let fixture = run_fixture(
+        annotated_encoder_split(
+            "const encoder = new TextEncoder();\n\
+             const values = [];\n\
+             const decoder = new TextDecoder('utf8');\n\
+             const left = encoder.encode('a');\n\
+             const right = encoder.encode('b');\n\
+             console.log(values.length, decoder.decode(left), decoder.decode(right));\n\
+             export { encoder, left, right };\n",
+        )
+        .with_dataflow_aware_s_chain()
+        .with_trusted_dataflow_summaries()
+        .with_commuting_statements(
+            "static/app",
+            ["left", "right"]
+                .into_iter()
+                .flat_map(|binding| {
+                    [
+                        ("const values = [];", "values"),
+                        ("const decoder = new TextDecoder('utf8');", "decoder"),
+                    ]
+                    .into_iter()
+                    .map(move |(statement, allocation)| {
+                        commuting_pair(
+                            member_source_unit("codec", binding),
+                            declared_source_unit(statement, allocation),
+                        )
+                    })
+                })
+                .collect(),
+        ),
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/codec.js",
+        &["encoder", "left", "right"],
+        &[],
+    );
+    assert_preserved_entry_output(&fixture, "0 a b\n");
+}
+
 fn set_source_only(staged: &Staged, binding: &str, chunk_rename: bool) {
     let mut spec: serde_yaml::Value =
         serde_yaml::from_slice(&fs::read(&staged.spec).unwrap()).unwrap();
