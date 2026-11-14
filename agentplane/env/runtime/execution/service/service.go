@@ -72,6 +72,11 @@ func runWithReady(ctx context.Context, config Config, start codexexecserver.Star
 	defer cancel()
 	instance, err := start(lifetime)
 	if err != nil {
+		if ctx.Err() != nil && errors.Is(err, supervision.ErrFencedLaunch) {
+			// A managed launch can be canceled before returning its Instance.
+			// Its owner already joined and fenced that exact process attempt.
+			return nil
+		}
 		return err
 	}
 	var fencedBackendLoss error

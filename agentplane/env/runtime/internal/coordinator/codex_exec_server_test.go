@@ -203,3 +203,99 @@ func (h *recordingExecutionHandle) StopAndFence(ctx context.Context) error {
 	}
 	return h.executionHandle.StopAndFence(ctx)
 }
+
+func TestCanceledInitialStartupCanResumeSameIncarnationAfterFence(t *testing.T) {
+	config := executionRuntimeConfig(t, "ws://unused", nil)
+	start := config.deps.startExecution
+	entered, canceled, releaseFence := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var releaseOnce sync.Once
+	defer releaseOnce.Do(func() { close(releaseFence) })
+	var mu sync.Mutex
+	incarnationStarts := 0
+	config.deps.startExecution = func(ctx context.Context, config Config, uid string) (executionHandle, error) {
+		if uid == "initial" {
+			mu.Lock()
+			incarnationStarts++
+			attempt := incarnationStarts
+			mu.Unlock()
+			if attempt == 1 {
+				close(entered)
+				<-ctx.Done()
+				close(canceled)
+				<-releaseFence
+				return nil, errors.Join(ErrFencedStartup, ctx.Err())
+			}
+		}
+		return start(ctx, config, uid)
+	}
+	// Start the real lifecycle without the fixture's automatic first adoption.
+	// The reported guest failure happens before any incarnation has been bound.
+	config.Config.HistoryIngress.Target = startAcknowledgingHistory(t)
+	r, err := newTestRuntime(t, config.Config, nil, config.deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.startSessions(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
+		defer cancel()
+		if err := r.Close(ctx); err != nil {
+			t.Errorf("Runtime close: %v", err)
+		}
+		select {
+		case <-r.sessionWorkerDone:
+		case <-ctx.Done():
+			t.Error("Session recovery did not join")
+		}
+	})
+	if err := r.waitForInitialSessions(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	firstDone := make(chan error, 1)
+	go func() { firstDone <- r.adoptIncarnation(ctx, "initial") }()
+	select {
+	case <-entered:
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("initial startup did not begin")
+	}
+	cancel()
+	<-canceled
+	retryDone := make(chan error, 1)
+	go func() { retryDone <- r.adoptIncarnation(t.Context(), "initial") }()
+	select {
+	case err := <-firstDone:
+		t.Fatalf("adoption settled before fence: %v", err)
+	default:
+	}
+	select {
+	case err := <-retryDone:
+		t.Fatalf("retry settled before fence: %v", err)
+	default:
+	}
+	mu.Lock()
+	if incarnationStarts != 1 {
+		t.Errorf("initial started before fence: %d", incarnationStarts)
+	}
+	mu.Unlock()
+	releaseOnce.Do(func() { close(releaseFence) })
+	if err := waitClose(t, firstDone); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled adoption = %v", err)
+	}
+	if err := waitClose(t, retryDone); err != nil {
+		t.Fatalf("same-incarnation retry = %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if incarnationStarts != 2 {
+		t.Fatalf("initial starts = %d, want canceled attempt then one retry", incarnationStarts)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.failed || !r.admissionOpen || r.desired.Mode != lifecycle.Running || r.desired.IncarnationUID != "initial" {
+		t.Fatalf("same incarnation did not recover admission: failed=%t open=%t desired=%+v", r.failed, r.admissionOpen, r.desired)
+	}
+}

@@ -136,7 +136,9 @@ coordinator and wait for that operation's completion. Close observes the coordin
 status for its exact closing generation. Transition requests and completions remain private handoffs.
 Each blocking boundary runs in an owned worker so component observation continues.
 A canceled observation stream ends future adoption stages but does not release a successor until accepted
-Execution starts and their fences settle. Repeated Quiesce preserves a healthy desired generation;
+Execution starts and their fences settle. During first-incarnation startup, a canceled native launch
+that has joined and fenced its exact process attempt can be retried for that same incarnation;
+an unproved or failed fence keeps admission closed. Repeated Quiesce preserves a healthy desired generation;
 only a failure for that exact generation can trigger retry.
 
 Quiesce selects the durable incarnation seal before publishing the draining revision. Native-stop
