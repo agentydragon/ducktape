@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "source_sha": "dfb5c71e78734703a482fd6e1f5b4ffbe9a2910d",
-  "observed_at_utc": "2026-11-14T20:45:00Z",
+  "source_sha": "288ca68295acd24917d4f3415c528cc56c19892d",
+  "observed_at_utc": "2026-11-14T21:40:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
     "files": 1278,
@@ -1447,6 +1447,66 @@
       "files": ["agentplane/env/scripts/scripts.go"]
     },
     {
+      "path": "agentplane/environments/cmd",
+      "production": 2,
+      "tests": 1,
+      "files": [
+        "agentplane/environments/cmd/config.go",
+        "agentplane/environments/cmd/config_test.go",
+        "agentplane/environments/cmd/main.go"
+      ]
+    },
+    {
+      "path": "agentplane/environments/internal/controller",
+      "production": 17,
+      "tests": 14,
+      "files": [
+        "agentplane/environments/internal/controller/apply.go",
+        "agentplane/environments/internal/controller/behavior.go",
+        "agentplane/environments/internal/controller/cache.go",
+        "agentplane/environments/internal/controller/children_integration_test.go",
+        "agentplane/environments/internal/controller/claim.go",
+        "agentplane/environments/internal/controller/controller.go",
+        "agentplane/environments/internal/controller/controller_test.go",
+        "agentplane/environments/internal/controller/environment_runtime_credential.go",
+        "agentplane/environments/internal/controller/environment_runtime_credential_test.go",
+        "agentplane/environments/internal/controller/firecracker.go",
+        "agentplane/environments/internal/controller/firecracker_status_reader_timeout_test.go",
+        "agentplane/environments/internal/controller/firecracker_suspend.go",
+        "agentplane/environments/internal/controller/firecracker_suspend_test.go",
+        "agentplane/environments/internal/controller/firecracker_test.go",
+        "agentplane/environments/internal/controller/identity.go",
+        "agentplane/environments/internal/controller/identity_test.go",
+        "agentplane/environments/internal/controller/idle.go",
+        "agentplane/environments/internal/controller/idle_test.go",
+        "agentplane/environments/internal/controller/launch.go",
+        "agentplane/environments/internal/controller/launch_test.go",
+        "agentplane/environments/internal/controller/quiescer.go",
+        "agentplane/environments/internal/controller/runtime_facts.go",
+        "agentplane/environments/internal/controller/runtime_facts_test.go",
+        "agentplane/environments/internal/controller/runtime_states.go",
+        "agentplane/environments/internal/controller/runtime_states_test.go",
+        "agentplane/environments/internal/controller/state_volume.go",
+        "agentplane/environments/internal/controller/state_volume_test.go",
+        "agentplane/environments/internal/controller/vm.go",
+        "agentplane/environments/internal/controller/vm_test.go",
+        "agentplane/environments/internal/controller/workspace.go",
+        "agentplane/environments/internal/controller/workspace_test.go"
+      ]
+    },
+    {
+      "path": "agentplane/environments/internal/runtimecontrol",
+      "production": 3,
+      "tests": 2,
+      "files": [
+        "agentplane/environments/internal/runtimecontrol/observer.go",
+        "agentplane/environments/internal/runtimecontrol/observer_test.go",
+        "agentplane/environments/internal/runtimecontrol/quiescer.go",
+        "agentplane/environments/internal/runtimecontrol/quiescer_test.go",
+        "agentplane/environments/internal/runtimecontrol/suspender.go"
+      ]
+    },
+    {
       "path": "agentplane/firecracker",
       "production": 7,
       "tests": 7,
@@ -2584,66 +2644,6 @@
         "agentplane/runner_gateway/migrations/integration_testmain_test.go",
         "agentplane/runner_gateway/migrations/migrations.go",
         "agentplane/runner_gateway/migrations/upgrade_integration_test.go"
-      ]
-    },
-    {
-      "path": "agentplane/sandbox_controller/cmd",
-      "production": 2,
-      "tests": 1,
-      "files": [
-        "agentplane/sandbox_controller/cmd/config.go",
-        "agentplane/sandbox_controller/cmd/config_test.go",
-        "agentplane/sandbox_controller/cmd/main.go"
-      ]
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller",
-      "production": 17,
-      "tests": 14,
-      "files": [
-        "agentplane/sandbox_controller/internal/controller/apply.go",
-        "agentplane/sandbox_controller/internal/controller/behavior.go",
-        "agentplane/sandbox_controller/internal/controller/cache.go",
-        "agentplane/sandbox_controller/internal/controller/children_integration_test.go",
-        "agentplane/sandbox_controller/internal/controller/claim.go",
-        "agentplane/sandbox_controller/internal/controller/controller.go",
-        "agentplane/sandbox_controller/internal/controller/controller_test.go",
-        "agentplane/sandbox_controller/internal/controller/environment_runtime_credential.go",
-        "agentplane/sandbox_controller/internal/controller/environment_runtime_credential_test.go",
-        "agentplane/sandbox_controller/internal/controller/firecracker.go",
-        "agentplane/sandbox_controller/internal/controller/firecracker_status_reader_timeout_test.go",
-        "agentplane/sandbox_controller/internal/controller/firecracker_suspend.go",
-        "agentplane/sandbox_controller/internal/controller/firecracker_suspend_test.go",
-        "agentplane/sandbox_controller/internal/controller/firecracker_test.go",
-        "agentplane/sandbox_controller/internal/controller/identity.go",
-        "agentplane/sandbox_controller/internal/controller/identity_test.go",
-        "agentplane/sandbox_controller/internal/controller/idle.go",
-        "agentplane/sandbox_controller/internal/controller/idle_test.go",
-        "agentplane/sandbox_controller/internal/controller/launch.go",
-        "agentplane/sandbox_controller/internal/controller/launch_test.go",
-        "agentplane/sandbox_controller/internal/controller/quiescer.go",
-        "agentplane/sandbox_controller/internal/controller/runtime_facts.go",
-        "agentplane/sandbox_controller/internal/controller/runtime_facts_test.go",
-        "agentplane/sandbox_controller/internal/controller/runtime_states.go",
-        "agentplane/sandbox_controller/internal/controller/runtime_states_test.go",
-        "agentplane/sandbox_controller/internal/controller/state_volume.go",
-        "agentplane/sandbox_controller/internal/controller/state_volume_test.go",
-        "agentplane/sandbox_controller/internal/controller/vm.go",
-        "agentplane/sandbox_controller/internal/controller/vm_test.go",
-        "agentplane/sandbox_controller/internal/controller/workspace.go",
-        "agentplane/sandbox_controller/internal/controller/workspace_test.go"
-      ]
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/runnercontrol",
-      "production": 3,
-      "tests": 2,
-      "files": [
-        "agentplane/sandbox_controller/internal/runnercontrol/observer.go",
-        "agentplane/sandbox_controller/internal/runnercontrol/observer_test.go",
-        "agentplane/sandbox_controller/internal/runnercontrol/quiescer.go",
-        "agentplane/sandbox_controller/internal/runnercontrol/quiescer_test.go",
-        "agentplane/sandbox_controller/internal/runnercontrol/suspender.go"
       ]
     },
     {
@@ -11855,98 +11855,98 @@
     },
     {
       "path": "agentplane/env/runtime/execution/adapter/adapter.go",
-      "package": "execution",
+      "package": "adapter",
       "test": false,
       "generated": false,
       "lines": 202,
-      "sha256": "2c8ee4e52f1ff31dfd41f81aa05aad2290f3694dd67bd69b110e82983aaba624",
+      "sha256": "7a5529c61008c926d250efc1f120c3314cebe964e6d14cdb22db49f060af1928",
       "planned_path": "agentplane/env/runtime/execution/adapter/adapter.go",
       "planned_parts": [],
       "planned_package": "adapter",
-      "goal_path_status": "package name alignment",
+      "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-execution-package-names"],
-      "disposition": "package name alignment",
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/execution/adapter"
     },
     {
       "path": "agentplane/env/runtime/execution/adapter/adapter_test.go",
-      "package": "execution",
+      "package": "adapter",
       "test": true,
       "generated": false,
       "lines": 802,
-      "sha256": "2770e531cff99ed1c892307ebd73b0bcb7288c00a3253bd44582baeaadc8f802",
+      "sha256": "e06a350c04acc62cde3b8d8aa5cabc1f33f812ffb9b68f1ff89eadbac6e0edec",
       "planned_path": "agentplane/env/runtime/execution/adapter/adapter_test.go",
       "planned_parts": [],
       "planned_package": "adapter",
-      "goal_path_status": "package name alignment",
+      "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-execution-package-names"],
-      "disposition": "package name alignment",
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/execution/adapter"
     },
     {
       "path": "agentplane/env/runtime/execution/adapter/connection.go",
-      "package": "execution",
+      "package": "adapter",
       "test": false,
       "generated": false,
       "lines": 216,
-      "sha256": "d9e351d02e0a318d67d402a59cc051fdb4c0524af6ba25a5b6dc3d5ccbd0ec95",
+      "sha256": "68b062ee06ae0c62a424f69c4d001edaacec6788769a0f948eaf30bdb1c248e3",
       "planned_path": "agentplane/env/runtime/execution/adapter/connection.go",
       "planned_parts": [],
       "planned_package": "adapter",
-      "goal_path_status": "package name alignment",
+      "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-execution-package-names"],
-      "disposition": "package name alignment",
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/execution/adapter"
     },
     {
       "path": "agentplane/env/runtime/execution/adapter/methods.go",
-      "package": "execution",
+      "package": "adapter",
       "test": false,
       "generated": false,
       "lines": 262,
-      "sha256": "da8d4ea62c8a3eb0b66624fe927a41ec955457e8115f904fffbf3f2bc1fc81fe",
+      "sha256": "9707d37e496e2f50675ce0473d194a5407c78653a93d2b912c0e1e84e3e57e53",
       "planned_path": "agentplane/env/runtime/execution/adapter/methods.go",
       "planned_parts": [],
       "planned_package": "adapter",
-      "goal_path_status": "package name alignment",
+      "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-execution-package-names"],
-      "disposition": "package name alignment",
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/execution/adapter"
     },
     {
       "path": "agentplane/env/runtime/execution/adapter/protocol.go",
-      "package": "execution",
+      "package": "adapter",
       "test": false,
       "generated": false,
       "lines": 167,
-      "sha256": "1c02d56df9a23d370d476b783cf614b86a2d6fe649f3ea3746612ddfb9e4a325",
+      "sha256": "8662a00184076ebca73b34b391fef5919a24046eadfe83fd38d9cd4ef0793dc5",
       "planned_path": "agentplane/env/runtime/execution/adapter/protocol.go",
       "planned_parts": [],
       "planned_package": "adapter",
-      "goal_path_status": "package name alignment",
+      "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-execution-package-names"],
-      "disposition": "package name alignment",
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/execution/adapter"
     },
     {
       "path": "agentplane/env/runtime/execution/adapter/sessions.go",
-      "package": "execution",
+      "package": "adapter",
       "test": false,
       "generated": false,
       "lines": 230,
-      "sha256": "6ffca546a34ebd361d92a7cf2821c072d9ba016cb3cce6a0985281614d3a464e",
+      "sha256": "2aecfbb7884fe3f4b81852b7631763abde3a9d131ddc9e51bdc3bc99b5e7104e",
       "planned_path": "agentplane/env/runtime/execution/adapter/sessions.go",
       "planned_parts": [],
       "planned_package": "adapter",
-      "goal_path_status": "package name alignment",
+      "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-execution-package-names"],
-      "disposition": "package name alignment",
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/execution/adapter"
     },
     {
@@ -11955,13 +11955,13 @@
       "test": false,
       "generated": false,
       "lines": 54,
-      "sha256": "6efe15ff5bac233943c79f7c9c4a392847a170fa97a339a800dbd67fe3fe943b",
+      "sha256": "8d4daf1a9e7aeccab2d867d2f36cc4c3d589b8a6db5216e104c7290496099ce6",
       "planned_path": "agentplane/env/runtime/execution/adapter/testing/main.go",
       "planned_parts": [],
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-execution-package-names"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/execution/adapter/testing"
     },
@@ -11970,14 +11970,14 @@
       "package": "main",
       "test": false,
       "generated": false,
-      "lines": 16,
-      "sha256": "d672fc4c0f7a6e7a7a141a8cdb49c9c14ee2d0bdb5b22637a67259dc3a292db5",
+      "lines": 71,
+      "sha256": "d9c6127a69f6c4318920afdd9907565354e4f79448b7c269e49d895fff2c6696",
       "planned_path": "agentplane/env/runtime/execution/cmd/main.go",
       "planned_parts": [],
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-execution-package-names"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/execution/cmd"
     },
@@ -12025,61 +12025,56 @@
       "planned_package": "control",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-execution-package-names", "protobuf-alignment"],
+      "pending_tracks": ["protobuf-alignment"],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/execution/companion/control"
     },
     {
       "path": "agentplane/env/runtime/execution/companion/health_test.go",
-      "package": "executor",
+      "package": "companion",
       "test": true,
       "generated": false,
       "lines": 78,
-      "sha256": "8fca52041bfc0d27ed61ad07180d99b36fcd72bfb1336f8924313a24c728a7f0",
+      "sha256": "bd0047b7e0b9e32a870ccfbb6f97421c26254a9a36f114aaf829f8d2509e114f",
       "planned_path": "agentplane/env/runtime/execution/companion/health_test.go",
       "planned_parts": [],
       "planned_package": "companion",
-      "goal_path_status": "package name alignment",
+      "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-execution-package-names"],
-      "disposition": "package name alignment",
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/execution/companion"
     },
     {
       "path": "agentplane/env/runtime/execution/companion/main.go",
-      "package": "executor",
+      "package": "companion",
       "test": false,
       "generated": false,
-      "lines": 366,
-      "sha256": "6ade14bb41bc14a283a2a1209ef4abd7aaeca4d7d9e7e79612e0d78f73289d62",
-      "planned_path": null,
-      "planned_parts": [
-        "agentplane/env/runtime/execution/cmd/main.go",
-        "agentplane/env/runtime/execution/companion/main.go"
-      ],
-      "planned_package": null,
-      "goal_path_status": "split responsibility",
+      "lines": 350,
+      "sha256": "113a9cd254044076d4b67cf3cb09aaa56f152e95dea096464c9b4e8afc391357",
+      "planned_path": "agentplane/env/runtime/execution/companion/main.go",
+      "planned_parts": [],
+      "planned_package": "companion",
+      "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-execution-package-names"],
-      "disposition": "split responsibility",
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/execution/companion"
     },
     {
       "path": "agentplane/env/runtime/execution/companion/main_test.go",
-      "package": "executor",
+      "package": "companion",
       "test": true,
       "generated": false,
       "lines": 287,
-      "sha256": "e5f55b85ff77613f46930515fca3b5ecbb906da49963eea80730de7e7adaccf4",
-      "planned_path": null,
-      "planned_parts": [
-        "agentplane/env/runtime/execution/companion/main_test.go"
-      ],
-      "planned_package": null,
-      "goal_path_status": "split responsibility",
+      "sha256": "884a990254fbb042f0a4022adc0690c419495a0dd6a43138b0f35e8e8fb01142",
+      "planned_path": "agentplane/env/runtime/execution/companion/main_test.go",
+      "planned_parts": [],
+      "planned_package": "companion",
+      "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-execution-package-names"],
-      "disposition": "split responsibility",
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/execution/companion"
     },
     {
@@ -12104,7 +12099,7 @@
       "test": false,
       "generated": false,
       "lines": 206,
-      "sha256": "824a4c6f6689f2eb80658eef57514a61190ab9a6cca82e7a3441db1d4439da1a",
+      "sha256": "0fbb131b663b7de4624ca74e81cac69eea67a2fa778a6446f5d10c761782309f",
       "planned_path": "agentplane/env/runtime/execution/service/service.go",
       "planned_parts": [],
       "planned_package": "service",
@@ -12648,7 +12643,7 @@
       "test": true,
       "generated": false,
       "lines": 79,
-      "sha256": "e52fae82a1aea8ebee6069b69ab7c587eabb12da2e23753d2bf59b1a8b7d4b33",
+      "sha256": "10697ee8125c6a163f83015b48d65f3d3489d297b95971c06f93837f0e3774f7",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -15033,6 +15028,754 @@
       "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/scripts"
+    },
+    {
+      "path": "agentplane/environments/cmd/config.go",
+      "package": "main",
+      "test": false,
+      "generated": false,
+      "lines": 84,
+      "sha256": "437f56b962c216fb1e00a06bdc92acc25aecc1e46dff85521bc878addab0411f",
+      "planned_path": "agentplane/environments/cmd/config.go",
+      "planned_parts": [],
+      "planned_package": "main",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["environment-service-to-sandbox-controller"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/environments/cmd"
+    },
+    {
+      "path": "agentplane/environments/cmd/config_test.go",
+      "package": "main",
+      "test": true,
+      "generated": false,
+      "lines": 166,
+      "sha256": "e9e2183361499814a22172d27c4d1752595a625d9d1aa7b1927a83d0cf21b664",
+      "planned_path": "agentplane/environments/cmd/config_test.go",
+      "planned_parts": [],
+      "planned_package": "main",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["environment-service-to-sandbox-controller"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/environments/cmd"
+    },
+    {
+      "path": "agentplane/environments/cmd/main.go",
+      "package": "main",
+      "test": false,
+      "generated": false,
+      "lines": 138,
+      "sha256": "81dc2c76c03e4732885cb35c407144fe4857f2f921a380d337c5a5ec6b11c586",
+      "planned_path": "agentplane/environments/cmd/main.go",
+      "planned_parts": [],
+      "planned_package": "main",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["environment-service-to-sandbox-controller"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/environments/cmd"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/apply.go",
+      "package": "sandboxcontroller",
+      "test": false,
+      "generated": false,
+      "lines": 48,
+      "sha256": "0ce2b4cfd150956e4bd2496020ad377ec6d9f09a5551de15c9c20689862bdfb6",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/behavior.go",
+      "package": "sandboxcontroller",
+      "test": false,
+      "generated": false,
+      "lines": 56,
+      "sha256": "3b843a40b1049ca215f11366d8f67cc162669b54562b381aad5e89ab0b447497",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/cache.go",
+      "package": "sandboxcontroller",
+      "test": false,
+      "generated": false,
+      "lines": 39,
+      "sha256": "8ec3f8bcd3c050aefebd4eb1f9592ba60cc0e9cfe1f447005d0da076ac469d7a",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/children_integration_test.go",
+      "package": "sandboxcontroller",
+      "test": true,
+      "generated": false,
+      "lines": 505,
+      "sha256": "86614a2aa7d9302b0a722711e1826b86873e1038b4dd3d04bba87d0c8b3d5b32",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/claim.go",
+      "package": "sandboxcontroller",
+      "test": false,
+      "generated": false,
+      "lines": 39,
+      "sha256": "f12743001e2e46a9d56294791f8c7d673845af0d0d4e4f11c36ada9f3d92f066",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/controller.go",
+      "package": "sandboxcontroller",
+      "test": false,
+      "generated": false,
+      "lines": 1027,
+      "sha256": "314a6fdef4928d268041e3e56806ea769538dfc552c46dea5aadcf8149d476b7",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/controller_test.go",
+      "package": "sandboxcontroller",
+      "test": true,
+      "generated": false,
+      "lines": 1427,
+      "sha256": "7ec9332ec2192ee11aa65391199b890024b22682bbbf2f7fb6ddf05af0062feb",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/environment_runtime_credential.go",
+      "package": "sandboxcontroller",
+      "test": false,
+      "generated": false,
+      "lines": 439,
+      "sha256": "e4a8eb4146f60725e4fdaa708f9f771d99f11d993388a6636104fd25dfcbb87c",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/environment_runtime_credential_test.go",
+      "package": "sandboxcontroller",
+      "test": true,
+      "generated": false,
+      "lines": 534,
+      "sha256": "0dfc8748b66714ecaebc75c1c18e3f78069cca298bd89130c3437ccdaaf1f387",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/firecracker.go",
+      "package": "sandboxcontroller",
+      "test": false,
+      "generated": false,
+      "lines": 202,
+      "sha256": "620bed4a43f43ffe0c524696920ea5b68721853cb05fc27989a5a243c08b856a",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/firecracker_status_reader_timeout_test.go",
+      "package": "sandboxcontroller",
+      "test": true,
+      "generated": false,
+      "lines": 60,
+      "sha256": "f1c229915903a9a7e1bd4473f3bbe8598bce7fe8d87158f0d81bc63c70041534",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/firecracker_suspend.go",
+      "package": "sandboxcontroller",
+      "test": false,
+      "generated": false,
+      "lines": 99,
+      "sha256": "2950818e55a815c70b362dee10176a1ffa4027ea6701bdf09446071922623313",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/firecracker_suspend_test.go",
+      "package": "sandboxcontroller",
+      "test": true,
+      "generated": false,
+      "lines": 301,
+      "sha256": "21aeea9c0839069c024fc2cbb4768bffc09a2b2d3fbf786a1e0ec2379111493d",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/firecracker_test.go",
+      "package": "sandboxcontroller",
+      "test": true,
+      "generated": false,
+      "lines": 274,
+      "sha256": "309a1a088830ea42f3a81479b508a9d9cf80db674206a0b0029b32ac89fb96a0",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/identity.go",
+      "package": "sandboxcontroller",
+      "test": false,
+      "generated": false,
+      "lines": 93,
+      "sha256": "0e9337721bd88d6af133519e4fc91587c57adf95b8bbbf7dc2aa63fad4f7faaf",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/identity_test.go",
+      "package": "sandboxcontroller",
+      "test": true,
+      "generated": false,
+      "lines": 256,
+      "sha256": "3a15f43fae0216e0e11ce000142c52479f881b0303a903e7c65ddd1b6af02455",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/idle.go",
+      "package": "sandboxcontroller",
+      "test": false,
+      "generated": false,
+      "lines": 182,
+      "sha256": "155f255264b5656f38daa1fd1101d1ab152c321d6bef2b148b5c7ae71f819164",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/idle_test.go",
+      "package": "sandboxcontroller",
+      "test": true,
+      "generated": false,
+      "lines": 467,
+      "sha256": "a4137ace765550212183f27a890bbb86d03c01c6a70d46ac4f87a58e6bef0bbd",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/launch.go",
+      "package": "sandboxcontroller",
+      "test": false,
+      "generated": false,
+      "lines": 102,
+      "sha256": "dc43b56d058640411a3aee52932d1d1843739bf4f0ff05343531677cdd567e04",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/launch_test.go",
+      "package": "sandboxcontroller",
+      "test": true,
+      "generated": false,
+      "lines": 147,
+      "sha256": "de74e0bf5f1d010214570090c89ee78de2865dc692718bba573ae235ce07951f",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/quiescer.go",
+      "package": "sandboxcontroller",
+      "test": false,
+      "generated": false,
+      "lines": 22,
+      "sha256": "c3181997be0e8f357801caaed77bea51dcb3f1fd063e3489bb5f42690071ed9f",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/runtime_facts.go",
+      "package": "sandboxcontroller",
+      "test": false,
+      "generated": false,
+      "lines": 88,
+      "sha256": "74a8b83f4abb1ebfe7d9f9985ee26108099592b2a8bc903ff8ceebc00f7ddc35",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/runtime_facts_test.go",
+      "package": "sandboxcontroller",
+      "test": true,
+      "generated": false,
+      "lines": 55,
+      "sha256": "f16205892a718fc2615f394f67012f3a543b572e2338e58042906f24e73e3e99",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/runtime_states.go",
+      "package": "sandboxcontroller",
+      "test": false,
+      "generated": false,
+      "lines": 215,
+      "sha256": "24f92581754579565c6e234889e5fe2c3f600b906ead25cb9a22ff3970905725",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/runtime_states_test.go",
+      "package": "sandboxcontroller",
+      "test": true,
+      "generated": false,
+      "lines": 350,
+      "sha256": "a113ebef531d103d917e95e43991ecb47e49a31c90b42e55f5e808052b93e0a0",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/state_volume.go",
+      "package": "sandboxcontroller",
+      "test": false,
+      "generated": false,
+      "lines": 110,
+      "sha256": "b55d122cb489996c72e6ece7276f3ef75a663549a6fedc4cf89b531b8b7e5585",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/state_volume_test.go",
+      "package": "sandboxcontroller",
+      "test": true,
+      "generated": false,
+      "lines": 187,
+      "sha256": "0f71d4c76260724a3520cd2333be39a2e5d74b1027fb8c82fb05e4c7e5424824",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/vm.go",
+      "package": "sandboxcontroller",
+      "test": false,
+      "generated": false,
+      "lines": 230,
+      "sha256": "a65fc0b7ce11ecf0f783956366fa83eaa8bb51a51afc31f8952c45aacdb5cecd",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/vm_test.go",
+      "package": "sandboxcontroller",
+      "test": true,
+      "generated": false,
+      "lines": 543,
+      "sha256": "428d3b4ffd417d86fe0a1ee0dd0be426d8475f829fa4e83d94a93634c38a2640",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/workspace.go",
+      "package": "sandboxcontroller",
+      "test": false,
+      "generated": false,
+      "lines": 180,
+      "sha256": "ee2591fe688026942aec173cc29a91bc5580ebda01d449a8e640ed8f9680dd8a",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/controller/workspace_test.go",
+      "package": "sandboxcontroller",
+      "test": true,
+      "generated": false,
+      "lines": 411,
+      "sha256": "912681f903246a27d943f1e2609e14999b1913998659e94232a8c7a9eb90a66f",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/environments/internal/controller",
+        "agentplane/environments/internal/runtimecredentials",
+        "agentplane/environments/internal/vm"
+      ],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
+      "path": "agentplane/environments/internal/runtimecontrol/observer.go",
+      "package": "runtimecontrol",
+      "test": false,
+      "generated": false,
+      "lines": 134,
+      "sha256": "8334b846d7486d02c10c4233145bd6ac9106dd4589fb180ad3a79bffba857322",
+      "planned_path": "agentplane/environments/internal/runtimecontrol/observer.go",
+      "planned_parts": [],
+      "planned_package": "runtimecontrol",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/environments/internal/runtimecontrol"
+    },
+    {
+      "path": "agentplane/environments/internal/runtimecontrol/observer_test.go",
+      "package": "runtimecontrol",
+      "test": true,
+      "generated": false,
+      "lines": 118,
+      "sha256": "9d2b36b94703911dad89efa0989adbbb66c098356775c9ee948265e7014335b3",
+      "planned_path": "agentplane/environments/internal/runtimecontrol/observer_test.go",
+      "planned_parts": [],
+      "planned_package": "runtimecontrol",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/environments/internal/runtimecontrol"
+    },
+    {
+      "path": "agentplane/environments/internal/runtimecontrol/quiescer.go",
+      "package": "runtimecontrol",
+      "test": false,
+      "generated": false,
+      "lines": 88,
+      "sha256": "44e9aaabaaa11c26187f8647cc653b47fa8a13f1cb49ea3dcb0b5e3408c1a34a",
+      "planned_path": "agentplane/environments/internal/runtimecontrol/quiescer.go",
+      "planned_parts": [],
+      "planned_package": "runtimecontrol",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/environments/internal/runtimecontrol"
+    },
+    {
+      "path": "agentplane/environments/internal/runtimecontrol/quiescer_test.go",
+      "package": "runtimecontrol",
+      "test": true,
+      "generated": false,
+      "lines": 199,
+      "sha256": "6066f8a13677b14a7d3fbf1a487c506d0276cbea410fec1b519e35c42756a97d",
+      "planned_path": "agentplane/environments/internal/runtimecontrol/quiescer_test.go",
+      "planned_parts": [],
+      "planned_package": "runtimecontrol",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/environments/internal/runtimecontrol"
+    },
+    {
+      "path": "agentplane/environments/internal/runtimecontrol/suspender.go",
+      "package": "runtimecontrol",
+      "test": false,
+      "generated": false,
+      "lines": 44,
+      "sha256": "a4e5dde1ffb85eb1c809e805ca2ac02f8d2962c4196406e0427cc096e54eb433",
+      "planned_path": "agentplane/environments/internal/runtimecontrol/suspender.go",
+      "planned_parts": [],
+      "planned_package": "runtimecontrol",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/environments/internal/runtimecontrol"
     },
     {
       "path": "agentplane/firecracker/cmd/launcher/main.go",
@@ -23236,8 +23979,8 @@
       "package": "dispatcher",
       "test": true,
       "generated": false,
-      "lines": 280,
-      "sha256": "0b56966b0db8b651700b92a49082459ac1c6fe3f019a667203614c922b1d35fe",
+      "lines": 318,
+      "sha256": "9eaee9e99ac74f27d9dd13ba14c2f0fc20b50e0480b19ae8b5278980770ff7b4",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -24384,856 +25127,6 @@
       "package_decision": "agentplane/runner_gateway/migrations"
     },
     {
-      "path": "agentplane/sandbox_controller/cmd/config.go",
-      "package": "main",
-      "test": false,
-      "generated": false,
-      "lines": 84,
-      "sha256": "437f56b962c216fb1e00a06bdc92acc25aecc1e46dff85521bc878addab0411f",
-      "planned_path": "agentplane/environments/cmd/config.go",
-      "planned_parts": [],
-      "planned_package": "main",
-      "goal_path_status": "exact move",
-      "candidate_owners": [],
-      "pending_tracks": [
-        "environments-directory",
-        "environment-service-to-sandbox-controller"
-      ],
-      "disposition": "exact move",
-      "package_decision": "agentplane/sandbox_controller/cmd"
-    },
-    {
-      "path": "agentplane/sandbox_controller/cmd/config_test.go",
-      "package": "main",
-      "test": true,
-      "generated": false,
-      "lines": 166,
-      "sha256": "e9e2183361499814a22172d27c4d1752595a625d9d1aa7b1927a83d0cf21b664",
-      "planned_path": "agentplane/environments/cmd/config_test.go",
-      "planned_parts": [],
-      "planned_package": "main",
-      "goal_path_status": "exact move",
-      "candidate_owners": [],
-      "pending_tracks": [
-        "environments-directory",
-        "environment-service-to-sandbox-controller"
-      ],
-      "disposition": "exact move",
-      "package_decision": "agentplane/sandbox_controller/cmd"
-    },
-    {
-      "path": "agentplane/sandbox_controller/cmd/main.go",
-      "package": "main",
-      "test": false,
-      "generated": false,
-      "lines": 138,
-      "sha256": "e959038b461bf5740427c310fd1e724ae03e9a8749ec128d4774a11980225568",
-      "planned_path": "agentplane/environments/cmd/main.go",
-      "planned_parts": [],
-      "planned_package": "main",
-      "goal_path_status": "exact move",
-      "candidate_owners": [],
-      "pending_tracks": [
-        "environments-directory",
-        "environment-service-to-sandbox-controller"
-      ],
-      "disposition": "exact move",
-      "package_decision": "agentplane/sandbox_controller/cmd"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/apply.go",
-      "package": "sandboxcontroller",
-      "test": false,
-      "generated": false,
-      "lines": 48,
-      "sha256": "0ce2b4cfd150956e4bd2496020ad377ec6d9f09a5551de15c9c20689862bdfb6",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/behavior.go",
-      "package": "sandboxcontroller",
-      "test": false,
-      "generated": false,
-      "lines": 56,
-      "sha256": "3b843a40b1049ca215f11366d8f67cc162669b54562b381aad5e89ab0b447497",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/cache.go",
-      "package": "sandboxcontroller",
-      "test": false,
-      "generated": false,
-      "lines": 39,
-      "sha256": "8ec3f8bcd3c050aefebd4eb1f9592ba60cc0e9cfe1f447005d0da076ac469d7a",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/children_integration_test.go",
-      "package": "sandboxcontroller",
-      "test": true,
-      "generated": false,
-      "lines": 505,
-      "sha256": "86614a2aa7d9302b0a722711e1826b86873e1038b4dd3d04bba87d0c8b3d5b32",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/claim.go",
-      "package": "sandboxcontroller",
-      "test": false,
-      "generated": false,
-      "lines": 39,
-      "sha256": "f12743001e2e46a9d56294791f8c7d673845af0d0d4e4f11c36ada9f3d92f066",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/controller.go",
-      "package": "sandboxcontroller",
-      "test": false,
-      "generated": false,
-      "lines": 1027,
-      "sha256": "314a6fdef4928d268041e3e56806ea769538dfc552c46dea5aadcf8149d476b7",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/controller_test.go",
-      "package": "sandboxcontroller",
-      "test": true,
-      "generated": false,
-      "lines": 1427,
-      "sha256": "7ec9332ec2192ee11aa65391199b890024b22682bbbf2f7fb6ddf05af0062feb",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/environment_runtime_credential.go",
-      "package": "sandboxcontroller",
-      "test": false,
-      "generated": false,
-      "lines": 439,
-      "sha256": "e4a8eb4146f60725e4fdaa708f9f771d99f11d993388a6636104fd25dfcbb87c",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/environment_runtime_credential_test.go",
-      "package": "sandboxcontroller",
-      "test": true,
-      "generated": false,
-      "lines": 534,
-      "sha256": "0dfc8748b66714ecaebc75c1c18e3f78069cca298bd89130c3437ccdaaf1f387",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/firecracker.go",
-      "package": "sandboxcontroller",
-      "test": false,
-      "generated": false,
-      "lines": 202,
-      "sha256": "620bed4a43f43ffe0c524696920ea5b68721853cb05fc27989a5a243c08b856a",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/firecracker_status_reader_timeout_test.go",
-      "package": "sandboxcontroller",
-      "test": true,
-      "generated": false,
-      "lines": 60,
-      "sha256": "f1c229915903a9a7e1bd4473f3bbe8598bce7fe8d87158f0d81bc63c70041534",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/firecracker_suspend.go",
-      "package": "sandboxcontroller",
-      "test": false,
-      "generated": false,
-      "lines": 99,
-      "sha256": "2950818e55a815c70b362dee10176a1ffa4027ea6701bdf09446071922623313",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/firecracker_suspend_test.go",
-      "package": "sandboxcontroller",
-      "test": true,
-      "generated": false,
-      "lines": 301,
-      "sha256": "21aeea9c0839069c024fc2cbb4768bffc09a2b2d3fbf786a1e0ec2379111493d",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/firecracker_test.go",
-      "package": "sandboxcontroller",
-      "test": true,
-      "generated": false,
-      "lines": 274,
-      "sha256": "309a1a088830ea42f3a81479b508a9d9cf80db674206a0b0029b32ac89fb96a0",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/identity.go",
-      "package": "sandboxcontroller",
-      "test": false,
-      "generated": false,
-      "lines": 93,
-      "sha256": "0e9337721bd88d6af133519e4fc91587c57adf95b8bbbf7dc2aa63fad4f7faaf",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/identity_test.go",
-      "package": "sandboxcontroller",
-      "test": true,
-      "generated": false,
-      "lines": 256,
-      "sha256": "3a15f43fae0216e0e11ce000142c52479f881b0303a903e7c65ddd1b6af02455",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/idle.go",
-      "package": "sandboxcontroller",
-      "test": false,
-      "generated": false,
-      "lines": 182,
-      "sha256": "155f255264b5656f38daa1fd1101d1ab152c321d6bef2b148b5c7ae71f819164",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/idle_test.go",
-      "package": "sandboxcontroller",
-      "test": true,
-      "generated": false,
-      "lines": 467,
-      "sha256": "a4137ace765550212183f27a890bbb86d03c01c6a70d46ac4f87a58e6bef0bbd",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/launch.go",
-      "package": "sandboxcontroller",
-      "test": false,
-      "generated": false,
-      "lines": 102,
-      "sha256": "dc43b56d058640411a3aee52932d1d1843739bf4f0ff05343531677cdd567e04",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/launch_test.go",
-      "package": "sandboxcontroller",
-      "test": true,
-      "generated": false,
-      "lines": 147,
-      "sha256": "de74e0bf5f1d010214570090c89ee78de2865dc692718bba573ae235ce07951f",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/quiescer.go",
-      "package": "sandboxcontroller",
-      "test": false,
-      "generated": false,
-      "lines": 22,
-      "sha256": "c3181997be0e8f357801caaed77bea51dcb3f1fd063e3489bb5f42690071ed9f",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/runtime_facts.go",
-      "package": "sandboxcontroller",
-      "test": false,
-      "generated": false,
-      "lines": 88,
-      "sha256": "74a8b83f4abb1ebfe7d9f9985ee26108099592b2a8bc903ff8ceebc00f7ddc35",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/runtime_facts_test.go",
-      "package": "sandboxcontroller",
-      "test": true,
-      "generated": false,
-      "lines": 55,
-      "sha256": "f16205892a718fc2615f394f67012f3a543b572e2338e58042906f24e73e3e99",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/runtime_states.go",
-      "package": "sandboxcontroller",
-      "test": false,
-      "generated": false,
-      "lines": 215,
-      "sha256": "24f92581754579565c6e234889e5fe2c3f600b906ead25cb9a22ff3970905725",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/runtime_states_test.go",
-      "package": "sandboxcontroller",
-      "test": true,
-      "generated": false,
-      "lines": 350,
-      "sha256": "a113ebef531d103d917e95e43991ecb47e49a31c90b42e55f5e808052b93e0a0",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/state_volume.go",
-      "package": "sandboxcontroller",
-      "test": false,
-      "generated": false,
-      "lines": 110,
-      "sha256": "b55d122cb489996c72e6ece7276f3ef75a663549a6fedc4cf89b531b8b7e5585",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/state_volume_test.go",
-      "package": "sandboxcontroller",
-      "test": true,
-      "generated": false,
-      "lines": 187,
-      "sha256": "0f71d4c76260724a3520cd2333be39a2e5d74b1027fb8c82fb05e4c7e5424824",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/vm.go",
-      "package": "sandboxcontroller",
-      "test": false,
-      "generated": false,
-      "lines": 230,
-      "sha256": "a65fc0b7ce11ecf0f783956366fa83eaa8bb51a51afc31f8952c45aacdb5cecd",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/vm_test.go",
-      "package": "sandboxcontroller",
-      "test": true,
-      "generated": false,
-      "lines": 543,
-      "sha256": "428d3b4ffd417d86fe0a1ee0dd0be426d8475f829fa4e83d94a93634c38a2640",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/workspace.go",
-      "package": "sandboxcontroller",
-      "test": false,
-      "generated": false,
-      "lines": 180,
-      "sha256": "ee2591fe688026942aec173cc29a91bc5580ebda01d449a8e640ed8f9680dd8a",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/controller/workspace_test.go",
-      "package": "sandboxcontroller",
-      "test": true,
-      "generated": false,
-      "lines": 411,
-      "sha256": "912681f903246a27d943f1e2609e14999b1913998659e94232a8c7a9eb90a66f",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
-      "pending_tracks": [
-        "environments-directory",
-        "sandbox-controller-lifecycle"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/sandbox_controller/internal/controller"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/runnercontrol/observer.go",
-      "package": "runnercontrol",
-      "test": false,
-      "generated": false,
-      "lines": 134,
-      "sha256": "836652fd7bf61a187744e0c700c6153b887dfaf24a96ab9c5db39679d7b60a6f",
-      "planned_path": "agentplane/sandbox_controller/internal/runnercontrol/observer.go",
-      "planned_parts": [],
-      "planned_package": "runnercontrol",
-      "goal_path_status": "retain owner",
-      "candidate_owners": [],
-      "pending_tracks": ["environments-directory"],
-      "disposition": "retain owner",
-      "package_decision": "agentplane/sandbox_controller/internal/runnercontrol"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/runnercontrol/observer_test.go",
-      "package": "runnercontrol",
-      "test": true,
-      "generated": false,
-      "lines": 118,
-      "sha256": "24e4bd70a6bfcf33067d8bbe18d5fff0dd0a876a1446b2a61fe6741b28ff9b4f",
-      "planned_path": "agentplane/environments/internal/runtimecontrol/observer_test.go",
-      "planned_parts": [],
-      "planned_package": "runtimecontrol",
-      "goal_path_status": "package name alignment",
-      "candidate_owners": [],
-      "pending_tracks": ["environments-directory"],
-      "disposition": "package name alignment",
-      "package_decision": "agentplane/sandbox_controller/internal/runnercontrol"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/runnercontrol/quiescer.go",
-      "package": "runnercontrol",
-      "test": false,
-      "generated": false,
-      "lines": 88,
-      "sha256": "0a6eb31fce15c9848b958281d45a707eb774b8b98e109fd6a59a4336f6ccb9cd",
-      "planned_path": "agentplane/environments/internal/runtimecontrol/quiescer.go",
-      "planned_parts": [],
-      "planned_package": "runtimecontrol",
-      "goal_path_status": "package name alignment",
-      "candidate_owners": [],
-      "pending_tracks": ["environments-directory"],
-      "disposition": "package name alignment",
-      "package_decision": "agentplane/sandbox_controller/internal/runnercontrol"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/runnercontrol/quiescer_test.go",
-      "package": "runnercontrol",
-      "test": true,
-      "generated": false,
-      "lines": 199,
-      "sha256": "3cf5da4d64420c88f593ff9f2747829bd77ada38f4302a00f183cafb34ef1803",
-      "planned_path": "agentplane/environments/internal/runtimecontrol/quiescer_test.go",
-      "planned_parts": [],
-      "planned_package": "runtimecontrol",
-      "goal_path_status": "package name alignment",
-      "candidate_owners": [],
-      "pending_tracks": ["environments-directory"],
-      "disposition": "package name alignment",
-      "package_decision": "agentplane/sandbox_controller/internal/runnercontrol"
-    },
-    {
-      "path": "agentplane/sandbox_controller/internal/runnercontrol/suspender.go",
-      "package": "runnercontrol",
-      "test": false,
-      "generated": false,
-      "lines": 44,
-      "sha256": "f178e2ab0da50f96793ccdf6b9b9cc8c18d317469f6e2d855907fff4ec130902",
-      "planned_path": "agentplane/environments/internal/runtimecontrol/suspender.go",
-      "planned_parts": [],
-      "planned_package": "runtimecontrol",
-      "goal_path_status": "package name alignment",
-      "candidate_owners": [],
-      "pending_tracks": ["environments-directory"],
-      "disposition": "package name alignment",
-      "package_decision": "agentplane/sandbox_controller/internal/runnercontrol"
-    },
-    {
       "path": "agentplane/sandboxes/api/constants.go",
       "package": "api",
       "test": false,
@@ -25271,7 +25164,7 @@
       "test": false,
       "generated": false,
       "lines": 12,
-      "sha256": "18c320eb4f23d63cf98f9efe85b45413d158fc7129875153c0e20334e9f028b0",
+      "sha256": "6d7c12a16237c4cab9a3864b1cfa53bef992409110523ac19330c78546fbf8bd",
       "planned_path": "agentplane/sandboxes/api/sandbox_name.go",
       "planned_parts": [],
       "planned_package": "api",
