@@ -225,6 +225,13 @@ func main() {
 		}
 		return
 	}
+	if handled, err := runOwnershipCommand(ctx, os.Args[1:], os.Stdout); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "central-sampler ownership:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	configuration := flag.String("config", os.Getenv("AGENTPLANE_CENTRAL_SAMPLER_CONFIG"), "JSON settings path")
 	flag.Parse()
 	settings, err := samplersettings.LoadSettings(*configuration)
