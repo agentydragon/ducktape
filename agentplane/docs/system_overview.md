@@ -797,3 +797,19 @@ flowchart LR
     actions[Actions] -->|service SVID plus typed Action delegation| env[EnvironmentService]
     env -->|effective Identity resume grant and token| lifecycle[Guarded lifecycle update]
 ```
+
+## Sessions role to the Runtime proxy
+
+The Dispatcher delivery worker presents its separate `spiffe://agentplane/sessions` certificate
+when dialing the stable Runtime proxy Service, including when a different Gateway replica holds
+the runner connection. It verifies the receiver's `spiffe://agentplane/session-dispatcher` server
+certificate. The receiver grants only Runtime Session operations to that Sessions role.
+The Gateway→central sampler hop remains on its current bearer path until the explicit ownership
+rewrite and separately verified caller cutover; its retained Sessions do not change in this step.
+
+```mermaid
+flowchart LR
+    sessions[Dispatcher / Sessions role] -->|service SVID mTLS; Session methods| proxy[Runtime proxy]
+    sessions -->|existing bearer; ownership cutover pending| sampler[Central sampler]
+    proxy -->|existing Runtime mTLS| runtime[Environment Runtime]
+```

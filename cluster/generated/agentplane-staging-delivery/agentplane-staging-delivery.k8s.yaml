@@ -321,7 +321,6 @@ data:
   settings.yaml: |
     sandbox_namespace: agentplane-staging
     policy_namespace: agentplane-staging
-    runner_token_file: /var/run/secrets/agentplane-runner-gateway/token
     kubernetes_client_qps: -1
     rpc:
       listen_address: 0.0.0.0:8080
@@ -338,6 +337,9 @@ data:
     gateway_tls:
       ca_file: /run/agentplane/workload-trust/ca-certificates.crt
       server_uri: spiffe://agentplane/session-dispatcher
+      cert_file: /run/agentplane/runner-gateway-sessions-client-tls/tls.crt
+      key_file: /run/agentplane/runner-gateway-sessions-client-tls/tls.key
+      client_uri: spiffe://agentplane/sessions
     runner_control_target_template: runner-gateway.{namespace}.svc:8080
     dispatcher_audience: session-dispatcher
     gateway_audience: agentplane-runner-gateway
