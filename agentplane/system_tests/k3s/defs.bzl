@@ -173,11 +173,11 @@ _SERVICE_IMAGES = _merge_image_maps(_COMMON_SERVICE_IMAGES, _MCP_EDGE_IMAGES)
 _STACKS = {
     "pod": struct(service_images = _SERVICE_IMAGES, fixture = _FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
     "pod_scenarios": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _POD_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
-    # Deletion keeps its dedicated runner disk but does not exercise external MCP Connections.
-    "deletion": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _POD_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
     "central": struct(service_images = _SERVICE_IMAGES, fixture = _CENTRAL_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
     "central_services": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _CENTRAL_SERVICES_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
     "central_budget": struct(service_images = _SERVICE_IMAGES, fixture = _CENTRAL_BUDGET_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
+    # Deletion keeps its dedicated runner disk but does not exercise external MCP Connections.
+    "deletion": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _POD_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
     "mcp": struct(service_images = _SERVICE_IMAGES, fixture = _MCP_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES, _MCP_FIXTURE_IMAGES)),
     "vm": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _VM_FIXTURE, vm = True, firecracker = False, real_model = False, images = {}),
     "firecracker": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _FIRECRACKER_FIXTURE, vm = False, firecracker = True, real_model = False, images = {}),

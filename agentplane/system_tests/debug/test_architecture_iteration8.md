@@ -44,15 +44,92 @@ The earlier two-guest candidate and full VM measurements are different source
 and cache exposures. This single pass establishes neither a speed saving nor
 coverage equivalence, p90 or a reliability rate.
 
-## Next measurements and admission controls
+## Readiness audit and image screen
 
 Use the existing boot/launcher/Runtime diagnostics to explain readiness before
 expanding expensive comparisons. In this run the readiness span begins at
 00:11:13.376Z, the launcher reports domain start at 00:11:46.252Z, the console
 reports the private supervision pass at 00:12:55.644Z, and readiness returns at
 00:13:05.830Z. These are cross-process observations, not an exact additive
-breakdown of kernel or controller CPU. Establish where the roughly 33s before
-domain start and 69s until the supervision receipt are spent.
+breakdown of kernel or controller CPU. The retained journal narrows this down:
+guest startup reports 17.229s kernel plus 24.715s userspace; the private Go
+fixture itself takes 19.830s and contains 11 subtests. Runtime's systemd unit
+starts its wrapper before that fixture, so unit `Started` does not mean Runtime
+is serving. The roughly 33s before domain start includes scheduling, container
+initialization and launcher startup. There is no duplicate fixed wait in the
+workspace/home prepare unit ordering. The roughly 7.4s between Runtime's
+WatchState start and first state has no causal subspans; its owner is unresolved.
+
+The manual `test_vm_platform_light_guest_candidate` uses the same body and
+rendered image reference with a separate root containing Codex but no Claude.
+The ordinary and profiling roots retain both CLIs. At literal source
+`cdad46e75623a058c9bb19aaac7147c840542cca`, the reduced root is
+408,961,024 bytes versus 553,885,696 bytes: **144,924,672 bytes (26.2%) less**.
+Downloaded bytes match the native build's advertised SHA-256 identities.
+
+| One serial B/A screen   | Full root A | Reduced root B |
+| ----------------------- | ----------: | -------------: |
+| Native elapsed          |    439.855s |       411.886s |
+| Physical test execution |    277.495s |       266.409s |
+| Reported test CPU       |    798.615s |       538.157s |
+| Guest image import      |     43.766s |        20.116s |
+| Stack setup             |     60.398s |        35.436s |
+| Sandbox readiness       |     99.747s |       136.646s |
+| Case span               |    139.907s |       168.251s |
+
+[Full A](https://app.buildbuddy.io/invocation/c0214fb8-fdc9-4a6b-aded-90e1d95a7f1e)
+and [reduced B](https://app.buildbuddy.io/invocation/1d9fe58a-84bb-4867-94dd-904407c843ed)
+each pass one nonempty JUnit case in one NEW physical action, without skips,
+errors or test retries. Both use a warm compatible baseline, import the changed
+root, report `layers_in_memory=false`, complete cleanup and release one loop
+device. The import drops 23.650s; total physical execution drops only 11.086s
+(4.0%). Readiness varies against the reduced image. These overlapping phases,
+different workers and one serial pair do not establish a complete-CI saving,
+p90, a reliability rate or a causal CPU reduction.
+
+The first attempted image removed both CLIs and 75.4% of root bytes.
+[It fails readiness](https://app.buildbuddy.io/invocation/77131353-d653-42c5-ae07-7fc064d0dc53):
+embedded Execution still launches Codex without model turns, and its native
+service exits with systemd status 203. Restoring Codex produces the passing
+variant above. The rejected image's size reduction is not a usable saving.
+The first required layout check also failed because `dump.erofs --path` returns
+zero for a missing inode; the corrected assertion checks its actual diagnostic
+and empty output. All three required checks pass at `cdad46e756`, including
+three nonempty layout cases and the full VM case; native required invocation
+`f36e7e40-79d6-5dce-a329-be8736e1ea8e` tests synthetic merge `107f9241bf`.
+This is correctness evidence, not another architecture timing pair.
+
+[Reviewed image identities, phases and rejected attempt](test_architecture_platform_image_screen.json)
+retain the source, native action and cache provenance. The smaller root is useful
+only for this platform composition; it cannot replace a two-harness gate.
+
+## Private systemd proof in the existing direct guest
+
+The existing direct Session guest already carries the same private systemd
+fixture binary and root. At pre-rebase source `4ff7cf51e6`,
+[the opt-in proof passes](https://app.buildbuddy.io/invocation/6112d945-2813-4f3c-8a38-86b72a0d561e)
+in that same guest: one NEW physical action, one nonempty JUnit pass, both
+packaged Claude turns, exact History, setup/fence, real CLI routes, credential
+revocation and cleanup. The native Go parent passes in 17.35s with 11 child
+passes; its exact private receipt appears on this guest's serial before
+authenticated readiness. The result file is also checked after teardown restores
+the host owner. The existing 120s QEMU cap is unchanged, and no extra VM or
+required target was added.
+
+Native elapsed is 224.093s, physical test execution 188.694s and reported test
+CPU 309.784s. These are a single correctness proof, not a matched saving.
+The first host-side assertion failed with `PermissionError` even though the
+guest's private checks passed: live guest state is deliberately private. The
+repair keeps the serial receipt check before readiness and reads the file after
+ownership restoration; it changes no permissions. The failed full test remains
+separate from the successful guest subtest result.
+
+[Reviewed direct proof](test_architecture_direct_private_systemd.json) retains
+both attempts. Before removing the duplicate private checks from the manual
+deployed platform candidate, seed controls against the changed composition and
+assign the direct target its required-graph owner. No required owner has moved.
+
+## Next measurements and admission controls
 
 Before promotion, seed launcher/mount, issuer/Pod-binding, kernel-limit and
 supervision defects against the new composition; keep the old full gate until
