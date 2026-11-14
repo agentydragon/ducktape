@@ -151,7 +151,7 @@ async def authenticated_readiness(
             expected_incarnation_uid=f"other-{sandbox.pod_uid}",
         )
     assert refused.value.code == grpc.StatusCode.ABORTED
-    status = await remote.runner_unary(
+    status: session_pb2.EnvironmentRuntimeStatus = await remote.runner_unary(
         sandbox.destination,
         lambda stub: stub.GetStatus,
         session_pb2.GetStatusRequest(),
