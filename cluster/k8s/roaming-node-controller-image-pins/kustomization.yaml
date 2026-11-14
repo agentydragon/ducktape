@@ -2,4 +2,4 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/roaming-node-controller
-    newTag: unset # {"$imagepolicy": "flux-system:roaming-node-controller:tag"}
+    newTag: devel-20261114211156-57c5ec6 # {"$imagepolicy": "flux-system:roaming-node-controller:tag"}
