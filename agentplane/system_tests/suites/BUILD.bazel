@@ -249,7 +249,7 @@ _POD_DEPS = [
     "@pypi//pytest_bazel",
 ]
 
-# Gazelle owns the required target's deps; it retains all 21 cases on one stack.
+# Gazelle owns the required target's deps; it retains the complete Pod case set on one stack.
 k3s_suite(
     name = "test_pod",
     srcs = ["test_pod.py"],
@@ -353,7 +353,7 @@ k3s_suite(
     deps = _POD_DEPS,
 )
 
-# Manual capacity candidates run all 21 Pod cases with their shared storage case first and exclusive.
+# Manual capacity candidates retain all Pod cases, with shared storage first and exclusive.
 k3s_suite(
     name = "test_pod_four_slots_candidate",
     srcs = ["test_pod.py"],
@@ -377,7 +377,7 @@ k3s_suite(
 )
 
 # The native candidate owns seven unchanged cases in this manual graph. Keep the other
-# fourteen App-backed cases and their existing bindings; qualify their union before changing the gate.
+# App-backed cases and their existing bindings; qualify their union before changing the gate.
 k3s_suite(
     name = "test_pod_without_trust_candidate",
     srcs = ["test_pod.py"],
