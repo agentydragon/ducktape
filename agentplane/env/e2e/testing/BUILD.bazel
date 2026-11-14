@@ -192,3 +192,16 @@ py_library(
     name = "history_tunnel",
     srcs = ["history_tunnel.py"],
 )
+
+py_library(
+    name = "claude_transcript",
+    srcs = ["claude_transcript.py"],
+    deps = [
+        ":events",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:event_pb2",
+        "//agentplane/proto:session_pb2",
+        "@pypi//protobuf",
+        "@pypi//tenacity",
+    ],
+)

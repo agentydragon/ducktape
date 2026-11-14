@@ -16,6 +16,7 @@ import pytest
 import pytest_bazel
 
 from agentplane.env.e2e.testing import events
+from agentplane.env.e2e.testing.claude_transcript import wait_for_claude_transcript
 from agentplane.env.e2e.testing.driver import RunnerDriver, runner_test_session_id
 from agentplane.env.e2e.testing.failure_journal import FailureEvidence
 from agentplane.env.e2e.testing.gateway import Gateway
@@ -58,37 +59,6 @@ def _native_frames(entries: Sequence[Any], direction: int) -> list[dict[str, Any
         for entry in events.of_kind(entries, "native")
         if entry.event.native.direction == direction
     ]
-
-
-async def _wait_for_claude_transcript(
-    spec: session_pb2.SessionSpec, session_id: str, entries: Sequence[Any], state_dir: Path, text: str
-) -> None:
-    """Resume tests require the native transcript to exist before the abrupt container death."""
-    if spec.placement.environment_hosted.harness != session_pb2.HARNESS_CLAUDE:
-        return
-    inits = [
-        frame
-        for frame in _native_frames(entries, event_pb2.DIRECTION_FROM_HARNESS)
-        if frame.get("type") == "system" and frame.get("subtype") == "init"
-    ]
-    native_id = inits[-1]["session_id"]
-    directory = state_dir / "sessions" / session_id / "claude" / "projects"
-
-    def recorded() -> bool:
-        for path in directory.glob(f"*/{native_id}.jsonl"):
-            for line in path.read_text().splitlines():
-                try:
-                    entry = json.loads(line)
-                except json.JSONDecodeError:
-                    continue  # Claude may be writing the last line.
-                if entry.get("type") == "assistant" and text in json.dumps(entry.get("message")):
-                    return True
-        return False
-
-    async with asyncio.timeout(10):
-        # Claude owns the file and does not publish a flush notification.
-        while not await asyncio.to_thread(recorded):  # noqa: ASYNC110
-            await asyncio.sleep(0.01)
 
 
 def _codex_history_items(
@@ -277,9 +247,7 @@ async def test_competing_runner_cannot_take_state_and_successor_leaves_uncertain
     await first.submit_input("handoff-seed", "Reply with exactly: HANDOFF_SEED_OK")
     await model.reply(await model.request(), Text("HANDOFF_SEED_OK"))
     await first.until(events.turn_completed)
-    await _wait_for_claude_transcript(
-        spec, first.attached.session_id, first.seen, tmp_path / "state", "HANDOFF_SEED_OK"
-    )
+    await wait_for_claude_transcript(spec, first.attached.session_id, first.seen, tmp_path / "state", "HANDOFF_SEED_OK")
     await first.submit_input(command_id, "Reply with exactly: HANDOFF_REPLACEMENT_OK")
     await first.until(events.is_kind("command_admitted"))
     checkpoint = await first.until(events.is_kind("debug_checkpoint"))
@@ -335,7 +303,7 @@ async def test_runner_sigkill_fences_an_active_native_group_before_successor_dis
     await first.submit_input("seed-before-active-crash", "Reply with exactly: ACTIVE_SEED_OK")
     await model.reply(await model.request(), Text("ACTIVE_SEED_OK"))
     await first.until(events.turn_completed)
-    await _wait_for_claude_transcript(spec, first.attached.session_id, first.seen, tmp_path / "state", "ACTIVE_SEED_OK")
+    await wait_for_claude_transcript(spec, first.attached.session_id, first.seen, tmp_path / "state", "ACTIVE_SEED_OK")
     await first.submit_input("active-before-crash", "Reply with exactly: ACTIVE_FENCE_OK")
     active_request = await model.request()
     assert active_request.user_texts[-1] == "Reply with exactly: ACTIVE_FENCE_OK"
@@ -387,7 +355,7 @@ async def test_a_restarted_runner_reports_the_loss_and_resumes_the_conversation(
     request = await model.request()
     await model.reply(request, Text("SEED_OK"))
     await first.until(events.turn_completed)
-    await _wait_for_claude_transcript(spec, first.attached.session_id, first.seen, tmp_path / "state", "SEED_OK")
+    await wait_for_claude_transcript(spec, first.attached.session_id, first.seen, tmp_path / "state", "SEED_OK")
     harness_pids = [entry.event.harness_started.pid for entry in events.of_kind(first.seen, "harness_started")]
     await first_runner.crash(harness_pids)
 
@@ -520,7 +488,7 @@ async def test_crash_after_dispatch_planned_does_not_retry_uncertain_command(
     seed_request = await model.request()
     await model.reply(seed_request, Text("UNCERTAIN_SEED_OK"))
     await first.until(events.turn_completed)
-    await _wait_for_claude_transcript(
+    await wait_for_claude_transcript(
         spec, first.attached.session_id, first.seen, tmp_path / "state", "UNCERTAIN_SEED_OK"
     )
     await first.submit_input(command_id, uncertain_text)
@@ -787,7 +755,7 @@ async def test_crash_after_terminal_effect_persists_replays_that_effect(
     seed_request = await model.request()
     await model.reply(seed_request, Text("EFFECT_SEED_OK"))
     await first.until(events.turn_completed)
-    await _wait_for_claude_transcript(spec, first.attached.session_id, first.seen, tmp_path / "state", "EFFECT_SEED_OK")
+    await wait_for_claude_transcript(spec, first.attached.session_id, first.seen, tmp_path / "state", "EFFECT_SEED_OK")
     await first.submit_input(command_id, "Reply with exactly: EFFECT_REPLAY_OK")
     await first.until(events.is_kind("command_admitted"))
     # Claude's confirmation correlation is its first response-side `message_start`, unlike
@@ -903,7 +871,7 @@ async def test_a_reasoning_item_cut_off_by_a_harness_kill_is_reported_absent_and
     await first.submit_input("seed", "Reply with exactly: SEED_OK")
     await model.reply(await model.request(), Text("SEED_OK"))
     await first.until(events.turn_completed)
-    await _wait_for_claude_transcript(spec, first.attached.session_id, first.seen, tmp_path / "state", "SEED_OK")
+    await wait_for_claude_transcript(spec, first.attached.session_id, first.seen, tmp_path / "state", "SEED_OK")
     await first.submit_input("input-1", "Reply with exactly: SEED_OK")
     await model.hold_after_first_delta(await model.request(), Reasoning("CUT_OFF_THOUGHT"))
     cut_off = (await first.until(events.is_kind("item_started"))).event.item_started.item_id

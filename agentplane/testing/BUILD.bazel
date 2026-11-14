@@ -114,6 +114,7 @@ py_library(
 py_library(
     name = "scripted_model",
     srcs = ["scripted_model.py"],
+    visibility = _TEST_VISIBILITY + ["//agentplane/x/native_contracts:__pkg__"],
     deps = ["//agentplane/native/testing:model_endpoint"],
 )
 
@@ -122,6 +123,68 @@ py_library(
     srcs = ["tls.py"],
     visibility = _TEST_VISIBILITY + ["//agentplane/notification_service/testing/process_fixture:__pkg__"],
     deps = ["@pypi//cryptography"],
+)
+
+py_library(
+    name = "sandbox_fixtures",
+    testonly = True,
+    srcs = ["sandbox_fixtures.py"],
+    visibility = [
+        "//agentplane/env/e2e:__pkg__",
+        "//agentplane/x/native_contracts:__pkg__",
+        "//agentplane/x/runner_layering:__pkg__",
+    ],
+    deps = [
+        ":kubernetes_apiserver",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "native_gateway_fixtures",
+    testonly = True,
+    srcs = ["native_gateway_fixtures.py"],
+    deps = [
+        ":kubernetes_apiserver",
+        ":kubernetes_apiserver_fixtures",
+        ":sandbox_fixtures",
+        "//agentplane:subjects",
+        "//agentplane/env:config",
+        "//agentplane/net/peertls:config",
+        "//agentplane/runner_gateway:client",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/runner_gateway/testing:gateway_process",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "//util/testing:postgres",
+        "//util/testing:postgres_fixtures",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "native_service_fixtures",
+    testonly = True,
+    srcs = ["native_service_fixtures.py"],
+    visibility = ["//agentplane/x/native_contracts:__pkg__"],
+    deps = [
+        ":kubernetes_apiserver",
+        ":native_gateway_fixtures",
+        "//agentplane/env:config",
+        "//agentplane/env/e2e/testing:config",
+        "//agentplane/env/e2e/testing:fixtures",
+        "//agentplane/env/e2e/testing:gateway",
+        "//agentplane/env/e2e/testing:history_tunnel",
+        "//agentplane/env/e2e/testing:launches",
+        "//agentplane/env/e2e/testing:model_config",
+        "//agentplane/env/e2e/testing:process_fixtures",
+        "//agentplane/history_service/testing:fixtures",
+        "//agentplane/history_service/testing:go_service",
+        "//agentplane/runner_gateway/testing:gateway_process",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "@pypi//pytest",
+        "@rules_python//python/runfiles",
+    ],
 )
 
 py_library(
