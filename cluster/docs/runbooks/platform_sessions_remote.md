@@ -16,11 +16,13 @@ Kustomization uses `deletionPolicy: Orphan`. Providers run in zone `hil-ovh`.
 ## Upstream traffic recording
 
 `RECORD_UPSTREAM_TRAFFIC` in `cluster/cdk8s/platform_sessions/config.py` enables a
-local mitmproxy sidecar for every provider. It is enabled for a session-rotation
+local mitmproxy sidecar for every provider except MyQuest. It is enabled for a session-rotation
 soak through at least January 2027. Each sidecar writes full, unredacted upstream
 exchanges to daily `.mitm` files on its own `piraeus-hdd-local` PVC. These files
 include session credentials and can include private financial, medical and
 conversation data; access them as secrets. A single HDD copy is not a backup.
+MyQuest uses direct egress so that interactive sign-in does not record passwords or
+MFA. Its existing capture PVC is retained and can still contain earlier sensitive data.
 
 Disabling the toggle removes proxy routing and sidecars while retaining the capture
 PVCs. The sidecar appends to the day's file after a restart. A failed capture write

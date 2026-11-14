@@ -48,6 +48,9 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: 
         provider = resource("Deployment", instance)["spec"]
         assert provider["strategy"]["type"] == "Recreate"
         provider_pod = provider["template"]["spec"]
+        container = provider_pod["containers"][0]
+        if instance == "myquest":
+            assert container["resources"]["limits"]["memory"] == "2Gi"
         expected_image = remote._provider_image(instance)
         assert provider_pod["containers"][0]["image"] == f"{remote.REGISTRY}/{expected_image}:unset"
         args = provider_pod["containers"][0]["args"]
@@ -96,7 +99,7 @@ def test_scheduler_has_one_owner_of_state(scratch_app: App) -> None:
     assert integration["state_dir"] == "/data/session/quest-scheduler"
 
 
-def test_recording_wires_each_provider_to_its_private_hdd_capture(scratch_app: App) -> None:
+def test_recording_excludes_myquest_and_retains_its_capture_claim(scratch_app: App) -> None:
     objects = Cdk8sTesting.synth(remote.chart(scratch_app, record_upstream_traffic=True))
 
     def resource(kind, name):
@@ -108,6 +111,17 @@ def test_recording_wires_each_provider_to_its_private_hdd_capture(scratch_app: A
         pod = resource("Deployment", instance)["spec"]["template"]["spec"]
         containers = {container["name"]: container for container in pod["containers"]}
         assert set(containers) == {"provider"}
+        claim = resource("PersistentVolumeClaim", f"{name}-captures")
+        assert claim["spec"]["storageClassName"] == "piraeus-hdd-local"
+        assert claim["metadata"]["annotations"]["kustomize.toolkit.fluxcd.io/prune"] == "disabled"
+        if instance == "myquest":
+            assert not pod.get("initContainers")
+            assert not any(
+                item["name"] in {"HTTP_PROXY", "HTTPS_PROXY", "PLATFORM_SESSIONS_PROXY_ENABLED"}
+                for item in containers["provider"]["env"]
+            )
+            assert not any(volume["name"] == "captures" for volume in pod["volumes"])
+            continue
         init = pod["initContainers"]
         assert [container["name"] for container in init] == ["recorder-ca-init", "upstream-recorder"]
         recorder = init[-1]
@@ -119,9 +133,6 @@ def test_recording_wires_each_provider_to_its_private_hdd_capture(scratch_app: A
         assert env["PLATFORM_SESSIONS_PROXY_ENABLED"] == "true"
         assert env["PLATFORM_SESSIONS_PROXY_CA_FILE"] == "/var/run/session-recorder-ca/tls.crt"
         assert "+/captures/%Y-%m-%d.mitm" in recorder["command"][-1]
-        claim = resource("PersistentVolumeClaim", f"{name}-captures")
-        assert claim["spec"]["storageClassName"] == "piraeus-hdd-local"
-        assert claim["metadata"]["annotations"]["kustomize.toolkit.fluxcd.io/prune"] == "disabled"
         capture = next(volume for volume in pod["volumes"] if volume["name"] == "captures")
         assert capture["persistentVolumeClaim"]["claimName"] == f"{name}-captures"
         assert not any(mount["name"] == "captures" for mount in containers["provider"]["volumeMounts"])

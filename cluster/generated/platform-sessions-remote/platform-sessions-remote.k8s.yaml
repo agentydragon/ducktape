@@ -2312,18 +2312,6 @@ spec:
           env:
             - name: HOME
               value: /tmp
-            - name: HTTP_PROXY
-              value: http://127.0.0.1:18080
-            - name: HTTPS_PROXY
-              value: http://127.0.0.1:18080
-            - name: NO_PROXY
-              value: localhost,127.0.0.1,.svc,.svc.cluster.local
-            - name: SSL_CERT_FILE
-              value: /var/run/session-recorder-trust/ca-certificates.crt
-            - name: PLATFORM_SESSIONS_PROXY_ENABLED
-              value: "true"
-            - name: PLATFORM_SESSIONS_PROXY_CA_FILE
-              value: /var/run/session-recorder-ca/tls.crt
           image: git.allegedly.works/ducktape-ci/platform-sessions-myquest:unset
           livenessProbe:
             httpGet:
@@ -2346,7 +2334,7 @@ spec:
           resources:
             limits:
               cpu: "1"
-              memory: 1Gi
+              memory: 2Gi
             requests:
               cpu: 50m
               memory: 128Mi
@@ -2371,79 +2359,9 @@ spec:
               subPath: state
             - mountPath: /tmp
               name: tmp
-            - mountPath: /var/run/session-recorder-ca
-              name: recorder-ca-public
-              readOnly: true
-            - mountPath: /var/run/session-recorder-trust
-              name: recorder-trust
-              readOnly: true
       imagePullSecrets:
         - name: forgejo-images-creds
-      initContainers:
-        - command:
-            - sh
-            - -c
-            - umask 077; cat /ca/tls.key /ca/tls.crt > /config/mitmproxy-ca.pem
-          image: busybox:1.38
-          name: recorder-ca-init
-          resources:
-            limits:
-              cpu: "1"
-              memory: 1Gi
-            requests:
-              cpu: 50m
-              memory: 128Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-            readOnlyRootFilesystem: true
-          volumeMounts:
-            - mountPath: /ca
-              name: recorder-ca
-              readOnly: true
-            - mountPath: /config
-              name: recorder-config
-        - command:
-            - sh
-            - -c
-            - umask 077; exec mitmdump -q --listen-host 127.0.0.1 --listen-port 18080 --set confdir=/config -w '+/captures/%Y-%m-%d.mitm'
-          image: mitmproxy/mitmproxy:12.2.3
-          name: upstream-recorder
-          readinessProbe:
-            exec:
-              command:
-                - python
-                - -c
-                - import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()
-          resources:
-            limits:
-              cpu: "1"
-              memory: 1Gi
-            requests:
-              cpu: 50m
-              memory: 128Mi
-          restartPolicy: Always
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-            readOnlyRootFilesystem: true
-          startupProbe:
-            exec:
-              command:
-                - python
-                - -c
-                - import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()
-            failureThreshold: 30
-            periodSeconds: 2
-          volumeMounts:
-            - mountPath: /config
-              name: recorder-config
-            - mountPath: /captures
-              name: captures
+      initContainers: []
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
       securityContext:
@@ -2485,23 +2403,6 @@ spec:
             claimName: platform-sessions-myquest-piraeus
         - emptyDir: {}
           name: tmp
-        - name: captures
-          persistentVolumeClaim:
-            claimName: platform-sessions-myquest-captures
-        - name: recorder-ca
-          secret:
-            secretName: platform-sessions-recorder-ca
-        - name: recorder-ca-public
-          secret:
-            items:
-              - key: tls.crt
-                path: tls.crt
-            secretName: platform-sessions-recorder-ca
-        - configMap:
-            name: platform-sessions-recorder-trust
-          name: recorder-trust
-        - emptyDir: {}
-          name: recorder-config
 ---
 apiVersion: v1
 kind: Service
