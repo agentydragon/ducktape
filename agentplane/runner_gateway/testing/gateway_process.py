@@ -166,6 +166,7 @@ async def run_gateway(
     dispatcher_callers: Sequence[ServiceAccountRef],
     gateway_callers: Sequence[ServiceAccountRef],
     workload: ServiceAccountRef,
+    pod_name: str | None = None,
     sandbox_controller_account: ServiceAccountRef | None = None,
     executor_callers: Sequence[ServiceAccountRef] = (),
     environment_readers: Sequence[ServiceAccountRef] = (),
@@ -174,6 +175,7 @@ async def run_gateway(
     dispatcher_audience: str,
     gateway_audience: str,
     runner_proxy_token_file: Path,
+    environment_runtime_ca: CertificateAuthority | None = None,
 ) -> AsyncIterator[GatewayProcess]:
     """Migrate the supplied database, then run the full Gateway on deployment-shaped settings.
 
@@ -193,7 +195,7 @@ async def run_gateway(
         rpc_listener = listeners.enter_context(listen_tcp())
         with tempfile.TemporaryDirectory() as settings_dir:
             settings_directory = Path(settings_dir)
-            environment_runtime_ca = make_ca("Environment Runtime transport test CA")
+            environment_runtime_ca = environment_runtime_ca or make_ca("Environment Runtime transport test CA")
             environment_runtime_ca_file, _ = write_ca(
                 environment_runtime_ca, settings_directory, "environment-runtime-ca"
             )
@@ -255,7 +257,7 @@ async def run_gateway(
                 **os.environ,
                 Settings.config_file_env: str(settings_path),
                 Settings.dispatcher_database_url_env: _wire_database_url(database_url),
-                Settings.pod_name_env: workload.name,
+                Settings.pod_name_env: pod_name or workload.name,
             }
             credentials = grpc.ssl_channel_credentials(root_certificates=environment_runtime_ca_file.read_bytes())
 

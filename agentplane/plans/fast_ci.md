@@ -18,21 +18,31 @@ measurements. No qualified 30% complete-PR saving has been established.
 Work resumed on 14 November 2026 with this measurable objective. The
 first candidate must change the ordinary selected graph, retain the current
 source in every executed binary, and account for every removed deployed assertion.
-The next architecture experiment compares prepared disposable infrastructure with
-the existing retained-infrastructure path. It must identify work beyond the
-already warm setup before implementation: warm Pod setup is only 27–34 seconds
-in the retained screens, so eliminating cold installation alone cannot establish
-the goal. Combine a useful substrate with coverage-accounted case partitions and
-structural dependency cuts, then measure the complete selected graph. Continue
-the bounded App-free Egress extraction; avoid unrelated fixture optimizations.
+The corrected B7/A7 system-subtree comparison at immutable `22014e7b` passes all
+fifty identical cases: 592.550s control to 382.619s candidate, 35.4% lower once.
+All declared resource-request screens pass; actual KVM CPU/memory and unequal Pod
+baseline warmth limit interpretation. This is not complete PR feedback or median/p90
+qualification. Preserve this positive screen alongside all failed attempts.
+
+The immediate work is a reversed-order repeat of that frozen composition, then
+one real-process Runtime/Gateway execution slice with demonstrated eligibility for
+actual backend source-plus-regression-test changes. The new two-Gateway contract
+passes active work through A, recovery through B, exact cursor/process continuity,
+fresh work and stale-identity denials. Its deliberate stale-boot guard defect fails
+the intended assertion. Integrated full-module checks precede selector changes.
+Keep the broad required graph as fallback and the replacement policy shadow-only
+until every removed assertion has a retained owner and actual selected labels prove
+the intended graph. Kubernetes/PKI/guest/App guarantees keep their real witnesses.
 
 The source audit narrows the stopped-seed option: the hosted non-KVM route already supports
 remote snapshots and live retained K3s, while self-hosted VM/Firecracker Docker actions use
 `recycle-runner=false` and fresh private K3s data. Do not assume snapshot support transfers
 between them. A stopped hosted Pod seed would add restart work to the current warm path;
-defer that low-headroom mode. A KVM baseline needs an actual action-owned disk/volume producer
-and isolated clone or prepared-worker contract before execution. Continue the complete graph
-screen and identify a broader Gateway/Dispatcher contract domain with real assertion witnesses.
+defer that low-headroom mode. The plain-property KVM build probe passes, but the PKI-only seed
+is parked: K3s start is 10.139s and PKI controller setup is 15.178s in the diagnosed action,
+while Notifications readiness is a separate 135.918s span. Broader prepared infrastructure
+needs an actual action-owned disk/volume producer and isolated clones, plus enough remaining
+critical-path work to justify its complexity. No cross-action seed restore is qualified.
 
 ## Candidate architecture
 

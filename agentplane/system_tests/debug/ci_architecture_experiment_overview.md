@@ -14,7 +14,15 @@ with unequal cache states and incomplete replacement coverage. The historical
 combined graph was 17.4% faster with unequal baseline warmth and higher known CPU.
 Neither establishes a rerun-inclusive PR saving.
 
-The latest fixed-source full-system screen is negative: 14 ordinary targets versus a 16-target
+The latest corrected fixed-source system-subtree pair passes the same fifty cases:
+fourteen ordinary targets take **592.550s**, versus **382.619s** for sixteen candidate
+targets, **35.4% lower once**. All predeclared resource-request screens pass, with
+unknown KVM physical CPU/memory and unequal Pod baseline warmth. This is an adaptive
+single B/A pair, not complete required-PR feedback or median/p90/flake qualification.
+The next gate is a balanced repeat and actual source/test/BUILD selection proof.
+[Current pair and limits](common_backend_contracts.md#corrected-full-system-composition-b7a7).
+
+An earlier fixed-source full-system screen was negative: 14 ordinary targets versus a 16-target
 composition pass the same 49 logical JUnit cases, but native elapsed grows from 516.795s to
 574.657s. The candidate contains a provider-kernel panic and a subsequent distinct successful
 VM execution; all physical costs count. Known managed CPU and requested-CU execution exceed
@@ -47,11 +55,14 @@ unit target also pass, while that invocation fails a type check subsequently cor
 The attempted full-system KVM screen is canceled before its control arm rather than timed
 through known source regressions. [Rebase evidence](common_backend_contracts.md#stable-gateway-rebase-qualification).
 
-The next large experiment targets prepared disposable integration infrastructure and the
-ordinary contract-owned gate. Warm retained Pod setup already takes only 27–34 seconds;
-eliminating cold bootstrap by itself is not a 30% complete-feedback case. A useful substrate
-must combine with shorter case tails or broader dependency cuts, preserve fresh identities
-and mutable state, and beat the existing warm path as well as a fresh cluster.
+The next architectural slice is real-process Runtime/Gateway execution coverage plus an
+ordinary contract-owned gate for actual common backend edits. The two-Gateway active-work
+contract now passes its focused positive and stale-boot defect control; integrated full-module
+qualification and representative selection are separate gates. The PKI-only prepared seed is
+parked: measured K3s/PKI work is too small to remove the observed Notification readiness tail
+or competing Pod/Services tails. A plain-property build action proves KVM access, but no
+cross-action K3s seed restore or saving is established. Broader prepared infrastructure
+remains an option if it removes enough measured work while preserving fresh identities/state.
 
 ## What has been tried
 

@@ -2,9 +2,10 @@
 
 import asyncio
 import shlex
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from dataclasses import replace
 from pathlib import Path
+from typing import cast
 from uuid import UUID, uuid4
 
 import grpc
@@ -13,10 +14,13 @@ import pytest_bazel
 from more_itertools import one
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
+from agentplane.app.testing.gateway_fixtures import APP, DISPATCHER_AUDIENCE, GATEWAY, GATEWAY_AUDIENCE
 from agentplane.env.e2e.testing import events, launches
 from agentplane.env.e2e.testing.config import RunnerTestConfig
 from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.env.runtime.control import environment_runtime_pb2
+from agentplane.env.runtime.execution import executor_pb2, executor_pb2_grpc
+from agentplane.env.runtime.execution.testing.codex_exec_server_container import CodexExecServerContainer
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.testing.go_service import wait_for_history_session
 from agentplane.proto import command_pb2, event_log_pb2, session_pb2
@@ -24,11 +28,16 @@ from agentplane.proto.identity_pb2 import SandboxDestination
 from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
 from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, accepted_session, admitted
-from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
+from agentplane.runner_gateway.testing.gateway_process import GatewayProcess, run_gateway
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
+from agentplane.subjects import ServiceAccountRef
+from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.scripted_model import ScriptedModel, Text
+from agentplane.testing.tls import RUNNER_GATEWAY_TEST_DNS
 
 # gazelle:include_dep @pypi//protobuf
+
+pytest_plugins = ("agentplane.env.runtime.execution.testing.codex_exec_server_container",)
 
 
 @pytest.fixture
@@ -284,6 +293,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     assert refused.value.code == grpc.StatusCode.ALREADY_EXISTS
     assert bootstrap_marker.read_text() == "B"
     assert setup_marker.read_text() == "S"
+
     status = await destination.status()
     assert not status.processes
     (dormant,) = [row for row in status.sessions if row.session_id == session]
@@ -328,6 +338,372 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     assert [summary.session_id for summary in await destination.list_sessions()] == [session]
     assert bootstrap_marker.read_text() == "B"
     assert setup_marker.read_text() == "S"
+
+
+@pytest.mark.parametrize("harness", [session_pb2.HARNESS_CODEX], ids=["codex"])
+class TestGatewayContinuity:
+    @pytest.fixture
+    def config(
+        self, config: RunnerTestConfig, codex_exec_server_container: CodexExecServerContainer
+    ) -> RunnerTestConfig:
+        return replace(
+            config,
+            codex_executor_url=codex_exec_server_container.url,
+            codex_executor_socket=codex_exec_server_container.socket,
+        )
+
+    @pytest.fixture
+    async def gateway_service(
+        self, api_server: KubernetesApiServer, sandbox: SandboxCluster, dispatcher_database_url: str, tmp_path: Path
+    ) -> AsyncIterator[GatewayProcess]:
+        workload = ServiceAccountRef(namespace=sandbox.namespace, name=GATEWAY.name)
+        token_file = tmp_path / "runner-gateway-token"
+        token_file.write_text(await api_server.workload_token(workload, [GATEWAY_AUDIENCE]))
+        async with run_gateway(
+            api_server.kubeconfig,
+            database_url=dispatcher_database_url,
+            namespace=sandbox.namespace,
+            dispatcher_callers=(APP,),
+            gateway_callers=(APP, workload),
+            workload=workload,
+            executor_callers=(APP,),
+            dispatcher_audience=DISPATCHER_AUDIENCE,
+            gateway_audience=GATEWAY_AUDIENCE,
+            runner_proxy_token_file=token_file,
+        ) as gateway:
+            yield gateway
+
+    @pytest.fixture
+    async def sibling_gateway(
+        self,
+        api_server: KubernetesApiServer,
+        sandbox: SandboxCluster,
+        dispatcher_database_url: str,
+        gateway_service: GatewayProcess,
+        app_token_file: Path,
+        runner: RunningRunner,
+        tmp_path: Path,
+    ) -> AsyncIterator[GatewayProcess]:
+        """A second production Gateway binary sharing the Runtime trust root and Dispatcher database."""
+        assert runner.process.exit_code is None
+        workload = ServiceAccountRef(namespace=sandbox.namespace, name=GATEWAY.name)
+        token_file = tmp_path / "gateway-replica-token"
+        token_file.write_text(await api_server.workload_token(workload, [GATEWAY_AUDIENCE], pod_name="gateway-replica"))
+        async with run_gateway(
+            api_server.kubeconfig,
+            database_url=dispatcher_database_url,
+            namespace=sandbox.namespace,
+            dispatcher_callers=(APP,),
+            gateway_callers=(APP, workload),
+            workload=workload,
+            pod_name="gateway-replica",
+            executor_callers=(APP,),
+            dispatcher_audience=DISPATCHER_AUDIENCE,
+            gateway_audience=GATEWAY_AUDIENCE,
+            runner_proxy_token_file=token_file,
+            environment_runtime_ca=gateway_service.environment_runtime_ca,
+        ) as replica:
+            await replica.wait_for_runner(replica.gateway_client(app_token_file), sandbox.destination)
+            yield replica
+
+    async def test_two_gateway_processes_keep_one_runtime_binding_and_active_execution(
+        self,
+        gateway_service: GatewayProcess,
+        sibling_gateway: GatewayProcess,
+        sandbox: SandboxCluster,
+        app_token_file: Path,
+        runner: RunningRunner,
+        tmp_path: Path,
+    ) -> None:
+        """Independent Gateway binaries can call one Runtime while either replica rolls."""
+        assert runner.process.exit_code is None
+        gateway_a_client = gateway_service.gateway_client(app_token_file)
+        gateway_b_client = sibling_gateway.gateway_client(app_token_file)
+        gateway_a_runner = gateway_a_client.runner(sandbox.destination)
+        gateway_b_runner = gateway_b_client.runner(sandbox.destination)
+        initial_a = await gateway_a_runner.status()
+        initial_b = await gateway_b_runner.status()
+        assert initial_a.environment_runtime_boot_id
+        assert initial_b.environment_runtime_boot_id == initial_a.environment_runtime_boot_id
+        await gateway_a_runner.list_sessions(expected_incarnation_uid=sandbox.pod_uid)
+        await gateway_b_runner.list_sessions(expected_incarnation_uid=sandbox.pod_uid)
+
+        scope = executor_pb2.ExecutionScope(
+            destination=sandbox.destination,
+            expected_incarnation_uid=sandbox.pod_uid,
+            session_id=f"gateway-replica-{uuid4().hex}",
+        )
+        app_token = (await asyncio.to_thread(app_token_file.read_text)).strip()
+        metadata = (("authorization", f"Bearer {app_token}"),)
+        workspace = tmp_path
+        ready = workspace / "replica-process-ready"
+        release = workspace / "replica-process-release"
+        pid_marker = workspace / "replica-process-pids"
+        prefix = f"replica-prefix-{uuid4().hex}"
+        suffix = f"replica-suffix-{uuid4().hex}"
+        process_id = uuid4().hex
+        shell = (
+            f"printf '%s\\n' \"$$\" >> {shlex.quote(str(pid_marker))}; "
+            f"printf '%s' {shlex.quote(prefix)}; "
+            f": > {shlex.quote(str(ready))}; "
+            f"while [ ! -e {shlex.quote(str(release))} ]; do sleep 0.02; done; "
+            f"printf '%s' {shlex.quote(suffix)}"
+        )
+
+        async def read_process(
+            client: executor_pb2_grpc.ExecutorStub,
+            execution_session_id: str,
+            *,
+            after_seq: int | None,
+            wait_ms: int = 100,
+        ) -> executor_pb2.ReadProcessResponse:
+            request = executor_pb2.ReadProcessRequest(
+                scope=scope,
+                execution_session_id=execution_session_id,
+                request_id=uuid4().hex,
+                process_id=process_id,
+                max_bytes=1024,
+                wait_ms=wait_ms,
+            )
+            if after_seq is not None:
+                request.after_seq = after_seq
+            return cast(
+                executor_pb2.ReadProcessResponse, await client.ReadProcess(request, metadata=metadata, timeout=5)
+            )
+
+        async with (
+            grpc.aio.secure_channel(gateway_service.target, gateway_service.channel_credentials()) as original_channel,
+            grpc.aio.secure_channel(sibling_gateway.target, sibling_gateway.channel_credentials()) as sibling_channel,
+        ):
+            await asyncio.wait_for(original_channel.channel_ready(), timeout=10)
+            await asyncio.wait_for(sibling_channel.channel_ready(), timeout=10)
+            executor = executor_pb2_grpc.ExecutorStub(original_channel)
+            opened = cast(
+                grpc.aio.UnaryStreamCall[executor_pb2.OpenSessionRequest, executor_pb2.OpenSessionResponse],
+                executor.OpenSession(
+                    executor_pb2.OpenSessionRequest(scope=scope, request_id=uuid4().hex), metadata=metadata
+                ),
+            )
+            opened_response = cast(executor_pb2.OpenSessionResponse, await opened.read())
+            assert opened_response.status.outcome == executor_pb2.ExecutionStatus.OUTCOME_COMPLETED
+            execution_session_id = opened_response.execution_session_id
+            assert execution_session_id
+            started = cast(
+                executor_pb2.StartProcessResponse,
+                await executor.StartProcess(
+                    executor_pb2.StartProcessRequest(
+                        scope=scope,
+                        execution_session_id=execution_session_id,
+                        request_id=uuid4().hex,
+                        process_id=process_id,
+                        argv=["/bin/sh", "-c", shell],
+                        cwd=workspace.as_uri(),
+                    ),
+                    metadata=metadata,
+                    timeout=10,
+                ),
+            )
+            assert started.status.outcome == executor_pb2.ExecutionStatus.OUTCOME_COMPLETED
+            assert started.process_id == process_id
+            async for attempt in AsyncRetrying(
+                stop=stop_after_delay(15),
+                wait=wait_fixed(0.02),
+                retry=retry_if_exception_type(AssertionError),
+                reraise=True,
+            ):
+                with attempt:
+                    assert ready.exists()
+            prefix_output = bytearray()
+            cursor: int | None = None
+            async with asyncio.timeout(15):
+                while bytes(prefix_output) != prefix.encode():
+                    response = await read_process(executor, execution_session_id, after_seq=cursor, wait_ms=500)
+                    assert response.status.outcome == executor_pb2.ExecutionStatus.OUTCOME_COMPLETED
+                    prefix_output.extend(b"".join(chunk.data for chunk in response.chunks))
+                    cursor = response.next_seq - 1 if response.next_seq else None
+            assert bytes(prefix_output) == prefix.encode()
+            assert cursor is not None
+            prefix_cursor = cursor
+            process_identity = pid_marker.read_text().splitlines()
+            assert len(process_identity) == 1
+
+            # Real Runtime auth rejects stale values before Executor.StartProcess can create a process.
+            runtime_client_tls = sibling_gateway.issue_environment_runtime_tls(
+                "spiffe://agentplane/runner-gateway", tmp_path / "direct-runtime-gateway-client"
+            )
+            assert runtime_client_tls.cert_file is not None
+            assert runtime_client_tls.key_file is not None
+            assert runtime_client_tls.ca_file is not None
+            root_certificates, private_key, certificate_chain = await asyncio.gather(
+                asyncio.to_thread(Path(runtime_client_tls.ca_file).read_bytes),
+                asyncio.to_thread(Path(runtime_client_tls.key_file).read_bytes),
+                asyncio.to_thread(Path(runtime_client_tls.cert_file).read_bytes),
+            )
+            runtime_credentials = grpc.ssl_channel_credentials(
+                root_certificates=root_certificates, private_key=private_key, certificate_chain=certificate_chain
+            )
+            async with grpc.aio.secure_channel(
+                runner.control_endpoint.listen_address,
+                runtime_credentials,
+                options=(("grpc.ssl_target_name_override", RUNNER_GATEWAY_TEST_DNS),),
+            ) as runtime_channel:
+                await asyncio.wait_for(runtime_channel.channel_ready(), timeout=10)
+                direct_executor = executor_pb2_grpc.ExecutorStub(runtime_channel)
+                current_runtime_metadata = {
+                    "agentplane-sandbox-uid": sandbox.uid,
+                    "agentplane-incarnation-uid": sandbox.pod_uid,
+                    "agentplane-environment-runtime-boot-id": initial_a.environment_runtime_boot_id,
+                }
+                stale_runtime_cases = (
+                    ("sandbox UID", "agentplane-sandbox-uid", "stale-sandbox-uid", grpc.StatusCode.PERMISSION_DENIED),
+                    ("incarnation UID", "agentplane-incarnation-uid", "stale-incarnation", grpc.StatusCode.UNAVAILABLE),
+                    (
+                        "Runtime boot ID",
+                        "agentplane-environment-runtime-boot-id",
+                        "stale-runtime-boot",
+                        grpc.StatusCode.UNAVAILABLE,
+                    ),
+                )
+                for label, key, value, code in stale_runtime_cases:
+                    stale_metadata = dict(current_runtime_metadata)
+                    stale_metadata[key] = value
+                    stale_marker = workspace / f"stale-{key}.executed"
+                    stale_request = executor_pb2.StartProcessRequest(
+                        scope=scope,
+                        execution_session_id=execution_session_id,
+                        request_id=uuid4().hex,
+                        process_id=uuid4().hex,
+                        argv=["/bin/sh", "-c", f"touch {shlex.quote(str(stale_marker))}"],
+                        cwd=workspace.as_uri(),
+                    )
+                    with pytest.raises(grpc.aio.AioRpcError) as rejected:
+                        await direct_executor.StartProcess(
+                            stale_request, metadata=tuple(stale_metadata.items()), timeout=5
+                        )
+                    assert rejected.value.code() == code, label
+                    assert not stale_marker.exists(), f"stale {label} started a process"
+
+            executor = executor_pb2_grpc.ExecutorStub(sibling_channel)
+
+            async def check_sibling_during_gateway_gap() -> None:
+                assert gateway_service.process.returncode is not None
+                gap_probe = gateway_service.gateway_client(app_token_file, request_timeout_s=0.25)
+                with pytest.raises(TimeoutError):
+                    await gap_probe.list_sessions(sandbox.destination)
+                during_gap = await gateway_b_runner.status()
+                assert during_gap.environment_runtime_boot_id == initial_a.environment_runtime_boot_id
+                await gateway_b_runner.list_sessions(expected_incarnation_uid=sandbox.pod_uid)
+                resumed = cast(
+                    grpc.aio.UnaryStreamCall[executor_pb2.OpenSessionRequest, executor_pb2.OpenSessionResponse],
+                    executor.OpenSession(
+                        executor_pb2.OpenSessionRequest(
+                            scope=scope, request_id=uuid4().hex, resume_session_id=execution_session_id
+                        ),
+                        metadata=metadata,
+                    ),
+                )
+                response = cast(executor_pb2.OpenSessionResponse, await resumed.read())
+                assert response.status.outcome == executor_pb2.ExecutionStatus.OUTCOME_COMPLETED
+                assert response.execution_session_id == execution_session_id
+                gap_read = await read_process(executor, execution_session_id, after_seq=cursor, wait_ms=100)
+                assert not gap_read.exited
+                assert not gap_read.chunks
+                resumed.cancel()
+
+            old_gateway_process = gateway_service.process
+            await gateway_service.restart(while_stopped=check_sibling_during_gateway_gap)
+            opened.cancel()
+            assert old_gateway_process.returncode is not None
+            await gateway_service.wait_for_runner(gateway_service.gateway_client(app_token_file), sandbox.destination)
+            recovered_a = await gateway_a_runner.status()
+            recovered_b = await gateway_b_runner.status()
+            assert recovered_a.environment_runtime_boot_id == initial_a.environment_runtime_boot_id
+            assert recovered_b.environment_runtime_boot_id == initial_a.environment_runtime_boot_id
+            await gateway_a_runner.list_sessions(expected_incarnation_uid=sandbox.pod_uid)
+            await gateway_b_runner.list_sessions(expected_incarnation_uid=sandbox.pod_uid)
+
+            resumed = cast(
+                grpc.aio.UnaryStreamCall[executor_pb2.OpenSessionRequest, executor_pb2.OpenSessionResponse],
+                executor.OpenSession(
+                    executor_pb2.OpenSessionRequest(
+                        scope=scope, request_id=uuid4().hex, resume_session_id=execution_session_id
+                    ),
+                    metadata=metadata,
+                ),
+            )
+            resumed_response = cast(executor_pb2.OpenSessionResponse, await resumed.read())
+            assert resumed_response.status.outcome == executor_pb2.ExecutionStatus.OUTCOME_COMPLETED
+            assert resumed_response.execution_session_id == execution_session_id
+            assert not release.exists()
+            release.touch()
+            suffix_output = bytearray()
+            post_recovery_reads: list[executor_pb2.ReadProcessResponse] = []
+            async with asyncio.timeout(15):
+                while True:
+                    response = await read_process(executor, execution_session_id, after_seq=cursor, wait_ms=500)
+                    post_recovery_reads.append(response)
+                    assert response.status.outcome == executor_pb2.ExecutionStatus.OUTCOME_COMPLETED
+                    suffix_output.extend(b"".join(chunk.data for chunk in response.chunks))
+                    cursor = response.next_seq - 1 if response.next_seq else cursor
+                    if response.exited:
+                        assert response.exit_code == 0
+                        break
+            assert bytes(suffix_output) == suffix.encode()
+            assert cursor is not None
+            assert cursor > prefix_cursor
+            assert all(chunk.data != prefix.encode() for response in post_recovery_reads for chunk in response.chunks)
+            assert pid_marker.read_text().splitlines() == process_identity
+
+            fresh_process_id = uuid4().hex
+            fresh_marker = workspace / "fresh-post-recovery-command"
+            fresh_start = cast(
+                executor_pb2.StartProcessResponse,
+                await executor.StartProcess(
+                    executor_pb2.StartProcessRequest(
+                        scope=scope,
+                        execution_session_id=execution_session_id,
+                        request_id=uuid4().hex,
+                        process_id=fresh_process_id,
+                        argv=[
+                            "/bin/sh",
+                            "-c",
+                            f"printf fresh; printf '%s\\n' \"$$\" >> {shlex.quote(str(fresh_marker))}",
+                        ],
+                        cwd=workspace.as_uri(),
+                    ),
+                    metadata=metadata,
+                    timeout=10,
+                ),
+            )
+            assert fresh_start.status.outcome == executor_pb2.ExecutionStatus.OUTCOME_COMPLETED
+            assert fresh_start.process_id == fresh_process_id
+            fresh_output = bytearray()
+            fresh_cursor: int | None = None
+            async with asyncio.timeout(15):
+                while True:
+                    request = executor_pb2.ReadProcessRequest(
+                        scope=scope,
+                        execution_session_id=execution_session_id,
+                        request_id=uuid4().hex,
+                        process_id=fresh_process_id,
+                        max_bytes=1024,
+                        wait_ms=500,
+                    )
+                    if fresh_cursor is not None:
+                        request.after_seq = fresh_cursor
+                    response = cast(
+                        executor_pb2.ReadProcessResponse,
+                        await executor.ReadProcess(request, metadata=metadata, timeout=5),
+                    )
+                    assert response.status.outcome == executor_pb2.ExecutionStatus.OUTCOME_COMPLETED
+                    fresh_output.extend(b"".join(chunk.data for chunk in response.chunks))
+                    fresh_cursor = response.next_seq - 1 if response.next_seq else fresh_cursor
+                    if response.exited:
+                        assert response.exit_code == 0
+                        break
+            assert bytes(fresh_output) == b"fresh"
+            assert len(fresh_marker.read_text().splitlines()) == 1
+            resumed.cancel()
 
 
 async def test_direct_gateway_command_cannot_create_a_session(
