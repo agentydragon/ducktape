@@ -97,16 +97,22 @@ can return its original receipt afterward. A failed settlement or seal leaves th
 The live gate reopens only after a successor journal reopen and its acknowledgement and seal
 publication succeed for the current Running incarnation; same-incarnation re-entry stays closed.
 
-External authentication, Sandbox/incarnation authorization and Gateway epochs remain in
-`runtime/control`. The Sandbox Controller's `observe_only` state watches carry epoch zero and
-never replace, authorize or cancel the Gateway's exclusive control/Executor epoch. A passive watch
-can perform initial incarnation adoption, including a replacement workload restoring sealed state;
-once a watch has established an incarnation in this Runtime process, passive observers cannot
-change it. Gateway adoption retains its existing successor fencing path. Only the Controller's
-exact SPIFFE identity may open passive watches; every control and Executor call still requires
-the Gateway identity and its live epoch. Direct Session admission uses that authority and Runtime's gate. `CreateSession`
-acknowledges a durable reservation, without promising process readiness. Model lookup occurs outside
-the gate; the reservation rechecks the epoch and accepted revision before its retained write.
+External authentication and Sandbox/incarnation/boot authorization remain in `runtime/control`.
+Gateway calls with an absent or zero connection epoch authorize against the successfully adopted
+incarnation independently of state-watch lifetime. Any authenticated Gateway replica may call;
+watch loss and same-incarnation observer replacement do not cancel this authority or its active
+execution streams. An incarnation change invalidates it. Supplied nonzero epochs retain the
+legacy live-watch checks. Gateway `WatchState` adoption still requires a nonzero epoch; the field
+remains during this receiver compatibility step.
+The Sandbox Controller's `observe_only` state watches carry epoch zero and never replace or
+cancel the Gateway's legacy watch. A passive watch can perform initial incarnation adoption,
+including a replacement workload restoring sealed state; once a watch has established an
+incarnation in this Runtime process, passive observers cannot change it. Gateway adoption retains
+its existing successor fencing path. Only the Controller's exact SPIFFE identity may open passive
+watches; every control and Executor call still requires the Gateway identity. Direct Session
+admission uses that authority and Runtime's gate. `CreateSession` acknowledges a durable
+reservation, without promising process readiness. Model lookup occurs outside the gate; the
+reservation rechecks its authorization and accepted revision before its retained write.
 Claude model lookup uses the local gRPC `model_config_target` without a bearer; the egress
 sidecar authenticates the upstream connection with the Sandbox's SVID.
 Accepted setup may finish after new admission closes. Canceling a setup's bootstrap waiter does

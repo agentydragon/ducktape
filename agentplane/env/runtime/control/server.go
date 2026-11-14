@@ -58,7 +58,8 @@ type watch struct {
 	ready          bool
 }
 
-// Epoch is an opaque authorization result tied to one active state watch.
+// Epoch is an opaque authorization result. Epoch zero binds admission to the adopted
+// incarnation; nonzero epochs retain the legacy state-watch authorization.
 type Epoch struct {
 	server *Server
 	watch  *watch
@@ -79,7 +80,7 @@ type Server struct {
 
 	adoptionMu            sync.Mutex
 	mu                    sync.RWMutex
-	adoptedIncarnationUID string
+	identity              *watch
 	watch                 *watch
 	highestEpoch          uint64
 	highestSandboxUID     string
@@ -191,9 +192,16 @@ func (s *Server) Authorize(ctx context.Context) (*Epoch, error) {
 	sandboxUID, sandboxOK := value(SandboxMetadata)
 	incarnationUID, incarnationOK := value(IncarnationMetadata)
 	bootID, bootOK := value(BootMetadata)
-	epochText, epochOK := value(EpochMetadata)
-	epoch, err := strconv.ParseUint(epochText, 10, 64)
-	if !sandboxOK || !incarnationOK || !bootOK || !epochOK || err != nil || epoch == 0 {
+	var epoch uint64
+	if epochValues := values.Get(EpochMetadata); len(epochValues) != 0 {
+		epochText, epochOK := oneMetadataValue(epochValues)
+		parsed, err := strconv.ParseUint(epochText, 10, 64)
+		if !epochOK || err != nil {
+			return nil, status.Error(codes.Unauthenticated, "Runner connection epoch is invalid")
+		}
+		epoch = parsed
+	}
+	if !sandboxOK || !incarnationOK || !bootOK {
 		return nil, status.Error(codes.Unauthenticated, "Runner control metadata is incomplete or invalid")
 	}
 	if sandboxUID != s.config.SandboxUID {
@@ -204,8 +212,12 @@ func (s *Server) Authorize(ctx context.Context) (*Epoch, error) {
 	}
 	s.mu.RLock()
 	current := s.watch
+	if epoch == 0 {
+		current = s.identity
+	}
 	if current == nil || !current.ready || current.ctx.Err() != nil || current.sandboxUID != sandboxUID ||
-		current.incarnationUID != incarnationUID || current.epoch != epoch || bootID != s.config.BootID {
+		current.incarnationUID != incarnationUID || current.epoch != epoch || bootID != s.config.BootID ||
+		(epoch == 0 && s.highestIncarnationUID != "" && s.highestIncarnationUID != incarnationUID) {
 		s.mu.RUnlock()
 		// A process restart can leave the Gateway briefly holding the previous boot's
 		// connection. Reject before admission with a retryable status.
@@ -215,15 +227,15 @@ func (s *Server) Authorize(ctx context.Context) (*Epoch, error) {
 	return &Epoch{server: s, watch: current}, nil
 }
 
-// Validate rejects an authorization after its state watch has been superseded.
+// Validate rejects an authorization after its incarnation or legacy watch has been superseded.
 func (s *Server) Validate(epoch *Epoch) error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.validateLocked(epoch)
 }
 
-// Admit keeps the authorized epoch current until the short admission callback finishes. A newer
-// Gateway observer cannot replace the watch between validation and publication of admitted work.
+// Admit keeps the authorized incarnation or legacy watch current until the short
+// admission callback finishes.
 func (s *Server) Admit(ctx context.Context, admit func(*Epoch) error) error {
 	epoch, err := s.Authorize(ctx)
 	if err != nil {
@@ -241,7 +253,14 @@ func (s *Server) validateLocked(epoch *Epoch) error {
 	if epoch == nil || epoch.server != s || epoch.watch == nil {
 		return status.Error(codes.Aborted, "executor stream belongs to a stale connection epoch")
 	}
-	if s.watch != epoch.watch || !epoch.watch.ready || epoch.watch.ctx.Err() != nil {
+	current := s.watch
+	if epoch.watch.epoch == 0 {
+		current = s.identity
+		if s.highestIncarnationUID != "" && s.highestIncarnationUID != epoch.watch.incarnationUID {
+			return status.Error(codes.Aborted, "control authorization belongs to a stale incarnation")
+		}
+	}
+	if current != epoch.watch || !epoch.watch.ready || epoch.watch.ctx.Err() != nil {
 		return status.Error(codes.Aborted, "executor stream belongs to a stale connection epoch")
 	}
 	return nil
@@ -342,7 +361,7 @@ func (s *Server) authorizeControllerPeer(ctx context.Context) error {
 func (s *Server) validatePassiveWatch(current *watch) error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if (s.adoptedIncarnationUID != "" && s.adoptedIncarnationUID != current.incarnationUID) ||
+	if (s.identity != nil && s.identity.incarnationUID != current.incarnationUID) ||
 		(s.highestIncarnationUID != "" && s.highestIncarnationUID != current.incarnationUID) ||
 		(s.watch != nil && s.watch.incarnationUID != current.incarnationUID) {
 		return status.Error(codes.FailedPrecondition, "observe-only watch cannot replace the Runtime incarnation")
@@ -368,7 +387,15 @@ func (s *Server) adoptWatch(current *watch, passive bool) error {
 		return err
 	}
 	s.mu.Lock()
-	s.adoptedIncarnationUID = current.incarnationUID
+	if s.identity == nil || s.identity.incarnationUID != current.incarnationUID {
+		if s.identity != nil {
+			s.identity.cancel()
+		}
+		// Observer loss and another Gateway replica do not end identity-bound work.
+		// The caller stream and Runtime lifecycle retain their own cancellation.
+		ctx, cancel := context.WithCancel(context.Background())
+		s.identity = &watch{ctx: ctx, cancel: cancel, sandboxUID: current.sandboxUID, incarnationUID: current.incarnationUID, ready: true}
+	}
 	s.mu.Unlock()
 	if err := current.ctx.Err(); err != nil {
 		return status.FromContextError(err).Err()

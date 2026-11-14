@@ -430,3 +430,56 @@ func TestPassiveWatchCancellationPreservesAdmittedExecution(t *testing.T) {
 		t.Fatalf("Gateway epoch after passive cancellation: %v", err)
 	}
 }
+
+type observerIndependentExecutor struct {
+	executorpb.UnimplementedExecutorServer
+	release chan struct{}
+}
+
+func (e *observerIndependentExecutor) OpenSession(_ *executorpb.OpenSessionRequest, stream executorpb.Executor_OpenSessionServer) error {
+	if err := stream.Send(&executorpb.OpenSessionResponse{ExecutionSessionId: "before-observer-change"}); err != nil {
+		return err
+	}
+	select {
+	case <-stream.Context().Done():
+		return stream.Context().Err()
+	case <-e.release:
+		return stream.Send(&executorpb.OpenSessionResponse{ExecutionSessionId: "after-observer-change"})
+	}
+}
+
+func TestEpochFreeExecutionSurvivesGatewayObserverReplacement(t *testing.T) {
+	for _, epoch := range []string{"", "0"} {
+		t.Run("epoch="+epoch, func(t *testing.T) {
+			executor := &observerIndependentExecutor{release: make(chan struct{})}
+			config := executionRuntimeConfig(t, "ws://unused", nil)
+			config.deps.startExecution = func(context.Context, Config, string) (executionHandle, error) {
+				return &executionServiceHandle{executor: executor, fence: func(context.Context) error { return nil }}, nil
+			}
+			r := newLifecycleRuntime(t, config)
+			client := startDirectExecutionTestClient(t, r, "incarnation")
+			md, _ := metadata.FromOutgoingContext(client.callCtx)
+			md = md.Copy()
+			if epoch == "" {
+				md.Delete(control.EpochMetadata)
+			} else {
+				md.Set(control.EpochMetadata, epoch)
+			}
+			call := metadata.NewOutgoingContext(client.ctx, md)
+			stream, err := client.open(call, "epoch-free-session", "epoch-free-open")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if response, err := stream.Recv(); err != nil || response.GetExecutionSessionId() != "before-observer-change" {
+				t.Fatalf("initial execution response = %v, error=%v", response, err)
+			}
+			if err := client.replaceWatch(client.incarnation, 2); err != nil {
+				t.Fatal(err)
+			}
+			close(executor.release)
+			if response, err := stream.Recv(); err != nil || response.GetExecutionSessionId() != "after-observer-change" {
+				t.Fatalf("execution response after observer replacement = %v, error=%v", response, err)
+			}
+		})
+	}
+}

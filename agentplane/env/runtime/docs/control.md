@@ -94,7 +94,7 @@ budget remains authoritative across all of its native services.
   services with matching explicit security settings. Cluster and k3s deployments use mTLS. The Environment Runtime certificate URI binds the Sandbox namespace, Sandbox UID and credential ID;
   the Gateway presents `spiffe://agentplane/runner-gateway`. Environment Runtime control has no bearer credential.
   Explicit insecure mode skips certificate authentication while retaining all Sandbox, incarnation,
-  boot-ID, observer ownership and epoch checks. Fencing metadata supplies no proof of peer identity.
+  boot-ID and legacy observer-epoch checks. Fencing metadata supplies no proof of peer identity.
   History ingress remains a separate outbound bearer-authenticated connection.
 - The control listener exposes the standard gRPC health API and reports local startup as `SERVING`
   before state observation begins. The Gateway's `WatchState` request supplies the Sandbox UID, current Pod
@@ -111,14 +111,20 @@ budget remains authoritative across all of its native services.
   epoch zero. Initial observation adopts the incarnation through the ordinary lifecycle barriers;
   subsequent passive observers cannot change the incarnation established by a watch in this
   process. Passive streams never replace or cancel the Gateway watch, and their cancellation
-  cannot revoke its control or Executor authorization. The Controller cannot invoke control or
+  cannot revoke Gateway control or Executor authorization. The Controller cannot invoke control or
   Executor RPCs, and the Gateway cannot select passive observation. Explicit insecure fixtures
   skip peer authentication while retaining the request, identity and epoch checks.
-- Every unary call and execution-session stream is fenced with the Sandbox UID, incarnation
-  UID, Environment Runtime boot ID and connection epoch. A stale epoch cannot authorize a call or clear a newer
-  observer's readiness. Calls with stale boot or observer metadata fail before admission with
-  `UNAVAILABLE`, allowing queued commands to retry through the current observer without marking
-  the whole workload incarnation as refusing work. `Executor.OpenSession` holds one local Codex
+- Every unary call and execution-session stream requires the exact Sandbox UID, adopted incarnation
+  UID and Environment Runtime boot ID. After successful state-watch adoption, a Gateway may omit
+  `agentplane-connection-epoch` or send zero. These calls authorize against the adopted identity;
+  their admission and execution contexts survive Gateway watch loss and same-incarnation observer
+  replacement. Any authenticated Gateway replica may make such calls. A different adopted incarnation
+  invalidates that authority; the Runtime lifecycle and caller stream retain their cancellation rules.
+  A supplied nonzero epoch retains the existing requirement for a matching, live Gateway watch.
+  Stale boot, incarnation or legacy observer metadata fails before admission with `UNAVAILABLE`.
+  Gateway `WatchState` still requires a nonzero epoch for incarnation adoption; this receiver
+  compatibility does not remove that dependency or the field from the protocol.
+  `Executor.OpenSession` holds one local Codex
   connection per server stream, with typed unary process and file RPCs bound to its session ID.
   Each Environment Runtime retains the old relay's budget of eight open or opening adapter connections;
   this is an Agentplane resource guard, not a Codex session limit. Native frames are bounded to 1 MiB;
