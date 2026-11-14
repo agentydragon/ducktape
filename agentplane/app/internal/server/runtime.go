@@ -432,7 +432,7 @@ func newSystemStatus(config settings.Config, httpClient *http.Client) (*status.C
 		tls       *peertls.ClientTLS
 	}{
 		{"Action Service", config.ActionFederation.ServiceURL, config.ActionsTLS},
-		{"Connection Service", config.ConnectionServiceURL, nil},
+		{"Connection Service", config.ConnectionServiceURL, config.ConnectionServiceTLS},
 		{"Notification Service", config.NotificationsURL, config.NotificationsTLS},
 		{"Egress proxy", config.EgressAdminURL, config.EgressAdminTLS},
 	} {

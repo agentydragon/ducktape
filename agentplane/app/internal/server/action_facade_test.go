@@ -21,6 +21,8 @@ import (
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	connectionpb "github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	notificationpb "github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
 	"google.golang.org/grpc"
@@ -124,20 +126,31 @@ func TestGeneratedEnvironmentFacadeRoutesManagementWithAppServiceToken(t *testin
 type generatedActionService struct {
 	actionpb.UnimplementedActionServiceServer
 
-	authorization []string
-	cookie        []string
-	privateHeader []string
-	started       chan struct{}
+	authorization  []string
+	clientIdentity []string
+	cookie         []string
+	privateHeader  []string
+	started        chan struct{}
 }
 
 type generatedConnectionService struct {
 	connectionpb.UnimplementedConnectionServiceServer
-	authorization []string
+	authorization  []string
+	clientIdentity []string
 }
 
 func (s *generatedConnectionService) ListConnections(ctx context.Context, _ *connectionpb.ListConnectionsRequest) (*connectionpb.ListConnectionsResponse, error) {
+	identity, err := peertls.PeerIdentity(ctx)
+	if err != nil || identity != peertls.AppURI {
+		return nil, status.Error(codes.Unauthenticated, "App SVID is required")
+	}
+	s.clientIdentity = append(s.clientIdentity, identity)
 	md, _ := metadata.FromIncomingContext(ctx)
-	s.authorization = append(s.authorization, md.Get("authorization")...)
+	authorization := md.Get("authorization")
+	s.authorization = append(s.authorization, strings.Join(authorization, ","))
+	if len(authorization) != 1 || authorization[0] != "Bearer connection-token" {
+		return nil, status.Error(codes.Unauthenticated, "operator bearer is required")
+	}
 	return &connectionpb.ListConnectionsResponse{}, nil
 }
 
@@ -265,10 +278,19 @@ func (s *generatedActionService) ListActionGroups(
 	ctx context.Context,
 	_ *actionpb.ListActionGroupsRequest,
 ) (*actionpb.ListActionGroupsResponse, error) {
+	identity, err := peertls.PeerIdentity(ctx)
+	if err != nil || identity != peertls.AppURI {
+		return nil, status.Error(codes.Unauthenticated, "App SVID is required")
+	}
+	s.clientIdentity = append(s.clientIdentity, identity)
 	md, _ := metadata.FromIncomingContext(ctx)
-	s.authorization = md.Get("authorization")
+	authorization := md.Get("authorization")
+	s.authorization = append(s.authorization, strings.Join(authorization, ","))
 	s.cookie = md.Get("cookie")
 	s.privateHeader = md.Get("x-private-header")
+	if len(authorization) != 1 || !strings.HasPrefix(authorization[0], "Bearer ") || authorization[0] == "Bearer " {
+		return nil, status.Error(codes.Unauthenticated, "operator bearer is required")
+	}
 	if s.started != nil {
 		close(s.started)
 		<-ctx.Done()
@@ -279,11 +301,17 @@ func (s *generatedActionService) ListActionGroups(
 
 func newGeneratedActionFacade(t *testing.T, service *generatedActionService) *upstreamproxy.HandlerUpstream {
 	t.Helper()
+	ca := peertlstesting.NewCA(t)
+	serverConfig := ca.Issue(t, peertls.ActionsURI)
+	serverCredentials, err := serverConfig.ServerCredentials(peertls.AppURI)
+	if err != nil {
+		t.Fatal(err)
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := grpc.NewServer()
+	server := grpc.NewServer(grpc.Creds(serverCredentials))
 	actionpb.RegisterActionServiceServer(server, service)
 	operatoractionpb.RegisterOperatorActionServiceServer(server, &operatoractionpb.UnimplementedOperatorActionServiceServer{})
 	webpushpb.RegisterWebPushServiceServer(server, &webpushpb.UnimplementedWebPushServiceServer{})
@@ -298,8 +326,13 @@ func newGeneratedActionFacade(t *testing.T, service *generatedActionService) *up
 		<-serveDone
 	})
 
-	handler, err := facade.NewHandler(
+	appCertificate := ca.Issue(t, peertls.AppURI)
+	handler, err := facade.NewHandlerWithOptions(
 		t.Context(), listener.Addr().String(), 10*time.Second,
+		facade.HandlerOptions{TLS: &peertls.ClientTLS{
+			CAFile: ca.RootFile, ServerURI: peertls.ActionsURI,
+			CertFile: appCertificate.CertFile, KeyFile: appCertificate.KeyFile, ClientURI: peertls.AppURI,
+		}},
 		actionpb.RegisterActionServiceHandlerFromEndpoint,
 		operatoractionpb.RegisterOperatorActionServiceHandlerFromEndpoint,
 		webpushpb.RegisterWebPushServiceHandlerFromEndpoint,
@@ -313,6 +346,16 @@ func newGeneratedActionFacade(t *testing.T, service *generatedActionService) *up
 func TestGeneratedActionFacadeUsesNativeRPCAndRequestBoundBearer(t *testing.T) {
 	service := &generatedActionService{}
 	upstream := newGeneratedActionFacade(t, service)
+	unauthenticatedRequest := httptest.NewRequest(http.MethodGet, "/upstream/actions/v1/action-groups", nil)
+	unauthenticatedRequest.SetPathValue("path", "v1/action-groups")
+	unauthenticatedResponse := httptest.NewRecorder()
+	if err := upstream.ForwardHTTP(unauthenticatedResponse, unauthenticatedRequest, unauthenticatedRequest.Context(), "v1/action-groups", ""); err != nil {
+		t.Fatalf("ForwardHTTP() without operator bearer = %v", err)
+	}
+	if unauthenticatedResponse.Code == http.StatusOK {
+		t.Fatal("Action facade accepted an App SVID without the operator bearer")
+	}
+
 	request := httptest.NewRequest(http.MethodGet, "/upstream/actions/v1/action-groups", nil)
 	request.SetPathValue("path", "v1/action-groups")
 	request.Header.Set("Accept", "application/json")
@@ -336,9 +379,10 @@ func TestGeneratedActionFacadeUsesNativeRPCAndRequestBoundBearer(t *testing.T) {
 	if strings.Contains(response.Body.String(), "must-not-cross") {
 		t.Fatalf("request-only headers escaped in response: %s", response.Body.String())
 	}
-	if len(service.authorization) != 1 || service.authorization[0] != "Bearer short-lived-action-token" ||
+	if len(service.authorization) != 2 || service.authorization[0] != "" || service.authorization[1] != "Bearer short-lived-action-token" ||
+		len(service.clientIdentity) != 2 || service.clientIdentity[0] != peertls.AppURI || service.clientIdentity[1] != peertls.AppURI ||
 		len(service.cookie) != 0 || len(service.privateHeader) != 0 {
-		t.Fatalf("generated RPC metadata: authorization=%v cookie=%v private=%v", service.authorization, service.cookie, service.privateHeader)
+		t.Fatalf("generated RPC metadata: authorization=%v peer=%v cookie=%v private=%v", service.authorization, service.clientIdentity, service.cookie, service.privateHeader)
 	}
 }
 
@@ -369,12 +413,18 @@ func TestGeneratedActionFacadeCancelsRPCWithOperatorRequest(t *testing.T) {
 }
 
 func TestGeneratedConnectionFacadeUsesFederatedBearer(t *testing.T) {
+	ca := peertlstesting.NewCA(t)
+	serverConfig := ca.Issue(t, peertls.MCPEdgeURI)
+	serverCredentials, err := serverConfig.ServerCredentials(peertls.AppURI)
+	if err != nil {
+		t.Fatal(err)
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	service := &generatedConnectionService{}
-	server := grpc.NewServer()
+	server := grpc.NewServer(grpc.Creds(serverCredentials))
 	connectionpb.RegisterConnectionServiceServer(server, service)
 	serveDone := make(chan struct{})
 	go func() {
@@ -386,7 +436,15 @@ func TestGeneratedConnectionFacadeUsesFederatedBearer(t *testing.T) {
 		_ = listener.Close()
 		<-serveDone
 	})
-	handler, err := facade.NewHandler(t.Context(), listener.Addr().String(), 10*time.Second, connectionpb.RegisterConnectionServiceHandlerFromEndpoint)
+	appCertificate := ca.Issue(t, peertls.AppURI)
+	handler, err := facade.NewHandlerWithOptions(
+		t.Context(), listener.Addr().String(), 10*time.Second,
+		facade.HandlerOptions{TLS: &peertls.ClientTLS{
+			CAFile: ca.RootFile, ServerURI: peertls.MCPEdgeURI,
+			CertFile: appCertificate.CertFile, KeyFile: appCertificate.KeyFile, ClientURI: peertls.AppURI,
+		}},
+		connectionpb.RegisterConnectionServiceHandlerFromEndpoint,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -396,8 +454,9 @@ func TestGeneratedConnectionFacadeUsesFederatedBearer(t *testing.T) {
 	if err := upstream.ForwardHTTP(response, request, request.Context(), "v1/operator/connections", "connection-token"); err != nil {
 		t.Fatal(err)
 	}
-	if response.Code != http.StatusOK || len(service.authorization) != 1 || service.authorization[0] != "Bearer connection-token" {
-		t.Fatalf("Connection facade status=%d authorization=%v body=%s", response.Code, service.authorization, response.Body.String())
+	if response.Code != http.StatusOK || len(service.authorization) != 1 || service.authorization[0] != "Bearer connection-token" ||
+		len(service.clientIdentity) != 1 || service.clientIdentity[0] != peertls.AppURI {
+		t.Fatalf("Connection facade status=%d authorization=%v peer=%v body=%s", response.Code, service.authorization, service.clientIdentity, response.Body.String())
 	}
 }
 
