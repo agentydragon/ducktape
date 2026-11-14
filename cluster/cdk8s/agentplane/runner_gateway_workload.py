@@ -42,6 +42,7 @@ from agentplane.net.peertls.config import (
     SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
     TLS,
+    ClientTLS,
     ServiceSPIFFEID,
 )
 from agentplane.runner_gateway.settings import CentralSamplerTarget, DelegationSettings, Settings
@@ -236,7 +237,7 @@ class RunnerGateway(Construct):
         serving_tls = workload_tls.service_certificate(
             self, env, container=workload.container, name=runner_gateway.NAME, uri=SESSION_DISPATCHER_URI
         )
-        workload_tls.client_certificate(
+        sessions_tls = workload_tls.client_certificate(
             self, env, container=workload.container, name=f"{runner_gateway.NAME}-sessions", uri=GATEWAY_SESSIONS_URI
         )
         workload_tls.client_certificate(
@@ -253,6 +254,9 @@ class RunnerGateway(Construct):
             name=f"{runner_gateway.NAME}-environments",
             uri=GATEWAY_ENVIRONMENTS_URI,
         )
+        assert sessions_tls.cert_file is not None
+        assert sessions_tls.key_file is not None
+        assert sessions_tls.ca_file is not None
         assert serving_tls.cert_file is not None
         assert serving_tls.key_file is not None
         assert serving_tls.ca_file is not None
@@ -282,7 +286,6 @@ class RunnerGateway(Construct):
         static_settings = Settings(
             sandbox_namespace=namespace,
             policy_namespace=namespace,
-            runner_token_file=Path(_RUNNER_TOKEN_FILE),
             kubernetes_client_qps=-1,
             rpc=workload_listener.Listener(
                 listen_address=f"0.0.0.0:{proxy.pod_port}",
@@ -294,7 +297,13 @@ class RunnerGateway(Construct):
                     workload_listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file)),
                 ],
             ),
-            gateway_tls=workload_tls.client_tls(SESSION_DISPATCHER_URI),
+            gateway_tls=ClientTLS(
+                ca_file=Path(sessions_tls.ca_file),
+                server_uri=SESSION_DISPATCHER_URI,
+                cert_file=Path(sessions_tls.cert_file),
+                key_file=Path(sessions_tls.key_file),
+                client_uri=GATEWAY_SESSIONS_URI,
+            ),
             runner_control_target_template=runner_gateway.control_target(namespace),
             dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
             gateway_audience=runner_gateway.TOKEN_AUDIENCE,
