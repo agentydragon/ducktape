@@ -95,7 +95,7 @@ func New(config Config, backend environmentruntimepb.EnvironmentRuntimeServer) *
 // Listen opens the configured authenticated control listener and registers the
 // Runner, executor stream, and standard gRPC health services.
 func (s *Server) Listen(executor executorpb.ExecutorServer) (net.Listener, *grpc.Server, error) {
-	transportCredentials, err := s.config.Security.ServerCredentials(environmentruntimetransport.GatewayURI, environmentruntimetransport.SandboxControllerURI)
+	transportCredentials, err := s.config.Security.ServerCredentials(environmentruntimetransport.GatewayURI, environmentruntimetransport.RuntimeProxyURI, environmentruntimetransport.SandboxControllerURI)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -279,7 +279,9 @@ func (s *Server) validateLocked(epoch *Epoch) error {
 
 func (s *Server) authorizeGatewayPeer(ctx context.Context) error {
 	if err := s.config.Security.AuthorizePeer(ctx, environmentruntimetransport.GatewayURI); err != nil {
-		return status.Error(codes.Unauthenticated, "Runner control peer is not authenticated as the Runner Gateway")
+		if err := s.config.Security.AuthorizePeer(ctx, environmentruntimetransport.RuntimeProxyURI); err != nil {
+			return status.Error(codes.Unauthenticated, "Runtime control peer is not an admitted Runtime proxy")
+		}
 	}
 	return nil
 }

@@ -106,7 +106,9 @@ process creates a fresh boot ID. Once bound, the UID cannot change during that p
 including after a failed or uncertain adoption callback; reconnects may settle only the same UID.
 This lets a replacement workload restore retained state without allowing a Gateway to select or
 advance the workload identity. The Controller can open only passive watches with its exact SPIFFE
-identity; every control and Executor call still requires the Gateway identity.
+identity; every control and Executor call still requires the exact Gateway identity or the
+role-specific `spiffe://agentplane/runtime-proxy` service SVID. The latter is admitted before its
+separate caller cutover; `spiffe://agentplane/sessions` has no direct Runtime grant.
 
 Gateway calls with an absent or zero connection epoch authorize against the Controller-bound
 incarnation and this Runtime boot, independently of Gateway state-watch lifetime. Any authenticated
@@ -116,7 +118,7 @@ boot ID invalidates it. A Gateway `WatchState` request without an epoch or with 
 observe only the already-bound incarnation and cannot establish or replace it. Supplied nonzero
 epochs retain the legacy live-watch checks for calls and the Gateway's connection-owner behavior
 for watches, still restricted to the Controller-bound incarnation. The epoch field remains during
-this receiver compatibility step. Direct Session admission uses Gateway identity and Runtime's
+this receiver compatibility step. Direct Session admission uses that authority and Runtime's
 gate. `CreateSession` acknowledges a durable
 reservation, without promising process readiness. Model lookup occurs outside the gate; the
 reservation rechecks its authorization and accepted revision before its retained write.
