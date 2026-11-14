@@ -28,6 +28,12 @@ _SAFE_ATTRIBUTES = frozenset(
         "deployment.environment.name",
         "sandbox.name",
         "sandbox.uid",
+        "sandbox.phase",
+        "sandbox.incarnation_uid",
+        "runtime.boot_id",
+        "runtime.proxy.allow_suspending",
+        "runtime.proxy.pod_ready",
+        "runtime.proxy.route",
         "session.id",
         "thread.id",
         "harness",
@@ -42,7 +48,6 @@ _SAFE_ATTRIBUTES = frozenset(
         "agentplane.environment_runtime.quiesce.stage",
     }
 )
-_SAFE_EVENTS = frozenset({"agentplane.environment_runtime.quiesce_stage"})
 _SAFE_QUIESCE_STAGES = frozenset({"none", "draining", "flushing", "quiesced"})
 _QUIESCE_STAGE_ATTRIBUTE = "agentplane.environment_runtime.quiesce.stage"
 
@@ -65,14 +70,23 @@ def _attributes(items: Iterable[KeyValue]) -> dict[str, str | int | bool]:
 def _events(items: Iterable[Span.Event]) -> list[dict[str, object]]:
     events: list[dict[str, object]] = []
     for item in items:
-        if item.name not in _SAFE_EVENTS:
+        if item.name == "agentplane.environment_runtime.quiesce_stage":
+            stage = _attributes(item.attributes).get(_QUIESCE_STAGE_ATTRIBUTE)
+            if stage not in _SAFE_QUIESCE_STAGES:
+                continue
+            attributes: dict[str, object] = {_QUIESCE_STAGE_ATTRIBUTE: stage}
+        elif item.name == "runner.control.ready":
+            values = _attributes(item.attributes)
+            attributes = {
+                key: values[key]
+                for key in ("sandbox.incarnation_uid", "runtime.boot_id")
+                if key in values and isinstance(values[key], str)
+            }
+            if len(attributes) != 2:
+                continue
+        else:
             continue
-        stage = _attributes(item.attributes).get(_QUIESCE_STAGE_ATTRIBUTE)
-        if stage not in _SAFE_QUIESCE_STAGES:
-            continue
-        events.append(
-            {"name": item.name, "time_unix_nano": item.time_unix_nano, "attributes": {_QUIESCE_STAGE_ATTRIBUTE: stage}}
-        )
+        events.append({"name": item.name, "time_unix_nano": item.time_unix_nano, "attributes": attributes})
     return events
 
 

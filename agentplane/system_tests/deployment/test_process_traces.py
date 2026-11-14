@@ -39,6 +39,13 @@ def test_process_spans_are_exported_with_identity_and_parentage(tmp_path: Path) 
                                     KeyValue(key="session.id", value=AnyValue(string_value="s1")),
                                     KeyValue(key="agentplane.codex.generation", value=AnyValue(int_value=3)),
                                     KeyValue(key="rpc.grpc.status_code", value=AnyValue(int_value=14)),
+                                    KeyValue(key="sandbox.phase", value=AnyValue(string_value="Quiescing")),
+                                    KeyValue(key="runtime.proxy.allow_suspending", value=AnyValue(bool_value=True)),
+                                    KeyValue(key="runtime.proxy.pod_ready", value=AnyValue(bool_value=False)),
+                                    KeyValue(
+                                        key="runtime.proxy.route",
+                                        value=AnyValue(string_value="destination_unavailable"),
+                                    ),
                                     KeyValue(key="authorization", value=AnyValue(string_value="secret")),
                                 ],
                                 events=[
@@ -49,6 +56,20 @@ def test_process_spans_are_exported_with_identity_and_parentage(tmp_path: Path) 
                                             KeyValue(
                                                 key="agentplane.environment_runtime.quiesce.stage",
                                                 value=AnyValue(string_value="flushing"),
+                                            ),
+                                            KeyValue(key="authorization", value=AnyValue(string_value="secret")),
+                                        ],
+                                    ),
+                                    Span.Event(
+                                        name="runner.control.ready",
+                                        time_unix_nano=160,
+                                        attributes=[
+                                            KeyValue(
+                                                key="sandbox.incarnation_uid",
+                                                value=AnyValue(string_value="test-pod-uid"),
+                                            ),
+                                            KeyValue(
+                                                key="runtime.boot_id", value=AnyValue(string_value="test-boot-id")
                                             ),
                                             KeyValue(key="authorization", value=AnyValue(string_value="secret")),
                                         ],
@@ -123,6 +144,10 @@ def test_process_spans_are_exported_with_identity_and_parentage(tmp_path: Path) 
     assert {span["attributes"]["session.id"] for span in spans} == {"s1"}
     assert {span["attributes"]["agentplane.codex.generation"] for span in spans} == {3}
     assert {span["attributes"]["rpc.grpc.status_code"] for span in spans} == {14}
+    assert {span["attributes"]["sandbox.phase"] for span in spans} == {"Quiescing"}
+    assert all(span["attributes"]["runtime.proxy.allow_suspending"] is True for span in spans)
+    assert all(span["attributes"]["runtime.proxy.pod_ready"] is False for span in spans)
+    assert {span["attributes"]["runtime.proxy.route"] for span in spans} == {"destination_unavailable"}
     assert all("authorization" not in span["attributes"] for span in spans)
     assert all(
         span["events"]
@@ -131,7 +156,12 @@ def test_process_spans_are_exported_with_identity_and_parentage(tmp_path: Path) 
                 "name": "agentplane.environment_runtime.quiesce_stage",
                 "time_unix_nano": 150,
                 "attributes": {"agentplane.environment_runtime.quiesce.stage": "flushing"},
-            }
+            },
+            {
+                "name": "runner.control.ready",
+                "time_unix_nano": 160,
+                "attributes": {"sandbox.incarnation_uid": "test-pod-uid", "runtime.boot_id": "test-boot-id"},
+            },
         ]
         for span in spans
     )

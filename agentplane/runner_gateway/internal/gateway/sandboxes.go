@@ -10,6 +10,8 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
@@ -146,6 +148,14 @@ func (r *sandboxResolver) destination(ctx context.Context, destination *identity
 		return sandboxView{}, err
 	}
 	view := routingView(incarnation)
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(
+		attribute.String("sandbox.phase", view.phase),
+		attribute.Bool("runtime.proxy.allow_suspending", allowSuspending),
+	)
+	if view.incarnation != nil {
+		span.SetAttributes(attribute.String("sandbox.incarnation_uid", view.incarnation.UID))
+	}
 	if view.phase == modeSuspended || view.phase == phaseSuspend && !allowSuspending {
 		return sandboxView{}, environmentUnavailable(executorpb.ExecutionEnvironmentFailure_STATE_SUSPENDED)
 	}
@@ -169,7 +179,9 @@ func (r *sandboxResolver) destination(ctx context.Context, destination *identity
 	if err != nil {
 		return sandboxView{}, fmt.Errorf("read Sandbox runner Pod: %w", err)
 	}
-	if !podIsReadyForSandbox(&pod, view) {
+	podReady := podIsReadyForSandbox(&pod, view)
+	span.SetAttributes(attribute.Bool("runtime.proxy.pod_ready", podReady))
+	if !podReady {
 		return sandboxView{}, environmentUnavailable(executorpb.ExecutionEnvironmentFailure_STATE_NOT_READY)
 	}
 	return view, nil
