@@ -139,6 +139,8 @@ class RunnerGateway(Construct):
         database_url: EnvValue,
         dispatcher_callers: Mapping[ServiceAccountRef, Pods],
         environment_launchers: Mapping[ServiceAccountRef, Pods],
+        environment_readers: frozenset[ServiceAccountRef],
+        environment_managers: frozenset[ServiceAccountRef],
         operator_callers: Mapping[ServiceAccountRef, Pods] | None = None,
         delegation_actor: ServiceAccountRef | None,
         extra_delegated_methods: tuple[str, ...] = (),
@@ -301,8 +303,8 @@ class RunnerGateway(Construct):
             runtime_proxy_controller_callers=[SANDBOX_CONTROLLER_URI],
             executor_service_callers=[CENTRAL_SAMPLER_URI] if central_sampler_target is not None else [],
             dispatcher_callers=dispatcher_accounts,
-            environment_readers=frozenset({_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))}),
-            environment_managers=frozenset({_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))}),
+            environment_readers=frozenset(map(_account, environment_readers)),
+            environment_managers=frozenset(map(_account, environment_managers)),
             environment_launchers=frozenset(map(_account, environment_launchers)),
             delegation=delegation,
             gateway_callers=gateway_accounts,
@@ -459,6 +461,8 @@ def serving_chart(
     app: App,
     *,
     env: Environment,
+    environment_readers: frozenset[ServiceAccountRef],
+    environment_managers: frozenset[ServiceAccountRef],
     operator_callers: Mapping[ServiceAccountRef, Pods] | None = None,
     extra_delegated_methods: tuple[str, ...] = (),
 ) -> Chart:
@@ -482,6 +486,8 @@ def serving_chart(
         dispatcher_callers=callers | orchestration | session_delegation,
         operator_callers=operator_callers,
         environment_launchers=orchestration,
+        environment_readers=environment_readers,
+        environment_managers=environment_managers,
         delegation_actor=(
             ServiceAccountRef(namespace=env.namespace, name=actions.NAME)
             if env.actions.orchestration_v1 is not None or env.actions.session_delegation is not None

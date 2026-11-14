@@ -51,10 +51,14 @@ class ActionResources:
     async def open_case(self, name: str) -> AsyncIterator[tuple[Client, SessionDispatcherClient, Sandboxes]]:
         async with (
             self.scripted.case_scope(),
-            scenario.open_resources(self.cluster, self.base_url, self.token, tracer, native_diagnostics=False) as (
-                client,
-                sandboxes,
-            ),
+            scenario.open_resources(
+                self.cluster,
+                self.base_url,
+                self.token,
+                tracer,
+                token_file=self.tmp_path_factory.mktemp(f"mcp-actions-{name}-gateway") / "gateway-token",
+                native_diagnostics=False,
+            ) as (client, sandboxes),
             native_client(
                 self.cluster, self.tmp_path_factory.mktemp(f"mcp-actions-{name}") / "dispatcher-token"
             ) as dispatcher,

@@ -6,14 +6,13 @@ import asyncio
 
 import pytest
 import pytest_bazel
+from opentelemetry import trace
 
-from agentplane.app.testing.client import Client
 from agentplane.proto import session_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.system_tests.deployment.local_models import LOCAL_MODEL_SCENARIO_IDS
 from agentplane.system_tests.driver.cluster import Cluster
-from agentplane.system_tests.driver.offered_models import models_offered_for
-from agentplane.system_tests.driver.sandbox import VM_TEMPLATE
-from agentplane.system_tests.driver.scenario import ScenarioResources
+from agentplane.system_tests.driver.native_platform import NativePlatformClients
+from agentplane.system_tests.driver.sandbox import VM_TEMPLATE, sandbox_scope
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import traced_scenario
 from agentplane.system_tests.scenarios import vm_sandbox
@@ -31,19 +30,12 @@ pytestmark = pytest.mark.vm_sandboxes
 @pytest.mark.scripted_model
 @pytest.mark.timeout(600)
 async def test_vm_scenarios(
-    cluster: Cluster,
-    client: Client,
-    dispatcher: SessionDispatcherClient,
-    scenario_resources: ScenarioResources,
-    scripted: ScriptedUpstream,
+    cluster: Cluster, native_platform: NativePlatformClients, phase_tracer: trace.Tracer, scripted: ScriptedUpstream
 ) -> None:
-    harnesses = [session_pb2.HARNESS_CLAUDE, session_pb2.HARNESS_CODEX]
-    models = await models_offered_for(client, harnesses)
-
     async def turn(harness: session_pb2.Harness, template: str) -> None:
-        async with scenario_resources() as (owned_client, sandbox):
+        async with sandbox_scope(cluster, native_platform.environment, phase_tracer) as sandbox:
             await vm_sandbox.vm_sandbox_turn(
-                cluster, owned_client, dispatcher, sandbox, harness, models[harness], scripted, template
+                cluster, native_platform, sandbox, harness, LOCAL_MODEL_SCENARIO_IDS[harness], scripted, template
             )
 
     # pytest-asyncio serializes separate tests. Launch every independent boot here so a

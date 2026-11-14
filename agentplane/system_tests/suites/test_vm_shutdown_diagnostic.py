@@ -5,8 +5,8 @@ import pytest_bazel
 from google.protobuf.json_format import MessageToDict
 from opentelemetry import trace
 
-from agentplane.app.testing.client import Client
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.environment_transport import EnvironmentServiceClient
 from agentplane.system_tests.driver.sandbox import VM_TEMPLATE, sandbox_scope
 from agentplane.system_tests.vm import host_qemu
 from agentplane.system_tests.vm.shutdown_diagnostic import write_progress
@@ -17,11 +17,11 @@ pytestmark = pytest.mark.vm_sandboxes
 
 @pytest.mark.timeout(600)
 async def test_one_guest_receives_acpi_and_powers_down(
-    cluster: Cluster, client: Client, phase_tracer: trace.Tracer
+    cluster: Cluster, environment_client: EnvironmentServiceClient, phase_tracer: trace.Tracer
 ) -> None:
     output_dir = undeclared_outputs_dir()
     write_progress(output_dir, "started")
-    async with sandbox_scope(cluster, client, phase_tracer) as create:
+    async with sandbox_scope(cluster, environment_client, phase_tracer) as create:
         sandbox = await create("vm-shutdown-diagnostic", template=VM_TEMPLATE)
         write_progress(output_dir, "guest_ready", sandbox_uid=sandbox.target.uid)
         if host_qemu.virtiofsd_timeline_enabled():

@@ -24,6 +24,7 @@ py_library(
         "//agentplane/system_tests/driver:case_batch",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:dispatcher_transport",
+        "//agentplane/system_tests/driver:environment_transport",
         "//agentplane/system_tests/driver:native_artifacts",
         "//agentplane/system_tests/driver:offered_models",
         "//agentplane/system_tests/driver:ollama_warmup",

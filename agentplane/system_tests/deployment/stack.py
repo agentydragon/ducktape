@@ -101,9 +101,9 @@ class StackInputs:
 class Stack:
     k3s: K3s
     cluster: Cluster
-    base_url: str
+    base_url: str | None
     # The test operator's ID token, which the app accepts as a bearer.
-    token: str
+    token: str | None
     mcp_fixtures: McpFixtureAccess | None
 
 
@@ -342,7 +342,13 @@ def _fresh_action_k3s_data_dir(*, persist_infrastructure: bool) -> Path | None:
     """Choose the explicitly non-retained KVM lifecycle before any stack setup can mutate state."""
     if persist_infrastructure or os.environ.get("AGENTPLANE_K3S_REQUIRE_KVM") != "1":
         return None
-    return baseline.fresh_kvm_data_dir()
+    test_tmpdir = os.environ.get("TEST_TMPDIR")
+    if not test_tmpdir:
+        raise RuntimeError("fresh KVM action requires Bazel TEST_TMPDIR")
+    data_parent = Path(test_tmpdir)
+    if not data_parent.is_absolute():
+        raise RuntimeError(f"fresh KVM action requires absolute Bazel TEST_TMPDIR: {test_tmpdir}")
+    return baseline.fresh_kvm_data_dir(data_parent=data_parent)
 
 
 @contextlib.contextmanager
@@ -621,8 +627,10 @@ def running_stack(
                 token = dex_id_token(fixture.mcp_fixtures.operator_token_grant, ca_bundle=ca_bundle)
             if operator_tokens is not None:
                 token = operator_tokens.mint(lifetime=OPERATOR_TOKEN_LIFETIME)
-            if token is None:
-                raise ValueError("the fixture neither pins an operator-token key nor runs Dex")
+            if fixture.app_origin is None and token is not None:
+                raise ValueError("an App-free fixture cannot issue an App operator token")
+            if fixture.app_origin is not None and token is None:
+                raise ValueError("an App fixture neither pins an operator-token key nor runs Dex")
             print("memory:", run("free", "-m"))
             setup.add_event("stack ready")
             if virtualization is not None:

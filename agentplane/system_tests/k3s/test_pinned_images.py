@@ -152,3 +152,5 @@ if __name__ == "__main__":
     import pytest_bazel
 
     pytest_bazel.main()
+
+# gazelle:include_dep //agentplane/system_tests/k3s:pytest_plugin

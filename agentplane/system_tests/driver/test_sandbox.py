@@ -7,18 +7,19 @@ from typing import cast
 from unittest.mock import AsyncMock, call, create_autospec
 from uuid import uuid4
 
-import httpx
+import grpc
 import pytest
 import pytest_bazel
 from opentelemetry import trace
 
-from agentplane.app.testing.client import Client
 from agentplane.environments.v1 import environment_service_pb2
+from agentplane.grpc.calls import ServiceError
 from agentplane.proto import identity_pb2
 
 # gazelle:include_dep @pypi//protobuf
 from agentplane.system_tests.driver import sandbox
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.environment_transport import EnvironmentServiceClient
 from agentplane.system_tests.driver.sandbox import SandboxNotReadyError, suspend_and_delete
 
 
@@ -62,17 +63,21 @@ def _target(name: str, uid: str) -> identity_pb2.EnvironmentTarget:
     return identity_pb2.EnvironmentTarget(namespace="test", name=name, uid=uid)
 
 
-def _create_targets(client: Client, names: tuple[str, ...]) -> dict[str, identity_pb2.EnvironmentTarget]:
+def _create_targets(
+    client: EnvironmentServiceClient, names: tuple[str, ...]
+) -> dict[str, identity_pb2.EnvironmentTarget]:
     created = {name: _target(name, str(uuid4())) for name in names}
-    cast(AsyncMock, client.create_sandbox).side_effect = list(created.values())
+    cast(AsyncMock, client.create_environment).side_effect = list(created.values())
     return created
 
 
 def _ready_for_targets(
     views: dict[str, identity_pb2.EnvironmentTarget],
-) -> Callable[[Client, identity_pb2.EnvironmentTarget], Awaitable[environment_service_pb2.EnvironmentDescriptor]]:
+) -> Callable[
+    [EnvironmentServiceClient, identity_pb2.EnvironmentTarget], Awaitable[environment_service_pb2.EnvironmentDescriptor]
+]:
     async def ready(
-        _client: Client, target: identity_pb2.EnvironmentTarget
+        _client: EnvironmentServiceClient, target: identity_pb2.EnvironmentTarget
     ) -> environment_service_pb2.EnvironmentDescriptor:
         assert target == views[target.name]
         return _environment(target.name, target.uid, ready=True)
@@ -101,7 +106,7 @@ def identity_scope(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 async def test_readiness_accepts_an_already_ready_sandbox_from_initial_inventory() -> None:
-    client = create_autospec(Client, instance=True)
+    client = create_autospec(EnvironmentServiceClient, instance=True)
     view = _environment("readiness-test", str(uuid4()), ready=True)
     closed = False
 
@@ -112,16 +117,16 @@ async def test_readiness_accepts_an_already_ready_sandbox_from_initial_inventory
         finally:
             closed = True
 
-    client.sandbox_snapshots.return_value = snapshots()
+    client.environment_snapshots.return_value = snapshots()
 
     assert await sandbox.wait_until_running(client, view.target) is view
 
-    client.sandbox_snapshots.assert_called_once_with()
+    client.environment_snapshots.assert_called_once_with()
     assert closed
 
 
 async def test_readiness_waits_for_a_later_ready_snapshot() -> None:
-    client = create_autospec(Client, instance=True)
+    client = create_autospec(EnvironmentServiceClient, instance=True)
     uid = str(uuid4())
     ready = _environment("readiness-test", uid, ready=True)
     not_ready = _environment("readiness-test", uid, ready=False)
@@ -135,25 +140,25 @@ async def test_readiness_waits_for_a_later_ready_snapshot() -> None:
         yield _snapshot(not_ready)
         yield _snapshot(ready)
 
-    client.sandbox_snapshots.return_value = snapshots()
+    client.environment_snapshots.return_value = snapshots()
 
     assert await sandbox.wait_until_running(client, ready.target) is ready
 
 
 async def test_readiness_propagates_a_lost_inventory_source() -> None:
-    client = create_autospec(Client, instance=True)
+    client = create_autospec(EnvironmentServiceClient, instance=True)
 
     async def snapshots() -> AsyncIterator[list[environment_service_pb2.EnvironmentDescriptor]]:
         yield []
         raise RuntimeError("environment watch source failed")
 
-    client.sandbox_snapshots.return_value = snapshots()
+    client.environment_snapshots.return_value = snapshots()
     with pytest.raises(RuntimeError, match="source failed"):
         await sandbox.wait_until_running(client, _target("readiness-test", str(uuid4())))
 
 
 async def test_readiness_rejects_a_replaced_sandbox_incarnation() -> None:
-    client = create_autospec(Client, instance=True)
+    client = create_autospec(EnvironmentServiceClient, instance=True)
     expected_uid = str(uuid4())
     replacement = _environment("readiness-test", str(uuid4()), ready=True)
     expected = identity_pb2.EnvironmentTarget(namespace="test", name="readiness-test", uid=expected_uid)
@@ -161,7 +166,7 @@ async def test_readiness_rejects_a_replaced_sandbox_incarnation() -> None:
     async def snapshots() -> AsyncIterator[list[environment_service_pb2.EnvironmentDescriptor]]:
         yield _snapshot(replacement)
 
-    client.sandbox_snapshots.return_value = snapshots()
+    client.environment_snapshots.return_value = snapshots()
 
     with pytest.raises(SandboxNotReadyError, match="has been replaced"):
         await sandbox.wait_until_running(client, expected)
@@ -169,7 +174,7 @@ async def test_readiness_rejects_a_replaced_sandbox_incarnation() -> None:
 
 async def test_readiness_timeout_closes_the_watch(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sandbox, "SANDBOX_READY_SECONDS", 0.01)
-    client = create_autospec(Client, instance=True)
+    client = create_autospec(EnvironmentServiceClient, instance=True)
     view = _environment("readiness-test", str(uuid4()), ready=False)
     closed = False
 
@@ -181,7 +186,7 @@ async def test_readiness_timeout_closes_the_watch(monkeypatch: pytest.MonkeyPatc
         finally:
             closed = True
 
-    client.sandbox_snapshots.return_value = snapshots()
+    client.environment_snapshots.return_value = snapshots()
 
     with pytest.raises(SandboxNotReadyError) as raised:
         await sandbox.wait_until_running(client, view.target)
@@ -192,7 +197,7 @@ async def test_readiness_timeout_closes_the_watch(monkeypatch: pytest.MonkeyPatc
 
 
 async def test_readiness_propagates_inventory_stream_end() -> None:
-    client = create_autospec(Client, instance=True)
+    client = create_autospec(EnvironmentServiceClient, instance=True)
     uid = str(uuid4())
 
     async def snapshots() -> AsyncIterator[list[environment_service_pb2.EnvironmentDescriptor]]:
@@ -200,14 +205,14 @@ async def test_readiness_propagates_inventory_stream_end() -> None:
         raise RuntimeError("the Sandbox inventory stream ended")
         yield  # pragma: no cover
 
-    client.sandbox_snapshots.return_value = snapshots()
+    client.environment_snapshots.return_value = snapshots()
 
     with pytest.raises(RuntimeError, match="inventory stream ended"):
         await sandbox.wait_until_running(client, _target("readiness-test", uid))
 
 
 async def test_cleanup_waits_for_effective_suspension_and_actual_deletion(cluster: Cluster) -> None:
-    client = create_autospec(Client, instance=True)
+    client = create_autospec(EnvironmentServiceClient, instance=True)
     uid = str(uuid4())
     closed = False
     deletion_observed = False
@@ -220,9 +225,9 @@ async def test_cleanup_waits_for_effective_suspension_and_actual_deletion(cluste
                 ("owned-test-sandbox", "other-test-namespace", "OPERATING_MODE_SUSPENDED"),
                 ("owned-test-sandbox", "test", "OPERATING_MODE_SUSPENDED"),
             ]:
-                client.delete_sandbox.assert_not_awaited()
+                client.delete_environment.assert_not_awaited()
                 yield [_environment(name, uid, ready=False, operating_mode=mode, namespace=namespace)]
-            client.delete_sandbox.assert_awaited_once_with(
+            client.delete_environment.assert_awaited_once_with(
                 identity_pb2.EnvironmentTarget(namespace=cluster.namespace, name="owned-test-sandbox", uid=uid)
             )
             deletion_observed = True
@@ -230,7 +235,7 @@ async def test_cleanup_waits_for_effective_suspension_and_actual_deletion(cluste
         finally:
             closed = True
 
-    client.sandbox_snapshots.return_value = snapshots()
+    client.environment_snapshots.return_value = snapshots()
     # The caller-scoped Environment watch can remove an item before Kubernetes finishes deletion.
     cast(AsyncMock, cluster.kubectl).side_effect = [json.dumps({"metadata": {"uid": uid}}), ""]
 
@@ -238,11 +243,11 @@ async def test_cleanup_waits_for_effective_suspension_and_actual_deletion(cluste
     assert cast(AsyncMock, cluster.kubectl).await_count == 2
 
     assert client.mock_calls == [
-        call.suspend_sandbox(
+        call.suspend_environment(
             identity_pb2.EnvironmentTarget(namespace=cluster.namespace, name="owned-test-sandbox", uid=uid)
         ),
-        call.sandbox_snapshots(),
-        call.delete_sandbox(
+        call.environment_snapshots(),
+        call.delete_environment(
             identity_pb2.EnvironmentTarget(namespace=cluster.namespace, name="owned-test-sandbox", uid=uid)
         ),
     ]
@@ -251,37 +256,37 @@ async def test_cleanup_waits_for_effective_suspension_and_actual_deletion(cluste
 
 
 async def test_cleanup_fences_replacement_after_inventory_removal(cluster: Cluster) -> None:
-    client = create_autospec(Client, instance=True)
+    client = create_autospec(EnvironmentServiceClient, instance=True)
     uid = str(uuid4())
 
     async def snapshots() -> AsyncIterator[list[environment_service_pb2.EnvironmentDescriptor]]:
         yield [_environment("owned-test-sandbox", uid, ready=False, operating_mode="OPERATING_MODE_SUSPENDED")]
         yield []
 
-    client.sandbox_snapshots.return_value = snapshots()
+    client.environment_snapshots.return_value = snapshots()
     cast(AsyncMock, cluster.kubectl).side_effect = [json.dumps({"metadata": {"uid": str(uuid4())}})]
     with pytest.raises(SandboxNotReadyError, match="has been replaced"):
         await suspend_and_delete(cluster, client, "owned-test-sandbox", uid)
-    client.delete_sandbox.assert_awaited_once_with(_target("owned-test-sandbox", uid))
+    client.delete_environment.assert_awaited_once_with(_target("owned-test-sandbox", uid))
 
 
 async def test_cleanup_does_not_delete_a_replacement_sandbox(cluster: Cluster) -> None:
-    client = create_autospec(Client, instance=True)
+    client = create_autospec(EnvironmentServiceClient, instance=True)
 
     async def snapshots() -> AsyncIterator[list[environment_service_pb2.EnvironmentDescriptor]]:
         yield [_environment("owned-test-sandbox", str(uuid4()), ready=False, operating_mode="OPERATING_MODE_SUSPENDED")]
 
-    client.sandbox_snapshots.return_value = snapshots()
+    client.environment_snapshots.return_value = snapshots()
     with pytest.raises(SandboxNotReadyError, match="has been replaced"):
         await suspend_and_delete(cluster, client, "owned-test-sandbox", str(uuid4()))
-    client.delete_sandbox.assert_not_awaited()
+    client.delete_environment.assert_not_awaited()
 
 
 async def test_cleanup_bounds_a_watch_that_stops_making_progress(
     cluster: Cluster, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(sandbox, "SANDBOX_READY_SECONDS", 0.01)
-    client = create_autospec(Client, instance=True)
+    client = create_autospec(EnvironmentServiceClient, instance=True)
     closed = False
 
     async def snapshots() -> AsyncIterator[list[environment_service_pb2.EnvironmentDescriptor]]:
@@ -292,33 +297,32 @@ async def test_cleanup_bounds_a_watch_that_stops_making_progress(
         finally:
             closed = True
 
-    client.sandbox_snapshots.return_value = snapshots()
+    client.environment_snapshots.return_value = snapshots()
     with pytest.raises(TimeoutError):
         await suspend_and_delete(cluster, client, "owned-test-sandbox", str(uuid4()))
-    client.delete_sandbox.assert_not_awaited()
+    client.delete_environment.assert_not_awaited()
     assert closed
 
 
 async def test_cleanup_does_not_retry_an_authorization_refusal_or_delete(cluster: Cluster) -> None:
-    client = create_autospec(Client, instance=True)
-    request = httpx.Request("GET", "https://app.test.invalid/sandboxes/owned-test-sandbox")
-    refused = httpx.HTTPStatusError("read refused", request=request, response=httpx.Response(403, request=request))
+    client = create_autospec(EnvironmentServiceClient, instance=True)
+    refused = ServiceError(grpc.StatusCode.PERMISSION_DENIED, "read refused")
 
     async def snapshots() -> AsyncIterator[list[environment_service_pb2.EnvironmentDescriptor]]:
         raise refused
         yield  # pragma: no cover
 
-    client.sandbox_snapshots.return_value = snapshots()
+    client.environment_snapshots.return_value = snapshots()
 
-    with pytest.raises(httpx.HTTPStatusError):
+    with pytest.raises(ServiceError):
         await suspend_and_delete(cluster, client, "owned-test-sandbox", str(uuid4()))
 
-    client.sandbox_snapshots.assert_called_once()
-    client.delete_sandbox.assert_not_awaited()
+    client.environment_snapshots.assert_called_once()
+    client.delete_environment.assert_not_awaited()
 
 
 async def test_scope_releases_owned_sandboxes_concurrently(cluster: Cluster, monkeypatch: pytest.MonkeyPatch) -> None:
-    client = create_autospec(Client, instance=True)
+    client = create_autospec(EnvironmentServiceClient, instance=True)
     views = _create_targets(client, ("owned-0", "owned-1"))
 
     monkeypatch.setattr(sandbox, "wait_until_running", _ready_for_targets(views))
@@ -327,7 +331,7 @@ async def test_scope_releases_owned_sandboxes_concurrently(cluster: Cluster, mon
     release = asyncio.Event()
     finished: set[str] = set()
 
-    async def delete(_cluster: Cluster, _client: Client, name: str, _uid: object) -> None:
+    async def delete(_cluster: Cluster, _client: EnvironmentServiceClient, name: str, _uid: object) -> None:
         started.add(name)
         if started == set(views):
             all_started.set()
@@ -357,7 +361,7 @@ async def test_scope_releases_owned_sandboxes_concurrently(cluster: Cluster, mon
 async def test_scope_drains_other_owners_when_one_cleanup_fails(
     cluster: Cluster, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    client = create_autospec(Client, instance=True)
+    client = create_autospec(EnvironmentServiceClient, instance=True)
     views = _create_targets(client, ("owned-0", "owned-1"))
 
     monkeypatch.setattr(sandbox, "wait_until_running", _ready_for_targets(views))
@@ -367,7 +371,7 @@ async def test_scope_drains_other_owners_when_one_cleanup_fails(
     failed_owner = asyncio.Event()
     finished: set[str] = set()
 
-    async def delete(_cluster: Cluster, _client: Client, name: str, _uid: object) -> None:
+    async def delete(_cluster: Cluster, _client: EnvironmentServiceClient, name: str, _uid: object) -> None:
         started.add(name)
         if name == "owned-1":
             await peer_started.wait()
@@ -400,7 +404,7 @@ async def test_scope_drains_other_owners_when_one_cleanup_fails(
 
 
 async def test_scope_preserves_multiple_cleanup_failures(cluster: Cluster, monkeypatch: pytest.MonkeyPatch) -> None:
-    client = create_autospec(Client, instance=True)
+    client = create_autospec(EnvironmentServiceClient, instance=True)
     views = _create_targets(client, ("owned-0", "owned-1"))
 
     monkeypatch.setattr(sandbox, "wait_until_running", _ready_for_targets(views))
@@ -408,7 +412,7 @@ async def test_scope_preserves_multiple_cleanup_failures(cluster: Cluster, monke
     all_started = asyncio.Event()
     release = asyncio.Event()
 
-    async def delete(_cluster: Cluster, _client: Client, name: str, _uid: object) -> None:
+    async def delete(_cluster: Cluster, _client: EnvironmentServiceClient, name: str, _uid: object) -> None:
         started.add(name)
         if started == set(views):
             all_started.set()
@@ -447,17 +451,17 @@ async def test_scope_preserves_multiple_cleanup_failures(cluster: Cluster, monke
 async def test_scope_cleans_failed_boot_and_preserves_its_error(
     cluster: Cluster, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    client = create_autospec(Client, instance=True)
+    client = create_autospec(EnvironmentServiceClient, instance=True)
     created = _create_targets(client, ("failed-boot",))["failed-boot"]
     cleanup: list[tuple[str, object]] = []
 
     async def not_ready(
-        _client: Client, target: identity_pb2.EnvironmentTarget
+        _client: EnvironmentServiceClient, target: identity_pb2.EnvironmentTarget
     ) -> environment_service_pb2.EnvironmentDescriptor:
         assert target == created
         raise RuntimeError("boot did not become ready")
 
-    async def delete(_cluster: Cluster, _client: Client, name: str, uid: object) -> None:
+    async def delete(_cluster: Cluster, _client: EnvironmentServiceClient, name: str, uid: object) -> None:
         cleanup.append((name, uid))
 
     monkeypatch.setattr(sandbox, "wait_until_running", not_ready)
@@ -475,14 +479,14 @@ async def test_scope_cleans_failed_boot_and_preserves_its_error(
 async def test_scope_captures_failed_vm_before_suspend_and_preserves_readiness_error(
     cluster: Cluster, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    client = create_autospec(Client, instance=True)
+    client = create_autospec(EnvironmentServiceClient, instance=True)
     created = _create_targets(client, ("failed-vm",))["failed-vm"]
     view = _environment(created.name, created.uid, ready=False, pod_uid=str(uuid4()))
     readiness_error = SandboxNotReadyError("VM did not reach Ready", last_view=view)
     events: list[str] = []
 
     async def not_ready(
-        _client: Client, target: identity_pb2.EnvironmentTarget
+        _client: EnvironmentServiceClient, target: identity_pb2.EnvironmentTarget
     ) -> environment_service_pb2.EnvironmentDescriptor:
         assert target == created
         raise readiness_error
@@ -492,7 +496,7 @@ async def test_scope_captures_failed_vm_before_suspend_and_preserves_readiness_e
         events.append("capture")
         raise RuntimeError("/proc snapshot unavailable")
 
-    async def delete(_cluster: Cluster, _client: Client, name: str, uid: str) -> None:
+    async def delete(_cluster: Cluster, _client: EnvironmentServiceClient, name: str, uid: str) -> None:
         assert (name, uid) == (created.name, created.uid)
         events.append("suspend-delete")
 
@@ -515,14 +519,14 @@ async def test_scope_captures_failed_vm_before_suspend_and_preserves_readiness_e
 async def test_scope_skips_capture_when_readiness_view_has_a_replacement_uid(
     cluster: Cluster, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    client = create_autospec(Client, instance=True)
+    client = create_autospec(EnvironmentServiceClient, instance=True)
     created = _create_targets(client, ("failed-vm",))["failed-vm"]
     replacement = _environment(created.name, str(uuid4()), ready=False, pod_uid=str(uuid4()))
     readiness_error = SandboxNotReadyError("VM was replaced", last_view=replacement)
     captures: list[str] = []
 
     async def not_ready(
-        _client: Client, target: identity_pb2.EnvironmentTarget
+        _client: EnvironmentServiceClient, target: identity_pb2.EnvironmentTarget
     ) -> environment_service_pb2.EnvironmentDescriptor:
         assert target == created
         raise readiness_error
@@ -530,7 +534,7 @@ async def test_scope_skips_capture_when_readiness_view_has_a_replacement_uid(
     def capture(view: environment_service_pb2.EnvironmentDescriptor, _artifact_root: object) -> None:
         captures.append(view.target.uid)
 
-    async def delete(_cluster: Cluster, _client: Client, _name: str, _uid: str) -> None:
+    async def delete(_cluster: Cluster, _client: EnvironmentServiceClient, _name: str, _uid: str) -> None:
         return
 
     monkeypatch.setattr(sandbox, "wait_until_running", not_ready)
@@ -552,7 +556,7 @@ async def test_scope_skips_capture_when_readiness_view_has_a_replacement_uid(
 async def test_scope_skips_capture_for_pod_failure_and_ready_vm(
     cluster: Cluster, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    client = create_autospec(Client, instance=True)
+    client = create_autospec(EnvironmentServiceClient, instance=True)
     views = _create_targets(client, ("failed-pod", "ready-vm"))
     pod_error = SandboxNotReadyError(
         "Pod did not reach Ready",
@@ -562,7 +566,7 @@ async def test_scope_skips_capture_for_pod_failure_and_ready_vm(
     captures: list[str] = []
 
     async def readiness(
-        _client: Client, target: identity_pb2.EnvironmentTarget
+        _client: EnvironmentServiceClient, target: identity_pb2.EnvironmentTarget
     ) -> environment_service_pb2.EnvironmentDescriptor:
         if target.name == "failed-pod":
             raise pod_error
@@ -571,7 +575,7 @@ async def test_scope_skips_capture_for_pod_failure_and_ready_vm(
     def capture(view: environment_service_pb2.EnvironmentDescriptor, _artifact_root: object) -> None:
         captures.append(view.target.name)
 
-    async def delete(_cluster: Cluster, _client: Client, _name: str, _uid: str) -> None:
+    async def delete(_cluster: Cluster, _client: EnvironmentServiceClient, _name: str, _uid: str) -> None:
         return
 
     async def admitted_launcher(*_args: object) -> None:
@@ -593,7 +597,7 @@ async def test_scope_skips_capture_for_pod_failure_and_ready_vm(
 async def test_scope_body_cancellation_waits_for_cleanup_and_keeps_failures(
     cluster: Cluster, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    client = create_autospec(Client, instance=True)
+    client = create_autospec(EnvironmentServiceClient, instance=True)
     views = _create_targets(client, ("owned-0", "owned-1"))
 
     monkeypatch.setattr(sandbox, "wait_until_running", _ready_for_targets(views))
@@ -603,7 +607,7 @@ async def test_scope_body_cancellation_waits_for_cleanup_and_keeps_failures(
     started: set[str] = set()
     finished: set[str] = set()
 
-    async def delete(_cluster: Cluster, _client: Client, name: str, _uid: object) -> None:
+    async def delete(_cluster: Cluster, _client: EnvironmentServiceClient, name: str, _uid: object) -> None:
         started.add(name)
         if started == set(views):
             cleanup_started.set()
@@ -649,7 +653,7 @@ async def test_scope_body_cancellation_waits_for_cleanup_and_keeps_failures(
 async def test_scope_cancellation_during_cleanup_waits_for_every_owner(
     cluster: Cluster, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    client = create_autospec(Client, instance=True)
+    client = create_autospec(EnvironmentServiceClient, instance=True)
     views = _create_targets(client, ("owned-0", "owned-1"))
 
     monkeypatch.setattr(sandbox, "wait_until_running", _ready_for_targets(views))
@@ -658,7 +662,7 @@ async def test_scope_cancellation_during_cleanup_waits_for_every_owner(
     started: set[str] = set()
     finished: set[str] = set()
 
-    async def delete(_cluster: Cluster, _client: Client, name: str, _uid: object) -> None:
+    async def delete(_cluster: Cluster, _client: EnvironmentServiceClient, name: str, _uid: object) -> None:
         started.add(name)
         if started == set(views):
             cleanup_started.set()
