@@ -13,9 +13,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// The sampler delegates to Agentplane's LLM ingress for a Session the Dispatcher recorded as
-// executing as an Identity, and otherwise calls as itself with the Session claimed by header, as it
-// does on every bearer connection.
+// The sampler delegates to Agentplane's LLM ingress for the execution Identity. Direct bearer
+// connections are never delegated to.
 func TestProviderAuthorizationDelegatesOnlyForAnIdentityOnTheAgentplaneIngress(t *testing.T) {
 	tokenFile := filepath.Join(t.TempDir(), "workload-token")
 	if err := os.WriteFile(tokenFile, []byte("test-workload-token\n"), 0o600); err != nil {
@@ -50,21 +49,14 @@ func TestProviderAuthorizationDelegatesOnlyForAnIdentityOnTheAgentplaneIngress(t
 		t.Fatalf("envelope = %v, want %v acting for Session %s", envelope, identity, sessionID)
 	}
 
-	for name, test := range map[string]struct {
-		connection samplersettings.ConnectionConfig
-		identity   *identitypb.Identity
-	}{
-		"a Session without an Identity on the ingress": {connection(samplersettings.AuthTypeAgentplaneIngress), nil},
-		"a bearer connection":                          {connection(samplersettings.AuthTypeBearer), identity},
-	} {
-		t.Run(name, func(t *testing.T) {
-			authorization, headers, err := providerAuthorization(test.connection, providerAttribution{SessionID: sessionID, Identity: test.identity})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if authorization != "Bearer test-workload-token" || headers["x-agentplane-session-id"] != sessionID || headers[auth.DelegationMetadataKey] != "" {
-				t.Fatalf("direct call: authorization %q headers %v", authorization, headers)
-			}
-		})
+	if _, _, err := providerAuthorization(connection(samplersettings.AuthTypeAgentplaneIngress), providerAttribution{SessionID: sessionID}); err == nil {
+		t.Fatal("Agentplane ingress accepted a Session without its execution Identity")
+	}
+	authorization, headers, err = providerAuthorization(connection(samplersettings.AuthTypeBearer), providerAttribution{SessionID: sessionID, Identity: identity})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if authorization != "Bearer test-workload-token" || headers["x-agentplane-session-id"] != sessionID || headers[auth.DelegationMetadataKey] != "" {
+		t.Fatalf("direct call: authorization %q headers %v", authorization, headers)
 	}
 }

@@ -6,28 +6,21 @@
 to a `SessionSpec` whose placement is `central_sampler_v1` with one exact `executor_environment`,
 caller ServiceAccount UID and fixed `SandboxDestination` plus expected incarnation UID. The
 Dispatcher and sampler require the spec environment and executor destination to match. The
-Dispatcher also supplies an optional immutable execution principal containing
-the account namespace/name and ServiceAccount UID; when present, its account must match the executor
-owner and the configuration retains it across retries and restarts. A legacy configuration without
-that principal cannot acquire one on a retry. The authenticated sampler ServiceAccount remains the
-journal producer identity and is retained separately by History. The Dispatcher uses its one
-configured central sampler target; callers select the V1 placement, not a service endpoint. Model and
-effort must be server-configured. Every RPC uses TokenReview and the allowed-account policy; Session
-UUID knowledge grants no authority.
+Dispatcher requires and supplies the complete execution Identity named by the executor's Sandbox,
+retaining it in the immutable configuration across retries and restarts. The authenticated sampler
+ServiceAccount remains the journal producer identity and is retained separately by History. The
+Dispatcher uses its one configured central sampler target; callers select the V1 placement, not a
+service endpoint. Model and effort must be server-configured. Every RPC uses TokenReview and the
+allowed-account policy; Session UUID knowledge grants no authority.
 
-The Dispatcher also supplies `execution_identity`, the Identity the executor's Sandbox names, when it
-names one; it is retained with the configuration like the execution principal. The sampler acts for
-that Identity under the [delegated authorization contract](../docs/delegated_authorization.md): it
+The sampler acts for that Identity under the [delegated authorization contract](../docs/delegated_authorization.md): it
 authenticates as itself with its own projected token and holds no agent key, and each History push
 and each LLM ingress call for the Session names the retained Identity as effective caller and the
 Session as provenance. Neither JavaScript nor tool arguments can name or override it; History
 refuses a push whose announced Identity, Session or journal kind differs from the envelope, and both
 receivers refuse an Identity incarnation that no longer exists, as they refuse a Sandbox whose
-Identity is gone. A Session whose Sandbox named no Identity has none to act for: the sampler pushes
-and samples it as itself, exactly as before Identities existed, and a delegating call for such a
-Session is refused rather than attributed to the sampler. Direct Anthropic connections carry no
-attribution either way. Executor and Gateway calls stay the sampler's own: they are
-environment-bound, not caller-bound.
+Identity is gone. Direct Anthropic connections carry no delegation. Executor and Gateway calls stay
+the sampler's own: they are environment-bound, not caller-bound.
 Reusing an identifier with a different payload conflicts. The integration app owns neither this
 admission nor the continuation database.
 

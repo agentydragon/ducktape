@@ -3629,13 +3629,19 @@ showing exactly the deployed services and the traffic between them in `cluster/c
 Each removal needs its own evidence and any real prerequisite, and is fixed in a PR of its own; this
 node leaves with the last of them.
 
-**Identity cutover residue, 2026-11-14:** Central Sampler migration 17 is in review in
-[#16323](https://github.com/agentydragon/ducktape/pull/16323). It removes retained session
-configurations without `execution_identity` or with the reserved `execution_principal` field, plus
-their session-owned conversation, event, command and provider state. The staging row count could not
-be obtained because this Identity cannot exec or port-forward to the database Pod. History already
-exported remains in History. The follow-up code PR removes the old retry, provider and export paths.
-Runner Gateway's retained rows and reader cleanup are tracked separately.
+**Identity cutover residue, 2026-11-14:** Central Sampler migration 17 merged in
+[#16323](https://github.com/agentydragon/ducktape/pull/16323). Its selector was run inside
+`BEGIN … ROLLBACK` on the `central_sampler` database (`postgres-3`, approximately 2026-11-14
+02:35 UTC): it selected 2 of 3 sampler Sessions, with 3,168 `sampler_event`, 40 `sampler_command`
+and 44 `sampler_model_request` rows (grouped by conversation). Counts for cell, process, intent,
+interrupt, notification, export checkpoint and conversation rows were not collected. The migration
+deletes those Sessions and their sampler-owned conversation, event, command, export checkpoint,
+notification, intent/provider-attempt, process, cell, interrupt and model-request state; unexported
+sampler events are lost. History rows already exported and shared content/context blobs remain. This
+PR removes the old retry, provider and export paths and their pre-cutover fixtures. Current Dispatcher
+writers supply the execution Identity, which Central Sampler now requires and retains. History's
+direct probe ingress remains. Runner Gateway's retained rows and reader cleanup are tracked
+separately.
 
 #### `ACTION_BOX_RENAME` — Action boxes stop being called sandboxes
 

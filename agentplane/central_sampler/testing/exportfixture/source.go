@@ -17,7 +17,6 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/google/uuid"
-	"google.golang.org/protobuf/proto"
 )
 
 const ownerUID = "test-central-sampler-owner-uid"
@@ -45,26 +44,6 @@ func (s *Source) CreateSession(ctx context.Context, request *samplerpb.CreateSes
 		return "", err
 	}
 	return session.ID, nil
-}
-
-// RemoveExecutionIdentity installs the retained pre-cutover configuration shape used to verify
-// direct sampler export for legacy Sessions.
-func (s *Source) RemoveExecutionIdentity(ctx context.Context, sessionID string) error {
-	session, err := s.store.GetSession(ctx, sessionID, ownerUID)
-	if err != nil {
-		return err
-	}
-	var request samplerpb.CreateSessionRequest
-	if err := proto.Unmarshal(session.Configuration, &request); err != nil {
-		return err
-	}
-	request.ExecutionIdentity = nil
-	wire, err := proto.Marshal(&request)
-	if err != nil {
-		return err
-	}
-	_, err = s.store.DB().ExecContext(ctx, "UPDATE sampler_session SET configuration=$2 WHERE id=$1", sessionID, wire)
-	return err
 }
 
 // ChangeModels performs the accepted command lifecycle used by export ordering and snapshot tests.

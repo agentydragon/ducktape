@@ -267,17 +267,6 @@ func (f samplerExportFixture) openSessionWithAPI(t *testing.T, identity *identit
 	return sessionID
 }
 
-// openLegacySession represents a retained pre-cutover request with no execution Identity. New
-// Session creation still requires one; only this fixture installs the historical wire shape.
-func (f samplerExportFixture) openLegacySession(t *testing.T) string {
-	t.Helper()
-	sessionID := f.openSession(t)
-	if err := f.source.RemoveExecutionIdentity(t.Context(), sessionID); err != nil {
-		t.Fatal(err)
-	}
-	return sessionID
-}
-
 func startSamplerExport(ctx context.Context, f samplerExportFixture, sessionID string) <-chan error {
 	done := make(chan error, 1)
 	go func() { done <- historyexport.ExportSession(ctx, f.source.Outbox(), sessionID, f.target, f.token, nil) }()
