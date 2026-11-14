@@ -436,14 +436,7 @@ def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: 
             + ([k8s.ContainerPort(name="quest-metrics", container_port=9090)] if instance == "quest-scheduler" else []),
             readiness_probe=provider_health,
             liveness_probe=provider_health,
-            resources=(
-                k8s.ResourceRequirements(
-                    requests={"cpu": k8s.Quantity.from_string("50m"), "memory": k8s.Quantity.from_string("128Mi")},
-                    limits={"cpu": k8s.Quantity.from_string("1"), "memory": k8s.Quantity.from_string("2Gi")},
-                )
-                if instance == "myquest"
-                else _resources()
-            ),
+            resources=_resources(),
             security_context=_container_security(),
             volume_mounts=[
                 k8s.VolumeMount(name="config", mount_path="/etc/platform-sessions", read_only=True),
@@ -505,8 +498,7 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
         )
     for instance in PROVIDERS:
         _add_provider(chart, instance)
-        # Interactive MyQuest sign-in may contain passwords and MFA; never record it.
-        _provider_workload(chart, instance, record_upstream_traffic=record_upstream_traffic and instance != "myquest")
+        _provider_workload(chart, instance, record_upstream_traffic=record_upstream_traffic)
     for image in PROVIDER_IMAGES:
         _image_policy(chart, image)
     Certificate(
