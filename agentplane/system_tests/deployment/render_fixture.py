@@ -27,8 +27,8 @@ from agentplane.system_tests.k3s.namespaces import NAMESPACE
 
 class FixtureVariant(StrEnum):
     LOCAL_MODEL = "local-model"
-    LOCAL_MODEL_CENTRAL = "local-model-central"
     LOCAL_MODEL_POD = "local-model-pod"
+    LOCAL_MODEL_CENTRAL = "local-model-central"
     LOCAL_MODEL_CENTRAL_SERVICES = "local-model-central-services"
     LOCAL_MODEL_CENTRAL_BUDGET = "local-model-central-budget"
     LOCAL_MODEL_VM = "local-model-vm"
@@ -97,8 +97,6 @@ def render_variant(output: Path, variant: FixtureVariant) -> None:
     match variant:
         case FixtureVariant.LOCAL_MODEL:
             _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=False)
-        case FixtureVariant.LOCAL_MODEL_CENTRAL:
-            _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=False, central_sampler=True)
         case FixtureVariant.LOCAL_MODEL_POD:
             _render(
                 output,
@@ -107,6 +105,8 @@ def render_variant(output: Path, variant: FixtureVariant) -> None:
                 vm_sandboxes=False,
                 profile=fixture_chart.FixtureProfile.NO_MCP_EDGE,
             )
+        case FixtureVariant.LOCAL_MODEL_CENTRAL:
+            _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=False, central_sampler=True)
         case FixtureVariant.LOCAL_MODEL_CENTRAL_SERVICES:
             _render(
                 output,

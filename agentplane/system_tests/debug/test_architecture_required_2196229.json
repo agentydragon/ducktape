@@ -1,0 +1,162 @@
+{
+  "schema_version": 1,
+  "source_head": "21962292287e585ef3415eeaa66e9cc621913e1c",
+  "tested_base": "f138affeba1654bb624a24af002a96b99490cc49",
+  "tested_merge": "75d2b2f53432803390352837e809a49733694acc",
+  "merge_parents": ["f138affeba1654bb624a24af002a96b99490cc49", "21962292287e585ef3415eeaa66e9cc621913e1c"],
+  "github_pr": {
+    "number": 16102,
+    "state": "open",
+    "head_sha": "21962292287e585ef3415eeaa66e9cc621913e1c",
+    "base_sha_field": "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
+    "merge_commit_sha_field": "75d2b2f53432803390352837e809a49733694acc"
+  },
+  "required_workflows": [
+    {
+      "id": 43500412229,
+      "name": "CI",
+      "path": ".github/workflows/ci.yml",
+      "head_sha": "21962292287e585ef3415eeaa66e9cc621913e1c",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-13T20:18:57Z",
+      "updated_at": "2026-11-13T20:29:47Z",
+      "url": "https://github.com/agentydragon/ducktape/actions/runs/43500412229"
+    },
+    {
+      "id": 43500411831,
+      "name": "Nix wheel check",
+      "path": ".github/workflows/nix-wheel-check.yml",
+      "head_sha": "21962292287e585ef3415eeaa66e9cc621913e1c",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-13T20:18:57Z",
+      "updated_at": "2026-11-13T20:20:30Z",
+      "url": "https://github.com/agentydragon/ducktape/actions/runs/43500411831"
+    },
+    {
+      "id": 43500412011,
+      "name": "Pre-commit checks",
+      "path": ".github/workflows/pre-commit.yml",
+      "head_sha": "21962292287e585ef3415eeaa66e9cc621913e1c",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-13T20:18:57Z",
+      "updated_at": "2026-11-13T20:20:07Z",
+      "url": "https://github.com/agentydragon/ducktape/actions/runs/43500412011"
+    }
+  ],
+  "required_checks": [
+    {
+      "name": "bazel-ci / Test & Build",
+      "run_id": 43500412229,
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS",
+      "started_at": "2026-11-13T20:19:00Z",
+      "completed_at": "2026-11-13T20:29:47Z",
+      "url": "https://github.com/agentydragon/ducktape/actions/runs/43500412229/job/132144390311"
+    },
+    {
+      "name": "Build artifacts + imports check",
+      "run_id": 43500411831,
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS",
+      "started_at": "2026-11-13T20:19:00Z",
+      "completed_at": "2026-11-13T20:20:30Z",
+      "url": "https://github.com/agentydragon/ducktape/actions/runs/43500411831/job/132144390577"
+    },
+    {
+      "name": "Pre-commit checks",
+      "run_id": 43500412011,
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS",
+      "started_at": "2026-11-13T20:19:00Z",
+      "completed_at": "2026-11-13T20:20:07Z",
+      "url": "https://github.com/agentydragon/ducktape/actions/runs/43500412011/job/132144390474"
+    }
+  ],
+  "earliest_required_workflow_creation": "2026-11-13T20:18:57Z",
+  "last_required_check_completion": "2026-11-13T20:29:47Z",
+  "workflow_creation_to_last_required_seconds": 650.0,
+  "native_test_invocation": "792dfb27-5ce9-5127-b849-caca435cd624",
+  "native_test_invocation_url": "https://app.buildbuddy.io/invocation/792dfb27-5ce9-5127-b849-caca435cd624",
+  "native_test_invocation_commit": "75d2b2f53432803390352837e809a49733694acc",
+  "native_test_elapsed_seconds": 545.284,
+  "execution_records": {
+    "total": 369,
+    "unique_execution_ids": 369,
+    "invocation_link_type_1": 369,
+    "merged_records": 0,
+    "completed_with_empty_status": 369,
+    "failed_physical_records": 0,
+    "action_key_duplicates": 0
+  },
+  "new_physical_test_runner_records": 139,
+  "actual_test_run_records": 138,
+  "test_xml_generator_actions": 1,
+  "fresh_unique_test_labels": 128,
+  "fresh_junit": {
+    "files": 138,
+    "nonempty_files": 138,
+    "actual_testcases": 1023,
+    "tests": 1023,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "zero_case_target_labels": 0,
+    "expected_source_level_junit_denominator": null,
+    "expected_source_level_junit_denominator_note": "No independent source-level expected-case denominator was collected; this reports the actual testcase elements in 138 correlated fresh XML outputs, and confirms all 128 labels had at least one case."
+  },
+  "fresh_junit_case_multiset_sha256": "b5ceec8020a16d5b5aac2d5c7924362d9be769fee5fcc5a22e757b3aa0161c0b",
+  "fresh_case_counts_for_focus_targets": {
+    "//agentplane/app:test_bridge": 24,
+    "//agentplane/env/e2e:test_pid1_container": 7
+  },
+  "fresh_bridge_junit_cases": 24,
+  "fresh_bridge_case_names_sha256": "aa9356035cfba9ca4795c4305f6a422d365d00c41884106aa10369171c4d0720",
+  "fresh_k3s_suite_actions": 13,
+  "fresh_k3s_suite_action_definition": "Distinct //agentplane/system_tests/suites* labels among matched fresh test actions with an attempt-1 test.outputs/k3s*.log artifact; direct //agentplane/system_tests/k3s:* targets are excluded.",
+  "fresh_process_envelope_seconds": 466.055,
+  "fresh_process_envelope": {
+    "first_start": {
+      "time": "2026-11-13T20:21:20.920Z",
+      "label": "//agentplane/native/codex:test_active_turn",
+      "shard": 1
+    },
+    "last_stop": {
+      "time": "2026-11-13T20:29:06.975Z",
+      "label": "//agentplane/system_tests/suites:test_pod",
+      "shard": 1
+    }
+  },
+  "fresh_remote_action_execution_envelope_seconds": 466.642108,
+  "fresh_remote_action_execution_envelope": {
+    "first_start": {
+      "time": "2026-11-13T20:21:25.004638Z",
+      "label": "//agentplane/native/codex:test_active_turn"
+    },
+    "last_completion": {
+      "time": "2026-11-13T20:29:11.646746Z",
+      "label": "//agentplane/system_tests/suites:test_pod"
+    }
+  },
+  "summed_reported_fresh_action_cpu_seconds": 11572.405452,
+  "fresh_test_records_reporting_cpu": 137,
+  "fresh_test_records_without_reported_cpu": 1,
+  "provenance": {
+    "fresh_test_result_correlation": "138 downloaded test.xml files and 138 test.log files were selected from this invocation and correlated to one actual TestRunner test/test-setup.sh execution each by target label and shard, with run=1 and attempt=1. Every matched XML was nonempty.",
+    "junit_case_fingerprint": "SHA-256 over sorted UTF-8 lines LABEL::CLASSNAME::TESTCASE_NAME, with a final newline; duplicate lines are retained as a multiset.",
+    "failed_or_retried_test_actions": "Zero among the 138 correlated physical test actions: each has a distinct execution ID and target/shard key, all selected test summaries are PASSED with attemptCount=1, and JUnit has zero failures, errors, or skipped cases. The one remaining TestRunner record runs test/generate-xml.sh and is not a test launch."
+  },
+  "limits": [
+    "This is exact-head required validation, not a matched saving comparison: tested source/base exposure differs from the earlier checkpoint.",
+    "GitHub PR #16102 base.sha is stale at f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de; the tested synthetic merge has actual parents f138affeba1654bb624a24af002a96b99490cc49 and the exact 21962292287e585ef3415eeaa66e9cc621913e1c head.",
+    "The action execution listing records physical remote actions, not independent reliability trials. JUnit case counts and the JUnit case multiset are not independent-trial counts.",
+    "Reported action CPU sums 137 known usageStats.cpuNanos values; one of the 138 test actions lacks CPU metadata and is left unknown, not treated as zero.",
+    "The process envelope uses testSummary firstStartTime/lastStopTime; the separate action envelope uses REAPI executionStartTimestamp/executionCompletedTimestamp. Neither is a matched speed comparison.",
+    "Pod/VM/top-process phase metadata was not gathered; the bounded collection stopped after correlated JUnit and test-log artifacts."
+  ]
+}

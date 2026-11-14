@@ -37,6 +37,21 @@ that the guest helper invalidated unrelated tests.
 
 ## Coverage and follow-ups
 
+Required CI subsequently passed on exact head `2196229` in
+[workflow 43500412229](https://github.com/agentydragon/ducktape/actions/runs/43500412229).
+Creation to the last of three required checks is 650 seconds; native Bazel is
+545.284 seconds. The tested merge `75d2b2f` has actual parents `f138aff` and
+`2196229`, despite the PR API's stale base field. The
+[curated checkpoint](test_architecture_required_2196229.json) correlates 138 fresh
+test launches across 128 labels with 138 nonempty JUnit files: 1,023 cases and no
+failures, errors, skips or zero-case labels. A separate XML-generator action is
+excluded from test-launch exposure. All summaries have one attempt, with no
+merged or failed physical records. Bridge retains its 24-case fingerprint and
+13 fresh K3s-bearing suite actions ran. The independent expected-case denominator
+was not collected; summed CPU has metadata for 137 of 138 test actions, leaving
+one unknown. The changed source/base prevents a causal comparison with the prior
+checkpoint. This validation predates the setup-probe and Notification additions.
+
 The shared supervision helper passes in a fresh direct Claude Session and the full
 deployed VM scenario. The real wrong-History-URI control fails the ordinary
 History assertion after healthy-service mTLS preflight and a real Shell command.

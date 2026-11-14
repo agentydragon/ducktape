@@ -102,8 +102,8 @@ def test_pod_profile_omits_only_mcp_edge_and_keeps_app_and_action_flows(runfiles
     assert ("Role", "mcp-edge") in removed
     assert ("RoleBinding", "mcp-edge") in removed
     assert all(name.startswith("mcp-edge") for _, name in removed)
-    # Retained resources are identical, including the app, Actions' command-box executor,
-    # notifications, policy, certificates and storage.
+    # Every retained resource is unchanged, including app presets, runtime configuration,
+    # Actions' command-box executor, notifications, policy, certificates and storage.
     assert pod_objects == {key: value for key, value in ordinary_objects.items() if key not in removed}
     assert not any(
         "agentplane-mcp-edge:" in container["image"]
@@ -113,7 +113,8 @@ def test_pod_profile_omits_only_mcp_edge_and_keeps_app_and_action_flows(runfiles
     )
     _resource(pod.objects, "Deployment", "actions")
     _resource(pod.objects, "Deployment", "notifications")
-    # The app keeps its unused Connection routes; external Connections are out of scope here.
+    # This profile intentionally retains the app's unused Connection routes and health
+    # probe. It does not cover external connections; system status reports them unavailable.
     app_config = yaml.safe_load(_resource(pod.objects, "ConfigMap", "app-config")["data"]["config.yaml"])
     assert AnyHttpUrl(app_config["connection_service_url"]) == AnyHttpUrl(fixture_chart.MCP_EDGE_SERVICE.url)
 
@@ -146,6 +147,8 @@ def test_virtualized_profiles_preserve_every_resource_except_unused_mcp_edge(run
     assert ("Deployment", "mcp-edge") in removed
     assert all(name.startswith("mcp-edge") for _, name in removed)
     assert candidate == {key: value for key, value in control.items() if key not in removed}
+    # App, Actions, credentials, storage, Runtime config and every retained object
+    # are unchanged. Neither virtualized suite exercises external Connections.
     _resource(fixture.objects, "Deployment", "actions")
     template = environment_firecracker.NAME if fixture.firecracker_sandboxes else SUPERVISION_TEMPLATE
     _resource(fixture.objects, "SandboxTemplate", template)
@@ -693,10 +696,15 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: re
 
 
 @pytest.mark.parametrize(
-    "location", ["K3S_FIXTURE_RLOCATION", "K3S_CENTRAL_FIXTURE_RLOCATION", "K3S_CENTRAL_BUDGET_FIXTURE_RLOCATION"]
+    ("location", "reconnect_timeout"),
+    [
+        ("K3S_FIXTURE_RLOCATION", None),
+        ("K3S_CENTRAL_FIXTURE_RLOCATION", None),
+        ("K3S_CENTRAL_BUDGET_FIXTURE_RLOCATION", 45),
+    ],
 )
 def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
-    runfiles: Runfiles, location: str
+    runfiles: Runfiles, location: str, reconnect_timeout: int | None
 ) -> None:
     fixture = _filled_fixture(runfiles, location)
     assert fixture.central_sampler
@@ -729,7 +737,7 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     settings = CentralSamplerSettings.model_validate_json(
         _resource(docs, "ConfigMap", f"{central_sampler.NAME}-settings")["data"]["settings.json"]
     )
-    assert settings.executor_reconnect_timeout_seconds is None
+    assert settings.executor_reconnect_timeout_seconds == reconnect_timeout
     ingress_connection = settings.connections["llm-ingress"]
     assert ingress_connection.base_url == (
         f"https://{llm_ingress.service(NAMESPACE).fqdn}:{llm_ingress.service(NAMESPACE).port.number}"

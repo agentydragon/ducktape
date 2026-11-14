@@ -136,13 +136,13 @@ py_test(
     ],
     env = {
         "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
-        "K3S_CENTRAL_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-central.json)",
         "K3S_DEFAULT_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model.json)",
+        "K3S_POD_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-pod.json)",
+        "K3S_CENTRAL_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-central.json)",
         "K3S_CENTRAL_SERVICES_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-central-services.json)",
         "K3S_CENTRAL_BUDGET_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-central-budget.json)",
         "K3S_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-mcp-fixtures.json)",
         "K3S_FIRECRACKER_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-firecracker.json)",
-        "K3S_POD_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-pod.json)",
         "K3S_VM_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-vm.json)",
     },
     deps = [
@@ -398,10 +398,10 @@ genrule(
 )
 
 genrule(
-    name = "render_local_model_central",
+    name = "render_local_model_pod",
     testonly = True,
-    outs = ["rendered/local-model-central.json"],
-    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_VARIANT=local-model-central K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_fixture_bin)",
+    outs = ["rendered/local-model-pod.json"],
+    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_VARIANT=local-model-pod K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_fixture_bin)",
     tools = [
         ":render_fixture_bin",
         "@nodejs_linux_amd64//:bin/node",
@@ -410,10 +410,10 @@ genrule(
 )
 
 genrule(
-    name = "render_local_model_pod",
+    name = "render_local_model_central",
     testonly = True,
-    outs = ["rendered/local-model-pod.json"],
-    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_VARIANT=local-model-pod K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_fixture_bin)",
+    outs = ["rendered/local-model-central.json"],
+    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_VARIANT=local-model-central K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_fixture_bin)",
     tools = [
         ":render_fixture_bin",
         "@nodejs_linux_amd64//:bin/node",
