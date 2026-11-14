@@ -306,15 +306,22 @@ def test_import_batch_arms_use_fresh_stores_and_warm_repeats(
     runfiles_root = Path(str(runfiles.root()))
     manifest_path = runfiles_root / os.environ["K3S_IMAGE_MANIFEST_RLOCATION"]
     image_manifest = json.loads(manifest_path.read_text())
+    group_names = os.environ["K3S_IMPORT_BENCHMARK_GROUPS"].split(",")
+    if len(group_names) != len(set(group_names)) or set(group_names) != {
+        group for group, images in image_manifest.items() if images
+    }:
+        raise ValueError(f"benchmark groups must name every nonempty image group once: {group_names}")
+    memory_setting = os.environ["K3S_IMPORT_BENCHMARK_LAYERS_IN_MEMORY"]
+    if memory_setting not in {"0", "1"}:
+        raise ValueError(f"invalid benchmark layer storage setting: {memory_setting}")
+    layers_in_memory = memory_setting == "1"
     groups = [
         (group, {reference: runfiles_root / layout for reference, layout in image_manifest[group].items()})
-        for group in ("pki", "fixture")
+        for group in group_names
     ]
-    if not all(images for _, images in groups):
-        raise ValueError("the current Pod profile must declare both pki and fixture images")
     all_images = {reference: layout for _, images in groups for reference, layout in images.items()}
     if len(all_images) != sum(len(images) for _, images in groups):
-        raise ValueError("the current Pod profile reuses an image reference across import groups")
+        raise ValueError("the current profile reuses an image reference across import groups")
     input_identity = _input_identity(groups)
     expected_targets = {layout["reference"]: layout for layout in input_identity["layouts"]}
     source_blobs = _source_blob_paths(all_images)
@@ -324,6 +331,7 @@ def test_import_batch_arms_use_fresh_stores_and_warm_repeats(
         "status": "running",
         "data_dir": "/var/lib/k3s-env",
         "groups": [name for name, _ in groups],
+        "layers_in_memory": layers_in_memory,
         "input": input_identity,
         "arm_order": order,
         "disabled_bootstrap_addons": ["coredns", "local-storage"],
@@ -349,7 +357,7 @@ def test_import_batch_arms_use_fresh_stores_and_warm_repeats(
                     # Bootstrap Pods can asynchronously pull layers shared with our inputs
                     # after NodeReady. This importer-only probe owns no workload Pods.
                     process = k3s.start(
-                        layers_in_memory=True,
+                        layers_in_memory=layers_in_memory,
                         preserve_image_store=False,
                         additional_disabled_addons=("coredns", "local-storage"),
                     )
@@ -360,6 +368,7 @@ def test_import_batch_arms_use_fresh_stores_and_warm_repeats(
                 preexisting = k3s._stored_blobs() & source_blobs
                 if preexisting:
                     raise AssertionError(f"cold containerd store already has source blobs: {sorted(preexisting)}")
+                k3s.protect_image_layouts(all_images)
                 _warm_source_layouts(all_images)
                 _run_import_arm(k3s, arm, groups, "cold_store")
                 cold_check = _assert_imported(k3s, all_images, source_blobs, expected_targets)
