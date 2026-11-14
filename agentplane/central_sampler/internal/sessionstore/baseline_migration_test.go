@@ -82,6 +82,7 @@ func TestMigrationDeletesRetainedPreIdentitySamplerSessions(t *testing.T) {
 	setConfiguration(missingIdentity, true, false)
 	setConfiguration(retiredPrincipal, false, true)
 
+	removeServiceOwnerMigration(t, store.DB())
 	migrationExec(t, store.DB(), "DELETE FROM central_sampler_goose_version WHERE version_id=17 AND is_applied")
 	if err := migrations.Up(t.Context(), store.DB()); err != nil {
 		t.Fatal(err)
@@ -110,6 +111,7 @@ func TestSamplerBaselineAdoptsCompletedRewriteWithoutTouchingData(t *testing.T) 
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
 	migrationExec(t, store.DB(), `INSERT INTO sampler_export_checkpoint(session_id,destination,cursor) VALUES($1,'fixture-history',73)`, session.ID)
+	removeServiceOwnerMigration(t, store.DB())
 	// Model a database that has the completed v14 rewrite and the v15 schema, but
 	// lost the v15 Goose marker before v16 existed. Re-run both adoption and the
 	// new provider-attempt migration from that state.
@@ -196,4 +198,11 @@ func TestSamplerBaselineConcurrentFreshCreation(t *testing.T) {
 	if count := migrationCount(t, store.DB(), `SELECT count(*) FROM central_sampler_goose_version WHERE version_id=16 AND is_applied`); count != 1 {
 		t.Fatal("provider attempt migration recorded more than once")
 	}
+}
+
+func removeServiceOwnerMigration(t *testing.T, db *sql.DB) {
+	t.Helper()
+	migrationExec(t, db, `ALTER TABLE sampler_session DROP CONSTRAINT sampler_session_owner_kind`)
+	migrationExec(t, db, `ALTER TABLE sampler_session DROP COLUMN service_spiffe_id`)
+	migrationExec(t, db, `DELETE FROM central_sampler_goose_version WHERE version_id=18`)
 }

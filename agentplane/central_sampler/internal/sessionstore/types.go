@@ -176,7 +176,7 @@ func (pending PendingIntent) Validate() error {
 type Session struct {
 	ID                string
 	ConversationID    string
-	AccountUID        string
+	OwnerKey          string
 	Configuration     []byte
 	Model             string
 	Effort            string

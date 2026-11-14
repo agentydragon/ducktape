@@ -10,6 +10,7 @@ import (
 )
 
 type Settings struct {
+	ServiceCallers                       []string                    `json:"service_callers,omitempty"`
 	GatewayTLS                           *peertls.ClientTLS          `mapstructure:"gateway_tls" json:"gateway_tls,omitempty"`
 	HistoryTLS                           *peertls.ClientTLS          `mapstructure:"history_tls" json:"history_tls,omitempty"`
 	ListenTLS                            *peertls.ServerTLSListener  `json:"listen_tls,omitempty"`

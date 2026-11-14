@@ -208,17 +208,17 @@ func TestProviderRequestStorageHasLinearContextGrowthAndFrozenProfile(t *testing
 	}
 	equivalentJSON(t, duplicateWire, firstWire)
 
-	first, err := store.LoadProviderRequest(t.Context(), session.ID, session.AccountUID, firstID)
+	first, err := store.LoadProviderRequest(t.Context(), session.ID, session.OwnerKey, firstID)
 	if err != nil {
 		t.Fatalf("load original provider request: %v", err)
 	}
 	equivalentJSON(t, first.Body, firstWire)
-	duplicate, err := store.LoadProviderRequest(t.Context(), session.ID, session.AccountUID, duplicateID)
+	duplicate, err := store.LoadProviderRequest(t.Context(), session.ID, session.OwnerKey, duplicateID)
 	if err != nil {
 		t.Fatalf("load duplicate provider request: %v", err)
 	}
 	equivalentJSON(t, duplicate.Body, firstWire)
-	last, err := store.LoadProviderRequest(t.Context(), session.ID, session.AccountUID, lastID)
+	last, err := store.LoadProviderRequest(t.Context(), session.ID, session.OwnerKey, lastID)
 	if err != nil {
 		t.Fatalf("load last provider request: %v", err)
 	}
@@ -284,11 +284,11 @@ func TestProviderRequestContentSharesAcrossAccountsAndReadsAreAuthorized(t *test
 		t.Fatalf("shared tool content rows=%d, want one", got)
 	}
 
-	first, err := store.LoadProviderRequest(t.Context(), firstSession.ID, firstSession.AccountUID, firstID)
+	first, err := store.LoadProviderRequest(t.Context(), firstSession.ID, firstSession.OwnerKey, firstID)
 	if err != nil {
 		t.Fatalf("authorized request read failed: %v", err)
 	}
-	second, err := store.LoadProviderRequest(t.Context(), secondSession.ID, secondSession.AccountUID, secondID)
+	second, err := store.LoadProviderRequest(t.Context(), secondSession.ID, secondSession.OwnerKey, secondID)
 	if err != nil {
 		t.Fatalf("second authorized request read failed: %v", err)
 	}
@@ -297,10 +297,10 @@ func TestProviderRequestContentSharesAcrossAccountsAndReadsAreAuthorized(t *test
 	}
 	equivalentJSON(t, first.Body, firstWire)
 	equivalentJSON(t, second.Body, firstWire)
-	if _, err := store.LoadProviderRequest(t.Context(), firstSession.ID, secondSession.AccountUID, firstID); !errors.Is(err, protocol.ErrMissing) {
+	if _, err := store.LoadProviderRequest(t.Context(), firstSession.ID, secondSession.OwnerKey, firstID); !errors.Is(err, protocol.ErrMissing) {
 		t.Fatalf("foreign account request read error=%v, want ErrMissing", err)
 	}
-	if _, err := store.LoadProviderRequest(t.Context(), secondSession.ID, secondSession.AccountUID, firstID); !errors.Is(err, protocol.ErrMissing) {
+	if _, err := store.LoadProviderRequest(t.Context(), secondSession.ID, secondSession.OwnerKey, firstID); !errors.Is(err, protocol.ErrMissing) {
 		t.Fatalf("foreign session request read error=%v, want ErrMissing", err)
 	}
 }

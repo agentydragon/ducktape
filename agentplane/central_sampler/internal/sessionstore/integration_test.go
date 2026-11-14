@@ -90,7 +90,7 @@ func fixtureExecutionIdentity() *identitypb.Identity {
 	return &identitypb.Identity{Name: "fixture-session-identity", Uid: "fixture-session-identity-uid"}
 }
 
-func openStoreSession(t *testing.T, store *Store, request *samplerpb.CreateSessionRequest, ownerUID string, api protocol.APIStyle) (*Session, error) {
+func openStoreSession(t *testing.T, store *Store, request *samplerpb.CreateSessionRequest, ownerKey string, api protocol.APIStyle) (*Session, error) {
 	t.Helper()
 	if request.GetExecutionIdentity() == nil {
 		request.ExecutionIdentity = fixtureExecutionIdentity()
@@ -107,7 +107,7 @@ func openStoreSession(t *testing.T, store *Store, request *samplerpb.CreateSessi
 		}}}
 	}
 	platformInstructions := fixturePlatformInstructions
-	return store.CreateSession(t.Context(), request, ownerUID, api, &platformInstructions)
+	return store.CreateSession(t.Context(), request, ownerKey, api, &platformInstructions)
 }
 
 func openSessionForStore(t *testing.T, store *Store, setup string) *Session {
@@ -2386,5 +2386,40 @@ func TestStoreRetryConflictsOnRetiredSessionRouting(t *testing.T) {
 	}
 	if _, err := store.GetSession(t.Context(), opened.ID, "fixture-account"); err != nil {
 		t.Fatalf("conflicting retries damaged the retained Session: %v", err)
+	}
+}
+
+func TestServiceSessionOwnershipIsSeparateFromLegacyAccountOwnership(t *testing.T) {
+	store := newTestStore(t)
+	legacy := openSessionForStore(t, store, "")
+	service := "spiffe://agentplane/sessions"
+	request := &samplerpb.CreateSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"}}
+	opened, err := openStoreSession(t, store, request, service, protocol.APIStyleResponses)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var account string
+	var spiffe sql.NullString
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT account_uid,service_spiffe_id FROM sampler_session WHERE id=$1`, opened.ID).Scan(&account, &spiffe); err != nil {
+		t.Fatal(err)
+	}
+	if account != "" || !spiffe.Valid || spiffe.String != service {
+		t.Fatalf("service stored as account=%q,service=%v", account, spiffe)
+	}
+	if _, err := store.GetSession(t.Context(), opened.ID, service); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.GetSession(t.Context(), opened.ID, legacy.OwnerKey); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("legacy accessed service session: %v", err)
+	}
+	if _, err := store.GetSession(t.Context(), legacy.ID, service); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("service inherited legacy session: %v", err)
+	}
+	listed, err := store.ListSessions(t.Context(), service)
+	if err != nil || len(listed) != 1 || listed[0].ID != opened.ID {
+		t.Fatalf("service inventory=%v,%v", listed, err)
+	}
+	if _, err := openStoreSession(t, store, request, legacy.OwnerKey, protocol.APIStyleResponses); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("legacy reopened service session: %v", err)
 	}
 }
