@@ -7,6 +7,8 @@ from dataclasses import dataclass
 
 from cdk8s import ApiObjectMetadata
 from cnpg_cluster_crds.io.cnpg.postgresql import (
+    Cluster,
+    ClusterSpec,
     ClusterSpecAffinity,
     ClusterSpecAffinityTolerations,
     ClusterSpecBootstrap,
@@ -26,7 +28,6 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
 from constructs import Construct
 
 from cluster.cdk8s import node_scheduling
-from cluster.cdk8s.providers.cnpg.cluster import Cluster
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
@@ -139,25 +140,29 @@ def cluster(
         scope,
         id,
         metadata=ApiObjectMetadata(name=ref.name, namespace=ref.namespace, annotations=annotations),
-        storage=ClusterSpecStorage(
-            storage_class=profile.storage_class, size=size, resize_in_use_volumes=resize_in_use_volumes
+        spec=ClusterSpec(
+            storage=ClusterSpecStorage(
+                storage_class=profile.storage_class, size=size, resize_in_use_volumes=resize_in_use_volumes
+            ),
+            instances=instances,
+            image_name=image_name,
+            bootstrap=None if initdb is None else ClusterSpecBootstrap(initdb=initdb),
+            affinity=profile.affinity,
+            env=env,
+            managed=managed,
+            postgresql=postgresql,
+            plugins=(
+                [ClusterSpecPlugins(name=BARMAN_PLUGIN, is_wal_archiver=True, parameters={"barmanObjectName": ref.name})]
+                if wal_archive
+                else None
+            ),
+            resources=resources,
+            probes=ClusterSpecProbes(
+                liveness=ClusterSpecProbesLiveness(
+                    isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False)
+                )
+            ),
+            # TODO: Migrate to manually managed PodMonitors (enablePodMonitor is deprecated).
+            monitoring=ClusterSpecMonitoring(enable_pod_monitor=enable_pod_monitor),
         ),
-        instances=instances,
-        image_name=image_name,
-        bootstrap=None if initdb is None else ClusterSpecBootstrap(initdb=initdb),
-        affinity=profile.affinity,
-        env=env,
-        managed=managed,
-        postgresql=postgresql,
-        plugins=(
-            [ClusterSpecPlugins(name=BARMAN_PLUGIN, is_wal_archiver=True, parameters={"barmanObjectName": ref.name})]
-            if wal_archive
-            else None
-        ),
-        resources=resources,
-        probes=ClusterSpecProbes(
-            liveness=ClusterSpecProbesLiveness(isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False))
-        ),
-        # TODO: Migrate to manually managed PodMonitors (enablePodMonitor is deprecated).
-        monitoring=ClusterSpecMonitoring(enable_pod_monitor=enable_pod_monitor),
     )

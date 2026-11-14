@@ -38,17 +38,6 @@ cdk8s_import(
 )
 
 py_library(
-    name = "cnpg_cluster",
-    srcs = ["cluster.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = [
-        ":cluster",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
-    ],
-)
-
-py_library(
     name = "cnpg_database",
     srcs = ["database.py"],
     visibility = ["//cluster/cdk8s:deployment_consumers"],

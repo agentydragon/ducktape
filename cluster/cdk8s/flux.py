@@ -24,6 +24,8 @@ import jsii
 from cdk8s import ApiObject, ApiObjectMetadata, App, Chart
 from constructs import IValidation
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
+    Kustomization,
+    KustomizationSpec,
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
@@ -41,8 +43,6 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 from pydantic.alias_generators import to_camel
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
-
-from cluster.cdk8s.providers.flux.flux_kustomization import Kustomization
 
 NAMESPACE = "ducktape-flux"  # shared Flux namespace every generated Kustomization CR lives in
 SOPS_DECRYPTION = KustomizationSpecDecryption(
@@ -233,25 +233,27 @@ def flux_kustomization(
         chart,
         name,
         metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations=metadata_annotations or None),
-        source_ref=source_ref,
-        path=path,
-        interval=interval,
-        retry_interval=retry_interval,
-        timeout=timeout,
-        prune=prune,
-        wait=wait,
-        suspend=suspend,
-        deletion_policy=deletion_policy,
-        decryption=decryption,
-        depends_on=depends_on,
-        health_checks=health_checks,
-        health_check_exprs=health_check_exprs,
-        post_build=post_build,
-        target_namespace=target_namespace,
-        service_account_name=service_account_name,
-        images=images,
-        patches=patches,
-        ignore=ignore,
+        spec=KustomizationSpec(
+            source_ref=source_ref,
+            path=path,
+            interval=interval,
+            retry_interval=retry_interval,
+            timeout=timeout,
+            prune=prune,
+            wait=wait,
+            suspend=suspend,
+            deletion_policy=deletion_policy,
+            decryption=decryption,
+            depends_on=list(depends_on) if depends_on is not None else None,
+            health_checks=list(health_checks) if health_checks is not None else None,
+            health_check_exprs=list(health_check_exprs) if health_check_exprs is not None else None,
+            post_build=post_build,
+            target_namespace=target_namespace,
+            service_account_name=service_account_name,
+            images=list(images) if images is not None else None,
+            patches=list(patches) if patches is not None else None,
+            ignore=list(ignore) if ignore is not None else None,
+        ),
     )
 
 
