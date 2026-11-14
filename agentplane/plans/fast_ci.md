@@ -87,13 +87,20 @@ this is an ownership prerequisite, not a matched timing result. Native Environme
 control, fixture-bound identity, separate rendered profiles and image maps are implemented for
 Firecracker and required VM acceptance. Fourteen affected caller targets build with lint/type
 checks. The App-free Firecracker target passes both original cases, and all five migrated MCP
-Actions cases pass. VM completes both harness scenarios, then fails a missing trace attribute;
-its metadata repair still needs a physical pass. Keep their guest,
+Actions cases pass. Exact source `6c31cfb9f7` passes the combined 11-case native platform/client
+qualification, including VM's unchanged process-trace contract; ordinary CI passes all 2,005
+test targets. Keep their guest,
 controller, PKI, identity, setup, checkpoint and storage assertions. The earlier dependency query
 removes App serving/client inputs while retaining shared configuration types. A query on pushed
 source confirms only Pod and MCP Services among the four platform tails still consume the App image.
-Finish VM qualification, then test historical source-plus-BUILD selection before timing the
-complete gate. [Current source and focused evidence](../system_tests/debug/common_backend_contracts.md).
+The manual App-free central Services candidate passes all four scenarios beside the seven original
+Services cases, 21 render cases and four library/aspect checks; its three App/MCP witnesses stay
+required. The retested balanced Pod graph retains all 40 cases but observes only 13.4% lower native
+elapsed in one cache-confounded pair with 35.8% higher Pod CPU. Keep it manual. The next capacity
+candidate runs all 21 Pod cases with four slots on one eight-CU action, avoiding a second cluster's
+setup while retaining exclusive storage first. Measure actual capacity, whole competing graph
+and resource costs before promotion, then historical source-plus-BUILD selection and complete
+required feedback. [Current source and focused evidence](../system_tests/debug/common_backend_contracts.md).
 Do not expand a global replacement list just to make more historical PRs
 eligible. Implementation-plus-owner-test changes must be accounted
 for structurally, and their owner tests must remain required. Test-only, shared

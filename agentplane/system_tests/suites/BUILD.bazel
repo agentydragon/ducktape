@@ -327,6 +327,17 @@ k3s_suite(
     deps = _POD_DEPS,
 )
 
+# Manual capacity candidate: same 21-case batch and storage-first exclusivity at four slots.
+k3s_suite(
+    name = "test_pod_four_slots_candidate",
+    srcs = ["test_pod_four_slots_candidate.py"],
+    exec_properties = {"EstimatedComputeUnits": "8"},
+    main = "test_pod_four_slots_candidate.py",
+    stack = "pod_scenarios",
+    tags = ["manual"],
+    deps = _POD_DEPS + ["//devinfra/testing:undeclared_outputs"],
+)
+
 # This suite scales the Dispatcher and deletes controller Pods; it needs its own no-MCP stack.
 k3s_suite(
     name = "test_dispatcher",
