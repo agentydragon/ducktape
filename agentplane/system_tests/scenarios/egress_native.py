@@ -157,7 +157,9 @@ def _standing_pod_spec(runner: dict[str, Any], box_labels: dict[str, str], secre
     }
 
 
-async def two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(cluster: Cluster, sandbox: Sandboxes) -> None:
+async def two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(
+    cluster: Cluster, sandbox: Sandboxes, *, reader_service_account: str
+) -> None:
     """Two Sandboxes act as one shared ServiceAccount through the proxy's impersonation, and
     removing one's use rule refuses it on its next request while the other keeps the account.
 
@@ -229,7 +231,7 @@ async def two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(cluster: 
                     for view in (first, second):
                         assert await _whoami(cluster, view, credential) == username
         for view in (first, second):
-            acted = await decision_for(cluster, view, KUBERNETES_HOST)
+            acted = await decision_for(cluster, view, KUBERNETES_HOST, reader_service_account=reader_service_account)
             assert acted.outcome == Decision.OUTCOME_ALLOW, f"{acted!r}"
             assert acted.policy == credential, f"{acted!r}"
             assert acted.substituted, f"{acted!r}"
@@ -251,7 +253,9 @@ async def two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(cluster: 
                     except RuntimeError:
                         still = None
                     assert still is None, f"{first.target.name} still acts as {still} after losing its rule"
-        refused = await decision_for(cluster, first, KUBERNETES_HOST, after=after)
+        refused = await decision_for(
+            cluster, first, KUBERNETES_HOST, reader_service_account=reader_service_account, after=after
+        )
         assert refused.outcome == Decision.OUTCOME_DENY, f"{refused!r}"
         assert refused.reason == Decision.REASON_NO_RULE, f"{refused!r}"
         assert await _whoami(cluster, second, credential) == username

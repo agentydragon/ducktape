@@ -277,7 +277,9 @@ async def a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes(re
 
 async def two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(resources: Resources) -> None:
     async with resources.open() as (_, sandboxes):
-        await egress_native.two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(resources.cluster, sandboxes)
+        await egress_native.two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(
+            resources.cluster, sandboxes, reader_service_account="app"
+        )
 
 
 SCENARIOS = (

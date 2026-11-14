@@ -12,6 +12,7 @@ import pytest_bazel
 
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.native_auth import NATIVE_CLIENT_NAME
 from agentplane.system_tests.driver.native_platform import NativePlatformClients
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes
 from agentplane.system_tests.scenarios import cert_manager_reissue, egress_native, workload_trust
@@ -76,7 +77,9 @@ async def test_a_standing_workload_authenticates_by_its_svid_and_its_prune_revok
 async def test_two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(
     cluster: Cluster, native_sandbox: Sandboxes
 ) -> None:
-    await egress_native.two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(cluster, native_sandbox)
+    await egress_native.two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(
+        cluster, native_sandbox, reader_service_account=NATIVE_CLIENT_NAME
+    )
 
 
 if __name__ == "__main__":
