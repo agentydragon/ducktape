@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 )
@@ -13,6 +14,12 @@ import (
 // ReserveWakeAttempt counts distinct guarded wake generations per authenticated
 // caller across replicas. A retry of the same generation spends no new budget.
 func (s *Store) ReserveWakeAttempt(ctx context.Context, caller lifecycle.WakeBudgetKey, sandboxUID string, generation int64) (time.Duration, error) {
+	if caller.ServiceSPIFFEID != "" {
+		if caller.Namespace != "" || caller.Name != "" || caller.UID != "" {
+			return 0, errors.New("service wake budget cannot contain account fields")
+		}
+		return s.reserveServiceWakeAttempt(ctx, caller.ServiceSPIFFEID, sandboxUID, generation)
+	}
 	if caller.Namespace == "" || caller.Name == "" || caller.UID == "" {
 		return 0, errors.New("wake caller namespace, name and UID are required")
 	}
@@ -62,6 +69,52 @@ func (s *Store) ReserveWakeAttempt(ctx context.Context, caller lifecycle.WakeBud
 		_, err = tx.ExecContext(ctx, `INSERT INTO wake_attempt
 			(caller_namespace,caller_name,caller_uid,sandbox_uid,wake_generation,attempted_at)
 			VALUES ($1,$2,$3,$4,$5,$6)`, namespace, name, uid, sandboxUID, generation, now)
+		return err
+	})
+	return retryAfter, err
+}
+
+// reserveServiceWakeAttempt spends a distinct certificate actor budget, never an account UID.
+func (s *Store) reserveServiceWakeAttempt(ctx context.Context, serviceID, sandboxUID string, generation int64) (time.Duration, error) {
+	if err := auth.ValidateServiceCallers([]string{serviceID}); err != nil {
+		return 0, err
+	}
+	var retryAfter time.Duration
+	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "dispatcher-service-wake:"+serviceID); err != nil {
+			return err
+		}
+		var now time.Time
+		if err := tx.QueryRowContext(ctx, "SELECT clock_timestamp()").Scan(&now); err != nil {
+			return err
+		}
+		windowStart := now.Add(-WakeWindow)
+		if _, err := tx.ExecContext(ctx, "DELETE FROM service_wake_attempt WHERE attempted_at <= $1", windowStart); err != nil {
+			return err
+		}
+		var exists bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM service_wake_attempt WHERE service_spiffe_id=$1 AND sandbox_uid=$2 AND wake_generation=$3)`, serviceID, sandboxUID, generation).Scan(&exists); err != nil {
+			return err
+		}
+		if exists {
+			return nil
+		}
+		var count int
+		var oldest sql.NullTime
+		if err := tx.QueryRowContext(ctx, `SELECT count(*), min(attempted_at) FROM service_wake_attempt WHERE service_spiffe_id=$1 AND attempted_at>$2`, serviceID, windowStart).Scan(&count, &oldest); err != nil {
+			return err
+		}
+		if count >= WakeLimit {
+			if !oldest.Valid {
+				return errors.New("service wake budget full without attempt")
+			}
+			retryAfter = oldest.Time.Add(WakeWindow).Sub(now)
+			if retryAfter < time.Millisecond {
+				retryAfter = time.Millisecond
+			}
+			return nil
+		}
+		_, err := tx.ExecContext(ctx, `INSERT INTO service_wake_attempt (service_spiffe_id,sandbox_uid,wake_generation,attempted_at) VALUES ($1,$2,$3,$4)`, serviceID, sandboxUID, generation, now)
 		return err
 	})
 	return retryAfter, err

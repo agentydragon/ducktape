@@ -148,6 +148,98 @@ func TestSharedListenerRequiresSVIDTLSAndBothBearerAudiences(t *testing.T) {
 	}
 }
 
+func TestServiceCallerSettingsRequireSPIFFEListener(t *testing.T) {
+	withoutSPIFFE := strings.Replace(requiredFile, "    - {mode: spiffe, ca_file: /tmp/workload-ca}\n", "", 1)
+	for name, settings := range map[string]string{
+		"runtime proxy reader":            "runtime_proxy_readers: [\"spiffe://agentplane/actions\"]\n",
+		"runtime proxy session caller":    "runtime_proxy_session_callers: [\"spiffe://agentplane/sessions\"]\n",
+		"runtime proxy controller caller": "runtime_proxy_controller_callers: [\"spiffe://agentplane/sandbox-controller\"]\n",
+		"executor caller":                 "executor_service_callers: [\"spiffe://agentplane/actions\"]\n",
+		"dispatcher caller":               "dispatcher_service_callers: [\"spiffe://agentplane/actions\"]\n",
+		"environment reader":              "environment_service_readers: [\"spiffe://agentplane/actions\"]\n",
+		"environment manager":             "environment_service_managers: [\"spiffe://agentplane/actions\"]\n",
+		"environment launcher":            "environment_service_launchers: [\"spiffe://agentplane/actions\"]\n",
+		"environment operator":            "environment_service_operators: [\"spiffe://agentplane/actions\"]\n",
+		"wake caller":                     "wake_service_callers: [\"spiffe://agentplane/actions\"]\n",
+		"Dispatcher delegation": `dispatcher_service_delegation:
+  actors: [{spiffe_id: "spiffe://agentplane/actions"}]
+  methods: [/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput]
+`,
+		"EnvironmentService delegation": `environment_service_delegation:
+  actors: [{spiffe_id: "spiffe://agentplane/actions"}]
+  methods: [/agentplane.environments.v1.EnvironmentService/ListEnvironments]
+`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			settings := configtest.WriteSettings(t, withoutSPIFFE+settings)
+			_, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+settings))
+			if err == nil || !strings.Contains(err.Error(), "service caller settings require rpc.auth to include spiffe") {
+				t.Fatalf("loadConfig error = %v, want missing-SPIFFE service-caller error", err)
+			}
+		})
+	}
+}
+
+func TestDispatcherServiceDelegationIsScopedToServiceMethodsAndActionActors(t *testing.T) {
+	base := `dispatcher_service_delegation:
+  actors: [{spiffe_id: "spiffe://agentplane/actions"}]
+  methods: [/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput]
+`
+	path := configtest.WriteSettings(t, requiredFile+base)
+	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.DispatcherServiceDelegation == nil || len(c.DispatcherServiceDelegation.Actors) != 1 ||
+		c.DispatcherServiceDelegation.Actors[0].SPIFFEID != peertls.ActionsURI ||
+		!slices.Equal(c.DispatcherServiceDelegation.Methods, []string{"/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput"}) {
+		t.Fatalf("Dispatcher service delegation = %+v", c.DispatcherServiceDelegation)
+	}
+
+	for name, settings := range map[string]string{
+		"EnvironmentService method": strings.Replace(base, "/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput", "/agentplane.environments.v1.EnvironmentService/ListEnvironments", 1),
+		"unknown method":            strings.Replace(base, "/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput", "/agentplane.runner_gateway.dispatcher.SessionDispatcher/NotAnRPC", 1),
+		"Connection provenance":     strings.Replace(base, `spiffe_id: "spiffe://agentplane/actions"`, `spiffe_id: "spiffe://agentplane/actions", connection_provenance: true`, 1),
+		"Identity URI actor":        strings.Replace(base, "spiffe://agentplane/actions", "spiffe://agentplane/test/sandbox/credential-id", 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := configtest.WriteSettings(t, requiredFile+settings)
+			if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path)); err == nil {
+				t.Fatal("invalid Dispatcher service delegation was accepted")
+			}
+		})
+	}
+}
+
+func TestEnvironmentServiceDelegationIsReadOnlyAndDoesNotAdmitConnectionProvenance(t *testing.T) {
+	base := `environment_service_delegation:
+  actors: [{spiffe_id: "spiffe://agentplane/actions"}]
+  methods: [/agentplane.environments.v1.EnvironmentService/ListEnvironments]
+`
+	path := configtest.WriteSettings(t, requiredFile+base)
+	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.EnvironmentServiceDelegation == nil || len(c.EnvironmentServiceDelegation.Actors) != 1 ||
+		c.EnvironmentServiceDelegation.Actors[0].SPIFFEID != peertls.ActionsURI {
+		t.Fatalf("EnvironmentService service delegation = %+v", c.EnvironmentServiceDelegation)
+	}
+
+	for name, settings := range map[string]string{
+		"mutation method":       strings.Replace(base, "/agentplane.environments.v1.EnvironmentService/ListEnvironments", "/agentplane.environments.v1.EnvironmentService/CreateEnvironment", 1),
+		"Connection provenance": strings.Replace(base, `spiffe_id: "spiffe://agentplane/actions"`, `spiffe_id: "spiffe://agentplane/actions", connection_provenance: true`, 1),
+		"Identity URI actor":    strings.Replace(base, "spiffe://agentplane/actions", "spiffe://agentplane/test/sandbox/credential-id", 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := configtest.WriteSettings(t, requiredFile+settings)
+			if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path)); err == nil {
+				t.Fatal("invalid EnvironmentService delegation was accepted")
+			}
+		})
+	}
+}
+
 func TestOperatorCallersMustAlsoBeAuthenticatedDispatcherCallers(t *testing.T) {
 	path := configtest.WriteSettings(t, requiredFile+"operator_callers: [agentplane/unknown]\n")
 	if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path)); err == nil {

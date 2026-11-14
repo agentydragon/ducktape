@@ -62,8 +62,8 @@ are separate current facts. Explicit-resume eligibility includes a denial reason
 against the caller's live UID and its explicit Identity rule or configured direct operator grant;
 it does not depend on `wakeOnSend`. Automatic Identity wake has its own assessment
 and uses the shared lifecycle manager under the `wakeOnSend` and existing
-`resumePolicy.allowOwnServiceAccount` opt-in. Configured `wake_callers` remains an automatic-only
-ServiceAccount broker grant.
+`resumePolicy.allowOwnServiceAccount` opt-in. Configured `wake_callers` and `wake_service_callers`
+remain automatic-only broker grants; service wake budgets are keyed by the caller's exact SPIFFE ID.
 
 Call `EnvironmentService.ResumeEnvironment` explicitly, then observe the same target again.
 `REQUESTED` confirms acceptance of desired running state, not readiness; no Session or input is
@@ -97,3 +97,12 @@ omit the execution ServiceAccount and automatic-wake eligibility. They expose re
 wake generation and a token only while an explicit rule authorizes resume. A delegated Action's component reader grant is never inherited by the
 effective Identity.
 An idle stream stays open while its credential remains valid and closes when revalidation fails.
+
+Direct service SVIDs have independent, exact-SPIFFE-ID grants through
+`environment_service_readers`, `environment_service_managers`,
+`environment_service_launchers`, and `environment_service_operators`. Service operators may
+explicitly resume, including a requested stop; delegated callers never inherit those roles.
+`environment_service_delegation` admits a service actor only for configured read methods,
+using the live effective Identity. `wake_service_callers` grants automatic broker wake only,
+with budgets keyed by exact service SPIFFE ID. Create receipts retain the typed service actor
+separately from the Action origin.

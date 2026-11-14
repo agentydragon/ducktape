@@ -468,7 +468,7 @@ func testRunnerObserver(t *testing.T, mode peertls.SecurityMode) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	publicServer := grpc.NewServer(g.Methods().ServerOptions(0)...)
+	publicServer := grpc.NewServer(gatewayMethods(t, g).ServerOptions(0)...)
 	g.RegisterExecutor(publicServer)
 	go func() { _ = publicServer.Serve(publicListener) }()
 	t.Cleanup(publicServer.Stop)

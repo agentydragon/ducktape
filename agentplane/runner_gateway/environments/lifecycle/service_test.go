@@ -878,6 +878,30 @@ func TestAutomaticWakeSharesPolicyBudgetAndReportsRetryFacts(t *testing.T) {
 	})
 }
 
+func TestConfiguredServiceWakeUsesItsSPIFFEIDBudget(t *testing.T) {
+	serviceID := "spiffe://agentplane/notifications"
+	objects := testObjects(t, suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 7), executionUID)
+	budget := &testWakeBudget{}
+	manager, err := lifecycle.NewManager(lifecycle.Options{
+		Namespace: testNamespace, Objects: objects, WakeBudget: budget, WakeServiceCallers: []string{serviceID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := &lifecycle.Target{Namespace: testNamespace, Name: testSandbox, Uid: testSandboxUID}
+	assessment, err := manager.RequestWake(t.Context(), target, lifecycle.ServiceWakeCaller{SPIFFEID: serviceID})
+	if err != nil || assessment.GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_REQUESTED {
+		t.Fatalf("configured service RequestWake = %+v, %v", assessment, err)
+	}
+	if len(budget.calls) != 1 || budget.calls[0].caller != (lifecycle.WakeBudgetKey{ServiceSPIFFEID: serviceID}) {
+		t.Fatalf("service wake budget keys = %+v, want exact SPIFFE caller", budget.calls)
+	}
+	assessment, err = manager.RequestWake(t.Context(), target, lifecycle.ServiceWakeCaller{SPIFFEID: "spiffe://agentplane/actions"})
+	if err != nil || assessment.GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_DENIED || len(budget.calls) != 1 {
+		t.Fatalf("unlisted service wake = %+v, %v, budget calls=%+v", assessment, err, budget.calls)
+	}
+}
+
 func TestAutomaticWakeBrokerDoesNotOverrideRequestedStop(t *testing.T) {
 	caller := &lifecycle.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: testNamespace, Name: "notifications"}, Uid: "notifications-uid"}
 	sandbox := suspendedSandbox(&sandboxapi.ResumePolicy{}, false, sandboxapi.SuspendedByRequested, 1)

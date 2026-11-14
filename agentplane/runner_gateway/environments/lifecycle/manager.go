@@ -41,13 +41,15 @@ var (
 // honored for direct, Pod-bound admissions. EnvironmentRules and PolicyReady provide Identity
 // explicit-resume authority; either being absent fails closed for Identity callers.
 type Options struct {
-	Namespace        string
-	Objects          client.Client
-	WakeBudget       WakeBudget
-	WakeCallers      []auth.Account
-	OperatorCallers  []auth.Account
-	EnvironmentRules *reader.Index[environmentaccess.Rule]
-	PolicyReady      func() error
+	Namespace              string
+	Objects                client.Client
+	WakeBudget             WakeBudget
+	WakeCallers            []auth.Account
+	WakeServiceCallers     []string
+	OperatorServiceCallers []string
+	OperatorCallers        []auth.Account
+	EnvironmentRules       *reader.Index[environmentaccess.Rule]
+	PolicyReady            func() error
 }
 
 // Manager owns permission checks and optimistic Sandbox desired-state changes for explicit and
@@ -60,6 +62,8 @@ type Manager struct {
 	sandboxes        *sandboxreader.Reader
 	wakeBudget       WakeBudget
 	wakeCallers      sets.Set[auth.Account]
+	wakeServices     sets.Set[string]
+	operatorServices sets.Set[string]
 	operatorCallers  sets.Set[auth.Account]
 	environmentRules *reader.Index[environmentaccess.Rule]
 	policyReady      func() error
@@ -69,6 +73,12 @@ func NewManager(options Options) (*Manager, error) {
 	if options.Namespace == "" || options.Objects == nil || options.WakeBudget == nil {
 		return nil, errors.New("Sandbox namespace, uncached Kubernetes client, and shared wake budget are required")
 	}
+	if err := auth.ValidateServiceCallers(options.WakeServiceCallers); err != nil {
+		return nil, fmt.Errorf("wake service callers: %w", err)
+	}
+	if err := auth.ValidateServiceCallers(options.OperatorServiceCallers); err != nil {
+		return nil, fmt.Errorf("operator service callers: %w", err)
+	}
 	sandboxes, err := sandboxreader.New(options.Namespace, options.Objects)
 	if err != nil {
 		return nil, err
@@ -77,6 +87,7 @@ func NewManager(options Options) (*Manager, error) {
 		namespace: options.Namespace, objects: options.Objects, sandboxes: sandboxes, wakeBudget: options.WakeBudget,
 		wakeCallers: sets.New(options.WakeCallers...), operatorCallers: sets.New(options.OperatorCallers...),
 		environmentRules: options.EnvironmentRules, policyReady: options.PolicyReady,
+		wakeServices: sets.New(options.WakeServiceCallers...), operatorServices: sets.New(options.OperatorServiceCallers...),
 	}, nil
 }
 
@@ -312,6 +323,11 @@ func (s *Manager) automaticWakeAssessment(ctx context.Context, view *sandboxapi.
 		return s.accountWakeAssessment(ctx, view, caller.Account)
 	case IdentityWakeCaller:
 		return s.identityWakeAssessment(ctx, view, caller.Identity)
+	case ServiceWakeCaller:
+		if !s.wakeServices.Has(caller.SPIFFEID) {
+			return assessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_DENIED, environmentlifecyclepb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED, generation), false
+		}
+		return assessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_ELIGIBLE, environmentlifecyclepb.WakeReason_WAKE_REASON_ALLOWED_WAKE_BROKER, generation), true
 	default:
 		panic(fmt.Sprintf("unknown wake caller %T", caller))
 	}
@@ -383,6 +399,8 @@ func (s *Manager) budgetKey(caller WakeCaller) WakeBudgetKey {
 		return WakeBudgetKey{Namespace: account.GetNamespace(), Name: account.GetName(), UID: caller.Account.GetUid()}
 	case IdentityWakeCaller:
 		return WakeBudgetKey{Namespace: s.namespace, Name: caller.Identity.GetName(), UID: caller.Identity.GetUid()}
+	case ServiceWakeCaller:
+		return WakeBudgetKey{ServiceSPIFFEID: caller.SPIFFEID}
 	default:
 		panic(fmt.Sprintf("unknown wake caller %T", caller))
 	}
@@ -407,6 +425,11 @@ func (s *Manager) eligibilityFor(ctx context.Context, view *sandboxapi.Sandbox, 
 		return denied(environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_CALLER_NOT_EXECUTION_ACCOUNT), nil
 	case IdentityWakeCaller:
 		return s.identityEligibility(ctx, view, caller.Identity)
+	case ServiceWakeCaller:
+		if operator {
+			return allowed(environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_ALLOWED_TRUSTED_OPERATOR), nil
+		}
+		return denied(environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_CALLER_NOT_EXECUTION_ACCOUNT), nil
 	default:
 		return nil, errInvalidCaller
 	}
@@ -493,18 +516,33 @@ func requestedStop(view *sandboxapi.Sandbox) bool {
 	return !view.Spec.Running || (view.Status.SuspendedBy != nil && *view.Status.SuspendedBy == sandboxapi.SuspendedByRequested)
 }
 
-// isWakeBroker reports whether caller is a configured automatic-wake broker, which only a
-// ServiceAccount can be.
+// isWakeBroker reports whether caller is a configured automatic-wake broker.
 func (s *Manager) isWakeBroker(caller WakeCaller) bool {
-	accountCaller, ok := caller.(AccountWakeCaller)
-	if !ok {
+	switch caller := caller.(type) {
+	case AccountWakeCaller:
+		account := caller.Account.GetAccount()
+		return account != nil && s.wakeCallers.Has(auth.Account{Namespace: account.GetNamespace(), Name: account.GetName()})
+	case ServiceWakeCaller:
+		return s.wakeServices.Has(caller.SPIFFEID)
+	default:
 		return false
 	}
-	account := accountCaller.Account.GetAccount()
-	if account == nil {
+}
+
+func (s *Manager) explicitOperator(ctx context.Context, caller WakeCaller) bool {
+	switch caller := caller.(type) {
+	case AccountWakeCaller:
+		return s.directOperator(ctx, caller.Account)
+	case ServiceWakeCaller:
+		admission, err := auth.Admitted(ctx)
+		if err != nil {
+			return false
+		}
+		service, ok := admission.(auth.ServiceAdmission)
+		return ok && service.Caller.SPIFFEID == caller.SPIFFEID && s.operatorServices.Has(caller.SPIFFEID)
+	default:
 		return false
 	}
-	return s.wakeCallers.Has(auth.Account{Namespace: account.GetNamespace(), Name: account.GetName()})
 }
 
 func (s *Manager) directOperator(ctx context.Context, caller *ServiceAccountIdentity) bool {
@@ -532,6 +570,12 @@ func (s *Manager) admittedResumeCaller(ctx context.Context) (WakeCaller, bool, e
 			return nil, false, status.Error(codes.Unauthenticated, errInvalidCaller.Error())
 		}
 		return AccountWakeCaller{Account: caller.Caller}, s.directOperator(ctx, caller.Caller), nil
+	case auth.ServiceAdmission:
+		if err := auth.ValidateServiceCallers([]string{caller.Caller.SPIFFEID}); err != nil {
+			return nil, false, status.Error(codes.Unauthenticated, errInvalidCaller.Error())
+		}
+		wakeCaller := ServiceWakeCaller{SPIFFEID: caller.Caller.SPIFFEID}
+		return wakeCaller, s.explicitOperator(ctx, wakeCaller), nil
 	case auth.IdentityAdmission:
 		identity := &identitypb.Identity{Name: caller.Caller.Identity.Name, Uid: caller.Caller.Identity.UID}
 		if !validIdentity(identity) {
@@ -642,6 +686,8 @@ func validWakeCaller(caller WakeCaller) bool {
 		return validServiceAccount(caller.Account)
 	case IdentityWakeCaller:
 		return caller.Identity.GetName() != "" && caller.Identity.GetUid() != ""
+	case ServiceWakeCaller:
+		return auth.ValidateServiceCallers([]string{caller.SPIFFEID}) == nil
 	default:
 		return false
 	}

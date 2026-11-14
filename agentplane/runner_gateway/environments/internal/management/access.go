@@ -14,6 +14,7 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/internal/view"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -37,7 +38,14 @@ type Access struct {
 	namespace string
 	objects   client.Client
 	reader    *sandboxreader.Reader
-	caller    *identitypb.ServiceAccount
+	actor     Actor
+}
+
+// Actor identifies the direct principal whose idempotent creation receipt is recorded. Exactly
+// one ServiceAccount or service SPIFFE ID is present; neither is converted into the other.
+type Actor struct {
+	ServiceAccount  *identitypb.ServiceAccount
+	ServiceSPIFFEID string
 }
 
 // New creates access over one Sandbox namespace and caller identity.
@@ -46,16 +54,31 @@ func New(
 	objects client.Client,
 	caller *identitypb.ServiceAccount,
 ) (*Access, error) {
-	if namespace == "" || objects == nil || caller == nil || caller.Namespace == "" || caller.Name == "" {
-		return nil, errors.New("Sandbox namespace, Kubernetes client, and caller ServiceAccount are required")
+	return NewWithActor(namespace, objects, Actor{ServiceAccount: caller})
+}
+
+// NewWithActor creates access for a directly admitted ServiceAccount or service principal.
+func NewWithActor(namespace string, objects client.Client, actor Actor) (*Access, error) {
+	validAccount := actor.ServiceAccount != nil && actor.ServiceAccount.Namespace != "" && actor.ServiceAccount.Name != ""
+	validService := actor.ServiceSPIFFEID != ""
+	if namespace == "" || objects == nil || validAccount == validService {
+		return nil, errors.New("Sandbox namespace, Kubernetes client, and exactly one complete direct actor are required")
+	}
+	if validService {
+		if err := auth.ValidateServiceCallers([]string{actor.ServiceSPIFFEID}); err != nil {
+			return nil, err
+		}
 	}
 	reader, err := sandboxreader.New(namespace, objects)
 	if err != nil {
 		return nil, err
 	}
+	if actor.ServiceAccount != nil {
+		actor.ServiceAccount = &identitypb.ServiceAccount{Namespace: actor.ServiceAccount.Namespace, Name: actor.ServiceAccount.Name}
+	}
 	return &Access{
 		namespace: namespace, objects: objects, reader: reader,
-		caller: &identitypb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name},
+		actor: actor,
 	}, nil
 }
 
@@ -79,7 +102,7 @@ func (a *Access) Create(ctx context.Context, request *environmentpb.CreateEnviro
 	if err := validateCreate(request); err != nil {
 		return nil, err
 	}
-	intent, err := encodeCreateIntent(request, a.caller)
+	intent, err := encodeCreateIntent(request, a.actor)
 	if err != nil {
 		return nil, &InvalidSandboxError{Reason: "create request cannot be recorded"}
 	}
@@ -296,7 +319,7 @@ func (a *Access) retry(ctx context.Context, request *environmentpb.CreateEnviron
 		}
 		return nil, err
 	}
-	if resource.DeletionTimestamp != nil || !sameIntent(resource.Annotations[sandboxapi.CreateIntentAnnotation], request, a.caller) {
+	if resource.DeletionTimestamp != nil || !sameIntent(resource.Annotations[sandboxapi.CreateIntentAnnotation], request, a.actor) {
 		return nil, &SandboxConflictError{Name: name}
 	}
 	return resource, nil
@@ -423,8 +446,16 @@ func isAlphaNumeric(value byte) bool {
 // createIntent is the receipt a create records on its Sandbox: the caller and the request it made.
 // The encoding needs only to be decodable; retries are matched by sameIntent, never by its bytes.
 type createIntent struct {
-	Caller  intentCaller    `json:"caller"`
+	Actor   *intentActor    `json:"actor,omitempty"`
+	Caller  intentCaller    `json:"caller,omitempty"`
 	Request json.RawMessage `json:"request"`
+}
+
+type intentActor struct {
+	Kind            string `json:"kind"`
+	Namespace       string `json:"namespace,omitempty"`
+	Name            string `json:"name,omitempty"`
+	ServiceSPIFFEID string `json:"service_spiffe_id,omitempty"`
 }
 
 type intentCaller struct {
@@ -432,16 +463,19 @@ type intentCaller struct {
 	Name      string `json:"name"`
 }
 
-func encodeCreateIntent(request *environmentpb.CreateEnvironmentRequest, caller *identitypb.ServiceAccount) (string, error) {
+func encodeCreateIntent(request *environmentpb.CreateEnvironmentRequest, actor Actor) (string, error) {
 	// Proto field names, as receipts have always spelled them and readers of the annotation expect.
 	requestJSON, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(request)
 	if err != nil {
 		return "", err
 	}
-	encoded, err := json.Marshal(createIntent{
-		Caller:  intentCaller{Namespace: caller.GetNamespace(), Name: caller.GetName()},
-		Request: requestJSON,
-	})
+	var receiptActor intentActor
+	if actor.ServiceAccount != nil {
+		receiptActor = intentActor{Kind: "service_account", Namespace: actor.ServiceAccount.GetNamespace(), Name: actor.ServiceAccount.GetName()}
+	} else {
+		receiptActor = intentActor{Kind: "service", ServiceSPIFFEID: actor.ServiceSPIFFEID}
+	}
+	encoded, err := json.Marshal(createIntent{Actor: &receiptActor, Request: requestJSON})
 	if err != nil {
 		return "", err
 	}
@@ -450,12 +484,22 @@ func encodeCreateIntent(request *environmentpb.CreateEnvironmentRequest, caller 
 
 // sameIntent reports whether recorded is a create by caller of request. A receipt that does not decode is
 // someone else's.
-func sameIntent(recorded string, request *environmentpb.CreateEnvironmentRequest, caller *identitypb.ServiceAccount) bool {
+func sameIntent(recorded string, request *environmentpb.CreateEnvironmentRequest, actor Actor) bool {
 	var intent createIntent
 	if err := json.Unmarshal([]byte(recorded), &intent); err != nil {
 		return false
 	}
-	if intent.Caller.Namespace != caller.GetNamespace() || intent.Caller.Name != caller.GetName() {
+	if intent.Actor == nil {
+		// Receipts created before typed actors stored the authenticated ServiceAccount in caller.
+		// Keep those retries recoverable while refusing to treat them as service actors.
+		if actor.ServiceAccount == nil || intent.Caller.Namespace != actor.ServiceAccount.GetNamespace() || intent.Caller.Name != actor.ServiceAccount.GetName() {
+			return false
+		}
+	} else if actor.ServiceAccount != nil {
+		if intent.Actor.Kind != "service_account" || intent.Actor.Namespace != actor.ServiceAccount.GetNamespace() || intent.Actor.Name != actor.ServiceAccount.GetName() {
+			return false
+		}
+	} else if intent.Actor.Kind != "service" || intent.Actor.ServiceSPIFFEID != actor.ServiceSPIFFEID {
 		return false
 	}
 	var recordedRequest environmentpb.CreateEnvironmentRequest

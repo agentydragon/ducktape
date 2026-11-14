@@ -17,44 +17,89 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
-// manager requires an explicit direct, Pod-bound grant. In particular, delegation and read access
-// do not confer write authority. Create records the authenticated account as the original caller.
+// manager requires an explicit direct, Pod-bound workload grant or a separately configured direct
+// service role. Delegation and read access do not confer write authority.
 func (s *Service) manager(ctx context.Context) (*management.Access, error) {
 	return s.managementAccess(ctx, nil)
 }
 
 func (s *Service) managementAccess(ctx context.Context, origin *environmentpb.EnvironmentLaunchOrigin) (*management.Access, error) {
-	identity, err := caller(ctx)
-	if err != nil {
-		return nil, err
-	}
 	admission, err := auth.Admitted(ctx)
 	if err != nil {
 		return nil, err
 	}
-	direct, ok := admission.(auth.DirectAdmission)
-	if !ok || direct.Pod == nil || !direct.Pod.IsPodBound() {
-		return nil, status.Error(codes.PermissionDenied, "environment management requires a direct Pod-bound caller")
+	switch admitted := admission.(type) {
+	case auth.ServiceAdmission:
+		if origin == nil {
+			if !s.serviceManagers.Has(admitted.Caller.SPIFFEID) {
+				return nil, status.Error(codes.PermissionDenied, "service caller cannot manage environments")
+			}
+		} else {
+			if !s.serviceLaunchers.Has(admitted.Caller.SPIFFEID) {
+				return nil, status.Error(codes.PermissionDenied, "service caller cannot launch environments")
+			}
+			if err := validateLaunchOrigin(origin); err != nil {
+				return nil, err
+			}
+		}
+		return management.NewWithActor(s.namespace, s.objects, management.Actor{ServiceSPIFFEID: admitted.Caller.SPIFFEID})
+	case auth.DirectAdmission:
+		if admitted.Pod == nil || !admitted.Pod.IsPodBound() {
+			return nil, status.Error(codes.PermissionDenied, "environment management requires a direct Pod-bound caller")
+		}
+		identity, err := caller(ctx)
+		if err != nil {
+			return nil, err
+		}
+		account := serviceAccountReference(identity)
+		if origin == nil {
+			if !s.managers.Has(account) {
+				return nil, status.Error(codes.PermissionDenied, "caller cannot manage environments")
+			}
+		} else {
+			if !s.launchers.Has(account) {
+				return nil, status.Error(codes.PermissionDenied, "caller cannot launch environments on behalf of an Action caller")
+			}
+			if err := validateLaunchOrigin(origin); err != nil {
+				return nil, err
+			}
+		}
+		return management.New(s.namespace, s.objects, identitypbAccount(account))
+	default:
+		return nil, status.Error(codes.PermissionDenied, "environment management requires a direct caller")
 	}
-	account := serviceAccountReference(identity)
-	if origin == nil {
-		if _, ok := s.managers[account]; !ok {
-			return nil, status.Error(codes.PermissionDenied, "caller cannot manage environments")
-		}
-	} else {
-		if _, ok := s.launchers[account]; !ok {
-			return nil, status.Error(codes.PermissionDenied, "caller cannot launch environments on behalf of an Action caller")
-		}
-		account, identity := origin.GetCaller(), origin.GetCallerIdentity()
-		validAccount := account != nil && account.GetNamespace() != "" && account.GetName() != ""
-		validIdentity := identity != nil && identity.GetName() != "" && identity.GetUid() != ""
-		if origin.GetActionGroup() == "" || !(validAccount && identity == nil || validIdentity && account == nil) {
-			return nil, status.Error(codes.InvalidArgument, "launch origin requires exactly one complete caller and Action group")
-		}
+}
+
+func identitypbAccount(account auth.Account) *identitypb.ServiceAccount {
+	return &identitypb.ServiceAccount{Namespace: account.Namespace, Name: account.Name}
+}
+
+func validateLaunchOrigin(origin *environmentpb.EnvironmentLaunchOrigin) error {
+	account, identity := origin.GetCaller(), origin.GetCallerIdentity()
+	validAccount := account != nil && account.GetNamespace() != "" && account.GetName() != ""
+	validIdentity := identity != nil && identity.GetName() != "" && identity.GetUid() != ""
+	if origin.GetActionGroup() == "" || !(validAccount && identity == nil || validIdentity && account == nil) {
+		return status.Error(codes.InvalidArgument, "launch origin requires exactly one complete caller and Action group")
 	}
-	return management.New(s.namespace, s.objects, &identitypb.ServiceAccount{
-		Namespace: account.Namespace, Name: account.Name,
-	})
+	return nil
+}
+
+func (s *Service) templateAccess(ctx context.Context) (*management.Access, error) {
+	admission, err := auth.Admitted(ctx)
+	if err != nil {
+		return nil, err
+	}
+	switch admitted := admission.(type) {
+	case auth.ServiceAdmission:
+		if !s.serviceLaunchers.Has(admitted.Caller.SPIFFEID) && !s.serviceManagers.Has(admitted.Caller.SPIFFEID) {
+			return nil, status.Error(codes.PermissionDenied, "service caller cannot list environment templates")
+		}
+		return management.NewWithActor(s.namespace, s.objects, management.Actor{ServiceSPIFFEID: admitted.Caller.SPIFFEID})
+	case auth.DirectAdmission:
+		return s.managementAccess(ctx, nil)
+	default:
+		return nil, status.Error(codes.PermissionDenied, "caller cannot list environment templates")
+	}
 }
 
 func (s *Service) mutationTarget(target *identitypb.EnvironmentTarget) (string, string, error) {
@@ -68,7 +113,7 @@ func (s *Service) mutationTarget(target *identitypb.EnvironmentTarget) (string, 
 }
 
 func (s *Service) ListEnvironmentTemplates(ctx context.Context, _ *emptypb.Empty) (*environmentpb.ListEnvironmentTemplatesResponse, error) {
-	access, err := s.manager(ctx)
+	access, err := s.templateAccess(ctx)
 	if err != nil {
 		return nil, err
 	}

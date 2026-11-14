@@ -55,7 +55,8 @@ token returns `STATE_CHANGED` with current eligibility and generation rather tha
 later suspension. It bounds conflict retries. A patch error may have uncertain effect, so the manager
 returns a typed `OUTCOME_UNKNOWN` status and does not replay the patch. The shared wake budget is
 reserved before patching and is keyed by effective caller namespace/name/UID (an Identity by the
-manager's namespace, its name and UID), target Sandbox UID and next generation.
+manager's namespace, its name and UID, or a service by exact SPIFFE ID), target Sandbox UID and next
+generation.
 
 `REQUESTED` means the desired running state and next wake generation were accepted. It does not mean
 the environment is ready. `ALREADY_RUNNING` means no wake mutation was needed. A current-generation
@@ -85,3 +86,12 @@ wake. Only `EnvironmentService` is registered as a public environment API. Its l
 remain read-only; explicit resume uses the policy and mutation contract above.
 The public service exposes no suspend operation. Any future public suspend API requires a separately
 reviewed authority and retry contract.
+
+Direct service SVIDs have independent, exact-SPIFFE-ID grants through
+`environment_service_readers`, `environment_service_managers`,
+`environment_service_launchers`, and `environment_service_operators`. Service operators may
+explicitly resume, including a requested stop; delegated callers never inherit those roles.
+`environment_service_delegation` admits a service actor only for configured read methods,
+using the live effective Identity. `wake_service_callers` grants automatic broker wake only,
+with budgets keyed by exact service SPIFFE ID. Create receipts retain the typed service actor
+separately from the Action origin.

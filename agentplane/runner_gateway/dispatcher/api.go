@@ -61,11 +61,12 @@ type Service struct {
 	Store *Store
 	// DispatcherCallers retain the explicit Pod-bound platform-component path. A ServiceAccount
 	// remains an authenticated actor, but never owns a Session by account identity.
-	DispatcherCallers sets.Set[auth.Account]
-	Sandboxes         SandboxReader
-	Hub               *WatchHub
-	WatchLease        time.Duration
-	CentralTarget     *CentralTarget
+	DispatcherCallers  sets.Set[auth.Account]
+	DispatcherServices sets.Set[string]
+	Sandboxes          SandboxReader
+	Hub                *WatchHub
+	WatchLease         time.Duration
+	CentralTarget      *CentralTarget
 }
 
 // maxFilterCommands bounds DispatchFilter.command_ids, the size of a Session's queue.
@@ -174,6 +175,8 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 
 func terminalVisibleTo(event terminalnotice.Event, caller Caller) bool {
 	switch c := caller.(type) {
+	case ServiceCaller:
+		return true
 	case ServiceAccountCaller:
 		return c.Privileged
 	case IdentityCaller:
@@ -246,6 +249,17 @@ func (s *Service) caller(ctx context.Context) (Caller, error) {
 		return nil, err
 	}
 	switch identity := admitted.(type) {
+	case auth.ServiceAdmission:
+		if !s.DispatcherServices.Has(identity.Caller.SPIFFEID) {
+			return nil, status.Error(codes.PermissionDenied, "service is not a Dispatcher caller")
+		}
+		return ServiceCaller{SPIFFEID: identity.Caller.SPIFFEID}, nil
+	case auth.DelegatedServiceIdentityAdmission:
+		caller := IdentityCaller{Identity: &identitypb.Identity{Name: identity.EffectiveCaller.Name, Uid: identity.EffectiveCaller.UID}, Proof: IdentityServiceDelegation{ActorSPIFFEID: identity.Actor.SPIFFEID, Action: ActionCorrelation{RequestID: identity.Provenance.GetAction().GetRequestId(), ExecutionID: identity.Provenance.GetAction().GetExecutionId()}}}
+		if err := validateCaller(caller, nil); err != nil {
+			return nil, status.Error(codes.Unauthenticated, "delegated service attribution is incomplete")
+		}
+		return caller, nil
 	case auth.IdentityAdmission:
 		return identityCaller(identity.Caller)
 	case auth.DelegatedIdentityAdmission:
@@ -335,6 +349,8 @@ func (s *Service) requireLiveExecution(ctx context.Context, session *Session, sa
 		return status.Error(codes.PermissionDenied, "Session target does not match")
 	}
 	switch c := caller.(type) {
+	case ServiceCaller:
+		return nil
 	case ServiceAccountCaller:
 		if c.Privileged {
 			return nil

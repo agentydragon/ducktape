@@ -326,6 +326,24 @@ Workload SVID and verifies `HISTORY_SERVICE_URI`; the central proxy carries that
 opaquely. History authorizes the read against the exact Identity name and UID in the SVID. This path
 uses no History bearer credential or projected audience token and adds no `reader_accounts` grant.
 
+### Service admission in the current Gateway
+
+The co-hosted receivers can additionally admit exact service SVIDs when configured.
+Their reader, manager, launcher, operator, Executor and proxy grants remain separate.
+The Sessions, Environments and Runtime-proxy roles can move with the planned binary split.
+No caller or production listener configuration switches in this stage.
+
+```mermaid
+flowchart LR
+    app[App service] -->|service mTLS: independent grants| environments[EnvironmentService]
+    actions[Action service] -->|service mTLS + typed Identity envelope| dispatcher[Dispatcher / Sessions role]
+    actions -->|service mTLS + typed launch origin| environments
+    sessions[Sessions service role] -->|service mTLS: session methods| proxy[Runtime proxy role]
+    environments -->|service mTLS: controller methods| proxy
+    sampler[Central sampler service] -->|service mTLS: Executor grant| executor[Executor]
+    proxy -->|existing Gateway client SVID until caller cutover| runtime[Native Runtime]
+```
+
 ## Central code-mode sampling (opt in)
 
 ```mermaid

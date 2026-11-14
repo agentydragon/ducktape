@@ -45,6 +45,9 @@ type Service struct {
 	readers                sets.Set[auth.Account]
 	managers               sets.Set[auth.Account]
 	launchers              sets.Set[auth.Account]
+	serviceReaders         sets.Set[string]
+	serviceManagers        sets.Set[string]
+	serviceLaunchers       sets.Set[string]
 	identityChanges        IdentityChangeGuard
 	collectionAuthInterval time.Duration
 }
@@ -68,6 +71,9 @@ func New(
 		namespace: namespace, objects: objects, sandboxes: sandboxes, runtime: runtime,
 		lifecycle: lifecycleManager, readers: readers, managers: management.Managers,
 		launchers:              management.Launchers,
+		serviceReaders:         management.ServiceReaders,
+		serviceManagers:        management.ServiceManagers,
+		serviceLaunchers:       management.ServiceLaunchers,
 		identityChanges:        management.IdentityChanges,
 		collectionAuthInterval: auth.DefaultVerdictTTL,
 	}, nil
@@ -75,9 +81,12 @@ func New(
 
 // ManagementOptions grants mutation authority independently of inventory and resume grants.
 type ManagementOptions struct {
-	Managers        sets.Set[auth.Account]
-	Launchers       sets.Set[auth.Account]
-	IdentityChanges IdentityChangeGuard
+	Managers         sets.Set[auth.Account]
+	Launchers        sets.Set[auth.Account]
+	ServiceReaders   sets.Set[string]
+	ServiceManagers  sets.Set[string]
+	ServiceLaunchers sets.Set[string]
+	IdentityChanges  IdentityChangeGuard
 }
 
 // IdentityChangeGuard serializes a Sandbox patch with Dispatcher Session admission and rejects
@@ -107,6 +116,53 @@ func Methods(resolver *auth.Resolver) auth.Methods {
 		environmentpb.EnvironmentService_SetEnvironmentIdleSuspend_FullMethodName:    rule,
 		environmentpb.EnvironmentService_SetEnvironmentIdentity_FullMethodName:       rule,
 	}
+}
+
+// WithServiceCallers adds the EnvironmentService's independent direct component roles. A service
+// allowlist only admits the certificate at the RPC boundary; handlers still check the matching
+// role before returning inventory or making a mutation.
+func WithServiceCallers(
+	methods auth.Methods,
+	readers, managers, launchers, operators []string,
+) (auth.Methods, error) {
+	var err error
+	templateCallers := append(slices.Clone(managers), launchers...)
+	templateCallers = slices.Compact(slices.Sorted(slices.Values(templateCallers)))
+	methods, err = methods.WithServiceCallers([]string{
+		environmentpb.EnvironmentService_ListEnvironments_FullMethodName,
+		environmentpb.EnvironmentService_WatchEnvironments_FullMethodName,
+		environmentpb.EnvironmentService_GetEnvironment_FullMethodName,
+		environmentpb.EnvironmentService_GetEnvironmentIdentityRecord_FullMethodName,
+		environmentpb.EnvironmentService_WatchEnvironment_FullMethodName,
+	}, readers)
+	if err != nil {
+		return nil, err
+	}
+	methods, err = methods.WithServiceCallers([]string{
+		environmentpb.EnvironmentService_SuspendEnvironment_FullMethodName,
+		environmentpb.EnvironmentService_DeleteEnvironment_FullMethodName,
+		environmentpb.EnvironmentService_SetEnvironmentWakeOnSend_FullMethodName,
+		environmentpb.EnvironmentService_SetEnvironmentIdleSuspend_FullMethodName,
+		environmentpb.EnvironmentService_SetEnvironmentIdentity_FullMethodName,
+	}, managers)
+	if err != nil {
+		return nil, err
+	}
+	methods, err = methods.WithServiceCallers([]string{
+		environmentpb.EnvironmentService_ListEnvironmentTemplates_FullMethodName,
+	}, templateCallers)
+	if err != nil {
+		return nil, err
+	}
+	methods, err = methods.WithServiceCallers([]string{
+		environmentpb.EnvironmentService_CreateEnvironment_FullMethodName,
+	}, launchers)
+	if err != nil {
+		return nil, err
+	}
+	return methods.WithServiceCallers([]string{
+		environmentpb.EnvironmentService_ResumeEnvironment_FullMethodName,
+	}, operators)
 }
 
 // ResumeEnvironment rechecks lifecycle authority and requests desired running state.
@@ -140,6 +196,7 @@ func caller(ctx context.Context) (*auth.ServiceAccountPrincipal, error) {
 // role never becomes authority for the effective Identity.
 type environmentCaller struct {
 	serviceAccount *auth.ServiceAccountPrincipal
+	service        *auth.ServicePrincipal
 	identity       *auth.Identity
 }
 
@@ -157,6 +214,11 @@ func environmentSubject(ctx context.Context) (environmentCaller, error) {
 	case auth.DelegatedIdentityAdmission:
 		identity := admitted.EffectiveCaller
 		return environmentCaller{identity: &identity}, nil
+	case auth.ServiceAdmission:
+		return environmentCaller{service: &admitted.Caller}, nil
+	case auth.DelegatedServiceIdentityAdmission:
+		identity := admitted.EffectiveCaller
+		return environmentCaller{identity: &identity}, nil
 	default:
 		return environmentCaller{}, status.Error(codes.Unauthenticated, "environment caller is not admitted")
 	}
@@ -166,6 +228,9 @@ func (caller environmentCaller) valid() bool {
 	if caller.serviceAccount != nil {
 		account := caller.serviceAccount.GetAccount()
 		return account != nil && account.GetNamespace() != "" && account.GetName() != "" && caller.serviceAccount.GetUid() != ""
+	}
+	if caller.service != nil {
+		return caller.service.SPIFFEID != ""
 	}
 	return caller.identity != nil && caller.identity.Name != "" && caller.identity.UID != ""
 }
@@ -185,16 +250,27 @@ func (s *Service) ownsSandbox(ctx context.Context, identity *auth.Identity, targ
 }
 
 // broadReader applies only to direct credentials; delegated actors never lend their grants to a caller.
-func (s *Service) broadReader(ctx context.Context, identity *auth.ServiceAccountPrincipal) bool {
+func (s *Service) broadReader(ctx context.Context, caller environmentCaller) bool {
 	admission, err := auth.Admitted(ctx)
 	if err != nil {
 		return false
 	}
-	if _, ok := admission.(auth.DirectAdmission); !ok {
+	switch admitted := admission.(type) {
+	case auth.DirectAdmission:
+		if caller.serviceAccount == nil || !sameAccountPrincipal(admitted.Caller, caller.serviceAccount) {
+			return false
+		}
+		return s.readers.Has(serviceAccountReference(caller.serviceAccount))
+	case auth.ServiceAdmission:
+		return caller.service != nil && admitted.Caller == *caller.service && s.serviceReaders.Has(admitted.Caller.SPIFFEID)
+	default:
 		return false
 	}
-	ok := s.readers.Has(serviceAccountReference(identity))
-	return ok
+}
+
+func sameAccountPrincipal(left, right *auth.ServiceAccountPrincipal) bool {
+	return left != nil && right != nil && left.GetUid() == right.GetUid() &&
+		serviceAccountReference(left) == serviceAccountReference(right)
 }
 
 func (s *Service) ListEnvironments(ctx context.Context, request *environmentpb.ListEnvironmentsRequest) (*environmentpb.ListEnvironmentsResponse, error) {
@@ -208,8 +284,8 @@ func (s *Service) ListEnvironments(ctx context.Context, request *environmentpb.L
 	if !identity.valid() {
 		return nil, status.Error(codes.Unauthenticated, "effective environment identity is incomplete")
 	}
-	if identity.serviceAccount != nil && s.broadReader(ctx, identity.serviceAccount) {
-		return s.listAll(ctx, request, identity.serviceAccount)
+	if s.broadReader(ctx, identity) {
+		return s.listAll(ctx, request, identity)
 	}
 	if identity.identity == nil {
 		if request.GetPageToken() != "" {
@@ -272,8 +348,7 @@ func (s *Service) listIdentityEnvironments(
 
 // listAll is used only by a direct, explicitly granted inventory reader. Its Kubernetes
 // continuation may include names only that principal is authorized to discover.
-func (s *Service) listAll(ctx context.Context, request *environmentpb.ListEnvironmentsRequest, identity *auth.ServiceAccountPrincipal) (*environmentpb.ListEnvironmentsResponse, error) {
-	caller := environmentCaller{serviceAccount: identity}
+func (s *Service) listAll(ctx context.Context, request *environmentpb.ListEnvironmentsRequest, caller environmentCaller) (*environmentpb.ListEnvironmentsResponse, error) {
 	var list api.SandboxList
 	opts := []client.ListOption{client.InNamespace(s.namespace), client.Limit(int64(request.GetLimit()))}
 	if request.GetPageToken() != "" {
@@ -364,7 +439,7 @@ func (s *Service) getEnvironment(
 		slog.ErrorContext(ctx, "Environment discovery Sandbox read failed", "error", err)
 		return nil, "", status.Error(codes.Unavailable, "Sandbox inventory is unavailable")
 	}
-	broad := identity.serviceAccount != nil && s.broadReader(ctx, identity.serviceAccount)
+	broad := s.broadReader(ctx, identity)
 	if view.Identity.Uid != target.GetUid() || (deleting(view.Resource) && !broad) {
 		return nil, "", status.Error(codes.NotFound, "environment not found")
 	}
@@ -521,7 +596,13 @@ func (s *Service) describe(
 			return nil, err
 		}
 		if !caller.isIdentity() && object.Status.OperatingMode == api.OperatingModeSuspended {
-			wake, err := s.lifecycle.AssessAutomaticWake(ctx, target, lifecycle.AccountWakeCaller{Account: caller.serviceAccount})
+			var wakeCaller lifecycle.WakeCaller
+			if caller.serviceAccount != nil {
+				wakeCaller = lifecycle.AccountWakeCaller{Account: caller.serviceAccount}
+			} else if caller.service != nil {
+				wakeCaller = lifecycle.ServiceWakeCaller{SPIFFEID: caller.service.SPIFFEID}
+			}
+			wake, err := s.lifecycle.AssessAutomaticWake(ctx, target, wakeCaller)
 			if err != nil {
 				return nil, status.Error(codes.Unavailable, "automatic wake eligibility is unavailable")
 			}

@@ -18,8 +18,8 @@ type Target = identitypb.EnvironmentTarget
 // ServiceAccountIdentity pins the effective caller to its live Kubernetes account incarnation.
 type ServiceAccountIdentity = identitypb.ServiceAccountIdentity
 
-// WakeCaller is the caller a wake is assessed for: an explicitly configured ServiceAccount broker
-// or an Identity acting for its bound Sandbox.
+// WakeCaller is the caller a wake is assessed for: an explicitly configured ServiceAccount broker,
+// a first-party service broker, or an Identity acting for its bound Sandbox.
 type WakeCaller interface{ isWakeCaller() }
 
 // AccountWakeCaller is a ServiceAccount incarnation. It can wake only through the explicit broker
@@ -30,12 +30,20 @@ type AccountWakeCaller struct{ Account *ServiceAccountIdentity }
 // it. It wakes only a Sandbox acting as it, under that Sandbox's existing resume policy opt-in.
 type IdentityWakeCaller struct{ Identity *identitypb.Identity }
 
+// ServiceWakeCaller is a verified first-party service. Its SPIFFE ID stays distinct from
+// Kubernetes ServiceAccount and Identity provenance throughout wake authorization and budgeting.
+type ServiceWakeCaller struct{ SPIFFEID string }
+
 func (AccountWakeCaller) isWakeCaller()  {}
 func (IdentityWakeCaller) isWakeCaller() {}
+func (ServiceWakeCaller) isWakeCaller()  {}
 
-// WakeBudgetKey is whose budget a wake attempt spends: the namespace, name and UID of the caller
-// incarnation. An Identity's namespace is the one the manager reads Identities in.
-type WakeBudgetKey struct{ Namespace, Name, UID string }
+// WakeBudgetKey is whose budget a wake attempt spends. ServiceAccounts and Identities use their
+// namespace, name, and UID; service callers use their exact SPIFFE ID.
+type WakeBudgetKey struct {
+	Namespace, Name, UID string
+	ServiceSPIFFEID      string
+}
 
 // WakeBudget reserves a bounded wake attempt without depending on Dispatcher storage.
 // Implementations share reservations across replicas and explicit and automatic wake paths.

@@ -99,6 +99,98 @@ def test_control_service_tls_pins_session_dispatcher_identity() -> None:
         Settings.model_validate(source)
 
 
+def test_service_settings_require_spiffe_listener_authentication() -> None:
+    source = _settings({"mode": "insecure"}).model_dump(mode="json")
+    source["rpc"]["auth"] = [source["rpc"]["auth"][1]]
+    source["dispatcher_service_callers"] = ["spiffe://agentplane/actions"]
+    with pytest.raises(ValidationError, match=r"service caller settings require rpc\.auth to include spiffe"):
+        Settings.model_validate(source)
+
+    source = _settings({"mode": "insecure"}).model_dump(mode="json")
+    source["rpc"]["auth"] = [source["rpc"]["auth"][1]]
+    source["environment_service_delegation"] = {
+        "actors": [{"spiffe_id": "spiffe://agentplane/actions"}],
+        "methods": ["/agentplane.environments.v1.EnvironmentService/ListEnvironments"],
+    }
+    with pytest.raises(ValidationError, match=r"service caller settings require rpc\.auth to include spiffe"):
+        Settings.model_validate(source)
+
+
+def test_empty_service_settings_are_omitted_from_deployment_output() -> None:
+    source = _settings({"mode": "insecure"}).model_dump(mode="json")
+    new_optional_fields = {
+        "runtime_proxy_readers",
+        "runtime_proxy_session_callers",
+        "runtime_proxy_controller_callers",
+        "executor_service_callers",
+        "dispatcher_service_delegation",
+        "dispatcher_service_callers",
+        "environment_service_readers",
+        "environment_service_managers",
+        "environment_service_launchers",
+        "environment_service_operators",
+        "environment_service_delegation",
+        "wake_service_callers",
+    }
+    assert new_optional_fields.isdisjoint(source)
+
+
+def test_dispatcher_service_delegation_is_scoped_to_dispatcher_and_action_provenance() -> None:
+    source = _settings({"mode": "insecure"}).model_dump(mode="json")
+    source["dispatcher_service_delegation"] = {
+        "actors": [{"spiffe_id": "spiffe://agentplane/actions"}],
+        "methods": ["/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput"],
+    }
+    assert Settings.model_validate(source).dispatcher_service_delegation is not None
+
+    source["dispatcher_service_delegation"]["methods"] = [
+        "/agentplane.environments.v1.EnvironmentService/ListEnvironments"
+    ]
+    with pytest.raises(ValidationError, match="dispatcher_service_delegation methods must belong to SessionDispatcher"):
+        Settings.model_validate(source)
+
+    source["dispatcher_service_delegation"]["methods"] = [
+        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput"
+    ]
+    source["dispatcher_service_delegation"]["actors"][0]["connection_provenance"] = True
+    with pytest.raises(ValidationError):
+        Settings.model_validate(source)
+
+    source["dispatcher_service_delegation"]["actors"] = [
+        {"spiffe_id": "spiffe://agentplane/test/sandbox/credential-id"}
+    ]
+    with pytest.raises(ValidationError):
+        Settings.model_validate(source)
+
+
+def test_environment_service_delegation_is_read_only_and_action_only() -> None:
+    source = _settings({"mode": "insecure"}).model_dump(mode="json")
+    source["environment_service_delegation"] = {
+        "actors": [{"spiffe_id": "spiffe://agentplane/actions"}],
+        "methods": ["/agentplane.environments.v1.EnvironmentService/ListEnvironments"],
+    }
+    assert Settings.model_validate(source).environment_service_delegation is not None
+
+    source["environment_service_delegation"]["methods"] = [
+        "/agentplane.environments.v1.EnvironmentService/CreateEnvironment"
+    ]
+    with pytest.raises(ValidationError, match="environment_service_delegation methods must be read-only"):
+        Settings.model_validate(source)
+
+    source["environment_service_delegation"]["methods"] = [
+        "/agentplane.environments.v1.EnvironmentService/ListEnvironments"
+    ]
+    source["environment_service_delegation"]["actors"][0]["connection_provenance"] = True
+    with pytest.raises(ValidationError):
+        Settings.model_validate(source)
+
+    source["environment_service_delegation"]["actors"] = [
+        {"spiffe_id": "spiffe://agentplane/test/sandbox/credential-id"}
+    ]
+    with pytest.raises(ValidationError):
+        Settings.model_validate(source)
+
+
 def test_static_settings_reject_runtime_inputs_and_legacy_namespace_authority() -> None:
     source = _settings({"mode": "insecure"}).model_dump(mode="json")
     source["dispatcher_database_url"] = "postgresql://secret.invalid/dispatcher"

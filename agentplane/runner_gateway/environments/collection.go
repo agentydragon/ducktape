@@ -46,7 +46,7 @@ func (s *Service) WatchEnvironments(_ *emptypb.Empty, stream grpc.ServerStreamin
 	if !identity.valid() {
 		return status.Error(codes.Unauthenticated, "effective environment identity is incomplete")
 	}
-	broad := identity.serviceAccount != nil && s.broadReader(ctx, identity.serviceAccount)
+	broad := s.broadReader(ctx, identity)
 	if identity.identity == nil && !broad {
 		return status.Error(codes.NotFound, "environment not found")
 	}
