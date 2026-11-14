@@ -21,4 +21,5 @@ Run JavaScript code to orchestrate/compose tool calls
 - `setTimeout(callback: () => void, delayMs?: number)`: schedules a callback to run later and returns a timeout id. Pending timeouts do not keep `exec` alive by themselves; await an explicit promise if you need to wait for one.
 - `clearTimeout(timeoutId?: number)`: cancels a timeout created by `setTimeout`.
 - `ALL_TOOLS`: metadata for the enabled nested tools as `{ name, description }` entries.
+- When Actions are configured, discover their names and full input JSON Schemas in `ALL_TOOLS`. Action calls return MCP `CallToolResult` objects: inspect `content`, `structuredContent` and `isError`. Execution failures include the typed `ExecutionError` ProtoJSON in `structuredContent.error`.
 - `yield_control()`: yields the accumulated output to the model immediately while the script keeps running.

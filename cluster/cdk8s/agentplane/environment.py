@@ -65,6 +65,7 @@ class CentralSamplerProps:
     executor_initialize_timeout_seconds: int = settings.DEFAULT_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS
     turn_timeout_seconds: int | None = None
     auto_compact_tokens: int | None = None
+    actions: settings.ActionsConfig | None = None
 
 
 @dataclass(frozen=True)

@@ -789,3 +789,28 @@ func TestCodeModeObservationBudgetMustFitWithRPCSlack(t *testing.T) {
 		}
 	}
 }
+
+func TestActionsAreOptionalAndRequireServiceMTLSWhenEnabled(t *testing.T) {
+	settings := fixtureSettings()
+	if err := settings.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	settings.Actions = &Actions{Target: "actions:8081", TLS: peertls.Config{
+		CertFile: "/run/svid/cert.pem", KeyFile: "/run/svid/key.pem", CAFile: "/run/svid/bundle.pem",
+	}}
+	if err := settings.Validate(); err != nil {
+		t.Fatalf("complete service mTLS config rejected: %v", err)
+	}
+	settings.Actions.TLS = peertls.Config{}
+	if err := settings.Validate(); err == nil {
+		t.Fatal("accepted Actions without service mTLS")
+	}
+	settings.Actions.TLS = peertls.Config{WorkloadAPISocket: "unix:///run/spire/api.sock"}
+	if err := settings.Validate(); err != nil {
+		t.Fatalf("Workload API config rejected: %v", err)
+	}
+	settings.Actions.Target = ""
+	if err := settings.Validate(); err == nil {
+		t.Fatal("accepted Actions without target")
+	}
+}

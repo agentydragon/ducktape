@@ -102,6 +102,7 @@ flowchart LR
     sampler -->|continuation, commands and ownership leases| samplerdb
     samplerdb -->|NOTIFY: central_sampler_work| sampler
     samplerdb -->|NOTIFY: central_sampler_outbox| sampler
+    sampler -.->|optional Action tools: service mTLS and Session delegation, gRPC| actions
     sampler -->|typed execution: Executor gRPC| gw
     sampler -->|SessionJournalIngress.Push| hs
     sampler -->|Responses API| llm -->|model API| responses

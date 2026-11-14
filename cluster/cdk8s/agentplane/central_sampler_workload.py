@@ -25,6 +25,7 @@ from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, HISTORY_SERVICE_U
 from agentplane.session_instructions.platform_instructions import SessionRuntime
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import (
+    actions,
     central_sampler,
     database,
     history_service,
@@ -85,6 +86,7 @@ class CentralSampler(Construct):
         settings = Settings(
             listen=f"0.0.0.0:{self.service.pod_port}",
             connections=dict(props.connections),
+            actions=props.actions,
             models=dict(props.models),
             platform_instructions=platform_instructions(env, session_runtime=SessionRuntime.CENTRAL_SAMPLER),
             audience=central_sampler.TOKEN_AUDIENCE,
@@ -196,6 +198,8 @@ class CentralSampler(Construct):
             history_service.service(namespace).egress(),
             llm_ingress.service(namespace).egress(),
         ]
+        if props.actions is not None:
+            egress.append(actions.service(namespace).egress())
         anthropic_connection = props.connections.get("anthropic-api")
         if (
             anthropic_connection is not None

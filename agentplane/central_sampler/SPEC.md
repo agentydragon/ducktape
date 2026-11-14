@@ -163,6 +163,24 @@ shared process. A host failure fails pending work for every attached Session. Fu
 a new host. Uncertain executor effects are never replayed; unfinished provider sampling resumes
 through the bounded attempt chain described below.
 
+### Action tools
+
+When `actions` is configured, the sampler exposes Action catalog entries as namespaced code-mode
+`tools`. Their descriptions include the complete catalog input schemas in `ALL_TOOLS`. The Go delegate
+handler submits each invocation under the exact Identity retained with its logical Session. Neither
+JavaScript nor Action arguments supply that effective caller. The sampler authenticates with its
+own service SVID and sends the shared typed Session delegation envelope; this path needs no Sandbox,
+executor destination or environment lookup. Executor tools keep their existing Gateway path and are
+only offered when an executor is bound.
+
+A nested intent is committed before submission and supplies the Action idempotency key. A lost
+response is recovered by that key, never by resubmitting. Accepted receipt IDs and keys remain in
+protocol evidence before waiting. The delegate awaits a terminal receipt asynchronously, without an
+overall approval deadline, so other cells and tools continue while the operator decides. Watches
+reconnect with the same receipt ID and reauthorize. Cancellation does not cancel the Action or settle
+an unknown effect as completed. Terminal results use the same MCP `CallToolResult` and typed
+`ExecutionError` ProtoJSON conversion as the MCP edge, including denied and unknown outcomes.
+
 ### Session residency and work wakeups
 
 A replica retains one authoritative database ownership lease for each Session whose JavaScript

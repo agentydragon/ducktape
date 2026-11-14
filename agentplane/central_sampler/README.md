@@ -107,6 +107,17 @@ sampler's durable intent journal; they do not deduplicate or cache server result
 retained native session during a Gateway outage, independently of the first-open and typed RPC
 timeouts. An outage longer than the exec-server's detached-session lifetime can return a definitive
 native loss response when Gateway recovers; the sampler then records a model notice before later work.
+
+Optional `actions` settings contain `target` and a complete `tls` service-SVID source
+(`cert_file`, `key_file`, `ca_file`, or `workload_api_socket`). The client requires the sampler's exact
+service identity and verifies the Action Service SVID. There is no token, insecure mode or auth
+fallback for this path. Omitted settings preserve the existing tool surface.
+
+Before configuring this client, deploy and pin the Action Service image that accepts sampler
+Session delegation, then enable its explicit sampler trust setting. Deploy the sampler image before
+adding `actions` to its strict settings. Rollback removes client activation first, then receiver
+trust, before reverting images. Retain Action receipts and the additive attribution schema.
+
 Set `gateway_target` to `runner-gateway.{namespace}.svc:8080` for the stable shared Runner Gateway Service.
 Each Gateway replica observes Runtimes independently, so the load-balanced Service works with
 multiple replicas. Fixed targets support single-process fixtures. Templates accept DNS-label

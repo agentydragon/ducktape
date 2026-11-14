@@ -12,12 +12,14 @@ from cdk8s_plus_34 import ConfigMap, Deployment, EnvValue, Volume
 from constructs import Construct
 from more_itertools import one
 
+from agentplane.central_sampler.settings import ActionsConfig as CentralSamplerActionsConfig
 from agentplane.mcp_edge.oauth_settings import OAuthSettings, OperatorPrincipal
+from agentplane.net.peertls.config import TLS
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests.deployment import dex, fixture_chart, mcp_fixture_servers, mcp_servers
 from agentplane.system_tests.deployment.rendered_fixture import DexPasswordGrant, McpInputs, Models
 from agentplane.system_tests.k3s.namespaces import NAMESPACE
-from cluster.cdk8s.agentplane import actions, mcp_edge
+from cluster.cdk8s.agentplane import actions, mcp_edge, workload_tls
 from cluster.cdk8s.agentplane.environment import SessionDelegationProps
 from cluster.cdk8s.providers.agentplane.identity import Identity
 from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
@@ -61,6 +63,7 @@ def objects(
     actions_config = replace(
         env.actions,
         connection_delegation_actor=ServiceAccountRef(namespace=NAMESPACE, name=mcp_edge.NAME),
+        central_sampler_session_delegation=True,
         mcp_servers={
             server_id: mcp_fixture_servers.oauth_fixture_server(
                 server_id, client_id=mcp_linkage.id, redirect_uri=mcp_linkage.redirect_uri
@@ -84,8 +87,20 @@ def objects(
             }
         ),
     )
+    assert env.central_sampler is not None
+    central_sampler_config = replace(
+        env.central_sampler,
+        actions=CentralSamplerActionsConfig(
+            target=f"{actions.service(NAMESPACE).fqdn}:{actions.service(NAMESPACE).port.number}",
+            tls=TLS(
+                cert_file="/run/agentplane/workload-tls/tls.crt",
+                key_file="/run/agentplane/workload-tls/tls.key",
+                ca_file=workload_tls.TRUST_BUNDLE_FILE,
+            ),
+        ),
+    )
     mcp_edge_config = replace(env.mcp_edge, oauth_secret_name=_MCP_EDGE_OAUTH_SECRET)
-    env = replace(env, actions=actions_config, mcp_edge=mcp_edge_config)
+    env = replace(env, actions=actions_config, central_sampler=central_sampler_config, mcp_edge=mcp_edge_config)
     fixture = fixture_chart.build_chart(
         ca_cert=ca_cert, ca_key=ca_key, system_roots=system_roots, cluster_ca=cluster_ca, models=models, env=env
     )

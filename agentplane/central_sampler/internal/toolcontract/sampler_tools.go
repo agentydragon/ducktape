@@ -106,7 +106,7 @@ func Definitions() []protocol.CodeToolDefinition {
 		ExecCommandDefinition(), WriteStdinDefinition(),
 		{Name: "apply_patch", ToolName: protocol.ToolName{Name: "apply_patch"}, Description: "Apply a Codex *** Begin Patch / *** End Patch patch through upstream apply-patch.", Kind: "freeform"},
 		ViewImageDefinition(),
-		// TODO: update_plan and Action-backed (MCP) tools, which Codex also nests.
+		// TODO: update_plan, which Codex also nests. Action tools come from the live catalog.
 	}
 }
 

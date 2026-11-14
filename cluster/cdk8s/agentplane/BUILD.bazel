@@ -157,6 +157,7 @@ py_library(
     name = "central_sampler_workload",
     srcs = ["central_sampler_workload.py"],
     deps = [
+        ":actions",
         ":central_sampler",
         ":database",
         ":environment",

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
-
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/actions"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
@@ -29,6 +29,7 @@ type CodeMode struct {
 	store    *sessionstore.Store
 	owner    sessionstore.Owner
 	executor *executor.Executor
+	actions  *actions.Session
 }
 
 func (r *CodeMode) Execute(ctx context.Context, call protocol.ToolInvocation) ([]protocol.ContentPart, error) {
@@ -96,11 +97,11 @@ func (r *CodeMode) prepareCall(ctx context.Context, call protocol.ToolInvocation
 	if err != nil {
 		return preparedCall{}, &toolcontract.Rejection{Message: err.Error()}
 	}
-	return r.prepareExecute(call.CallID, source)
+	return r.prepareExecute(ctx, call.CallID, source)
 }
 
-func (r *CodeMode) prepareExecute(callID string, source toolcontract.ExecSource) (preparedCall, error) {
-	hostDefinitions, err := toolcontract.HostToolDefinitions(toolcontract.Definitions())
+func (r *CodeMode) prepareExecute(ctx context.Context, callID string, source toolcontract.ExecSource) (preparedCall, error) {
+	hostDefinitions, err := r.hostTools(ctx)
 	if err != nil {
 		return preparedCall{}, err
 	}
@@ -125,7 +126,7 @@ func (r *CodeMode) prepareJSONCall(ctx context.Context, call protocol.ToolInvoca
 	if parsed.Wait != nil {
 		return r.prepareWaitArguments(ctx, *parsed.Wait)
 	}
-	return r.prepareExecute(call.CallID, *parsed.Source)
+	return r.prepareExecute(ctx, call.CallID, *parsed.Source)
 }
 
 func (r *CodeMode) prepareWait(ctx context.Context, input string) (preparedCall, error) {

@@ -359,8 +359,11 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner sessionst
 					return activeCommand, err
 				}
 			}
-			changes := live.executor.ProcessChanges()
-			if changes != reconciled {
+			var changes <-chan struct{}
+			if live.executor != nil {
+				changes = live.executor.ProcessChanges()
+			}
+			if live.executor != nil && changes != reconciled {
 				progressed, err := live.executor.ReconcileProcesses(ctx, time.Duration(r.settings.RPCTimeoutSeconds)*time.Second)
 				if err != nil {
 					return activeCommand, err

@@ -15,6 +15,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/protobuf/types/known/structpb"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/actionresult"
 	pb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 )
 
@@ -243,7 +244,7 @@ func (t *tools) requestAction(ctx context.Context, input requestActionInput) (*m
 		if !found {
 			return nil, fmt.Errorf("group %q of request %s is not configured", request.GetAction().GetGroup(), request.GetId())
 		}
-		return actionResult(request, executor, t.maxWaitSeconds)
+		return actionresult.Result(request, executor, t.maxWaitSeconds)
 	case "receipt":
 		return receiptResult(request, input.IncludeFields)
 	default:
@@ -294,7 +295,7 @@ func (t *tools) getActionResult(ctx context.Context, input namedRequest) (*mcp.C
 	if !found {
 		return nil, groupGone
 	}
-	return actionResult(request, executor, t.maxWaitSeconds)
+	return actionresult.Result(request, executor, t.maxWaitSeconds)
 }
 
 // namedReceipt reads the request a caller names, waiting as it asks.

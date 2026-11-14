@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/actionresult"
 	pb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 )
 
@@ -211,7 +212,7 @@ func (t *tools) callDirect(ctx context.Context, group *pb.ActionGroup, action ac
 	if err != nil {
 		return nil, err
 	}
-	return actionResult(request, group.GetExecutorKind(), t.maxWaitSeconds)
+	return actionresult.Result(request, group.GetExecutorKind(), t.maxWaitSeconds)
 }
 
 // undecidedResult refuses a call no policy decides, with the core's reasons and how to ask the operator instead.
