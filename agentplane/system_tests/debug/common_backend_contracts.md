@@ -708,3 +708,24 @@ The independent structured resume-refusal repair is
 CI exposure fails during PKI fixture setup; one unchanged-head rerun passes all substantive
 required checks. The failure remains part of the reliability evidence rather than disappearing
 from the denominator. No fleet rerun reduction has been measured.
+
+### Expanded native Egress partition
+
+The next candidate extracts three Environment-only Egress scenarios: command-box SVID and
+revocation, standing-workload SVID and pruning, and two Sandboxes sharing a Kubernetes account
+before one loses access. The real Action Service, Policy Controller, workload credentials,
+proxy decisions, impersonation and denial assertions remain. Decision lookup consumes the
+already observed Environment identity rather than depending on an App API read.
+
+Shared Action CLI arguments and PolicyObjects move out of the App-backed MCP scenario module;
+every caller imports their owning modules directly. PolicyObjects is an async resource context
+manager, retaining cancellation-safe cleanup. Static comparison at the extraction source
+preserves all 26 moved assertions and the original scenario list. This is not runtime proof.
+
+The native target grows from four to seven cases. Devel `22d099a9` subsequently adds two
+ordinary Pod authorization/lifecycle cases, so the integrated union is **23 cases: native seven
+plus App-backed sixteen**. Both new devel cases remain in the complement and required suite.
+The old 21-case and 49-case measurements above retain their original source-specific counts.
+Run the updated partition and explicitly named helper libraries before a new frozen full-graph
+screen. Keep both candidates manual; no elapsed saving or selector promotion follows from
+moving scenarios or counting assertions.
