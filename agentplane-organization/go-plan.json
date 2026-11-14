@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
-  "source_sha": "7867f8178028984cb8d4ff481ed415158c26eca5",
-  "observed_at_utc": "2026-11-14T07:50:00Z",
+  "source_sha": "1dc2f4b2194f11766c5fc7db6128ac6fa5af3112",
+  "observed_at_utc": "2026-11-14T08:55:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1275,
-    "directories": 223,
-    "production": 702,
-    "tests": 573
+    "files": 1279,
+    "directories": 224,
+    "production": 703,
+    "tests": 576
   },
   "legend": {
     "=": "Intentional retained owner with an explicit package rationale",
@@ -124,8 +124,8 @@
         "id": "explicit-resume-bound",
         "title": "Rate bound for explicit resume",
         "status": "DECIDED",
-        "today": "Since #16346 an Identity with a live `environment` grant for `resume` may call `ResumeEnvironment`. Every explicit resume reserves the shared wake budget in the Dispatcher's PostgreSQL before patching, keyed by effective caller, target Sandbox UID and generation (`lifecycle/SPEC.md`).",
-        "proposal": "Explicit resume reserves no wake budget, before and after the split; only the Sessions binary's automatic wake keeps one. A resume acts only on a fully stopped Sandbox (idle suspend of at least a minute, or a requested stop), so a Sandbox is resumed at most once per stop, and an Identity's `resume` grant scopes which Sandboxes it may wake. Dropping the reservation from the explicit path is a behavior PR before EnvironmentService moves.",
+        "today": "Since #16346 an Identity with a live `environment` grant for `resume` may call `ResumeEnvironment`. Since #16375 explicit resume, operator or Identity grant, reserves no wake budget and is unaffected by its exhaustion; automatic wake still reserves the budget in the Dispatcher's PostgreSQL (`lifecycle/SPEC.md`).",
+        "proposal": "Explicit resume reserves no wake budget, before and after the split; only the Sessions binary's automatic wake keeps one. A resume acts only on a fully stopped Sandbox (idle suspend of at least a minute, or a requested stop), so a Sandbox is resumed at most once per stop, and an Identity's `resume` grant scopes which Sandboxes it may wake. #16375 made that the behavior before the move.",
         "evidence_paths": [
           "agentplane/runner_gateway/environments/lifecycle/manager.go",
           "agentplane/runner_gateway/environments/lifecycle/SPEC.md"
@@ -6003,8 +6003,8 @@
       "id": "notification_service",
       "path": "agentplane/notification_service",
       "counts": {
-        "files": 179,
-        "directories": 20
+        "files": 180,
+        "directories": 21
       },
       "directories": [
         {
@@ -6321,6 +6321,14 @@
           "production": 1,
           "tests": 0,
           "files": ["agentplane/notification_service/testing/grpc.go"]
+        },
+        {
+          "path": "agentplane/notification_service/testing/process_fixture",
+          "production": 0,
+          "tests": 1,
+          "files": [
+            "agentplane/notification_service/testing/process_fixture/driver_test.go"
+          ]
         }
       ],
       "context_paths": [
@@ -6375,7 +6383,8 @@
           "agentplane/notification_service/internal/worker",
           "agentplane/notification_service/migrations",
           "agentplane/notification_service/model",
-          "agentplane/notification_service/testing"
+          "agentplane/notification_service/testing",
+          "agentplane/notification_service/testing/process_fixture"
         ]
       },
       "tree_annotations": {
@@ -6783,6 +6792,21 @@
           "counts": {
             "non_test": 1,
             "tests": 0
+          }
+        },
+        {
+          "path": "agentplane/notification_service/testing/process_fixture",
+          "role": "Go driver for the Notification process fixture: seeds an owned subscription through `store.Subscribe` and serves the production `serve` path for the Python subprocess contract test (`process.py`).",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "A test-only process driver beside its Python fixture, under the component's test-support tree; not a production package.",
+          "gate": "",
+          "evidence_paths": [],
+          "declared_packages": ["main"],
+          "pending_tracks": ["notification-inbox-split"],
+          "counts": {
+            "non_test": 0,
+            "tests": 1
           }
         }
       ]
@@ -7394,7 +7418,7 @@
       "id": "runner_gateway",
       "path": "agentplane/runner_gateway",
       "counts": {
-        "files": 70,
+        "files": 73,
         "directories": 12
       },
       "directories": [
@@ -7410,8 +7434,8 @@
         },
         {
           "path": "agentplane/runner_gateway/dispatcher",
-          "production": 11,
-          "tests": 13,
+          "production": 12,
+          "tests": 14,
           "files": [
             "agentplane/runner_gateway/dispatcher/api.go",
             "agentplane/runner_gateway/dispatcher/authorization_integration_test.go",
@@ -7427,6 +7451,8 @@
             "agentplane/runner_gateway/dispatcher/placement_contract_test.go",
             "agentplane/runner_gateway/dispatcher/placement_test.go",
             "agentplane/runner_gateway/dispatcher/runner_client.go",
+            "agentplane/runner_gateway/dispatcher/service_admission_integration_test.go",
+            "agentplane/runner_gateway/dispatcher/service_attribution.go",
             "agentplane/runner_gateway/dispatcher/snapshots.go",
             "agentplane/runner_gateway/dispatcher/store.go",
             "agentplane/runner_gateway/dispatcher/store_integration_test.go",
@@ -7468,12 +7494,13 @@
         {
           "path": "agentplane/runner_gateway/environments",
           "production": 4,
-          "tests": 3,
+          "tests": 4,
           "files": [
             "agentplane/runner_gateway/environments/collection.go",
             "agentplane/runner_gateway/environments/environment_grants_test.go",
             "agentplane/runner_gateway/environments/management.go",
             "agentplane/runner_gateway/environments/service.go",
+            "agentplane/runner_gateway/environments/service_svid_test.go",
             "agentplane/runner_gateway/environments/service_test.go",
             "agentplane/runner_gateway/environments/watch.go",
             "agentplane/runner_gateway/environments/watch_test.go"
@@ -7650,8 +7677,8 @@
             "runner-gateway-dispatcher-store"
           ],
           "counts": {
-            "non_test": 11,
-            "tests": 13
+            "non_test": 12,
+            "tests": 14
           }
         },
         {
@@ -7733,7 +7760,7 @@
           "pending_tracks": ["environment-service-to-sandbox-controller"],
           "counts": {
             "non_test": 4,
-            "tests": 3
+            "tests": 4
           }
         },
         {
@@ -8785,9 +8812,9 @@
       "kind": "decided removal across services",
       "stage": 1,
       "priority": 5,
-      "summary": "Operator decision, 2026-11-14 (card \"Let any Gateway replica call a Runtime, dropping the Lease's call epoch?\", chose \"Any replica, no epoch\"): the Runtime fences calls only by incarnation and boot ID; the connection Lease, its epoch and the -control EndpointSlice go; callers use the Gateway Service. Today the Gateway claims the per-Sandbox Lease to allocate the `ConnectionEpoch` and watches it to reject superseded connections (`internal/gateway/records.go`, `runner_observer.go`); the Runtime accepts calls without the epoch since #16330 (`env/runtime/control/server.go`); and the Sandbox Controller keeps a selector-less `<sandbox>-control` Service (`control_service.go`) whose EndpointSlice the Gateway publishes, so the Dispatcher, the app bridge, the Notification Service's `ProxyRunner` and the Controller's quiesce reach the replica holding the connection. Progress: #16345 (merged 2026-11-14) makes the Runtime bind its incarnation through the Controller and accept independent Gateway watches; #16361 (open) makes every Gateway replica observe and call Runtimes, after the Runtime image carrying #16345 is pinned and older Runtimes are cycled.",
+      "summary": "Operator decision, 2026-11-14 (card \"Let any Gateway replica call a Runtime, dropping the Lease's call epoch?\", chose \"Any replica, no epoch\"): the Runtime fences calls only by incarnation and boot ID; the connection Lease, its epoch and the -control EndpointSlice go; callers use the Gateway Service. Since #16361 (merged 2026-11-14) every Gateway replica observes and calls Runtimes without an epoch, and the Runtime fences calls by Sandbox UID, workload Pod UID and boot ID (#16345). The Gateway still claims the per-Sandbox Lease and route epoch, but only to publish the EndpointSlice of the Sandbox Controller's selector-less `<sandbox>-control` Service (`internal/gateway/records.go`, `control_service.go`), which the app, the Notification Service, the Controller, the Dispatcher and the central sampler still dial. Remaining: #16362 (open) points those callers at the Gateway Service once the Gateway image carrying #16361 runs on every replica; #16365 (open) then removes the Lease, the route epoch, EndpointSlice publication and the Controller's per-Sandbox Services after every caller process has rolled.",
       "how": [
-        "Any Gateway replica serves Runtime calls and callers address the Gateway Service; the Gateway's Lease claim and watch, the epoch, its EndpointSlice publication and the Controller's `-control` Service go.",
+        "Done in #16361: any Gateway replica serves Runtime calls. Next, callers address the Gateway Service (#16362); then the Gateway's Lease claim, the route epoch, its EndpointSlice publication and the Controller's `-control` Service go (#16365).",
         "Then drop the Runtime's epoch handling and the Firecracker runtime probe's epoch, and delete the Lease object. Lease and EndpointSlice RBAC (`cluster/cdk8s/agentplane/runner_gateway_workload.py`, `sandbox_controller.py`, including the Controller's connection-Lease permissions) comes out after the images are pinned."
       ],
       "gate": "Decided. Each step is its own PR after the previous image pin, receivers before senders. Cross-service protocol change: system tests covering command delivery, quiesce and suspend must pass, and each PR states its rollback.",
@@ -8814,7 +8841,7 @@
         "agentplane/firecracker/testing/runtime_probe/main.go",
         "agentplane/plans/runtime_state_observation.md"
       ],
-      "review_size": "Two PRs, each after the previous image pin: any replica serves and callers use the Gateway Service; the epoch, the Lease and its RBAC go."
+      "review_size": "Three PRs, each after the previous image pin: every replica serves (#16361, merged); callers use the Gateway Service (#16362); the epoch, the Lease and the route objects go (#16365). RBAC and the epoch proto fields follow after the rollback window."
     },
     {
       "id": "env-execution-package-names",
@@ -9713,7 +9740,7 @@
       "summary": "Operator, 2026-11-14 direction discussion: merging EnvironmentService into the Sandbox Controller \"sounds good\". The service code is self-contained: `runner_gateway/environments` and its `lifecycle`, `internal/management` and `internal/view` packages import shared Agentplane packages and generated protos, never Gateway or Dispatcher internals. Three in-process couplings with the Dispatcher, plus the Sandbox Controller not serving gRPC today, decide the merge's shape. Under the agreed two-binary shape (target binaries) the Sandbox Controller becomes the Environments binary at `agentplane/environments/` (environments-directory moves it first); the Runtime proxy and Executor follow (runner-gateway-connections-proxy). Automatic wake stays with the Dispatcher (Operator, 2026-11-14 05:19 UTC, card \"Choose which binary performs automatic wakes after the split\": \"Sessions binary wakes\".)",
       "how": [
         "Write the remaining merge contract: (a) wake is decided: the Dispatcher keeps `RequestWake`'s automatic policy check and its budget and writes the Sandbox spec itself, so EnvironmentService carries only explicit resume; split `lifecycle` along that line.",
-        "(b) wake budget: only automatic wake reserves one, in the Dispatcher's PostgreSQL (`dispatcher/wake.go` `ReserveWakeAttempt`); explicit resume reserves none (decided 2026-11-14), and the controller reserves none. Drop the explicit path's reservation in its own behavior PR before the move.",
+        "(b) wake budget: only automatic wake reserves one, in the Dispatcher's PostgreSQL (`dispatcher/wake.go` `ReserveWakeAttempt`). Explicit resume reserves none since #16375 (merged 2026-11-14), so the Environments side needs no database.",
         "(c) identity fence, decided 2026-11-14: first, as its own behavior PR, drop `dispatcher.Store.ChangeSandboxIdentity` and its retained-Session refusal; EnvironmentService patches `spec.identity` itself under optimistic locking, and admission, placement and delivery keep re-checking the live Identity (cut line: identity fence). #16373 (open) is that PR.",
         "(d) serving: the Sandbox Controller is a leader-elected controller-runtime manager with no listener; EnvironmentService adds an every-replica gRPC listener with its own lifecycle, readiness that never waits for leadership, auth resolver, Service, certificate identity and retargeted callers (cut line: serving).",
         "Then move the four packages whole, with tests, to `environments/internal/service` (package `environments` becomes `service`), with `lifecycle`, `management` and `view` under it, beside the API at `environments/v1`. The only importer outside the Gateway, orchestration_v1's `fixture_test.go` (`environments` and `lifecycle`), must first be retired (orchestration-v1-retirement) or rewritten against a test server, since `internal/` closes those packages. Retarget every caller, RBAC, manifests and the system overview diagram, image before config, with the rollback stated.",
@@ -11367,7 +11394,7 @@
         "agentplane/session_dispatcher/dispatcher",
         "agentplane/session_dispatcher/dispatcher/internal/store"
       ],
-      "summary": "Keep the 11-file/4,845-line dispatcher package intact. Its 3,286-line store integration test crosses transactions, API, watch, workers, wakeups and uncertain outcomes. Current package role is explicit; no cosmetic relocation. Candidate `dispatcher/internal/store` is only viable if transaction state and settlement can be owned without moving shared receiver files or hiding caller-visible uncertain outcomes.",
+      "summary": "Keep the 12-file/5,033-line dispatcher package intact. Its 3,276-line store integration test crosses transactions, API, watch, workers, wakeups and uncertain outcomes. Current package role is explicit; no cosmetic relocation. Candidate `dispatcher/internal/store` is only viable if transaction state and settlement can be owned without moving shared receiver files or hiding caller-visible uncertain outcomes.",
       "how": [
         "Before any future internal/store package, specify transaction, terminal-state, wake and storage API ownership.",
         "Keep integration tests spanning caller-visible outcomes.",
@@ -11638,7 +11665,7 @@
     "environments-directory",
     "runner-gateway-command"
   ],
-  "remaining_work_note": "Ordered by certainty (revised 2026-11-14 at the inventory pin, devel 7867f81780). Stages 1 and 2 hold whatever the service map becomes; stage 3 follows directions the operator agreed; stage 4 needs only a local contract; stage 5 waits on open service decisions; stage 6 is deferred. READY records decided exact moves; PLANNED names a concrete boundary; AGREED DIRECTION is an operator-agreed move whose contract is still to be written; HELD is a decided move waiting so its files move once; DESIGN REQUIRED needs a local contract; OPEN DIRECTION waits on an undecided service decision. The tree shows candidates without assigning fictitious final filenames.",
+  "remaining_work_note": "Ordered by certainty (revised 2026-11-14 at the inventory pin, devel 1dc2f4b219). Stages 1 and 2 hold whatever the service map becomes; stage 3 follows directions the operator agreed; stage 4 needs only a local contract; stage 5 waits on open service decisions; stage 6 is deferred. READY records decided exact moves; PLANNED names a concrete boundary; AGREED DIRECTION is an operator-agreed move whose contract is still to be written; HELD is a decided move waiting so its files move once; DESIGN REQUIRED needs a local contract; OPEN DIRECTION waits on an undecided service decision. The tree shows candidates without assigning fictitious final filenames.",
   "adoption": [
     {
       "stage": 1,
@@ -11721,12 +11748,12 @@
   ],
   "scope_coverage": {
     "top_level_areas": 36,
-    "go_packages": 223,
-    "go_files": 1275,
+    "go_packages": 224,
+    "go_files": 1279,
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "7867f8178028984cb8d4ff481ed415158c26eca5",
+    "review_source_sha": "1dc2f4b2194f11766c5fc7db6128ac6fa5af3112",
     "review_slices": [
       {
         "slice": "action_service",
@@ -11851,8 +11878,8 @@
       {
         "slice": "notification_service",
         "components": ["notification_service"],
-        "packages": 20,
-        "go_files": 179
+        "packages": 21,
+        "go_files": 180
       },
       {
         "slice": "observability",
@@ -11894,7 +11921,7 @@
         "slice": "runner_gateway",
         "components": ["runner_gateway"],
         "packages": 12,
-        "go_files": 70
+        "go_files": 73
       },
       {
         "slice": "sandbox_controller",
@@ -11952,7 +11979,7 @@
       "track": "gateway-connection-lease-removal",
       "title": "Let any Gateway replica serve Runtime calls and remove the connection Lease",
       "readiness": "PLANNED",
-      "first_step": "Let any Gateway replica serve Runtime calls and point callers at the Gateway Service."
+      "first_step": "Point Runtime callers at the Gateway Service (#16362) once the #16361 Gateway image runs on every replica."
     },
     {
       "id": "next-2",
