@@ -22,7 +22,9 @@ from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
 from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.environment_transport import ENVIRONMENT_AUDIENCE
 from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS, scenario_identity
+from agentplane.system_tests.driver.native_auth import write_bound_fixture_token
 from agentplane.system_tests.driver.tls import service_credentials
 from agentplane.system_tests.driver.tracing import tracer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -199,10 +201,17 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
             stack.push_async_callback(_diagnostics, cluster)
             connection = await stack.enter_async_context(cluster.api_client())
             core = k8s.CoreV1Api(connection)
-            app = await _pod(cluster, core, "app")
-            caller_token = await _bound_token(cluster, core, "app", app, "session-dispatcher")
+            dispatcher_token = directory / "dispatcher-caller-token"
+            dispatcher_principal = await write_bound_fixture_token(
+                cluster, dispatcher_token, audience=ENVIRONMENT_AUDIENCE
+            )
             reader_token = directory / "history-reader-token"
-            reader_token.write_text(await _bound_token(cluster, core, "app", app, HISTORY_READER_AUDIENCE))
+            history_principal = await write_bound_fixture_token(cluster, reader_token, audience=HISTORY_READER_AUDIENCE)
+            gateway_token = directory / "gateway-reader-token"
+            gateway_principal = await write_bound_fixture_token(cluster, gateway_token, audience=GATEWAY_AUDIENCE)
+            if history_principal != dispatcher_principal or gateway_principal != dispatcher_principal:
+                raise RuntimeError("central sampler reader tokens were not bound to one fixture Pod incarnation")
+            caller_token = dispatcher_token.read_text()
             sandbox = "systest-central-" + uuid4().hex[:8]
             # Entered before the Sandbox's cleanup, so it is deleted after the Sandbox that acts as it.
             identity = await cleanup.enter_async_context(
@@ -242,8 +251,6 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
             server_credentials = await service_credentials(cluster)
             # Sandbox Ready proves Controller observation. A claimed EndpointSlice can precede
             # the Gateway's first snapshot, so prove the live read route before starting setup.
-            gateway_token = directory / "gateway-reader-token"
-            gateway_token.write_text(await _bound_token(cluster, core, "app", app, GATEWAY_AUDIENCE))
             gateway = SandboxControlClient(
                 control_target=gateway_target,
                 token_file=gateway_token,

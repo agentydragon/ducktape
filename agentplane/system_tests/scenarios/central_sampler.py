@@ -1827,7 +1827,6 @@ async def dispatcher_central_setup_tool_and_retained_answer(
 
 async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
     cluster: Cluster,
-    client: Client,
     environments: EnvironmentServiceClient,
     tmp_path: Path,
     scripted: ScriptedUpstream,
@@ -1907,7 +1906,7 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
         await environments.suspend_environment(target)
         async with asyncio.timeout(SANDBOX_READY_SECONDS):
             while True:
-                suspended = await client.get_environment(target)
+                suspended = await environments.get_environment(target)
                 if (
                     suspended.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED
                     and not suspended.kubernetes_diagnostics.HasField("pod")

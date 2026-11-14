@@ -158,15 +158,10 @@ async def test_central_sampler_action_wait_keeps_other_code_mode_cells_live(
 @pytest.mark.scripted_model
 @pytest.mark.timeout(600)
 async def test_pod_central_sampler_exec_resumes_after_sandbox_suspend_resume(
-    cluster: Cluster,
-    client: Client,
-    environment_client: EnvironmentServiceClient,
-    tmp_path: Path,
-    scripted: ScriptedUpstream,
+    cluster: Cluster, environment_client: EnvironmentServiceClient, tmp_path: Path, scripted: ScriptedUpstream
 ) -> None:
     await central_sampler.pod_exec_session_rebinds_after_sandbox_suspend_resume(
         cluster,
-        client,
         environment_client,
         tmp_path,
         scripted,
