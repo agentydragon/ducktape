@@ -73,7 +73,7 @@ own:
 4. Gateway code supports independent Runtime watches and direct calls from every replica, fenced
    by the Controller-bound Sandbox UID, workload Pod UID and Runtime boot ID. Each replica
    dials the Runtime at its Pod IP; proxy callers use the stable `runner-gateway` Service. The
-   the Controller's authenticated watch binds the Runtime to the current workload UID before facts
+   Controller's authenticated watch binds the Runtime to the current workload UID before facts
    are published. Observation loss does not revoke another Gateway replica's calls or Runtime-owned
    work. Existing per-Sandbox route objects are unused. Only deleting their Sandbox owner triggers
    garbage collection; unowned objects require manual deletion. The Dispatcher delivery Lease is a separate scheduling protocol and remains

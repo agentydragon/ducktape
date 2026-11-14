@@ -54,7 +54,6 @@ class Settings(BaseModel):
     config_file_env: ClassVar[str] = "AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE"
     dispatcher_database_url_env: ClassVar[str] = "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL"
     pod_name_env: ClassVar[str] = "AGENTPLANE_RUNNER_GATEWAY_POD_NAME"
-    pod_ip_env: ClassVar[str] = "AGENTPLANE_RUNNER_GATEWAY_POD_IP"
     model_config = ConfigDict(extra="forbid")
 
     sandbox_namespace: str = Field(min_length=1, description="Namespace of Agentplane Sandboxes.")

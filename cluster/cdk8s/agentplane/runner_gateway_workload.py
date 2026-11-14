@@ -17,7 +17,6 @@ from cdk8s_plus_34 import (
     Cpu,
     CpuResources,
     DeploymentStrategy,
-    EnvFieldPaths,
     EnvValue,
     IApiResource,
     MemoryResources,
@@ -186,12 +185,7 @@ class RunnerGateway(Construct):
             serves=[proxy],
             container="runner-gateway",
             image=image,
-            env_variables={
-                Settings.dispatcher_database_url_env: database_url,
-                # CLEANUP(added 2026-11-14): Remove after every Gateway image no longer requires PodIP.
-                Settings.pod_ip_env: EnvValue.from_field_ref(EnvFieldPaths.POD_IP),
-                **(container_env or {}),
-            },
+            env_variables={Settings.dispatcher_database_url_env: database_url, **(container_env or {})},
             readiness=tls_grpc_probe(
                 port=proxy.pod_port,
                 ca_file=workload_tls.TRUST_BUNDLE_FILE,

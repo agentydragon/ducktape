@@ -78,11 +78,11 @@ Dispatcher delivery Lease permissions; it removes the Controller's per-Sandbox S
 while preserving its leader-election Lease permission. It also removes Runtime's connection-epoch
 protocol fields and receiver tolerance. Runtime-to-Gateway connections are not part of this route.
 
-A separate settings cleanup follows the image rollout: this change stops emitting `proxy_port` and
-removes the Gateway's Pod-IP read/validation, while the decoder still accepts an old `proxy_port`
-key and the Deployment retains its Pod-IP DownwardAPI binding. Once the new image and manifest
-configuration are active, a stacked follow-up removes the accepted key and the unused environment
-binding. That settings cleanup is not complete in this change.
+The separate strict-settings PR removes `proxy_port` acceptance and the Pod-IP environment input.
+It merges only after the preceding cleanup's configuration without `proxy_port` has applied and its
+Gateway image, which no longer reads Pod IP, is pinned and running on staging. Removing the decoder
+before the configuration rolls would fail strict startup; removing Pod IP before the accepting image
+rolls would fail old-image startup.
 
 ## Acceptance
 

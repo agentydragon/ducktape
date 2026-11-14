@@ -81,9 +81,7 @@ conversation and from Runner admission.
 - `main.go`, `config.go`: process and listener wiring, and the settings (the required
   `AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE` path, with all non-secret settings in that file;
   [`settings.py`](settings.py) is the authoring schema). The Dispatcher database URL Secret and
-  Pod name are runtime environment inputs. The deployment still carries an unused Pod-IP
-  DownwardAPI binding and `proxy_port` remains accepted by the settings decoder pending the
-  separate strict-settings cleanup after the manifest rollout. Generic
+  Pod name are runtime environment inputs. Generic
   `AGENTPLANE_RUNNER_GATEWAY_*` variables do not override file values. The independent `delegation`
   policy names an Actions actor and exact full RPC methods; it can include the
   `EnvironmentService` list/get/watch methods and, when separately configured, `ResumeEnvironment`, without
