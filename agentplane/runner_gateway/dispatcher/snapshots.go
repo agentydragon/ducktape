@@ -19,10 +19,6 @@ func dispatchState(state string) (dispatcherpb.DeliveryState, error) {
 		return dispatcherpb.DeliveryState_DELIVERY_STATE_DELIVERING_TO_RUNNER, nil
 	case AdmittedState:
 		return dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED, nil
-	case "HARNESS_CONFIRMED":
-		return dispatcherpb.DeliveryState_DELIVERY_STATE_HARNESS_CONFIRMED, nil
-	case "NO_OP":
-		return dispatcherpb.DeliveryState_DELIVERY_STATE_NO_OP, nil
 	case FailedState:
 		return dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED, nil
 	case CancelledState:
@@ -30,7 +26,7 @@ func dispatchState(state string) (dispatcherpb.DeliveryState, error) {
 	case UnknownState:
 		return dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN, nil
 	default:
-		return 0, fmt.Errorf("unknown dispatch state %q", state)
+		return dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN, nil
 	}
 }
 

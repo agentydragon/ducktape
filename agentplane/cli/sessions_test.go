@@ -55,6 +55,25 @@ func TestSessionLineRejectsIncompleteResource(t *testing.T) {
 	}
 }
 
+func TestDispatchLineMapsUnknownStateToNamedUnknown(t *testing.T) {
+	raw, err := protojson.Marshal(&dispatcherpb.Dispatch{CommandId: "command", State: dispatcherpb.DeliveryState(99)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []json.RawMessage{
+		raw,
+		json.RawMessage(`{"commandId":"command","state":"DELIVERY_STATE_FUTURE"}`),
+	} {
+		line, err := dispatchLine(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(line, "UNKNOWN") || strings.Contains(line, "99") {
+			t.Fatalf("dispatchLine() = %q, want the named UNKNOWN state", line)
+		}
+	}
+}
+
 func TestSessionGetAndReadTurnsExposeNeutralProjections(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

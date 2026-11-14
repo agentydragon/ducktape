@@ -1650,6 +1650,8 @@ async def dispatcher_central_setup_tool_and_retained_answer(
                 if not change.HasField("dispatch"):
                     continue
                 delivery = change.dispatch
+                if delivery.state not in session_dispatcher_pb2.DeliveryState.values():
+                    delivery.state = session_dispatcher_pb2.DELIVERY_STATE_UNKNOWN
                 assert delivery.state not in (
                     session_dispatcher_pb2.DELIVERY_STATE_FAILED,
                     session_dispatcher_pb2.DELIVERY_STATE_UNKNOWN,

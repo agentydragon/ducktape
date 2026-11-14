@@ -317,8 +317,8 @@ func TestObserveInputDoesNotInferHistoryCommandOutcomeFromDispatcherState(t *tes
 	dispatch := &dispatcherpb.Dispatch{
 		CommandId: testCommandID, SessionId: testSessionID,
 		Operation: commandpb.Operation_OPERATION_SUBMIT_INPUT,
-		State:     dispatcherpb.DeliveryState_DELIVERY_STATE_NO_OP,
-		Reason:    new("dispatcher did not enqueue input"),
+		State:     dispatcherpb.DeliveryState(99),
+		Reason:    new("dispatcher returned an unrecognized state"),
 	}
 	history := &historyStub{}
 	got, err := ObserveInput(context.Background(), &dispatcherStub{dispatch: dispatch}, history,

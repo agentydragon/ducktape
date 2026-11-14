@@ -469,6 +469,7 @@ ts_library(
     srcs = ["thread_commands.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         ":command_delivery",
         ":command_progress",
         ":local_commands",

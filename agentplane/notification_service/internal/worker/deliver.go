@@ -141,16 +141,31 @@ func (w *Worker) deliver(ctx context.Context, claim store.Claim, sandbox string,
 		return unavailable(err)
 	}
 	dispatch := response.GetDispatch()
-	switch dispatch.GetState() {
-	case dispatcherpb.DeliveryState_DELIVERY_STATE_NO_OP, dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED,
+	state := normalizeDeliveryState(dispatch.GetState())
+	switch state {
+	case dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED,
 		dispatcherpb.DeliveryState_DELIVERY_STATE_CANCELLED_IN_DISPATCHER, dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN:
 		reason := "no reason provided"
 		if dispatch.Reason != nil {
 			reason = dispatch.GetReason()
 		}
-		return w.Store.DeliveryFailed(ctx, claim, *current, fmt.Sprintf("Dispatcher %s: %s", dispatch.GetState(), reason))
+		return w.Store.DeliveryFailed(ctx, claim, *current, fmt.Sprintf("Dispatcher %s: %s", state, reason))
 	}
 	return nil
+}
+
+func normalizeDeliveryState(state dispatcherpb.DeliveryState) dispatcherpb.DeliveryState {
+	switch state {
+	case dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
+		dispatcherpb.DeliveryState_DELIVERY_STATE_DELIVERING_TO_RUNNER,
+		dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED,
+		dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED,
+		dispatcherpb.DeliveryState_DELIVERY_STATE_CANCELLED_IN_DISPATCHER,
+		dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN:
+		return state
+	default:
+		return dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN
+	}
 }
 
 // noticeDueAt is when the entries no notice covers become due for one: the quiet window after the newest of

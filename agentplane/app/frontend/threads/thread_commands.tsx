@@ -7,6 +7,7 @@ import { EvidencePanel, EvidenceToggle, revealEvidenceOnTap } from "./thread_evi
 import { type CommandIssue } from "./command_delivery";
 import type { LocalCommands, LocalCommand, PendingCommand } from "./local_commands";
 import { useThreadSync } from "./thread_sync";
+import { normalizeDeliveryState } from "./client";
 import {
   ThreadCommandOutcome,
   type ThreadCommand,
@@ -39,24 +40,22 @@ function progressStage(
   if (outcome === ThreadCommandOutcome.FAILED) return "failed";
   if (outcome === ThreadCommandOutcome.NOOP) return "noop";
   if (admitted) return "admitted";
-  switch (receipt?.state) {
+  switch (receipt ? normalizeDeliveryState(receipt.state) : undefined) {
     case DeliveryState.QUEUED_IN_DISPATCHER:
       return "queued";
     case DeliveryState.DELIVERING_TO_RUNNER:
       return "delivering";
     case DeliveryState.RUNNER_ADMITTED:
-    case DeliveryState.HARNESS_CONFIRMED:
       return "admitted";
-    case DeliveryState.NO_OP:
-      return "noop";
     case DeliveryState.FAILED:
       return "dispatch_failed";
     case DeliveryState.CANCELLED_IN_DISPATCHER:
       return "cancelled";
     case DeliveryState.UNKNOWN:
       return "unknown";
+    default:
+      return receipt ? "unknown" : (issue?.kind ?? "local");
   }
-  return issue?.kind ?? "local";
 }
 
 /** No-op is a settled result, not a fourth progress state. Keep its reason readable,
@@ -172,7 +171,7 @@ export function PendingInputMessages({
         const issue = row ? undefined : errors.get(id);
         const dispatchState = value.dispatch?.state;
         const dispatchAdmitted =
-          dispatchState === DeliveryState.RUNNER_ADMITTED || dispatchState === DeliveryState.HARNESS_CONFIRMED;
+          dispatchState !== undefined && normalizeDeliveryState(dispatchState) === DeliveryState.RUNNER_ADMITTED;
         const admitted = row !== undefined || value.admission !== null || dispatchAdmitted;
         const stage = progressStage(outcome, admitted, value.dispatch, issue);
         const failed =

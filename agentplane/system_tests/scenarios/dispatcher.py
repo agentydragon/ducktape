@@ -365,6 +365,7 @@ async def _dispatch_until(
                 if not response.HasField("dispatch"):
                     continue
                 row = response.dispatch
+                _normalize_delivery_state(row)
                 if row.state in (pb.DELIVERY_STATE_FAILED, pb.DELIVERY_STATE_UNKNOWN):
                     raise DispatchFailedError(f"{pb.DeliveryState.Name(row.state)}: {row.reason}")
                 if predicate(row):
@@ -372,6 +373,11 @@ async def _dispatch_until(
         finally:
             stream.cancel()
         raise AssertionError("Dispatch watch ended before the expected state")
+
+
+def _normalize_delivery_state(dispatch: pb.Dispatch) -> None:
+    if dispatch.state not in pb.DeliveryState.values():
+        dispatch.state = pb.DELIVERY_STATE_UNKNOWN
 
 
 async def session_until(
@@ -718,6 +724,8 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
                     if response == grpc.aio.EOF:
                         raise AssertionError("Replica watch missed the Sandbox deletion outcome")
                     assert isinstance(response, pb.WatchDispatchesResponse)
+                    if response.HasField("dispatch"):
+                        _normalize_delivery_state(response.dispatch)
                     if response.HasField("dispatch") and response.dispatch.state == pb.DELIVERY_STATE_FAILED:
                         assert response.dispatch.reason == "sandbox_deleted"
                         assert response.dispatch.command_id == deletion_command
@@ -768,6 +776,7 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
             try:
                 async for response in stream:
                     if response.HasField("dispatch") and response.dispatch.command_id == next_command:
+                        _normalize_delivery_state(response.dispatch)
                         if response.dispatch.state == pb.DELIVERY_STATE_FAILED:
                             assert response.dispatch.reason == "execution_identity_changed"
                             assert not response.dispatch.HasField("admission")
