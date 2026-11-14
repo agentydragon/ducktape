@@ -30,8 +30,8 @@ time. Tracks name it where their placement depends on it.
   with `?`.
 - `OPEN DIRECTION`: the move depends on a service decision nobody has made.
   Code under it stays where it is.
-- `DEFERRED …`: an operator-deferred contract decision. Authentication and
-  protobuf namespace choices stay separate from ordinary organization moves.
+- `DEFERRED …`: an operator-deferred contract decision. Protobuf namespace
+  choices stay separate from ordinary organization moves.
 - `retain`: the package keeps a specific responsibility and dependency boundary.
   It remains in scope. Retention does not mean every file in it is permanently
   settled or that the package has passed behavior acceptance for a new design.
@@ -41,8 +41,8 @@ time. Tracks name it where their placement depends on it.
 Stages run in order of certainty. Stage 1 deletes leftovers; stage 2 fixes
 layout in components no service decision touches; stage 3 follows directions
 the operator agreed; stage 4 extracts responsibilities behind a local contract;
-stage 5 waits on open service decisions; stage 6 holds deferred authentication
-and protobuf contracts. A file moves or is renamed once: an in-component move
+stage 5 waits on open service decisions; stage 6 holds the service
+authentication migration, which moves no files, and deferred protobuf contracts. A file moves or is renamed once: an in-component move
 waits for any agreed or open boundary change that would move the same file
 again. Line-level cleanups stay in the task DAG's cleanup section; this plan
 only orders them before the moves that would carry them.

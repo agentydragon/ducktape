@@ -9935,7 +9935,8 @@
       "The Notification Service probably splits into an inbox-holding service plus GitHub webhook processing as an actor adding messages to inboxes; the subscribe-to-a-source seam covering Actions and GitHub is unclear.",
       "Journals sounds like where History should eventually go; naming approved: Journal for what a harness or process emits, stored verbatim; Thread for the messaging object with editable messages. The migration is not approved work.",
       "The runtime-dials-Gateway connection mode was removed and the Gateway Lease is no longer particularly useful.",
-      "Service authentication will be made consistent; the scheme is not picked."
+      "Service authentication will be made consistent; the scheme is not picked.",
+      "Later the same day: \"One auth mode can fire off\" (PRIVILEGED_BACKEND_AUTH_DESIGN option 2: service SVIDs over mTLS for every service call; decision record in #16342)."
     ],
     "verified_at_devel": [
       "runner_gateway/environments, lifecycle, internal/management and internal/view import no Gateway or Dispatcher package.",

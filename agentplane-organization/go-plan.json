@@ -100,7 +100,7 @@
         "title": "Runtime calls from the Sessions binary",
         "status": "PROPOSED",
         "today": "The Dispatcher's `ProxyRunner` already calls the proxy over gRPC. The proxy admits `CreateSession`, `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort` and `InterruptTurn` only from the combined Gateway/Dispatcher account, proven at startup to belong to the serving Pod (`dispatcherAccount`).",
-        "proposal": "The Environments proxy grants those methods to the Sessions binary's workload identity instead, and callers address the Environments Service. After gateway-connection-lease-removal; receivers before senders.",
+        "proposal": "The Environments proxy grants those methods to the Sessions binary's service SVID instead, per the service authentication decision, and callers address the Environments Service. After gateway-connection-lease-removal; receivers before senders.",
         "evidence_paths": [
           "agentplane/runner_gateway/dispatcher/runner_client.go",
           "agentplane/runner_gateway/main.go",
@@ -5964,7 +5964,7 @@
           "decision": "retain",
           "target_paths": [],
           "reason": "Thirty-one production packages use this transport implementation; the accepted package home is net even while privileged authentication design remains deferred.",
-          "gate": "Keep peertls under net; defer mechanism decisions and preserve URI/EKU/rotation checks.",
+          "gate": "Keep peertls under net; the service SVID migration extends it in place; preserve URI/EKU/rotation checks.",
           "evidence_paths": [
             "agentplane/net/peertls/BUILD.bazel",
             "agentplane/net/peertls/client_tls.go",
@@ -11310,7 +11310,7 @@
       "how": [
         "After gateway-connection-lease-removal, re-inventory `internal/gateway`: the proxy, the Executor, peer authentication and Sandbox/Pod validation remain.",
         "Move it whole into the Environments binary as `environments/internal/runtimeproxy` (package `gateway` becomes `runtimeproxy`), served by the every-replica listener EnvironmentService brings (target binaries cut line: serving).",
-        "Grant the proxy's mutating methods to the Sessions binary's workload identity in place of the same-Pod account proof (`dispatcherAccount`), receivers before senders (cut line: Runtime calls).",
+        "Grant the proxy's mutating methods to the Sessions binary's service SVID (privileged-auth) in place of the same-Pod account proof (`dispatcherAccount`), receivers before senders (cut line: Runtime calls).",
         "Retarget callers: the Dispatcher's `ProxyRunner`, the app bridge, the Notification Service's `ProxyRunner` and the central sampler's Executor client. The controller's quiesce calls the Runtime directly, as its `WatchState` observer already does.",
         "Update RBAC, certificate identities, cdk8s and settings (code before manifests) and the README system diagram; remove the old serving path after traffic has left (cut line: rollout)."
       ],
@@ -11491,10 +11491,10 @@
     },
     {
       "id": "privileged-auth",
-      "title": "Choose privileged peer authentication",
-      "status": "DEFERRED DESIGN",
+      "title": "Replace backend bearers with service SVIDs without moving the auth owners",
+      "status": "PLANNED",
       "components": ["net", "identity", "sandboxes", "env"],
-      "kind": "contract design; no filesystem move selected",
+      "kind": "decided migration across services; no filesystem move selected",
       "source_paths": [
         "agentplane/net/peertls",
         "agentplane/identity/operator",
@@ -11502,12 +11502,12 @@
       ],
       "source_owner": "agentplane/net/peertls + identity + per-target clients",
       "candidate_target": null,
-      "summary": "Keep the current shared peer TLS owner at net/peertls. Later compare Kubernetes-independent service SPIFFE, audience-scoped ServiceAccount/TokenReview over pinned TLS, and explicit per-target configuration. No mechanism is selected. Operator, 2026-11-14 direction discussion: service authentication will be made consistent; the scheme is not picked (`PRIVILEGED_BACKEND_AUTH_DESIGN`).",
+      "summary": "Operator, 2026-11-14, `PRIVILEGED_BACKEND_AUTH_DESIGN` option 2: \"One auth mode can fire off\". Every first-party service-to-service call authenticates its caller by a service SVID over mTLS with verified server TLS; the `kubernetes_bearer` listener mode, Agentplane's TokenReview code, projected token audiences and the `tokenreviews` RBAC go, and Kubernetes authentication stays only toward the Kubernetes API. A service acting for an Identity proves itself with its certificate plus the typed delegation envelope. The app's `agentplane-agent` TokenReview bearer goes separately (operator, 05:05–05:06 UTC). The decision record is in #16342. The migration removes code paths inside files and moves none: `net/peertls` and `identity/auth` stay the owners.",
       "how": [
-        "Inventory callers, peer identity and delegated authority separately.",
-        "Design the mechanism and migration/configuration surface; then choose any additional owner boundaries from that contract."
+        "Runs as its own staged migration, owned by the DAG node `PRIVILEGED_BACKEND_AUTH_DESIGN`: inventory, issue and mount service SVIDs, receivers admit exact service SPIFFE IDs beside bearers (#16350), callers present SVIDs after the receivers' images are pinned, then bearer admission, TokenReview and its RBAC go.",
+        "This plan moves no file in `net/peertls`, `identity/auth` or the listener configuration while the migration runs. The two-binary split grants the Runtime proxy's methods to the Sessions binary's service SVID (target binaries cut line: Runtime calls)."
       ],
-      "gate": "Deferred by the operator. Do not move peer TLS under identity/transport or infer an authentication decision from a path change.",
+      "gate": "Decided 2026-11-14. Each stage rolls on its own with its rollback stated; certificates exist before code relies on them, receivers before callers, RBAC removals last. No reorg move waits on it.",
       "preserve": "Role and delegation boundaries; peer URI/EKU checks, rotation and expiry closure.",
       "validation": [],
       "evidence_paths": [
@@ -11717,9 +11717,9 @@
     },
     {
       "stage": 6,
-      "title": "Deferred authentication and protobuf contracts",
+      "title": "Service authentication migration and deferred protobuf contracts",
       "work": ["privileged-auth", "protobuf-alignment"],
-      "result": "Keep existing peer TLS and wire contracts until the operator selects mechanisms and compatibility rules. Inventory callers and stored payloads as preflight, not as a naming move."
+      "result": "Service authentication is decided (service SVIDs over mTLS, operator 2026-11-14) and migrates in its own stages without moving files. Keep wire contracts until the operator selects protobuf namespaces and compatibility rules; inventory callers and stored payloads as preflight, not as a naming move."
     }
   ],
   "scope_coverage": {
