@@ -60,6 +60,7 @@ type config struct {
 	WakeCallers                 []auth.Account     `mapstructure:"wake_callers"`
 	OperatorCallers             []auth.Account     `mapstructure:"operator_callers"`
 	ControllerAccount           *auth.Account      `mapstructure:"sandbox_controller_account"`
+	WakeBudgetControllerAccount *auth.Account      `mapstructure:"wake_budget_controller_account"`
 	QueueCap                    int                `mapstructure:"max_queued_per_session"`
 	WatchLeaseSeconds           int                `mapstructure:"dispatcher_watch_lease_seconds"`
 	RunnerTimeoutSeconds        int                `mapstructure:"runner_request_timeout_seconds"`
@@ -233,6 +234,9 @@ func (c *config) validate() error {
 		if !slices.Contains(c.DispatcherCallers, account) {
 			return fmt.Errorf("operator caller %s/%s is not a Dispatcher caller", account.Namespace, account.Name)
 		}
+	}
+	if account := c.WakeBudgetControllerAccount; account != nil && (account.Namespace == "" || account.Name == "") {
+		return errors.New("wake_budget_controller_account requires namespace and name")
 	}
 	if target := c.CentralSampler; target != nil && (target.Target == "" || target.TokenFile == "") {
 		return errors.New("central_sampler requires a target and token_file")

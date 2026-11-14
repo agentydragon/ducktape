@@ -72,6 +72,8 @@ conversation and from Runner admission.
   restricted to direct, Pod-bound callers and gives only its configured operator broker the
   requested-stop override. No deployment caller or delegated-method activation is part of this
   backend slice. `environment_managers` grants direct Pod-bound accounts full Sandbox management;
+  `wake_budget_controller_account` independently grants a Pod-bound controller only the private Dispatcher
+  budget reservation method; omission refuses all callers, and no deployment enables it yet.
   `environment_launchers` grants Action brokers create-only authority with required caller origin.
   `CreateEnvironment` names the Identity the Sandbox acts as and binds no PolicySets: a launch
   creates the Identity and grants it, including the default sets, before calling it.

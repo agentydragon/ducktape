@@ -1,0 +1,24 @@
+// Private wake-budget reservation for the Sandbox Controller. No HTTP binding.
+syntax = "proto3";
+
+package agentplane.runner_gateway.dispatcher;
+
+import "google/protobuf/duration.proto";
+
+service WakeBudget {
+  rpc ReserveWakeAttempt(ReserveWakeAttemptRequest) returns (ReserveWakeAttemptResponse);
+}
+
+message ReserveWakeAttemptRequest {
+  // The policy-approved effective caller incarnation, never the controller actor.
+  string caller_namespace = 1;
+  string caller_name = 2;
+  string caller_uid = 3;
+  string sandbox_uid = 4;
+  int64 wake_generation = 5;
+}
+
+message ReserveWakeAttemptResponse {
+  // Zero means reserved or an exact retry; positive means no reservation was made.
+  google.protobuf.Duration retry_after = 1;
+}

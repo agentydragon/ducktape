@@ -108,6 +108,10 @@ class Settings(BaseModel):
     sandbox_controller_account: ServiceAccountName | None = Field(
         default=None, description="ServiceAccount admitted to Quiesce through the Gateway, as namespace/name."
     )
+    wake_budget_controller_account: ServiceAccountName | None = Field(
+        default=None,
+        description="Pod-bound Sandbox Controller ServiceAccount allowed to reserve the Dispatcher's shared wake budget.",
+    )
     max_queued_per_session: int = Field(default=1000, ge=1, description="Queued commands per Session.")
     dispatcher_watch_lease_seconds: int = Field(default=300, ge=1, description="WatchDispatches stream lease.")
     runner_request_timeout_seconds: int = Field(default=10, ge=1, description="Per-Sandbox Runner call timeout.")

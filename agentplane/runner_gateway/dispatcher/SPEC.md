@@ -172,6 +172,13 @@ It scopes existing Sessions and existing environments; it does not create enviro
   its observation time, observed generation, optional retry time and structured status details. The shared lifecycle
   budget charges caller namespace/name/UID plus Sandbox UID and generation. An uncertain patch result is not retried
   during the same observed generation; a later generation triggers a fresh assessment.
+- The private `WakeBudget.ReserveWakeAttempt` gRPC method exposes that same PostgreSQL reservation to a future
+  Sandbox Controller lifecycle instance. It takes the policy-approved effective caller incarnation, exact
+  Sandbox UID and next wake generation, and returns the existing retry duration. A duplicate generation does
+  not spend budget; storage failure refuses the reservation. Only a direct, Pod-bound ServiceAccount whose
+  exact name is set by `wake_budget_controller_account` may call it. The setting defaults absent, independently
+  of `sandbox_controller_account`, Dispatcher caller and delegation grants. This receiver does not move wake
+  policy, call sites or serving traffic out of the Gateway.
 - Central sampler openings and their inputs bypass executor readiness and automatic wake. The suspended execution
   environment does not block delivery to the central sampler.
 

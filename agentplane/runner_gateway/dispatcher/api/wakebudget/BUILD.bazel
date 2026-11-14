@@ -1,0 +1,20 @@
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+
+package(default_visibility = ["//agentplane/runner_gateway:__subpackages__"])
+
+proto_library(
+    name = "wake_budget_proto",
+    srcs = ["wake_budget.proto"],
+    deps = ["@protobuf//:duration_proto"],
+)
+
+go_proto_library(
+    name = "wake_budget_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/wakebudget/wakebudgetpb",
+    proto = ":wake_budget_proto",
+)

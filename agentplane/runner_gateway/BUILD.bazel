@@ -168,6 +168,7 @@ go_library(
         "//agentplane/postgres/migrate",
         "//agentplane/runner_gateway/dispatcher",
         "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_go_proto",
+        "//agentplane/runner_gateway/dispatcher/api/wakebudget:wake_budget_go_proto",
         "//agentplane/runner_gateway/environments",
         "//agentplane/runner_gateway/environments/lifecycle",
         "//agentplane/runner_gateway/internal/gateway",

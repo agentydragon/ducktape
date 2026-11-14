@@ -17,6 +17,7 @@ import (
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	authlistener "github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
@@ -28,6 +29,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
+	wakebudgetpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/wakebudget/wakebudgetpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/internal/gateway"
@@ -105,6 +107,31 @@ func accountNamespaces(accounts []auth.Account, extra *auth.Account, additional 
 		}
 	}
 	return sets.List(names)
+}
+
+func dispatcherWorkloadNamespaces(c config) []string {
+	accounts := append(append(append(append([]auth.Account{}, c.DispatcherCallers...), c.EnvironmentReaders...), c.EnvironmentManagers...), c.EnvironmentLaunchers...)
+	var delegators []auth.Account
+	if c.Delegation != nil {
+		delegators = append(delegators, c.Delegation.Actor)
+	}
+	return accountNamespaces(accounts, &auth.Account{Namespace: c.Namespace}, delegators...)
+}
+
+// The budget grant is separate from every ordinary Dispatcher and Environment caller rule.
+// It uses the same TLS listener and Dispatcher audience, but admits only bearer credentials.
+func wakeBudgetControllerResolver(c config, reviews auth.TokenReviews) (*auth.Resolver, error) {
+	if c.WakeBudgetControllerAccount == nil {
+		return nil, nil
+	}
+	if !c.RPC.Has(authlistener.KubernetesBearer) || !c.RPC.AllowsBearerAudience(c.DispatcherAudience) {
+		return nil, errors.New("wake_budget_controller_account requires Dispatcher-audience kubernetes_bearer authentication")
+	}
+	resolver, err := auth.NewResolver(reviews, c.DispatcherAudience, []string{c.WakeBudgetControllerAccount.Namespace})
+	if err != nil {
+		return nil, err
+	}
+	return resolver.WithListenerAuthentication(c.rpcForMethodAudience(c.DispatcherAudience, false), nil)
 }
 
 type lifecycleWakeBudget struct {
@@ -251,13 +278,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	if err != nil {
 		return err
 	}
-	var delegatedActors []auth.Account
-	if c.Delegation != nil {
-		delegatedActors = append(delegatedActors, c.Delegation.Actor)
-	}
-	dispatchAccounts := append(append(append(append([]auth.Account{}, c.DispatcherCallers...), c.EnvironmentReaders...), c.EnvironmentManagers...), c.EnvironmentLaunchers...)
-	workloadNamespaces := accountNamespaces(dispatchAccounts, &auth.Account{Namespace: c.Namespace}, delegatedActors...)
-	dispatchAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.DispatcherAudience, workloadNamespaces)
+	dispatchAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.DispatcherAudience, dispatcherWorkloadNamespaces(c))
 	if err != nil {
 		return err
 	}
@@ -269,6 +290,10 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	dispatcherAuth, err := dispatchAuth.WithListenerAuthentication(c.rpcForMethodAudience(c.DispatcherAudience, true), dispatcherSVIDs)
 	if err != nil {
 		return fmt.Errorf("configure Gateway Dispatcher authentication: %w", err)
+	}
+	wakeBudgetAuth, err := wakeBudgetControllerResolver(c, kube.AuthenticationV1().TokenReviews())
+	if err != nil {
+		return fmt.Errorf("configure Gateway wake budget authentication: %w", err)
 	}
 	gatewayAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.GatewayAudience,
 		accountNamespaces(append(append([]auth.Account{}, c.GatewayCallers...), c.ExecutorCallers...), c.ControllerAccount))
@@ -349,6 +374,9 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	dispatcherMethods := dispatcher.Methods(auth.ReviewedServiceAccountOrIdentity(dispatcherAuth))
 	methods := auth.HealthMethods()
 	maps.Copy(methods, dispatcherMethods)
+	if wakeBudgetAuth != nil {
+		maps.Copy(methods, dispatcher.WakeBudgetMethods(wakeBudgetAuth))
+	}
 	maps.Copy(methods, environments.Methods(dispatcherAuth))
 	if c.Delegation != nil {
 		delegator := auth.Delegator{
@@ -379,6 +407,9 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 		}),
 	)...)
 	dispatcherpb.RegisterSessionDispatcherServer(server, service)
+	wakebudgetpb.RegisterWakeBudgetServer(server, &dispatcher.WakeBudgetService{
+		Store: store, ControllerAccount: c.WakeBudgetControllerAccount,
+	})
 	environmentpb.RegisterEnvironmentServiceServer(server, environmentService)
 	defer server.Stop()
 	g.RegisterProxy(server)

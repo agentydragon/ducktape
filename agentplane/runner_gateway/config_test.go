@@ -53,6 +53,8 @@ rpc:
 
 type configTestTokenReviews struct{}
 
+type wakeBudgetNamespaceReviews struct{}
+
 type configTestWakeBudget struct{}
 
 func (configTestWakeBudget) ReserveWakeAttempt(context.Context, lifecycle.WakeBudgetKey, string, int64) (time.Duration, error) {
@@ -70,6 +72,24 @@ func (configTestTokenReviews) Create(
 		User: authenticationv1.UserInfo{
 			Username: "system:serviceaccount:agentplane:app",
 			UID:      "app-account-uid",
+		},
+	}}, nil
+}
+
+func (wakeBudgetNamespaceReviews) Create(_ context.Context, request *authenticationv1.TokenReview, _ metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
+	account := "agentplane/app"
+	if request.Spec.Token == "controller" {
+		account = "budget-test/controller"
+	}
+	parts := strings.Split(account, "/")
+	return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
+		Authenticated: true, Audiences: request.Spec.Audiences,
+		User: authenticationv1.UserInfo{
+			Username: "system:serviceaccount:" + parts[0] + ":" + parts[1], UID: "test-account-uid",
+			Extra: map[string]authenticationv1.ExtraValue{
+				"authentication.kubernetes.io/pod-name": {"test-pod"},
+				"authentication.kubernetes.io/pod-uid":  {"test-pod-uid"},
+			},
 		},
 	}}, nil
 }
@@ -159,6 +179,65 @@ func TestOperatorCallersMustAlsoBeAuthenticatedDispatcherCallers(t *testing.T) {
 	}
 	if len(c.OperatorCallers) != 0 {
 		t.Fatalf("empty operator caller list loaded as %v", c.OperatorCallers)
+	}
+}
+
+func TestWakeBudgetControllerGrantIsIndependentAndDefaultDisabled(t *testing.T) {
+	without, err := configtest.Load(t, settingPrefix, loadConfig, required(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if without.WakeBudgetControllerAccount != nil {
+		t.Fatal("wake budget controller grant is enabled by default")
+	}
+	path := configtest.WriteSettings(t, requiredFile+"wake_budget_controller_account: budget-test/controller\n")
+	configured, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *configured.WakeBudgetControllerAccount != (auth.Account{Namespace: "budget-test", Name: "controller"}) ||
+		configured.ControllerAccount == nil || configured.ControllerAccount.Name != "sandbox-controller" {
+		t.Fatalf("controller grants were conflated: %+v", configured)
+	}
+	ordinary, err := auth.NewResolver(wakeBudgetNamespaceReviews{}, configured.DispatcherAudience, dispatcherWorkloadNamespaces(configured))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ordinary.ResolveReviewedCallerToken(t.Context(), "controller"); err == nil {
+		t.Fatal("wake-budget-only namespace gained ordinary Dispatcher authority")
+	}
+	wakeBudget, err := wakeBudgetControllerResolver(configured, wakeBudgetNamespaceReviews{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if caller, err := wakeBudget.ResolveReviewedCallerToken(t.Context(), "controller"); err != nil || caller.Pod == nil {
+		t.Fatalf("configured controller resolver = %+v, %v", caller, err)
+	}
+	if _, err := wakeBudget.ResolveReviewedCallerToken(t.Context(), "app"); err == nil {
+		t.Fatal("ordinary Dispatcher namespace gained controller-only authority")
+	}
+	selected := configured.rpcForMethodAudience(configured.DispatcherAudience, false)
+	if selected.TLS == nil || !selected.Has(listener.KubernetesBearer) || selected.Has(listener.SPIFFE) {
+		t.Fatalf("wake budget listener policy = %+v", selected)
+	}
+	path = configtest.WriteSettings(t, requiredFile+"wake_budget_controller_account: controller\n")
+	if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path)); err == nil {
+		t.Fatal("malformed wake budget controller grant was accepted")
+	}
+}
+
+func TestWakeBudgetResolverDisabledWithoutBearer(t *testing.T) {
+	c := defaultConfig()
+	c.Namespace = "agentplane"
+	c.DispatcherAudience = "session-dispatcher"
+	c.RPC.Auth = []listener.Authentication{&listener.SPIFFEAuth{}}
+	resolver, err := wakeBudgetControllerResolver(c, wakeBudgetNamespaceReviews{})
+	if err != nil || resolver != nil {
+		t.Fatalf("absent grant with SPIFFE-only listener = %v, %v", resolver, err)
+	}
+	c.WakeBudgetControllerAccount = &auth.Account{Namespace: "budget-test", Name: "controller"}
+	if _, err := wakeBudgetControllerResolver(c, wakeBudgetNamespaceReviews{}); err == nil {
+		t.Fatal("controller grant accepted without Dispatcher-audience bearer authentication")
 	}
 }
 
