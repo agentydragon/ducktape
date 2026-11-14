@@ -16,8 +16,10 @@ _EXPECTED_OUTPUTS = {
     "local-model-central-budget.json",
     "local-model-central-services.json",
     "local-model-firecracker.json",
+    "local-model-firecracker-native.json",
     "local-model-mcp-fixtures.json",
     "local-model-vm.json",
+    "local-model-vm-native.json",
     "public-litellm.json",
 }
 

@@ -664,7 +664,7 @@ async def launcher_drives_only_the_sandbox_it_launched(
         environment_target = identity_pb2.EnvironmentTarget(
             namespace=cluster.namespace, name=target["name"], uid=target["uid"]
         )
-        view = await wait_until_running(client, environment_target)
+        view = await wait_until_running(sandbox.environment, environment_target)
         assert view.target.uid == target["uid"]
         assert view.identity_name == name
         assert view.kubernetes_diagnostics.HasField("pod")
@@ -813,7 +813,7 @@ async def launcher_drives_only_the_sandbox_it_launched(
         assert refused.decision.WhichOneof("decider") == "policy"
         assert refused.decision.policy.evidence.matched.policy_set == f"{name}.launcher"
 
-        await suspend_and_delete(cluster, client, name, view.target.uid)
+        await suspend_and_delete(cluster, sandbox.environment, name, view.target.uid)
         deleted = True
         await _wait_unbound(launcher, launcher_view.identity_name, f"{name}.launcher")
         revoked = await launcher.submit(
@@ -822,7 +822,7 @@ async def launcher_drives_only_the_sandbox_it_launched(
         await _decide_pending(operator_bff, revoked.id, action_service_pb2.VERDICT_DENY)
     finally:
         if not deleted:
-            await suspend_and_delete(cluster, client, name, target["uid"])
+            await suspend_and_delete(cluster, sandbox.environment, name, target["uid"])
 
 
 # `session_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.

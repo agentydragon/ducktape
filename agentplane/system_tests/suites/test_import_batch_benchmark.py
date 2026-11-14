@@ -416,3 +416,5 @@ def test_import_batch_arms_use_fresh_stores_and_warm_repeats(
 
 if __name__ == "__main__":
     pytest_bazel.main()
+
+# gazelle:include_dep //agentplane/system_tests/k3s:pytest_plugin

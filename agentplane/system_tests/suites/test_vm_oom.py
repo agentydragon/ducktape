@@ -13,7 +13,10 @@ from agentplane.system_tests.driver.offered_models import models_offered_for
 from agentplane.system_tests.driver.scenario import ScenarioResources
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import traced_scenario
-from agentplane.system_tests.scenarios import vm_sandbox
+from agentplane.system_tests.scenarios import vm_oom
+
+# Generated Session stubs import protobuf directly during mypy traversal.
+# gazelle:include_dep @pypi//protobuf
 
 
 @pytest.mark.vm_sandboxes
@@ -30,7 +33,7 @@ async def test_codex_tool_oom(
     async with scenario_resources() as (owned_client, sandbox):
         await traced_scenario(
             "codex-tool-oom",
-            vm_sandbox.codex_tool_oom(
+            vm_oom.codex_tool_oom(
                 cluster,
                 owned_client,
                 dispatcher,

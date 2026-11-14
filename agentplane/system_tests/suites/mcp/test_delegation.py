@@ -15,14 +15,14 @@ import pytest_bazel
 from google.protobuf.json_format import ParseDict
 from more_itertools import one
 
-from agentplane.app.testing.client import Client
 from agentplane.environments.v1 import environment_service_pb2
-from agentplane.grpc.calls import ServiceError
+from agentplane.grpc.calls import RefusedError, ServiceError
 from agentplane.mcp_edge.api.connection import connection_service_pb2
 from agentplane.proto import identity_pb2
 from agentplane.system_tests.deployment.stack import Stack
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.dispatcher_transport import native_client
+from agentplane.system_tests.driver.environment_transport import native_environment_client
 from agentplane.system_tests.driver.identity import (
     LAUNCH_DEFAULT_POLICY_SETS,
     create_scenario_identity,
@@ -30,7 +30,6 @@ from agentplane.system_tests.driver.identity import (
 )
 from agentplane.system_tests.driver.mcp_connection import ExternalMCPSession, connected_session
 from agentplane.system_tests.driver.operator_login import OperatorCredentials
-from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, suspend_and_delete, wait_until_running
 
 _REQUIRED_TOOLS = {"environments__list", "environments__get", "sessions__create"}
@@ -84,21 +83,9 @@ async def _wait_app(cluster: Cluster, *, replicas: int) -> None:
             await asyncio.sleep(0.5)
 
 
-async def _cleanup_sandbox(cluster: Cluster, token: str, name: str, uid: str) -> None:
-    service = json.loads(await cluster.kubectl("get", "service", "app", "-o", "json"))
-    remote_port = service["spec"]["ports"][0]["port"]
-    forward = PortForward(
-        cluster.command("port-forward"),
-        resource="service/app",
-        local_address="127.0.0.1",
-        local_port=None,
-        remote_port=remote_port,
-    )
-    async with (
-        async_port_forward(forward) as endpoint,
-        Client.connect(base_url=f"http://{endpoint}", token=token) as cleanup_client,
-    ):
-        await suspend_and_delete(cluster, cleanup_client, name, uid)
+async def _cleanup_sandbox(cluster: Cluster, token_file: Path, name: str, uid: str) -> None:
+    async with native_environment_client(cluster, token_file) as environments:
+        await suspend_and_delete(cluster, environments, name, uid)
 
 
 @pytest.mark.scripted_model
@@ -108,7 +95,6 @@ async def test_external_connection_cannot_control_an_identity_sandbox(
     deployment: Stack,
     operator_bff: httpx.AsyncClient,
     operator_credentials: OperatorCredentials,
-    base_url: str,
     tmp_path: Path,
 ) -> None:
     """An external Identity Connection cannot discover or create Sessions for another Identity."""
@@ -122,20 +108,27 @@ async def test_external_connection_cannot_control_an_identity_sandbox(
     created: identity_pb2.EnvironmentTarget | None = None
     app_needs_restore = False
     try:
-        # Close this setup transport before deliberately removing its app Pod. Cleanup opens
-        # a fresh port-forward; a failed scenario must not capture diagnostics through a dead one.
-        async with Client.connect(base_url=base_url, token=deployment.token) as setup_client:
+        # Native lifecycle access remains available while the application deployment is stopped.
+        async with native_environment_client(cluster, tmp_path / "gateway-setup-token") as environments:
             request = environment_service_pb2.CreateEnvironmentRequest(
                 name=name, template=POD_TEMPLATE, identity=identity["name"]
             )
             try:
-                created = await setup_client.create_sandbox(request)
-            except httpx.HTTPStatusError as error:
-                status = error.response.status_code
-                if 400 <= status < 500 and status not in (408, 429):
+                created = await environments.create_environment(request)
+            except RefusedError:
+                await delete_scenario_identity(cluster, identity)
+                raise
+            except ServiceError as error:
+                if error.code in {
+                    grpc.StatusCode.INVALID_ARGUMENT,
+                    grpc.StatusCode.UNAUTHENTICATED,
+                    grpc.StatusCode.PERMISSION_DENIED,
+                    grpc.StatusCode.NOT_FOUND,
+                    grpc.StatusCode.ALREADY_EXISTS,
+                }:
                     await delete_scenario_identity(cluster, identity)
                 raise
-            view = await wait_until_running(setup_client, created)
+            view = await wait_until_running(environments, created)
         assert view.kubernetes_diagnostics.HasField("pod")
         assert view.identity_name == identity["name"]
 
@@ -161,8 +154,8 @@ async def test_external_connection_cannot_control_an_identity_sandbox(
             assert tools.isdisjoint(_UNGRANTED_TOOLS)
 
             page = await _tool(session, "environments__list", {"limit": 10})
-            environments = ParseDict(page, environment_service_pb2.ListEnvironmentsResponse())
-            assert not environments.items, environments
+            listed_environments = ParseDict(page, environment_service_pb2.ListEnvironmentsResponse())
+            assert not listed_environments.items, listed_environments
 
             target = {"namespace": created.namespace, "name": created.name, "uid": created.uid}
             await _tool(
@@ -207,7 +200,7 @@ async def test_external_connection_cannot_control_an_identity_sandbox(
             await cluster.kubectl("wait", "--for=condition=Available", "deployment/app", "--timeout=180s")
             await _wait_app(cluster, replicas=1)
         if created is not None:
-            await _cleanup_sandbox(cluster, deployment.token, created.name, created.uid)
+            await _cleanup_sandbox(cluster, tmp_path / "gateway-cleanup-token", created.name, created.uid)
             await delete_scenario_identity(cluster, identity)
 
 
