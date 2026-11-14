@@ -92,12 +92,15 @@ class SandboxController(Construct):
         runner_tls = workload_tls.client_certificate(
             self, env, container=workload.container, name=NAME, uri=SANDBOX_CONTROLLER_URI
         )
+        assert runner_tls.cert_file is not None
+        assert runner_tls.key_file is not None
+        assert runner_tls.ca_file is not None
         settings = Settings(
             runner_gateway_tls=ClientTLS(
-                ca_file=Path(workload_tls.TRUST_BUNDLE_FILE),
+                ca_file=Path(runner_tls.ca_file),
                 server_uri=SESSION_DISPATCHER_URI,
-                cert_file=Path("/run/agentplane/sandbox-controller-client-tls/tls.crt"),
-                key_file=Path("/run/agentplane/sandbox-controller-client-tls/tls.key"),
+                cert_file=Path(runner_tls.cert_file),
+                key_file=Path(runner_tls.key_file),
                 client_uri=SANDBOX_CONTROLLER_URI,
             ),
             runner_security=MTLS(tls=runner_tls),
