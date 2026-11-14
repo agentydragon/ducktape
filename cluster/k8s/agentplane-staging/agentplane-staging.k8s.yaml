@@ -1603,6 +1603,8 @@ data:
     admin_grpc_audience: agentplane-egress-admin
     admin_grpc_callers:
       - agentplane-staging/app
+    admin_grpc_service_callers:
+      - spiffe://agentplane/app
     ca_cert: /etc/agentplane-egress/ca/tls.crt
     ca_key: /etc/agentplane-egress/ca/tls.key
     upstream_ca_file: /etc/agentplane-egress/upstream-ca/ca-certificates.crt
