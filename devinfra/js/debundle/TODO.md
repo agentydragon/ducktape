@@ -400,13 +400,22 @@ Infer literal-string `TextEncoder.encode` initialization from a proved fresh
 receiver and intact constructor/method identities. The accepted split in
 `e2e/initializer_source_only_test.rs` currently needs explicit initializer purity
 and lexical-effect promises. Its dataflow-aware allocation fixture additionally
-needs commuting promises against independent allocations: purity and lexical
-effects alone do not establish heap independence, and commuting with one barrier
-preserves ordering through earlier statements. Compose precise heap/call effects
+uses either commuting promises against independent allocations or the scoped
+`initializer_heap_effects: isolated` author contract. Purity and lexical effects
+alone do not establish heap independence, and commuting with one barrier preserves
+ordering through earlier statements. Compose precise heap/call effects
 and native proof dependencies so those promises can be removed; retain fallback
 for shadowing, replacement, accessors and coercing arguments. Follow
 <plans/native_receiver_identity.md> and verify a real extraction gain before
 changing gate behavior.
+
+Heap-isolation admission currently rejects any source-observed content access
+without a fresh runtime ownership proof. Do not whitelist a cell merely because
+its allocation site occurs in the same initializer's invoked helpers: source
+origins conflate earlier, recursive and deferred runtime generations. Extend
+admission only with a real source/spec acceptance case requiring stronger fresh
+ownership evidence. `observes_external_heap` currently records known native
+class-key reads without a cell witness and must remain a separate rejection.
 
 ## Rename pipeline
 

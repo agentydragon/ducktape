@@ -355,6 +355,7 @@ pub fn build_dependency_graph_with(
             synchronous_execution: stmt.synchronous_calls.as_ref().map(|calls| {
                 crate::reports::schema::SynchronousExecutionReport {
                     initializer_binding_effects: calls.initializer_binding_effects.clone(),
+                    initializer_heap_effects: calls.initializer_heap_effects.clone(),
                     purity_disagreement: calls.purity_disagreement.clone(),
                     binding_effect_authority: Some(calls.binding_effect_authority_report()),
                     local_record_factory_uses: calls.local_record_factory_uses.clone(),
@@ -1144,6 +1145,29 @@ fn emit_heap_content_order(
             .is_some_and(|calls| calls.complete)
         {
             opaque_causes.insert(HeapBarrierCause::IncompleteSynchronousExecution);
+        }
+        if let Some(calls) = &stmt.synchronous_calls
+            && calls
+                .initializer_heap_effects
+                .as_ref()
+                .is_some_and(|effect_use| {
+                    effect_use.effects == spec::InitializerHeapEffects::Isolated
+                })
+        {
+            // A validated author promise covers only this initializer's
+            // unknown heap accesses. Keep source-observed cells, allocation
+            // events and non-heap/impure ordering; never complete execution.
+            effects = heap_content_cells(&own.reads, &own.writes);
+            union_effects(
+                &mut effects,
+                &heap_content_cells(
+                    &calls.non_assumed_heap_accesses.reads,
+                    &calls.non_assumed_heap_accesses.writes,
+                ),
+            );
+            opaque_causes.remove(&HeapBarrierCause::ArrayContentEffects);
+            opaque_causes.remove(&HeapBarrierCause::CalleeHeapEffects);
+            opaque_causes.remove(&HeapBarrierCause::IncompleteSynchronousExecution);
         }
         let opaque = !opaque_causes.is_empty();
         has_live_heap_contents |=

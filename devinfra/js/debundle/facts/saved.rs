@@ -482,6 +482,7 @@ impl<'a> SavedStatementFacts<'a> {
 struct SavedSynchronousCalls<'a> {
     initializer_binding_effects:
         Cow<'a, Option<Box<crate::reports::schema::InitializerBindingEffectsUse>>>,
+    initializer_heap_effects: Cow<'a, Option<crate::reports::schema::InitializerHeapEffectsUse>>,
     completed_initialization:
         Cow<'a, Option<super::sync_effects::noninvoking_initialization::CompletedInitialization>>,
     initialization_coverage_refusal:
@@ -534,6 +535,7 @@ impl<'a> SavedSynchronousCalls<'a> {
     ) -> Result<Self> {
         Ok(Self {
             initializer_binding_effects: Cow::Borrowed(&calls.initializer_binding_effects),
+            initializer_heap_effects: Cow::Borrowed(&calls.initializer_heap_effects),
             completed_initialization: Cow::Borrowed(&calls.completed_initialization),
             initialization_coverage_refusal: Cow::Borrowed(&calls.initialization_coverage_refusal),
             root_attempt: calls.root_attempt,
@@ -625,6 +627,7 @@ impl<'a> SavedSynchronousCalls<'a> {
     ) -> Result<SynchronousCalls> {
         Ok(SynchronousCalls {
             initializer_binding_effects: self.initializer_binding_effects.into_owned(),
+            initializer_heap_effects: self.initializer_heap_effects.into_owned(),
             completed_initialization: self.completed_initialization.into_owned(),
             initialization_coverage_refusal: self.initialization_coverage_refusal.into_owned(),
             root_attempt: self.root_attempt,
