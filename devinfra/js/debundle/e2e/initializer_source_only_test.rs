@@ -7,7 +7,68 @@ use std::fs;
 use debundle_e2e_support::saved_analysis::*;
 use debundle_e2e_support::*;
 use serde_json::Value;
-use spec::{IntrinsicFamilies, IntrinsicFamily, IntrinsicsNeverWritten, ProgramPremises};
+use spec::{
+    BindingAnnotation, InitializerBindingEffects, IntrinsicFamilies, IntrinsicFamily,
+    IntrinsicsNeverWritten, ProgramPremises,
+};
+
+fn annotated_encoder_split(source: &'static str) -> FixtureOpts<'static> {
+    let mut codec = logical_module(
+        "codec",
+        &[
+            Member::new("encoder"),
+            Member::new("left"),
+            Member::new("right"),
+        ],
+    );
+    for binding in ["left", "right"] {
+        codec.1.annotations.insert(
+            binding.to_owned(),
+            BindingAnnotation {
+                initializer_purity: InitializerPurity::Pure,
+                initializer_binding_effects: Some(InitializerBindingEffects::SourceOnly),
+                ..Default::default()
+            },
+        );
+    }
+    FixtureOpts::new(source, vec![codec]).with_unassigned_mode(unassigned_mode_inline())
+}
+
+#[test]
+fn audited_encoder_initializers_emit_together_and_preserve_output() {
+    let fixture = run_fixture(annotated_encoder_split(
+        "const encoder = new TextEncoder();\n\
+         function peek() { return later; }\n\
+         globalThis.saved = peek;\n\
+         const left = encoder.encode('a');\n\
+         globalThis.marker = 1;\n\
+         const right = encoder.encode('b');\n\
+         const later = 2;\n\
+         console.log(left[0], right[0], globalThis.marker, globalThis.saved());\n\
+         export { encoder, left, right };\n",
+    ));
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/codec.js",
+        &["encoder", "left", "right"],
+        &[],
+    );
+    assert_preserved_entry_output(&fixture, "97 98 1 2\n");
+}
+
+#[test]
+fn encoder_initializer_contract_rejects_observed_application_state_writes() {
+    expect_rejection_containing_all(
+        annotated_encoder_split(
+            "let state = 0;\n\
+             const encoder = { encode(value) { state++; return value; } };\n\
+             const left = encoder.encode('a');\n\
+             const right = encoder.encode('b');\n\
+             export { encoder, left, right };\n",
+        ),
+        &["initializer_binding_effects", "contradicts", "state"],
+    );
+}
 
 fn set_source_only(staged: &Staged, binding: &str, chunk_rename: bool) {
     let mut spec: serde_yaml::Value =
