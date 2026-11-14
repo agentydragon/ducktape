@@ -582,6 +582,12 @@ func (s *Manager) admittedResumeCaller(ctx context.Context) (WakeCaller, bool, e
 			return nil, false, status.Error(codes.Unauthenticated, errInvalidCaller.Error())
 		}
 		return IdentityWakeCaller{Identity: identity}, false, nil
+	case auth.DelegatedServiceIdentityAdmission:
+		identity := &identitypb.Identity{Name: caller.EffectiveCaller.Name, Uid: caller.EffectiveCaller.UID}
+		if !validIdentity(identity) {
+			return nil, false, status.Error(codes.Unauthenticated, errInvalidCaller.Error())
+		}
+		return IdentityWakeCaller{Identity: identity}, false, nil
 	case auth.DelegatedIdentityAdmission:
 		identity := &identitypb.Identity{Name: caller.EffectiveCaller.Name, Uid: caller.EffectiveCaller.UID}
 		if !validIdentity(identity) {
