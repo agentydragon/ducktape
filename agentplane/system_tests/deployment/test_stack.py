@@ -78,5 +78,111 @@ def test_leftover_sandbox_prevents_workload_cleanup(
     assert all(command[0] == "get" for command in calls)
 
 
+@pytest.mark.parametrize("existing", ["marker", "private_data"])
+def test_fresh_kvm_refusal_precedes_stack_creation_and_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, existing: str
+) -> None:
+    root = tmp_path / "retained"
+    root.mkdir()
+    marker = root / "server.json"
+    data_dir = root / "data"
+    monkeypatch.setattr(baseline, "_BASELINE_ROOT", root)
+    monkeypatch.setattr(baseline, "_BASELINE_MARKER", marker)
+    if existing == "marker":
+        marker.write_text('{"state":"dirty"}')
+    else:
+        data_dir.mkdir()
+    monkeypatch.setenv("AGENTPLANE_K3S_REQUIRE_KVM", "1")
+    monkeypatch.delenv("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE", raising=False)
+
+    calls: list[str] = []
+    monkeypatch.setattr(stack.baseline, "stop_previous", lambda: calls.append("stop_previous"))
+    monkeypatch.setattr(stack.baseline, "stop_owned", lambda *_args: calls.append("stop_owned"))
+    monkeypatch.setattr(stack.baseline, "_reset_previous_stack", lambda *_args: calls.append("reset"))
+    monkeypatch.setattr(stack.tempfile, "mkdtemp", lambda: calls.append("work_mkdir"))
+    monkeypatch.setattr(stack, "K3s", lambda *_args, **_kwargs: calls.append("construct_k3s"))
+
+    with (
+        pytest.raises(RuntimeError, match="fresh KVM action found"),
+        stack.running_stack(
+            inputs=None,  # type: ignore[arg-type]
+            models=None,  # type: ignore[arg-type]
+            validate_vm_shutdown=lambda: True,
+            persist_infrastructure=False,
+            virtualization_factory=None,
+        ),
+    ):
+        pytest.fail("refused state must not reach a running stack")
+
+    assert calls == []
+    if existing == "marker":
+        assert marker.read_text() == '{"state":"dirty"}'
+    else:
+        assert data_dir.is_dir()
+
+
+@pytest.mark.parametrize("require_kvm", [False, True])
+def test_action_store_and_previous_stop_follow_the_selected_lifecycle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fixture: rendered_fixture.RenderedFixture, require_kvm: bool
+) -> None:
+    root = tmp_path / "retained"
+    monkeypatch.setattr(baseline, "_BASELINE_ROOT", root)
+    monkeypatch.setattr(baseline, "_BASELINE_MARKER", root / "server.json")
+    monkeypatch.setenv("AGENTPLANE_K3S_REQUIRE_KVM", "1" if require_kvm else "0")
+    monkeypatch.delenv("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE", raising=False)
+    monkeypatch.setattr(stack.tempfile, "mkdtemp", lambda: str(tmp_path / "work"))
+    monkeypatch.setattr(stack.pki_infrastructure, "releases", lambda: ([], []))
+    monkeypatch.setattr(stack.process_traces, "ProcessTraces", lambda *_args: contextlib.nullcontext())
+    events: list[tuple[str, dict[str, Any]]] = []
+
+    class StartReachedError(Exception):
+        """End this offline fixture test before a real node could start."""
+
+    class FakeK3s:
+        node_ip = "127.0.0.1"
+
+        def __init__(self, work: Path, binary: Path, **kwargs: Any) -> None:
+            events.append(("construct", {"work": work, "binary": binary, **kwargs}))
+
+        def image_store_is_retainable(self) -> bool:
+            return False
+
+        def start(self, **kwargs: Any) -> None:
+            events.append(("start", kwargs))
+            raise StartReachedError
+
+    monkeypatch.setattr(stack, "K3s", FakeK3s)
+    monkeypatch.setattr(stack.baseline, "stop_previous", lambda: events.append(("stop_previous", {})))
+    inputs = stack.StackInputs(
+        fixture=fixture,
+        binary=Path("k3s"),
+        image_layouts={},
+        pki_image_layouts={},
+        vm_image_layouts={},
+        guest_image_layouts={},
+    )
+    with (
+        pytest.raises(StartReachedError),
+        stack.running_stack(
+            inputs,
+            models=rendered_fixture.LocalModel(url="http://model.test.invalid"),
+            validate_vm_shutdown=lambda: True,
+            persist_infrastructure=False,
+            virtualization_factory=None,
+        ),
+    ):
+        pytest.fail("the offline start sentinel must end the fixture")
+
+    expected_constructor = {"work": tmp_path / "work", "binary": Path("k3s")}
+    if require_kvm:
+        expected_constructor["data_dir"] = root / "data"
+    expected: list[tuple[str, dict[str, Any]]] = [("construct", expected_constructor)]
+    if not require_kvm:
+        expected.append(("stop_previous", {}))
+    expected.append(("start", {"layers_in_memory": True, "preserve_image_store": False, "database_in_memory": False}))
+    assert events == expected
+    assert not root.exists()
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
