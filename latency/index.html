@@ -537,6 +537,62 @@
             <//>
             <${Paper}
               component="section"
+              id="architecture-followup-iteration11"
+              withBorder
+              p="lg"
+              my="xl"
+            >
+              <${Stack} gap="sm">
+                <${Title} order=${2}>Iteration 11 architecture follow-up<//>
+                <${Text} size="sm" c="dimmed"
+                  >Observed 2026-11-14T00:31:06Z from PR #16102 source 4bfabd5.
+                  The latency cohorts, source pins, original window, rates and
+                  denominators above are unchanged.<//
+                >
+                <${Text}
+                  >The fixed-source 376f8ae A/B/B/A replay of the historical
+                  2196229 label population averaged 442.484s baseline versus
+                  365.475s candidate (77.009s / 17.4% lower native invocation
+                  time); known test CPU rose 5.4%. It covered 562 unique NEW
+                  physical launches and 4,118 nonempty JUnit case exposures with
+                  no failures, errors, skips or retries. Only 14 new
+                  candidate-contract launches were observed. One Firecracker CPU
+                  and queue clock are unknown per arm. This is not current
+                  selection, branch-vs-devel, complete GitHub feedback, p90 or a
+                  qualified saving.<//
+                >
+                <${Text}
+                  >The one-VM platform candidate passed one NEW physical
+                  execution with one nonempty JUnit pass and no model request;
+                  its 403.285s native invocation is a single cold run, not a
+                  speed claim. The full VM case averaged 171.775s versus
+                  173.669s for the smaller witness, but the full baselines were
+                  cold and the witnesses warm. MCP Services nearly tied the VM
+                  tail in B2, so the combined graph must keep all tails. Current
+                  PR #16102 checks are green at 4bfabd5, but the 139.276s
+                  selected/cached Bazel invocation (tested merge c5a0272, devel
+                  parent 0479dfc9) is not a matched saving and no full
+                  current-head physical/JUnit cohort is curated.<//
+                >
+                <${Text}
+                  >Next, isolate Sandbox creation/readiness request to VM domain
+                  start, then guest boot to supervision receipt, seed
+                  launcher/mount, issuer/Pod binding, kernel-limit and
+                  supervision controls, then rerun a fixed-source graph
+                  including MCP Services, Pod and all selected targets. Keep the
+                  full gate until 30 qualified pairs, 100 fresh contract
+                  executions, three busy windows and a four-PR burst satisfy
+                  qualification. #15126 remains unproven and #15214 remains
+                  held.<//
+                >
+                <${Anchor}
+                  href="../agentplane-test-architecture/iteration11.json"
+                  >Reviewed architecture and readiness evidence<//
+                >
+              <//>
+            <//>
+            <${Paper}
+              component="section"
               id="architecture-followup-iteration10"
               withBorder
               p="lg"

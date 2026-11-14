@@ -5,8 +5,8 @@
   "published_at_utc": "2026-11-13T03:43:49.914251+00:00",
   "attribution": "not collected",
   "previous_report_commit": "8032ec1140281be66ee934b69bb71b25f892be82",
-  "report_sha256": "2208ff1811e01ae6ed38b89b62c9a6a83a52cdb4443bddc9d76ed0f4ea654e87",
-  "evidence_sha256": "6c36e06f307d40fb1921b581af2f55d0f64cd64218bdef1e56e339de23b1d746",
+  "report_sha256": "13ddcd3b36de9da6903d77bd6916e19f164fb828aef89dbda718bf6a4ce45ad0",
+  "evidence_sha256": "91f954c0248e8de92c715162ed8c1b5d5a6cde3292ae3ff5b6be6722f659e515",
   "evidence_schema_version": 3,
   "population": "159 latest devel-base backend PR heads: 129 production (124 green, four failed, one cancelled), 25 tests/helpers, five BUILD-only; 719 devel-base PR search frame",
   "feedback_clock": "Earliest exact-head PR workflow creation to latest successful completion of all three required gates; workflow creation proxies unavailable push timestamps. Not auto-merge eligibility.",
@@ -15,10 +15,7 @@
   "client_admission_source_commit": "28dae5ef3ef397393ed4df7f18425d3502ba9f77",
   "client_admission_scope": "PR #15842 50/100/50-job experiment only; per-workstream source/head commits and invocation IDs are recorded in evidence.json.",
   "supplemental_followup_scope": "Selected Nov 12 investigations through 23:20 UTC; original population window, source pin, denominators and rates are unchanged.",
-  "earlier_all_pr_window_utc": [
-    "2026-11-11T07:20:00Z",
-    "2026-11-12T07:20:00Z"
-  ],
+  "earlier_all_pr_window_utc": ["2026-11-11T07:20:00Z", "2026-11-12T07:20:00Z"],
   "earlier_all_pr_source_devel_commit": "97ebe3e463f4137e9878ee627ccf50e16d81883d",
   "backend_collection_started_at_utc": "2026-11-13T03:03:35Z",
   "backend_observed_at_utc": "2026-11-13T03:04:30.559122+00:00",
@@ -69,7 +66,14 @@
     "scope": "Single authoritative snapshot; original fleet latency/reliability populations unchanged."
   },
   "prepared_at_utc": "2026-11-13T22:27:42Z",
-  "publication_base_gh_pages_commit": "58719ab4f4",
-  "visual_validation_status": "Four desktop/mobile light/dark cases passed in4b05be9c; reviewed report head1318317f31. Final proof/publication metadata was added after the browser run.",
-  "visual_validation_observed_at_utc": "2026-11-13T23:07:24.285273+00:00"
+  "publication_base_gh_pages_commit": "bfa51cc0c71f6d736ffa8c15514fd332f5882eec",
+  "visual_validation_status": "Browser evidence for this report snapshot is recorded separately in visual-validation.json.",
+  "draft_prepared_at_utc": "2026-11-14T00:31:06Z",
+  "architecture_iteration11": {
+    "evidence_file": "../agentplane-test-architecture/iteration11.json",
+    "evidence_sha256": "bde3219d91558865e4208264be1889077356e0b28e7b6b45012969990e3f94ac",
+    "observed_at_utc": "2026-11-14T00:31:06Z",
+    "source_head": "4bfabd5a9ac5e39eac956b9bbca38f75fd457eb2",
+    "scope": "Supplemental architecture and readiness evidence only; the report’s original population, window, source pin, rates and denominators are unchanged."
+  }
 }

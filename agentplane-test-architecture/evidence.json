@@ -9633,5 +9633,13 @@
     "scope": "Selected architecture evidence; detailed source/check/guest/control records have one owner in iteration10.json. Original fleet populations and rates are unchanged.",
     "k3s_summary_source": "542e6152491f16e1cd677ad25b81cd5b7243cef8",
     "k3s_summary_file": "required-542-k3s-summary.json"
+  },
+  "iteration11": {
+    "evidence_file": "iteration11.json",
+    "evidence_sha256": "bde3219d91558865e4208264be1889077356e0b28e7b6b45012969990e3f94ac",
+    "observed_at_utc": "2026-11-14T00:31:06Z",
+    "source_head": "4bfabd5a9ac5e39eac956b9bbca38f75fd457eb2",
+    "source_base": "ff39339c927c94a26c028cc69f4a5b55efc977c6",
+    "scope": "Reviewed fixed-source graph replay, one-VM platform proof, and storage-readiness candidate. Existing fleet latency/reliability windows and denominators are unchanged."
   }
 }

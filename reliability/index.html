@@ -689,6 +689,89 @@
           <//>
           <${Stack}
             component="section"
+            id="architecture-followup-iteration11"
+            gap="sm"
+            my="xl"
+          >
+            <${Title} order=${2}
+              >Iteration 11 architecture and storage-readiness follow-up<//
+            >
+            <${Text} size="sm" c="dimmed"
+              >Observed 2026-11-14T00:31:06Z from source 4bfabd5. The retained
+              reliability window, source pins, failure rates and denominators
+              above are unchanged; these selected actions are not a fleet
+              sample.<//
+            >
+            <${Text}
+              >Required CI for source 58c274be30 tested merge 35eb3cce00 failed
+              in
+              <${Anchor}
+                href="https://app.buildbuddy.io/invocation/e0cdcb09-e0ad-5a46-88aa-465f85deb0a7"
+                >invocation e0cdcb09<//
+              >. The storage test’s initial readyReplicas guard ran before
+              storage work; the other 20 cases did not run. Lease PUT/GET
+              timeouts preceded controller exit 1, restart and Ready 11 seconds
+              later, but the cause is unknown because previous stderr was not
+              captured. The controller was not OOM-killed. A separate MCP
+              Actions snapshot-restore error code 14 occurred before the test
+              body and recovered on an automatic infrastructure retry. Keep both
+              attempts in any future all-attempt review; this separate pair does
+              not alter the frozen fleet population.<//
+            >
+            <${Text}
+              >At ff39339, a bounded 30-second wait on the same readiness
+              predicate keeps the full storage case and captures previous
+              controller logs on restart. The focused control
+              <${Anchor}
+                href="https://app.buildbuddy.io/invocation/1dd90380-d9a8-4eab-990c-907761aeb854"
+                >1dd90380<//
+              >
+              passed one NEW physical action with two nonempty JUnit cases: the
+              unavailable control failed at the expected 30.150s bound; recovery
+              waited 10.207s and passed incompatible-claim refusal, changed
+              Sandbox workload incarnation, retained-volume checks and cleanup.
+              The earlier 7abcaacc submission found no tests under the wrong
+              manual-target filter and is excluded. Required source validation
+              <${Anchor}
+                href="https://app.buildbuddy.io/invocation/92dde5b6-dc28-5c52-9a0f-0482fd1d0466"
+                >92dde5b6<//
+              >
+              passed in 457.457s with one NEW required Pod action and 21
+              nonempty JUnit passes.<//
+            >
+            <${Text}
+              >The narrow devel port
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/pull/16299"
+                >PR #16299<//
+              >
+              is OPEN and unmerged at f57b556f; all three required checks are
+              SUCCESS. This repairs the test’s asynchronous precondition, not
+              the controller or its unknown exit cause. The independent
+              architecture PR #16102 head 4bfabd5 also has all required checks
+              green, but no current-head physical/JUnit cohort is curated. The
+              Go Notification fixture now has one passing nonempty JUnit case in
+              e0cd; the earlier empty JUnit output is not case proof. Keep these
+              events outside the retained rates.<//
+            >
+            <${Text}
+              >Next, retain the controller’s previous stderr and restart
+              evidence, establish whether lease renewal caused an exit if it
+              recurs, and measure seven days of fresh physical exposure after
+              #16299 merges. The original controller exit cause and fleet
+              recurrence remain open in
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/issues/16099"
+                >#16099<//
+              >. Do not merge this incident with the separate managed-VM
+              kernel/OOM report.<//
+            >
+            <${Anchor} href="../agentplane-test-architecture/iteration11.json"
+              >Reviewed architecture and readiness evidence<//
+            >
+          <//>
+          <${Stack}
+            component="section"
             id="architecture-followup-iteration10"
             gap="sm"
             my="xl"
