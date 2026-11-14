@@ -21,10 +21,10 @@ go_library(
         "vm.go",
         "workspace.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/sandbox_controller/internal/controller",
+    importpath = "github.com/agentydragon/ducktape/agentplane/environments/internal/controller",
     visibility = [
-        "//agentplane/sandbox_controller/cmd:__pkg__",
-        "//agentplane/sandbox_controller/internal/runnercontrol:__pkg__",
+        "//agentplane/environments/cmd:__pkg__",
+        "//agentplane/environments/internal/runtimecontrol:__pkg__",
     ],
     deps = [
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
@@ -85,7 +85,7 @@ go_test(
     ],
     data = ["//agentplane/env/images:vm_guest_contract.json"],
     embed = [":controller"],
-    x_defs = {"github.com/agentydragon/ducktape/agentplane/sandbox_controller/internal/controller.vmGuestContractRlocation": "$(rlocationpath //agentplane/env/images:vm_guest_contract.json)"},
+    x_defs = {"github.com/agentydragon/ducktape/agentplane/environments/internal/controller.vmGuestContractRlocation": "$(rlocationpath //agentplane/env/images:vm_guest_contract.json)"},
     deps = [
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/identity/credentials/api/v1alpha1",

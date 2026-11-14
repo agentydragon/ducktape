@@ -4,7 +4,7 @@ load("//devinfra/python:defs.bzl", "py_library")
 
 pkg_tar(
     name = "binary_layer",
-    srcs = ["//agentplane/sandbox_controller/cmd:sandbox-controller"],
+    srcs = ["//agentplane/environments/cmd:sandbox-controller"],
     package_dir = "/usr/local/bin",
 )
 

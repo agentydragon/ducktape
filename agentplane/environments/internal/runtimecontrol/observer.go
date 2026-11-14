@@ -1,4 +1,4 @@
-package runnercontrol
+package runtimecontrol
 
 import (
 	"context"

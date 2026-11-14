@@ -1,5 +1,5 @@
 """The runner's boxes, behind the egress path every agentplane box shares (sandbox_pod.py): the
-runner SandboxTemplate (agentplane/sandbox_controller), which adds the harness runner and a state
+runner SandboxTemplate (agentplane/environments), which adds the harness runner and a state
 volume, and the fence its Pods share. Each deployment names and images its own Pod execution
 environments: a `EnvironmentSandboxTemplate` takes the SandboxTemplate name it offers and the image it runs, and
 a deployment adds as many as it offers (staging one, on the ducktape tools image; the k3s fixture one,

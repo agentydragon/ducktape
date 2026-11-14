@@ -28,7 +28,7 @@ the approval gateway for any MCP-capable LLM product, exposed externally through
 - [Egress proxy](egress/README.md): authenticates sandbox workloads and substitutes credentials.
 - [Policy Controller](policy_controller/README.md): expires `PolicyBinding`s and keeps the
   RoleBindings they grant.
-- [Sandbox Controller](sandbox_controller/README.md): reconciles `Sandbox` Identity credentials,
+- [Sandbox Controller](environments/README.md): reconciles `Sandbox` Identity credentials,
   retained state PVCs and Pods or a KubeVirt VM.
 - [LLM ingress](llm_ingress/README.md): authenticated hop in front of LiteLLM.
 - [Notification service](notification_service/README.md): subscriptions and session inboxes.

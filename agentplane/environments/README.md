@@ -77,7 +77,7 @@ Locally:
 
 ```bash
 AGENTPLANE_SANDBOX_CONTROLLER_CONFIG_FILE=<settings.yaml> \
-  bb run //agentplane/sandbox_controller/cmd:sandbox-controller
+  bb run //agentplane/environments/cmd:sandbox-controller
 ```
 
 At startup the controller discovers whether the cluster serves KubeVirt's API and only then watches

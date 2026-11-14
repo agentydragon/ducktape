@@ -3,7 +3,7 @@ package api
 import "k8s.io/apimachinery/pkg/util/validation"
 
 // MaxSandboxNameLength is 57: it leaves six bytes for the "-state" suffix in
-// sandbox_controller.StateVolumeName within the 63-byte DNS label limit.
+// environments/internal/controller.StateVolumeName within the 63-byte DNS label limit.
 const MaxSandboxNameLength = 57
 
 // IsValidSandboxName reports whether name meets the Sandbox DNS label contract.

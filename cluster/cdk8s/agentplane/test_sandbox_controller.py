@@ -7,8 +7,8 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
+from agentplane.environments.settings import Settings
 from agentplane.net.peertls.config import SANDBOX_CONTROLLER_URI
-from agentplane.sandbox_controller.settings import Settings
 from cluster.cdk8s.agentplane import environment_sandbox, runner_gateway, sandbox_controller, workload_tls
 
 

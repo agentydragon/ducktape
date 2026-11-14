@@ -6,16 +6,16 @@ go_library(
         "config.go",
         "main.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/sandbox_controller/cmd",
+    importpath = "github.com/agentydragon/ducktape/agentplane/environments/cmd",
     visibility = ["//visibility:private"],
     deps = [
+        "//agentplane/environments/internal/controller",
+        "//agentplane/environments/internal/runtimecontrol",
         "//agentplane/identity/credentials/api/v1alpha1",
         "//agentplane/identity/credentials/requester",
         "//agentplane/net/peertls",
         "//agentplane/observability",
         "//agentplane/policy/api/v1alpha1",
-        "//agentplane/sandbox_controller/internal/controller",
-        "//agentplane/sandbox_controller/internal/runnercontrol",
         "//agentplane/sandboxes/api",
         "@com_github_go_logr_logr//:logr",
         "@in_gopkg_yaml_v3//:yaml_v3",
@@ -37,7 +37,7 @@ go_binary(
     name = "sandbox-controller",
     embed = [":cmd_lib"],
     pure = "on",
-    visibility = ["//agentplane/sandbox_controller:__pkg__"],
+    visibility = ["//agentplane/environments:__pkg__"],
 )
 
 go_test(

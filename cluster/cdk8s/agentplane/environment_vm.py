@@ -1,5 +1,5 @@
 """The runner's VM SandboxTemplate: the runner on the NixOS guest (agentplane/env/images/vm.nix), in a
-KubeVirt VM the Sandbox Controller makes from `spec.vm` (agentplane/sandbox_controller/SPEC.md § VMs).
+KubeVirt VM the Sandbox Controller makes from `spec.vm` (agentplane/environments/SPEC.md § VMs).
 
 The guest gets what a runner Pod's container gets, as the disks vm.nix reads by serial: the public
 launch config (platform instructions included), the egress trust bundle, the runner

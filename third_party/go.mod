@@ -30,7 +30,7 @@ require (
 	sigs.k8s.io/controller-runtime v0.25.2
 )
 
-// Direct dependencies for agentplane/sandbox_controller
+// Direct dependencies for agentplane/environments
 require kubevirt.io/api v1.8.2
 
 // Direct dependencies for agentplane/runner_gateway

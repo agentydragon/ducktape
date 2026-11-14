@@ -8,7 +8,7 @@ patches are owned by `agent-sandbox-controller`; see
 The standalone `agent-workspaces` namespace, Codex `SandboxTemplate`, warm pool,
 janitor, and image pin have been retired. No `SandboxClaim` pool is deployed there.
 Agentplane's `Sandbox` API and controller are separate; see
-<../../../../agentplane/sandbox_controller/README.md>.
+<../../../../agentplane/environments/README.md>.
 
 The `cluster/images/agent-workspace/` image and `devinfra/ws` client remain available
 for a future pool. The image is built by

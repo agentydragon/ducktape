@@ -95,7 +95,7 @@ _COMMON_SERVICE_IMAGES = {
     "//agentplane/notification_service:service_image": "git.allegedly.works/ducktape-ci/agentplane-notification-service:unset",
     "//agentplane/policy_controller:image": "git.allegedly.works/ducktape-ci/agentplane-policy-controller:unset",
     "//agentplane/runner_gateway:image": "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset",
-    "//agentplane/sandbox_controller:image": "git.allegedly.works/ducktape-ci/agentplane-sandbox-controller:unset",
+    "//agentplane/environments:image": "git.allegedly.works/ducktape-ci/agentplane-sandbox-controller:unset",
     "@postgres_18_minimal_linux_amd64": "git.allegedly.works/ducktape-ci/agentplane-postgres:unset",
 }
 _HARNESSES_IMAGES = {
