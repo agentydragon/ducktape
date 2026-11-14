@@ -39,6 +39,7 @@ func TestSuspendAdmissionFencesWorkAcrossWatchReconnectAndGeneration(t *testing.
 	client := environmentruntimepb.NewEnvironmentRuntimeClient(conn)
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
+	bindTestIncarnation(t, client, "sandbox-uid", "pod-uid-1")
 	watch := func(epoch uint64) *environmentruntimepb.WatchStateResponse {
 		t.Helper()
 		stream, err := client.WatchState(ctx, &environmentruntimepb.WatchStateRequest{

@@ -15,10 +15,10 @@ import "google/protobuf/timestamp.proto";
 // Served by Environment Runtime over its configured control transport. Sessions are durable;
 // process startup, native readiness and reconciliation are owned by the environment services.
 service EnvironmentRuntime {
-  // Liveness and state watch. The Gateway supplies the current Sandbox and workload
-  // incarnation and its nonzero Lease epoch. The Runner adopts that incarnation before publishing facts.
-  // Control/Executor call metadata separately accepts an absent or zero epoch after adoption;
-  // nonzero call epochs retain the legacy live-watch checks during the receiver-first rollout.
+  // The Controller's authenticated observe_only watch binds the workload incarnation once
+  // per Runtime process, before publishing facts. Gateway watches must match that binding.
+  // Epoch zero permits independent Gateway observations; nonzero epochs retain the legacy
+  // exclusive watch and call fence during rollout. No Gateway watch can change incarnation.
   rpc WatchState(WatchStateRequest) returns (stream WatchStateResponse);
   rpc ListSessions(agentplane.proto.ListSessionsRequest)
       returns (agentplane.proto.ListSessionsResponse);
@@ -53,9 +53,9 @@ service EnvironmentRuntime {
 message WatchStateRequest {
   string sandbox_uid = 1;
   string incarnation_uid = 2;  // current Pod or virt-launcher Pod UID
-  uint64 connection_epoch = 3;  // nonzero Gateway Lease epoch; zero for observe_only
-  // Sandbox Controller observations are independent of the Gateway's exclusive epoch.
-  // Requires the Controller peer identity; grants no control or Executor authorization.
+  uint64 connection_epoch = 3;  // legacy Gateway Lease epoch; zero for independent observation
+  // Requires the Controller peer identity, which binds this Runtime process's incarnation.
+  // Grants no control or Executor authorization; reconnect cannot replace the binding.
   bool observe_only = 4;
 }
 

@@ -58,6 +58,7 @@ func startDirectExecutionTestClient(t *testing.T, r *Runtime, incarnation string
 		t.Fatal(err)
 	}
 	runnerClient := environmentruntimepb.NewEnvironmentRuntimeClient(conn)
+	bindTestIncarnation(t, runnerClient, r.config.Launch.Sandbox.UID, incarnation)
 	watch, err := runnerClient.WatchState(ctx, &environmentruntimepb.WatchStateRequest{
 		SandboxUid: r.config.Launch.Sandbox.UID, IncarnationUid: incarnation, ConnectionEpoch: 1,
 	})
@@ -218,7 +219,7 @@ func TestOpenSessionEndsWhenObserverEpochIsSuperseded(t *testing.T) {
 		t.Fatal("second local execution session did not initialize")
 	}
 
-	if err := client.replaceWatch("incarnation-2", 2); err != nil {
+	if err := client.replaceWatch(client.incarnation, 2); err != nil {
 		t.Fatalf("replace observer epoch: %v", err)
 	}
 	wantClosed := map[string]bool{response.GetExecutionSessionId(): true, secondResponse.GetExecutionSessionId(): true}

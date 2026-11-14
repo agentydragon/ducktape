@@ -19,8 +19,14 @@ The service definitions are `env/runtime/control/environment_runtime.proto` and 
 
 The leader-elected Sandbox Controller independently opens `WatchState(observe_only=true)` directly
 to each accepted incarnation, authenticating with its dedicated client SVID. This stream carries no
-Gateway epoch and grants no command or Executor authority. The Controller validates Sandbox UID,
-Pod UID and boot ID, then keeps bootstrap, quiesce, setup, idle and blocker facts in memory.
+Gateway epoch and grants no command or Executor authority. Its authenticated request names the
+Sandbox UID and current workload Pod UID; for a VM, the incarnation is the virt-launcher Pod UID.
+Runtime uses this watch to bind the incarnation for its process lifetime and completes ordinary
+lifecycle adoption before returning the first snapshot. Each Runtime process has a fresh boot ID.
+The Controller supplies the current workload UID to a new process, and reconnects may retry that
+UID; neither the Controller nor a Gateway may change the binding after adoption begins. The
+Controller keeps bootstrap, quiesce, setup, idle and blocker facts in memory keyed by Sandbox UID,
+incarnation UID and boot ID.
 A local watch generation fences callbacks from replaced streams. A new leader relists Sandboxes
 and starts fresh watches and idle timers. Lost streams retry after one second; a 30-second
 heartbeat timeout clears idle eligibility immediately, while connectivity status keeps a one-minute
@@ -28,28 +34,31 @@ grace. Reconnects start a full idle timer, even when the Runtime reports the sam
 Quiesce attempts remain persisted, and an unobserved published incarnation must still seal before
 stop or deletion. Bootstrap failure remains terminal for its incarnation.
 
-The Gateway's separate, exclusive watch still controls its proxy admission fence during this reader
-migration. Its Lease and `<sandbox>-control` EndpointSlice remain in use; the Controller no longer
-reads lifecycle facts from that Lease. Quiesce and suspend admission RPCs continue through the
-Gateway proxy. Removing that replica ownership protocol is a separate change.
+The Gateway's connection Lease and `<sandbox>-control` EndpointSlice remain in the current routing
+path. During the receiver compatibility rollout, a nonzero-epoch Gateway watch continues to support
+that legacy connection owner, but it can observe only the incarnation already bound by the
+Controller. A Gateway watch with no epoch or epoch zero may observe that same binding without
+claiming ownership. Quiesce and suspend-admission RPCs continue through the Gateway proxy.
 
-One Gateway replica claims the runner Lease, then calls `Runner.WatchState` with the Sandbox UID,
-incarnation Pod UID and claimed epoch. For a VM, the incarnation UID is the virt-launcher Pod's.
-The runner adopts that incarnation before publishing its boot ID and facts, then sends snapshots
-on changes and periodically. The Gateway records the boot ID on its connection Lease and exposes the existing `<sandbox>-control` proxy route. A claim without an observed boot ID is
-not a connected runner. Other replicas wait for the owner's Lease to expire before taking over:
-one Lease duration after they first saw its latest renewal, on their own clock, as client-go
-`leaderelection` measures it, so the owner's clock skew neither shortens nor extends the wait.
-The owning Gateway retries a lost observation after one second, without waiting for a Sandbox or Pod event.
-Each attempt claims a fresh Lease epoch. Unchanged internal notifications do not send snapshots;
-periodic heartbeats renew the connection Lease.
+The legacy Gateway owner claims the runner Lease, then calls `Runner.WatchState` with the Sandbox
+UID, incarnation Pod UID and claimed epoch. Runtime accepts this only for the UID already bound by
+the Controller. The Gateway records the boot ID on its connection Lease after receiving a valid
+response and exposes the existing `<sandbox>-control` proxy route. A claim without an observed boot
+ID is not a connected runner. Other replicas wait for the owner's Lease to expire before taking
+over: one Lease duration after they first saw its latest renewal, on their own clock, as client-go
+`leaderelection` measures it, so the owner's clock skew neither shortens nor extends the wait. The
+owning Gateway retries a lost observation after one second, without waiting for a Sandbox or Pod
+event. Each attempt claims a fresh Lease epoch. Unchanged internal notifications do not send
+snapshots; periodic heartbeats renew the connection Lease.
 
-Unary Runner calls and typed `Executor` calls carry the Sandbox UID, incarnation UID,
-runner boot ID and epoch in metadata. The runner rejects calls outside its active observer epoch
-before admission with `UNAVAILABLE`. This lets queued commands retry through the current observer;
-`ABORTED` remains the explicit refusal of new work for a workload incarnation.
-A superseded observer cannot clear its successor. Observation loss stops execution-session streams
-and new control calls; admitted journal work remains runner-owned and continues independently.
+Unary Runner calls and typed `Executor` calls carry the Sandbox UID, incarnation UID and Runtime
+boot ID. Calls with an absent or zero `agentplane-connection-epoch` authorize against the
+Controller-bound identity, independently of Gateway watch lifetime; any authenticated Gateway
+replica may make them. A supplied nonzero epoch retains the legacy requirement for the matching,
+live Gateway watch. Stale Sandbox, incarnation, boot ID or legacy epoch fails before admission.
+Gateway observer loss no longer cancels epochless calls or their execution-session streams; admitted
+journal work remains Runtime-owned and continues independently. `ABORTED` remains the explicit
+refusal of new work for a workload incarnation.
 `Executor.OpenSession` holds the Runner-side Codex connection with a server stream; typed unary
 process and file RPCs use its opaque session ID. JSON-RPC framing, initialization and native
 notifications stay in the Runner adapter. Both hops use the same sandbox-owned

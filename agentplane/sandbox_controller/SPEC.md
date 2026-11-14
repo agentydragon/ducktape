@@ -95,6 +95,12 @@ Gateway token; token contents remain in the rotating read-only projected volume.
   the Sandbox Controller has a dedicated SVID authorized only for passive state observation. The
   controller exposes no transport choice on a `SandboxTemplate` and labels workloads only with the
   credential ID each incarnation was started with.
+  Its direct `WatchState(observe_only=true)` names the accepted workload Pod UID (the
+  virt-launcher Pod UID for a VM). Runtime uses this authenticated observation to bind the
+  incarnation for its process lifetime and complete ordinary lifecycle adoption before publishing
+  facts. A reconnect for the same UID can restore observation; a Gateway cannot choose or advance
+  the binding. Each new Runtime process has a fresh boot ID, even when retained state and workload
+  UID are unchanged.
   The controller's own Gateway calls retain their projected bearer and verify the shared service's
   SVID with `runner_gateway_tls`. Its scalar environment fields are
   `AGENTPLANE_SANDBOX_CONTROLLER_RUNNER_GATEWAY_TLS__CA_FILE` and
@@ -319,7 +325,9 @@ with the reason and message of `Running`.
 current Sandbox UID and incarnation Pod UID, until 30 seconds without a heartbeat plus a one-minute
 status grace. It is False with `NeverConnected`, `ConnectionLost` or `WorkloadNotReady`. The elected
 Controller uses its own narrow SVID and an observe-only stream; it never acquires the Gateway's
-command epoch. Losing the stream immediately disqualifies facts for idle suspension and quiescence,
+command epoch. On a compatible Runtime, this stream also establishes the process's immutable
+incarnation binding before the first snapshot; stream loss does not clear that binding. Losing the
+stream immediately disqualifies facts for idle suspension and quiescence,
 then retries after one second. Connectivity loss restarts and replaces nothing.
 
 A new leader discovers published incarnations from the initial cache list and opens new watches.

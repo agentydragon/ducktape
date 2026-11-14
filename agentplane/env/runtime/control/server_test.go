@@ -186,41 +186,53 @@ func TestPassiveWatchLifetimeDoesNotReplaceGatewayEpoch(t *testing.T) {
 	})
 }
 
-func TestPassiveWatchCannotUndoPartiallyCompletedGatewayAdoption(t *testing.T) {
-	backendIncarnation := "initial"
+func TestControllerBindingSurvivesUncertainAdoption(t *testing.T) {
+	backendIncarnation := ""
+	attempts := 0
 	server := New(Config{
 		SandboxUID: "sandbox",
 		AdoptIncarnation: func(_ context.Context, uid string) error {
 			backendIncarnation = uid
-			if uid == "replacement" {
-				// The coordinator may have changed state before cancellation reaches
-				// the caller; only another Gateway adoption may resolve that outcome.
+			attempts++
+			if attempts == 1 {
 				return status.Error(codes.Canceled, "adoption caller disconnected")
 			}
 			return nil
 		},
 	}, nil)
-	initial, err := server.passiveWatchContext(&environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox", IncarnationUid: "initial", ObserveOnly: true}, t.Context())
-	if err != nil {
+	observer := func(uid string) *watch {
+		t.Helper()
+		w, err := server.passiveWatchContext(&environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox", IncarnationUid: uid, ObserveOnly: true}, t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(w.cancel)
+		return w
+	}
+	current := observer("current")
+	if err := server.bindControllerWatch(current); status.Code(err) != codes.Canceled {
+		t.Fatalf("uncertain adoption = %v", err)
+	}
+	for _, uid := range []string{"older", "successor"} {
+		if err := server.bindControllerWatch(observer(uid)); status.Code(err) != codes.FailedPrecondition {
+			t.Fatalf("different Controller UID %s after uncertain adoption = %v", uid, err)
+		}
+	}
+	for _, epoch := range []uint64{0, 99} {
+		if _, err := server.directWatchContext(&environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox", IncarnationUid: "current", ConnectionEpoch: epoch}, t.Context()); status.Code(err) != codes.Unavailable {
+			t.Fatalf("Gateway admitted before settled binding = %v", err)
+		}
+	}
+	if backendIncarnation != "current" || attempts != 1 {
+		t.Fatalf("uncertain binding reversed: uid=%s attempts=%d", backendIncarnation, attempts)
+	}
+	if err := server.bindControllerWatch(current); err != nil {
 		t.Fatal(err)
 	}
-	defer initial.cancel()
-	if err := server.adoptWatch(initial, true); err != nil {
-		t.Fatal(err)
-	}
-	replacement, err := server.directWatchContext(&environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox", IncarnationUid: "replacement", ConnectionEpoch: 1}, t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := server.adoptWatch(replacement, false); status.Code(err) != codes.Canceled {
-		t.Fatalf("partial Gateway adoption error = %v", err)
-	}
-	server.finishWatch(replacement)
-	if err := server.adoptWatch(initial, true); status.Code(err) != codes.FailedPrecondition {
-		t.Fatalf("passive watch reversed partial Gateway adoption: %v", err)
-	}
-	if backendIncarnation != "replacement" {
-		t.Fatalf("passive watch changed Runtime incarnation to %q", backendIncarnation)
+	for _, epoch := range []uint64{0, 99} {
+		if _, err := server.directWatchContext(&environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox", IncarnationUid: "older", ConnectionEpoch: epoch}, t.Context()); status.Code(err) != codes.FailedPrecondition {
+			t.Fatalf("Gateway changed settled binding = %v", err)
+		}
 	}
 }
 
@@ -265,6 +277,14 @@ func TestEpochFreeCallsRemainBoundToIncarnationAcrossGatewayWatches(t *testing.T
 			}
 			return cancel, done
 		}
+		binding, err := server.passiveWatchContext(&environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox", IncarnationUid: "pod", ObserveOnly: true}, t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer binding.cancel()
+		if err := server.bindControllerWatch(binding); err != nil {
+			t.Fatal(err)
+		}
 		cancelFirst, firstDone := start("pod", 1)
 		var admissions []*Epoch
 		for _, ctx := range []context.Context{callContext("pod", "boot"), callContext("pod", "boot", "0")} {
@@ -299,25 +319,22 @@ func TestEpochFreeCallsRemainBoundToIncarnationAcrossGatewayWatches(t *testing.T
 				t.Fatalf("malformed epoch %v = %v", epoch, err)
 			}
 		}
-		cancelReplacement, replacementDone := start("new-pod", 4)
-		defer cancelReplacement()
-		if err := <-thirdDone; status.Code(err) != codes.Canceled {
-			t.Fatalf("incarnation watch replacement = %v", err)
-		}
-		for _, epoch := range admissions {
-			if err := server.Validate(epoch); status.Code(err) != codes.Aborted || epoch.Context().Err() == nil {
-				t.Fatalf("old incarnation admission survived adoption: validation=%v context=%v", err, epoch.Context().Err())
+		for _, epoch := range []uint64{0, 4} {
+			if _, err := server.directWatchContext(&environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox", IncarnationUid: "new-pod", ConnectionEpoch: epoch}, t.Context()); status.Code(err) != codes.FailedPrecondition {
+				t.Fatalf("Gateway changed immutable binding = %v", err)
 			}
 		}
-		for _, ctx := range []context.Context{callContext("pod", "boot"), callContext("new-pod", "old-boot", "0")} {
+		for _, epoch := range admissions {
+			if err := server.Validate(epoch); err != nil || epoch.Context().Err() != nil {
+				t.Fatalf("rejected watch canceled current admission: %v", err)
+			}
+		}
+		for _, ctx := range []context.Context{callContext("new-pod", "boot"), callContext("pod", "old-boot", "0")} {
 			if _, err := server.Authorize(ctx); status.Code(err) != codes.Unavailable {
 				t.Fatalf("stale epoch-free identity = %v", err)
 			}
 		}
-		if _, err := server.Authorize(callContext("new-pod", "boot")); err != nil {
-			t.Fatalf("current epoch-free identity = %v", err)
-		}
-		cancelReplacement()
-		<-replacementDone
+		cancelThird()
+		<-thirdDone
 	})
 }

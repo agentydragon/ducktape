@@ -110,8 +110,8 @@ flowchart LR
     policy --> k8s
     sandboxctl --> k8s
     sandboxctl -->|Quiesce and suspend admission: gRPC| gw
-    sandboxctl -->|passive WatchState: mTLS gRPC| runtime
-    sandboxctl -->|passive WatchState: mTLS gRPC| vmruntime
+    sandboxctl -->|passive WatchState binds workload UID and observes facts: mTLS gRPC| runtime
+    sandboxctl -->|passive WatchState binds workload UID and observes facts: mTLS gRPC| vmruntime
     runner -->|local Codex JSON-RPC over WebSocket, isolated mode| podexec
     runner -->|starts| agent
     podexec --> sidecar
@@ -131,8 +131,8 @@ flowchart LR
     sidecar -->|OTLP/gRPC| alloy
     guest -.->|OTLP/gRPC telemetry route| relay
     relay -->|OTLP/gRPC| alloy
-    gw -->|mTLS Runner and Executor gRPC| runtime
-    gw -->|mTLS Runner and Executor gRPC| vmruntime
+    gw -->|mTLS Runner / Executor; bound-UID WatchState with zero or legacy epoch| runtime
+    gw -->|mTLS Runner / Executor; bound-UID WatchState with zero or legacy epoch| vmruntime
     runner -.->|History mTLS through CONNECT| sidecar
     sidecar -.->|opaque History TLS| egress
     egress -.->|opaque SessionJournalIngress.Push TLS| hs
@@ -199,9 +199,11 @@ embeds files through an embedding endpoint and owns its own PostgreSQL database
   retained history.
 - **Runner control uses native gRPC.** The Gateway dials each runner's private server using mTLS.
   It validates the certificate against the active Sandbox/workload and retains `<sandbox>-control`
-  routing and `<sandbox>-environment-runtime` proxy ownership Leases. The Sandbox Controller
-  watches Runtime facts solely over direct mTLS and keeps them in memory per incarnation;
-  the Gateway publishes only connection identity and renewal metadata to its Lease. History push and ordinary Sandbox egress retain
+  routing and `<sandbox>-environment-runtime` proxy ownership Leases. The Sandbox Controller's
+  direct mTLS `observe_only` watch supplies the accepted workload UID and binds it for the Runtime
+  process before the first facts snapshot; the Controller keeps those facts in memory per
+  Sandbox, incarnation and boot. Gateway watches cannot select or replace that binding. The Gateway
+  publishes only connection identity and renewal metadata to its Lease. History push and ordinary Sandbox egress retain
   their sidecar or VM relay paths; History terminates and verifies the Runtime SVID itself
   ([runner control](runner_control.md)).
 - **Telemetry uses Alloy as its collector.** SDK-instrumented services export OTLP/gRPC to Alloy.
@@ -273,7 +275,7 @@ flowchart LR
     dispatcher -->|Pod-bound workload token: wrapped Codex and Claude opens + commands| gateway
     dispatcher -->|central opens + commands: Sampler gRPC| central
     sandboxctl -->|Quiesce| gateway
-    sandboxctl -->|passive WatchState: mTLS gRPC| runtime
+    sandboxctl -->|passive WatchState binds workload UID and observes facts: mTLS gRPC| runtime
     dispatcher -->|Sandbox watch| k8s
     dispatcher -->|automatic wake assessment + request| lifecycle
     lifecycle -->|guarded running + generation update| k8s
@@ -387,8 +389,8 @@ flowchart LR
       sessions -->|journal inventory| delivery
     end
     history[History ingress]
-    gateway -->|mTLS Runner / Executor / exclusive WatchState| runtime
-    sandboxctl[Sandbox Controller] -->|passive WatchState: mTLS gRPC| runtime
+    gateway -->|mTLS Runner / Executor; bound-UID zero-epoch calls and WatchState; legacy nonzero epochs| runtime
+    sandboxctl[Sandbox Controller] -->|passive WatchState binds workload UID and observes facts: mTLS gRPC| runtime
     delivery -.->|durable journal push and ACK| history
 ```
 

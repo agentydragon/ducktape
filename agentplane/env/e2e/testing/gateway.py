@@ -46,8 +46,11 @@ class _RunnerMetadataInterceptor(grpc.aio.UnaryUnaryClientInterceptor):
 class ControlListener:
     """Observe Runner facts and call its RPCs as the test Gateway workload."""
 
-    def __init__(self, client_credentials: grpc.ChannelCredentials) -> None:
+    def __init__(
+        self, client_credentials: grpc.ChannelCredentials, controller_credentials: grpc.ChannelCredentials
+    ) -> None:
         self._client_credentials = client_credentials
+        self._controller_credentials = controller_credentials
         self.connections = 0
         self.facts: list[environment_runtime_state_pb2.EnvironmentRuntimeFacts] = []
         self.facts_published = asyncio.Condition()
@@ -72,14 +75,16 @@ class ControlListener:
         while True:
             self._connection_epoch += 1
             channel = await self._new_channel(endpoint)
-            watch = environment_runtime_pb2_grpc.EnvironmentRuntimeStub(channel).WatchState(
-                environment_runtime_pb2.WatchStateRequest(
-                    sandbox_uid=sandbox_uid,
-                    incarnation_uid=self.incarnation_uid,
-                    connection_epoch=self._connection_epoch,
-                )
-            )
+            watch: grpc.aio.UnaryStreamCall | None = None
             try:
+                await self._bind_incarnation(endpoint, sandbox_uid)
+                watch = environment_runtime_pb2_grpc.EnvironmentRuntimeStub(channel).WatchState(
+                    environment_runtime_pb2.WatchStateRequest(
+                        sandbox_uid=sandbox_uid,
+                        incarnation_uid=self.incarnation_uid,
+                        connection_epoch=self._connection_epoch,
+                    )
+                )
                 first = await asyncio.wait_for(watch.read(), timeout=2)
                 if (
                     not isinstance(first, environment_runtime_pb2.WatchStateResponse)
@@ -87,7 +92,8 @@ class ControlListener:
                 ):
                     raise RuntimeError("Runner WatchState ended before publishing its boot ID")
             except grpc.aio.AioRpcError, OSError, TimeoutError, RuntimeError:
-                watch.cancel()
+                if watch is not None:
+                    watch.cancel()
                 await channel.close()
                 remaining = deadline - asyncio.get_running_loop().time()
                 if remaining <= 0:
@@ -114,18 +120,34 @@ class ControlListener:
                 self._connected.notify_all()
             return
 
+    async def _bind_incarnation(self, endpoint: EnvironmentRuntimeControl, sandbox_uid: str) -> None:
+        """Model the Controller's authenticated first observation, independently of Gateway ownership."""
+        async with await self._new_channel(endpoint, credentials=self._controller_credentials) as channel:
+            watch = environment_runtime_pb2_grpc.EnvironmentRuntimeStub(channel).WatchState(
+                environment_runtime_pb2.WatchStateRequest(
+                    sandbox_uid=sandbox_uid, incarnation_uid=self.incarnation_uid, observe_only=True
+                )
+            )
+            try:
+                response = await asyncio.wait_for(watch.read(), timeout=2)
+                if not isinstance(response, environment_runtime_pb2.WatchStateResponse):
+                    raise RuntimeError("Controller observation ended before binding the Runtime incarnation")
+            finally:
+                watch.cancel()
+
     async def _new_channel(
         self,
         endpoint: EnvironmentRuntimeControl,
         metadata: tuple[tuple[str, str], ...] = (),
         options: tuple[tuple[str, Any], ...] = (),
+        credentials: grpc.ChannelCredentials | None = None,
     ) -> grpc.aio.Channel:
         interceptors = (_RunnerMetadataInterceptor(metadata),) if metadata else ()
         if isinstance(endpoint.security, Insecure):
             raise ValueError("the test Runner must present its Sandbox workload SVID")
         return grpc.aio.secure_channel(
             endpoint.listen_address,
-            self._client_credentials,
+            self._client_credentials if credentials is None else credentials,
             options=(("grpc.ssl_target_name_override", RUNNER_GATEWAY_TEST_DNS), *options),
             interceptors=interceptors,
         )
@@ -250,7 +272,17 @@ async def serve_gateway(sandbox: SandboxCluster, directory: Path) -> AsyncIterat
     )
     address = _sandbox_loopback_address(sandbox.uid)
     target = f"{address}:9090"
-    control = ControlListener(credentials)
+    controller_directory = directory / "controller-client-tls"
+    controller_directory.mkdir()
+    controller_cert, controller_key = issue_workload_leaf(
+        ca, "spiffe://agentplane/sandbox-controller", controller_directory
+    )
+    controller_credentials = grpc.ssl_channel_credentials(
+        root_certificates=ca.cert_pem,
+        private_key=controller_key.read_bytes(),
+        certificate_chain=controller_cert.read_bytes(),
+    )
+    control = ControlListener(credentials, controller_credentials)
     try:
         yield Gateway(
             control,
