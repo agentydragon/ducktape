@@ -50,6 +50,22 @@ The [old-behavior probe](https://app.buildbuddy.io/invocation/baed436b-71df-4d42
 fails the new recovery and expected-incarnation assertions. The
 [candidate's focused validation](https://app.buildbuddy.io/invocation/36520d5d-7f17-4881-9140-55df5709e645)
 passes all four targets: Gateway proxy, controller, quiescer and transport client.
-A fresh unchanged Firecracker control is still required before claiming the
-repair or its saving. Track it and matched follow-up exposure in
-[#16099](https://github.com/agentydragon/ducktape/issues/16099).
+The [unchanged real Firecracker validation](https://app.buildbuddy.io/invocation/772f9305-8a5d-4c60-9f01-f52580d26799)
+at literal `458e22a745` passes two nonempty cases in one NEW physical action,
+without failures, errors, skips or retries. Its trust guest reproduces
+`PodReady=false` and `destination_unavailable`; the second request forwards for
+the same incarnation 1.008s later. Cleanup takes 14.564s. The other guest's first
+seal succeeds, with 43.819s cleanup. Separate continuation evidence preserves the
+live guest's PID, start ticks, kernel boot and marker across suspend/resume, with
+its progress counter advancing. Native invocation elapsed is 658.540s, including
+253.778s action queue; physical execution is 284.171s. This proves the targeted
+repair, not a matched complete-PR saving or a fleet failure-rate reduction.
+
+The independently reviewable production port is
+[#16344](https://github.com/agentydragon/ducktape/pull/16344), merged as `02dc3c7a2e` at 2026-11-14 05:56:35 UTC after head `c323fc94eb` passed
+Bazel CI, pre-commit and artifact/import checks. It excludes the
+architecture experiments and extra tracing. From that merge, inspect the first
+20 fresh Firecracker actions containing its patch: first-call rejection,
+within-handshake recovery, exhaustion, incarnation fences and cleanup phases,
+retaining failed/cancelled outcomes. Track this and the unchanged broader gate
+qualification in [#16099](https://github.com/agentydragon/ducktape/issues/16099).
