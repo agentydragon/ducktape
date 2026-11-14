@@ -5,7 +5,7 @@
   "published_at_utc": "2026-11-13T03:43:50.005100+00:00",
   "attribution": "not collected",
   "previous_report_commit": "8032ec1140281be66ee934b69bb71b25f892be82",
-  "report_sha256": "1bfd2634a52cf02b02797108b600292ea9cf8729c98233d4ae9d16c6ff352ecc",
+  "report_sha256": "b5a68e38ecd86df7332729f61c8f0e0a7ddd108fe882fafd9bfc0e2f61bd24fa",
   "evidence_sha256": "575405ea94553c4d90ed6f682cd56317228c9edb704d0f5e3fc969a90e0afbbc",
   "supplemental_followup_observed_at_utc": "2026-11-12T22:55:00Z",
   "client_admission_source_commit": "28dae5ef3ef397393ed4df7f18425d3502ba9f77",
