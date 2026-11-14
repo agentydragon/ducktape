@@ -26,7 +26,7 @@ from agentplane.history_service.testing.go_service import WRITER, GoHistoryServi
 from agentplane.native.claude.testing.messages import AnthropicMessages
 from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.proto import session_pb2
-from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
+from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from agentplane.testing.claude_model import ClaudeModel
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
@@ -70,12 +70,6 @@ def workspace(tmp_path: Path) -> Path:
     root = tmp_path / "workspace"
     root.mkdir()
     return root
-
-
-@pytest.fixture
-async def sandbox(api_server: KubernetesApiServer) -> AsyncIterator[SandboxCluster]:
-    async with sandbox_cluster(api_server) as started:
-        yield started
 
 
 @pytest.fixture

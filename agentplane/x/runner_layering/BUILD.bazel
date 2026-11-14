@@ -145,6 +145,7 @@ py_library(
         "//agentplane/history_service/testing:fixtures",
         "//agentplane/history_service/testing:go_service",
         "//agentplane/testing:kubernetes_apiserver_fixtures",
+        "//agentplane/testing:sandbox_fixtures",
         "//util/testing:postgres_fixtures",
         "@pypi//pytest",
     ],
