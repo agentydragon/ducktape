@@ -2210,6 +2210,7 @@ filter and optional live follow. The browser follows Threads through Electric
 
 ```mermaid
 flowchart TD
+    THREAD_SYNC_WITHOUT_ELECTRIC[Decision, unscheduled: replace Electric with our own thread stream]
     SESSION_ACTIVITY_STREAM[Unscheduled: deliver on a Session's idle time, section 7]
     NOTIFICATION_COMMAND_OUTCOME_DESIGN[Unscheduled: notice delivery without reading history, section 2]
     THREAD_READ_POLICY[Blocked: scoped archive reads, section 3]
@@ -2218,6 +2219,35 @@ flowchart TD
 [`history_read_follow.md`](history_read_follow.md) records how orchestration builds on the API and
 which other consumers may move to it. Automatic titles remain deferred under
 [`THREAD_TITLE_GENERATION`](task_freezer.md#thread_title_generation--revisit-automatic-thread-titles).
+
+### `THREAD_SYNC_WITHOUT_ELECTRIC` — replace Electric with our own thread stream
+
+**Decision, unscheduled; operator, 2026-11-14 UTC:** dropping Electric and doing the sync ourselves
+"might be better", "to be looked into"; it costs a separate container.
+
+Electric replicates two History tables, `thread_entity` and `thread_payload_chunk`, per Thread and
+projection epoch, through the app's authorizing [proxy](../app/internal/proxy/electric.go), for
+the thread view alone ([`electric_sync.tsx`](../app/frontend/threads/electric_sync.tsx)). Every
+other live browser view already follows gRPC watches through the app facade
+([`watch_stream.ts`](../app/frontend/watch_stream.ts)). Its costs are:
+
+- a single-replica `Recreate` Deployment with a 5 GiB `emptyDir` ([exception](electric_ha.md));
+- a logical replication slot on the History database;
+- the mismatches in [Electric limits](../docs/thread_sync_electric_limits.md): every follower gets
+  the shape's whole live log, deltas exist only as committed rows, and compaction is re-sent to
+  followers.
+
+[Thread sync](thread_sync/README.md) already scores replacements; the moving window meets every
+requirement row where Electric is short.
+
+Coupled to the History direction: if History becomes harness journal storage rendered per kind,
+the synced fold tables, and Electric's job, go away, and the stream should follow journal records
+instead of fold rows.
+
+**Recommendation:** replace Electric with a History server stream reached through the existing app
+watch facade, and build it once against whichever History representation is chosen rather than
+first over the fold tables. **Question for review:** build the replacement now over the fold, or
+after the History representation decision, over journal records?
 
 ## 12. The Runner Gateway serves the runner's own service
 
@@ -3498,15 +3528,36 @@ Dispatchable now. "Unscheduled" is the operator's priority statement, not a gate
   sampler's `exec` tool, and Anthropic then rejected every older Thread's signed thinking ("The
   `tools` list differs from the one this block was created with"), because the tool list and
   instructions are rendered from current code on every request and staging sets
-  `prefix_mismatch_behavior: error`. Those Threads cannot continue. Planning inputs: (1) provider
-  mechanisms for changing tool definitions inside a conversation without invalidating earlier
-  blocks, such as Anthropic's ways to append a tool or schema change after the prefix, and their
-  Responses API equivalents; (2) persisting the rendered tools, system instructions and other prefix
-  inputs with the conversation and reconciling the committed prefix with what current code would
-  render, so a change is appended or adopted at an explicit boundary (new Thread, compaction,
-  operator-chosen migration); (3) `drop_block` only as a last resort, since it silently loses
-  reasoning. Test by rendering a stored conversation under a changed tool description and asserting
-  the provider accepts the continuation. Covers the Responses and Anthropic Messages paths.
+  `prefix_mismatch_behavior: error`. Those Threads cannot continue. **Operator, 2026-11-14 UTC:**
+  "older threads can stay broken"; the fix only stops future prompt changes from breaking Threads,
+  with no repair or migration of existing ones.
+
+  Provider rules, from current documentation (2026-11-14):
+
+  - **Anthropic Messages.** A thinking block's signature binds the top-level `system`, the `tools`
+    set (name-sorted, so reordering is safe) and every earlier message. Editing them is a 400 when
+    enforced (accounts created on or after 2026-08-31, or any request setting
+    `thinking.block_binding.prefix_mismatch_behavior`); `drop_block` drops that block and every later
+    one. Append-only forms: a mid-conversation `role: "system"` message for instruction changes;
+    `tool_addition`/`tool_removal` blocks in such a message (beta
+    `mid-conversation-tool-changes-2026-07-01`, tools declared up front with `defer_loading`); and,
+    under beta `inline-tools-2026-09-15`, a `tool_addition` carrying a full definition that replaces
+    a same-named tool's definition from that point on, with `tools[]` left as first sent.
+  - **OpenAI Responses** ([preserved reasoning](https://developers.openai.com/api/docs/guides/preserved-reasoning)).
+    The prefix includes `tools`, `instructions`, `text.format` and earlier input items. A change is
+    not rejected: reasoning items after it are silently dropped (reported in
+    `input_transformations`), with no parameter to change that. Append-only forms: an
+    `additional_tools` item to add tools, `tool_choice.allowed_tools` to restrict them, a
+    `configuration_update` item for effort or output schema, and an appended developer message for
+    instructions.
+
+  Design: persist the rendered tools and instructions with each conversation as its frozen
+  baseline. On each request, compare it with what current code renders, and express any difference
+  through the provider's append-only form at the next turn boundary. A difference with no such form
+  on that route waits for an explicit boundary (new Thread, compaction). Never edit the baseline;
+  keep `drop_block` off. Test by rendering a stored conversation under a changed tool description
+  and asserting the provider accepts the continuation and keeps its reasoning (empty
+  `input_transformations` on both APIs). Covers the Responses and Anthropic Messages paths.
 
 #### Authentication: dead or stale today
 
