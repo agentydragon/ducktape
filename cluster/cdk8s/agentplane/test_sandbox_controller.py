@@ -1,4 +1,4 @@
-"""The Controller reads static settings from its mounted file and the rotating token separately."""
+"""The Controller authenticates Gateway calls with its mounted service SVID."""
 
 from pathlib import PurePosixPath
 from typing import Any
@@ -8,7 +8,7 @@ import yaml
 from more_itertools import one
 
 from agentplane.environments.settings import Settings
-from agentplane.net.peertls.config import SANDBOX_CONTROLLER_URI
+from agentplane.net.peertls.config import SANDBOX_CONTROLLER_URI, SESSION_DISPATCHER_URI
 from cluster.cdk8s.agentplane import environment_sandbox, runner_gateway, sandbox_controller, workload_tls
 
 
@@ -35,6 +35,14 @@ def test_controller_settings_are_mounted_and_gateway_token_is_projected(
     assert config_mount["readOnly"] is True
     settings = yaml.safe_load(config_map["data"][config_path.name])
     Settings.model_validate(settings)
+    assert "runner_gateway_token_file" not in settings
+    assert settings["runner_gateway_tls"] == {
+        "ca_file": workload_tls.TRUST_BUNDLE_FILE,
+        "server_uri": SESSION_DISPATCHER_URI,
+        "cert_file": "/run/agentplane/sandbox-controller-client-tls/tls.crt",
+        "key_file": "/run/agentplane/sandbox-controller-client-tls/tls.key",
+        "client_uri": SANDBOX_CONTROLLER_URI,
+    }
     assert settings["runner_security"] == {
         "mode": "mtls",
         "tls": {
@@ -56,7 +64,8 @@ def test_controller_settings_are_mounted_and_gateway_token_is_projected(
     assert cert_mount["readOnly"] is True
     assert cert_volume["secret"]["secretName"] == f"{sandbox_controller.NAME}-client-workload-tls"
 
-    token_path = PurePosixPath(settings["runner_gateway_token_file"])
+    # Keep the projected bearer available for rollback until stage 5 removes it.
+    token_path = PurePosixPath("/var/run/secrets/agentplane-runner-gateway/token")
     token_mount = one(mount for mount in container["volumeMounts"] if mount["mountPath"] == str(token_path.parent))
     token_volume = one(volume for volume in pod["volumes"] if volume["name"] == token_mount["name"])
     assert token_mount["readOnly"] is True
