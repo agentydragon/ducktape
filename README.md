@@ -6,7 +6,7 @@ report snapshots. The CI reports are:
 
 - **Agentplane test architecture:** [fast-CI plan, implementation progress and recovery measurements](agentplane-test-architecture/index.html),
   [evidence](agentplane-test-architecture/evidence.json),
-  [source manifest](agentplane-test-architecture/manifest.json). Iteration 15 records a synthetic journal-only changed-label screen at 29.3% lower two-run midpoint, but the policy matched 0/30 reviewed historical changesets and four target substitutions lack semantic-coverage proof. PR #16102 remains green with the required gate unchanged; no selector promotion is qualified.
+  [source manifest](agentplane-test-architecture/manifest.json). Iteration 16 records 59 passing JUnit cases across seven recovered actions, including overlapping control/candidate coverage and exact Pod21/Services7 logical unions, plus a healthy 20-case repeat. The seven-target concurrency screen is 23.8% lower once but misses its compute-time cap. Required-feedback savings and selector promotion remain unqualified.
 - **Latency:** [standalone HTML](latency/index.html), [evidence](latency/evidence.json),
   [source and observation window](latency/manifest.json). Original backend windows and denominators are retained; iteration 14 adds the shared-guest screen, targeted retry repair and VM-tail phases without a whole-CI saving claim.
 - **Reliability (5–12 November failure history, VM OOM and merged-PR gates):** [standalone HTML](reliability/index.html),

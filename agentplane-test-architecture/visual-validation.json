@@ -1,30 +1,23 @@
 {
   "schema_version": 1,
-  "scope": "Iteration 15 current architecture first screen and root navigation; desktop/mobile and light/dark; real CDN, live theme changes, interactive selector controls and overflow checks.",
-  "verified_at_utc": "2026-11-14T11:30:18Z",
-  "source_base_gh_pages_commit": "6222ccfefa3c621d79871437c64953e54f6e12b8",
-  "source_snapshot_sha256": "8f70261a2d107727207951a2d7ef2f94d95cf260f97e52459646703c6e2cb906",
+  "scope": "Report16 current evidence and root navigation, desktop/mobile light/dark, real CDN, live theme changes, asset identity and overflow checks. Raw images/diagnostics stay private.",
+  "verified_at_utc": "2026-11-14T18:43:21Z",
+  "source_base_gh_pages_commit": "895a488df402554bf680083d340019d7d95091f5",
   "source_revision": {
-    "tested_commit": "38f6c8e723995efb5c8372c5f81bbd30d9e0621f",
-    "integrated_devel_base": "bb7c716f5a97fe4946acb10f0dafa3d69ff76d76",
-    "preview_overlay": "Scratch-only real-CDN RBE report preview; exact source commit plus x/report15_visual_preview.",
-    "test_script_sha256": "3ddf02dbdf2f932105800514471f10cf94d6bd035968af863835ab28ce6fc84c"
+    "tested_commit": "9b330689a24042259393a713b5f271b42bd7e669",
+    "preview_overlay": "Untracked scratch preview only; automatic mirroring with a per-command Git default-branch setting to the published source. No runtime source edits."
   },
-  "invocation_url": "https://app.buildbuddy.io/invocation/7a276da5-910f-47a4-aabe-1af9a9dc884f",
-  "target": "//x/report15_visual_preview:test_report",
+  "invocation_url": "https://app.buildbuddy.io/invocation/07177d2c-b302-4b0e-8b50-97aa850f3e68",
+  "target": "//x/report16_visual_preview:test_report",
   "native_result": {
     "tests": 4,
     "failures": 0,
     "errors": 0,
     "skipped": 0,
     "status": "PASSED",
-    "native_seconds": 46.249,
+    "native_seconds": 43.74,
     "buildbuddy_invocation_success": true
   },
-  "live_assets_verified": [
-    "Mantine 9.6.1 stylesheet from jsDelivr",
-    "React 19.3.0 from esm.sh"
-  ],
   "rendered_asset_sha256": {
     "agentplane-test-architecture/accepted-run-observer-binary-build.json": "6ae74edb0e3aa46af04cf2994a7f0896a920073c38453b3b74db003773b37152",
     "agentplane-test-architecture/accepted-run-observer-live-helper.patch": "f8f9bdcab493d82a86823b1132ed0e71d2a0f9fcd1e3be2edb89b09c32b2042d",
@@ -35,7 +28,7 @@
     "agentplane-test-architecture/app-fixture-selector.json": "f249519b006bbd71fafdcfe04970089c5db61ff32e24e47ab7cdafb81f903b68",
     "agentplane-test-architecture/asgi-mcp-ownership.json": "44b7a1ba7d6e8bf4e69f1b457ff0f786af9cbdbb5862416c83fefa10b6db210d",
     "agentplane-test-architecture/configured-guest-runtime-gateway.json": "52d941e1b26d77c3281e2563b9818fc948c2cf3e849596d18c75a84bb4185938",
-    "agentplane-test-architecture/evidence.json": "682d6273d1fc56d2d279f537e07d78a2e86c859b7b5b8dbd932047f62be89f54",
+    "agentplane-test-architecture/evidence.json": "8875b9d2ea91b3feb4e5c692b8d7871ad1a14fdc3e2a72a374af6abaf26d275a",
     "agentplane-test-architecture/guest-session-contract.json": "3ca543f371c9d92ca8d1b8211c142b71117ae3e124e3deceffdefe89389ea3f4",
     "agentplane-test-architecture/historical-app-cut-cohort-stage.json": "a16cd58c67c460c709f774ace32efb03d1f7c5b6bda1b1c58773afd6d2a742b6",
     "agentplane-test-architecture/historical-app-cut-four-pair-selector.json": "d71917f2e089853877ba5c17d7b34277cfcf81907c0a1c89d0218cfad7a25ed7",
@@ -44,17 +37,18 @@
     "agentplane-test-architecture/historical-app-cut-selector.json": "86555b1d64c998d0ae23dddcb67c6741a9d2725b74d76d955c538d5f7b65a26d",
     "agentplane-test-architecture/historical-app-cut-stage.json": "4e416cb61566a4999cb595056e18e71cfe06dc1bb8606aa939b8f14ebe14e1fa",
     "agentplane-test-architecture/historical-selector-first-pair.json": "52acf259c93e476f05e80e7073fe40a2024bf78507b037372b39215a1417ff8b",
-    "agentplane-test-architecture/index.html": "e8cca2f64524a397e14ee8369ac86a5a1893b83d4c4e0aa60e9338b10954cc91",
+    "agentplane-test-architecture/index.html": "f15f1296c4c562b18d40dcebfb3f4faf64cddc16a9abd22096c3e71809abc9f0",
     "agentplane-test-architecture/iteration10.json": "490e4fb5a36103a61116a15a82a422fd37e5a3205360d7c4cf738629418629cc",
     "agentplane-test-architecture/iteration11.json": "bde3219d91558865e4208264be1889077356e0b28e7b6b45012969990e3f94ac",
     "agentplane-test-architecture/iteration12.json": "0111db2d6e25666e76143c54e27d0c3689e15b7b8fcf986a6d624d12066643ee",
     "agentplane-test-architecture/iteration13.json": "a48ad005e894b52a6192bf816be29172fb41f461e5003485572c6edd2a58acae",
     "agentplane-test-architecture/iteration14.json": "0d8761ce9542009990b8443174598fefb6b6ffd53e028462a593333a36728c16",
     "agentplane-test-architecture/iteration15.json": "0e5f99643ef17a6f0044e733de13747aedd2eb1ef67dffdee023e2dad90b0316",
+    "agentplane-test-architecture/iteration16.json": "e7e89850197c5ce9e397206bf78a255bb00f7176a4f1089619cc7c4601fb8c93",
     "agentplane-test-architecture/iteration9.json": "516f6af4e3f3ae857f7c552193a272ff81d4e49975498806e531d959cab779a2",
     "agentplane-test-architecture/kvm-capacity-feasibility.json": "954589a61986dd9303bfbe1cb4141c459937546a1e093f8552eee8c0645e1c77",
     "agentplane-test-architecture/managed-vm-kernel-failure.json": "362cafa84ab380b85a5d58c3f38fdc27bbdd1b84361d851320a77687f73b8232",
-    "agentplane-test-architecture/manifest.json": "398b810c5e116b32a3f668a2b6bdec4947e4fdf2506ec47e37a7dfb51abe997f",
+    "agentplane-test-architecture/manifest.json": "c2261aebf68b32845a704f4479ed38431053cab2f849969cfb69a9a378092f4b",
     "agentplane-test-architecture/native-contract-validation.json": "786867a5cb5a0e934261bd0148f29cd8723ecd10d1a4e7b10582d776c237c5ac",
     "agentplane-test-architecture/native-gateway-fixture-split.json": "78850becdca63bc6520d2f04b5e07414acfaf5f8e1647c3d30046df03ccb52ec",
     "agentplane-test-architecture/native-setup-profile.json": "2e3d446b90a0f64a88677fdd463d155566faa8fa2982046034191f060f674cbc",
@@ -71,20 +65,7 @@
     "agentplane-test-architecture/selector-counterfactual.sh": "74d59cd7daaafb0890ed4eb42523f05d81d95f259248f9e72362c8bac6eafcf2",
     "agentplane-test-architecture/setup-attribution.json": "d7594d0a2854b2f9b2f462085797d97463a76a2b8465f3f37c3154bf9c649634",
     "ci-lanes.js": "75489df1779c3c5d51426522eee0358904ae07365b60d8be92b761876e1b5db1",
-    "index.html": "aa8615d9532daf5d593a5627ef53e90557cff49e6af405857244a949d9833614",
-    "latency/bridge-sharding-probe.json": "d5558a2fd7de187080650726b950158eae869617de2694e54d73d981545424eb",
-    "latency/crd-ordering-spike.patch": "28ab694a4c12c6f1e91de1b91bacfc905c32aebe38b4bb0beba145e0dd1677f5",
-    "latency/critical-path-5699.json": "ec3946f448097406d30ce46be879136e9ccb2f95abfa7fb79ff57567895c7f07",
-    "latency/evidence.json": "577d31f7983215f57e816474b07e1f5b68e32b4376c0b70584686cbb1d1fe888",
-    "latency/evidence.md": "f56776d75d36cb921821ae96e3a13ce202b993c61a7c70ce8e2cef3d9556e627",
-    "latency/index.html": "70cbb0a0ea43e4a5128c7904e9c25e83c720d95c8095c77a8ee3206cfb13de3e",
-    "latency/manifest.json": "99afa3b8ce0d498df62084d83b17ab3c72b6fa1384f910e3ef22ed448171696d",
-    "latency/resource-followup.js": "5d9c207c9d41aa4874accbe422f03de1d4e5cd5f80fe248aabac338d1dfdb870",
-    "latency/resource-timeline.png": "93e85c13f3d97684a12cdef44694990a71f283878022c3cc4103ad6afd899a4e",
-    "reliability/charts.js": "ee77367c9d8124c2fe1013d341998994edbdce02eb77a3e67ccb0996fda06866",
-    "reliability/evidence.json": "d53dd888853f2c3a8e53a7a8fc1427a737c989491a5a3185e00cb101b13ebaed",
-    "reliability/index.html": "4864af4b5293f4079087628ae6d12c09c7513acc9da2d2c319563e3614db9521",
-    "reliability/manifest.json": "9c9c0ace1f51e5e9f6c771e89fdafc6a304d283dc86366e65eca9d51766c1bf0",
+    "index.html": "c98dba6b1c0892c6b1f500ea9289c28e17cd12ac74150090bb6e8600bc6964c2",
     "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
     "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
   },
@@ -96,33 +77,10 @@
         "width": 1280,
         "height": 900
       },
-      "pages_checked": ["root", "architecture", "latency", "reliability"],
-      "screenshot_names": [
-        "root-first-screen",
-        "root-page-00",
-        "root-page-01",
-        "root-page-02",
-        "architecture-first-screen",
-        "architecture-current-00",
-        "architecture-current-01",
-        "architecture-current-02",
-        "latency-first-screen",
-        "latency-current-00",
-        "latency-current-01",
-        "reliability-first-screen",
-        "reliability-current-00"
-      ],
       "capture_counts": {
         "root": 3,
-        "architecture": 3,
-        "latency": 2,
-        "reliability": 1
+        "architecture": 8
       },
-      "controls_exercised": [
-        "App selection shows the App change and its behavioral contract",
-        "Platform selection shows controller reconcile contract",
-        "Runtime selection shows real Gateway to Runtime to History recovery"
-      ],
       "live_theme_change": true,
       "document_overflow": false,
       "console_errors": [],
@@ -137,85 +95,10 @@
         "width": 1280,
         "height": 900
       },
-      "pages_checked": ["root", "architecture", "latency", "reliability"],
-      "screenshot_names": [
-        "root-first-screen",
-        "root-page-00",
-        "root-page-01",
-        "root-page-02",
-        "architecture-first-screen",
-        "architecture-current-00",
-        "architecture-current-01",
-        "architecture-current-02",
-        "latency-first-screen",
-        "latency-current-00",
-        "latency-current-01",
-        "reliability-first-screen",
-        "reliability-current-00"
-      ],
       "capture_counts": {
         "root": 3,
-        "architecture": 3,
-        "latency": 2,
-        "reliability": 1
+        "architecture": 8
       },
-      "controls_exercised": [
-        "App selection shows the App change and its behavioral contract",
-        "Platform selection shows controller reconcile contract",
-        "Runtime selection shows real Gateway to Runtime to History recovery"
-      ],
-      "live_theme_change": true,
-      "document_overflow": false,
-      "console_errors": [],
-      "page_errors": [],
-      "failed_requests": [],
-      "http_errors": []
-    },
-    {
-      "status": "passed",
-      "theme": "light",
-      "viewport": {
-        "width": 390,
-        "height": 844
-      },
-      "pages_checked": ["root", "architecture", "latency", "reliability"],
-      "screenshot_names": [
-        "root-first-screen",
-        "root-page-00",
-        "root-page-01",
-        "root-page-02",
-        "root-page-03",
-        "root-page-04",
-        "root-page-05",
-        "root-page-06",
-        "architecture-first-screen",
-        "architecture-current-00",
-        "architecture-current-01",
-        "architecture-current-02",
-        "architecture-current-03",
-        "architecture-current-04",
-        "architecture-current-05",
-        "latency-first-screen",
-        "latency-current-00",
-        "latency-current-01",
-        "latency-current-02",
-        "latency-current-03",
-        "reliability-first-screen",
-        "reliability-current-00",
-        "reliability-current-01",
-        "reliability-current-02"
-      ],
-      "capture_counts": {
-        "root": 7,
-        "architecture": 6,
-        "latency": 4,
-        "reliability": 3
-      },
-      "controls_exercised": [
-        "App selection shows the App change and its behavioral contract",
-        "Platform selection shows controller reconcile contract",
-        "Runtime selection shows real Gateway to Runtime to History recovery"
-      ],
       "live_theme_change": true,
       "document_overflow": false,
       "console_errors": [],
@@ -230,44 +113,28 @@
         "width": 390,
         "height": 844
       },
-      "pages_checked": ["root", "architecture", "latency", "reliability"],
-      "screenshot_names": [
-        "root-first-screen",
-        "root-page-00",
-        "root-page-01",
-        "root-page-02",
-        "root-page-03",
-        "root-page-04",
-        "root-page-05",
-        "root-page-06",
-        "architecture-first-screen",
-        "architecture-current-00",
-        "architecture-current-01",
-        "architecture-current-02",
-        "architecture-current-03",
-        "architecture-current-04",
-        "architecture-current-05",
-        "latency-first-screen",
-        "latency-current-00",
-        "latency-current-01",
-        "latency-current-02",
-        "latency-current-03",
-        "reliability-first-screen",
-        "reliability-current-00",
-        "reliability-current-01",
-        "reliability-current-02"
-      ],
       "capture_counts": {
         "root": 7,
-        "architecture": 6,
-        "latency": 4,
-        "reliability": 3
+        "architecture": 16
       },
-      "controls_exercised": [
-        "App selection shows the App change and its behavioral contract",
-        "Platform selection shows controller reconcile contract",
-        "Runtime selection shows real Gateway to Runtime to History recovery"
-      ],
+      "live_theme_change": true,
+      "document_overflow": false,
+      "console_errors": [],
+      "page_errors": [],
+      "failed_requests": [],
+      "http_errors": []
+    },
+    {
+      "status": "passed",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "capture_counts": {
+        "root": 7,
+        "architecture": 16
+      },
       "live_theme_change": true,
       "document_overflow": false,
       "console_errors": [],
@@ -276,69 +143,45 @@
       "http_errors": []
     }
   ],
-  "screenshots": {
-    "captured": 78,
-    "manually_inspected": 10,
-    "inspected": [
+  "screenshot_count": 76,
+  "root_visual_review": {
+    "result": "Readability, light/dark contrast, table rows, links and mobile wrapping reviewed from retained current-section screenshots. Root navigation reviewed separately; no layout defect found.",
+    "reviewed_screenshots": [
       {
-        "case": "desktop-light",
-        "checkpoint": "root-first-screen",
-        "sha256": "fb418e686e40cc11114ce54849ece2ca91d444220b737703e143df754218ea27"
+        "case": "mobile-dark",
+        "checkpoint": "architecture-current-14",
+        "sha256": "669f73167d967471ba03280d190aeb6d6fc7879c612599525b5d46180b650ce5"
+      },
+      {
+        "case": "mobile-light",
+        "checkpoint": "root-page-01",
+        "sha256": "8f9f3d5b440f6355989680ff4fe123ff415ebcf60536c4af5544e06eb9ad8302"
       },
       {
         "case": "desktop-dark",
-        "checkpoint": "root-first-screen",
-        "sha256": "7db455af1a5f6b2a0d1604a49078046c753ccb9466be65ac17aaf00a663a54ca"
+        "checkpoint": "root-page-00",
+        "sha256": "b2f0608e1f62f7f22b83653e489785627c537fa907ba522862185a2148245e6e"
       },
       {
         "case": "mobile-light",
-        "checkpoint": "root-first-screen",
-        "sha256": "70d464839035f737c40812aef6d341cebba7a1bd039312d21c2f8e5a1101633e"
-      },
-      {
-        "case": "mobile-dark",
-        "checkpoint": "root-first-screen",
-        "sha256": "a898c3dbfa5d1417518e92600234cfe31965243f283f6e4abe23369fdcde64e4"
-      },
-      {
-        "case": "desktop-light",
-        "checkpoint": "architecture-first-screen",
-        "sha256": "3d897e96fcc53d9ca40fa711163e4c26ec3924245ae41af2fb136bb3f540b204"
+        "checkpoint": "architecture-current-14",
+        "sha256": "27b98266b55a30a673c01ff07953cc7dab7cfd36680cd6dd52ec89353b385cd8"
       },
       {
         "case": "desktop-dark",
-        "checkpoint": "architecture-first-screen",
-        "sha256": "422c532a5f72a246bc54de1619a022ca88012557c02c7815d5b9408dba66fb42"
-      },
-      {
-        "case": "mobile-light",
-        "checkpoint": "architecture-first-screen",
-        "sha256": "ccd773fd391410244fb382acbbdb571a220f26242b5368d1e47ae476c05bc704"
-      },
-      {
-        "case": "mobile-dark",
-        "checkpoint": "architecture-first-screen",
-        "sha256": "c0eb847b1f1c1223a34852f5e047d30aa6e9cc15edbe1abf211348e3c6463fe4"
+        "checkpoint": "architecture-current-06",
+        "sha256": "bae5c3b1a3492fed39cca22953c0ecc5d766845218a2faf7c35587566dc27960"
       },
       {
         "case": "desktop-light",
-        "checkpoint": "architecture-app-selection-control",
-        "sha256": "39b33bb796e444a79322f15b5e57c1a8c424a6461e965b64e79088e25eb60f8d"
-      },
-      {
-        "case": "mobile-light",
-        "checkpoint": "architecture-app-selection-control",
-        "sha256": "a13066aa72667df2a7ab5e054f38916014c9beb304efa91832faf535f54bba8d"
+        "checkpoint": "architecture-current-06",
+        "sha256": "0fa5518cb7417fa3d9cdc438926c0bc49992c3a65447f95aefac74657d556efd"
       }
     ]
   },
-  "screenshot_review": {
-    "status": "passed",
-    "finding": "The homepage card and architecture first screen make the current 29.3% synthetic result, 0/30 applicability, unproven substitutions, and unchanged gate legible in desktop/mobile light/dark. The App selector panel is readable at both inspected widths; theme contrast and mobile wrapping are clear."
+  "excluded_earlier_analysis_failure": {
+    "invocation": "6ce4c1af-42d5-4cff-aaa9-9146745fc9b1",
+    "reason": "An explicit remote branch disabled scratch mirroring; preview package was absent, so no tests ran. Not a test flake."
   },
-  "limits": [
-    "Presentation proof only; source and experiment conclusions remain governed by their pinned evidence and limitations.",
-    "The proof JSON is excluded from the tested asset digest to avoid circular self-hashing.",
-    "Raw browser records, logs, and PNGs stay private in task scratch; only reviewed summaries and screenshot hashes are published."
-  ]
+  "source_snapshot_note": "visual-validation.json is intentionally excluded from the rendered asset set; all listed final publication assets match the browser-fetched bytes."
 }
