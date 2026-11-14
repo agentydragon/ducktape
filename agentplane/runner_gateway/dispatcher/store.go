@@ -293,6 +293,31 @@ func identityAttributionValues(attribution Attribution) []any {
 	return []any{identity.Identity.GetName(), identity.Identity.GetUid(), podName, podUID}
 }
 
+func sessionIdentityAttributionValues(attribution Attribution) []any {
+	switch identity := attribution.(type) {
+	case *IdentityAttribution:
+		return identityAttributionValues(identity)
+	case *DelegatedIdentityAttribution:
+		return []any{identity.Identity.GetName(), identity.Identity.GetUid(), nil, nil}
+	default:
+		return []any{nil, nil, nil, nil}
+	}
+}
+
+// sessionDelegationAttributionValues stores the verified delegating actor separately from the
+// effective Identity that created the Session.
+func sessionDelegationAttributionValues(attribution Attribution) []any {
+	delegated, ok := attribution.(*DelegatedIdentityAttribution)
+	if !ok {
+		return []any{nil, nil, nil, nil, nil, nil, nil}
+	}
+	proof := delegated.Delegation
+	return []any{
+		proof.Actor.GetAccount().GetNamespace(), proof.Actor.GetAccount().GetName(), proof.Actor.GetUid(),
+		proof.ActorPod.Name, proof.ActorPod.UID, proof.Action.RequestID, proof.Action.ExecutionID,
+	}
+}
+
 func (d IdentityDelegation) validate() error {
 	if d.Actor.GetAccount().GetNamespace() == "" || d.Actor.GetAccount().GetName() == "" || d.Actor.GetUid() == "" ||
 		d.ActorPod.Name == "" || d.ActorPod.UID == "" || d.Action.RequestID == "" || d.Action.ExecutionID == "" {
@@ -337,6 +362,36 @@ func scanDelegatedIdentityAttribution(columns [9]sql.NullString) (*DelegatedIden
 			Actor:    serviceAccountIdentityFor(Account{Namespace: columns[2].String, Name: columns[3].String}, columns[4].String),
 			ActorPod: PodIdentity{Name: columns[5].String, UID: columns[6].String},
 			Action:   ActionCorrelation{RequestID: columns[7].String, ExecutionID: columns[8].String},
+		},
+	}
+	if err := result.Delegation.validate(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func scanSessionCreatorDelegation(
+	identityName, identityUID sql.NullString,
+	columns [7]sql.NullString,
+) (*DelegatedIdentityAttribution, error) {
+	recorded := 0
+	for _, column := range columns {
+		if column.Valid {
+			recorded++
+		}
+	}
+	if recorded == 0 {
+		return nil, nil
+	}
+	if recorded != len(columns) || !identityName.Valid || !identityUID.Valid {
+		return nil, errors.New("delegated Identity creator attribution is incomplete")
+	}
+	result := &DelegatedIdentityAttribution{
+		Identity: &identitypb.Identity{Name: identityName.String, Uid: identityUID.String},
+		Delegation: IdentityDelegation{
+			Actor:    serviceAccountIdentityFor(Account{Namespace: columns[0].String, Name: columns[1].String}, columns[2].String),
+			ActorPod: PodIdentity{Name: columns[3].String, UID: columns[4].String},
+			Action:   ActionCorrelation{RequestID: columns[5].String, ExecutionID: columns[6].String},
 		},
 	}
 	if err := result.Delegation.validate(); err != nil {
@@ -1028,7 +1083,10 @@ const sessionColumns = `session_id, sandbox_name, sandbox_uid::text, creator_acc
 	wake_caller_namespace, wake_caller_name, wake_from_incarnation, wake_requested_at,
 	spec, setup_script, state, reason, traceparent, created_at, updated_at,
 	delivery_blocker, wake_assessment, environment_deleted_at, execution_identity_name, execution_identity_uid::text,
-	creator_identity_name, creator_identity_uid, creator_identity_pod_name, creator_identity_pod_uid, service_attribution`
+	creator_identity_name, creator_identity_uid, creator_identity_pod_name, creator_identity_pod_uid,
+	creator_delegator_account_namespace, creator_delegator_account_name, creator_delegator_account_uid,
+	creator_delegator_pod_name, creator_delegator_pod_uid, creator_delegated_action_request_id::text,
+	creator_delegated_action_execution_id::text, service_attribution`
 
 func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 	o := &Session{}
@@ -1039,13 +1097,17 @@ func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 	var wakeAt, environmentDeletedAt sql.NullTime
 	var identityName, identityUID sql.NullString
 	var creatorIdentityName, creatorIdentityUID, creatorIdentityPodName, creatorIdentityPodUID sql.NullString
+	var creatorDelegatorNS, creatorDelegatorName, creatorDelegatorUID sql.NullString
+	var creatorDelegatorPodName, creatorDelegatorPodUID, creatorActionRequestID, creatorActionExecutionID sql.NullString
 	var spec, blockerBytes, wakeBytes, serviceBytes []byte
 	err := row.Scan(&o.SessionID, &o.SandboxName, &o.SandboxUID, &creatorNS, &creatorName, &creatorUID,
 		&effectiveNS, &effectiveName, &effectiveUID, &creatorPodName, &creatorPodUID,
 		&actionRequestID, &actionExecutionID, &o.WakeEligible,
 		&callerNS, &callerName, &incarnation, &wakeAt, &spec, &script, &o.State,
 		&reason, &o.Traceparent, &o.CreatedAt, &o.UpdatedAt, &blockerBytes, &wakeBytes, &environmentDeletedAt,
-		&identityName, &identityUID, &creatorIdentityName, &creatorIdentityUID, &creatorIdentityPodName, &creatorIdentityPodUID, &serviceBytes)
+		&identityName, &identityUID, &creatorIdentityName, &creatorIdentityUID, &creatorIdentityPodName, &creatorIdentityPodUID,
+		&creatorDelegatorNS, &creatorDelegatorName, &creatorDelegatorUID,
+		&creatorDelegatorPodName, &creatorDelegatorPodUID, &creatorActionRequestID, &creatorActionExecutionID, &serviceBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -1076,6 +1138,19 @@ func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 	o.Attribution, err = scanAttribution(account, creatorIdentityName, creatorIdentityUID, creatorIdentityPodName, creatorIdentityPodUID)
 	if err != nil {
 		return nil, err
+	}
+	delegated, err := scanSessionCreatorDelegation(creatorIdentityName, creatorIdentityUID, [7]sql.NullString{
+		creatorDelegatorNS, creatorDelegatorName, creatorDelegatorUID,
+		creatorDelegatorPodName, creatorDelegatorPodUID, creatorActionRequestID, creatorActionExecutionID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if delegated != nil {
+		if creatorIdentityPodName.Valid || creatorIdentityPodUID.Valid {
+			return nil, errors.New("delegated Identity creator also has direct Pod attribution")
+		}
+		o.Attribution = delegated
 	}
 	o.Attribution, err = scanServiceAttribution(o.Attribution, serviceBytes)
 	if err != nil {
@@ -1137,10 +1212,6 @@ func (s *Store) createSessionWithPlacementForCaller(ctx context.Context, session
 		account.Attribution.Actor.GetUid() == "") {
 		return nil, errors.New("ServiceAccount actor and creator attribution are required")
 	}
-	// The session table records no delegated Identity creator: CreateSession refuses one.
-	if identity, ok := caller.(IdentityCaller); ok && isDelegatedIdentityProof(identity.Proof) {
-		return nil, errors.New("a delegated Identity caller opens no Session")
-	}
 	if err := validateCaller(caller, wakeCaller); err != nil {
 		return nil, err
 	}
@@ -1161,6 +1232,30 @@ func (o *Session) authorizeRetry(caller Caller) error {
 		}
 	case IdentityCaller:
 		if sameIdentity(o.ExecutionIdentity, c.Identity) {
+			return nil
+		}
+	}
+	return ErrNotFound
+}
+
+// authorizeCreateRetry adds exact creator recovery for Identity-created Sessions. It is used only
+// by CreateSession receipt recovery and the transactional duplicate path; ordinary Session reads
+// continue to authorize against the immutable execution Identity.
+func (o *Session) authorizeCreateRetry(caller Caller) error {
+	switch c := caller.(type) {
+	case ServiceCaller, ServiceAccountCaller:
+		return o.authorizeRetry(caller)
+	case IdentityCaller:
+		var creator *identitypb.Identity
+		switch attribution := o.Attribution.(type) {
+		case *IdentityAttribution:
+			creator = attribution.Identity
+		case *DelegatedIdentityAttribution:
+			creator = attribution.Identity
+		case *ServiceAttribution:
+			creator = attribution.Identity
+		}
+		if creator != nil && sameIdentity(creator, c.Identity) {
 			return nil
 		}
 	}
@@ -1220,7 +1315,7 @@ func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandbox
 		}
 		existing, err := scanSession(tx.QueryRowContext(ctx, "SELECT "+sessionColumns+" FROM session WHERE session_id=$1", sessionID))
 		if err == nil {
-			if err := existing.authorizeRetry(caller); err != nil {
+			if err := existing.authorizeCreateRetry(caller); err != nil {
 				return err
 			}
 			if err := existing.matchRequest(sandboxName, sandboxUID, sessionPlacement, spec, setupScript); err != nil {
@@ -1251,7 +1346,8 @@ func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandbox
 			creatorNS, creatorName, creatorUID = creator.GetAccount().GetNamespace(), creator.GetAccount().GetName(), creator.GetUid()
 		}
 		attributionArgs := attributionValues(attribution)
-		identityArgs := identityAttributionValues(attribution)
+		identityArgs := sessionIdentityAttributionValues(attribution)
+		delegationArgs := sessionDelegationAttributionValues(attribution)
 		serviceBytes, err := serviceAttributionBytes(attribution)
 		if err != nil {
 			return err
@@ -1261,13 +1357,16 @@ func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandbox
 			 creator_pod_name,creator_pod_uid,action_request_id,action_execution_id,wake_eligible,wake_caller_namespace,wake_caller_name,
 			 spec,setup_script,state,traceparent,created_at,updated_at,delivery_blocker,wake_assessment,
 			 execution_identity_name,execution_identity_uid,
-			 creator_identity_name,creator_identity_uid,creator_identity_pod_name,creator_identity_pod_uid,service_attribution)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,now(),now(),$21,$22,$23,$24,$25,$26,$27,$28,$29) RETURNING `+sessionColumns,
+			 creator_identity_name,creator_identity_uid,creator_identity_pod_name,creator_identity_pod_uid,
+			 creator_delegator_account_namespace,creator_delegator_account_name,creator_delegator_account_uid,
+			 creator_delegator_pod_name,creator_delegator_pod_uid,creator_delegated_action_request_id,creator_delegated_action_execution_id,service_attribution)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,now(),now(),$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36) RETURNING `+sessionColumns,
 			sessionID, sandboxName, sandboxUID, creatorNS, creatorName, creatorUID,
 			attributionArgs[5], attributionArgs[6], attributionArgs[7], attributionArgs[3], attributionArgs[4], attributionArgs[8], attributionArgs[9],
 			wakeCaller != nil, ns, name, data, setupScript, SessionWaitingState,
 			observability.Traceparent(ctx), nil, wakeAssessment, identityName, identityUID,
-			identityArgs[0], identityArgs[1], identityArgs[2], identityArgs[3], serviceBytes))
+			identityArgs[0], identityArgs[1], identityArgs[2], identityArgs[3],
+			delegationArgs[0], delegationArgs[1], delegationArgs[2], delegationArgs[3], delegationArgs[4], delegationArgs[5], delegationArgs[6], serviceBytes))
 		if err != nil {
 			return err
 		}

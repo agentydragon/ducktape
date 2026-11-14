@@ -14,14 +14,15 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 
-	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
-
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environmentaccess"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/google/uuid"
@@ -33,6 +34,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
@@ -75,6 +77,7 @@ type authorityInventory struct {
 	mu              sync.Mutex
 	sandbox         SandboxSnapshot
 	identity        *identitypb.Identity
+	environment     *sandboxapi.Sandbox
 	identityMissing bool
 	sandboxErr      error
 }
@@ -101,6 +104,29 @@ func (i *authorityInventory) GetExecutionIdentity(_ context.Context, sandbox San
 		return &identitypb.Identity{Name: "authority-test-identity", Uid: "00000000-0000-4000-8000-00000000a001"}, true, nil
 	}
 	return i.identity, true, nil
+}
+
+func (i *authorityInventory) GetEnvironment(_ context.Context, sandbox SandboxSnapshot) (*sandboxapi.Sandbox, bool, error) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if sandbox.Name != i.sandbox.Name || sandbox.UID != i.sandbox.UID {
+		return nil, false, nil
+	}
+	if i.environment != nil {
+		return i.environment.DeepCopy(), true, nil
+	}
+	resource := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{
+		Namespace: i.sandbox.Namespace, Name: i.sandbox.Name, UID: types.UID(i.sandbox.UID),
+	}}
+	identity := i.identity
+	if identity == nil && !i.identityMissing {
+		identity = &identitypb.Identity{Name: "authority-test-identity", Uid: "00000000-0000-4000-8000-00000000a001"}
+	}
+	if identity != nil {
+		resource.Spec.Identity = &sandboxapi.IdentityRef{Name: identity.GetName()}
+	}
+	resource.Spec.Running = true
+	return resource, true, nil
 }
 
 func (i *authorityInventory) failSandboxRead(err error) {
@@ -213,7 +239,10 @@ func TestDispatcherServiceAccountSVIDDoesNotOwnSandboxIdentitySessions(t *testin
 	owner := workloadauthtesting.NewWorkload(t, api, caller.Namespace, caller.Name)
 	foreign := workloadauthtesting.NewWorkload(t, api, caller.Namespace, "test-foreign-caller")
 	ownerSandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
-	inventory := &authorityInventory{sandbox: ownerSandbox}
+	ownerIdentity := &identitypb.Identity{Name: owner.Identity.Name, Uid: string(owner.Identity.UID)}
+	inventory := &authorityInventory{sandbox: ownerSandbox, identity: ownerIdentity}
+	environmentRules := environmentaccess.NewIndex()
+	environmentRules.PutIdentity(owner.Identity)
 	svids, err := auth.NewSVIDResolver(owner.Objects, []string{caller.Namespace}, &resolver.Identities{PolicyNamespace: caller.Namespace})
 	if err != nil {
 		t.Fatal(err)
@@ -222,7 +251,8 @@ func TestDispatcherServiceAccountSVIDDoesNotOwnSandboxIdentitySessions(t *testin
 	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, connected: true}
 	service := &Service{
 		Store: store, DispatcherCallers: sets.New[auth.Account](),
-		Sandboxes: inventory, Hub: hub, WatchLease: 10 * time.Second,
+		Sandboxes: inventory, EnvironmentRules: environmentRules, PolicyReady: func() error { return nil },
+		Hub: hub, WatchLease: 10 * time.Second,
 	}
 	counted := &countingAuthorityDispatcher{SessionDispatcherServer: service}
 	methods := Methods(auth.AnySubject(svids))
@@ -306,6 +336,8 @@ func TestDispatcherIdentitySVIDDoesNotInheritSameNamedAccountAuthority(t *testin
 	ownerIdentity := &identitypb.Identity{Name: owner.Identity.Name, Uid: string(owner.Identity.UID)}
 	ownerSandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
 	inventory := &authorityInventory{sandbox: ownerSandbox, identity: ownerIdentity}
+	environmentRules := environmentaccess.NewIndex()
+	environmentRules.PutIdentity(owner.Identity)
 	svids, err := auth.NewSVIDResolver(owner.Objects, []string{caller.Namespace}, &resolver.Identities{PolicyNamespace: caller.Namespace})
 	if err != nil {
 		t.Fatal(err)
@@ -314,7 +346,8 @@ func TestDispatcherIdentitySVIDDoesNotInheritSameNamedAccountAuthority(t *testin
 	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, connected: true}
 	service := &Service{
 		Store: store, DispatcherCallers: sets.New[auth.Account](),
-		Sandboxes: inventory, Hub: hub, WatchLease: 10 * time.Second,
+		Sandboxes: inventory, EnvironmentRules: environmentRules, PolicyReady: func() error { return nil },
+		Hub: hub, WatchLease: 10 * time.Second,
 	}
 	counted := &countingAuthorityDispatcher{SessionDispatcherServer: service}
 	methods := Methods(auth.AnySubject(svids))

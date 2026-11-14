@@ -188,6 +188,13 @@ async def operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_c
         )
 
 
+async def an_identity_creates_a_native_session_only_with_an_explicit_binding_grant(resources: Resources) -> None:
+    async with resources.open() as (client, sandboxes):
+        await suspend_resume.an_identity_creates_a_native_session_only_with_an_explicit_binding_grant(
+            resources.cluster, client, resources.dispatcher, sandboxes, resources.scripted
+        )
+
+
 async def an_unknown_history_session_is_not_found(resources: Resources) -> None:
     async with Client.connect(base_url=resources.base_url, token=resources.token) as client:
         await thread_history.an_unknown_history_session_is_not_found(client)
@@ -264,6 +271,9 @@ SCENARIOS = (
     pytest.param(
         operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_control,
         marks=[pytest.mark.scripted_model, pytest.mark.timeout(600)],
+    ),
+    pytest.param(
+        an_identity_creates_a_native_session_only_with_an_explicit_binding_grant, marks=pytest.mark.scripted_model
     ),
     pytest.param(a_command_box_presents_its_own_svid),
     pytest.param(a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes),

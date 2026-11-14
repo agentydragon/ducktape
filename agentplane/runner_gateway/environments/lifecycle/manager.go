@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"time"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
@@ -480,6 +481,9 @@ func selectorRequiresLiveBoundIdentity(index *reader.Index[environmentaccess.Rul
 	for _, grant := range index.Grants(caller) {
 		for _, set := range grant.Sets {
 			for _, numbered := range set.Rules {
+				if !slices.Contains(numbered.Rule.Operations, "resume") {
+					continue
+				}
 				for _, selector := range numbered.Rule.Environments {
 					if !selectorMatches(sandbox, caller, selector) {
 						continue

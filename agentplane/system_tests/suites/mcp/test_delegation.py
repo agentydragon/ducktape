@@ -187,7 +187,7 @@ async def test_external_connection_cannot_control_an_identity_sandbox(
                         "reasoning_effort": "low",
                     },
                 },
-                error_kind="EXECUTION_ERROR_KIND_BACKEND_REFUSED",
+                error_kind="EXECUTION_ERROR_KIND_TARGET_NOT_FOUND",
             )
             await cluster.kubectl("scale", "deployment/app", "--replicas=1")
             await cluster.kubectl("wait", "--for=condition=Available", "deployment/app", "--timeout=180s")
