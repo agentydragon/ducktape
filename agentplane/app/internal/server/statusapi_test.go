@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
+	apphttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/status"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -42,7 +43,7 @@ func TestSystemStatusUsesGeneratedProtoJSONAndCallerAuthentication(t *testing.T)
 		t.Fatal(err)
 	}
 	server := newHTTPServer(authentication)
-	if err := registerStatusRoutes(server, &appService{systemStatus: checker}); err != nil {
+	if err := apphttp.NewSystemStatusHandler(checker).RegisterRoutes(server); err != nil {
 		t.Fatal(err)
 	}
 	handler := server.Handler(authentication)

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+
+	apphttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi"
 )
 
 // ExportOpenAPI registers the application's typed routes and writes the OpenAPI document
@@ -12,7 +14,9 @@ import (
 func ExportOpenAPI(writer io.Writer) error {
 	server := newHTTPServer(nil)
 	registerOperatorRoutes(server, nil)
-	registerStatusRoutes(server, nil)
+	if err := apphttp.NewSystemStatusHandler(nil).RegisterRoutes(server); err != nil {
+		return fmt.Errorf("register System status facade: %w", err)
+	}
 
 	encoded, err := json.MarshalIndent(server.api.OpenAPI(), "", "  ")
 	if err != nil {

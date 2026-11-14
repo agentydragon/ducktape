@@ -1,4 +1,4 @@
-package server
+package httpapi
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/settings"
 	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
@@ -15,16 +16,32 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-type policySetNameReader interface {
+// RouteRegistrar mounts routes on the app's authenticated HTTP server.
+type RouteRegistrar interface {
+	RegisterRawRoute(pattern string, handler http.Handler, operatorOnly bool)
+}
+
+// PolicySetNameReader lists the policy sets visible to the app's Sandbox form.
+type PolicySetNameReader interface {
 	ListPolicySetNames(context.Context, *policypb.ListPolicySetNamesRequest, ...grpc.CallOption) (*policypb.ListPolicySetNamesResponse, error)
 }
 
-// registerAppConfigRoutes serves the app-owned browser configuration through generated
-// ProtoJSON HTTP routes. The generated gateway and service implementation share this process;
-// there is no separate config service or internal HTTP hop.
-func registerAppConfigRoutes(server *httpServer, service *appService) error {
+// AppConfigHandler serves browser-safe configuration through generated AppService routes.
+type AppConfigHandler struct {
+	apppb.UnimplementedAppServiceServer
+	config         settings.Config
+	policySetNames PolicySetNameReader
+}
+
+// NewAppConfigHandler creates a handler from the deployment settings and policy name reader.
+func NewAppConfigHandler(config settings.Config, policySetNames PolicySetNameReader) *AppConfigHandler {
+	return &AppConfigHandler{config: config, policySetNames: policySetNames}
+}
+
+// RegisterRoutes mounts the generated AppService configuration routes.
+func (h *AppConfigHandler) RegisterRoutes(server RouteRegistrar) error {
 	gateway := runtime.NewServeMux()
-	if err := apppb.RegisterAppServiceHandlerServer(context.Background(), gateway, service); err != nil {
+	if err := apppb.RegisterAppServiceHandlerServer(context.Background(), gateway, h); err != nil {
 		return err
 	}
 	const prefix = "/upstream/app-config"
@@ -35,16 +52,16 @@ func registerAppConfigRoutes(server *httpServer, service *appService) error {
 	return nil
 }
 
-func (s *appService) GetSandboxForm(ctx context.Context, _ *apppb.GetSandboxFormRequest) (*apppb.GetSandboxFormResponse, error) {
-	if s.policySetNames == nil {
+func (h *AppConfigHandler) GetSandboxForm(ctx context.Context, _ *apppb.GetSandboxFormRequest) (*apppb.GetSandboxFormResponse, error) {
+	if h.policySetNames == nil {
 		return nil, status.Error(codes.Unavailable, "Policy access is unavailable")
 	}
-	sets, err := s.policySetNames.ListPolicySetNames(ctx, &policypb.ListPolicySetNamesRequest{})
+	sets, err := h.policySetNames.ListPolicySetNames(ctx, &policypb.ListPolicySetNamesRequest{})
 	if err != nil {
 		return nil, status.Error(codes.Unavailable, "Policy access is unavailable")
 	}
-	defaults := &apppb.NewSandboxDefaults{WakeOnSend: s.config.NewSandboxDefaults.WakeOnSend}
-	if seconds := s.config.NewSandboxDefaults.IdleSuspendAfterSeconds; seconds != nil {
+	defaults := &apppb.NewSandboxDefaults{WakeOnSend: h.config.NewSandboxDefaults.WakeOnSend}
+	if seconds := h.config.NewSandboxDefaults.IdleSuspendAfterSeconds; seconds != nil {
 		defaults.IdleSuspendAfterSeconds = seconds
 	}
 	return &apppb.GetSandboxFormResponse{
@@ -52,17 +69,17 @@ func (s *appService) GetSandboxForm(ctx context.Context, _ *apppb.GetSandboxForm
 	}, nil
 }
 
-func (s *appService) ListModels(context.Context, *emptypb.Empty) (*apppb.ListModelsResponse, error) {
+func (h *AppConfigHandler) ListModels(context.Context, *emptypb.Empty) (*apppb.ListModelsResponse, error) {
 	response := &apppb.ListModelsResponse{}
-	for _, model := range s.config.Models.Models {
+	for _, model := range h.config.Models.Models {
 		response.Models = append(response.Models, &apppb.ModelOption{
 			Model: model.Model, DisplayName: model.DisplayName,
 			ReasoningEfforts: nonNilStrings(model.ReasoningEfforts),
 		})
 	}
 
-	harnessNames := make([]string, 0, len(s.config.Models.Harnesses))
-	for name := range s.config.Models.Harnesses {
+	harnessNames := make([]string, 0, len(h.config.Models.Harnesses))
+	for name := range h.config.Models.Harnesses {
 		harnessNames = append(harnessNames, name)
 	}
 	sort.Strings(harnessNames)
@@ -73,15 +90,15 @@ func (s *appService) ListModels(context.Context, *emptypb.Empty) (*apppb.ListMod
 			continue
 		}
 		response.Harnesses = append(response.Harnesses, &apppb.HarnessModelOffers{
-			Harness: sessionpb.Harness(value), Models: nonNilStrings(s.config.Models.Harnesses[name]),
+			Harness: sessionpb.Harness(value), Models: nonNilStrings(h.config.Models.Harnesses[name]),
 		})
 	}
 	return response, nil
 }
 
-func (s *appService) ListSandboxPresets(context.Context, *emptypb.Empty) (*apppb.ListSandboxPresetsResponse, error) {
+func (h *AppConfigHandler) ListSandboxPresets(context.Context, *emptypb.Empty) (*apppb.ListSandboxPresetsResponse, error) {
 	response := &apppb.ListSandboxPresetsResponse{}
-	for _, preset := range s.config.PresetViews() {
+	for _, preset := range h.config.PresetViews() {
 		defaults := &apppb.SessionDefaults{
 			Model: preset.SessionDefaults.Model, Cwd: preset.SessionDefaults.CWD,
 			Instructions: preset.SessionDefaults.Instructions, SetupScript: preset.SessionDefaults.SetupScript,
@@ -101,15 +118,15 @@ func (s *appService) ListSandboxPresets(context.Context, *emptypb.Empty) (*apppb
 	return response, nil
 }
 
-func (s *appService) GetFrontendConfig(context.Context, *apppb.GetFrontendConfigRequest) (*apppb.GetFrontendConfigResponse, error) {
+func (h *AppConfigHandler) GetFrontendConfig(context.Context, *apppb.GetFrontendConfigRequest) (*apppb.GetFrontendConfigResponse, error) {
 	config := &apppb.FrontendConfig{}
-	if settings := s.config.FrontendConfig.TraceSearch; settings != nil {
+	if settings := h.config.FrontendConfig.TraceSearch; settings != nil {
 		config.TraceSearch = &apppb.TraceSearchSettings{
 			GrafanaBaseUrl: settings.GrafanaBaseURL, TempoDatasourceUid: settings.TempoDatasourceUID,
 			DeploymentEnvironment: settings.DeploymentEnvironment,
 		}
 	}
-	if settings := s.config.FrontendConfig.LangfuseSearch; settings != nil {
+	if settings := h.config.FrontendConfig.LangfuseSearch; settings != nil {
 		config.LangfuseSearch = &apppb.LangfuseSearchSettings{
 			BaseUrl: settings.BaseURL, ProjectId: settings.ProjectID,
 			SessionMetadataKey:               settings.SessionMetadataKey,

@@ -5,7 +5,6 @@ package(default_visibility = ["//agentplane/app:__subpackages__"])
 go_library(
     name = "server",
     srcs = [
-        "appconfigapi.go",
         "appservice.go",
         "operatorapi.go",
         "runnerapi.go",
@@ -14,7 +13,6 @@ go_library(
         "schema_export.go",
         "server.go",
         "sessionapi.go",
-        "statusapi.go",
         "streamapi.go",
         "threadreadapi.go",
         "trace_relay.go",
@@ -33,6 +31,7 @@ go_library(
         "//agentplane/app/internal/historyclient",
         "//agentplane/app/internal/historydata",
         "//agentplane/app/internal/historywatch",
+        "//agentplane/app/internal/httpapi",
         "//agentplane/app/internal/httpapi/sessions",
         "//agentplane/app/internal/httpapi/threads",
         "//agentplane/app/internal/httperror",
@@ -168,6 +167,7 @@ go_test(
     embed = [":server"],
     deps = [
         "//agentplane/app/internal/auth",
+        "//agentplane/app/internal/httpapi",
         "//agentplane/app/internal/settings",
         "//agentplane/sandboxes/runtimeconfig",
         "@io_k8s_api//authentication/v1:authentication",
@@ -181,6 +181,7 @@ go_test(
     embed = [":server"],
     deps = [
         "//agentplane/app/internal/auth",
+        "//agentplane/app/internal/httpapi",
         "//agentplane/app/internal/status",
         "@io_k8s_api//authentication/v1:authentication",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
