@@ -1494,6 +1494,10 @@ This contract does not assert purity, freedom from throws, heap locality,
 result shape, or integrity of global-object or host state. Shared-heap effects,
 foreign registry or configuration access, global-object and host effects, and
 callbacks retained for future use remain subject to their ordinary analysis.
+A chunk with no modeled local heap cells can still call into provider-owned
+storage. After a lexical-only assertion narrows binding fallback, unknown heap
+frontiers remain ordered on both sides of that initializer; an empty local
+heap census does not discharge them.
 `initializer_purity: pure` separately asserts that the initializer has no
 observable effects and cannot throw. Neither contract applies to later uses of
 its value.

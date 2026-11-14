@@ -34,9 +34,23 @@ fn annotated_encoder_split(source: &'static str) -> FixtureOpts<'static> {
     FixtureOpts::new(source, vec![codec]).with_unassigned_mode(unassigned_mode_inline())
 }
 
+fn isolated_encoder_split(source: &'static str) -> FixtureOpts<'static> {
+    let mut options = annotated_encoder_split(source);
+    for (_, module) in &mut options.logical_modules {
+        for binding in ["left", "right"] {
+            module
+                .annotations
+                .get_mut(binding)
+                .unwrap()
+                .initializer_external_effects = Some(InitializerExternalEffects::Isolated);
+        }
+    }
+    options
+}
+
 #[test]
 fn audited_encoder_initializers_emit_together_and_preserve_output() {
-    let fixture = run_fixture(annotated_encoder_split(
+    let fixture = run_fixture(isolated_encoder_split(
         "const encoder = new TextEncoder();\n\
          function peek() { return later; }\n\
          globalThis.saved = peek;\n\
@@ -115,7 +129,7 @@ fn encoder_initializers_commute_with_independent_allocations() {
 
 #[test]
 fn isolated_encoder_initializers_emit_across_heap_barriers_without_pairwise_promises() {
-    let mut options = annotated_encoder_split(
+    let options = isolated_encoder_split(
         "const encoder = new TextEncoder();\n\
          const values = [];\n\
          const decoder = new TextDecoder('utf8');\n\
@@ -126,15 +140,6 @@ fn isolated_encoder_initializers_emit_across_heap_barriers_without_pairwise_prom
     )
     .with_dataflow_aware_s_chain()
     .with_trusted_dataflow_summaries();
-    for (_, module) in &mut options.logical_modules {
-        for binding in ["left", "right"] {
-            module
-                .annotations
-                .get_mut(binding)
-                .unwrap()
-                .initializer_external_effects = Some(InitializerExternalEffects::Isolated);
-        }
-    }
     let fixture = run_fixture(options);
     assert_module_exports(
         &fixture.out_root,
@@ -573,4 +578,87 @@ fn initializer_source_only_uses_resolved_binding_and_keeps_comma_siblings_raw() 
             "the sibling's observed promoted read must remain: {graph:#}"
         );
     }
+}
+
+#[test]
+fn shared_metadata_identity_cannot_cross_an_intervening_reader() {
+    const PROVIDER: &str = "const metadata = new WeakMap();\n\
+        const shared = {};\n\
+        export function makeSchema(label) { metadata.set(shared, label); return shared; }\n\
+        export function description(schema) { return metadata.get(schema); }\n";
+    expect_sequenced_cycle_rejection(
+        metadata_boundary_fixture(
+            "import { makeSchema, description } from './provider.js';\n\
+         const first = makeSchema('a');\n\
+         const observed = description(first);\n\
+         const second = makeSchema('b');\n\
+         console.log(observed, description(second));\n\
+         export { first, second };\n",
+            &[("static/provider", PROVIDER)],
+        ),
+        &["schemas", "anon_residual_sentinel"],
+    );
+}
+
+#[test]
+fn published_fresh_metadata_cannot_cross_an_intervening_reader() {
+    const PROVIDER: &str = "const metadata = new WeakMap();\n\
+        let published;\n\
+        export function makeSchema(label) {\n\
+          const schema = {}; metadata.set(schema, label); published = schema; return schema;\n\
+        }\n\
+        export function description(schema) { return metadata.get(schema); }\n\
+        export function latest() { return description(published); }\n";
+    expect_sequenced_cycle_rejection(
+        metadata_boundary_fixture(
+            "import { makeSchema, description, latest } from './provider.js';\n\
+         const first = makeSchema('a');\n\
+         const observed = latest();\n\
+         const second = makeSchema('b');\n\
+         console.log(observed, description(second));\n\
+         export { first, second };\n",
+            &[("static/provider", PROVIDER)],
+        ),
+        &["schemas", "anon_residual_sentinel"],
+    );
+}
+
+#[test]
+fn schema_construction_cannot_cross_a_configuration_change() {
+    const PROVIDER: &str = "let mode = '0';\n\
+        export function makeSchema(label) { return { value: label + mode }; }\n\
+        export function configure(value) { mode = value; }\n";
+    expect_sequenced_cycle_rejection(
+        metadata_boundary_fixture(
+            "import { makeSchema, configure } from './provider.js';\n\
+         const first = makeSchema('a');\n\
+         configure('1');\n\
+         const second = makeSchema('b');\n\
+         console.log(first.value, second.value);\n\
+         export { first, second };\n",
+            &[("static/provider", PROVIDER)],
+        ),
+        &["schemas", "anon_residual_sentinel"],
+    );
+}
+
+fn metadata_boundary_fixture<'a>(
+    source: &'a str,
+    chunks: &'a [(&'a str, &'a str)],
+) -> FixtureOpts<'a> {
+    let mut schemas = logical_module("schemas", &[Member::new("first"), Member::new("second")]);
+    for binding in ["first", "second"] {
+        schemas.1.annotations.insert(
+            binding.to_owned(),
+            BindingAnnotation {
+                initializer_binding_effects: Some(InitializerBindingEffects::SourceOnly),
+                ..Default::default()
+            },
+        );
+    }
+    FixtureOpts::new(source, vec![schemas])
+        .with_extra_chunks(chunks)
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_dataflow_aware_s_chain()
+        .with_trusted_dataflow_summaries()
 }

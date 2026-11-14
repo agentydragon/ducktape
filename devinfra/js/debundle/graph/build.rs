@@ -1087,7 +1087,13 @@ fn emit_heap_content_order(
     // External storage already exists at chunk entry. Scan every observation
     // before emitting events so its preceding opaque writers are retained too.
     let mut has_live_heap_contents = facts.iter().any(|stmt| {
-        stmt.heap_contents.observes_external_heap
+        // A lexical-only initializer assertion can remove the conservative
+        // binding coupling without bounding provider-owned heap state. Keep
+        // opaque ordering on both sides of it even with no modeled local cells.
+        stmt.synchronous_calls
+            .as_ref()
+            .is_some_and(|calls| calls.initializer_binding_effects.is_some())
+            || stmt.heap_contents.observes_external_heap
             || stmt
                 .synchronous_calls
                 .as_ref()
