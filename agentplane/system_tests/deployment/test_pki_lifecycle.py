@@ -9,6 +9,7 @@ from typing import Any
 import pytest_bazel
 import yaml
 from cryptography import x509
+from cryptography.hazmat.primitives import serialization
 from python.runfiles import Runfiles
 
 from agentplane.system_tests.deployment import certificates, rendered_fixture, stack
@@ -70,6 +71,30 @@ def test_fixture_cas_are_fresh_on_the_same_controllers(tmp_path: Path) -> None:
             root = _public_certificate(node, "test-runner-root")
             workload = _public_certificate(node, "agentplane-workload-ca")
             workload.verify_directly_issued_by(root)
+            revision = int(
+                node.kubectl(
+                    "-n", "cert-manager", "get", "certificate/test-runner-root", "-o", "jsonpath={.status.revision}"
+                )
+            )
+            # A new issuance must preserve the key that the existing intermediate trusts.
+            # Changing duration triggers cert-manager issuance without changing the CA subject.
+            node.kubectl(
+                "-n", "cert-manager", "patch", "certificate/test-runner-root", "--type=merge",
+                "-p", json.dumps({"spec": {"duration": "43800h"}}),
+            )  # fmt: skip
+            node.kubectl(
+                "-n", "cert-manager", "wait", "certificate/test-runner-root",
+                f"--for=jsonpath={{.status.revision}}={revision + 1}",
+                f"--timeout={pki_infrastructure.READY_SECONDS}s",
+            )  # fmt: skip
+            renewed_root = _public_certificate(node, "test-runner-root")
+            assert renewed_root.serial_number != root.serial_number
+            assert renewed_root.public_key().public_bytes(
+                serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+            ) == root.public_key().public_bytes(
+                serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+            )
+            workload.verify_directly_issued_by(renewed_root)
             identities = {
                 doc["metadata"]["name"]: node.kubectl(
                     "-n",
