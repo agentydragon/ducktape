@@ -340,3 +340,15 @@ py_library(
         "@pypi//tenacity",
     ],
 )
+
+py_test(
+    name = "test_runtime_guest_cleanup",
+    srcs = ["test_runtime_guest_cleanup.py"],
+    deps = [
+        ":runtime_guest",
+        "//:conftest",
+        "//util:net",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

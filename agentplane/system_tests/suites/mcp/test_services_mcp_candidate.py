@@ -14,6 +14,7 @@ from agentplane.system_tests.driver.harness_pair import run_harness_pair_in_own_
 from agentplane.system_tests.driver.operator_login import OperatorCredentials
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.scenarios import dcr, external_connection, mcp
+from agentplane.system_tests.scenarios.policy_objects import PolicyObjects
 
 
 async def test_deployed_discovery_and_registration(pytestconfig: pytest.Config, deployment: Stack) -> None:
@@ -36,7 +37,7 @@ async def test_policy_binding_auto_approves_the_bound_sandbox(
     client: Client,
     dispatcher: SessionDispatcherClient,
     scripted: ScriptedUpstream,
-    policy_objects: mcp.PolicyObjects,
+    policy_objects: PolicyObjects,
 ) -> None:
     await run_harness_pair_in_own_sandboxes(
         cluster,

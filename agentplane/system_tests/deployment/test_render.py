@@ -370,7 +370,7 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     assert proxy_certificate["issuerRef"] == {"name": "agentplane-workload", "kind": "ClusterIssuer"}
     assert any(mount["name"] == "svid" for mount in proxy["volumeMounts"])
     assert egress_config["admin_grpc_audience"] == "agentplane-egress-admin"
-    assert egress_config["admin_grpc_callers"] == [f"{NAMESPACE}/app"]
+    assert egress_config["admin_grpc_callers"] == [f"{NAMESPACE}/app", f"{NAMESPACE}/system-test-native-client"]
     assert egress_config["admin_grpc_service_callers"] == ["spiffe://agentplane/app"]
     app_pod = _resource(docs, "Deployment", "app")["spec"]["template"]["spec"]
     token = next(volume for volume in app_pod["volumes"] if volume["name"] == "egress-admin-token")
@@ -1148,8 +1148,8 @@ def test_native_profile_omits_app_but_keeps_platform_and_bound_caller(
     egress = EgressSettings.model_validate(
         yaml.safe_load(_resource(docs, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"])
     )
-    assert egress.admin_grpc_audience is None
-    assert egress.admin_grpc_callers is None
+    assert egress.admin_grpc_audience == "agentplane-egress-admin"
+    assert egress.admin_grpc_callers == [f"{NAMESPACE}/system-test-native-client"]
     assert egress.forward.tls is not None
 
     gateway = yaml.safe_load(_resource(docs, "ConfigMap", "runner-gateway-settings")["data"]["settings.yaml"])
