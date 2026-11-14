@@ -3637,12 +3637,17 @@ Current Dispatcher writers supply the execution Identity, which Central Sampler 
 retains. History's direct probe ingress remains. Runner Gateway's retained rows and reader cleanup
 are tracked separately.
 
-History's current sampler and manual-probe writers send a validated nonempty Sandbox UID. A separate
-History data PR removes rows whose `sandbox_uid` is NULL or empty, together with their event,
-settlement, range, block, lease, fold-queue and Thread projection state. Staging counts could not be
-obtained because this Identity cannot exec or port-forward to the History database Pod; no system
-test covers this one-off cleanup. Its stacked code PR removes the empty-UID `BindWriter` tolerance
-while preserving the current Identity fence and writer attribution on retained Sessions.
+History still admits account-level `Push` from the Central Sampler ServiceAccount. A plain
+ServiceAccount announcement from an account with no Sandbox owner resolves to an empty UID in
+`ServiceAccountSandboxUIDResolver`, and `BindWriter` stores it. Current sampler exports and the manual
+packing probe use an explicit executor Sandbox UID; Sandbox runners use Identity SVIDs tied to their
+Sandbox. Code PR [#16356](https://github.com/agentydragon/ducktape/pull/16356) refuses ownerless
+ServiceAccounts and requires a nonempty UID in `BindWriter`. The History data drop in
+[#16336](https://github.com/agentydragon/ducktape/pull/16336) waits for that code to merge and its image
+to be pinned in staging; applying it also needs explicit operator approval. Its rolled-back selector
+found 95 of 168 Sessions, with 250,962 events, 9,029 event blocks, 89 Thread checkpoints and 111,085
+Thread entities; counts for the other dependent tables were not supplied. No system test covers this
+one-off staging cleanup.
 
 #### `ACTION_BOX_RENAME` — Action boxes stop being called sandboxes
 
