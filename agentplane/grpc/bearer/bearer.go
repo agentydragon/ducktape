@@ -1,5 +1,5 @@
-// Package bearer dials Agentplane services as a workload: each call carries the Pod's projected ServiceAccount
-// token, read again for the call because the kubelet rotates it (agentplane/docs/grpc_services.md).
+// Package bearer dials Agentplane services with a service SVID or an explicitly
+// configured projected ServiceAccount token (agentplane/docs/grpc_services.md).
 package bearer
 
 import (
@@ -22,12 +22,15 @@ const (
 	tokenFileEmptyError = "the bearer token file is empty"
 )
 
-// Dial opens a connection to target whose calls carry the token in tokenPath; unary calls end after timeout. It
+// Dial opens a connection using a service SVID or the token in tokenPath; unary calls end after timeout. It
 // never retries: a mutation whose outcome is unknown needs its caller's reconciliation, not a repeat. It does
 // not connect until the first call, and options come after, so they may override these.
 func Dial(target, tokenPath string, timeout time.Duration, transport *peertls.ClientTLS, options ...grpc.DialOption) (*grpc.ClientConn, error) {
-	if target == "" || tokenPath == "" || timeout <= 0 {
-		return nil, errors.New("target, token file and a positive timeout are required")
+	if target == "" || timeout <= 0 {
+		return nil, errors.New("target and a positive timeout are required")
+	}
+	if err := transport.ValidateCaller(tokenPath, ""); err != nil {
+		return nil, err
 	}
 	credentials, err := transport.Credentials()
 	if err != nil {
@@ -67,6 +70,13 @@ func readToken(path string) (string, error) {
 }
 
 func withToken(ctx context.Context, path string) (context.Context, error) {
+	if path == "" {
+		md, _ := metadata.FromOutgoingContext(ctx)
+		if len(md.Get("authorization")) != 0 {
+			return nil, status.Error(codes.Unauthenticated, "service SVID calls cannot carry authorization metadata")
+		}
+		return ctx, nil
+	}
 	token, err := readToken(path)
 	if err != nil {
 		return nil, err

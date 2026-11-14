@@ -85,8 +85,9 @@ actor and effective Identity separately, then apply the Identity's ordinary auth
 method; the direct mode remains available. `Admitted` returns a typed direct or delegated admission.
 `EffectiveCaller` returns only a directly authenticated ServiceAccount for ordinary resource checks;
 handlers read an effective Identity from `DelegatedIdentityAdmission`. The legacy `Caller` accessor
-stays Pod-bound and is not populated for delegated requests. The `identity/auth/grpc` client reads its
-destination token for each call and has no ordinary Bearer fallback. These shared primitives do not
+stays Pod-bound and is not populated for delegated requests. The `identity/auth/grpc` client uses its configured service SVID or reads its
+destination token for each call. SVID mode sends only the typed delegation metadata; it never
+sends an Authorization header or falls back to a bearer. These shared primitives do not
 opt a production method or client into delegation by themselves. The Runner Gateway's explicitly
 configured method list includes the `EnvironmentService` list/get methods; `ResumeEnvironment` remains
 separately configured, and Action Service adapter integration remains separate.
@@ -96,8 +97,8 @@ SVID over mutual TLS and verifies the receiver's service SVID on every hop. It n
 service principal and exact per-method service allowlist; a service SPIFFE URI is neither an
 `auth.Account` nor a workload `IdentityPrincipal` and supplies no ServiceAccount UID or Pod proof.
 For delegated calls, preserve the service actor, effective Identity, and typed provenance separately.
-Those service-caller admission primitives are not implemented yet; do not treat current bearer rules
-or workload `SVIDResolver` rules as their substitute. App OIDC and external MCP OAuth remain separate
+Service admission uses `ServicePrincipal` and exact service allowlists, separately from bearer rules
+and workload `SVIDResolver` rules. App OIDC and external MCP OAuth remain separate
 edge protocols.
 
 ## Errors
@@ -239,3 +240,12 @@ does not require an HTTP facade.
   `proto_openapi` ([`//devinfra/go:proto_openapi.bzl`](../../devinfra/go/proto_openapi.bzl)) from the proto.
   The Notification Service keeps its HTTP annotations for the App browser gateway but has no direct
   HTTP workload API, service-local OpenAPI document or `/docs/agents/` routes. Its CLI embeds the agent guides.
+
+Both direct (`grpc/bearer.Dial`) and delegated (`identity/auth/grpc.DialDelegated`) clients
+select SVID mode by configuring `ClientTLS.cert_file`, `key_file` and `client_uri` together,
+with `ca_file` and the exact `server_uri`. Binary settings validate `client_uri` against the
+caller's role. In this mode the token path must be empty. Partial certificate settings, mixed
+bearer/SVID settings, a different local certificate identity, or a TLS failure are errors;
+none selects a bearer fallback. Certificate and trust files reload on replacement, and gRPC
+connections close at either certificate's expiry. Omitting all three client fields retains
+server-only TLS with explicit token authentication during the staged migration.
