@@ -9,13 +9,16 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from uuid import uuid4
 
+import grpc
 from kubernetes_asyncio import client as k8s
 from kubernetes_asyncio.client.exceptions import ApiException
 
 from agentplane.central_sampler.api import sampler_pb2_grpc
 from agentplane.crd_group import GROUP, VERSION
-from agentplane.grpc.calls import dial
+from agentplane.grpc.calls import ServiceError, dial
 from agentplane.history_service.client import HistoryServiceClient
+from agentplane.proto.identity_pb2 import EnvironmentTarget, SandboxDestination, ServiceAccount
+from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.driver.cluster import Cluster
@@ -28,6 +31,7 @@ from model_catalog.catalog import GPT6_LUNA_RESPONSES
 SERVICE = "central-sampler"
 MODEL = GPT6_LUNA_RESPONSES.id
 HISTORY_READER_AUDIENCE = "agentplane-history-service"
+GATEWAY_AUDIENCE = "agentplane-runner-gateway"
 
 
 @dataclass(frozen=True)
@@ -246,6 +250,30 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
             control_target = await _control_address(cluster, connection, sandbox, uid)
             sampler_token = await _bound_token(cluster, core, "runner-gateway", gateway_pod, SERVICE)
             server_credentials = await service_credentials(cluster)
+            # Sandbox Ready proves Controller observation. A claimed EndpointSlice can precede
+            # the Gateway's first snapshot, so prove the live read route before starting setup.
+            gateway_token = directory / "gateway-reader-token"
+            gateway_token.write_text(await _bound_token(cluster, core, "app", app, GATEWAY_AUDIENCE))
+            gateway = SandboxControlClient(
+                control_target=control_target,
+                token_file=gateway_token,
+                request_timeout_s=2,
+                channel_credentials=server_credentials,
+                server_name=f"runner-gateway.{cluster.namespace}.svc.cluster.local",
+            )
+            destination = SandboxDestination(
+                owner=ServiceAccount(namespace=cluster.namespace, name=sandbox),
+                target=EnvironmentTarget(namespace=cluster.namespace, name=sandbox, uid=uid),
+            )
+            async with asyncio.timeout(15):
+                while True:
+                    try:
+                        await gateway.list_sessions(destination)
+                        break
+                    except ServiceError as error:
+                        if error.code not in (grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.ABORTED):
+                            raise
+                    await asyncio.sleep(0.05)
             sampler_channel = await stack.enter_async_context(dial(target))
             dispatcher_channel = await stack.enter_async_context(
                 dial(
