@@ -338,6 +338,13 @@ def _certify_baseline(
     return virtualization.released_devices if virtualization is not None else 0
 
 
+def _fresh_action_k3s_data_dir(*, persist_infrastructure: bool) -> Path | None:
+    """Choose the explicitly non-retained KVM lifecycle before any stack setup can mutate state."""
+    if persist_infrastructure or os.environ.get("AGENTPLANE_K3S_REQUIRE_KVM") != "1":
+        return None
+    return baseline.fresh_kvm_data_dir()
+
+
 @contextlib.contextmanager
 def running_stack(
     inputs: StackInputs,
@@ -348,6 +355,9 @@ def running_stack(
     virtualization_factory: VirtualizationFactory | None,
 ) -> Iterator[Stack]:
     """Create fresh fixtures; retain infrastructure only with the executor's lifecycle permission."""
+    # This read-only guard must precede work-directory creation, stop_previous, and K3s.start's
+    # reset. A normal KVM action gets a private empty store and does not touch retained ownership.
+    fresh_kvm_data_dir = _fresh_action_k3s_data_dir(persist_infrastructure=persist_infrastructure)
     crds = sorted((Runfiles.CreateOrRaise().root() / "ducktape/agentplane/crds/manifests").glob("crd-*.yaml"))
     fixture = inputs.fixture
     # Virtualized suites keep image layers on disk: a 2026-10-30 tmpfs trial beside six VM guests
@@ -371,7 +381,10 @@ def running_stack(
         if missing := _deployment_images(objects) - images.keys():
             raise ValueError(f"Infrastructure workloads lack OCI layouts for: {sorted(missing)}")
 
-    k3s = K3s(work, inputs.binary)
+    if fresh_kvm_data_dir is None:
+        k3s = K3s(work, inputs.binary)
+    else:
+        k3s = K3s(work, inputs.binary, data_dir=fresh_kvm_data_dir)
     with (
         baseline.invalidate_snapshot_on_action_error(enabled=persist_infrastructure),
         contextlib.ExitStack() as trace_cleanup,
@@ -407,9 +420,10 @@ def running_stack(
                     layers_in_memory=not uses_virtualization,
                 )
             else:
-                # An executor can restore a retained snapshot even when this action opts out.
-                # Stop its exact owned server before resetting the ordinary stack's state.
-                baseline.stop_previous()
+                # A non-KVM stack still leaves retention mode by stopping its exact owned server.
+                # Fresh KVM starts in an empty action-private store and must not touch v1/v2 state.
+                if fresh_kvm_data_dir is None:
+                    baseline.stop_previous()
                 process = k3s.start(
                     layers_in_memory=not uses_virtualization,
                     preserve_image_store=k3s.image_store_is_retainable(),
