@@ -3938,9 +3938,10 @@ flowchart LR
 ### `GO_LAYOUT_FIXES` — stage 2 layout fixes
 
 **Candidate; not released.** The Go plan tracks that hold whatever the service map becomes:
-`env-execution-package-names`, `runner-era-names` (the app's share landed in #16394),
-`sampler-json-contract`, `egress-sidecar-runtime`, `llm-ingress-server-boundary` and
-`firecracker-host-guest`; `app-session-client-name` landed in #16394. Each is its own small PR. **Exit:** each track's plan exit met on devel.
+`runner-era-names` (the app's share landed in #16394), `sampler-json-contract`,
+`egress-sidecar-runtime`, `llm-ingress-server-boundary` and `firecracker-host-guest`;
+`app-session-client-name` (#16394) and `env-execution-package-names` (#16402) landed. Each is its own
+small PR. **Exit:** each track's plan exit met on devel.
 
 ### `EXPLICIT_RESUME_BUDGET_REMOVAL` — explicit resume reserves no wake budget
 
