@@ -9,7 +9,6 @@ import (
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
-	"github.com/agentydragon/ducktape/agentplane/policy"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/internal/management"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -182,7 +181,6 @@ func (s *Service) SetEnvironmentIdentity(ctx context.Context, request *environme
 func managementError(ctx context.Context, err error) error {
 	var missing *management.SandboxNotFoundError
 	var invalid *management.InvalidSandboxError
-	var unknownPolicy *policy.UnknownPolicySetError
 	var launcherPolicy *management.LauncherPolicySetError
 	var conflict *management.SandboxConflictError
 	var running *management.SandboxRunningError
@@ -195,8 +193,6 @@ func managementError(ctx context.Context, err error) error {
 		return status.FromContextError(err).Err()
 	case errors.As(err, &missing), apierrors.IsNotFound(err):
 		return status.Error(codes.NotFound, err.Error())
-	case errors.As(err, &unknownPolicy):
-		return managementRefusal(codes.InvalidArgument, "UNKNOWN_POLICY_SET", err.Error())
 	case errors.As(err, &launcherPolicy):
 		return managementRefusal(codes.InvalidArgument, "LAUNCHER_POLICY_SET", err.Error())
 	case errors.As(err, &invalid):

@@ -1,8 +1,13 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
-    name = "service",
-    srcs = ["service.go"],
+    name = "rpc",
+    srcs = [
+        "identities.go",
+        "sandbox_bindings.go",
+        "service.go",
+        "watches.go",
+    ],
     importpath = "github.com/agentydragon/ducktape/agentplane/policy_controller/internal/rpc",
     visibility = ["//agentplane/policy_controller/cmd:__pkg__"],
     deps = [
@@ -34,9 +39,9 @@ go_library(
 )
 
 go_test(
-    name = "service_test",
+    name = "rpc_test",
     srcs = ["service_test.go"],
-    embed = [":service"],
+    embed = [":rpc"],
     deps = [
         "//agentplane/identity/auth",
         "//agentplane/identity/credentials/api/v1alpha1",
