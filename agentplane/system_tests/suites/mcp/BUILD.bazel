@@ -233,14 +233,15 @@ k3s_suite(
 )
 
 # The History outage is isolated so a failed recovery assertion cannot leave another case without History.
-# Native fixtures replace the App-backed ancestor conftests; the scenario is unchanged.
-# gazelle:ignore
+# It also asserts the App Pod remains unchanged during the outage, so retain the App fixture.
 k3s_suite(
     name = "test_history_outage",
     srcs = ["test_history_outage.py"],
-    stack = "central_services_native",
+    stack = "central",
     deps = [
+        ":conftest",
         "//:conftest",
+        "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:executor",
         "//agentplane/system_tests/driver:sandbox",

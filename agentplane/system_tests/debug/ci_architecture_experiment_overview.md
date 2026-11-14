@@ -23,9 +23,14 @@ exposure. No candidate roster was promoted. The
 [current evidence](common_backend_contracts.md#exact-source-slice-qualification) records source,
 coverage, resource accounting and failure attribution separately.
 
-The next implementation work targets repeated environment work and reliable execution. A
-bounded teardown observer identifies which fixture Pod or finalizer consumes namespace-deletion
-time, while preserving normal cleanup. The current native VM suite also passes on the existing
+The next implementation work targets repeated environment work and reliable execution. The
+bounded teardown observer traced a full 30-second SIGTERM/SIGKILL delay to the branch's idle
+native-client Pod. Its corrected PID 1 handles TERM; a real retained fixture exits promptly and
+stack cleanup falls from 65.057s to 26.884s in one exposure. Three unchanged ordinary recovery
+scenarios also pass with App-free fixtures, removing their App serving/client dependencies.
+An attempted fourth migration fails an explicit App-stability assertion, so that History-outage
+witness keeps its original App-backed fixture. These are coverage-preserving repairs and cuts,
+not a qualified complete-feedback saving. The current native VM suite also passes on the existing
 KVM worker in 226.691s with both harnesses and real KVM acceleration; this is
 [feasibility evidence](vm_kvm_existing_pool_2026_11_12.md#current-native-fixture-14-november),
 not a matched placement saving or adequate concurrent capacity. The larger untried options
