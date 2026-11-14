@@ -80,6 +80,7 @@ K3S_BINARY = "@k3s_linux_amd64//file:k3s"
 K3S_BINARY_RLOCATION = "$(rlocationpath " + K3S_BINARY + ")"
 
 _POD_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-pod.json"
+_POD_NATIVE_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-pod-native.json"
 _FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model.json"
 _CENTRAL_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-central.json"
 _CENTRAL_SERVICES_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-central-services.json"
@@ -189,6 +190,7 @@ _SERVICE_IMAGES = _merge_image_maps(_COMMON_SERVICE_IMAGES, _MCP_EDGE_IMAGES)
 _STACKS = {
     "pod": struct(native_fixtures = False, service_images = _SERVICE_IMAGES, fixture = _FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
     "pod_scenarios": struct(native_fixtures = False, service_images = _COMMON_SERVICE_IMAGES, fixture = _POD_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
+    "pod_scenarios_native": struct(native_fixtures = True, service_images = _APP_FREE_SERVICE_IMAGES, fixture = _POD_NATIVE_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
     "central": struct(native_fixtures = False, service_images = _SERVICE_IMAGES, fixture = _CENTRAL_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
     "central_services": struct(native_fixtures = False, service_images = _COMMON_SERVICE_IMAGES, fixture = _CENTRAL_SERVICES_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
     "central_services_native": struct(native_fixtures = True, service_images = _APP_FREE_SERVICE_IMAGES, fixture = _CENTRAL_SERVICES_NATIVE_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),

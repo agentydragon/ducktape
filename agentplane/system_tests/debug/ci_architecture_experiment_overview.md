@@ -94,9 +94,13 @@ promoted. The first manual four-slot/eight-CU Pod candidate passes all 21 cases,
 442.477s versus the earlier control's 452.003s and exceeds the CPU/requested-compute screening
 caps. It has cold setup of 130.737s versus 33.305s, while the case envelope falls from 321.105s
 to 220.225s; this is an unmatched-source/warmth observation. Kubernetes reports 11 allocatable
-CPUs, distinct from requested CUs. A six-slot variant under that same request is the next manual
-experiment; it consolidates shared code, retains all cases and storage exclusivity, and establishes
-no new speed claim. [Detailed evidence](common_backend_contracts.md#pod-partition-and-capacity-screen).
+CPUs, distinct from requested CUs. The subsequent shared-module six-slot configuration passes all
+21 cases against a same-source ordinary control: 513.545s to 313.609s physical execution (38.9%
+lower), 7.4% lower CPU, 22.1% higher requested-CU execution and 7.7% higher peak action memory.
+Both infrastructures are warm; node capacity is intentionally different (seven versus eleven CPUs).
+This single ordered configuration screen passes its resource caps. Whole competing-graph testing
+is now submitted; no complete required-feedback median, p90 or flake result is established.
+[Detailed evidence](common_backend_contracts.md#pod-partition-and-capacity-screen).
 
 The [actual App-image consumer query](https://app.buildbuddy.io/invocation/ce224205-7707-4240-8c4b-9a5520a3b468)
 leaves Pod and MCP Services among the four platform tails. This proves a dependency cut, not
