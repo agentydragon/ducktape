@@ -12,7 +12,7 @@ rendering, scroll anchoring, sending commands — is shared.
 
 Electric sits behind one module on each side:
 
-- **Backend:** `agentplane/app/internal/proxy/electric.go` holds `ElectricProxy` and the
+- **Backend:** `agentplane/app/internal/electricproxy/electric.go` holds `ElectricProxy` and the
   `/threads/{thread_id}/sync/*` routes, which `runtime.go` mounts only when `electric_url` is set.
   Its fold check is `ThreadEpochStore.CurrentEpoch` (`historydata.Store.CurrentEpoch`), which any
   implementation needs for **P7**. The browser reads projection scope from History's generated
