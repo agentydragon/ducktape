@@ -46,8 +46,10 @@ agentplane-delegation-bin: <serialized Delegation protobuf>
 ```
 
 **Deviation:** `Agentplane-Delegated` is an Agentplane authorization scheme. It uses the existing
-TokenReview mechanism for the token, but explicitly selects delegated authorization. The envelope
-uses standard [gRPC binary metadata](https://grpc.io/docs/guides/metadata/); the gRPC library handles
+TokenReview mechanism for the token, but explicitly selects delegated authorization. During the service-SVID migration, a client may instead prove the actor with its service
+certificate over mTLS and send no Authorization header. The typed envelope stays the same;
+the receiver authenticates the certificate against its explicit service actor allowlist.
+The envelope uses standard [gRPC binary metadata](https://grpc.io/docs/guides/metadata/); the gRPC library handles
 its transport encoding. An HTTP receiver (LLM ingress) takes the same two headers, the envelope in
 standard base64 as gRPC itself transports `-bin` metadata, and admits the request through the same
 middleware (`Rule.AdmitRequest`).
@@ -83,13 +85,14 @@ caller Identity instead. No caller-token minting or new signing service is neede
 
 ### Authentication modes and rollout
 
-| Authorization                                  | Delegation metadata                                | Result                                                           |
-| ---------------------------------------------- | -------------------------------------------------- | ---------------------------------------------------------------- |
-| `Bearer <token>`                               | Absent                                             | Existing direct authentication and explicit service authority.   |
-| `Agentplane-Delegated <token>`                 | Exactly one valid envelope                         | Delegated authentication, only on a method admitting that actor. |
-| `Bearer <token>`                               | Present                                            | Reject; do not ignore the claimed caller.                        |
-| Delegated scheme                               | Missing, repeated, malformed or oversized envelope | Reject before the handler runs.                                  |
-| Unknown scheme or repeated authorization value | Any                                                | Reject before the handler runs.                                  |
+| Authorization                                  | Delegation metadata                                | Result                                                             |
+| ---------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------ |
+| No header; verified service SVID               | Exactly one valid envelope                         | Delegated authentication for an explicitly admitted service actor. |
+| `Bearer <token>`                               | Absent                                             | Existing direct authentication and explicit service authority.     |
+| `Agentplane-Delegated <token>`                 | Exactly one valid envelope                         | Delegated authentication, only on a method admitting that actor.   |
+| `Bearer <token>`                               | Present                                            | Reject; do not ignore the claimed caller.                          |
+| Delegated scheme                               | Missing, repeated, malformed or oversized envelope | Reject before the handler runs.                                    |
+| Unknown scheme or repeated authorization value | Any                                                | Reject before the handler runs.                                    |
 
 Sending ordinary `Bearer <Actions-token>` with optional caller metadata is unsafe during a roll:
 an older backend could ignore the metadata and use Actions' privileged authority. The distinct
