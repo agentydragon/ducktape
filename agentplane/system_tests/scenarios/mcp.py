@@ -31,7 +31,7 @@ from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.proto import identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.deployment import mcp_servers
-from agentplane.system_tests.driver.agent import RUNNER_ANSWERS_SECONDS, TURN_SECONDS, WORKING_DIRECTORY, Agent
+from agentplane.system_tests.driver.agent import RUNNER_ANSWERS_SECONDS, WORKING_DIRECTORY, Agent
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS
 from agentplane.system_tests.driver.operator_login import (
@@ -42,6 +42,7 @@ from agentplane.system_tests.driver.operator_login import (
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes, suspend_and_delete, wait_until_running
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
+from agentplane.system_tests.driver.turn import TURN_SECONDS
 from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
 
 # A status write follows the informer's next watch event; the bound covers a relist after a
