@@ -47,7 +47,6 @@ async def sandbox(api_server: KubernetesApiServer) -> AsyncIterator[SandboxClust
 
 async def test_packaged_runtime_uses_authenticated_gateway_transport(
     tmp_path: Path,
-    api_server: KubernetesApiServer,
     sandbox: SandboxCluster,
     control: EnvironmentRuntimeControl,
     gateway_service: GatewayProcess,
@@ -103,7 +102,6 @@ async def test_packaged_runtime_uses_authenticated_gateway_transport(
             authenticated_readiness(
                 gateway_service,
                 client_token,
-                api_server,
                 sandbox,
                 control=control,
                 controller_credentials=gateway_service.controller_credentials(tmp_path / "controller-transport"),

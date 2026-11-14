@@ -18,9 +18,13 @@ measurements. No qualified 30% complete-PR saving has been established.
 Work resumed on 14 November 2026 with this measurable objective. The
 first candidate must change the ordinary selected graph, retain the current
 source in every executed binary, and account for every removed deployed assertion.
-The immediate architecture work removes incidental App dependencies from real
-platform acceptance, then measures common backend changes. Prepared infrastructure
-remains a separate option if the retained deployment work still limits feedback.
+The next architecture experiment compares prepared disposable infrastructure with
+the existing retained-infrastructure path. It must identify work beyond the
+already warm setup before implementation: warm Pod setup is only 27–34 seconds
+in the retained screens, so eliminating cold installation alone cannot establish
+the goal. Combine a useful substrate with coverage-accounted case partitions and
+structural dependency cuts, then measure the complete selected graph. Continue
+the bounded App-free Egress extraction; avoid unrelated fixture optimizations.
 
 ## Candidate architecture
 
@@ -105,11 +109,29 @@ requested CU execution 22.1% higher. Both infrastructures are warm; actual alloc
 seven versus eleven CPUs. The whole seven-target comparison then passes the same 40 cases in both
 arms: 489.497s to 373.066s native Bazel elapsed (23.8% lower), with known CPU 1.0% lower but
 requested-CU execution 10.35% higher, above its predeclared 10% cap. Pod remains the last finisher.
-Keep six slots manual. Qualify the four unchanged trust/certificate cases on their App-free fixture
-and the complementary 17 App-backed cases, including duplicated setup/resource cost. Also qualify
-the separate three-case MCP fixture without central Sampler against the native four-case Services
-target. These source changes are not yet physical or complete-PR performance proof. Then measure
-source-plus-BUILD selection and complete required feedback.
+Keep six slots manual. At exact `9b330689`, retained action results establish all 59 cases in the
+Pod17+native4 and MCP3+native4 qualification, despite the aggregate provider-disconnected outcome.
+A healthy follow-up passes the 20 Pod17/MCP3 cases and eight named libraries/aspects. The logical
+case unions match their original 21/7 controls; native dependency queries pass. Required checks
+for that head pass on synthetic merge `2aec7a80` after one provider-failed attempt and a rerun.
+These are coverage/correctness results, not a complete-PR saving. The Pod-only split then passes
+the same 40 cases in both arms: 516.925s to 384.420s native elapsed (25.63% lower once), below the
+30% screen threshold. Its CPU/compute-time/peak-request ratios pass 1.15/1.20/1.30 caps narrowly,
+with unequal warmth and node shapes. Services becomes the last target. The combined 14-versus-16
+ordinary-system-suite screen then passes 49 JUnit cases per arm but finishes 11.2% slower:
+516.795s to 574.657s. A provider-kernel panic precedes a second successful VM execution; both
+physical executions count. Known managed CPU and requested-CU execution ratios, 1.1530 and
+1.2350, fail their 1.15/1.20 caps. The short budget also removes 75 seconds of default-duration
+exposure. Keep these arrangements manual. Next identify the retained namespace deletion holder,
+qualify reliable VM execution/capacity and test prepared disposable infrastructure. The ordinary
+source-plus-BUILD selection and complete-feedback qualification remain required; no roster
+promotion follows from component correctness. The cleanup observer subsequently identifies a
+branch-introduced idle PID 1 that ignores TERM and consumes its full 30-second Pod grace. The
+corrected client exits promptly on normal TERM; one retained fixture's cleanup falls from
+65.057s to 26.884s with unchanged cleanup/grace assertions. Three ordinary recovery scenarios
+pass on App-free fixtures. Keep the History-outage suite App-backed: its attempted migration
+exposes an explicit App-Pod-stability assertion. Measure these implemented changes as one
+complete graph before deciding on further environment work or promotion.
 [Current source and focused evidence](../system_tests/debug/common_backend_contracts.md).
 Do not expand a global replacement list just to make more historical PRs
 eligible. Implementation-plus-owner-test changes must be accounted

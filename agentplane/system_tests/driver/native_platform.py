@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
@@ -40,10 +39,6 @@ REQUEST_TIMEOUT_SECONDS = 30.0
 RUNNER_READY_SECONDS = 120.0
 
 
-class RunnerEndpointNotReadyError(RuntimeError):
-    """The exact Sandbox's Gateway-owned control endpoint has not been published yet."""
-
-
 @dataclass(frozen=True)
 class NativePlatformClients:
     """Real backend clients authenticated as the fixture-owned native principal."""
@@ -52,25 +47,16 @@ class NativePlatformClients:
     environment: EnvironmentServiceClient
     dispatcher: SessionDispatcherClient
     history: HistoryServiceClient
-    gateway_token_file: Path
-    credentials: grpc.ChannelCredentials
+    control: SandboxControlClient
 
     async def runner(self, target: identity_pb2.EnvironmentTarget) -> SandboxRunner:
-        """Resolve the Sandbox-owned Gateway endpoint for this exact Sandbox incarnation."""
+        """Address this exact Sandbox through the stable Gateway Service."""
         if target.namespace != self.cluster.namespace or not target.name or not target.uid:
             raise ValueError("runner status requires this cluster's complete Environment target")
-        control_target = await sandbox_control_endpoint(self.cluster, target)
-        control = SandboxControlClient(
-            control_target=control_target,
-            token_file=self.gateway_token_file,
-            request_timeout_s=REQUEST_TIMEOUT_SECONDS,
-            channel_credentials=self.credentials,
-            server_name=f"{GATEWAY_TLS_SERVICE}.{self.cluster.namespace}.svc.cluster.local",
-        )
         destination = identity_pb2.SandboxDestination(
             owner=identity_pb2.ServiceAccount(namespace=target.namespace, name=target.name), target=target
         )
-        return control.runner(destination)
+        return self.control.runner(destination)
 
     async def ready_runner(
         self, target: identity_pb2.EnvironmentTarget, *, timeout_s: float = RUNNER_READY_SECONDS
@@ -82,8 +68,6 @@ class NativePlatformClients:
                     runner = await self.runner(target)
                     await runner.status()
                     return runner
-                except RunnerEndpointNotReadyError:
-                    pass
                 except TimeoutError:
                     pass
                 except ServiceError as error:
@@ -145,8 +129,13 @@ async def native_platform_clients(cluster: Cluster, directory: Path) -> AsyncIte
             environment=environment,
             dispatcher=dispatcher,
             history=history,
-            gateway_token_file=gateway_token,
-            credentials=credentials,
+            control=SandboxControlClient(
+                control_target=gateway_target,
+                token_file=gateway_token,
+                request_timeout_s=REQUEST_TIMEOUT_SECONDS,
+                channel_credentials=credentials,
+                server_name=f"{GATEWAY_TLS_SERVICE}.{cluster.namespace}.svc.cluster.local",
+            ),
         )
 
 
@@ -162,46 +151,3 @@ async def _service_forward(cluster: Cluster, service: str, port: int) -> AsyncIt
     )
     async with async_port_forward(forward) as target:
         yield target
-
-
-async def sandbox_control_endpoint(cluster: Cluster, target: identity_pb2.EnvironmentTarget) -> str:
-    """Return the sole ready endpoint owned by the exact Sandbox's Gateway control Service."""
-    if target.namespace != cluster.namespace or not target.name or not target.uid:
-        raise ValueError("control routing requires this cluster's complete Environment target")
-    response = json.loads(
-        await cluster.kubectl(
-            "get", "endpointslices", "-l", f"kubernetes.io/service-name={target.name}-control", "-o", "json"
-        )
-    )
-    slices = response["items"]
-    if not slices:
-        raise RunnerEndpointNotReadyError(f"no Gateway control EndpointSlice for {target.name}/{target.uid}")
-    if len(slices) != 1:
-        raise RuntimeError(f"expected one control EndpointSlice for {target.name}/{target.uid}, found {len(slices)}")
-    (slice_,) = slices
-    metadata = slice_["metadata"]
-    if metadata.get("labels", {}).get("endpointslice.kubernetes.io/managed-by") != "agentplane-runner-gateway":
-        raise RuntimeError(f"control EndpointSlice for {target.name}/{target.uid} is not Gateway-owned")
-    if not any(
-        owner.get("kind") == "Sandbox" and owner.get("name") == target.name and owner.get("uid") == target.uid
-        for owner in metadata.get("ownerReferences", [])
-    ):
-        raise RuntimeError(f"control EndpointSlice is not owned by exact Sandbox {target.name}/{target.uid}")
-    ready = [endpoint for endpoint in slice_.get("endpoints", []) if endpoint.get("conditions", {}).get("ready")]
-    if not ready:
-        raise RunnerEndpointNotReadyError(f"no ready Gateway control endpoint for {target.name}/{target.uid}")
-    if len(ready) != 1:
-        raise RuntimeError(f"expected one ready control endpoint for {target.name}/{target.uid}, found {len(ready)}")
-    (endpoint,) = ready
-    addresses = endpoint.get("addresses", [])
-    if len(addresses) != 1:
-        raise RuntimeError(f"expected one address for {target.name}/{target.uid}, found {len(addresses)}")
-    (address,) = addresses
-    ports = slice_.get("ports", [])
-    if len(ports) != 1:
-        raise RuntimeError(f"expected one control port for {target.name}/{target.uid}, found {len(ports)}")
-    (port,) = ports
-    if port.get("protocol", "TCP") != "TCP":
-        raise RuntimeError(f"control EndpointSlice for {target.name}/{target.uid} is not TCP")
-    host = f"[{address}]" if ":" in address else address
-    return f"{host}:{port['port']}"

@@ -464,7 +464,8 @@ def _add_native_test_client(chart: Chart) -> None:
         name="native-test-client",
         image=NATIVE_TEST_CLIENT_IMAGE,
         image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-        command=["/bin/sleep", "infinity"],
+        # A bare sleep as PID 1 ignores SIGTERM and consumes the full Pod grace period.
+        command=["/bin/sh", "-c", "trap 'exit 0' TERM; sleep infinity & wait"],
         resources=ContainerResources(
             cpu=CpuResources(request=Cpu.millis(10)), memory=MemoryResources(request=Size.mebibytes(16))
         ),

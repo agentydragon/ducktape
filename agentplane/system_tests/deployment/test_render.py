@@ -1143,7 +1143,7 @@ def test_native_profile_omits_app_but_keeps_platform_and_bound_caller(
     )
     native_container = native_pod["containers"][0]
     assert native_container["image"] == fixture_database.IMAGE
-    assert native_container["command"] == ["/bin/sleep", "infinity"]
+    assert native_container["command"] == ["/bin/sh", "-c", "trap 'exit 0' TERM; sleep infinity & wait"]
 
     egress = EgressSettings.model_validate(
         yaml.safe_load(_resource(docs, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"])

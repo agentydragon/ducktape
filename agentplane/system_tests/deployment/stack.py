@@ -20,11 +20,12 @@ import shutil
 import socket
 import sys
 import tempfile
+import threading
 import time
 from collections.abc import Callable, Iterator
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -52,6 +53,149 @@ DEPLOY_TIMEOUT_SECONDS = 480
 HOSTS_MARKER = "# k3s-env"
 # Outlasts the longest suite, whose `enormous` size allows 3600 s.
 OPERATOR_TOKEN_LIFETIME = timedelta(hours=1)
+NAMESPACE_DELETE_TIMEOUT_SECONDS = 60
+NAMESPACE_CLEANUP_POLL_SECONDS = 5
+NAMESPACE_CLEANUP_COMMAND_TIMEOUT_SECONDS = 2
+NAMESPACE_CLEANUP_OBSERVER_JOIN_SECONDS = 4
+NAMESPACE_CLEANUP_MAX_SNAPSHOTS = 13
+NAMESPACE_CLEANUP_MAX_OBJECTS = 512
+NAMESPACE_CLEANUP_MAX_OUTPUT_BYTES = 2 * 1024 * 1024
+
+_NAMESPACE_METADATA_COLUMNS = (
+    "name:.metadata.name,uid:.metadata.uid,deletionTimestamp:.metadata.deletionTimestamp,"
+    "finalizers:.spec.finalizers,phase:.status.phase,conditionTypes:.status.conditions[*].type,"
+    "conditionStates:.status.conditions[*].status,conditionReasons:.status.conditions[*].reason,"
+    "conditionMessages:.status.conditions[*].message"
+)
+_POD_PVC_COLUMNS = (
+    "apiVersion:.apiVersion,kind:.kind,name:.metadata.name,namespace:.metadata.namespace,uid:.metadata.uid,"
+    "deletionTimestamp:.metadata.deletionTimestamp,deletionGraceSeconds:.metadata.deletionGracePeriodSeconds,"
+    "finalizers:.metadata.finalizers,ownerKinds:.metadata.ownerReferences[*].kind,"
+    "ownerNames:.metadata.ownerReferences[*].name,ownerUIDs:.metadata.ownerReferences[*].uid,"
+    "phase:.status.phase,reason:.status.reason,volumeName:.spec.volumeName,"
+    "terminationGraceSeconds:.spec.terminationGracePeriodSeconds,nodeName:.spec.nodeName,"
+    "containerNames:.status.containerStatuses[*].name,containerReady:.status.containerStatuses[*].ready,"
+    "containerRestarts:.status.containerStatuses[*].restartCount,"
+    "containerWaitingReasons:.status.containerStatuses[*].state.waiting.reason,"
+    "containerTerminatedReasons:.status.containerStatuses[*].state.terminated.reason,"
+    "containerExitCodes:.status.containerStatuses[*].state.terminated.exitCode,"
+    "containerSignals:.status.containerStatuses[*].state.terminated.signal,"
+    "containerLastReasons:.status.containerStatuses[*].lastState.terminated.reason,"
+    "containerLastExitCodes:.status.containerStatuses[*].lastState.terminated.exitCode"
+)
+
+
+def _capture_namespace_cleanup_snapshot(k3s: K3s, namespaces: list[str], stopped: threading.Event) -> dict[str, Any]:
+    def query_columns(*args: str, columns: str) -> tuple[str, str | None]:
+        try:
+            output = k3s.kubectl(
+                *args,
+                f"-o=custom-columns={columns}",
+                "--request-timeout=2s",
+                check=True,
+                timeout=NAMESPACE_CLEANUP_COMMAND_TIMEOUT_SECONDS,
+                stdout_only=True,
+            )
+            return output, None
+        except Exception as error:
+            return "", type(error).__name__
+
+    def read_namespace(namespace: str) -> tuple[str, dict[str, Any]]:
+        if stopped.is_set():
+            return namespace, {"state_error": "observer_stopped", "objects_error": "observer_stopped"}
+        state, state_error = query_columns("get", "namespace", namespace, columns=_NAMESPACE_METADATA_COLUMNS)
+        if stopped.is_set():
+            return namespace, {"state": state, "state_error": state_error, "objects_error": "observer_stopped"}
+        objects, objects_error = query_columns(
+            "get", "-n", namespace, "pods,persistentvolumeclaims", "--chunk-size=200", columns=_POD_PVC_COLUMNS
+        )
+        lines = objects.splitlines()
+        return namespace, {
+            "state": state,
+            "state_error": state_error,
+            "pods_and_pvcs": "\n".join(lines[: NAMESPACE_CLEANUP_MAX_OBJECTS + 1]),
+            "object_count": max(0, len(lines) - 1),
+            "objects_truncated": len(lines) > NAMESPACE_CLEANUP_MAX_OBJECTS + 1,
+            "objects_error": objects_error,
+        }
+
+    max_workers = min(3, max(1, len(namespaces)))
+    with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="namespace-cleanup-snapshot") as pool:
+        futures = [pool.submit(read_namespace, namespace) for namespace in namespaces]
+        namespace_results = [future.result() for future in futures]
+    output: dict[str, Any] = {"observed_at": datetime.now(UTC).isoformat(), "namespaces": dict(namespace_results)}
+    return output
+
+
+def _observe_namespace_cleanup(k3s: K3s, namespaces: list[str], stopped: threading.Event) -> None:
+    try:
+        output_path = undeclared_outputs_dir() / "namespace-cleanup-state.jsonl"
+        output_path.write_text("")
+        written = 0
+        for _ in range(NAMESPACE_CLEANUP_MAX_SNAPSHOTS):
+            if stopped.is_set():
+                break
+            snapshot = _capture_namespace_cleanup_snapshot(k3s, namespaces, stopped)
+            if stopped.is_set():
+                break
+            line = (json.dumps(snapshot, separators=(",", ":")) + "\n").encode()
+            if written + len(line) > NAMESPACE_CLEANUP_MAX_OUTPUT_BYTES:
+                marker = (json.dumps({"truncated": True, "reason": "output_size_limit"}) + "\n").encode()
+                if written + len(marker) <= NAMESPACE_CLEANUP_MAX_OUTPUT_BYTES:
+                    with output_path.open("ab") as output:
+                        output.write(marker)
+                return
+            with output_path.open("ab") as output:
+                output.write(line)
+            written += len(line)
+            if stopped.wait(NAMESPACE_CLEANUP_POLL_SECONDS):
+                break
+    except Exception as error:
+        logger.warning("namespace cleanup observer failed (%s)", type(error).__name__)
+
+
+def _finish_namespace_cleanup_observer(
+    stopped: threading.Event, future: Future[None], executor: ThreadPoolExecutor
+) -> None:
+    stopped.set()
+    try:
+        future.result(timeout=NAMESPACE_CLEANUP_OBSERVER_JOIN_SECONDS)
+    except TimeoutError:
+        logger.warning("namespace cleanup observer did not stop within its join bound")
+        executor.shutdown(wait=False, cancel_futures=True)
+        return
+    except BaseException as error:
+        logger.warning("namespace cleanup observer failed (%s)", type(error).__name__)
+    executor.shutdown(wait=True, cancel_futures=True)
+
+
+def _delete_fixture_namespaces(k3s: K3s, namespaces: list[str]) -> None:
+    """Keep the cleanup wait unchanged while collecting bounded lifecycle metadata in parallel."""
+    with tracer.start_as_current_span(
+        "system_test.stack.namespaces.delete", attributes={"k8s.namespace.names": namespaces}
+    ):
+        stopped = threading.Event()
+        executor: ThreadPoolExecutor | None = None
+        observer: Future[None] | None = None
+        try:
+            executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="namespace-cleanup-observer")
+            context = contextvars.copy_context()
+            observer = executor.submit(context.run, _observe_namespace_cleanup, k3s, namespaces, stopped)
+        except Exception as error:
+            logger.warning("could not start namespace cleanup observer (%s)", type(error).__name__)
+            if executor is not None:
+                executor.shutdown(wait=False, cancel_futures=True)
+        try:
+            k3s.kubectl(
+                "delete", "namespace", *namespaces, "--wait=true", f"--timeout={NAMESPACE_DELETE_TIMEOUT_SECONDS}s"
+            )
+        except BaseException:
+            if observer is not None and executor is not None:
+                _finish_namespace_cleanup_observer(stopped, observer, executor)
+            raise
+        else:
+            if observer is not None and executor is not None:
+                _finish_namespace_cleanup_observer(stopped, observer, executor)
 
 
 @tracer.start_as_current_span("system_test.pki.fixture_ca")
@@ -277,10 +421,7 @@ def _baseline_clean(k3s: K3s, fixture: rendered_fixture.RenderedFixture) -> None
     ]
     # Submit both fixture-owned namespace deletions before waiting, so their controller
     # reconciliation overlaps. Keep monitoring alive until the fixture services have stopped.
-    with tracer.start_as_current_span(
-        "system_test.stack.namespaces.delete", attributes={"k8s.namespace.names": namespaces}
-    ):
-        k3s.kubectl("delete", "namespace", *namespaces, "--wait=true", "--timeout=60s")
+    _delete_fixture_namespaces(k3s, namespaces)
     for name in owned_pvs:
         with tracer.start_as_current_span("system_test.stack.volume.delete", attributes={"k8s.pv.name": name}):
             k3s.kubectl("delete", "pv", name, "--ignore-not-found=true", "--wait=true", "--timeout=60s")
