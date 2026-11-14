@@ -390,8 +390,8 @@ Its separate `mcp_services` fixture now retains App, Dex/OIDC, MCP Edge, Actions
 consented identities and real Pod/PKI integration, but omits the unused central Sampler image,
 Deployment, database and model route. The ordinary `mcp` profile remains unchanged. Each render
 selects one explicit profile; the independent determinism driver renders both. The original
-seven-case target remains required; dependency and physical union qualification of the
-structurally separate three-plus-four graph is pending.
+seven-case target remains required. Exact-source dependency and physical union evidence for
+the structurally separate three-plus-four graph is recorded below.
 
 The manual `test_pod_trust_native_candidate` exposes four unchanged scenario bodies: certificate
 reissue and the three wrong-issuer trust cases. It uses a Pod-only App-free fixture, retaining
@@ -400,17 +400,170 @@ sampler. Certificate reissue moves unchanged to an App-free scenario library wit
 30-second bound. The trust scenarios already used only one descriptor from the original pair;
 the candidate creates one Ready Pod and verifies its exact Environment and Pod UID. Its logical
 case names are preserved. Render invariants and independent-render byte equality include the
-new profile. Dependency inspection and physical qualification remain pending; all original 21
-Pod cases stay required. App Thread/feed/projection, model/preset and HTTP error assertions are
+new profile. All original 21 Pod cases stay required. App Thread/feed/projection, model/preset and HTTP error assertions are
 explicitly retained with their App-backed owners.
 
 The manual `test_pod_without_trust_candidate` keeps those other 17 cases on the original
 App-backed module with six slots/eight requested CU. It deselects exactly the four native
-trust target cases. The first physical qualification must prove this 17-plus-four union
-matches all 21 original logical cases without skips or retries; no required selection changes.
+trust target cases. Physical qualification proves the 17-plus-four logical case union below;
+no required selection changes.
 The split adds a fixture lifecycle, so any latency benefit must include its CPU, requested
 compute time and queue exposure. The six-slot trace ends with the Gateway refusing a wrong-issuer
 runner address, while earlier App cases finish before it; that observed tail motivates this cut.
+
+### Exact-source slice qualification
+
+At `9b330689a24042259393a713b5f271b42bd7e669`, the
+[Pod-native dependency query](https://app.buildbuddy.io/invocation/c4577721-8573-4e72-b99b-be0cd4ae8176)
+and [central-native query](https://app.buildbuddy.io/invocation/76b9f4af-d1b1-4548-8ed8-617a0cc3e22c)
+exclude App serving images/binaries, HTTP client and App-backed conftests. Five shared App
+configuration modules remain. The
+[MCP3 query](https://app.buildbuddy.io/invocation/8af9a101-68ae-41e6-8f08-8344a8eedbed)
+excludes central Sampler image/binary and central-only scenario inputs.
+
+The [first physical qualification](https://app.buildbuddy.io/invocation/12cdf1bb-c0de-400c-821e-8f79dcb4b275)
+loses its outer runner with provider status 13, `stream closed with task still claimed`.
+Its inner Bazel invocation is disconnected. Retained, exact TestRunner `ActionResult`s and
+their matching JUnit output digests nevertheless prove all seven component actions passed:
+59 cases, zero failures, errors or skips. The original Services seven equal the three MCP plus
+four native cases. The Pod 17 plus native four equal all 21 original logical leaves; only the
+original parameterized wrapper is normalized. Render contributes 23 cases and determinism one.
+This proves component coverage; it does not convert the disconnected aggregate into a success.
+Executor-internal attempts and old worker liveness are not inferred from stale execution indexes.
+
+The [healthy follow-up](https://app.buildbuddy.io/invocation/b741d170-3bb3-4980-946b-c1f5f1c55030)
+then passes the two remaining slices together: 20 cases and all eight explicitly named libraries
+with the configured lint/type aspects. Each test has one recorded test attempt; both fixture
+states are warm and cleanup completes. Pod17 physical execution is 302.694s, CPU 1,145.606s,
+peak memory 5.586 GiB; MCP3 is 178.047s, CPU 352.908s, peak 5.099 GiB. Setup/case envelope/cleanup
+are 35.630/167.470/63.647s and 59.114/37.737/59.364s respectively; these phases are not the entire
+action. Pod node capacity is 11 allocatable CPUs and 20,012,876 KiB memory, distinct from the
+eight-CU request. One turn-wait error span occurs inside a passing resume case; cleanup has no
+error spans. This is correctness and phase evidence, not a matched saving or flake-rate result.
+
+All three hosted required checks associated with head `9b330689` pass after one failed-job
+rerun. Both CI attempts test synthetic merge `2aec7a80cb38d483634e9236616168ba5e9a9a06`, whose
+parents are devel `ff801c85c732b368a67f0d6ada3bb487146abca8` and that PR head. Direct qualifications
+above test `9b330689` without overlays. Preserve the provider-failed attempt in feedback/reliability
+accounting; [the lease-stream note](../../../devinfra/buildbuddy/debug/2026_11_14_claimed_lease_stream.md)
+records the mechanism and visibility limits.
+
+The same-source Pod-only split screen completes in B3→A3 order:
+[candidate](https://app.buildbuddy.io/invocation/a3515982-6fec-47d0-9ea8-84c661d6d45a)
+and [control](https://app.buildbuddy.io/invocation/569d3f7b-a8f7-495b-b70b-2a63f82129ab)
+both pass all 40 logical cases, with matching JUnit digests and one recorded test attempt per
+target. Native Bazel elapsed is 516.925s to 384.420s (25.63% lower once), below the 30% screen
+threshold. Known managed CPU ratio 1.1415, managed requested-CU execution ratio 1.1776 and actual
+peak requested-CU ratio 1.2857 pass the predeclared 1.15/1.20/1.30 ceilings narrowly. Requests
+peak at 28 versus 36 CU; KVM CPU remains unknown and separate. Pod reports seven versus eleven
+allocatable CPUs and unequal warmth (control cold, candidate Pod fixtures warm). Firecracker
+queue is 112.417s versus zero, with valid timestamps; it is not the last target. These conditions
+prevent a causal or representative speed claim. This new architecture budget does not alter the
+earlier six-slot single-fixture screen's failed 10% CU-time cap.
+
+The candidate finishes on original Services (348.050s), followed by Gateway budget (313.130s)
+and Pod17 (302.671s). The control finishes on Pod (483.748s), whose last case is the Gateway
+refusing a wrong-issuer runner address. Services setup/case envelope/cleanup is
+70.370/177.323/62.978s in B3 versus 64.651/176.647/61.986s in A3. The exhaustion target's case
+envelope is about 165s in both arms. These competing tails motivate evaluating a composition,
+rather than extrapolating an isolated target saving.
+
+The next frozen-source screen includes all ordinary targets under `suites/...`, as confirmed by
+the [Bazel roster query](https://app.buildbuddy.io/invocation/ee5d45db-7919-4cd7-981a-0bb653501781):
+13 integration suites plus the live-harness unit target. The 16-target candidate replaces Pod21
+with 17+4 and Services7 with MCP3+native4. It also uses the existing 45-second exhaustion profile
+with the unchanged recovery/no-replay/next-input assertions. This explicitly removes 75 seconds
+of default-duration exposure from that one integration case; production settings, other
+recovery profiles and default/configurability unit checks retain 120 seconds. A matching case
+name does not establish identical duration coverage. Keep the same architecture resource caps,
+count every physical attempt, and leave the required roster unchanged while evaluating it.
+The [control A4](https://app.buildbuddy.io/invocation/18ba7c7f-5eac-4920-8609-3ea521c86248)
+and [candidate B4](https://app.buildbuddy.io/invocation/0097ec40-3d03-4bc4-b787-6de29bc27942)
+both finish successfully at exact `9b330689`, without overlays. Each has 49 passing JUnit cases;
+the logical case multisets match after normalizing only the intended scenario wrappers. Every
+JUnit digest matches its successful physical ActionResult. The explicit budget-duration
+tradeoff above still applies.
+
+| Measurement, including every physical TestRunner execution | Control A4 | Candidate B4 | Ratio / screen                     |
+| ---------------------------------------------------------- | ---------: | -----------: | ---------------------------------- |
+| Native Bazel elapsed                                       |   516.795s |     574.657s | 1.1120; fails 0.70                 |
+| Physical executions / final passing targets                |    14 / 14 |      17 / 16 | One additional failed VM execution |
+| Known managed TestRunner CPU                               | 6,234.578s |   7,188.740s | 1.1530; fails 1.15                 |
+| Managed requested-CU times execution                       | 13,470.184 |   16,635.356 | 1.2350; fails 1.20                 |
+| Peak concurrent requested managed CU                       |         52 |           64 | 1.2308; passes 1.30                |
+
+The candidate is 11.2% slower in this exposure. Its first VM operation has REAPI status 14 / exit
+-2 after a provider Firecracker guest kernel panic; a distinct operation with the same action
+digest subsequently succeeds. The failed operation consumes 166.683s execution, 167.027s worker
+reservation and 643.406 CPU seconds. The successful one takes 354.855s and 1,149.802 CPU seconds.
+Both remain in the resource and feedback accounting, although JUnit records only one passing
+attempt. Their relationship does not establish which retry mechanism submitted the second one.
+The [owning kernel investigation](../../../devinfra/buildbuddy/debug/2026_11_02_scheduler_kernel_panic.md#14-november-full-system-screen-recurrence)
+records the exact signature and its attribution limits.
+
+Pod is the control's last target; VM is the candidate's last target. Candidate Pod17, native
+central Services and short Gateway budget finish in 305.7s, 277.2s and 216.2s respectively.
+Firecracker CPU is unknown in both arms and is excluded from the known managed totals, not
+treated as zero. Requested CU is distinct from observed node capacity; Pod nodes expose seven
+versus eleven CPUs. Mixed fixture warmth, uncontrolled account load and one sequential pair
+prevent a causal median claim. Keep all candidate targets manual. Neither this failed screen
+nor component correctness qualifies complete required feedback, ordinary-cache applicability,
+p90 or flakes.
+
+The next decision is about environment lifetime and reliability, rather than further target
+fanout alone. Retained fixtures spend roughly 38–45s waiting for namespace deletion within their
+53–64s cleanup; the App-free trust fixture has the same pattern. A bounded metadata observer
+preserves deletion/grace semantics while identifying the remaining Pod, PVC or namespace
+condition. The existing KVM route also needs fresh-source feasibility and capacity evidence;
+moving VM beside Firecracker onto one serialized worker is not a qualified improvement.
+
+### Native fixture client shutdown
+
+The [retained trust control](https://app.buildbuddy.io/invocation/80e62ff1-a172-441b-89ee-8c19ca8eb2a4)
+identifies the fixture's native-client Pod as the last remaining Pod, without a finalizer or PVC.
+Containerd sends SIGTERM with the normal 30-second stop timeout, waits 30.045s, then kills the
+container; its exit status is 137. The rendered command is `/bin/sleep infinity` as PID 1, which
+has no SIGTERM handler. This identity Pod is added to every fixture profile on this architecture
+branch, so it also delays App-backed fixtures; it is not an App shutdown failure.
+
+The repair uses a shell PID 1 with an explicit TERM handler while waiting for a background sleep,
+the same signal-handling pattern used by production command Sandboxes. It keeps the same pinned
+PostgreSQL image, Pod-bound identity, Pod grace, namespace deletion command and cleanup absence
+checks. The [fixed-command run](https://app.buildbuddy.io/invocation/7cd3b0f9-c27c-4bbd-88cd-bca7292c06df)
+passes the four trust cases, ordinary App-backed History-outage case and renderer/stack tests.
+The native client exits about 69ms after SIGTERM without KillContainer or a nonzero exit event;
+the runtime still requests the original 30-second timeout.
+
+| Retained native trust fixture |  Before |   After |
+| ----------------------------- | ------: | ------: |
+| Namespace deletion            | 43.290s | 11.463s |
+| Baseline cleanup              | 61.648s | 22.638s |
+| Total stack cleanup           | 65.057s | 26.884s |
+
+This removes the demonstrated grace-expiration failure and observes 38.173s less cleanup in
+one pair. The fixed run has additional test targets and uncontrolled executor load, so it does
+not establish a matched whole-graph speedup, median or flake rate. The native identity Pod was
+introduced on this branch; removing its shutdown regression is not a measured saving versus
+devel. The diagnostic observer adds bounded API reads and private output, not a new service,
+image or persistent resource. Reassess that diagnostic overhead during final qualification.
+
+### Ordinary native recovery fixtures
+
+Four ordinary required targets now select the existing App-free central fixture:
+`mcp:test_gateway_crash`, `mcp:test_gateway_budget`, `mcp:test_sampler_roll` and
+`mcp:test_history_outage`. Their test modules, shared scenario bodies and real platform
+assertions are unchanged. They already admit Sessions through Dispatcher, inspect retained
+History and drive real Pod executors through the native fixture principal; App HTTP and MCP edge
+are not assertion owners in these four scenarios. The ordinary Gateway budget remains 120s.
+The separate 45-second experiment remains manual.
+
+The [dependency query](https://app.buildbuddy.io/invocation/5f2b7062-74dc-4351-b7c8-90a5bb65a88c)
+contains no App executable/image, App HTTP testing client, ancestor App-backed conftest or
+MCP edge service image for those targets. It retains five App and two MCP settings modules
+used by shared rendering. This is an ordinary dependency cut, not a path-filter exception or
+replacement-policy expansion. Physical qualification is still pending; no elapsed saving is
+credited yet. App routes, projection, OAuth, delegation and MCP assertions stay with their
+existing required witnesses.
 
 ### Pod partition and capacity screen
 
@@ -498,7 +651,7 @@ required-check, rerun, p90 and flake qualification support adoption. Exact `8c09
 three required checks; that correctness result does not establish the performance goal.
 
 The independent Actions repair is [PR #16386](https://github.com/agentydragon/ducktape/pull/16386),
-open and unmerged at `d34c757904475f262cce517503a21d863e466684`. All three required hosted checks
-pass, as do 25 generated-manifest cases with no staging snapshot drift. Its
+merged on 2026-11-14 at 17:22:30 UTC from `d34c757904475f262cce517503a21d863e466684`.
+All three required hosted checks pass, as do 25 generated-manifest cases with no staging snapshot drift. Its
 [ordinary CI invocation](https://app.buildbuddy.io/invocation/786681d0-1e2e-5bdc-bff1-d58089c715ef)
 passes. That narrow port does not depend on adopting this architecture.
