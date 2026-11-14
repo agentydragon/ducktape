@@ -31,7 +31,7 @@ class Settings(BaseModel):
     actions_target: str = Field(min_length=1)
     policy_namespace: str = Field(min_length=1, description="Namespace holding the live Identity objects.")
     actions_token_file: str | None = Field(
-        default=None, description="The MCP edge's rotating projected token for the Action Service audience."
+        default=None, description="The MCP edge's projected token when it uses bearer authentication to Action Service."
     )
     oauth_file: Path | None = Field(
         default=None, description="Provider-owned OAuth settings projected from its Secret."

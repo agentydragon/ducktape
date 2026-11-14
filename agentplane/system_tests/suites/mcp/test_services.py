@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import httpx
@@ -14,6 +13,7 @@ from more_itertools import one
 from agentplane.action_service.api.contracts import action_service_pb2
 from agentplane.app.testing.client import Client
 from agentplane.mcp_edge.api.connection import connection_service_pb2
+from agentplane.net.peertls.config import MCP_EDGE_URI
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.deployment import mcp_servers
 from agentplane.system_tests.deployment.stack import Stack
@@ -104,22 +104,8 @@ async def test_external_mcp_connection_uses_its_consented_identity(
         assert not receipt.HasField("caller")
         assert receipt.caller_identity == identity
 
-        assert receipt.delegating_actor.WhichOneof("actor") == "service_account"
-        actor = receipt.delegating_actor.service_account
-        service_account = json.loads(
-            await deployment.cluster.kubectl("get", "serviceaccount", "mcp-edge", "-o", "json")
-        )
-        assert actor.identity.account.namespace == deployment.cluster.namespace
-        assert actor.identity.account.name == "mcp-edge"
-        assert actor.identity.uid == service_account["metadata"]["uid"]
-        assert actor.pod_name
-        assert actor.pod_uid
-        pods = json.loads(
-            await deployment.cluster.kubectl("get", "pods", "-l", "app.kubernetes.io/name=mcp-edge", "-o", "json")
-        )["items"]
-        actor_pod = one(pod for pod in pods if pod["metadata"]["uid"] == actor.pod_uid)
-        assert actor_pod["metadata"]["name"] == actor.pod_name
-        assert actor_pod["spec"]["serviceAccountName"] == "mcp-edge"
+        assert receipt.delegating_actor.WhichOneof("actor") == "service_spiffe_id"
+        assert receipt.delegating_actor.service_spiffe_id == MCP_EDGE_URI
 
         assert receipt.WhichOneof("provenance") == "connection_provenance"
         assert receipt.connection_provenance.connection_id == connection.id

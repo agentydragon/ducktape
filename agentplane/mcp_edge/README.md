@@ -71,8 +71,12 @@ there is no ServiceAccount fallback.
 input for static settings; `AGENTPLANE_MCP_EDGE_DATABASE_URL` is read explicitly from the PostgreSQL
 Secret and is not part of the file model. `actions_target` is the internal Action Service gRPC
 endpoint. OAuth deployments set `policy_namespace` to the namespace whose live Identities may be
-selected, and `actions_token_file` to the mounted projected Action audience token. The edge refuses
-use when required Identity state or the Action token is unavailable. `operator_oidc` requires the
+selected. `actions_tls` verifies the Action Service SVID and can also present the edge's service
+SVID. When that client certificate is configured, `actions_token_file` must be absent; there is no
+bearer fallback if the certificate is unavailable. Otherwise, `actions_token_file` selects the
+mounted projected Action audience token. Staging keeps the token mount and ServiceAccount RBAC for
+rollback while selecting the SVID in config, so the projected token is not sent to Actions.
+`operator_oidc` requires the
 issuer, audience, JWKS URI and token profile used by the app's operator tokens. `oauth` is an
 optional typed inline object for synthetic deployments. Staging instead sets `oauth_file` to the
 provider-owned settings file projected from the existing Authentik Secret, keeping its user and

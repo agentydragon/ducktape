@@ -8479,6 +8479,9 @@ data:
     actions_tls:
       ca_file: /run/agentplane/workload-trust/ca-certificates.crt
       server_uri: spiffe://agentplane/actions
+      cert_file: /run/agentplane/workload-tls/tls.crt
+      key_file: /run/agentplane/workload-tls/tls.key
+      client_uri: spiffe://agentplane/mcp-edge
     rpc_tls:
       listen: 0.0.0.0:8443
       cert_file: /run/agentplane/workload-tls/tls.crt
@@ -8488,7 +8491,6 @@ data:
       - spiffe://agentplane/app
     actions_target: actions.agentplane-staging.svc.cluster.local:8080
     policy_namespace: agentplane-staging
-    actions_token_file: /var/run/secrets/agentplane-mcp/actions
     oauth_file: /etc/agentplane-mcp/oauth
     host: 0.0.0.0
     port: 8080

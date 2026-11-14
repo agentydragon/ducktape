@@ -23,10 +23,12 @@ from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.llm_ingress.settings import Settings as LlmIngressSettings
 from agentplane.mcp_edge.oauth_settings import OAuthSettings
 from agentplane.net.peertls.config import (
+    ACTIONS_URI,
     CENTRAL_SAMPLER_URI,
     GATEWAY_SESSIONS_URI,
     HISTORY_SERVICE_URI,
     LLM_INGRESS_URI,
+    MCP_EDGE_URI,
     SESSION_DISPATCHER_URI,
 )
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
@@ -227,6 +229,14 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     assert edge_config["actions_target"] == (
         f"{fixture_chart.ACTIONS_SERVICE.fqdn}:{fixture_chart.ACTIONS_SERVICE.port.number}"
     )
+    assert edge_config["actions_tls"] == {
+        "ca_file": "/run/agentplane/workload-trust/ca-certificates.crt",
+        "server_uri": ACTIONS_URI,
+        "cert_file": "/run/agentplane/workload-tls/tls.crt",
+        "key_file": "/run/agentplane/workload-tls/tls.key",
+        "client_uri": MCP_EDGE_URI,
+    }
+    assert edge_config.get("actions_token_file") is None
     app_container = _resource(docs, "Deployment", "app")["spec"]["template"]["spec"]["containers"][0]
     app_env = {entry["name"]: entry for entry in app_container["env"]}
     app_settings = yaml.safe_load(_resource(docs, "ConfigMap", "app-config")["data"]["config.yaml"])
@@ -514,7 +524,7 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     # Terraform/provider-owned OAuth settings and the upstream secret are projected from one Secret.
     assert edge_config.get("oauth") is None
     assert edge_config["oauth_file"] == "/etc/agentplane-mcp/oauth"
-    assert edge_config["actions_token_file"] == "/var/run/secrets/agentplane-mcp/actions"
+    assert edge_config.get("actions_token_file") is None
     edge_settings_env_names = {entry["name"] for entry in edge_container["env"]}
     assert "AGENTPLANE_MCP_EDGE_OAUTH" not in edge_settings_env_names
     edge_secret_mount = next(
@@ -538,13 +548,14 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     token_volume = next(volume for volume in edge_pod["volumes"] if volume["name"] == token_mount["name"])
     token = token_volume["projected"]["sources"][0]["serviceAccountToken"]
     assert token["audience"] == WORKLOAD_TOKEN_AUDIENCE
-    assert edge_config["actions_token_file"] == f"{token_mount['mountPath']}/{token['path']}"
+    assert token["path"] == "actions"
+    assert token_mount["mountPath"] == "/var/run/secrets/agentplane-mcp"
     operator_config = yaml.safe_load(operator["config.yaml"])
     clients = {client["id"]: client for client in operator_config["staticClients"]}
     assert clients[edge_oauth.upstream_client_id]["redirectURIs"] == [f"{_MCP.mcp_edge_origin}/auth/callback"]
     assert clients["test-mcp-linkage"]["redirectURIs"] == [f"{_MCP.app_origin}/mcp-linkage/callback"]
     assert edge_config["policy_namespace"] == fixture.namespace
-    assert edge_config["actions_token_file"] == "/var/run/secrets/agentplane-mcp/actions"
+    assert edge_config.get("actions_token_file") is None
     caller = _resource(docs, "Identity", "mcp-edge-test-caller")
     assert caller["metadata"]["namespace"] == fixture.namespace
     binding = _resource(docs, "PolicyBinding", "mcp-edge-test-caller")
