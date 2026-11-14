@@ -13,8 +13,7 @@ Only the Pod-bound Gateway/Dispatcher workload can proxy Runtime Session creatio
 authenticated Gateway replica to connect to and call a Runtime; there is no per-Sandbox connection
 owner or connection epoch in that contract. The Runtime fences calls by Sandbox UID, workload
 incarnation and Runtime boot ID, all bound from a Runtime-trusted source; the shared Gateway SVID
-does not authorize a replica to choose a replacement incarnation. The current image keeps its Lease
-and epoch during the staged migration described below. Startup reviews `runner_token_file` with the Gateway
+does not authorize a replica to choose a replacement incarnation. The current image retains its Lease and route epoch solely for legacy caller routing. Startup reviews `runner_token_file` with the Gateway
 audience and verifies its Pod name, current UID and ServiceAccount against Kubernetes before serving.
 The Kubernetes API must answer that TokenReview and Pod read; failure prevents startup.
 See the [proxy contract](internal/gateway/SPEC.md). The Sandbox
@@ -54,8 +53,9 @@ connection epoch in the selected contract. Runtime fences each request by Sandbo
 incarnation and boot ID, bound from a Runtime-trusted source; the shared Gateway SVID does not let a
 replica choose or advance an incarnation. Per-method caller authorization remains, and uncertain
 mutations are never replayed automatically. The Dispatcher delivery Lease is separate and unchanged.
-The Gateway cutover is pending; the [Runtime state observation plan](../plans/runtime_state_observation.md)
-records the rollout and rollback holds.
+All replicas now independently observe and call the Controller-bound Runtime without a wire epoch.
+The existing per-Sandbox route remains until callers switch to the stable Service after this Gateway
+image is pinned. Its Lease/epoch selects legacy routing only, never Runtime call ownership.
 
 The Dispatcher role retains its PostgreSQL queue, command IDs, per-Sandbox delivery Leases
 and database ownership generations. Those delivery Leases are separate from Gateway-to-Runtime
@@ -64,9 +64,8 @@ no History Service client. The selected Controller ownership has its leader-elec
 Runtime state directly and keep lifecycle facts in memory. Runtime restart, workload replacement and
 same-name Sandbox replacement invalidate old calls through boot ID, incarnation UID and Sandbox UID.
 Observation loss makes facts stale; they cannot prove connectivity, quiescence or idleness. A fresh
-snapshot restores observation and resets the Controller's idle timer. Current Gateway images still
-use the connection Lease, EndpointSlice and epoch while the selected cutover is pending; rollout
-details are in the [Runtime state observation plan](../plans/runtime_state_observation.md).
+snapshot restores observation and resets the Controller's idle timer. The legacy connection Lease and EndpointSlice remain solely for existing caller routing.
+Loss of one Gateway observer affects its local connection, while other replicas remain callable.
 
 Every Gateway forwards an execution mutation at most once. If the direct call loses its connection
 after the Runtime may have acted, its outcome is uncertain and the Gateway does not automatically

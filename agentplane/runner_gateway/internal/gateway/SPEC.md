@@ -1,22 +1,30 @@
 # Gateway connection and authorization contracts
 
-## Connection Lease handoff
+## Independent Runtime observations
 
-An observer may release its connection Lease only after its local callable connection is removed,
-calls through that connection are canceled, and its direct Runner gRPC connection is closed.
-The release uses a bounded independent context because observer shutdown cancels its own context.
-It may clear only a Lease with the same Sandbox owner, Lease UID, holder Pod name, and connection
-epoch that this observer claimed. The update uses Kubernetes resource-version conflict detection and
-rechecks all fences after a conflict; a delayed release cannot clear a newer claim. It clears the
-holder, renewal and current boot ID, but preserves the epoch and last verified Pod contact.
-An orderly stop can therefore hand off without waiting for Lease expiry. A crashed or partitioned
-Gateway remains protected by the 30-second duration measured from each contender's own observation
-of the unchanged renewal, independent of clock skew.
-Closing the old client does not prove already admitted remote effects have finished. The Runner's
-newer `WatchState` epoch supersedes the old watch and blocks new old-epoch admissions; uncertain
-already admitted requests still remain uncertain. Clearing the boot ID and renewal stops Gateway proxy admission while the next Gateway reconnects.
-The Sandbox Controller independently observes lifecycle facts directly from the Runtime; connection
-Lease metadata does not establish lifecycle readiness, idleness or quiescence.
+Every authenticated Gateway replica may independently observe and call one Runtime. The Sandbox
+Controller binds its Sandbox UID and workload Pod UID through its dedicated observe-only watch;
+Gateway watches cannot establish or advance that binding. Gateway watches send no connection epoch.
+Calls carry the bound Sandbox UID, incarnation UID and boot ID. Runtime rejects stale fences before
+admission. Removing one replica's observation cannot revoke another replica's calls.
+
+Observation loss removes only that replica's local callable connection. Reconnect validates the
+current workload and learns its boot ID again. Replacement observers wait for their canceled
+predecessor to exit before installing a new local connection. Admitted Runtime work remains owned
+by Runtime; an uncertain mutation is never automatically replayed.
+
+## Legacy route handoff
+
+The connection Lease and `<sandbox>-control` EndpointSlice temporarily select a destination for
+existing callers. Their epoch is a Kubernetes publication fence only; it is never sent to Runtime
+and grants no call authority. Each replica becomes callable before attempting route publication,
+so another replica's route claim or a publication error does not block its direct calls.
+
+Orderly shutdown closes local traffic before releasing its exact route claim, fenced by Sandbox
+owner, Lease UID, holder and route epoch with resource-version conflict detection. A delayed release
+cannot clear a successor. Contenders measure expiry on their own monotonic clocks. Route publication
+is retried on snapshots and heartbeats. The Sandbox Controller consumes lifecycle facts directly;
+route records prove neither readiness, idleness nor quiescence.
 
 ## Environment Runtime proxy authorization
 

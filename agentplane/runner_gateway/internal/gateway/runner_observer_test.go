@@ -15,6 +15,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
+	runtimecontrol "github.com/agentydragon/ducktape/agentplane/env/runtime/control"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
@@ -25,16 +26,13 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	coordinationclient "k8s.io/client-go/kubernetes/typed/coordination/v1"
 	"k8s.io/client-go/rest"
 	toolscache "k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
@@ -44,16 +42,47 @@ import (
 
 type observedRunner struct {
 	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
-	bootID       string
-	facts        *environmentruntimestatepb.EnvironmentRuntimeFacts
-	calls        atomic.Int32
-	quiesceCalls atomic.Int32
+	sandboxUID     string
+	incarnationUID string
+	bootID         string
+	facts          *environmentruntimestatepb.EnvironmentRuntimeFacts
+	calls          atomic.Int32
+	quiesceCalls   atomic.Int32
+}
+
+type statusOnlyRuntime struct {
+	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
+	calls     atomic.Int32
+	changes   chan struct{}
+	changesMu sync.Mutex
+}
+
+func (r *statusOnlyRuntime) GetStatus(context.Context, *sessionpb.GetStatusRequest) (*sessionpb.EnvironmentRuntimeStatus, error) {
+	r.calls.Add(1)
+	return &sessionpb.EnvironmentRuntimeStatus{}, nil
+}
+
+func (r *statusOnlyRuntime) currentChanges() <-chan struct{} {
+	r.changesMu.Lock()
+	defer r.changesMu.Unlock()
+	return r.changes
+}
+
+func (r *statusOnlyRuntime) notify() {
+	r.changesMu.Lock()
+	defer r.changesMu.Unlock()
+	close(r.changes)
+	r.changes = make(chan struct{})
 }
 
 func (r *observedRunner) WatchState(request *environmentruntimepb.WatchStateRequest, stream grpc.ServerStreamingServer[environmentruntimepb.WatchStateResponse]) error {
+	if request.GetSandboxUid() != r.sandboxUID || request.GetIncarnationUid() != r.incarnationUID ||
+		request.GetConnectionEpoch() != 0 || request.GetObserveOnly() {
+		return status.Error(codes.FailedPrecondition, "invalid Runtime observation fence")
+	}
 	if err := stream.Send(&environmentruntimepb.WatchStateResponse{
 		SandboxUid:               request.SandboxUid,
-		EnvironmentRuntimeBootId: r.bootID, IncarnationUid: request.IncarnationUid, ConnectionEpoch: request.ConnectionEpoch,
+		EnvironmentRuntimeBootId: r.bootID, IncarnationUid: request.IncarnationUid,
 		Facts: r.facts,
 	}); err != nil {
 		return err
@@ -62,18 +91,39 @@ func (r *observedRunner) WatchState(request *environmentruntimepb.WatchStateRequ
 	return stream.Context().Err()
 }
 
-func (r *observedRunner) GetStatus(ctx context.Context, _ *sessionpb.GetStatusRequest) (*sessionpb.EnvironmentRuntimeStatus, error) {
+func (r *observedRunner) validateFence(ctx context.Context) error {
 	md, _ := metadata.FromIncomingContext(ctx)
-	if len(md.Get("agentplane-environment-runtime-boot-id")) != 1 || md.Get("agentplane-environment-runtime-boot-id")[0] != r.bootID ||
-		len(md.Get("agentplane-sandbox-uid")) != 1 || len(md.Get("agentplane-incarnation-uid")) != 1 ||
-		len(md.Get("agentplane-connection-epoch")) != 1 {
-		return nil, status.Error(codes.PermissionDenied, "missing Runner request fence")
+	for key, want := range map[string]string{
+		"agentplane-sandbox-uid":                 r.sandboxUID,
+		"agentplane-incarnation-uid":             r.incarnationUID,
+		"agentplane-environment-runtime-boot-id": r.bootID,
+	} {
+		got := md.Get(key)
+		if len(got) != 1 {
+			return status.Errorf(codes.InvalidArgument, "Runtime request requires one %s", key)
+		}
+		if got[0] != want {
+			return status.Errorf(codes.FailedPrecondition, "Runtime request has stale %s", key)
+		}
+	}
+	if len(md.Get("agentplane-connection-epoch")) != 0 {
+		return status.Error(codes.InvalidArgument, "Runtime request must not carry a connection epoch")
+	}
+	return nil
+}
+
+func (r *observedRunner) GetStatus(ctx context.Context, _ *sessionpb.GetStatusRequest) (*sessionpb.EnvironmentRuntimeStatus, error) {
+	if err := r.validateFence(ctx); err != nil {
+		return nil, err
 	}
 	r.calls.Add(1)
 	return &sessionpb.EnvironmentRuntimeStatus{}, nil
 }
 
-func (r *observedRunner) Quiesce(context.Context, *sessionpb.QuiesceRequest) (*sessionpb.QuiesceResponse, error) {
+func (r *observedRunner) Quiesce(ctx context.Context, _ *sessionpb.QuiesceRequest) (*sessionpb.QuiesceResponse, error) {
+	if err := r.validateFence(ctx); err != nil {
+		return nil, err
+	}
 	r.quiesceCalls.Add(1)
 	return &sessionpb.QuiesceResponse{Stage: sessionpb.QuiesceStage_QUIESCE_STAGE_QUIESCED}, nil
 }
@@ -86,311 +136,302 @@ func TestRunnerObserverPublishesIdentityAndFencesRPCs(t *testing.T) {
 	}
 }
 
-// pauseAfterBootIDUpdate holds the first verified boot identity update's response
-// after the API server has made it visible to other clients.
-type pauseAfterBootIDUpdate struct {
-	coordinationclient.CoordinationV1Interface
-	updated chan struct{}
-	release <-chan struct{}
-	paused  atomic.Bool
-}
-
-func (p *pauseAfterBootIDUpdate) Leases(namespace string) coordinationclient.LeaseInterface {
-	return &pausedBootIDLeases{LeaseInterface: p.CoordinationV1Interface.Leases(namespace), parent: p}
-}
-
-type pausedBootIDLeases struct {
-	coordinationclient.LeaseInterface
-	parent *pauseAfterBootIDUpdate
-}
-
-type inspectReleaseCoordination struct {
-	coordinationclient.CoordinationV1Interface
-	inspect func()
-}
-
-func (c *inspectReleaseCoordination) Leases(namespace string) coordinationclient.LeaseInterface {
-	return &inspectReleaseLeases{LeaseInterface: c.CoordinationV1Interface.Leases(namespace), inspect: c.inspect}
-}
-
-type inspectReleaseLeases struct {
-	coordinationclient.LeaseInterface
-	inspect func()
-}
-
-func (l *inspectReleaseLeases) Update(ctx context.Context, lease *coordinationv1.Lease, options metav1.UpdateOptions) (*coordinationv1.Lease, error) {
-	if lease.Spec.HolderIdentity == nil {
-		l.inspect()
+func TestAnyGatewayReplicaObservesAndCallsOneRuntime(t *testing.T) {
+	f := newSandboxFixture(t)
+	gatewayA := f.newGatewayReplica(t, "gateway-a", "192.0.2.10")
+	gatewayB := f.newGatewayReplica(t, "gateway-b", "192.0.2.11")
+	destinationA, backend := startProductionRuntime(t, f, gatewayA)
+	destinationB, err := gatewayB.runnerDestination(t.Context(), f.sandbox)
+	if err != nil {
+		t.Fatal(err)
 	}
-	return l.LeaseInterface.Update(ctx, lease, options)
+	destinationB.target = destinationA.target
+
+	cancelA, doneA, _ := runObserver(t, gatewayA, destinationA)
+	cancelB, doneB, resultB := runObserver(t, gatewayB, destinationB)
+	defer cancelB()
+	awaitConnection(t, gatewayA, string(f.sandbox.UID), "shared-runtime-boot", doneA)
+	connectionB := awaitConnection(t, gatewayB, string(f.sandbox.UID), "shared-runtime-boot", doneB)
+	clientA := startProxyClient(t, gatewayA)
+	clientB := startProxyClient(t, gatewayB)
+	if _, err := clientA.GetStatus(f.callerContext(f.appToken), &sessionpb.GetStatusRequest{}); err != nil {
+		t.Fatalf("Gateway A did not call the shared Runtime: %v", err)
+	}
+	if _, err := clientB.GetStatus(f.callerContext(f.appToken), &sessionpb.GetStatusRequest{}); err != nil {
+		t.Fatalf("Gateway B did not call the shared Runtime: %v", err)
+	}
+	if got := backend.calls.Load(); got != 2 {
+		t.Fatalf("shared Runtime received %d calls, want one from each Gateway", got)
+	}
+
+	cancelA()
+	waitObserver(t, doneA)
+	if _, err := clientB.GetStatus(f.callerContext(f.appToken), &sessionpb.GetStatusRequest{}); err != nil {
+		t.Fatalf("Gateway B stopped serving after observer A closed: %v", err)
+	}
+	cancelA, doneA, _ = runObserver(t, gatewayA, destinationA)
+	defer cancelA()
+	awaitConnection(t, gatewayA, string(f.sandbox.UID), "shared-runtime-boot", doneA)
+	if _, err := clientB.GetStatus(f.callerContext(f.appToken), &sessionpb.GetStatusRequest{}); err != nil {
+		t.Fatalf("Gateway B stopped serving after observer A restarted: %v", err)
+	}
+	if current, err := gatewayB.connections.holder(string(f.sandbox.UID)); err != nil || current != connectionB {
+		t.Fatalf("Gateway A changed Gateway B's local connection: %v, %+v", err, current)
+	}
+	if got := backend.calls.Load(); got != 4 {
+		t.Fatalf("shared Runtime received %d calls after observer restart, want 4", got)
+	}
+
+	credentials, err := f.gatewayTLS.ClientCredentials(destinationA.peerURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	directConn, err := grpc.NewClient(destinationA.target, grpc.WithTransportCredentials(credentials), grpc.WithNoProxy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = directConn.Close() })
+	directClient := environmentruntimepb.NewEnvironmentRuntimeClient(directConn)
+	staleWatch, err := directClient.WatchState(t.Context(), &environmentruntimepb.WatchStateRequest{
+		SandboxUid: string(f.sandbox.UID), IncarnationUid: "replaced-incarnation",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := staleWatch.Recv(); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("Runtime accepted a stale incarnation observation: %v", err)
+	}
+	staleBoot := metadata.AppendToOutgoingContext(
+		t.Context(),
+		"agentplane-sandbox-uid", string(f.sandbox.UID),
+		"agentplane-incarnation-uid", string(f.pod.UID),
+		"agentplane-environment-runtime-boot-id", "retired-runtime-boot",
+	)
+	if _, err := directClient.GetStatus(staleBoot, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("Runtime accepted a stale boot fence: %v", err)
+	}
+	staleIncarnation := metadata.AppendToOutgoingContext(
+		t.Context(),
+		"agentplane-sandbox-uid", string(f.sandbox.UID),
+		"agentplane-incarnation-uid", "replaced-incarnation",
+		"agentplane-environment-runtime-boot-id", "shared-runtime-boot",
+	)
+	if _, err := directClient.GetStatus(staleIncarnation, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("Runtime accepted a stale incarnation call: %v", err)
+	}
+	if got := backend.calls.Load(); got != 4 {
+		t.Fatalf("stale direct calls reached the Runtime backend: calls=%d", got)
+	}
+	select {
+	case err := <-resultB:
+		t.Fatalf("Gateway B observer stopped while Gateway A restarted: %v", err)
+	default:
+	}
 }
 
-func (p *pausedBootIDLeases) Update(ctx context.Context, lease *coordinationv1.Lease, options metav1.UpdateOptions) (*coordinationv1.Lease, error) {
-	updated, err := p.LeaseInterface.Update(ctx, lease, options)
-	if err == nil && updated.Annotations[environmentRuntimeBootIDAnnotation] != "" && p.parent.paused.CompareAndSwap(false, true) {
-		close(p.parent.updated)
-		select {
-		case <-p.parent.release:
-		case <-ctx.Done():
+func TestRunnerObservationRetriesLegacyRouteAfterAnotherReplicaReleases(t *testing.T) {
+	f := newSandboxFixture(t)
+	gatewayA := f.newGatewayReplica(t, "gateway-a", "192.0.2.10")
+	gatewayB := f.newGatewayReplica(t, "gateway-b", "192.0.2.11")
+	destinationA, backend := startProductionRuntime(t, f, gatewayA)
+	destinationB, err := gatewayB.runnerDestination(t.Context(), f.sandbox)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destinationB.target = destinationA.target
+
+	cancelA, doneA, _ := runObserver(t, gatewayA, destinationA)
+	awaitConnection(t, gatewayA, string(f.sandbox.UID), "shared-runtime-boot", doneA)
+	awaitEndpointAddress := func(want string) {
+		t.Helper()
+		deadline := time.NewTimer(5 * time.Second)
+		defer deadline.Stop()
+		poll := time.NewTicker(time.Millisecond)
+		defer poll.Stop()
+		for {
+			route, err := api.Clientset.DiscoveryV1().EndpointSlices(f.namespace).Get(
+				t.Context(), f.sandbox.Name+sandboxapi.ControlServiceSuffix, metav1.GetOptions{},
+			)
+			if err == nil && len(route.Endpoints) == 1 && len(route.Endpoints[0].Addresses) == 1 && route.Endpoints[0].Addresses[0] == want {
+				return
+			}
+			select {
+			case <-deadline.C:
+				t.Fatalf("legacy control route did not point at %s", want)
+			case <-poll.C:
+			}
 		}
 	}
-	return updated, err
+	awaitEndpointAddress(gatewayA.config.HolderIP)
+	readLeaseHolder := func() string {
+		t.Helper()
+		lease, err := api.Clientset.CoordinationV1().Leases(f.namespace).Get(
+			t.Context(), f.sandbox.Name+environmentRuntimeLeaseSuffix, metav1.GetOptions{},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if lease.Spec.HolderIdentity == nil {
+			return ""
+		}
+		return *lease.Spec.HolderIdentity
+	}
+	if got := readLeaseHolder(); got != gatewayA.config.HolderName {
+		t.Fatalf("initial legacy route holder = %q, want %q", got, gatewayA.config.HolderName)
+	}
+
+	cancelB, doneB, _ := runObserver(t, gatewayB, destinationB)
+	defer cancelB()
+	awaitConnection(t, gatewayB, string(f.sandbox.UID), "shared-runtime-boot", doneB)
+	clientB := startProxyClient(t, gatewayB)
+	if _, err := clientB.GetStatus(f.callerContext(f.appToken), &sessionpb.GetStatusRequest{}); err != nil {
+		t.Fatalf("Gateway B observation was blocked by Gateway A's legacy route claim: %v", err)
+	}
+	awaitEndpointAddress(gatewayA.config.HolderIP)
+	if got := readLeaseHolder(); got != gatewayA.config.HolderName {
+		t.Fatalf("Gateway B changed a live legacy route claim: holder = %q, want %q", got, gatewayA.config.HolderName)
+	}
+
+	cancelA()
+	waitObserver(t, doneA)
+	backend.notify()
+	awaitEndpointAddress(gatewayB.config.HolderIP)
+	if got := readLeaseHolder(); got != gatewayB.config.HolderName {
+		t.Fatalf("legacy route holder after Gateway A released = %q, want %q", got, gatewayB.config.HolderName)
+	}
+	if _, err := clientB.GetStatus(f.callerContext(f.appToken), &sessionpb.GetStatusRequest{}); err != nil {
+		t.Fatalf("Gateway B stopped serving after taking over the legacy route: %v", err)
+	}
+	if got := backend.calls.Load(); got != 2 {
+		t.Fatalf("shared Runtime received %d Gateway B calls, want 2", got)
+	}
 }
 
-func startObservedRunner(t *testing.T, f *sandboxFixture, g *Gateway, runner environmentruntimepb.EnvironmentRuntimeServer) runnerDestination {
+func startProductionRuntime(t *testing.T, f *sandboxFixture, g *Gateway) (runnerDestination, *statusOnlyRuntime) {
 	t.Helper()
 	destination, err := g.runnerDestination(t.Context(), f.sandbox)
 	if err != nil {
 		t.Fatal(err)
 	}
+	opened, err := (peertls.Security{Mode: peertls.MutualTLS, TLS: &f.runnerTLS}).Open(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = opened.Close() })
+	backend := &statusOnlyRuntime{changes: make(chan struct{})}
+	runtimeServer := runtimecontrol.New(runtimecontrol.Config{
+		SandboxUID: destination.identity.Uid, BootID: "shared-runtime-boot", ListenAddress: "127.0.0.1:0",
+		Security: opened, IsClosing: func() bool { return false }, AdoptIncarnation: func(context.Context, string) error { return nil },
+		Facts: func() (*environmentruntimestatepb.EnvironmentRuntimeFacts, error) {
+			return &environmentruntimestatepb.EnvironmentRuntimeFacts{
+				Bootstrap: environmentruntimestatepb.EnvironmentRuntimeFacts_BOOTSTRAP_SUCCEEDED,
+			}, nil
+		},
+		Changes: backend.currentChanges,
+	}, backend)
+	listener, server, err := runtimeServer.Listen(&executorpb.UnimplementedExecutorServer{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	destination.target = listener.Addr().String()
+
+	controllerTLS := f.ca.Issue(t, peertls.SandboxControllerURI)
+	controllerCredentials, err := controllerTLS.ClientCredentials(destination.peerURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	controllerConn, err := grpc.NewClient(destination.target, grpc.WithTransportCredentials(controllerCredentials), grpc.WithNoProxy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = controllerConn.Close() })
+	controllerCtx, stopController := context.WithCancel(t.Context())
+	t.Cleanup(stopController)
+	controllerWatch, err := environmentruntimepb.NewEnvironmentRuntimeClient(controllerConn).WatchState(controllerCtx, &environmentruntimepb.WatchStateRequest{
+		SandboxUid: destination.identity.Uid, IncarnationUid: destination.podUID, ObserveOnly: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bound, err := controllerWatch.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bound.GetSandboxUid() != destination.identity.Uid || bound.GetIncarnationUid() != destination.podUID || bound.GetEnvironmentRuntimeBootId() != "shared-runtime-boot" {
+		t.Fatalf("Runtime did not bind its Controller-observed identity: %v", bound)
+	}
+	return destination, backend
+}
+
+func runObserver(t *testing.T, g *Gateway, destination runnerDestination) (context.CancelFunc, <-chan struct{}, <-chan error) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	result := make(chan error, 1)
+	go func() {
+		result <- g.observeRunner(ctx, destination)
+		close(done)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		waitObserver(t, done)
+	})
+	return cancel, done, result
+}
+
+func waitObserver(t *testing.T, done <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Runner observer did not stop")
+	}
+}
+
+func awaitConnection(t *testing.T, g *Gateway, sandboxUID, bootID string, done <-chan struct{}) *runnerConnection {
+	t.Helper()
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	poll := time.NewTicker(time.Millisecond)
+	defer poll.Stop()
+	for {
+		if connection, err := g.connections.holder(sandboxUID); err == nil && connection.bootID == bootID {
+			return connection
+		}
+		select {
+		case <-done:
+			t.Fatal("Runner observer stopped before becoming callable")
+		case <-deadline.C:
+			t.Fatal("Runner observer did not become callable")
+		case <-poll.C:
+		}
+	}
+}
+
+func startProxyClient(t *testing.T, g *Gateway) environmentruntimepb.EnvironmentRuntimeClient {
+	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	creds, err := (peertls.Security{Mode: peertls.MutualTLS, TLS: &f.runnerTLS}).ServerCredentials(peertls.GatewayURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := grpc.NewServer(grpc.Creds(creds))
-	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, runner)
+	server := grpc.NewServer(g.Methods().ServerOptions(0)...)
+	g.RegisterProxy(server)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
-	destination.target = listener.Addr().String()
-	return destination
-}
-
-type delayedFirstStateRunner struct {
-	*observedRunner
-	watchStarted chan struct{}
-	release      chan struct{}
-}
-
-func (r *delayedFirstStateRunner) WatchState(request *environmentruntimepb.WatchStateRequest, stream grpc.ServerStreamingServer[environmentruntimepb.WatchStateResponse]) error {
-	close(r.watchStarted)
-	select {
-	case <-r.release:
-	case <-stream.Context().Done():
-		return stream.Context().Err()
-	}
-	return r.observedRunner.WatchState(request, stream)
-}
-
-func TestFirstRunnerBootIDIsPublishedAfterLocalConnection(t *testing.T) {
-	f := newSandboxFixture(t)
-	g := f.newGateway(t, "test-runner-gateway", "192.0.2.30")
-	runner := &observedRunner{bootID: "first-boot"}
-	destination := startObservedRunner(t, f, g, runner)
-
-	updated := make(chan struct{})
-	release := make(chan struct{})
-	g.records.coordination = &pauseAfterBootIDUpdate{CoordinationV1Interface: g.records.coordination, updated: updated, release: release}
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	finished := make(chan error, 1)
-	go func() { finished <- g.observeRunner(ctx, destination) }()
-	select {
-	case <-updated:
-	case err := <-finished:
-		t.Fatalf("Runner observer stopped before publishing boot ID: %v", err)
-	case <-time.After(5 * time.Second):
-		t.Fatal("Runner boot ID was not published")
-	}
-
-	lease, err := api.Clientset.CoordinationV1().Leases(f.namespace).Get(t.Context(), testSandbox+environmentRuntimeLeaseSuffix, metav1.GetOptions{})
+	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lease.Annotations[podUIDAnnotation] != string(f.pod.UID) ||
-		lease.Annotations[environmentRuntimeBootIDAnnotation] != runner.bootID ||
-		lease.Spec.RenewTime == nil || lease.Spec.LeaseTransitions == nil {
-		t.Fatalf("first boot identity update has unexpected metadata: %#v", lease)
-	}
-	route, err := api.Clientset.DiscoveryV1().EndpointSlices(f.namespace).Get(t.Context(), testSandbox+sandboxapi.ControlServiceSuffix, metav1.GetOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if route.Annotations[connectionEpochAnnotation] != strconv.Itoa(int(*lease.Spec.LeaseTransitions)) ||
-		route.Annotations[connectionLeaseUIDAnnotation] != string(lease.UID) ||
-		len(route.Endpoints) != 1 || len(route.Endpoints[0].Addresses) != 1 || route.Endpoints[0].Addresses[0] != g.config.HolderIP ||
-		route.Endpoints[0].Conditions.Ready == nil || !*route.Endpoints[0].Conditions.Ready {
-		t.Fatalf("control route is not ready at boot-ID publication: %#v", route)
-	}
-	connection, err := g.connections.holder(string(f.sandbox.UID))
-	if err != nil || connection.epoch != uint64(*lease.Spec.LeaseTransitions) || connection.podUID != string(f.pod.UID) || connection.bootID != runner.bootID {
-		t.Fatalf("first boot identity update preceded a correctly fenced local connection: %v, %+v", err, connection)
-	}
-	requestMetadata, _ := metadata.FromOutgoingContext(f.callerContext(f.appToken))
-	_, err = (&environmentRuntimeProxy{gateway: g}).GetStatus(metadata.NewIncomingContext(t.Context(), requestMetadata), &sessionpb.GetStatusRequest{})
-	if err != nil || runner.calls.Load() != 1 {
-		t.Fatalf("GetStatus at first boot identity update = %v, runner calls = %d", err, runner.calls.Load())
-	}
-	close(release)
-	cancel()
-	select {
-	case <-finished:
-	case <-time.After(5 * time.Second):
-		t.Fatal("Runner observer did not stop after releasing boot-ID update")
-	}
-}
-
-type failBootIDUpdate struct {
-	coordinationclient.CoordinationV1Interface
-	local      *connections
-	sandboxUID string
-	checked    chan error
-}
-
-func (f *failBootIDUpdate) Leases(namespace string) coordinationclient.LeaseInterface {
-	return &failingBootIDLeases{LeaseInterface: f.CoordinationV1Interface.Leases(namespace), parent: f}
-}
-
-type failingBootIDLeases struct {
-	coordinationclient.LeaseInterface
-	parent *failBootIDUpdate
-}
-
-func (f *failingBootIDLeases) Update(ctx context.Context, lease *coordinationv1.Lease, options metav1.UpdateOptions) (*coordinationv1.Lease, error) {
-	if lease.Annotations[environmentRuntimeBootIDAnnotation] != "" {
-		_, err := f.parent.local.holder(f.parent.sandboxUID)
-		f.parent.checked <- err
-		return nil, status.Error(codes.Internal, "injected boot-ID update rejection")
-	}
-	return f.LeaseInterface.Update(ctx, lease, options)
-}
-
-func TestRejectedBootIDPublicationRemovesLocalConnection(t *testing.T) {
-	f := newSandboxFixture(t)
-	g := f.newGateway(t, "test-runner-gateway", "192.0.2.30")
-	destination := startObservedRunner(t, f, g, &observedRunner{bootID: "first-boot"})
-	checked := make(chan error, 1)
-	g.records.coordination = &failBootIDUpdate{
-		CoordinationV1Interface: g.records.coordination, local: g.connections,
-		sandboxUID: string(f.sandbox.UID), checked: checked,
-	}
-	finished := make(chan error, 1)
-	go func() { finished <- g.observeRunner(t.Context(), destination) }()
-	select {
-	case err := <-checked:
-		if err != nil {
-			t.Fatalf("local connection was unavailable before boot-ID publication: %v", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("boot-ID update was never attempted")
-	}
-	select {
-	case err := <-finished:
-		if status.Code(err) != codes.Internal {
-			t.Fatalf("boot-ID update rejection = %v, want Internal", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("observer did not stop after boot-ID update rejection")
-	}
-	if _, err := g.connections.holder(string(f.sandbox.UID)); status.Code(err) != codes.Unavailable {
-		t.Fatalf("rejected observation left a local connection callable: %v", err)
-	}
-	lease, err := api.Clientset.CoordinationV1().Leases(f.namespace).Get(t.Context(), testSandbox+environmentRuntimeLeaseSuffix, metav1.GetOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if lease.Annotations[environmentRuntimeBootIDAnnotation] != "" {
-		t.Fatalf("rejected observation published readiness: %#v", lease.Annotations)
-	}
-}
-
-func TestSupersededClaimCannotInstallConnectionBeforeBootID(t *testing.T) {
-	f := newSandboxFixture(t)
-	g := f.newGateway(t, "test-runner-gateway", "192.0.2.30")
-	runner := &delayedFirstStateRunner{
-		observedRunner: &observedRunner{bootID: "first-boot"},
-		watchStarted:   make(chan struct{}), release: make(chan struct{}),
-	}
-	destination := startObservedRunner(t, f, g, runner)
-	finished := make(chan error, 1)
-	go func() { finished <- g.observeRunner(t.Context(), destination) }()
-	select {
-	case <-runner.watchStarted:
-	case err := <-finished:
-		t.Fatalf("observer stopped before first watch: %v", err)
-	case <-time.After(5 * time.Second):
-		t.Fatal("observer did not start its first watch")
-	}
-	newEpoch, _, err := g.records.claim(t.Context(), destination.identity, destination.podUID)
-	if err != nil || newEpoch < 2 {
-		t.Fatalf("failed to supersede the original claim: epoch %d, %v", newEpoch, err)
-	}
-	close(runner.release)
-	select {
-	case err := <-finished:
-		if status.Code(err) != codes.Aborted {
-			t.Fatalf("superseded observer = %v, want Aborted", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("superseded observer did not stop")
-	}
-	if _, err := g.connections.holder(string(f.sandbox.UID)); status.Code(err) != codes.Unavailable {
-		t.Fatalf("superseded observer installed a local connection: %v", err)
-	}
-	lease, err := api.Clientset.CoordinationV1().Leases(f.namespace).Get(t.Context(), testSandbox+environmentRuntimeLeaseSuffix, metav1.GetOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if lease.Annotations[environmentRuntimeBootIDAnnotation] != "" || lease.Spec.LeaseTransitions == nil || uint64(*lease.Spec.LeaseTransitions) != newEpoch {
-		t.Fatalf("superseded observer published readiness: %#v", lease)
-	}
-}
-
-func TestLocalConnectionsRejectStaleObserverEpochs(t *testing.T) {
-	uid := "sandbox-uid"
-	identity := &sandboxreader.Identity{Uid: uid}
-	local := newConnections()
-	first := &runnerConnection{identity: identity, epoch: 1, ended: make(chan struct{})}
-	newer := &runnerConnection{identity: identity, epoch: 2, ended: make(chan struct{})}
-	if err := local.accept(first); err != nil {
-		t.Fatal(err)
-	}
-	if err := local.accept(newer); err != nil {
-		t.Fatal(err)
-	}
-	for _, candidate := range []*runnerConnection{
-		{identity: identity, epoch: 1, ended: make(chan struct{})},
-		{identity: identity, epoch: 2, ended: make(chan struct{})},
-	} {
-		if err := local.accept(candidate); status.Code(err) != codes.Aborted {
-			t.Fatalf("accepted an observer at stale or duplicate epoch %d: %v", candidate.epoch, err)
-		}
-	}
-	if current, err := local.holder(uid); err != nil || current != newer {
-		t.Fatalf("stale observer displaced the newer connection: %v, %+v", err, current)
-	}
-	local.replaceLease("", uid, 4)
-	if err := local.accept(&runnerConnection{identity: identity, epoch: 3, ended: make(chan struct{})}); status.Code(err) != codes.Aborted {
-		t.Fatalf("accepted an observer superseded by watched Lease epoch: %v", err)
-	}
-}
-
-func TestUnavailableLocalConnectionDoesNotClaimAnotherReplicaOwnsIt(t *testing.T) {
-	uid := "sandbox-uid"
-	identity := &sandboxreader.Identity{Uid: uid}
-	local := newConnections()
-
-	if _, err := local.holder(uid); status.Code(err) != codes.Unavailable || status.Convert(err).Message() != runnerConnectionUnavailable {
-		t.Fatalf("missing local connection error = %v, want Unavailable %q", err, runnerConnectionUnavailable)
-	}
-
-	connection := &runnerConnection{identity: identity, epoch: 1, ended: make(chan struct{})}
-	if err := local.accept(connection); err != nil {
-		t.Fatal(err)
-	}
-	local.replaceLease("", uid, 2)
-	if _, err := local.holder(uid); status.Code(err) != codes.Unavailable || status.Convert(err).Message() != runnerConnectionUnavailable {
-		t.Fatalf("connection behind watched Lease error = %v, want Unavailable %q", err, runnerConnectionUnavailable)
-	}
+	t.Cleanup(func() { _ = conn.Close() })
+	return environmentruntimepb.NewEnvironmentRuntimeClient(conn)
 }
 
 func testRunnerObserver(t *testing.T, mode peertls.SecurityMode) {
 	t.Helper()
 	f := newSandboxFixture(t)
-	g := f.newGateway(t, "test-runner-gateway", "192.0.2.30", executorAccount)
+	g := f.newGateway(t, executorAccount)
 	g.config.RunnerSecurity = peertls.Security{Mode: mode}
 	runnerSecurity := peertls.Security{Mode: mode}
 	if mode == peertls.MutualTLS {
@@ -411,7 +452,7 @@ func testRunnerObserver(t *testing.T, mode peertls.SecurityMode) {
 	}
 	server := grpc.NewServer(grpc.Creds(creds))
 	runner := &observedRunner{
-		bootID: "test-runner-boot",
+		sandboxUID: string(f.sandbox.UID), incarnationUID: string(f.pod.UID), bootID: "test-runner-boot",
 		facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{
 			Bootstrap:     environmentruntimestatepb.EnvironmentRuntimeFacts_BOOTSTRAP_SUCCEEDED,
 			QuiesceStage:  environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_FLUSHING,
@@ -423,41 +464,8 @@ func testRunnerObserver(t *testing.T, mode peertls.SecurityMode) {
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 	destination.target = listener.Addr().String()
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	var connection *runnerConnection
-	var observedConnection atomic.Pointer[runnerConnection]
-	releaseChecked := atomic.Bool{}
-	g.records.coordination = &inspectReleaseCoordination{CoordinationV1Interface: g.records.coordination, inspect: func() {
-		if ctx.Err() == nil {
-			t.Error("Lease released before old observer watch context was canceled")
-		}
-		if _, err := g.connections.holder(string(f.sandbox.UID)); status.Code(err) != codes.Unavailable {
-			t.Errorf("Lease released while old connection was locally callable: %v", err)
-		}
-		old := observedConnection.Load()
-		if old == nil || old.direct.conn.GetState() != connectivity.Shutdown {
-			t.Error("Lease released before direct Runner connection closed")
-		}
-		releaseChecked.Store(true)
-	}}
-	finished := make(chan error, 1)
-	go func() { finished <- g.observeRunner(ctx, destination) }()
-	deadline := time.NewTimer(5 * time.Second)
-	defer deadline.Stop()
-	poll := time.NewTicker(time.Millisecond)
-	defer poll.Stop()
-	for connection == nil {
-		select {
-		case err := <-finished:
-			t.Fatalf("Runner observer stopped: %v", err)
-		case <-deadline.C:
-			t.Fatal("Runner never became callable")
-		case <-poll.C:
-			connection, _ = g.connections.holder(string(f.sandbox.UID))
-		}
-	}
-	observedConnection.Store(connection)
+	cancel, done, _ := runObserver(t, g, destination)
+	connection := awaitConnection(t, g, string(f.sandbox.UID), "test-runner-boot", done)
 	if _, err := connection.runner.GetStatus(t.Context(), &sessionpb.GetStatusRequest{}); err != nil {
 		t.Fatal(err)
 	}
@@ -476,7 +484,7 @@ func testRunnerObserver(t *testing.T, mode peertls.SecurityMode) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer publicConn.Close()
+	t.Cleanup(func() { _ = publicConn.Close() })
 	execCtx, stopExec := context.WithTimeout(metadata.NewOutgoingContext(t.Context(), metadata.Pairs("authorization", "Bearer "+f.executorToken)), 5*time.Second)
 	defer stopExec()
 	exec, err := executorpb.NewExecutorClient(publicConn).OpenSession(execCtx, &executorpb.OpenSessionRequest{
@@ -517,49 +525,16 @@ func testRunnerObserver(t *testing.T, mode peertls.SecurityMode) {
 		t.Fatalf("existing-session unary call during quiescing = %v, %v", started, err)
 	}
 	stopExec()
-	lease, err := api.Clientset.CoordinationV1().Leases(f.namespace).Get(t.Context(), testSandbox+environmentRuntimeLeaseSuffix, metav1.GetOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !maps.Equal(lease.Annotations, map[string]string{
-		environmentRuntimeBootIDAnnotation: runner.bootID,
-		podUIDAnnotation:                   string(f.pod.UID),
-		lastConnectedPodUIDAnnotation:      string(f.pod.UID),
-	}) {
-		t.Fatalf("Runner connection published unexpected metadata: %v", lease.Annotations)
-	}
-	other := f.newGateway(t, "test-other-gateway", "192.0.2.31")
-	if _, _, err := other.records.claim(t.Context(), destination.identity, destination.podUID); status.Code(err) != codes.Unavailable {
-		t.Fatalf("another live Gateway stole Runner ownership: %v", err)
-	}
 	cancel()
-	select {
-	case <-finished:
-	case <-time.After(time.Second):
-		t.Fatal("Runner observation did not stop")
-	}
-	if !releaseChecked.Load() {
-		t.Fatal("Runner observer stopped without releasing its Lease")
-	}
+	waitObserver(t, done)
 	if _, err := g.connections.holder(string(f.sandbox.UID)); status.Code(err) != codes.Unavailable {
 		t.Fatalf("closed Runner connection remained callable: %v", err)
-	}
-	newEpoch, _, err := other.records.claim(t.Context(), destination.identity, destination.podUID)
-	if err != nil || newEpoch <= connection.epoch {
-		t.Fatalf("stopped Gateway did not hand off the runner Lease immediately: epoch=%d, err=%v", newEpoch, err)
-	}
-	route, err := api.Clientset.DiscoveryV1().EndpointSlices(f.namespace).Get(t.Context(), testSandbox+sandboxapi.ControlServiceSuffix, metav1.GetOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(route.Endpoints) != 1 || len(route.Endpoints[0].Addresses) != 1 || route.Endpoints[0].Addresses[0] != "192.0.2.31" {
-		t.Fatalf("control route did not follow the new holder: %+v", route.Endpoints)
 	}
 }
 
 func TestExecutionConnectionOnlySignalsVerifiedIncarnationChanges(t *testing.T) {
 	f := newSandboxFixture(t)
-	g := f.newGateway(t, "test-runner-gateway", "192.0.2.30", executorAccount)
+	g := f.newGateway(t, executorAccount)
 	server := &executorServer{gateway: g}
 	scope := &executorpb.ExecutionScope{
 		Destination: &identitypb.SandboxDestination{
@@ -567,15 +542,11 @@ func TestExecutionConnectionOnlySignalsVerifiedIncarnationChanges(t *testing.T) 
 		},
 		ExpectedIncarnationUid: "previous-incarnation", SessionId: "sampler-session",
 	}
-	var epoch uint64
 	setConnection := func(podUID string) {
-		epoch++
-		if err := g.connections.accept(&runnerConnection{
+		g.connections.accept(&runnerConnection{
 			identity: &sandboxreader.Identity{Namespace: f.namespace, Name: f.sandbox.Name, Uid: string(f.sandbox.UID)},
-			podUID:   podUID, epoch: epoch, ended: make(chan struct{}),
-		}); err != nil {
-			t.Fatal(err)
-		}
+			podUID:   podUID, ended: make(chan struct{}),
+		})
 	}
 	setConnection("previous-incarnation")
 
@@ -647,6 +618,19 @@ func TestExecutionConnectionOnlySignalsVerifiedIncarnationChanges(t *testing.T) 
 	}
 }
 
+func TestRemovingOldConnectionKeepsItsSuccessor(t *testing.T) {
+	identity := &sandboxreader.Identity{Namespace: "test", Name: "box", Uid: "sandbox-uid"}
+	connections := newConnections()
+	old := &runnerConnection{identity: identity, ended: make(chan struct{})}
+	successor := &runnerConnection{identity: identity, ended: make(chan struct{})}
+	connections.accept(old)
+	connections.accept(successor)
+	connections.remove(old, errSupersededConnection)
+	if current, err := connections.holder(identity.Uid); err != nil || current != successor {
+		t.Fatalf("removing an old observer removed its successor: %v, %+v", err, current)
+	}
+}
+
 func TestExecutionConnectionReportsVerifiedEnvironmentFailures(t *testing.T) {
 	for _, test := range []struct {
 		name       string
@@ -702,7 +686,7 @@ func TestExecutionConnectionReportsVerifiedEnvironmentFailures(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			g := f.newGateway(t, "test-runner-gateway", "192.0.2.30", executorAccount)
+			g := f.newGateway(t, executorAccount)
 			server := &executorServer{gateway: g}
 			scope := &executorpb.ExecutionScope{
 				Destination: &identitypb.SandboxDestination{
@@ -737,7 +721,7 @@ type echoForwardExecutor struct {
 func (*echoForwardExecutor) OpenSession(_ *executorpb.OpenSessionRequest, stream grpc.ServerStreamingServer[executorpb.OpenSessionResponse]) error {
 	md, _ := metadata.FromIncomingContext(stream.Context())
 	if len(md.Get("agentplane-environment-runtime-boot-id")) != 1 || len(md.Get("agentplane-sandbox-uid")) != 1 ||
-		len(md.Get("agentplane-incarnation-uid")) != 1 || len(md.Get("agentplane-connection-epoch")) != 1 {
+		len(md.Get("agentplane-incarnation-uid")) != 1 || len(md.Get("agentplane-connection-epoch")) != 0 {
 		return status.Error(codes.PermissionDenied, "missing executor fence")
 	}
 	if err := stream.Send(&executorpb.OpenSessionResponse{
@@ -754,7 +738,7 @@ func (*echoForwardExecutor) OpenSession(_ *executorpb.OpenSessionRequest, stream
 func (*echoForwardExecutor) StartProcess(ctx context.Context, request *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
 	if len(md.Get("agentplane-environment-runtime-boot-id")) != 1 || len(md.Get("agentplane-sandbox-uid")) != 1 ||
-		len(md.Get("agentplane-incarnation-uid")) != 1 || len(md.Get("agentplane-connection-epoch")) != 1 {
+		len(md.Get("agentplane-incarnation-uid")) != 1 || len(md.Get("agentplane-connection-epoch")) != 0 {
 		return nil, status.Error(codes.PermissionDenied, "missing executor fence")
 	}
 	return &executorpb.StartProcessResponse{
@@ -765,7 +749,7 @@ func (*echoForwardExecutor) StartProcess(ctx context.Context, request *executorp
 
 func TestRunnerCertificateCannotFollowReplacementCredentials(t *testing.T) {
 	f := newSandboxFixture(t)
-	g := f.newGateway(t, "test-gateway", "192.0.2.31")
+	g := f.newGateway(t)
 	destination, err := g.runnerDestination(t.Context(), f.sandbox)
 	if err != nil {
 		t.Fatal(err)
@@ -794,16 +778,22 @@ func TestRunnerCertificateCannotFollowReplacementCredentials(t *testing.T) {
 // reconnectingRunner replaces its boot after the first observation ends without changing Pod identity.
 type reconnectingRunner struct {
 	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
-	observations atomic.Int32
-	disconnect   chan struct{}
+	sandboxUID     string
+	incarnationUID string
+	observations   atomic.Int32
+	disconnect     chan struct{}
 }
 
 func (r *reconnectingRunner) WatchState(request *environmentruntimepb.WatchStateRequest, stream grpc.ServerStreamingServer[environmentruntimepb.WatchStateResponse]) error {
+	if request.GetSandboxUid() != r.sandboxUID || request.GetIncarnationUid() != r.incarnationUID ||
+		request.GetConnectionEpoch() != 0 || request.GetObserveOnly() {
+		return status.Error(codes.FailedPrecondition, "invalid Runtime observation fence")
+	}
 	observation := r.observations.Add(1)
 	if err := stream.Send(&environmentruntimepb.WatchStateResponse{
 		SandboxUid: request.SandboxUid, IncarnationUid: request.IncarnationUid,
-		ConnectionEpoch: request.ConnectionEpoch, EnvironmentRuntimeBootId: fmt.Sprintf("boot-%d", observation),
-		Facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{},
+		EnvironmentRuntimeBootId: fmt.Sprintf("boot-%d", observation),
+		Facts:                    &environmentruntimestatepb.EnvironmentRuntimeFacts{},
 	}); err != nil {
 		return err
 	}
@@ -821,8 +811,15 @@ func (r *reconnectingRunner) WatchState(request *environmentruntimepb.WatchState
 
 func (r *reconnectingRunner) GetStatus(ctx context.Context, _ *sessionpb.GetStatusRequest) (*sessionpb.EnvironmentRuntimeStatus, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
-	if got := md.Get("agentplane-environment-runtime-boot-id"); len(got) != 1 || got[0] != fmt.Sprintf("boot-%d", r.observations.Load()) {
-		return nil, status.Error(codes.Unavailable, "stale runner boot")
+	if got := md.Get("agentplane-sandbox-uid"); len(got) != 1 || got[0] != r.sandboxUID {
+		return nil, status.Error(codes.FailedPrecondition, "stale Runtime Sandbox")
+	}
+	if got := md.Get("agentplane-incarnation-uid"); len(got) != 1 || got[0] != r.incarnationUID {
+		return nil, status.Error(codes.FailedPrecondition, "stale Runtime incarnation")
+	}
+	if got := md.Get("agentplane-environment-runtime-boot-id"); len(got) != 1 || got[0] != fmt.Sprintf("boot-%d", r.observations.Load()) ||
+		len(md.Get("agentplane-connection-epoch")) != 0 {
+		return nil, status.Error(codes.Unavailable, "stale Runtime boot or epoch metadata")
 	}
 	return &sessionpb.EnvironmentRuntimeStatus{}, nil
 }
@@ -834,7 +831,7 @@ func TestRunnerObserverReconnectsBeforeNextDiscoveryAndFencesOldBoot(t *testing.
 	if _, err := api.Clientset.CoreV1().Pods(f.namespace).UpdateStatus(t.Context(), pod, metav1.UpdateOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	g := f.newGateway(t, "test-reconnecting-gateway", "192.0.2.30")
+	g := f.newGateway(t)
 	g.config.RunnerSecurity = peertls.Security{Mode: peertls.Insecure}
 	// The Sandbox's only event: transport loss must trigger its own retry.
 	g.RunnerDiscoveryHandler().OnAdd(f.sandbox, true)
@@ -843,7 +840,9 @@ func TestRunnerObserverReconnectsBeforeNextDiscoveryAndFencesOldBoot(t *testing.
 		t.Fatal(err)
 	}
 	server := grpc.NewServer()
-	runner := &reconnectingRunner{disconnect: make(chan struct{})}
+	runner := &reconnectingRunner{
+		sandboxUID: string(f.sandbox.UID), incarnationUID: string(f.pod.UID), disconnect: make(chan struct{}),
+	}
 	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, runner)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
@@ -874,8 +873,8 @@ func TestRunnerObserverReconnectsBeforeNextDiscoveryAndFencesOldBoot(t *testing.
 	first := awaitBoot("boot-1")
 	close(runner.disconnect)
 	second := awaitBoot("boot-2")
-	if second.epoch <= first.epoch || second.podUID != first.podUID {
-		t.Fatalf("reconnect changed incarnation or failed to advance epoch: first=%+v second=%+v", first, second)
+	if second.podUID != first.podUID {
+		t.Fatalf("reconnect changed incarnation: first=%+v second=%+v", first, second)
 	}
 	g.connections.remove(first, errSupersededConnection)
 	if _, err := second.runner.GetStatus(ctx, &sessionpb.GetStatusRequest{}); err != nil {
@@ -889,7 +888,7 @@ func TestRunnerObserverReconnectsBeforeNextDiscoveryAndFencesOldBoot(t *testing.
 
 func TestRunnerObserverKeepsUnchangedDestinationOnSandboxUpdate(t *testing.T) {
 	f := newSandboxFixture(t)
-	g := f.newGateway(t, "test-stable-gateway", "192.0.2.30")
+	g := f.newGateway(t)
 	destination, err := g.runnerDestination(t.Context(), f.sandbox)
 	if err != nil {
 		t.Fatal(err)
@@ -915,6 +914,62 @@ func TestRunnerObserverKeepsUnchangedDestinationOnSandboxUpdate(t *testing.T) {
 	}
 	if cancelled || active[f.sandbox.Name].done != oldDone {
 		t.Fatal("an unchanged destination replaced the live runner observer")
+	}
+}
+
+func TestReconcileWaitsForCanceledObserverBeforeStartingSuccessor(t *testing.T) {
+	f := newSandboxFixture(t)
+	g := f.newGateway(t)
+	oldDestination, err := g.runnerDestination(t.Context(), f.sandbox)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updatedPod := f.pod.DeepCopy()
+	updatedPod.Status.PodIP = "192.0.2.21"
+	if _, err := api.Clientset.CoreV1().Pods(f.namespace).UpdateStatus(t.Context(), updatedPod, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	cancelRequested := make(chan struct{})
+	oldDone := make(chan struct{})
+	active := map[string]runnerObserver{
+		f.sandbox.Name: {
+			destination: oldDestination,
+			cancel:      func() { close(cancelRequested) },
+			done:        oldDone,
+		},
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	var workers sync.WaitGroup
+	defer func() {
+		cancel()
+		workers.Wait()
+	}()
+	reconciled := make(chan error, 1)
+	go func() { reconciled <- g.reconcileObserver(ctx, f.sandbox.Name, active, &workers) }()
+	select {
+	case <-cancelRequested:
+	case <-time.After(time.Second):
+		t.Fatal("reconcile did not cancel the old observer")
+	}
+	select {
+	case err := <-reconciled:
+		t.Fatalf("reconcile started its successor before the old observer stopped: %v", err)
+	default:
+	}
+	if active[f.sandbox.Name].done != oldDone {
+		t.Fatal("reconcile replaced the active observer before it stopped")
+	}
+	close(oldDone)
+	select {
+	case err := <-reconciled:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("reconcile did not start a successor after the old observer stopped")
+	}
+	if active[f.sandbox.Name].destination.target == oldDestination.target {
+		t.Fatal("successor kept the old Runner destination")
 	}
 }
 
@@ -948,7 +1003,7 @@ func (r *heartbeatingRunner) WatchState(request *environmentruntimepb.WatchState
 	defer ticker.Stop()
 	for {
 		if err := stream.Send(&environmentruntimepb.WatchStateResponse{
-			SandboxUid: request.SandboxUid, IncarnationUid: request.IncarnationUid, ConnectionEpoch: request.ConnectionEpoch,
+			SandboxUid: request.SandboxUid, IncarnationUid: request.IncarnationUid,
 			EnvironmentRuntimeBootId: "test-heartbeating-boot", Facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{},
 		}); err != nil {
 			return err
@@ -996,7 +1051,7 @@ func TestRunnerHeartbeatsReadNoSandboxOrPodFromTheAPIServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	health := watchhealth.New()
-	g := f.newGatewayReading(t, inventory, health, "test-cached-gateway", "192.0.2.32")
+	g := f.newGatewayReading(t, inventory, health)
 	g.config.RunnerSecurity = peertls.Security{Mode: peertls.Insecure}
 	for _, watched := range []client.Object{&sandboxapi.Sandbox{}, &corev1.Pod{}} {
 		informer, err := inventory.GetInformer(t.Context(), watched)

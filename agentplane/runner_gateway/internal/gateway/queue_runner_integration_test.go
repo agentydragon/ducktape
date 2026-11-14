@@ -21,7 +21,9 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -79,13 +81,16 @@ type queueRunner struct {
 }
 
 func (r *queueRunner) WatchState(request *environmentruntimepb.WatchStateRequest, stream grpc.ServerStreamingServer[environmentruntimepb.WatchStateResponse]) error {
+	if request.GetConnectionEpoch() != 0 || request.GetObserveOnly() {
+		return status.Error(codes.FailedPrecondition, "Gateway request must use an independent zero-epoch observation")
+	}
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
 		if err := stream.Send(&environmentruntimepb.WatchStateResponse{
 			SandboxUid: request.SandboxUid, IncarnationUid: request.IncarnationUid,
-			EnvironmentRuntimeBootId: r.bootID, ConnectionEpoch: request.ConnectionEpoch,
-			Facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{},
+			EnvironmentRuntimeBootId: r.bootID,
+			Facts:                    &environmentruntimestatepb.EnvironmentRuntimeFacts{},
 		}); err != nil {
 			return err
 		}
@@ -146,7 +151,7 @@ func TestQueuedDeliveryThroughGatewayRunnerRPC(t *testing.T) {
 		t.Fatalf("queue receipt: %+v %v", queued, err)
 	}
 
-	gateway := f.newGateway(t, "test-runner-gateway", "192.0.2.10")
+	gateway := f.newGateway(t)
 	runnerDestination, err := gateway.runnerDestination(ctx, f.sandbox)
 	if err != nil {
 		t.Fatal(err)
@@ -241,8 +246,8 @@ func TestQueuedDeliveryThroughGatewayRunnerRPC(t *testing.T) {
 		if got := received.metadata.Get("agentplane-environment-runtime-boot-id"); len(got) != 1 || got[0] != runner.bootID {
 			t.Fatalf("Gateway omitted the Runner boot fence: %v", received.metadata)
 		}
-		if got := received.metadata.Get("agentplane-connection-epoch"); len(got) != 1 || got[0] == "" {
-			t.Fatalf("Gateway omitted the Lease epoch fence: %v", received.metadata)
+		if got := received.metadata.Get("agentplane-connection-epoch"); len(got) != 0 {
+			t.Fatalf("Gateway sent a removed connection epoch: %v", received.metadata)
 		}
 	case <-ctx.Done():
 		t.Fatal("queued command did not reach Runner")

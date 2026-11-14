@@ -333,9 +333,6 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 		return errors.New("Sandbox inventory did not synchronize")
 	}
 	inventoryHealth.MarkSynced()
-	if err := g.WatchConnectionLeases(ctx, kube); err != nil {
-		return err
-	}
 	hub := dispatcher.NewWatchHub(c.DispatcherDatabaseURL)
 	go func() { reportUnexpected(ctx, failed, "PostgreSQL listener", hub.Run(ctx)) }()
 	if err := waitForListener(ctx, hub, failed); err != nil {

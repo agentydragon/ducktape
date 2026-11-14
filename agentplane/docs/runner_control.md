@@ -34,22 +34,19 @@ grace. Reconnects start a full idle timer, even when the Runtime reports the sam
 Quiesce attempts remain persisted, and an unobserved published incarnation must still seal before
 stop or deletion. Bootstrap failure remains terminal for its incarnation.
 
-The Gateway's connection Lease and `<sandbox>-control` EndpointSlice remain in the current routing
-path. During the receiver compatibility rollout, a nonzero-epoch Gateway watch continues to support
-that legacy connection owner, but it can observe only the incarnation already bound by the
-Controller. A Gateway watch with no epoch or epoch zero may observe that same binding without
-claiming ownership. Quiesce and suspend-admission RPCs continue through the Gateway proxy.
+Every Gateway replica independently watches the current Controller-bound Runtime with no epoch,
+validates the workload and boot ID, and can forward calls. Gateway watches cannot bind or advance
+the incarnation. Observation loss removes that replica's callable connection and starts a fresh
+attempt after one second; it does not revoke another replica's connection. Replacement observers
+wait for their predecessor to exit before publishing their local connection.
 
-The legacy Gateway owner claims the runner Lease, then calls `Runner.WatchState` with the Sandbox
-UID, incarnation Pod UID and claimed epoch. Runtime accepts this only for the UID already bound by
-the Controller. The Gateway records the boot ID on its connection Lease after receiving a valid
-response and exposes the existing `<sandbox>-control` proxy route. A claim without an observed boot
-ID is not a connected runner. Other replicas wait for the owner's Lease to expire before taking
-over: one Lease duration after they first saw its latest renewal, on their own clock, as client-go
-`leaderelection` measures it, so the owner's clock skew neither shortens nor extends the wait. The
-owning Gateway retries a lost observation after one second, without waiting for a Sandbox or Pod
-event. Each attempt claims a fresh Lease epoch. Unchanged internal notifications do not send
-snapshots; periodic heartbeats renew the connection Lease.
+Existing callers still use `<sandbox>-control`. The connection Lease and EndpointSlice temporarily
+select its destination, independently of Runtime call authority. Each replica attempts route
+publication after becoming callable; a live competing route claim does not block its own calls.
+Route metadata renews on Runtime snapshots and heartbeats. A contender takes over after observing
+an unchanged renewal for one Lease duration on its own clock. Orderly shutdown closes local traffic
+and releases its exact claim. These routing records carry no lifecycle facts. Quiesce and
+suspend-admission RPCs continue through the Gateway proxy.
 
 Unary Runner calls and typed `Executor` calls carry the Sandbox UID, incarnation UID and Runtime
 boot ID. Calls with an absent or zero `agentplane-connection-epoch` authorize against the
@@ -73,8 +70,9 @@ runner journal; a repeated ID with a different operation or payload fails `ALREA
 
 ## Runner proxy
 
-The gateway replica holding a Sandbox's connection also serves `agentplane.env.runtime.control.EnvironmentRuntime`
-on its public gRPC port, which the Sandbox's `<sandbox>-control` Service reaches. The proxy forwards
+Every Gateway replica serves `agentplane.env.runtime.control.EnvironmentRuntime`
+on its public gRPC port. The Sandbox's `<sandbox>-control` Service temporarily selects one replica
+for existing callers. The proxy forwards
 unary calls over the runner gRPC connection and returns the runner's status and response.
 
 - **Sandbox.** The caller names it in the `x-agentplane-sandbox` header, the same name its target
@@ -223,49 +221,25 @@ other watch events or a controller restart from bypassing that deadline. Only af
 flushed may the Sandbox's volume go. A runner that cannot report leaves the Sandbox in sealing for
 the operator.
 
-## Connection records in Kubernetes
+## Legacy routing records in Kubernetes
 
-The Gateway owns a Lease `<sandbox>-environment-runtime` and EndpointSlice `<sandbox>-control` per Sandbox.
-The Sandbox Controller owns the headless, selector-less control Service. All records are owned by
-the exact Sandbox API, kind, name and UID, with no other owners, and must not be deleting. Foreign
-records, including those of a deleted Sandbox whose name was reused, block connection acceptance.
+The Gateway temporarily publishes `<sandbox>-environment-runtime` Leases and `<sandbox>-control`
+EndpointSlices for existing callers; the Sandbox Controller owns the selector-less control Service.
+These records select a route only. Every Gateway replica independently observes and calls Runtime,
+regardless of who publishes the route. Lifecycle facts come only from the Controller's direct watch.
 
-The Lease's `holderIdentity` is the Gateway Pod name, `leaseTransitions` the monotonically increasing
-epoch, `renewTime` the last authenticated state snapshot and `leaseDurationSeconds` 30. Its
-`agentplane.allegedly.works/pod-uid` and
-`agentplane.allegedly.works/environment-runtime-boot-id` annotations bind the workload incarnation
-and Environment Runtime process. Lifecycle facts travel only over the Sandbox Controller's direct observation stream.
-
-Claiming the Lease uses resource-version conflict retries and refuses takeover of another live
-holder. The Gateway assigns a Sandbox-lifetime route epoch above both the retained EndpointSlice
-epoch and the current Lease transition count. This keeps the route epoch increasing when a Lease is
-deleted and recreated, whose Kubernetes UID changes and transition count may restart. The holder
-writes an EndpointSlice naming its own Pod IP and proxy port, annotated with
-`agentplane.allegedly.works/connection-epoch` and the exact Lease UID in
-`agentplane.allegedly.works/connection-lease-uid`; a write cannot replace a newer epoch. Every
-EndpointSlice conflict retry re-reads the Lease and requires the exact Sandbox owner UID, Lease UID,
-holder name and transition count that authorized the publication. Missing epoch annotations are a
-legacy zero baseline; malformed present epochs and exhausted counters fail closed. It records the
-boot ID only after a valid `WatchState` response. Renewals that find another holder or a newer
-epoch fail the observation. A new claim clears the previous boot ID until the runner authenticates again.
-
-Lease and EndpointSlice are separate Kubernetes objects, so their read and write cannot be atomic.
-An old publication that validated immediately before a Lease replacement can briefly land; a
-successful publication for the new Lease uses a higher route epoch and becomes the advertised
-route. If publishing the slice fails after claiming the Lease, the runner observer retries the claim
-and publication through its existing retry loop. This provides convergence under successful
-reconciliation, without a wall-clock bound; the stale route can remain advertised while Kubernetes
-rejects the writes.
-
-Each replica watches Leases and rejects proxy calls superseded by a newer epoch. No Kubernetes read
-is needed for that epoch check on each RPC. EndpointSlices route callers; they do not prove
-ownership. Stale DNS can reach a former holder, which refuses with `UNAVAILABLE`; the caller
-resolves the control Service again.
+Route updates check the exact Sandbox owner, Lease UID, holder and monotonically increasing route
+epoch, with resource-version conflict retries. Foreign records prevent publication but do not block
+an authenticated current Runtime connection. The route epoch is never sent to Runtime. A publication
+error is logged and retried on subsequent snapshots/heartbeats; a superseded claim is reacquired when
+eligible. Existing callers can lose reachability while Kubernetes rejects route writes. A stale route
+may reach any still-current replica, which can serve independently; a stopped observer refuses with
+`UNAVAILABLE`. Closing one observer does not prove admitted Runtime effects stopped.
 
 ## Lifecycle operations
 
 The Runner Gateway makes Session calls over the runner gRPC connection. App and Notification callers
-reach the holder through the control Service (`control_target`, a required setting).
+reach the temporary selected route through the control Service (`control_target`, a required setting).
 
 - `ListSessions` reads retained Session inventory.
 - `GetStatus` reads a coherent live snapshot of process incarnations, Session assignments and
@@ -283,8 +257,8 @@ reach the holder through the control Service (`control_target`, a required setti
   It waits for preceding admissions; subsequent new-work calls fail `ABORTED`. Final ingress acknowledgement
   is required for `QUIESCED`.
 
-Only the replica holding the runner's observation Lease calls it. Callers reach that replica through the
-Sandbox's control Service. Holding that Lease does not make the replica the Sandbox's Dispatcher owner. Transport reconnect never replays calls; durable command retry uses the
+Any replica with a current independent observation may call it. Existing callers reach a selected
+replica through the temporary control Service. Runtime connectivity grants no Dispatcher ownership. Transport reconnect never replays calls; durable command retry uses the
 original command ID. Process identities in diagnostics are per-spawn UUIDs, not command addresses.
 Stored native conversations may be dormant while their store's app server is running. A Session
 becomes ready after its native conversation preparation/reconciliation, without needing a turn.
@@ -305,7 +279,7 @@ Public Gateway callers still use their existing workload bearers and per-method 
 
 Standalone behavior tests can explicitly select insecure transport at both endpoints. It supplies
 plaintext without peer authentication; it never fabricates a certificate identity. Live Sandbox/Pod/VM
-ownership and incarnation validation, boot-ID/epoch fencing and command admission remain enforced.
+ownership and incarnation validation, Sandbox/incarnation/boot-ID fencing and command admission remain enforced.
 Every Sandbox incarnation gets a credential; k3s keeps real cert-manager/trust-manager and
 mTLS in every stack. Bad mTLS credentials never trigger an insecure retry.
 

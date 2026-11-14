@@ -42,8 +42,8 @@ func bearing(t *testing.T, token string) context.Context {
 
 func TestEveryRPCAdmitsOnlyItsCallers(t *testing.T) {
 	f := newSandboxFixture(t)
-	withController := f.newGateway(t, "test-runner-gateway", "192.0.2.30", executorAccount)
-	withoutController := f.newGateway(t, "test-runner-gateway", "192.0.2.30", executorAccount)
+	withController := f.newGateway(t, executorAccount)
+	withoutController := f.newGateway(t, executorAccount)
 	withoutController.config.SandboxControllerAccount = nil
 	tokens := map[string]string{
 		"dispatcher": f.dispatcherToken, "unbound dispatcher": f.unboundDispatcherToken,
@@ -136,7 +136,7 @@ func TestUnauthorizedExecutorCallerCannotReadEnvironmentFailureState(t *testing.
 	if err := f.objects.Status().Update(t.Context(), sandbox); err != nil {
 		t.Fatal(err)
 	}
-	g := f.newGateway(t, "test-runner-gateway", "192.0.2.30", executorAccount)
+	g := f.newGateway(t, executorAccount)
 	connection := grpcmethods.Serve(t, gatewayMethods(t, g), func(server *grpc.Server) {
 		executorpb.RegisterExecutorServer(server, &executorServer{gateway: g})
 	})
@@ -173,7 +173,7 @@ func TestCheckpointedLauncherWithIncarnationRoutesAsSuspended(t *testing.T) {
 
 func TestRuntimeProxyServiceRolesStayMethodScoped(t *testing.T) {
 	f := newSandboxFixture(t)
-	g := f.newGateway(t, "test-service-proxy", "192.0.2.44", executorAccount)
+	g := f.newGateway(t, executorAccount)
 	g.config.RuntimeReaders = []string{peertls.AppURI}
 	g.config.SessionServices = []string{peertls.SessionsURI}
 	g.config.ControllerServices = []string{peertls.SandboxControllerURI}

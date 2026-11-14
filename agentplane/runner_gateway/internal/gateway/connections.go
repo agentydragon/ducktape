@@ -9,17 +9,13 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const (
-	runnerLeaseHeldByAnotherGateway = "another Gateway replica holds this Sandbox's runner Lease"
-	runnerConnectionUnavailable     = "runner connection is not available on this Gateway replica"
-)
+const runnerConnectionUnavailable = "runner connection is not available on this Gateway replica"
 
 var errSupersededConnection = status.Error(codes.Aborted, "superseded by a newer connection")
 
 type runnerConnection struct {
 	identity    *sandboxreader.Identity
 	podUID      string
-	epoch       uint64
 	bootID      string
 	runner      environmentruntimepb.EnvironmentRuntimeClient
 	direct      *fencedRunnerConn
@@ -54,31 +50,24 @@ func (c *runnerConnection) error() error {
 	return status.Error(codes.Unavailable, "runner observation ended")
 }
 
-// connections is the local replica's stream table and watch-derived view of Lease epochs.
+// connections is this replica's table of authenticated Runtime observations.
 type connections struct {
-	mu          sync.RWMutex
-	local       map[string]*runnerConnection
-	leaseEpochs map[string]uint64
+	mu    sync.RWMutex
+	local map[string]*runnerConnection
 }
 
 func newConnections() *connections {
-	return &connections{local: make(map[string]*runnerConnection), leaseEpochs: make(map[string]uint64)}
+	return &connections{local: make(map[string]*runnerConnection)}
 }
 
-func (c *connections) accept(connection *runnerConnection) error {
+func (c *connections) accept(connection *runnerConnection) {
 	c.mu.Lock()
-	if current := c.local[connection.identity.Uid]; current != nil && current.epoch >= connection.epoch ||
-		c.leaseEpochs[connection.identity.Uid] > connection.epoch {
-		c.mu.Unlock()
-		return errSupersededConnection
-	}
 	previous := c.local[connection.identity.Uid]
 	c.local[connection.identity.Uid] = connection
 	c.mu.Unlock()
 	if previous != nil {
 		previous.end(errSupersededConnection)
 	}
-	return nil
 }
 
 func (c *connections) remove(connection *runnerConnection, err error) {
@@ -97,9 +86,6 @@ func (c *connections) holder(sandboxUID string) (*runnerConnection, error) {
 	if connection == nil {
 		return nil, status.Error(codes.Unavailable, runnerConnectionUnavailable)
 	}
-	if c.leaseEpochs[sandboxUID] > connection.epoch {
-		return nil, status.Error(codes.Unavailable, runnerConnectionUnavailable)
-	}
 	select {
 	case <-connection.ended:
 		if err := connection.error(); err != nil {
@@ -108,22 +94,5 @@ func (c *connections) holder(sandboxUID string) (*runnerConnection, error) {
 		return nil, status.Error(codes.Unavailable, "runner observation ended")
 	default:
 		return connection, nil
-	}
-}
-
-func (c *connections) forgetLease(sandboxUID string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	delete(c.leaseEpochs, sandboxUID)
-}
-
-func (c *connections) replaceLease(previousUID, currentUID string, epoch uint64) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if previousUID != "" && previousUID != currentUID {
-		delete(c.leaseEpochs, previousUID)
-	}
-	if currentUID != "" {
-		c.leaseEpochs[currentUID] = epoch
 	}
 }

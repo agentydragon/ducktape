@@ -21,7 +21,7 @@ import (
 
 func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	f := newSandboxFixture(t)
-	gateway := f.newGateway(t, "test-runner-gateway", "192.0.2.30")
+	gateway := f.newGateway(t)
 	destination, err := gateway.runnerDestination(t.Context(), f.sandbox)
 	if err != nil {
 		t.Fatal(err)
@@ -35,7 +35,9 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	runnerServer := grpc.NewServer(grpc.Creds(credentials))
-	runner := &observedRunner{bootID: "proxy-test-boot"}
+	runner := &observedRunner{
+		sandboxUID: string(f.sandbox.UID), incarnationUID: string(f.pod.UID), bootID: "proxy-test-boot",
+	}
 	environmentruntimepb.RegisterEnvironmentRuntimeServer(runnerServer, runner)
 	go func() { _ = runnerServer.Serve(runnerListener) }()
 	t.Cleanup(runnerServer.Stop)

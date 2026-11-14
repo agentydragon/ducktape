@@ -2432,9 +2432,9 @@ service caller contract. The separate destination-authority decision
 ```mermaid
 flowchart TD
     RUNNER_OBSERVATION_READINESS_RACE[Candidate: investigate runner readiness and routing race]
-    RUNNER_GATEWAY_CONNECTION_LEASE_REMOVAL[Blocked: remove Gateway connection ownership after receiver image pin and live Runtime verification]
-    RUNNER_CONNECTION_LEASE_CLEANUP[Blocked: remove final connection-Lease RBAC and epoch protocol after Gateway image pin]
-    RUNNER_GATEWAY_CONNECTION_LEASE_REMOVAL --> RUNNER_CONNECTION_LEASE_CLEANUP
+    RUNNER_GATEWAY_CUTOVER_ROLLOUT[Held: Runtime inventory then Gateway receiver pin then stable-Service caller rollout]
+    RUNNER_CONNECTION_LEASE_CLEANUP[Blocked: remove compatibility RBAC and protocol after route-removal image pin]
+    RUNNER_GATEWAY_CUTOVER_ROLLOUT --> RUNNER_CONNECTION_LEASE_CLEANUP
 ```
 
 ### `RUNNER_OBSERVATION_READINESS_RACE` — resolve intermittent runner readiness diagnostics
@@ -2462,26 +2462,31 @@ contract and its follow-on implementation below.
 **Exit:** either capture evidence that distinguishes the remaining failure boundary if the failure
 recurs, or close the incident follow-up if ordinary use shows no recurrence. Preserve UID/incarnation/boot fencing and stale-call denial.
 
-### `RUNNER_GATEWAY_CONNECTION_LEASE_REMOVAL` — remove Gateway connection ownership
+### `RUNNER_GATEWAY_CUTOVER_ROLLOUT` — operational holds for the prepared cutover
 
-**Blocked until this receiver change lands, its Runtime image is pinned, and live Sandbox Runtimes
-are verified compatible.** Pinning the image does not replace existing Runtime processes. Inventory
-live Sandboxes and cycle older ones through suspend/resume before the zero-epoch Gateway cutover; an
-older Runtime cannot accept that watch mode until restarted. The later Gateway must not revive the
-Lease protocol as a fallback for older processes. Then route callers through the stable
-`runner-gateway` Service; remove Gateway connection-Lease claims, call-epoch checks and the
-per-Sandbox `<sandbox>-control` EndpointSlice. Preserve per-method authorization and the
-Controller-bound Runtime identity; do not replay mutations with uncertain outcomes. Keep old Lease
-objects and permissions through the Gateway image rollback window. Exit: image rollout and
-deterministic multi-replica coverage of failover, stale callers, Runtime restart, same-name
-replacement and uncertain outcomes.
+**In flight, 2026-11-14: independent Gateway observers, stable-Service caller routing, then route
+publication removal are prepared as separate PRs in this batch.** The #16345 Runtime receiver is
+pinned as runner-disk `devel-20261114063459-d8258d6`; live Runtime provenance still needs operator
+verification before zero-epoch Gateway deployment. The [rollout plan](runtime_state_observation.md#migration-and-rollback)
+lists backend-specific inventory evidence. Firecracker suspend/resume preserves its Runtime
+process and cannot upgrade an older receiver; a retained old checkpoint keeps this gate closed
+until the operator selects a state-preserving path.
+
+Pin the independent-observer Gateway image before changing caller target settings. Keep legacy
+Lease/epoch/EndpointSlice publication for old callers until every caller process uses the stable
+Service; then deploy route-publication removal. No Runtime-dials-Gateway or legacy-wire fallback
+is added. Preserve Sandbox/incarnation/boot fencing, per-method authorization, retained work and
+History, and uncertain outcomes without replay. Exit: all three rollout gates verified, required
+bootstrap/idle/quiesce k3s suites and deterministic two-replica/stale-call checks pass. These are
+operational holds for this batch, not additional implementation tasks.
 
 ### `RUNNER_CONNECTION_LEASE_CLEANUP` — remove final connection-Lease compatibility
 
-**Blocked on `RUNNER_GATEWAY_CONNECTION_LEASE_REMOVAL` and the new Gateway image pin.** Remove the
-remaining connection-Lease RBAC and epoch-protocol fields only after no deployed Gateway references
-them. The Dispatcher delivery Lease and its authorization remain. Exit: obsolete connection-Lease
-permissions and protocol fields are gone.
+**Blocked on `RUNNER_GATEWAY_CUTOVER_ROLLOUT` and the route-removal Gateway/Controller image pins.**
+In a later PR, remove obsolete Lease/EndpointSlice/control-Service permissions and legacy epoch
+fields/tolerance after no deployed image or supported rollback needs them. Keep Controller leader
+election and Dispatcher delivery Lease permissions. Exit: obsolete permissions and Runtime epoch
+compatibility are gone.
 
 ## Scope and retirement of stale gates
 
