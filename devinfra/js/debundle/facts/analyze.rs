@@ -868,7 +868,7 @@ fn assemble_statement_facts(
         havoc,
         trusted_summary_discharged,
         heap_contents: super::HeapContentCells::default(),
-        heap_one_shot_allocation: None,
+        heap_one_shot_allocations: BTreeSet::new(),
         deferred_heap_allocations: BTreeSet::new(),
         heap_native_integrity_uses: Vec::new(),
         // Conservative until `settle_statement_purity` records the verdict.

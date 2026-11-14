@@ -328,7 +328,7 @@ struct SavedStatementFacts<'a> {
     havoc: Cow<'a, BTreeSet<DataflowOpacityCause>>,
     trusted_summary_discharged: Cow<'a, BTreeSet<DataflowOpacityCause>>,
     heap_contents: SavedHeapContentCells,
-    heap_one_shot_allocation: Option<SavedEffectCell>,
+    heap_one_shot_allocations: BTreeSet<SavedEffectCell>,
     deferred_heap_allocations: BTreeSet<SavedEffectCell>,
     heap_native_integrity_uses: Cow<'a, [crate::reports::schema::NativeIntegrityUse]>,
     purity: SavedPurity,
@@ -392,11 +392,11 @@ impl<'a> SavedStatementFacts<'a> {
             havoc: Cow::Borrowed(&fact.havoc),
             trusted_summary_discharged: Cow::Borrowed(&fact.trusted_summary_discharged),
             heap_contents: SavedHeapContentCells::snapshot(&fact.heap_contents, ordinals)?,
-            heap_one_shot_allocation: fact
-                .heap_one_shot_allocation
-                .as_ref()
+            heap_one_shot_allocations: fact
+                .heap_one_shot_allocations
+                .iter()
                 .map(|cell| SavedEffectCell::snapshot(cell, ordinals))
-                .transpose()?,
+                .collect::<Result<_>>()?,
             deferred_heap_allocations: fact
                 .deferred_heap_allocations
                 .iter()
@@ -461,10 +461,11 @@ impl<'a> SavedStatementFacts<'a> {
             havoc: self.havoc.into_owned(),
             trusted_summary_discharged: self.trusted_summary_discharged.into_owned(),
             heap_contents: self.heap_contents.restore(ordinals)?,
-            heap_one_shot_allocation: self
-                .heap_one_shot_allocation
+            heap_one_shot_allocations: self
+                .heap_one_shot_allocations
+                .into_iter()
                 .map(|cell| cell.restore(ordinals))
-                .transpose()?,
+                .collect::<Result<_>>()?,
             deferred_heap_allocations: self
                 .deferred_heap_allocations
                 .into_iter()

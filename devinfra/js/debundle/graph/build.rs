@@ -1157,7 +1157,11 @@ fn emit_heap_content_order(
                 .initializer_external_effects
                 .as_ref()
                 .is_some_and(|effect_use| {
-                    effect_use.effects == spec::InitializerExternalEffects::Isolated
+                    matches!(
+                        effect_use.effects,
+                        spec::InitializerExternalEffects::Isolated
+                            | spec::InitializerExternalEffects::PrivateMetadata
+                    )
                 })
         {
             // A validated author promise covers only this initializer's
@@ -1267,7 +1271,7 @@ impl OneShotEagerAllocations {
         let mut eager_counts = BTreeMap::<EffectCell, usize>::new();
         for cell in facts
             .iter()
-            .filter_map(|stmt| stmt.heap_one_shot_allocation.clone())
+            .flat_map(|stmt| stmt.heap_one_shot_allocations.iter().cloned())
         {
             *eager_counts.entry(cell).or_default() += 1;
         }

@@ -39,6 +39,13 @@ or host state and writes only fresh allocations, consider
 Audit native/protocol identity through all admitted schedules; source checks do
 not prove this premise. Lexical effects and freedom from throws remain separate.
 
+For private result-owned metadata in a pre-existing provider registry, consider
+[`initializer_external_effects: private_metadata`](../../SPEC.md#initializer-external-effects).
+Audit fresh key ownership, non-publication and non-interception, stable provider
+and environment observations, and idempotent private memoization across every
+admitted schedule. This is an author promise about exact code, not purity or
+automatic recognition of a library. Known heap/global conflicts stay checked.
+
 ## Choose the contract for the established fact
 
 This table routes to the relevant audit. [SPEC](../../SPEC.md) owns the complete

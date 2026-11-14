@@ -1212,6 +1212,18 @@ completion, result shape or an operation receipt. Neither initializer purity nor
 lexical source-only effects implies external isolation.
 See SPEC § Initializer external effects.
 
+`initializer_external_effects: private_metadata` allows an audited provider to
+write private identity-keyed metadata for fresh result-owned objects. It also
+requires stable provider/configuration/environment observations and only
+observationally idempotent private capability memoization over every admitted
+initialization schedule. No key/entry publication except through the result,
+enumeration, interception or application reentry is permitted. These are author
+obligations, not a WeakMap recognizer or an inference of purity. The graph can
+refine the unknown external frontier while retaining source-known heap cells,
+allocation events and all other effect domains. Known global-property accesses
+and external observations remain admission guards. `isolated` keeps its stricter
+meaning. See SPEC § Initializer external effects for the complete contract.
+
 `initializer_call_effect_inputs` is a separate exact AUTHOR premise for one
 direct imported-call initializer with one fresh anonymous ordinary function
 argument. Its required `resolved_member: { module, name }` reference identifies

@@ -354,8 +354,12 @@ pub struct GateOutcome {
     pub accepted: bool,
     pub source: CommandResult,
     pub emitted: CommandResult,
+    /// The generated app tree, retained for output-contract assertions.
+    pub out_root: PathBuf,
     /// The entry chunk's `candidate_relocation_assessment.json`.
     pub assessment: Value,
+    // Keep the generated tree alive for callers inspecting `out_root`.
+    _root: TempDir,
 }
 
 /// `debundle run --emit-on-rejection` over a spec the gate may accept or
@@ -384,12 +388,14 @@ pub fn run_fixture_to_gate_outcome(opts: FixtureOpts<'_>) -> GateOutcome {
                 .join(path_from_module_path(opts.chunk_id))
                 .join("entry.js"),
         ),
+        out_root: app_root.clone(),
         assessment: read_json(
             &setup
                 .report_root
                 .join(opts.chunk_id)
                 .join("candidate_relocation_assessment.json"),
         ),
+        _root: setup.root,
     }
 }
 
