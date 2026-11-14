@@ -785,3 +785,34 @@ cancellation/retry. Exact-head PR CI and the original guest rerun remain separat
 no fleet rerun-rate improvement is established. An injected replacement-start probe whose
 production applicability is unproven is preserved in
 [issue #16412](https://github.com/agentydragon/ducktape/issues/16412).
+
+The [original Codex guest rerun](https://app.buildbuddy.io/invocation/eb3eb508-c2c4-4a2e-8a2e-963b051e595d)
+passes fresh in one attempt: 142.2s TestRunner and 214.658s native Bazel time, on
+`437615d9dc` plus only the two production-file fence repair overlay from `f999d6d041`.
+Its exact-head independent PR checks at `e8e3fe0886` also pass; the PR remains unmerged.
+These establish the focused repair, not an observed fleet flake-rate reduction.
+
+### Firecracker Notification dependency screen
+
+B6's longest deployment-readiness span is specifically `notifications`: 135.918s.
+K3s startup is 10.139s and PKI controller readiness is 15.178s; concurrent image imports
+overlap controller setup. A prepared infrastructure seed cannot automatically remove
+the Notification wait or the whole 224.494s setup. The retained K3s log shows the Notification
+Pod's container starts in about 3.27s; it does not explain the later readiness delay.
+
+Both Firecracker case bodies require guest/session/process continuity, suspend/checkpoint/
+resume, live credential rotation, Egress rules identity, actual mount/storage layout and
+Runner rejection of an impostor cluster-CA leaf. Neither calls Notifications. VM's original
+scenario explicitly runs `agentplane notifications subscriptions` and retains its deployment.
+The manual `test_firecracker_platform_candidate` runs the unchanged `test_firecracker.py`
+with a dedicated fixture that omits Notification workload/service/PKI/callers and its image
+dependency. It still creates the ordinary empty Notification database as part of shared
+bootstrap SQL; no Notification process consumes it. Required Firecracker acceptance stays
+unchanged during the experiment.
+
+Before promotion, compare both targets at one frozen source with fresh tests and the same
+4-CPU/6-GiB KVM requests. Require the exact same two case identities and all existing
+assertions, complete cleanup and no extra retry. Preserve both physical costs, setup phases,
+queue/worker identity and actual resource evidence. A one-pair improvement is only a
+component screen; repeat the full selected graph and representative required checks before
+crediting a contribution to the 30% objective.

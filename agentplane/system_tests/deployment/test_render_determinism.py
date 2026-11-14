@@ -19,6 +19,7 @@ _EXPECTED_OUTPUTS = {
     "local-model-central-services-native.json",
     "local-model-firecracker.json",
     "local-model-firecracker-native.json",
+    "local-model-firecracker-platform.json",
     "local-model-mcp-fixtures.json",
     "local-model-mcp-services.json",
     "local-model-vm.json",
