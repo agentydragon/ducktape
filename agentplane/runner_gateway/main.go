@@ -314,7 +314,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	if err != nil {
 		return err
 	}
-	gatewayRPCAuth, err := gatewayAuth.WithListenerAuthentication(c.rpcForMethodAudience(c.GatewayAudience, true), dispatcherSVIDs)
+	gatewayRPCAuth, err := gatewayAuth.WithListenerAuthentication(c.rpcForMethodAudience(c.GatewayAudience, false), nil)
 	if err != nil {
 		return fmt.Errorf("configure Gateway proxy authentication: %w", err)
 	}
