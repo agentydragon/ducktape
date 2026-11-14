@@ -90,28 +90,6 @@ cdk8s_import(
 )
 
 py_library(
-    name = "flux_kustomization",
-    srcs = ["flux_kustomization.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = [
-        "//cluster/cdk8s/providers/flux:kustomization",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
-    ],
-)
-
-py_library(
-    name = "helm_repository",
-    srcs = ["helm_repository.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = [
-        "//cluster/cdk8s/providers/flux:helmrepository",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
-    ],
-)
-
-py_library(
     name = "git_repository",
     srcs = ["git_repository.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
@@ -181,32 +159,5 @@ py_library(
         "//cluster/cdk8s/providers/flux:receiver",
         "@pypi//cdk8s",
         "@pypi//constructs",
-    ],
-)
-
-py_library(
-    name = "helm_release",
-    srcs = ["helm_release.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = [
-        "//cluster/cdk8s/providers/flux:helmrelease",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
-    ],
-)
-
-py_test(
-    name = "test_helm_release",
-    srcs = ["test_helm_release.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":helm_release",
-        "//:conftest",
-        "//cluster/cdk8s:conftest",
-        "//cluster/cdk8s/providers/flux:helmrelease",
-        "@pypi//cdk8s",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

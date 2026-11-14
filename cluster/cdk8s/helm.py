@@ -8,6 +8,8 @@ from collections.abc import Sequence
 from cdk8s import ApiObjectMetadata
 from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
+    HelmRelease,
+    HelmReleaseSpec,
     HelmReleaseSpecChart,
     HelmReleaseSpecChartSpec,
     HelmReleaseSpecChartSpecSourceRef,
@@ -19,11 +21,9 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgrade,
     HelmReleaseSpecValuesFrom,
 )
-from flux_source.io.fluxcd.toolkit.source import HelmRepositorySpecType
+from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec, HelmRepositorySpecType
 
 from cluster.cdk8s.providers.flux.git_repository import GitRepository
-from cluster.cdk8s.providers.flux.helm_release import HelmRelease
-from cluster.cdk8s.providers.flux.helm_repository import HelmRepository
 
 # Uninstall and retry a failed install three times before the release stalls.
 RETRY_FAILED_INSTALL = HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3))
@@ -38,8 +38,7 @@ def oci_helm_repository(scope: Construct, name: str, namespace: str, *, url: str
         scope,
         f"helm-repository-{name}",
         metadata=ApiObjectMetadata(name=name, namespace=namespace),
-        url=url,
-        type=HelmRepositorySpecType.OCI,
+        spec=HelmRepositorySpec(url=url, type=HelmRepositorySpecType.OCI),
     )
 
 
@@ -54,8 +53,7 @@ def https_helm_repository(
         scope,
         f"helm-repository-{name}",
         metadata=ApiObjectMetadata(name=name, namespace=namespace),
-        url=url,
-        interval=interval,
+        spec=HelmRepositorySpec(url=url, interval=interval),
     )
 
 
@@ -122,16 +120,20 @@ def helm_release(
         metadata=ApiObjectMetadata(
             name=name, namespace=namespace, annotations=None if description is None else {"description": description}
         ),
-        interval=interval,
-        timeout=timeout,
-        install=install,
-        upgrade=upgrade,
-        drift_detection=drift_detection,
-        target_namespace=target_namespace,
-        chart=HelmReleaseSpecChart(
-            spec=HelmReleaseSpecChartSpec(chart=chart, version=version, source_ref=source_ref, interval=chart_interval)
+        spec=HelmReleaseSpec(
+            interval=interval,
+            timeout=timeout,
+            install=install,
+            upgrade=upgrade,
+            drift_detection=drift_detection,
+            target_namespace=target_namespace,
+            chart=HelmReleaseSpecChart(
+                spec=HelmReleaseSpecChartSpec(
+                    chart=chart, version=version, source_ref=source_ref, interval=chart_interval
+                )
+            ),
+            values_from=list(values_from) if values_from is not None else None,
+            post_renderers=list(post_renderers) if post_renderers is not None else None,
+            values=values,
         ),
-        values_from=values_from,
-        post_renderers=post_renderers,
-        values=values,
     )

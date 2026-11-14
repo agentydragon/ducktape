@@ -7,10 +7,10 @@ import pytest
 import pytest_bazel
 from cdk8s import ApiObjectMetadata, Chart, Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from constructs import Construct
+from flux_source.io.fluxcd.toolkit.source import HelmRepository
 
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.providers.flux.git_repository import GitRepository
-from cluster.cdk8s.providers.flux.helm_repository import HelmRepository
 
 
 def _helm_repository(scope: Construct) -> HelmRepository:
