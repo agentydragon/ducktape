@@ -4,11 +4,8 @@ import (
 	"bytes"
 	"database/sql"
 	"fmt"
-	"io/fs"
-	"strconv"
 	"strings"
 	"testing"
-	"testing/fstest"
 
 	_ "github.com/lib/pq"
 )
@@ -29,30 +26,12 @@ func TestBaselineCreatesFinalSchema(t *testing.T) {
 
 func TestCutoverRemovesPreIdentityAndUnattributedRows(t *testing.T) {
 	db := openMigrationDatabase(t)
-	// Start from the actual pre-cutover schema so later migrations remain unapplied.
-	prior := fstest.MapFS{}
-	names, err := fs.Glob(scripts, "dispatcher/*.sql")
+	provider, err := schema.Provider(db)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range names {
-		version, err := strconv.Atoi(strings.Split(strings.TrimPrefix(name, "dispatcher/"), "_")[0])
-		if err != nil {
-			t.Fatal(err)
-		}
-		if version >= 18 {
-			continue
-		}
-		data, err := scripts.ReadFile(name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		prior[name] = &fstest.MapFile{Data: data}
-	}
-	previous := schema
-	previous.Files = prior
-	if err := previous.Up(t.Context(), db); err != nil {
-		t.Fatal("create final schema:", err)
+	if _, err := provider.UpTo(t.Context(), 17); err != nil {
+		t.Fatal("create pre-cutover schema:", err)
 	}
 	const sandboxUID = "00000000-0000-0000-0000-000000000018"
 	const executionIdentityUID = "00000000-0000-4000-8000-000000000018"

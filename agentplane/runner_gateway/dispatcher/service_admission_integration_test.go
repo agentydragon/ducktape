@@ -9,10 +9,12 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environmentaccess"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -20,6 +22,8 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
@@ -60,7 +64,7 @@ func TestServiceActorsRetainSeparateProofAndIdentityScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	methods := Methods(rule)
-	methods, err = methods.WithServiceDelegation([]string{dispatcherpb.SessionDispatcher_SubmitInput_FullMethodName, dispatcherpb.SessionDispatcher_GetSession_FullMethodName}, []auth.ServiceDelegator{{SPIFFEID: peertls.ActionsURI}}, serviceIdentityReader{owner.Name: owner.Uid, other.Name: other.Uid})
+	methods, err = methods.WithServiceDelegation([]string{dispatcherpb.SessionDispatcher_SubmitInput_FullMethodName, dispatcherpb.SessionDispatcher_GetSession_FullMethodName, dispatcherpb.SessionDispatcher_CreateSession_FullMethodName}, []auth.ServiceDelegator{{SPIFFEID: peertls.ActionsURI}}, serviceIdentityReader{owner.Name: owner.Uid, other.Name: other.Uid})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +75,10 @@ func TestServiceActorsRetainSeparateProofAndIdentityScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
-	dispatcherpb.RegisterSessionDispatcherServer(server, &Service{Store: store, Sandboxes: inventory, DispatcherServices: sets.New(peertls.AppURI)})
+	rules := environmentaccess.NewIndex()
+	ownerObject := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Name: owner.Name, UID: types.UID(owner.Uid)}}
+	rules.PutIdentity(ownerObject)
+	dispatcherpb.RegisterSessionDispatcherServer(server, &Service{Store: store, Sandboxes: inventory, DispatcherServices: sets.New(peertls.AppURI), EnvironmentRules: rules, PolicyReady: func() error { return nil }})
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -123,8 +130,33 @@ func TestServiceActorsRetainSeparateProofAndIdentityScope(t *testing.T) {
 	if _, err := actions.GetSession(delegated, &dispatcherpb.GetSessionRequest{SessionId: foreign}); status.Code(err) != codes.NotFound {
 		t.Fatalf("delegator inherited component authority: %v", err)
 	}
-	if _, err := actions.CreateSession(delegated, &dispatcherpb.CreateSessionRequest{SessionId: uuid.NewString()}); status.Code(err) != codes.PermissionDenied {
+	if _, err := actions.CreateSession(delegated, nativeCreateRequest(uuid.NewString(), sandbox.Name, sandbox.UID)); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("ungranted delegated lifecycle: %v", err)
+	}
+	appRequest := nativeCreateRequest(uuid.NewString(), sandbox.Name, sandbox.UID)
+	for range 2 {
+		if _, err := app.CreateSession(t.Context(), appRequest); err != nil {
+			t.Fatalf("direct service native creation/receipt: %v", err)
+		}
+	}
+	addEnvironmentGrant(rules, "service-bind-session", ownerObject, "bind_session", policyapi.EnvironmentSelector{
+		BoundIdentity: &policyapi.BoundIdentitySelector{Self: true},
+	}, nil)
+	request := nativeCreateRequest(uuid.NewString(), sandbox.Name, sandbox.UID)
+	if _, err := actions.CreateSession(delegated, request); err != nil {
+		t.Fatalf("granted service-delegated native creation: %v", err)
+	}
+	created, err := store.GetSession(t.Context(), request.SessionId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	creator, ok := created.Attribution.(*ServiceAttribution)
+	if !ok || creator.ActorSPIFFEID != peertls.ActionsURI || !sameIdentity(creator.Identity, owner) || creator.Action.RequestID != action.RequestId {
+		t.Fatalf("service-delegated creator proof: %#v", created.Attribution)
+	}
+	rules.DeleteBinding("service-bind-session")
+	if _, err := actions.CreateSession(delegated, request); err != nil {
+		t.Fatalf("service-delegated receipt after grant revocation: %v", err)
 	}
 	ambiguous := metadata.AppendToOutgoingContext(delegated, "authorization", "Bearer legacy")
 	if _, err := actions.GetSession(ambiguous, &dispatcherpb.GetSessionRequest{SessionId: owned}); status.Code(err) != codes.Unauthenticated {

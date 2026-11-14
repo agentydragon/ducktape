@@ -362,9 +362,26 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+	// Native placement owns a policy reader independently of explicit resume. The selected
+	// Environments/Sessions split can move each consumer without sharing an in-process index.
+	dispatchEnvironmentRules := environmentaccess.NewIndex()
+	dispatchPolicyHealth := watchhealth.New()
+	dispatchPolicyWatches := reader.NewWatches(config, dispatchPolicyHealth)
+	if err := reader.WatchRules(dispatchPolicyWatches, dispatchEnvironmentRules, c.PolicyNamespace, environmentaccess.Ready); err != nil {
+		return fmt.Errorf("configure Dispatcher environment policy watches: %w", err)
+	}
+	go dispatchPolicyWatches.Run(ctx)
+	defer dispatchPolicyHealth.MarkDraining()
+	dispatchPolicyReady := func() error {
+		if !dispatchPolicyHealth.Available() {
+			return errors.New("Dispatcher environment policy state is unavailable")
+		}
+		return nil
+	}
 	service := &dispatcher.Service{
 		Store: store, DispatcherCallers: sets.New(c.DispatcherCallers...), DispatcherServices: sets.New(c.DispatcherServiceCallers...),
-		Sandboxes:     catalog,
+		Sandboxes:        catalog,
+		EnvironmentRules: dispatchEnvironmentRules, PolicyReady: dispatchPolicyReady,
 		CentralTarget: c.CentralSampler, Hub: hub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,
 	}
 	dispatcherRule, err := auth.ReviewedServiceAccountOrIdentity(dispatcherAuth).AllowServiceCallers(c.DispatcherServiceCallers)

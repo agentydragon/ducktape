@@ -23,12 +23,15 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environmentaccess"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
@@ -62,12 +65,20 @@ func (actorReviews) Create(_ context.Context, review *authenticationv1.TokenRevi
 
 // identitySandbox is one live Sandbox naming an Identity.
 type identitySandbox struct {
-	sandbox  dispatcher.SandboxSnapshot
-	identity *identitypb.Identity
+	sandbox     dispatcher.SandboxSnapshot
+	environment *sandboxapi.Sandbox
+	identity    *identitypb.Identity
 }
 
 func (s identitySandbox) GetSandbox(_ context.Context, name string) (dispatcher.SandboxSnapshot, bool, error) {
 	return s.sandbox, name == s.sandbox.Name, nil
+}
+
+func (s identitySandbox) GetEnvironment(_ context.Context, target dispatcher.SandboxSnapshot) (*sandboxapi.Sandbox, bool, error) {
+	if target.Name != s.sandbox.Name || target.Namespace != s.sandbox.Namespace || target.UID != s.sandbox.UID {
+		return nil, false, nil
+	}
+	return s.environment, s.environment != nil, nil
 }
 
 func (s identitySandbox) GetExecutionIdentity(context.Context, dispatcher.SandboxSnapshot) (*identitypb.Identity, bool, error) {
@@ -92,6 +103,11 @@ func TestAnIdentitysSessionActionsSucceedAgainstTheDispatcher(t *testing.T) {
 	owner := workloadauthtesting.NewIdentityWorkload(t, api, integrationNamespace, "test-delegating-identity", policyNamespace)
 	ownerIdentity := &identitypb.Identity{Name: owner.Identity.Name, Uid: string(owner.Identity.UID)}
 	sandbox := dispatcher.SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
+	environment := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{
+		Namespace: sandbox.Namespace, Name: sandbox.Name, UID: types.UID(sandbox.UID),
+	}, Spec: sandboxapi.SandboxSpec{Identity: &sandboxapi.IdentityRef{Name: ownerIdentity.GetName()}, Running: true}}
+	environmentRules := environmentaccess.NewIndex()
+	environmentRules.PutIdentity(owner.Identity)
 	resolver, err := auth.NewResolver(actorReviews{}, "test-dispatcher", []string{integrationNamespace}, auth.WithVerdictTTL(0))
 	if err != nil {
 		t.Fatal(err)
@@ -112,7 +128,8 @@ func TestAnIdentitysSessionActionsSucceedAgainstTheDispatcher(t *testing.T) {
 	server := grpc.NewServer(served.ServerOptions(time.Second)...)
 	dispatcherpb.RegisterSessionDispatcherServer(server, &dispatcher.Service{
 		Store: sessions, DispatcherCallers: sets.New(integrationActor), WatchLease: 10 * time.Second,
-		Sandboxes: identitySandbox{sandbox: sandbox, identity: ownerIdentity},
+		Sandboxes: identitySandbox{sandbox: sandbox, environment: environment, identity: ownerIdentity}, EnvironmentRules: environmentRules,
+		PolicyReady: func() error { return nil },
 	})
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

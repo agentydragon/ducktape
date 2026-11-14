@@ -22,7 +22,8 @@ type RoleRef struct {
 // Rule is shared by policy consumers; each consumer handles its own Type.
 // +kubebuilder:validation:XValidation:rule="!has(self.hosts) || !self.hosts.exists(h, h == '*') || (!has(self.credentialRef) && (!has(self.clusterInternal) || !self.clusterInternal))",message="A blanket host rule cannot set clusterInternal or credentialRef."
 // +kubebuilder:validation:XValidation:rule="self.type == 'kubernetes_role_binding' ? (has(self.role) && has(self.namespaces) && !has(self.clusterRole) && !has(self.hosts) && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal) && !has(self.credentialRef) && !has(self.policy) && !has(self.targets) && !has(self.environments)) : self.type == 'kubernetes_cluster_role_binding' ? (has(self.clusterRole) && !has(self.role) && !has(self.namespaces) && !has(self.hosts) && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal) && !has(self.credentialRef) && !has(self.policy) && !has(self.targets) && !has(self.environments)) : self.type == 'egress' ? (has(self.hosts) && !has(self.role) && !has(self.namespaces) && !has(self.clusterRole) && !has(self.policy) && !has(self.targets) && !has(self.environments)) : (self.type == 'session_inbox_access' || self.type == 'environment') ? (!has(self.role) && !has(self.namespaces) && !has(self.clusterRole) && !has(self.hosts) && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal) && !has(self.credentialRef) && !has(self.policy)) : has(self.policy) && !has(self.role) && !has(self.namespaces) && !has(self.clusterRole) && !has(self.hosts) && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal) && !has(self.credentialRef) && !has(self.targets) && !has(self.environments)",message="Rule fields must match type."
-// +kubebuilder:validation:XValidation:rule="self.type == 'session_inbox_access' ? (has(self.operations) && has(self.targets) && !has(self.environments) && self.operations.all(o, o == 'send_message')) : self.type == 'environment' ? (has(self.operations) && has(self.environments) && !has(self.targets) && self.operations.all(o, o == 'resume')) : (!has(self.operations) && !has(self.targets) && !has(self.environments))",message="Rule fields must match type."
+// +kubebuilder:validation:XValidation:rule="self.type == 'session_inbox_access' ? (has(self.operations) && has(self.targets) && !has(self.environments) && self.operations.all(o, o == 'send_message')) : self.type == 'environment' ? (has(self.operations) && has(self.environments) && !has(self.targets) && self.operations.all(o, o == 'resume' || o == 'bind_session')) : (!has(self.operations) && !has(self.targets) && !has(self.environments))",message="Rule fields must match type."
+// +kubebuilder:validation:XValidation:rule="self.type != 'environment' || !self.operations.exists(o, o == 'bind_session') || self.environments.all(e, !has(e.sandbox) || has(e.boundIdentity))",message="bind_session on a named Sandbox must name its bound Identity."
 type Rule struct {
 	// Type selects the consumer that handles this rule.
 	// +kubebuilder:validation:Enum=kubernetes_role_binding;kubernetes_cluster_role_binding;egress;action_auto_approve;session_inbox_access;environment
@@ -61,8 +62,8 @@ type Rule struct {
 	// Operations lists what a session_inbox_access or environment rule allows on its targets.
 	// +listType=set
 	// +kubebuilder:validation:MinItems=1
-	// +kubebuilder:validation:MaxItems=1
-	// +kubebuilder:validation:items:Enum=send_message;resume
+	// +kubebuilder:validation:MaxItems=2
+	// +kubebuilder:validation:items:Enum=send_message;resume;bind_session
 	Operations []string `json:"operations,omitempty" proto:"11"`
 	// Targets names the Sandboxes whose Session inboxes a session_inbox_access rule covers.
 	Targets *SandboxTargets `json:"targets,omitempty" proto:"12"`

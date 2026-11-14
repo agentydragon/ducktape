@@ -11,12 +11,15 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/observability"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/internal/placement"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/internal/terminalnotice"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environmentaccess"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -24,6 +27,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
@@ -37,6 +41,13 @@ type SandboxReader interface {
 // delivery/write authority; retained reads use the UID recorded in the Session.
 type ExecutionIdentityReader interface {
 	GetExecutionIdentity(context.Context, SandboxSnapshot) (*identitypb.Identity, bool, error)
+}
+
+// EnvironmentReader reads the exact live Sandbox selected by a native CreateSession placement.
+// Identity grants are evaluated against its current spec after Dispatcher has taken the shared
+// Sandbox admission lock.
+type EnvironmentReader interface {
+	GetEnvironment(context.Context, SandboxSnapshot) (*sandboxapi.Sandbox, bool, error)
 }
 
 type SandboxSnapshot struct {
@@ -64,6 +75,8 @@ type Service struct {
 	DispatcherCallers  sets.Set[auth.Account]
 	DispatcherServices sets.Set[string]
 	Sandboxes          SandboxReader
+	EnvironmentRules   *reader.Index[environmentaccess.Rule]
+	PolicyReady        func() error
 	Hub                *WatchHub
 	WatchLease         time.Duration
 	CentralTarget      *CentralTarget
@@ -342,6 +355,68 @@ func (s *Service) executionIdentity(ctx context.Context, sandbox SandboxSnapshot
 	return reader.GetExecutionIdentity(ctx, sandbox)
 }
 
+func (s *Service) authorizeIdentityPlacement(
+	ctx context.Context,
+	caller IdentityCaller,
+	sandbox SandboxSnapshot,
+) (*identitypb.Identity, error) {
+	if s.EnvironmentRules == nil || s.PolicyReady == nil {
+		return nil, status.Error(codes.Unavailable, "environment policy is unavailable")
+	}
+	if err := s.PolicyReady(); err != nil {
+		return nil, status.Error(codes.Unavailable, "environment policy is unavailable")
+	}
+	environmentReader, ok := s.Sandboxes.(EnvironmentReader)
+	if !ok {
+		return nil, status.Error(codes.Unavailable, "sandbox environment reader unavailable")
+	}
+	environment, found, err := environmentReader.GetEnvironment(ctx, sandbox)
+	if err != nil {
+		return nil, status.Error(codes.Unavailable, "sandbox environment unavailable")
+	}
+	if !found || environment == nil || environment.Name != sandbox.Name || environment.Namespace != sandbox.Namespace ||
+		string(environment.UID) != sandbox.UID {
+		return nil, status.Error(codes.NotFound, "sandbox not found")
+	}
+	identity, identityFound, err := s.executionIdentity(ctx, sandbox)
+	if err != nil {
+		return nil, status.Error(codes.Unavailable, "sandbox execution identity unavailable")
+	}
+	if !identityFound || identity == nil || identity.GetName() == "" || identity.GetUid() == "" ||
+		environment.Spec.Identity == nil || environment.Spec.Identity.Name != identity.GetName() {
+		return nil, status.Error(codes.NotFound, "sandbox not found")
+	}
+	policyCaller := reader.Identity{Name: caller.Identity.GetName(), UID: types.UID(caller.Identity.GetUid())}
+	granted := environmentaccess.Allowed(s.EnvironmentRules, policyCaller, "bind_session", environment)
+	if !granted {
+		if sameIdentity(identity, caller.Identity) {
+			return nil, status.Error(codes.PermissionDenied, "caller may not bind a Session to this sandbox")
+		}
+		return nil, status.Error(codes.NotFound, "sandbox not found")
+	}
+	if environment.DeletionTimestamp != nil || !environment.Spec.Running ||
+		(environment.Status.SuspendedBy != nil && *environment.Status.SuspendedBy == sandboxapi.SuspendedByRequested) {
+		return nil, status.Error(codes.FailedPrecondition, "sandbox cannot accept a new Session")
+	}
+	return identity, nil
+}
+
+func (s *Service) checkIdentityPlacement(
+	ctx context.Context,
+	caller IdentityCaller,
+	sandbox SandboxSnapshot,
+	execution *identitypb.Identity,
+) error {
+	identity, err := s.authorizeIdentityPlacement(ctx, caller, sandbox)
+	if err != nil {
+		return err
+	}
+	if !sameIdentity(identity, execution) {
+		return status.Error(codes.FailedPrecondition, "sandbox execution identity changed")
+	}
+	return nil
+}
+
 // requireLiveExecution checks the recorded target before applying scoped backend trust or proving
 // that an Identity caller still matches its current and retained execution Identity.
 func (s *Service) requireLiveExecution(ctx context.Context, session *Session, sandbox SandboxSnapshot, caller Caller) error {
@@ -523,18 +598,11 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 	if err != nil {
 		return nil, err
 	}
-	// An Identity creates no Session, directly or through a platform component acting for it, not
-	// even on a Sandbox acting as it: creating a Session is lifecycle control, which needs an explicit
-	// grant that does not exist yet. How a Session asks for a sub-Session is
-	// SESSION_SUBAGENT_DELEGATION (agentplane/plans/task_dag.md).
-	if _, ok := caller.(IdentityCaller); ok {
-		return nil, status.Error(codes.PermissionDenied, "an Identity caller cannot create a Session")
-	}
 	// Recover an accepted request without consulting current owner availability. This
 	// path only reads the receipt; it never queues, wakes, binds or materializes work.
 	row, err := s.Store.GetSession(ctx, request.GetSessionId())
 	if err == nil {
-		if err := row.authorizeRetry(caller); err != nil {
+		if err := row.authorizeCreateRetry(caller); err != nil {
 			return nil, apiError(err)
 		}
 		sessionPlacement, err := placement.PlacementFromRequest(request)
@@ -558,12 +626,19 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 	if err != nil {
 		return nil, err
 	}
+	identityCaller, isIdentityCaller := caller.(IdentityCaller)
+	if isIdentityCaller && sessionPlacement != placement.EnvironmentHosted {
+		return nil, status.Error(codes.PermissionDenied, "an Identity caller may only create a native Session on a granted sandbox")
+	}
 	target := placement.RequestTarget(request)
 	current, err := s.sandbox(ctx, target.GetName())
 	if err != nil {
 		return nil, err
 	}
 	if current.UID != target.GetUid() {
+		if isIdentityCaller {
+			return nil, status.Error(codes.NotFound, "sandbox not found")
+		}
 		return nil, status.Error(codes.FailedPrecondition, "sandbox identity changed")
 	}
 	if err := ValidateRuntime(sessionPlacement, request.SetupScript, s.CentralTarget); err != nil {
@@ -572,25 +647,34 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 	// The Dispatcher is the authority for the Identity a Session executes as: the exact Identity its
 	// Sandbox names now, recorded once with its UID. ServiceAccounts authenticate platform actors;
 	// they are never Session execution principals.
-	identity, identityFound, err := s.executionIdentity(ctx, current)
-	if err != nil {
-		return nil, status.Error(codes.Unavailable, "sandbox execution identity unavailable")
-	}
-	execution := SessionExecution{Identity: identity}
-	switch c := caller.(type) {
-	case ServiceAccountCaller:
-		if !c.Privileged {
+	var execution SessionExecution
+	if isIdentityCaller {
+		identity, err := s.authorizeIdentityPlacement(ctx, identityCaller, current)
+		if err != nil {
+			return nil, err
+		}
+		execution.Identity = identity
+	} else {
+		identity, identityFound, err := s.executionIdentity(ctx, current)
+		if err != nil {
+			return nil, status.Error(codes.Unavailable, "sandbox execution identity unavailable")
+		}
+		if accountCaller, ok := caller.(ServiceAccountCaller); ok && !accountCaller.Privileged {
 			return nil, status.Error(codes.PermissionDenied, "caller does not own the Session")
 		}
-	}
-	if !identityFound {
-		return nil, status.Error(codes.FailedPrecondition, "sandbox execution identity unavailable")
-	}
-	if identity == nil || identity.GetName() == "" || identity.GetUid() == "" {
-		return nil, status.Error(codes.FailedPrecondition, "sandbox execution identity is incomplete")
+		if !identityFound {
+			return nil, status.Error(codes.FailedPrecondition, "sandbox execution identity unavailable")
+		}
+		if identity == nil || identity.GetName() == "" || identity.GetUid() == "" {
+			return nil, status.Error(codes.FailedPrecondition, "sandbox execution identity is incomplete")
+		}
+		execution.Identity = identity
 	}
 	row, err = s.Store.createSessionWithPlacementForCaller(ctx, request.GetSessionId(), target.GetName(), current.UID, sessionPlacement,
 		request.GetSpec(), request.SetupScript, nil, execution, caller, func(ctx context.Context) error {
+			if isIdentityCaller {
+				return s.checkIdentityPlacement(ctx, identityCaller, current, execution.Identity)
+			}
 			latest, err := s.sandbox(ctx, target.GetName())
 			if err != nil {
 				return err
@@ -608,10 +692,15 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 			return nil
 		})
 	if err != nil {
+		if isIdentityCaller && errors.Is(err, ErrSandboxDeleted) {
+			return nil, status.Error(codes.NotFound, "sandbox not found")
+		}
 		return nil, apiError(err)
 	}
-	if _, err := s.Store.GetSessionForCaller(ctx, row.SessionID, caller); err != nil {
-		return nil, apiError(err)
+	if !isIdentityCaller {
+		if _, err := s.Store.GetSessionForCaller(ctx, row.SessionID, caller); err != nil {
+			return nil, apiError(err)
+		}
 	}
 	session, err := DescribeSession(row)
 	if err != nil {

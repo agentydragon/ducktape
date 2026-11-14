@@ -8,6 +8,7 @@ import json
 import shlex
 import subprocess
 from dataclasses import dataclass, field
+from typing import Any
 from uuid import UUID, uuid4
 
 from google.protobuf.json_format import MessageToDict
@@ -333,6 +334,140 @@ async def operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_c
                 "fresh_exec_output": [
                     output for output in fresh_turn.tool_outputs if "EXPLICIT_RESUME_EXEC_OK" in output
                 ],
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+
+
+async def an_identity_creates_a_native_session_only_with_an_explicit_binding_grant(
+    cluster: Cluster,
+    client: Client,
+    dispatcher: SessionDispatcherClient,
+    sandbox: Sandboxes,
+    scripted: ScriptedUpstream,
+) -> None:
+    """Workload SVID admission requires a grant and retains the exact creation receipt."""
+    view = await sandbox(f"systest-bind-session-{uuid4().hex[:8]}", template=POD_TEMPLATE)
+    assert view.identity_name
+    assert view.kubernetes_diagnostics.HasField("pod")
+    target = view.target
+    model_name = (await client.models()).harnesses[Harness.CODEX][0]
+    agent = await Agent.create(
+        client,
+        dispatcher,
+        sandbox=target.name,
+        sandbox_uid=target.uid,
+        harness=session_pb2.HARNESS_CODEX,
+        model=model_name,
+        cwd=WORKING_DIRECTORY,
+    )
+    model = scripted.model(view.kubernetes_diagnostics.pod.name, session_pb2.HARNESS_CODEX)
+    session_id = str(uuid4())
+    spec = session_pb2.SessionSpec(
+        placement=session_pb2.SessionPlacement(
+            environment_hosted=session_pb2.EnvironmentHostedPlacement(
+                environment=session_pb2.ExactEnvironment(name=target.name, uid=target.uid),
+                harness=session_pb2.HARNESS_CODEX,
+            )
+        ),
+        cwd=WORKING_DIRECTORY,
+        model=model_name,
+        reasoning_effort="low",
+    )
+    command = shlex.join(
+        [
+            "/run/agentplane/environment/bin/agentplane",
+            "--json",
+            "sessions",
+            "create",
+            session_id,
+            "--sandbox",
+            target.name,
+            "--sandbox-uid",
+            target.uid,
+            "--spec",
+            json.dumps(MessageToDict(spec)),
+        ]
+    )
+
+    async def create() -> dict[str, Any]:
+        turn = await agent.run_shell(model, command + " || true")
+        output = "\n".join(turn.tool_outputs)
+        start = output.find("{")
+        assert start >= 0, turn.transcript
+        result, _ = json.JSONDecoder().raw_decode(output[start:])
+        assert isinstance(result, dict), turn.transcript
+        return result
+
+    denied = await create()
+    assert denied["error"]["code"] == "PERMISSION_DENIED", denied
+    grant_name = f"{target.name}-bind"
+    await cluster.kubectl(
+        "create",
+        "-f",
+        "-",
+        body={
+            "apiVersion": "v1",
+            "kind": "List",
+            "items": [
+                {
+                    "apiVersion": "agentplane.allegedly.works/v1alpha1",
+                    "kind": "PolicySet",
+                    "metadata": {"name": grant_name, "namespace": cluster.namespace},
+                    "spec": {
+                        "rules": [
+                            {
+                                "type": "environment",
+                                "operations": ["bind_session"],
+                                "environments": [
+                                    {
+                                        "sandbox": {"name": target.name, "uid": target.uid},
+                                        "boundIdentity": {"self": True},
+                                    }
+                                ],
+                            }
+                        ]
+                    },
+                },
+                {
+                    "apiVersion": "agentplane.allegedly.works/v1alpha1",
+                    "kind": "PolicyBinding",
+                    "metadata": {"name": grant_name, "namespace": cluster.namespace},
+                    "spec": {"subject": {"identity": {"name": view.identity_name}}, "policySets": [grant_name]},
+                },
+            ],
+        },
+    )
+    try:
+        await cluster.kubectl(
+            "wait", f"policybinding/{grant_name}", "--for=condition=EnvironmentReady=True", "--timeout=60s"
+        )
+        created = await create()
+        assert "error" not in created, created
+        # Read with the privileged fixture, independently checking the actual persisted principal.
+        retained = await dispatcher.get_session(session_id)
+        assert retained.identity.name == view.identity_name, retained
+        assert retained.identity.uid, retained
+        assert retained.placement == spec.placement, retained
+        assert created["sessionId"] == session_id, created
+        assert created["identity"] == MessageToDict(retained.identity), created
+    finally:
+        await cluster.kubectl("delete", "policybinding", grant_name, "--ignore-not-found")
+        await cluster.kubectl("delete", "policyset", grant_name, "--ignore-not-found")
+    recovered = await create()
+    assert "error" not in recovered, recovered
+    assert recovered["sessionId"] == session_id, recovered
+    assert recovered["identity"] == created["identity"], (created, recovered)
+    assert recovered["createdAt"] == created["createdAt"], (created, recovered)
+    (undeclared_outputs_dir() / "identity-bind-session.json").write_text(
+        json.dumps(
+            {
+                "target": MessageToDict(target, preserving_proto_field_name=True),
+                "denied_without_grant": denied,
+                "created": created,
+                "recovered_after_grant_removal": recovered,
             },
             indent=2,
         )

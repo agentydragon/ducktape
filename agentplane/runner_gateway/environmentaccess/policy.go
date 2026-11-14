@@ -4,6 +4,7 @@ package environmentaccess
 import (
 	"errors"
 	"fmt"
+	"slices"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
@@ -11,8 +12,9 @@ import (
 )
 
 const (
-	ruleType = "environment"
-	resume   = "resume"
+	ruleType    = "environment"
+	resume      = "resume"
+	bindSession = "bind_session"
 )
 
 // Ready is the condition kept on bindings whose environment rules this reader enforces.
@@ -24,6 +26,7 @@ var Ready = reader.Condition{
 // Rule is an environment rule this package can enforce. Its selectors are evaluated against the
 // current Sandbox on every lookup, so boundIdentity:self follows the caller's Identity.
 type Rule struct {
+	Operations   []string
 	Environments []policyapi.EnvironmentSelector
 }
 
@@ -37,8 +40,15 @@ func ParseRule(rule policyapi.Rule) (Rule, error) {
 	if rule.Type != ruleType {
 		return Rule{}, fmt.Errorf("rule type %q is not %q", rule.Type, ruleType)
 	}
-	if len(rule.Operations) != 1 || rule.Operations[0] != resume {
-		return Rule{}, fmt.Errorf("operations must contain only %q", resume)
+	if len(rule.Operations) == 0 || len(rule.Operations) > 2 {
+		return Rule{}, errors.New("operations must contain resume, bind_session, or both")
+	}
+	seen := map[string]bool{}
+	for _, operation := range rule.Operations {
+		if (operation != resume && operation != bindSession) || seen[operation] {
+			return Rule{}, fmt.Errorf("unsupported or duplicate operation %q", operation)
+		}
+		seen[operation] = true
 	}
 	if len(rule.Environments) == 0 {
 		return Rule{}, errors.New("environments must name at least one selector")
@@ -52,6 +62,9 @@ func ParseRule(rule policyapi.Rule) (Rule, error) {
 		if selector.Sandbox == nil && selector.BoundIdentity == nil {
 			return Rule{}, fmt.Errorf("environments[%d] must name a Sandbox or a bound Identity", i)
 		}
+		if seen[bindSession] && selector.Sandbox != nil && selector.BoundIdentity == nil {
+			return Rule{}, fmt.Errorf("environments[%d].sandbox must also name boundIdentity for bind_session", i)
+		}
 		if selector.Sandbox != nil && selector.Sandbox.Name == "" {
 			return Rule{}, fmt.Errorf("environments[%d].sandbox.name is required", i)
 		}
@@ -62,18 +75,21 @@ func ParseRule(rule policyapi.Rule) (Rule, error) {
 			}
 		}
 	}
-	return Rule{Environments: rule.Environments}, nil
+	return Rule{Operations: rule.Operations, Environments: rule.Environments}, nil
 }
 
 // Allowed reports whether the caller's current Identity grants operation on this Sandbox.
-// This slice supports resume only; callers must check policy and Sandbox watch readiness separately.
+// Callers check policy readiness and live target/Identity facts separately.
 func Allowed(index *reader.Index[Rule], caller reader.Identity, operation string, sandbox *sandboxapi.Sandbox) bool {
-	if index == nil || sandbox == nil || caller.Name == "" || caller.UID == "" || operation != resume {
+	if index == nil || sandbox == nil || caller.Name == "" || caller.UID == "" || (operation != resume && operation != bindSession) {
 		return false
 	}
 	for _, grant := range index.Grants(caller) {
 		for _, set := range grant.Sets {
 			for _, numbered := range set.Rules {
+				if !slices.Contains(numbered.Rule.Operations, operation) {
+					continue
+				}
 				for _, selector := range numbered.Rule.Environments {
 					if matches(selector, caller.Name, sandbox) {
 						return true

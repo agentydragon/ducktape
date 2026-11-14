@@ -144,6 +144,14 @@ finishes the same model response while the other service Pods and Sandbox runner
 compares the sampler journal cursor across the outage with History's committed and folded cursors,
 checks ACTIVE projection and exactly-once command settlement, then completes another input.
 
+The Pod suite also creates a native Session using a workload's own SVID: creation is refused
+without an explicit environment `bind_session` grant, admitted with the exact Sandbox and
+`boundIdentity:self` selector, and retains the Sandbox's live Identity. Retrying the exact creation
+UUID after removing the grant recovers its receipt without creating another Session. The
+`identity-bind-session.json` output records those checks. Dispatcher integration tests separately
+cover delegated actor/creator attribution, grant revocation, concurrent rebind and receipt-only
+creator scope across Identities.
+
 ## Dispatcher queue and replicas
 
 The queue case leaves a stopped Sandbox unchanged. The replica case raises Gateway replicas to two,

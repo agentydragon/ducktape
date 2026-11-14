@@ -286,7 +286,7 @@ flowchart LR
     dispatcher -->|central opens + commands: Sampler gRPC| central
     sandboxctl -->|Quiesce| gateway
     sandboxctl -->|passive WatchState binds workload UID and observes facts: mTLS gRPC| runtime
-    dispatcher -->|Sandbox watch| k8s
+    dispatcher -->|Sandbox + independent environment-policy watches| k8s
     dispatcher -->|automatic wake assessment + request| lifecycle
     lifecycle -->|guarded running + generation update| k8s
     pod -.->|Session and EnvironmentService gRPC over HTTPS_PROXY/CONNECT| sidecar
@@ -310,7 +310,11 @@ continues to use the configured Dispatcher audience and a pod-bound Actions toke
 `EnvironmentService.ResumeEnvironment` method. The receiver applies the caller identity from the
 shared delegation envelope, then checks the current Sandbox and explicit Identity resume grant.
 The lifecycle consumer watches PolicySets, PolicyBindings and Identities through its typed policy index;
-a failed policy watch refuses explicit Identity resume while implied self-reads remain available. The integration app uses its own Pod-bound
+a failed policy watch refuses explicit Identity resume while implied self-reads remain available.
+Dispatcher constructs its own environment-policy index and watches for native Identity `CreateSession`
+with `bind_session`; it records the placed Sandbox's exact live Identity as the Session principal,
+and retains the effective creator and actor separately. These consumers share an evaluator library,
+not an in-process index. The integration app uses its own Pod-bound
 token as a distinct operator broker; it does not forward browser identity. Resume acceptance is not
 readiness, and no resume path replays Session input or creates a grant.
 Dispatcher automatic wake uses the same lifecycle manager with the original effective caller

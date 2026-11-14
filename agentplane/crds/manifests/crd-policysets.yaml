@@ -167,8 +167,9 @@ spec:
                         enum:
                         - send_message
                         - resume
+                        - bind_session
                         type: string
-                      maxItems: 1
+                      maxItems: 2
                       minItems: 1
                       type: array
                       x-kubernetes-list-type: set
@@ -355,8 +356,12 @@ spec:
                       && has(self.targets) && !has(self.environments) && self.operations.all(o,
                       o == ''send_message'')) : self.type == ''environment'' ? (has(self.operations)
                       && has(self.environments) && !has(self.targets) && self.operations.all(o,
-                      o == ''resume'')) : (!has(self.operations) && !has(self.targets)
-                      && !has(self.environments))'
+                      o == ''resume'' || o == ''bind_session'')) : (!has(self.operations)
+                      && !has(self.targets) && !has(self.environments))'
+                  - message: bind_session on a named Sandbox must name its bound Identity.
+                    rule: self.type != 'environment' || !self.operations.exists(o,
+                      o == 'bind_session') || self.environments.all(e, !has(e.sandbox)
+                      || has(e.boundIdentity))
                 maxItems: 256
                 minItems: 1
                 type: array

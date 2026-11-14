@@ -3,7 +3,10 @@
 Ship the PolicySet CRD and Runner Gateway implementation before creating an `environment` rule.
 The Gateway must have `get/list/watch` on PolicySets, PolicyBindings and Identities, and `patch` on
 PolicyBinding status. Confirm the new Gateway image is pinned, its policy watches are healthy,
-and a fixture binding reports `EnvironmentReady`. These source changes introduce no standing grant.
+and a fixture binding reports `EnvironmentReady`. Resume and native Session placement construct
+independent readers from the same evaluator library. Confirm both watches are healthy before using
+`bind_session`; its schema and enforcing Session consumer must ship together after the resume slice.
+These source changes introduce no standing grant.
 
 ## Reader compatibility
 
@@ -40,3 +43,13 @@ Policy decisions use the reader's observed view. Each mutation retries Sandbox U
 conflicts with fresh authorization, but does not atomically serialize PolicyBinding changes with
 Sandbox patches. A healthy watch may lag events; failed or unsynchronized watches refuse new
 grant-backed mutations as `UNAVAILABLE`. Credential revalidation retains its normal cache bound.
+
+The native Session slice adds nullable creator/actor/delegation attribution columns through the
+normal Gateway startup migration. Existing writers can overlap the new schema. Rollback keeps
+those columns and all retained Session rows: first remove `bind_session` rules (or remove just that
+operation from combined rules), then revert the service image and narrow the operation enum.
+An old service refuses new Identity creation; it does not reinterpret retained Identity creators as
+ServiceAccount authority. While rolled back, a cross-Identity creator may lose its new create-receipt
+recovery path, but the Session retains the target's execution Identity and its existing access rules.
+Check exact CreateSession retry, execution Identity fencing, automatic wake and retained History
+before and after the roll. No down migration or replay of an uncertain creation is required.
