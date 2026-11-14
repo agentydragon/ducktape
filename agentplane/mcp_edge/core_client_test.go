@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"net"
 	"os"
@@ -13,6 +14,8 @@ import (
 	pb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/connections"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	"github.com/google/uuid"
 	mcpauth "github.com/modelcontextprotocol/go-sdk/auth"
@@ -58,6 +61,21 @@ func startActionServer(t *testing.T) (string, <-chan metadata.MD) {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer()
+	started := make(chan metadata.MD, 1)
+	pb.RegisterActionServiceServer(server, &watchActionServer{started: started})
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	t.Cleanup(func() { _ = listener.Close() })
+	return listener.Addr().String(), started
+}
+
+func startMutualTLSActionServer(t *testing.T, credentials grpc.ServerOption) (string, <-chan metadata.MD) {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer(credentials)
 	started := make(chan metadata.MD, 1)
 	pb.RegisterActionServiceServer(server, &watchActionServer{started: started})
 	go func() { _ = server.Serve(listener) }()
@@ -151,5 +169,62 @@ func TestConnectionDelegationRefusesInvalidBearerWithoutActorFallback(t *testing
 	case <-started:
 		t.Fatal("Action received a call after the Connection bearer was refused")
 	default:
+	}
+}
+
+func TestConnectionDelegationUsesMCPServiceSVIDWithoutBearerFallback(t *testing.T) {
+	ca := peertlstesting.NewCA(t)
+	clientCertificate := ca.IssueWithUsage(t, peertls.MCPEdgeURI, x509.ExtKeyUsageClientAuth)
+	serverCertificate := ca.IssueWithUsage(t, peertls.ActionsURI, x509.ExtKeyUsageServerAuth)
+	serverCredentials, err := serverCertificate.ServerCredentials(peertls.MCPEdgeURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, started := startMutualTLSActionServer(t, grpc.Creds(serverCredentials))
+	transport := &peertls.ClientTLS{
+		CAFile: ca.RootFile, ServerURI: peertls.ActionsURI,
+		CertFile: clientCertificate.CertFile, KeyFile: clientCertificate.KeyFile, ClientURI: peertls.MCPEdgeURI,
+	}
+	caller := &coreCaller{
+		authority: func(_ context.Context, bearer string) (*connections.ResolvedGrant, error) {
+			if bearer != "external-connection-token" {
+				return nil, mcpauth.ErrInvalidToken
+			}
+			grant := testGrant
+			return &grant, nil
+		},
+	}
+	clientConn, err := dialActions(target, "", time.Second, transport, caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = clientConn.Close() })
+
+	ctx := context.WithValue(t.Context(), edgeBearerKey{}, "external-connection-token")
+	watch, err := pb.NewActionServiceClient(clientConn).WatchActionRequest(ctx, &pb.WatchActionRequestRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := watch.Recv(); err != nil {
+		t.Fatalf("first Action frame: %v", err)
+	}
+	md := <-started
+	if got := md.Get("authorization"); len(got) != 0 {
+		t.Fatalf("service SVID call included authorization metadata %q", got)
+	}
+	delegations := md.Get(auth.DelegationMetadataKey)
+	if len(delegations) != 1 {
+		t.Fatalf("delegation metadata values %d, want one", len(delegations))
+	}
+	envelope := new(delegationpb.Delegation)
+	if err := proto.Unmarshal([]byte(delegations[0]), envelope); err != nil {
+		t.Fatal(err)
+	}
+	if got := envelope.GetIdentity(); got == nil || got.GetName() != testIdentity.Name || got.GetUid() != testIdentity.UID {
+		t.Fatalf("effective Identity %v", got)
+	}
+	provenance := envelope.GetConnection()
+	if provenance == nil || provenance.GetConnectionId() != testConnectionID || provenance.GetGrantId() != testGrantID {
+		t.Fatalf("Connection provenance %v", provenance)
 	}
 }

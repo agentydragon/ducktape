@@ -261,7 +261,7 @@ func TestOAuthFileAndInlineSettingsAreMutuallyExclusive(t *testing.T) {
 	}
 }
 
-func TestOAuthRequiresProjectedActionToken(t *testing.T) {
+func TestOAuthRequiresExactlyOneActionCallerCredential(t *testing.T) {
 	oauthPath := filepath.Join(t.TempDir(), "oauth.yaml")
 	oauth := `upstream_client_id: client
 upstream_client_secret_file: /etc/agentplane-mcp/client-secret
@@ -276,11 +276,44 @@ approving_operator:
 	if err := os.WriteFile(oauthPath, []byte(oauth), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	settings := strings.Replace(testSettings, "actions_token_file: /run/agentplane/action-token/token\n", "", 1) +
-		fmt.Sprintf("oauth_file: %q\n", oauthPath)
-	settingsFile(t, settings)
-	if _, err := loadConfig(); err == nil {
-		t.Fatal("accepted OAuth without the projected Action Service token path")
+	base := strings.Replace(testSettings, "actions_token_file: /run/agentplane/action-token/token\n", "", 1)
+	oauthFile := fmt.Sprintf("oauth_file: %q\n", oauthPath)
+	serverTLS := `actions_tls:
+  ca_file: /etc/agentplane/ca/ca.crt
+  server_uri: spiffe://agentplane/actions
+`
+	svid := `actions_tls:
+  ca_file: /etc/agentplane/ca/ca.crt
+  server_uri: spiffe://agentplane/actions
+  cert_file: /var/run/secrets/agentplane-mcp/tls.crt
+  key_file: /var/run/secrets/agentplane-mcp/tls.key
+  client_uri: spiffe://agentplane/mcp-edge
+`
+
+	t.Run("service SVID with typed delegation", func(t *testing.T) {
+		settingsFile(t, base+svid+oauthFile)
+		if _, err := loadConfig(); err != nil {
+			t.Fatalf("accepted exact MCP edge SVID configuration: %v", err)
+		}
+	})
+	t.Run("server TLS with projected bearer", func(t *testing.T) {
+		settingsFile(t, testSettings+serverTLS+oauthFile)
+		if _, err := loadConfig(); err != nil {
+			t.Fatalf("accepted verified server TLS with the projected token: %v", err)
+		}
+	})
+	for name, settings := range map[string]string{
+		"missing caller credential":               base + oauthFile,
+		"server TLS without caller credential":    base + serverTLS + oauthFile,
+		"mixed token and service SVID":            testSettings + svid + oauthFile,
+		"wrong service identity cannot fall back": base + strings.Replace(svid, "spiffe://agentplane/mcp-edge", "spiffe://agentplane/app", 1) + oauthFile,
+	} {
+		t.Run(name, func(t *testing.T) {
+			settingsFile(t, settings)
+			if _, err := loadConfig(); err == nil {
+				t.Fatal("accepted an invalid Action caller authentication configuration")
+			}
+		})
 	}
 }
 
