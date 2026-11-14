@@ -22,6 +22,7 @@ from cluster.cdk8s.agentplane import (
     workload_tls,
 )
 from cluster.cdk8s.agentplane.environment import SessionDelegationProps
+from cluster.cdk8s.public_coder import egress as public_coder_egress
 
 # REST, docs, health and consent live behind the Action API's own authentication, never on
 # the public MCP origin.
@@ -178,6 +179,30 @@ def test_cross_owner_reader_is_explicit_in_static_settings(staging_manifests: li
     assert "AGENTPLANE_ACTIONS_READER_ACCOUNTS" not in names
     assert "AGENTPLANE_ACTIONS_MCP_SERVERS__GITHUB__CLIENT_ID" not in names
     assert not any(arg.startswith("--reader-accounts") for arg in container.get("args", []))
+
+
+def test_public_coder_namespace_is_not_an_action_service_caller(staging_manifests: list[dict[str, Any]]) -> None:
+    settings_config = one(
+        doc for doc in staging_manifests if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "actions-settings"
+    )
+    settings = yaml.safe_load(settings_config["data"]["settings.yaml"])
+    assert public_coder_egress.NAMESPACE not in settings["caller_service_account_namespaces"]
+    assert not any(
+        doc["kind"] == "WorkloadCredential" and doc["metadata"]["namespace"] == public_coder_egress.NAMESPACE
+        for doc in staging_manifests
+    )
+    assert not any(
+        doc["kind"] == "Role"
+        and doc["metadata"]["namespace"] == public_coder_egress.NAMESPACE
+        and doc["metadata"]["name"] == actions.NAME
+        for doc in staging_manifests
+    )
+    assert not any(
+        doc["kind"] == "RoleBinding"
+        and doc["metadata"]["namespace"] == public_coder_egress.NAMESPACE
+        and doc["metadata"]["name"] == actions.NAME
+        for doc in staging_manifests
+    )
 
 
 def test_actions_migrate_before_serving_and_roll(staging_manifests: list[dict[str, Any]]) -> None:

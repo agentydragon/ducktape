@@ -7061,7 +7061,6 @@ data:
     caller_service_account_namespaces:
       - agentplane-staging
       - haku-sandbox
-      - public-coder-agent
     direct_wait_seconds: 30
     operator_oidc:
       issuer: https://auth.allegedly.works/application/o/agentplane-staging-actions/
@@ -7855,49 +7854,6 @@ kind: RoleBinding
 metadata:
   name: actions
   namespace: haku-sandbox
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: actions
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: actions
-    namespace: agentplane-staging
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: actions
-  namespace: public-coder-agent
-rules:
-  - apiGroups:
-      - ""
-    resources:
-      - serviceaccounts
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - sandboxes
-    verbs:
-      - get
-      - list
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - workloadcredentials
-    verbs:
-      - get
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: actions
-  namespace: public-coder-agent
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role

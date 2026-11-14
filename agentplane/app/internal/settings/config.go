@@ -17,7 +17,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/go-viper/mapstructure/v2"
-	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 )
 
@@ -217,11 +216,6 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("could not read app settings file: %w", err)
 	}
-	settings := viper.New()
-	settings.SetConfigType("yaml")
-	if err := settings.ReadConfig(bytes.NewReader(contents)); err != nil {
-		return Config{}, fmt.Errorf("could not decode app settings file: %w", err)
-	}
 	decoder := yaml.NewDecoder(bytes.NewReader(contents))
 	var rawSettings map[string]any
 	if err := decoder.Decode(&rawSettings); err != nil {
@@ -234,21 +228,29 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("could not decode app settings file: %w", err)
 	}
 	sandboxPresetOrder = yamlMappingKeys(contents, "sandbox_presets")
-	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.TextUnmarshallerHookFunc())); err != nil {
+	// Keep Viper's weak scalar conversions for compatibility with existing settings files.
+	mapDecoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+		Result: &c, TagName: "mapstructure", ErrorUnused: true, WeaklyTypedInput: true,
+		DecodeHook: mapstructure.TextUnmarshallerHookFunc(),
+	})
+	if err != nil {
+		return Config{}, fmt.Errorf("invalid app settings: %w", err)
+	}
+	if err := mapDecoder.Decode(rawSettings); err != nil {
 		return Config{}, fmt.Errorf("invalid app settings: %w", err)
 	}
 	c.DatabaseURL = os.Getenv("AGENTPLANE_DATABASE_URL")
 	if c.LogLevels == nil {
 		c.LogLevels = map[string]string{}
 	}
-	for _, key := range []string{"models.models", "models.harnesses"} {
-		if !settings.IsSet(key) {
-			return Config{}, fmt.Errorf("%s is required", key)
-		}
+	models, _ := rawSection(rawSettings, "models")
+	if !rawHasKey(models, "models") {
+		return Config{}, errors.New("models.models is required")
 	}
-	if err := c.decodeCaseSensitiveSettings(rawSettings); err != nil {
-		return Config{}, err
+	if !rawHasKey(models, "harnesses") {
+		return Config{}, errors.New("models.harnesses is required")
 	}
+	c.Models.NormalizeHarnessNames()
 	c.OIDC, err = auth.LoadOIDC(c.OIDCSettings)
 	if err != nil {
 		return Config{}, fmt.Errorf("invalid OIDC settings: %w", err)
@@ -283,54 +285,6 @@ func yamlMappingKeys(contents []byte, section string) []string {
 		keys = append(keys, root.Content[index].Value)
 	}
 	return keys
-}
-
-func (c *Config) decodeCaseSensitiveSettings(raw map[string]any) error {
-	if models, ok := rawSection(raw, "models"); ok {
-		if err := decodeMapSection(models, &c.Models); err != nil {
-			return fmt.Errorf("invalid models settings: %w", err)
-		}
-	}
-	if presets, ok := rawSection(raw, "thread_presets"); ok {
-		// Viper case-folds arbitrary map keys while decoding. Replace its normalized copy with the
-		// original YAML map so preset names retain their exact spelling.
-		c.ThreadPresets = make(map[string]ThreadPreset)
-		if err := decodeMapSection(presets, &c.ThreadPresets); err != nil {
-			return fmt.Errorf("invalid thread_presets settings: %w", err)
-		}
-	}
-	if presets, ok := rawSection(raw, "sandbox_presets"); ok {
-		c.SandboxPresets = make(map[string]SandboxPreset)
-		if err := decodeMapSection(presets, &c.SandboxPresets); err != nil {
-			return fmt.Errorf("invalid sandbox_presets settings: %w", err)
-		}
-	}
-	if defaults, ok := rawSection(raw, "new_sandbox_defaults"); ok {
-		if err := decodeMapSection(defaults, &c.NewSandboxDefaults); err != nil {
-			return fmt.Errorf("invalid new_sandbox_defaults settings: %w", err)
-		}
-	}
-	if frontend, ok := rawSection(raw, "frontend_config"); ok {
-		c.FrontendConfig = FrontendConfig{}
-		if err := decodeMapSection(frontend, &c.FrontendConfig); err != nil {
-			return fmt.Errorf("invalid frontend_config settings: %w", err)
-		}
-	}
-	c.Models.NormalizeHarnessNames()
-	return nil
-}
-
-func decodeMapSection(value any, result any) error {
-	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
-		Result:           result,
-		TagName:          "mapstructure",
-		WeaklyTypedInput: true,
-		ErrorUnused:      true,
-	})
-	if err != nil {
-		return err
-	}
-	return decoder.Decode(value)
 }
 
 func rawSection(raw map[string]any, key string) (any, bool) {

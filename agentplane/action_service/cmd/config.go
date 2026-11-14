@@ -18,7 +18,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/operator"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/go-viper/mapstructure/v2"
-	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 )
 
@@ -93,16 +92,19 @@ func loadConfig() (config, error) {
 	if c.ActionGroups, err = catalog.New(file.ActionGroups); err != nil {
 		return config{}, fmt.Errorf("action_groups: %w", err)
 	}
-	settings := viper.New()
-	if err := settings.MergeConfigMap(file.Others); err != nil {
-		return config{}, errors.New("could not read Action Service settings file")
-	}
 	// The errors name no value: a setting can be a Secret.
 	decodeHook := mapstructure.ComposeDecodeHookFunc(
 		mapstructure.TextUnmarshallerHookFunc(),
 		mapstructure.DecodeHookFuncType(listener.AuthenticationDecodeHook),
 	)
-	if err := settings.UnmarshalExact(&c, viper.DecodeHook(decodeHook)); err != nil {
+	// Keep Viper's weak scalar conversions for compatibility with existing settings files.
+	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+		Result: &c, TagName: "mapstructure", ErrorUnused: true, WeaklyTypedInput: true, DecodeHook: decodeHook,
+	})
+	if err != nil {
+		return config{}, fmt.Errorf("invalid Action Service settings: %w", err)
+	}
+	if err := decoder.Decode(file.Others); err != nil {
 		return config{}, errors.New("invalid Action Service settings")
 	}
 	c.DatabaseURL = os.Getenv(databaseURLSecretEnv)
@@ -272,10 +274,9 @@ func (c *config) validateOrchestration() error {
 
 // settingsFile is the settings file as gopkg.in/yaml.v3 decodes it.
 type settingsFile struct {
-	// ActionGroups is decoded apart from Viper, which folds the case of every key it reads: an input schema's keys and
-	// an MCP server configuration's keep theirs.
+	// ActionGroups has its own strict decoder; input schema and MCP server keys retain their spelling.
 	ActionGroups catalog.Settings `yaml:"action_groups"`
-	// Others are the settings Viper reads.
+	// Others are decoded with mapstructure so unknown service settings fail startup.
 	Others map[string]any `yaml:",inline"`
 }
 

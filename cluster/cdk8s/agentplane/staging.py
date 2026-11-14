@@ -584,9 +584,7 @@ ENV = Environment(
     actions=ActionsProps(
         hostname=_ACTIONS_HOSTNAME,
         operator_oidc=_FEDERATION_TARGET,
-        caller_service_account_namespaces=frozenset(
-            {STAGING_NAMESPACE, public_coder_egress.NAMESPACE, haku_ui_egress.NAMESPACE}
-        ),
+        caller_service_account_namespaces=frozenset({STAGING_NAMESPACE, haku_ui_egress.NAMESPACE}),
         connection_delegation_actor=ServiceAccountRef(namespace=STAGING_NAMESPACE, name="mcp-edge"),
         mcp_servers=_MCP_SERVERS,
         action_groups=_ACTION_GROUPS,
