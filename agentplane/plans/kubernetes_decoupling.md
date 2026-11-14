@@ -83,9 +83,11 @@ process, a developer machine, a VM elsewhere. What it needs:
 
 - **Registration.** An environment record the Sandbox Controller does not create, so it needs O2's
   opaque IDs.
-- **Reachability.** The Gateway dials the Runtime today. Off-cluster that address is often
-  unreachable, so the Runtime would dial in and the Gateway would serve calls over that connection.
-  History ingress is already Runtime-initiated.
+- **Address.** The Gateway dials the Runtime at an address it derives from the Pod record's IP and
+  the runner port. Without a Pod, the environment record must carry the Runtime's address, and the
+  Gateway keeps dialing it. Only a host the Gateway cannot reach (behind NAT, a laptop) would need
+  the Runtime to dial in instead, as it already does for History ingress; that is an option, not a
+  requirement.
 - **Identity.** An SVID without a mounted Secret. The Runtime already accepts a SPIFFE Workload API
   socket (Firecracker uses one); something must attest the host instead of a Pod, such as a join
   token exchanged for a certificate.

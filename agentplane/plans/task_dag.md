@@ -2231,7 +2231,7 @@ the thread view alone ([`electric_sync.tsx`](../app/frontend/threads/electric_sy
 other live browser view already follows gRPC watches through the app facade
 ([`watch_stream.ts`](../app/frontend/watch_stream.ts)). Its costs are:
 
-- a single-replica `Recreate` Deployment with a 5 GiB `emptyDir` ([exception](electric_ha.md));
+- a single-replica `Recreate` Deployment with a 5 GiB `emptyDir` ([exception](../docs/electric_single_replica.md));
 - a logical replication slot on the History database;
 - the mismatches in [Electric limits](../docs/thread_sync_electric_limits.md): every follower gets
   the shape's whole live log, deltas exist only as committed rows, and compaction is re-sent to
