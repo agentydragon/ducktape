@@ -10,9 +10,13 @@ from cdk8s import App, Chart, Testing as Cdk8sTesting
 from more_itertools import one
 
 from agentplane.net.peertls.config import (
+    APP_URI,
+    CENTRAL_SAMPLER_URI,
     GATEWAY_ENVIRONMENTS_URI,
     GATEWAY_RUNTIME_PROXY_URI,
     GATEWAY_SESSIONS_URI,
+    NOTIFICATIONS_URI,
+    SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
 )
 from agentplane.runner_gateway.settings import Settings
@@ -120,6 +124,10 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
     assert spiffe_auth == {"mode": "spiffe", "ca_file": workload_tls.TRUST_BUNDLE_FILE}
     assert settings["dispatcher_audience"] == session_dispatcher.TOKEN_AUDIENCE
     assert settings["gateway_audience"] == runner_gateway.TOKEN_AUDIENCE
+    assert settings["runtime_proxy_readers"] == [APP_URI, NOTIFICATIONS_URI]
+    assert settings["runtime_proxy_session_callers"] == [GATEWAY_SESSIONS_URI]
+    assert settings["runtime_proxy_controller_callers"] == [SANDBOX_CONTROLLER_URI]
+    assert settings["executor_service_callers"] == [CENTRAL_SAMPLER_URI]
     assert settings["gateway_tls"] == {
         "ca_file": "/run/agentplane/workload-trust/ca-certificates.crt",
         "server_uri": SESSION_DISPATCHER_URI,

@@ -32,10 +32,14 @@ from constructs import Construct
 from agentplane.crd_group import GROUP
 from agentplane.identity.auth import listener as workload_listener
 from agentplane.net.peertls.config import (
+    APP_URI,
+    CENTRAL_SAMPLER_URI,
     GATEWAY_ENVIRONMENTS_URI,
     GATEWAY_RUNTIME_PROXY_URI,
     GATEWAY_SESSIONS_URI,
     MTLS,
+    NOTIFICATIONS_URI,
+    SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
     TLS,
 )
@@ -292,6 +296,10 @@ class RunnerGateway(Construct):
             dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
             gateway_audience=runner_gateway.TOKEN_AUDIENCE,
             runner_security=MTLS(tls=TLS(cert_file=_RUNNER_TLS_CERT, key_file=_RUNNER_TLS_KEY, ca_file=_RUNNER_TLS_CA)),
+            runtime_proxy_readers=[APP_URI, NOTIFICATIONS_URI],
+            runtime_proxy_session_callers=[GATEWAY_SESSIONS_URI],
+            runtime_proxy_controller_callers=[SANDBOX_CONTROLLER_URI],
+            executor_service_callers=[CENTRAL_SAMPLER_URI] if central_sampler_target is not None else [],
             dispatcher_callers=dispatcher_accounts,
             environment_readers=frozenset({_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))}),
             environment_managers=frozenset({_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))}),
