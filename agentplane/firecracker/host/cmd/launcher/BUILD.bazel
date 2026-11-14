@@ -5,5 +5,5 @@ go_binary(
     srcs = ["main.go"],
     pure = "on",
     visibility = ["//agentplane/firecracker:__pkg__"],
-    deps = ["//agentplane/firecracker"],
+    deps = ["//agentplane/firecracker/host"],
 )

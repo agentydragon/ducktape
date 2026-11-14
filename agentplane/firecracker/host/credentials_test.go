@@ -1,4 +1,4 @@
-package firecracker
+package host
 
 import (
 	"os"

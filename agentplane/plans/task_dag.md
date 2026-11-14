@@ -3939,7 +3939,7 @@ flowchart LR
 
 **Candidate; not released.** The Go plan tracks that hold whatever the service map becomes:
 `runner-era-names` (the app's share landed in #16394), `sampler-json-contract`,
-`egress-sidecar-runtime`, `llm-ingress-server-boundary` and `firecracker-host-guest`;
+`egress-sidecar-runtime` and `llm-ingress-server-boundary`;
 `app-session-client-name` (#16394) and `env-execution-package-names` (#16402) landed. Each is its own
 small PR. **Exit:** each track's plan exit met on devel.
 

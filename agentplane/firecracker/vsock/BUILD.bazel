@@ -1,8 +1,8 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = [
-    "//agentplane/env/firecracker:__pkg__",
-    "//agentplane/firecracker:__pkg__",
+    "//agentplane/firecracker/guest:__pkg__",
+    "//agentplane/firecracker/host:__pkg__",
 ])
 
 go_library(

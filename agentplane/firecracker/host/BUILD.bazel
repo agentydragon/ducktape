@@ -1,0 +1,33 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "host",
+    srcs = glob(
+        ["*.go"],
+        exclude = ["*_test.go"],
+    ),
+    importpath = "github.com/agentydragon/ducktape/agentplane/firecracker/host",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "//agentplane/env/firecracker:management_go_proto",
+        "//agentplane/firecracker/vsock",
+        "//agentplane/firecracker/workloadidentity",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_spiffe_go_spiffe_v2//proto/spiffe/workload",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials/insecure",
+    ],
+)
+
+go_test(
+    name = "host_test",
+    srcs = glob(["*_test.go"]),
+    embed = [":host"],
+    deps = [
+        "//agentplane/env/firecracker:management_go_proto",
+        "//agentplane/net/peertls/testing",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)

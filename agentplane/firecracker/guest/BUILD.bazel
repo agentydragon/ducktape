@@ -1,0 +1,42 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "guest",
+    srcs = [
+        "thaw.go",
+        "vsock_linux.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/firecracker/guest",
+    deps = [
+        "//agentplane/env/firecracker:management_go_proto",
+        "//agentplane/firecracker/vsock",
+        "//agentplane/firecracker/workloadidentity",
+        "@com_github_coreos_go_systemd_v22//daemon",
+        "@com_github_mdlayher_vsock//:vsock",
+        "@com_github_spiffe_go_spiffe_v2//proto/spiffe/workload",
+        "@com_github_spiffe_go_spiffe_v2//workloadapi",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_x_sys//unix",
+    ],
+)
+
+go_test(
+    name = "guest_test",
+    srcs = ["thaw_test.go"],
+    embed = [":guest"],
+    deps = [
+        "//agentplane/env/firecracker:management_go_proto",
+        "//agentplane/firecracker/workloadidentity",
+        "//agentplane/net/peertls/testing",
+        "@com_github_spiffe_go_spiffe_v2//proto/spiffe/workload",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_grpc//test/bufconn",
+    ],
+)

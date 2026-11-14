@@ -6,5 +6,5 @@ go_binary(
     name = "agentplane-firecracker-thaw-agent",
     srcs = ["main.go"],
     pure = "on",
-    deps = ["//agentplane/env/firecracker"],
+    deps = ["//agentplane/firecracker/guest"],
 )
