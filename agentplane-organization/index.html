@@ -70,6 +70,14 @@
       import { html, mount } from "../report.js";
       const sourceURL = (plan, path) =>
         `https://github.com/agentydragon/ducktape/tree/${plan.source_sha}/${path}`;
+      const workColor = (track) =>
+        track.status === "READY"
+          ? "blue"
+          : track.status === "PLANNED"
+            ? "cyan"
+            : track.status.startsWith("DEFERRED")
+              ? "gray"
+              : "yellow";
       function treeLines(plan, component, goal, showFiles) {
         const all = component.id === "all";
         const root = {
@@ -80,14 +88,21 @@
         const tracks = plan.remaining_work.filter(
           (t) => all || t.components.includes(component.id),
         );
-        const moves = goal
-          ? new Map(
-              tracks.flatMap((t) =>
-                (t.path_moves || []).map((m) => [m.from, m.to]),
-              ),
-            )
-          : new Map();
+        const exactMoves = new Map(
+          tracks.flatMap((t) =>
+            (t.path_moves || []).map((m) => [m.from, m.to]),
+          ),
+        );
+        const moves = goal ? exactMoves : new Map();
+        const splits = new Map(
+          tracks.flatMap((t) =>
+            (t.file_splits || []).map((split) => [split.from, split.parts]),
+          ),
+        );
+        const deleted = new Set(tracks.flatMap((t) => t.deleted_paths || []));
         function node(path, directory = true) {
+          if (path !== component.path && !path.startsWith(component.path + "/"))
+            return null;
           let current = root;
           const relative = path
             .slice(component.path.length + 1)
@@ -106,76 +121,121 @@
           }
           return current;
         }
+        function note(path, value, marker = "") {
+          const n = node(path);
+          if (!n) return;
+          n.note = [n.note, value].filter(Boolean).join(" · ");
+          if (marker) n.marker = marker;
+        }
         const buckets = new Map();
-        for (const dir of component.directories)
+        const sourceDirectories =
+          goal && !all
+            ? plan.components.flatMap((area) => area.directories)
+            : component.directories;
+        for (const dir of sourceDirectories)
           for (const path of dir.files) {
-            const mapped = moves.get(path) || path;
-            const parent = mapped.slice(0, mapped.lastIndexOf("/"));
-            if (!buckets.has(parent))
-              buckets.set(parent, { other: 0, tests: 0, files: [] });
-            const bucket = buckets.get(parent);
-            mapped.endsWith("_test.go") ? bucket.tests++ : bucket.other++;
-            bucket.files.push({
-              path: mapped,
-              from: mapped !== path ? path : null,
-            });
+            if (goal && deleted.has(path)) continue;
+            const parts =
+              goal && splits.has(path)
+                ? splits
+                    .get(path)
+                    .map((part) => ({ path: part.path, proposed: true }))
+                : [{ path: moves.get(path) || path, proposed: false }];
+            for (const part of parts) {
+              const mapped = part.path;
+              const parent = mapped.slice(0, mapped.lastIndexOf("/"));
+              if (!buckets.has(parent))
+                buckets.set(parent, {
+                  other: 0,
+                  tests: 0,
+                  files: [],
+                  proposed: false,
+                });
+              const bucket = buckets.get(parent);
+              const existing = bucket.files.find(
+                (file) => file.path === mapped,
+              );
+              if (existing) {
+                existing.proposed ||= part.proposed;
+                existing.from ||= mapped !== path ? path : null;
+                bucket.proposed ||= part.proposed;
+                continue;
+              }
+              mapped.endsWith("_test.go") ? bucket.tests++ : bucket.other++;
+              bucket.proposed ||= part.proposed;
+              bucket.files.push({
+                path: mapped,
+                from: mapped !== path ? path : null,
+                proposed: part.proposed,
+              });
+            }
           }
         for (const [path, bucket] of buckets) {
-          const n = path === component.path ? root : node(path);
-          n.note = `${bucket.other} other Go + ${bucket.tests} tests`;
+          const n = node(path);
+          if (!n) continue;
+          n.note =
+            `${bucket.other} non-test Go + ${bucket.tests} tests` +
+            (bucket.proposed ? " · includes proposed split" : "");
           if (showFiles)
             for (const file of bucket.files) {
               const f = node(file.path, false);
               if (file.from) f.note = "← " + file.from;
+              if (file.proposed) {
+                f.marker = "? ";
+                f.note = [f.note, "proposed allocation"]
+                  .filter(Boolean)
+                  .join(" · ");
+              }
+              if (!goal && exactMoves.has(file.path))
+                f.note = "→ " + exactMoves.get(file.path);
+              if (!goal && splits.has(file.path))
+                f.note = "→ split; see work item";
+              if (!goal && deleted.has(file.path))
+                f.note = "→ remove obsolete owner";
             }
         }
         for (const path of component.context_paths) {
           const n = node(path, path.endsWith("/"));
-          if (!n.note)
+          if (n && !n.note)
             n.note = path.endsWith("/") ? "context" : "protocol source";
         }
+        const decisions = all
+          ? plan.components.flatMap((c) => c.package_decisions)
+          : component.package_decisions;
+        if (goal)
+          for (const pkg of decisions) {
+            if (pkg.decision === "retain") continue;
+            const targets = [
+              ...new Set(pkg.target_paths.filter((p) => p !== pkg.path)),
+            ];
+            const current = node(pkg.path);
+            if (current && buckets.has(pkg.path))
+              note(
+                pkg.path,
+                targets.length
+                  ? "→ ? " +
+                      targets.map((p) => p.split("/").pop() + "/").join(", ")
+                  : pkg.decision + "; see package decision",
+              );
+            for (const target of targets) {
+              if (buckets.has(target)) continue;
+              note(target, "proposed owner; allocation gated", "? ");
+            }
+          }
+        if (goal)
+          for (const track of tracks)
+            for (const rename of track.package_renames || [])
+              note(rename.path, `package ${rename.from} → ${rename.to}`);
         if (all)
           for (const c of plan.components) {
             const n = node(c.path);
-            n.note = `${c.counts.files} Go files · ${c.counts.directories} packages`;
-            if (goal) n.note += " · " + c.decision.state;
+            n.note =
+              `${c.counts.files} Go files · ${c.counts.directories} packages` +
+              (goal ? " · " + c.decision.state : "");
           }
-        for (const track of tracks) {
-          if (track.path_moves?.length) {
-            const owner = node(track.source_owner);
-            if (!goal)
-              owner.note = (owner.note || "") + " → " + track.target_path;
-            else node(track.target_path).note += " · ← command placement";
-          }
-          if (!track.candidate_target) continue;
-          const source = node(track.source_owner);
-          source.note = goal
-            ? "= retained authority; extraction contract TBD"
-            : `${source.note} → ? ${track.candidate_target.split("/").pop()}/`;
-          if (showFiles)
-            for (const path of track.source_paths)
-              node(path, false).note = "→ ? responsibility extraction";
-          if (goal) {
-            const target = node(track.candidate_target);
-            target.marker = "? ";
-            target.note = "candidate; contract and allocation TBD";
-          }
-        }
-        const annotations = all
-          ? plan.components.flatMap(
-              (c) => c.tree_annotations?.[goal ? "goal" : "current"] || [],
-            )
-          : component.tree_annotations?.[goal ? "goal" : "current"] || [];
-        for (const annotation of annotations) {
-          const n = node(annotation.path);
-          n.note = n.note ? n.note + " · " + annotation.note : annotation.note;
-        }
-        const focus = [
-          ...tracks.flatMap((t) =>
-            [t.source_owner, t.candidate_target, t.target_path].filter(Boolean),
-          ),
-          ...annotations.map((annotation) => annotation.path),
-        ];
+        const focus = decisions
+          .filter((p) => p.decision !== "retain")
+          .flatMap((p) => [p.path, ...p.target_paths]);
         const lines = [root.name + (root.note ? `  [${root.note}]` : "")];
         function visit(parent, prefix, depth) {
           const children = [...parent.children.values()].sort((a, b) =>
@@ -195,9 +255,7 @@
               path.startsWith(n.path + "/"),
             );
             if (all && !showFiles && depth >= 2 && n.children.size && !relevant)
-              lines.push(
-                deeper + "└── … choose this component for nested owners",
-              );
+              lines.push(deeper + "└── … select component for nested owners");
             else visit(n, deeper, depth + 1);
           });
         }
@@ -222,6 +280,7 @@
         const [error, setError] = useState(null);
         const [selected, setSelected] = useState("all");
         const [showFiles, setShowFiles] = useState(false);
+        const [workFilter, setWorkFilter] = useState("all");
         useEffect(() => {
           const controller = new AbortController();
           fetch("go-plan.json", { signal: controller.signal })
@@ -235,6 +294,14 @@
             });
           return () => controller.abort();
         }, []);
+        function openWork(event, id) {
+          event.preventDefault();
+          setWorkFilter("all");
+          requestAnimationFrame(() => {
+            document.getElementById(id)?.scrollIntoView();
+            history.replaceState(null, "", "#" + id);
+          });
+        }
         if (error)
           return html`<${Container} py="xl"
             ><${Title} order=${1}>${"Agentplane organization"}<//
@@ -250,6 +317,9 @@
                 id: "all",
                 path: "agentplane",
                 directories: plan.components.flatMap((c) => c.directories),
+                package_decisions: plan.components.flatMap(
+                  (c) => c.package_decisions,
+                ),
                 context_paths: [
                   ...new Set(
                     plan.components.flatMap((c) => [
@@ -265,12 +335,18 @@
         const tracks = plan.remaining_work.filter(
           (t) => selected === "all" || t.components.includes(selected),
         );
-        return html`<${Container} size="xl" py="xl"
+        const visibleWork = plan.remaining_work.filter(
+          (t) => workFilter === "all" || t.status === workFilter,
+        );
+        return html`<${Container}
+          size="xl"
+          py="xl"
+          style=${{ overflowWrap: "anywhere" }}
           ><${Stack} gap="lg">
             <${Anchor} href="../">${"All reports"}<//>
             <${Title} order=${1}>${"Agentplane: current → goal"}<//>
             <${Text}
-              >${"All of Agentplane is in scope: services, controllers, browser-facing code, runtimes, clients, shared libraries, commands and test support. Compare the whole current tree with the goal; component views expose the detailed ownership decisions and remaining moves."}<//
+              >${"A whole-tree organization proposal: concrete commands, domain owners, boundary adapters, persistence and test support. Every tracked Go file has a disposition. Compare exact moves with proposed responsibility extractions; retained packages have a stated role and reason."}<//
             >
             <${Text} size="sm" c="dimmed"
               >${`${plan.counts.files.toLocaleString()} tracked Go files · ${plan.counts.directories} Go packages · ${plan.components.length} top-level areas · source ${plan.source_sha.slice(0, 10)} · observed ${plan.observed_at_utc}. Counts include every tracked Agentplane Go file, including tests and experiments. Trees also show protocol/browser context; generated Go bindings are not tracked files.`}<//
@@ -286,13 +362,13 @@
               ><${Anchor} href="go-plan.json">${"Remaining plan data"}<//
               ><${Anchor} href="go-files.json">${"Every current Go file"}<//
               ><${Anchor} href="evidence.json"
-                >${"Source and historical validation evidence"}<//
+                >${"Source review and validation evidence"}<//
               ><//
             >
             <${Stack} component="section" id="trees" gap="md">
               <${Title} order=${2}>${"Current and goal trees"}<//>
               <${Text}
-                >${"= keep the current owner · ? candidate destination, requires design · → extract a responsibility after its contract is decided · ≋ contract design with no path move selected. Ready moves have exact file mappings. ? extractions show candidate destinations; their file allocation remains undecided. Unchanged owners remain visible in the goal."}<//
+                >${"= retain an intentional owner · → exact file move · ? proposed responsibility owner; API and file allocation still gated · ~ deferred contract design. Current files remain under their current owner until an exact mapping is decided. A proposed directory is not a claim that its implementation exists. Goal file counts include explicitly proposed file splits; candidate-owner allocation remains undecided."}<//
               >
               <${Group} align="end"
                 ><${Select}
@@ -325,7 +401,7 @@
                 />
               <//>
               <${Stack} gap="xs"
-                >${tracks.map((track) => html`<${Group} key=${track.id} gap="xs"><${Badge} color=${track.status === "READY" ? "blue" : track.candidate_target ? "yellow" : "gray"}>${track.status === "READY" ? "→ ready move" : track.candidate_target ? "? candidate extraction" : "≋ no path move selected"}<//><${Anchor} href=${"#" + track.id}>${track.title}<//><//>`)}<//
+                >${tracks.map((track) => html`<${Group} key=${track.id} gap="xs"><${Badge} color=${workColor(track)}>${track.status === "READY" ? "→ ready" : track.status === "PLANNED" ? "→ planned boundary" : track.status.startsWith("DEFERRED") ? "~ deferred" : "? ownership design"}<//><${Anchor} href=${"#" + track.id} onClick=${(event) => openWork(event, track.id)}>${track.title}<//><//>`)}<//
               >
             <//>
             <${Stack} component="section" id="coverage" gap="md">
@@ -333,12 +409,16 @@
                 >${"Goal decisions for every Agentplane area"}<//
               >
               <${Text}
-                >${`Every one of the ${plan.counts.directories} Go packages is assigned to a reviewed component decision. A KEEP decision retains an actual owner; it does not remove those files from scope. Areas without tracked Go are included as context.`}<//
+                >${`Every one of the ${plan.counts.directories} Go packages has its own role, disposition, target and rationale below. RETAIN means an intentional boundary with evidence; REWORK means remaining changes, including named design gates. Areas without tracked Go remain visible as context.`}<//
               >
               <${Accordion} variant="contained"
                 >${plan.components.map(
                   (c) =>
-                    html`<${Accordion.Item} key=${c.id} value=${c.id}>
+                    html`<${Accordion.Item}
+                      key=${c.id}
+                      value=${c.id}
+                      data-testid=${"component-" + c.id}
+                    >
                       <${Accordion.Control}
                         >${`${c.id} · ${c.decision.state} · ${c.counts.files} Go files`}<//
                       >
@@ -350,6 +430,39 @@
                           <${Group} gap="sm"
                             >${c.decision.evidence_paths.map((path) => html`<${Anchor} key=${path} size="sm" href=${sourceURL(plan, path)}>${path}<//>`)}<//
                           >
+                          <${Accordion} variant="separated">
+                            ${c.package_decisions.map(
+                              (pkg) =>
+                                html`<${Accordion.Item}
+                                  key=${pkg.path}
+                                  value=${pkg.path}
+                                >
+                                  <${Accordion.Control}
+                                    >${pkg.path.slice(c.path.length + 1) || "(component root)"}
+                                    · ${pkg.decision.toUpperCase()}<//
+                                  >
+                                  <${Accordion.Panel}
+                                    ><${Stack} gap="xs">
+                                      <${Text} fw=${600}>${pkg.role}<//>
+                                      <${Text} size="sm" c="dimmed"
+                                        >${"Declared packages: " + pkg.declared_packages.join(" · ") + ` · ${pkg.counts.non_test} non-test Go + ${pkg.counts.tests} tests`}<//
+                                      >
+                                      <${Text} size="sm">${pkg.reason}<//>
+                                      <${Text} size="sm"
+                                        >${"Goal: " + (pkg.target_paths.length ? pkg.target_paths.join(" · ") : pkg.path)}<//
+                                      >
+                                      ${pkg.gate ? html`<${Text} size="sm" c="dimmed">${"Gate: " + pkg.gate}<//>` : ""}
+                                      <${Group} gap="xs"
+                                        >${pkg.pending_tracks.map((id) => html`<${Anchor} key=${id} size="sm" href=${"#" + id} onClick=${(event) => openWork(event, id)}>${id}<//>`)}<//
+                                      >
+                                      <${Group} gap="xs"
+                                        >${pkg.evidence_paths.map((path) => html`<${Anchor} key=${path} size="sm" href=${sourceURL(plan, path)}>${path.split("/").pop()}<//>`)}<//
+                                      >
+                                    <//><//
+                                  >
+                                <//>`,
+                            )}
+                          <//>
                         <//><//
                       >
                     <//>`,
@@ -359,7 +472,21 @@
             <${Stack} component="section" id="remaining" gap="md">
               <${Title} order=${2}>${"Remaining work"}<//>
               <${Text}>${plan.remaining_work_note}<//>
-              ${plan.remaining_work.map(
+              <${Select}
+                label="Work status"
+                value=${workFilter}
+                onChange=${setWorkFilter}
+                allowDeselect=${false}
+                data=${[{ value: "all", label: "All remaining work" }, ...[...new Set(plan.remaining_work.map((t) => t.status))].map((value) => ({ value, label: value }))]}
+                style=${{ width: "min(100%, 26rem)" }}
+              />
+              <${Text} size="sm"
+                >${"Priority follows adoption stage and the queue below. PLANNED has a concrete boundary; DESIGN REQUIRED names unresolved ownership. Neither means a tested code patch. Target 200–3,000 changed LOC per coherent PR, with tests and caller closure."}<//
+              >
+              <${List} type="ordered" spacing="xs"
+                >${plan.next_prs.map((item) => html`<${List.Item} key=${item.id}><${Anchor} href=${"#" + item.track} onClick=${(event) => openWork(event, item.track)}>${item.title}<//>${" · " + item.readiness}<//>`)}<//
+              >
+              ${visibleWork.map(
                 (track) =>
                   html`<${Paper}
                     key=${track.id}
@@ -370,13 +497,19 @@
                     style=${{ minWidth: 0, overflowWrap: "anywhere" }}
                   >
                     <${Group} gap="sm"
-                      ><${Badge}
-                        color=${track.status === "READY" ? "blue" : track.candidate_target ? "yellow" : "gray"}
-                        >${track.status}<//
+                      ><${Badge} color=${workColor(track)}>${track.status}<//
                       ><${Text} size="sm" c="dimmed">${track.kind}<//><//
                     >
                     <${Title} order=${3} mt="sm">${track.title}<//>
                     <${Text} mt="sm">${track.summary}<//>
+                    <${Text} size="sm" c="dimmed" mt="xs"
+                      >${`Stage ${track.stage} · ${track.review_size}`}<//
+                    >
+                    ${track.dependencies.length ? html`<${Group} gap="xs" mt="xs"><${Text} size="sm">${"Content prerequisites:"}<//>${track.dependencies.map((id) => html`<${Anchor} key=${id} size="sm" href=${"#" + id} onClick=${(event) => openWork(event, id)}>${id}<//>`)}<//>` : ""}
+                    ${track.target_paths.length ? html`<${TreePane} title="Target owners" id=${track.id + "-owners"} text=${track.target_paths.map((p) => p + "/").join("\n")} />` : ""}
+                    ${track.file_splits?.length ? html`<${TreePane} title="Proposed file allocation" id=${track.id + "-split"} text=${track.file_splits.map((split) => split.from + "\n" + split.parts.map((part) => "└── → ? " + part.path + (part.symbols?.length ? "\n    " + part.symbols.join(", ") : "")).join("\n")).join("\n\n")} />` : ""}
+                    ${track.deleted_paths?.length ? html`<${Text} size="sm">${"Proposed removal: " + track.deleted_paths.join(" · ")}<//>` : ""}
+                    ${track.package_renames?.length ? html`<${Text} size="sm">${track.package_renames.map((r) => `${r.path}: package ${r.from} → ${r.to}`).join(" · ")}<//>` : ""}
                     ${track.path_moves?.length ? html`<${TreePane} title="Placement flow" id=${track.id + "-flow"} text=${track.path_moves.map((move) => `${move.from}\n└── → ${move.to}`).join("\n")} />` : ""}
                     ${track.candidate_target ? html`<${TreePane} title="Responsibility flow" id=${track.id + "-flow"} text=${`${track.source_owner}/\n└── selected types, methods and their tests\n    └── → ? ${track.candidate_target}/\n        └── API and exact filenames decided after the contract`} />` : ""}
                     <${List} type="ordered" spacing="xs" mt="sm"
@@ -392,7 +525,7 @@
                           >${"Source locations and validation"}<//
                         ><${Accordion.Panel}>
                           <${Text} size="sm"
-                            >${"Source links pin the reviewed implementation. Ready placement moves have an exact path mapping in the plan data. Candidate extractions still require a responsibility contract."}<//
+                            >${"Source links pin the reviewed implementation. Exact file moves and package-name changes are recorded separately from candidate owners. Checks below name existing targets at this source pin; update labels when a package moves. No source behavior tests were run for this planning-only change."}<//
                           >
                           <${List} size="sm"
                             >${track.evidence_paths.map((path) => html`<${List.Item} key=${path}><${Anchor} href=${sourceURL(plan, path)}>${path}<//><//>`)}<//
@@ -411,10 +544,10 @@
             <${Stack} component="section" id="adoption" gap="md">
               <${Title} order=${2}>${"Adoption order"}<//>
               <${List} type="ordered" spacing="md"
-                >${plan.adoption.map((stage) => html`<${List.Item} key=${stage.stage}><${Text} fw=${600}>${stage.title}<//><${Text} size="sm">${stage.result}<//><//>`)}<//
+                >${plan.adoption.map((stage) => html`<${List.Item} key=${stage.stage}><${Text} fw=${600}>${stage.title}<//><${Text} size="sm">${stage.result}<//><${Group} gap="xs">${stage.work.map((id) => html`<${Anchor} key=${id} size="sm" href=${"#" + id} onClick=${(event) => openWork(event, id)}>${id}<//>`)}<//><//>`)}<//
               >
               <${Text} size="sm"
-                >${"Independent command placement and responsibility research can proceed in parallel across components. Dispatch the smallest decided responsibility with complete import/BUILD/docs/test closure. Native stack membership records content dependencies; rebase conflicts do not create design dependencies. Remove an item from this plan when its implementation lands."}<//
+                >${"Independent lanes proceed in parallel; only named content prerequisites constrain order. Use native GitHub Stacks for dependent PRs. Each implementation PR includes imports, BUILD, tests, CI/release/runfiles and docs closure. On merge, remove its work item and mappings, refresh the immutable inventory and re-review the remaining package decision; do not turn merged work into a completed-work listing."}<//
               >
             <//>
             <${Stack} component="section" id="rules" gap="md">
