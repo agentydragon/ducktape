@@ -41,7 +41,14 @@ from agentplane.action_service.settings import ServicePeer, Settings
 from agentplane.crd_group import GROUP
 from agentplane.identity.auth import listener
 from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from agentplane.net.peertls.config import ACTIONS_URI, HISTORY_SERVICE_URI, SESSION_DISPATCHER_URI
+from agentplane.net.peertls.config import (
+    ACTIONS_URI,
+    APP_URI,
+    HISTORY_SERVICE_URI,
+    MCP_EDGE_URI,
+    NOTIFICATIONS_URI,
+    SESSION_DISPATCHER_URI,
+)
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import database, notifications, workload_tls
@@ -413,6 +420,9 @@ class Actions(Construct):
             content=yaml_config(
                 Settings(
                     rpc=rpc,
+                    service_readers=[NOTIFICATIONS_URI],
+                    operator_services=[APP_URI],
+                    connection_delegation_service=MCP_EDGE_URI,
                     policy_namespace=env.namespace,
                     caller_service_account_namespaces=props.caller_service_account_namespaces,
                     connection_delegation_actor=props.connection_delegation_actor,

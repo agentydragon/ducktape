@@ -715,18 +715,20 @@ Actions retains upstream MCP linkage and its public client metadata. The edge ve
 external MCP bearers and forwards workload calls under the bound ServiceAccount's token. Its optional TLS gRPC listener
 also checks configured service SVIDs; operator OIDC remains required and determines Connection authority.
 
-## Staged Action Service certificate admission
+## Staged Action Service certificate callers
 
-The receiver can admit configured service SVIDs while existing bearer callers continue to work.
-These edges become active only after receiver image pins and the separate caller cutover.
-Operator authority still requires independently verified OIDC; MCP delegation uses the effective
+The Actions receiver now accepts the exact App, Notifications, and MCP edge service SVIDs alongside
+existing bearer callers. The services still use their bearer settings until their separate caller
+configuration changes land. App calls carrying a service SVID still require independently verified
+operator OIDC; Notifications receives read-only request access; MCP edge calls require typed
+Connection delegation and retain the configured actor account. MCP delegation uses the effective
 Identity's grants and live UID.
 
 ```mermaid
 flowchart LR
-    app[App service SVID] -->|mTLS plus operator OIDC| actions[Action Service]
-    notifications[Notifications service SVID] -->|mTLS: explicit read methods| actions
-    mcp[MCP edge service SVID] -->|mTLS plus typed Connection delegation| actions
+    app[App service SVID] -->|accepted with operator OIDC; caller config pending| actions[Action Service]
+    notifications[Notifications service SVID] -->|accepted for read methods; caller config pending| actions
+    mcp[MCP edge service SVID] -->|accepted with typed Connection delegation; caller config pending| actions
     actions -->|effective Identity grants| policy[Policy bindings]
 ```
 

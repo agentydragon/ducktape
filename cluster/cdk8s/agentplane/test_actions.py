@@ -11,7 +11,13 @@ from cdk8s import App, Chart, Testing as Cdk8sTesting
 from cdk8s_plus_34 import EnvValue
 from more_itertools import one
 
-from agentplane.net.peertls.config import HISTORY_SERVICE_URI, SESSION_DISPATCHER_URI
+from agentplane.net.peertls.config import (
+    APP_URI,
+    HISTORY_SERVICE_URI,
+    MCP_EDGE_URI,
+    NOTIFICATIONS_URI,
+    SESSION_DISPATCHER_URI,
+)
 from cluster.cdk8s.agentplane import (
     actions,
     history_service,
@@ -215,6 +221,32 @@ def test_cross_owner_reader_is_explicit_in_static_settings(staging_manifests: li
     assert "AGENTPLANE_ACTIONS_READER_ACCOUNTS" not in names
     assert "AGENTPLANE_ACTIONS_MCP_SERVERS__GITHUB__CLIENT_ID" not in names
     assert not any(arg.startswith("--reader-accounts") for arg in container.get("args", []))
+
+
+def test_action_service_allows_only_configured_service_callers(staging_manifests: list[dict[str, Any]]) -> None:
+    deployment = one(
+        doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "actions"
+    )
+    pod = deployment["spec"]["template"]["spec"]
+    container = one(item for item in pod["containers"] if item["name"] == "actions")
+    config = one(
+        doc for doc in staging_manifests if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "actions-settings"
+    )
+    settings = yaml.safe_load(config["data"]["settings.yaml"])
+
+    assert settings["service_readers"] == [NOTIFICATIONS_URI]
+    assert settings["operator_services"] == [APP_URI]
+    assert settings["connection_delegation_service"] == MCP_EDGE_URI
+    assert settings["connection_delegation_actor"] == {"namespace": staging.ENV.namespace, "name": "mcp-edge"}
+    assert settings["reader_accounts"] == [{"namespace": staging.ENV.namespace, "name": "notifications"}]
+    assert {auth["mode"] for auth in settings["rpc"]["auth"]} == {"kubernetes_bearer", "spiffe"}
+    spiffe = one(auth for auth in settings["rpc"]["auth"] if auth["mode"] == "spiffe")
+    assert spiffe["ca_file"] == workload_tls.TRUST_BUNDLE_FILE
+
+    volumes = {volume["name"]: volume for volume in pod["volumes"]}
+    mounted = {mount["mountPath"]: volumes[mount["name"]] for mount in container["volumeMounts"]}
+    assert mounted["/run/agentplane/workload-tls"]["secret"]["secretName"] == "actions-workload-tls"
+    assert mounted["/run/agentplane/workload-trust"]["configMap"]["name"] == "agentplane-workload-ca-bundle"
 
 
 def test_public_coder_namespace_is_not_an_action_service_caller(staging_manifests: list[dict[str, Any]]) -> None:
