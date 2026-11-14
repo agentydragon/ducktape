@@ -24,8 +24,8 @@ from agentplane.system_tests.scenarios import (
     cert_manager_reissue,
     dispatcher_workload,
     egress,
+    egress_native,
     launch_presets,
-    mcp,
     runner_credentials,
     session_instructions,
     storage,
@@ -33,6 +33,7 @@ from agentplane.system_tests.scenarios import (
     thread_history,
     workload_trust,
 )
+from agentplane.system_tests.scenarios.policy_objects import PolicyObjects
 from agentplane.system_tests.suites import pod_runners
 
 
@@ -254,11 +255,11 @@ async def a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway(resour
 
 
 async def a_command_box_presents_its_own_svid(resources: Resources) -> None:
-    policy_objects = mcp.PolicyObjects(cluster=resources.cluster)
+    policy_objects = PolicyObjects(cluster=resources.cluster)
     try:
         async with resources.open() as (_, sandboxes):
             caller = await sandboxes("systest-box-caller")
-            await egress.a_command_box_presents_its_own_svid(resources.cluster, caller, policy_objects)
+            await egress_native.a_command_box_presents_its_own_svid(resources.cluster, caller, policy_objects)
     finally:
         await policy_objects.delete_all()
 
@@ -266,12 +267,14 @@ async def a_command_box_presents_its_own_svid(resources: Resources) -> None:
 async def a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes(resources: Resources) -> None:
     async with resources.open() as (_, sandboxes):
         subject = await sandboxes("systest-standing-subject")
-        await egress.a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes(resources.cluster, subject)
+        await egress_native.a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes(
+            resources.cluster, subject
+        )
 
 
 async def two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(resources: Resources) -> None:
-    async with resources.open() as (client, sandboxes):
-        await egress.two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(resources.cluster, client, sandboxes)
+    async with resources.open() as (_, sandboxes):
+        await egress_native.two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(resources.cluster, sandboxes)
 
 
 SCENARIOS = (
