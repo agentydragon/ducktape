@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
-  "source_sha": "ce53bc8c8552d3f469343c73b441e27ace268edf",
-  "observed_at_utc": "2026-11-14T02:45:00+00:00",
+  "source_sha": "55e7df4226dd4d761a72b96ea055a362c953e3ec",
+  "observed_at_utc": "2026-11-14T03:30:00+00:00",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1263,
-    "directories": 221,
-    "production": 696,
-    "tests": 567
+    "files": 1270,
+    "directories": 222,
+    "production": 700,
+    "tests": 570
   },
   "legend": {
     "=": "Intentional retained owner with an explicit package rationale",
@@ -347,7 +347,6 @@
         "agentplane/action_service/api/web_push/web_push_service.proto"
       ],
       "pending_tracks": [
-        "settings-viper-removal",
         "orchestration-v1-retirement",
         "action-service-grpcgate",
         "settings-single-source",
@@ -422,7 +421,6 @@
           ],
           "declared_packages": ["main"],
           "pending_tracks": [
-            "settings-viper-removal",
             "orchestration-v1-retirement",
             "action-service-grpcgate"
           ],
@@ -799,8 +797,8 @@
       "id": "app",
       "path": "agentplane/app",
       "counts": {
-        "files": 73,
-        "directories": 17
+        "files": 75,
+        "directories": 19
       },
       "directories": [
         {
@@ -881,6 +879,24 @@
           ]
         },
         {
+          "path": "agentplane/app/internal/httpapi",
+          "production": 2,
+          "tests": 0,
+          "files": [
+            "agentplane/app/internal/httpapi/appconfigapi.go",
+            "agentplane/app/internal/httpapi/statusapi.go"
+          ]
+        },
+        {
+          "path": "agentplane/app/internal/httpapi/sessions",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/app/internal/httpapi/sessions/handler.go",
+            "agentplane/app/internal/httpapi/sessions/handler_test.go"
+          ]
+        },
+        {
           "path": "agentplane/app/internal/httpapi/threads",
           "production": 1,
           "tests": 1,
@@ -921,11 +937,10 @@
         },
         {
           "path": "agentplane/app/internal/server",
-          "production": 13,
+          "production": 11,
           "tests": 14,
           "files": [
             "agentplane/app/internal/server/action_facade_test.go",
-            "agentplane/app/internal/server/appconfigapi.go",
             "agentplane/app/internal/server/appconfigapi_test.go",
             "agentplane/app/internal/server/appservice.go",
             "agentplane/app/internal/server/operatorapi.go",
@@ -943,7 +958,6 @@
             "agentplane/app/internal/server/sessionapi.go",
             "agentplane/app/internal/server/sessionapi_test.go",
             "agentplane/app/internal/server/staging_config_test.go",
-            "agentplane/app/internal/server/statusapi.go",
             "agentplane/app/internal/server/statusapi_test.go",
             "agentplane/app/internal/server/streamapi.go",
             "agentplane/app/internal/server/streamapi_test.go",
@@ -1005,7 +1019,6 @@
         "agentplane/app/frontend/threads/"
       ],
       "pending_tracks": [
-        "settings-viper-removal",
         "gateway-connection-lease-removal",
         "runner-era-names",
         "app-session-client-name",
@@ -1023,7 +1036,7 @@
         "evidence_paths": [
           "agentplane/app/internal/auth/auth.go",
           "agentplane/app/internal/bridge/bridge.go",
-          "agentplane/app/internal/server/appconfigapi.go"
+          "agentplane/app/internal/httpapi/appconfigapi.go"
         ],
         "reviewed_package_paths": [
           "agentplane/app/cmd",
@@ -1034,6 +1047,8 @@
           "agentplane/app/internal/historyclient",
           "agentplane/app/internal/historydata",
           "agentplane/app/internal/historywatch",
+          "agentplane/app/internal/httpapi",
+          "agentplane/app/internal/httpapi/sessions",
           "agentplane/app/internal/httpapi/threads",
           "agentplane/app/internal/httperror",
           "agentplane/app/internal/migrations",
@@ -1187,6 +1202,41 @@
           }
         },
         {
+          "path": "agentplane/app/internal/httpapi",
+          "role": "App config and status HTTP handlers behind the generated AppService routes",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Resource-owned handlers from app-http-owners for the app's configuration and runtime status reads, with explicit inputs instead of the aggregate server's dependency bag.",
+          "gate": "No move planned; preserve the generated AppService routes and caller authorization.",
+          "evidence_paths": [
+            "agentplane/app/internal/httpapi/appconfigapi.go",
+            "agentplane/app/internal/httpapi/statusapi.go"
+          ],
+          "declared_packages": ["httpapi"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 2,
+            "tests": 0
+          }
+        },
+        {
+          "path": "agentplane/app/internal/httpapi/sessions",
+          "role": "Session HTTP handler behind the generated AppService routes",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "The Session resource handler extracted from the aggregate server (app-http-owners), with explicit Dispatcher, History and Environment inputs.",
+          "gate": "No move planned; preserve the generated AppService routes, caller authorization and drain behavior.",
+          "evidence_paths": [
+            "agentplane/app/internal/httpapi/sessions/handler.go"
+          ],
+          "declared_packages": ["sessions"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 1
+          }
+        },
+        {
           "path": "agentplane/app/internal/httpapi/threads",
           "role": "Thread read, metadata and watch HTTP handler behind the generated AppService routes",
           "decision": "retain",
@@ -1264,11 +1314,11 @@
           ],
           "reason": "The appService receiver aggregates unrelated route dependencies, while Run wires database/Kubernetes/streams. Separate route owners through narrow inputs; generated browser schema remains one contract.",
           "gate": "",
-          "evidence_paths": ["agentplane/app/internal/server/appconfigapi.go"],
+          "evidence_paths": ["agentplane/app/internal/httpapi/appconfigapi.go"],
           "declared_packages": ["server"],
           "pending_tracks": ["runner-era-names", "app-http-owners"],
           "counts": {
-            "non_test": 13,
+            "non_test": 11,
             "tests": 14
           }
         },
@@ -1281,7 +1331,7 @@
           "gate": "",
           "evidence_paths": ["agentplane/app/internal/settings/config.go"],
           "declared_packages": ["settings"],
-          "pending_tracks": ["settings-viper-removal"],
+          "pending_tracks": [],
           "counts": {
             "non_test": 2,
             "tests": 1
@@ -1634,7 +1684,6 @@
       ],
       "context_paths": ["agentplane/central_sampler/api/sampler.proto"],
       "pending_tracks": [
-        "transition-tolerance-removal",
         "sampler-json-contract",
         "sampler-execution-state",
         "sampler-request-preparation",
@@ -1900,7 +1949,6 @@
           ],
           "declared_packages": ["sessionstore"],
           "pending_tracks": [
-            "transition-tolerance-removal",
             "sampler-execution-state",
             "sampler-request-preparation",
             "sampler-content-persistence"
@@ -2045,7 +2093,7 @@
             "agentplane/central_sampler/testing/exportfixture/source.go"
           ],
           "declared_packages": ["exportfixture"],
-          "pending_tracks": ["transition-tolerance-removal"],
+          "pending_tracks": [],
           "counts": {
             "non_test": 1,
             "tests": 0
@@ -7171,7 +7219,7 @@
       "id": "runner_gateway",
       "path": "agentplane/runner_gateway",
       "counts": {
-        "files": 66,
+        "files": 67,
         "directories": 11
       },
       "directories": [
@@ -7277,9 +7325,10 @@
         },
         {
           "path": "agentplane/runner_gateway/internal/gateway",
-          "production": 8,
+          "production": 9,
           "tests": 9,
           "files": [
+            "agentplane/runner_gateway/internal/gateway/connection_metadata.go",
             "agentplane/runner_gateway/internal/gateway/connections.go",
             "agentplane/runner_gateway/internal/gateway/executor.go",
             "agentplane/runner_gateway/internal/gateway/fixture_test.go",
@@ -7325,7 +7374,6 @@
       ],
       "pending_tracks": [
         "transition-tolerance-removal",
-        "runtime-facts-off-lease",
         "gateway-connection-lease-removal",
         "environment-service-to-sandbox-controller",
         "runner-gateway-command",
@@ -7570,14 +7618,13 @@
           ],
           "declared_packages": ["gateway"],
           "pending_tracks": [
-            "runtime-facts-off-lease",
             "gateway-connection-lease-removal",
             "runner-gateway-command",
             "gateway-replica-ownership",
             "runner-gateway-connections-proxy"
           ],
           "counts": {
-            "non_test": 8,
+            "non_test": 9,
             "tests": 9
           }
         },
@@ -7630,7 +7677,7 @@
       "id": "sandbox_controller",
       "path": "agentplane/sandbox_controller",
       "counts": {
-        "files": 34,
+        "files": 40,
         "directories": 3
       },
       "directories": [
@@ -7646,8 +7693,8 @@
         },
         {
           "path": "agentplane/sandbox_controller/internal/controller",
-          "production": 16,
-          "tests": 12,
+          "production": 18,
+          "tests": 14,
           "files": [
             "agentplane/sandbox_controller/internal/controller/apply.go",
             "agentplane/sandbox_controller/internal/controller/behavior.go",
@@ -7671,6 +7718,10 @@
             "agentplane/sandbox_controller/internal/controller/launch.go",
             "agentplane/sandbox_controller/internal/controller/launch_test.go",
             "agentplane/sandbox_controller/internal/controller/quiescer.go",
+            "agentplane/sandbox_controller/internal/controller/runtime_facts.go",
+            "agentplane/sandbox_controller/internal/controller/runtime_facts_test.go",
+            "agentplane/sandbox_controller/internal/controller/runtime_states.go",
+            "agentplane/sandbox_controller/internal/controller/runtime_states_test.go",
             "agentplane/sandbox_controller/internal/controller/state_volume.go",
             "agentplane/sandbox_controller/internal/controller/state_volume_test.go",
             "agentplane/sandbox_controller/internal/controller/vm.go",
@@ -7681,9 +7732,11 @@
         },
         {
           "path": "agentplane/sandbox_controller/internal/runnercontrol",
-          "production": 2,
-          "tests": 1,
+          "production": 3,
+          "tests": 2,
           "files": [
+            "agentplane/sandbox_controller/internal/runnercontrol/observer.go",
+            "agentplane/sandbox_controller/internal/runnercontrol/observer_test.go",
             "agentplane/sandbox_controller/internal/runnercontrol/quiescer.go",
             "agentplane/sandbox_controller/internal/runnercontrol/quiescer_test.go",
             "agentplane/sandbox_controller/internal/runnercontrol/suspender.go"
@@ -7692,7 +7745,6 @@
       ],
       "context_paths": [],
       "pending_tracks": [
-        "runtime-facts-off-lease",
         "gateway-connection-lease-removal",
         "runner-era-names",
         "environment-service-to-sandbox-controller",
@@ -7731,10 +7783,7 @@
             "agentplane/sandbox_controller/cmd/main.go"
           ],
           "declared_packages": ["main"],
-          "pending_tracks": [
-            "runtime-facts-off-lease",
-            "environment-service-to-sandbox-controller"
-          ],
+          "pending_tracks": ["environment-service-to-sandbox-controller"],
           "counts": {
             "non_test": 2,
             "tests": 1
@@ -7759,14 +7808,13 @@
           ],
           "declared_packages": ["sandboxcontroller"],
           "pending_tracks": [
-            "runtime-facts-off-lease",
             "gateway-connection-lease-removal",
             "environment-service-to-sandbox-controller",
             "sandbox-controller-lifecycle"
           ],
           "counts": {
-            "non_test": 16,
-            "tests": 12
+            "non_test": 18,
+            "tests": 14
           }
         },
         {
@@ -7789,8 +7837,8 @@
             "runner-era-names"
           ],
           "counts": {
-            "non_test": 2,
-            "tests": 1
+            "non_test": 3,
+            "tests": 2
           }
         }
       ],
@@ -7803,8 +7851,8 @@
       "id": "sandboxes",
       "path": "agentplane/sandboxes",
       "counts": {
-        "files": 13,
-        "directories": 5
+        "files": 11,
+        "directories": 4
       },
       "directories": [
         {
@@ -7830,15 +7878,6 @@
           ]
         },
         {
-          "path": "agentplane/sandboxes/lease",
-          "production": 1,
-          "tests": 1,
-          "files": [
-            "agentplane/sandboxes/lease/facts.go",
-            "agentplane/sandboxes/lease/facts_test.go"
-          ]
-        },
-        {
           "path": "agentplane/sandboxes/runtimeconfig",
           "production": 1,
           "tests": 0,
@@ -7855,16 +7894,12 @@
         }
       ],
       "context_paths": [],
-      "pending_tracks": [
-        "runtime-facts-off-lease",
-        "gateway-connection-lease-removal",
-        "privileged-auth"
-      ],
-      "goal_note": "Agentplane v1alpha1 Sandbox and SandboxTemplate Kubernetes API, scheme, and stable name helpers.; Per-RPC transport client to the runner connected to a Sandbox.; Codec for the Runtime facts the Gateway publishes on its per-Sandbox Lease, with incarnation facts.",
+      "pending_tracks": ["gateway-connection-lease-removal", "privileged-auth"],
+      "goal_note": "Agentplane v1alpha1 Sandbox and SandboxTemplate Kubernetes API, scheme, and stable name helpers.; Per-RPC transport client to the runner connected to a Sandbox.; Deployment-published runtime/model facts shared by app config and environment discovery.",
       "decision": {
         "state": "RETAIN",
         "role": "Shared Sandbox API, clients, readers, lease and runtime configuration",
-        "goal_summary": "Agentplane v1alpha1 Sandbox and SandboxTemplate Kubernetes API, scheme, and stable name helpers.; Per-RPC transport client to the runner connected to a Sandbox.; Codec for the Runtime facts the Gateway publishes on its per-Sandbox Lease, with incarnation facts.",
+        "goal_summary": "Agentplane v1alpha1 Sandbox and SandboxTemplate Kubernetes API, scheme, and stable name helpers.; Per-RPC transport client to the runner connected to a Sandbox.; Deployment-published runtime/model facts shared by app config and environment discovery.",
         "reason": "Retain the named package owners for their specific roles and dependency boundaries below. Retention is an explicit current decision, not exclusion from future review.",
         "evidence_paths": [
           "agentplane/sandboxes/api/constants.go",
@@ -7872,14 +7907,11 @@
           "agentplane/sandboxes/api/sandbox_name.go",
           "agentplane/sandboxes/api/sandbox_name_test.go",
           "agentplane/sandboxes/environmentruntimeclient/client.go",
-          "agentplane/sandboxes/environmentruntimeclient/client_test.go",
-          "agentplane/sandboxes/lease/facts.go",
-          "agentplane/sandboxes/lease/facts_test.go"
+          "agentplane/sandboxes/environmentruntimeclient/client_test.go"
         ],
         "reviewed_package_paths": [
           "agentplane/sandboxes/api",
           "agentplane/sandboxes/environmentruntimeclient",
-          "agentplane/sandboxes/lease",
           "agentplane/sandboxes/runtimeconfig",
           "agentplane/sandboxes/sandboxreader"
         ]
@@ -7918,24 +7950,6 @@
           ],
           "declared_packages": ["environmentruntimeclient"],
           "pending_tracks": ["privileged-auth"],
-          "counts": {
-            "non_test": 1,
-            "tests": 1
-          }
-        },
-        {
-          "path": "agentplane/sandboxes/lease",
-          "role": "Codec for the Runtime facts the Gateway publishes on its per-Sandbox Lease, with incarnation facts.",
-          "decision": "remove",
-          "target_paths": [],
-          "reason": "Only the Gateway's fact publication and the Sandbox Controller's fact reads use it. Once the Controller observes Runtimes directly, nothing writes or reads Lease facts and the codec goes; the connection Lease itself stays in the Gateway until gateway-replica-ownership.",
-          "gate": "Removed after every fact reader moves to direct observation (`agentplane/plans/runtime_state_observation.md`).",
-          "evidence_paths": [
-            "agentplane/sandboxes/lease/facts.go",
-            "agentplane/sandboxes/lease/facts_test.go"
-          ],
-          "declared_packages": ["lease"],
-          "pending_tracks": ["runtime-facts-off-lease"],
           "counts": {
             "non_test": 1,
             "tests": 1
@@ -8538,8 +8552,6 @@
   "remaining_work": [
     {
       "source_paths": [
-        "agentplane/central_sampler/internal/sessionstore/sessions.go",
-        "agentplane/central_sampler/testing/exportfixture/source.go",
         "agentplane/runner_gateway/dispatcher/store.go",
         "agentplane/runner_gateway/dispatcher/delivery.go",
         "agentplane/runner_gateway/dispatcher/delivery_wake.go"
@@ -8552,135 +8564,31 @@
       "proposed_file_targets": [],
       "source_owner": null,
       "id": "transition-tolerance-removal",
-      "title": "Delete code kept for writers and rows from before finished cutovers",
-      "components": ["central_sampler", "runner_gateway"],
+      "title": "Delete the Dispatcher's branches for rows from before the attribution cutover",
+      "components": ["runner_gateway"],
       "status": "PLANNED",
       "kind": "deletion",
       "stage": 1,
       "priority": 1,
-      "summary": "Agentplane's deployed state is disposable (agentplane/AGENTS.md), so code that exists only to accept messages or rows written before a finished cutover goes before anything moves the files that hold it. A search at the pin found these sites: the sampler's Session-creation idempotency check ignores `execution_principal` from pre-cutover Dispatchers (`sessionstore/sessions.go`) and its export fixture keeps a pre-cutover configuration shape for legacy Sessions (`testing/exportfixture/source.go`); the Dispatcher keeps branches for Session rows with no execution Identity or attribution (`dispatcher/store.go`, `delivery.go`, `delivery_wake.go`). History's empty Sandbox UID is not one: a ServiceAccount writer whose account has no Sandbox owner binds without one (`history_service/internal/ingress/sandbox_uid.go`), a live path. The line-level census and per-item gates stay in DAG section 15 (`REFACTOR_COHERENCE_AUDIT`); this track only puts those removals first.",
+      "summary": "Agentplane's deployed state is disposable (agentplane/AGENTS.md), so code that exists only to accept rows written before a finished cutover goes before anything moves the files that hold it. The sampler's pre-Identity rows and fallbacks are gone (#16323, #16331). What remains: the Dispatcher keeps branches for Session rows with no execution Identity or attribution, \"a legacy writer's\" (`dispatcher/store.go`, `delivery.go`, `delivery_wake.go`). Not leftovers: History's empty Sandbox UID, which a ServiceAccount writer whose account has no Sandbox owner still produces (`history_service/internal/ingress/sandbox_uid.go`). The line-level census and per-item gates stay in DAG section 15 (`REFACTOR_COHERENCE_AUDIT`).",
       "how": [
-        "For each site, find every reader and confirm no current writer produces the old shape.",
-        "Remove code-only tolerances first, with their tests, one PR per owner.",
-        "Where retained rows still carry the old shape (Dispatcher Sessions without an execution Identity, stored sampler configurations), deleting those rows is a data change: its own PR, with the exact loss stated and operator approval before merge. The code branch goes after the rows are gone.",
-        "Leave the Lease facts' `Unrecognised` variants (`sandboxes/lease/facts.go`): they are STYLE.md's roll-safety deviation for a newer writer, not a leftover, and go with the codec in runtime-facts-off-lease."
+        "Confirm no current writer produces a Dispatcher row without an execution Identity or attribution, and count the retained rows on staging.",
+        "Deleting retained rows of the old shape is a data change: its own PR, with the exact loss stated and operator approval before merge. The code branches go after the rows are gone."
       ],
       "gate": "Per site: no live writer of the old shape, and no retained row that needs the branch (or that row's deletion approved and merged first). Historical actor, writer and sender attribution stays, as DAG section 15 keeps it. The Session-opening facade's rollback-window fallbacks in `app/internal/server/runnerapi.go` have their own DAG gate and are not in this track.",
       "preserve": "Historical attribution; current Identity fencing and refusals; protobuf field numbers (reserve removed fields).",
       "validation": [
-        "//agentplane/central_sampler/internal/sessionstore:sessionstore_test",
         "//agentplane/runner_gateway/dispatcher:store_integration_test"
       ],
       "evidence_paths": [
-        "agentplane/central_sampler/internal/sessionstore/sessions.go",
-        "agentplane/central_sampler/testing/exportfixture/source.go",
         "agentplane/runner_gateway/dispatcher/store.go",
         "agentplane/runner_gateway/dispatcher/delivery.go",
         "agentplane/runner_gateway/dispatcher/delivery_wake.go",
         "agentplane/AGENTS.md",
         "agentplane/plans/task_dag.md",
-        "agentplane/sandboxes/lease/facts.go",
         "agentplane/history_service/internal/ingress/sandbox_uid.go"
       ],
-      "review_size": "One PR per owner; row deletions are separate PRs."
-    },
-    {
-      "source_paths": [
-        "agentplane/app/internal/settings/config.go",
-        "agentplane/action_service/cmd/config.go"
-      ],
-      "target_paths": [],
-      "dependencies": [],
-      "path_moves": [],
-      "file_splits": [],
-      "deleted_paths": [],
-      "proposed_file_targets": [],
-      "source_owner": null,
-      "id": "settings-viper-removal",
-      "title": "Decode the app and Action Service settings files like every other service",
-      "components": ["app", "action_service"],
-      "status": "PLANNED",
-      "kind": "library cleanup",
-      "stage": 1,
-      "priority": 2,
-      "summary": "The app (`app/internal/settings/config.go`) and the Action Service (`action_service/cmd/config.go`) are the only Agentplane Go code importing Viper. Both read one required YAML file and call `UnmarshalExact`, with no environment or flag layering, so Viper only maps a decoded document onto the config struct. The Gateway does the same without Viper (`yaml.v3` into a map, then `mapstructure` with `ErrorUnused` and the same hooks); the Policy Controller, Sandbox Controller, MCP edge and egress sidecar decode with `yaml.v3` `KnownFields(true)`, STYLE.md's row for file-only settings.",
-      "how": [
-        "Replace Viper with one of the existing shapes, the same for both services: the Gateway's `yaml.v3` map plus `mapstructure` decoder with `ErrorUnused`, keeping the TextUnmarshaler and listener-authentication hooks, or `KnownFields(true)` where the config types carry yaml tags.",
-        "Keep the Action Service's split of `action_groups` from the other keys, the app's single-document check and its `sandbox_presets` key order.",
-        "Viper lowercases keys before decoding: prove the rendered staging and fixture settings decode to the same Config before and after."
-      ],
-      "gate": "Rendered staging and fixture settings decode identically; unknown keys still fail startup.",
-      "preserve": "The config-file path variables, Secret inputs read from the environment, and errors that name no Secret value.",
-      "validation": [
-        "//agentplane/app/internal/settings:settings_test",
-        "//agentplane/app/internal/server:staging_config_test",
-        "//agentplane/action_service/cmd:config_test"
-      ],
-      "evidence_paths": [
-        "agentplane/app/internal/settings/config.go",
-        "agentplane/action_service/cmd/config.go",
-        "agentplane/runner_gateway/config.go",
-        "STYLE.md",
-        "agentplane/sandbox_controller/cmd/config.go"
-      ],
-      "review_size": "One PR; both loaders are small."
-    },
-    {
-      "id": "runtime-facts-off-lease",
-      "title": "Move Runtime facts off the Gateway's per-Sandbox Lease",
-      "components": ["runner_gateway", "sandbox_controller", "sandboxes"],
-      "status": "PLANNED",
-      "kind": "leftover removal across two services",
-      "stage": 1,
-      "priority": 4,
-      "summary": "Operator, 2026-11-14: the \"environment runtime dials gateway\" connection mode was removed, and the Gateway Lease is no longer particularly useful. The `<sandbox>-environment-runtime` Lease does two jobs. It carries facts: the Gateway's observer receives each Runtime's `WatchState` snapshots and publishes them as Lease annotations (`internal/gateway/runner_observer.go`, `records.go`, the `sandboxes/lease` codec), and the Sandbox Controller caches the Leases and reads quiesce stage, idle-since, bootstrap, running setups and autosuspend blockers from them (`controller.go`, `idle.go`, `cache.go`). It is also the Gateway's connection Lease: claiming it allocates the `ConnectionEpoch` that fences every Gateway unary, admission and Executor call, and the Gateway checks its UID and epoch before publishing the `-control` EndpointSlice (`agentplane/plans/runtime_state_observation.md`, #16312). This item moves the facts; gateway-connection-lease-removal removes the connection Lease.",
-      "how": [
-        "Reader migration, as proposed in the design note: an observe-only `WatchState` mode that validates the Sandbox and incarnation but never installs or advances the Gateway's call epoch, a dedicated read-only Controller SVID and a direct Controller-to-Runtime path. The leader-elected Controller keeps facts in memory per Sandbox UID, Pod UID and boot ID and moves connectivity, bootstrap, quiesce, idle, setup and autosuspend-blocker reads to them. The Gateway keeps writing Lease facts during this phase.",
-        "Once every fact reader has moved, delete the Gateway's fact publication, the `sandboxes/lease` codec (its `Unrecognised` roll-safety variants go with it) and the Controller's Lease cache and reads.",
-        "Remove the Controller's Lease read permission (`cluster/cdk8s/agentplane/sandbox_controller.py`) in a later rollout, after the image references are pinned.",
-        "The connection Lease and its epoch go in gateway-connection-lease-removal."
-      ],
-      "gate": "Design proposed in `agentplane/plans/runtime_state_observation.md` (#16312); its review question (observe-only `WatchState` with a dedicated Controller SVID) is open. Cross-service protocol change: system tests covering bootstrap, idle suspend and quiesce must pass, and the PR states the rollback.",
-      "preserve": "Ready including Bootstrapped and BootstrapFailed as terminal; quiesce before suspend; idle suspension only, never deletion; incarnation fencing.",
-      "validation": [
-        "//agentplane/sandboxes/lease:lease_test",
-        "//agentplane/runner_gateway/internal/gateway:gateway_test",
-        "//agentplane/sandbox_controller/internal/controller:controller_test",
-        "//agentplane/sandbox_controller/internal/controller:children_integration_test"
-      ],
-      "evidence_paths": [
-        "agentplane/sandboxes/lease/facts.go",
-        "agentplane/sandboxes/lease/facts_test.go",
-        "agentplane/runner_gateway/internal/gateway/records.go",
-        "agentplane/runner_gateway/internal/gateway/runner_observer.go",
-        "agentplane/sandbox_controller/internal/controller/controller.go",
-        "agentplane/sandbox_controller/internal/controller/idle.go",
-        "agentplane/sandbox_controller/internal/controller/cache.go",
-        "agentplane/sandbox_controller/cmd/main.go",
-        "agentplane/env/runtime/control/environment_runtime.proto",
-        "agentplane/plans/runtime_state_observation.md"
-      ],
-      "source_paths": [
-        "agentplane/sandboxes/lease/facts.go",
-        "agentplane/sandboxes/lease/facts_test.go",
-        "agentplane/runner_gateway/internal/gateway/records.go",
-        "agentplane/runner_gateway/internal/gateway/runner_observer.go",
-        "agentplane/sandbox_controller/internal/controller/controller.go",
-        "agentplane/sandbox_controller/internal/controller/idle.go",
-        "agentplane/sandbox_controller/internal/controller/cache.go",
-        "agentplane/sandbox_controller/cmd/main.go"
-      ],
-      "target_paths": [],
-      "dependencies": [],
-      "path_moves": [],
-      "file_splits": [],
-      "deleted_paths": [
-        "agentplane/sandboxes/lease/facts.go",
-        "agentplane/sandboxes/lease/facts_test.go"
-      ],
-      "proposed_file_targets": [],
-      "source_owner": null,
-      "review_size": "One PR adding the observe-only stream and moving the readers; one deleting fact publication, the codec and the Controller's Lease reads; RBAC after the pins."
+      "review_size": "A data PR if rows remain, then one code PR."
     },
     {
       "source_paths": [
@@ -8721,11 +8629,10 @@
       "kind": "decided removal across services",
       "stage": 1,
       "priority": 5,
-      "summary": "Operator decision, 2026-11-14 (card \"Let any Gateway replica call a Runtime, dropping the Lease's call epoch?\", chose \"Any replica, no epoch\"): the Runtime fences calls only by incarnation and boot ID; the connection Lease, its epoch and the -control EndpointSlice go; callers use the Gateway Service. Today the Gateway claims the per-Sandbox Lease to allocate the `ConnectionEpoch` and watches it to reject superseded connections (`internal/gateway/records.go`, `runner_observer.go`); the Runtime checks that epoch on every call (`env/runtime/control/server.go`); and the Sandbox Controller keeps a selector-less `<sandbox>-control` Service (`control_service.go`) whose EndpointSlice the Gateway publishes, so the Dispatcher, the app bridge, the Notification Service's `ProxyRunner` and the Controller's quiesce reach the replica holding the connection.",
+      "summary": "Operator decision, 2026-11-14 (card \"Let any Gateway replica call a Runtime, dropping the Lease's call epoch?\", chose \"Any replica, no epoch\"): the Runtime fences calls only by incarnation and boot ID; the connection Lease, its epoch and the -control EndpointSlice go; callers use the Gateway Service. Today the Gateway claims the per-Sandbox Lease to allocate the `ConnectionEpoch` and watches it to reject superseded connections (`internal/gateway/records.go`, `runner_observer.go`); the Runtime accepts calls without the epoch since #16330 (`env/runtime/control/server.go`); and the Sandbox Controller keeps a selector-less `<sandbox>-control` Service (`control_service.go`) whose EndpointSlice the Gateway publishes, so the Dispatcher, the app bridge, the Notification Service's `ProxyRunner` and the Controller's quiesce reach the replica holding the connection.",
       "how": [
-        "Runtime first: accept calls without a connection epoch, fencing by incarnation and boot ID; update the Firecracker runtime probe with it.",
-        "After that image is pinned: any Gateway replica serves Runtime calls, callers address the Gateway Service, and the Gateway's Lease claim and watch, the epoch, its EndpointSlice publication and the Controller's `-control` Service go.",
-        "The Lease object itself goes once runtime-facts-off-lease has moved every fact reader. Lease and EndpointSlice RBAC (`cluster/cdk8s/agentplane/runner_gateway_workload.py`, `sandbox_controller.py`) comes out after the images are pinned."
+        "Any Gateway replica serves Runtime calls and callers address the Gateway Service; the Gateway's Lease claim and watch, the epoch, its EndpointSlice publication and the Controller's `-control` Service go.",
+        "Then drop the Runtime's epoch handling and the Firecracker runtime probe's epoch, and delete the Lease object. Lease and EndpointSlice RBAC (`cluster/cdk8s/agentplane/runner_gateway_workload.py`, `sandbox_controller.py`, including the Controller's connection-Lease permissions) comes out after the images are pinned."
       ],
       "gate": "Decided. Each step is its own PR after the previous image pin, receivers before senders. Cross-service protocol change: system tests covering command delivery, quiesce and suspend must pass, and each PR states its rollback.",
       "preserve": "Incarnation and boot-ID fencing; command idempotency by command ID; suspend generation checks; quiesce before suspend.",
@@ -8751,7 +8658,7 @@
         "agentplane/firecracker/testing/runtime_probe/main.go",
         "agentplane/plans/runtime_state_observation.md"
       ],
-      "review_size": "Three PRs, each after the previous image pin: the Runtime accepts epoch-less calls; any replica serves and callers use the Gateway Service; the Lease and its RBAC go."
+      "review_size": "Two PRs, each after the previous image pin: any replica serves and callers use the Gateway Service; the epoch, the Lease and its RBAC go."
     },
     {
       "id": "env-execution-package-names",
@@ -8861,7 +8768,9 @@
         "agentplane/sandbox_controller/internal/runnercontrol/quiescer_test.go",
         "agentplane/sandbox_controller/internal/runnercontrol/suspender.go",
         "agentplane/app/internal/bridge/runner.go",
-        "agentplane/app/internal/server/runnerapi.go"
+        "agentplane/app/internal/server/runnerapi.go",
+        "agentplane/sandbox_controller/internal/runnercontrol/observer.go",
+        "agentplane/sandbox_controller/internal/runnercontrol/observer_test.go"
       ],
       "target_paths": ["agentplane/sandbox_controller/internal/runtimecontrol"],
       "dependencies": [],
@@ -8877,6 +8786,14 @@
         {
           "from": "agentplane/sandbox_controller/internal/runnercontrol/suspender.go",
           "to": "agentplane/sandbox_controller/internal/runtimecontrol/suspender.go"
+        },
+        {
+          "from": "agentplane/sandbox_controller/internal/runnercontrol/observer.go",
+          "to": "agentplane/sandbox_controller/internal/runtimecontrol/observer.go"
+        },
+        {
+          "from": "agentplane/sandbox_controller/internal/runnercontrol/observer_test.go",
+          "to": "agentplane/sandbox_controller/internal/runtimecontrol/observer_test.go"
         }
       ],
       "file_splits": [],
@@ -9824,7 +9741,7 @@
       "summary": "Replace the aggregate appService dependency bag with resource-owned route handlers. Keep the app as the browser client/composition layer and keep generated AppService/OpenAPI output stable.",
       "how": [
         "Define narrow Thread, Session/environment and streaming handler inputs; keep a root registrar that composes them.",
-        "Thread read and metadata handling is extracted to `app/internal/httpapi/threads` (#16320); extract Session/environment routes and streaming facades next, as separate reviewable PRs.",
+        "Thread, Session, config and status handlers are extracted under `app/internal/httpapi` (#16320, #16326, #16329); extract the remaining routes in `runnerapi.go` and the streaming facades in `streamapi.go` next, as separate reviewable PRs.",
         "Separate Run wiring from route implementation after constructors no longer need private httpServer/appService fields. Keep schema export using the same registrations."
       ],
       "gate": "Go receiver methods cannot move independently while implementing one generated aggregate servicer. Choose explicit delegation/composition without duplicate schemas or backend APIs in the app.",
@@ -10903,7 +10820,7 @@
         "Do not rename the aggregate to proxy based on one role among several.",
         "Probe whether independent APIs can separate proxy calls from connection/watch lifetime; if not, keep the cohesive gateway package."
       ],
-      "gate": "No package split until an owner map and race tests prove close-before-release, observer join and generation fencing. Candidate paths are provisional; require narrow APIs and race-tested close-before-release before creating them. The Runtime facts this package publishes on the Lease go first (runtime-facts-off-lease); the connection Lease, its epoch and the control EndpointSlice go in gateway-connection-lease-removal. Split only what remains.",
+      "gate": "No package split until an owner map and race tests prove close-before-release, observer join and generation fencing. Candidate paths are provisional; require narrow APIs and race-tested close-before-release before creating them. The connection Lease, its epoch and the control EndpointSlice go first (gateway-connection-lease-removal). Split only what remains.",
       "preserve": "Peer authentication; Connection/observer lifetime and lease release ordering; Generation fences",
       "validation": [
         "//agentplane/runner_gateway/internal/gateway:gateway_test",
@@ -10916,7 +10833,6 @@
         "agentplane/runner_gateway/internal/gateway/proxy.go"
       ],
       "dependencies": [
-        "runtime-facts-off-lease",
         "gateway-connection-lease-removal",
         "gateway-replica-ownership",
         "environment-service-to-sandbox-controller"
@@ -11221,11 +11137,9 @@
       "title": "Delete leftovers",
       "work": [
         "transition-tolerance-removal",
-        "settings-viper-removal",
-        "runtime-facts-off-lease",
         "gateway-connection-lease-removal"
       ],
-      "result": "Remove code that exists only for finished cutovers, the last Viper loaders, dead error mappings and the per-Sandbox Gateway Lease: its Runtime facts move to the Sandbox Controller and, per the operator's 2026-11-14 decision, any Gateway replica serves Runtime calls, so the connection Lease, its epoch and the `-control` EndpointSlice go. True whatever the service map becomes."
+      "result": "Remove code that exists only for finished cutovers and the per-Sandbox Gateway Lease: per the operator's 2026-11-14 decision any Gateway replica serves Runtime calls, so the connection Lease, its epoch and the `-control` EndpointSlice go. True whatever the service map becomes."
     },
     {
       "stage": 2,
@@ -11301,12 +11215,12 @@
   ],
   "scope_coverage": {
     "top_level_areas": 36,
-    "go_packages": 221,
-    "go_files": 1263,
+    "go_packages": 222,
+    "go_files": 1270,
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "ce53bc8c8552d3f469343c73b441e27ace268edf",
+    "review_source_sha": "55e7df4226dd4d761a72b96ea055a362c953e3ec",
     "review_slices": [
       {
         "slice": "action_service",
@@ -11317,8 +11231,8 @@
       {
         "slice": "app",
         "components": ["app"],
-        "packages": 17,
-        "go_files": 73
+        "packages": 19,
+        "go_files": 75
       },
       {
         "slice": "central_sampler",
@@ -11474,19 +11388,19 @@
         "slice": "runner_gateway",
         "components": ["runner_gateway"],
         "packages": 11,
-        "go_files": 66
+        "go_files": 67
       },
       {
         "slice": "sandbox_controller",
         "components": ["sandbox_controller"],
         "packages": 3,
-        "go_files": 34
+        "go_files": 40
       },
       {
         "slice": "sandboxes",
         "components": ["sandboxes"],
-        "packages": 5,
-        "go_files": 13
+        "packages": 4,
+        "go_files": 11
       },
       {
         "slice": "session_client",
@@ -11536,76 +11450,62 @@
     },
     {
       "id": "next-2",
-      "track": "settings-viper-removal",
-      "title": "Decode the app and Action Service settings files like every other service",
-      "readiness": "PLANNED",
-      "first_step": "Decode both settings files without Viper, in one existing loader shape, and prove rendered settings decode identically."
-    },
-    {
-      "id": "next-3",
-      "track": "runtime-facts-off-lease",
-      "title": "Move Runtime facts off the Gateway's per-Sandbox Lease",
-      "readiness": "PLANNED",
-      "first_step": "Add the observe-only WatchState mode and move the Sandbox Controller's fact reads to it, once the design note's review question is answered."
-    },
-    {
-      "id": "next-4",
       "track": "gateway-connection-lease-removal",
       "title": "Let any Gateway replica serve Runtime calls and remove the connection Lease",
       "readiness": "PLANNED",
-      "first_step": "Make the Runtime accept calls without a connection epoch, fencing by incarnation and boot ID."
+      "first_step": "Let any Gateway replica serve Runtime calls and point callers at the Gateway Service."
     },
     {
-      "id": "next-5",
+      "id": "next-3",
       "track": "env-execution-package-names",
       "title": "Name execution adapter and companion packages for their actual roles",
       "readiness": "PLANNED",
       "first_step": "Update package clauses, imports, tests and Bazel deps; keep executor protobuf identities."
     },
     {
-      "id": "next-6",
+      "id": "next-4",
       "track": "runner-era-names",
       "title": "Stop calling the Environment Runtime a runner in Go names",
       "readiness": "PLANNED",
       "first_step": "Classify runner occurrences; rename runnercontrol to runtimecontrol with its callers."
     },
     {
-      "id": "next-7",
+      "id": "next-5",
       "track": "sampler-json-contract",
       "title": "Remove general helpers from the sampler protocol namespace",
       "readiness": "PLANNED",
       "first_step": "Classify every helper caller and retain the exact behavior of JSON numbers, trailing-input rejection and object-only decoding."
     },
     {
-      "id": "next-8",
+      "id": "next-6",
       "track": "egress-sidecar-runtime",
       "title": "Separate egress sidecar process entry from its relay runtime",
       "readiness": "PLANNED",
       "first_step": "Move the ten complete production/test files listed in path_moves under internal/sidecar and change package main to sidecar."
     },
     {
-      "id": "next-9",
+      "id": "next-7",
       "track": "llm-ingress-server-boundary",
       "title": "Separate LLM ingress process entry from server runtime",
       "readiness": "PLANNED",
       "first_step": "Move the eleven complete production/test files listed in path_moves under internal/server and update package declarations and Bazel targets."
     },
     {
-      "id": "next-10",
+      "id": "next-8",
       "track": "app-session-client-name",
       "title": "Name the app Session client by its responsibility",
       "readiness": "PLANNED",
       "first_step": "Confirm that app-local open/inspect Session behavior is not already supplied by shared session_client."
     },
     {
-      "id": "next-11",
+      "id": "next-9",
       "track": "firecracker-host-guest",
       "title": "Name Firecracker host and guest code while deferring shared identity and vsock ownership",
       "readiness": "PLANNED",
       "first_step": "Inventory host and guest imports, runfiles and launcher callers."
     },
     {
-      "id": "next-12",
+      "id": "next-10",
       "track": "environment-service-to-sandbox-controller",
       "title": "Move EnvironmentService into the Sandbox Controller",
       "readiness": "AGREED DIRECTION",
