@@ -451,7 +451,6 @@ def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: 
                 k8s.VolumeMount(name="tls", mount_path="/var/run/provider-tls", read_only=True),
                 k8s.VolumeMount(name="data", mount_path="/data", sub_path="state"),
                 k8s.VolumeMount(name="tmp", mount_path="/tmp"),
-                *([k8s.VolumeMount(name="shm", mount_path="/dev/shm")] if instance == "myquest" else []),
                 *recorder_mounts,
             ],
         ),
@@ -463,18 +462,6 @@ def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: 
                 name="data", persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=f"{name}-piraeus")
             ),
             tmp,
-            *(
-                [
-                    k8s.Volume(
-                        name="shm",
-                        empty_dir=k8s.EmptyDirVolumeSource(
-                            medium="Memory", size_limit=k8s.Quantity.from_string("256Mi")
-                        ),
-                    )
-                ]
-                if instance == "myquest"
-                else []
-            ),
             *recorder_volumes,
         ],
         selector_name=name,
