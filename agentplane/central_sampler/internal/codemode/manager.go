@@ -16,7 +16,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/google/uuid"
 )
 

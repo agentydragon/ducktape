@@ -5,8 +5,6 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
-
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 )
 
 func TestCodeModeRejectsAmbiguousOrUnknownRuntimeOutcome(t *testing.T) {

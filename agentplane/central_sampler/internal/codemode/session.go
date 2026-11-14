@@ -11,7 +11,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
 

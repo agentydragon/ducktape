@@ -9,8 +9,6 @@ import (
 	"unicode"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
-
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 )
 
 // ExecSource is the source and optional budget parsed from a freeform exec call.

@@ -6,8 +6,6 @@ import (
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
-
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 )
 
 // ObservationKind identifies one code-mode runtime result variant.
