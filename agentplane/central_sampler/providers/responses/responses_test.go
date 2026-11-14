@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerio"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
@@ -199,12 +200,12 @@ func TestProviderSemanticProgressResetsIdleBudgetForSamplingAndCompaction(t *tes
 			defer server.Close()
 
 			var progress atomic.Int32
-			ctx, hooks, stop := protocol.WithProviderIdleTimeout(t.Context(), 70*time.Millisecond, func(context.Context) error {
+			ctx, hooks, stop := providerio.WithProviderIdleTimeout(t.Context(), 70*time.Millisecond, func(context.Context) error {
 				progress.Add(1)
 				return nil
 			})
 			defer stop()
-			client := protocol.WithProviderResponseHeaderTimeout(server.Client(), 250*time.Millisecond)
+			client := providerio.WithProviderResponseHeaderTimeout(server.Client(), 250*time.Millisecond)
 			recorder := &providerEvidenceRecorder{}
 			response, err := Sample(ctx, client, server.URL, "Bearer fixture", []byte(`{}`), Config{Dialect: DialectLite}, recorder, nil, compaction, hooks)
 			if err != nil {
@@ -243,13 +244,13 @@ func TestRepeatedOutputItemTransitionsAndMissingIdentityDoNotRenewIdleBudget(t *
 	defer server.Close()
 
 	var progress atomic.Int32
-	ctx, hooks, stop := protocol.WithProviderIdleTimeout(t.Context(), 55*time.Millisecond, func(context.Context) error {
+	ctx, hooks, stop := providerio.WithProviderIdleTimeout(t.Context(), 55*time.Millisecond, func(context.Context) error {
 		progress.Add(1)
 		return nil
 	})
 	defer stop()
 	recorder := &providerEvidenceRecorder{}
-	_, err := Sample(ctx, protocol.WithProviderResponseHeaderTimeout(server.Client(), time.Second), server.URL, "Bearer fixture", []byte(`{}`), Config{Dialect: DialectLite}, recorder, nil, false, hooks)
+	_, err := Sample(ctx, providerio.WithProviderResponseHeaderTimeout(server.Client(), time.Second), server.URL, "Bearer fixture", []byte(`{}`), Config{Dialect: DialectLite}, recorder, nil, false, hooks)
 	var timeout *protocol.ProviderPhaseTimeoutError
 	if !errors.As(err, &timeout) || timeout.Phase != protocol.ProviderTimeoutSemanticIdle {
 		t.Fatalf("duplicate item transitions error=%v, want semantic-idle timeout", err)
@@ -286,13 +287,13 @@ func TestKeepalivesAndEmptyProviderDeltasDoNotResetIdleBudget(t *testing.T) {
 	defer server.Close()
 
 	var progress atomic.Int32
-	ctx, hooks, stop := protocol.WithProviderIdleTimeout(t.Context(), 45*time.Millisecond, func(context.Context) error {
+	ctx, hooks, stop := providerio.WithProviderIdleTimeout(t.Context(), 45*time.Millisecond, func(context.Context) error {
 		progress.Add(1)
 		return nil
 	})
 	defer stop()
 	recorder := &providerEvidenceRecorder{}
-	_, err := Sample(ctx, protocol.WithProviderResponseHeaderTimeout(server.Client(), time.Second), server.URL, "Bearer fixture", []byte(`{}`), Config{Dialect: DialectLite}, recorder, nil, false, hooks)
+	_, err := Sample(ctx, providerio.WithProviderResponseHeaderTimeout(server.Client(), time.Second), server.URL, "Bearer fixture", []byte(`{}`), Config{Dialect: DialectLite}, recorder, nil, false, hooks)
 	var timeout *protocol.ProviderPhaseTimeoutError
 	if !errors.As(err, &timeout) || timeout.Phase != protocol.ProviderTimeoutSemanticIdle {
 		t.Fatalf("keepalive-only stream error=%v, want semantic-idle timeout", err)
@@ -314,13 +315,13 @@ func TestEvidenceFailureStopsStreamWithoutReportingProgress(t *testing.T) {
 	defer server.Close()
 
 	var progress atomic.Int32
-	ctx, hooks, stop := protocol.WithProviderIdleTimeout(t.Context(), 250*time.Millisecond, func(context.Context) error {
+	ctx, hooks, stop := providerio.WithProviderIdleTimeout(t.Context(), 250*time.Millisecond, func(context.Context) error {
 		progress.Add(1)
 		return nil
 	})
 	defer stop()
 	recorder := &providerEvidenceRecorder{failOnProviderEvents: want}
-	_, err := Sample(ctx, protocol.WithProviderResponseHeaderTimeout(server.Client(), time.Second), server.URL, "Bearer fixture", []byte(`{}`), Config{Dialect: DialectLite}, recorder, nil, false, hooks)
+	_, err := Sample(ctx, providerio.WithProviderResponseHeaderTimeout(server.Client(), time.Second), server.URL, "Bearer fixture", []byte(`{}`), Config{Dialect: DialectLite}, recorder, nil, false, hooks)
 	var persistenceErr *protocol.ProviderEvidencePersistenceError
 	if !errors.As(err, &persistenceErr) || !errors.Is(err, want) || progress.Load() != 0 {
 		t.Fatalf("evidence failure=%v, progress callbacks=%d", err, progress.Load())

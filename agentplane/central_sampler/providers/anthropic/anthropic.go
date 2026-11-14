@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerio"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
@@ -202,7 +203,7 @@ func Sample(ctx context.Context, client *http.Client, baseURL, credential string
 	request.Header.Set("x-api-key", credential)
 	response, err := client.Do(request)
 	if err != nil {
-		return nil, protocol.ProviderTransportError(ctx, err)
+		return nil, providerio.ProviderTransportError(ctx, err)
 	}
 	defer response.Body.Close()
 	reader := protocol.CaptureReader{Reader: response.Body, Context: ctx, Evidence: evidence}
@@ -218,10 +219,10 @@ func Sample(ctx context.Context, client *http.Client, baseURL, credential string
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		body, err := io.ReadAll(io.LimitReader(reader, protocol.MaxProviderStreamBytes))
 		if err != nil {
-			return nil, protocol.ProviderTransportError(ctx, err)
+			return nil, providerio.ProviderTransportError(ctx, err)
 		}
 		if response.StatusCode == http.StatusRequestTimeout || response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= http.StatusInternalServerError {
-			return nil, &protocol.ProviderTransientError{Cause: fmt.Errorf("Anthropic returned HTTP %d", response.StatusCode), RetryAfter: protocol.ParseProviderRetryAfter(response.Header.Get("Retry-After"))}
+			return nil, &protocol.ProviderTransientError{Cause: fmt.Errorf("Anthropic returned HTTP %d", response.StatusCode), RetryAfter: providerio.ParseProviderRetryAfter(response.Header.Get("Retry-After"))}
 		}
 		return nil, &protocol.KnownFailureError{Evidence: map[string]any{
 			"http_status": head.HTTPStatus, "provider_request_id": head.ProviderRequestID, "content_type": head.ContentType, "body": string(body),
@@ -229,7 +230,7 @@ func Sample(ctx context.Context, client *http.Client, baseURL, credential string
 	}
 	result, err := ReadStream(ctx, io.LimitReader(reader, protocol.MaxProviderStreamBytes), evidence, compaction, hooks)
 	if err != nil {
-		err = protocol.ProviderContextError(ctx, err)
+		err = providerio.ProviderContextError(ctx, err)
 	}
 	if result != nil {
 		result.HTTPStatus = response.StatusCode
@@ -552,7 +553,7 @@ func ReadStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 		}
 		if readErr != nil {
 			if !errors.Is(readErr, io.EOF) {
-				return nil, protocol.ProviderTransportError(ctx, readErr)
+				return nil, providerio.ProviderTransportError(ctx, readErr)
 			}
 			return nil, &protocol.ProviderTransientError{Cause: errors.New("Anthropic stream ended before message_stop")}
 		}

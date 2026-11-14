@@ -30,6 +30,6 @@ go_library(
 
 go_test(
     name = "protocol_test",
-    srcs = ["provider_hooks_test.go"],
+    srcs = ["errors_test.go"],
     embed = [":protocol"],
 )

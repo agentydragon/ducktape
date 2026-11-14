@@ -29,6 +29,7 @@ go_library(
         "//agentplane/central_sampler/internal/executor",
         "//agentplane/central_sampler/internal/outputbuffer",
         "//agentplane/central_sampler/internal/promptimage",
+        "//agentplane/central_sampler/internal/providerio",
         "//agentplane/central_sampler/internal/sessionstore",
         "//agentplane/central_sampler/internal/settings",
         "//agentplane/central_sampler/internal/toolcontract",
