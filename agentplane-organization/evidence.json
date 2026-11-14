@@ -1,28 +1,45 @@
 {
   "schema_version": 3,
   "artifact_kind": "source-grounded organization proposal and file ledger",
-  "source_sha": "6dfbd741f5ba004f02aba929cadbbd59b6950393",
+  "source_sha": "749fda99a200b5a60b21c0af343074c5e4fd3ac9",
   "observed_at_utc": "2026-11-14T00:48:53+00:00",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "freshness": {
-    "checked_origin_devel": "a2c0b74e3cd4a14e2397adb25847665e1a09c094",
-    "checked_at_utc": "2026-11-14T01:36:53+00:00",
-    "agentplane_diff_from_reviewed_pin": [
-      "agentplane/debug/storage_controller_startup.md",
-      "agentplane/system_tests/scenarios/storage.py",
-      "agentplane/system_tests/suites/BUILD.bazel",
-      "agentplane/system_tests/suites/test_storage_startup.py"
+    "checked_origin_devel": "749fda99a200b5a60b21c0af343074c5e4fd3ac9",
+    "checked_at_utc": "2026-11-14T02:20:00+00:00",
+    "previous_pin": "6dfbd741f5ba004f02aba929cadbbd59b6950393",
+    "go_or_proto_delta": "51 Go files changed between the pins, all from four landed work items; every other tracked Go file has the same blob hash.",
+    "landed": [
+      {
+        "track": "app-proxy-owners",
+        "pr": 16309,
+        "result": "`app/internal/proxy` split into `electricproxy` and `upstream`."
+      },
+      {
+        "track": "action-service-cmd-layout",
+        "pr": 16310,
+        "result": "The Action Service package main moved to `action_service/cmd`."
+      },
+      {
+        "track": "policy-controller-rpc-cleanup",
+        "pr": 16313,
+        "result": "`internal/rpc` declares package rpc and is split into service, sandbox-binding, Identity and watch files; `agentplane/policy/errors.go` and the dead Gateway mapping are gone. The planned `policy_sets.go` and `resources.go` were not created; those methods stayed in `service.go`."
+      },
+      {
+        "track": "sampler-provider-io",
+        "pr": 16314,
+        "result": "Provider I/O budgets and errors moved to `central_sampler/internal/providerio`; `protocol` keeps the contracts."
+      }
     ],
-    "go_or_proto_delta": [],
-    "interpretation": "All tracked Agentplane Go/protobuf source is unchanged from the reviewed pin. The listed later changes concern non-Go storage tests and investigation notes."
+    "interpretation": "Landed work items are removed, not listed as done. Moved and new files are reclassified at their new paths; packages that no longer hold Go files (`action_service` root, `app/internal/proxy`, `policy` root) left the ledger."
   },
   "inventory": {
-    "source_sha": "6dfbd741f5ba004f02aba929cadbbd59b6950393",
+    "source_sha": "749fda99a200b5a60b21c0af343074c5e4fd3ac9",
     "counts": {
-      "files": 1256,
-      "directories": 219,
-      "production": 691,
-      "tests": 565
+      "files": 1261,
+      "directories": 220,
+      "production": 695,
+      "tests": 566
     },
     "all_tracked_go_files_included": true,
     "manifest_path": "agentplane-organization/go-files.json"
@@ -9918,14 +9935,14 @@
       "No page errors or console errors; no horizontal page overflow in any case.",
       "Live system color-scheme change switches both pages from light to dark.",
       "Component selector (runner_gateway, sandbox_controller, action_service), Go filename toggle and work-status filter (OPEN DIRECTION shows its four items).",
-      "Goal trees show EnvironmentService's proposed owners under the Sandbox Controller, runtimecontrol's exact move and no emptied directories."
+      "Goal trees show the Action Service's cmd package, EnvironmentService's proposed owners under the Sandbox Controller and no emptied directories."
     ],
     "structural_checks": [
-      "All 1,256 source files and 219 package decisions match the immutable inventory; every pending track exists.",
+      "All 1,261 tracked Go files at devel 749fda99a2 match the ledger's path, blob hash, line count, package and test flags; the 220 directories and package decisions match one to one; every pending track exists.",
       "Every non-retained package has a work item; adoption stages cover every work item once; content prerequisites precede dependents; move targets are unique and new.",
-      "New work items' source and evidence paths exist on devel a2c0b74e3c and their validation labels exist in the pinned BUILD files."
+      "Every work item's source, evidence and deletion paths exist at 749fda99a2, and its validation labels exist in the pinned BUILD files."
     ],
-    "visual_review": "Inspected the remaining-work queue, adoption order, sandbox_controller trees and new work-item cards (desktop light, mobile dark). Screenshots were not published.",
+    "visual_review": "Inspected the reworked runtime-facts-off-lease and gateway-replica-ownership cards, the remaining-work queue, adoption order and the action_service and sandbox_controller trees (desktop light, mobile dark). Screenshots were not published.",
     "limits": "Planning/report validation only. No Go behavior changes, Go tests, deployments or live acceptance are claimed."
   },
   "sequence_review": {
@@ -9956,6 +9973,11 @@
       "The twelve Python settings.py models are live cdk8s authoring schemas and fixture inputs, not dead code; making settings single-source is an open mechanism choice (settings-single-source).",
       "The Lease facts' Unrecognised variants are STYLE.md's roll-safety deviation, not a tolerance for removed state; they go with the Lease."
     ],
-    "limits": "Planning only. No Go code moved, no Go tests run, nothing deployed."
+    "limits": "Planning only. No Go code moved, no Go tests run, nothing deployed.",
+    "runtime_facts_split": {
+      "source": "agentplane/plans/runtime_state_observation.md (#16312, merged 2026-11-14 02:11 UTC)",
+      "finding": "The per-Sandbox Lease is also the Gateway's connection Lease: claiming it allocates the ConnectionEpoch that fences Gateway unary, admission and Executor calls and guards EndpointSlice publication. Calling the current WatchState from the Controller would replace the Gateway's epoch.",
+      "plan_change": "gateway-runtime-lease-removal became runtime-facts-off-lease (stage 1: move fact readers, then delete fact publication and the codec). Deleting the connection Lease moved to gateway-replica-ownership (stage 5), which must name the replacement call fence and EndpointSlice owner."
+    }
   }
 }

@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
-  "source_sha": "6dfbd741f5ba004f02aba929cadbbd59b6950393",
-  "observed_at_utc": "2026-11-14T00:48:53+00:00",
+  "source_sha": "749fda99a200b5a60b21c0af343074c5e4fd3ac9",
+  "observed_at_utc": "2026-11-14T02:20:00+00:00",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1256,
-    "directories": 219,
-    "production": 691,
-    "tests": 565
+    "files": 1261,
+    "directories": 220,
+    "production": 695,
+    "tests": 566
   },
   "legend": {
     "=": "Intentional retained owner with an explicit package rationale",
@@ -40,26 +40,26 @@
       },
       "directories": [
         {
-          "path": "agentplane/action_service",
-          "production": 2,
-          "tests": 7,
-          "files": [
-            "agentplane/action_service/config.go",
-            "agentplane/action_service/config_test.go",
-            "agentplane/action_service/executors_test.go",
-            "agentplane/action_service/integration_testmain_test.go",
-            "agentplane/action_service/main.go",
-            "agentplane/action_service/main_test.go",
-            "agentplane/action_service/push_test.go",
-            "agentplane/action_service/sandbox_groups_test.go",
-            "agentplane/action_service/svid_test.go"
-          ]
-        },
-        {
           "path": "agentplane/action_service/callers",
           "production": 1,
           "tests": 0,
           "files": ["agentplane/action_service/callers/labels.go"]
+        },
+        {
+          "path": "agentplane/action_service/cmd",
+          "production": 2,
+          "tests": 7,
+          "files": [
+            "agentplane/action_service/cmd/config.go",
+            "agentplane/action_service/cmd/config_test.go",
+            "agentplane/action_service/cmd/executors_test.go",
+            "agentplane/action_service/cmd/integration_testmain_test.go",
+            "agentplane/action_service/cmd/main.go",
+            "agentplane/action_service/cmd/main_test.go",
+            "agentplane/action_service/cmd/push_test.go",
+            "agentplane/action_service/cmd/sandbox_groups_test.go",
+            "agentplane/action_service/cmd/svid_test.go"
+          ]
         },
         {
           "path": "agentplane/action_service/docs",
@@ -348,21 +348,20 @@
       ],
       "pending_tracks": [
         "settings-viper-removal",
-        "action-service-cmd-layout",
         "orchestration-v1-retirement",
         "action-service-grpcgate",
         "settings-single-source",
         "protobuf-alignment"
       ],
-      "goal_note": "Executable composition, settings, listeners, dependency wiring and service tests.; Action, operator, policy and Web Push gRPC adapters plus method admission/drain gate.",
+      "goal_note": "Action, operator, policy and Web Push gRPC adapters plus method admission/drain gate.",
       "decision": {
         "state": "REWORK",
         "role": "Action admission, authorization, orchestration and execution",
-        "goal_summary": "Executable composition, settings, listeners, dependency wiring and service tests.; Action, operator, policy and Web Push gRPC adapters plus method admission/drain gate.",
+        "goal_summary": "Action, operator, policy and Web Push gRPC adapters plus method admission/drain gate.",
         "reason": "Package decisions below name each current responsibility, proposed targets and its extraction/naming gate. Existing shared transactions and mutable lifecycle state are constraints to resolve, not blanket reasons to retain every file arrangement.",
         "evidence_paths": [
-          "agentplane/action_service/main.go",
-          "agentplane/action_service/config.go",
+          "agentplane/action_service/cmd/main.go",
+          "agentplane/action_service/cmd/config.go",
           "agentplane/action_service/BUILD.bazel",
           "agentplane/action_service/internal/rpc/gate.go",
           "agentplane/action_service/internal/rpc/policy.go",
@@ -370,8 +369,8 @@
           "agentplane/action_service/internal/rpc/fixture_test.go"
         ],
         "reviewed_package_paths": [
-          "agentplane/action_service",
           "agentplane/action_service/callers",
+          "agentplane/action_service/cmd",
           "agentplane/action_service/docs",
           "agentplane/action_service/internal/admission/catalog",
           "agentplane/action_service/internal/admission/informer",
@@ -396,30 +395,6 @@
       },
       "package_decisions": [
         {
-          "path": "agentplane/action_service",
-          "role": "Executable composition, settings, listeners, dependency wiring and service tests.",
-          "decision": "move",
-          "target_paths": ["agentplane/action_service/cmd"],
-          "reason": "Move the complete binary-only package main into cmd. The code is composition, not a reusable service library; no external Go importer exists, and sibling app, central_sampler and runner_gateway use cmd.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/action_service/main.go",
-            "agentplane/action_service/config.go",
-            "agentplane/action_service/BUILD.bazel"
-          ],
-          "declared_packages": ["main"],
-          "pending_tracks": [
-            "settings-viper-removal",
-            "action-service-cmd-layout",
-            "orchestration-v1-retirement",
-            "action-service-grpcgate"
-          ],
-          "counts": {
-            "non_test": 2,
-            "tests": 7
-          }
-        },
-        {
           "path": "agentplane/action_service/callers",
           "role": "Stable caller label constants used by workload admission and policy objects.",
           "decision": "retain",
@@ -432,6 +407,28 @@
           "counts": {
             "non_test": 1,
             "tests": 0
+          }
+        },
+        {
+          "path": "agentplane/action_service/cmd",
+          "role": "Executable composition, settings, listeners, dependency wiring and service tests.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "The binary-only package main: composition, not a reusable service library, under cmd like the app, central_sampler and runner_gateway commands. Python settings, catalog and docs stay at the component root.",
+          "gate": "Preserve settings, listeners and the actions binary name.",
+          "evidence_paths": [
+            "agentplane/action_service/cmd/config.go",
+            "agentplane/action_service/cmd/main.go"
+          ],
+          "declared_packages": ["main"],
+          "pending_tracks": [
+            "settings-viper-removal",
+            "orchestration-v1-retirement",
+            "action-service-grpcgate"
+          ],
+          "counts": {
+            "non_test": 2,
+            "tests": 7
           }
         },
         {
@@ -803,7 +800,7 @@
       "path": "agentplane/app",
       "counts": {
         "files": 71,
-        "directories": 15
+        "directories": 16
       },
       "directories": [
         {
@@ -838,6 +835,15 @@
             "agentplane/app/internal/bridge/dispatcher.go",
             "agentplane/app/internal/bridge/errors.go",
             "agentplane/app/internal/bridge/runner.go"
+          ]
+        },
+        {
+          "path": "agentplane/app/internal/electricproxy",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/app/internal/electricproxy/electric.go",
+            "agentplane/app/internal/electricproxy/electric_test.go"
           ]
         },
         {
@@ -890,17 +896,6 @@
           "files": [
             "agentplane/app/internal/migrations/migrations.go",
             "agentplane/app/internal/migrations/migrations_test.go"
-          ]
-        },
-        {
-          "path": "agentplane/app/internal/proxy",
-          "production": 2,
-          "tests": 2,
-          "files": [
-            "agentplane/app/internal/proxy/electric.go",
-            "agentplane/app/internal/proxy/electric_test.go",
-            "agentplane/app/internal/proxy/upstream.go",
-            "agentplane/app/internal/proxy/upstream_test.go"
           ]
         },
         {
@@ -977,6 +972,15 @@
             "agentplane/app/internal/threads/store.go",
             "agentplane/app/internal/threads/store_integration_test.go"
           ]
+        },
+        {
+          "path": "agentplane/app/internal/upstream",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/app/internal/upstream/upstream.go",
+            "agentplane/app/internal/upstream/upstream_test.go"
+          ]
         }
       ],
       "context_paths": [
@@ -994,7 +998,6 @@
       "pending_tracks": [
         "settings-viper-removal",
         "runner-era-names",
-        "app-proxy-owners",
         "app-session-client-name",
         "app-http-owners",
         "app-browser-session-store",
@@ -1002,34 +1005,34 @@
         "settings-single-source",
         "protobuf-alignment"
       ],
-      "goal_note": "Operator OIDC login, browser sessions and authenticated caller projection; App-specific Session creation and Runner/Gateway client composition; Electric shapes and authenticated backend HTTP/stream facades; Browser route registration, resource views and process composition",
+      "goal_note": "Operator OIDC login, browser sessions and authenticated caller projection; App-specific Session creation and Runner/Gateway client composition; Browser route registration, resource views and process composition",
       "decision": {
         "state": "REWORK",
         "role": "Browser-facing HTTP service and frontend",
-        "goal_summary": "Operator OIDC login, browser sessions and authenticated caller projection; App-specific Session creation and Runner/Gateway client composition; Electric shapes and authenticated backend HTTP/stream facades; Browser route registration, resource views and process composition",
+        "goal_summary": "Operator OIDC login, browser sessions and authenticated caller projection; App-specific Session creation and Runner/Gateway client composition; Browser route registration, resource views and process composition",
         "reason": "Package decisions below name each current responsibility, proposed targets and its extraction/naming gate. Existing shared transactions and mutable lifecycle state are constraints to resolve, not blanket reasons to retain every file arrangement.",
         "evidence_paths": [
           "agentplane/app/internal/auth/auth.go",
           "agentplane/app/internal/bridge/bridge.go",
-          "agentplane/app/internal/proxy/electric.go",
           "agentplane/app/internal/server/appconfigapi.go"
         ],
         "reviewed_package_paths": [
           "agentplane/app/cmd",
           "agentplane/app/internal/auth",
           "agentplane/app/internal/bridge",
+          "agentplane/app/internal/electricproxy",
           "agentplane/app/internal/federation",
           "agentplane/app/internal/historyclient",
           "agentplane/app/internal/historydata",
           "agentplane/app/internal/historywatch",
           "agentplane/app/internal/httperror",
           "agentplane/app/internal/migrations",
-          "agentplane/app/internal/proxy",
           "agentplane/app/internal/sandboxes",
           "agentplane/app/internal/server",
           "agentplane/app/internal/settings",
           "agentplane/app/internal/status",
-          "agentplane/app/internal/threads"
+          "agentplane/app/internal/threads",
+          "agentplane/app/internal/upstream"
         ]
       },
       "package_decisions": [
@@ -1085,6 +1088,23 @@
           ],
           "counts": {
             "non_test": 4,
+            "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/app/internal/electricproxy",
+          "role": "Electric shape requests with projection-epoch and shape authorization",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Electric's shape protocol, epoch check and shape authorization have their own dependency surface, separate from backend forwarding.",
+          "gate": "No move planned; preserve shape authorization and stale-epoch rejection.",
+          "evidence_paths": [
+            "agentplane/app/internal/electricproxy/electric.go"
+          ],
+          "declared_packages": ["electricproxy"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
             "tests": 1
           }
         },
@@ -1189,25 +1209,6 @@
           }
         },
         {
-          "path": "agentplane/app/internal/proxy",
-          "role": "Electric shapes and authenticated backend HTTP/stream facades",
-          "decision": "rework",
-          "target_paths": [
-            "agentplane/app/internal/proxy",
-            "agentplane/app/internal/electricproxy",
-            "agentplane/app/internal/upstream"
-          ],
-          "reason": "Electric epoch/shape authorization and backend response forwarding are separate protocol responsibilities currently grouped only as proxies.",
-          "gate": "",
-          "evidence_paths": ["agentplane/app/internal/proxy/electric.go"],
-          "declared_packages": ["proxy"],
-          "pending_tracks": ["app-proxy-owners"],
-          "counts": {
-            "non_test": 2,
-            "tests": 2
-          }
-        },
-        {
           "path": "agentplane/app/internal/sandboxes",
           "role": "App Sandbox inventory watch and serial-console read adapters",
           "decision": "retain",
@@ -1288,6 +1289,21 @@
             "non_test": 1,
             "tests": 1
           }
+        },
+        {
+          "path": "agentplane/app/internal/upstream",
+          "role": "Forwarding app requests to backend services and generated HTTP facades",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Streams HTTP to one configured backend or an in-process generated facade; route composition supplies the target and its credentials.",
+          "gate": "No move planned; preserve no-redirect, no whole-request timeout streaming.",
+          "evidence_paths": ["agentplane/app/internal/upstream/upstream.go"],
+          "declared_packages": ["upstream"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 1
+          }
         }
       ],
       "tree_annotations": {
@@ -1299,8 +1315,8 @@
       "id": "central_sampler",
       "path": "agentplane/central_sampler",
       "counts": {
-        "files": 144,
-        "directories": 19
+        "files": 147,
+        "directories": 20
       },
       "directories": [
         {
@@ -1387,6 +1403,16 @@
           "files": [
             "agentplane/central_sampler/internal/promptimage/image_preparation.go",
             "agentplane/central_sampler/internal/promptimage/image_preparation_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/central_sampler/internal/providerio",
+          "production": 2,
+          "tests": 1,
+          "files": [
+            "agentplane/central_sampler/internal/providerio/errors.go",
+            "agentplane/central_sampler/internal/providerio/providerio_test.go",
+            "agentplane/central_sampler/internal/providerio/timeouts.go"
           ]
         },
         {
@@ -1527,11 +1553,11 @@
             "agentplane/central_sampler/protocol/content.go",
             "agentplane/central_sampler/protocol/context.go",
             "agentplane/central_sampler/protocol/errors.go",
+            "agentplane/central_sampler/protocol/errors_test.go",
             "agentplane/central_sampler/protocol/evidence.go",
             "agentplane/central_sampler/protocol/instructions.go",
             "agentplane/central_sampler/protocol/json.go",
             "agentplane/central_sampler/protocol/provider_hooks.go",
-            "agentplane/central_sampler/protocol/provider_hooks_test.go",
             "agentplane/central_sampler/protocol/status.go",
             "agentplane/central_sampler/protocol/tool_definitions.go",
             "agentplane/central_sampler/protocol/tool_invocation.go",
@@ -1583,7 +1609,6 @@
       "pending_tracks": [
         "transition-tolerance-removal",
         "sampler-json-contract",
-        "sampler-provider-io",
         "sampler-execution-state",
         "sampler-request-preparation",
         "sampler-content-persistence",
@@ -1616,6 +1641,7 @@
           "agentplane/central_sampler/internal/executor",
           "agentplane/central_sampler/internal/outputbuffer",
           "agentplane/central_sampler/internal/promptimage",
+          "agentplane/central_sampler/internal/providerio",
           "agentplane/central_sampler/internal/residentruntime",
           "agentplane/central_sampler/internal/rpc",
           "agentplane/central_sampler/internal/sessionstore",
@@ -1776,6 +1802,24 @@
           }
         },
         {
+          "path": "agentplane/central_sampler/internal/providerio",
+          "role": "Provider I/O policy: response-header and semantic-idle budgets, retry-after parsing and phase cancellation errors",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Concrete provider I/O behavior the resident runtime composes; the protocol package keeps only the contracts the native adapters implement.",
+          "gate": "No move planned; preserve timeout classification and retry budgets.",
+          "evidence_paths": [
+            "agentplane/central_sampler/internal/providerio/errors.go",
+            "agentplane/central_sampler/internal/providerio/timeouts.go"
+          ],
+          "declared_packages": ["providerio"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 2,
+            "tests": 1
+          }
+        },
+        {
           "path": "agentplane/central_sampler/internal/residentruntime",
           "role": "Replica scheduler and leased per-session execution",
           "decision": "design",
@@ -1789,7 +1833,7 @@
             "agentplane/central_sampler/internal/residentruntime/codemode.go"
           ],
           "declared_packages": ["residentruntime"],
-          "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
+          "pending_tracks": ["sampler-resident-session"],
           "counts": {
             "non_test": 13,
             "tests": 12
@@ -1913,7 +1957,6 @@
           "decision": "rework",
           "target_paths": [
             "agentplane/central_sampler/protocol",
-            "agentplane/central_sampler/internal/providerio",
             "agentplane/central_sampler/internal/executionstate",
             "agentplane/central_sampler/internal/jsonwire"
           ],
@@ -1923,7 +1966,6 @@
           "declared_packages": ["protocol"],
           "pending_tracks": [
             "sampler-json-contract",
-            "sampler-provider-io",
             "sampler-execution-state"
           ],
           "counts": {
@@ -6578,16 +6620,10 @@
       "id": "policy",
       "path": "agentplane/policy",
       "counts": {
-        "files": 18,
-        "directories": 5
+        "files": 17,
+        "directories": 4
       },
       "directories": [
-        {
-          "path": "agentplane/policy",
-          "production": 1,
-          "tests": 0,
-          "files": ["agentplane/policy/errors.go"]
-        },
         {
           "path": "agentplane/policy/api/v1alpha1",
           "production": 6,
@@ -6633,21 +6669,27 @@
         }
       ],
       "context_paths": ["agentplane/policy/v1/policy_service.proto"],
-      "pending_tracks": ["policy-controller-rpc-cleanup", "protobuf-alignment"],
-      "goal_note": "Unused exported UnknownPolicySetError package",
+      "pending_tracks": ["protobuf-alignment"],
+      "goal_note": "Versioned Policy CRD types and scheme; Policy CRD-to-proto generator binary; PolicyBinding condition apply preparation",
       "decision": {
-        "state": "REWORK",
+        "state": "RETAIN",
         "role": "Policy API types, client interpretation and informer health",
-        "goal_summary": "Unused exported UnknownPolicySetError package",
-        "reason": "Package decisions below name each current responsibility, proposed targets and its extraction/naming gate. Existing shared transactions and mutable lifecycle state are constraints to resolve, not blanket reasons to retain every file arrangement.",
+        "goal_summary": "Versioned Policy CRD types and scheme; Policy CRD-to-proto generator binary; PolicyBinding condition apply preparation",
+        "reason": "Retain the named package owners for their specific roles and dependency boundaries below. Retention is an explicit current decision, not exclusion from future review.",
         "evidence_paths": [
-          "agentplane/policy/BUILD.bazel",
-          "agentplane/policy/errors.go",
-          "agentplane/runner_gateway/environments/management.go",
-          "agentplane/runner_gateway/environments/BUILD.bazel"
+          "agentplane/policy/api/v1alpha1/BUILD.bazel",
+          "agentplane/policy/api/v1alpha1/conditions.go",
+          "agentplane/policy/api/v1alpha1/doc.go",
+          "agentplane/policy/api/v1alpha1/protogen/BUILD.bazel",
+          "agentplane/policy/api/v1alpha1/protogen/main.go",
+          "agentplane/policy/client/apply/BUILD.bazel",
+          "agentplane/policy/client/apply/conditions.go",
+          "agentplane/policy/client/apply/conditions_test.go",
+          "agentplane/policy/reader/BUILD.bazel",
+          "agentplane/policy/reader/index.go",
+          "agentplane/policy/reader/readiness.go"
         ],
         "reviewed_package_paths": [
-          "agentplane/policy",
           "agentplane/policy/api/v1alpha1",
           "agentplane/policy/api/v1alpha1/protogen",
           "agentplane/policy/client/apply",
@@ -6655,26 +6697,6 @@
         ]
       },
       "package_decisions": [
-        {
-          "path": "agentplane/policy",
-          "role": "Unused exported UnknownPolicySetError package",
-          "decision": "rework",
-          "target_paths": [],
-          "reason": "This package contains only the 16-line UnknownPolicySetError. At the pinned repository tree, its only reference is a type assertion and dead status mapping in runner_gateway/environments/management.go; the repository-wide symbol search found no constructor or reference outside agentplane. Remove the type, package target, dependency, and branch in the Policy Controller cleanup PR.",
-          "gate": "Delete only after preserving the exhaustive no-constructor/source-use audit; if a real producer is later introduced, define the error beside that producer and test it.",
-          "evidence_paths": [
-            "agentplane/policy/BUILD.bazel",
-            "agentplane/policy/errors.go",
-            "agentplane/runner_gateway/environments/management.go",
-            "agentplane/runner_gateway/environments/BUILD.bazel"
-          ],
-          "declared_packages": ["policy"],
-          "pending_tracks": ["policy-controller-rpc-cleanup"],
-          "counts": {
-            "non_test": 1,
-            "tests": 0
-          }
-        },
         {
           "path": "agentplane/policy/api/v1alpha1",
           "role": "Versioned Policy CRD types and scheme",
@@ -6760,7 +6782,7 @@
       "id": "policy_controller",
       "path": "agentplane/policy_controller",
       "counts": {
-        "files": 13,
+        "files": 16,
         "directories": 3
       },
       "directories": [
@@ -6791,26 +6813,32 @@
         },
         {
           "path": "agentplane/policy_controller/internal/rpc",
-          "production": 1,
+          "production": 4,
           "tests": 1,
           "files": [
+            "agentplane/policy_controller/internal/rpc/identities.go",
+            "agentplane/policy_controller/internal/rpc/sandbox_bindings.go",
             "agentplane/policy_controller/internal/rpc/service.go",
-            "agentplane/policy_controller/internal/rpc/service_test.go"
+            "agentplane/policy_controller/internal/rpc/service_test.go",
+            "agentplane/policy_controller/internal/rpc/watches.go"
           ]
         }
       ],
       "context_paths": [],
-      "pending_tracks": [
-        "policy-controller-rpc-cleanup",
-        "settings-single-source"
-      ],
-      "goal_note": "PolicyService gRPC implementation",
+      "pending_tracks": ["settings-single-source"],
+      "goal_note": "Policy Controller command composition; Policy, account, grant and credential reconciliation; PolicyService gRPC implementation",
       "decision": {
-        "state": "REWORK",
+        "state": "RETAIN",
         "role": "Policy, account, grant and credential reconciliation",
-        "goal_summary": "PolicyService gRPC implementation",
-        "reason": "Package decisions below name each current responsibility, proposed targets and its extraction/naming gate. Existing shared transactions and mutable lifecycle state are constraints to resolve, not blanket reasons to retain every file arrangement.",
+        "goal_summary": "Policy Controller command composition; Policy, account, grant and credential reconciliation; PolicyService gRPC implementation",
+        "reason": "Retain the named package owners for their specific roles and dependency boundaries below. Retention is an explicit current decision, not exclusion from future review.",
         "evidence_paths": [
+          "agentplane/policy_controller/cmd/BUILD.bazel",
+          "agentplane/policy_controller/cmd/config.go",
+          "agentplane/policy_controller/cmd/main.go",
+          "agentplane/policy_controller/internal/controller/BUILD.bazel",
+          "agentplane/policy_controller/internal/controller/account_use.go",
+          "agentplane/policy_controller/internal/controller/accounts.go",
           "agentplane/policy_controller/internal/rpc/BUILD.bazel",
           "agentplane/policy_controller/internal/rpc/service.go",
           "agentplane/policy_controller/internal/rpc/service_test.go",
@@ -6837,7 +6865,7 @@
             "agentplane/policy_controller/cmd/main.go"
           ],
           "declared_packages": ["main"],
-          "pending_tracks": ["policy-controller-rpc-cleanup"],
+          "pending_tracks": [],
           "counts": {
             "non_test": 2,
             "tests": 1
@@ -6865,10 +6893,10 @@
         {
           "path": "agentplane/policy_controller/internal/rpc",
           "role": "PolicyService gRPC implementation",
-          "decision": "rename",
-          "target_paths": ["agentplane/policy_controller/internal/rpc"],
-          "reason": "The package directory is internal/rpc and its Bazel library is :service, but service.go declares package service. Align both names to rpc, then split the 918-line implementation along its existing sandbox-binding, Identity, PolicySet, resource-conversion and watch responsibilities.",
-          "gate": "Keep the service internal and preserve full RPC names, method auth and resource ownership; no wire rename.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "The Go package and Bazel targets are both rpc, and the PolicyService implementation is split by responsibility: service construction and auth in service.go, sandbox bindings, Identities and watches in their own files.",
+          "gate": "Keep the service internal; preserve full RPC names, method auth and resource ownership.",
           "evidence_paths": [
             "agentplane/policy_controller/internal/rpc/BUILD.bazel",
             "agentplane/policy_controller/internal/rpc/service.go",
@@ -6876,10 +6904,10 @@
             "agentplane/policy_controller/cmd/main.go",
             "agentplane/policy/v1/policy_service.proto"
           ],
-          "declared_packages": ["service"],
-          "pending_tracks": ["policy-controller-rpc-cleanup"],
+          "declared_packages": ["rpc"],
+          "pending_tracks": [],
           "counts": {
-            "non_test": 1,
+            "non_test": 4,
             "tests": 1
           }
         }
@@ -7264,8 +7292,7 @@
       ],
       "pending_tracks": [
         "transition-tolerance-removal",
-        "policy-controller-rpc-cleanup",
-        "gateway-runtime-lease-removal",
+        "runtime-facts-off-lease",
         "environment-service-to-sandbox-controller",
         "runner-gateway-command",
         "runner-gateway-app",
@@ -7420,10 +7447,7 @@
             "agentplane/runner_gateway/environments/service_test.go"
           ],
           "declared_packages": ["environments"],
-          "pending_tracks": [
-            "policy-controller-rpc-cleanup",
-            "environment-service-to-sandbox-controller"
-          ],
+          "pending_tracks": ["environment-service-to-sandbox-controller"],
           "counts": {
             "non_test": 4,
             "tests": 2
@@ -7510,7 +7534,7 @@
           ],
           "declared_packages": ["gateway"],
           "pending_tracks": [
-            "gateway-runtime-lease-removal",
+            "runtime-facts-off-lease",
             "runner-gateway-command",
             "gateway-replica-ownership",
             "runner-gateway-connections-proxy"
@@ -7631,7 +7655,7 @@
       ],
       "context_paths": [],
       "pending_tracks": [
-        "gateway-runtime-lease-removal",
+        "runtime-facts-off-lease",
         "runner-era-names",
         "environment-service-to-sandbox-controller",
         "sandbox-controller-lifecycle",
@@ -7671,7 +7695,7 @@
           ],
           "declared_packages": ["main"],
           "pending_tracks": [
-            "gateway-runtime-lease-removal",
+            "runtime-facts-off-lease",
             "environment-service-to-sandbox-controller"
           ],
           "counts": {
@@ -7698,7 +7722,7 @@
           ],
           "declared_packages": ["sandboxcontroller"],
           "pending_tracks": [
-            "gateway-runtime-lease-removal",
+            "runtime-facts-off-lease",
             "environment-service-to-sandbox-controller",
             "sandbox-controller-lifecycle",
             "gateway-replica-ownership"
@@ -7791,12 +7815,12 @@
         }
       ],
       "context_paths": [],
-      "pending_tracks": ["gateway-runtime-lease-removal", "privileged-auth"],
-      "goal_note": "Agentplane v1alpha1 Sandbox and SandboxTemplate Kubernetes API, scheme, and stable name helpers.; Per-RPC transport client to the runner connected to a Sandbox.; Shared Lease protocol between Runner Gateway and Sandbox Controller, including incarnation facts.",
+      "pending_tracks": ["runtime-facts-off-lease", "privileged-auth"],
+      "goal_note": "Agentplane v1alpha1 Sandbox and SandboxTemplate Kubernetes API, scheme, and stable name helpers.; Per-RPC transport client to the runner connected to a Sandbox.; Codec for the Runtime facts the Gateway publishes on its per-Sandbox Lease, with incarnation facts.",
       "decision": {
         "state": "RETAIN",
         "role": "Shared Sandbox API, clients, readers, lease and runtime configuration",
-        "goal_summary": "Agentplane v1alpha1 Sandbox and SandboxTemplate Kubernetes API, scheme, and stable name helpers.; Per-RPC transport client to the runner connected to a Sandbox.; Shared Lease protocol between Runner Gateway and Sandbox Controller, including incarnation facts.",
+        "goal_summary": "Agentplane v1alpha1 Sandbox and SandboxTemplate Kubernetes API, scheme, and stable name helpers.; Per-RPC transport client to the runner connected to a Sandbox.; Codec for the Runtime facts the Gateway publishes on its per-Sandbox Lease, with incarnation facts.",
         "reason": "Retain the named package owners for their specific roles and dependency boundaries below. Retention is an explicit current decision, not exclusion from future review.",
         "evidence_paths": [
           "agentplane/sandboxes/api/constants.go",
@@ -7857,17 +7881,17 @@
         },
         {
           "path": "agentplane/sandboxes/lease",
-          "role": "Shared Lease protocol between Runner Gateway and Sandbox Controller, including incarnation facts.",
+          "role": "Codec for the Runtime facts the Gateway publishes on its per-Sandbox Lease, with incarnation facts.",
           "decision": "remove",
           "target_paths": [],
-          "reason": "Shared Lease protocol between Runner Gateway and Sandbox Controller, including incarnation facts. Retain the current path and Go package name: this is already a responsibility-specific boundary, and a broader rename would add churn without clarifying ownership.",
-          "gate": "Removed once the Sandbox Controller reads Runtime facts directly; operator, 2026-11-14: a leftover of the removed runtime-dials-Gateway mode.",
+          "reason": "Only the Gateway's fact publication and the Sandbox Controller's fact reads use it. Once the Controller observes Runtimes directly, nothing writes or reads Lease facts and the codec goes; the connection Lease itself stays in the Gateway until gateway-replica-ownership.",
+          "gate": "Removed after every fact reader moves to direct observation (`agentplane/plans/runtime_state_observation.md`).",
           "evidence_paths": [
             "agentplane/sandboxes/lease/facts.go",
             "agentplane/sandboxes/lease/facts_test.go"
           ],
           "declared_packages": ["lease"],
-          "pending_tracks": ["gateway-runtime-lease-removal"],
+          "pending_tracks": ["runtime-facts-off-lease"],
           "counts": {
             "non_test": 1,
             "tests": 1
@@ -8521,7 +8545,7 @@
     {
       "source_paths": [
         "agentplane/app/internal/settings/config.go",
-        "agentplane/action_service/config.go"
+        "agentplane/action_service/cmd/config.go"
       ],
       "target_paths": [],
       "dependencies": [],
@@ -8537,23 +8561,22 @@
       "kind": "library cleanup",
       "stage": 1,
       "priority": 2,
-      "summary": "The app (`app/internal/settings/config.go`) and the Action Service (`action_service/config.go`) are the only Agentplane Go code importing Viper. Both read one required YAML file and call `UnmarshalExact`, with no environment or flag layering, so Viper only maps a decoded document onto the config struct. The Gateway does the same without Viper (`yaml.v3` into a map, then `mapstructure` with `ErrorUnused` and the same hooks); the Policy Controller, Sandbox Controller, MCP edge and egress sidecar decode with `yaml.v3` `KnownFields(true)`, STYLE.md's row for file-only settings.",
+      "summary": "The app (`app/internal/settings/config.go`) and the Action Service (`action_service/cmd/config.go`) are the only Agentplane Go code importing Viper. Both read one required YAML file and call `UnmarshalExact`, with no environment or flag layering, so Viper only maps a decoded document onto the config struct. The Gateway does the same without Viper (`yaml.v3` into a map, then `mapstructure` with `ErrorUnused` and the same hooks); the Policy Controller, Sandbox Controller, MCP edge and egress sidecar decode with `yaml.v3` `KnownFields(true)`, STYLE.md's row for file-only settings.",
       "how": [
         "Replace Viper with one of the existing shapes, the same for both services: the Gateway's `yaml.v3` map plus `mapstructure` decoder with `ErrorUnused`, keeping the TextUnmarshaler and listener-authentication hooks, or `KnownFields(true)` where the config types carry yaml tags.",
         "Keep the Action Service's split of `action_groups` from the other keys, the app's single-document check and its `sandbox_presets` key order.",
-        "Viper lowercases keys before decoding: prove the rendered staging and fixture settings decode to the same Config before and after.",
-        "Independent of action-service-cmd-layout, which moves `config.go`; they only conflict."
+        "Viper lowercases keys before decoding: prove the rendered staging and fixture settings decode to the same Config before and after."
       ],
       "gate": "Rendered staging and fixture settings decode identically; unknown keys still fail startup.",
       "preserve": "The config-file path variables, Secret inputs read from the environment, and errors that name no Secret value.",
       "validation": [
         "//agentplane/app/internal/settings:settings_test",
         "//agentplane/app/internal/server:staging_config_test",
-        "//agentplane/action_service:config_test"
+        "//agentplane/action_service/cmd:config_test"
       ],
       "evidence_paths": [
         "agentplane/app/internal/settings/config.go",
-        "agentplane/action_service/config.go",
+        "agentplane/action_service/cmd/config.go",
         "agentplane/runner_gateway/config.go",
         "STYLE.md",
         "agentplane/sandbox_controller/cmd/config.go"
@@ -8561,147 +8584,21 @@
       "review_size": "One PR; both loaders are small."
     },
     {
-      "id": "policy-controller-rpc-cleanup",
-      "title": "Align Policy Controller RPC ownership and remove its dead Policy error mapping",
-      "status": "PLANNED",
-      "components": ["policy_controller", "policy", "runner_gateway"],
-      "source_paths": [
-        "agentplane/policy_controller/internal/rpc/service.go",
-        "agentplane/policy_controller/internal/rpc/service_test.go",
-        "agentplane/policy_controller/internal/rpc/BUILD.bazel",
-        "agentplane/policy_controller/cmd/main.go",
-        "agentplane/policy_controller/cmd/BUILD.bazel",
-        "agentplane/policy/errors.go",
-        "agentplane/policy/BUILD.bazel",
-        "agentplane/runner_gateway/environments/management.go",
-        "agentplane/runner_gateway/environments/BUILD.bazel"
-      ],
-      "target_paths": [
-        "agentplane/policy_controller/internal/rpc",
-        "agentplane/policy_controller/cmd",
-        "agentplane/runner_gateway/environments"
-      ],
-      "package_renames": [
-        {
-          "path": "agentplane/policy_controller/internal/rpc",
-          "from": "service",
-          "to": "rpc"
-        }
-      ],
-      "deleted_paths": ["agentplane/policy/errors.go"],
-      "path_moves": [],
-      "file_splits": [
-        {
-          "from": "agentplane/policy_controller/internal/rpc/service.go",
-          "parts": [
-            {
-              "path": "agentplane/policy_controller/internal/rpc/service.go",
-              "symbols": ["New", "Methods", "caller", "Service"]
-            },
-            {
-              "path": "agentplane/policy_controller/internal/rpc/sandbox_bindings.go",
-              "symbols": [
-                "GrantSandboxPolicyBinding",
-                "cleanupCreatedBinding",
-                "RevokeSandboxPolicyBinding",
-                "requestTarget",
-                "validSandboxName",
-                "sandboxIdentity"
-              ]
-            },
-            {
-              "path": "agentplane/policy_controller/internal/rpc/identities.go",
-              "symbols": [
-                "WatchIdentities",
-                "DeleteIdentity",
-                "CreateIdentity",
-                "GrantIdentityPolicyBinding",
-                "ownedBy"
-              ]
-            },
-            {
-              "path": "agentplane/policy_controller/internal/rpc/policy_sets.go",
-              "symbols": [
-                "requireKnownPolicySets",
-                "WatchPolicySets",
-                "ListPolicySetNames"
-              ]
-            },
-            {
-              "path": "agentplane/policy_controller/internal/rpc/resources.go",
-              "symbols": [
-                "bindingMessage",
-                "identityMessage",
-                "policySetMessage",
-                "identity",
-                "convert"
-              ]
-            },
-            {
-              "path": "agentplane/policy_controller/internal/rpc/watch.go",
-              "symbols": [
-                "WatchPolicyBindings",
-                "selectBindings",
-                "watch",
-                "unavailable",
-                "send",
-                "follow"
-              ]
-            }
-          ]
-        }
-      ],
-      "summary": "Align the internal/rpc package and Bazel target names, split the 918-line source file by its existing RPC/resource/watch responsibilities, and remove UnknownPolicySetError, its unsupported status mapping and the now-unused policy dependency. Repository-wide search at the source pin found no constructor and no use of this type outside Agentplane.",
-      "how": [
-        "Rename the Go package declaration and Bazel library/test targets from service/service_test to rpc/rpc_test; update the cmd import alias and dependency in the same change.",
-        "Keep Service construction, method authorization registration and caller extraction in service.go. Move the existing methods into sandbox_bindings.go, identities.go, policy_sets.go and watch.go as enumerated in file_splits; move message conversion helpers to resources.go.",
-        "Delete agentplane/policy/errors.go and its BUILD target; remove the //agentplane/policy dependency/import and the UnknownPolicySetError assertion/UNKNOWN_POLICY_SET branch from runner_gateway managementError.",
-        "Keep the RPC service private to policy_controller/cmd and preserve generated contracts and method behavior."
-      ],
-      "gate": "Function groups and all type references are visible in the pinned 918-line service.go. Before deletion, the repository-wide git grep for UnknownPolicySetError at SHA 6dfbd741f5ba004f02aba929cadbbd59b6950393 returned only its three declarations in agentplane/policy/errors.go and the type assertion in agentplane/runner_gateway/environments/management.go; a repository-wide import-path search found no imports outside agentplane. The final PR must update every BUILD/caller in the same commit.",
-      "preserve": "PolicyService protobuf full names and method names; per-method read/write admission; Sandbox, Identity and PolicyBinding UID/resource-version checks; identity and delegation separation; all live Environment management error mappings other than the dead UNKNOWN_POLICY_SET shape. No stored-data edits or wire renames.",
-      "validation": [
-        "//agentplane/policy_controller/internal/rpc:service_test",
-        "//agentplane/policy_controller/cmd:policy-controller",
-        "//agentplane/policy_controller/internal/controller:controller_test",
-        "//agentplane/runner_gateway/environments:environments_test",
-        "//agentplane/runner_gateway/environments/internal/management:unit_test"
-      ],
-      "evidence_paths": [
-        "agentplane/policy_controller/internal/rpc/service.go",
-        "agentplane/policy_controller/internal/rpc/BUILD.bazel",
-        "agentplane/policy_controller/cmd/main.go",
-        "agentplane/policy_controller/cmd/BUILD.bazel",
-        "agentplane/policy_controller/internal/rpc/service_test.go",
-        "agentplane/policy/errors.go",
-        "agentplane/policy/BUILD.bazel",
-        "agentplane/runner_gateway/environments/management.go",
-        "agentplane/runner_gateway/environments/BUILD.bazel"
-      ],
-      "dependencies": [],
-      "kind": "organization",
-      "source_owner": "agentplane/policy_controller/internal/rpc",
-      "priority": 3,
-      "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; keep one coherent responsibility and all callers/tests together.",
-      "stage": 1,
-      "proposed_file_targets": []
-    },
-    {
-      "id": "gateway-runtime-lease-removal",
-      "title": "Remove the Gateway's per-Sandbox runtime Lease",
+      "id": "runtime-facts-off-lease",
+      "title": "Move Runtime facts off the Gateway's per-Sandbox Lease",
       "components": ["runner_gateway", "sandbox_controller", "sandboxes"],
       "status": "PLANNED",
       "kind": "leftover removal across two services",
       "stage": 1,
       "priority": 4,
-      "summary": "Operator, 2026-11-14: the \"environment runtime dials gateway\" connection mode was removed, and the Gateway Lease is no longer particularly useful. Today the Gateway's observer receives each Runtime's `WatchState` facts and publishes them as annotations on the `<sandbox>-environment-runtime` Lease, with a connection epoch (`internal/gateway/runner_observer.go`, `records.go`, `sandboxes/lease`); the Sandbox Controller caches those Leases and reads quiesce stage, idle-since, bootstrap, running setups and autosuspend blockers from them for readiness, idle suspension and quiesce (`controller.go`, `idle.go`, `cache.go`). Removing the Lease means giving those facts one direct path.",
+      "summary": "Operator, 2026-11-14: the \"environment runtime dials gateway\" connection mode was removed, and the Gateway Lease is no longer particularly useful. The `<sandbox>-environment-runtime` Lease does two jobs. It carries facts: the Gateway's observer receives each Runtime's `WatchState` snapshots and publishes them as Lease annotations (`internal/gateway/runner_observer.go`, `records.go`, the `sandboxes/lease` codec), and the Sandbox Controller caches the Leases and reads quiesce stage, idle-since, bootstrap, running setups and autosuspend blockers from them (`controller.go`, `idle.go`, `cache.go`). It is also the Gateway's connection Lease: claiming it allocates the `ConnectionEpoch` that fences every Gateway unary, admission and Executor call, and the Gateway checks its UID and epoch before publishing the `-control` EndpointSlice (`agentplane/plans/runtime_state_observation.md`, #16312). This item moves the facts; the connection Lease waits for gateway-replica-ownership.",
       "how": [
-        "Write the replacement in a short design: who watches each Runtime's `WatchState` and fences by incarnation. Proposed: the Sandbox Controller, which already consumes these facts and already dials Runtimes for quiesce and suspend, keeping them in memory per incarnation rather than in etcd.",
-        "Move the readers (readiness and bootstrap, idle suspension, quiesce, connection loss) to that source with their tests.",
-        "Delete the Gateway's Lease writes, the `sandboxes/lease` package (its `Unrecognised` roll-safety variants go with it), the Sandbox Controller's Lease cache and reads, and both services' Lease RBAC (`cluster/cdk8s/agentplane/sandbox_controller.py`, `runner_gateway_workload.py`); code before RBAC.",
-        "Then check whether the Gateway still holds any per-Sandbox state. If not, the `-control` EndpointSlice, which carries the same connection epoch, goes in gateway-replica-ownership."
+        "Reader migration, as proposed in the design note: an observe-only `WatchState` mode that validates the Sandbox and incarnation but never installs or advances the Gateway's call epoch, a dedicated read-only Controller SVID and a direct Controller-to-Runtime path. The leader-elected Controller keeps facts in memory per Sandbox UID, Pod UID and boot ID and moves connectivity, bootstrap, quiesce, idle, setup and autosuspend-blocker reads to them. The Gateway keeps writing Lease facts during this phase.",
+        "Once every fact reader has moved, delete the Gateway's fact publication, the `sandboxes/lease` codec (its `Unrecognised` roll-safety variants go with it) and the Controller's Lease cache and reads.",
+        "Remove the Controller's Lease read permission (`cluster/cdk8s/agentplane/sandbox_controller.py`) in a later rollout, after the image references are pinned.",
+        "Do not delete the connection Lease or its epoch protocol here; gateway-replica-ownership names their replacement first."
       ],
-      "gate": "Agreed leftover; the replacement path is not yet written. Cross-service protocol change: system tests covering bootstrap, idle suspend and quiesce must pass, and the PR states the rollback.",
+      "gate": "Design proposed in `agentplane/plans/runtime_state_observation.md` (#16312); its review question (observe-only `WatchState` with a dedicated Controller SVID) is open. Cross-service protocol change: system tests covering bootstrap, idle suspend and quiesce must pass, and the PR states the rollback.",
       "preserve": "Ready including Bootstrapped and BootstrapFailed as terminal; quiesce before suspend; idle suspension only, never deletion; incarnation fencing.",
       "validation": [
         "//agentplane/sandboxes/lease:lease_test",
@@ -8718,7 +8615,8 @@
         "agentplane/sandbox_controller/internal/controller/idle.go",
         "agentplane/sandbox_controller/internal/controller/cache.go",
         "agentplane/sandbox_controller/cmd/main.go",
-        "agentplane/env/runtime/control/environment_runtime.proto"
+        "agentplane/env/runtime/control/environment_runtime.proto",
+        "agentplane/plans/runtime_state_observation.md"
       ],
       "source_paths": [
         "agentplane/sandboxes/lease/facts.go",
@@ -8740,108 +8638,7 @@
       ],
       "proposed_file_targets": [],
       "source_owner": null,
-      "review_size": "Design note, then one PR moving the readers and one deleting the Lease and its RBAC."
-    },
-    {
-      "id": "action-service-cmd-layout",
-      "title": "Put Action Service command package under cmd",
-      "components": ["action_service"],
-      "source_paths": [
-        "agentplane/action_service/config.go",
-        "agentplane/action_service/config_test.go",
-        "agentplane/action_service/executors_test.go",
-        "agentplane/action_service/integration_testmain_test.go",
-        "agentplane/action_service/main.go",
-        "agentplane/action_service/main_test.go",
-        "agentplane/action_service/push_test.go",
-        "agentplane/action_service/sandbox_groups_test.go",
-        "agentplane/action_service/svid_test.go",
-        "agentplane/action_service/BUILD.bazel"
-      ],
-      "target_paths": ["agentplane/action_service/cmd"],
-      "status": "READY",
-      "summary": "Move the complete binary-only package main, config and tests under action_service/cmd; keep composition in the command package and Python settings/catalog/docs at the root.",
-      "how": [
-        "Create cmd BUILD targets main_lib, actions, config_test, executors_test and integration_test.",
-        "Move all listed Go production and test files; retain target and binary names.",
-        "Keep root Python targets and OCI packaging; point service_binary_layer at //agentplane/action_service/cmd:actions.",
-        "Source-SHA grep found no Go or BUILD consumer of the root main package."
-      ],
-      "gate": "READY: exact complete package move; review target ownership and OCI dependency.",
-      "preserve": "Action APIs, readiness, startup migration, executor construction and graceful shutdown.; All config, executor, integration, push, sandbox and SVID coverage.",
-      "validation": [
-        "//agentplane/action_service:config_test",
-        "//agentplane/action_service:executors_test",
-        "//agentplane/action_service:integration_test",
-        "//agentplane/action_service:service_image"
-      ],
-      "evidence_paths": [
-        "agentplane/action_service/main.go",
-        "agentplane/action_service/config.go",
-        "agentplane/action_service/BUILD.bazel",
-        "agentplane/app/cmd/main.go",
-        "agentplane/central_sampler/cmd/main.go"
-      ],
-      "dependencies": [],
-      "kind": "organization",
-      "path_moves": [
-        {
-          "from": "agentplane/action_service/config.go",
-          "to": "agentplane/action_service/cmd/config.go"
-        },
-        {
-          "from": "agentplane/action_service/config_test.go",
-          "to": "agentplane/action_service/cmd/config_test.go"
-        },
-        {
-          "from": "agentplane/action_service/executors_test.go",
-          "to": "agentplane/action_service/cmd/executors_test.go"
-        },
-        {
-          "from": "agentplane/action_service/integration_testmain_test.go",
-          "to": "agentplane/action_service/cmd/integration_testmain_test.go"
-        },
-        {
-          "from": "agentplane/action_service/main.go",
-          "to": "agentplane/action_service/cmd/main.go"
-        },
-        {
-          "from": "agentplane/action_service/main_test.go",
-          "to": "agentplane/action_service/cmd/main_test.go"
-        },
-        {
-          "from": "agentplane/action_service/push_test.go",
-          "to": "agentplane/action_service/cmd/push_test.go"
-        },
-        {
-          "from": "agentplane/action_service/sandbox_groups_test.go",
-          "to": "agentplane/action_service/cmd/sandbox_groups_test.go"
-        },
-        {
-          "from": "agentplane/action_service/svid_test.go",
-          "to": "agentplane/action_service/cmd/svid_test.go"
-        }
-      ],
-      "source_owner": "agentplane/action_service",
-      "proposed_validation": [
-        "After move: same target names under //agentplane/action_service/cmd"
-      ],
-      "priority": 1,
-      "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; keep one coherent responsibility and all callers/tests together.",
-      "file_splits": [],
-      "deleted_paths": [],
-      "stage": 2,
-      "proposed_file_targets": [
-        "agentplane/action_service/cmd/config.go",
-        "agentplane/action_service/cmd/config_test.go",
-        "agentplane/action_service/cmd/executors_test.go",
-        "agentplane/action_service/cmd/integration_testmain_test.go",
-        "agentplane/action_service/cmd/main.go",
-        "agentplane/action_service/cmd/main_test.go",
-        "agentplane/action_service/cmd/push_test.go",
-        "agentplane/action_service/cmd/sandbox_groups_test.go",
-        "agentplane/action_service/cmd/svid_test.go"
-      ]
+      "review_size": "One PR adding the observe-only stream and moving the readers; one deleting fact publication, the codec and the Controller's Lease reads; RBAC after the pins."
     },
     {
       "id": "env-execution-package-names",
@@ -9053,100 +8850,6 @@
       "dependencies": [],
       "priority": 4,
       "group": "sampler-leaves",
-      "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; split by the named responsibility and keep all callers/tests with it.",
-      "kind": "organization",
-      "path_moves": [],
-      "file_splits": [],
-      "deleted_paths": [],
-      "stage": 2,
-      "proposed_file_targets": []
-    },
-    {
-      "id": "sampler-provider-io",
-      "title": "Separate provider I/O policy from provider contracts",
-      "components": ["central_sampler"],
-      "source_paths": [
-        "agentplane/central_sampler/protocol/provider_hooks.go",
-        "agentplane/central_sampler/protocol/errors.go",
-        "agentplane/central_sampler/internal/residentruntime/provider_recovery_runtime.go"
-      ],
-      "target_paths": [
-        "agentplane/central_sampler/protocol",
-        "agentplane/central_sampler/internal/providerio"
-      ],
-      "source_owner": "agentplane/central_sampler/protocol",
-      "status": "PLANNED",
-      "summary": "Keep progress/evidence callbacks and typed outcomes as provider contracts; move HTTP header/semantic-idle budgets and transport classification into providerio.",
-      "how": [
-        "Identify the callback/error declarations consumed by both native adapters and runtime.",
-        "Extract the timer, cancel/join and HTTP client implementations; providers depend on the narrow contract, while the runtime composes I/O policy.",
-        "Move phase-timeout and durable-progress tests with the behavior, preserving classification and retry budgets."
-      ],
-      "gate": "Keep interface declarations out of the implementation leaf to prevent protocol → providerio → protocol cycles. No retry behavior changes belong in this organization PR.",
-      "preserve": "Header versus semantic-idle phase, durable progress resets, evidence-persistence failures, cancel/join and bounded retry classification.",
-      "validation": [
-        "//agentplane/central_sampler/protocol:protocol_test",
-        "//agentplane/central_sampler/internal/sessionstore:sessionstore_test",
-        "//agentplane/central_sampler/internal/residentruntime:unit_test",
-        "//agentplane/central_sampler/internal/residentruntime:integration_test",
-        "//agentplane/history_service/internal/ingress:integration_test"
-      ],
-      "evidence_paths": [
-        "agentplane/central_sampler/protocol/provider_hooks.go",
-        "agentplane/central_sampler/protocol/errors.go",
-        "agentplane/central_sampler/internal/residentruntime/provider_recovery_runtime.go",
-        "agentplane/central_sampler/protocol/BUILD.bazel",
-        "agentplane/central_sampler/internal/residentruntime/BUILD.bazel"
-      ],
-      "dependencies": [],
-      "priority": 5,
-      "group": "sampler-leaves",
-      "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; split by the named responsibility and keep all callers/tests with it.",
-      "kind": "organization",
-      "path_moves": [],
-      "file_splits": [],
-      "deleted_paths": [],
-      "stage": 2,
-      "proposed_file_targets": []
-    },
-    {
-      "id": "app-proxy-owners",
-      "title": "Separate Electric shape proxy from backend forwarding",
-      "components": ["app"],
-      "source_paths": [
-        "agentplane/app/internal/proxy/electric.go",
-        "agentplane/app/internal/proxy/upstream.go"
-      ],
-      "target_paths": [
-        "agentplane/app/internal/electricproxy",
-        "agentplane/app/internal/upstream"
-      ],
-      "source_owner": "agentplane/app/internal/proxy",
-      "status": "PLANNED",
-      "summary": "Give Electric shape/epoch authorization and upstream HTTP/gRPC facade forwarding separate package names and dependency surfaces.",
-      "how": [
-        "Move ElectricProxy and its epoch/shape tests to electricproxy.",
-        "Move upstream forwarding and its response/stream writer tests to upstream; route composition supplies target credentials explicitly.",
-        "Update server callers and BUILD visibility in the same PR, without forwarding aliases."
-      ],
-      "gate": "Review test allocation and shared private helpers first; any shared type must have one concrete owner.",
-      "preserve": "Shape authorization, epoch handling, response status/headers, cancellation, backend credentials and streaming flush.",
-      "validation": [
-        "//agentplane/app/internal/proxy:unit_test",
-        "//agentplane/app/internal/server:server_test",
-        "//agentplane/app/internal/server:threadreadapi_test",
-        "//agentplane/app/internal/server:sessionapi_test",
-        "//agentplane/app/internal/server:streamapi_test",
-        "//agentplane/app/internal/server:schema_export_test"
-      ],
-      "evidence_paths": [
-        "agentplane/app/internal/proxy/electric.go",
-        "agentplane/app/internal/proxy/upstream.go",
-        "agentplane/app/internal/proxy/BUILD.bazel"
-      ],
-      "dependencies": [],
-      "priority": 6,
-      "group": "app-cli",
       "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; split by the named responsibility and keep all callers/tests with it.",
       "kind": "organization",
       "path_moves": [],
@@ -9827,8 +9530,8 @@
         "agentplane/action_service/orchestration_v1/turns_test.go",
         "agentplane/action_service/orchestration_v1/contract/inputs.go",
         "agentplane/action_service/orchestration_v1/contract/inputs_test.go",
-        "agentplane/action_service/main.go",
-        "agentplane/action_service/config.go",
+        "agentplane/action_service/cmd/main.go",
+        "agentplane/action_service/cmd/config.go",
         "agentplane/action_service/internal/admission/catalog/catalog.go",
         "agentplane/runner_gateway/environments/service_test.go"
       ],
@@ -9871,7 +9574,7 @@
         "//agentplane/action_service/orchestration_v1:orchestration_v1_test",
         "//agentplane/action_service/session_delegation:session_delegation_test",
         "//agentplane/action_service/session_delegation:dispatcher_integration_test",
-        "//agentplane/action_service:executors_test"
+        "//agentplane/action_service/cmd:executors_test"
       ],
       "evidence_paths": [
         "agentplane/action_service/orchestration_v1/launch.go",
@@ -9948,7 +9651,7 @@
         "agentplane/action_service/internal/rpc/fixture_test.go",
         "agentplane/action_service/internal/rpc/policy.go",
         "agentplane/action_service/internal/rpc/watch.go",
-        "agentplane/action_service/main.go",
+        "agentplane/action_service/cmd/main.go",
         "agentplane/action_service/internal/rpc/BUILD.bazel"
       ],
       "target_paths": ["agentplane/action_service/internal/admission/grpcgate"],
@@ -11052,14 +10755,14 @@
         "agentplane/sandbox_controller/internal/runnercontrol/suspender.go"
       ],
       "target_paths": [],
-      "dependencies": ["gateway-runtime-lease-removal"],
+      "dependencies": ["runtime-facts-off-lease"],
       "path_moves": [],
       "file_splits": [],
       "deleted_paths": [],
       "proposed_file_targets": [],
       "source_owner": null,
       "id": "gateway-replica-ownership",
-      "title": "Decide what the Gateway still owns per Sandbox once the Lease is gone",
+      "title": "Decide what replaces the Gateway's connection Lease and holder routing",
       "components": [
         "runner_gateway",
         "sandbox_controller",
@@ -11070,10 +10773,10 @@
       "kind": "service boundary design",
       "stage": 5,
       "priority": 8,
-      "summary": "After the runtime Lease goes (gateway-runtime-lease-removal), the Gateway still owns the endpoints of the `<sandbox>-control` Service, which the Sandbox Controller creates without a selector (`control_service.go`) so callers reach the replica holding the Runtime connection, under the same connection epoch (`internal/gateway/records.go`); and the Dispatcher keeps its own ownership Lease (`dispatcher/ownership.go`). Callers resolving the control Service: the Dispatcher, the Gateway, the app bridge, the Notification Service's `ProxyRunner` and the Sandbox Controller's quiesce and suspend. Holder routing looks like a leftover of the same removed connection mode, but that is not confirmed. What stays in `runner_gateway` once EnvironmentService leaves, and its name (`RUNNER_GATEWAY_RENAME`, operator 2026-10-31: Environment Gateway), follow from this.",
+      "summary": "After runtime-facts-off-lease, the per-Sandbox Lease remains as the Gateway's connection Lease: claiming it allocates the `ConnectionEpoch` that fences every Gateway unary, admission and Executor call, and the Gateway checks its UID and epoch before publishing the endpoints of the `<sandbox>-control` Service, which the Sandbox Controller creates without a selector (`control_service.go`) so callers reach the replica holding the Runtime connection (`internal/gateway/records.go`, `agentplane/plans/runtime_state_observation.md`). The Dispatcher keeps its own ownership Lease (`dispatcher/ownership.go`). Callers resolving the control Service: the Dispatcher, the Gateway, the app bridge, the Notification Service's `ProxyRunner` and the Sandbox Controller's quiesce and suspend. Holder routing looks like a leftover of the same removed connection mode, but that is not confirmed. What stays in `runner_gateway` once EnvironmentService leaves, and its name (`RUNNER_GATEWAY_RENAME`, operator 2026-10-31: Environment Gateway), follow from this.",
       "how": [
-        "Decide whether any replica may dial a Runtime per call, which retires holder routing, and what replaces the Dispatcher's ownership Lease (History, Notifications and the sampler use `postgres/lease`).",
-        "Then delete what that retires and settle the Gateway's package split (runner-gateway-connections-proxy, runner-gateway-dispatcher-store) and name in one sequence, so its files move once."
+        "Decide (`RUNNER_GATEWAY_REPLICA_OWNERSHIP_DESIGN`) the replacement call fence and the EndpointSlice owner. One candidate the design note names: every authenticated replica serves Runtime calls, with an independently owned EndpointSlice. Separately decide what replaces the Dispatcher's ownership Lease (History, Notifications and the sampler use `postgres/lease`).",
+        "Then delete the connection Lease, its epoch protocol and what else the decision retires, and settle the Gateway's package split (runner-gateway-connections-proxy, runner-gateway-dispatcher-store) and name in one sequence, so its files move once."
       ],
       "gate": "Open. Removing the EndpointSlice is a cross-service protocol change: system test and stated rollback.",
       "preserve": "Generation and incarnation fencing, quiesce and bootstrap semantics, one live Runtime connection per incarnation.",
@@ -11089,7 +10792,8 @@
         "agentplane/sandbox_controller/internal/controller/control_service.go",
         "agentplane/sandboxes/api/constants.go",
         "agentplane/notification_service/internal/rpc/runner.go",
-        "agentplane/app/internal/bridge/runner.go"
+        "agentplane/app/internal/bridge/runner.go",
+        "agentplane/plans/runtime_state_observation.md"
       ],
       "review_size": "Design first; deletions and the Gateway layout follow as their own PRs."
     },
@@ -11124,7 +10828,7 @@
         "agentplane/runner_gateway/internal/gateway/proxy.go"
       ],
       "dependencies": [
-        "gateway-runtime-lease-removal",
+        "runtime-facts-off-lease",
         "gateway-replica-ownership",
         "environment-service-to-sandbox-controller"
       ],
@@ -11420,11 +11124,7 @@
       "path_moves": []
     }
   ],
-  "ready_filesystem_moves": [
-    "action-service-cmd-layout",
-    "runner-era-names",
-    "runner-gateway-command"
-  ],
+  "ready_filesystem_moves": ["runner-era-names", "runner-gateway-command"],
   "remaining_work_note": "Ordered by certainty (revised 2026-11-14 against devel a2c0b74e3c, which has no Go or protobuf change from the inventory pin). Stages 1 and 2 hold whatever the service map becomes; stage 3 follows directions the operator agreed; stage 4 needs only a local contract; stage 5 waits on open service decisions; stage 6 is deferred. READY records decided exact moves; PLANNED names a concrete boundary; AGREED DIRECTION is an operator-agreed move whose contract is still to be written; HELD is a decided move waiting so its files move once; DESIGN REQUIRED needs a local contract; OPEN DIRECTION waits on an undecided service decision. The tree shows candidates without assigning fictitious final filenames.",
   "adoption": [
     {
@@ -11433,21 +11133,17 @@
       "work": [
         "transition-tolerance-removal",
         "settings-viper-removal",
-        "policy-controller-rpc-cleanup",
-        "gateway-runtime-lease-removal"
+        "runtime-facts-off-lease"
       ],
-      "result": "Remove code that exists only for finished cutovers, the last Viper loaders, dead error mappings and the per-Sandbox Gateway Lease left from the removed runtime-dials-Gateway mode, before any later move carries them. True whatever the service map becomes."
+      "result": "Remove code that exists only for finished cutovers, the last Viper loaders, dead error mappings and the Runtime facts carried on the per-Sandbox Gateway Lease, before any later move carries them. True whatever the service map becomes; the connection Lease itself waits for stage 5."
     },
     {
       "stage": 2,
       "title": "Fix layout inside components no direction changes",
       "work": [
-        "action-service-cmd-layout",
         "env-execution-package-names",
         "runner-era-names",
         "sampler-json-contract",
-        "sampler-provider-io",
-        "app-proxy-owners",
         "app-session-client-name",
         "egress-sidecar-runtime",
         "llm-ingress-server-boundary",
@@ -11515,12 +11211,12 @@
   ],
   "scope_coverage": {
     "top_level_areas": 36,
-    "go_packages": 219,
-    "go_files": 1256,
+    "go_packages": 220,
+    "go_files": 1261,
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "6dfbd741f5ba004f02aba929cadbbd59b6950393",
+    "review_source_sha": "749fda99a200b5a60b21c0af343074c5e4fd3ac9",
     "review_slices": [
       {
         "slice": "action_service",
@@ -11531,14 +11227,14 @@
       {
         "slice": "app",
         "components": ["app"],
-        "packages": 15,
+        "packages": 16,
         "go_files": 71
       },
       {
         "slice": "central_sampler",
         "components": ["central_sampler"],
-        "packages": 19,
-        "go_files": 144
+        "packages": 20,
+        "go_files": 147
       },
       {
         "slice": "cli",
@@ -11663,14 +11359,14 @@
       {
         "slice": "policy",
         "components": ["policy"],
-        "packages": 5,
-        "go_files": 18
+        "packages": 4,
+        "go_files": 17
       },
       {
         "slice": "policy_controller",
         "components": ["policy_controller"],
         "packages": 3,
-        "go_files": 13
+        "go_files": 16
       },
       {
         "slice": "postgres",
@@ -11757,90 +11453,62 @@
     },
     {
       "id": "next-3",
-      "track": "policy-controller-rpc-cleanup",
-      "title": "Align Policy Controller RPC ownership and remove its dead Policy error mapping",
+      "track": "runtime-facts-off-lease",
+      "title": "Move Runtime facts off the Gateway's per-Sandbox Lease",
       "readiness": "PLANNED",
-      "first_step": "Rename the Go package declaration and Bazel library/test targets from service/service_test to rpc/rpc_test; update the cmd import alias and dependency in the same change."
+      "first_step": "Add the observe-only WatchState mode and move the Sandbox Controller's fact reads to it, once the design note's review question is answered."
     },
     {
       "id": "next-4",
-      "track": "gateway-runtime-lease-removal",
-      "title": "Remove the Gateway's per-Sandbox runtime Lease",
-      "readiness": "PLANNED",
-      "first_step": "Write the replacement path for the Lease facts: the Sandbox Controller watching each Runtime's WatchState."
-    },
-    {
-      "id": "next-5",
-      "track": "action-service-cmd-layout",
-      "title": "Put Action Service command package under cmd",
-      "readiness": "READY",
-      "first_step": "Create cmd BUILD targets main_lib, actions, config_test, executors_test and integration_test."
-    },
-    {
-      "id": "next-6",
       "track": "env-execution-package-names",
       "title": "Name execution adapter and companion packages for their actual roles",
       "readiness": "PLANNED",
       "first_step": "Update package clauses, imports, tests and Bazel deps; keep executor protobuf identities."
     },
     {
-      "id": "next-7",
+      "id": "next-5",
       "track": "runner-era-names",
       "title": "Stop calling the Environment Runtime a runner in Go names",
       "readiness": "PLANNED",
       "first_step": "Classify runner occurrences; rename runnercontrol to runtimecontrol with its callers."
     },
     {
-      "id": "next-8",
+      "id": "next-6",
       "track": "sampler-json-contract",
       "title": "Remove general helpers from the sampler protocol namespace",
       "readiness": "PLANNED",
       "first_step": "Classify every helper caller and retain the exact behavior of JSON numbers, trailing-input rejection and object-only decoding."
     },
     {
-      "id": "next-9",
-      "track": "sampler-provider-io",
-      "title": "Separate provider I/O policy from provider contracts",
-      "readiness": "PLANNED",
-      "first_step": "Identify the callback/error declarations consumed by both native adapters and runtime."
-    },
-    {
-      "id": "next-10",
-      "track": "app-proxy-owners",
-      "title": "Separate Electric shape proxy from backend forwarding",
-      "readiness": "PLANNED",
-      "first_step": "Move ElectricProxy and its epoch/shape tests to electricproxy."
-    },
-    {
-      "id": "next-11",
+      "id": "next-7",
       "track": "egress-sidecar-runtime",
       "title": "Separate egress sidecar process entry from its relay runtime",
       "readiness": "PLANNED",
       "first_step": "Move the ten complete production/test files listed in path_moves under internal/sidecar and change package main to sidecar."
     },
     {
-      "id": "next-12",
+      "id": "next-8",
       "track": "llm-ingress-server-boundary",
       "title": "Separate LLM ingress process entry from server runtime",
       "readiness": "PLANNED",
       "first_step": "Move the eleven complete production/test files listed in path_moves under internal/server and update package declarations and Bazel targets."
     },
     {
-      "id": "next-13",
+      "id": "next-9",
       "track": "app-session-client-name",
       "title": "Name the app Session client by its responsibility",
       "readiness": "PLANNED",
       "first_step": "Confirm that app-local open/inspect Session behavior is not already supplied by shared session_client."
     },
     {
-      "id": "next-14",
+      "id": "next-10",
       "track": "firecracker-host-guest",
       "title": "Name Firecracker host and guest code while deferring shared identity and vsock ownership",
       "readiness": "PLANNED",
       "first_step": "Inventory host and guest imports, runfiles and launcher callers."
     },
     {
-      "id": "next-15",
+      "id": "next-11",
       "track": "environment-service-to-sandbox-controller",
       "title": "Move EnvironmentService into the Sandbox Controller",
       "readiness": "AGREED DIRECTION",
