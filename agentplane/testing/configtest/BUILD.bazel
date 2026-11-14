@@ -6,7 +6,7 @@ go_library(
     srcs = ["configtest.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/testing/configtest",
     visibility = [
-        "//agentplane/action_service:__pkg__",
+        "//agentplane/action_service/cmd:__pkg__",
         "//agentplane/egress/cmd:__pkg__",
         "//agentplane/history_service/cmd:__pkg__",
         "//agentplane/llm_ingress:__pkg__",
