@@ -211,7 +211,9 @@ class Settings(BaseModel):
     platform_instructions: str | None = Field(default=None, min_length=1)
     audience: str
     service_callers: list[ServiceSPIFFEID] = Field(
-        default_factory=list, description="Exact service SPIFFE IDs admitted on the mTLS listener."
+        exclude_if=lambda value: not value,
+        default_factory=list,
+        description="Exact service SPIFFE IDs admitted on the mTLS listener.",
     )
     allowed_accounts: set[str] = Field(min_length=1)
     code_mode_host: Path
