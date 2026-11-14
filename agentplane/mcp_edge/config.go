@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/operator"
@@ -23,9 +24,10 @@ const (
 
 // config is the standalone edge's non-secret deployment contract. DatabaseURL is supplied separately from a Secret.
 type config struct {
-	ActionsTLS    *peertls.ClientTLS `yaml:"actions_tls,omitempty"`
-	DatabaseURL   string             `mapstructure:"-" yaml:"-"`
-	ActionsTarget string             `yaml:"actions_target"`
+	ActionsTLS    *peertls.ClientTLS         `yaml:"actions_tls,omitempty"`
+	RPCTLS        *peertls.ServerTLSListener `yaml:"rpc_tls,omitempty"`
+	DatabaseURL   string                     `mapstructure:"-" yaml:"-"`
+	ActionsTarget string                     `yaml:"actions_target"`
 	// PolicyNamespace holds live Identities; ActionsTokenFile is the rotating Action-audience token.
 	PolicyNamespace  string `yaml:"policy_namespace"`
 	ActionsTokenFile string `yaml:"actions_token_file"`
@@ -35,6 +37,7 @@ type config struct {
 	Port              int               `yaml:"port"`
 	HTTPPort          int               `yaml:"http_port"`
 	OperatorOIDC      operator.Settings `yaml:"operator_oidc"`
+	OperatorServices  []string          `yaml:"operator_services,omitempty"`
 	OAuthFile         string            `yaml:"oauth_file,omitempty"`
 	OAuth             *oauthSettings    `yaml:"oauth,omitempty"`
 	MaxWaitSeconds    float64           `yaml:"max_wait_seconds"`
@@ -134,6 +137,23 @@ func (c config) validate() error {
 	}
 	if err := c.OperatorOIDC.Validate(); err != nil {
 		return err
+	}
+	if c.RPCTLS != nil {
+		if err := c.RPCTLS.Validate(); err != nil {
+			return fmt.Errorf("rpc_tls: %w", err)
+		}
+		if c.RPCTLS.Listen == c.grpcAddress() || c.RPCTLS.Listen == c.httpAddress() {
+			return errors.New("rpc_tls.listen must differ from port and http_port")
+		}
+	}
+	if err := auth.ValidateServiceCallers(c.OperatorServices); err != nil {
+		return fmt.Errorf("invalid operator_services: %w", err)
+	}
+	if len(c.OperatorServices) > 0 && (c.RPCTLS == nil || c.RPCTLS.ClientCAFile == "") {
+		return errors.New("operator_services requires rpc_tls.client_ca_file")
+	}
+	if c.RPCTLS != nil && c.RPCTLS.ClientCAFile != "" && len(c.OperatorServices) == 0 {
+		return errors.New("rpc_tls.client_ca_file requires operator_services")
 	}
 	if c.OAuth == nil {
 		return nil

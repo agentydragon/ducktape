@@ -23,6 +23,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/operator"
 	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -461,6 +463,84 @@ func TestSVIDPeersAndMixedCredentialsAreRefusedAtTheBoundary(t *testing.T) {
 		return nil
 	}); err != nil || !calledStream {
 		t.Errorf("public health watch with only a peer certificate returned %v, called=%t", err, calledStream)
+	}
+}
+
+func TestOperatorServiceSVIDAddsATLSCheckWithoutReplacingOIDC(t *testing.T) {
+	issuer, verifier := newTestIssuer(t)
+	valid := issuer.token(t, nil)
+	ca := peertlstesting.NewCA(t)
+	serverSVID := ca.Issue(t, peertls.MCPEdgeURI)
+	serverCredentials, err := (peertls.ServerTLSListener{
+		Listen: "127.0.0.1:0", CertFile: serverSVID.CertFile, KeyFile: serverSVID.KeyFile, ClientCAFile: ca.RootFile,
+	}).Credentials(peertls.MCPEdgeURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gate := NewGateWithOperatorServices(verifier, []string{peertls.AppURI})
+	connectionServer := &connectionServer{gate: gate, principal: make(chan operator.Subject, 1), watchStart: make(chan struct{}, 1)}
+	server := grpc.NewServer(grpc.Creds(serverCredentials),
+		grpc.ChainUnaryInterceptor(gate.UnaryInterceptor), grpc.ChainStreamInterceptor(gate.StreamInterceptor))
+	pb.RegisterConnectionServiceServer(server, connectionServer)
+	healthServer := health.NewServer()
+	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	healthpb.RegisterHealthServer(server, healthServer)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
+
+	call := func(t *testing.T, serviceID, token, delegation string) error {
+		t.Helper()
+		clientSVID := ca.Issue(t, serviceID)
+		clientTLS, err := clientSVID.ClientTLSConfig(peertls.MCPEdgeURI)
+		if err != nil {
+			t.Fatal(err)
+		}
+		client, err := grpc.NewClient(listener.Addr().String(), grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = client.Close() })
+		ctx := context.Background()
+		if token != "" {
+			ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)
+		}
+		if delegation != "" {
+			ctx = metadata.AppendToOutgoingContext(ctx, auth.DelegationMetadataKey, delegation)
+		}
+		_, err = pb.NewConnectionServiceClient(client).ListConnections(ctx, &pb.ListConnectionsRequest{})
+		return err
+	}
+
+	if err := call(t, peertls.AppURI, valid, ""); err != nil {
+		t.Fatalf("allowlisted service with valid operator bearer: %v", err)
+	}
+	if got := <-connectionServer.principal; got != (operator.Subject{Issuer: issuer.settings.Issuer, Subject: "test-operator"}) {
+		t.Fatalf("protected RPC authority = %+v", got)
+	}
+	for _, tc := range []struct {
+		name, serviceID, token, delegation string
+		want                               codes.Code
+	}{
+		{name: "certificate alone", serviceID: peertls.AppURI, want: codes.Unauthenticated},
+		{name: "unallowlisted service", serviceID: peertls.ActionsURI, token: valid, want: codes.PermissionDenied},
+		{name: "invalid operator bearer", serviceID: peertls.AppURI, token: "invalid", want: codes.Unauthenticated},
+		{name: "delegation metadata", serviceID: peertls.AppURI, token: valid, delegation: "delegated", want: codes.Unauthenticated},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := call(t, tc.serviceID, tc.token, tc.delegation); status.Code(err) != tc.want {
+				t.Fatalf("RPC error = %v, want %v", err, tc.want)
+			}
+		})
+	}
+
+	// The existing plaintext endpoint remains OIDC-only for the HTTP facade.
+	plain := serve(t, NewGate(verifier))
+	if _, err := plain.connections.ListConnections(bearer(context.Background(), valid), &pb.ListConnectionsRequest{}); err != nil {
+		t.Fatalf("OIDC-only plaintext call: %v", err)
 	}
 }
 

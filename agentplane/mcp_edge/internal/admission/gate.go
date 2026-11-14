@@ -2,12 +2,14 @@ package admission
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"log/slog"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/operator"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -24,16 +26,28 @@ var (
 
 // Gate admits operator requests to the MCP edge's Connection API.
 type Gate struct {
-	operators *operator.Verifier
-	methods   map[string]bool
-	draining  context.Context
-	drain     context.CancelFunc
+	operators        *operator.Verifier
+	operatorServices map[string]struct{}
+	methods          map[string]bool
+	draining         context.Context
+	drain            context.CancelFunc
 }
 
 func NewGate(operators *operator.Verifier) *Gate {
+	return NewGateWithOperatorServices(operators, nil)
+}
+
+// NewGateWithOperatorServices admits exact service SVIDs as an additional TLS peer check. The operator's OIDC bearer
+// remains required and supplies the authority for every protected method.
+func NewGateWithOperatorServices(operators *operator.Verifier, operatorServices []string) *Gate {
 	draining, drain := context.WithCancel(context.Background())
+	services := make(map[string]struct{}, len(operatorServices))
+	for _, service := range operatorServices {
+		services[service] = struct{}{}
+	}
 	return &Gate{
-		operators: operators,
+		operators:        operators,
+		operatorServices: services,
 		methods: map[string]bool{
 			connection_servicepb.ConnectionService_ListConnectionIdentities_FullMethodName:    true,
 			connection_servicepb.ConnectionService_ListConnections_FullMethodName:             true,
@@ -82,8 +96,31 @@ func (g *Gate) Recheck(ctx context.Context) error {
 
 func (g *Gate) authenticate(ctx context.Context) (operator.Subject, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
-	if hasSVIDPeer(ctx) || len(md.Get(auth.DelegationMetadataKey)) > 0 {
+	if len(md.Get(auth.DelegationMetadataKey)) > 0 {
 		return operator.Subject{}, unauthenticated
+	}
+	if hasSVIDPeer(ctx) {
+		if len(g.operatorServices) == 0 {
+			return operator.Subject{}, unauthenticated
+		}
+		remote, ok := peer.FromContext(ctx)
+		if !ok {
+			return operator.Subject{}, unauthenticated
+		}
+		info, ok := remote.AuthInfo.(credentials.TLSInfo)
+		if !ok || len(info.State.PeerCertificates) == 0 {
+			return operator.Subject{}, unauthenticated
+		}
+		id, err := peertls.PeerIdentityFromTLSState(info.State, x509.ExtKeyUsageClientAuth)
+		if err != nil {
+			return operator.Subject{}, unauthenticated
+		}
+		if !peertls.IsServiceURI(id) {
+			return operator.Subject{}, status.Error(codes.PermissionDenied, "operator service is not admitted")
+		}
+		if _, allowed := g.operatorServices[id]; !allowed {
+			return operator.Subject{}, status.Error(codes.PermissionDenied, "operator service is not admitted")
+		}
 	}
 	token, err := auth.BearerToken(md.Get("authorization"))
 	if err != nil || g.operators == nil || !g.operators.MatchesUnverifiedIssuer(token) {
@@ -105,15 +142,22 @@ func hasSVIDPeer(ctx context.Context) bool {
 	return ok && len(info.State.PeerCertificates) > 0
 }
 
-// rejectMixedCredentials applies to health and Connection methods alike: a client certificate cannot be paired with
-// a bearer or delegated actor to select a second authorization path.
-func rejectMixedCredentials(ctx context.Context) error {
-	if !hasSVIDPeer(ctx) {
-		return nil
-	}
+// rejectUnauthenticatedPeer prevents health and unknown RPCs from becoming a way to bypass the TLS listener's
+// allowlist. Plaintext health stays public; a TLS peer must also present an allowlisted service SVID and operator OIDC.
+func (g *Gate) rejectUnauthenticatedPeer(ctx context.Context) error {
 	md, _ := metadata.FromIncomingContext(ctx)
-	if len(md.Get("authorization")) > 0 || len(md.Get(auth.DelegationMetadataKey)) > 0 {
+	if len(md.Get(auth.DelegationMetadataKey)) > 0 {
 		return unauthenticated
+	}
+	if hasSVIDPeer(ctx) {
+		if len(g.operatorServices) == 0 {
+			if len(md.Get("authorization")) > 0 {
+				return unauthenticated
+			}
+			return nil
+		}
+		_, err := g.authenticate(ctx)
+		return err
 	}
 	return nil
 }
@@ -143,14 +187,17 @@ func (g *Gate) admit(ctx context.Context) (context.Context, error) {
 
 // UnaryInterceptor admits only the nine operator Connection methods and leaves gRPC health to its own handler.
 func (g *Gate) UnaryInterceptor(ctx context.Context, request any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-	if err := rejectMixedCredentials(ctx); err != nil {
-		return nil, err
-	}
 	listed, protected := g.authenticateMethod(info.FullMethod)
 	if !listed {
+		if err := g.rejectUnauthenticatedPeer(ctx); err != nil {
+			return nil, err
+		}
 		return nil, status.Error(codes.PermissionDenied, "method not allowed")
 	}
 	if !protected {
+		if err := g.rejectUnauthenticatedPeer(ctx); err != nil {
+			return nil, err
+		}
 		return handler(ctx, request)
 	}
 	admittedContext, err := g.admit(ctx)
@@ -166,14 +213,17 @@ func (g *Gate) UnaryInterceptor(ctx context.Context, request any, info *grpc.Una
 
 // StreamInterceptor admits only the operator Connection watch and leaves gRPC health to its own handler.
 func (g *Gate) StreamInterceptor(server any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-	if err := rejectMixedCredentials(stream.Context()); err != nil {
-		return err
-	}
 	listed, protected := g.authenticateMethod(info.FullMethod)
 	if !listed {
+		if err := g.rejectUnauthenticatedPeer(stream.Context()); err != nil {
+			return err
+		}
 		return status.Error(codes.PermissionDenied, "method not allowed")
 	}
 	if !protected {
+		if err := g.rejectUnauthenticatedPeer(stream.Context()); err != nil {
+			return err
+		}
 		return handler(server, stream)
 	}
 	admittedContext, err := g.admit(stream.Context())

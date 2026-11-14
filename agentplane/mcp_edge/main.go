@@ -29,6 +29,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/connections"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/mcpserver"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/migrations"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
@@ -76,17 +77,25 @@ func run(ctx context.Context, c config) error {
 		return fmt.Errorf("gRPC listener: %w", err)
 	}
 	defer grpcListener.Close()
+	var rpcTLSListener net.Listener
+	if c.RPCTLS != nil {
+		rpcTLSListener, err = net.Listen("tcp", c.RPCTLS.Listen)
+		if err != nil {
+			return fmt.Errorf("TLS gRPC listener: %w", err)
+		}
+		defer rpcTLSListener.Close()
+	}
 	httpListener, err := net.Listen("tcp", c.httpAddress())
 	if err != nil {
 		return fmt.Errorf("HTTP listener: %w", err)
 	}
 	defer httpListener.Close()
-	return serve(ctx, c, kubeConfig, grpcListener, httpListener)
+	return serve(ctx, c, kubeConfig, grpcListener, rpcTLSListener, httpListener)
 }
 
-// serve answers gRPC on grpcListener and HTTP (the facade, /mcp, OAuth and metrics) on httpListener until ctx ends or a
-// listener fails.
-func serve(ctx context.Context, c config, kubeConfig *rest.Config, grpcListener, httpListener net.Listener) error {
+// serve answers gRPC on grpcListener, optional mTLS gRPC on rpcTLSListener, and HTTP (the facade, /mcp, OAuth and
+// metrics) on httpListener until ctx ends or a listener fails.
+func serve(ctx context.Context, c config, kubeConfig *rest.Config, grpcListener, rpcTLSListener, httpListener net.Listener) error {
 	db, err := openDatabase(ctx, c.DatabaseURL)
 	if err != nil {
 		return err
@@ -110,11 +119,29 @@ func serve(ctx context.Context, c config, kubeConfig *rest.Config, grpcListener,
 	}
 	gate := admission.NewGate(operators)
 	connectionStore := connections.NewStore(db, identities, identities)
-	grpcServer := grpc.NewServer(observability.GRPCServerOption(),
-		grpc.ChainUnaryInterceptor(gate.UnaryInterceptor), grpc.ChainStreamInterceptor(gate.StreamInterceptor))
+	newGRPCServer := func(gate *admission.Gate, options ...grpc.ServerOption) *grpc.Server {
+		options = append(options, observability.GRPCServerOption(),
+			grpc.ChainUnaryInterceptor(gate.UnaryInterceptor), grpc.ChainStreamInterceptor(gate.StreamInterceptor))
+		return grpc.NewServer(options...)
+	}
+	registerServices := func(server *grpc.Server, gate *admission.Gate, health *probes.Probes) {
+		healthpb.RegisterHealthServer(server, readiness{Probes: health, identities: identities})
+		connection_servicepb.RegisterConnectionServiceServer(server, connections.NewService(connectionStore, gate, hub))
+	}
+	grpcServer := newGRPCServer(gate)
 	health := probes.New(db, hub)
-	healthpb.RegisterHealthServer(grpcServer, readiness{Probes: health, identities: identities})
-	connection_servicepb.RegisterConnectionServiceServer(grpcServer, connections.NewService(connectionStore, gate, hub))
+	registerServices(grpcServer, gate, health)
+	var tlsGate *admission.Gate
+	var tlsServer *grpc.Server
+	if rpcTLSListener != nil {
+		credentials, err := c.RPCTLS.Credentials(peertls.MCPEdgeURI)
+		if err != nil {
+			return fmt.Errorf("configure TLS gRPC listener: %w", err)
+		}
+		tlsGate = admission.NewGateWithOperatorServices(operators, c.OperatorServices)
+		tlsServer = newGRPCServer(tlsGate, grpc.Creds(credentials))
+		registerServices(tlsServer, tlsGate, health)
+	}
 	facadeContext, stopFacade := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopFacade()
 	httpFacade, err := facade.NewHandler(facadeContext, grpcListener.Addr().String(), 0, connection_servicepb.RegisterConnectionServiceHandlerFromEndpoint)
@@ -143,9 +170,12 @@ func serve(ctx context.Context, c config, kubeConfig *rest.Config, grpcListener,
 		defer connection.Close()
 	}
 	server := &http.Server{Handler: observability.HTTPHandler(routes), ReadHeaderTimeout: 10 * time.Second}
-	failed := make(chan error, 2)
+	failed := make(chan error, 3)
 	go func() { failed <- fmt.Errorf("gRPC listener: %w", grpcServer.Serve(grpcListener)) }()
 	go func() { failed <- fmt.Errorf("HTTP listener: %w", server.Serve(httpListener)) }()
+	if tlsServer != nil {
+		go func() { failed <- fmt.Errorf("TLS gRPC listener: %w", tlsServer.Serve(rpcTLSListener)) }()
+	}
 	var result error
 	select {
 	case result = <-failed:
@@ -154,6 +184,9 @@ func serve(ctx context.Context, c config, kubeConfig *rest.Config, grpcListener,
 	}
 	health.Drain()
 	gate.Drain()
+	if tlsGate != nil {
+		tlsGate.Drain()
+	}
 	stopped, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
 	defer cancel()
 	// The facade's calls are gRPC calls, so the HTTP listener stops first.
@@ -161,6 +194,9 @@ func serve(ctx context.Context, c config, kubeConfig *rest.Config, grpcListener,
 		server.Close()
 	}
 	graceful.Stop(stopped, grpcServer)
+	if tlsServer != nil {
+		graceful.Stop(stopped, tlsServer)
+	}
 	return result
 }
 
