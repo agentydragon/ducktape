@@ -12,13 +12,13 @@ from agentplane.env.e2e.testing.fixtures import (
     model,
     runner,
     runner_gateway,
-    sandbox,
     spec,
     workspace,
 )
 from agentplane.env.e2e.testing.process_fixtures import start_runner
 from agentplane.history_service.testing.fixtures import service_database_template, service_history_db_url
 from agentplane.testing.kubernetes_apiserver_fixtures import api_server, kubeconfig
+from agentplane.testing.sandbox_fixtures import sandbox
 from util.testing.postgres_fixtures import (
     database_clones,
     database_names,
