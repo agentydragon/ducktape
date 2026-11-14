@@ -1,14 +1,14 @@
 {
   "schema_version": 3,
   "artifact_kind": "source-grounded organization proposal and file ledger",
-  "source_sha": "ce53bc8c8552d3f469343c73b441e27ace268edf",
+  "source_sha": "55e7df4226dd4d761a72b96ea055a362c953e3ec",
   "observed_at_utc": "2026-11-14T00:48:53+00:00",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "freshness": {
-    "checked_origin_devel": "ce53bc8c8552d3f469343c73b441e27ace268edf",
-    "checked_at_utc": "2026-11-14T02:45:00+00:00",
+    "checked_origin_devel": "55e7df4226dd4d761a72b96ea055a362c953e3ec",
+    "checked_at_utc": "2026-11-14T03:30:00+00:00",
     "previous_pin": "6dfbd741f5ba004f02aba929cadbbd59b6950393",
-    "go_or_proto_delta": "Since 6dfbd741, 15 Go files were removed or moved away, 22 added or moved in and 19 edited, all by the landed work below; every other tracked Go file has the same blob hash.",
+    "go_or_proto_delta": "Since 6dfbd741, 19 Go files were removed or moved away, 33 added or moved in and 77 edited, by the landed work below and the backend gRPC TLS support (#16332, outside this plan); every other tracked Go file has the same blob hash.",
     "landed": [
       {
         "track": "app-proxy-owners",
@@ -34,17 +34,42 @@
         "track": "app-http-owners (first step; item stays)",
         "pr": 16320,
         "result": "Thread read and metadata handling moved to `app/internal/httpapi/threads`; Session/environment routes and streaming facades remain in the aggregate server."
+      },
+      {
+        "track": "settings-viper-removal",
+        "pr": 16315,
+        "result": "The app and Action Service decode their settings files without Viper; no Agentplane Go code imports it."
+      },
+      {
+        "track": "runtime-facts-off-lease",
+        "pr": 16328,
+        "result": "The Sandbox Controller reads Runtime facts itself (#16324); the Gateway's fact publication, the Controller's Lease reads and the `sandboxes/lease` codec are gone (#16328). The Controller's connection-Lease RBAC waits for its image pin and is carried by gateway-connection-lease-removal."
+      },
+      {
+        "track": "transition-tolerance-removal (sampler part; item stays for the Dispatcher)",
+        "pr": 16331,
+        "result": "Pre-Identity sampler Sessions deleted by migration 17 (#16323) and the sampler's fallbacks removed (#16331)."
+      },
+      {
+        "track": "gateway-connection-lease-removal (first step; item stays)",
+        "pr": 16330,
+        "result": "The Runtime accepts calls without a connection epoch."
+      },
+      {
+        "track": "app-http-owners (more steps; item stays)",
+        "pr": 16329,
+        "result": "Session (#16326), config and status (#16329) handlers moved under `app/internal/httpapi`."
       }
     ],
     "interpretation": "Landed work items are removed, not listed as done. Moved and new files are reclassified at their new paths; packages that no longer hold Go files (`action_service` root, `app/internal/proxy`, `policy` root) left the ledger."
   },
   "inventory": {
-    "source_sha": "ce53bc8c8552d3f469343c73b441e27ace268edf",
+    "source_sha": "55e7df4226dd4d761a72b96ea055a362c953e3ec",
     "counts": {
-      "files": 1263,
-      "directories": 221,
-      "production": 696,
-      "tests": 567
+      "files": 1270,
+      "directories": 222,
+      "production": 700,
+      "tests": 570
     },
     "all_tracked_go_files_included": true,
     "manifest_path": "agentplane-organization/go-files.json"
@@ -9943,9 +9968,9 @@
       "Goal trees show the Action Service's cmd package, EnvironmentService's proposed owners under the Sandbox Controller and no emptied directories."
     ],
     "structural_checks": [
-      "All 1,263 tracked Go files at devel ce53bc8c85 match the ledger's path, blob hash, line count, package and test flags; the 221 directories and package decisions match one to one; every pending track exists.",
+      "All 1,270 tracked Go files at devel 55e7df4226 match the ledger's path, blob hash, line count, package and test flags; the 222 directories and package decisions match one to one; every pending track exists.",
       "Every non-retained package has a work item; adoption stages cover every work item once; content prerequisites precede dependents; move targets are unique and new.",
-      "Every work item's source, evidence and deletion paths exist at ce53bc8c85, and its validation labels exist in the pinned BUILD files."
+      "Every work item's source, evidence and deletion paths exist at 55e7df4226, and its validation labels exist in the pinned BUILD files."
     ],
     "visual_review": "Inspected the reworked runtime-facts-off-lease and gateway-replica-ownership cards, the remaining-work queue, adoption order and the action_service and sandbox_controller trees (desktop light, mobile dark). Screenshots were not published.",
     "limits": "Planning/report validation only. No Go behavior changes, Go tests, deployments or live acceptance are claimed."
