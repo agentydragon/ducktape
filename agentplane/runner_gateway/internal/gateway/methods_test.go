@@ -16,7 +16,6 @@ import (
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"google.golang.org/grpc"
@@ -170,15 +169,6 @@ func TestCheckpointedLauncherWithIncarnationRoutesAsSuspended(t *testing.T) {
 	if phase := sandboxPhase(sandbox); phase != modeSuspended {
 		t.Fatalf("checkpointed launcher phase = %s, want Suspended", phase)
 	}
-}
-
-func gatewayMethods(t *testing.T, g *Gateway) auth.Methods {
-	t.Helper()
-	methods, err := g.Methods()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return methods
 }
 
 func TestRuntimeProxyServiceRolesStayMethodScoped(t *testing.T) {
