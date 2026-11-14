@@ -46,6 +46,10 @@ def main() -> None:
             ]
             if runnable:
                 print("\n".join(runnable))
+        elif query_arg.endswith("contract-validation-owners-query.txt"):
+            validations = os.environ.get("FAKE_CONTRACT_VALIDATIONS", "")
+            if validations:
+                print(validations)
         elif query_arg.endswith("contract-sources-query.txt"):
             print(os.environ.get("FAKE_CONTRACT_SOURCES", "//agentplane/env/runtime/journal:journal.go"))
         elif query_arg.endswith("contract-owners-query.txt"):

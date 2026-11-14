@@ -5,6 +5,8 @@ No kubelet or controller runs: the Pod's and the Sandbox's statuses are whatever
 the test write.
 """
 
+import asyncio
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -26,6 +28,7 @@ from agentplane.testing.tls import workload_uri
 
 SANDBOX = "test-runner"
 _MERGE_PATCH = "application/merge-patch+json"
+_SANDBOX_LABEL = "agentplane.allegedly.works/sandbox"
 _RUNNER_CREDENTIAL_LABEL = "agentplane.allegedly.works/environment-runtime-credential"
 _RUNNER_CREDENTIAL_ID = "0123456789abcdef0123456789abcdef"
 _WORKLOAD_CREDENTIALS_PLURAL = "workloadcredentials"
@@ -102,6 +105,97 @@ class SandboxCluster:
             _content_type=_MERGE_PATCH,
         )
 
+    async def replace_runner_pod(self) -> str:
+        """Model the controller's accepted same-Sandbox Pod replacement and return its new UID."""
+        core = k8s_client.CoreV1Api(self.server.api)
+        current = await core.read_namespaced_pod(self.name, self.namespace)
+        old_uid = str(current.metadata.uid)
+        if old_uid != self.pod_uid:
+            raise AssertionError(f"runner Pod UID changed unexpectedly: {old_uid} != {self.pod_uid}")
+        await core.delete_namespaced_pod(
+            self.name,
+            self.namespace,
+            body=k8s_client.V1DeleteOptions(
+                grace_period_seconds=0, preconditions=k8s_client.V1Preconditions(uid=old_uid)
+            ),
+        )
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            try:
+                await core.read_namespaced_pod(self.name, self.namespace)
+            except k8s_client.ApiException as error:
+                if error.status == 404:
+                    break
+                raise
+            await asyncio.sleep(0.05)
+        else:
+            raise TimeoutError(f"runner Pod {self.namespace}/{self.name} was not deleted")
+        pod = await core.create_namespaced_pod(
+            self.namespace,
+            k8s_client.V1Pod(
+                metadata=k8s_client.V1ObjectMeta(
+                    name=self.name,
+                    labels={_SANDBOX_LABEL: self.name, _RUNNER_CREDENTIAL_LABEL: _RUNNER_CREDENTIAL_ID},
+                    owner_references=[
+                        k8s_client.V1OwnerReference(
+                            api_version=sandbox_resource.SANDBOX_API_VERSION,
+                            kind=sandbox_resource.SANDBOX_KIND,
+                            name=self.name,
+                            uid=self.uid,
+                            controller=True,
+                        )
+                    ],
+                ),
+                spec=k8s_client.V1PodSpec(
+                    service_account_name=self.name,
+                    containers=[
+                        k8s_client.V1Container(name="environment-runtime", image="registry.test/runner:unused")
+                    ],
+                ),
+            ),
+        )
+        await core.patch_namespaced_pod_status(
+            self.name,
+            self.namespace,
+            {"status": {"phase": "Running", "podIP": "127.0.0.1", "conditions": [{"type": "Ready", "status": "True"}]}},
+        )
+        credential = cast(
+            dict[str, Any],
+            await self.custom_objects.patch_namespaced_custom_object(
+                GROUP,
+                VERSION,
+                self.namespace,
+                _WORKLOAD_CREDENTIALS_PLURAL,
+                self.name,
+                {
+                    "spec": {
+                        "binding": {"podUID": str(pod.metadata.uid)},
+                        "pod": {"name": self.name, "uid": str(pod.metadata.uid)},
+                    }
+                },
+                _content_type=_MERGE_PATCH,
+            ),
+        )
+        await self.custom_objects.patch_namespaced_custom_object_status(
+            GROUP,
+            VERSION,
+            self.namespace,
+            _WORKLOAD_CREDENTIALS_PLURAL,
+            self.name,
+            {
+                "status": {
+                    "observedGeneration": credential["metadata"]["generation"],
+                    "acceptedBinding": {"podUID": str(pod.metadata.uid)},
+                }
+            },
+            _content_type=_MERGE_PATCH,
+        )
+        await self.patch_sandbox_status({"status": {"incarnation": {"name": self.name, "uid": str(pod.metadata.uid)}}})
+        new_uid = str(pod.metadata.uid)
+        if new_uid == old_uid:
+            raise AssertionError(f"replacement runner Pod reused UID {new_uid}")
+        return new_uid
+
 
 @asynccontextmanager
 async def sandbox_cluster(server: KubernetesApiServer, *, name: str = SANDBOX) -> AsyncIterator[SandboxCluster]:
@@ -160,7 +254,7 @@ async def sandbox_cluster(server: KubernetesApiServer, *, name: str = SANDBOX) -
         k8s_client.V1Pod(
             metadata=k8s_client.V1ObjectMeta(
                 name=name,
-                labels={_RUNNER_CREDENTIAL_LABEL: _RUNNER_CREDENTIAL_ID},
+                labels={_SANDBOX_LABEL: name, _RUNNER_CREDENTIAL_LABEL: _RUNNER_CREDENTIAL_ID},
                 owner_references=[
                     k8s_client.V1OwnerReference(
                         api_version=sandbox_resource.SANDBOX_API_VERSION,

@@ -6,6 +6,7 @@ Runtime in its PID1 container, PostgreSQL, and the existing envtest Kubernetes A
 ```sh
 bbr test //agentplane/x/native_contracts:test_recovery --nocache_test_results
 bbr test //agentplane/x/native_contracts:test_admission_reply_loss --nocache_test_results
+bbr test //agentplane/x/native_contracts:test_quiesce_cutoff --nocache_test_results
 ```
 
 The four Claude cases exercise:
@@ -33,6 +34,18 @@ startup code in a test-only binary whose interceptor returns `UNAVAILABLE` after
 handler commits. The four recovery cases retain the production executable. The fault models a
 discarded admission response, not a socket reset. A later Dispatcher receipt replay must cause
 no third Runtime call. Rejecting a valid journal replay as a conflict makes this contract fail.
+
+The Quiesce cutoff contract holds an authenticated interrupt after real Gateway
+routing, then waits for Runtime Quiesce and History's durable seal acknowledgement.
+Releasing the interrupt calls the production handler, which must refuse it without
+changing sealed History. A new API-server-issued Pod UID and Controller binding
+then restore the same native Session as dormant with no process. Fresh Dispatcher
+input reopens its journal under the successor UID and completes with the sealed
+prefix unchanged and no delayed-command admission. Readiness verifies both the
+expected incarnation UID and Runtime boot ID. The test-only Runtime executable
+adds an interceptor gate; the production handler, journal, lifecycle and transport
+remain real. The fixture authors Pod, credential-binding and Sandbox status;
+this is not a Kubernetes-controller or certificate-rotation witness.
 
 Suspending History tests unavailability; it does not establish a History process restart,
 database failover or packaged Deployment rollout.

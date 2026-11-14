@@ -399,8 +399,20 @@ def _contract_test_graph(
     record: dict[str, object] = {"mode": policy["mode"], "eligible": False, "candidate_labels": labels}
     changed_paths = (temp_dir / "changed-files.txt").read_text().splitlines()
     owners = " ".join(json.dumps(label) for label in policy["implementations"])
+    # Implementation fixes normally arrive with their owner tests. Only accept
+    # same-package ordinary tests that directly depend on a declared implementation.
+    # Discovering companions must not load //... for unrelated PRs. Helpers,
+    # shared sources and other production owners still fail closed below.
+    validation_query = temp_dir / "contract-validation-owners-query.txt"
+    validation_query.write_text(
+        f'let validations = kind(".*_test rule", same_pkg_direct_rdeps(set({owners}))) in '
+        f'$validations except attr("tags", {json.dumps(_CI_EXCLUDED_TEST_TAGS)}, $validations)\n'
+    )
+    validations = _capture(["bazel", "query", f"--query_file={validation_query}"]).splitlines()
+    accounted_owners = set(policy["implementations"]) | set(validations)
+    accounted = " ".join(json.dumps(label) for label in sorted(accounted_owners))
     sources_query = temp_dir / "contract-sources-query.txt"
-    sources_query.write_text(f'kind("source file", labels("srcs", set({owners})))\n')
+    sources_query.write_text(f'kind("source file", labels("srcs", set({accounted})))\n')
     sources = _capture(["bazel", "query", f"--query_file={sources_query}"]).splitlines()
     source_paths = {label[2:].replace(":", "/", 1): label for label in sources if label.startswith("//")}
     if not changed_paths or not set(changed_paths) <= source_paths.keys():
@@ -410,21 +422,31 @@ def _contract_test_graph(
     owners_query = temp_dir / "contract-owners-query.txt"
     owners_query.write_text(f'kind(".* rule", rdeps(//..., set({changed_labels}), 1))\n')
     changed_owners = _capture(["bazel", "query", f"--query_file={owners_query}"]).splitlines()
-    if not changed_owners or not set(changed_owners) <= set(policy["implementations"]):
+    if not changed_owners or not set(changed_owners) <= accounted_owners:
         record["reason"] = "change has an unaccounted direct source owner"
         return labels, record
-    required = " ".join(json.dumps(label) for label in policy["requires"])
+    if not set(changed_owners) & set(policy["implementations"]):
+        record["reason"] = "validation-only change does not replace deployment coverage"
+        return labels, record
+    required_labels = set(policy["requires"]) | set(validations)
+    required = " ".join(json.dumps(label) for label in sorted(required_labels))
     required_query = temp_dir / "contract-required-query.txt"
     required_query.write_text(
         f'let required = tests(set({required})) in $required except attr("tags", '
         f"{json.dumps(_CI_EXCLUDED_TEST_TAGS)}, $required)\n"
     )
     required_tests = _capture(["bazel", "query", f"--query_file={required_query}"]).splitlines()
-    if set(required_tests) != set(policy["requires"]):
+    if set(required_tests) != required_labels:
         raise ValueError("Every Agentplane replacement must be an ordinary, runnable test target")
     removed = sorted(set(labels) & set(policy["replaces"]))
     candidate = sorted((set(labels) - set(removed)) | set(required_tests))
-    record.update(eligible=True, owners=sorted(changed_owners), replaced_labels=removed, candidate_labels=candidate)
+    record.update(
+        eligible=True,
+        owners=sorted(changed_owners),
+        validation_tests=sorted(validations),
+        replaced_labels=removed,
+        candidate_labels=candidate,
+    )
     return (candidate if policy["mode"] == "required" else labels), record
 
 

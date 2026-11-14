@@ -256,7 +256,7 @@ def _baseline_evidence(
         "pki_controller_uids": controllers,
         "vm_controller_uids": vm_controllers,
         "workspace_storage_class_uid": (virtualization.storage_class_uid(k3s) if virtualization is not None else None),
-        "layers_in_memory": not fixture.vm_sandboxes,
+        "layers_in_memory": not (fixture.vm_sandboxes or fixture.firecracker_sandboxes),
         "model_endpoint": models.url if isinstance(models, rendered_fixture.LocalModel) else None,
     }
 
@@ -355,8 +355,6 @@ def running_stack(
     uses_virtualization = fixture.vm_sandboxes or fixture.firecracker_sandboxes
     if fixture.firecracker_sandboxes and os.environ.get("AGENTPLANE_K3S_REQUIRE_KVM") != "1":
         raise ValueError("the Firecracker fixture requires a KVM-enabled executor")
-    if fixture.firecracker_sandboxes and persist_infrastructure:
-        raise ValueError("the Firecracker fixture does not retain executor snapshots")
     cert_manager, trust_manager = pki_infrastructure.releases()
     pki_images = inputs.pki_image_layouts
     if uses_virtualization != (virtualization_factory is not None):

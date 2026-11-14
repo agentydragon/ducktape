@@ -272,6 +272,63 @@ def test_manual_replacement_contract_cannot_silently_leave_a_coverage_gap(
 
 
 @pytest.mark.parametrize(
+    ("changed_files", "direct_owners", "replaced"),
+    [
+        (
+            "agentplane/env/runtime/journal/journal.go\nagentplane/env/runtime/journal/journal_test.go",
+            "//agentplane/env/runtime/journal:journal\n//agentplane/env/runtime/journal:journal_test",
+            True,
+        ),
+        (
+            "agentplane/env/runtime/journal/journal.go\nagentplane/env/runtime/journal/journal_test.go",
+            "//agentplane/env/runtime/journal:journal\n//agentplane/env/runtime/journal:journal_test\n//ci:shared_helper",
+            False,
+        ),
+        ("agentplane/env/runtime/journal/journal_test.go", "//agentplane/env/runtime/journal:journal_test", False),
+        (
+            "agentplane/env/runtime/journal/journal.go\nagentplane/env/runtime/journal/README.md",
+            "//agentplane/env/runtime/journal:journal",
+            False,
+        ),
+    ],
+)
+def test_contract_fix_with_owner_tests_keeps_them_required_and_rejects_shared_inputs(
+    tmp_path: Path,
+    run_ci: Callable[[dict[str, str]], subprocess.CompletedProcess[str]],
+    changed_files: str,
+    direct_owners: str,
+    replaced: bool,
+) -> None:
+    owner_test = "//agentplane/env/runtime/journal:journal_test"
+    result = run_ci(
+        {
+            "GITHUB_EVENT_NAME": "pull_request",
+            "PR_HEAD_SHA": "pr-head",
+            "CHANGED_FILE": changed_files,
+            "FAKE_TESTS": "//ci:deployment_test",
+            "FAKE_CONTRACT_SOURCES": (
+                "//agentplane/env/runtime/journal:journal.go\n//agentplane/env/runtime/journal:journal_test.go"
+            ),
+            "FAKE_CONTRACT_OWNERS": direct_owners,
+            "FAKE_CONTRACT_VALIDATIONS": owner_test,
+            "FAKE_CONTRACT_POLICY": json.dumps(
+                {
+                    "schema": "ducktape.agentplane_test_contracts.v1",
+                    "mode": "required",
+                    "implementations": ["//agentplane/env/runtime/journal:journal"],
+                    "replaces": ["//ci:deployment_test"],
+                    "requires": ["//ci:process_contract"],
+                }
+            ),
+        }
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    executed = set((tmp_path / "test-targets.log").read_text().splitlines())
+    assert executed == ({owner_test, "//ci:process_contract"} if replaced else {"//ci:deployment_test"})
+    assert (tmp_path / "build-args.log").exists()
+
+
+@pytest.mark.parametrize(
     ("mode", "test_exit", "expected", "phases"),
     [("required", "0", 0, ["test"]), ("required", "4", 4, ["test"]), ("shadow", "0", 0, [])],
 )
