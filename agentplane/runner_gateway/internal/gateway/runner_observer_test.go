@@ -419,7 +419,7 @@ func startProxyClient(t *testing.T, g *Gateway) environmentruntimepb.Environment
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := grpc.NewServer(g.Methods().ServerOptions(0)...)
+	server := grpc.NewServer(gatewayMethods(t, g).ServerOptions(0)...)
 	g.RegisterProxy(server)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
