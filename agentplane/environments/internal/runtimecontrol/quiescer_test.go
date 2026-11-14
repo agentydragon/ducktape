@@ -12,6 +12,8 @@ import (
 	"time"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/grpc"
@@ -30,13 +32,13 @@ func (g quiesceGateway) Quiesce(ctx context.Context, request *sessionpb.QuiesceR
 	return g.handle(ctx, request)
 }
 
-func newQuiescerTest(t *testing.T, handle func(context.Context, *sessionpb.QuiesceRequest) (*sessionpb.QuiesceResponse, error)) (GatewayQuiescer, *sandboxapi.Sandbox) {
+func newQuiescerTest(t *testing.T, handle func(context.Context, *sessionpb.QuiesceRequest) (*sessionpb.QuiesceResponse, error), serverOptions ...grpc.ServerOption) (GatewayQuiescer, *sandboxapi.Sandbox) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := grpc.NewServer()
+	server := grpc.NewServer(serverOptions...)
 	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, quiesceGateway{handle: handle})
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
@@ -195,5 +197,36 @@ func TestQuiesceResultTreatsOnlyQuiescedAsFinal(t *testing.T) {
 				t.Errorf("quiescing = %t, want %t", got, test.quiescing)
 			}
 		})
+	}
+}
+
+func TestGatewayQuiescerUsesControllerSVIDWithoutBearer(t *testing.T) {
+	ca := peertlstesting.NewCA(t)
+	serverConfig := ca.Issue(t, peertls.SessionDispatcherURI)
+	credentials, err := serverConfig.ServerCredentials(peertls.SandboxControllerURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := make(chan metadata.MD, 1)
+	quiescer, sandbox := newQuiescerTest(t, func(ctx context.Context, _ *sessionpb.QuiesceRequest) (*sessionpb.QuiesceResponse, error) {
+		uri, err := peertls.PeerIdentity(ctx)
+		if err != nil || uri != peertls.SandboxControllerURI {
+			t.Errorf("controller peer = %q, %v", uri, err)
+		}
+		md, _ := metadata.FromIncomingContext(ctx)
+		seen <- md
+		return &sessionpb.QuiesceResponse{Stage: sessionpb.QuiesceStage_QUIESCE_STAGE_QUIESCED}, nil
+	}, grpc.Creds(credentials))
+	leaf := ca.Issue(t, peertls.SandboxControllerURI)
+	quiescer.TokenFile = ""
+	quiescer.TLS = &peertls.ClientTLS{
+		CAFile: ca.RootFile, ServerURI: peertls.SessionDispatcherURI,
+		CertFile: leaf.CertFile, KeyFile: leaf.KeyFile, ClientURI: peertls.SandboxControllerURI,
+	}
+	if _, err := quiescer.Quiesce(t.Context(), sandbox, nil); err != nil {
+		t.Fatal(err)
+	}
+	if md := <-seen; len(md.Get("authorization")) != 0 {
+		t.Fatal("SVID quiesce sent bearer metadata")
 	}
 }

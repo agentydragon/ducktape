@@ -64,17 +64,14 @@ func (c config) validate() error {
 	if err := c.RunnerSecurity.Validate(); err != nil {
 		return fmt.Errorf("runner_security: %w", err)
 	}
-	if c.RunnerGatewayTLS != nil {
-		if err := c.RunnerGatewayTLS.Validate(); err != nil {
-			return fmt.Errorf("runner_gateway_tls: %w", err)
-		}
+	if err := c.RunnerGatewayTLS.ValidateCaller(c.RunnerGatewayTokenFile, peertls.SandboxControllerURI); err != nil {
+		return fmt.Errorf("runner_gateway caller authentication: %w", err)
 	}
 	for _, required := range []struct{ name, value string }{
 		{"namespace", c.Namespace},
 		{"metrics_bind_address", c.MetricsBindAddress},
 		{"health_probe_bind_address", c.HealthProbeBindAddress},
 		{"runner_gateway_target", c.RunnerGatewayTarget},
-		{"runner_gateway_token_file", c.RunnerGatewayTokenFile},
 	} {
 		if strings.TrimSpace(required.value) == "" {
 			return fmt.Errorf("%s is required", required.name)

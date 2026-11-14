@@ -164,3 +164,34 @@ func TestRunnerGatewayTLSRejectsIncompleteOrUnknownSettings(t *testing.T) {
 		})
 	}
 }
+
+func TestControllerGatewayCallerUsesOnlyItsOwnSVID(t *testing.T) {
+	const transport = `runner_gateway_tls:
+  ca_file: /run/agentplane/workload-trust/ca.crt
+  server_uri: spiffe://agentplane/session-dispatcher
+  cert_file: /run/agentplane/sandbox-controller-client-tls/tls.crt
+  key_file: /run/agentplane/sandbox-controller-client-tls/tls.key
+  client_uri: spiffe://agentplane/sandbox-controller
+`
+	source := strings.Replace(validSettings, "runner_gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token\n", "", 1) + transport
+	t.Setenv(configFileEnv, writeSettings(t, source))
+	c, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.RunnerGatewayTokenFile != "" || !c.RunnerGatewayTLS.UsesSVID() {
+		t.Fatal("lost service SVID caller settings")
+	}
+	for name, invalid := range map[string]string{
+		"mixed":      validSettings + transport,
+		"other role": strings.Replace(source, "client_uri: spiffe://agentplane/sandbox-controller", "client_uri: spiffe://agentplane/app", 1),
+		"partial":    strings.Replace(source, "  key_file: /run/agentplane/sandbox-controller-client-tls/tls.key\n", "", 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(configFileEnv, writeSettings(t, invalid))
+			if _, err := loadConfig(); err == nil {
+				t.Fatal("accepted invalid service SVID caller")
+			}
+		})
+	}
+}
