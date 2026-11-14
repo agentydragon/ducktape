@@ -3569,11 +3569,14 @@ Dispatchable now. "Unscheduled" is the operator's priority statement, not a gate
   differs from the one this block was created with"; staging sets
   `thinking.block_binding.prefix_mismatch_behavior: error`. The operator accepted that already
   broken Threads stay broken and asked that future prompt/tool rollouts cannot break a Thread.
-  Current devel now freezes the first request's system/instructions and tools for continuation, but
-  this is implicit in request profiles, is incomplete for other route fields, and does not deliver
-  changes to existing Threads. See the [design plan](sampler_stable_prefix.md) for current request
-  projection/storage, provider mechanisms, the egress limitation on live-doc verification, compared
-  designs and acceptance test. **Design only:** no implementation until the operator reviews it.
+  Current devel implicitly freezes the first request's system/instructions and tools, but not every
+  route field. Provider docs confirm Anthropic's append-only instruction and tool-update forms;
+  OpenAI supports appended developer instructions and new tools, but documents no same-name tool
+  definition replacement. The plan recommends an explicit baseline plus provider-native updates;
+  unsupported differences stay pinned until a new provider conversation. Provider-held state is
+  only an optional transport optimization. See the [design plan](sampler_stable_prefix.md) for
+  current request/storage details, mechanisms, tradeoffs and acceptance tests. **Design only:** no
+  implementation until the operator reviews it.
 
 #### `ACTION_BOX_RENAME` — Action boxes stop being called sandboxes
 
