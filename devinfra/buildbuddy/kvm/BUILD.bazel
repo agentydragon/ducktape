@@ -17,6 +17,7 @@ go_test(
 go_test(
     name = "kvm_vm_test",
     srcs = [
+        "action_isolation_preflight_test.go",
         "kvm_test.go",
         "worker_keyring_test.go",
         "worker_pivot_root_test.go",
