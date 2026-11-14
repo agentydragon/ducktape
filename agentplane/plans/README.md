@@ -13,6 +13,9 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
 
 ## Open plans and gates
 
+- [EnvironmentService in Sandbox Controller](environment_service_controller_merge.md) — proposed
+  wake, budget, identity-fence, serving and rollout contract; requires review before moving the service
+
 - [Central Anthropic follow-ups](../central_sampler/plans/anthropic.md) — deferred BuildBuddy
   credentials, background compaction, dynamic tools and optional Langfuse export; direct sampling
   and ordinary compaction are deployed
