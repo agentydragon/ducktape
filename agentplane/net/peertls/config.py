@@ -95,7 +95,7 @@ Security = Annotated[MTLS | Insecure, Field(discriminator="mode")]
 
 
 class ClientTLS(BaseModel):
-    """Verify a backend service SVID without presenting a client certificate."""
+    """Verify a backend SVID, optionally authenticating with a service SVID."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -103,12 +103,36 @@ class ClientTLS(BaseModel):
     server_uri: str = Field(
         pattern=r"^spiffe://agentplane/(runner-gateway|egress-proxy|history-ingress|notifications|llm-ingress|session-dispatcher|actions|policy-controller|central-sampler|mcp-edge)$"
     )
+    cert_file: Path | None = None
+    key_file: Path | None = None
+    client_uri: ServiceSPIFFEID | None = None
 
     @model_validator(mode="after")
     def absolute_path(self) -> Self:
         if not self.ca_file.is_absolute():
             raise ValueError("client TLS requires an absolute ca_file")
+        if self.uses_svid and (
+            self.cert_file is None
+            or self.key_file is None
+            or self.client_uri is None
+            or not self.cert_file.is_absolute()
+            or not self.key_file.is_absolute()
+        ):
+            raise ValueError("service SVID requires absolute cert_file and key_file paths and a service client_uri")
         return self
+
+    @property
+    def uses_svid(self) -> bool:
+        return any(value is not None for value in (self.cert_file, self.key_file, self.client_uri))
+
+    def validate_caller(self, token_file: str | Path | None, client_uri: str) -> None:
+        if self.uses_svid:
+            if token_file:
+                raise ValueError("service SVID and bearer token authentication cannot be combined")
+            if self.client_uri != client_uri:
+                raise ValueError(f"client_uri must be {client_uri!r}")
+        elif not token_file:
+            raise ValueError("a bearer token file or service SVID is required")
 
 
 class ServerTLSListener(BaseModel):

@@ -3,6 +3,7 @@ package peertls_test
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"os"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
@@ -111,5 +112,94 @@ func TestClientTLSInvalidConfigurationFailsWithoutDowngrade(t *testing.T) {
 	}
 	if got := plaintext.Info().SecurityProtocol; got != "insecure" {
 		t.Fatalf("nil ClientTLS protocol = %q, want explicit insecure transport", got)
+	}
+}
+
+func TestServiceSVIDCallerValidation(t *testing.T) {
+	valid := peertls.ClientTLS{CAFile: "/ca", ServerURI: peertls.ActionsURI, CertFile: "/cert", KeyFile: "/key", ClientURI: peertls.AppURI}
+	if err := valid.ValidateCaller("", peertls.AppURI); err != nil {
+		t.Fatal(err)
+	}
+	for name, mutate := range map[string]func(*peertls.ClientTLS){
+		"missing cert":      func(c *peertls.ClientTLS) { c.CertFile = "" },
+		"relative key":      func(c *peertls.ClientTLS) { c.KeyFile = "key" },
+		"missing identity":  func(c *peertls.ClientTLS) { c.ClientURI = "" },
+		"workload identity": func(c *peertls.ClientTLS) { c.ClientURI = "spiffe://agentplane/ns/test/sandbox/agent/uid/uid" },
+		"other role":        func(c *peertls.ClientTLS) { c.ClientURI = peertls.MCPEdgeURI },
+	} {
+		t.Run(name, func(t *testing.T) {
+			invalid := valid
+			mutate(&invalid)
+			if err := invalid.ValidateCaller("", peertls.AppURI); err == nil {
+				t.Fatal("accepted invalid SVID caller")
+			}
+		})
+	}
+	if err := valid.ValidateCaller("/token", peertls.AppURI); err == nil {
+		t.Fatal("accepted mixed SVID and bearer")
+	}
+}
+
+func TestClientSVIDPinsIdentityAndReloadsCertificate(t *testing.T) {
+	ca := environmentruntimetransporttesting.NewCA(t)
+	server := ca.Issue(t, peertls.ActionsURI)
+	serverTLS, err := server.WorkloadServerTLSConfigWithServices(peertls.ActionsURI, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf := ca.Issue(t, peertls.AppURI)
+	client := peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.ActionsURI, CertFile: leaf.CertFile, KeyFile: leaf.KeyFile, ClientURI: peertls.AppURI}
+	clientTLS, err := client.TLSConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := func() []byte {
+		t.Helper()
+		_, peer, err := tlsHandshake(t, clientTLS, serverTLS)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(peer.PeerCertificates) != 1 || peer.PeerCertificates[0].URIs[0].String() != peertls.AppURI {
+			t.Fatal("wrong client peer")
+		}
+		return peer.PeerCertificates[0].Raw
+	}
+	first := string(check())
+	replace := func(replacement peertls.Config) {
+		t.Helper()
+		for dst, src := range map[string]string{leaf.CertFile: replacement.CertFile, leaf.KeyFile: replacement.KeyFile} {
+			data, err := os.ReadFile(src)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Atomic replacement matches the projected volume's inode changes.
+			if err := os.WriteFile(dst+".new", data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Rename(dst+".new", dst); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	replace(ca.Issue(t, peertls.AppURI))
+	if string(check()) == first {
+		t.Fatal("client certificate did not rotate")
+	}
+	replace(ca.Issue(t, peertls.MCPEdgeURI))
+	if _, _, err := tlsHandshake(t, clientTLS, serverTLS); err == nil {
+		t.Fatal("accepted changed local identity")
+	}
+	if _, err := client.TLSConfig(); err == nil {
+		t.Fatal("accepted certificate not matching configured client_uri")
+	}
+	replace(ca.IssueWithUsage(t, peertls.AppURI, x509.ExtKeyUsageServerAuth))
+	if _, err := client.Credentials(); err == nil {
+		t.Fatal("accepted local leaf without clientAuth")
+	}
+	if err := os.Remove(leaf.CertFile); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Credentials(); err == nil {
+		t.Fatal("missing certificate fell back")
 	}
 }
