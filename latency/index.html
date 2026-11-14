@@ -539,6 +539,150 @@
             <//>
             <${Paper}
               component="section"
+              id="architecture-followup-iteration14"
+              withBorder
+              p="lg"
+              my="xl"
+            >
+              <${Stack} gap="sm">
+                <${Title} order=${2}
+                  >Iteration 14 architecture follow-up: shared-guest screen and
+                  seal retry candidate<//
+                >
+                <${Text} size="sm" c="dimmed">
+                  Selected architecture evidence only. The backend CI
+                  population, original observation windows, rates and
+                  denominators above are unchanged; these four arms are not a
+                  new fleet sample.
+                <//>
+                ${table(
+                  [
+                    "Run",
+                    "Guest arrangement",
+                    "Invocation",
+                    "Native",
+                    "Execution",
+                    "Cleanup",
+                  ],
+                  [
+                    [
+                      "A1",
+                      "Two separate fresh guests",
+                      html`<${Anchor}
+                        href=${inv("572ec341-d887-49e7-9a5d-27c090a1a7c3")}
+                        >572ec341<//
+                      >`,
+                      "343.286s",
+                      "300.021882s",
+                      "20.968475s, 76.358416s",
+                    ],
+                    [
+                      "B1",
+                      "One shared fresh guest",
+                      html`<${Anchor}
+                        href=${inv("21b2e916-d0d0-45ab-b2ba-9e878fc2844c")}
+                        >21b2e916<//
+                      >`,
+                      "424.462s",
+                      "270.135676s",
+                      "81.449116s",
+                    ],
+                    [
+                      "B2",
+                      "One shared fresh guest",
+                      html`<${Anchor}
+                        href=${inv("a9b44bc7-d5af-47b3-8e6d-06df1835b983")}
+                        >a9b44bc7<//
+                      >`,
+                      "246.365s",
+                      "199.252506s",
+                      "13.854960s",
+                    ],
+                    [
+                      "A2",
+                      "Two separate fresh guests",
+                      html`<${Anchor}
+                        href=${inv("289fcb99-c6ef-477e-9d88-034263b14a29")}
+                        >289fcb99<//
+                      >`,
+                      "357.140s",
+                      "313.951183s",
+                      "69.360931s, 67.363305s",
+                    ],
+                  ],
+                  920,
+                )}
+                <${Text}>
+                  All four runs succeeded with four NEW actions and six nonempty
+                  passing cases; failures, errors, skips and retries were zero,
+                  and CPU is unknown. Queue and image-import exposure differ
+                  between arms. Sharing one guest also changes the independent
+                  fresh-fixture guarantee. The screen does not qualify a saving
+                  or gate promotion, and it does not change the backend rates or
+                  denominators.
+                <//>
+                <${Text}>
+                  CI 9e943df5-9491-5e9a-9df7-1e35e45c734d reproduced a seal
+                  race: at 05:04:57.835 PodReady was false, phase was Quiescing,
+                  the destination was unavailable, and no Runtime forward
+                  occurred. A verified ready control followed at 05:04:58.786;
+                  the next Quiesce began at 05:05:57.015. Failed guest cleanup
+                  took 70.270s versus 17.083s for the other guest. Direct
+                  WatchState became fresh before Gateway Pod readiness and
+                  routing; the persisted one-minute cooldown amplified the race.
+                <//>
+                <${Text}>
+                  Candidate source 458e22a74523d49e80034eb3475f6c9f79c370f0
+                  makes at most three idempotent seal attempts, one second apart
+                  within the existing 30-second limit. Each attempt opens a
+                  fresh connection and resolves its target; the expected
+                  incarnation UID is enforced by the Gateway, which aborts on a
+                  mismatch. Existing readiness, caller, Lease and connection
+                  guards remain. Authentication refusal and unfinished seal do
+                  not retry inside the handshake; cooldown is unchanged. The
+                  negative probe rejects the old quiescer/proxy behavior, and a
+                  focused run passed 335 JUnit records over four NEW actions.
+                  Unchanged real Firecracker validation
+                  772f9305-8a5d-4c60-9f01-f52580d26799 passed at literal source
+                  458e22a74523d49e80034eb3475f6c9f79c370f0: native 658.540s with
+                  one unique NEW TestRunner, 284.170552s physical execution and
+                  253.777823s queue. Two nonempty JUnit cases passed with no
+                  failures, errors, skips or retries. The same-UID second trust
+                  guest request forwarded 1.008149s after the first Gateway
+                  start; process and boot continuity were verified. This
+                  confirms recovery in the controlled reproduction, not a
+                  whole-PR saving or fleet rate.
+                <//>
+                <${Text} size="sm">
+                  On that unchanged full CI, native time was 532.813s; VM took
+                  425.037s with 0.063s queue and finished at 05:06:51.772519;
+                  Pod took 312.127s. Firecracker took 274.942s, queued 106.276s,
+                  and finished at 05:06:10.952736. It is not the last phase in
+                  the graph, so its isolated benefit is not a whole-PR saving.
+                  The Claude guest runs a 22.51s synchronous systemd fixture
+                  before Runtime startup and reaches Ready about 23s after its
+                  concurrent Codex peer. A separate earlier oneshot would lose
+                  the exact Runtime invocation and lifetime-marker contract.
+                  Retain current ordering; the next bounded setup probe is the
+                  normal-root image-import benchmark. See the
+                  <${Anchor} href="../agentplane-test-architecture/#iteration14"
+                    >architecture analysis<//
+                  >
+                  and
+                  <${Anchor}
+                    href="../agentplane-test-architecture/iteration14.json"
+                    >reviewed evidence<//
+                  >.
+                <//>
+                <${Anchor}
+                  href="https://github.com/agentydragon/ducktape/pull/16344"
+                  >Independent devel PR #16344 · ready for review, checks
+                  pass<//
+                >
+              <//>
+            <//>
+            <${Paper}
+              component="section"
               id="architecture-followup-iteration13"
               withBorder
               p="lg"
@@ -546,8 +690,8 @@
             >
               <${Stack} gap="sm">
                 <${Title} order=${2}
-                  >Iteration 13 architecture follow-up: measured setup and
-                  required tail<//
+                  >Historical iteration 13 architecture follow-up: measured
+                  setup and required tail<//
                 >
                 <${Text} size="sm" c="dimmed">
                   Current experiment source

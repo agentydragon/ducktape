@@ -689,13 +689,101 @@
           <//>
           <${Stack}
             component="section"
+            id="architecture-followup-iteration14"
+            my="xl"
+          >
+            <${Stack} gap="sm">
+              <${Title} order=${2}
+                >Iteration 14 reliability follow-up: confirmed seal race, real
+                Firecracker validation passed<//
+              >
+              <${Text} size="sm" c="dimmed">
+                These selected runs do not recollect the original 5–12 November
+                reliability window, source pins, rates or denominators. The
+                unchanged real Firecracker validation passed at literal source
+                458e22a; the controlled retry recovered from the transient
+                rejection.
+              <//>
+              <${Text}>
+                CI 9e943df5-9491-5e9a-9df7-1e35e45c734d, tested merge 056bd735be
+                containing 6aae2a61a5, failed seal at 05:04:57.835 with
+                PodReady=false, phase Quiescing, destination_unavailable and no
+                Runtime forward. The verified control was ready at 05:04:58.786;
+                the next Quiesce began at 05:05:57.015. Cleanup took 70.270s for
+                the failed guest and 17.083s for the other guest. Controller
+                WatchState became fresh before Gateway Pod readiness and route
+                availability; the persisted one-minute cooldown amplified the
+                race.
+              <//>
+              <${Text}>
+                Candidate source 458e22a74523d49e80034eb3475f6c9f79c370f0 adds
+                at most three idempotent attempts one second apart inside the
+                existing 30-second total. Each attempt opens a fresh connection
+                and resolves its target; an expected incarnation UID is sent and
+                enforced by the Gateway, which aborts on mismatch. Existing
+                readiness, caller, Lease and connection guards remain.
+                Authentication refusal and unfinished seal do not retry within
+                the handshake, and the persisted cooldown is unchanged.
+              <//>
+              <${Text}>
+                The negative probe rejects the old quiescer/proxy behavior
+                against the retry and incarnation assertions. The focused
+                candidate run reports four NEW actions and 335 passing JUnit
+                records with zero bad, skipped or retried cases. The unchanged
+                Firecracker validation
+                <${Anchor}
+                  href="https://app.buildbuddy.io/invocation/772f9305-8a5d-4c60-9f01-f52580d26799"
+                  >772f9305<//
+                >
+                passed at literal source
+                458e22a74523d49e80034eb3475f6c9f79c370f0: native 658.540s, one
+                unique NEW TestRunner, 284.170552s execution and 253.777823s
+                queue. Two nonempty JUnit cases passed; there were no failures,
+                errors, skips or retries. In the trust guest the first Quiesce
+                saw an unavailable Gateway and the same-UID second request
+                forwarded 1.008149s later. Continuation evidence confirms
+                process and boot continuity across suspend/resume, an in-guest
+                progress counter change from 2 to 327, PID 1 systemd, and no
+                projected service-account token. The reproduced transient
+                rejection recovered; this does not establish a fleet rate or
+                whole-PR saving. The latest unchanged full graph also shows the
+                VM as the last test. Its Claude-only systemd fixture adds 22.51s
+                before Runtime startup; a separate earlier oneshot would change
+                the Runtime invocation and lifetime-marker proof. That simple
+                arrangement is ruled out; the full fixture remains.
+              <//>
+              <${Text} size="sm">
+                The selected shared-guest A/B/B/A screen had four successful
+                invocations, four NEW actions, six nonempty passing cases and
+                zero failures, errors, skips or retries. Queue and image-import
+                exposure differ; the shared guest changes the independent fresh
+                fixture guarantee. No saving or gate promotion follows. See the
+                <${Anchor} href="../agentplane-test-architecture/#iteration14"
+                  >full architecture evidence<//
+                >.
+              <//>
+              <${Anchor} href="../agentplane-test-architecture/iteration14.json"
+                >Reviewed iteration 14 evidence and provenance<//
+              >
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/pull/16344"
+                >Independent devel PR #16344<//
+              >
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/issues/16099"
+                >Qualification tracker #16099<//
+              >
+            <//>
+          <//>
+          <${Stack}
+            component="section"
             id="architecture-followup-iteration13"
             my="xl"
           >
             <${Stack} gap="sm">
               <${Title} order=${2}
-                >Iteration 13 reliability follow-up: retained-session prefix
-                repair<//
+                >Historical iteration 13 reliability follow-up: retained-session
+                prefix repair<//
               >
               <${Text} size="sm" c="dimmed">
                 Current source ff06b22d196eca2bd3c477e94e62b3e141336f1a passed
