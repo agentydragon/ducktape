@@ -36,9 +36,12 @@ class Settings(BaseModel):
         ),
     )
     model_config_service_callers: list[ServiceSPIFFEID] = Field(
-        default_factory=list, description="Exact service SPIFFE IDs admitted to GetModelConfig."
+        exclude_if=lambda value: not value,
+        default_factory=list,
+        description="Exact service SPIFFE IDs admitted to GetModelConfig.",
     )
     central_sampler_services: list[ServiceSPIFFEID] = Field(
+        exclude_if=lambda value: not value,
         default_factory=list,
         description="Exact service SPIFFE IDs allowed to delegate Session inference when central_sampler_identity_callers is enabled.",
     )
