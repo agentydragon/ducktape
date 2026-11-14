@@ -18,6 +18,7 @@ from python.runfiles import Runfiles
 
 from devinfra.testing.output_writer import BoundTestOutputs
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
+from grafana.visual_tests.fixture_codec import expand_fixture
 from grafana.visual_tests.recorded import replay_query, validate_fixture
 from grafana.visual_tests.visual_browser import capture_dashboard
 from grafana.visual_tests.visual_harness import grafana_dashboard, record_stage
@@ -33,7 +34,7 @@ async def test_dashboard_visual(tmp_path: Path, test_outputs: BoundTestOutputs) 
     dashboard_path = root / os.environ["GRAFANA_DASHBOARD_RLOCATION"]
     dashboard = json.loads(dashboard_path.read_text())
     fixture_path = os.environ["GRAFANA_FIXTURE_RLOCATION"]
-    fixture = json.loads((root / fixture_path).read_text())
+    fixture = expand_fixture(json.loads((root / fixture_path).read_text()))
     validate_fixture(dashboard, fixture)
     with grafana_dashboard(
         tmp_path, dashboard_path, "", render_fixture=True, variables=fixture.get("variables", {})
