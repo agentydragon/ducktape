@@ -61,8 +61,23 @@ security inputs keep broad acceptance. The current required graph is unchanged.
 See [the implementation and source checks](../system_tests/debug/ordinary_contract_graph.md).
 
 The earlier historical replay selected the same 51 tests because replacement
-contracts remained manual. The new graph has not yet been qualified by a timed
-whole-graph screen or complete required-check comparison.
+contracts remained manual. A four-arm, fresh-test screen now exercises the
+different 40-label graphs at one source; complete required-check qualification
+remains pending. The policy is still shadow-only. Its journal-only eligibility
+matches none of the 30 recorded historical change sets, so a synthetic speedup
+cannot establish the routine-backend goal.
+
+The immediate milestone is a broadly applicable, coverage-accounted improvement
+with complete feedback measurements. The real shutdown/seal/successor contract
+now passes a focused run. Dispatcher sharding duplicates setup without a clear
+wall-time win; reject its promotion. A shorter exhaustion budget changes coverage
+and remains manual. One prepared KVM cold/warm pair saves 8.79% native time but
+exposes unsafe shared-data ownership; private-data v2 remains unmeasured. These
+results prioritize owner-specific graph selection and retained case witnesses.
+Do not expand a global replacement list just to make more historical PRs
+eligible. Implementation-plus-owner-test changes must be accounted
+for structurally, and their owner tests must remain required. Test-only, shared
+or unknown inputs do not justify deployment replacement.
 
 Assign Runtime journal/admission, History retention/cursors and native transport
 to real-process contracts. Assign packaged kernel/Runtime/CLI/setup behavior to

@@ -1,17 +1,18 @@
 # Agentplane CI architecture: experiment overview
 
 Evidence reviewed on 14 November 2026 UTC. Implementation measurements below
-identify their source; the latest import screen uses `6997d12620` on
+identify their source; the current frozen graph screen uses `38f6c8e723` on
 [draft PR #16102](https://github.com/agentydragon/ducktape/pull/16102).
 Optimization resumed with a 30% median complete-feedback qualification goal and
 no worse p90 or flake rate. This write-up records completed work and outstanding
 evidence; the replacement gate remains unqualified.
 
 **There is no qualified 30% reduction in complete PR feedback.** The branch has
-working smaller contracts, useful independent ports, several rejected ideas and
-a promising VM importer screen. The historical combined graph was 17.4% faster
-on its native Bazel clock, with unequal baseline warmth and higher known CPU.
-That is not a current branch-versus-devel or rerun-inclusive PR saving.
+working smaller contracts, useful independent ports and several rejected ideas.
+The current synthetic graph screen has a 29.3% lower median native Bazel time,
+with unequal cache states and incomplete replacement coverage. The historical
+combined graph was 17.4% faster with unequal baseline warmth and higher known CPU.
+Neither establishes a rerun-inclusive PR saving.
 
 ## What has been tried
 
@@ -40,10 +41,36 @@ That is not a current branch-versus-devel or rerun-inclusive PR saving.
 | Batch seven fixture render profiles                                    | Existing assertions pass, but observed render window/action does not shorten and a VM-only consumer gains nine outputs.                                                                                                                      | Withdrawn. Lower aggregate CPU alone did not justify broader dependencies.                                                                                                                                                                                                       |
 | Repair reliability defects found while measuring                       | Listener allocation, storage precondition and Quiesce repairs have focused proof. Quiesce reproduces unavailable routing then same-incarnation forwarding about **1.008s later**, avoiding the observed minute-delayed retry.                | These are useful repairs, not measured fleet flake-rate or complete-PR reductions. [Storage](storage_controller_startup.md), [Quiesce](firecracker_quiesce_retry.md).                                                                                                            |
 
-Before the next graph comparison, required fixtures return to devel defaults:
+The frozen graph comparison uses devel-equivalent required fixture defaults:
 four Bridge shards, ordinary kubelet cadence, serial Pod pairs and the 120-second
 Gateway reconnect deadline. The trials above remain historical evidence; their
 savings and costs are excluded from the architecture-only comparison.
+
+## Current graph screen and retained-tail experiments
+
+The four fresh A/B/B/A exposures at `38f6c8e723` all pass: native medians are
+412.876s for control and 291.913s for candidate, a 29.3% reduction. Each graph
+has 40 labels and 46 physical test actions. The first control additionally ran
+47 build actions; cache states and concurrent load differ. The 248 versus 224
+JUnit rows do not prove equivalence across replaced targets. This synthetic
+journal-only graph matches none of the 30 recorded historical PR change sets.
+The policy remains shadow-only; neither the 30% screen nor the complete-PR
+qualification passes. [Source and coverage limits](ordinary_contract_graph.md#frozen-graph-screen-and-applicability).
+
+Further experiments use `38f6c8e723` plus documented working-tree overlays:
+
+| Attempt                                      | Result                                                                                                                                                                                                                                             | Disposition                                                                                                                                                                                      |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Implementation plus owner regression tests   | The selector discovers same-package direct owner tests, keeps them required, and rejects shared, unknown and test-only replacement inputs. Real Bazel queries confirm the positive and negative cases.                                             | Useful eligibility repair; no broader ownership or speed claim.                                                                                                                                  |
+| Real Quiesce/History seal/successor contract | [One focused case passes](https://app.buildbuddy.io/invocation/9c62fa6a-fa6b-4e24-b497-e06189e2842f): a routed command held across the durable seal is refused without mutation; a fresh Pod UID reopens at the next cursor and accepts new input. | Ordinary native coverage. The API server is real; controller decisions and credentials are fixture-owned. No controller/issuer replacement claim.                                                |
+| 45-second Gateway exhaustion budget          | The unchanged case passes in 228.8s, versus 243.4–271.6s recorded ordinary actions. Cache/source conditions are unmatched and the configuration changes.                                                                                           | Manual only. It shortens default-duration exposure; no causal saving or reliability claim.                                                                                                       |
+| Three Dispatcher shards                      | All three original cases pass once; longest shard is 233.3s versus 218.0–246.8s ordinary. CPU grows to 799.3s from 301.4–388.6s, with three fresh stack setups.                                                                                    | Reject promotion: no convincing wall gain, substantially more compute.                                                                                                                           |
+| Prepared Firecracker baseline                | Two full two-case runs pass. The same K3s process/plugin is reused with fresh workload identities; native 302.222s → 275.648s, 8.79% lower. Setup falls 48.375s → 21.772s; case work is nearly unchanged.                                          | Mechanism evidence only. One pair cannot qualify tails or flakes. The v1 shared data mount lacks cross-container ownership; adoption is blocked. A private-data v2 candidate remains unmeasured. |
+
+The next implementation must make the smaller graph applicable to common real
+backend changes with explicit assertion ownership. Do not expand the flat global
+replacement list. Use owner-specific requirements and retained platform witnesses,
+then measure the complete required-check path under ordinary cache conditions.
 
 ## Independent ports and validation state
 

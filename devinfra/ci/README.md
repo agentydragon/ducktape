@@ -2,6 +2,23 @@
 
 CI-side utilities and configuration.
 
+## Agentplane contract graph experiment
+
+[`ci_contracts.json`](../../agentplane/system_tests/ci_contracts.json) declares the
+implementation owners and replacement contracts for the architecture experiment.
+Its current `shadow` mode records a proposal and leaves required test selection
+unchanged. Unknown inputs, BUILD changes and full sweeps keep broad acceptance.
+
+An implementation fix may include sources from directly dependent ordinary
+owner tests in the implementation's own package. Companion discovery loads only
+those packages; unrelated changes do not incur a repository-wide ownership query.
+Every direct consumer of every changed source must still be a
+declared implementation or one of those tests; shared helpers and other production
+owners disqualify the proposal. Associated owner tests remain explicitly required
+alongside the replacement contracts, even if the affected-target selector returns
+no tests. A test-only change does not activate deployment replacement. This
+accounts for code-plus-regression-test PRs without accepting paths by name.
+
 ## PR visual review
 
 The publisher moved with its code to <../pr_visuals/README.md>.

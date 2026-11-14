@@ -25,6 +25,7 @@ from agentplane.testing.native_gateway_fixtures import (
     api_server,
     client_token,
     control,
+    controller_token,
     database_clones,
     database_names,
     dispatcher,
@@ -37,6 +38,7 @@ from agentplane.testing.native_gateway_fixtures import (
     postgres_image,
     runtime_client,
     sandbox,
+    sandbox_controller_account,
 )
 
 __all__ = [
@@ -44,6 +46,7 @@ __all__ = [
     "client_token",
     "config",
     "control",
+    "controller_token",
     "database_clones",
     "database_names",
     "dispatcher",
@@ -61,6 +64,7 @@ __all__ = [
     "runtime_binary",
     "runtime_client",
     "sandbox",
+    "sandbox_controller_account",
     "service_database_template",
     "service_history_db_url",
     "spec",

@@ -83,10 +83,16 @@ class Runtime:
         return {"firecracker/runtime.py": Path(__file__)}
 
     def baseline_identity(self, k3s: K3s) -> dict[str, str]:
-        raise ValueError("the Firecracker fixture does not retain an infrastructure baseline")
+        uid = k3s.kubectl(
+            "get", "daemonset", "kvm-device-plugin", "-n", "kvm-device-plugin", "-o", "jsonpath={.metadata.uid}"
+        )
+        if not uid:
+            raise RuntimeError("the retained KVM device-plugin DaemonSet has no UID")
+        return {"kvm-device-plugin": uid}
 
-    def storage_class_uid(self, k3s: K3s) -> str:
-        raise ValueError("the Firecracker fixture does not retain a block-storage baseline")
+    def storage_class_uid(self, _k3s: K3s) -> str | None:
+        # The Firecracker fixture uses no retained storage-class infrastructure.
+        return None
 
     def configure(self, objects: list[dict[str, Any]]) -> None:
         # The suite's image manifest selects the guest; no VM root/profile selection is needed.

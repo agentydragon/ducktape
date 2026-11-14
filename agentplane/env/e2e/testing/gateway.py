@@ -45,7 +45,7 @@ class _RunnerMetadataInterceptor(grpc.aio.UnaryUnaryClientInterceptor):
 
 async def bind_incarnation(
     endpoint: EnvironmentRuntimeControl, sandbox_uid: str, incarnation_uid: str, credentials: grpc.ChannelCredentials
-) -> None:
+) -> tuple[str, str]:
     """Model the Controller's authenticated observation, independent of Gateway ownership."""
     if isinstance(endpoint.security, Insecure):
         raise ValueError("the test Runner must present its Sandbox workload SVID")
@@ -69,7 +69,7 @@ async def bind_incarnation(
                         or not response.environment_runtime_boot_id
                     ):
                         raise RuntimeError("Controller observation ended before binding the Runtime incarnation")
-                    return
+                    return response.incarnation_uid, response.environment_runtime_boot_id
                 finally:
                     watch.cancel()
         except grpc.aio.AioRpcError as error:
