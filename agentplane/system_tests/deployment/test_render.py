@@ -257,6 +257,7 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     assert any(mount["name"] == "svid" for mount in proxy["volumeMounts"])
     assert egress_config["admin_grpc_audience"] == "agentplane-egress-admin"
     assert egress_config["admin_grpc_callers"] == [f"{NAMESPACE}/app"]
+    assert egress_config["admin_grpc_service_callers"] == ["spiffe://agentplane/app"]
     app_pod = _resource(docs, "Deployment", "app")["spec"]["template"]["spec"]
     token = next(volume for volume in app_pod["volumes"] if volume["name"] == "egress-admin-token")
     assert token["projected"]["sources"][0]["serviceAccountToken"]["audience"] == "agentplane-egress-admin"

@@ -674,7 +674,7 @@ flowchart LR
     guest --> relay -->|mTLS Runtime SVID :8888| egress
     nonSandbox[Action boxes] -->|mTLS box SVID :8888| egress
     standing[Haku UI and Anki sidecars] -->|mTLS standing SVID :8888| egress
-    app -->|admin API on shared TLS gRPC listener :8081| egress
+    app -->|EgressAdmin TLS gRPC :8081; current App bearer| egress
     egress -->|policy and credential watches; live Sandbox lookup for SVID| k8s
     egress -->|policy-approved requests| other
     egress -.->|opaque TLS; Rules verifies SVID :8081| rules[Rules and EgressAdmin TLS gRPC :8081]
@@ -697,6 +697,10 @@ projected ServiceAccount bearer token pending Stage 4. Only LLM ingress holds th
 Kubernetes retains its destination-scoped projected token until the later impersonation cutover.
 Rules, Notification, ModelConfig and telemetry share the local gRPC listener on port 3130; exact
 service prefixes select independent upstream connections and authentication.
+
+Staging EgressAdmin continues to admit the App's TokenReview bearer and additionally trusts the exact
+`spiffe://agentplane/app` service identity. The App still uses its bearer while its caller is pending
+the separate SVID cutover.
 
 Action command/build boxes present their own `WorkloadCredential`'s SVID, subject their caller's
 ServiceAccount; Haku UI/Anki present their standing records' SVIDs, subject `haku-ui`. Their
