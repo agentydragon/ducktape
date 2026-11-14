@@ -2,7 +2,12 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "rpc",
-    srcs = ["identities.go", "sandbox_bindings.go", "service.go", "watches.go"],
+    srcs = [
+        "identities.go",
+        "sandbox_bindings.go",
+        "service.go",
+        "watches.go",
+    ],
     importpath = "github.com/agentydragon/ducktape/agentplane/policy_controller/internal/rpc",
     visibility = ["//agentplane/policy_controller/cmd:__pkg__"],
     deps = [
