@@ -397,6 +397,7 @@ async def _follow_code_mode_cell(
     """Wait for the same running code-mode cell; never reissue its executor operation."""
     output_blocks: list[str] = []
     visible_blocks: list[str] = []
+    followed_call_ids = {call_id}
     waits = 0
     try:
         async with asyncio.timeout(timeout_s):
@@ -412,13 +413,23 @@ async def _follow_code_mode_cell(
                 output = code_outputs[-1]
                 output_blocks.extend(output.blocks)
                 visible_blocks.extend(
-                    [*request.user_texts, *(block for item in matching_outputs for block in item.blocks)]
+                    [
+                        request.system_text,
+                        *request.user_texts,
+                        *(
+                            block
+                            for item in request.tool_outputs
+                            if item.call_id in followed_call_ids
+                            for block in item.blocks
+                        ),
+                    ]
                 )
                 running = re.search(r"^Script running with cell ID (\S+)", "\n".join(output.blocks), re.MULTILINE)
                 if running is None:
                     return request, "\n".join(output_blocks), "\n".join(visible_blocks), output
                 waits += 1
                 wait_call_id = f"{call_id}-wait-{waits}"
+                followed_call_ids.add(wait_call_id)
                 async with request._exchange as exchange:
                     await exchange.send(
                         *responses_sse.response_stream(
@@ -1183,26 +1194,32 @@ async def gateway_retry_exhaustion_reports_unknown_and_accepts_next_input(
         # Service readiness does not end the sampler channel's reconnect backoff. Follow the
         # same yielded cell to settlement before asserting its native-session resume; never
         # send another exec_command while the original probe is still running.
-        request, _, _, probe_output = await _follow_code_mode_cell(
+        request, _, probe_visible, probe_output = await _follow_code_mode_cell(
             model, request, "probe-budget-session", timeout_s=140
         )
-        probe_outputs = [output for output in request.tool_outputs if output.call_id == probe_output.call_id]
         probe_text = "\n".join(probe_output.blocks)
         if "was definitively lost" in probe_text:
-            assert len(probe_outputs) == 2, probe_outputs
             assert probe_text.startswith("Script failed\n"), probe_text
             assert f'retained exec-server session "{native_session_id}" was definitively lost' in probe_text, probe_text
             assert "was not dispatched" in probe_text, probe_text
             assert "no mutation was replayed" in probe_text, probe_text
-            notice_text = "\n".join(probe_outputs[1].blocks)
-            assert notice_text.startswith("The retained exec-server session was definitively lost."), notice_text
+            # The durable notice can precede settlement under an earlier wait call ID,
+            # or arrive as a developer/user message instead of a tool output.
+            notice_text = next(
+                (
+                    line
+                    for line in probe_visible.splitlines()
+                    if line.startswith("The retained exec-server session was definitively lost.")
+                ),
+                "",
+            )
+            assert notice_text, probe_visible
             assert "no mutation was replayed" in notice_text, notice_text
             await _assert_replacement_native_session_started(recovered, session_id, cursor, native_session_id)
             await model.reply(request, ShellCall("verify-budget-once", "cat gateway-budget-marker"))
             request = await asyncio.wait_for(model.request(), timeout=30)
             (marker_output,) = [output for output in request.tool_outputs if output.call_id == "verify-budget-once"]
         else:
-            assert len(probe_outputs) == 1, probe_outputs
             await _assert_original_native_session_resumed(recovered, session_id, cursor, native_session_id)
             marker_output = probe_output
         assert _code_mode_shell_stdout(marker_output) == "once\n", marker_output

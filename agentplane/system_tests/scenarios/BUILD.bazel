@@ -445,3 +445,19 @@ py_library(
         "@pypi//protobuf",
     ],
 )
+
+py_test(
+    name = "test_central_sampler",
+    srcs = ["test_central_sampler.py"],
+    deps = [
+        ":central_sampler",
+        "//:conftest",
+        "//agentplane/native/codex/testing:requests",
+        "//agentplane/native/testing:model_endpoint",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/testing:codex_model",
+        "//agentplane/testing:scripted_model",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
