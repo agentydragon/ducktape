@@ -64,13 +64,14 @@ floors and Helm `disableWait` are gone.
   laptop, which is why `cilium.tf` skips Helm's wait and rolls agents by hand. Narrow
   their tolerations, then drop that workaround. Add a cdk8s fleet rule rejecting a
   DaemonSet toleration that matches `node.kubernetes.io/out-of-service`.
-- **Piraeus:** drop `only_when_node_ready` from the `lvm-metrics` collector alert; the
-  collector's DaemonSet now has zero desired pods while its laptop is away.
 - **Alerts:** key node-level exclusions on the out-of-service taint instead of the static
   roaming taint, so an online laptop alerts like any node. Prefer one Alertmanager
   inhibition (a `RoamingNodeOffline` source alert with a `node` label) over forked rules.
   Remove the null routes for pod and DaemonSet alerts once their sources vanish with the
-  pods.
+  pods. The taint lands 5 minutes after the kubelet goes silent, so an alert with a
+  shorter `for` still fires in between: the Piraeus `lvm-metrics` alerts (2m) keep their
+  `only_when_node_ready` guard until the inhibition's source keys on NotReady plus the
+  roaming taint and covers that window.
 
 Out of scope: `KubeVersionMismatch` (NixOS kubelets ahead of Talos) is version drift, not
 absence.
