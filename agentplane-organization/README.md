@@ -14,13 +14,31 @@ These files describe a proposal, not implemented boundaries.
   implementation still has to close its callers and pass checks.
 - `PLANNED`: the responsibility and proposed owner are concrete; constructor,
   helper or test allocation still needs implementation review.
+- `AGREED DIRECTION`: the operator agreed the move's direction; its contract
+  (calls, state, serving) is written and reviewed before any file moves.
+- `HELD`: a decided move that waits for a boundary decision so its files move
+  once.
 - `DESIGN REQUIRED`: the item states the unresolved transaction, state or
-  lifecycle contract. Candidate directories are shown with `?`.
+  lifecycle contract inside one component. Candidate directories are shown
+  with `?`.
+- `OPEN DIRECTION`: the move depends on a service decision nobody has made.
+  Code under it stays where it is.
 - `DEFERRED …`: an operator-deferred contract decision. Authentication and
   protobuf namespace choices stay separate from ordinary organization moves.
 - `retain`: the package keeps a specific responsibility and dependency boundary.
   It remains in scope. Retention does not mean every file in it is permanently
   settled or that the package has passed behavior acceptance for a new design.
+
+## Sequencing
+
+Stages run in order of certainty. Stage 1 deletes leftovers; stage 2 fixes
+layout in components no service decision touches; stage 3 follows directions
+the operator agreed; stage 4 extracts responsibilities behind a local contract;
+stage 5 waits on open service decisions; stage 6 holds deferred authentication
+and protobuf contracts. A file moves or is renamed once: an in-component move
+waits for any agreed or open boundary change that would move the same file
+again. Line-level cleanups stay in the task DAG's cleanup section; this plan
+only orders them before the moves that would carry them.
 
 Exact mappings and candidate allocations are different. A ledger entry with no
 selected file placement points to its package decision and work item; do not invent
