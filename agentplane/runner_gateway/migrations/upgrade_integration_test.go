@@ -114,12 +114,12 @@ func TestCutoverRemovesPreIdentityAndUnattributedRows(t *testing.T) {
 			effectiveNamespace, effectiveName, effectiveUID, actionRequestID, actionExecutionID,
 			wakeCallerNamespace, wakeCallerName,
 		}
-		placeholders := make([]string, len(args))
-		for i := range args {
-			placeholders[i] = fmt.Sprintf("$%d", i+1)
+		values := []string{"$1", "$2", "'test-sandbox'", "$3", "'submit_input'", "$4", "'QUEUED'", "now()", "now()"}
+		for i := 4; i < len(args); i++ {
+			values = append(values, fmt.Sprintf("$%d", i+1))
 		}
 		query := `INSERT INTO dispatch (` + columns + `)
-			VALUES (` + strings.Join(placeholders, ",") + `)`
+			VALUES (` + strings.Join(values, ",") + `)`
 		_, err := db.ExecContext(t.Context(), query, args...)
 		if err != nil {
 			t.Fatalf("insert dispatch %q: %v", commandID, err)
