@@ -188,7 +188,7 @@ func enqueueWithSession(t *testing.T, store *Store, ctx context.Context, session
 	} else if err != nil {
 		return nil, err
 	}
-	return store.Enqueue(ctx, sessionID, sandboxName, sandboxUID, command, wakeCaller)
+	return store.EnqueueForCaller(ctx, sessionID, sandboxName, sandboxUID, command, wakeCaller, testStoreCaller(wakeCaller))
 }
 
 func TestAdmissionIsDurableAndIdempotent(t *testing.T) {
@@ -2682,10 +2682,10 @@ func TestEveryCommandAdmissionRequiresSession(t *testing.T) {
 			t.Fatalf("missing Session command: %v", err)
 		}
 	}
-	for _, identity := range []Caller{nil, ServiceAccountCaller{Privileged: true}, ServiceAccountCaller{ServiceAccountIdentity: serviceAccountIdentityFor(Account(caller), "test-account-uid")}} {
-		if _, err := store.enqueue(ctx, "missing", "sandbox-api", sandboxUID, input(uuid.NewString(), "input"), nil, identity); !errors.Is(err, ErrNotFound) {
-			t.Fatalf("store missing Session: %v", err)
-		}
+	identity := serviceAccountIdentityFor(Account(caller), "test-account-uid")
+	admission := ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: identity, Attribution: &AdmissionAttribution{Actor: identity, EffectiveCaller: identity}}
+	if _, err := store.enqueue(ctx, "missing", "sandbox-api", sandboxUID, input(uuid.NewString(), "input"), nil, admission); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("store missing Session: %v", err)
 	}
 	if rows, err := store.ListDispatches(ctx, "missing", "", nil); err != nil || len(rows) != 0 {
 		t.Fatalf("missing Session left work: %+v %v", rows, err)
@@ -2831,51 +2831,41 @@ func TestInterruptRechecksSessionAfterLiveAuthorization(t *testing.T) {
 }
 
 func TestQueuedSessionAllowsNotificationWakeWithoutBorrowingCaller(t *testing.T) {
-	for _, attributedSession := range []bool{false, true} {
-		t.Run(fmt.Sprint(attributedSession), func(t *testing.T) {
-			ctx := t.Context()
-			wake := &scriptedWake{}
-			fixture := newWakeWorkerFixture(t, &sessionpb.SessionSpec{}, wake)
-			if attributedSession {
-				wake.assessments = append(wake.assessments, &environmentpb.WakeAssessment{State: environmentpb.WakeState_WAKE_STATE_DENIED, Reason: environmentpb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED})
-			} else {
-				if _, err := fixture.store.DB.ExecContext(ctx, "UPDATE session SET creator_account_namespace=NULL,creator_account_name=NULL,creator_account_uid=NULL,effective_caller_account_namespace=NULL,effective_caller_account_name=NULL,effective_caller_account_uid=NULL WHERE session_id=$1", fixture.opening.SessionID); err != nil {
-					t.Fatal(err)
-				}
-			}
-			notification := serviceAccountIdentityFor(Account{Namespace: "test-notifications", Name: "notification-service"}, "notification-uid")
-			if _, err := fixture.store.DB.ExecContext(ctx, "UPDATE dispatch SET actor_account_namespace=$2,actor_account_name=$3,actor_account_uid=$4,effective_caller_account_namespace=$2,effective_caller_account_name=$3,effective_caller_account_uid=$4 WHERE command_id=$1", fixture.dispatch.CommandID, notification.GetAccount().GetNamespace(), notification.GetAccount().GetName(), notification.GetUid()); err != nil {
-				t.Fatal(err)
-			}
-			wake.assessments = append(wake.assessments, &environmentpb.WakeAssessment{State: environmentpb.WakeState_WAKE_STATE_REQUESTED, ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(fixture.sandbox.WakeGeneration + 1)})
-			catalog := &executionAccountCatalog{growingCatalog: &growingCatalog{sandboxes: []SandboxSnapshot{fixture.sandbox}}, accountUID: fixture.caller.GetUid()}
-			runner := &acceptingRunner{calls: make(chan string, 2)}
-			worker := &DeliveryWorker{Store: fixture.store, Wake: wake, Catalog: catalog, Leases: testLease{store: fixture.store}, Runner: runner}
-			worker.init()
-			defer worker.queue.ShutDown()
-			if err := worker.reconcile(ctx, true); err != nil {
-				t.Fatal(err)
-			}
-			if err := worker.processSession(ctx, fixture.opening.SessionID); err != nil {
-				t.Fatal(err)
-			}
-			if len(wake.callers) == 0 || !sameServiceAccountIdentity(wake.callers[len(wake.callers)-1], notification) {
-				t.Fatalf("downstream wake used wrong caller: %+v", wake.callers)
-			}
-			row, err := fixture.store.GetDispatch(ctx, fixture.dispatch.CommandID)
-			if err != nil || row.State != QueueState || row.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_REQUESTED || len(runner.calls) != 0 {
-				t.Fatalf("wake changed delivery ordering: %+v %v", row, err)
-			}
-			catalog.growingCatalog.sandboxes[0].Blocker = ""
-			for range 2 {
-				if err := worker.processSession(ctx, fixture.opening.SessionID); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if len(runner.calls) != 2 || <-runner.calls != "opening:"+fixture.opening.SessionID || <-runner.calls != fixture.dispatch.CommandID {
-				t.Fatal("command did not follow opening admission")
-			}
-		})
+	ctx := t.Context()
+	wake := &scriptedWake{}
+	fixture := newWakeWorkerFixture(t, &sessionpb.SessionSpec{}, wake)
+	wake.assessments = append(wake.assessments, &environmentpb.WakeAssessment{State: environmentpb.WakeState_WAKE_STATE_DENIED, Reason: environmentpb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED})
+	notification := serviceAccountIdentityFor(Account{Namespace: "test-notifications", Name: "notification-service"}, "notification-uid")
+	if _, err := fixture.store.DB.ExecContext(ctx, "UPDATE dispatch SET actor_account_namespace=$2,actor_account_name=$3,actor_account_uid=$4,effective_caller_account_namespace=$2,effective_caller_account_name=$3,effective_caller_account_uid=$4 WHERE command_id=$1", fixture.dispatch.CommandID, notification.GetAccount().GetNamespace(), notification.GetAccount().GetName(), notification.GetUid()); err != nil {
+		t.Fatal(err)
+	}
+	wake.assessments = append(wake.assessments, &environmentpb.WakeAssessment{State: environmentpb.WakeState_WAKE_STATE_REQUESTED, ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(fixture.sandbox.WakeGeneration + 1)})
+	catalog := &executionAccountCatalog{growingCatalog: &growingCatalog{sandboxes: []SandboxSnapshot{fixture.sandbox}}, accountUID: fixture.caller.GetUid()}
+	runner := &acceptingRunner{calls: make(chan string, 2)}
+	worker := &DeliveryWorker{Store: fixture.store, Wake: wake, Catalog: catalog, Leases: testLease{store: fixture.store}, Runner: runner}
+	worker.init()
+	defer worker.queue.ShutDown()
+	if err := worker.reconcile(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := worker.processSession(ctx, fixture.opening.SessionID); err != nil {
+		t.Fatal(err)
+	}
+	if len(wake.callers) == 0 || !sameServiceAccountIdentity(wake.callers[len(wake.callers)-1], notification) {
+		t.Fatalf("downstream wake used wrong caller: %+v", wake.callers)
+	}
+	row, err := fixture.store.GetDispatch(ctx, fixture.dispatch.CommandID)
+	if err != nil || row.State != QueueState || row.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_REQUESTED || len(runner.calls) != 0 {
+		t.Fatalf("wake changed delivery ordering: %+v %v", row, err)
+	}
+	catalog.growingCatalog.sandboxes[0].Blocker = ""
+	for range 2 {
+		if err := worker.processSession(ctx, fixture.opening.SessionID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(runner.calls) != 2 || <-runner.calls != "opening:"+fixture.opening.SessionID || <-runner.calls != fixture.dispatch.CommandID {
+		t.Fatal("command did not follow opening admission")
 	}
 }
 

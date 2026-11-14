@@ -423,35 +423,6 @@ func TestRPCIdentityOnlyOwnershipKeepsPodBoundBackendReads(t *testing.T) {
 	if err != nil || len(ordinary.GetSessions()) != 0 {
 		t.Fatalf("account-only ServiceAccount ListSessions = %v, %v; want no owned Sessions", ordinary, err)
 	}
-
-	// Historical account-owned rows stay available to configured backend readers without acquiring
-	// the Sandbox's current Identity. The old tuple remains in its inert columns for operator recovery.
-	legacyID := "authority-legacy-session"
-	if _, err := store.CreateSession(t.Context(), legacyID, caller.Name, authoritySandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
-		t.Fatal("seed legacy row:", err)
-	}
-	if _, err := store.DB.ExecContext(t.Context(), `UPDATE session SET execution_identity_name=NULL,execution_identity_uid=NULL,
-		execution_account_namespace=$2,execution_account_name=$3,execution_account_uid=$4 WHERE session_id=$1`,
-		legacyID, caller.Namespace, caller.Name, "legacy-service-account-uid"); err != nil {
-		t.Fatal("mark retained legacy row:", err)
-	}
-	if _, err := client.GetSession(authorityContext(t, "owner-account"), &dispatcherpb.GetSessionRequest{SessionId: legacyID}); status.Code(err) != codes.NotFound {
-		t.Fatalf("account-only ServiceAccount read legacy Session: %v, want NotFound", err)
-	}
-	legacyRead, err := client.GetSession(authorityContext(t, "owner-pod"), &dispatcherpb.GetSessionRequest{SessionId: legacyID})
-	if err != nil || legacyRead.GetSession().GetIdentity() != nil {
-		t.Fatalf("legacy Session was reassigned to the current Identity: %v, %v", legacyRead, err)
-	}
-	if _, err := client.SubmitInput(authorityContext(t, "owner-pod"), &dispatcherpb.SubmitInputRequest{
-		CommandId: "authority-legacy-input", SessionId: legacyID, ExpectedSandboxUid: authoritySandboxUID, Text: "must stay queued nowhere",
-	}); status.Code(err) != codes.FailedPrecondition {
-		t.Fatalf("backend mutated legacy Session without an Identity: %v, want FailedPrecondition", err)
-	}
-	var legacyNamespace, legacyName, legacyUID string
-	if err := store.DB.QueryRowContext(t.Context(), `SELECT execution_account_namespace,execution_account_name,execution_account_uid FROM session WHERE session_id=$1`, legacyID).
-		Scan(&legacyNamespace, &legacyName, &legacyUID); err != nil || legacyNamespace != caller.Namespace || legacyName != caller.Name || legacyUID != "legacy-service-account-uid" {
-		t.Fatalf("legacy ServiceAccount tuple changed: %q/%q/%q, %v", legacyNamespace, legacyName, legacyUID, err)
-	}
 }
 
 func TestCreateSessionRejectsMissingIdentityEvenWhenSandboxLookupSucceeds(t *testing.T) {
@@ -481,61 +452,6 @@ func TestCreateSessionRejectsMissingIdentityEvenWhenSandboxLookupSucceeds(t *tes
 func admissionAttribution(attribution Attribution) *AdmissionAttribution {
 	account, _ := attribution.(*AdmissionAttribution)
 	return account
-}
-
-func TestLegacySessionWithoutIdentityIsRetainedButNeverDelivered(t *testing.T) {
-	ctx := context.Background()
-	store := testStore(t, 3)
-	snapshot := SandboxSnapshot{Name: caller.Name, Namespace: caller.Namespace, UID: pendingSandboxUID}
-	session, err := store.CreateSession(ctx, "authority-legacy-delivery-session", snapshot.Name, snapshot.UID, &sessionpb.SessionSpec{}, nil, nil)
-	if err != nil {
-		t.Fatalf("seed retained Session: %v", err)
-	}
-	if _, err := store.DB.ExecContext(ctx, `UPDATE session SET execution_identity_name=NULL,execution_identity_uid=NULL,
-		execution_account_namespace=$2,execution_account_name=$3,execution_account_uid=$4 WHERE session_id=$1`,
-		session.SessionID, caller.Namespace, caller.Name, "retained-account-uid"); err != nil {
-		t.Fatalf("mark legacy ownership tuple: %v", err)
-	}
-	command, err := enqueueWithSession(t, store, ctx, session.SessionID, snapshot.Name, snapshot.UID,
-		input("authority-legacy-delivery-command", "must remain queued"), nil)
-	if err != nil {
-		t.Fatalf("seed retained command: %v", err)
-	}
-
-	runner := &acceptingRunner{calls: make(chan string, 2)}
-	worker := &DeliveryWorker{
-		Store: store, Catalog: testCatalog{sandbox: snapshot},
-		Leases: testLease{store: store}, Runner: runner,
-	}
-	worker.init()
-	defer worker.queue.ShutDown()
-	owner, err := worker.Leases.Acquire(ctx, snapshot.Name, snapshot.UID)
-	if err != nil || owner == nil {
-		t.Fatalf("acquire delivery owner: %#v %v", owner, err)
-	}
-	worker.owners[snapshot.UID] = *owner
-
-	if err := worker.processSession(ctx, session.SessionID); err != nil {
-		t.Fatalf("process retained Session: %v", err)
-	}
-	retained, err := store.GetSession(ctx, session.SessionID)
-	if err != nil || retained.State != SessionWaitingState || hasExecutionIdentity(retained) {
-		t.Fatalf("retained Session was changed or attributed: %+v %v", retained, err)
-	}
-	pending, err := store.GetDispatch(ctx, command.CommandID)
-	if err != nil || pending.State != QueueState || pending.DeliveryAttempted {
-		t.Fatalf("retained command was claimed or replayed: %+v %v", pending, err)
-	}
-	select {
-	case call := <-runner.calls:
-		t.Fatalf("Runner received legacy Session work: %q", call)
-	default:
-	}
-	var legacyNamespace, legacyName, legacyUID string
-	if err := store.DB.QueryRowContext(ctx, `SELECT execution_account_namespace,execution_account_name,execution_account_uid FROM session WHERE session_id=$1`, session.SessionID).
-		Scan(&legacyNamespace, &legacyName, &legacyUID); err != nil || legacyNamespace != caller.Namespace || legacyName != caller.Name || legacyUID != "retained-account-uid" {
-		t.Fatalf("legacy ServiceAccount tuple changed: %q/%q/%q, %v", legacyNamespace, legacyName, legacyUID, err)
-	}
 }
 
 func TestSessionRetryReadsDurableReceiptWithoutOwnerInventory(t *testing.T) {
@@ -660,7 +576,6 @@ func TestSessionDiscoveryUsesRetainedAuthorityAndStablePages(t *testing.T) {
 	const queuedID = "00000000-0000-4000-8000-000000000001"
 	const foreignID = "00000000-0000-4000-8000-000000000002"
 	const failedID = "00000000-0000-4000-8000-000000000003"
-	const legacyID = "00000000-0000-4000-8000-000000000004"
 	// Insert out of order; ordering is the immutable public ID, never delivery state.
 	for _, row := range []struct {
 		id      string
@@ -669,7 +584,6 @@ func TestSessionDiscoveryUsesRetainedAuthorityAndStablePages(t *testing.T) {
 		{failedID, sessionpb.Harness_HARNESS_CLAUDE},
 		{foreignID, sessionpb.Harness_HARNESS_CENTRAL_SAMPLER},
 		{queuedID, sessionpb.Harness_HARNESS_CODEX},
-		{legacyID, sessionpb.Harness_HARNESS_CODEX},
 	} {
 		spec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "discovery-sandbox", Uid: uid}, Harness: row.harness}}}}
 		if row.harness == sessionpb.Harness_HARNESS_CENTRAL_SAMPLER {
@@ -678,10 +592,6 @@ func TestSessionDiscoveryUsesRetainedAuthorityAndStablePages(t *testing.T) {
 		if _, err := store.CreateSession(t.Context(), row.id, "discovery-sandbox", uid, spec, nil, nil); err != nil {
 			t.Fatal(err)
 		}
-	}
-	if _, err := store.DB.ExecContext(t.Context(), "UPDATE session SET execution_identity_name=NULL,execution_identity_uid=NULL, execution_account_namespace=$2,execution_account_name=$3,execution_account_uid=$4 WHERE session_id=$1",
-		legacyID, caller.Namespace, caller.Name, "retained-legacy-account-uid"); err != nil {
-		t.Fatal(err)
 	}
 	lease, err := store.ClaimSandboxOwner(t.Context(), uid, "discovery-lease", 1, "discovery-worker", 0)
 	if err != nil || lease == nil {
@@ -725,16 +635,9 @@ func TestSessionDiscoveryUsesRetainedAuthorityAndStablePages(t *testing.T) {
 		Limit: 1, PageToken: second.GetNextPageToken(),
 	})
 	if err != nil || len(third.GetSessions()) != 1 || third.GetSessions()[0].GetSessionId() != failedID ||
-		third.GetNextPageToken() == "" || third.GetSessions()[0].GetStatus().GetMaterialization() != dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_FAILED ||
+		third.GetNextPageToken() != "" || third.GetSessions()[0].GetStatus().GetMaterialization() != dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_FAILED ||
 		third.GetSessions()[0].GetPlacement().GetEnvironmentHosted().GetHarness() != sessionpb.Harness_HARNESS_CLAUDE {
 		t.Fatalf("backend third page: %v %v", third, err)
-	}
-	fourth, err := client.ListSessions(authorityContext(t, "discovery-backend"), &dispatcherpb.ListSessionsRequest{
-		Limit: 1, PageToken: third.GetNextPageToken(),
-	})
-	if err != nil || len(fourth.GetSessions()) != 1 || fourth.GetSessions()[0].GetSessionId() != legacyID ||
-		fourth.GetSessions()[0].GetIdentity() != nil || fourth.GetNextPageToken() != "" {
-		t.Fatalf("backend legacy page: %v %v", fourth, err)
 	}
 	// A cursor is position only; ordinary ServiceAccounts cannot use a backend cursor as authority.
 	for _, token := range []string{"discovery-owner", "discovery-replacement", "discovery-foreign"} {

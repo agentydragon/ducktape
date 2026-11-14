@@ -30,14 +30,7 @@ type CentralTarget struct {
 // SessionExecution is the exact Identity incarnation a Session executes as.
 type SessionExecution struct{ Identity *identitypb.Identity }
 
-func hasExecutionIdentity(session *Session) bool {
-	return session != nil && session.ExecutionIdentity != nil && session.ExecutionIdentity.GetName() != "" && session.ExecutionIdentity.GetUid() != ""
-}
-
 func (s *Session) execution() SessionExecution {
-	if !hasExecutionIdentity(s) {
-		return SessionExecution{}
-	}
 	return SessionExecution{Identity: proto.Clone(s.ExecutionIdentity).(*identitypb.Identity)}
 }
 

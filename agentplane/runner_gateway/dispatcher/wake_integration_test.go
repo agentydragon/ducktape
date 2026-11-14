@@ -187,17 +187,34 @@ func TestDeliveryUsesRetainedEffectiveCallerUIDForWakeBudget(t *testing.T) {
 	}
 }
 
-func TestLegacyWakeCallerWithoutUIDDoesNotWake(t *testing.T) {
+func TestDispatchWithoutCallerIdentityDoesNotWake(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t, 3)
 	const uid = "00000000-0000-4000-8000-000000000092"
-	wakeCaller := Account{Namespace: "agentplane", Name: "legacy-wake-caller"}
-	row, err := enqueueWithSession(t, store, ctx, "legacy-wake-session", "legacy-wake-sandbox", uid,
-		input("legacy-wake-command", "hello"), &wakeCaller)
+	wakeCaller := Account{Namespace: "agentplane", Name: "historical-wake-caller"}
+	row, err := enqueueWithSession(t, store, ctx, "historical-wake-session", "historical-wake-sandbox", uid,
+		input("historical-wake-command", "hello"), nil)
 	if err != nil {
-		t.Fatal("enqueue legacy row:", err)
+		t.Fatal("enqueue attributed row:", err)
 	}
-	owner, err := store.ClaimSandboxOwner(ctx, uid, "legacy-wake-lease", 1, "replica", 0)
+	_, err = store.DB.ExecContext(ctx, `UPDATE dispatch SET
+		actor_account_namespace=NULL,actor_account_name=NULL,actor_account_uid=NULL,actor_pod_name=NULL,actor_pod_uid=NULL,
+		effective_caller_account_namespace=NULL,effective_caller_account_name=NULL,effective_caller_account_uid=NULL,
+		action_request_id=NULL,action_execution_id=NULL,
+		actor_identity_name=NULL,actor_identity_uid=NULL,actor_identity_pod_name=NULL,actor_identity_pod_uid=NULL,
+		delegated_identity_name=NULL,delegated_identity_uid=NULL,
+		delegator_account_namespace=NULL,delegator_account_name=NULL,delegator_account_uid=NULL,
+		delegator_pod_name=NULL,delegator_pod_uid=NULL,
+		delegated_action_request_id=NULL,delegated_action_execution_id=NULL,
+		wake_caller_namespace=$2,wake_caller_name=$3 WHERE command_id=$1`, row.CommandID, wakeCaller.Namespace, wakeCaller.Name)
+	if err != nil {
+		t.Fatal("seed historical wake caller without caller Identity:", err)
+	}
+	row, err = store.GetDispatch(ctx, row.CommandID)
+	if err != nil || row.Attribution != nil {
+		t.Fatalf("read historical dispatch without caller Identity: %+v %v", row, err)
+	}
+	owner, err := store.ClaimSandboxOwner(ctx, uid, "historical-wake-lease", 1, "replica", 0)
 	if err != nil || owner == nil {
 		t.Fatalf("claim owner: owner=%+v error=%v", owner, err)
 	}
@@ -206,24 +223,24 @@ func TestLegacyWakeCallerWithoutUIDDoesNotWake(t *testing.T) {
 	worker.init()
 	defer worker.queue.ShutDown()
 	_, err = worker.prepareDispatch(ctx, row, SandboxSnapshot{
-		Name: "legacy-wake-sandbox", Namespace: wakeCaller.Namespace, UID: uid,
+		Name: "historical-wake-sandbox", Namespace: wakeCaller.Namespace, UID: uid,
 		Incarnation: "old-pod", Blocker: "sandbox_suspended", WakeOnSend: true,
 	}, *owner)
 	if err != nil {
-		t.Fatal("prepare legacy queued work:", err)
+		t.Fatal("prepare dispatch without caller Identity:", err)
 	}
 	stored, err := store.GetDispatch(ctx, row.CommandID)
 	if err != nil {
-		t.Fatal("read legacy queued work:", err)
+		t.Fatal("read refused dispatch:", err)
 	}
 	var attempts int
 	if err := store.DB.QueryRowContext(ctx, "SELECT count(*) FROM wake_attempt WHERE sandbox_uid=$1", uid).Scan(&attempts); err != nil {
-		t.Fatal("count legacy wake attempts:", err)
+		t.Fatal("count wake attempts:", err)
 	}
 	if stored.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_DENIED ||
 		stored.WakeAssessment.GetReason() != environmentpb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED ||
 		wake.calls != 0 || attempts != 0 {
-		t.Fatalf("legacy row gained wake authority: assessment=%+v wake calls=%d attempts=%d",
+		t.Fatalf("wake caller without caller Identity gained wake authority: assessment=%+v wake calls=%d attempts=%d",
 			stored.WakeAssessment, wake.calls, attempts)
 	}
 }

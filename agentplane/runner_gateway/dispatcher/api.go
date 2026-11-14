@@ -334,9 +334,6 @@ func (s *Service) requireLiveExecution(ctx context.Context, session *Session, sa
 	if session == nil || session.SandboxName != sandbox.Name || session.SandboxUID != sandbox.UID {
 		return status.Error(codes.PermissionDenied, "Session target does not match")
 	}
-	if !hasExecutionIdentity(session) {
-		return status.Error(codes.FailedPrecondition, "Session has no execution Identity")
-	}
 	switch c := caller.(type) {
 	case ServiceAccountCaller:
 		if c.Privileged {
@@ -353,7 +350,7 @@ func (s *Service) requireLiveExecution(ctx context.Context, session *Session, sa
 // requireLiveIdentity proves an Identity caller owns the Session and its Sandbox still names that
 // exact Identity incarnation.
 func (s *Service) requireLiveIdentity(ctx context.Context, session *Session, sandbox SandboxSnapshot, caller IdentityCaller) error {
-	if session.ExecutionIdentity == nil || !sameIdentity(session.ExecutionIdentity, caller.Identity) {
+	if !sameIdentity(session.ExecutionIdentity, caller.Identity) {
 		return status.Error(codes.PermissionDenied, "caller does not own the Session")
 	}
 	identity, found, err := s.executionIdentity(ctx, sandbox)

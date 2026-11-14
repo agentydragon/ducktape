@@ -125,13 +125,23 @@ func TestQueuedDeliveryThroughGatewayRunnerRPC(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	actor := &identitypb.ServiceAccountIdentity{
+		Account: &identitypb.ServiceAccount{Namespace: "gateway-test", Name: "queue-writer"},
+		Uid:     "gateway-test-actor-uid",
+	}
 	if _, err := db.ExecContext(ctx, `INSERT INTO session(session_id,sandbox_name,sandbox_uid,spec,state,
-		execution_identity_name,execution_identity_uid,created_at,updated_at)
-		VALUES($1,$2,$3,$4,$5,$6,$7,now(),now())`, "session-queue", testSandbox, sandboxUID, spec,
-		dispatcher.SessionAcceptedState, "queue-identity", queueIdentityUID); err != nil {
+		execution_identity_name,execution_identity_uid,
+		creator_account_namespace,creator_account_name,creator_account_uid,
+		effective_caller_account_namespace,effective_caller_account_name,effective_caller_account_uid,
+		created_at,updated_at)
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$8,$9,$10,now(),now())`, "session-queue", testSandbox, sandboxUID, spec,
+		dispatcher.SessionAcceptedState, "queue-identity", queueIdentityUID,
+		actor.GetAccount().GetNamespace(), actor.GetAccount().GetName(), actor.GetUid()); err != nil {
 		t.Fatal(err)
 	}
-	queued, err := store.Enqueue(ctx, "session-queue", testSandbox, sandboxUID, command, nil)
+	attribution := &dispatcher.AdmissionAttribution{Actor: actor, EffectiveCaller: actor}
+	caller := dispatcher.ServiceAccountCaller{ServiceAccountIdentity: actor, Privileged: true, Attribution: attribution}
+	queued, err := store.EnqueueForCaller(ctx, "session-queue", testSandbox, sandboxUID, command, nil, caller)
 	if err != nil || queued.State != dispatcher.QueueState {
 		t.Fatalf("queue receipt: %+v %v", queued, err)
 	}

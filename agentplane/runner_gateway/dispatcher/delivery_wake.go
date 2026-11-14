@@ -117,7 +117,7 @@ func (w *DeliveryWorker) prepareSession(ctx context.Context, row *Session, sandb
 		return false, nil
 	}
 	for _, command := range commands {
-		if command.State != QueueState || command.Attribution == nil {
+		if command.State != QueueState {
 			continue
 		}
 		if _, err := w.prepareCommand(ctx, command, current, sandbox, owner, nil); err != nil {
@@ -262,8 +262,7 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 	}
 
 	// The lifecycle manager authorizes the wake for the row's retained effective caller: its
-	// ServiceAccount, or the Identity it acted as. A row attributed to no one (a legacy writer's)
-	// never wakes.
+	// ServiceAccount, or the Identity it acted as. Rows without one cannot wake.
 	caller := wakeCaller(work.attribution)
 	if caller == nil {
 		assessment := assessmentFor(sandbox, work.wakeAssessment,
