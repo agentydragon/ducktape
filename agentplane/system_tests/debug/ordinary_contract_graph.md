@@ -139,3 +139,14 @@ Explicit builds of the changed Gateway fixture, Sampler store and Egress helper
 libraries pass their lint/type aspects in
 [f757a24e](https://app.buildbuddy.io/invocation/f757a24e-dcc2-4b3f-8f23-21cfc99c7070).
 Focused py_test success alone did not check those helper-library aspects.
+
+Source `0279cfc028` also stopped before any timing arm. Its
+[full CI run](https://app.buildbuddy.io/invocation/07065d23-3c61-5ef8-9f7c-0886f1c6d394)
+ran 1,999 test targets; only `app:test_history_gateway` failed, in both harnesses'
+permanent Gateway-stop cases. Retaining the parent's listener for restart left
+a listening socket without a server after `stop()`, changing connection refusal
+into a deadline expiry. Permanent stop now closes the parent socket; restart
+continues to retain it. The unchanged six App cases and real Sampler Gateway-roll
+case pass together, with the fixture library's aspects, in
+[2c2e1bd7](https://app.buildbuddy.io/invocation/2c2e1bd7-2421-4f6a-988f-9fa3fd631c2f).
+This is a fixture regression repair, not a measured production reliability gain.
