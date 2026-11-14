@@ -24,6 +24,7 @@ py_library(
     data = [":launcher_tools"],
     deps = [
         "//agentplane/env:config",
+        "//agentplane/env/e2e/testing:gateway",
         "//agentplane/net/peertls:config",
         "//agentplane/proto:session_pb2",
         "//agentplane/runner_gateway/testing:gateway_process",
@@ -33,6 +34,7 @@ py_library(
         "//agentplane/x/direct_vm_boot:launcher_tools",
         "//devinfra/oci",
         "//devinfra/testing:undeclared_outputs",
+        "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@rules_python//python/runfiles",

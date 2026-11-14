@@ -178,6 +178,7 @@ py_library(
         "//agentplane/env:config",
         "//agentplane/env/e2e/testing:config",
         "//agentplane/env/e2e/testing:fixtures",
+        "//agentplane/env/e2e/testing:gateway",
         "//agentplane/env/e2e/testing:history_tunnel",
         "//agentplane/env/e2e/testing:launches",
         "//agentplane/env/e2e/testing:model_config",

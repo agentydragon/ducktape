@@ -12,6 +12,7 @@ from agentplane.env.config import Endpoint, EnvironmentRuntimeControl, SVIDEndpo
 from agentplane.env.e2e.testing import launches
 from agentplane.env.e2e.testing.config import RunnerTestConfig
 from agentplane.env.e2e.testing.fixtures import config, endpoint, model, spec, workspace
+from agentplane.env.e2e.testing.gateway import bind_incarnation
 from agentplane.env.e2e.testing.history_tunnel import history_tunnel
 from agentplane.env.e2e.testing.model_config import model_config
 from agentplane.env.e2e.testing.process_fixtures import RunnerProcess, pid1_container
@@ -115,6 +116,7 @@ async def start_runtime(
 ) -> AsyncIterator[Callable[[], Awaitable[RunnerProcess]]]:
     environment = {**config.harness_environment, "ANTHROPIC_AUTH_TOKEN": launches.TOKEN, "OTEL_SDK_DISABLED": "true"}
     remote = gateway_service.gateway_client(client_token, request_timeout_s=2)
+    controller_credentials = gateway_service.controller_credentials(tmp_path / "controller-transport")
     async with model_config() as model_endpoint, AsyncExitStack() as processes:
         command = launches.command(
             config, control=control, ingress=ingress, model_config_target=model_endpoint, runner_binary=runtime_binary
@@ -131,6 +133,7 @@ async def start_runtime(
             await asyncio.to_thread(container.__enter__)
             process = RunnerProcess(container)
             processes.push_async_callback(stop, process)
+            await bind_incarnation(control, sandbox.uid, sandbox.pod_uid, controller_credentials)
             await gateway_service.wait_for_runner(remote, sandbox.destination)
             return process
 

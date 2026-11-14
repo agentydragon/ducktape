@@ -406,7 +406,14 @@ async def test_packaged_claude_session_runs_shell_and_accepts_next_input(
         ) as docker_done:
             await assert_guest_systemd_supervision_passed(outputs, docker_done)
             ready_task = asyncio.create_task(
-                authenticated_readiness(gateway_service, client_token, api_server, sandbox)
+                authenticated_readiness(
+                    gateway_service,
+                    client_token,
+                    api_server,
+                    sandbox,
+                    control=control,
+                    controller_credentials=gateway_service.controller_credentials(tmp_path / "controller-transport"),
+                )
             )
             try:
                 done, _ = await asyncio.wait((docker_done, ready_task), return_when=asyncio.FIRST_COMPLETED)
