@@ -70,8 +70,12 @@ own:
    [`PRIVILEGED_BACKEND_AUTH_DESIGN`](task_dag.md#privileged_backend_auth_design--review-privileged-service-authentication-and-transport)),
    with credential resolution through the same reader.
 3. Dispatcher, EnvironmentService and CLI addresses become opaque environment IDs.
-4. The Gateway's per-Sandbox Lease and EndpointSlice give way to `postgres/lease` and Gateway-owned
-   routing ([`RUNNER_GATEWAY_REPLICA_OWNERSHIP_DESIGN`](task_dag.md#runner_gateway_replica_ownership_design--reconsider-per-runner-gateway-ownership)).
+4. The Gateway's per-Sandbox Lease and `<sandbox>-control` EndpointSlice go. They date from the
+   removed Runtime-dials-Gateway mode, when only the replica holding a Runtime's inbound connection
+   could reach it; the operator calls the Lease "no longer particularly useful" (2026-11-14). Now
+   that the Gateway dials, any replica can reach a Runtime, and whatever single-observer fence
+   remains needed moves to `postgres/lease`
+   ([`RUNNER_GATEWAY_REPLICA_OWNERSHIP_DESIGN`](task_dag.md#runner_gateway_replica_ownership_design--reconsider-per-runner-gateway-ownership)).
 
 Service tests could then run against one fake `PolicyService` instead of envtest. The store stays
 an API server.
@@ -84,10 +88,9 @@ process, a developer machine, a VM elsewhere. What it needs:
 - **Registration.** An environment record the Sandbox Controller does not create, so it needs O2's
   opaque IDs.
 - **Address.** The Gateway dials the Runtime at an address it derives from the Pod record's IP and
-  the runner port. Without a Pod, the environment record must carry the Runtime's address, and the
-  Gateway keeps dialing it. Only a host the Gateway cannot reach (behind NAT, a laptop) would need
-  the Runtime to dial in instead, as it already does for History ingress; that is an option, not a
-  requirement.
+  the runner port. Without a Pod, the environment record carries the Runtime's address and the
+  Gateway keeps dialing it. A Runtime-dials-Gateway mode used to be the default and was removed
+  deliberately (operator, 2026-11-14); it does not come back for this.
 - **Identity.** An SVID without a mounted Secret. The Runtime already accepts a SPIFFE Workload API
   socket (Firecracker uses one); something must attest the host instead of a Pod, such as a join
   token exchanged for a certificate.
