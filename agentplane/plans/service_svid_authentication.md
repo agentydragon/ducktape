@@ -140,8 +140,8 @@ certificate.
    History JournalIngress must preserve its existing Identity and Session provenance independently.
 4. Move each caller only once every receiver image it needs is pinned with SVID admission. Each
    target's authentication settings land in source before deployment manifests enable them.
-   For LLM ingress, this includes switching the Central Sampler connection from `auth.type: bearer`
-   to `auth.type: agentplane_ingress` and enabling `central_sampler_identity_callers` for the exact
+   For LLM ingress, this includes switching the Central Sampler connection from `auth.mode: bearer`
+   to `auth.mode: agentplane_ingress` and enabling `central_sampler_identity_callers` for the exact
    `spiffe://agentplane/central-sampler` service actor only after that receiver image is pinned. The
    sampler's existing
    `providerAuthorization` builds a typed envelope from the Session's recorded execution Identity
