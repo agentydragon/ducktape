@@ -81,3 +81,40 @@ additive, and an import-only result cannot establish a complete-CI saving.
 Preserve the serial production importer until a useful comparison supports a
 change. Raw artifacts stay private;
 [#16099](https://github.com/agentydragon/ducktape/issues/16099) tracks qualification.
+
+## Completed disk-backed VM screen
+
+Four actions submitted before the optimization pause completed at literal source
+`6997d126206312acbeb0bdc9ec559844087942df`, in bounded/serial/serial/bounded
+order. Each uses exactly the same compiled input identity
+`c8fe1accdb1473d029fc5a860a5dab908b06604b7ac4152d0e54a4a9fa459298`:
+25 references (7 VM, 4 PKI, 12 fixture, 2 guest), 135 unique blobs and
+2,627,041,492 source bytes. Stores are disk-backed; unused bootstrap add-ons are
+disabled and recycling is requested off. Each action passes one nonempty JUnit
+case with no failures, errors, skips or retries. All are distinct NEW physical
+actions; cold-zero, warm-all, exact pinned config, unpacked target and post-prune
+retention checks pass.
+
+| Arm        | Invocation                                                                            | Cold imports | Physical execution | Native invocation |      CPU |
+| ---------- | ------------------------------------------------------------------------------------- | -----------: | -----------------: | ----------------: | -------: |
+| Bounded B1 | [6f772fa4](https://app.buildbuddy.io/invocation/6f772fa4-88f0-49ed-9ed2-b030a8962c55) |     108.767s |           170.597s |          211.083s | 432.974s |
+| Serial A1  | [73c6b935](https://app.buildbuddy.io/invocation/73c6b935-75fc-4092-bc2d-31ed7aa736df) |     131.952s |           212.504s |          249.344s | 531.773s |
+| Serial A2  | [a4248865](https://app.buildbuddy.io/invocation/a4248865-bd41-4b6a-9b27-953c20f02303) |     135.012s |           219.779s |          254.261s | 530.875s |
+| Bounded B2 | [324d93d6](https://app.buildbuddy.io/invocation/324d93d6-d164-49ad-b54e-8de9a761cf37) |     117.889s |           184.047s |          219.585s | 458.691s |
+
+Mean cold imports fall **133.482s → 113.328s (15.1%)**, physical execution
+**216.142s → 177.322s (18.0%)**, and CPU **531.324s → 445.832s (16.1%)**.
+Native invocation mean falls 14.5%; that clock also includes outer preparation
+and analysis. This is a promising import-only result on four correlated actions,
+not a deployed VM scenario, complete selected graph or rerun-inclusive PR result.
+The production importer remains serial; a port and real deployed/full-graph
+validation have not been performed.
+
+Two earlier actions remain excluded from these means. Serial invocation
+`c7297e2a-6283-4d61-a882-dfc7b7648d9f` passed but had a different guest-root
+OCI identity, despite equal counts/bytes. Its executed packaging action produced
+that differing OCI layer; where the inputs or output first diverged remains unproved.
+The other 24 images match, and the four retained actions match completely.
+Invocation `ccd77df7-8251-48c4-85bd-46427ce3a76a` failed because the submitted
+arm name was invalid; no import phase ran. Neither is erased or counted as an
+importer performance outcome.

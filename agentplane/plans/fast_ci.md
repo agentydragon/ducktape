@@ -11,6 +11,12 @@ Keep the current required gate while the replacement graph is proved. Desired ro
 backend feedback is mean <4 minutes and p90 <8 minutes, including reruns and all
 required checks. These are targets, not measured improvements.
 
+The [experiment overview](../system_tests/debug/ci_architecture_experiment_overview.md)
+records the completed attempts, negative results, ports and source-specific
+measurements. No qualified 30% complete-PR saving has been established.
+Optimization is paused; the following larger experiments are proposals for a
+future resumption, not dispatched work.
+
 ## Candidate architecture
 
 1. Owner tests cover state machines, authorization rules and injected-clock timing.
@@ -32,7 +38,93 @@ and journals isolate state. Only an intentional in-case restart retains its jour
 Read-only artifacts and certified infrastructure baselines may be reused under
 explicit compatibility keys. Setup failure and injected-fault cleanup have owners.
 
-## Work lanes
+## Untried changes with a plausible 30% budget
+
+Prioritize removing whole categories of repeated validation or setup. The
+reference graph has 578.721s native Bazel time and 650s GitHub Bazel-job occupancy,
+with competing VM/Pod/Services/Firecracker tails. A 30% improvement means roughly
+174s on the first clock or 195s on the second. Neither clock is a complete
+rerun-inclusive PR feedback distribution. The budgets below are hypotheses;
+they are not summed measurements or promised fleet savings.
+
+### A. Make the smaller contract graph the actual ordinary backend gate
+
+The current branch builds and validates candidate contracts, but the ordinary
+Runtime selector still retains the expensive deployed graph. The historical
+replay selected the same 51 tests because replacement contracts remained manual.
+This major step has not been implemented or measured.
+
+Assign Runtime journal/admission, History retention/cursors and native transport
+to real-process contracts. Assign packaged kernel/Runtime/CLI/setup behavior to
+direct guests. Retain controller/issuer/Kubernetes/KubeVirt/PVC/App witnesses for
+the changes that can affect those boundaries, including protocol, authentication,
+packaging and deployment changes. Unknown coverage keeps the broad witness.
+Ordinary implementation changes then need fewer orchestration layers to prove
+their guarantees. Use explicit contract/dependency ownership; a blind directory
+filter or a last-green production binary is not an equivalent witness.
+
+An illustrative budget is a 200–240s longest selected action, versus 435.681s
+today. Holding the other observed clocks fixed gives about 343–383s native time
+and 415–455s GitHub job occupancy: approximately 30–36% less on the latter clock.
+This requires every competing selected path to fit, including existing native
+and App tests. It is most plausible for ordinary backend implementation PRs;
+platform/auth/schema PRs may still need the broad graph. Actual PR feedback must
+also include GitHub waiting, other gates and reruns.
+
+First experiment after resumption: wire the candidate selector at one fixed
+source and run all labels it actually selects for representative Runtime,
+History, MCP, App and protocol/platform changes. Preserve the complete retained
+assertion inventory and seeded defects. Compare whole required feedback, not a
+manual target against a larger unrelated suite. Then use the 30 matched pairs,
+100 fresh contract executions and busy/burst exposure below. Independent coverage
+ports #16370/#16374 are foundations; landing them alone does not do this migration.
+
+### B. Amortize integration infrastructure and partition its long cases
+
+Run fresh test leases on certified prepared infrastructure, or clone a
+Bazel-produced compatible infrastructure disk/snapshot into a fresh execution
+unit. Keep K3s/KubeVirt/PKI controllers and read-only OCI content out of ordinary
+per-action bootstrap. Every lease still gets fresh databases, namespaces,
+identities, credentials, Sandbox state, homes and Runtime journals. Cluster-wide
+fault tests need exclusive disposable leases. Corrupt/dirty/unknown-compatible
+state must fail qualification rather than become an implicit cache hit.
+
+This is beyond the retained infrastructure baselines already implemented. The
+parked shared-cluster prototype does not wire the application deployment and
+driver handoff, or prove concurrent end-to-end isolation. No live trial of this
+complete architecture has run. Compare disposable disk clones with a persistent
+cluster instead of assuming that sharing one privileged cluster is necessary.
+Changing execution service/placement to prepared isolated workers is another
+implementation option; requested compute units alone are not observed capacity.
+
+Warm infrastructure alone is insufficient: Pod and Firecracker can become the
+tail. Combine it with the already prototyped Pod/Services case partitions and
+enough compatible worker capacity to avoid moving saved time into admission.
+Illustrative whole-action budgets are VM about 225s (small setup plus retained
+case/cleanup), Pod and Services partitions about 200s, and Firecracker about
+220–240s including queue. Those are design targets, not sums of independent
+savings. If all selected paths fit 240s and other clocks stay comparable, the
+same 415–455s GitHub-job budget is a plausible 30%+ hypothesis.
+
+First experiment after resumption: run the unchanged real Pod, Services, VM and
+Firecracker contracts on the prepared substrate with two simultaneous leases.
+Prove current credentials, fresh state, cross-lease denial, fault containment,
+cleanup and dirty-lease rejection before timing adoption. Repeat cold/busy and
+four-PR bursts; account for persistent idle cost, CPU, memory, disk and an
+explicit infrastructure owner. A lower fresh-cluster frequency is a coverage
+tradeoff requiring a decision; do not silently move that guarantee to a schedule.
+
+### What does not qualify as a new 30% bet
+
+VM importer batching now has a useful four-action 18.0% import-test execution
+screen, but no deployed/full-graph result. Reduced roots, private-fixture moves,
+render batching, additional Bridge shards and another KVM worker alone do not
+have a 30% complete-feedback case from the observed graph. A capacity trial may
+matter greatly in saturated windows; it saves nothing when its queue is not the
+critical path. Treat these as components or separately justified repairs, not
+as evidence that the larger architecture options are exhausted.
+
+## Work lanes and prior milestones
 
 - **P1, recovery pilot:** `//agentplane/x/native_contracts:test_recovery` composes
   production Gateway and History processes, Runtime PID1 and PostgreSQL containers,
