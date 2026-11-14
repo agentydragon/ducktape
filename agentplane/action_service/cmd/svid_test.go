@@ -273,6 +273,9 @@ func TestSVIDIdentityCallerActsByItsIdentityBindings(t *testing.T) {
 		receipt.GetDecision().GetPolicy() == nil || receipt.GetState() == action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING {
 		t.Errorf("the receipt %v, want one an Identity binding allowed for %v", receipt, wantCaller)
 	}
+	if receipt.GetDelegatingActor() != nil || receipt.GetProvenance() != nil {
+		t.Fatalf("direct Identity call acquired delegated attribution: %v", receipt)
+	}
 	listed, err := caller.ListActionRequests(ctx, &action_servicepb.ListActionRequestsRequest{})
 	if err != nil || len(listed.GetActionRequests()) != 1 || listed.GetActionRequests()[0].GetId() != receipt.GetId() {
 		t.Errorf("the Identity lists %v, %v; want its own request alone", listed, err)
@@ -302,6 +305,24 @@ func TestSVIDIdentityCallerActsByItsIdentityBindings(t *testing.T) {
 		if proto.Equal(subject, wantCaller) {
 			if err != nil || !proto.Equal(result.GetActionRequest().GetCallerIdentity(), wantCaller) || result.GetActionRequest().GetCaller() != nil {
 				t.Fatalf("service actor effective caller=%v,%v", result, err)
+			}
+			receipt := result.GetActionRequest()
+			if receipt.GetDelegatingActor().GetServiceSpiffeId() != peertls.MCPEdgeURI || !proto.Equal(receipt.GetConnectionProvenance(), envelope.GetConnection()) || receipt.GetSessionProvenance() != nil {
+				t.Fatalf("service receipt lost actor or Connection provenance: %v", receipt)
+			}
+			// A read through another Connection of the same Identity returns the original admission,
+			// rather than attributing the receipt to the current reader's metadata.
+			readEnvelope := proto.Clone(envelope).(*delegationpb.Delegation)
+			readEnvelope.GetConnection().ConnectionId = uuid.NewString()
+			readEnvelope.GetConnection().GrantId = uuid.NewString()
+			readProof, err := auth.MarshalDelegation(readEnvelope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			readCtx := metadata.AppendToOutgoingContext(ctx, auth.DelegationMetadataKey, string(readProof))
+			read, err := edgeClient.GetActionRequest(readCtx, &action_servicepb.GetActionRequestRequest{RequestId: receipt.GetId()})
+			if err != nil || !proto.Equal(read.GetActionRequest().GetDelegatingActor(), receipt.GetDelegatingActor()) || !proto.Equal(read.GetActionRequest().GetConnectionProvenance(), envelope.GetConnection()) {
+				t.Fatalf("recovered service receipt lost its original admission: %v, %v", read, err)
 			}
 		} else if status.Code(err) != codes.Unauthenticated && status.Code(err) != codes.PermissionDenied {
 			t.Fatalf("service actor admitted ungranted/stale Identity: %v", err)

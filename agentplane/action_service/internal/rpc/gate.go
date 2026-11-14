@@ -122,6 +122,7 @@ func (g *Gate) Drain() { g.drain() }
 // admission is the principal a bearer proved.
 type admission struct {
 	principal           store.ReadPrincipal
+	attribution         *store.DelegationAttribution
 	connectionDelegated bool
 	authContext         context.Context
 }
@@ -301,7 +302,12 @@ func (g *Gate) authenticateAction(method string) func(context.Context) (admissio
 			return admission{}, err
 		}
 
+		attribution, err := recordedDelegation(verified)
+		if err != nil {
+			return admission{}, err
+		}
 		return admission{
+			attribution: attribution,
 			principal: store.IdentityPrincipal{Identity: store.Identity{
 				Name: effective.Name, UID: effective.UID,
 			}},

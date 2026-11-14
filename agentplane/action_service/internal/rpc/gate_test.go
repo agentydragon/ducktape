@@ -295,9 +295,21 @@ func TestConnectionDelegationUsesAnExactIdentityAndRechecksItOnActionStreams(t *
 	if submitted.GetActionRequest().GetCallerIdentity().GetUid() != string(identity.UID) || submitted.GetActionRequest().GetCaller() != nil {
 		t.Fatalf("Action request was attributed to an SA instead of the effective Identity: %v", submitted.GetActionRequest())
 	}
+	receipt := submitted.GetActionRequest()
+	actorProof := receipt.GetDelegatingActor().GetServiceAccount()
+	if actorProof.GetIdentity().GetAccount().GetNamespace() != actor.Namespace || actorProof.GetIdentity().GetAccount().GetName() != actor.Name || actorProof.GetIdentity().GetUid() == "" {
+		t.Fatalf("receipt lost the authenticated account actor: %v", receipt)
+	}
+	wantProvenance := connectionEnvelope(identityRef).GetConnection()
+	if !proto.Equal(receipt.GetConnectionProvenance(), wantProvenance) || receipt.GetSessionProvenance() != nil {
+		t.Fatalf("receipt lost the admitting Connection provenance: %v", receipt)
+	}
 	listed, err := s.client.ListActionRequests(delegated(identityRef), &action_servicepb.ListActionRequestsRequest{})
 	if err != nil || len(listed.GetActionRequests()) != 1 {
 		t.Fatalf("Identity could not read its own request: response=%v err=%v", listed, err)
+	}
+	if !proto.Equal(listed.GetActionRequests()[0].GetDelegatingActor(), receipt.GetDelegatingActor()) || !proto.Equal(listed.GetActionRequests()[0].GetConnectionProvenance(), wantProvenance) {
+		t.Fatalf("listing did not retain the admitting actor and provenance: %v", listed)
 	}
 	actorList, err := s.client.ListActionRequests(as(t, actorToken), &action_servicepb.ListActionRequestsRequest{})
 	if err != nil || len(actorList.GetActionRequests()) != 0 {

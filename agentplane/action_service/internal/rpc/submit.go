@@ -62,7 +62,7 @@ func (s *Service) SubmitActionRequest(ctx context.Context, request *action_servi
 			"group", input.Action.Group, "action", input.Action.Name, "error", err)
 		return nil, status.Error(codes.Internal, "the Action's input schema cannot be used")
 	}
-	admission := store.Admission{RequestID: uuid.New()}
+	admission := store.Admission{RequestID: uuid.New(), Attribution: admitted(ctx).attribution}
 	switch decision := s.decide(ctx, caller, input.Action, arguments).(type) {
 	case policies.Allow:
 		admission.Vote = &decision.Vote

@@ -229,6 +229,14 @@ proto_library(
     deps = [":identity_proto"],
 )
 
+ts_proto_library(
+    name = "delegation_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":delegation_proto",
+    deps = [":identity_pb"],
+)
+
 go_proto_library(
     name = "command_go_proto",
     importpath = "github.com/agentydragon/ducktape/agentplane/proto/command",

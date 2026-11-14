@@ -213,9 +213,21 @@ type ProviderVote struct {
 type Admission struct {
 	// RequestID is the ID the request is stored under.
 	RequestID uuid.UUID
+	// Attribution records the authenticated actor and its typed audit correlation when another component delegated
+	// this request. It does not change Caller, ownership or idempotency.
+	Attribution *DelegationAttribution
 	// Vote commits a Decision with the insert, so the request is never visible as pending. Nil leaves the
 	// Decision to a human.
 	Vote *ProviderVote
+}
+
+// DelegationAttribution separates the authenticated delegating component from the effective request caller.
+// Exactly one provenance form is present: SessionID, or the paired ConnectionID and ConnectionGrantID.
+type DelegationAttribution struct {
+	Actor             *action_servicepb.DelegatingActor
+	SessionID         *uuid.UUID
+	ConnectionID      *uuid.UUID
+	ConnectionGrantID *uuid.UUID
 }
 
 // DecisionInput is a human Decision on a pending request.
@@ -237,6 +249,7 @@ type ActionRequest struct {
 	Title       string
 	Description *string
 	Caller      Caller
+	Attribution *DelegationAttribution
 	State       action_servicepb.ActionState
 	// Version counts the request's transitions from 1; an Event's sequence is the version it records.
 	Version   int64

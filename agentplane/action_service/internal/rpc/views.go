@@ -8,6 +8,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
+	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -99,6 +100,16 @@ func requestView(request store.ActionRequest) (*action_servicepb.ActionRequest, 
 		State: request.State, Version: request.Version,
 		CreatedAt: timestamppb.New(request.CreatedAt), UpdatedAt: timestamppb.New(request.UpdatedAt),
 		Decision: decision, Execution: execution,
+	}
+	if attribution := request.Attribution; attribution != nil {
+		view.DelegatingActor = attribution.Actor
+		if attribution.SessionID != nil {
+			view.Provenance = &action_servicepb.ActionRequest_SessionProvenance{SessionProvenance: &delegationpb.SessionProvenance{SessionId: attribution.SessionID.String()}}
+		} else if attribution.ConnectionID != nil && attribution.ConnectionGrantID != nil {
+			view.Provenance = &action_servicepb.ActionRequest_ConnectionProvenance{ConnectionProvenance: &delegationpb.ConnectionProvenance{
+				ConnectionId: attribution.ConnectionID.String(), GrantId: attribution.ConnectionGrantID.String(),
+			}}
+		}
 	}
 	switch caller := request.Caller.(type) {
 	case store.ServiceAccountCaller:

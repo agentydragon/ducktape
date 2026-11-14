@@ -202,7 +202,10 @@ Local access and refresh tokens are opaque; PostgreSQL stores their SHA-256 dige
 provider refresh token must be recoverable for renewal, so it is stored as plaintext in
 the MCP edge database's `oauth_authorization.upstream_refresh_token`; the current design accepts
 plaintext database storage. Each `/mcp` request resolves the grant to its Connection's current bound account. Grant
-identity and provenance are not copied onto ActionRequests. Local token revocation revokes the
+identity and provenance are retained on newly admitted Action receipts, with the authenticated
+component actor kept separate from the effective Identity. Actions does not resolve the Connection
+or treat its IDs as authority. Receipts written before attribution recording, and direct calls, have
+no delegated actor or provenance; neither is reconstructed. Local token revocation revokes the
 grant; upstream account revocation is separate.
 
 Configure `base_url`, `integration_app_url`, `upstream_issuer`, `upstream_client_id`,
@@ -520,6 +523,11 @@ existing requests remain unknown and are never backfilled. Existing Goose versio
 history remain intact. Databases behind version 6, or with a partial or unmarked schema, must first
 be repaired with the earlier migration-capable image. Do not renumber this baseline; subsequent
 schema changes use later Goose versions.
+
+Version 12 adds a nullable typed delegating-actor snapshot and UUID columns for Session or
+Connection/grant provenance. The effective caller remains the owner and policy subject. No existing
+receipt is backfilled or refused, and older replicas may keep writing NULL during a roll. Rollback
+to the prior image keeps the additive columns and all receipts; no database downgrade is needed.
 
 Action identities use `action_group`/`action_name` columns, event actors use binary `Principal`
 messages, and decision policy evidence uses binary `PolicyEvidence` messages. Arguments, results and

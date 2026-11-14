@@ -48,10 +48,12 @@ k3s_suite(
     deps = [
         ":conftest",
         "//:conftest",
+        "//agentplane/action_service/api/contracts:action_service_pb2",
         "//agentplane/app/testing:client",
         "//agentplane/mcp_edge/api/connection:connection_service_pb2",
         "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/deployment:mcp_servers",
         "//agentplane/system_tests/deployment:stack",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:executor",
