@@ -61,10 +61,11 @@ def _database_secret(
     )
 
 
-def add_database(scope: Construct, env: Environment) -> Construct:
+def add_database(scope: Construct, env: Environment, *, include_app: bool = True) -> Construct:
     """Build the fixture database and its connection Secrets."""
     db_scope = Construct(scope, "db")
-    roles = _ROLES + (("central_sampler",) if env.central_sampler is not None else ())
+    roles = tuple(role for role in _ROLES if include_app or role != "app")
+    roles += ("central_sampler",) if env.central_sampler is not None else ()
 
     Secret(
         db_scope,
@@ -76,6 +77,8 @@ def add_database(scope: Construct, env: Environment) -> Construct:
         _database_secret(db_scope, env, role=role, database=role, password=_PASSWORD, async_uri=role == "app")
 
     bootstrap_sql = _fixture_file("bootstrap.sql")
+    if include_app:
+        bootstrap_sql = _fixture_file("bootstrap_app.sql") + "\n" + bootstrap_sql
     if env.central_sampler is not None:
         bootstrap_sql += "\n" + _fixture_file("bootstrap_central_sampler.sql")
     bootstrap = ConfigMap(

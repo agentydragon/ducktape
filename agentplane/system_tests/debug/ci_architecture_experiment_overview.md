@@ -1,7 +1,7 @@
 # Agentplane CI architecture: experiment overview
 
 Evidence reviewed on 14 November 2026 UTC. Implementation measurements below
-identify their source; the current frozen graph screen uses `38f6c8e723` on
+identify their source; the historical frozen graph screen uses `38f6c8e723` on
 [draft PR #16102](https://github.com/agentydragon/ducktape/pull/16102).
 Optimization resumed with a 30% median complete-feedback qualification goal and
 no worse p90 or flake rate. This write-up records completed work and outstanding
@@ -59,15 +59,28 @@ qualification passes. [Source and coverage limits](ordinary_contract_graph.md#fr
 
 Further experiments use `38f6c8e723` plus documented working-tree overlays:
 
-| Attempt                                      | Result                                                                                                                                                                                                                                             | Disposition                                                                                                                                                                                      |
-| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Implementation plus owner regression tests   | The selector discovers same-package direct owner tests, keeps them required, and rejects shared, unknown and test-only replacement inputs. Real Bazel queries confirm the positive and negative cases.                                             | Useful eligibility repair; no broader ownership or speed claim.                                                                                                                                  |
-| Real Quiesce/History seal/successor contract | [One focused case passes](https://app.buildbuddy.io/invocation/9c62fa6a-fa6b-4e24-b497-e06189e2842f): a routed command held across the durable seal is refused without mutation; a fresh Pod UID reopens at the next cursor and accepts new input. | Ordinary native coverage. The API server is real; controller decisions and credentials are fixture-owned. No controller/issuer replacement claim.                                                |
-| 45-second Gateway exhaustion budget          | The unchanged case passes in 228.8s, versus 243.4–271.6s recorded ordinary actions. Cache/source conditions are unmatched and the configuration changes.                                                                                           | Manual only. It shortens default-duration exposure; no causal saving or reliability claim.                                                                                                       |
-| Three Dispatcher shards                      | All three original cases pass once; longest shard is 233.3s versus 218.0–246.8s ordinary. CPU grows to 799.3s from 301.4–388.6s, with three fresh stack setups.                                                                                    | Reject promotion: no convincing wall gain, substantially more compute.                                                                                                                           |
-| Prepared Firecracker baseline                | Two full two-case runs pass. The same K3s process/plugin is reused with fresh workload identities; native 302.222s → 275.648s, 8.79% lower. Setup falls 48.375s → 21.772s; case work is nearly unchanged.                                          | Mechanism evidence only. One pair cannot qualify tails or flakes. The v1 shared data mount lacks cross-container ownership; adoption is blocked. A private-data v2 candidate remains unmeasured. |
+| Attempt                                      | Result                                                                                                                                                                                                                                             | Disposition                                                                                                                                                                                                                                                        |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Implementation plus owner regression tests   | The selector discovers same-package direct owner tests, keeps them required, and rejects shared, unknown and test-only replacement inputs. Real Bazel queries confirm the positive and negative cases.                                             | Useful eligibility repair; no broader ownership or speed claim.                                                                                                                                                                                                    |
+| Real Quiesce/History seal/successor contract | [One focused case passes](https://app.buildbuddy.io/invocation/9c62fa6a-fa6b-4e24-b497-e06189e2842f): a routed command held across the durable seal is refused without mutation; a fresh Pod UID reopens at the next cursor and accepts new input. | Ordinary native coverage. The API server is real; controller decisions and credentials are fixture-owned. No controller/issuer replacement claim.                                                                                                                  |
+| 45-second Gateway exhaustion budget          | The unchanged case passes in 228.8s, versus 243.4–271.6s recorded ordinary actions. Cache/source conditions are unmatched and the configuration changes.                                                                                           | Manual only. It shortens default-duration exposure; no causal saving or reliability claim.                                                                                                                                                                         |
+| Three Dispatcher shards                      | All three original cases pass once; longest shard is 233.3s versus 218.0–246.8s ordinary. CPU grows to 799.3s from 301.4–388.6s, with three fresh stack setups.                                                                                    | Reject promotion: no convincing wall gain, substantially more compute.                                                                                                                                                                                             |
+| Prepared Firecracker baseline                | Two full two-case runs pass. The same K3s process/plugin is reused with fresh workload identities; native 302.222s → 275.648s, 8.79% lower. Setup falls 48.375s → 21.772s; case work is nearly unchanged.                                          | Mechanism evidence only. One pair cannot qualify tails or flakes. The v1 shared data mount lacks cross-container ownership; adoption is blocked. A private-data v2 candidate remains unmeasured.                                                                   |
+| Native Session driver                        | One real-process case passes: exact Session admission, setup output, a genuine History read timeout, recovery without accepting an earlier turn, and a third input. Its dependency graph has no App targets.                                       | The native VM/Firecracker migration is now implemented, with 14 caller builds passing; combined validation and physical acceptance are in progress. This is not yet a qualified speedup. [Evidence](common_backend_contracts.md#native-platform-driver-milestone). |
+| Fresh private KVM data                       | The Docker-overlay placement fails during bootstrap. Moving only the fresh store to Bazel's action-owned ext4 workspace passes both ordinary Firecracker cases in one attempt; TestRunner 254.857s, Bazel 290.188s.                                | Working ownership prerequisite, not a matched speed comparison. Retained-state reuse, p90 and flakes remain unqualified; shared-store cleanup remains unexecuted. [Evidence](common_backend_contracts.md#private-fresh-kvm-prerequisite).                          |
 
-The next implementation must make the smaller graph applicable to common real
+The native platform migration now removes the App executable/image and HTTP testing client
+from the required VM/Firecracker graphs. Exact rebased source `fc38753823` passes nine unit/render
+targets and 36 explicit library/aspect checks. At `04cbff4776`, both original Firecracker cases
+and all five migrated MCP Actions cases pass in one attempt. The VM scenarios reach their final
+trace contract, which catches missing Sandbox metadata in the native driver; the correction
+retains that assertion and still needs a physical pass. The
+[current qualification record](common_backend_contracts.md#native-platform-dependency-migration)
+also records the initial fixture/plugin, Actions mount and client-audience failures.
+
+The [actual App-image consumer query](https://app.buildbuddy.io/invocation/ce224205-7707-4240-8c4b-9a5520a3b468)
+leaves Pod and MCP Services among the four platform tails. This proves a dependency cut, not
+ordinary-cache test avoidance or a latency reduction. The next implementation must make the smaller graph applicable to common real
 backend changes with explicit assertion ownership. Do not expand the flat global
 replacement list. Use owner-specific requirements and retained platform witnesses,
 then measure the complete required-check path under ordinary cache conditions.
@@ -87,8 +100,14 @@ checks pass. It adds ordinary coverage without removing deployed witnesses.
 Its initial failures were fixture setup; the repaired target includes a third
 input after History recovery.
 
-Main source `7efbf06932` passes Bazel, pre-commit and artifact/import checks,
-including ordinary BuildBuddy invocation `e27407ca`. This full branch check is
+[Actions mount ordering #16386](https://github.com/agentydragon/ducktape/pull/16386) is independently
+open and unmerged at `d34c757904`. The intended missing-settings-mount negative control fails;
+the repaired target passes all 14 cases and generated manifests pass all 25 cases with no staging
+snapshot drift. Its three required hosted checks pass. This fixes a real generator defect exposed
+by omitting optional fixture secrets; no fleet reliability or latency benefit is measured.
+
+Published main source `38f6c8e723` passes Bazel, pre-commit and artifact/import
+checks, including ordinary BuildBuddy invocation `59ee9acc-a353-520b-8bb9-d8e1612771cc`. This full branch check is
 not a representative routine-backend comparison. The current working milestone
 adds an exact-owner shadow selector and promotes four contracts; deployed tests
 remain required. The focused selector and native contract checks are recorded in
@@ -96,9 +115,12 @@ remain required. The focused selector and native contract checks are recorded in
 control `6094b0b9` reaches the intended missing-retained-Session assertion after
 real Runtime restart; its healthy counterpart is `254e237c`.
 
-The gh-pages refinement is a separate unpublished snapshot. Its browser run
-passed, but review found missing spaces around links; visual proof/publication
-was not finalized before the pause. Do not treat it as the published latest result.
+The [architecture report](https://agentydragon.github.io/ducktape/agentplane-test-architecture/)
+was published through merged report PR #16385 at gh-pages `895a488df402`. Pages
+deployment `43594433341` passed; live HTML and evidence hashes matched the reviewed
+snapshot. Its desktop/mobile light/dark browser checks passed. The latest native
+Session-driver work described in [the current partition](common_backend_contracts.md)
+postdates that report and remains separate from its measured graph screen.
 
 ## Why a larger change is still needed
 

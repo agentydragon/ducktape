@@ -60,7 +60,15 @@ class Session:
         request = session_dispatcher_pb2.CreateSessionRequest(session_id=str(session_id), spec=spec)
         if setup_script is not None:
             request.setup_script = setup_script
-        with tracer.start_as_current_span("system_test.session.create", attributes={"session.id": str(session_id)}):
+        with tracer.start_as_current_span(
+            "system_test.session.create",
+            attributes={
+                "session.id": str(session_id),
+                "sandbox.name": environment.name,
+                "sandbox.uid": environment.uid,
+                "harness": session_pb2.Harness.Name(spec.placement.environment_hosted.harness),
+            },
+        ):
             # An uncertain create is not permission to replay a mutation. The caller retains the
             # Session ID for diagnostics and reconciliation if submission itself fails.
             await dispatcher.unary(dispatcher.stub.CreateSession, request)

@@ -272,13 +272,22 @@ def test_actions_delegation_is_explicit_for_each_receiving_backend(staging_manif
 
 
 def test_empty_operator_callers_are_omitted(scratch_app: App) -> None:
-    chart = runner_gateway_workload.serving_chart(scratch_app, env=staging.ENV, operator_callers={})
+    app_account = ServiceAccountRef(namespace=staging.ENV.namespace, name=app.NAME)
+    chart = runner_gateway_workload.serving_chart(
+        scratch_app,
+        env=staging.ENV,
+        environment_readers=frozenset({app_account}),
+        environment_managers=frozenset({app_account}),
+        operator_callers={},
+    )
     docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
     settings = yaml.safe_load(_resource(docs, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"])
 
     assert "operator_callers" not in settings
     assert "environment_service_operators" not in settings
     assert "wake_service_callers" not in settings
+    assert settings["environment_readers"] == [f"{staging.ENV.namespace}/{app.NAME}"]
+    assert settings["environment_managers"] == [f"{staging.ENV.namespace}/{app.NAME}"]
     assert settings["environment_launchers"] == [f"{staging.ENV.namespace}/{actions.NAME}"]
 
 
@@ -289,6 +298,8 @@ def test_gateway_can_explicitly_configure_operator_and_delegated_resume(scratch_
     chart = runner_gateway_workload.serving_chart(
         scratch_app,
         env=env,
+        environment_readers=frozenset({operator}),
+        environment_managers=frozenset({operator}),
         operator_callers={operator: app.service(env.namespace).pods},
         extra_delegated_methods=(resume_method,),
     )
@@ -310,7 +321,13 @@ def test_session_delegation_is_a_dispatcher_caller_without_wake_authority(scratc
             ),
         ),
     )
-    chart = runner_gateway_workload.serving_chart(scratch_app, env=env)
+    app_account = ServiceAccountRef(namespace=env.namespace, name=app.NAME)
+    chart = runner_gateway_workload.serving_chart(
+        scratch_app,
+        env=env,
+        environment_readers=frozenset({app_account}),
+        environment_managers=frozenset({app_account}),
+    )
     docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
     settings = yaml.safe_load(_resource(docs, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"])
     assert set(settings["dispatcher_callers"]) == {

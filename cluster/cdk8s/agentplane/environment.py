@@ -154,7 +154,7 @@ class SessionDelegationProps:
 class ActionsProps:
     """This environment's Actions settings and secret wiring."""
 
-    operator_oidc: OperatorOidcSettings
+    operator_oidc: OperatorOidcSettings | None
     # Its own namespace included; the Action Service watches policies in its own.
     caller_service_account_namespaces: frozenset[str]
     mcp_servers: Mapping[Key, McpOAuthServer]

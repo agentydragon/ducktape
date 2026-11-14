@@ -898,13 +898,23 @@ def _persistent_data_dir() -> Path:
     return _SHARED_K3S_DATA_DIR
 
 
-def fresh_kvm_data_dir() -> Path:
+def fresh_kvm_data_dir(*, data_parent: Path) -> Path:
     """Select an empty action-private store for a non-retained KVM action.
 
     This check is intentionally read-only. Callers must run it before creating or starting the
     ordinary stack: a marker can belong to a retained server, and an existing data directory can
-    contain state from an earlier action. Neither is safe for the fresh path to stop or reset.
+    contain state from an earlier action. Neither is safe for the fresh path to stop or reset. The
+    caller supplies Bazel's action-owned TEST_TMPDIR so the store is on the action's private disk.
     """
+    if not data_parent.is_absolute():
+        raise RuntimeError(f"fresh KVM action requires an absolute action data parent: {data_parent}")
+    try:
+        resolved_data_parent = data_parent.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise RuntimeError(f"fresh KVM action requires an existing action data parent: {data_parent}") from exc
+    if resolved_data_parent != data_parent or not resolved_data_parent.is_dir():
+        raise RuntimeError(f"fresh KVM action requires a real action data directory: {data_parent}")
+
     if _BASELINE_ROOT.is_symlink():
         raise RuntimeError(f"fresh KVM action found a symlinked persistence root: {_BASELINE_ROOT}")
     if os.path.lexists(_BASELINE_ROOT) and not _BASELINE_ROOT.is_dir():
@@ -914,9 +924,9 @@ def fresh_kvm_data_dir() -> Path:
         if os.path.lexists(marker):
             raise RuntimeError(f"fresh KVM action found a persistence marker; refusing to reuse it: {marker}")
 
-    data_dir = _BASELINE_ROOT / "data"
+    data_dir = data_parent / "k3s"
     if os.path.lexists(data_dir):
-        raise RuntimeError(f"fresh KVM action found pre-existing private K3s data; refusing to reset it: {data_dir}")
+        raise RuntimeError(f"fresh KVM action found pre-existing action K3s data; refusing to reset it: {data_dir}")
     return data_dir
 
 

@@ -1,9 +1,12 @@
 """Pod scenario bindings with fresh Sessions and explicit runner ownership."""
 
 import asyncio
+import os
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import pytest
 
@@ -43,11 +46,22 @@ class Resources:
 
     @asynccontextmanager
     async def open(self) -> AsyncIterator[tuple[Client, Sandboxes]]:
-        async with (
-            self.scripted.case_scope(),
-            scenario.open_resources(self.cluster, self.base_url, self.token, tracer, native_diagnostics=False) as owned,
-        ):
-            yield owned
+        test_tmpdir = Path(os.environ["TEST_TMPDIR"])
+        if not test_tmpdir.is_absolute():
+            raise RuntimeError("TEST_TMPDIR must be absolute for the native Gateway token")
+        with TemporaryDirectory(prefix="agentplane-gateway-", dir=test_tmpdir) as directory:
+            async with (
+                self.scripted.case_scope(),
+                scenario.open_resources(
+                    self.cluster,
+                    self.base_url,
+                    self.token,
+                    tracer,
+                    token_file=Path(directory) / "gateway-token",
+                    native_diagnostics=False,
+                ) as owned,
+            ):
+                yield owned
 
     @asynccontextmanager
     async def shared(self) -> AsyncIterator[tuple[Client, pod_runners.Pair]]:

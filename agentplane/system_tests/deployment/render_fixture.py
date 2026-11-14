@@ -1,6 +1,7 @@
-"""Render one ordinary, central-recovery or VM fixture chart into `$K3S_FIXTURE_DIR`.
+"""Render one ordinary, central-recovery, VM or Firecracker fixture chart into `$K3S_FIXTURE_DIR`.
 
-`K3S_FIXTURE_VARIANT` selects an ordinary, Pod, central-recovery, VM or Firecracker fixture.
+`K3S_FIXTURE_VARIANT` selects an ordinary, Pod, central-recovery, VM, Firecracker or native
+virtualized fixture.
 The selector is an environment variable because the app's Settings parse `sys.argv` as their own.
 """
 
@@ -32,7 +33,9 @@ class FixtureVariant(StrEnum):
     LOCAL_MODEL_CENTRAL_SERVICES = "local-model-central-services"
     LOCAL_MODEL_CENTRAL_BUDGET = "local-model-central-budget"
     LOCAL_MODEL_VM = "local-model-vm"
+    LOCAL_MODEL_VM_NATIVE = "local-model-vm-native"
     LOCAL_MODEL_FIRECRACKER = "local-model-firecracker"
+    LOCAL_MODEL_FIRECRACKER_NATIVE = "local-model-firecracker-native"
     PUBLIC_LITELLM = "public-litellm"
 
 
@@ -63,25 +66,30 @@ def _render(
     executor_reconnect_timeout_seconds: int | None = None,
 ) -> None:
     models = MODEL_PLACEHOLDERS[backend]
+    app_enabled = profile != fixture_chart.FixtureProfile.APP_FREE
     fixture = RenderedFixture(
         backend=backend,
         vm_sandboxes=vm_sandboxes,
         firecracker_sandboxes=firecracker_sandboxes,
         central_sampler=central_sampler,
         namespace=NAMESPACE,
-        app_origin=fixture_chart.APP_ORIGIN,
-        browser_services=[
-            BrowserService(
-                name=fixture_chart.APP_SERVICE.name,
-                host=fixture_chart.APP_SERVICE.host,
-                fqdn=fixture_chart.APP_SERVICE.fqdn,
-            )
-        ],
+        app_origin=fixture_chart.APP_ORIGIN if app_enabled else None,
+        browser_services=(
+            [
+                BrowserService(
+                    name=fixture_chart.APP_SERVICE.name,
+                    host=fixture_chart.APP_SERVICE.host,
+                    fqdn=fixture_chart.APP_SERVICE.fqdn,
+                )
+            ]
+            if app_enabled
+            else []
+        ),
         mcp_fixtures=None,
-        operator_tokens=fixture_chart.OPERATOR_TOKENS,
+        operator_tokens=fixture_chart.OPERATOR_TOKENS if app_enabled else None,
         objects=fixture_chart.objects(
             **asdict(PLACEHOLDERS),
-            operator_token_key=OPERATOR_TOKEN_KEY_PLACEHOLDER,
+            operator_token_key=OPERATOR_TOKEN_KEY_PLACEHOLDER if app_enabled else None,
             models=models,
             vm_sandboxes=vm_sandboxes,
             firecracker_sandboxes=firecracker_sandboxes,
@@ -134,6 +142,10 @@ def render_variant(output: Path, variant: FixtureVariant) -> None:
                 vm_sandboxes=True,
                 profile=fixture_chart.FixtureProfile.NO_MCP_EDGE,
             )
+        case FixtureVariant.LOCAL_MODEL_VM_NATIVE:
+            _render(
+                output, variant, Backend.LOCAL_MODEL, vm_sandboxes=True, profile=fixture_chart.FixtureProfile.APP_FREE
+            )
         case FixtureVariant.LOCAL_MODEL_FIRECRACKER:
             _render(
                 output,
@@ -142,6 +154,15 @@ def render_variant(output: Path, variant: FixtureVariant) -> None:
                 vm_sandboxes=False,
                 firecracker_sandboxes=True,
                 profile=fixture_chart.FixtureProfile.NO_MCP_EDGE,
+            )
+        case FixtureVariant.LOCAL_MODEL_FIRECRACKER_NATIVE:
+            _render(
+                output,
+                variant,
+                Backend.LOCAL_MODEL,
+                vm_sandboxes=False,
+                firecracker_sandboxes=True,
+                profile=fixture_chart.FixtureProfile.APP_FREE,
             )
         case FixtureVariant.PUBLIC_LITELLM:
             _render(output, variant, Backend.PUBLIC_LITELLM, vm_sandboxes=False)

@@ -77,3 +77,5 @@ def test_device_allocation_releases_after_pod_deletion(tmp_path: Path, runfiles:
 
 if __name__ == "__main__":
     pytest_bazel.main()
+
+# gazelle:include_dep //agentplane/system_tests/k3s:pytest_plugin

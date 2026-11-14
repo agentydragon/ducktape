@@ -510,7 +510,7 @@ class Egress(Construct):
         *,
         database_url: EnvValue,
         runners: Pods,
-        admin_grpc_callers: Sequence[ServiceAccountRef],
+        admin_grpc_callers: Sequence[ServiceAccountRef] | None,
         litellm_host: str | None = None,
         litellm_cluster_internal: bool = True,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
@@ -554,12 +554,14 @@ class Egress(Construct):
             rules_namespace=env.namespace,
             credentials_namespace=env.egress.credentials_namespace,
             allowed_service_account_namespaces=frozenset((env.namespace, *env.egress.external_workload_namespaces)),
-            admin_grpc_audience=ADMIN_GRPC_AUDIENCE,
+            admin_grpc_audience=ADMIN_GRPC_AUDIENCE if admin_grpc_callers is not None else None,
             admin_grpc_callers=[
                 f"{account.namespace}/{account.name}"
                 for account in sorted(admin_grpc_callers, key=lambda account: (account.namespace, account.name))
-            ],
-            admin_grpc_service_callers=frozenset({APP_URI}),
+            ]
+            if admin_grpc_callers is not None
+            else None,
+            admin_grpc_service_callers=frozenset({APP_URI}) if admin_grpc_callers is not None else frozenset(),
             ca_cert=Path("/etc/agentplane-egress/ca/tls.crt"),
             ca_key=Path("/etc/agentplane-egress/ca/tls.key"),
             upstream_ca_file=Path(f"{_UPSTREAM_CA_DIR}/{CA_BUNDLE_KEY}"),

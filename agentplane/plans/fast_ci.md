@@ -18,8 +18,9 @@ measurements. No qualified 30% complete-PR saving has been established.
 Work resumed on 14 November 2026 with this measurable objective. The
 first candidate must change the ordinary selected graph, retain the current
 source in every executed binary, and account for every removed deployed assertion.
-Prepared infrastructure is the next architecture option if retained deployment
-work prevents the required improvement.
+The immediate architecture work removes incidental App dependencies from real
+platform acceptance, then measures common backend changes. Prepared infrastructure
+remains a separate option if the retained deployment work still limits feedback.
 
 ## Candidate architecture
 
@@ -79,6 +80,20 @@ finds BUILD edits in 33 of 46 recent backend-input PRs. Its first concrete class
 is App handler/server changes, with direct route tests and real App/Dispatcher/
 History witnesses. That class is only 3/46 PRs; qualify broader applicability
 and the complete required gate before claiming the median goal.
+The App-free native Session driver passes a real-process History outage/recovery
+proof, but does not by itself remove platform inputs. Fresh action-private K3s
+storage now passes both ordinary Firecracker cases on the action's ext4 workspace;
+this is an ownership prerequisite, not a matched timing result. Native Environment/Runner
+control, fixture-bound identity, separate rendered profiles and image maps are implemented for
+Firecracker and required VM acceptance. Fourteen affected caller targets build with lint/type
+checks. The App-free Firecracker target passes both original cases, and all five migrated MCP
+Actions cases pass. VM completes both harness scenarios, then fails a missing trace attribute;
+its metadata repair still needs a physical pass. Keep their guest,
+controller, PKI, identity, setup, checkpoint and storage assertions. The earlier dependency query
+removes App serving/client inputs while retaining shared configuration types. A query on pushed
+source confirms only Pod and MCP Services among the four platform tails still consume the App image.
+Finish VM qualification, then test historical source-plus-BUILD selection before timing the
+complete gate. [Current source and focused evidence](../system_tests/debug/common_backend_contracts.md).
 Do not expand a global replacement list just to make more historical PRs
 eligible. Implementation-plus-owner-test changes must be accounted
 for structurally, and their owner tests must remain required. Test-only, shared
