@@ -94,11 +94,11 @@ budget remains authoritative across all of its native services.
   services with matching explicit security settings. Cluster and k3s deployments use mTLS. The Environment Runtime certificate URI binds the Sandbox namespace, Sandbox UID and credential ID;
   the Gateway presents `spiffe://agentplane/runner-gateway`. Environment Runtime control has no bearer credential.
   Explicit insecure mode skips certificate authentication while retaining all Sandbox, incarnation,
-  boot-ID and legacy observer-epoch checks. Fencing metadata supplies no proof of peer identity.
+  and boot-ID checks. Fencing metadata supplies no proof of peer identity.
   History ingress remains a separate outbound bearer-authenticated connection.
 - The control listener exposes the standard gRPC health API and reports local startup as `SERVING`
   before state observation begins. The Controller's authenticated `observe_only` `WatchState` request
-  supplies the Sandbox UID, current Pod or virt-launcher incarnation UID, and epoch zero. Runtime
+  supplies the Sandbox UID and current Pod or virt-launcher incarnation UID. Runtime
   creates a fresh boot ID at process start, reserves this UID, and completes incarnation adoption
   before publishing the first facts snapshot. This Controller watch is the sole source that may
   establish the UID; a Gateway cannot choose or advance it. The UID remains fixed for this Runtime
@@ -107,35 +107,27 @@ budget remains authoritative across all of its native services.
   notifications with unchanged facts do not publish extra snapshots.
   Replacing a launcher Pod while preserving its Runtime process (KubeVirt live migration) is
   unsupported: a new launcher Pod is a new incarnation, fenced by incarnation UID and Runtime boot ID.
-  The Gateway may retry observation independently of Sandbox discovery. During the compatibility
-  rollout, nonzero Gateway `WatchState` epochs retain the existing connection-owner behavior but are
-  accepted only for the Controller-bound UID. A Gateway watch with an absent or zero epoch can
-  observe that same UID without installing or replacing connection ownership. Cancellation of a
-  Controller or zero-epoch observation affects only that stream. A higher nonzero Gateway epoch
-  still supersedes the prior legacy Gateway watch and its epoch-bound calls or streams; it does not
-  revoke calls authorized against the Controller-bound identity without an epoch.
+  The Gateway may retry observation independently of Sandbox discovery. Every Gateway replica
+  observes the same Controller-bound UID independently; cancellation or loss of one observation
+  affects only that stream and does not revoke another replica's calls or Runtime-owned work.
 - The Sandbox Controller presents `spiffe://agentplane/sandbox-controller` and opens independent
   `WatchState` streams with `observe_only = true`, the Sandbox UID, the current workload
-  incarnation UID and connection epoch zero. Responses contain the Runtime boot ID and facts with
-  epoch zero. This authenticated observation establishes the process's incarnation UID and invokes
+  incarnation UID. Responses contain the Runtime boot ID and facts. This authenticated observation
+  establishes the process's incarnation UID and invokes
   adoption through Runtime's ordinary lifecycle barriers before the initial response. A replacement
   workload with retained state can therefore restore its seal. Later passive observers in the same
   Runtime process may reconnect only with that UID; they cannot replace it. Passive streams never
   replace or cancel a Gateway watch, and their cancellation cannot revoke Gateway control or
   Executor authorization. The Controller cannot invoke control or Executor RPCs, and the Gateway
   cannot select passive observation. Explicit insecure fixtures skip peer authentication while
-  retaining the request, identity and epoch checks.
+  retaining the request and identity checks.
 - Every unary call and execution-session stream requires the exact Sandbox UID, adopted incarnation
-  UID and Environment Runtime boot ID. After successful state-watch adoption, a Gateway may omit
-  `agentplane-connection-epoch` or send zero. These calls authorize against the Controller-bound
+  UID and Environment Runtime boot ID. These calls authorize against the Controller-bound
   Sandbox/incarnation/boot identity; their admission and execution contexts survive Gateway watch
   loss and same-incarnation observer replacement. Any authenticated Gateway replica may make such
   calls. A different Sandbox, incarnation, or boot ID invalidates that authority; the Runtime
-  lifecycle and caller stream retain their cancellation rules. A supplied nonzero epoch retains the
-  existing requirement for a matching, live Gateway watch. Stale boot, incarnation or legacy
-  observer metadata fails before admission with `UNAVAILABLE`. Gateway `WatchState` with no epoch or
-  epoch zero can observe only the already-bound UID; a nonzero epoch remains accepted for legacy
-  Gateway behavior. The epoch field remains in the protocol during this receiver compatibility step.
+  lifecycle and caller stream retain their cancellation rules. Stale boot or incarnation metadata
+  fails before admission with `UNAVAILABLE`.
   `Executor.OpenSession` holds one local Codex
   connection per server stream, with typed unary process and file RPCs bound to its session ID.
   Each Environment Runtime retains the old relay's budget of eight open or opening adapter connections;

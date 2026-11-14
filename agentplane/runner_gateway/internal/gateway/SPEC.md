@@ -5,11 +5,10 @@
 Every Gateway replica resolves the current Sandbox and workload independently and opens a direct
 `WatchState` to the Runtime on private port `9090`. It uses the Sandbox UID and current workload Pod
 UID from Kubernetes and requires the response to match both identities and return a nonempty Runtime
-boot ID. A VM's workload Pod is its current virt-launcher Pod. A zero or absent watch epoch can only
-observe the incarnation already bound by the Sandbox Controller's authenticated direct watch; the
-Gateway cannot establish or advance that binding. Each replica can then serve the Runtime connection
-locally. Gateway availability does not depend on per-Sandbox Lease ownership, EndpointSlices or an
-epoch allocator.
+boot ID. A VM's workload Pod is its current virt-launcher Pod. A watch can only observe the
+incarnation already bound by the Sandbox Controller's authenticated direct watch; the Gateway
+cannot establish or advance that binding. Each replica can then serve the Runtime connection
+locally.
 
 Each forwarded RPC is fenced by the current Sandbox UID, workload Pod UID and Runtime boot ID.
 Those values come from the Gateway's live Kubernetes inventory and its authenticated Runtime
@@ -22,10 +21,10 @@ Callers connect through the stable `runner-gateway` Service. The per-Sandbox `<s
 EndpointSlice and Gateway-owned connection Lease are not part of the route. Dispatcher delivery
 Leases continue to coordinate queue delivery independently.
 
-The generated Runtime protocol still carries `connection_epoch` for the old Gateway rollback
-window. Legacy nonzero watch and call epochs remain accepted by the receiver for the already-bound
-incarnation, but this Gateway sends no allocated epoch. Remove that receiver compatibility and its
-RBAC only in the follow-on cleanup after the old Gateway rollback window closes.
+The Runtime protocol carries no Gateway connection epoch. Runtime call authorization uses the
+Controller-bound Sandbox UID, workload UID and Runtime boot ID, independently of Gateway observer
+lifetime. Losing one replica's observation does not revoke another replica's calls or cancel
+Runtime-owned admitted work.
 
 ## Environment Runtime proxy authorization
 

@@ -16,6 +16,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/control"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/coder/websocket"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -30,6 +31,7 @@ type directExecutionTestClient struct {
 	runner      environmentruntimepb.EnvironmentRuntimeClient
 	executor    executorpb.ExecutorClient
 	callCtx     context.Context
+	stopWatch   func() error
 	bootID      string
 	incarnation string
 	identity    configuration.SandboxIdentity
@@ -59,10 +61,12 @@ func startDirectExecutionTestClient(t *testing.T, r *Runtime, incarnation string
 	}
 	runnerClient := environmentruntimepb.NewEnvironmentRuntimeClient(conn)
 	bindTestIncarnation(t, runnerClient, r.config.Launch.Sandbox.UID, incarnation)
-	watch, err := runnerClient.WatchState(ctx, &environmentruntimepb.WatchStateRequest{
-		SandboxUid: r.config.Launch.Sandbox.UID, IncarnationUid: incarnation, ConnectionEpoch: 1,
+	watchCtx, stopWatch := context.WithCancel(ctx)
+	watch, err := runnerClient.WatchState(watchCtx, &environmentruntimepb.WatchStateRequest{
+		SandboxUid: r.config.Launch.Sandbox.UID, IncarnationUid: incarnation,
 	})
 	if err != nil {
+		stopWatch()
 		cancel()
 		_ = conn.Close()
 		server.Stop()
@@ -82,7 +86,6 @@ func startDirectExecutionTestClient(t *testing.T, r *Runtime, incarnation string
 		control.SandboxMetadata, r.config.Launch.Sandbox.UID,
 		control.IncarnationMetadata, incarnation,
 		control.BootMetadata, first.GetEnvironmentRuntimeBootId(),
-		control.EpochMetadata, "1",
 	)
 	t.Cleanup(func() {
 		cancel()
@@ -92,7 +95,14 @@ func startDirectExecutionTestClient(t *testing.T, r *Runtime, incarnation string
 	})
 	return &directExecutionTestClient{
 		ctx: ctx, cancel: cancel, conn: conn, runner: runnerClient,
-		executor: executorpb.NewExecutorClient(conn), callCtx: callCtx,
+		executor: executorpb.NewExecutorClient(conn), callCtx: callCtx, stopWatch: func() error {
+			stopWatch()
+			for {
+				if _, err := watch.Recv(); err != nil {
+					return err
+				}
+			}
+		},
 		bootID: first.GetEnvironmentRuntimeBootId(), incarnation: incarnation, identity: r.config.Launch.Sandbox,
 	}
 }
@@ -111,11 +121,16 @@ func (h *directExecutionTestClient) scope(sessionID string) *executorpb.Executio
 	}
 }
 
-func (h *directExecutionTestClient) replaceWatch(incarnation string, epoch uint64) error {
-	watch, err := h.runner.WatchState(h.ctx, &environmentruntimepb.WatchStateRequest{
-		SandboxUid: h.identity.UID, IncarnationUid: incarnation, ConnectionEpoch: epoch,
+func (h *directExecutionTestClient) replaceWatch(incarnation string) error {
+	if h.stopWatch != nil {
+		_ = h.stopWatch()
+	}
+	watchCtx, stopWatch := context.WithCancel(h.ctx)
+	watch, err := h.runner.WatchState(watchCtx, &environmentruntimepb.WatchStateRequest{
+		SandboxUid: h.identity.UID, IncarnationUid: incarnation,
 	})
 	if err != nil {
+		stopWatch()
 		return err
 	}
 	first, err := watch.Recv()
@@ -129,8 +144,15 @@ func (h *directExecutionTestClient) replaceWatch(incarnation string, epoch uint6
 		control.SandboxMetadata, h.identity.UID,
 		control.IncarnationMetadata, incarnation,
 		control.BootMetadata, h.bootID,
-		control.EpochMetadata, uint64String(epoch),
 	)
+	h.stopWatch = func() error {
+		stopWatch()
+		for {
+			if _, err := watch.Recv(); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
@@ -188,8 +210,8 @@ func startNativeExecutionTestServer(t *testing.T, notify bool) (string, <-chan s
 	return "ws" + strings.TrimPrefix(server.URL, "http"), opened, closed
 }
 
-func TestOpenSessionEndsWhenObserverEpochIsSuperseded(t *testing.T) {
-	url, opened, closed := startNativeExecutionTestServer(t, false)
+func TestOpenSessionSurvivesGatewayObserverLoss(t *testing.T) {
+	url, opened, _ := startNativeExecutionTestServer(t, false)
 	r := newExecutionRuntime(t, url, nil)
 	client := startDirectExecutionTestClient(t, r, "incarnation-1")
 	stream, err := client.open(client.callCtx, "sampler-session", "open-before-supersession")
@@ -219,28 +241,32 @@ func TestOpenSessionEndsWhenObserverEpochIsSuperseded(t *testing.T) {
 		t.Fatal("second local execution session did not initialize")
 	}
 
-	if err := client.replaceWatch(client.incarnation, 2); err != nil {
-		t.Fatalf("replace observer epoch: %v", err)
+	if err := client.stopWatch(); status.Code(err) != codes.Canceled {
+		t.Fatalf("Gateway observer cancellation = %v, want Canceled", err)
 	}
-	wantClosed := map[string]bool{response.GetExecutionSessionId(): true, secondResponse.GetExecutionSessionId(): true}
-	for range 2 {
-		select {
-		case closedID := <-closed:
-			if !wantClosed[closedID] {
-				t.Fatalf("observer supersession closed unexpected native session %q", closedID)
-			}
-			delete(wantClosed, closedID)
-		case <-time.After(lifecycleTestTimeout):
-			t.Fatalf("observer epoch supersession left native WebSockets open: %v", wantClosed)
-		}
+	if _, err := client.runner.GetStatus(client.callCtx, &sessionpb.GetStatusRequest{}); err != nil {
+		t.Fatalf("GetStatus after Gateway observer loss: %v", err)
 	}
-	if _, err := stream.Recv(); err == nil {
-		t.Fatal("OpenSession remained open after observer supersession")
+	r.mu.Lock()
+	activeCalls := r.activeExecutionCalls
+	r.mu.Unlock()
+	if activeCalls != 2 {
+		t.Fatalf("active execution calls after observer loss = %d, want both native sessions retained", activeCalls)
 	}
-	if _, err := second.Recv(); err == nil {
-		t.Fatal("second OpenSession remained open after observer supersession")
+	if _, err := client.open(client.callCtx, "third-session", "third-open-after-observer-loss"); err != nil {
+		t.Fatalf("OpenSession after Gateway observer loss: %v", err)
 	}
-	waitRuntime(t, r, func() bool { facts, err := r.facts(); return err == nil && facts.IdleSince != nil }, "superseded execution slot release")
+	select {
+	case <-opened:
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("new local execution session did not initialize after observer loss")
+	}
+	r.mu.Lock()
+	activeCalls = r.activeExecutionCalls
+	r.mu.Unlock()
+	if activeCalls != 3 {
+		t.Fatalf("active execution calls after new OpenSession = %d, want 3", activeCalls)
+	}
 }
 
 type blockingDirectExecutor struct {
@@ -411,7 +437,7 @@ func TestPassiveWatchCancellationPreservesAdmittedExecution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snapshot, err := watch.Recv(); err != nil || snapshot.GetConnectionEpoch() != 0 {
+	if snapshot, err := watch.Recv(); err != nil || snapshot.GetFacts() == nil {
 		t.Fatalf("passive watch during execution = %v, error = %v", snapshot, err)
 	}
 	cancelWatch()
@@ -427,8 +453,8 @@ func TestPassiveWatchCancellationPreservesAdmittedExecution(t *testing.T) {
 	case <-time.After(lifecycleTestTimeout):
 		t.Fatal("admitted execution did not complete")
 	}
-	if err := client.replaceWatch(client.incarnation, 2); err != nil {
-		t.Fatalf("Gateway epoch after passive cancellation: %v", err)
+	if err := client.replaceWatch(client.incarnation); err != nil {
+		t.Fatalf("Gateway watch after passive cancellation: %v", err)
 	}
 }
 
@@ -449,38 +475,29 @@ func (e *observerIndependentExecutor) OpenSession(_ *executorpb.OpenSessionReque
 	}
 }
 
-func TestEpochFreeExecutionSurvivesGatewayObserverReplacement(t *testing.T) {
-	for _, epoch := range []string{"", "0"} {
-		t.Run("epoch="+epoch, func(t *testing.T) {
-			executor := &observerIndependentExecutor{release: make(chan struct{})}
-			config := executionRuntimeConfig(t, "ws://unused", nil)
-			config.deps.startExecution = func(context.Context, Config, string) (executionHandle, error) {
-				return &executionServiceHandle{executor: executor, fence: func(context.Context) error { return nil }}, nil
-			}
-			r := newLifecycleRuntime(t, config)
-			client := startDirectExecutionTestClient(t, r, "incarnation")
-			md, _ := metadata.FromOutgoingContext(client.callCtx)
-			md = md.Copy()
-			if epoch == "" {
-				md.Delete(control.EpochMetadata)
-			} else {
-				md.Set(control.EpochMetadata, epoch)
-			}
-			call := metadata.NewOutgoingContext(client.ctx, md)
-			stream, err := client.open(call, "epoch-free-session", "epoch-free-open")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if response, err := stream.Recv(); err != nil || response.GetExecutionSessionId() != "before-observer-change" {
-				t.Fatalf("initial execution response = %v, error=%v", response, err)
-			}
-			if err := client.replaceWatch(client.incarnation, 2); err != nil {
-				t.Fatal(err)
-			}
-			close(executor.release)
-			if response, err := stream.Recv(); err != nil || response.GetExecutionSessionId() != "after-observer-change" {
-				t.Fatalf("execution response after observer replacement = %v, error=%v", response, err)
-			}
-		})
+func TestExecutionSurvivesGatewayObserverLoss(t *testing.T) {
+	executor := &observerIndependentExecutor{release: make(chan struct{})}
+	config := executionRuntimeConfig(t, "ws://unused", nil)
+	config.deps.startExecution = func(context.Context, Config, string) (executionHandle, error) {
+		return &executionServiceHandle{executor: executor, fence: func(context.Context) error { return nil }}, nil
+	}
+	r := newLifecycleRuntime(t, config)
+	client := startDirectExecutionTestClient(t, r, "incarnation")
+	stream, err := client.open(client.callCtx, "observer-loss-session", "observer-loss-open")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response, err := stream.Recv(); err != nil || response.GetExecutionSessionId() != "before-observer-change" {
+		t.Fatalf("initial execution response = %v, error=%v", response, err)
+	}
+	if err := client.stopWatch(); status.Code(err) != codes.Canceled {
+		t.Fatalf("Gateway observer cancellation = %v, want Canceled", err)
+	}
+	if _, err := client.runner.GetStatus(client.callCtx, &sessionpb.GetStatusRequest{}); err != nil {
+		t.Fatalf("GetStatus after Gateway observer loss: %v", err)
+	}
+	close(executor.release)
+	if response, err := stream.Recv(); err != nil || response.GetExecutionSessionId() != "after-observer-change" {
+		t.Fatalf("execution response after observer loss = %v, error=%v", response, err)
 	}
 }

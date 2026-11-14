@@ -130,7 +130,6 @@ func TestRuntimeStatesRejectsInvalidResponseWithoutPublishing(t *testing.T) {
 			func(r *environmentruntimepb.WatchStateResponse) { r.SandboxUid = "another-sandbox" },
 			func(r *environmentruntimepb.WatchStateResponse) { r.IncarnationUid = "old-pod" },
 			func(r *environmentruntimepb.WatchStateResponse) { r.EnvironmentRuntimeBootId = "" },
-			func(r *environmentruntimepb.WatchStateResponse) { r.ConnectionEpoch = 1 },
 			func(r *environmentruntimepb.WatchStateResponse) { r.Facts = nil },
 		} {
 			response := runtimeStateResponse(attempt, "boot-1")

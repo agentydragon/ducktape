@@ -75,11 +75,10 @@ func (configTestTokenReviews) Create(
 	}}, nil
 }
 
-// required includes the explicit database Secret and Pod IP runtime inputs plus the static settings file.
+// required includes the explicit database Secret runtime input plus the static settings file.
 func required(t *testing.T, extra ...string) []string {
 	t.Helper()
 	return append([]string{
-		settingPrefix + "POD_IP=10.0.0.5",
 		settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, requiredFile), databaseURLEnv,
 	}, extra...)
 }
@@ -504,7 +503,7 @@ func TestSettingsWithoutADefaultAreRequired(t *testing.T) {
 	if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t)); err != nil {
 		t.Fatal(err)
 	}
-	for _, missing := range []string{"POD_IP", "DISPATCHER_DATABASE_URL"} {
+	for _, missing := range []string{"DISPATCHER_DATABASE_URL"} {
 		rest := slices.DeleteFunc(required(t), func(item string) bool {
 			return strings.HasPrefix(item, settingPrefix+missing+"=")
 		})
@@ -535,11 +534,11 @@ func TestSettingsWithoutADefaultAreRequired(t *testing.T) {
 }
 
 func TestSettingsFilePathIsRequiredAndMustBeReadable(t *testing.T) {
-	if _, err := configtest.Load(t, settingPrefix, loadConfig, []string{databaseURLEnv, settingPrefix + "POD_IP=10.0.0.5"}); err == nil {
+	if _, err := configtest.Load(t, settingPrefix, loadConfig, []string{databaseURLEnv}); err == nil {
 		t.Fatal("started without a settings file path")
 	}
 	if _, err := configtest.Load(t, settingPrefix, loadConfig, []string{
-		settingPrefix + "CONFIG_FILE=/settings/file/does/not/exist", databaseURLEnv, settingPrefix + "POD_IP=10.0.0.5",
+		settingPrefix + "CONFIG_FILE=/settings/file/does/not/exist", databaseURLEnv,
 	}); err == nil {
 		t.Fatal("started without the required settings file")
 	}

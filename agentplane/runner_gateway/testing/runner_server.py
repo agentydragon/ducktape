@@ -54,7 +54,6 @@ class _WatchStateInterceptor(grpc.aio.ServerInterceptor):
                 sandbox_uid=request.sandbox_uid,
                 incarnation_uid=request.incarnation_uid,
                 environment_runtime_boot_id=self.boot_id,
-                connection_epoch=request.connection_epoch,
                 facts=environment_runtime_state_pb2.EnvironmentRuntimeFacts(),
             )
             while True:

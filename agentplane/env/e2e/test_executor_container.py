@@ -354,7 +354,6 @@ async def test_process_output_resume_files_and_incarnation_fence(runner: Running
             ("agentplane-sandbox-uid", scope.destination.target.uid),
             ("agentplane-incarnation-uid", scope.expected_incarnation_uid),
             ("agentplane-environment-runtime-boot-id", control_status.environment_runtime_boot_id),
-            ("agentplane-connection-epoch", str(runner.gateway.control.connection_epoch)),
         )
         client = executor_pb2_grpc.ExecutorStub(channel)
         stale = executor_pb2.ExecutionScope()

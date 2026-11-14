@@ -183,14 +183,14 @@ The operator released these tracks on 2026-11-14; Codex workers build them, and 
 their state at 07:40 UTC. Each row's node owns its gates; the Go reorganization behind several of them
 is [section 17](#17-two-binaries-and-the-go-layout).
 
-| Track                                    | Operator release (UTC)                                         | Node                                                                | State                                                                                                           |
-| ---------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Pre-cutover leftovers                    | 01:41, "dispatch 1, 2"                                         | `REFACTOR_COHERENCE_AUDIT`                                          | Merged #16323, #16331, #16340, #16341; #16336 and #16356 closed (History keeps Sessions without a Sandbox UID)  |
-| TLS on the two plaintext hops            | 01:41, same release                                            | `PRIVILEGED_BACKEND_AUTH_DESIGN`                                    | Merged #16332; #16333 and #16334 in review                                                                      |
-| Any Gateway replica, no epoch            | 02:36, card "Any replica, no epoch"                            | [Section 12](#12-the-runner-gateway-serves-the-runners-own-service) | Merged #16324, #16328, #16330, #16345; #16361, #16362, #16365 in review, merged in that order across image pins |
-| One service authentication mode          | 04:56, "One auth mode can fire off"                            | `PRIVILEGED_BACKEND_AUTH_DESIGN`                                    | Stages 1–2 merged; stage 3 receivers part merged, part in review                                                |
-| Environment rule slices                  | 04:58, "Okay this sounds good to me (these environment rules)" | `ENVIRONMENT_LIFECYCLE_RULES`                                       | `resume` merged (#16346); `bind_session` in review (#16351)                                                     |
-| Identity changes re-checked, not refused | 07:20, "okay, sounds good to me, sessions can re-check"        | `SANDBOX_IDENTITY_RECHECK`                                          | In review (#16373)                                                                                              |
+| Track                                    | Operator release (UTC)                                         | Node                                                                | State                                                                                                                    |
+| ---------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Pre-cutover leftovers                    | 01:41, "dispatch 1, 2"                                         | `REFACTOR_COHERENCE_AUDIT`                                          | Merged #16323, #16331, #16340, #16341; #16336 and #16356 closed (History keeps Sessions without a Sandbox UID)           |
+| TLS on the two plaintext hops            | 01:41, same release                                            | `PRIVILEGED_BACKEND_AUTH_DESIGN`                                    | Merged #16332; #16333 and #16334 in review                                                                               |
+| Any Gateway replica                      | 02:36, card "Any replica, no epoch"                            | [Section 12](#12-the-runner-gateway-serves-the-runners-own-service) | Route and stable-Service cutover merged through #16365; final receiver/RBAC cleanup is image-gated in the component plan |
+| One service authentication mode          | 04:56, "One auth mode can fire off"                            | `PRIVILEGED_BACKEND_AUTH_DESIGN`                                    | Stages 1–2 merged; stage 3 receivers part merged, part in review                                                         |
+| Environment rule slices                  | 04:58, "Okay this sounds good to me (these environment rules)" | `ENVIRONMENT_LIFECYCLE_RULES`                                       | `resume` merged (#16346); `bind_session` in review (#16351)                                                              |
+| Identity changes re-checked, not refused | 07:20, "okay, sounds good to me, sessions can re-check"        | `SANDBOX_IDENTITY_RECHECK`                                          | In review (#16373)                                                                                                       |
 
 Not released: the stage 3 moves of section 17, retiring `orchestration_v1` and launcher auto-grants.
 Decided since: explicit resume reserves no wake budget (07:41, card "No budget for explicit resume");
@@ -201,8 +201,8 @@ flowchart LR
     subgraph AUTH_TRACK[One service authentication mode]
         PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: service SVIDs and TLS on every hop]
     end
-    subgraph GATEWAY_TRACK[Any Gateway replica, no epoch]
-        RUNNER_CONNECTION_LEASE_CLEANUP[Section 12: cutover in review, then final Lease cleanup]
+    subgraph GATEWAY_TRACK[Any Gateway replica]
+        RUNNER_GATEWAY_SETTINGS_CLEANUP[Held: remove legacy Gateway settings after image rollout]
     end
     subgraph RULE_TRACK[Environment rule slices]
         ENVIRONMENT_IDENTITY_BIND_SESSION[In review: native bind_session grants]
@@ -1685,8 +1685,7 @@ cost. **Question for review:** is the payoff lighter tests (O1 and O2), or envir
 Kubernetes as a product capability (O3), which changes the
 [principles](../docs/principles.md)' Kubernetes baseline? Implementation waits on the answer;
 `PRIVILEGED_BACKEND_AUTH_DESIGN` remains independently decidable. The selected Gateway replica
-contract and its staged connection-Lease removal are tracked in section 12; they do not decide the
-broader Kubernetes direction.
+contract is summarized in section 12; it does not decide the broader Kubernetes direction.
 
 ### `BUILD_BOX_BAZEL` — build Sandboxes can run Bazel
 
@@ -2414,14 +2413,13 @@ after the History representation decision, over journal records?
 
 The Gateway proxies the runner's `Runner` service with per-method authorization; commands use
 Dispatcher and typed Runner RPCs. The Sandbox Controller's authenticated passive watch binds the
-Runtime workload UID before it publishes facts. The receiver contract permits any authenticated
-Gateway replica to call with the bound Sandbox/incarnation/boot identity and an absent or zero
-epoch; legacy nonzero call and watch epochs remain temporarily supported for that same UID. The
-[runtime state observation plan](runtime_state_observation.md) records the contract and rollout.
-The direct Controller reader and Lease-fact removal landed in #16324 and #16328; the receiver
-binding and independent-watch compatibility landed in #16345. The remaining work is staged: pin and
-validate the receiver before the independent-connection Gateway image, route caller defaults only
-after that image is pinned, then remove the old route records after all callers have moved.
+Runtime workload UID before it publishes facts. Merged #16365
+(`efacbf509178221d60e392168ba812aff360beae`) completes independent Gateway observation and
+stable-Service routing. Gateway calls use the bound Sandbox/incarnation/boot identity; observation
+loss does not revoke another replica's calls or Runtime-owned admitted work. No Gateway connection
+Lease or per-Sandbox control Service/EndpointSlice creation remains. The
+[runtime state observation plan](runtime_state_observation.md) records the image gates for final
+RBAC and protocol cleanup. Dispatcher delivery Leases remain a separate scheduling protocol.
 
 The [service-boundary contract](../docs/service_boundaries.md) and [Runner Gateway README](../runner_gateway/README.md)
 describe the current proxy. Live `Runner.ListSessions` remains part of the app and Notification
@@ -2431,9 +2429,7 @@ service caller contract. The separate destination-authority decision
 ```mermaid
 flowchart TD
     RUNNER_OBSERVATION_READINESS_RACE[Candidate: investigate runner readiness and routing race]
-    RUNNER_GATEWAY_CUTOVER_ROLLOUT[Held: Runtime inventory then Gateway receiver pin then stable-Service caller rollout]
-    RUNNER_CONNECTION_LEASE_CLEANUP[Blocked: remove compatibility RBAC and protocol after route-removal image pin]
-    RUNNER_GATEWAY_CUTOVER_ROLLOUT --> RUNNER_CONNECTION_LEASE_CLEANUP
+    RUNNER_GATEWAY_SETTINGS_CLEANUP[Held: remove unused proxy_port and Pod-IP env after image rollout]
 ```
 
 ### `RUNNER_OBSERVATION_READINESS_RACE` — resolve intermittent runner readiness diagnostics
@@ -2457,36 +2453,20 @@ replica, selected Service endpoint, and local observer/connection state at the f
 PR #14851 adds a bounded retry for transient `UNAVAILABLE` in the test's read-only `ListSessions`
 poll. This handles the test poll only; it does not establish that the publication race caused the
 original same-name-replacement failure or prove the underlying failure is fixed. Do not retry
-mutations with uncertain outcomes. Keep this investigation separate from the selected replica-ownership
-contract and its follow-on implementation below.
+mutations with uncertain outcomes. Keep this investigation separate from the selected route contract and the independent Gateway
+settings cleanup below.
 **Exit:** either capture evidence that distinguishes the remaining failure boundary if the failure
 recurs, or close the incident follow-up if ordinary use shows no recurrence. Preserve UID/incarnation/boot fencing and stale-call denial.
 
-### `RUNNER_GATEWAY_CUTOVER_ROLLOUT` — operational holds for the prepared cutover
+### `RUNNER_GATEWAY_SETTINGS_CLEANUP` — remove obsolete Gateway settings
 
-**In flight, 2026-11-14: independent Gateway observers, stable-Service caller routing, then route
-publication removal are prepared as separate PRs in this batch.** The #16345 Runtime receiver is
-included in runner-disk `devel-20261114071615-9e1f8fe` on fresh devel; live Runtime provenance still needs operator
-verification before zero-epoch Gateway deployment. The [rollout plan](runtime_state_observation.md#migration-and-rollback)
-lists backend-specific inventory evidence. Firecracker suspend/resume preserves its Runtime
-process and cannot upgrade an older receiver; a retained old checkpoint keeps this gate closed
-until the operator selects a state-preserving path.
-
-Pin the independent-observer Gateway image before changing caller target settings. Keep legacy
-Lease/epoch/EndpointSlice publication for old callers until every caller process uses the stable
-Service; then deploy route-publication removal. No Runtime-dials-Gateway or legacy-wire fallback
-is added. Preserve Sandbox/incarnation/boot fencing, per-method authorization, retained work and
-History, and uncertain outcomes without replay. Exit: all three rollout gates verified, required
-bootstrap/idle/quiesce k3s suites and deterministic two-replica/stale-call checks pass. These are
-operational holds for this batch, not additional implementation tasks.
-
-### `RUNNER_CONNECTION_LEASE_CLEANUP` — remove final connection-Lease compatibility
-
-**Blocked on `RUNNER_GATEWAY_CUTOVER_ROLLOUT` and the route-removal Gateway/Controller image pins.**
-In a later PR, remove obsolete Lease/EndpointSlice/control-Service permissions and legacy epoch
-fields/tolerance after no deployed image or supported rollback needs them. Keep Controller leader
-election and Dispatcher delivery Lease permissions. Exit: obsolete permissions and Runtime epoch
-compatibility are gone.
+**Held until the current Gateway image and manifest rollout is active; separate stacked PR.** Remove
+the accepted `proxy_port` setting and the unused Pod-IP DownwardAPI environment binding after
+settings deployed by the image containing this cleanup no longer include them. The current change
+stops emitting `proxy_port` and removes Gateway Pod-IP reads, while retaining the decoder field and
+manifest environment binding for the rollout. This is separate from the final Runtime protocol and
+RBAC cleanup. **Exit:** deployed settings no longer provide either value, and the settings reader
+rejects the removed key.
 
 ## Scope and retirement of stale gates
 
@@ -3970,20 +3950,20 @@ no wake budget (07:41 UTC, card "No budget for explicit resume"). The
 [Go reorganization plan](https://agentydragon.github.io/ducktape/agentplane-organization/) holds the
 evidence and line-level steps for every track below; its stages are ordered by certainty.
 
-| Plan stage                         | DAG node                                                                                                                                                                                                                                                           |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1. Leftovers and the Gateway Lease | Leftovers landed (`REFACTOR_COHERENCE_AUDIT`); Lease removal is [section 12](#12-the-runner-gateway-serves-the-runners-own-service)                                                                                                                                |
-| 2. Layout under any service map    | `GO_LAYOUT_FIXES`                                                                                                                                                                                                                                                  |
-| 3. The two-binary moves            | `ENVIRONMENTS_DIRECTORY`, `SANDBOX_IDENTITY_RECHECK`, `EXPLICIT_RESUME_BUDGET_REMOVAL`, `ENVIRONMENT_SERVICE_TO_ENVIRONMENTS`, `RUNTIME_PROXY_TO_ENVIRONMENTS`, `SESSIONS_BINARY_DIRECTORY`; `orchestration_v1` retirement is `SESSION_TOOL_SURFACE_CONSOLIDATION` |
-| 4. Local extractions               | `GO_LOCAL_EXTRACTIONS`                                                                                                                                                                                                                                             |
-| 5. Waiting on service decisions    | `NOTIFICATION_SERVICE_SPLIT`, `DISPATCHER_PERSISTENCE_MODEL_DESIGN`, `JOURNAL_REPRESENTATION_DESIGN`, `SERVICE_SETTINGS_RETHINK`                                                                                                                                   |
-| 6. Deferred                        | `PRIVILEGED_BACKEND_AUTH_DESIGN` (moves no files), `PROTO_PACKAGE_ALIGNMENT`                                                                                                                                                                                       |
+| Plan stage                      | DAG node                                                                                                                                                                                                                                                           |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1. Pre-cutover leftovers        | Leftovers landed (`REFACTOR_COHERENCE_AUDIT`); Gateway routing cleanup is complete in merged #16365                                                                                                                                                                |
+| 2. Layout under any service map | `GO_LAYOUT_FIXES`                                                                                                                                                                                                                                                  |
+| 3. The two-binary moves         | `ENVIRONMENTS_DIRECTORY`, `SANDBOX_IDENTITY_RECHECK`, `EXPLICIT_RESUME_BUDGET_REMOVAL`, `ENVIRONMENT_SERVICE_TO_ENVIRONMENTS`, `RUNTIME_PROXY_TO_ENVIRONMENTS`, `SESSIONS_BINARY_DIRECTORY`; `orchestration_v1` retirement is `SESSION_TOOL_SURFACE_CONSOLIDATION` |
+| 4. Local extractions            | `GO_LOCAL_EXTRACTIONS`                                                                                                                                                                                                                                             |
+| 5. Waiting on service decisions | `NOTIFICATION_SERVICE_SPLIT`, `DISPATCHER_PERSISTENCE_MODEL_DESIGN`, `JOURNAL_REPRESENTATION_DESIGN`, `SERVICE_SETTINGS_RETHINK`                                                                                                                                   |
+| 6. Deferred                     | `PRIVILEGED_BACKEND_AUTH_DESIGN` (moves no files), `PROTO_PACKAGE_ALIGNMENT`                                                                                                                                                                                       |
 
 The stage 3 moves are not released; `SANDBOX_IDENTITY_RECHECK` is.
 
 ```mermaid
 flowchart LR
-    RUNNER_CONNECTION_LEASE_CLEANUP[Section 12: Gateway Lease removal]
+    RUNNER_GATEWAY_SETTINGS_CLEANUP[Section 12: Gateway settings follow-up]
     PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: service SVIDs, section 15]
     GO_LAYOUT_FIXES[Candidate: stage 2 layout fixes]
     ENVIRONMENTS_DIRECTORY[Ready: Sandbox Controller moves to environments/]
@@ -3999,7 +3979,6 @@ flowchart LR
     SANDBOX_IDENTITY_RECHECK --> ENVIRONMENT_SERVICE_TO_ENVIRONMENTS
     EXPLICIT_RESUME_BUDGET_REMOVAL --> ENVIRONMENT_SERVICE_TO_ENVIRONMENTS
     ENVIRONMENTS_DIRECTORY --> RUNTIME_PROXY_TO_ENVIRONMENTS
-    RUNNER_CONNECTION_LEASE_CLEANUP --> RUNTIME_PROXY_TO_ENVIRONMENTS
     PRIVILEGED_BACKEND_AUTH_DESIGN --> RUNTIME_PROXY_TO_ENVIRONMENTS
     ENVIRONMENT_SERVICE_TO_ENVIRONMENTS --> SESSIONS_BINARY_DIRECTORY
     RUNTIME_PROXY_TO_ENVIRONMENTS --> SESSIONS_BINARY_DIRECTORY
@@ -4064,8 +4043,7 @@ per-method authorization unchanged.
 
 ### `RUNTIME_PROXY_TO_ENVIRONMENTS` — the Runtime proxy and Executor move into Environments
 
-**Agreed direction; not released.** After the Gateway Lease removal (section 12) the proxy and
-Executor keep no per-Sandbox state, and the Dispatcher already calls the proxy over the network, so
+**Agreed direction; not released.** The Dispatcher already calls the proxy over the network, so
 the move adds no hop. The proxy grants `CreateSession`, `SubmitInput`, `ChangeModel`,
 `ChangeReasoningEffort` and `InterruptTurn` to the Sessions binary's service SVID instead of the
 combined Gateway account; receivers before senders. **Exit:** Runtime calls reach Environments

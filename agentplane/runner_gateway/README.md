@@ -6,8 +6,8 @@ resume and Dispatcher automatic wake use the shared lifecycle manager. Automatic
 effective caller and applies the Sandbox's `wakeOnSend` setting and the configured `wake_callers` grant.
 EnvironmentService and Dispatcher share the Gateway listener and Dispatcher TokenReview audience.
 The Gateway dials each Runner's native gRPC server on private port `9090`. Every Gateway replica
-independently opens a zero-epoch `WatchState` to each current Runtime and may serve calls for it;
-there is no Gateway connection Lease, allocated epoch or per-Sandbox `-control` EndpointSlice.
+independently opens a `WatchState` to each current Runtime and may serve calls for it; no Gateway
+connection Lease or per-Sandbox `-control` EndpointSlice participates in routing.
 Callers use the stable `runner-gateway` Service. Each Gateway resolves the live Sandbox and
 workload, then calls the Runtime with the Sandbox UID, current workload Pod UID and boot ID
 observed from that Runtime. The Sandbox Controller's authenticated direct watch binds the workload
@@ -15,8 +15,6 @@ UID before facts are published. The Runtime rejects stale Sandbox, incarnation o
 the shared Gateway SVID cannot select or advance the binding. The Gateway's per-method caller
 authorization remains in force, and uncertain mutations are never replayed automatically.
 
-The Runtime receiver retains its legacy nonzero watch/call epoch tolerance for the rollback window;
-the Gateway does not allocate or send those epochs.
 Dispatcher delivery Leases are unchanged.
 
 One TLS gRPC listener serves Dispatcher, EnvironmentService, Gateway proxy, Executor and health
@@ -42,9 +40,9 @@ trust-manager. Required `runner_security.mode: mtls` uses a `tls` block naming t
 `cert_file`, `key_file` and `ca_file`. The Gateway identity
 is `spiffe://agentplane/runner-gateway`; runner identities bind the Sandbox UID and its current
 controller-assigned credential ID. Mutual TLS plus Sandbox UID, workload incarnation and Runtime
-boot ID fence every direct Runner RPC. Each replica opens an independent zero-epoch Runtime watch;
-the retained receiver epoch field is compatibility for older Gateway binaries during rollback and
-does not participate in the new call fence.
+boot ID fence every direct Runner RPC. Each replica opens an independent Runtime watch. The Runtime
+protocol has no Gateway connection epoch; observation loss does not revoke another replica's calls
+or Runtime-owned admitted work.
 
 Local tests may explicitly select `runner_security: {mode: insecure}`, with the Runner's
 `control.security` set to the same value. This disables transport encryption and peer authentication;
@@ -57,11 +55,11 @@ Controller still provisions certificates, so cluster and k3s stacks retain real 
 **Selected by Rai, 2026-11-14 02:36 UTC, relayed by Claude.** Callers route through the stable
 `runner-gateway` Service, so any authenticated Gateway replica may receive a call and connect
 directly to the current Runtime. No per-Sandbox `<sandbox>-control` EndpointSlice, Gateway
-connection Lease or connection-epoch allocation participates in routing. The Controller-bound
+connection Lease participates in routing. The Controller-bound
 Sandbox UID and workload Pod UID plus the Runtime's boot ID fence each call. The shared Gateway SVID
 does not let a replica choose or advance an incarnation. Per-method caller authorization remains,
 and uncertain mutations are never replayed automatically. The Dispatcher delivery Lease is separate
-and unchanged. The old receiver protocol remains available through the Gateway rollback window.
+and unchanged.
 
 The Dispatcher role retains its PostgreSQL queue, command IDs, per-Sandbox delivery Leases
 and database ownership generations. Those delivery Leases are separate from Gateway-to-Runtime
@@ -82,8 +80,10 @@ conversation and from Runner admission.
 
 - `main.go`, `config.go`: process and listener wiring, and the settings (the required
   `AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE` path, with all non-secret settings in that file;
-  [`settings.py`](settings.py) is the authoring schema). Only the Dispatcher database URL Secret,
-  Pod IP from the Downward API and optional Pod name are runtime environment inputs. Generic
+  [`settings.py`](settings.py) is the authoring schema). The Dispatcher database URL Secret and
+  Pod name are runtime environment inputs. The deployment still carries an unused Pod-IP
+  DownwardAPI binding and `proxy_port` remains accepted by the settings decoder pending the
+  separate strict-settings cleanup after the manifest rollout. Generic
   `AGENTPLANE_RUNNER_GATEWAY_*` variables do not override file values. The independent `delegation`
   policy names an Actions actor and exact full RPC methods; it can include the
   `EnvironmentService` list/get/watch methods and, when separately configured, `ResumeEnvironment`, without

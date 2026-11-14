@@ -18,8 +18,8 @@ The service definitions are `env/runtime/control/environment_runtime.proto` and 
 ## State observation and fencing
 
 The leader-elected Sandbox Controller independently opens `WatchState(observe_only=true)` directly
-to each accepted incarnation, authenticating with its dedicated client SVID. This stream carries no
-Gateway epoch and grants no command or Executor authority. Its authenticated request names the
+to each accepted incarnation, authenticating with its dedicated client SVID. This stream grants no
+command or Executor authority. Its authenticated request names the
 Sandbox UID and current workload Pod UID; for a VM, the incarnation is the virt-launcher Pod UID.
 Runtime uses this watch to bind the incarnation for its process lifetime and completes ordinary
 lifecycle adoption before returning the first snapshot. Each Runtime process has a fresh boot ID.
@@ -34,8 +34,8 @@ grace. Reconnects start a full idle timer, even when the Runtime reports the sam
 Quiesce attempts remain persisted, and an unobserved published incarnation must still seal before
 stop or deletion. Bootstrap failure remains terminal for its incarnation.
 
-Every Gateway replica independently opens a direct `WatchState` to the current Runtime with no
-connection epoch. The Controller's authenticated `observe_only` watch binds the Runtime to the
+Every Gateway replica independently opens a direct `WatchState` to the current Runtime. The
+Controller's authenticated `observe_only` watch binds the Runtime to the
 Sandbox UID and accepted workload Pod UID before Gateway watches arrive; a Gateway can observe that
 binding but cannot select or advance it. Each replica learns the Runtime boot ID from its own
 authenticated watch and can serve calls for the current incarnation. The stable `runner-gateway`
@@ -45,11 +45,9 @@ Replacement observers wait for their predecessor to exit before publishing their
 
 Unary Runner calls and typed `Executor` calls carry the Sandbox UID, incarnation UID and Runtime
 boot ID. Runtime checks those values against its Controller-bound identity and process boot; stale
-Sandbox, incarnation or boot calls fail before admission. The receiver retains legacy nonzero epoch
-tolerance for older Gateway binaries during the rollback window, but the selected Gateway call
-contract allocates and sends no epoch. Loss of one replica's observation does not revoke another
-replica's connection or cancel Runtime-owned admitted work. `ABORTED` remains the explicit refusal
-of new work for a workload incarnation.
+Sandbox, incarnation or boot calls fail before admission. Loss of one replica's observation does not
+revoke another replica's connection or cancel Runtime-owned admitted work. `ABORTED` remains the
+explicit refusal of new work for a workload incarnation.
 `Executor.OpenSession` holds the Runner-side Codex connection with a server stream; typed unary
 process and file RPCs use its opaque session ID. JSON-RPC framing, initialization and native
 notifications stay in the Runner adapter. Both hops use the same sandbox-owned
@@ -215,11 +213,11 @@ the operator.
 
 ## Runtime routing
 
-Gateway replicas connect to the current Runtime using its Pod IP and private listener. The selected
-route does not use a per-Sandbox `<sandbox>-control` EndpointSlice or connection Lease to decide
-which replica may call. All caller traffic uses the stable `runner-gateway` Service; the Runtime
-identity in each call provides stale-Sandbox, stale-workload and stale-process fencing. The
-Dispatcher delivery Lease is unrelated and remains part of durable command scheduling.
+Gateway replicas connect to the current Runtime using its Pod IP and private listener. No
+per-Sandbox `<sandbox>-control` EndpointSlice or connection Lease decides which replica may call.
+All caller traffic uses the stable `runner-gateway` Service; the Runtime identity in each call
+provides stale-Sandbox, stale-workload and stale-process fencing. The Dispatcher delivery Lease is
+unrelated and remains part of durable command scheduling.
 
 ## Lifecycle operations
 
