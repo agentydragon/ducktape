@@ -302,6 +302,10 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 				// Install the callable connection before publishing verified boot identity.
 				err = g.connections.accept(connection)
 				if err == nil {
+					span.AddEvent("runner.control.ready", trace.WithAttributes(
+						attribute.String("sandbox.incarnation_uid", destination.podUID),
+						attribute.String("runtime.boot_id", response.EnvironmentRuntimeBootId),
+					))
 					err = g.records.recordBootID(validateCtx, destination.identity, epoch, response.EnvironmentRuntimeBootId)
 				}
 			}

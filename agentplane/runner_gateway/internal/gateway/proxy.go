@@ -8,6 +8,8 @@ import (
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -60,18 +62,23 @@ func (p *environmentRuntimeProxy) connection(ctx context.Context, writes, allowS
 		},
 	}, writes, allowSuspending)
 	if err != nil {
+		trace.SpanFromContext(ctx).SetAttributes(attribute.String("runtime.proxy.route", "destination_unavailable"))
 		return nil, unavailable(err)
 	}
 	if len(expectedIncarnationUIDs) == 1 && expectedIncarnationUIDs[0] != view.incarnation.UID {
+		trace.SpanFromContext(ctx).SetAttributes(attribute.String("runtime.proxy.route", "expected_incarnation_mismatch"))
 		return nil, status.Error(codes.Aborted, "Sandbox runner incarnation changed")
 	}
 	connection, err := g.connections.holder(view.identity.Uid)
 	if err != nil {
+		trace.SpanFromContext(ctx).SetAttributes(attribute.String("runtime.proxy.route", "connection_unavailable"))
 		return nil, err
 	}
 	if view.incarnation == nil || !proto.Equal(connection.identity, view.identity) || connection.podUID != view.incarnation.UID {
+		trace.SpanFromContext(ctx).SetAttributes(attribute.String("runtime.proxy.route", "incarnation_mismatch"))
 		return nil, status.Error(codes.Unavailable, "runner connection belongs to another incarnation")
 	}
+	trace.SpanFromContext(ctx).SetAttributes(attribute.String("runtime.proxy.route", "forwarded"))
 	return connection, nil
 }
 
