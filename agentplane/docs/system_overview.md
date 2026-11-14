@@ -207,17 +207,16 @@ embeds files through an embedding endpoint and owns its own PostgreSQL database
 - **Sessions and Threads.** A Session is a runner's raw Event stream; a Thread is its conversation
   view, folded by the History Service. Runners push Events to the History Service, the only way into
   retained history.
-- **Runner control uses native gRPC.** The Gateway dials each runner's private server using mTLS.
-  It validates the certificate against the active Sandbox/workload and retains `<sandbox>-control`
-  routing and `<sandbox>-environment-runtime` Leases solely for legacy route publication during caller
-  rollout. Current callers use the stable `runner-gateway` Service.
-  Every replica independently watches and calls the Runtime without a connection epoch. The Sandbox Controller's
-  direct mTLS `observe_only` watch supplies the accepted workload UID and binds it for the Runtime
-  process before the first facts snapshot; the Controller keeps those facts in memory per
-  Sandbox, incarnation and boot. Gateway watches cannot select or replace that binding. The Gateway
-  publishes only legacy routing identity and renewal metadata to its Lease; it grants no Runtime call authority. History push and ordinary Sandbox egress retain
-  their sidecar or VM relay paths; History terminates and verifies the Runtime SVID itself
-  ([runner control](runner_control.md)).
+- **Runner control uses native gRPC.** Every Gateway replica independently dials each current
+  Runtime's private server using mTLS and opens a zero-epoch state watch. Its calls carry the live
+  Sandbox UID, accepted workload Pod UID and observed Runtime boot ID. The Sandbox Controller's
+  direct mTLS `observe_only` watch binds the workload UID before the first facts snapshot; the
+  Controller keeps those facts in memory per Sandbox, incarnation and boot. Gateway watches cannot
+  select or replace that binding. Callers use the stable `runner-gateway` Service; no Gateway
+  connection Lease or per-Sandbox `<sandbox>-control` EndpointSlice decides Runtime call ownership.
+  The Runtime protocol retains epoch compatibility for older Gateway images during the rollback
+  window ([runner control](runner_control.md)). History push and ordinary Sandbox egress retain
+  their sidecar or VM relay paths; History terminates and verifies the Runtime SVID itself.
 - **Telemetry uses Alloy as its collector.** SDK-instrumented services export OTLP/gRPC to Alloy.
   Browser spans post to the same-origin App relay, which forwards OTLP/HTTP to Alloy. Runner spans use
   the sidecar's local telemetry route; VM guest spans use the launcher relay's guest gateway route.
@@ -240,8 +239,6 @@ Runner Gateway read Sandbox inventory directly. The Runner Gateway implements Di
 openings and durable command admission/delivery alongside the control stream; the app reads live
 runner inventory and diagnostics through the Runner Proxy, which checks the live Sandbox name, UID
 and owner. The Runner starts and resumes its own harnesses.
-
-Status, open work and design gates: [`plans/`](../plans/README.md).
 
 ## Focused diagrams
 
@@ -457,8 +454,10 @@ flowchart LR
 Runtime owns the components and one desired lifecycle revision. Native Session admission rechecks
 that accepted revision and the public caller epoch before durable work. Component observations
 prove native cleanup; Execution fencing precedes journal sealing, and exact durable History ACKs
-precede delivery/journal closure and owner release. The external control Lease and epoch boundaries
-remain in Runtime's endpoint. Central sampler remains a separate control-plane process.
+precede delivery/journal closure and owner release. The Runtime endpoint still accepts legacy
+nonzero connection epochs for Gateway rollback compatibility; zero-epoch calls use the immutable
+Controller-bound Sandbox and incarnation identity plus the Runtime boot ID. Central sampler remains
+a separate control-plane process.
 
 ## Codex execution inside a Sandbox
 

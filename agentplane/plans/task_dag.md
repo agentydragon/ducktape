@@ -2420,9 +2420,11 @@ Dispatcher and typed Runner RPCs. The Sandbox Controller's authenticated passive
 Runtime workload UID before it publishes facts. The receiver contract permits any authenticated
 Gateway replica to call with the bound Sandbox/incarnation/boot identity and an absent or zero
 epoch; legacy nonzero call and watch epochs remain temporarily supported for that same UID. The
-[runtime state observation plan](runtime_state_observation.md) records the contract and rollout. The
-direct Controller reader migration merged in #16324; #16328 removes Lease fact publication after
-the new Controller is running on staging. Gateway connection removal remains pending.
+[runtime state observation plan](runtime_state_observation.md) records the contract and rollout.
+The direct Controller reader and Lease-fact removal landed in #16324 and #16328; the receiver
+binding and independent-watch compatibility landed in #16345. The remaining work is staged: pin and
+validate the receiver before the independent-connection Gateway image, route caller defaults only
+after that image is pinned, then remove the old route records after all callers have moved.
 
 The [service-boundary contract](../docs/service_boundaries.md) and [Runner Gateway README](../runner_gateway/README.md)
 describe the current proxy. Live `Runner.ListSessions` remains part of the app and Notification

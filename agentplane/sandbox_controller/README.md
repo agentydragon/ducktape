@@ -42,7 +42,7 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
   check them directly. The pinned upstream `controller-gen` binary and Go SDK run with declared
   Bazel inputs, so no generated Go file is committed.
 - [`controller.go`](internal/controller/controller.go): one reconcile per `Sandbox`. Its VM (`Owns`), its ConfigMap,
-  Service and WorkloadCredential, its Pods, VMI and state PVC (by the Sandbox label), and the
+  WorkloadCredential, its Pods, VMI and state PVC (by the Sandbox label), and the
   templates and Identity it names (by a field index) map back to it.
 - [`vm.go`](internal/controller/vm.go): a VM Sandbox's VirtualMachine (types from `kubevirt.io/api`), its run strategy,
   and the VMI and virt-launcher Pod its status comes from.
@@ -55,9 +55,11 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
   the next start; a running incarnation with one is replaced.
 - [`cmd/main.go`](cmd/main.go): the manager, its cache limited to one namespace.
 - [`cache.go`](internal/controller/cache.go): the cache holds only objects carrying the Sandbox label (ConfigMaps,
-  Services and the other kinds it creates or watches), every Identity and WorkloadCredential in the
+  and the other kinds it creates or watches), every Identity and WorkloadCredential in the
   namespace and Pod Events. Runtime facts come only from direct in-memory observation.
-  Connection Lease reads are no longer cached; their RBAC awaits the deployed image pin.
+  Connection Lease reads are no longer cached. Lease RBAC is retained through the Gateway routing
+  cutover and removed in a follow-up after the final Gateway image pin; leader election continues
+  to use its own Lease.
   RBAC cannot select by label, so the Role
   still grants `list`/`watch` on those kinds.
 
@@ -126,9 +128,9 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   ineligible immediately; connectivity keeps a one-minute grace. Reopening a stream restarts its
   full idle timer, including when `idle-since` is unchanged. Quiesce retry deadlines remain durable;
   only fresh observed quiescence or an acknowledged quiesce RPC completes a seal. Bootstrap failure
-  stays terminal for that incarnation. Every Gateway replica can now call independently with Sandbox UID, incarnation and boot ID;
-  the current legacy route still uses its connection Lease
-  and control EndpointSlice; its legacy nonzero watch can observe only the Controller-bound UID.
+  stays terminal for that incarnation. Every Gateway replica independently observes the
+  Controller-bound Runtime UID with a zero-epoch watch and may call using the current Sandbox UID,
+  workload UID and Runtime boot ID.
 - **Gotcha:** a deleted Sandbox whose runner cannot seal stays in `Quiescing`. To give up on the seal,
   remove the finalizer by hand: the PVC is owned, so it goes with the Sandbox, and the Pod or VM
   with it.

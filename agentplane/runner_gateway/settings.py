@@ -74,7 +74,10 @@ class Settings(BaseModel):
         description="Verify the Session Dispatcher SVID on this Gateway's named control-Service calls."
     )
     proxy_port: int = Field(
-        default=8080, ge=1, le=65535, description="Port advertised in each Sandbox control EndpointSlice."
+        default=8080,
+        ge=1,
+        le=65535,
+        description="Legacy control EndpointSlice port, retained until the route-removal image is pinned.",
     )
     runner_control_target_template: str = Field(
         default="runner-gateway.{namespace}.svc:8080",

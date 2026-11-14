@@ -1,35 +1,36 @@
 # Gateway connection and authorization contracts
 
-## Independent Runtime observations
+## Runtime observation and independent Gateway connections
 
-Every authenticated Gateway replica may independently observe and call one Runtime. The Sandbox
-Controller binds its Sandbox UID and workload Pod UID through its dedicated observe-only watch;
-Gateway watches cannot establish or advance that binding. Gateway watches send no connection epoch.
-Calls carry the bound Sandbox UID, incarnation UID and boot ID. Runtime rejects stale fences before
-admission. Removing one replica's observation cannot revoke another replica's calls.
+Every Gateway replica resolves the current Sandbox and workload independently and opens a direct
+`WatchState` to the Runtime on private port `9090`. It uses the Sandbox UID and current workload Pod
+UID from Kubernetes and requires the response to match both identities and return a nonempty Runtime
+boot ID. A VM's workload Pod is its current virt-launcher Pod. A zero or absent watch epoch can only
+observe the incarnation already bound by the Sandbox Controller's authenticated direct watch; the
+Gateway cannot establish or advance that binding. Each replica can then serve the Runtime connection
+locally. Gateway availability does not depend on per-Sandbox Lease ownership, EndpointSlices or an
+epoch allocator.
 
-Observation loss removes only that replica's local callable connection. Reconnect validates the
-current workload and learns its boot ID again. Replacement observers wait for their canceled
-predecessor to exit before installing a new local connection. Admitted Runtime work remains owned
-by Runtime; an uncertain mutation is never automatically replayed.
+Each forwarded RPC is fenced by the current Sandbox UID, workload Pod UID and Runtime boot ID.
+Those values come from the Gateway's live Kubernetes inventory and its authenticated Runtime
+observation, never from caller metadata. Runtime rejects a stale Sandbox, workload incarnation or
+process boot before admitting work. Loss of one Gateway's observation closes that replica's local
+connection; it does not revoke another replica's connection or cancel Runtime-owned admitted work.
+An uncertain mutation is never replayed after reconnect or failover.
 
-## Legacy route handoff
+Callers connect through the stable `runner-gateway` Service. The per-Sandbox `<sandbox>-control`
+EndpointSlice and Gateway-owned connection Lease are not part of the route. Dispatcher delivery
+Leases continue to coordinate queue delivery independently.
 
-The connection Lease and `<sandbox>-control` EndpointSlice temporarily select a destination for
-existing callers. Their epoch is a Kubernetes publication fence only; it is never sent to Runtime
-and grants no call authority. Each replica becomes callable before attempting route publication,
-so another replica's route claim or a publication error does not block its direct calls.
-
-Orderly shutdown closes local traffic before releasing its exact route claim, fenced by Sandbox
-owner, Lease UID, holder and route epoch with resource-version conflict detection. A delayed release
-cannot clear a successor. Contenders measure expiry on their own monotonic clocks. Route publication
-is retried on snapshots and heartbeats. The Sandbox Controller consumes lifecycle facts directly;
-route records prove neither readiness, idleness nor quiescence.
+The generated Runtime protocol still carries `connection_epoch` for the old Gateway rollback
+window. Legacy nonzero watch and call epochs remain accepted by the receiver for the already-bound
+incarnation, but this Gateway sends no allocated epoch. Remove that receiver compatibility and its
+RBAC only in the follow-on cleanup after the old Gateway rollback window closes.
 
 ## Environment Runtime proxy authorization
 
 The public Gateway authenticates Gateway-audience Kubernetes tokens with singular Pod-name and
-Pod-UID proof. All calls retain Sandbox UID/owner and current Runtime incarnation fencing.
+Pod-UID proof. All calls retain Sandbox UID/owner and current Runtime incarnation and boot fencing.
 Callers may additionally provide one non-empty `x-agentplane-incarnation-uid` metadata value to
 require a specific Runtime incarnation. The Gateway resolves and validates the current Sandbox and
 Pod first, then returns `Aborted` without forwarding if that incarnation differs. A duplicate or

@@ -5,19 +5,27 @@ The Runner Gateway combines durable Session Dispatcher admission and delivery, t
 resume and Dispatcher automatic wake use the shared lifecycle manager. Automatic wake preserves the
 effective caller and applies the Sandbox's `wakeOnSend` setting and the configured `wake_callers` grant.
 EnvironmentService and Dispatcher share the Gateway listener and Dispatcher TokenReview audience.
-The Gateway dials each Runner's native gRPC
-server on private port `9090`. One TLS gRPC listener serves Dispatcher, EnvironmentService,
-Gateway proxy, Executor and health methods, with independent per-method authorization.
-Only the Pod-bound Gateway/Dispatcher workload can proxy Runtime Session creation and commands;
-`gateway_callers` grants read-only diagnostics. The selected Runtime call contract allows any
-authenticated Gateway replica to connect to and call a Runtime; there is no per-Sandbox connection
-owner or connection epoch in that contract. The Runtime fences calls by Sandbox UID, workload
-incarnation and Runtime boot ID, all bound from a Runtime-trusted source; the shared Gateway SVID
-does not authorize a replica to choose a replacement incarnation. The current image retains its Lease and route epoch solely for legacy caller routing. Startup reviews `runner_token_file` with the Gateway
-audience and verifies its Pod name, current UID and ServiceAccount against Kubernetes before serving.
-The Kubernetes API must answer that TokenReview and Pod read; failure prevents startup.
-See the [proxy contract](internal/gateway/SPEC.md). The Sandbox
-Controller owns `Sandbox.status`.
+The Gateway dials each Runner's native gRPC server on private port `9090`. Every Gateway replica
+independently opens a zero-epoch `WatchState` to each current Runtime and may serve calls for it;
+there is no Gateway connection Lease, allocated epoch or per-Sandbox `-control` EndpointSlice.
+Callers use the stable `runner-gateway` Service. Each Gateway resolves the live Sandbox and
+workload, then calls the Runtime with the Sandbox UID, current workload Pod UID and boot ID
+observed from that Runtime. The Sandbox Controller's authenticated direct watch binds the workload
+UID before facts are published. The Runtime rejects stale Sandbox, incarnation or boot identities;
+the shared Gateway SVID cannot select or advance the binding. The Gateway's per-method caller
+authorization remains in force, and uncertain mutations are never replayed automatically.
+
+The Runtime receiver retains its legacy nonzero watch/call epoch tolerance for the rollback window;
+the Gateway does not allocate or send those epochs.
+Dispatcher delivery Leases are unchanged.
+
+One TLS gRPC listener serves Dispatcher, EnvironmentService, Gateway proxy, Executor and health
+methods, with independent per-method authorization. Only the Pod-bound Gateway/Dispatcher workload
+can proxy Runtime Session creation and commands; `gateway_callers` grants read-only diagnostics.
+Startup reviews `runner_token_file` with the Gateway audience and verifies its Pod name, current UID
+and ServiceAccount against Kubernetes before serving. The Kubernetes API must answer that
+TokenReview and Pod read; failure prevents startup. See the [proxy contract](internal/gateway/SPEC.md).
+The Sandbox Controller owns `Sandbox.status`.
 
 The required `rpc` settings block configures this shared TLS listener. It enables SPIFFE and
 Kubernetes bearer authentication, with exactly the Dispatcher and Gateway audiences. Dispatcher
@@ -26,16 +34,17 @@ the Gateway audience. Dispatcher and EnvironmentService methods also accept a ve
 SVID. Each method retains its existing caller allowlist, delegation, and effective-caller checks.
 Calls select one enabled credential: an invalid presented SVID cannot fall back to bearer
 authentication, and certificate plus authorization or delegation credentials are rejected as
-ambiguous. The Gateway's calls through each Sandbox control Service use `gateway_tls` to verify
-the Session Dispatcher server SVID and present only their projected Gateway bearer.
+ambiguous. The Gateway uses `gateway_tls` to verify the stable Runner Gateway and Dispatcher service
+peers and presents its projected Gateway bearer where required.
 
 Cluster and k3s Gateways and Runners use certificates from cert-manager and roots distributed by
 trust-manager. Required `runner_security.mode: mtls` uses a `tls` block naming the Gateway's client
 `cert_file`, `key_file` and `ca_file`. The Gateway identity
 is `spiffe://agentplane/runner-gateway`; runner identities bind the Sandbox UID and its current
-controller-assigned credential ID. Mutual TLS plus Sandbox UID, workload incarnation and Runner
-boot ID fence every direct Runner RPC. The Gateway connection Lease and epoch are temporary rollout
-compatibility, not part of the selected Runtime call fence.
+controller-assigned credential ID. Mutual TLS plus Sandbox UID, workload incarnation and Runtime
+boot ID fence every direct Runner RPC. Each replica opens an independent zero-epoch Runtime watch;
+the retained receiver epoch field is compatibility for older Gateway binaries during rollback and
+does not participate in the new call fence.
 
 Local tests may explicitly select `runner_security: {mode: insecure}`, with the Runner's
 `control.security` set to the same value. This disables transport encryption and peer authentication;
@@ -46,16 +55,13 @@ Controller still provisions certificates, so cluster and k3s stacks retain real 
 ## Replica ownership decision
 
 **Selected by Rai, 2026-11-14 02:36 UTC, relayed by Claude.** Callers route through the stable
-`runner-gateway` Service, so any authenticated Gateway replica may receive the call and connect to
-the current Runtime. Remove the per-Sandbox `<sandbox>-control` EndpointSlice, which currently routes
-to the replica holding the connection Lease. There is no singleton Gateway connection owner or
-connection epoch in the selected contract. Runtime fences each request by Sandbox UID, workload
-incarnation and boot ID, bound from a Runtime-trusted source; the shared Gateway SVID does not let a
-replica choose or advance an incarnation. Per-method caller authorization remains, and uncertain
-mutations are never replayed automatically. The Dispatcher delivery Lease is separate and unchanged.
-All replicas now independently observe and call the Controller-bound Runtime without a wire epoch.
-Callers now use the stable Service. The per-Sandbox route remains until all old caller processes
-have rolled out. Its Lease/epoch selects legacy routing only, never Runtime call ownership.
+`runner-gateway` Service, so any authenticated Gateway replica may receive a call and connect
+directly to the current Runtime. No per-Sandbox `<sandbox>-control` EndpointSlice, Gateway
+connection Lease or connection-epoch allocation participates in routing. The Controller-bound
+Sandbox UID and workload Pod UID plus the Runtime's boot ID fence each call. The shared Gateway SVID
+does not let a replica choose or advance an incarnation. Per-method caller authorization remains,
+and uncertain mutations are never replayed automatically. The Dispatcher delivery Lease is separate
+and unchanged. The old receiver protocol remains available through the Gateway rollback window.
 
 The Dispatcher role retains its PostgreSQL queue, command IDs, per-Sandbox delivery Leases
 and database ownership generations. Those delivery Leases are separate from Gateway-to-Runtime
@@ -64,8 +70,7 @@ no History Service client. The selected Controller ownership has its leader-elec
 Runtime state directly and keep lifecycle facts in memory. Runtime restart, workload replacement and
 same-name Sandbox replacement invalidate old calls through boot ID, incarnation UID and Sandbox UID.
 Observation loss makes facts stale; they cannot prove connectivity, quiescence or idleness. A fresh
-snapshot restores observation and resets the Controller's idle timer. The legacy connection Lease and EndpointSlice remain solely for existing caller routing.
-Loss of one Gateway observer affects its local connection, while other replicas remain callable.
+snapshot restores observation and resets the Controller's idle timer. Every Gateway observer has its own callable connection.
 
 Every Gateway forwards an execution mutation at most once. If the direct call loses its connection
 after the Runtime may have acted, its outcome is uncertain and the Gateway does not automatically
@@ -89,7 +94,7 @@ conversation and from Runner admission.
   `environment_launchers` grants Action brokers create-only authority with required caller origin.
   `CreateEnvironment` names the Identity the Sandbox acts as and binds no PolicySets: a launch
   creates the Identity and grants it, including the default sets, before calling it.
-- `internal/gateway/`: Runner connections, authenticated proxy, Sandbox/Pod validation and connection ownership.
+- `internal/gateway/`: direct Runner connections, authenticated proxy and Sandbox/Pod validation.
 - `internal/sandboxinventory/`: informer-backed Sandbox reads and the uncached Identity reader that supply the Dispatcher contract.
 - `dispatcher/`: durable admission, watch, delivery, guarded wake and scheduling ownership.
 - `migrations/`: Goose migrations for the Dispatcher database.

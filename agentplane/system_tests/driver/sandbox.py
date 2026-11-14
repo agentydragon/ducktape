@@ -34,7 +34,6 @@ from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 POD_TEMPLATE = "environment-tools"
 ENVIRONMENT_RUNTIME_CONTAINER = "environment-runtime"
-ENVIRONMENT_RUNTIME_LEASE_SUFFIX = "-environment-runtime"
 VM_TEMPLATE = "environment-vm"
 VM_WORKING_DIRECTORY = "/state/workspaces/accept"
 SANDBOX_READY_SECONDS = 300.0
@@ -396,15 +395,13 @@ async def _write_sandbox_diagnostics(
         except Exception as error:
             return {"error": repr(error)}
 
-    resource, lease, pods, controller_logs, gateway_logs = await asyncio.gather(
+    resource, pods, controller_logs, gateway_logs = await asyncio.gather(
         kubectl("get", "sandbox", name, "-o", "json"),
-        kubectl("get", "lease", f"{name}{ENVIRONMENT_RUNTIME_LEASE_SUFFIX}", "-o", "json"),
         kubectl("get", "pods", "-l", f"{GROUP}/sandbox={name}", "-o", "json"),
         kubectl("logs", "deployment/sandbox-controller", "--all-pods=true", "--tail=100", "--since=10m"),
         kubectl("logs", "deployment/runner-gateway", "--all-pods=true", "--tail=100", "--since=10m"),
     )
     diagnostic["kubernetes_sandbox"] = resource
-    diagnostic["environment_runtime_lease"] = lease
     diagnostic["sandbox_pods"] = pods
     diagnostic["sandbox_controller_logs"] = controller_logs
     diagnostic["runner_gateway_logs"] = gateway_logs

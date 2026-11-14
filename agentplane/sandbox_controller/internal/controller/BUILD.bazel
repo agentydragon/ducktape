@@ -7,7 +7,6 @@ go_library(
         "behavior.go",
         "cache.go",
         "claim.go",
-        "control_service.go",
         "controller.go",
         "environment_runtime_credential.go",
         "firecracker.go",

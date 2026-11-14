@@ -34,29 +34,22 @@ grace. Reconnects start a full idle timer, even when the Runtime reports the sam
 Quiesce attempts remain persisted, and an unobserved published incarnation must still seal before
 stop or deletion. Bootstrap failure remains terminal for its incarnation.
 
-Every Gateway replica independently watches the current Controller-bound Runtime with no epoch,
-validates the workload and boot ID, and can forward calls. Gateway watches cannot bind or advance
-the incarnation. Observation loss removes that replica's callable connection and starts a fresh
-attempt after one second; it does not revoke another replica's connection. Replacement observers
-wait for their predecessor to exit before publishing their local connection.
-
-Callers use the stable `runner-gateway` Service. During their rollout, old callers still use
-`<sandbox>-control`. The connection Lease and EndpointSlice temporarily
-select its destination, independently of Runtime call authority. Each replica attempts route
-publication after becoming callable; a live competing route claim does not block its own calls.
-Route metadata renews on Runtime snapshots and heartbeats. A contender takes over after observing
-an unchanged renewal for one Lease duration on its own clock. Orderly shutdown closes local traffic
-and releases its exact claim. These routing records carry no lifecycle facts. Quiesce and
-suspend-admission RPCs continue through the Gateway proxy.
+Every Gateway replica independently opens a direct `WatchState` to the current Runtime with no
+connection epoch. The Controller's authenticated `observe_only` watch binds the Runtime to the
+Sandbox UID and accepted workload Pod UID before Gateway watches arrive; a Gateway can observe that
+binding but cannot select or advance it. Each replica learns the Runtime boot ID from its own
+authenticated watch and can serve calls for the current incarnation. The stable `runner-gateway`
+Service routes callers to any replica. Observation loss removes that replica's callable connection
+and starts a fresh attempt after one second; it does not revoke another replica's connection.
+Replacement observers wait for their predecessor to exit before publishing their local connection.
 
 Unary Runner calls and typed `Executor` calls carry the Sandbox UID, incarnation UID and Runtime
-boot ID. Calls with an absent or zero `agentplane-connection-epoch` authorize against the
-Controller-bound identity, independently of Gateway watch lifetime; any authenticated Gateway
-replica may make them. A supplied nonzero epoch retains the legacy requirement for the matching,
-live Gateway watch. Stale Sandbox, incarnation, boot ID or legacy epoch fails before admission.
-Gateway observer loss no longer cancels epochless calls or their execution-session streams; admitted
-journal work remains Runtime-owned and continues independently. `ABORTED` remains the explicit
-refusal of new work for a workload incarnation.
+boot ID. Runtime checks those values against its Controller-bound identity and process boot; stale
+Sandbox, incarnation or boot calls fail before admission. The receiver retains legacy nonzero epoch
+tolerance for older Gateway binaries during the rollback window, but the selected Gateway call
+contract allocates and sends no epoch. Loss of one replica's observation does not revoke another
+replica's connection or cancel Runtime-owned admitted work. `ABORTED` remains the explicit refusal
+of new work for a workload incarnation.
 `Executor.OpenSession` holds the Runner-side Codex connection with a server stream; typed unary
 process and file RPCs use its opaque session ID. JSON-RPC framing, initialization and native
 notifications stay in the Runner adapter. Both hops use the same sandbox-owned
@@ -71,13 +64,11 @@ runner journal; a repeated ID with a different operation or payload fails `ALREA
 
 ## Runner proxy
 
-Every Gateway replica serves `agentplane.env.runtime.control.EnvironmentRuntime`
-on its public gRPC port. Callers reach any replica through the stable `runner-gateway` Service.
-The Sandbox's `<sandbox>-control` Service remains available for old caller processes during rollout. The proxy forwards
-unary calls over the runner gRPC connection and returns the runner's status and response.
+Every Gateway replica serves `agentplane.env.runtime.control.EnvironmentRuntime` on the shared gRPC
+listener and can forward unary calls over its own direct Runtime connection. Callers reach that
+listener through the stable `runner-gateway` Service.
 
-- **Sandbox.** The caller names it in the `x-agentplane-sandbox` header, the same name its target
-  carries; a gRPC server cannot see the dialed `:authority`. A missing or repeated header is
+- **Sandbox.** The caller names it in the `x-agentplane-sandbox` header. A missing or repeated header is
   `INVALID_ARGUMENT`, an unknown Sandbox `NOT_FOUND`.
 - **Expected identity.** Callers must supply `x-agentplane-sandbox-uid`,
   `x-agentplane-sandbox-owner-namespace` and `x-agentplane-sandbox-owner-name` exactly once.
@@ -88,8 +79,8 @@ unary calls over the runner gRPC connection and returns the runner's status and 
   verified combined Gateway/Dispatcher workload; clients use SessionDispatcher with their existing
   direct or delegated authority. Only `sandbox_controller_account` may `Quiesce`; unset, nobody may.
   Executor permissions stay separate. See the [proxy contract](../runner_gateway/internal/gateway/SPEC.md).
-- **Holder.** A replica that does not hold the Sandbox's current connection answers `UNAVAILABLE`
-  before acting, and the caller dials the control Service again.
+- **Replica.** Any Gateway replica with a fresh observation of the current Sandbox incarnation can
+  serve the request. A replica without a matching local Runtime connection answers `UNAVAILABLE`.
 - **Deadline.** The proxy propagates the caller's remaining gRPC deadline; a call without one waits until
   the runner answers or the connection ends.
 
@@ -222,25 +213,18 @@ other watch events or a controller restart from bypassing that deadline. Only af
 flushed may the Sandbox's volume go. A runner that cannot report leaves the Sandbox in sealing for
 the operator.
 
-## Legacy routing records in Kubernetes
+## Runtime routing
 
-The Gateway temporarily publishes `<sandbox>-environment-runtime` Leases and `<sandbox>-control`
-EndpointSlices for existing callers; the Sandbox Controller owns the selector-less control Service.
-These records select a route only. Every Gateway replica independently observes and calls Runtime,
-regardless of who publishes the route. Lifecycle facts come only from the Controller's direct watch.
-
-Route updates check the exact Sandbox owner, Lease UID, holder and monotonically increasing route
-epoch, with resource-version conflict retries. Foreign records prevent publication but do not block
-an authenticated current Runtime connection. The route epoch is never sent to Runtime. A publication
-error is logged and retried on subsequent snapshots/heartbeats; a superseded claim is reacquired when
-eligible. Existing callers can lose reachability while Kubernetes rejects route writes. A stale route
-may reach any still-current replica, which can serve independently; a stopped observer refuses with
-`UNAVAILABLE`. Closing one observer does not prove admitted Runtime effects stopped.
+Gateway replicas connect to the current Runtime using its Pod IP and private listener. The selected
+route does not use a per-Sandbox `<sandbox>-control` EndpointSlice or connection Lease to decide
+which replica may call. All caller traffic uses the stable `runner-gateway` Service; the Runtime
+identity in each call provides stale-Sandbox, stale-workload and stale-process fencing. The
+Dispatcher delivery Lease is unrelated and remains part of durable command scheduling.
 
 ## Lifecycle operations
 
 The Runner Gateway makes Session calls over the runner gRPC connection. App and Notification callers
-reach the stable `runner-gateway` Service (`control_target`, a required setting).
+reach any replica through the stable `runner-gateway` Service.
 
 - `ListSessions` reads retained Session inventory.
 - `GetStatus` reads a coherent live snapshot of process incarnations, Session assignments and
@@ -258,9 +242,10 @@ reach the stable `runner-gateway` Service (`control_target`, a required setting)
   It waits for preceding admissions; subsequent new-work calls fail `ABORTED`. Final ingress acknowledgement
   is required for `QUIESCED`.
 
-Any replica with a current independent observation may call it. Callers reach any replica through the stable Service; old caller processes retain their
-per-Sandbox route until rollout completes. Runtime connectivity grants no Dispatcher ownership. Transport reconnect never replays calls; durable command retry uses the
-original command ID. Process identities in diagnostics are per-spawn UUIDs, not command addresses.
+Any Gateway replica with a current observation may call the Runtime. Runtime connectivity is
+independent of Dispatcher scheduling ownership. Transport reconnect never replays calls; durable
+command retry uses the original command ID. Process identities in diagnostics are per-spawn UUIDs,
+not command addresses.
 Stored native conversations may be dormant while their store's app server is running. A Session
 becomes ready after its native conversation preparation/reconciliation, without needing a turn.
 
@@ -280,7 +265,8 @@ Public Gateway callers still use their existing workload bearers and per-method 
 
 Standalone behavior tests can explicitly select insecure transport at both endpoints. It supplies
 plaintext without peer authentication; it never fabricates a certificate identity. Live Sandbox/Pod/VM
-ownership and incarnation validation, Sandbox/incarnation/boot-ID fencing and command admission remain enforced.
+ownership and incarnation validation, Sandbox/incarnation/boot-ID fencing and command admission
+remain enforced.
 Every Sandbox incarnation gets a credential; k3s keeps real cert-manager/trust-manager and
 mTLS in every stack. Bad mTLS credentials never trigger an insecure retry.
 

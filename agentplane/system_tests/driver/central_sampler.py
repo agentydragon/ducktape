@@ -240,7 +240,7 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
             gateway_target = await _address(cluster, core, "runner-gateway", 8080)
             sampler_token = await _bound_token(cluster, core, "runner-gateway", gateway_pod, SERVICE)
             server_credentials = await service_credentials(cluster)
-            # Sandbox Ready proves Controller observation. Service endpoint readiness can precede
+            # Sandbox Ready proves Controller observation. A claimed EndpointSlice can precede
             # the Gateway's first snapshot, so prove the live read route before starting setup.
             gateway_token = directory / "gateway-reader-token"
             gateway_token.write_text(await _bound_token(cluster, core, "app", app, GATEWAY_AUDIENCE))
