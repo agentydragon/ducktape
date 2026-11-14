@@ -32,9 +32,15 @@ def test_only_the_setup_platform_image_omits_packaged_harnesses() -> None:
         image = runfiles_root / os.environ[image_key]
         for path in ("/opt/harnesses/claude", "/opt/harnesses/codex/bin/codex"):
             result = subprocess.run(
-                [tool, closure, "dump.erofs", f"--path={path}", image], check=False, capture_output=True, text=True
+                [tool, closure, "dump.erofs", f"--path={path}", image], check=True, capture_output=True, text=True
             )
-            assert (result.returncode == 0) == (image_key != "ROOT_PLATFORM_IMAGE_RLOCATION"), result
+            if image_key == "ROOT_PLATFORM_IMAGE_RLOCATION":
+                # dump.erofs reports a missing path on stderr but still exits zero.
+                assert not result.stdout, result
+                assert f"read inode failed @ {path}" in result.stderr, result
+            else:
+                assert result.stdout, result
+                assert not result.stderr, result
         if image_key == "ROOT_PLATFORM_IMAGE_RLOCATION":
             prepare = subprocess.run(
                 [
