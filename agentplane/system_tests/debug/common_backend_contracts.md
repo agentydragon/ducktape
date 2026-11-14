@@ -315,7 +315,7 @@ cases. Firecracker TestRunner execution is 254.256s; its cases report 202.485s a
 Those durations do not establish a speedup against the earlier App-dependent run, whose source,
 imports and concurrent workload differ. The benefit currently proved is the dependency boundary.
 
-The VM case completes both harness scenarios, then fails the retained process-trace contract:
+The first VM case completes both harness scenarios, then fails the retained process-trace contract:
 the native Session driver's `system_test.session.create` span omits `sandbox.name`. Its added
 span now carries the exact Sandbox name/UID and harness from the validated placement. Inspection
 of the same private artifacts also finds no Runtime CreateSession sharing the driver trace:
@@ -324,13 +324,89 @@ A real gRPC wire regression
 [fails on the old transport](https://app.buildbuddy.io/invocation/ff4e8fbc-64fa-41d9-a1d0-9cf1bd539814)
 because the server receives no `traceparent` for an active driver span. The Dispatcher test client
 now injects the current context per unary call, retaining rotating bearer credentials and no
-automatic mutation replay. The real trace assertions remain unchanged and require another
-physical pass. The full CI check also
+automatic mutation replay. The real trace assertions remain unchanged. The first full CI check also
 exposes Dispatcher assertions whose expected caller lists predate the fixture principal. Both
 lists now explicitly include that native caller beside App, Notification and Actions; native
 test sends need the same opted-in wake behavior as the App sends they replace. The original
 wake/no-wake cases and exact allowlist equality remain. These are implementation failures, not measurements of
 devel's flake rate or evidence of a speedup.
+
+Exact pushed source `6c31cfb9f7412506338a069fda13100fc291f993` now passes the
+[combined physical qualification](https://app.buildbuddy.io/invocation/b31ff206-af86-4808-95ff-776a15f0905c):
+five test targets, 11 cases and three explicitly named libraries/aspects, with no source overlay,
+skips, failures or test retries. The VM process-trace contract passes. Each test has a fresh
+physical execution in one attempt. Native Bazel elapsed is 347.022s; these are action clocks:
+
+| Target                          | Cases | Execution |      CPU |         Peak memory |
+| ------------------------------- | ----: | --------: | -------: | ------------------: |
+| Native Dispatcher test client   |     4 |   15.051s |  12.773s |   548,794,368 bytes |
+| Native Session driver           |     1 |   46.592s |  56.719s | 1,099,145,216 bytes |
+| Firecracker                     |     2 |  241.044s |  unknown |             unknown |
+| Dispatcher                      |     3 |  258.982s | 300.706s | 4,890,451,968 bytes |
+| VM, concurrent Claude and Codex |     1 |  274.889s | 849.883s | 6,062,084,096 bytes |
+
+Inner action queue is 0.058-0.059s except Firecracker's 7.952s. Disk usage is unknown.
+This is one source exposure, not a matched timing comparison or p90/flake qualification.
+The metadata-only repair invocation `2dba4751-321c-46ba-9aa1-49fd884d02d0` had a cancellation
+request after diagnosis but nevertheless completed with the trace-parent and old caller-list
+failures; it is neither a pass nor a successfully stopped experiment.
+
+The [ordinary PR invocation](https://app.buildbuddy.io/invocation/b215237c-b0a9-5800-bbb5-6a15b278171f)
+for the same PR head also passes all 2,005 test targets, of which 15 execute fresh. Native Bazel
+elapsed is 627.656s. Pod is the longest fresh target at 532.0s, versus VM 286.5s and Services
+285.3s. This changed competing tail justifies retesting the existing balanced Pod split; it
+does not turn earlier unequal-cache measurements into a causal speedup.
+
+### App-free central Services candidate
+
+Published source `f919e2ed22f4245446f5bdd6e4b0b03480da8ffc` adds a manual
+`test_services_central_native_candidate`. Its four tests call the same central-sampler scenarios
+with unchanged timeouts, recovery faults and assertions. Dispatcher, History and Gateway readers
+use audience-specific tokens bound to one Ready fixture Pod UID; the separate Gateway-to-sampler
+credential path is retained. The suspend/resume scenario replaces only its incidental App
+inventory read with the native Environment service. The rendered stack omits App, OIDC and MCP
+Edge while retaining the real sampler, services, controllers, PKI, Pod and harness images.
+
+The ordinary seven-case Services target remains required and unchanged in case ownership. Its
+three App/MCP discovery, consented identity and policy-binding witnesses are retained. The
+candidate is not promoted until physical acceptance, dependency inspection and comparison pass.
+The [focused qualification](https://app.buildbuddy.io/invocation/fd790fe6-da40-460f-a3c6-df0324de6d4f)
+passes on that exact source: native four cases, original seven cases, 21 render cases and four
+named libraries/aspects. All three test targets execute fresh in one attempt without failures,
+errors or skips. Native Bazel elapsed is 379.430s. The four-case native target takes 271.860s,
+481.926 CPU seconds and 4,694,003,712 bytes peak memory. The seven-case original takes 308.526s,
+599.724 CPU seconds and 5,840,916,480 bytes. These are unequal workloads, not a causal speedup.
+The [candidate dependency query](https://app.buildbuddy.io/invocation/a5029663-f1fa-490d-8a69-0e7ebb7d9934)
+retains only five App configuration modules; App executable/image, HTTP client and App-backed
+conftests are absent. The full PR check catches an omitted expected output in render determinism:
+the new variant is now included, retaining both independent-render and byte-equality assertions.
+
+### Pod partition and capacity screen
+
+At frozen source `6c31cfb9f7`, the existing balanced Pod split is screened with all six competing
+VM/Firecracker/Dispatcher/MCP Actions/Services/Gateway-budget targets unchanged. Candidate
+[B2](https://app.buildbuddy.io/invocation/58a5cb3f-b6c7-41e2-9858-be783ba63f4d) passes eight targets
+in 429.315s native Bazel time; control
+[A2](https://app.buildbuddy.io/invocation/358bfd56-dcde-4480-8ebd-d34c6194a883) passes seven in
+495.738s, 13.4% lower elapsed in this one pair. The 40 JUnit identities match as multisets;
+all 21 Pod cases remain, with no failures, errors or skips. Pod actions take 257.920s and
+384.804s versus the ordinary 452.003s. Known test CPU, excluding unknown Firecracker CPU in
+both arms, grows from 3,660.154s to 4,165.295s (13.8%). Pod CPU alone grows from 1,037.989s
+to 1,410.055s (35.8%). Peak memory is 5,535,584,256 bytes for the ordinary Pod action and
+5,088,698,368 / 5,183,868,928 bytes for the separate candidate actions; their separate peaks
+cannot be summed into an observed simultaneous peak. Candidate has two fresh non-test build
+actions; control has none. Cache warmth and concurrent load differ. This is a selected-graph
+screen, not complete required-PR feedback, causal median saving, p90 or flake qualification.
+
+The case traces show stale balancing weights: 232.907s and 363.362s of actual case work. JUnit
+durations also include fixture phases and must not be used as pure case weights. Setup and cleanup
+are duplicated. The next manual candidate keeps all 21 cases on one cluster, with storage still
+exclusive first, but requests eight compute units and runs four case slots instead of two.
+It records actual Kubernetes node capacity rather than treating the request as observed capacity.
+This tests resource organization without another fixture startup. Adoption requires the same
+case multiset, no new failure/cleanup signatures, a materially shorter complete competing graph,
+and explicit CPU, memory and requested-compute cost. One larger action may cost more or queue
+longer; no saving is yet measured and the ordinary two-slot target remains required.
 
 The independent Actions repair is [PR #16386](https://github.com/agentydragon/ducktape/pull/16386),
 open and unmerged at `d34c757904475f262cce517503a21d863e466684`. All three required hosted checks
