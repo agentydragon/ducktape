@@ -3564,41 +3564,16 @@ flowchart LR
 
 Dispatchable now. "Unscheduled" is the operator's priority statement, not a gate.
 
-- **`SAMPLER_STABLE_PROVIDER_PREFIX`**: a sampler rollout must not break the request prefix an
-  existing conversation already sent. #15591 edited the `write_stdin` schema text inside the
-  sampler's `exec` tool, and Anthropic then rejected every older Thread's signed thinking ("The
-  `tools` list differs from the one this block was created with"), because the tool list and
-  instructions are rendered from current code on every request and staging sets
-  `prefix_mismatch_behavior: error`. Those Threads cannot continue. **Operator, 2026-11-14 UTC:**
-  "older threads can stay broken"; the fix only stops future prompt changes from breaking Threads,
-  with no repair or migration of existing ones.
-
-  Provider rules, from current documentation (2026-11-14):
-
-  - **Anthropic Messages.** A thinking block's signature binds the top-level `system`, the `tools`
-    set (name-sorted, so reordering is safe) and every earlier message. Editing them is a 400 when
-    enforced (accounts created on or after 2026-08-31, or any request setting
-    `thinking.block_binding.prefix_mismatch_behavior`); `drop_block` drops that block and every later
-    one. Append-only forms: a mid-conversation `role: "system"` message for instruction changes;
-    `tool_addition`/`tool_removal` blocks in such a message (beta
-    `mid-conversation-tool-changes-2026-07-01`, tools declared up front with `defer_loading`); and,
-    under beta `inline-tools-2026-09-15`, a `tool_addition` carrying a full definition that replaces
-    a same-named tool's definition from that point on, with `tools[]` left as first sent.
-  - **OpenAI Responses** ([preserved reasoning](https://developers.openai.com/api/docs/guides/preserved-reasoning)).
-    The prefix includes `tools`, `instructions`, `text.format` and earlier input items. A change is
-    not rejected: reasoning items after it are silently dropped (reported in
-    `input_transformations`), with no parameter to change that. Append-only forms: an
-    `additional_tools` item to add tools, `tool_choice.allowed_tools` to restrict them, a
-    `configuration_update` item for effort or output schema, and an appended developer message for
-    instructions.
-
-  Design: persist the rendered tools and instructions with each conversation as its frozen
-  baseline. On each request, compare it with what current code renders, and express any difference
-  through the provider's append-only form at the next turn boundary. A difference with no such form
-  on that route waits for an explicit boundary (new Thread, compaction). Never edit the baseline;
-  keep `drop_block` off. Test by rendering a stored conversation under a changed tool description
-  and asserting the provider accepts the continuation and keeps its reasoning (empty
-  `input_transformations` on both APIs). Covers the Responses and Anthropic Messages paths.
+- **`SAMPLER_STABLE_PROVIDER_PREFIX`**: the #15591 rollout changed the `write_stdin` schema inside
+  the sampler's `exec` tool. Anthropic rejected older Threads' signed thinking with "The `tools` list
+  differs from the one this block was created with"; staging sets
+  `thinking.block_binding.prefix_mismatch_behavior: error`. The operator accepted that already
+  broken Threads stay broken and asked that future prompt/tool rollouts cannot break a Thread.
+  Current devel now freezes the first request's system/instructions and tools for continuation, but
+  this is implicit in request profiles, is incomplete for other route fields, and does not deliver
+  changes to existing Threads. See the [design plan](sampler_stable_prefix.md) for current request
+  projection/storage, provider mechanisms, the egress limitation on live-doc verification, compared
+  designs and acceptance test. **Design only:** no implementation until the operator reviews it.
 
 #### `ACTION_BOX_RENAME` — Action boxes stop being called sandboxes
 
