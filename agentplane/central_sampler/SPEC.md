@@ -115,7 +115,9 @@ An authenticated Gateway may report `ExecutionEnvironmentFailure` after it verif
 Sandbox UID and refuses a request before forwarding it. Scoped Runtime may report a local
 readiness refusal before native dispatch. The catchable error exposes `environment_state` as the
 proto enum name (for example, `"STATE_SUSPENDED"`) and
-`request_outcome: "not_dispatched"`; it never wakes, resumes, provisions or retries the operation.
+`request_outcome: "not_dispatched"`; it never wakes, provisions or retries the refused tool operation.
+The retained-session `OpenSession` retry below separately tolerates the structured control-route
+refusal while a replacement Gateway reconnects its Runtime observer.
 The outer `remote_outcome` is `not_dispatched` for a refused process start. If a refused
 `process/read` was observing a process started earlier, that process outcome is `unknown`: the
 handle is abandoned with its last sequence cursor and buffered output, while the nested read intent
@@ -535,7 +537,10 @@ call's deadline. The sampler resumes the retained exec-server session under the 
 incarnation fence and reuses the read intent, process ID and cursor. The read does not consume remote
 output; only its durable result advances the sampler's cursor. An expired session, changed session
 ID, failed reconnect or second transport failure settles the affected intent and process as unknown.
-For a retained session, a reconnect retries `OpenSession` on `Unavailable` or an attempt deadline
+For a retained session, a reconnect retries `OpenSession` on transport `Unavailable`, an attempt
+deadline, or a structured `STATE_CONTROL_ROUTE_UNAVAILABLE` refusal of `initialize` whose outcome
+is explicitly not dispatched. Other environment states and authentication failures remain terminal.
+This retry resumes only the retained session; it does not replay a process start or write. It runs
 until the separate `executor_reconnect_timeout_seconds` budget (120 seconds by default) or the
 caller's earlier deadline. The first-open `executor_initialize_timeout_seconds` remains 30 seconds
 by default. Each attempt
