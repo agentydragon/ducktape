@@ -55,7 +55,7 @@ func TestAuditOmitsTransientEventsAndKeepsProviderMetadata(t *testing.T) {
 		Events:        []json.RawMessage{json.RawMessage(`{"type":"message_start","provider_event_marker":"fixture"}`)},
 		ContextTokens: &tokens, HTTPStatus: 200, ProviderRequestID: "req_fixture",
 	}
-	got := protocol.CanonicalJSON(response.Audit())
+	got := string(mustMarshalJSON(t, response.Audit()))
 	if strings.Contains(got, `"events"`) {
 		t.Fatalf("successful audit retained transient events: %s", got)
 	}
@@ -64,7 +64,7 @@ func TestAuditOmitsTransientEventsAndKeepsProviderMetadata(t *testing.T) {
 			t.Fatalf("successful audit lost %s: %s", marker, got)
 		}
 	}
-	if eventJSON := protocol.CanonicalJSON(response.Events); !strings.Contains(eventJSON, `"provider_event_marker":"fixture"`) {
+	if eventJSON := string(mustMarshalJSON(t, response.Events)); !strings.Contains(eventJSON, `"provider_event_marker":"fixture"`) {
 		t.Fatalf("transient per-event evidence was lost: %s", eventJSON)
 	}
 }
@@ -82,7 +82,7 @@ func TestCompactionFailureDiagnosticsKeepTransientEvents(t *testing.T) {
 	if !errors.As(err, &known) {
 		t.Fatalf("invalid compaction error=%v; want a known rejection", err)
 	}
-	got := protocol.CanonicalJSON(known.Evidence["response"])
+	got := string(mustMarshalJSON(t, known.Evidence["response"]))
 	for _, marker := range []string{`"events":[{"type":"message_start"`, `"provider_event_marker":"fixture"`, `"provider_terminal_marker":"fixture"`, `"http_status":200`, `"provider_request_id":"req_fixture"`} {
 		if !strings.Contains(got, marker) {
 			t.Fatalf("compaction failure diagnostics lost %s: %s", marker, got)
@@ -109,7 +109,7 @@ func TestSuccessfulCompactionAuditKeepsReplacementWithoutEvents(t *testing.T) {
 	if audit.Replacement != replacement {
 		t.Fatal("successful compaction did not retain its replacement context in the audit")
 	}
-	got := protocol.CanonicalJSON(audit)
+	got := string(mustMarshalJSON(t, audit))
 	if strings.Contains(got, `"events"`) {
 		t.Fatalf("successful compaction audit retained transient events: %s", got)
 	}
@@ -288,7 +288,7 @@ func TestBuildAnthropicRequestReplaysSignedThinkingBlockUnchanged(t *testing.T) 
 	stored, err := conversation.Records()
 	if err != nil || len(stored) != 1 || !bytes.Contains(stored[0], []byte(`"provider_metadata":{"opaque_sequence":9007199254740993}`)) ||
 		!bytes.Contains(stored[0], []byte(`"provider_usage":{"fixture":true}`)) {
-		t.Fatalf("unknown native response metadata was not retained in storage: records=%s err=%v", protocol.MustJSON(stored), err)
+		t.Fatalf("unknown native response metadata was not retained in storage: records=%s err=%v", mustMarshalJSON(t, stored), err)
 	}
 	if body.Diagnostics == nil || body.Diagnostics.PreviousMessageID == nil || *body.Diagnostics.PreviousMessageID != "msg_signed" {
 		t.Fatalf("previous message diagnostics were lost: %+v", body.Diagnostics)
@@ -629,7 +629,7 @@ func TestAnthropicRejectsUnsupportedOutputBlocks(t *testing.T) {
 	if response != nil || !errors.As(err, &known) {
 		t.Fatalf("unsupported output block outcome=%+v err=%v; want a known rejection", response, err)
 	}
-	if got := protocol.CanonicalJSON(known.Evidence); !strings.Contains(got, `"events"`) || !strings.Contains(got, `"server_tool_use"`) {
+	if got := string(mustMarshalJSON(t, known.Evidence)); !strings.Contains(got, `"events"`) || !strings.Contains(got, `"server_tool_use"`) {
 		t.Fatalf("provider failure diagnostics lost streamed events: %s", got)
 	}
 }
@@ -692,7 +692,7 @@ func TestAnthropicRequestWireBytes(t *testing.T) {
 	params := RequestParams{Context: conversation, Model: "claude-test", Effort: "high", Instructions: &instructions, Tools: testToolSurface()}
 	config := testConfig()
 	config.Compaction = &CompactionConfig{MaxTokens: 2048, KeepRecentTurns: 1}
-	system := string(protocol.MustJSON(protocol.BaseInstructions + "\n\n" + instructions))
+	system := string(mustMarshalJSON(t, protocol.BaseInstructions+"\n\n"+instructions))
 	for _, test := range []struct {
 		name string
 		body func() (any, error)
@@ -713,7 +713,7 @@ func TestAnthropicRequestWireBytes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got := strings.Replace(string(protocol.MustJSON(body)), system, `"<system>"`, 1)
+			got := strings.Replace(string(mustMarshalJSON(t, body)), system, `"<system>"`, 1)
 			if got != test.want {
 				t.Fatalf("wire body changed:\ngot  %s\nwant %s", got, test.want)
 			}
@@ -727,4 +727,13 @@ func anthropicEventStream(events ...string) string {
 		fmt.Fprintf(&stream, "data: %s\n\n", event)
 	}
 	return stream.String()
+}
+
+func mustMarshalJSON(t *testing.T, value any) []byte {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }

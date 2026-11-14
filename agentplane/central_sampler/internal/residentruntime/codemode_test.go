@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
@@ -40,7 +42,7 @@ type fakeCodeModePeer struct {
 
 func TestJSONExecPreparesNativeCodeWithoutChangingSource(t *testing.T) {
 	source := "// @exec: is just a JavaScript comment in JSON code\nconst value = `quotes: \" and ${1 + 2}`;\ntext(value);"
-	input := protocol.CanonicalJSON(map[string]any{"code": source, "yield_time_ms": 0, "max_output_tokens": 123})
+	input := string(mustMarshalJSON(t, map[string]any{"code": source, "yield_time_ms": 0, "max_output_tokens": 123}))
 	manager, _ := newFakeCodeModeManager(t)
 	runtime := openFakeSession(t, manager, "fixture")
 	prepared, err := runtime.prepareCall(context.Background(), protocol.ToolInvocation{Encoding: protocol.ExecEncodingJSON, Name: "exec", CallID: "call", Input: input})
@@ -151,7 +153,7 @@ func (p *fakeCodeModePeer) serve() {
 		return
 	}
 	var hello codemode.Hello
-	if protocol.DecodeObject(payload, &hello) != nil || hello.Type != "connection/hello" {
+	if jsonwire.DecodeObject(payload, &hello) != nil || hello.Type != "connection/hello" {
 		return
 	}
 	granted := []string{}
@@ -167,7 +169,7 @@ func (p *fakeCodeModePeer) serve() {
 			return
 		}
 		var fields map[string]json.RawMessage
-		if protocol.DecodeObject(payload, &fields) != nil {
+		if jsonwire.DecodeObject(payload, &fields) != nil {
 			return
 		}
 		select {
@@ -179,14 +181,14 @@ func (p *fakeCodeModePeer) serve() {
 			ID      int64           `json:"id"`
 			Request json.RawMessage `json:"request"`
 		}
-		if protocol.DecodeObject(payload, &frame) != nil || frame.Type != "operation/request" {
+		if jsonwire.DecodeObject(payload, &frame) != nil || frame.Type != "operation/request" {
 			continue
 		}
 		var request struct {
 			Method    string `json:"method"`
 			SessionID string `json:"sessionId"`
 		}
-		if protocol.DecodeObject(frame.Request, &request) != nil || request.Method != "session/open" {
+		if jsonwire.DecodeObject(frame.Request, &request) != nil || request.Method != "session/open" {
 			continue
 		}
 		value, _ := json.Marshal(codemode.HostResponse{Type: "session/ready", SessionID: request.SessionID})
@@ -508,7 +510,7 @@ func TestCodeModeSharesHostAndIsolatesLogicalSessionDetach(t *testing.T) {
 	responseA := receivePeerFrame(t, peer)
 	assertDelegateResponse(t, responseA, 1001, "ok")
 	var notification codemode.DelegateResponse
-	if err := protocol.DecodeObject(mustMarshalFields(t, responseA), &notification); err != nil {
+	if err := jsonwire.DecodeObject(mustMarshalFields(t, responseA), &notification); err != nil {
 		t.Fatal(err)
 	}
 	notificationJSON, err := json.Marshal(notification.Result.Value)
@@ -516,7 +518,7 @@ func TestCodeModeSharesHostAndIsolatesLogicalSessionDetach(t *testing.T) {
 		t.Fatal(err)
 	}
 	var notificationFields map[string]json.RawMessage
-	if err := protocol.DecodeObject(notificationJSON, &notificationFields); err != nil {
+	if err := jsonwire.DecodeObject(notificationJSON, &notificationFields); err != nil {
 		t.Fatal(err)
 	}
 	if _, exists := notificationFields["result"]; exists {
@@ -610,7 +612,7 @@ func TestCodeModeCallerCancellationKeepsSharedHostAndDropsLateResponse(t *testin
 			Type string `json:"type"`
 			ID   int64  `json:"id"`
 		}
-		if err := protocol.DecodeObject(mustMarshalFields(t, fields), &cancelFrame); err != nil {
+		if err := jsonwire.DecodeObject(mustMarshalFields(t, fields), &cancelFrame); err != nil {
 			t.Fatal(err)
 		}
 		if cancelFrame.Type != "operation/cancel" || cancelFrame.ID != firstID {
@@ -1047,7 +1049,7 @@ func receiveCodeOperationRequest(t *testing.T, peer *fakeCodeModePeer, sessionID
 				ID      int64           `json:"id"`
 				Request json.RawMessage `json:"request"`
 			}
-			if err := protocol.DecodeObject(mustMarshalFields(t, fields), &envelope); err != nil {
+			if err := jsonwire.DecodeObject(mustMarshalFields(t, fields), &envelope); err != nil {
 				t.Fatal(err)
 			}
 			if envelope.Type != "operation/request" {
@@ -1057,7 +1059,7 @@ func receiveCodeOperationRequest(t *testing.T, peer *fakeCodeModePeer, sessionID
 				Method    string `json:"method"`
 				SessionID string `json:"sessionId"`
 			}
-			if err := protocol.DecodeObject(envelope.Request, &request); err != nil {
+			if err := jsonwire.DecodeObject(envelope.Request, &request); err != nil {
 				t.Fatal(err)
 			}
 			if request.Method == method && (sessionID == "" || request.SessionID == sessionID) {
@@ -1078,7 +1080,7 @@ func receiveOperationRequest(t *testing.T, peer *fakeCodeModePeer, sessionID str
 func assertDelegateResponse(t *testing.T, fields map[string]json.RawMessage, wantID int64, wantStatus string) {
 	t.Helper()
 	var response codemode.DelegateResponse
-	if err := protocol.DecodeObject(mustMarshalFields(t, fields), &response); err != nil {
+	if err := jsonwire.DecodeObject(mustMarshalFields(t, fields), &response); err != nil {
 		t.Fatal(err)
 	}
 	if response.Type != "delegate/response" || response.ID != wantID || response.Result.Status != wantStatus {
@@ -1118,14 +1120,14 @@ func TestCodeModeHostFailureFansOutThenRestartsWithoutReplay(t *testing.T) {
 				Type    string          `json:"type"`
 				Request json.RawMessage `json:"request"`
 			}
-			if err := protocol.DecodeObject(mustMarshalFields(t, fields), &envelope); err != nil {
+			if err := jsonwire.DecodeObject(mustMarshalFields(t, fields), &envelope); err != nil {
 				t.Fatal(err)
 			}
 			if envelope.Type == "operation/request" {
 				var request struct {
 					Method string `json:"method"`
 				}
-				if err := protocol.DecodeObject(envelope.Request, &request); err != nil {
+				if err := jsonwire.DecodeObject(envelope.Request, &request); err != nil {
 					t.Fatal(err)
 				}
 				if request.Method == "session/wait" {
@@ -1168,14 +1170,14 @@ func TestCodeModeHostFailureFansOutThenRestartsWithoutReplay(t *testing.T) {
 				Type    string          `json:"type"`
 				Request json.RawMessage `json:"request"`
 			}
-			if err := protocol.DecodeObject(mustMarshalFields(t, fields), &envelope); err != nil {
+			if err := jsonwire.DecodeObject(mustMarshalFields(t, fields), &envelope); err != nil {
 				t.Fatal(err)
 			}
 			if envelope.Type == "operation/request" {
 				var request struct {
 					Method string `json:"method"`
 				}
-				if err := protocol.DecodeObject(envelope.Request, &request); err != nil {
+				if err := jsonwire.DecodeObject(envelope.Request, &request); err != nil {
 					t.Fatal(err)
 				}
 				switch request.Method {
@@ -1237,7 +1239,7 @@ func TestForegroundObservationYieldsOnlyWhenTheHostAcknowledgesIt(t *testing.T) 
 					Type string `json:"type"`
 					ID   int64  `json:"id"`
 				}
-				if err := protocol.DecodeObject(mustMarshalFields(t, fields), &frame); err != nil {
+				if err := jsonwire.DecodeObject(mustMarshalFields(t, fields), &frame); err != nil {
 					t.Fatal(err)
 				}
 				if frame.Type != test.next || frame.ID != id {
@@ -1392,4 +1394,13 @@ func TestCodeModeObservationBudgetsBoundWedgedHostWithoutExpiringCaller(t *testi
 			}
 		})
 	}
+}
+
+func mustMarshalJSON(t *testing.T, value any) []byte {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }

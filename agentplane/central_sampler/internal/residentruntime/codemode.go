@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
@@ -49,7 +51,7 @@ func (r *CodeMode) Execute(ctx context.Context, call protocol.ToolInvocation) ([
 	if !prepared.execute {
 		observation, err = tooloutput.DecodeWaitObservation(value)
 	} else {
-		err = protocol.DecodeObject(value, &observation)
+		err = jsonwire.DecodeObject(value, &observation)
 	}
 	if err != nil {
 		return nil, err

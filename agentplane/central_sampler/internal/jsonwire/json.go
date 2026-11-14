@@ -1,19 +1,11 @@
-package protocol
+package jsonwire
 
 import (
 	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
-	"slices"
 )
-
-func CloneJSON(value []byte) json.RawMessage {
-	if value == nil {
-		return nil
-	}
-	return append(json.RawMessage(nil), value...)
-}
 
 func DecodeJSONValue(data []byte) (any, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -29,19 +21,6 @@ func DecodeJSONValue(data []byte) (any, error) {
 		return nil, err
 	}
 	return value, nil
-}
-
-func MustJSON(value any) []byte { data, _ := json.Marshal(value); return data }
-func CanonicalJSON(value any) string {
-	data, err := json.Marshal(value)
-	if err != nil {
-		return "{}"
-	}
-	return string(data)
-}
-
-func IsOneOf(value string, options ...string) bool {
-	return slices.Contains(options, value)
 }
 
 func DecodeObject(data []byte, value any) error {

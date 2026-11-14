@@ -8,6 +8,8 @@ import (
 	"maps"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
@@ -143,7 +145,7 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
-	requestJSON, err := protocol.Object(map[string]any{"method": method, "params": params})
+	requestJSON, err := jsonwire.Object(map[string]any{"method": method, "params": params})
 	if err != nil {
 		return nil, err
 	}
@@ -689,7 +691,7 @@ func responseObject(method executionMethod, response proto.Message) (map[string]
 			x := int(*r.ExitCode)
 			code = &x
 		}
-		return protocol.Object(executorReadResult{Chunks: chunks, NextSeq: r.NextSeq, Exited: r.Exited, ExitCode: code, Closed: r.Closed, Failure: r.Failure})
+		return jsonwire.Object(executorReadResult{Chunks: chunks, NextSeq: r.NextSeq, Exited: r.Exited, ExitCode: code, Closed: r.Closed, Failure: r.Failure})
 	case *executorpb.WriteProcessResponse:
 		return map[string]any{"status": r.WriteStatus}, nil
 	case *executorpb.SignalProcessResponse:
@@ -697,11 +699,11 @@ func responseObject(method executionMethod, response proto.Message) (map[string]
 	case *executorpb.TerminateProcessResponse:
 		return map[string]any{"running": r.Running}, nil
 	case *executorpb.GetFileMetadataResponse:
-		return protocol.Object(executorFSMetadata{IsDirectory: r.IsDirectory, IsFile: r.IsFile, IsSymlink: r.IsSymlink, Size: r.Size})
+		return jsonwire.Object(executorFSMetadata{IsDirectory: r.IsDirectory, IsFile: r.IsFile, IsSymlink: r.IsSymlink, Size: r.Size})
 	case *executorpb.OpenFileResponse:
 		return map[string]any{"handleId": r.HandleId}, nil
 	case *executorpb.ReadFileResponse:
-		return protocol.Object(executorFSBlock{Chunk: append([]byte{}, r.Data...), EOF: r.Eof})
+		return jsonwire.Object(executorFSBlock{Chunk: append([]byte{}, r.Data...), EOF: r.Eof})
 	case *executorpb.CloseFileResponse:
 		return map[string]any{}, nil
 	default:
@@ -719,7 +721,7 @@ func executorRPCWithEvidence[R any, P any](ctx context.Context, e *Executor, met
 		return nil, err
 	}
 	var result R
-	if err := protocol.DecodeObject(raw, &result); err != nil {
+	if err := jsonwire.DecodeObject(raw, &result); err != nil {
 		return nil, fmt.Errorf("decode typed execution %s result: %w", method, err)
 	}
 	return &result, nil

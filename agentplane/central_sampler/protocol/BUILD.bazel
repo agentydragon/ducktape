@@ -10,7 +10,6 @@ go_library(
         "errors.go",
         "evidence.go",
         "instructions.go",
-        "json.go",
         "provider_hooks.go",
         "status.go",
         "tool_definitions.go",

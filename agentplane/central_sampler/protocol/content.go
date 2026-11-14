@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"slices"
 )
 
 type ContentPart struct {
@@ -23,13 +24,13 @@ func (part *ContentPart) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return err
 	}
-	*part = ContentPart{Type: wire.Type, Text: wire.Text, Raw: CloneJSON(data)}
+	*part = ContentPart{Type: wire.Type, Text: wire.Text, Raw: slices.Clone(data)}
 	return nil
 }
 
 func (part ContentPart) MarshalJSON() ([]byte, error) {
 	if len(part.Raw) != 0 {
-		return CloneJSON(part.Raw), nil
+		return slices.Clone(part.Raw), nil
 	}
 	type wire ContentPart
 	return json.Marshal(wire(part))

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -79,7 +80,7 @@ func (state *Context) RecordsFrom(start int) ([]json.RawMessage, error) {
 		if err != nil {
 			return nil, err
 		}
-		records = append(records, protocol.CloneJSON(encoded))
+		records = append(records, slices.Clone(encoded))
 	}
 	return records, nil
 }

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
@@ -89,7 +91,7 @@ func (r *CodeMode) delegate(ctx context.Context, session *codemode.Session, requ
 	if invocation.ToolName.Name == "" || invocation.ToolName.Namespace != nil {
 		return empty, empty, errors.New("code-mode tool invocation has no supported tool name")
 	}
-	requestJournal, err := protocol.Object(invocation)
+	requestJournal, err := jsonwire.Object(invocation)
 	if err != nil {
 		return empty, empty, err
 	}
@@ -121,7 +123,7 @@ func (r *CodeMode) delegate(ctx context.Context, session *codemode.Session, requ
 	var evidence map[string]any
 	if viewed, ok := result.(*executor.ViewImageResult); ok {
 		evidence = viewed.Evidence()
-	} else if evidence, err = protocol.Object(result); err != nil {
+	} else if evidence, err = jsonwire.Object(result); err != nil {
 		return empty, empty, err
 	}
 	if err := r.store.FinishNested(ctx, r.owner, intent, evidence); err != nil {

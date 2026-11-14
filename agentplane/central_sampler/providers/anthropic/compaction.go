@@ -3,6 +3,7 @@ package anthropic
 import (
 	"encoding/json"
 	"errors"
+	"slices"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 )
@@ -92,7 +93,7 @@ func (p *CompactionPlan) Apply(records []json.RawMessage, audit *Audit, events [
 	if err := json.Unmarshal(blocks[0], &block); err != nil || blockTypeOf(block) != BlockCompaction || rawString(block, "content") == "" || rawString(block, "signature") == "" {
 		return reject("compaction must produce exactly one signed compaction block")
 	}
-	replacement := &Context{messages: []json.RawMessage{protocol.CloneJSON(records[0])}, PendingEffort: cloneString(p.original.PendingEffort)}
+	replacement := &Context{messages: []json.RawMessage{slices.Clone(records[0])}, PendingEffort: cloneString(p.original.PendingEffort)}
 	replacement.messages = append(replacement.messages, cloneRecords(p.suffix)...)
 	if p.restoreEffort != nil {
 		replacement.PendingEffort = cloneString(p.restoreEffort)
@@ -105,7 +106,9 @@ func (p *CompactionPlan) Apply(records []json.RawMessage, audit *Audit, events [
 	if err != nil {
 		return nil, err
 	}
-	if len(protocol.MustJSON(replacementMessages)) >= len(protocol.MustJSON(originalMessages)) {
+	replacementJSON, _ := json.Marshal(replacementMessages)
+	originalJSON, _ := json.Marshal(originalMessages)
+	if len(replacementJSON) >= len(originalJSON) {
 		return reject("compaction did not reduce serialized model context")
 	}
 	if audit != nil {
@@ -117,7 +120,7 @@ func (p *CompactionPlan) Apply(records []json.RawMessage, audit *Audit, events [
 func cloneRecords(records []json.RawMessage) []json.RawMessage {
 	cloned := make([]json.RawMessage, len(records))
 	for i, record := range records {
-		cloned[i] = protocol.CloneJSON(record)
+		cloned[i] = slices.Clone(record)
 	}
 	return cloned
 }

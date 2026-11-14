@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
@@ -455,7 +457,7 @@ func receiveDelegateResponse(t *testing.T, peer *fakeCodeModePeer, id int64) {
 			var frame struct {
 				Type string `json:"type"`
 			}
-			if err := protocol.DecodeObject(mustMarshalFields(t, fields), &frame); err != nil {
+			if err := jsonwire.DecodeObject(mustMarshalFields(t, fields), &frame); err != nil {
 				t.Fatal(err)
 			}
 			if frame.Type == "delegate/response" {

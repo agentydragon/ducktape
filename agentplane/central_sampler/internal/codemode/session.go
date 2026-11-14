@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
@@ -92,7 +94,7 @@ func (r *Session) send(ctx context.Context, requestID int64, value any) error {
 
 // sendJournaled journals journal in place of the sent frame value.
 func (r *Session) sendJournaled(ctx context.Context, requestID int64, value, journal any) error {
-	object, err := protocol.Object(journal)
+	object, err := jsonwire.Object(journal)
 	if err != nil {
 		return err
 	}
@@ -114,7 +116,7 @@ func (r *Session) operationID(id int64) string {
 
 func (r *Session) enqueueProtocol(raw []byte, id int64) (<-chan error, bool) {
 	var object map[string]any
-	if err := protocol.DecodeObject(raw, &object); err != nil {
+	if err := jsonwire.DecodeObject(raw, &object); err != nil {
 		return nil, false
 	}
 	done := make(chan error, 1)
@@ -275,7 +277,7 @@ func (r *Session) Request(ctx context.Context, request Operation, execute bool) 
 		return value, nil
 	}
 	var started HostResponse
-	if err := protocol.DecodeObject(value, &started); err != nil {
+	if err := jsonwire.DecodeObject(value, &started); err != nil {
 		return nil, err
 	}
 	cellID := started.CellID
@@ -407,7 +409,7 @@ func validateCodeModeResult(frame *WireResult, method string, phase ResponsePhas
 		return nil, &ResponseError{Method: method, Phase: phase, Message: frame.Message}
 	case "ok":
 		var object struct{}
-		if err := protocol.DecodeObject(frame.Value, &object); err != nil {
+		if err := jsonwire.DecodeObject(frame.Value, &object); err != nil {
 			return nil, err
 		}
 		return frame.Value, nil

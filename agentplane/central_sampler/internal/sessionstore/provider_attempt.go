@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
+
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -131,11 +133,11 @@ func scanProviderAttempt(row rowScanner) (*ProviderAttempt, error) {
 }
 
 func sameJSONValue(left, right []byte) bool {
-	leftValue, err := protocol.DecodeJSONValue(left)
+	leftValue, err := jsonwire.DecodeJSONValue(left)
 	if err != nil {
 		return false
 	}
-	rightValue, err := protocol.DecodeJSONValue(right)
+	rightValue, err := jsonwire.DecodeJSONValue(right)
 	if err != nil {
 		return false
 	}
