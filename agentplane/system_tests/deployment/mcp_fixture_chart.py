@@ -50,10 +50,21 @@ OPERATOR_TOKEN_GRANT = DexPasswordGrant(
 
 
 def objects(
-    *, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, models: Models, mcp: McpInputs
+    *,
+    ca_cert: str,
+    ca_key: str,
+    system_roots: str,
+    cluster_ca: str,
+    models: Models,
+    mcp: McpInputs,
+    central_sampler: bool,
 ) -> list[dict[str, Any]]:
     env = fixture_chart.environment(
-        vm_sandboxes=False, models=models, operator_token_key=None, app_origin=mcp.app_origin, central_sampler=True
+        vm_sandboxes=False,
+        models=models,
+        operator_token_key=None,
+        app_origin=mcp.app_origin,
+        central_sampler=central_sampler,
     )
     mcp_linkage = fixture_chart.linkage_client(mcp.app_origin)
     mcp_edge_login = replace(_MCP_EDGE_LOGIN, redirect_uri=f"{mcp.mcp_edge_origin}/auth/callback")

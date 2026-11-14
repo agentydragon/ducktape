@@ -386,8 +386,12 @@ four tests from the combined module. Its DCR and policy wrappers retain their bo
 consented-identity body moves to the focused `scenarios:external_connection` library, called by
 both the original and candidate wrappers. The shared MCP scenario library gains no dependencies.
 This removes central-only imports/dependencies from the candidate without duplicating assertions.
-The original seven-case target remains required; dependency and physical union qualification of
-the structurally separate three-plus-four graph is pending.
+Its separate `mcp_services` fixture now retains App, Dex/OIDC, MCP Edge, Actions, History,
+consented identities and real Pod/PKI integration, but omits the unused central Sampler image,
+Deployment, database and model route. The ordinary `mcp` profile remains unchanged. Each render
+selects one explicit profile; the independent determinism driver renders both. The original
+seven-case target remains required; dependency and physical union qualification of the
+structurally separate three-plus-four graph is pending.
 
 The manual `test_pod_trust_native_candidate` exposes four unchanged scenario bodies: certificate
 reissue and the three wrong-issuer trust cases. It uses a Pod-only App-free fixture, retaining
@@ -399,6 +403,14 @@ case names are preserved. Render invariants and independent-render byte equality
 new profile. Dependency inspection and physical qualification remain pending; all original 21
 Pod cases stay required. App Thread/feed/projection, model/preset and HTTP error assertions are
 explicitly retained with their App-backed owners.
+
+The manual `test_pod_without_trust_candidate` keeps those other 17 cases on the original
+App-backed module with six slots/eight requested CU. It deselects exactly the four native
+trust target cases. The first physical qualification must prove this 17-plus-four union
+matches all 21 original logical cases without skips or retries; no required selection changes.
+The split adds a fixture lifecycle, so any latency benefit must include its CPU, requested
+compute time and queue exposure. The six-slot trace ends with the Gateway refusing a wrong-issuer
+runner address, while earlier App cases finish before it; that observed tail motivates this cut.
 
 ### Pod partition and capacity screen
 
@@ -468,10 +480,19 @@ four-slot exposure and its failed screen; this result does not supersede that ob
 
 The next screen compares all seven competing targets at the same frozen source, control first,
 then six-slot candidate. [Control A2](https://app.buildbuddy.io/invocation/88db0989-55ba-40f8-8a9a-94e87fb95a54)
-is submitted; outcomes are pending. Require the same 40-case multiset, report unknown Firecracker
-CPU separately, and screen whole-graph known CPU/requested CU execution at no more than 1.10 times
-control and peak requested managed CU at 1.20 times. This graph requests at most 28 managed CU in
-control and 32 in candidate, with the unchanged KVM action's explicit CPU/memory accounted separately.
+and [candidate B2](https://app.buildbuddy.io/invocation/1d268405-f1e7-4a68-9649-12a174d5b62f)
+both pass the same 40 logical cases, with seven fresh TestRunner actions each and no failures,
+errors, skips or retries. Native Bazel elapsed falls from 489.497s to 373.066s (23.8%), below
+the 30% goal. Pod remains last at 443.020s versus 330.949s physical execution; candidate
+Services is next at 291.709s. Both Pod infrastructures are warm and complete cleanup.
+
+Known TestRunner CPU falls from 3,736.954s to 3,697.784s (ratio 0.9895), within its 1.10 cap;
+Firecracker CPU remains unknown in both arms. Managed requested-CU execution grows from
+8,065.575 to 8,900.240 CU-seconds (ratio 1.1035), **failing the predeclared 1.10 cap**.
+Peak concurrent requested managed CU grows from 28 to 32 (ratio 1.1429), within its 1.20 cap.
+KVM explicit CPU/memory remain separate; per-action memory peaks are not simultaneous memory.
+The eight-CU/six-slot arrangement remains manual: one ordered capacity comparison with
+different node shapes neither meets all screening caps nor proves a complete-feedback win.
 The ordinary two-slot target remains required until complete-graph and representative ordinary-cache
 required-check, rerun, p90 and flake qualification support adoption. Exact `8c097bae` passes all
 three required checks; that correctness result does not establish the performance goal.

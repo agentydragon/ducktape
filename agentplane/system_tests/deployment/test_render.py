@@ -141,6 +141,90 @@ def test_default_and_mcp_profiles_keep_real_connection_service(runfiles: Runfile
     _resource(fixture.objects, "RoleBinding", "mcp-edge")
 
 
+def test_mcp_services_profile_keeps_oauth_and_omits_central_sampler(runfiles: Runfiles) -> None:
+    fixture = _filled_fixture(runfiles, "K3S_MCP_SERVICES_FIXTURE_RLOCATION")
+    assert not fixture.central_sampler
+    assert fixture.mcp_fixtures is not None
+    assert fixture.app_origin is not None
+    assert fixture.operator_tokens is None
+
+    docs = fixture.objects
+    deployments = {
+        doc["metadata"]["name"]: doc["spec"]["template"]["spec"] for doc in docs if doc["kind"] == "Deployment"
+    }
+    assert {
+        "actions",
+        "app",
+        "dex",
+        "egress",
+        "history-service",
+        "llm-ingress",
+        "mcp-edge",
+        "mcp-everything",
+        fixture_chart.NATIVE_TEST_CLIENT,
+        "notifications",
+        "oauth-fixture",
+        "postgres",
+        "runner-gateway",
+        "sandbox-controller",
+    } <= deployments.keys()
+    assert "agentplane-app:" in deployments["app"]["containers"][0]["image"]
+    assert "central-sampler" not in deployments
+    assert not any(
+        "agentplane-central-sampler:" in container["image"]
+        for pod in deployments.values()
+        for container in pod.get("containers", [])
+    )
+    assert not any(
+        source.get("serviceAccountToken", {}).get("audience") == central_sampler.TOKEN_AUDIENCE
+        for pod in deployments.values()
+        for volume in pod.get("volumes", [])
+        for source in volume.get("projected", {}).get("sources", [])
+    )
+    assert not any(
+        doc["metadata"]["name"] in {central_sampler.NAME, f"{NAMESPACE}-central-sampler-token-reviewer"} for doc in docs
+    )
+    assert not any(doc["metadata"]["name"] == "postgres-central-sampler" for doc in docs)
+    assert not any(doc["metadata"]["name"] == f"{central_sampler.NAME}-settings" for doc in docs)
+
+    bootstrap = _resource(docs, "ConfigMap", "postgres-bootstrap")["data"]["bootstrap.sql"]
+    assert "CREATE ROLE central_sampler " not in bootstrap
+    assert "CREATE DATABASE central_sampler " not in bootstrap
+    app_config = yaml.safe_load(_resource(docs, "ConfigMap", "app-config")["data"]["config.yaml"])
+    assert app_config["oidc"]["issuer"] == fixture_chart.DEX_ISSUER
+    assert Harness.CENTRAL_SAMPLER not in ModelCatalog.model_validate(app_config["models"]).harnesses
+    assert _resource(docs, "Secret", fixture.mcp_fixtures.operator_secret)
+
+    edge_config = yaml.safe_load(_resource(docs, "ConfigMap", "mcp-edge-settings")["data"]["settings.yaml"])
+    assert edge_config["actions_target"] == (
+        f"{fixture_chart.ACTIONS_SERVICE.fqdn}:{fixture_chart.ACTIONS_SERVICE.port.number}"
+    )
+    assert _resource(docs, "Secret", "agentplane-mcp-edge-oauth")
+    assert _resource(docs, "Identity", "mcp-edge-test-caller")["metadata"]["namespace"] == fixture.namespace
+    assert _resource(docs, "PolicyBinding", "mcp-edge-test-caller")["spec"] == {
+        "subject": {"identity": {"name": "mcp-edge-test-caller"}},
+        "policySets": ["mcp-edge-test-caller-session-delegation"],
+    }
+    assert _resource(docs, "PolicySet", "mcp-edge-test-caller-session-delegation")["spec"]["rules"] == [
+        {
+            "type": "action_auto_approve",
+            "policy": {"type": "exact_actions", "actions": {"environments": ["list", "get"], "sessions": ["create"]}},
+        }
+    ]
+    assert _resource(docs, "Deployment", "history-service")
+    assert _resource(docs, "Service", "history-service")
+    template = _resource(docs, "SandboxTemplate", fixture_chart.POD_TEMPLATE)
+    runtime = next(
+        container
+        for container in template["spec"]["pod"]["spec"]["containers"]
+        if container["name"] == "environment-runtime"
+    )
+    assert runtime["image"] == f"{fixture_chart.ENVIRONMENT_TOOLS_IMAGE}:unset"
+    assert _resource(docs, "ClusterIssuer", "agentplane-workload")
+    assert _resource(docs, "Bundle", "agentplane-workload-ca-bundle")
+    assert _resource(docs, "Bundle", "cluster-internal-ca-bundle")
+
+
 @pytest.mark.parametrize("location", ["K3S_VM_FIXTURE_RLOCATION", "K3S_FIRECRACKER_FIXTURE_RLOCATION"])
 def test_virtualized_profiles_preserve_every_resource_except_unused_mcp_edge(runfiles: Runfiles, location: str) -> None:
     fixture = rendered_fixture.read(runfiles.root() / os.environ[location])

@@ -102,9 +102,15 @@ exclusive storage first, but the first cold exposure exceeds CPU and compute-tim
 no large elapsed saving. The shared-module six-slot/eight-CU configuration subsequently passes a
 same-source 21-case pair: physical execution 513.545s to 313.609s (38.9% lower), CPU 7.4% lower,
 requested CU execution 22.1% higher. Both infrastructures are warm; actual allocatable capacity is
-seven versus eleven CPUs. This is one ordered capacity screen, not a complete-PR saving. Measure
-the whole competing graph and resource costs before promotion, then source-plus-BUILD selection and complete
-required feedback. [Current source and focused evidence](../system_tests/debug/common_backend_contracts.md).
+seven versus eleven CPUs. The whole seven-target comparison then passes the same 40 cases in both
+arms: 489.497s to 373.066s native Bazel elapsed (23.8% lower), with known CPU 1.0% lower but
+requested-CU execution 10.35% higher, above its predeclared 10% cap. Pod remains the last finisher.
+Keep six slots manual. Qualify the four unchanged trust/certificate cases on their App-free fixture
+and the complementary 17 App-backed cases, including duplicated setup/resource cost. Also qualify
+the separate three-case MCP fixture without central Sampler against the native four-case Services
+target. These source changes are not yet physical or complete-PR performance proof. Then measure
+source-plus-BUILD selection and complete required feedback.
+[Current source and focused evidence](../system_tests/debug/common_backend_contracts.md).
 Do not expand a global replacement list just to make more historical PRs
 eligible. Implementation-plus-owner-test changes must be accounted
 for structurally, and their owner tests must remain required. Test-only, shared
