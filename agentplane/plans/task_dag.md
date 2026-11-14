@@ -2468,7 +2468,7 @@ recurs, or close the incident follow-up if ordinary use shows no recurrence. Pre
 
 **In flight, 2026-11-14: independent Gateway observers, stable-Service caller routing, then route
 publication removal are prepared as separate PRs in this batch.** The #16345 Runtime receiver is
-pinned as runner-disk `devel-20261114063459-d8258d6`; live Runtime provenance still needs operator
+included in runner-disk `devel-20261114071615-9e1f8fe` on fresh devel; live Runtime provenance still needs operator
 verification before zero-epoch Gateway deployment. The [rollout plan](runtime_state_observation.md#migration-and-rollback)
 lists backend-specific inventory evidence. Firecracker suspend/resume preserves its Runtime
 process and cannot upgrade an older receiver; a retained old checkpoint keeps this gate closed

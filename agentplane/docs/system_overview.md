@@ -133,8 +133,8 @@ flowchart LR
     sidecar -->|OTLP/gRPC| alloy
     guest -.->|OTLP/gRPC telemetry route| relay
     relay -->|OTLP/gRPC| alloy
-    gw -->|mTLS Runner / Executor; bound-UID WatchState with zero or legacy epoch| runtime
-    gw -->|mTLS Runner / Executor; bound-UID WatchState with zero or legacy epoch| vmruntime
+    gw -->|mTLS Runner / Executor; zero-epoch WatchState; UID and boot fences| runtime
+    gw -->|mTLS Runner / Executor; zero-epoch WatchState; UID and boot fences| vmruntime
     runner -.->|History mTLS through CONNECT| sidecar
     sidecar -.->|opaque History TLS| egress
     egress -.->|opaque SessionJournalIngress.Push TLS| hs
@@ -444,7 +444,7 @@ flowchart LR
       sessions -->|journal inventory| delivery
     end
     history[History ingress]
-    gateway -->|mTLS Runner / Executor; bound-UID zero-epoch calls and WatchState; legacy nonzero epochs| runtime
+    gateway -->|mTLS Runner / Executor; zero-epoch WatchState; UID and boot fences| runtime
     policy_api[Kubernetes PolicySets / PolicyBindings / Identities]
     gateway -->|list/watch grants; patch EnvironmentReady| policy_api
     sandboxctl[Sandbox Controller] -->|passive WatchState binds workload UID and observes facts: mTLS gRPC| runtime
