@@ -148,14 +148,12 @@ one clock ([Policy Controller SPEC](../policy_controller/SPEC.md#managed-service
 - **Explicit lifecycle control needs an explicit grant**: resume, suspend, delete or rebind a
   Sandbox as a direct request, or bind a Session to an environment. A grant is a `PolicySet` rule bound to a
   subject, which may be I if someone writes that binding, never implied. Explicit environment
-  rules, saying who may make these requests for which environments, are the mechanism; no such
-  `PolicySet` rule type exists yet (`Rule.Type` has `kubernetes_role_binding`,
-  `kubernetes_cluster_role_binding`, `egress`, `action_auto_approve`, `session_inbox_access`), an
-  open item tracked by `ENVIRONMENT_LIFECYCLE_RULES`. The Identity inventory reads already admit
-  Identity callers; explicit lifecycle operations remain ServiceAccount/operator-only, while
-  automatic Identity wake uses the existing target resume policy and is outside the proposed rule.
-  The reviewed design is [the `environment` rule type](environment_rules.md): resume followed by
-  native `bind_session`. Session creation without a binding remains a separate, unresolved design.
+  rules, saying who may make these requests for which environments, are the mechanism:
+  [the `environment` rule type](environment_rules.md) admits explicit `resume` (#16346) and native
+  `bind_session` (#16351). The Identity inventory reads already admit Identity callers; the other
+  lifecycle operations remain ServiceAccount/operator-only, and automatic Identity wake uses the
+  existing target resume policy, outside the rule. Session creation without a binding remains a
+  separate, unresolved design.
 - **Action boxes:** creating one is lifecycle. Today it is granted explicitly, through the Action
   Service's `action_auto_approve` policy on the effective caller. **Open consideration** (operator,
   not decided): an agent creating its own boxes with automatic approval is a deliberate path, so MCP

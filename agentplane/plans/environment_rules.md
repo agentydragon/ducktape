@@ -1,13 +1,13 @@
 # The `environment` rule type
 
-Status: **both slices operator-released (2026-11-14 04:58 UTC); resume merged in PR #16346, native bind_session in review as PR #16351.** The Identity cutover, #15742
+Status: **both slices operator-released (2026-11-14 04:58 UTC) and merged: resume in PR #16346, native bind_session in PR #16351.** The Identity cutover, #15742
 and #15744, is merged with live acceptance recorded in
 [`sandbox_identity_cutover_2026_11_12`](../docs/sandbox_identity_cutover_2026_11_12/README.md).
 The cutover implements Identity self-read for the four Environment inventory RPCs, but not an
 `environment` policy rule: explicit Identity resume and Identity native `CreateSession` were refused
 before these slices. The implementation slices are explicit `resume`, followed by native
-`CreateSession` `bind_session`. The task DAG tracks both under
-[`ENVIRONMENT_LIFECYCLE_RULES`](task_dag.md#environment_lifecycle_rules--explicit-identity-lifecycle-authority). Settled and not reopened here
+`CreateSession` `bind_session`; the rollout order is in
+[environment policy rollout](../docs/environment_policy_rollout.md). Settled and not reopened here
 ([identity plan](identity_and_kubernetes_accounts.md#identity-lifetime), operator 2026-11-10): acting
 in a workload is implied for its bound Identity, and so are same-Identity messaging and the wake it
 causes; direct lifecycle control (resume, suspend, delete or rebind an environment, or create
