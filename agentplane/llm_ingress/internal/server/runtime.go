@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"context"
@@ -45,11 +45,11 @@ func kubernetesIdentityUIDs(kubeConfig *rest.Config, policyNamespace string) (au
 	return auth.KubernetesIdentityUIDs(objects, policyNamespace)
 }
 
-func main() {
+func Run() int {
 	c, err := loadConfig()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
+		return 2
 	}
 	logger := configureLogging(c.LogLevels)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -57,14 +57,15 @@ func main() {
 	shutdownTracing, err := observability.Init(ctx, "llm-ingress")
 	if err != nil {
 		logger.Error("LLM ingress tracing setup failed", "error", err)
-		os.Exit(1)
+		return 1
 	}
 	err = serve(ctx, c, logger)
 	shutdownTracing()
 	if err != nil {
 		logger.Error("LLM ingress stopped", "error", err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 func serve(ctx context.Context, c config, logger *slog.Logger) error {
