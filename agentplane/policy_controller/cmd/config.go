@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/util/validation"
 )
@@ -17,17 +18,18 @@ const configFileEnv = "AGENTPLANE_POLICY_CONTROLLER_CONFIG_FILE"
 // config is the Policy Controller's complete non-secret deployment contract. The required YAML
 // file is authored through settings.py; service settings have no environment overrides.
 type config struct {
-	PolicyNamespace        string   `yaml:"policy_namespace"`
-	SubjectNamespaces      []string `yaml:"subject_namespaces"`
-	AccountsNamespace      string   `yaml:"accounts_namespace"`
-	MetricsBindAddress     string   `yaml:"metrics_bind_address"`
-	HealthProbeBindAddress string   `yaml:"health_probe_bind_address"`
-	GRPCBindAddress        string   `yaml:"grpc_bind_address"`
-	GRPCAudience           string   `yaml:"grpc_audience"`
-	ReaderAccounts         []string `yaml:"reader_accounts"`
-	WriterAccounts         []string `yaml:"writer_accounts"`
-	WorkloadIssuer         string   `yaml:"workload_issuer"`
-	WorkloadNamespaces     []string `yaml:"workload_namespaces"`
+	PolicyNamespace        string                     `yaml:"policy_namespace"`
+	SubjectNamespaces      []string                   `yaml:"subject_namespaces"`
+	AccountsNamespace      string                     `yaml:"accounts_namespace"`
+	MetricsBindAddress     string                     `yaml:"metrics_bind_address"`
+	HealthProbeBindAddress string                     `yaml:"health_probe_bind_address"`
+	GRPCBindAddress        string                     `yaml:"grpc_bind_address"`
+	GRPCTLS                *peertls.ServerTLSListener `yaml:"grpc_tls"`
+	GRPCAudience           string                     `yaml:"grpc_audience"`
+	ReaderAccounts         []string                   `yaml:"reader_accounts"`
+	WriterAccounts         []string                   `yaml:"writer_accounts"`
+	WorkloadIssuer         string                     `yaml:"workload_issuer"`
+	WorkloadNamespaces     []string                   `yaml:"workload_namespaces"`
 }
 
 func defaultConfig() config {
@@ -58,6 +60,14 @@ func loadConfig() (config, error) {
 }
 
 func (c config) validate() error {
+	if c.GRPCTLS != nil {
+		if err := c.GRPCTLS.Validate(); err != nil {
+			return fmt.Errorf("grpc_tls: %w", err)
+		}
+		if c.GRPCTLS.Listen == c.GRPCBindAddress {
+			return errors.New("grpc_tls.listen must differ from grpc_bind_address")
+		}
+	}
 	for _, setting := range []struct {
 		name       string
 		namespaces []string

@@ -13,6 +13,7 @@ go_library(
         "//agentplane/identity/auth",
         "//agentplane/identity/credentials/api/v1alpha1",
         "//agentplane/identity/credentials/issuer",
+        "//agentplane/net/peertls",
         "//agentplane/observability",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/policy/v1:policy_service_go_proto",

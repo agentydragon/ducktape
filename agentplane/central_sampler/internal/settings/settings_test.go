@@ -12,6 +12,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/anthropic"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 )
 
 func TestSettingsPlatformGuidanceAcceptsOldConfigurationAndRejectsEmptyGuide(t *testing.T) {
@@ -65,6 +66,25 @@ func TestSettingsPlatformGuidanceAcceptsOldConfigurationAndRejectsEmptyGuide(t *
 				t.Fatal("configuration did not retain the supplied platform guide")
 			}
 		})
+	}
+}
+
+func TestOptionalTLSListenerRequiresASeparateAddressAndAbsoluteFiles(t *testing.T) {
+	settings := fixtureSettings()
+	settings.ListenTLS = &peertls.ServerTLSListener{
+		Listen: ":8081", CertFile: "/run/agentplane/workload-tls/tls.crt", KeyFile: "/run/agentplane/workload-tls/tls.key",
+	}
+	if err := settings.Validate(); err != nil {
+		t.Fatalf("valid TLS listener rejected: %v", err)
+	}
+	settings.ListenTLS.Listen = settings.Listen
+	if err := settings.Validate(); err == nil {
+		t.Fatal("accepted TLS and plaintext listeners on the same address")
+	}
+	settings.ListenTLS.Listen = ":8081"
+	settings.ListenTLS.CertFile = "relative.pem"
+	if err := settings.Validate(); err == nil {
+		t.Fatal("accepted a relative TLS certificate path")
 	}
 }
 

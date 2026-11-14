@@ -218,6 +218,7 @@ go_test(
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/identity/auth",
         "//agentplane/identity/auth/listener",
+        "//agentplane/net/peertls",
         "//agentplane/proto:session_go_proto",
         "//agentplane/runner_gateway/environments",
         "//agentplane/runner_gateway/environments/lifecycle",

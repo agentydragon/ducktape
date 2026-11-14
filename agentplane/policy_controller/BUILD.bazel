@@ -31,5 +31,8 @@ py_library(
     name = "settings",
     srcs = ["settings.py"],
     visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        "//agentplane/net/peertls:config",
+        "@pypi//pydantic",
+    ],
 )

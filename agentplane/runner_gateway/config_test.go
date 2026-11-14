@@ -13,6 +13,7 @@ import (
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
@@ -478,12 +479,20 @@ func TestPodNameDefaultsToTheHostname(t *testing.T) {
 }
 
 func TestOptionalCentralSamplerTarget(t *testing.T) {
-	path := configtest.WriteSettings(t, requiredFile+`central_sampler: {target: sampler:8080, token_file: /run/token}
+	path := configtest.WriteSettings(t, requiredFile+`central_sampler:
+  target: sampler:8080
+  token_file: /run/token
+  tls: {ca_file: /run/ca.pem, server_uri: spiffe://agentplane/central-sampler}
 `)
 	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))
-	if err != nil || c.CentralSampler == nil || c.CentralSampler.Target != "sampler:8080" {
+	if err != nil || c.CentralSampler == nil || c.CentralSampler.Target != "sampler:8080" || c.CentralSampler.TLS == nil || c.CentralSampler.TLS.ServerURI != peertls.CentralSamplerURI {
 		t.Fatalf("configured sampler: %v %v", c.CentralSampler, err)
 	}
+	c.CentralSampler.TLS.ServerURI = peertls.PolicyControllerURI
+	if err := c.validate(); err == nil {
+		t.Fatal("accepted a central sampler target with another service identity")
+	}
+	c.CentralSampler.TLS = nil
 	c.CentralSampler.TokenFile = ""
 	if err := c.validate(); err == nil {
 		t.Fatal("accepted target without token file")

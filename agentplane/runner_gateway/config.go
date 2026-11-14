@@ -237,6 +237,14 @@ func (c *config) validate() error {
 	if target := c.CentralSampler; target != nil && (target.Target == "" || target.TokenFile == "") {
 		return errors.New("central_sampler requires a target and token_file")
 	}
+	if target := c.CentralSampler; target != nil && target.TLS != nil {
+		if err := target.TLS.Validate(); err != nil {
+			return fmt.Errorf("central_sampler.tls: %w", err)
+		}
+		if target.TLS.ServerURI != peertls.CentralSamplerURI {
+			return errors.New("central_sampler.tls.server_uri must identify the Central Sampler")
+		}
+	}
 
 	return nil
 }

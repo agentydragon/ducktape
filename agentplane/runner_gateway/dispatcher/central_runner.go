@@ -9,6 +9,7 @@ import (
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -21,8 +22,9 @@ import (
 
 // CentralTarget is deployment-owned. The Dispatcher selects the service for new sessions.
 type CentralTarget struct {
-	Target    string `mapstructure:"target"`
-	TokenFile string `mapstructure:"token_file"`
+	Target    string             `mapstructure:"target"`
+	TokenFile string             `mapstructure:"token_file"`
+	TLS       *peertls.ClientTLS `mapstructure:"tls"`
 }
 
 // SessionExecution is the exact Identity incarnation a Session executes as.
@@ -81,7 +83,7 @@ func (r *RoutingRunner) withClient(ctx context.Context, call func(context.Contex
 	if target.Target == "" || target.TokenFile == "" || r.Timeout <= 0 {
 		return status.Error(codes.Internal, "invalid configured central sampler target")
 	}
-	conn, err := bearer.Dial(target.Target, target.TokenFile, r.Timeout, nil)
+	conn, err := bearer.Dial(target.Target, target.TokenFile, r.Timeout, target.TLS)
 	if err != nil {
 		return err
 	}

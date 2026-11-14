@@ -22,6 +22,7 @@ go_library(
         "//agentplane/grpc/graceful",
         "//agentplane/identity/auth",
         "//agentplane/net/listener",
+        "//agentplane/net/peertls",
         "//agentplane/postgres",
         "//agentplane/postgres/migrate",
         "//agentplane/postgres/wakeups",
