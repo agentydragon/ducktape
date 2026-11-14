@@ -249,8 +249,8 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
             gateway_target = await _address(cluster, core, "runner-gateway", 8080)
             sampler_token = await _bound_token(cluster, core, "runner-gateway", gateway_pod, SERVICE)
             server_credentials = await service_credentials(cluster)
-            # Sandbox Ready proves Controller observation. A claimed EndpointSlice can precede
-            # the Gateway's first snapshot, so prove the live read route before starting setup.
+            # Sandbox Ready proves Controller observation. The Gateway may still be waiting for
+            # its first Runtime snapshot, so prove the live read route before starting setup.
             gateway = SandboxControlClient(
                 control_target=gateway_target,
                 token_file=gateway_token,

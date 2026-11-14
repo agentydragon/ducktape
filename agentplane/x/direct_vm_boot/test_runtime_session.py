@@ -335,7 +335,6 @@ async def _run_shell_turn(
 async def test_packaged_claude_session_runs_shell_and_accepts_next_input(
     tmp_path: Path,
     postgres_admin_url: str,
-    api_server: KubernetesApiServer,
     sandbox: SandboxCluster,
     control: EnvironmentRuntimeControl,
     gateway_service: GatewayProcess,
@@ -438,7 +437,6 @@ async def test_packaged_claude_session_runs_shell_and_accepts_next_input(
                 authenticated_readiness(
                     gateway_service,
                     client_token,
-                    api_server,
                     sandbox,
                     control=control,
                     controller_credentials=gateway_service.controller_credentials(tmp_path / "controller-transport"),
