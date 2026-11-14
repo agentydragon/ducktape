@@ -135,6 +135,10 @@ _VM_GUEST_ROOT_IMAGE = {
 _VM_GUEST_ROOT_PROFILE_IMAGE = {
     "//agentplane/system_tests/vm/guest:root_profile_image": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root-profile:unset",
 }
+_VM_GUEST_ROOT_PLATFORM_IMAGE = {
+    # Keep the rendered containerDisk reference; only this manual action's image bytes differ.
+    "//agentplane/system_tests/vm/guest:root_platform_image": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset",
+}
 _RUNNER_DISK_IMAGE = {
     "//agentplane/env/images:disk_image": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset",
 }
@@ -205,7 +209,7 @@ image_manifest = rule(
     doc = "Write grouped image references and OCI layout runfiles paths to one JSON manifest.",
 )
 
-def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False, shutdown_diagnostic = False, require_kvm = False, main = None, exec_properties = {}, args = []):
+def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, platform_guest = False, boot_evidence = False, shutdown_diagnostic = False, require_kvm = False, main = None, exec_properties = {}, args = []):
     """Run one suite with fresh fixture state and the selected executor lifecycle.
 
     `exec_properties` are added to the test's execution properties. A `require_kvm` suite must set its own
@@ -215,6 +219,8 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         fail("unknown k3s stack: " + stack)
     if profile_guest and stack != "vm":
         fail("profile_guest requires the VM stack")
+    if platform_guest and (stack != "vm" or profile_guest):
+        fail("platform_guest requires the VM stack and cannot use the profile guest")
     if boot_evidence and stack != "vm":
         fail("boot_evidence requires the VM stack")
     if shutdown_diagnostic and stack != "vm":
@@ -246,7 +252,7 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         properties["EstimatedComputeUnits"] = "8"
         if config.vm:
             images["vm"] = _VM_IMAGES
-            guest_root_image = _VM_GUEST_ROOT_PROFILE_IMAGE if profile_guest else _VM_GUEST_ROOT_IMAGE
+            guest_root_image = _VM_GUEST_ROOT_PROFILE_IMAGE if profile_guest else _VM_GUEST_ROOT_PLATFORM_IMAGE if platform_guest else _VM_GUEST_ROOT_IMAGE
             images["guest"] = _merge_image_maps(_VM_GUEST_BOOT_IMAGE, guest_root_image)
         else:
             images["guest"] = _FIRECRACKER_GUEST_IMAGES

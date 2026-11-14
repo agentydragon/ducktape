@@ -10,7 +10,7 @@ def test_root_run_is_the_fixture_symlink_in_all_images() -> None:
     closure = runfiles_root / os.environ["EROFS_CLOSURE_RLOCATION"]
     tool = runfiles_root / os.environ["EROFS_TOOL_RLOCATION"]
 
-    for image_key in ("ROOT_IMAGE_RLOCATION", "ROOT_PROFILE_IMAGE_RLOCATION"):
+    for image_key in ("ROOT_IMAGE_RLOCATION", "ROOT_PROFILE_IMAGE_RLOCATION", "ROOT_PLATFORM_IMAGE_RLOCATION"):
         image = runfiles_root / os.environ[image_key]
 
         inode = subprocess.run(
@@ -22,6 +22,34 @@ def test_root_run_is_the_fixture_symlink_in_all_images() -> None:
             [tool, closure, "dump.erofs", "--cat", "--path=/var/run", image], check=True, capture_output=True, text=True
         ).stdout
         assert target == "/run", f"{image_key}: {target}"
+
+
+def test_only_the_setup_platform_image_omits_packaged_harnesses() -> None:
+    runfiles_root = Runfiles.CreateOrRaise().root()
+    closure = runfiles_root / os.environ["EROFS_CLOSURE_RLOCATION"]
+    tool = runfiles_root / os.environ["EROFS_TOOL_RLOCATION"]
+    for image_key in ("ROOT_IMAGE_RLOCATION", "ROOT_PROFILE_IMAGE_RLOCATION", "ROOT_PLATFORM_IMAGE_RLOCATION"):
+        image = runfiles_root / os.environ[image_key]
+        for path in ("/opt/harnesses/claude", "/opt/harnesses/codex/bin/codex"):
+            result = subprocess.run(
+                [tool, closure, "dump.erofs", f"--path={path}", image], check=False, capture_output=True, text=True
+            )
+            assert (result.returncode == 0) == (image_key != "ROOT_PLATFORM_IMAGE_RLOCATION"), result
+        if image_key == "ROOT_PLATFORM_IMAGE_RLOCATION":
+            prepare = subprocess.run(
+                [
+                    tool,
+                    closure,
+                    "dump.erofs",
+                    "--cat",
+                    "--path=/etc/systemd/system/agentplane-guest-prepare.service.d/guest-prepare-platform.conf",
+                    image,
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout
+            assert "ExecStart=/usr/sbin/agentplane-guest-prepare platform" in prepare
 
 
 def test_workload_trust_mount_matches_guest_contract() -> None:

@@ -4,8 +4,14 @@ profile=/run/current-system/sw/bin
 export PATH=$profile:/usr/sbin:/usr/bin
 busybox mkdir -p "$profile"
 busybox --install -s "$profile"
-ln -s /opt/harnesses/claude "$profile/claude"
-ln -s /opt/harnesses/codex/bin/codex "$profile/codex"
+case "${1:-harnesses}" in
+    harnesses)
+        ln -s /opt/harnesses/claude "$profile/claude"
+        ln -s /opt/harnesses/codex/bin/codex "$profile/codex"
+        ;;
+    platform) ;; # This image intentionally omits harness packages; it runs setup only.
+    *) echo "unknown guest preparation mode: $1" >&2; exit 2 ;;
+esac
 ln -s /usr/bin/bash /usr/bin/git /usr/bin/findmnt "$profile/"
 
 ip link set lo up
