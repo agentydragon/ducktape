@@ -1,0 +1,382 @@
+{
+  "schema_version": 1,
+  "scope": "Iteration 12 image screen, direct private-systemd controls, merged ports, latency/reliability supplements and root navigation; original fleet populations unchanged.",
+  "verified_at_utc": "2026-11-14T02:42:59.121976+00:00",
+  "reviewed_report_head": "654d8d6fb10e858c3e31f887eff7a9d6135c5524",
+  "source_snapshot_sha256": "f756a997801a2e43a9bb5a84dd4f26bce76d27e522abef4f3020fa5fb42d81f0",
+  "invocation_url": "https://app.buildbuddy.io/invocation/8bdb0ba9-c1e4-4eb2-8e8d-959c3c1f6e4e",
+  "target": "//x/report12_visual_preview:test_report",
+  "native_result": {
+    "tests": 4,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "status": "PASSED",
+    "run": 1,
+    "shard": 1,
+    "attempt": 1,
+    "cached_results": 0,
+    "remote_command_exit_code": 0,
+    "bbr_exit_code": 0
+  },
+  "physical_test_runner": {
+    "new_records": 1,
+    "stage": "COMPLETED",
+    "reported_reapi_code": 0,
+    "execution_id_sha256": "f181a72170767e5c3ae5ba30767c10311890c53aa7a2c44a2dbbcd45935c4a9c"
+  },
+  "rendered_asset_sha256": {
+    "agentplane-test-architecture/accepted-run-observer-binary-build.json": "6ae74edb0e3aa46af04cf2994a7f0896a920073c38453b3b74db003773b37152",
+    "agentplane-test-architecture/accepted-run-observer-live-helper.patch": "f8f9bdcab493d82a86823b1132ed0e71d2a0f9fcd1e3be2edb89b09c32b2042d",
+    "agentplane-test-architecture/accepted-run-observer-live.json": "6e7fdb05669548081c50495127d7ecb36dbf142a1e78745c8208a58972ed6f0f",
+    "agentplane-test-architecture/accepted-run-observer-reconciliation.json": "4242d59aa3711a74c9ea7a06b1b12bf225a1ecd10c05090058df74091684b1ab",
+    "agentplane-test-architecture/accepted-run-observer-reconciliation.patch": "84db76b8c8d24930de852fc5a0b68d432828dc1bac3bf382e3aef4b6eff7d859",
+    "agentplane-test-architecture/app-fixture-ownership.json": "436f76dbc8053790f9a186981e17a2e32bbaa891469bb18e7258e29930328cb2",
+    "agentplane-test-architecture/app-fixture-selector.json": "f249519b006bbd71fafdcfe04970089c5db61ff32e24e47ab7cdafb81f903b68",
+    "agentplane-test-architecture/asgi-mcp-ownership.json": "44b7a1ba7d6e8bf4e69f1b457ff0f786af9cbdbb5862416c83fefa10b6db210d",
+    "agentplane-test-architecture/configured-guest-runtime-gateway.json": "52d941e1b26d77c3281e2563b9818fc948c2cf3e849596d18c75a84bb4185938",
+    "agentplane-test-architecture/evidence.json": "3590092332cacd726b4d7729e4ca69a9d1b8353418b660a1d76b4141d54466fa",
+    "agentplane-test-architecture/guest-session-contract.json": "3ca543f371c9d92ca8d1b8211c142b71117ae3e124e3deceffdefe89389ea3f4",
+    "agentplane-test-architecture/historical-app-cut-cohort-stage.json": "a16cd58c67c460c709f774ace32efb03d1f7c5b6bda1b1c58773afd6d2a742b6",
+    "agentplane-test-architecture/historical-app-cut-four-pair-selector.json": "d71917f2e089853877ba5c17d7b34277cfcf81907c0a1c89d0218cfad7a25ed7",
+    "agentplane-test-architecture/historical-app-cut-pair-asts.jsonl": "236d894ac0b8b875bbc4c2dae46abf30cc0109d82df314ab603db0856f4a4206",
+    "agentplane-test-architecture/historical-app-cut-pair-deltas.jsonl": "79a184682caa8c3b9e90853ff80e237bfaee1507e1779df74c9af515ce81caf8",
+    "agentplane-test-architecture/historical-app-cut-selector.json": "86555b1d64c998d0ae23dddcb67c6741a9d2725b74d76d955c538d5f7b65a26d",
+    "agentplane-test-architecture/historical-app-cut-stage.json": "4e416cb61566a4999cb595056e18e71cfe06dc1bb8606aa939b8f14ebe14e1fa",
+    "agentplane-test-architecture/historical-selector-first-pair.json": "52acf259c93e476f05e80e7073fe40a2024bf78507b037372b39215a1417ff8b",
+    "agentplane-test-architecture/index.html": "ba22b13dc521177257f18a063bed6bd5a96b2e4635bf81005ccb64d4659b8ec6",
+    "agentplane-test-architecture/iteration10.json": "490e4fb5a36103a61116a15a82a422fd37e5a3205360d7c4cf738629418629cc",
+    "agentplane-test-architecture/iteration11.json": "bde3219d91558865e4208264be1889077356e0b28e7b6b45012969990e3f94ac",
+    "agentplane-test-architecture/iteration12.json": "0111db2d6e25666e76143c54e27d0c3689e15b7b8fcf986a6d624d12066643ee",
+    "agentplane-test-architecture/iteration9.json": "516f6af4e3f3ae857f7c552193a272ff81d4e49975498806e531d959cab779a2",
+    "agentplane-test-architecture/kvm-capacity-feasibility.json": "954589a61986dd9303bfbe1cb4141c459937546a1e093f8552eee8c0645e1c77",
+    "agentplane-test-architecture/managed-vm-kernel-failure.json": "362cafa84ab380b85a5d58c3f38fdc27bbdd1b84361d851320a77687f73b8232",
+    "agentplane-test-architecture/manifest.json": "cb8ff205575e174395072a2ce87404770d76c7d4f588c8340c0b78661685f456",
+    "agentplane-test-architecture/native-contract-validation.json": "786867a5cb5a0e934261bd0148f29cd8723ecd10d1a4e7b10582d776c237c5ac",
+    "agentplane-test-architecture/native-gateway-fixture-split.json": "78850becdca63bc6520d2f04b5e07414acfaf5f8e1647c3d30046df03ccb52ec",
+    "agentplane-test-architecture/native-setup-profile.json": "2e3d446b90a0f64a88677fdd463d155566faa8fa2982046034191f060f674cbc",
+    "agentplane-test-architecture/python-bytecode-collection-screen.json": "6bc254fc641ea37f081510b36bad745260796ca77b124989403224b56f4138da",
+    "agentplane-test-architecture/render-batching-candidate.patch": "16f48390d6d34ccfafe5efca9bddb3c15bb119894f9bd89d1aeb2e3bc2d070cb",
+    "agentplane-test-architecture/render-batching-rejected.json": "e7642fe4ab3ec96d2f51e6d7326ad173a439fbae4dca524a7667b29fea456efc",
+    "agentplane-test-architecture/required-542-k3s-summary.json": "b97fddfe643484e04ffcf8bb9877618fc4f514b8b22a903dad35aa4a85423a69",
+    "agentplane-test-architecture/required-ci-0a9-workflow.json": "57edaaf20cd5639bffbc6fa7d454528a336743789f0225ae1eb2b080b3bff171",
+    "agentplane-test-architecture/required-ci-135-workflow.json": "9d1e7378694fd384ba4bec4ff348a415da959490abfc11aa8d414bd7ef9ede0e",
+    "agentplane-test-architecture/required-ci-5699-workflow.json": "e37f5d2ea4daba1e41179d559dfe522512545164044c8502c9bd5c190f7bdeb0",
+    "agentplane-test-architecture/required-ci-8a5-workflow.json": "c7b1bedc52c6401ae830a9337726d746a75f7a060a344789d7bd18f66d2113f8",
+    "agentplane-test-architecture/required-ci-a16-workflow.json": "8584a810536a43562cb1a94a427ce8ca7551e404d98ae79b8d82316ccc812f03",
+    "agentplane-test-architecture/runtime-control-listener-repair.json": "38f72a255773273126db83d3828797ad6b4977525368869222dced67721ee8d5",
+    "agentplane-test-architecture/selector-counterfactual.sh": "74d59cd7daaafb0890ed4eb42523f05d81d95f259248f9e72362c8bac6eafcf2",
+    "agentplane-test-architecture/setup-attribution.json": "d7594d0a2854b2f9b2f462085797d97463a76a2b8465f3f37c3154bf9c649634",
+    "ci-lanes.js": "75489df1779c3c5d51426522eee0358904ae07365b60d8be92b761876e1b5db1",
+    "index.html": "16e72d0e69a454a63563b6c80afbc1c55dde76a1b96658e143bddf65175effad",
+    "latency/bridge-sharding-probe.json": "d5558a2fd7de187080650726b950158eae869617de2694e54d73d981545424eb",
+    "latency/crd-ordering-spike.patch": "28ab694a4c12c6f1e91de1b91bacfc905c32aebe38b4bb0beba145e0dd1677f5",
+    "latency/critical-path-5699.json": "ec3946f448097406d30ce46be879136e9ccb2f95abfa7fb79ff57567895c7f07",
+    "latency/evidence.json": "27fc94ed3a0485d34fb42e82423edcaa41d2e3873ee79b8178089c4bc4246bf3",
+    "latency/evidence.md": "f56776d75d36cb921821ae96e3a13ce202b993c61a7c70ce8e2cef3d9556e627",
+    "latency/index.html": "50db242dfefe9e8a349a731416e61c8b619fd2aed48e3af018bce3c3d331a7b3",
+    "latency/manifest.json": "5daf03fb1178c69047e300a8f758af02978a7333012a4daf9b3d9a70323da585",
+    "latency/resource-followup.js": "5d9c207c9d41aa4874accbe422f03de1d4e5cd5f80fe248aabac338d1dfdb870",
+    "latency/resource-timeline.png": "93e85c13f3d97684a12cdef44694990a71f283878022c3cc4103ad6afd899a4e",
+    "reliability/charts.js": "ee77367c9d8124c2fe1013d341998994edbdce02eb77a3e67ccb0996fda06866",
+    "reliability/evidence.json": "47a0154d19f8397b42687a641e22c8e977af4090551d1b5ac83d436fca0ddb45",
+    "reliability/index.html": "46557a9217e7494732aee6b10c153cb2838934f879f557f9568bc72f72cef467",
+    "reliability/manifest.json": "89ab28b4bde3b7fb13e2efaeae002e2440338f4705e85f7aead1dee7b57707e5",
+    "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+    "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
+  },
+  "cases": [
+    {
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "status": "passed",
+      "pages_checked": [
+        "root",
+        "architecture",
+        "latency",
+        "reliability"
+      ],
+      "capture_counts": {
+        "root": 6,
+        "architecture": 4,
+        "latency": 3,
+        "reliability": 2
+      },
+      "live_theme_change": true,
+      "document_overflow": false,
+      "console_errors": [],
+      "page_errors": [],
+      "failed_requests": [],
+      "http_errors": []
+    },
+    {
+      "theme": "dark",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "status": "passed",
+      "pages_checked": [
+        "root",
+        "architecture",
+        "latency",
+        "reliability"
+      ],
+      "capture_counts": {
+        "root": 3,
+        "architecture": 2,
+        "latency": 1,
+        "reliability": 1
+      },
+      "live_theme_change": true,
+      "document_overflow": false,
+      "console_errors": [],
+      "page_errors": [],
+      "failed_requests": [],
+      "http_errors": []
+    },
+    {
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "status": "passed",
+      "pages_checked": [
+        "root",
+        "architecture",
+        "latency",
+        "reliability"
+      ],
+      "capture_counts": {
+        "root": 6,
+        "architecture": 4,
+        "latency": 3,
+        "reliability": 2
+      },
+      "live_theme_change": true,
+      "document_overflow": false,
+      "console_errors": [],
+      "page_errors": [],
+      "failed_requests": [],
+      "http_errors": []
+    },
+    {
+      "theme": "light",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "status": "passed",
+      "pages_checked": [
+        "root",
+        "architecture",
+        "latency",
+        "reliability"
+      ],
+      "capture_counts": {
+        "root": 3,
+        "architecture": 2,
+        "latency": 1,
+        "reliability": 1
+      },
+      "live_theme_change": true,
+      "document_overflow": false,
+      "console_errors": [],
+      "page_errors": [],
+      "failed_requests": [],
+      "http_errors": []
+    }
+  ],
+  "screenshots": {
+    "count": 60,
+    "cases": 4,
+    "coverage": "Root and current architecture, latency and reliability sections; desktop/mobile, light/dark.",
+    "artifact_paths": [
+      "test.outputs/test-outputs/files/a900382df8e2f592ebd78d964c2cf4622577668f75ecc295fa6b47fe71dd6396.png",
+      "test.outputs/test-outputs/files/4e16d82725ae2a3ce60bbd844a57ab8e16e7bd380dcb62a6c2558bc5b2a65882.png",
+      "test.outputs/test-outputs/files/e157ee68a8cdd6750fa67918815d190747e38db6128cd7dcbe6625571a101314.png",
+      "test.outputs/test-outputs/files/27f43f6dabf1234c1469741cf08851e1ccd23d311d6ffd27ea2e05919becb4d1.png",
+      "test.outputs/test-outputs/files/a7e54b18741b2a8b8d0dee6172ce911b5eb604aedbe6f4ec2df736ea2f253c7c.png",
+      "test.outputs/test-outputs/files/eb1f7299cc733625914b1fbb40c5cdbb33d48ec40123487eb4256a1eb87f634b.png",
+      "test.outputs/test-outputs/files/15329acf6753c33c02bc8531d65df21063ccbd6d5ad979306414dcc311d71b3d.png",
+      "test.outputs/test-outputs/files/667a6bb1f4471ae3992df9e18fe35a9c8df669e552105ee7614e0fe2dee2a7d7.png",
+      "test.outputs/test-outputs/files/35915668561f8b9f547a537ccda4fe451e8442f4e99dc7ffceeb3eec87538765.png",
+      "test.outputs/test-outputs/files/e87ccbc36f79de05330590bb1765e027108afc35da3c9ce2040c6eae83ea2d2e.png",
+      "test.outputs/test-outputs/files/77ffb505ff79e27a5b66c635d398e6e7dd91f70e09b34de80f35d6744835af4c.png",
+      "test.outputs/test-outputs/files/405c8d000111f7831c7a8802b4f218a8151a62e7eb374219ed13e6947c2f4ced.png",
+      "test.outputs/test-outputs/files/4e56ee1bc8a76c49622e80ca7f61d9c383086541fa5c9b1fadb08dcb8a936a0c.png",
+      "test.outputs/test-outputs/files/a29ee46bafcfe806633b6050141d046eec04d42dae4b3d589829c90f87627d9c.png",
+      "test.outputs/test-outputs/files/7b1f70f7d534d1a2da104a657a371c8e3d3042777f7fd4b5342d0d366e5a04a8.png",
+      "test.outputs/test-outputs/files/a6ad27d388c9424718091e587cf3af15b873185a99117e33925eccf32df861e1.png",
+      "test.outputs/test-outputs/files/39c6f3b82076757a81c4904d16f6a02a1787531294c2d339779d080776f16c51.png",
+      "test.outputs/test-outputs/files/1e9466294b867485b353f9f92a136951563012cd0cbce9b4ce118255531f77c4.png",
+      "test.outputs/test-outputs/files/0f3e3f3197751b17330bbe2b68cee9a1d4999aea12e927c36ce66880e6e43204.png",
+      "test.outputs/test-outputs/files/cd4cc2caf1a46b44cb071b91b394c33d634ca05e4b1282484ac916e210e96746.png",
+      "test.outputs/test-outputs/files/0c3ca191fdf2e7f2c309a96fbd6771a8d00bcd171954fcb9fa5168082075240d.png",
+      "test.outputs/test-outputs/files/05e29e720ea9dea532d26eb2e2b92e70a967d9949b1a17e2db0cc6243a49f665.png",
+      "test.outputs/test-outputs/files/625d1cc716d6f312653f88165138b99c9249a9149f018079eccb5851e291e4f0.png",
+      "test.outputs/test-outputs/files/ef6f3db124ba5e989051aeb855628611ad0eed7ea97cf2beebe47dd8ac150fee.png",
+      "test.outputs/test-outputs/files/427b1247cc9685f12ac5a78c48b2fab2f16b06fde820d5e403084bcb8e843f12.png",
+      "test.outputs/test-outputs/files/ca90a36970ee85b4c88fe8d1189fbf6e942b8fd2f24d5c2c0ac0917d7521cde4.png",
+      "test.outputs/test-outputs/files/c3ec06944d04bedf24f2801c8758adcfd45a040b92e29c44be3a2da646b58416.png",
+      "test.outputs/test-outputs/files/0c6a833378f9136644514e12ed3c9b9ac1690256c27c6ae1c81de84cd967ae6d.png",
+      "test.outputs/test-outputs/files/42f141e5376d69754adf89cbb32e01848760724d7102ad6f09b2bb8218a81a1c.png",
+      "test.outputs/test-outputs/files/f48bc527049c700ec21b19c051efbea193578207f12778103a6bb66878db92ed.png",
+      "test.outputs/test-outputs/files/012fc3ca27e8594d4f791933da613c3acb7723e78f05d4bcf1d1b201cdf84ab4.png",
+      "test.outputs/test-outputs/files/a506b375adb4d430eedff1fd71a2a7dc9a65d86a5aecd401b69859e6582d968c.png",
+      "test.outputs/test-outputs/files/ab46289659cba53a43e32a307128da01a39295e2718cb51a0d0e15a77409d217.png",
+      "test.outputs/test-outputs/files/b4d535f771334487d7361680a9671822950bb005032771d285fa62a640624932.png",
+      "test.outputs/test-outputs/files/62b4dda0a309af1db1eacf27138b2a5a5589dd46f96d946895a070ba94761b3c.png",
+      "test.outputs/test-outputs/files/e476451fe68cc8588540411dfdfed6282598ff701e2296680c549b39ac00b928.png",
+      "test.outputs/test-outputs/files/64a7456ac3da9daf6af07f3e71b0b60a32f6db1b34f5c60743ca32a6e908626c.png",
+      "test.outputs/test-outputs/files/bca79f9df715221002939eefc144494a024e0e766a9f429a37fb07a5bdd8fba5.png",
+      "test.outputs/test-outputs/files/f185f802ba07109f8405c3df0389294f762d8ba891bc264ad4eab975160fe823.png",
+      "test.outputs/test-outputs/files/78423c74fe298adf2bd515b00839ec90afb4cde52adb8fb4e772865832aa200a.png",
+      "test.outputs/test-outputs/files/58c6362e952c8539422d58dab64c55633883ab33d8d9e56b5b3e0031c3d39dbd.png",
+      "test.outputs/test-outputs/files/b750338bb128f99357bc2667b0d2267020cd8d14a722bfe9de201ae8edd0b2b4.png",
+      "test.outputs/test-outputs/files/7a46fa81b735400641bc6409f13a68aedc216cb62e5081884a2776beebe923c7.png",
+      "test.outputs/test-outputs/files/697fce44130c89a54bf42e93744950e2a81c65a87d9f938ce27c2823fef4e677.png",
+      "test.outputs/test-outputs/files/63346e8d8ff79609ecf065662319215d1fdef06a2fed3aa1ac60fff7aee5bdb9.png",
+      "test.outputs/test-outputs/files/98e15205b0f704049e759111efe9af4c1496da591479584f743070f9e5514966.png",
+      "test.outputs/test-outputs/files/38103ffff0e9aaca9ebb4733853aee614c6ca230d807c3855f37f0676dd8619e.png",
+      "test.outputs/test-outputs/files/7ba7368bf838ddfa9ae6a661c39d8b828e31cf9ff55ea8d80db4ed975602a9c5.png",
+      "test.outputs/test-outputs/files/9a2c7026c4861171798c93d6d5daa37d5b0eeca02ee24523e7022560916f4a60.png",
+      "test.outputs/test-outputs/files/796d6650fc4d7a7da784f99f0810b3f520afc58230fcf91ef90cc6438840cff5.png",
+      "test.outputs/test-outputs/files/e22e65e7749223630c157b593d41249c441927e73e1a66c119d3da3f1e8de5da.png",
+      "test.outputs/test-outputs/files/25b10caa50d53856dc545add1eb97907724a5349b84441d6fe8ff8d114b6ab38.png",
+      "test.outputs/test-outputs/files/0377c6e287e2db61a51410f0b224e9e5f4945b995c8c235be3982e20a5b0380c.png",
+      "test.outputs/test-outputs/files/a8dc9c27f3c8671078ffb5f318f1ea5f870443c0a879154a8f4244a78eed0d01.png",
+      "test.outputs/test-outputs/files/245c0a523051aebb13a3e955371a0136a312465fa2a249d1a3ca88528957a8e4.png",
+      "test.outputs/test-outputs/files/1dc65b09411c15e6db0eff16d7e80c376614500a901a21cfeeda6fc8b5a67992.png",
+      "test.outputs/test-outputs/files/3dba29e72909c73cc5bed932ba9490b2dac957a812f706ef0dc961489e56fe9f.png",
+      "test.outputs/test-outputs/files/b7dc5e9016ec810b9f9073e500ce7456bb2f242fb5ccfdc91b25948dd7960044.png",
+      "test.outputs/test-outputs/files/3e9ea9353fa14198f00ef523b6377b61ea9b2bd878022f37dd8dd7888bcbaa79.png",
+      "test.outputs/test-outputs/files/47896692ba3a654ebd2be032af5bb48de1423e471a93db184d7ad50e55d132aa.png"
+    ]
+  },
+  "screenshot_review": {
+    "reviewer": "root",
+    "result": "Representative screenshots inspected for readable content, meaningful distinctions and clipping.",
+    "images": [
+      {
+        "case": "x/report12_visual_preview/test_report.py::test_report12_pages[desktop-light]",
+        "checkpoint": "root-first-screen",
+        "artifact_basename": "ef6f3db124ba5e989051aeb855628611ad0eed7ea97cf2beebe47dd8ac150fee.png",
+        "png_sha256": "31f2ab31cc24897fb2e08d41e3cd42b9c30123fbd0e1bfd9d7448f21361567d2"
+      },
+      {
+        "case": "x/report12_visual_preview/test_report.py::test_report12_pages[desktop-light]",
+        "checkpoint": "architecture-first-screen",
+        "artifact_basename": "a900382df8e2f592ebd78d964c2cf4622577668f75ecc295fa6b47fe71dd6396.png",
+        "png_sha256": "57829e8db9ca271519bd1fcdf2fcfd82dc1af6d66faad45da616cffcc05edce7"
+      },
+      {
+        "case": "x/report12_visual_preview/test_report.py::test_report12_pages[desktop-light]",
+        "checkpoint": "architecture-current-00",
+        "artifact_basename": "42f141e5376d69754adf89cbb32e01848760724d7102ad6f09b2bb8218a81a1c.png",
+        "png_sha256": "fcb2bcc8e0558298e2566e0251d4c682025801de16ef998a9e32ca488c9c7cfb"
+      },
+      {
+        "case": "x/report12_visual_preview/test_report.py::test_report12_pages[desktop-light]",
+        "checkpoint": "latency-current-00",
+        "artifact_basename": "62b4dda0a309af1db1eacf27138b2a5a5589dd46f96d946895a070ba94761b3c.png",
+        "png_sha256": "93be9d49dd6f20461a283e65555f0f6927b4b0021596188d41bef54b1ac196ac"
+      },
+      {
+        "case": "x/report12_visual_preview/test_report.py::test_report12_pages[desktop-dark]",
+        "checkpoint": "reliability-current-00",
+        "artifact_basename": "e157ee68a8cdd6750fa67918815d190747e38db6128cd7dcbe6625571a101314.png",
+        "png_sha256": "b9987537c81999924deeb1c9e3de038201a27c271007a959a85c4c07040d51f7"
+      },
+      {
+        "case": "x/report12_visual_preview/test_report.py::test_report12_pages[desktop-dark]",
+        "checkpoint": "architecture-current-00",
+        "artifact_basename": "cd4cc2caf1a46b44cb071b91b394c33d634ca05e4b1282484ac916e210e96746.png",
+        "png_sha256": "deb5496ccfb53c556bb61c9226574d70db8812948cc85fcc7d51c12b220bd260"
+      },
+      {
+        "case": "x/report12_visual_preview/test_report.py::test_report12_pages[mobile-dark]",
+        "checkpoint": "architecture-current-00",
+        "artifact_basename": "47896692ba3a654ebd2be032af5bb48de1423e471a93db184d7ad50e55d132aa.png",
+        "png_sha256": "6c15f47279c7267e3e7964f8150cc75050a685a911d64e12396e42c8ca643226"
+      },
+      {
+        "case": "x/report12_visual_preview/test_report.py::test_report12_pages[mobile-dark]",
+        "checkpoint": "architecture-current-01",
+        "artifact_basename": "f185f802ba07109f8405c3df0389294f762d8ba891bc264ad4eab975160fe823.png",
+        "png_sha256": "cb2c04dcded0a74ee068d7f729c2cc0d6526b2c00f5eeb9a2622c4a5211e1f44"
+      },
+      {
+        "case": "x/report12_visual_preview/test_report.py::test_report12_pages[mobile-dark]",
+        "checkpoint": "architecture-current-02",
+        "artifact_basename": "697fce44130c89a54bf42e93744950e2a81c65a87d9f938ce27c2823fef4e677.png",
+        "png_sha256": "c50f1d029d1d6c67cda180b85a1f2d27d578348c0f40db708a7e4fdc17a2c09c"
+      },
+      {
+        "case": "x/report12_visual_preview/test_report.py::test_report12_pages[mobile-dark]",
+        "checkpoint": "architecture-current-03",
+        "artifact_basename": "a8dc9c27f3c8671078ffb5f318f1ea5f870443c0a879154a8f4244a78eed0d01.png",
+        "png_sha256": "c31095519c06fc1a503e4054bafb0aecd4352de06d08bf972a30e72035f3e7bf"
+      },
+      {
+        "case": "x/report12_visual_preview/test_report.py::test_report12_pages[mobile-light]",
+        "checkpoint": "latency-current-00",
+        "artifact_basename": "667a6bb1f4471ae3992df9e18fe35a9c8df669e552105ee7614e0fe2dee2a7d7.png",
+        "png_sha256": "7f89046d6c3f590c9b95e1bb88c5c0e902386513a698b86378984e2edf07946f"
+      },
+      {
+        "case": "x/report12_visual_preview/test_report.py::test_report12_pages[mobile-light]",
+        "checkpoint": "latency-current-01",
+        "artifact_basename": "e87ccbc36f79de05330590bb1765e027108afc35da3c9ce2040c6eae83ea2d2e.png",
+        "png_sha256": "dfd9b383248400e3b12e85f74174f22793d8802bea1a292eea528e1a2f650c1a"
+      },
+      {
+        "case": "x/report12_visual_preview/test_report.py::test_report12_pages[mobile-light]",
+        "checkpoint": "latency-current-02",
+        "artifact_basename": "ca90a36970ee85b4c88fe8d1189fbf6e942b8fd2f24d5c2c0ac0917d7521cde4.png",
+        "png_sha256": "97f7766610e22fe7457965fe4501602e5c781f43089cbab37be42e7a0f2f2608"
+      },
+      {
+        "case": "x/report12_visual_preview/test_report.py::test_report12_pages[mobile-light]",
+        "checkpoint": "reliability-current-00",
+        "artifact_basename": "f48bc527049c700ec21b19c051efbea193578207f12778103a6bb66878db92ed.png",
+        "png_sha256": "3bd3ea0f492d6bc668c7307810a565d5f7545009576d484bd55c390c8863beed"
+      },
+      {
+        "case": "x/report12_visual_preview/test_report.py::test_report12_pages[mobile-light]",
+        "checkpoint": "reliability-current-01",
+        "artifact_basename": "4e16d82725ae2a3ce60bbd844a57ab8e16e7bd380dcb62a6c2558bc5b2a65882.png",
+        "png_sha256": "11937d7e91132ac6095f72972cfdc76cac71ebd03d29a88c25ecded03ecf3f98"
+      },
+      {
+        "case": "x/report12_visual_preview/test_report.py::test_report12_pages[mobile-light]",
+        "checkpoint": "root-page-03",
+        "artifact_basename": "1dc65b09411c15e6db0eff16d7e80c376614500a901a21cfeeda6fc8b5a67992.png",
+        "png_sha256": "bf4261f531de54f51bfa1ba986ed4346ee240b2454dcc1ad1cae4f7c1e77e339"
+      }
+    ]
+  },
+  "prior_attempts": [
+    {
+      "invocation": "f9fb6df0-c62e-468f-acf8-86fcdaa85309",
+      "outcome": "CI tag filter excluded the manual target: zero test targets, no browser case. Excluded from validation."
+    },
+    {
+      "invocation": "9acae4b5-8188-42db-8ecc-f73707d2e0e2",
+      "outcome": "Browser predecessor passed; concurrent root navigation changes were then integrated and captured again."
+    },
+    {
+      "invocation": "0115ac26-1954-4af2-93ae-212ba5eba5a2",
+      "outcome": "Four browser cases passed. Screenshot review found stale directory descriptions; those were corrected and the final snapshot was recaptured."
+    }
+  ],
+  "limits": [
+    "Presentation proof only; no source-coverage, saving or qualification claim.",
+    "Raw logs and fixture diagnostics remain private.",
+    "Only the three visual-validation.json files are added after this captured snapshot; they are excluded from asset identity to avoid self-reference. HTML, evidence, manifests and shared assets retain exactly the captured bytes."
+  ]
+}
