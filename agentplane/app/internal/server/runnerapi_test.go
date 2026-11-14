@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
+	sessionhttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/sessions"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -43,7 +44,7 @@ func TestEnvironmentRuntimeStatusServesLifecycleProgressAndExactCursors(t *testi
 		t.Fatal(err)
 	}
 	server := newHTTPServer(authentication)
-	if err := registerRunnerRoutes(server, &appService{runnerStatus: runnerStatusFake{status: &sessionpb.EnvironmentRuntimeStatus{
+	handler := sessionhttp.NewHandler(sessionhttp.Dependencies{RuntimeStatus: runnerStatusFake{status: &sessionpb.EnvironmentRuntimeStatus{
 		EnvironmentRuntimeBootId: "fixture-boot",
 		Lifecycle: &sessionpb.EnvironmentRuntimeLifecycleStatus{
 			DesiredMode:       sessionpb.EnvironmentRuntimeLifecycleMode_ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_QUIESCING,
@@ -56,7 +57,8 @@ func TestEnvironmentRuntimeStatusServesLifecycleProgressAndExactCursors(t *testi
 				JournalSealCursor: 1<<63 + 3, AcknowledgementPresent: true, AcknowledgementCursor: 1<<63 + 2,
 			},
 		},
-	}}}); err != nil {
+	}}})
+	if err := registerRunnerRoutes(server, &appService{sessions: handler}); err != nil {
 		t.Fatal(err)
 	}
 	request := httptest.NewRequest(http.MethodGet, "/sandboxes/fixture/runner-status?sandbox_uid=uid", nil)
@@ -114,7 +116,8 @@ func TestRunnerStatusRoutePreservesSandboxErrorsAndCallerAuthentication(t *testi
 		t.Fatal(err)
 	}
 	server := newHTTPServer(authentication)
-	if err := registerRunnerRoutes(server, &appService{runnerStatus: runnerStatusFake{err: status.Error(codes.NotFound, "fixture")}}); err != nil {
+	handler := sessionhttp.NewHandler(sessionhttp.Dependencies{RuntimeStatus: runnerStatusFake{err: status.Error(codes.NotFound, "fixture")}})
+	if err := registerRunnerRoutes(server, &appService{sessions: handler}); err != nil {
 		t.Fatal(err)
 	}
 

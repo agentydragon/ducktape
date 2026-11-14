@@ -29,6 +29,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/internal/historyclient"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/historywatch"
+	sessionhttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/sessions"
 	threadhttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/threads"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/migrations"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/sandboxes"
@@ -307,14 +308,19 @@ func Run(ctx context.Context, config settings.Config) error {
 	defer closeConnections(healthConnections)
 
 	server := newHTTPServer(appAuth)
+	sessionHandlers := sessionhttp.NewHandler(sessionhttp.Dependencies{
+		SandboxNamespace: config.SandboxNamespace, SandboxPresets: config.SandboxPresets,
+		ThreadPresets: config.ThreadPresets, Environments: environments, SessionOpener: appBridge,
+		ThreadOpener: threadStore, RuntimeStatus: appBridge,
+	})
 	threadMetadata := threadhttp.NewHandler(threadhttp.Dependencies{
 		Store: threadStore, History: history, SandboxNamespace: config.SandboxNamespace,
 		Environments: environments, EnvironmentRuntime: runner,
 		Updates: wakeupHub, UpdatesConnected: wakeupHub.Connected, DrainDone: server.DrainDone(),
 	})
 	app := &appService{
-		config: config, systemStatus: serviceStatus, policySetNames: policySetNames, environments: environments, bridge: appBridge, runnerStatus: appBridge,
-		threadWriter: threadStore, threadMetadata: threadMetadata,
+		config: config, systemStatus: serviceStatus, policySetNames: policySetNames,
+		sessions: sessionHandlers, threadMetadata: threadMetadata,
 	}
 	if err := registerAppConfigRoutes(server, app); err != nil {
 		return fmt.Errorf("register app configuration facade: %w", err)

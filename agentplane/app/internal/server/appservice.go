@@ -2,6 +2,7 @@ package server
 
 import (
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
+	sessionhttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/sessions"
 	threadhttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/threads"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/status"
@@ -14,9 +15,6 @@ type appService struct {
 	config         settings.Config
 	systemStatus   *status.Checker
 	policySetNames policySetNameReader
-	environments   sessionEnvironmentReader
-	bridge         sessionOpener
-	runnerStatus   runnerStatusReader
-	threadWriter   threadOpener
+	sessions       *sessionhttp.Handler
 	threadMetadata *threadhttp.Handler
 }
