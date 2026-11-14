@@ -48,7 +48,6 @@ type Service struct {
 	serviceReaders         sets.Set[string]
 	serviceManagers        sets.Set[string]
 	serviceLaunchers       sets.Set[string]
-	identityChanges        IdentityChangeGuard
 	collectionAuthInterval time.Duration
 }
 
@@ -74,7 +73,6 @@ func New(
 		serviceReaders:         management.ServiceReaders,
 		serviceManagers:        management.ServiceManagers,
 		serviceLaunchers:       management.ServiceLaunchers,
-		identityChanges:        management.IdentityChanges,
 		collectionAuthInterval: auth.DefaultVerdictTTL,
 	}, nil
 }
@@ -86,13 +84,6 @@ type ManagementOptions struct {
 	ServiceReaders   sets.Set[string]
 	ServiceManagers  sets.Set[string]
 	ServiceLaunchers sets.Set[string]
-	IdentityChanges  IdentityChangeGuard
-}
-
-// IdentityChangeGuard serializes a Sandbox patch with Dispatcher Session admission and rejects
-// retained Sessions of a different Identity incarnation.
-type IdentityChangeGuard interface {
-	ChangeSandboxIdentity(context.Context, string, *identitypb.Identity, func() error) error
 }
 
 // Methods admits direct TokenReview-verified ServiceAccounts in the configured Resolver namespaces.

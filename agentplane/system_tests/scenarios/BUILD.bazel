@@ -1,6 +1,7 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # gazelle:resolve py agentplane.central_sampler.api.sampler_pb2 //agentplane/central_sampler/api:sampler_pb2
+# gazelle:resolve py agentplane.environments.v1.environment_service_pb2_grpc //agentplane/environments/v1:environment_service_pb2_grpc
 
 package(
     default_testonly = True,
@@ -100,8 +101,11 @@ py_library(
     deps = [
         "//agentplane:crd_group",
         "//agentplane:sandbox_resource",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/environments/v1:environment_service_pb2_grpc",
         "//agentplane/grpc:calls",
         "//agentplane/proto:environment_lifecycle_pb2",
+        "//agentplane/proto:identity_pb2",
         "//agentplane/proto:session_pb2",
         "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_pb2",
         "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_pb2_grpc",

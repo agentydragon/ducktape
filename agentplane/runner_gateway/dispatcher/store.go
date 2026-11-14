@@ -8,7 +8,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
@@ -536,68 +535,6 @@ func lockLiveSandbox(ctx context.Context, tx *sql.Tx, sandboxUID string) error {
 		return ErrSandboxDeleted
 	}
 	return nil
-}
-
-// SessionIdentityConflict names retained Sessions that would still refer to another acting
-// identity after an Environment identity change. Retained rows are conservative references:
-// Dispatcher has no terminal Session lifecycle projection to prove that one can be ignored.
-type SessionIdentityConflict struct{ SessionIDs []string }
-
-func (e *SessionIdentityConflict) ConflictingSessionIDs() []string { return e.SessionIDs }
-
-func (e *SessionIdentityConflict) Error() string {
-	return "environment identity is still named by Sessions: " + strings.Join(e.SessionIDs, ", ")
-}
-
-// ChangeSandboxIdentity serializes a Sandbox patch with Session admission using the same per-UID
-// advisory lock. The patch runs while the lock is held; callers fence the Kubernetes UID/version.
-func (s *Store) ChangeSandboxIdentity(ctx context.Context, sandboxUID string, identity *identitypb.Identity, patch func() error) error {
-	if sandboxUID == "" || patch == nil {
-		return errors.New("Sandbox UID and patch are required")
-	}
-	return transaction(ctx, s.DB, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", "sandbox:"+sandboxUID); err != nil {
-			return err
-		}
-		var deleted bool
-		if err := tx.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM deleted_sandbox WHERE sandbox_uid=$1)", sandboxUID).Scan(&deleted); err != nil {
-			return err
-		}
-		if deleted {
-			return ErrSandboxDeleted
-		}
-		var name, uid any
-		if identity != nil {
-			name, uid = identity.GetName(), identity.GetUid()
-		}
-		rows, err := tx.QueryContext(ctx, `SELECT session_id FROM session
-			WHERE sandbox_uid=$1 AND (execution_identity_name IS DISTINCT FROM $2 OR execution_identity_uid::text IS DISTINCT FROM $3)
-			ORDER BY session_id LIMIT 21`, sandboxUID, name, uid)
-		if err != nil {
-			return err
-		}
-		var ids []string
-		for rows.Next() {
-			var id string
-			if err := rows.Scan(&id); err != nil {
-				rows.Close()
-				return err
-			}
-			ids = append(ids, id)
-		}
-		err = rows.Err()
-		rows.Close()
-		if err != nil {
-			return err
-		}
-		if len(ids) > 0 {
-			if len(ids) > 20 {
-				ids = append(ids[:20], "and more")
-			}
-			return &SessionIdentityConflict{SessionIDs: ids}
-		}
-		return patch()
-	})
 }
 
 func operation(command *commandpb.Command) (string, error) {

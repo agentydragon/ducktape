@@ -20,8 +20,9 @@ from python.runfiles import Runfiles
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.crd_group import GROUP, VERSION
+from agentplane.environments.v1 import environment_service_pb2 as environments_pb, environment_service_pb2_grpc
 from agentplane.grpc.calls import dial
-from agentplane.proto import environment_lifecycle_pb2 as lifecycle_pb, session_pb2
+from agentplane.proto import environment_lifecycle_pb2 as lifecycle_pb, identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2 as pb, session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.driver.cleanup_diagnostics import capture_without_masking, cleanup_without_masking
@@ -495,7 +496,8 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
         # TokenReview needs a bound workload identity, not an app HTTP session. Reuse an
         # existing app Pod as the token's binding object; this probe creates no caller Pods.
         authentication, caller, _caller_uid = await _bound_caller(cluster, "app")
-        identity = await stack.enter_async_context(scenario_identity(cluster, sandbox, policies))
+        identities = await stack.enter_async_context(AsyncExitStack())
+        identity = await identities.enter_async_context(scenario_identity(cluster, sandbox, policies))
         created = json.loads(
             await cluster.kubectl(
                 "create",
@@ -726,6 +728,69 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
                         assert response.dispatch.command_id == deletion_command
                         break
             evidence["deletion_observed_replicas"] = [item["metadata"]["uid"] for item in live]
+        else:
+            environments = environment_service_pb2_grpc.EnvironmentServiceStub(channel)
+            target_handle = identity_pb2.EnvironmentTarget(namespace=cluster.namespace, name=sandbox, uid=uid)
+            next_identity = await identities.enter_async_context(
+                scenario_identity(cluster, f"{sandbox}-next", policies)
+            )
+            change = environments_pb.SetEnvironmentIdentityRequest(target=target_handle, identity_name=next_identity)
+            with pytest.raises(grpc.aio.AioRpcError) as running_change:
+                await environments.SetEnvironmentIdentity(change, metadata=authentication.metadata, timeout=15)
+            assert running_change.value.code() == grpc.StatusCode.FAILED_PRECONDITION
+            await environments.SuspendEnvironment(
+                environments_pb.EnvironmentMutationRequest(target=target_handle),
+                metadata=authentication.metadata,
+                timeout=15,
+            )
+            await cluster.kubectl(
+                "wait",
+                f"sandbox.agentplane.allegedly.works/{sandbox}",
+                "--for=jsonpath={.status.stopStage}=Stopped",
+                "--timeout=300s",
+            )
+            await environments.SetEnvironmentIdentity(change, metadata=authentication.metadata, timeout=15)
+            rebound = json.loads(await cluster.kubectl("get", "sandbox", sandbox, "-o", "json"))
+            assert rebound["spec"]["identity"]["name"] == next_identity
+            retained_session = await stub.GetSession(
+                pb.GetSessionRequest(session_id=session), metadata=authentication.metadata, timeout=15
+            )
+            assert retained_session.session.identity == session_status.session.identity
+            assert retained_session.session.identity.name == identity
+            next_command = str(uuid4())
+            await stub.SubmitInput(
+                pb.SubmitInputRequest(
+                    session_id=session, command_id=next_command, text="Input to a retained Session after rebinding."
+                ),
+                metadata=authentication.metadata,
+                timeout=15,
+            )
+            stream = stub.WatchDispatches(
+                pb.WatchDispatchesRequest(filter=pb.DispatchFilter(session_id=session)),
+                metadata=authentication.metadata,
+                timeout=BOUND_SECONDS,
+            )
+            try:
+                async for response in stream:
+                    if response.HasField("dispatch") and response.dispatch.command_id == next_command:
+                        if response.dispatch.state == pb.DELIVERY_STATE_FAILED:
+                            assert response.dispatch.reason == "execution_identity_changed"
+                            assert not response.dispatch.HasField("admission")
+                            break
+                        assert response.dispatch.state in (
+                            pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER,
+                            pb.DELIVERY_STATE_DELIVERING_TO_RUNNER,
+                        )
+                else:
+                    raise AssertionError("Dispatch watch ended before the retained Session's input failed")
+            finally:
+                stream.cancel()
+            evidence["retained_session_after_rebind"] = {
+                "command": next_command,
+                "reason": "execution_identity_changed",
+                "old_identity": identity,
+                "new_identity": next_identity,
+            }
         evidence.update(
             {
                 "runner_admitted": True,
