@@ -69,6 +69,8 @@ from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 # gazelle:include_dep //agentplane/history_service/testing:fixtures
 pytest_plugins = ("agentplane.testing.native_gateway_fixtures", "agentplane.history_service.testing.fixtures")
 
+SUPERVISION_RECEIPT = '{"real_systemd_supervision":"passed"}\n'
+
 
 @pytest.fixture
 async def sandbox(api_server: KubernetesApiServer) -> AsyncIterator[SandboxCluster]:
@@ -266,9 +268,8 @@ def model(endpoint: AnthropicMessages) -> ClaudeModel:
     return ClaudeModel(endpoint)
 
 
-async def assert_guest_systemd_supervision_passed(state: Path, outputs: Path, docker_done: asyncio.Task[int]) -> None:
-    expected_receipt = '{"real_systemd_supervision":"passed"}\n'
-    expected_marker = f"AGENTPLANE_GUEST_SUPERVISION_PASSED {expected_receipt.rstrip()}"
+async def assert_guest_systemd_supervision_passed(outputs: Path, docker_done: asyncio.Task[int]) -> None:
+    expected_marker = f"AGENTPLANE_GUEST_SUPERVISION_PASSED {SUPERVISION_RECEIPT.rstrip()}"
     # The start wrapper emits serial records before its private checks finish.
     # The existing QEMU lifetime bounds this wait, including a wedged fixture.
     while True:
@@ -278,8 +279,6 @@ async def assert_guest_systemd_supervision_passed(state: Path, outputs: Path, do
             break
         assert not docker_done.done(), "QEMU guest exited before the supervision pass receipt"
         await asyncio.sleep(0.05)
-    result = (state / "testing/supervision/result.json").read_text()
-    assert result == expected_receipt, "guest supervision result did not match the exact pass receipt"
     assert serial.count("--- PASS: TestSystemdKernelFixture ") == 1, "guest serial lacks the parent Go test pass"
 
 
@@ -403,7 +402,7 @@ async def test_packaged_claude_session_runs_shell_and_accepts_next_input(
             gateway_address=hostfwd_address,
             kernel_args=(SUPERVISION_KERNEL_ARG,),
         ) as docker_done:
-            await assert_guest_systemd_supervision_passed(state, outputs, docker_done)
+            await assert_guest_systemd_supervision_passed(outputs, docker_done)
             ready_task = asyncio.create_task(
                 authenticated_readiness(gateway_service, client_token, api_server, sandbox)
             )
@@ -464,6 +463,8 @@ async def test_packaged_claude_session_runs_shell_and_accepts_next_input(
             assert not docker_done.done(), "QEMU guest exited before both Session turns completed"
             final_status = await wait_for_session_ready(gateway_service, client_token, sandbox, str(session_id))
             assert final_status.environment_runtime_boot_id == initial_status.environment_runtime_boot_id
+        # Guest state is private until launcher teardown restores the host owner.
+        assert (state / "testing/supervision/result.json").read_text() == SUPERVISION_RECEIPT
         await assert_credential_rotation_refuses_old_svid(platform, sandbox)
 
     serial = (outputs / "runtime.serial.log").read_text(errors="replace")
