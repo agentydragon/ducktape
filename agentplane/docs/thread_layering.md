@@ -52,6 +52,8 @@ A **Session** is the raw Event stream: harness messages, protocol reconciliation
 everything else the runner journals. A **Thread** is the conversation-style projection of a
 Session, its messages and the like. Names follow that split wherever the data lives: the fold's
 tables are `thread_*` in the History Service too, although they are keyed by public Session ID.
+**Naming decision:** this projection meaning of "Thread" goes away with the fold; new code does not
+use it ([Journal and Thread](adr_journal_and_thread.md)).
 
 ```mermaid
 flowchart LR

@@ -22,6 +22,9 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
   objects and data live, the operator's workflows through each, what Agentplane borrows from
   Kubernetes and what each direction keeps or replaces, what is right under every direction, and the
   experiments that would narrow the choice; no direction chosen
+- [Decoupling from Kubernetes](kubernetes_decoupling.md) — what ties Agentplane to Kubernetes, which
+  tests need it, and four composable options (API-server-only test tier, seams behind service APIs,
+  environments without Kubernetes, moving the record store); no direction chosen
 - [History tags and History's Sandbox records](sandbox_tags.md) — older Sandbox-scoped History
   proposal; inbox tags ship, but grouping ownership, grants and lifetimes need review for independent
   Sessions before this is treated as an approved prerequisite

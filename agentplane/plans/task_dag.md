@@ -974,6 +974,8 @@ flowchart LR
     EGRESS_CREDENTIAL_TRANSPORT_DESIGN[Decision: credential upstream schemes and ports]
     RUNNER_HARNESS_DELIVERY_DESIGN[Decision: decoupled harness delivery]
     K3S_BUNDLED_SERVICES_SPIKE[Unscheduled: measure bundled control-plane services]
+    KUBERNETES_DECOUPLING_DESIGN[Decision, unscheduled: how far to decouple from Kubernetes]
+    KUBERNETES_DECOUPLING_DESIGN -. related test-weight options .-> K3S_BUNDLED_SERVICES_SPIKE
     DOCKABLE_PANES[Unscheduled: dockable panes in the web app]
     ACTION_SURFACES_DESIGN -. related .-> DOCKABLE_PANES
     NOTIFICATION_PRESENTATION[Blocked: compact notification rendering, section 2]
@@ -1198,7 +1200,7 @@ need not mirror model context items or expose each reasoning/tool step as a work
 could participate in such a thread alongside humans or other agents; a human participant is optional.
 Expose conversation operations through MCP so third-party harnesses can participate without changes
 to their binaries. Treat publishing a message, notifying a participant and waking an agent as
-separate concerns; incoming-message delivery and harness-specific notification support need design.
+separate concerns; incoming-message delivery and harness-specific notification support need design. The object is named a Thread ([naming ADR](../docs/adr_journal_and_thread.md)).
 
 Start by evaluating the bounded CLI experiment above before committing to the broader model. Its
 local tool dispatch and storage choices are experimental, not decisions about service ownership,
@@ -1529,6 +1531,24 @@ or discard the reduced mode, with normal-layout coverage retained for those boun
 Keep the expensive workflow manual-only; this spike does not authorize a production topology
 change, removal of existing coverage or a language rewrite. Keep one documented invocation path
 per supported test tier.
+
+### `KUBERNETES_DECOUPLING_DESIGN` — how far to decouple from Kubernetes
+
+**Decision, unscheduled; operator request, 2026-11-14 UTC.** The operator asked for a plan on making
+Agentplane more decoupleable from Kubernetes, for example for lighter integration tests, with Flux
+still configuring it through something like Crossplane, and with environments that execute commands
+without Kubernetes; he is unsure it is a good idea. [The plan](kubernetes_decoupling.md) inventories
+the coupling and compares an API-server-only test tier (O1), removing incidental coupling behind
+existing service APIs (O2), an environment backend without Kubernetes (O3) and moving the record
+store ([D4](architecture_overview.md#four-directions), O4).
+
+**Recommendation:** O2 first, O1 on the existing process fixtures, O3 as a design only if
+environments off Kubernetes are wanted as a product capability, O4 only on measured remaining test
+cost. **Question for review:** is the payoff lighter tests (O1 and O2), or environments off
+Kubernetes as a product capability (O3), which changes the
+[principles](../docs/principles.md)' Kubernetes baseline? Implementation waits on the answer;
+`PRIVILEGED_BACKEND_AUTH_DESIGN` and `RUNNER_GATEWAY_REPLICA_OWNERSHIP_DESIGN` stay independently
+decidable.
 
 ### `BUILD_BOX_BAZEL` — build Sandboxes can run Bazel
 
@@ -2100,7 +2120,8 @@ tags with it ([tags](sandbox_tags.md#tags)). Deciding before `HISTORY_SANDBOX_RE
 Sandbox field take its final name with no CRD rename. A service rename reaches its protos, token
 audiences, images, the `agentplane/history_service` package and docs, and
 [`HISTORY_DATABASE_RENAME`](#history_database_rename--name-the-database-for-its-owner) would take
-the new name.
+the new name. **Name decided, operator, 2026-11-14 UTC:** the Journal service
+([naming ADR](../docs/adr_journal_and_thread.md)); the rename itself stays unscheduled.
 
 ### `ACTION_BOX_IDLE_REAPER` — delete Action boxes nobody uses
 
@@ -2190,6 +2211,9 @@ filter and optional live follow. The browser follows Threads through Electric
 
 ```mermaid
 flowchart TD
+    JOURNAL_REPRESENTATION_DESIGN[Decision, unscheduled: History as stored journals]
+    THREAD_SYNC_WITHOUT_ELECTRIC[Decision, unscheduled: replace Electric with our own thread stream]
+    JOURNAL_REPRESENTATION_DESIGN -. what the stream follows .-> THREAD_SYNC_WITHOUT_ELECTRIC
     SESSION_ACTIVITY_STREAM[Unscheduled: deliver on a Session's idle time, section 7]
     NOTIFICATION_COMMAND_OUTCOME_DESIGN[Unscheduled: notice delivery without reading history, section 2]
     THREAD_READ_POLICY[Blocked: scoped archive reads, section 3]
@@ -2198,6 +2222,56 @@ flowchart TD
 [`history_read_follow.md`](history_read_follow.md) records how orchestration builds on the API and
 which other consumers may move to it. Automatic titles remain deferred under
 [`THREAD_TITLE_GENERATION`](task_freezer.md#thread_title_generation--revisit-automatic-thread-titles).
+
+### `JOURNAL_REPRESENTATION_DESIGN` — History as stored journals
+
+**Decision, unscheduled; operator, 2026-11-14 UTC:** "journals" sounds like where History should
+eventually go. Vocabulary is decided ([ADR](../docs/adr_journal_and_thread.md)): a Journal is what a
+harness or process emits, and a Thread is the messaging object agents and people act on
+([`AGENT_AUTHORED_CONVERSATIONS_DESIGN`](#agent_authored_conversations_design--conversations-agents-act-on-through-tools)).
+
+Two separate problems:
+
+- **Size.** On staging the projection tables (about 1.3 GB) outweigh the raw events (about 1.0 GB),
+  and packed blocks and sampler capture keep several copies
+  ([storage representations](storage_representations.md)). Removing redundant sampler response
+  capture holds either way; sharing bodies between events and the projection waits on this node.
+- **Coercion.** The fold approximates Claude Code, Codex, sampler and process formats in one
+  materialized entity model instead of rendering each source on read.
+
+**Recommendation:** History stores each source's Journal verbatim with its kind; the app renders a
+journal view per kind at read time; the common surface keeps only what every source has (inputs,
+turn boundaries, status, usage). **Question for review:** retire the fold and its tables for
+per-kind rendering on read, and with what common surface?
+
+### `THREAD_SYNC_WITHOUT_ELECTRIC` — replace Electric with our own thread stream
+
+**Decision, unscheduled; operator, 2026-11-14 UTC:** dropping Electric and doing the sync ourselves
+"might be better", "to be looked into"; it costs a separate container.
+
+Electric replicates two History tables, `thread_entity` and `thread_payload_chunk`, per Thread and
+projection epoch, through the app's authorizing [proxy](../app/internal/proxy/electric.go), for
+the thread view alone ([`electric_sync.tsx`](../app/frontend/threads/electric_sync.tsx)). Every
+other live browser view already follows gRPC watches through the app facade
+([`watch_stream.ts`](../app/frontend/watch_stream.ts)). Its costs are:
+
+- a single-replica `Recreate` Deployment with a 5 GiB `emptyDir` ([exception](../docs/electric_single_replica.md));
+- a logical replication slot on the History database;
+- the mismatches in [Electric limits](../docs/thread_sync_electric_limits.md): every follower gets
+  the shape's whole live log, deltas exist only as committed rows, and compaction is re-sent to
+  followers.
+
+[Thread sync](thread_sync/README.md) already scores replacements; the moving window meets every
+requirement row where Electric is short.
+
+Coupled to [`JOURNAL_REPRESENTATION_DESIGN`](#journal_representation_design--history-as-stored-journals): if History becomes harness journal storage rendered per kind,
+the synced fold tables, and Electric's job, go away, and the stream should follow journal records
+instead of fold rows.
+
+**Recommendation:** replace Electric with a History server stream reached through the existing app
+watch facade, and build it once against whichever History representation is chosen rather than
+first over the fold tables. **Question for review:** build the replacement now over the fold, or
+after the History representation decision, over journal records?
 
 ## 12. The Runner Gateway serves the runner's own service
 
@@ -3478,15 +3552,36 @@ Dispatchable now. "Unscheduled" is the operator's priority statement, not a gate
   sampler's `exec` tool, and Anthropic then rejected every older Thread's signed thinking ("The
   `tools` list differs from the one this block was created with"), because the tool list and
   instructions are rendered from current code on every request and staging sets
-  `prefix_mismatch_behavior: error`. Those Threads cannot continue. Planning inputs: (1) provider
-  mechanisms for changing tool definitions inside a conversation without invalidating earlier
-  blocks, such as Anthropic's ways to append a tool or schema change after the prefix, and their
-  Responses API equivalents; (2) persisting the rendered tools, system instructions and other prefix
-  inputs with the conversation and reconciling the committed prefix with what current code would
-  render, so a change is appended or adopted at an explicit boundary (new Thread, compaction,
-  operator-chosen migration); (3) `drop_block` only as a last resort, since it silently loses
-  reasoning. Test by rendering a stored conversation under a changed tool description and asserting
-  the provider accepts the continuation. Covers the Responses and Anthropic Messages paths.
+  `prefix_mismatch_behavior: error`. Those Threads cannot continue. **Operator, 2026-11-14 UTC:**
+  "older threads can stay broken"; the fix only stops future prompt changes from breaking Threads,
+  with no repair or migration of existing ones.
+
+  Provider rules, from current documentation (2026-11-14):
+
+  - **Anthropic Messages.** A thinking block's signature binds the top-level `system`, the `tools`
+    set (name-sorted, so reordering is safe) and every earlier message. Editing them is a 400 when
+    enforced (accounts created on or after 2026-08-31, or any request setting
+    `thinking.block_binding.prefix_mismatch_behavior`); `drop_block` drops that block and every later
+    one. Append-only forms: a mid-conversation `role: "system"` message for instruction changes;
+    `tool_addition`/`tool_removal` blocks in such a message (beta
+    `mid-conversation-tool-changes-2026-07-01`, tools declared up front with `defer_loading`); and,
+    under beta `inline-tools-2026-09-15`, a `tool_addition` carrying a full definition that replaces
+    a same-named tool's definition from that point on, with `tools[]` left as first sent.
+  - **OpenAI Responses** ([preserved reasoning](https://developers.openai.com/api/docs/guides/preserved-reasoning)).
+    The prefix includes `tools`, `instructions`, `text.format` and earlier input items. A change is
+    not rejected: reasoning items after it are silently dropped (reported in
+    `input_transformations`), with no parameter to change that. Append-only forms: an
+    `additional_tools` item to add tools, `tool_choice.allowed_tools` to restrict them, a
+    `configuration_update` item for effort or output schema, and an appended developer message for
+    instructions.
+
+  Design: persist the rendered tools and instructions with each conversation as its frozen
+  baseline. On each request, compare it with what current code renders, and express any difference
+  through the provider's append-only form at the next turn boundary. A difference with no such form
+  on that route waits for an explicit boundary (new Thread, compaction). Never edit the baseline;
+  keep `drop_block` off. Test by rendering a stored conversation under a changed tool description
+  and asserting the provider accepts the continuation and keeps its reasoning (empty
+  `input_transformations` on both APIs). Covers the Responses and Anthropic Messages paths.
 
 #### Authentication: dead or stale today
 
