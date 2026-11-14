@@ -3642,7 +3642,7 @@ History data PR removes rows whose `sandbox_uid` is NULL or empty, together with
 settlement, range, block, lease, fold-queue and Thread projection state. Staging counts could not be
 obtained because this Identity cannot exec or port-forward to the History database Pod; no system
 test covers this one-off cleanup. Its stacked code PR removes the empty-UID `BindWriter` tolerance
-while preserving the current Identity fence and historical writer attribution.
+while preserving the current Identity fence and writer attribution on retained Sessions.
 
 #### `ACTION_BOX_RENAME` — Action boxes stop being called sandboxes
 
