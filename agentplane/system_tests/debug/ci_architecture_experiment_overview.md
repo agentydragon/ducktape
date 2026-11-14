@@ -9,10 +9,27 @@ evidence; the replacement gate remains unqualified.
 
 **There is no qualified 30% reduction in complete PR feedback.** The branch has
 working smaller contracts, useful independent ports and several rejected ideas.
-The current synthetic graph screen has a 29.3% lower median native Bazel time,
+The historical synthetic graph screen has a 29.3% lower median native Bazel time,
 with unequal cache states and incomplete replacement coverage. The historical
 combined graph was 17.4% faster with unequal baseline warmth and higher known CPU.
 Neither establishes a rerun-inclusive PR saving.
+
+The latest fixed-source full-system screen is negative: 14 ordinary targets versus a 16-target
+composition pass the same 49 logical JUnit cases, but native elapsed grows from 516.795s to
+574.657s. The candidate contains a provider-kernel panic and a subsequent distinct successful
+VM execution; all physical costs count. Known managed CPU and requested-CU execution exceed
+their predeclared caps. The short Gateway budget also deliberately reduces default-duration
+exposure. No candidate roster was promoted. The
+[current evidence](common_backend_contracts.md#exact-source-slice-qualification) records source,
+coverage, resource accounting and failure attribution separately.
+
+The next implementation work targets repeated environment work and reliable execution. A
+bounded teardown observer identifies which fixture Pod or finalizer consumes namespace-deletion
+time, while preserving normal cleanup. The current native VM suite also passes on the existing
+KVM worker in 226.691s with both harnesses and real KVM acceleration; this is
+[feasibility evidence](vm_kvm_existing_pool_2026_11_12.md#current-native-fixture-14-november),
+not a matched placement saving or adequate concurrent capacity. The larger untried options
+remain an ordinary contract-owned gate and prepared disposable integration infrastructure.
 
 ## What has been tried
 
@@ -123,13 +140,14 @@ value does not depend on adopting the architecture pivot.
 [Notification fixture #16370](https://github.com/agentydragon/ducktape/pull/16370)
 is merged in devel at `bb7c716f5a`. The architecture branch rebased onto that
 source. [Native recovery #16374](https://github.com/agentydragon/ducktape/pull/16374)
-remains open at `605da061d5`; its Bazel, pre-commit, artifact/import and visual
-checks pass. It adds ordinary coverage without removing deployed witnesses.
+was rebased to `34c305ccad` with focused and exact-head checks passing, then merged by the
+repository owner on 14 November at 19:13:55 UTC as `2e4101b90a`. It adds ordinary coverage
+without removing deployed witnesses.
 Its initial failures were fixture setup; the repaired target includes a third
 input after History recovery.
 
 [Actions mount ordering #16386](https://github.com/agentydragon/ducktape/pull/16386) is independently
-open and unmerged at `d34c757904`. The intended missing-settings-mount negative control fails;
+merged on 14 November at 17:22:30 UTC from `d34c757904`. The intended missing-settings-mount negative control fails;
 the repaired target passes all 14 cases and generated manifests pass all 25 cases with no staging
 snapshot drift. Its three required hosted checks pass. This fixes a real generator defect exposed
 by omitting optional fixture secrets; no fleet reliability or latency benefit is measured.
@@ -144,11 +162,10 @@ control `6094b0b9` reaches the intended missing-retained-Session assertion after
 real Runtime restart; its healthy counterpart is `254e237c`.
 
 The [architecture report](https://agentydragon.github.io/ducktape/agentplane-test-architecture/)
-was published through merged report PR #16385 at gh-pages `895a488df402`. Pages
-deployment `43594433341` passed; live HTML and evidence hashes matched the reviewed
-snapshot. Its desktop/mobile light/dark browser checks passed. The latest native
-Session-driver work described in [the current partition](common_backend_contracts.md)
-postdates that report and remains separate from its measured graph screen.
+was most recently published through merged report PR #16391 at gh-pages
+`51dae409262bb1839caf876710258e52720450fd`. Iteration 16 has verified live HTML and evidence
+hashes plus desktop/mobile light/dark browser checks. Its cutoff precedes the later Pod-only
+and full-system composition screens above; those new measurements are not in that snapshot.
 
 ## Why a larger change is still needed
 

@@ -174,3 +174,29 @@ retain enough matched attempts to assess recurrence rather than counting a few
 passes as a fix. A kernel change should segregate snapshot configuration hashes,
 but actual loads must be checked. No provider contact, setting change or kernel
 rollout is performed here.
+
+## 14 November full-system screen recurrence
+
+The [candidate full-system invocation](https://app.buildbuddy.io/invocation/0097ec40-3d03-4bc4-b787-6de29bc27942)
+at exact source `9b330689a24042259393a713b5f271b42bd7e669` finishes successfully, but contains
+two distinct physical `test_vm` operations with the same action digest. The first begins execution
+at 18:47:28.130048 UTC and runs 166.683s, consuming 643.406 CPU seconds with a reported peak
+action memory of 6,081,691,648 bytes. It ends REAPI 14 / exit -2. Its retained 17,736-byte
+`vm_log_tail.txt` shows successful snapshot loading followed by a noncanonical-address general
+protection fault at `update_blocked_averages+0x250/0x740`, then
+`Kernel panic - not syncing: Fatal exception in interrupt`. The pause/socket refusal follows
+the kernel death. There is no observed TSC scaling or snapshot-load `Invalid argument` failure.
+
+The first execution ID begins `/uploads/349b8414-e5c6-4071-ace4-93b827369e61/`; the subsequent
+successful operation begins `/uploads/cd8bbdac-1760-4a6f-b4e4-e6e8571d6fcd/`. Both use action
+digest `3518394fd9607e9c0beb611bed29bc99a476d8979e34f8daaa2d1ee6a1e806c7/1852`.
+The successful operation starts 2.374s after the first worker reservation ends, runs 354.855s
+and consumes 1,149.802 CPU seconds. JUnit records one passing attempt and its XML digest matches
+only the successful ActionResult; that final verdict must not erase the failed physical cost.
+The records alone do not identify which retry mechanism submitted the second operation.
+
+This is another occurrence of the fair-scheduler panic signature, not confirmation of the exact
+free/relink race or a maintained-kernel repair. This failed guest's build ID was not collected,
+and the instruction offset differs from the earlier `+0x273` failures. Keep the CVE attribution
+as an inference. Provider kernel selection and confirmation remain the next external boundary;
+no provider contact or configuration change was made.

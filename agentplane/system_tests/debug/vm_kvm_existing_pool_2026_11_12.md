@@ -60,3 +60,30 @@ This is one successful run on a preexisting worker, not a fleet percentile, mini
 concurrency result, or measured end-to-end CI saving. The target remains manual. The action's queued
 timestamp is later than its worker-start timestamp, so that cross-clock interval cannot establish queue latency.
 No pool configuration, worker size, required-CI routing, or Codex source changed.
+
+## Current native fixture, 14 November
+
+The manual target was rerun after the App-free native VM migration, using source
+`9b330689a24042259393a713b5f271b42bd7e669` plus the bounded namespace-observer and investigation
+documentation overlay. The launch log confirms those patches were applied. The VM scenario body,
+guest images and resource requests are unchanged. This fresh, non-retained KVM route does not call
+baseline namespace cleanup, so it is not a test of that observer.
+
+The [Bazel invocation](https://app.buildbuddy.io/invocation/9eb2043f-9480-48f6-9fb0-435fab21b1e2)
+and parent `e051d036-0219-4f28-92ea-997f34d816bf` finish successfully. One fresh physical
+TestRunner action takes 226.691s; Bazel elapsed is 286.416s. One aggregate JUnit case passes,
+containing both unchanged Claude and Codex scenarios and the required VM process-trace contract.
+Stack setup takes 119.410s; the concurrent case envelope is 84.096s. Both retained QEMU command
+diagnostics contain `-accel kvm`. The exact ActionResult is present with exit zero and requests
+4,000 milli-CPU, 7 GiB memory and 50 GiB free disk.
+
+The physical execution ID begins `/uploads/39f83c2b-06db-4030-82d3-83e8822dd96f/`, action digest
+`75527b1e074e499ad13750a2f81166c46fb599ccf99f90777dfb7085e015a189/596`. Its queued timestamp
+is later than worker start, so queue latency is unknown. Physical CPU and whole-action peak memory
+are absent from the response; per-Pod memory samples do not substitute for those measurements or
+the older run's cgroup proof.
+
+A read-only pool snapshot shortly before launch found one Ready 4-CPU/8-GiB VMI. No capacity or
+routing change was made. This establishes current-source feasibility on that worker, not a matched
+speed comparison, a repaired provider failure rate or sufficient capacity for VM and Firecracker
+concurrently. Any placement proposal must account for their competition and burst admission.
