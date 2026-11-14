@@ -1,6 +1,8 @@
 package rpc
 
 import (
+	"crypto/x509"
+	"net"
 	"os"
 	"path/filepath"
 	"slices"
@@ -8,11 +10,14 @@ import (
 	"time"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	notificationtesting "github.com/agentydragon/ducktape/agentplane/notification_service/testing" // Shared gRPC fixtures; avoids colliding with Go testing.
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
@@ -56,6 +61,43 @@ func TestProxyRunnerListsTheSessionsOfTheSandboxItNames(t *testing.T) {
 		if got := received.Get(key); !slices.Equal(got, []string{value}) {
 			t.Errorf("%s = %v, want %q", key, got, value)
 		}
+	}
+}
+
+func TestProxyRunnerUsesNotificationsSVIDWithoutBearerToken(t *testing.T) {
+	ca := peertlstesting.NewCA(t)
+	serverIdentity := ca.IssueWithUsage(t, peertls.SessionDispatcherURI, x509.ExtKeyUsageServerAuth)
+	serverTLS, err := serverIdentity.WorkloadServerTLSConfigWithServices(peertls.SessionDispatcherURI, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := &notificationtesting.ListingRunner{Sessions: []string{"svid-session"}, Received: make(chan metadata.MD, 1)}
+	server := grpc.NewServer(grpc.Creds(credentials.NewTLS(serverTLS)))
+	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, runner)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+
+	clientIdentity := ca.IssueWithUsage(t, peertls.NotificationsURI, x509.ExtKeyUsageClientAuth)
+	proxy := &ProxyRunner{
+		TLS: &peertls.ClientTLS{
+			CAFile: ca.RootFile, ServerURI: peertls.SessionDispatcherURI,
+			CertFile: clientIdentity.CertFile, KeyFile: clientIdentity.KeyFile, ClientURI: peertls.NotificationsURI,
+		},
+		Timeout: 10 * time.Second, TargetTemplate: listener.Addr().String(),
+	}
+	sessions, err := proxy.ListSessions(t.Context(), proxiedSandbox)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(sessions, []string{"svid-session"}) {
+		t.Fatalf("sessions = %v", sessions)
+	}
+	if got := (<-runner.Received).Get("authorization"); len(got) != 0 {
+		t.Fatalf("authorization metadata = %v, want no bearer fallback", got)
 	}
 }
 

@@ -2,26 +2,49 @@
 
 from datetime import date
 from pathlib import Path
-from typing import Annotated, ClassVar
+from typing import Annotated, ClassVar, Self
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, model_validator
 
 from agentplane.identity.auth.listener import KubernetesBearerAuth, Listener, SPIFFEAuth
-from agentplane.net.peertls.config import ClientTLS, ServiceSPIFFEID
+from agentplane.net.peertls.config import (
+    ACTIONS_URI,
+    HISTORY_SERVICE_URI,
+    NOTIFICATIONS_URI,
+    SESSION_DISPATCHER_URI,
+    ClientTLS,
+    ServiceSPIFFEID,
+)
 from util.urls import HttpEndpointUrl
 
 TOKEN_AUDIENCE = "agentplane-notifications"
 PositiveSeconds = Annotated[float, Field(gt=0, allow_inf_nan=False)]
 
 
+def validate_outbound_caller(tls: ClientTLS | None, token_file: Path | None, expected_server_uri: str) -> None:
+    if tls is None:
+        if token_file is None:
+            raise ValueError("token_file is required when caller SVID TLS is not configured")
+        return
+    tls.validate_caller(token_file, NOTIFICATIONS_URI)
+    if tls.server_uri != expected_server_uri:
+        raise ValueError(f"tls.server_uri must be {expected_server_uri!r}")
+
+
 class ActionsSettings(BaseModel):
     tls: ClientTLS | None = None
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     url: HttpEndpointUrl = Field(description="Base URL of the Actions Service's canonical request/event read API.")
-    token_file: Path = Field(
-        description="Path to the projected ServiceAccount token for Actions; reread for each request to follow rotation."
+    token_file: Path | None = Field(
+        default=None,
+        description="Path to the rotating projected token for Actions when caller SVID TLS is not configured.",
     )
     request_timeout_s: PositiveSeconds = 5
+
+    @model_validator(mode="after")
+    def caller_authentication(self) -> Self:
+        validate_outbound_caller(self.tls, self.token_file, ACTIONS_URI)
+        return self
 
 
 class GitHubSettings(BaseModel):
@@ -59,9 +82,15 @@ class RunnerGatewaySettings(BaseModel):
         "the Gateway routes each lifecycle call using the Sandbox identity."
     )
     request_timeout_s: PositiveSeconds = 5
-    token_file: Path = Field(
-        description="Path to the rotating projected ServiceAccount token used to authenticate to the Runner Gateway."
+    token_file: Path | None = Field(
+        default=None,
+        description="Path to the rotating projected token for the Runner Gateway when caller SVID TLS is not configured.",
     )
+
+    @model_validator(mode="after")
+    def caller_authentication(self) -> Self:
+        validate_outbound_caller(self.tls, self.token_file, SESSION_DISPATCHER_URI)
+        return self
 
 
 class HistoryServiceSettings(BaseModel):
@@ -71,9 +100,15 @@ class HistoryServiceSettings(BaseModel):
         description="History Service gRPC host:port; delivery reads the Session's runner entries there."
     )
     request_timeout_s: PositiveSeconds = 20
-    token_file: Path = Field(
-        description="Path to the rotating projected ServiceAccount token used to authenticate to the History Service."
+    token_file: Path | None = Field(
+        default=None,
+        description="Path to the rotating projected token for History when caller SVID TLS is not configured.",
     )
+
+    @model_validator(mode="after")
+    def caller_authentication(self) -> Self:
+        validate_outbound_caller(self.tls, self.token_file, HISTORY_SERVICE_URI)
+        return self
 
 
 class SessionDispatcherSettings(BaseModel):
@@ -81,9 +116,15 @@ class SessionDispatcherSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     target: str = Field(description="Session Dispatcher gRPC host:port for queued runner notices.")
     request_timeout_s: PositiveSeconds = 15
-    token_file: Path = Field(
-        description="Path to the rotating projected ServiceAccount token used to authenticate to the Session Dispatcher."
+    token_file: Path | None = Field(
+        default=None,
+        description="Path to the rotating projected token for the Session Dispatcher when caller SVID TLS is not configured.",
     )
+
+    @model_validator(mode="after")
+    def caller_authentication(self) -> Self:
+        validate_outbound_caller(self.tls, self.token_file, SESSION_DISPATCHER_URI)
+        return self
 
 
 class NoticeDebounceSettings(BaseModel):
