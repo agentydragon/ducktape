@@ -948,6 +948,7 @@ def test_firecracker_fixture_uses_production_construct_and_discloses_cilium_boun
         ("K3S_VM_NATIVE_FIXTURE_RLOCATION", True, False, False),
         ("K3S_FIRECRACKER_NATIVE_FIXTURE_RLOCATION", False, True, False),
         ("K3S_CENTRAL_SERVICES_NATIVE_FIXTURE_RLOCATION", False, False, True),
+        ("K3S_POD_NATIVE_FIXTURE_RLOCATION", False, False, False),
     ],
 )
 def test_native_profile_omits_app_but_keeps_platform_and_bound_caller(
@@ -994,6 +995,9 @@ def test_native_profile_omits_app_but_keeps_platform_and_bound_caller(
     assert not any(doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "app-config" for doc in docs)
     assert not any(
         doc["kind"] == "Secret" and doc["metadata"]["name"] in {"postgres-app", "agentplane-oidc"} for doc in docs
+    )
+    assert not any(
+        doc["metadata"].get("name") in {"app", "postgres-app", "agentplane-oidc", "app-config"} for doc in docs
     )
     assert not any(
         doc["kind"] == "PolicySet" and doc["metadata"]["name"] in {runtime_grant.POLICY_SET, send_grant.POLICY_SET}
@@ -1049,6 +1053,9 @@ def test_native_profile_omits_app_but_keeps_platform_and_bound_caller(
     assert _resource(docs, "SandboxTemplate", template_name)
     assert _resource(docs, "Service", fixture_chart.RUNNER_GATEWAY)
     assert _resource(docs, "Service", fixture_chart.SESSION_DISPATCHER)
+    assert _resource(docs, "ClusterIssuer", "agentplane-workload")
+    assert _resource(docs, "Bundle", "agentplane-workload-ca-bundle")
+    assert _resource(docs, "Bundle", "cluster-internal-ca-bundle")
 
     llm_settings = yaml.safe_load(_resource(docs, "ConfigMap", "llm-ingress-settings")["data"]["settings.yaml"])
     claude_model_ids = {item["model"] for item in llm_settings["models"]}

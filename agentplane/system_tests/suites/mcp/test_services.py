@@ -7,22 +7,18 @@ from pathlib import Path
 import httpx
 import pytest
 import pytest_bazel
-from google.protobuf.json_format import ParseDict
-from more_itertools import one
 
 from agentplane.app.testing.client import Client
-from agentplane.mcp_edge.api.connection import connection_service_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.deployment.stack import Stack
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.environment_transport import EnvironmentServiceClient
 from agentplane.system_tests.driver.executor import Executor
 from agentplane.system_tests.driver.harness_pair import run_harness_pair_in_own_sandboxes
-from agentplane.system_tests.driver.mcp_connection import connected_session
 from agentplane.system_tests.driver.operator_login import OperatorCredentials
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
-from agentplane.system_tests.scenarios import central_sampler, dcr, mcp
+from agentplane.system_tests.scenarios import central_sampler, dcr, external_connection, mcp
 
 
 async def test_deployed_discovery_and_registration(pytestconfig: pytest.Config, deployment: Stack) -> None:
@@ -35,23 +31,7 @@ async def test_deployed_discovery_and_registration(pytestconfig: pytest.Config, 
 async def test_external_mcp_connection_uses_its_consented_identity(
     deployment: Stack, operator_bff: httpx.AsyncClient, operator_credentials: OperatorCredentials
 ) -> None:
-    assert deployment.mcp_fixtures is not None
-    response = await operator_bff.get("/upstream/connections/v1/operator/connection-identities")
-    assert response.status_code == 200
-    inventory = ParseDict(response.json(), connection_service_pb2.ListConnectionIdentitiesResponse())
-    identity = one(candidate for candidate in inventory.identities if candidate.name == "mcp-edge-test-caller")
-    async with connected_session(
-        server=deployment.mcp_fixtures.mcp_edge_url,
-        operator=operator_bff,
-        credentials=operator_credentials,
-        identity=identity,
-        ca_bundle=deployment.mcp_fixtures.ca_bundle,
-    ) as session:
-        catalog = await session.list_tools()
-        assert "get_action_policy" in {tool.name for tool in catalog.tools}
-        policy = await session.call_tool("get_action_policy", arguments={"include_fields": ["subject"]})
-        assert not policy.is_error
-        assert policy.structured_content == {"subject": {"name": identity.name, "uid": identity.uid}}
+    await external_connection.uses_its_consented_identity(deployment, operator_bff, operator_credentials)
 
 
 @pytest.mark.scripted_model
