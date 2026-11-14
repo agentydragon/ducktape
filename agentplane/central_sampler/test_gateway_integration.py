@@ -5,6 +5,8 @@ import base64
 import io
 import json
 import os
+import re
+import shlex
 import signal
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
@@ -31,7 +33,7 @@ from agentplane.env.runtime.execution.testing.codex_exec_server_container import
 )
 from agentplane.grpc.calls import dial
 from agentplane.history_service.testing.go_service import WRITER_AUDIENCE, go_history_service, migrate_history_database
-from agentplane.native.codex.testing.responses_sse import CustomToolCall, Message, response_stream
+from agentplane.native.codex.testing.responses_sse import CustomToolCall, FunctionCall, Message, response_stream
 from agentplane.net.peertls.config import MTLS
 from agentplane.proto import event_pb2, session_pb2
 from agentplane.runner_gateway.testing.gateway_process import run_gateway
@@ -432,6 +434,225 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                             ).events
                         )
                     await wait_for_turn_completion(outage_cursor, next_command_id)
+
+                    gateway_roll_workspace = tmp_path / "workspace"
+                    gateway_roll_marker = gateway_roll_workspace / "gateway-roll-starts"
+                    gateway_roll_ready = gateway_roll_workspace / "gateway-roll-prefix-ready"
+                    gateway_roll_release = gateway_roll_workspace / "gateway-roll-release"
+                    gateway_roll_prefix = "GATEWAY_ROLL_PREFIX_" + uuid4().hex
+                    gateway_roll_suffix = "GATEWAY_ROLL_SUFFIX_" + uuid4().hex
+                    gateway_roll_command_id = str(uuid4())
+                    before_gateway_roll = await store.get_session(session_id)
+                    await stub.SubmitInput(
+                        environment_runtime_pb2.SubmitInputRequest(
+                            session_id=session_id,
+                            command_id=gateway_roll_command_id,
+                            text="Keep one process open while its Gateway is replaced, then finish this turn.",
+                        ),
+                        metadata=sampler_metadata,
+                        timeout=10,
+                    )
+                    gateway_roll_shell = (
+                        f"printf '%s\\n' \"$$\" >> {shlex.quote(str(gateway_roll_marker))}; "
+                        f"printf '%s' {shlex.quote(gateway_roll_prefix)}; "
+                        f": > {shlex.quote(str(gateway_roll_ready))}; "
+                        f"while [ ! -e {shlex.quote(str(gateway_roll_release))} ]; do sleep 0.02; done; "
+                        f"printf '%s' {shlex.quote(gateway_roll_suffix)}"
+                    )
+                    gateway_roll_code = (
+                        '// @exec: {"yield_time_ms": 10}\n'
+                        "const started = await tools.exec_command("
+                        + json.dumps({"cmd": gateway_roll_shell, "yield_time_ms": 1000})
+                        + ");\n"
+                        'if (started.session_id === undefined) throw new Error("gateway roll process exited early");\n'
+                        "text(JSON.stringify({session_id: started.session_id, output: started.output}));\n"
+                        "const result = await tools.write_stdin({session_id: started.session_id, yield_time_ms: 300000});\n"
+                        "text(JSON.stringify(result));\n"
+                    )
+                    async with await endpoint.next() as exchange:
+                        await exchange.send(
+                            *response_stream(
+                                [CustomToolCall("gateway-roll", "exec", gateway_roll_code)], model="test-model"
+                            ).events
+                        )
+
+                    async with await endpoint.next() as exchange:
+                        yielded_call = [
+                            item
+                            for item in exchange.request.body["input"]
+                            if item.get("type") == "custom_tool_call_output" and item.get("call_id") == "gateway-roll"
+                        ]
+                        yielded_text = json.dumps(yielded_call)
+                        cell_id_match = re.search(r"Script running with cell ID ([A-Za-z0-9_:-]+)", yielded_text)
+                        assert cell_id_match is not None, yielded_text
+
+                        async def wait_for_pending_gateway_read():
+                            async with asyncio.timeout(10):
+                                while True:
+                                    intents = await store.intents()
+                                    pending_reads = [
+                                        intent
+                                        for intent in intents
+                                        if intent.request.get("method") == "process/read" and intent.result is None
+                                    ]
+                                    for intent in reversed(pending_reads):
+                                        params = intent.request.get("params", {})
+                                        process_id = params.get("processId")
+                                        if process_id is None or params.get("afterSeq") is None:
+                                            continue
+                                        process = await store.process_by_id(process_id)
+                                        if (
+                                            process is not None
+                                            and process.status == "running"
+                                            and process.after_sequence == params["afterSeq"]
+                                            and gateway_roll_ready.exists()
+                                        ):
+                                            return intent, process
+                                    await asyncio.sleep(0.01)
+
+                        pending_read, pending_process = await wait_for_pending_gateway_read()
+                        read_cursor = pending_process.after_sequence
+                        assert read_cursor is not None
+                        process_identity = gateway_roll_marker.read_text().splitlines()
+                        assert len(process_identity) == 1
+                        read_intents_before_restart = {
+                            intent.id
+                            for intent in await store.intents()
+                            if intent.request.get("method") == "process/read"
+                            and intent.request.get("params", {}).get("processId") == pending_process.id
+                        }
+                        assert pending_read.id in read_intents_before_restart
+
+                        async def assert_gateway_gap() -> None:
+                            assert gateway.process.returncode is not None
+                            gap_probe = gateway.gateway_client(gateway_token, request_timeout_s=0.25)
+                            # The fixture retains the listening socket for the replacement. During the
+                            # gap the kernel can accept into its backlog, but no Gateway process reads it.
+                            with pytest.raises(TimeoutError):
+                                await gap_probe.list_sessions(sandbox.destination)
+                            during_gap = next(
+                                intent for intent in await store.intents() if intent.id == pending_read.id
+                            )
+                            assert during_gap.request == pending_read.request
+                            assert during_gap.result is None
+                            process_during_gap = await store.process_by_id(pending_process.id)
+                            assert process_during_gap is not None
+                            assert process_during_gap.status == "running"
+                            assert process_during_gap.after_sequence == read_cursor
+
+                        await gateway.restart(while_stopped=assert_gateway_gap)
+                        await gateway.wait_for_runner(gateway.gateway_client(gateway_token), sandbox.destination)
+                        after_reconnect = next(
+                            intent for intent in await store.intents() if intent.id == pending_read.id
+                        )
+                        assert after_reconnect.request == pending_read.request
+                        process_after_reconnect = await store.process_by_id(pending_process.id)
+                        assert process_after_reconnect is not None
+                        assert process_after_reconnect.after_sequence == read_cursor
+
+                        gateway_roll_release.touch()
+                        async with asyncio.timeout(15):
+                            while True:
+                                settled_read = next(
+                                    intent for intent in await store.intents() if intent.id == pending_read.id
+                                )
+                                process_after_read = await store.process_by_id(pending_process.id)
+                                if (
+                                    settled_read.result is not None
+                                    and process_after_read is not None
+                                    and process_after_read.status in ("exited", "abandoned")
+                                ):
+                                    break
+                                await asyncio.sleep(0.02)
+                        assert process_after_read is not None
+
+                        await exchange.send(
+                            *response_stream(
+                                [
+                                    FunctionCall(
+                                        "gateway-roll-wait",
+                                        "wait",
+                                        {"cell_id": cell_id_match[1], "yield_time_ms": 10000},
+                                    )
+                                ],
+                                model="test-model",
+                            ).events
+                        )
+
+                    async with await endpoint.next() as exchange:
+                        completed_call = [
+                            item
+                            for item in exchange.request.body["input"]
+                            if item.get("type") == "function_call_output" and item.get("call_id") == "gateway-roll-wait"
+                        ]
+                        completed_text = json.dumps(completed_call)
+                        assert completed_text.count(gateway_roll_prefix) == 1, completed_text
+                        assert completed_text.count(gateway_roll_suffix) == 1, completed_text
+                        assert process_after_read.status == "exited", {
+                            "process": process_after_read,
+                            "read_result": settled_read.result,
+                            "tool_output": completed_call,
+                        }
+                        assert settled_read.result.get("outcome") == "completed"
+                        assert process_after_read.after_sequence is not None
+                        assert process_after_read.after_sequence > read_cursor
+                        assert gateway_roll_marker.read_text().splitlines() == process_identity
+                        all_gateway_roll_intents = [
+                            intent
+                            for intent in await store.intents()
+                            if intent.request.get("params", {}).get("processId") == pending_process.id
+                        ]
+                        process_start_intents = [
+                            intent
+                            for intent in all_gateway_roll_intents
+                            if intent.request.get("method") == "process/start"
+                        ]
+                        assert len(process_start_intents) == 1
+                        assert process_start_intents[0].result is not None
+                        process_read_intents = [
+                            intent
+                            for intent in all_gateway_roll_intents
+                            if intent.request.get("method") == "process/read"
+                        ]
+                        assert process_read_intents
+                        assert any(
+                            intent.result is not None and intent.result.get("outcome") == "completed"
+                            for intent in process_read_intents
+                        ), process_read_intents
+                        post_restart_reads = [
+                            intent for intent in process_read_intents if intent.id not in read_intents_before_restart
+                        ]
+                        assert all(
+                            intent.request.get("params", {}).get("afterSeq") is not None
+                            and intent.request["params"]["afterSeq"] >= read_cursor
+                            for intent in post_restart_reads
+                        ), post_restart_reads
+                        await exchange.send(
+                            *response_stream(
+                                [Message("The same process completed after Gateway replacement.")], model="test-model"
+                            ).events
+                        )
+                    await wait_for_turn_completion(before_gateway_roll.cursor, gateway_roll_command_id)
+
+                    after_gateway_roll = await store.get_session(session_id)
+                    fresh_gateway_command_id = str(uuid4())
+                    await stub.SubmitInput(
+                        environment_runtime_pb2.SubmitInputRequest(
+                            session_id=session_id,
+                            command_id=fresh_gateway_command_id,
+                            text="Complete one fresh input after Gateway reconnect.",
+                        ),
+                        metadata=sampler_metadata,
+                        timeout=10,
+                    )
+                    async with await endpoint.next() as exchange:
+                        await exchange.send(
+                            *response_stream(
+                                [Message("The fresh input completed after Gateway reconnect.")], model="test-model"
+                            ).events
+                        )
+                    await wait_for_turn_completion(after_gateway_roll.cursor, fresh_gateway_command_id)
+
                     recovered_snapshot = await store.get_session(session_id)
                     await history.folded(UUID(session_id), recovered_snapshot.cursor)
                     final_page = await history.reader.read_session_events(session_id, limit=1000)

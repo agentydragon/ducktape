@@ -31,8 +31,11 @@ model call through the real Egress proxy; a real Gateway roll during a live
 central read/turn; and Firecracker process continuity across checkpoint/thaw.
 Both packaged guest harnesses now send their actual model traffic through the
 real sidecar/Egress route to an mTLS scripted endpoint. The tests require an
-allowed CONNECT decision for that Sandbox Identity. The native Gateway-roll
-contract is still being qualified. Keep the matching deployed cases for the
+allowed CONNECT decision for that Sandbox Identity. The native Gateway-roll contract now passes with a bounded resume repair.
+Its initial real-process outage exposed a structured control-route refusal that
+abandoned a live read; the fix retries only the not-dispatched retained-session
+initialize handshake within its existing deadline. Starts and writes keep their
+no-replay behavior. Keep the matching deployed cases for the
 remaining surfaces; Firecracker checkpoint coverage requires the actual platform. This scoped starting policy
 does not narrow the overall goal to journal-only PRs.
 
@@ -112,3 +115,27 @@ four Bridge shards, ordinary kubelet sync cadence, serial Pod harness pairing,
 and the 120-second Gateway reconnect deadline. The earlier larger shard count,
 shorter cadence/budget and overlap trials remain documented experiments. Their
 separate effects and resource costs must not be folded into a graph-only result.
+
+The Gateway-roll contract initially failed with real lost progress in
+[a506292e](https://app.buildbuddy.io/invocation/a506292e-853e-422f-a0a7-6331b71611d8).
+After the narrow resume repair, the
+[executor owner tests](https://app.buildbuddy.io/invocation/14028ff2-3586-440c-89f8-82880c544d83)
+and [real Gateway integration](https://app.buildbuddy.io/invocation/a392bf47-fdc5-4cf9-be9b-410175fdff30)
+pass. The latter retains the same process and cursor, one process start, exact
+output once, turn completion and a fresh input after recovery. These are
+working-tree proofs; no representative rerun-rate improvement is established.
+
+The first frozen timing controller stopped before any arm: source `5baec60b89`
+failed a helper-library mypy aspect even though the focused guest targets passed.
+The Egress client field used the synchronous generated stub type for an async
+channel; its annotation is corrected to `EgressAdminAsyncStub`. The retired
+budget profile also required removing its expected output from the determinism
+case; that correction passes in
+[8fe254eb](https://app.buildbuddy.io/invocation/8fe254eb-a62b-44d3-a820-0ab90dd1896a).
+Both failed CI attempts remain part of this branch's validation history. No
+40-vs-40 timing result exists yet.
+
+Explicit builds of the changed Gateway fixture, Sampler store and Egress helper
+libraries pass their lint/type aspects in
+[f757a24e](https://app.buildbuddy.io/invocation/f757a24e-dcc2-4b3f-8f23-21cfc99c7070).
+Focused py_test success alone did not check those helper-library aspects.
