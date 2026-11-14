@@ -1,26 +1,28 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
+_TEST_VISIBILITY = [
+    "//agentplane/action_service:__pkg__",
+    "//agentplane/app:__pkg__",
+    "//agentplane/app/testing:__pkg__",
+    "//agentplane/central_sampler:__pkg__",
+    "//agentplane/crds:__pkg__",
+    "//agentplane/egress:__pkg__",
+    "//agentplane/egress/testing:__pkg__",
+    "//agentplane/env/e2e:__subpackages__",
+    "//agentplane/grpc:__pkg__",
+    "//agentplane/history_service/testing:__pkg__",
+    "//agentplane/llm_ingress:__pkg__",
+    "//agentplane/runner_gateway:__subpackages__",
+    "//agentplane/sandboxes:__subpackages__",
+    "//agentplane/system_tests:__subpackages__",
+    "//agentplane/x/runner_layering:__pkg__",
+    "//cluster/cdk8s/agentplane:__pkg__",
+    "//cluster/providers/buildbuddy/apis/v1alpha1:__pkg__",
+]
+
 package(
     default_testonly = True,
-    default_visibility = [
-        "//agentplane/action_service:__pkg__",
-        "//agentplane/app:__pkg__",
-        "//agentplane/app/testing:__pkg__",
-        "//agentplane/central_sampler:__pkg__",
-        "//agentplane/crds:__pkg__",
-        "//agentplane/egress:__pkg__",
-        "//agentplane/egress/testing:__pkg__",
-        "//agentplane/env/e2e:__subpackages__",
-        "//agentplane/grpc:__pkg__",
-        "//agentplane/history_service/testing:__pkg__",
-        "//agentplane/llm_ingress:__pkg__",
-        "//agentplane/runner_gateway:__subpackages__",
-        "//agentplane/sandboxes:__subpackages__",
-        "//agentplane/system_tests:__subpackages__",
-        "//agentplane/x/runner_layering:__pkg__",
-        "//cluster/cdk8s/agentplane:__pkg__",
-        "//cluster/providers/buildbuddy/apis/v1alpha1:__pkg__",
-    ],
+    default_visibility = _TEST_VISIBILITY,
 )
 
 py_library(
@@ -61,6 +63,7 @@ py_library(
         "//agentplane/testing/envtest:server",  # keep: fixture subprocess
         "@envtest_kubernetes_linux_amd64//:assets",  # keep: pinned control-plane executables
     ],
+    visibility = _TEST_VISIBILITY + ["//agentplane/notification_service/testing/process_fixture:__pkg__"],
     deps = [
         "//agentplane:subjects",
         "//devinfra/testing:undeclared_outputs",
@@ -117,6 +120,7 @@ py_library(
 py_library(
     name = "tls",
     srcs = ["tls.py"],
+    visibility = _TEST_VISIBILITY + ["//agentplane/notification_service/testing/process_fixture:__pkg__"],
     deps = ["@pypi//cryptography"],
 )
 
