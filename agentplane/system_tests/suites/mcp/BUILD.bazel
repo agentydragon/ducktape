@@ -77,7 +77,7 @@ k3s_suite(
     name = "test_services_mcp_candidate",
     srcs = ["test_services_mcp_candidate.py"],
     main = "test_services_mcp_candidate.py",
-    stack = "mcp",
+    stack = "mcp_services",
     tags = ["manual"],
     deps = [
         ":conftest",

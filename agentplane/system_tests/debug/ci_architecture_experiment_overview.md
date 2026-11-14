@@ -98,8 +98,12 @@ CPUs, distinct from requested CUs. The subsequent shared-module six-slot configu
 21 cases against a same-source ordinary control: 513.545s to 313.609s physical execution (38.9%
 lower), 7.4% lower CPU, 22.1% higher requested-CU execution and 7.7% higher peak action memory.
 Both infrastructures are warm; node capacity is intentionally different (seven versus eleven CPUs).
-This single ordered configuration screen passes its resource caps. Whole competing-graph testing
-is now submitted; no complete required-feedback median, p90 or flake result is established.
+This isolated ordered configuration screen passes its resource caps. The same-source seven-target
+comparison then passes the same 40 cases in both arms, reducing native Bazel elapsed from 489.497s
+to 373.066s (23.8%). Known CPU is 1.0% lower, but requested-CU execution grows by 10.35%, failing
+the predeclared 10% cap; peak concurrent requested CU grows from 28 to 32. Pod remains last at
+330.949s, followed by Services at 291.709s. Keep the candidate manual. No complete required-feedback
+median, p90 or flake result is established.
 [Detailed evidence](common_backend_contracts.md#pod-partition-and-capacity-screen).
 
 The [actual App-image consumer query](https://app.buildbuddy.io/invocation/ce224205-7707-4240-8c4b-9a5520a3b468)
