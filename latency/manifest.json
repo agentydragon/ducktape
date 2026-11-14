@@ -5,8 +5,8 @@
   "published_at_utc": "2026-11-13T03:43:49.914251+00:00",
   "attribution": "not collected",
   "previous_report_commit": "8032ec1140281be66ee934b69bb71b25f892be82",
-  "report_sha256": "50db242dfefe9e8a349a731416e61c8b619fd2aed48e3af018bce3c3d331a7b3",
-  "evidence_sha256": "27fc94ed3a0485d34fb42e82423edcaa41d2e3873ee79b8178089c4bc4246bf3",
+  "report_sha256": "375a196be475eb82d72fb3d24ca61ab433bada2288474ffb941683b2832a9a1d",
+  "evidence_sha256": "ec020e73347386e2e0a9b52b0b23cd983e520a2b2942c022fcc167338c2053cc",
   "evidence_schema_version": 3,
   "population": "159 latest devel-base backend PR heads: 129 production (124 green, four failed, one cancelled), 25 tests/helpers, five BUILD-only; 719 devel-base PR search frame",
   "feedback_clock": "Earliest exact-head PR workflow creation to latest successful completion of all three required gates; workflow creation proxies unavailable push timestamps. Not auto-merge eligibility.",
@@ -66,15 +66,15 @@
     "scope": "Single authoritative snapshot; original fleet latency/reliability populations unchanged."
   },
   "prepared_at_utc": "2026-11-13T22:27:42Z",
-  "publication_base_gh_pages_commit": "c8f6801795c2a610a839f356487eadec6474fe79",
-  "visual_validation_status": "Presentation proof is recorded separately in visual-validation.json and must match the captured HTML, evidence and manifests.",
-  "draft_prepared_at_utc": "2026-11-14T02:32:12.581846+00:00",
+  "publication_base_gh_pages_commit": "beb020013fd5fed19fd0b44b3cc9bfef14835abf",
+  "visual_validation_status": "Separate new presentation proof must match this snapshot. Previous proof does not validate iteration 13.",
+  "draft_prepared_at_utc": "2026-11-14T03:39:26.838681+00:00",
   "architecture_iteration11": {
     "evidence_file": "../agentplane-test-architecture/iteration11.json",
     "evidence_sha256": "bde3219d91558865e4208264be1889077356e0b28e7b6b45012969990e3f94ac",
     "observed_at_utc": "2026-11-14T00:31:06Z",
     "source_head": "4bfabd5a9ac5e39eac956b9bbca38f75fd457eb2",
-    "scope": "Supplemental architecture and readiness evidence only; the report’s original population, window, source pin, rates and denominators are unchanged."
+    "scope": "Supplemental architecture and readiness evidence only; the report\u2019s original population, window, source pin, rates and denominators are unchanged."
   },
   "architecture_iteration12": {
     "evidence_file": "../agentplane-test-architecture/iteration12.json",
@@ -83,5 +83,13 @@
     "source_head": "417b6428baeae93116fb293a782120664a754697",
     "source_base": "61fff5940585974df89ad1b2f4222c403814925d",
     "scope": "Supplemental image screen, direct private-systemd controls and merged-port status. Original fleet populations, windows, source pins, rates and denominators unchanged."
+  },
+  "architecture_iteration13": {
+    "evidence_file": "../agentplane-test-architecture/iteration13.json",
+    "evidence_sha256": "a48ad005e894b52a6192bf816be29172fb41f461e5003485572c6edd2a58acae",
+    "observed_at_utc": "2026-11-14T03:39:26.838681+00:00",
+    "source_head": "ff06b22d196eca2bd3c477e94e62b3e141336f1a",
+    "source_base": "a4785875d139241007d18377a9c2d70a9881ae1f",
+    "scope": "Supplemental architecture experiment, rebase validation, and selected critical-tail diagnosis. Original fleet populations, windows, source pins, denominators and rates unchanged."
   }
 }

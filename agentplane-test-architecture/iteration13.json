@@ -1,0 +1,598 @@
+{
+  "schema_version": 1,
+  "observed_at_utc": "2026-11-14T03:39:26.838681+00:00",
+  "scope": "Supplemental architecture experiment, rebase validation, and selected critical-tail diagnosis. Original fleet populations, windows, source pins, denominators and rates unchanged.",
+  "source": {
+    "repository": "https://github.com/agentydragon/ducktape",
+    "pull_request": 16102,
+    "reviewed_source": "ff06b22d196eca2bd3c477e94e62b3e141336f1a",
+    "source_base": "a4785875d139241007d18377a9c2d70a9881ae1f",
+    "required_checks": {
+      "status": "All three required checks SUCCESS at literal ff06b22d19.",
+      "native_invocation": "08e0386c-f063-5c95-a339-d517384dad6a",
+      "native_elapsed_seconds": 142.499,
+      "tested_merge": "059587fef2b67a4c68ce19c4be9158c414d6b17b",
+      "workflow_run": 43550390286,
+      "bazel_job": 132311273179,
+      "passing_tests_including_cached": 1993,
+      "fresh_physical_test_actions": 1,
+      "fresh_test_labels": ["//cluster/cdk8s:test_generate_manifests"],
+      "limit": "Selected/cached correctness run. Manual contract experiments are separate fresh executions; no matched savings or fleet reliability claim.",
+      "tested_merge_base": "227eff4c0b2a30f0a0fb996e984785ef65b44882"
+    },
+    "rebase_audit": {
+      "rebased_head": "44a0c04d7ffcbd236302f9351f89d0d769ca829f",
+      "new_base": "a4785875d139241007d18377a9c2d70a9881ae1f",
+      "branch_changed_paths": 105,
+      "upstream_changed_paths": 85,
+      "overlap_paths": 0,
+      "unexpected_changes": 0
+    }
+  },
+  "private_supervision_ownership": {
+    "experiment_source": "ff06b22d196eca2bd3c477e94e62b3e141336f1a",
+    "arm_order": [
+      "A1 deployed",
+      "B1 direct-guest",
+      "B2 direct-guest",
+      "A2 deployed"
+    ],
+    "same_source_and_roots": true,
+    "uncached_tests": true,
+    "flaky_attempts": 1,
+    "fresh_physical_actions": 8,
+    "nonempty_junit_cases": 8,
+    "failures_errors_skips_retries": 0,
+    "arms": [
+      {
+        "arm": "A1",
+        "owner": "deployed",
+        "invocation": "a9a3b28d-a822-41da-b0a3-9f914150dae5",
+        "source": "ff06b22d196eca2bd3c477e94e62b3e141336f1a",
+        "native_elapsed_seconds": 289.701,
+        "tests": [
+          {
+            "label": "//agentplane/system_tests/suites:test_vm_platform_light_guest_candidate",
+            "physical_execution_sha256": "038a41a1b4ef823415d0816b27f51ceb3589df473b11c6ad1c614ef3e171e9e9",
+            "worker_sha256": "75733108ed600dbed21248a4330d52d1f169c96c50bb6f2dcfbd52c3a048d4c9",
+            "new_physical_actions": 1,
+            "queue_seconds": 0.059414,
+            "preparation_seconds": 1.047879,
+            "execution_seconds": 224.880343,
+            "output_upload_seconds": 0.425499,
+            "cpu_seconds": 603.803123,
+            "peak_memory_bytes": 4339175424,
+            "execution_start": "2026-11-14T03:13:46.551392Z",
+            "execution_completed": "2026-11-14T03:17:31.431735Z",
+            "junit": {
+              "cases": 1,
+              "failure": 0,
+              "error": 0,
+              "skipped": 0,
+              "identities": [
+                [
+                  "agentplane.system_tests.suites.test_vm_platform",
+                  "test_one_vm_platform_without_model_turns"
+                ]
+              ]
+            },
+            "persistence": {
+              "outcome": "warm",
+              "fingerprint": "ac4cf98674a1ff7ed4ea239c6a3f37e5e6c8070822b977708b97c4bf98bc4d93",
+              "layers_in_memory": false,
+              "cleanup": "complete",
+              "workspace_loop_devices_released": 1,
+              "reason": "reused"
+            },
+            "phase_seconds": {
+              "system_test.stack.setup": [70.183159],
+              "system_test.sandbox.ready": [65.711302],
+              "system_test.session_setup.output_wait": [12.059847, 1.286058],
+              "system_test.sandbox.cleanup": [16.050797],
+              "system_test.case": [100.409309],
+              "system_test.stack.cleanup": [28.912327]
+            },
+            "imports": {
+              "count": 14,
+              "not_skipped": 12,
+              "span_seconds": 51.891588
+            },
+            "platform": {
+              "template": "environment-vm-supervision",
+              "private_supervision_owner": "deployed",
+              "private_supervision_kernel_arg": true,
+              "supervision_and_fence": true,
+              "notification_cli": true
+            },
+            "private_fixture": {
+              "parent_pass_seconds": [12.48],
+              "child_passes": 11,
+              "exact_receipts": 1,
+              "parent_failures": 0
+            }
+          },
+          {
+            "label": "//agentplane/x/direct_vm_boot:test_runtime_session",
+            "physical_execution_sha256": "223ff89ecd5bc83a4fa0129529e81ea075434c594f9bee5db2df6028e7b293e4",
+            "worker_sha256": "fcadb37c44be6cf7eada4e33d3933ca3d41e8802cdecfd1049f5670046383dbb",
+            "new_physical_actions": 1,
+            "queue_seconds": 0.059106,
+            "preparation_seconds": 0.338885,
+            "execution_seconds": 148.126195,
+            "output_upload_seconds": 0.174808,
+            "cpu_seconds": 263.55531,
+            "peak_memory_bytes": 2324516864,
+            "execution_start": "2026-11-14T03:13:17.571969Z",
+            "execution_completed": "2026-11-14T03:15:45.698164Z",
+            "junit": {
+              "cases": 1,
+              "failure": 0,
+              "error": 0,
+              "skipped": 0,
+              "identities": [
+                [
+                  "agentplane.x.direct_vm_boot.test_runtime_session",
+                  "test_packaged_claude_session_runs_shell_and_accepts_next_input"
+                ]
+              ]
+            },
+            "cleanup": {
+              "docker_exit": 143,
+              "remove_exit": 0,
+              "owner_restoration_receipt": true,
+              "listener_assertion": "passed in test teardown"
+            },
+            "private_fixture": {
+              "parent_pass_seconds": [15.13],
+              "child_passes": 11,
+              "exact_receipts": 1,
+              "parent_failures": 0
+            }
+          }
+        ]
+      },
+      {
+        "arm": "B1",
+        "owner": "direct-guest",
+        "invocation": "c5567381-85be-44de-bd09-bf256fe7a4b4",
+        "source": "ff06b22d196eca2bd3c477e94e62b3e141336f1a",
+        "native_elapsed_seconds": 192.106,
+        "tests": [
+          {
+            "label": "//agentplane/system_tests/suites:test_vm_platform_light_guest_candidate",
+            "physical_execution_sha256": "ea821df01e45aa4d46852ec869d03aabe4bc0282e7b21a3812ddb614d22daa29",
+            "worker_sha256": "75733108ed600dbed21248a4330d52d1f169c96c50bb6f2dcfbd52c3a048d4c9",
+            "new_physical_actions": 1,
+            "queue_seconds": 0.060053,
+            "preparation_seconds": 0.332805,
+            "execution_seconds": 157.09314,
+            "output_upload_seconds": 0.389322,
+            "cpu_seconds": 381.071583,
+            "peak_memory_bytes": 4287352832,
+            "execution_start": "2026-11-14T03:18:31.554272Z",
+            "execution_completed": "2026-11-14T03:21:08.647412Z",
+            "junit": {
+              "cases": 1,
+              "failure": 0,
+              "error": 0,
+              "skipped": 0,
+              "identities": [
+                [
+                  "agentplane.system_tests.suites.test_vm_platform",
+                  "test_one_vm_platform_without_model_turns"
+                ]
+              ]
+            },
+            "persistence": {
+              "outcome": "warm",
+              "fingerprint": "ac4cf98674a1ff7ed4ea239c6a3f37e5e6c8070822b977708b97c4bf98bc4d93",
+              "layers_in_memory": false,
+              "cleanup": "complete",
+              "workspace_loop_devices_released": 1,
+              "reason": "reused"
+            },
+            "phase_seconds": {
+              "system_test.stack.setup": [25.231895],
+              "system_test.sandbox.ready": [53.817551],
+              "system_test.session_setup.output_wait": [10.095671, 1.264782],
+              "system_test.sandbox.cleanup": [14.738605],
+              "system_test.case": [83.830489],
+              "system_test.stack.cleanup": [28.690877]
+            },
+            "imports": {
+              "count": 14,
+              "not_skipped": 0,
+              "span_seconds": 7.2e-5
+            },
+            "platform": {
+              "template": "environment-vm",
+              "private_supervision_owner": "direct-guest",
+              "private_supervision_kernel_arg": false,
+              "supervision_and_fence": true,
+              "notification_cli": true
+            },
+            "private_fixture": {
+              "parent_pass_seconds": [],
+              "child_passes": 0,
+              "exact_receipts": 0,
+              "parent_failures": 0
+            }
+          },
+          {
+            "label": "//agentplane/x/direct_vm_boot:test_runtime_session",
+            "physical_execution_sha256": "8da2258b78e6cae4cf50f43a5ce00bf4d1560f05a7165b25f86cc27ffceb9d1d",
+            "worker_sha256": "fcadb37c44be6cf7eada4e33d3933ca3d41e8802cdecfd1049f5670046383dbb",
+            "new_physical_actions": 1,
+            "queue_seconds": 0.057695,
+            "preparation_seconds": 0.330874,
+            "execution_seconds": 153.932405,
+            "output_upload_seconds": 0.175832,
+            "cpu_seconds": 277.28612,
+            "peak_memory_bytes": 2340794368,
+            "execution_start": "2026-11-14T03:18:31.550132Z",
+            "execution_completed": "2026-11-14T03:21:05.482537Z",
+            "junit": {
+              "cases": 1,
+              "failure": 0,
+              "error": 0,
+              "skipped": 0,
+              "identities": [
+                [
+                  "agentplane.x.direct_vm_boot.test_runtime_session",
+                  "test_packaged_claude_session_runs_shell_and_accepts_next_input"
+                ]
+              ]
+            },
+            "cleanup": {
+              "docker_exit": 143,
+              "remove_exit": 0,
+              "owner_restoration_receipt": true,
+              "listener_assertion": "passed in test teardown"
+            },
+            "private_fixture": {
+              "parent_pass_seconds": [13.24],
+              "child_passes": 11,
+              "exact_receipts": 1,
+              "parent_failures": 0
+            }
+          }
+        ]
+      },
+      {
+        "arm": "B2",
+        "owner": "direct-guest",
+        "invocation": "29f33135-0dae-433f-a992-e11b0e5d58aa",
+        "source": "ff06b22d196eca2bd3c477e94e62b3e141336f1a",
+        "native_elapsed_seconds": 209.431,
+        "tests": [
+          {
+            "label": "//agentplane/system_tests/suites:test_vm_platform_light_guest_candidate",
+            "physical_execution_sha256": "38e5ae20eb41d17594e5a9de3818b98e045d58a4bd723967429070f7c4934a3f",
+            "worker_sha256": "75733108ed600dbed21248a4330d52d1f169c96c50bb6f2dcfbd52c3a048d4c9",
+            "new_physical_actions": 1,
+            "queue_seconds": 0.057736,
+            "preparation_seconds": 0.285341,
+            "execution_seconds": 173.389017,
+            "output_upload_seconds": 2.762604,
+            "cpu_seconds": 408.751466,
+            "peak_memory_bytes": 4310573056,
+            "execution_start": "2026-11-14T03:23:33.831052Z",
+            "execution_completed": "2026-11-14T03:26:27.220069Z",
+            "junit": {
+              "cases": 1,
+              "failure": 0,
+              "error": 0,
+              "skipped": 0,
+              "identities": [
+                [
+                  "agentplane.system_tests.suites.test_vm_platform",
+                  "test_one_vm_platform_without_model_turns"
+                ]
+              ]
+            },
+            "persistence": {
+              "outcome": "warm",
+              "fingerprint": "ac4cf98674a1ff7ed4ea239c6a3f37e5e6c8070822b977708b97c4bf98bc4d93",
+              "layers_in_memory": false,
+              "cleanup": "complete",
+              "workspace_loop_devices_released": 1,
+              "reason": "reused"
+            },
+            "phase_seconds": {
+              "system_test.stack.setup": [26.388514],
+              "system_test.sandbox.ready": [70.848107],
+              "system_test.session_setup.output_wait": [10.033135, 1.053154],
+              "system_test.sandbox.cleanup": [13.782355],
+              "system_test.case": [99.711063],
+              "system_test.stack.cleanup": [27.439968]
+            },
+            "imports": {
+              "count": 14,
+              "not_skipped": 0,
+              "span_seconds": 0.000118
+            },
+            "platform": {
+              "template": "environment-vm",
+              "private_supervision_owner": "direct-guest",
+              "private_supervision_kernel_arg": false,
+              "supervision_and_fence": true,
+              "notification_cli": true
+            },
+            "private_fixture": {
+              "parent_pass_seconds": [],
+              "child_passes": 0,
+              "exact_receipts": 0,
+              "parent_failures": 0
+            }
+          },
+          {
+            "label": "//agentplane/x/direct_vm_boot:test_runtime_session",
+            "physical_execution_sha256": "0a236b895287d45ba8a15f160bc5de302f047504452e16bb0db5cebc9b44f04c",
+            "worker_sha256": "fcadb37c44be6cf7eada4e33d3933ca3d41e8802cdecfd1049f5670046383dbb",
+            "new_physical_actions": 1,
+            "queue_seconds": 0.061219,
+            "preparation_seconds": 0.394424,
+            "execution_seconds": 160.310297,
+            "output_upload_seconds": 0.205114,
+            "cpu_seconds": 318.79876,
+            "peak_memory_bytes": 2319310848,
+            "execution_start": "2026-11-14T03:23:33.947409Z",
+            "execution_completed": "2026-11-14T03:26:14.257706Z",
+            "junit": {
+              "cases": 1,
+              "failure": 0,
+              "error": 0,
+              "skipped": 0,
+              "identities": [
+                [
+                  "agentplane.x.direct_vm_boot.test_runtime_session",
+                  "test_packaged_claude_session_runs_shell_and_accepts_next_input"
+                ]
+              ]
+            },
+            "cleanup": {
+              "docker_exit": 143,
+              "remove_exit": 0,
+              "owner_restoration_receipt": true,
+              "listener_assertion": "passed in test teardown"
+            },
+            "private_fixture": {
+              "parent_pass_seconds": [23.6],
+              "child_passes": 11,
+              "exact_receipts": 1,
+              "parent_failures": 0
+            }
+          }
+        ]
+      },
+      {
+        "arm": "A2",
+        "owner": "deployed",
+        "invocation": "26742449-a8e5-4bfb-bb72-4a0285e6c544",
+        "source": "ff06b22d196eca2bd3c477e94e62b3e141336f1a",
+        "native_elapsed_seconds": 202.192,
+        "tests": [
+          {
+            "label": "//agentplane/system_tests/suites:test_vm_platform_light_guest_candidate",
+            "physical_execution_sha256": "3ee8afe0c3af7529a90539b2b35c12b149349bc34da97137f92de6300105f1ed",
+            "worker_sha256": "75733108ed600dbed21248a4330d52d1f169c96c50bb6f2dcfbd52c3a048d4c9",
+            "new_physical_actions": 1,
+            "queue_seconds": 0.058681,
+            "preparation_seconds": 0.28978,
+            "execution_seconds": 166.923732,
+            "output_upload_seconds": 0.375745,
+            "cpu_seconds": 392.254133,
+            "peak_memory_bytes": 4314431488,
+            "execution_start": "2026-11-14T03:29:54.760153Z",
+            "execution_completed": "2026-11-14T03:32:41.683885Z",
+            "junit": {
+              "cases": 1,
+              "failure": 0,
+              "error": 0,
+              "skipped": 0,
+              "identities": [
+                [
+                  "agentplane.system_tests.suites.test_vm_platform",
+                  "test_one_vm_platform_without_model_turns"
+                ]
+              ]
+            },
+            "persistence": {
+              "outcome": "warm",
+              "fingerprint": "ac4cf98674a1ff7ed4ea239c6a3f37e5e6c8070822b977708b97c4bf98bc4d93",
+              "layers_in_memory": false,
+              "cleanup": "complete",
+              "workspace_loop_devices_released": 1,
+              "reason": "reused"
+            },
+            "phase_seconds": {
+              "system_test.stack.setup": [25.586051],
+              "system_test.sandbox.ready": [65.90435],
+              "system_test.session_setup.output_wait": [10.499198, 1.066677],
+              "system_test.sandbox.cleanup": [14.445482],
+              "system_test.case": [95.787735],
+              "system_test.stack.cleanup": [28.452377]
+            },
+            "imports": {
+              "count": 14,
+              "not_skipped": 0,
+              "span_seconds": 8e-5
+            },
+            "platform": {
+              "template": "environment-vm-supervision",
+              "private_supervision_owner": "deployed",
+              "private_supervision_kernel_arg": true,
+              "supervision_and_fence": true,
+              "notification_cli": true
+            },
+            "private_fixture": {
+              "parent_pass_seconds": [11.15],
+              "child_passes": 11,
+              "exact_receipts": 1,
+              "parent_failures": 0
+            }
+          },
+          {
+            "label": "//agentplane/x/direct_vm_boot:test_runtime_session",
+            "physical_execution_sha256": "01b1ba808ab054df22d96bb87e62877d5b19c19f506c4ee73f691402db38f0a6",
+            "worker_sha256": "fcadb37c44be6cf7eada4e33d3933ca3d41e8802cdecfd1049f5670046383dbb",
+            "new_physical_actions": 1,
+            "queue_seconds": 0.056987,
+            "preparation_seconds": 0.306944,
+            "execution_seconds": 146.120944,
+            "output_upload_seconds": 0.175724,
+            "cpu_seconds": 271.761249,
+            "peak_memory_bytes": 2336030720,
+            "execution_start": "2026-11-14T03:29:54.891311Z",
+            "execution_completed": "2026-11-14T03:32:21.012255Z",
+            "junit": {
+              "cases": 1,
+              "failure": 0,
+              "error": 0,
+              "skipped": 0,
+              "identities": [
+                [
+                  "agentplane.x.direct_vm_boot.test_runtime_session",
+                  "test_packaged_claude_session_runs_shell_and_accepts_next_input"
+                ]
+              ]
+            },
+            "cleanup": {
+              "docker_exit": 143,
+              "remove_exit": 0,
+              "owner_restoration_receipt": true,
+              "listener_assertion": "passed in test teardown"
+            },
+            "private_fixture": {
+              "parent_pass_seconds": [12.2],
+              "child_passes": 11,
+              "exact_receipts": 1,
+              "parent_failures": 0
+            }
+          }
+        ]
+      }
+    ],
+    "work_removed": "B removes the duplicate private-systemd preflight only from the manual deployed witness. Its existing direct Claude guest still passes the same 11 private Go children and exact receipt. Required VM/OOM and default deployed mode are unchanged.",
+    "added_assertions": "Read actual launcher Pod and its controller VMI; assert exact Pod/VMI owner UID linkage and actual firmware kernel arguments against selected owner. Direct-owner mode rejects an unexpected deployed private receipt.",
+    "retained_contracts": "Setup and process/aggregate/service kernel budgets; issuer and Pod identity; Runtime lifecycle; workspace; CLI routes; descendant fence; same-boot; owned cleanup. Direct guest retains both Session turns, History, CLI, private proof, credential revocation and listener cleanup.",
+    "warm_subset": {
+      "control_arm": "A2",
+      "candidate_arms": ["B1", "B2"],
+      "all_imports_skipped": true,
+      "control_native_seconds": 202.192,
+      "candidate_native_mean_seconds": 200.76850000000002,
+      "candidate_minus_control_seconds": -1.4235,
+      "candidate_readiness_range_seconds": [53.817551, 70.848107],
+      "disposition": "No convincing wall-time saving. Keep manual; do not promote or port as a proven optimization."
+    },
+    "limits": [
+      "A1 imports 12 images for 51.891588 seconds; other arms skip all 14 imports. A1/B1 whole-invocation difference is cache-confounded.",
+      "B1/B2 readiness differs by 17.030556 seconds despite warm image stores. The 1.4235-second warm native mean difference is below observed variation.",
+      "Only the two named manual targets are run together; competing Pod, Services and KVM tails are absent.",
+      "Eight passing cases establish focused correctness exposures, not a low flake rate or qualification.",
+      "Launcher/mount and issuer/Pod-binding controls and complete graph qualification remain open."
+    ]
+  },
+  "recovery_prefix_repair": {
+    "failed_rebase_validation": {
+      "source": "44a0c04d7ffcbd236302f9351f89d0d769ca829f",
+      "invocation": "77d101be-a24d-49d1-91b6-8755b2034154",
+      "fresh_physical_actions": 6,
+      "junit_cases": 9,
+      "passes": 8,
+      "failures": 1
+    },
+    "mechanism": "A late harness event can arrive while Runtime shuts down after the test captures History. Compare the exact captured prefix instead of assuming the journal stops growing.",
+    "repair_source": "a49291d92b9f831a33423ef17327ccb7603e2a55",
+    "healthy": {
+      "invocation": "85868ecb-8ec3-49a7-bfc7-de246a5052e4",
+      "fresh_physical_actions": 1,
+      "junit_passes": 4,
+      "errors_skips_failures": 0
+    },
+    "discarded_journal_negative": {
+      "invocation": "061c7aec-a160-4458-964e-ef7ac95412a7",
+      "fresh_physical_actions": 1,
+      "expected_failures": 1,
+      "intentionally_deselected": 3,
+      "outcome": "Repaired prefix passes, then the retained-Session assertion fails as intended."
+    },
+    "limit": "Branch-specific manual recovery test repair; native contracts do not yet exist on devel. Not a standalone production fix or speed claim."
+  },
+  "selected_required_tail": {
+    "source": "a49291d92b9f831a33423ef17327ccb7603e2a55",
+    "tested_merge": "06f3f7138a73446a543a88c0cc47b24d3fb0fe04",
+    "invocation": "acbad609-9135-5b68-9fa5-30709c4690d4",
+    "native_elapsed_seconds": 530.543,
+    "completed_physical_test_records": 49,
+    "firecracker": {
+      "queue_seconds": 206.046,
+      "preparation_seconds": 0.594,
+      "execution_seconds": 223.095,
+      "completed_at_utc": "2026-11-14T03:09:49.831Z"
+    },
+    "pod_completed_at_utc": "2026-11-14T03:08:19.785Z",
+    "fixed_other_clocks_completion_headroom_seconds": 90.046,
+    "vm_or_services_only_complete_graph_gain_seconds": 0,
+    "saturation": {
+      "window_utc": ["2026-11-14T03:02:30Z", "2026-11-14T03:06:15Z"],
+      "sample_interval_seconds": 15,
+      "registered_and_scraped_executors": 3,
+      "executing_tasks_continuous": 3,
+      "desired_replicas": 3,
+      "local_queued_reservations_range": [6, 21],
+      "assigned_and_assignable_cpu_millicores": 12000,
+      "interpretation": "All eligible workers busy at the pool cap during this wait. Queued reservations are not unique useful actions."
+    },
+    "pool_policy": {
+      "min_replicas": 1,
+      "max_replicas": 3,
+      "concurrent_tasks_per_worker": 1,
+      "worker_cpu": 4,
+      "worker_memory_gib": 8,
+      "worker_ssd_volume_gib": 80,
+      "strict_one_worker_per_node": true,
+      "scale_up_stabilization_seconds": 120,
+      "scale_up_limit": "One replica per 900 seconds"
+    },
+    "fourth_worker_feasibility": "One existing SSD host has request headroom for another 4 CPU/8 GiB worker and 80 GiB volume. Other two SSD hosts lack CPU request headroom. A single live CPU sample does not prove sustained capacity. A fourth worker requires a deliberate narrow spread-policy exception and contention/cost monitoring; no infrastructure change or capacity trial was made.",
+    "limits": "One selected successful required run, not a representative before/after population. Durations from test spans cannot be joined to worker absolute clocks because test-result timestamps differ."
+  },
+  "next_probes": [
+    {
+      "priority": 1,
+      "proposal": "Run unchanged gateway certificate trust helper on the first fresh Firecracker guest before the live-session, certificate rotation and suspend/resume scenario.",
+      "current_second_case_seconds": 33.782,
+      "second_guest_create_and_ready_seconds": 18.387,
+      "second_guest_cleanup_seconds": 13.782,
+      "helper_seconds_approx": 1.35,
+      "conditional_work_reduction_seconds_approx": 32.169,
+      "tradeoff": "Removes the second independently clean guest fixture. All positive TLS, forged-issuer rejection and Ready assertions must execute before the first guest is mutated.",
+      "checks": "Keep existing required two-case control; use manual candidate, then compare same-source complete required graphs with all cases and gates retained. No result yet."
+    },
+    {
+      "priority": 2,
+      "proposal": "Repair the held import benchmark using the ordinary K3s root and fresh containerd stores; first demonstrate a working measurement action.",
+      "constraints": "Same 18 OCI references, pinned-image verification, low-disk/prune semantics; hold source blob cache exposure fixed and separate cold-store versus warm repeats.",
+      "limit": "Earlier batching figures were order/cache-confounded. Missing custom-root iptables helper root cause remains unproved; no new import speedup claimed."
+    },
+    {
+      "priority": 3,
+      "proposal": "Only after workload reduction, consider a bounded fourth warm KVM worker trial with queue/host CPU/RAM and cost comparison.",
+      "limit": "No deployment authorization question or infrastructure change is needed for the present read-only audit; a concrete trial proposal remains future work."
+    }
+  ],
+  "retained_followups": {
+    "tracker": "https://github.com/agentydragon/ducktape/issues/16099",
+    "qualification": "30 qualified pairs, 100 fresh contract executions, three busy windows, and a four-PR burst remain open. No required owners/frequency changed; diminishing returns not established.",
+    "selection_archive": "Inspect the next three natural backend heads for identity/result-stream completeness.",
+    "sampler_port": "Inspect the first ten fresh integration actions after merged #16317; cached checks do not count as exposures.",
+    "storage_16299_window_utc": [
+      "2026-11-14T00:50:49Z",
+      "2026-11-21T00:50:49Z"
+    ],
+    "storage_limit": "Retain prior stderr/restart evidence; the original controller exit cause remains unknown. No scheduled monitor claimed."
+  },
+  "privacy": "Raw test artifacts, execution metadata, host identities and fixture diagnostics remain private. This file contains reviewed summaries and hashed physical identities only."
+}

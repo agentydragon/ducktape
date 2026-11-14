@@ -567,7 +567,7 @@
             my="xl"
           >
             <${Title} order=${2}
-              >Iteration 9 observer evidence and retained reliability
+              >Historical iteration 9 observer evidence and retained reliability
               follow-ups<//
             >
             <${Text} size="sm" c="dimmed">
@@ -689,15 +689,92 @@
           <//>
           <${Stack}
             component="section"
+            id="architecture-followup-iteration13"
+            my="xl"
+          >
+            <${Stack} gap="sm">
+              <${Title} order=${2}
+                >Iteration 13 reliability follow-up: retained-session prefix
+                repair<//
+              >
+              <${Text} size="sm" c="dimmed">
+                Current source ff06b22d196eca2bd3c477e94e62b3e141336f1a passed
+                all three required checks. Required invocation 08e0386c was
+                SUCCESS in 142.499s with exactly one NEW physical action for
+                test manifest generation and 1,993 passing results, mostly
+                cached. The reliability populations, original windows, source
+                pins, rates and denominators remain unchanged. These selected
+                actions are not a fleet sample.
+              <//>
+              <${Text}>
+                The initial manual rebase 77d101be recorded six NEW physical
+                actions and nine JUnit cases: eight passed and one exposed a
+                prefix race. The same-source healthy repair 85868ecb at rebase
+                checkpoint a49291d passes four cases. Its previous-prefix
+                limited read permits late harness events while retaining
+                equality, restart, deduplication and next-input behavior.
+              <//>
+              <${Text}>
+                The journal-deletion control 061c7aec fails at the intended
+                missing retained Session assertion (one case, three deselected);
+                the healthy and control runs each have one NEW physical action.
+                The other five manual targets pass at 44a0c04d7f. These focused
+                results do not change any historical failure-rate population.
+              <//>
+              <${Text}>
+                All four A/B/B/A private-fixture ownership arms passed, each
+                with two NEW physical actions and two nonempty passing cases, no
+                failures, errors, skips or retries. A1 performed 12 image
+                imports spanning 51.891588s; B1, B2 and A2 skipped every image
+                import, so A1 is cache-confounded. The B1/B2 warm native mean
+                was 200.769s versus A2 at 202.192s; this screen supports no
+                speed promotion. Each direct arm passed the exact 11 private Go
+                children and one receipt. Deployed A1/A2 also passed 11 children
+                and one receipt; deployed B1/B2 intentionally had no kernel
+                argument, parent pass or receipt. The default deployed owner
+                remains enabled. These runs confirm selected ownership and
+                duplicate omission; the separate omission-negative remains the
+                prior direct-private control. See the
+                <${Anchor} href="../agentplane-test-architecture/#iteration13"
+                  >full timing and tail analysis<//
+                >.
+              <//>
+              <${Text}>
+                PRs #16316, #16317 and #16299 are merged; no redispatch is
+                needed. Retain the storage follow-up from 2026-11-14T00:50:49Z
+                through 2026-11-21T00:50:49Z. The 30-pair, 100-fresh-contract,
+                three-busy-window and four-PR-burst qualifications remain open,
+                as do launcher/mount and issuer/ Pod-binding controls. No gate
+                owner or cadence promotion and no diminishing-returns claim
+                follows from these selected runs.
+              <//>
+              <${Anchor} href="../agentplane-test-architecture/iteration13.json"
+                >Reviewed measurements and exact provenance<//
+              >
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/pull/16102"
+                >Source PR #16102<//
+              >
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/issues/16099"
+                >Tracker #16099<//
+              >
+            <//>
+          <//>
+          <${Stack}
+            component="section"
             id="architecture-followup-iteration12"
             my="xl"
           >
             <${Stack} gap="sm">
-              <${Title} order=${2}>Iteration 12 architecture follow-up<//>
+              <${Title} order=${2}
+                >Historical iteration 12 architecture follow-up<//
+              >
               <${Text} size="sm" c="dimmed"
-                >Reviewed source 417b6428; original fleet populations, windows,
-                source pins, rates and denominators remain unchanged. These
-                selected experiments do not remeasure them.<//
+                >Historical selected evidence from source 417b6428; original
+                fleet populations, windows, source pins, rates and denominators
+                remain unchanged. These selected experiments do not remeasure
+                them.<//
               >
               <${Text}
                 >The real private systemd fixture now runs in the existing
@@ -755,7 +832,8 @@
             my="xl"
           >
             <${Title} order=${2}
-              >Iteration 11 architecture and storage-readiness follow-up<//
+              >Historical iteration 11 architecture and storage-readiness
+              follow-up<//
             >
             <${Text} size="sm" c="dimmed"
               >Observed 2026-11-14T00:31:06Z from source 4bfabd5. The retained
@@ -837,7 +915,9 @@
             gap="sm"
             my="xl"
           >
-            <${Title} order=${2}>Iteration 10 architecture follow-up<//>
+            <${Title} order=${2}
+              >Historical iteration 10 architecture follow-up<//
+            >
             <${Text} size="sm" c="dimmed">
               Selected evidence observed 2026-11-13T22:27:42Z. The retained
               reliability windows, source pins, rates and denominators above
