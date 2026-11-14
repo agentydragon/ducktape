@@ -1,36 +1,36 @@
 {
   "schema_version": 3,
-  "source_sha": "6dfbd741f5ba004f02aba929cadbbd59b6950393",
-  "observed_at_utc": "2026-11-14T00:48:53+00:00",
+  "source_sha": "749fda99a200b5a60b21c0af343074c5e4fd3ac9",
+  "observed_at_utc": "2026-11-14T02:20:00+00:00",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1256,
-    "directories": 219,
-    "production": 691,
-    "tests": 565
+    "files": 1261,
+    "directories": 220,
+    "production": 695,
+    "tests": 566
   },
   "directories": [
-    {
-      "path": "agentplane/action_service",
-      "production": 2,
-      "tests": 7,
-      "files": [
-        "agentplane/action_service/config.go",
-        "agentplane/action_service/config_test.go",
-        "agentplane/action_service/executors_test.go",
-        "agentplane/action_service/integration_testmain_test.go",
-        "agentplane/action_service/main.go",
-        "agentplane/action_service/main_test.go",
-        "agentplane/action_service/push_test.go",
-        "agentplane/action_service/sandbox_groups_test.go",
-        "agentplane/action_service/svid_test.go"
-      ]
-    },
     {
       "path": "agentplane/action_service/callers",
       "production": 1,
       "tests": 0,
       "files": ["agentplane/action_service/callers/labels.go"]
+    },
+    {
+      "path": "agentplane/action_service/cmd",
+      "production": 2,
+      "tests": 7,
+      "files": [
+        "agentplane/action_service/cmd/config.go",
+        "agentplane/action_service/cmd/config_test.go",
+        "agentplane/action_service/cmd/executors_test.go",
+        "agentplane/action_service/cmd/integration_testmain_test.go",
+        "agentplane/action_service/cmd/main.go",
+        "agentplane/action_service/cmd/main_test.go",
+        "agentplane/action_service/cmd/push_test.go",
+        "agentplane/action_service/cmd/sandbox_groups_test.go",
+        "agentplane/action_service/cmd/svid_test.go"
+      ]
     },
     {
       "path": "agentplane/action_service/docs",
@@ -345,6 +345,15 @@
       ]
     },
     {
+      "path": "agentplane/app/internal/electricproxy",
+      "production": 1,
+      "tests": 1,
+      "files": [
+        "agentplane/app/internal/electricproxy/electric.go",
+        "agentplane/app/internal/electricproxy/electric_test.go"
+      ]
+    },
+    {
       "path": "agentplane/app/internal/federation",
       "production": 2,
       "tests": 1,
@@ -394,17 +403,6 @@
       "files": [
         "agentplane/app/internal/migrations/migrations.go",
         "agentplane/app/internal/migrations/migrations_test.go"
-      ]
-    },
-    {
-      "path": "agentplane/app/internal/proxy",
-      "production": 2,
-      "tests": 2,
-      "files": [
-        "agentplane/app/internal/proxy/electric.go",
-        "agentplane/app/internal/proxy/electric_test.go",
-        "agentplane/app/internal/proxy/upstream.go",
-        "agentplane/app/internal/proxy/upstream_test.go"
       ]
     },
     {
@@ -480,6 +478,15 @@
       "files": [
         "agentplane/app/internal/threads/store.go",
         "agentplane/app/internal/threads/store_integration_test.go"
+      ]
+    },
+    {
+      "path": "agentplane/app/internal/upstream",
+      "production": 1,
+      "tests": 1,
+      "files": [
+        "agentplane/app/internal/upstream/upstream.go",
+        "agentplane/app/internal/upstream/upstream_test.go"
       ]
     },
     {
@@ -566,6 +573,16 @@
       "files": [
         "agentplane/central_sampler/internal/promptimage/image_preparation.go",
         "agentplane/central_sampler/internal/promptimage/image_preparation_test.go"
+      ]
+    },
+    {
+      "path": "agentplane/central_sampler/internal/providerio",
+      "production": 2,
+      "tests": 1,
+      "files": [
+        "agentplane/central_sampler/internal/providerio/errors.go",
+        "agentplane/central_sampler/internal/providerio/providerio_test.go",
+        "agentplane/central_sampler/internal/providerio/timeouts.go"
       ]
     },
     {
@@ -706,11 +723,11 @@
         "agentplane/central_sampler/protocol/content.go",
         "agentplane/central_sampler/protocol/context.go",
         "agentplane/central_sampler/protocol/errors.go",
+        "agentplane/central_sampler/protocol/errors_test.go",
         "agentplane/central_sampler/protocol/evidence.go",
         "agentplane/central_sampler/protocol/instructions.go",
         "agentplane/central_sampler/protocol/json.go",
         "agentplane/central_sampler/protocol/provider_hooks.go",
-        "agentplane/central_sampler/protocol/provider_hooks_test.go",
         "agentplane/central_sampler/protocol/status.go",
         "agentplane/central_sampler/protocol/tool_definitions.go",
         "agentplane/central_sampler/protocol/tool_invocation.go",
@@ -2247,12 +2264,6 @@
       ]
     },
     {
-      "path": "agentplane/policy",
-      "production": 1,
-      "tests": 0,
-      "files": ["agentplane/policy/errors.go"]
-    },
-    {
       "path": "agentplane/policy/api/v1alpha1",
       "production": 6,
       "tests": 0,
@@ -2322,11 +2333,14 @@
     },
     {
       "path": "agentplane/policy_controller/internal/rpc",
-      "production": 1,
+      "production": 4,
       "tests": 1,
       "files": [
+        "agentplane/policy_controller/internal/rpc/identities.go",
+        "agentplane/policy_controller/internal/rpc/sandbox_bindings.go",
         "agentplane/policy_controller/internal/rpc/service.go",
-        "agentplane/policy_controller/internal/rpc/service_test.go"
+        "agentplane/policy_controller/internal/rpc/service_test.go",
+        "agentplane/policy_controller/internal/rpc/watches.go"
       ]
     },
     {
@@ -2738,7 +2752,7 @@
       "package_decision": "agentplane/action_service/callers"
     },
     {
-      "path": "agentplane/action_service/config.go",
+      "path": "agentplane/action_service/cmd/config.go",
       "package": "main",
       "test": false,
       "generated": false,
@@ -2747,19 +2761,18 @@
       "planned_path": "agentplane/action_service/cmd/config.go",
       "planned_parts": [],
       "planned_package": "main",
-      "goal_path_status": "exact move",
+      "goal_path_status": "retain owner",
       "candidate_owners": [],
       "pending_tracks": [
         "settings-viper-removal",
-        "action-service-cmd-layout",
         "orchestration-v1-retirement",
         "action-service-grpcgate"
       ],
-      "disposition": "exact move",
-      "package_decision": "agentplane/action_service"
+      "disposition": "retain owner",
+      "package_decision": "agentplane/action_service/cmd"
     },
     {
-      "path": "agentplane/action_service/config_test.go",
+      "path": "agentplane/action_service/cmd/config_test.go",
       "package": "main",
       "test": true,
       "generated": false,
@@ -2768,15 +2781,126 @@
       "planned_path": "agentplane/action_service/cmd/config_test.go",
       "planned_parts": [],
       "planned_package": "main",
-      "goal_path_status": "exact move",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["settings-viper-removal", "action-service-grpcgate"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/action_service/cmd"
+    },
+    {
+      "path": "agentplane/action_service/cmd/executors_test.go",
+      "package": "main",
+      "test": true,
+      "generated": false,
+      "lines": 133,
+      "sha256": "28c4490dd87fa9ced4cce90ea3b77c9b5893d2f57c6c84e7bada8e03fe539d66",
+      "planned_path": "agentplane/action_service/cmd/executors_test.go",
+      "planned_parts": [],
+      "planned_package": "main",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["action-service-grpcgate"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/action_service/cmd"
+    },
+    {
+      "path": "agentplane/action_service/cmd/integration_testmain_test.go",
+      "package": "main",
+      "test": true,
+      "generated": false,
+      "lines": 31,
+      "sha256": "a98d6b14b2ef3b49ce138eaa3e801152e4131a915c36661ec2f72dc40d2c19e3",
+      "planned_path": "agentplane/action_service/cmd/integration_testmain_test.go",
+      "planned_parts": [],
+      "planned_package": "main",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["action-service-grpcgate"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/action_service/cmd"
+    },
+    {
+      "path": "agentplane/action_service/cmd/main.go",
+      "package": "main",
+      "test": false,
+      "generated": false,
+      "lines": 662,
+      "sha256": "9eeaea96ae93471c12329d7bd8723a0ee1285ce60dc5523b9a6607471abc8103",
+      "planned_path": "agentplane/action_service/cmd/main.go",
+      "planned_parts": [],
+      "planned_package": "main",
+      "goal_path_status": "retain owner",
       "candidate_owners": [],
       "pending_tracks": [
-        "settings-viper-removal",
-        "action-service-cmd-layout",
+        "orchestration-v1-retirement",
         "action-service-grpcgate"
       ],
-      "disposition": "exact move",
-      "package_decision": "agentplane/action_service"
+      "disposition": "retain owner",
+      "package_decision": "agentplane/action_service/cmd"
+    },
+    {
+      "path": "agentplane/action_service/cmd/main_test.go",
+      "package": "main",
+      "test": true,
+      "generated": false,
+      "lines": 756,
+      "sha256": "8aec581741efe1de4c69f0bc576194fe190fa78caf69679269a4fcc50cc9f791",
+      "planned_path": "agentplane/action_service/cmd/main_test.go",
+      "planned_parts": [],
+      "planned_package": "main",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["action-service-grpcgate"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/action_service/cmd"
+    },
+    {
+      "path": "agentplane/action_service/cmd/push_test.go",
+      "package": "main",
+      "test": true,
+      "generated": false,
+      "lines": 111,
+      "sha256": "ffde03250b0097f5b39f97b11b244a1d5350c7f7272ff163f1a2b02b1e097df5",
+      "planned_path": "agentplane/action_service/cmd/push_test.go",
+      "planned_parts": [],
+      "planned_package": "main",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["action-service-grpcgate"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/action_service/cmd"
+    },
+    {
+      "path": "agentplane/action_service/cmd/sandbox_groups_test.go",
+      "package": "main",
+      "test": true,
+      "generated": false,
+      "lines": 68,
+      "sha256": "af0a7063dde4368f9b0a7d871bbbecc51422a2ca16d9d06c778f7c31543a4c8d",
+      "planned_path": "agentplane/action_service/cmd/sandbox_groups_test.go",
+      "planned_parts": [],
+      "planned_package": "main",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["action-service-grpcgate"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/action_service/cmd"
+    },
+    {
+      "path": "agentplane/action_service/cmd/svid_test.go",
+      "package": "main",
+      "test": true,
+      "generated": false,
+      "lines": 281,
+      "sha256": "b73be50668263889047f5bc3452d40ef3e026fbc04f70690e81d8fd4ebedd7ae",
+      "planned_path": "agentplane/action_service/cmd/svid_test.go",
+      "planned_parts": [],
+      "planned_package": "main",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["action-service-grpcgate"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/action_service/cmd"
     },
     {
       "path": "agentplane/action_service/docs/docs.go",
@@ -2793,44 +2917,6 @@
       "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/action_service/docs"
-    },
-    {
-      "path": "agentplane/action_service/executors_test.go",
-      "package": "main",
-      "test": true,
-      "generated": false,
-      "lines": 133,
-      "sha256": "28c4490dd87fa9ced4cce90ea3b77c9b5893d2f57c6c84e7bada8e03fe539d66",
-      "planned_path": "agentplane/action_service/cmd/executors_test.go",
-      "planned_parts": [],
-      "planned_package": "main",
-      "goal_path_status": "exact move",
-      "candidate_owners": [],
-      "pending_tracks": [
-        "action-service-cmd-layout",
-        "action-service-grpcgate"
-      ],
-      "disposition": "exact move",
-      "package_decision": "agentplane/action_service"
-    },
-    {
-      "path": "agentplane/action_service/integration_testmain_test.go",
-      "package": "main",
-      "test": true,
-      "generated": false,
-      "lines": 31,
-      "sha256": "a98d6b14b2ef3b49ce138eaa3e801152e4131a915c36661ec2f72dc40d2c19e3",
-      "planned_path": "agentplane/action_service/cmd/integration_testmain_test.go",
-      "planned_parts": [],
-      "planned_package": "main",
-      "goal_path_status": "exact move",
-      "candidate_owners": [],
-      "pending_tracks": [
-        "action-service-cmd-layout",
-        "action-service-grpcgate"
-      ],
-      "disposition": "exact move",
-      "package_decision": "agentplane/action_service"
     },
     {
       "path": "agentplane/action_service/internal/admission/catalog/arguments.go",
@@ -4591,45 +4677,6 @@
       "package_decision": "agentplane/action_service/internal/worker"
     },
     {
-      "path": "agentplane/action_service/main.go",
-      "package": "main",
-      "test": false,
-      "generated": false,
-      "lines": 662,
-      "sha256": "9eeaea96ae93471c12329d7bd8723a0ee1285ce60dc5523b9a6607471abc8103",
-      "planned_path": "agentplane/action_service/cmd/main.go",
-      "planned_parts": [],
-      "planned_package": "main",
-      "goal_path_status": "exact move",
-      "candidate_owners": [],
-      "pending_tracks": [
-        "action-service-cmd-layout",
-        "orchestration-v1-retirement",
-        "action-service-grpcgate"
-      ],
-      "disposition": "exact move",
-      "package_decision": "agentplane/action_service"
-    },
-    {
-      "path": "agentplane/action_service/main_test.go",
-      "package": "main",
-      "test": true,
-      "generated": false,
-      "lines": 756,
-      "sha256": "8aec581741efe1de4c69f0bc576194fe190fa78caf69679269a4fcc50cc9f791",
-      "planned_path": "agentplane/action_service/cmd/main_test.go",
-      "planned_parts": [],
-      "planned_package": "main",
-      "goal_path_status": "exact move",
-      "candidate_owners": [],
-      "pending_tracks": [
-        "action-service-cmd-layout",
-        "action-service-grpcgate"
-      ],
-      "disposition": "exact move",
-      "package_decision": "agentplane/action_service"
-    },
-    {
       "path": "agentplane/action_service/migrations/baseline_integration_test.go",
       "package": "migrations",
       "test": true,
@@ -4854,25 +4901,6 @@
       "package_decision": "agentplane/action_service/orchestration_v1"
     },
     {
-      "path": "agentplane/action_service/push_test.go",
-      "package": "main",
-      "test": true,
-      "generated": false,
-      "lines": 111,
-      "sha256": "ffde03250b0097f5b39f97b11b244a1d5350c7f7272ff163f1a2b02b1e097df5",
-      "planned_path": "agentplane/action_service/cmd/push_test.go",
-      "planned_parts": [],
-      "planned_package": "main",
-      "goal_path_status": "exact move",
-      "candidate_owners": [],
-      "pending_tracks": [
-        "action-service-cmd-layout",
-        "action-service-grpcgate"
-      ],
-      "disposition": "exact move",
-      "package_decision": "agentplane/action_service"
-    },
-    {
       "path": "agentplane/action_service/sandbox/contract/contract.go",
       "package": "contract",
       "test": false,
@@ -5033,25 +5061,6 @@
       "package_decision": "agentplane/action_service/sandbox"
     },
     {
-      "path": "agentplane/action_service/sandbox_groups_test.go",
-      "package": "main",
-      "test": true,
-      "generated": false,
-      "lines": 68,
-      "sha256": "af0a7063dde4368f9b0a7d871bbbecc51422a2ca16d9d06c778f7c31543a4c8d",
-      "planned_path": "agentplane/action_service/cmd/sandbox_groups_test.go",
-      "planned_parts": [],
-      "planned_package": "main",
-      "goal_path_status": "exact move",
-      "candidate_owners": [],
-      "pending_tracks": [
-        "action-service-cmd-layout",
-        "action-service-grpcgate"
-      ],
-      "disposition": "exact move",
-      "package_decision": "agentplane/action_service"
-    },
-    {
       "path": "agentplane/action_service/session_delegation/contract/inputs.go",
       "package": "contract",
       "test": false,
@@ -5162,25 +5171,6 @@
       "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/action_service/session_delegation"
-    },
-    {
-      "path": "agentplane/action_service/svid_test.go",
-      "package": "main",
-      "test": true,
-      "generated": false,
-      "lines": 281,
-      "sha256": "b73be50668263889047f5bc3452d40ef3e026fbc04f70690e81d8fd4ebedd7ae",
-      "planned_path": "agentplane/action_service/cmd/svid_test.go",
-      "planned_parts": [],
-      "planned_package": "main",
-      "goal_path_status": "exact move",
-      "candidate_owners": [],
-      "pending_tracks": [
-        "action-service-cmd-layout",
-        "action-service-grpcgate"
-      ],
-      "disposition": "exact move",
-      "package_decision": "agentplane/action_service"
     },
     {
       "path": "agentplane/action_service/testing/nettest/refusing.go",
@@ -5517,6 +5507,38 @@
       "package_decision": "agentplane/app/internal/bridge"
     },
     {
+      "path": "agentplane/app/internal/electricproxy/electric.go",
+      "package": "electricproxy",
+      "test": false,
+      "generated": false,
+      "lines": 411,
+      "sha256": "1d2f8991a8eca8fb73f9a61d640ac75bdf864e3d9121a9df6ecaf4577665762b",
+      "planned_path": "agentplane/app/internal/electricproxy/electric.go",
+      "planned_parts": [],
+      "planned_package": "electricproxy",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/app/internal/electricproxy"
+    },
+    {
+      "path": "agentplane/app/internal/electricproxy/electric_test.go",
+      "package": "electricproxy",
+      "test": true,
+      "generated": false,
+      "lines": 296,
+      "sha256": "164ef0f0d93c82fbd96ba0ffc9f80bb78a269f9bd78e6b083490ba649f9f5401",
+      "planned_path": "agentplane/app/internal/electricproxy/electric_test.go",
+      "planned_parts": [],
+      "planned_package": "electricproxy",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/app/internal/electricproxy"
+    },
+    {
       "path": "agentplane/app/internal/federation/federation.go",
       "package": "federation",
       "test": false,
@@ -5709,86 +5731,6 @@
       "package_decision": "agentplane/app/internal/migrations"
     },
     {
-      "path": "agentplane/app/internal/proxy/electric.go",
-      "package": "proxy",
-      "test": false,
-      "generated": false,
-      "lines": 409,
-      "sha256": "8fa680fab1a9eb91f1336518e396b68e4628a3511e0d6da8526cfe1e35ca62fc",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/app/internal/proxy",
-        "agentplane/app/internal/electricproxy",
-        "agentplane/app/internal/upstream"
-      ],
-      "pending_tracks": ["app-proxy-owners"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/app/internal/proxy"
-    },
-    {
-      "path": "agentplane/app/internal/proxy/electric_test.go",
-      "package": "proxy",
-      "test": true,
-      "generated": false,
-      "lines": 296,
-      "sha256": "c76ead14f60c2ca83414e8600da6a2b0c9ce79414d1b98fe411498e5aead686f",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/app/internal/proxy",
-        "agentplane/app/internal/electricproxy",
-        "agentplane/app/internal/upstream"
-      ],
-      "pending_tracks": ["app-proxy-owners"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/app/internal/proxy"
-    },
-    {
-      "path": "agentplane/app/internal/proxy/upstream.go",
-      "package": "proxy",
-      "test": false,
-      "generated": false,
-      "lines": 342,
-      "sha256": "4123f58872448d27a19680bfba10aff4c36f2c40ff148eab7193281260fa2bc7",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/app/internal/proxy",
-        "agentplane/app/internal/electricproxy",
-        "agentplane/app/internal/upstream"
-      ],
-      "pending_tracks": ["app-proxy-owners"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/app/internal/proxy"
-    },
-    {
-      "path": "agentplane/app/internal/proxy/upstream_test.go",
-      "package": "proxy",
-      "test": true,
-      "generated": false,
-      "lines": 338,
-      "sha256": "ed58d5b0b672bb8dc32bbf8fd767a296880d2ad3379a4192f4f5f34c1fb504b5",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/app/internal/proxy",
-        "agentplane/app/internal/electricproxy",
-        "agentplane/app/internal/upstream"
-      ],
-      "pending_tracks": ["app-proxy-owners"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/app/internal/proxy"
-    },
-    {
       "path": "agentplane/app/internal/sandboxes/console.go",
       "package": "sandboxes",
       "test": false,
@@ -5874,7 +5816,7 @@
       "test": true,
       "generated": false,
       "lines": 585,
-      "sha256": "82f6f04cb7899ae694062261d7a1ed04a8bf4029bdd800eb47e8390eb0cd1fb6",
+      "sha256": "a1a0fab3df595866f106cb5a0e72ab839c890b2cda59b952dad521106a2d6699",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -6012,7 +5954,7 @@
       "test": true,
       "generated": false,
       "lines": 201,
-      "sha256": "637ce965d8f34308d25dd3eb42febe2445a8c4fb9d9ead36d9ebb5ae0972f386",
+      "sha256": "4eec1db413074bd8920b3188fec52812575ed6d57278a6d9b462237541561d43",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -6103,8 +6045,8 @@
       "package": "server",
       "test": false,
       "generated": false,
-      "lines": 534,
-      "sha256": "19cf1dbd50a1c3f26ac6cd2d7134440d9445a1bcd3576eff1baa0119f1128197",
+      "lines": 535,
+      "sha256": "5edd9b5b272d50c72ca505d9c710173e5d969ea0ee0ed721172dcc0de80265f8",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -6357,7 +6299,7 @@
       "test": false,
       "generated": false,
       "lines": 409,
-      "sha256": "d97c2dc44d84d98d777e2a0e7ab1d980ca82f83e69283d1cfdc76fff4857db2b",
+      "sha256": "e31f47082e2ed2590567bc97419f1be0c2c1dd2acf904111d98e0dc622495e98",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -6380,7 +6322,7 @@
       "test": true,
       "generated": false,
       "lines": 621,
-      "sha256": "8e21e72d457c0fb89dace61156df95666eb36fd283aaca25d098ebbc33fb3f6b",
+      "sha256": "a962b19a7156c18674c61a346fb44a962a89cd9f6d49a5e4ec473cea816789d8",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -6616,6 +6558,38 @@
       "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/app/internal/threads"
+    },
+    {
+      "path": "agentplane/app/internal/upstream/upstream.go",
+      "package": "upstream",
+      "test": false,
+      "generated": false,
+      "lines": 342,
+      "sha256": "85f550d52a152f4eae6e8610fbb4f6c83465cdfcf2df2792bb818b551fa94d48",
+      "planned_path": "agentplane/app/internal/upstream/upstream.go",
+      "planned_parts": [],
+      "planned_package": "upstream",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/app/internal/upstream"
+    },
+    {
+      "path": "agentplane/app/internal/upstream/upstream_test.go",
+      "package": "upstream",
+      "test": true,
+      "generated": false,
+      "lines": 338,
+      "sha256": "1598291dff427f54b1461e62c4f5b0c5c56b307d5f19ecc184711f8465f7dae1",
+      "planned_path": "agentplane/app/internal/upstream/upstream_test.go",
+      "planned_parts": [],
+      "planned_package": "upstream",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/app/internal/upstream"
     },
     {
       "path": "agentplane/central_sampler/cmd/main.go",
@@ -7213,6 +7187,54 @@
       "package_decision": "agentplane/central_sampler/internal/promptimage"
     },
     {
+      "path": "agentplane/central_sampler/internal/providerio/errors.go",
+      "package": "providerio",
+      "test": false,
+      "generated": false,
+      "lines": 77,
+      "sha256": "4d247bb3fb0b253b1380cc3d353d730041cdffeda976255c74b1a6fa8f082984",
+      "planned_path": "agentplane/central_sampler/internal/providerio/errors.go",
+      "planned_parts": [],
+      "planned_package": "providerio",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/central_sampler/internal/providerio"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/providerio/providerio_test.go",
+      "package": "providerio",
+      "test": true,
+      "generated": false,
+      "lines": 288,
+      "sha256": "753caf58cad782647c39b86558f2e2444bb5f3dacde8f213bcb9eb4eb8ced274",
+      "planned_path": "agentplane/central_sampler/internal/providerio/providerio_test.go",
+      "planned_parts": [],
+      "planned_package": "providerio",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/central_sampler/internal/providerio"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/providerio/timeouts.go",
+      "package": "providerio",
+      "test": false,
+      "generated": false,
+      "lines": 229,
+      "sha256": "988ad99443ace921285c83021e2caa54be3f34b7ab07762ca15aacd43557e74e",
+      "planned_path": "agentplane/central_sampler/internal/providerio/timeouts.go",
+      "planned_parts": [],
+      "planned_package": "providerio",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/central_sampler/internal/providerio"
+    },
+    {
       "path": "agentplane/central_sampler/internal/residentruntime/anthropic_test.go",
       "package": "residentruntime",
       "test": true,
@@ -7227,7 +7249,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
+      "pending_tracks": ["sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -7246,7 +7268,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
+      "pending_tracks": ["sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -7265,7 +7287,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
+      "pending_tracks": ["sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -7284,7 +7306,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
+      "pending_tracks": ["sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -7303,7 +7325,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
+      "pending_tracks": ["sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -7322,7 +7344,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
+      "pending_tracks": ["sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -7341,7 +7363,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
+      "pending_tracks": ["sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -7360,7 +7382,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
+      "pending_tracks": ["sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -7379,7 +7401,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
+      "pending_tracks": ["sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -7398,7 +7420,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
+      "pending_tracks": ["sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -7417,7 +7439,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
+      "pending_tracks": ["sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -7426,8 +7448,8 @@
       "package": "residentruntime",
       "test": false,
       "generated": false,
-      "lines": 250,
-      "sha256": "7f2a1bddf4412a7bb0dcd726471f3f782af65805eaa8d3d8d9a789c4cdf4fbd3",
+      "lines": 251,
+      "sha256": "1b0f0efe0a64441cfbc6025570ec1256cdf8d3acade1f46927582cf10bb276da",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -7436,7 +7458,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
+      "pending_tracks": ["sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -7455,7 +7477,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
+      "pending_tracks": ["sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -7474,7 +7496,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
+      "pending_tracks": ["sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -7493,7 +7515,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
+      "pending_tracks": ["sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -7512,7 +7534,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
+      "pending_tracks": ["sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -7531,7 +7553,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
+      "pending_tracks": ["sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -7550,7 +7572,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
+      "pending_tracks": ["sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -7569,7 +7591,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
+      "pending_tracks": ["sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -7588,7 +7610,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
+      "pending_tracks": ["sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -7607,7 +7629,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
+      "pending_tracks": ["sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -7626,7 +7648,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
+      "pending_tracks": ["sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -7645,7 +7667,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
+      "pending_tracks": ["sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -7664,7 +7686,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
+      "pending_tracks": ["sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -7683,7 +7705,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
+      "pending_tracks": ["sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -8962,15 +8984,10 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/central_sampler/protocol",
-        "agentplane/central_sampler/internal/providerio",
         "agentplane/central_sampler/internal/executionstate",
         "agentplane/central_sampler/internal/jsonwire"
       ],
-      "pending_tracks": [
-        "sampler-json-contract",
-        "sampler-provider-io",
-        "sampler-execution-state"
-      ],
+      "pending_tracks": ["sampler-json-contract", "sampler-execution-state"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/protocol"
     },
@@ -8987,15 +9004,10 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/central_sampler/protocol",
-        "agentplane/central_sampler/internal/providerio",
         "agentplane/central_sampler/internal/executionstate",
         "agentplane/central_sampler/internal/jsonwire"
       ],
-      "pending_tracks": [
-        "sampler-json-contract",
-        "sampler-provider-io",
-        "sampler-execution-state"
-      ],
+      "pending_tracks": ["sampler-json-contract", "sampler-execution-state"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/protocol"
     },
@@ -9004,23 +9016,38 @@
       "package": "protocol",
       "test": false,
       "generated": false,
-      "lines": 160,
-      "sha256": "d38729eb7d6e8f967a362f90c9d205b415cabab1f21485fa0cf429323adb8c7c",
+      "lines": 91,
+      "sha256": "77d4f43c945baa3bd2ac44341b006767b035d0835fd39e3902c92a2329bd135c",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/central_sampler/protocol",
-        "agentplane/central_sampler/internal/providerio",
         "agentplane/central_sampler/internal/executionstate",
         "agentplane/central_sampler/internal/jsonwire"
       ],
-      "pending_tracks": [
-        "sampler-json-contract",
-        "sampler-provider-io",
-        "sampler-execution-state"
+      "pending_tracks": ["sampler-json-contract", "sampler-execution-state"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/central_sampler/protocol"
+    },
+    {
+      "path": "agentplane/central_sampler/protocol/errors_test.go",
+      "package": "protocol",
+      "test": true,
+      "generated": false,
+      "lines": 22,
+      "sha256": "e60c044c6b0f032772a11b17843e9ae8fceae7c49c453618140f86c4b41d9327",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/central_sampler/protocol",
+        "agentplane/central_sampler/internal/executionstate",
+        "agentplane/central_sampler/internal/jsonwire"
       ],
+      "pending_tracks": ["sampler-json-contract", "sampler-execution-state"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/protocol"
     },
@@ -9037,15 +9064,10 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/central_sampler/protocol",
-        "agentplane/central_sampler/internal/providerio",
         "agentplane/central_sampler/internal/executionstate",
         "agentplane/central_sampler/internal/jsonwire"
       ],
-      "pending_tracks": [
-        "sampler-json-contract",
-        "sampler-provider-io",
-        "sampler-execution-state"
-      ],
+      "pending_tracks": ["sampler-json-contract", "sampler-execution-state"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/protocol"
     },
@@ -9062,15 +9084,10 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/central_sampler/protocol",
-        "agentplane/central_sampler/internal/providerio",
         "agentplane/central_sampler/internal/executionstate",
         "agentplane/central_sampler/internal/jsonwire"
       ],
-      "pending_tracks": [
-        "sampler-json-contract",
-        "sampler-provider-io",
-        "sampler-execution-state"
-      ],
+      "pending_tracks": ["sampler-json-contract", "sampler-execution-state"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/protocol"
     },
@@ -9087,15 +9104,10 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/central_sampler/protocol",
-        "agentplane/central_sampler/internal/providerio",
         "agentplane/central_sampler/internal/executionstate",
         "agentplane/central_sampler/internal/jsonwire"
       ],
-      "pending_tracks": [
-        "sampler-json-contract",
-        "sampler-provider-io",
-        "sampler-execution-state"
-      ],
+      "pending_tracks": ["sampler-json-contract", "sampler-execution-state"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/protocol"
     },
@@ -9104,48 +9116,18 @@
       "package": "protocol",
       "test": false,
       "generated": false,
-      "lines": 238,
-      "sha256": "71ec518fc207a993f1c6400d57d1b73b1e13df5469c1d2fb87749d679093ff77",
+      "lines": 14,
+      "sha256": "44bc2cd942189c35c78fbbbb497fb0bd5336001136b87ebc163e75f9e02315ef",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/central_sampler/protocol",
-        "agentplane/central_sampler/internal/providerio",
         "agentplane/central_sampler/internal/executionstate",
         "agentplane/central_sampler/internal/jsonwire"
       ],
-      "pending_tracks": [
-        "sampler-json-contract",
-        "sampler-provider-io",
-        "sampler-execution-state"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/central_sampler/protocol"
-    },
-    {
-      "path": "agentplane/central_sampler/protocol/provider_hooks_test.go",
-      "package": "protocol",
-      "test": true,
-      "generated": false,
-      "lines": 286,
-      "sha256": "ec653fc061aa099ba1256b02537466cf2815f750ab5a2ccb4bbd2ae1fa1dfd8e",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/central_sampler/protocol",
-        "agentplane/central_sampler/internal/providerio",
-        "agentplane/central_sampler/internal/executionstate",
-        "agentplane/central_sampler/internal/jsonwire"
-      ],
-      "pending_tracks": [
-        "sampler-json-contract",
-        "sampler-provider-io",
-        "sampler-execution-state"
-      ],
+      "pending_tracks": ["sampler-json-contract", "sampler-execution-state"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/protocol"
     },
@@ -9162,15 +9144,10 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/central_sampler/protocol",
-        "agentplane/central_sampler/internal/providerio",
         "agentplane/central_sampler/internal/executionstate",
         "agentplane/central_sampler/internal/jsonwire"
       ],
-      "pending_tracks": [
-        "sampler-json-contract",
-        "sampler-provider-io",
-        "sampler-execution-state"
-      ],
+      "pending_tracks": ["sampler-json-contract", "sampler-execution-state"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/protocol"
     },
@@ -9187,15 +9164,10 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/central_sampler/protocol",
-        "agentplane/central_sampler/internal/providerio",
         "agentplane/central_sampler/internal/executionstate",
         "agentplane/central_sampler/internal/jsonwire"
       ],
-      "pending_tracks": [
-        "sampler-json-contract",
-        "sampler-provider-io",
-        "sampler-execution-state"
-      ],
+      "pending_tracks": ["sampler-json-contract", "sampler-execution-state"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/protocol"
     },
@@ -9212,15 +9184,10 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/central_sampler/protocol",
-        "agentplane/central_sampler/internal/providerio",
         "agentplane/central_sampler/internal/executionstate",
         "agentplane/central_sampler/internal/jsonwire"
       ],
-      "pending_tracks": [
-        "sampler-json-contract",
-        "sampler-provider-io",
-        "sampler-execution-state"
-      ],
+      "pending_tracks": ["sampler-json-contract", "sampler-execution-state"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/protocol"
     },
@@ -9237,15 +9204,10 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/central_sampler/protocol",
-        "agentplane/central_sampler/internal/providerio",
         "agentplane/central_sampler/internal/executionstate",
         "agentplane/central_sampler/internal/jsonwire"
       ],
-      "pending_tracks": [
-        "sampler-json-contract",
-        "sampler-provider-io",
-        "sampler-execution-state"
-      ],
+      "pending_tracks": ["sampler-json-contract", "sampler-execution-state"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/protocol"
     },
@@ -9254,8 +9216,8 @@
       "package": "anthropic",
       "test": false,
       "generated": false,
-      "lines": 560,
-      "sha256": "8ebcada9c8944d3e40c9d42186a2cb5b446455fa975679a9161c01cb329ef55f",
+      "lines": 561,
+      "sha256": "b8d3a21a66782cc9564c4b81c710980fbdfe54964b7825f5d8b22eaa64c77925",
       "planned_path": "agentplane/central_sampler/providers/anthropic/anthropic.go",
       "planned_parts": [],
       "planned_package": "anthropic",
@@ -9270,8 +9232,8 @@
       "package": "anthropic",
       "test": true,
       "generated": false,
-      "lines": 729,
-      "sha256": "8bcb36ef432292af5d0c1ccb8d387637130768a0825feb79aa69697860ca143c",
+      "lines": 730,
+      "sha256": "e0293a17a5a414286da95c2a21202e16e88a09a3866ce9f98b88b2f2d5c599e1",
       "planned_path": "agentplane/central_sampler/providers/anthropic/anthropic_test.go",
       "planned_parts": [],
       "planned_package": "anthropic",
@@ -9462,8 +9424,8 @@
       "package": "responses",
       "test": false,
       "generated": false,
-      "lines": 366,
-      "sha256": "9687c19390ed53e5000d451f0d6c1e25fc4d4cb0b13c227a10e085a3f588d787",
+      "lines": 367,
+      "sha256": "0f3462ebb373677d1196f8e68ddf73b6d2ff9d44aa507b127207a2241443c397",
       "planned_path": "agentplane/central_sampler/providers/responses/provider.go",
       "planned_parts": [],
       "planned_package": "responses",
@@ -9494,8 +9456,8 @@
       "package": "responses",
       "test": true,
       "generated": false,
-      "lines": 864,
-      "sha256": "c313d520da087dbaec87526420ec6acad17ebf8277ad8f95fe7d3f69b5b276d7",
+      "lines": 865,
+      "sha256": "e2544e952531f008ee9beebec94fda6f248baa3671c178d3601c372f4159bdad",
       "planned_path": "agentplane/central_sampler/providers/responses/responses_test.go",
       "planned_parts": [],
       "planned_package": "responses",
@@ -22332,22 +22294,6 @@
       "package_decision": "agentplane/policy/client/apply"
     },
     {
-      "path": "agentplane/policy/errors.go",
-      "package": "policy",
-      "test": false,
-      "generated": false,
-      "lines": 16,
-      "sha256": "ac4474a8b9d2ab8e92305776c427e0d785dc53556239e7eac579a4dc5182abac",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "delete",
-      "candidate_owners": [],
-      "pending_tracks": ["policy-controller-rpc-cleanup"],
-      "disposition": "delete",
-      "package_decision": "agentplane/policy"
-    },
-    {
       "path": "agentplane/policy/reader/fixture_test.go",
       "package": "reader",
       "test": true,
@@ -22487,7 +22433,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["policy-controller-rpc-cleanup"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/policy_controller/cmd"
     },
@@ -22503,7 +22449,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["policy-controller-rpc-cleanup"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/policy_controller/cmd"
     },
@@ -22513,13 +22459,13 @@
       "test": false,
       "generated": false,
       "lines": 214,
-      "sha256": "975bd25f2684c67e98f15f8e5fe8beca1447155056749910653e6068f14efee9",
+      "sha256": "602d901248f937ab7bc78d08e8a9d80b2faa628e4d2dd611c4507d6c14505465",
       "planned_path": "agentplane/policy_controller/cmd/main.go",
       "planned_parts": [],
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["policy-controller-rpc-cleanup"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/policy_controller/cmd"
     },
@@ -22652,42 +22598,83 @@
       "package_decision": "agentplane/policy_controller/internal/controller"
     },
     {
-      "path": "agentplane/policy_controller/internal/rpc/service.go",
-      "package": "service",
+      "path": "agentplane/policy_controller/internal/rpc/identities.go",
+      "package": "rpc",
       "test": false,
       "generated": false,
-      "lines": 918,
-      "sha256": "df78b3ffa7b6c33aa93a11eaf8ab7e989aeb38fcc5fadc4390440bd7f4fcf666",
-      "planned_path": null,
-      "planned_parts": [
-        "agentplane/policy_controller/internal/rpc/service.go",
-        "agentplane/policy_controller/internal/rpc/sandbox_bindings.go",
-        "agentplane/policy_controller/internal/rpc/identities.go",
-        "agentplane/policy_controller/internal/rpc/policy_sets.go",
-        "agentplane/policy_controller/internal/rpc/resources.go",
-        "agentplane/policy_controller/internal/rpc/watch.go"
-      ],
-      "planned_package": null,
-      "goal_path_status": "split responsibility",
+      "lines": 206,
+      "sha256": "9d313fbbd79f90eba59281fa5779196c623a0b6286d5322f48cdc243e25f567c",
+      "planned_path": "agentplane/policy_controller/internal/rpc/identities.go",
+      "planned_parts": [],
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["policy-controller-rpc-cleanup"],
-      "disposition": "split responsibility",
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/policy_controller/internal/rpc"
+    },
+    {
+      "path": "agentplane/policy_controller/internal/rpc/sandbox_bindings.go",
+      "package": "rpc",
+      "test": false,
+      "generated": false,
+      "lines": 254,
+      "sha256": "4b6ebc4cd58debf04a39aded9a0d40fdcd0ed69cf8187b965804b5d95480313e",
+      "planned_path": "agentplane/policy_controller/internal/rpc/sandbox_bindings.go",
+      "planned_parts": [],
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/policy_controller/internal/rpc"
+    },
+    {
+      "path": "agentplane/policy_controller/internal/rpc/service.go",
+      "package": "rpc",
+      "test": false,
+      "generated": false,
+      "lines": 77,
+      "sha256": "285a13a32f10d9a6174e0e04730e0c2aa27aa8dd9b2b62fe6e58d3f2494364d1",
+      "planned_path": "agentplane/policy_controller/internal/rpc/service.go",
+      "planned_parts": [],
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/policy_controller/internal/rpc"
     },
     {
       "path": "agentplane/policy_controller/internal/rpc/service_test.go",
-      "package": "service",
+      "package": "rpc",
       "test": true,
       "generated": false,
       "lines": 877,
-      "sha256": "81d4354fdcd202dbf34aa51d0d1cbe7ddbbdaa65da0f6abfcedcabca88d49d14",
+      "sha256": "99394efcd6980ad212e2a24b7670d85bfe3f119516a38ab476796a02485822ca",
       "planned_path": "agentplane/policy_controller/internal/rpc/service_test.go",
       "planned_parts": [],
       "planned_package": "rpc",
-      "goal_path_status": "package name alignment",
+      "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["policy-controller-rpc-cleanup"],
-      "disposition": "package name alignment",
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/policy_controller/internal/rpc"
+    },
+    {
+      "path": "agentplane/policy_controller/internal/rpc/watches.go",
+      "package": "rpc",
+      "test": false,
+      "generated": false,
+      "lines": 435,
+      "sha256": "540b783f67ed4b3e5a3e828340420260d08f96ba09459410065ed8865f059fad",
+      "planned_path": "agentplane/policy_controller/internal/rpc/watches.go",
+      "planned_parts": [],
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/policy_controller/internal/rpc"
     },
     {
@@ -23540,10 +23527,7 @@
       "candidate_owners": [
         "agentplane/sandbox_controller/internal/environments"
       ],
-      "pending_tracks": [
-        "policy-controller-rpc-cleanup",
-        "environment-service-to-sandbox-controller"
-      ],
+      "pending_tracks": ["environment-service-to-sandbox-controller"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/environments"
     },
@@ -23696,8 +23680,8 @@
       "package": "environments",
       "test": false,
       "generated": false,
-      "lines": 222,
-      "sha256": "197dff53b6536a76159d1fe47fc58fe52908b0e4683203a98af496df3b060e7d",
+      "lines": 218,
+      "sha256": "b715ee38d5345b194885927a20f3fe9d4a07a3d82d1f7b5da4cb99e3e01709bd",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -23705,10 +23689,7 @@
       "candidate_owners": [
         "agentplane/sandbox_controller/internal/environments"
       ],
-      "pending_tracks": [
-        "policy-controller-rpc-cleanup",
-        "environment-service-to-sandbox-controller"
-      ],
+      "pending_tracks": ["environment-service-to-sandbox-controller"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/environments"
     },
@@ -23726,10 +23707,7 @@
       "candidate_owners": [
         "agentplane/sandbox_controller/internal/environments"
       ],
-      "pending_tracks": [
-        "policy-controller-rpc-cleanup",
-        "environment-service-to-sandbox-controller"
-      ],
+      "pending_tracks": ["environment-service-to-sandbox-controller"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/environments"
     },
@@ -23748,7 +23726,6 @@
         "agentplane/sandbox_controller/internal/environments"
       ],
       "pending_tracks": [
-        "policy-controller-rpc-cleanup",
         "environment-service-to-sandbox-controller",
         "orchestration-v1-retirement"
       ],
@@ -23769,10 +23746,7 @@
       "candidate_owners": [
         "agentplane/sandbox_controller/internal/environments"
       ],
-      "pending_tracks": [
-        "policy-controller-rpc-cleanup",
-        "environment-service-to-sandbox-controller"
-      ],
+      "pending_tracks": ["environment-service-to-sandbox-controller"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/environments"
     },
@@ -23790,10 +23764,7 @@
       "candidate_owners": [
         "agentplane/sandbox_controller/internal/environments"
       ],
-      "pending_tracks": [
-        "policy-controller-rpc-cleanup",
-        "environment-service-to-sandbox-controller"
-      ],
+      "pending_tracks": ["environment-service-to-sandbox-controller"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/environments"
     },
@@ -24102,7 +24073,7 @@
         "agentplane/runner_gateway/internal/proxy"
       ],
       "pending_tracks": [
-        "gateway-runtime-lease-removal",
+        "runtime-facts-off-lease",
         "runner-gateway-command",
         "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
@@ -24151,7 +24122,7 @@
         "agentplane/runner_gateway/internal/proxy"
       ],
       "pending_tracks": [
-        "gateway-runtime-lease-removal",
+        "runtime-facts-off-lease",
         "runner-gateway-command",
         "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
@@ -24355,7 +24326,7 @@
       "goal_path_status": "retain owner",
       "candidate_owners": [],
       "pending_tracks": [
-        "gateway-runtime-lease-removal",
+        "runtime-facts-off-lease",
         "environment-service-to-sandbox-controller"
       ],
       "disposition": "retain owner",
@@ -24418,7 +24389,7 @@
         "agentplane/sandbox_controller/internal/vm"
       ],
       "pending_tracks": [
-        "gateway-runtime-lease-removal",
+        "runtime-facts-off-lease",
         "sandbox-controller-lifecycle",
         "gateway-replica-ownership"
       ],
@@ -24505,7 +24476,7 @@
         "agentplane/sandbox_controller/internal/vm"
       ],
       "pending_tracks": [
-        "gateway-runtime-lease-removal",
+        "runtime-facts-off-lease",
         "sandbox-controller-lifecycle",
         "gateway-replica-ownership"
       ],
@@ -24729,7 +24700,7 @@
         "agentplane/sandbox_controller/internal/vm"
       ],
       "pending_tracks": [
-        "gateway-runtime-lease-removal",
+        "runtime-facts-off-lease",
         "sandbox-controller-lifecycle"
       ],
       "disposition": "candidate boundary",
@@ -25123,7 +25094,7 @@
       "planned_package": null,
       "goal_path_status": "delete",
       "candidate_owners": [],
-      "pending_tracks": ["gateway-runtime-lease-removal"],
+      "pending_tracks": ["runtime-facts-off-lease"],
       "disposition": "delete",
       "package_decision": "agentplane/sandboxes/lease"
     },
@@ -25139,7 +25110,7 @@
       "planned_package": null,
       "goal_path_status": "delete",
       "candidate_owners": [],
-      "pending_tracks": ["gateway-runtime-lease-removal"],
+      "pending_tracks": ["runtime-facts-off-lease"],
       "disposition": "delete",
       "package_decision": "agentplane/sandboxes/lease"
     },
