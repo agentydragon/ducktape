@@ -193,6 +193,7 @@ py_test(
         "//:conftest",
         "//agentplane:subjects",
         "//agentplane/central_sampler/api:sampler_pb2",
+        "//agentplane/central_sampler/api:sampler_pb2_grpc",
         "//agentplane/env:config",
         "//agentplane/env/e2e/testing:gateway",
         "//agentplane/env/e2e/testing:launches",

@@ -5,6 +5,7 @@ import base64
 import io
 import json
 import os
+import signal
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
@@ -15,8 +16,8 @@ import pytest
 import pytest_bazel
 from PIL import Image
 
-from agentplane.central_sampler.api import sampler_pb2
-from agentplane.central_sampler.testing import METADATA, Endpoint, create_request, service, settings
+from agentplane.central_sampler.api import sampler_pb2, sampler_pb2_grpc
+from agentplane.central_sampler.testing import Endpoint, create_request, go_sampler, settings
 from agentplane.central_sampler.testing_store import Store
 from agentplane.env import config as configuration
 from agentplane.env.e2e.testing import launches
@@ -119,12 +120,20 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
     tmp_path: Path,
 ) -> None:
     sampler = ServiceAccountRef(namespace="test-central", name="sampler")
+    sampler_audience = "test-central-sampler"
     gateway_account = ServiceAccountRef(namespace=sandbox.namespace, name="gateway")
     gateway_audience = "test-central-gateway"
     gateway_token = tmp_path / "gateway-token"
     gateway_token.write_text(await api_server.workload_token(gateway_account, [gateway_audience]))
     sampler_token = tmp_path / "sampler-token"
     sampler_token.write_text(await api_server.workload_token(sampler, [gateway_audience]))
+    sampler_api_token = tmp_path / "sampler-api-token"
+    sampler_api_token.write_text(await api_server.workload_token(sampler, [sampler_audience]))
+    wrong_audience_token = tmp_path / "wrong-audience-token"
+    wrong_audience_token.write_text(await api_server.workload_token(sampler, ["test-central-wrong-audience"]))
+    unauthorized_account = ServiceAccountRef(namespace=sampler.namespace, name="unauthorized")
+    unauthorized_token = tmp_path / "unauthorized-account-token"
+    unauthorized_token.write_text(await api_server.workload_token(unauthorized_account, [sampler_audience]))
     history_token = tmp_path / "history-token"
     history_token.write_text(await api_server.workload_token(sampler, [WRITER_AUDIENCE]))
     ensure_electric_role(postgres_admin_url)
@@ -226,13 +235,38 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                     "printf 'gateway setup stderr\\n' >&2\n"
                 )
                 session_id = request.session_id
-                async with service(sampler_settings) as stub:
-                    await stub.CreateSession(request, metadata=METADATA, timeout=10)
+                sampler_settings = sampler_settings.model_copy(
+                    update={"audience": sampler_audience, "allowed_accounts": {f"{sampler.namespace}/{sampler.name}"}}
+                )
+                sampler_metadata = (("authorization", f"Bearer {sampler_api_token.read_text().strip()}"),)
+                async with (
+                    go_sampler(sampler_settings, api_server.kubeconfig, undeclared_outputs_dir()) as sampler_target,
+                    grpc.aio.insecure_channel(sampler_target) as channel,
+                ):
+                    stub = sampler_pb2_grpc.SamplerStub(channel)
+                    for token, expected_code in (
+                        (wrong_audience_token, grpc.StatusCode.UNAUTHENTICATED),
+                        (unauthorized_token, grpc.StatusCode.PERMISSION_DENIED),
+                    ):
+                        with pytest.raises(grpc.aio.AioRpcError) as rejected:
+                            await stub.CreateSession(
+                                request,
+                                metadata=(("authorization", f"Bearer {token.read_text().strip()}"),),
+                                timeout=10,
+                            )
+                        assert rejected.value.code() == expected_code
+                    assert not await store.events(session_id, 0, limit=1000)
+                    with pytest.raises(grpc.aio.AioRpcError) as absent_session:
+                        await stub.GetSession(
+                            sampler_pb2.GetSessionRequest(session_id=session_id), metadata=sampler_metadata, timeout=10
+                        )
+                    assert absent_session.value.code() == grpc.StatusCode.NOT_FOUND
+                    await stub.CreateSession(request, metadata=sampler_metadata, timeout=10)
                     await stub.SubmitInput(
                         environment_runtime_pb2.SubmitInputRequest(
                             session_id=session_id, command_id="shell-and-patch", text="Write, patch and read the file."
                         ),
-                        metadata=METADATA,
+                        metadata=sampler_metadata,
                         timeout=10,
                     )
                     code = (
@@ -270,21 +304,23 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                         await exchange.send(
                             *response_stream([Message("Patched artifact: after")], model="test-model").events
                         )
-                    stream = stub.FollowEvents(
-                        sampler_pb2.FollowEventsRequest(session_id=session_id, follow=True), metadata=METADATA
+                    event_stream = stub.FollowEvents(
+                        sampler_pb2.FollowEventsRequest(session_id=session_id, follow=True), metadata=sampler_metadata
                     )
                     try:
                         async with asyncio.timeout(20):
-                            async for frame in stream:
+                            async for frame in event_stream:
                                 if frame.entry.event.HasField("turn_completed"):
                                     assert frame.entry.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
                                     break
                             else:
                                 pytest.fail("sampler stream ended before the turn completed")
                     finally:
-                        stream.cancel()
-                    async with dial(gateway.target, channel_credentials=gateway.channel_credentials()) as channel:
-                        stream = executor_pb2_grpc.ExecutorStub(channel).OpenSession(
+                        event_stream.cancel()
+                    async with dial(
+                        gateway.target, channel_credentials=gateway.channel_credentials()
+                    ) as gateway_channel:
+                        stale_stream = executor_pb2_grpc.ExecutorStub(gateway_channel).OpenSession(
                             executor_pb2.OpenSessionRequest(
                                 scope=executor_pb2.ExecutionScope(
                                     destination=sandbox.destination,
@@ -296,8 +332,114 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                             metadata=(("authorization", f"Bearer {sampler_token.read_text().strip()}"),),
                         )
                         with pytest.raises(grpc.aio.AioRpcError) as rejected:
-                            await stream.read()
+                            await stale_stream.read()
                         assert rejected.value.code() == grpc.StatusCode.FAILED_PRECONDITION
+
+                    sampler_prefix_snapshot = await store.get_session(session_id)
+                    await history.folded(UUID(session_id), sampler_prefix_snapshot.cursor)
+                    sampler_prefix = await store.events(session_id, 0, limit=1000)
+                    prefix_page = await history.reader.read_session_events(session_id, limit=1000)
+                    prefix = list(prefix_page.entries)
+                    assert prefix == sampler_prefix
+                    assert prefix
+
+                    outage_command_id = str(uuid4())
+                    await stub.SubmitInput(
+                        environment_runtime_pb2.SubmitInputRequest(
+                            session_id=session_id,
+                            command_id=outage_command_id,
+                            text="Complete this input while History is unavailable.",
+                        ),
+                        metadata=sampler_metadata,
+                        timeout=10,
+                    )
+                    outage_request = await endpoint.next()
+
+                    async def wait_for_turn_completion(after_cursor: int, turn_id: str) -> None:
+                        event_stream = stub.FollowEvents(
+                            sampler_pb2.FollowEventsRequest(
+                                session_id=session_id, after_cursor=after_cursor, follow=True
+                            ),
+                            metadata=sampler_metadata,
+                        )
+                        try:
+                            async with asyncio.timeout(20):
+                                async for frame in event_stream:
+                                    if frame.entry.event.HasField("turn_completed"):
+                                        assert frame.entry.event.turn_completed.turn_id == turn_id
+                                        assert (
+                                            frame.entry.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
+                                        )
+                                        return
+                                pytest.fail("sampler stream ended before the turn completed")
+                        finally:
+                            event_stream.cancel()
+
+                    outage_reader = history.reader.new_client()
+                    outage_reader.request_timeout_s = 0.5
+                    async with outage_reader:
+                        history.process.process.send_signal(signal.SIGSTOP)
+                        try:
+                            with pytest.raises(TimeoutError):
+                                await outage_reader.read_session_events(session_id)
+                            async with outage_request as exchange:
+                                await exchange.send(
+                                    *response_stream(
+                                        [Message("This turn completed while History was unavailable.")],
+                                        model="test-model",
+                                    ).events
+                                )
+                            await wait_for_turn_completion(prefix[-1].cursor, outage_command_id)
+                            outage_snapshot = await store.get_session(session_id)
+                            outage_suffix = await store.events(session_id, prefix[-1].cursor, limit=1000)
+                            assert outage_suffix
+                            outage_cursor = outage_suffix[-1].cursor
+                            assert outage_snapshot.cursor == outage_cursor
+                            assert any(
+                                entry.event.HasField("turn_completed")
+                                and entry.event.turn_completed.turn_id == outage_command_id
+                                for entry in outage_suffix
+                            )
+                            assert [entry.cursor for entry in [*prefix, *outage_suffix]] == list(
+                                range(prefix[0].cursor, prefix[0].cursor + len(prefix) + len(outage_suffix))
+                            )
+                        finally:
+                            history.process.process.send_signal(signal.SIGCONT)
+
+                    await history.reader.redial()
+                    await history.folded(UUID(session_id), outage_cursor)
+                    recovered_page = await history.reader.read_session_events(session_id, limit=1000)
+                    recovered = list(recovered_page.entries)
+                    assert recovered == [*prefix, *outage_suffix]
+
+                    next_command_id = str(uuid4())
+                    await stub.SubmitInput(
+                        environment_runtime_pb2.SubmitInputRequest(
+                            session_id=session_id,
+                            command_id=next_command_id,
+                            text="Complete a fresh input after History recovery.",
+                        ),
+                        metadata=sampler_metadata,
+                        timeout=10,
+                    )
+                    next_request = await endpoint.next()
+                    async with next_request as exchange:
+                        await exchange.send(
+                            *response_stream(
+                                [Message("The fresh input completed after History recovery.")], model="test-model"
+                            ).events
+                        )
+                    await wait_for_turn_completion(outage_cursor, next_command_id)
+                    recovered_snapshot = await store.get_session(session_id)
+                    await history.folded(UUID(session_id), recovered_snapshot.cursor)
+                    final_page = await history.reader.read_session_events(session_id, limit=1000)
+                    final_history = list(final_page.entries)
+                    final_sampler = await store.events(session_id, 0, limit=1000)
+                    assert final_history == final_sampler
+                    assert final_history[: len(prefix)] == prefix
+                    assert [entry.cursor for entry in final_history] == list(
+                        range(final_history[0].cursor, final_history[0].cursor + len(final_history))
+                    )
                     shutdown = asyncio.create_task(running_runner.stop())
                     try:
                         await shutdown
