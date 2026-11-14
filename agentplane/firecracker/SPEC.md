@@ -1,5 +1,9 @@
 # Firecracker launcher contract
 
+Host supervision lives in `host/`; the guest thaw agent lives in `guest/`. Shared transports
+and workload identity live in `vsock/` and `workloadidentity/`. The management protocol remains
+in `agentplane/env/firecracker`.
+
 The `environment-runtime` container owns one Firecracker VM for the lifetime of its Sandbox Pod.
 The Sandbox controller writes the Pod annotation projected at
 `/run/agentplane/firecracker-intent/running`; `true` requests a running VM, and `false` requests a
