@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
+	apphttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/settings"
 	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
@@ -55,7 +56,7 @@ func TestAppConfigRoutesUseGeneratedProtoJSONAndCallerAuthentication(t *testing.
 	}
 	server := newHTTPServer(authentication)
 	policySets := &appConfigPolicySetNames{names: []string{"alpha", "zeta"}}
-	if err := registerAppConfigRoutes(server, &appService{config: config, policySetNames: policySets}); err != nil {
+	if err := apphttp.NewAppConfigHandler(config, policySets).RegisterRoutes(server); err != nil {
 		t.Fatal(err)
 	}
 	handler := server.Handler(authentication)
@@ -143,7 +144,7 @@ func TestSandboxFormReturnsUnavailableWhenPolicyServiceFails(t *testing.T) {
 	}
 	server := newHTTPServer(authentication)
 	policySets := &appConfigPolicySetNames{err: errors.New("policy backend unavailable")}
-	if err := registerAppConfigRoutes(server, &appService{policySetNames: policySets}); err != nil {
+	if err := apphttp.NewAppConfigHandler(settings.Config{}, policySets).RegisterRoutes(server); err != nil {
 		t.Fatal(err)
 	}
 	request := httptest.NewRequest(http.MethodGet, "/upstream/app-config/v1/sandbox-form", nil)

@@ -29,6 +29,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/internal/historyclient"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/historywatch"
+	apphttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi"
 	sessionhttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/sessions"
 	threadhttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/threads"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/migrations"
@@ -319,10 +320,10 @@ func Run(ctx context.Context, config settings.Config) error {
 		Updates: wakeupHub, UpdatesConnected: wakeupHub.Connected, DrainDone: server.DrainDone(),
 	})
 	app := &appService{
-		config: config, systemStatus: serviceStatus, policySetNames: policySetNames,
 		sessions: sessionHandlers, threadMetadata: threadMetadata,
 	}
-	if err := registerAppConfigRoutes(server, app); err != nil {
+	appConfigHandler := apphttp.NewAppConfigHandler(config, policySetNames)
+	if err := appConfigHandler.RegisterRoutes(server); err != nil {
 		return fmt.Errorf("register app configuration facade: %w", err)
 	}
 	if err := registerSessionRoutes(server, app); err != nil {
@@ -335,7 +336,8 @@ func Run(ctx context.Context, config settings.Config) error {
 		return fmt.Errorf("register Thread metadata facade: %w", err)
 	}
 	registerOperatorRoutes(server, linkageClient)
-	if err := registerStatusRoutes(server, app); err != nil {
+	statusHandler := apphttp.NewSystemStatusHandler(serviceStatus)
+	if err := statusHandler.RegisterRoutes(server); err != nil {
 		return fmt.Errorf("register System status facade: %w", err)
 	}
 	server.RegisterRawRoute("POST /telemetry/v1/traces", traceRelayHandler(), true)
