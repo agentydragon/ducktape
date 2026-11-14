@@ -599,6 +599,93 @@ func TestSettingsRejectPartialAndUnknownConfiguration(t *testing.T) {
 	}
 }
 
+func TestSettingsAcceptCentralSamplerSVIDForHistoryAndGateway(t *testing.T) {
+	settings := fixtureSettings()
+	settings.HistoryTarget = "history.invalid:8080"
+	settings.HistoryTLS = &peertls.ClientTLS{
+		CAFile: "/run/agentplane/ca.pem", ServerURI: peertls.HistoryIngressURI,
+		CertFile: "/run/agentplane/svid/tls.crt", KeyFile: "/run/agentplane/svid/tls.key", ClientURI: peertls.CentralSamplerURI,
+	}
+	settings.GatewayTarget = "gateway.invalid:8080"
+	settings.GatewayTLS = &peertls.ClientTLS{
+		CAFile: "/run/agentplane/ca.pem", ServerURI: peertls.GatewayURI,
+		CertFile: "/run/agentplane/svid/tls.crt", KeyFile: "/run/agentplane/svid/tls.key", ClientURI: peertls.CentralSamplerURI,
+	}
+	settings.DirectExecutorTarget = ""
+	settings.DirectExecutorInsecureLocaltest = false
+	if err := settings.Validate(); err != nil {
+		t.Fatalf("valid SVID transports rejected: %v", err)
+	}
+
+	for name, edit := range map[string]func(*Settings){
+		"history mixed credentials": func(s *Settings) { s.HistoryTokenFile = "/run/agentplane/history-token" },
+		"history wrong caller":      func(s *Settings) { s.HistoryTLS.ClientURI = peertls.AppURI },
+		"history wrong server":      func(s *Settings) { s.HistoryTLS.ServerURI = peertls.GatewayURI },
+		"gateway mixed credentials": func(s *Settings) { s.GatewayTokenFile = "/run/agentplane/gateway-token" },
+		"gateway wrong caller":      func(s *Settings) { s.GatewayTLS.ClientURI = peertls.AppURI },
+		"gateway wrong server":      func(s *Settings) { s.GatewayTLS.ServerURI = peertls.HistoryIngressURI },
+	} {
+		t.Run(name, func(t *testing.T) {
+			invalid := settings
+			invalid.HistoryTLS = cloneClientTLS(settings.HistoryTLS)
+			invalid.GatewayTLS = cloneClientTLS(settings.GatewayTLS)
+			edit(&invalid)
+			if err := invalid.Validate(); err == nil {
+				t.Fatal("accepted invalid service SVID settings")
+			}
+		})
+	}
+}
+
+func TestAgentplaneIngressAcceptsOnlyCredentialOrCentralSamplerSVID(t *testing.T) {
+	connection := fixtureSettings().Connections["provider"]
+	connection.Auth = AuthConfig{Type: AuthTypeAgentplaneIngress}
+	connection.TLS = &peertls.ClientTLS{
+		CAFile: "/run/agentplane/ca.pem", ServerURI: peertls.LLMIngressURI,
+		CertFile: "/run/agentplane/svid/tls.crt", KeyFile: "/run/agentplane/svid/tls.key", ClientURI: peertls.CentralSamplerURI,
+	}
+	if err := connection.Validate(); err != nil {
+		t.Fatalf("valid central sampler ingress SVID rejected: %v", err)
+	}
+
+	for name, edit := range map[string]func(*ConnectionConfig){
+		"missing credential and SVID": func(c *ConnectionConfig) { c.TLS = nil },
+		"mixed bearer and SVID":       func(c *ConnectionConfig) { c.Auth.Credential = "fixture-token" },
+		"wrong SVID caller":           func(c *ConnectionConfig) { c.TLS.ClientURI = peertls.AppURI },
+		"wrong service endpoint":      func(c *ConnectionConfig) { c.TLS.ServerURI = peertls.HistoryIngressURI },
+		"SVID on bearer auth": func(c *ConnectionConfig) {
+			c.Auth.Type = AuthTypeBearer
+			c.Auth.Credential = "fixture-token"
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			invalid := connection
+			if connection.TLS != nil {
+				copied := *connection.TLS
+				invalid.TLS = &copied
+			}
+			edit(&invalid)
+			if err := invalid.Validate(); err == nil {
+				t.Fatal("accepted invalid ingress credential settings")
+			}
+		})
+	}
+
+	tokenConnection := fixtureSettings().Connections["provider"]
+	tokenConnection.Auth.Type = AuthTypeAgentplaneIngress
+	if err := tokenConnection.Validate(); err != nil {
+		t.Fatalf("existing ingress bearer mode rejected: %v", err)
+	}
+}
+
+func cloneClientTLS(config *peertls.ClientTLS) *peertls.ClientTLS {
+	if config == nil {
+		return nil
+	}
+	copy := *config
+	return &copy
+}
+
 func TestLoadSettingsUsesDatabaseURLEnvironmentOverride(t *testing.T) {
 	settings := fixtureSettings()
 	encoded, err := json.Marshal(settings)

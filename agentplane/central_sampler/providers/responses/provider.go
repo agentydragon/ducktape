@@ -172,7 +172,9 @@ func Sample(ctx context.Context, client *http.Client, baseURL, authorization str
 		return nil, err
 	}
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Authorization", authorization)
+	if authorization != "" {
+		request.Header.Set("Authorization", authorization)
+	}
 	for name, value := range Headers(config, compaction) {
 		if name != "content-type" {
 			request.Header.Set(name, value)

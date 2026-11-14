@@ -7,9 +7,12 @@ to a `SessionSpec` whose placement is `central_sampler_v1` with one exact `execu
 a typed caller owner (ServiceAccount UID or service SPIFFE ID) and fixed `SandboxDestination` plus expected incarnation UID. The
 Dispatcher and sampler require the spec environment and executor destination to match. The
 Dispatcher requires and supplies the complete execution Identity named by the executor's Sandbox,
-retaining it in the immutable configuration across retries and restarts. The authenticated sampler actor remains the journal producer identity and is retained separately
-by History; its projected ServiceAccount token is still the current outbound proof until the
-separately staged caller cutover. The
+retaining it in the immutable configuration across retries and restarts. The authenticated sampler
+actor remains the journal producer identity and is retained separately by History. History and
+Gateway connections accept either their existing projected ServiceAccount token or a central
+sampler service SVID; SVID mode verifies the exact receiver service URI and presents
+`spiffe://agentplane/central-sampler` as its caller. The deployed token mode changes only when
+separately configured. The
 Dispatcher uses its one configured central sampler target; callers select the V1 placement, not a
 service endpoint. Model and effort must be server-configured. Every RPC uses the explicit bearer-account policy or the exact service SVID allowlist. Service
 ownership is stored separately from account UIDs; existing account-owned Sessions never become
@@ -17,9 +20,11 @@ service-owned implicitly. Session UUID knowledge grants no authority. Service ad
 verified client TLS with the configured trust bundle and never falls back to bearer verification.
 
 The sampler acts for that Identity under the [delegated authorization contract](../docs/delegated_authorization.md): it
-authenticates as itself with its own projected token and holds no agent key, and each History push names the retained Identity as effective caller and the Session as provenance.
-LLM ingress receives the same typed proof when the connection selects `auth.mode: agentplane_ingress`;
-staging still selects bearer mode with Session metadata until its separate caller cutover. Neither JavaScript nor tool arguments can name or override it; History
+authenticates as itself with its own projected token or central sampler service SVID and holds no
+agent key, and each History push names the retained Identity as effective caller and the Session as
+provenance. LLM ingress receives the same typed proof when the connection selects
+`auth.type: agentplane_ingress`; it can authenticate with the projected token or a central sampler
+service SVID. Neither JavaScript nor tool arguments can name or override the typed delegation; History
 refuses a push whose announced Identity, Session or journal kind differs from the envelope, and both
 receivers refuse an Identity incarnation that no longer exists, as they refuse a Sandbox whose
 Identity is gone. Direct Anthropic connections carry no delegation. Executor and Gateway calls stay
@@ -254,8 +259,11 @@ tokens from data URL size rather than decoded duration.
 
 A flat top-level `models` map allowlists public route IDs and reasoning efforts. Each entry binds a
 named `connection`, explicit `provider_model`, `api` (`responses` or `anthropic_messages`) and
-`exec_encoding`. Connections declare a base URL and `auth.type` (`bearer` or `anthropic_api_key`),
-with exactly one inline credential or rotating credential file. URLs cannot contain credentials,
+`exec_encoding`. Connections declare a base URL and `auth.type` (`bearer`, `agentplane_ingress` or
+`anthropic_api_key`). Bearer and Anthropic API key connections require exactly one inline credential
+or rotating credential file. Agentplane ingress accepts that credential mode or, with `tls`, a
+verified LLM ingress server and central sampler client SVID; SVID mode carries the same typed
+Identity and Session delegation without an Authorization header. URLs cannot contain credentials,
 query strings or fragments. Callers cannot select connections. Responses settings declare a
 `lite` or `standard` dialect; Anthropic settings declare native request features and require JSON
 exec. Unknown APIs, mixed API settings and invalid feature combinations are rejected.
