@@ -111,7 +111,7 @@ func (r requestRow) mayBeReadBy(principal ReadPrincipal) bool {
 	switch principal := principal.(type) {
 	case Owner:
 		return ownedBy(r.Caller, principal)
-	case OperatorPrincipal, ServiceReaderPrincipal:
+	case OperatorPrincipal, ServiceReaderPrincipal, ServiceSVIDReaderPrincipal:
 		return true
 	default:
 		return false
@@ -534,7 +534,7 @@ func (q *query) readableBy(principal ReadPrincipal) []string {
 		return []string{"caller_namespace = " + q.arg(principal.Account.Namespace) + " AND caller_name = " + q.arg(principal.Account.Name)}
 	case IdentityPrincipal:
 		return []string{"caller_identity_name = " + q.arg(principal.Identity.Name) + " AND caller_identity_uid = " + q.arg(principal.Identity.UID)}
-	case OperatorPrincipal, ServiceReaderPrincipal:
+	case OperatorPrincipal, ServiceReaderPrincipal, ServiceSVIDReaderPrincipal:
 		return nil
 	default:
 		return []string{"FALSE"}

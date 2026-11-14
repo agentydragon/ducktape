@@ -496,6 +496,21 @@ the service its own `actions` database and login role on the namespace's shared
 CNPG cluster `postgres` (`cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml`),
 separate from the integration app's database.
 
+### Service certificate admission during the cutover
+
+Optional `service_readers` grants exact service SPIFFE IDs the existing read/catalog methods.
+These principals remain read-only and carry no Kubernetes account or Pod proof. `operator_services`
+names transport actors allowed to carry a separately verified operator OIDC token; a certificate
+alone grants no operator authority, and a Kubernetes bearer cannot supply that proof.
+`connection_delegation_service` names the exact MCP edge certificate actor for the existing
+Connection delegation methods. The live effective Identity's PolicyBindings remain its only Action
+grants. An actor's own bindings or reader role never become the effective caller's grants.
+
+All three settings require the listener's SPIFFE client trust. They default to no service grants;
+production settings follow receiver image pins. Existing bearer admission remains during the staged
+cutover. Mixed service/bearer credentials fail closed except the explicit service-plus-operator-OIDC
+path. The listener verifies every presented certificate before method authorization.
+
 ### Schema initialization
 
 Goose version 7 creates the final typed schema on an empty database. A database that completed

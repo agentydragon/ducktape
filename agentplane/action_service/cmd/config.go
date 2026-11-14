@@ -30,8 +30,11 @@ const (
 // config holds the required YAML settings plus the explicitly named runtime Secret inputs.
 // DatabaseURL and the Web Push private key are never read from the settings file.
 type config struct {
-	DatabaseURL string          `mapstructure:"-"`
-	RPC         listener.Config `mapstructure:"rpc"`
+	ServiceReaders              []string        `mapstructure:"service_readers"`
+	OperatorServices            []string        `mapstructure:"operator_services"`
+	ConnectionDelegationService string          `mapstructure:"connection_delegation_service"`
+	DatabaseURL                 string          `mapstructure:"-"`
+	RPC                         listener.Config `mapstructure:"rpc"`
 	// CallerServiceAccountNamespaces hold the ServiceAccounts whose workloads may call; a labeled account outside
 	// them is refused.
 	CallerServiceAccountNamespaces []string `mapstructure:"caller_service_account_namespaces"`
@@ -149,6 +152,19 @@ func (c *config) validate() error {
 	} {
 		if required.value == "" {
 			return errors.New(required.name + " is required")
+		}
+	}
+	if (len(c.ServiceReaders)+len(c.OperatorServices) > 0 || c.ConnectionDelegationService != "") && !c.RPC.Has(listener.SPIFFE) {
+		return errors.New("service callers require rpc spiffe client trust")
+	}
+	for _, services := range [][]string{c.ServiceReaders, c.OperatorServices} {
+		if err := auth.ValidateServiceCallers(services); err != nil {
+			return err
+		}
+	}
+	if c.ConnectionDelegationService != "" {
+		if err := auth.ValidateServiceCallers([]string{c.ConnectionDelegationService}); err != nil {
+			return err
 		}
 	}
 	for _, account := range c.ReaderAccounts {

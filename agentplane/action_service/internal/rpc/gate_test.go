@@ -2,6 +2,8 @@ package rpc
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"slices"
 	"testing"
@@ -11,13 +13,17 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -322,4 +328,49 @@ func TestConnectionDelegationUsesAnExactIdentityAndRechecksItOnActionStreams(t *
 	}
 	_, err = stream.Recv()
 	wantCode(t, "an open Action stream after same-name Identity replacement", err, codes.PermissionDenied)
+}
+
+// A service certificate proves the app transport actor. Only the separately verified
+// operator token grants operator authority; a Kubernetes bearer never substitutes for it.
+func TestServiceActorMustAlsoProveOperatorOIDC(t *testing.T) {
+	s := serve(t)
+	s.gate.operatorServices.Insert(peertls.AppURI)
+	ca := transporttesting.NewCA(t)
+	for _, tc := range []struct {
+		name, actor, token string
+		allowed            bool
+	}{
+		{"app and operator", peertls.AppURI, s.operatorToken, true},
+		{"app alone", peertls.AppURI, "", false},
+		{"app and Kubernetes bearer", peertls.AppURI, readerToken, false},
+		{"ungranted actor with operator", peertls.NotificationsURI, s.operatorToken, false},
+		{"expired operator", peertls.AppURI, s.issuer.token(t, map[string]any{"exp": time.Now().Add(-time.Hour).Unix()}), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			files := ca.Issue(t, tc.actor)
+			pair, err := tls.LoadX509KeyPair(files.CertFile, files.KeyFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			leaf, err := x509.ParseCertificate(pair.Certificate[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx := peer.NewContext(t.Context(), &peer.Peer{AuthInfo: credentials.TLSInfo{State: tls.ConnectionState{PeerCertificates: []*x509.Certificate{leaf}, VerifiedChains: [][]*x509.Certificate{{leaf}}}}})
+			if tc.token != "" {
+				ctx = metadata.NewIncomingContext(ctx, metadata.Pairs("authorization", "Bearer "+tc.token))
+			}
+			result, err := s.gate.authenticateOperator(ctx)
+			if tc.allowed {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, ok := result.principal.(store.OperatorPrincipal); !ok {
+					t.Fatalf("operator proof = %#v", result.principal)
+				}
+			} else if status.Code(err) != codes.Unauthenticated {
+				t.Fatalf("unproved operator: %v", err)
+			}
+		})
+	}
 }

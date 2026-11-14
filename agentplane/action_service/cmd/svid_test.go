@@ -14,11 +14,13 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -210,6 +212,7 @@ func TestSVIDIdentityCallerActsByItsIdentityBindings(t *testing.T) {
 	ca := transporttesting.NewCA(t)
 	serving := ca.IssueWithUsage(t, peertls.ActionsURI, x509.ExtKeyUsageServerAuth)
 	service := startConfigured(t, kube.Config, groups, func(c *config, _ *deps) {
+		c.ConnectionDelegationService = peertls.MCPEdgeURI
 		c.RPC = listener.Config{
 			ListenAddress: "127.0.0.1:0",
 			TLS:           &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile},
@@ -277,5 +280,79 @@ func TestSVIDIdentityCallerActsByItsIdentityBindings(t *testing.T) {
 	policy, err := caller.GetActionPolicy(ctx, &action_servicepb.GetActionPolicyRequest{})
 	if err != nil || !proto.Equal(policy.GetActionPolicy().GetIdentity(), wantCaller) || len(policy.GetActionPolicy().GetAutoApproveIf()) != 1 {
 		t.Errorf("the Identity's own policy: %v, %v", policy, err)
+	}
+	transportCredentials, err := ca.Issue(t, peertls.MCPEdgeURI).ClientCredentials(peertls.ActionsURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edgeConn, err := grpc.NewClient(service.address, grpc.WithNoProxy(), grpc.WithTransportCredentials(transportCredentials))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = edgeConn.Close() })
+	edgeClient := action_servicepb.NewActionServiceClient(edgeConn)
+	for _, subject := range []*identitypb.Identity{wantCaller, {Name: unbound.Identity.Name, Uid: string(unbound.Identity.UID)}, {Name: wantCaller.Name, Uid: uuid.NewString()}} {
+		envelope := &delegationpb.Delegation{EffectiveCaller: &delegationpb.Delegation_Identity{Identity: subject}, Provenance: &delegationpb.Delegation_Connection{Connection: &delegationpb.ConnectionProvenance{ConnectionId: uuid.NewString(), GrantId: uuid.NewString()}}}
+		encoded, err := auth.MarshalDelegation(envelope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		delegated := metadata.AppendToOutgoingContext(ctx, auth.DelegationMetadataKey, string(encoded))
+		result, err := edgeClient.SubmitActionRequest(delegated, &action_servicepb.SubmitActionRequestRequest{IdempotencyKey: uuid.NewString(), Action: &action_servicepb.ActionIdentity{Group: "test-mcp", Name: "test_echo"}, Arguments: &structpb.Struct{}, Title: "delegated service request"})
+		if proto.Equal(subject, wantCaller) {
+			if err != nil || !proto.Equal(result.GetActionRequest().GetCallerIdentity(), wantCaller) || result.GetActionRequest().GetCaller() != nil {
+				t.Fatalf("service actor effective caller=%v,%v", result, err)
+			}
+		} else if status.Code(err) != codes.Unauthenticated && status.Code(err) != codes.PermissionDenied {
+			t.Fatalf("service actor admitted ungranted/stale Identity: %v", err)
+		}
+	}
+}
+
+func TestServiceReaderAdmissionIsReadOnlyAndNotAnOperator(t *testing.T) {
+	ca := transporttesting.NewCA(t)
+	serving := ca.Issue(t, peertls.ActionsURI)
+	service := startConfigured(t, kube.Config, &catalog.Catalog{}, func(c *config, _ *deps) {
+		c.ServiceReaders = []string{peertls.NotificationsURI}
+		c.RPC = listener.Config{ListenAddress: "127.0.0.1:0", TLS: &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile}, Auth: []listener.Authentication{&listener.SPIFFEAuth{CAFile: serving.CAFile}, &listener.KubernetesBearerAuth{Audiences: []string{testAudience}}}}
+	})
+	waitReady(t, service)
+	for _, actor := range []string{peertls.NotificationsURI, peertls.MCPEdgeURI} {
+		t.Run(actor, func(t *testing.T) {
+			security, err := ca.Issue(t, actor).ClientCredentials(peertls.ActionsURI)
+			if err != nil {
+				t.Fatal(err)
+			}
+			conn, err := grpc.NewClient(service.address, grpc.WithNoProxy(), grpc.WithTransportCredentials(security))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			client := action_servicepb.NewActionServiceClient(conn)
+			ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
+			defer cancel()
+			_, err = client.ListActionRequests(ctx, &action_servicepb.ListActionRequestsRequest{})
+			if actor == peertls.NotificationsURI {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if status.Code(err) != codes.Unauthenticated {
+				t.Fatalf("unlisted service read: %v", err)
+			}
+			if _, err := client.SubmitActionRequest(ctx, &action_servicepb.SubmitActionRequestRequest{}); status.Code(err) != codes.PermissionDenied && status.Code(err) != codes.Unauthenticated {
+				t.Fatalf("service mutated: %v", err)
+			}
+			mixed := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+readerToken)
+			if _, err := client.ListActionRequests(mixed, &action_servicepb.ListActionRequestsRequest{}); status.Code(err) != codes.Unauthenticated {
+				t.Fatalf("bearer fallback: %v", err)
+			}
+			operatorWatch, err := operator_action_servicepb.NewOperatorActionServiceClient(conn).WatchMcpServers(ctx, &operator_action_servicepb.WatchMcpServersRequest{})
+			if err == nil {
+				_, err = operatorWatch.Recv()
+			}
+			if status.Code(err) != codes.Unauthenticated {
+				t.Fatalf("service acquired operator grant: %v", err)
+			}
+		})
 	}
 }
