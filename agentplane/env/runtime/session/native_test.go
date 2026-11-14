@@ -847,7 +847,7 @@ func setLifecycleStatusReady(t *testing.T, m *Manager, s *Session) {
 	s.mu.Unlock()
 }
 
-// The test aggregate publishes only the Runner-wide gate needed by Session.
+// The test aggregate publishes only the Runtime-wide gate needed by Session.
 type testAggregateController struct{}
 
 func (*testAggregateController) Name() string { return "test-aggregate" }

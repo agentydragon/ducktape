@@ -71,7 +71,7 @@ func firecrackerIdleController(t *testing.T) (*Reconciler, client.Client, *time.
 	reconcileOnce(t, r) // Accept and publish this fixture's runner identity before its Runtime facts.
 	connect(t, r, string(pod.UID))
 	setIdleSuspendAfter(t, c, durationPtr(idleSuspendAfter))
-	publishIdleSince(t, r, &runnerIdleSince)
+	publishIdleSince(t, r, &runtimeIdleSince)
 	reconcileOnce(t, r) // The controller first observes this idle period at its own clock.
 	return r, c, &now, status, suspender
 }
@@ -79,7 +79,7 @@ func firecrackerIdleController(t *testing.T) (*Reconciler, client.Client, *time.
 func firecrackerToResumingAfterWake(t *testing.T, r *Reconciler, c client.Client, now *time.Time, status *testFirecrackerStatus) {
 	t.Helper()
 	*now = now.Add(idleSuspendAfter)
-	publishIdleSince(t, r, &runnerIdleSince)
+	publishIdleSince(t, r, &runtimeIdleSince)
 	reconcileResult(t, r) // Persist Preparing, call Prepare, and move to Checkpointing.
 	reconcileResult(t, r) // Project the checkpoint intent to the launcher.
 	status.state.Phase = "suspended"
@@ -107,7 +107,7 @@ func TestFirecrackerLateBusyRuntimeFactRefusesIdleSuspendWithoutCheckpointIntent
 	}
 
 	*now = now.Add(idleSuspendAfter)
-	publishIdleSince(t, r, &runnerIdleSince)
+	publishIdleSince(t, r, &runtimeIdleSince)
 	reconcileResult(t, r)
 	if got := getSandbox(t, c); got.Status.FirecrackerSuspension == nil || got.Status.FirecrackerSuspension.Phase != sandboxapi.FirecrackerSuspendResuming || got.Status.SuspendedBy != nil {
 		t.Fatalf("busy refusal did not clear the idle reason and enter Resuming: %+v", got.Status)
@@ -137,7 +137,7 @@ func TestFirecrackerLostPrepareReplyRetriesPersistedGenerationAfterControllerRes
 		return nil
 	}
 	*now = now.Add(idleSuspendAfter)
-	publishIdleSince(t, r, &runnerIdleSince)
+	publishIdleSince(t, r, &runtimeIdleSince)
 	reconcileResult(t, r)
 	if got := getSandbox(t, c).Status.FirecrackerSuspension; got.Phase != sandboxapi.FirecrackerSuspendPreparing {
 		t.Fatalf("lost Prepare reply advanced phase to %s", got.Phase)
@@ -151,8 +151,8 @@ func TestFirecrackerLostPrepareReplyRetriesPersistedGenerationAfterControllerRes
 	}
 	reconcileResult(t, restarted)
 	if len(suspender.prepares) != 2 || suspender.prepares[0].generation != 1 || suspender.prepares[1].generation != 1 ||
-		!suspender.prepares[0].idleSince.Equal(runnerIdleSince) || !suspender.prepares[1].idleSince.Equal(runnerIdleSince) {
-		t.Fatalf("Prepare retries = %+v, want both calls to reuse generation 1 and idle-since %s", suspender.prepares, runnerIdleSince)
+		!suspender.prepares[0].idleSince.Equal(runtimeIdleSince) || !suspender.prepares[1].idleSince.Equal(runtimeIdleSince) {
+		t.Fatalf("Prepare retries = %+v, want both calls to reuse generation 1 and idle-since %s", suspender.prepares, runtimeIdleSince)
 	}
 	if got := getSandbox(t, c).Status.FirecrackerSuspension; got.Generation != 1 || got.Phase != sandboxapi.FirecrackerSuspendCheckpointing {
 		t.Fatalf("retried Prepare phase = %+v, want generation 1 Checkpointing", got)
@@ -162,7 +162,7 @@ func TestFirecrackerLostPrepareReplyRetriesPersistedGenerationAfterControllerRes
 func TestFirecrackerConcurrentWakeWaitsForCheckpointBeforeResumeAndClearsStopStage(t *testing.T) {
 	r, c, now, status, suspender := firecrackerIdleController(t)
 	*now = now.Add(idleSuspendAfter)
-	publishIdleSince(t, r, &runnerIdleSince)
+	publishIdleSince(t, r, &runtimeIdleSince)
 	reconcileResult(t, r) // Prepare is acknowledged; the launcher still reports running.
 	if got := getSandbox(t, c); got.Status.FirecrackerSuspension.Phase != sandboxapi.FirecrackerSuspendCheckpointing {
 		t.Fatalf("after Prepare, phase = %s, want Checkpointing", got.Status.FirecrackerSuspension.Phase)
@@ -263,7 +263,7 @@ func TestFirecrackerPrepareIsNotCalledWhenPersistingFenceConflicts(t *testing.T)
 	r, c, now, _, suspender := firecrackerIdleController(t)
 	r.Client = firecrackerStatusConflictClient{Client: r.Client}
 	*now = now.Add(idleSuspendAfter)
-	publishIdleSince(t, r, &runnerIdleSince)
+	publishIdleSince(t, r, &runtimeIdleSince)
 	_, err := r.Reconcile(context.Background(), request)
 	if !apierrors.IsConflict(err) {
 		t.Fatalf("Reconcile() error = %v, want status conflict", err)
@@ -290,7 +290,7 @@ func TestFirecrackerReleasedSuspensionIncrementsGenerationForNextAttempt(t *test
 	}
 
 	sandbox := getSandbox(t, c)
-	nextIdleSince := runnerIdleSince.Add(2 * time.Hour)
+	nextIdleSince := runtimeIdleSince.Add(2 * time.Hour)
 	if err := r.beginFirecrackerSuspend(context.Background(), sandbox, nextIdleSince); err != nil {
 		t.Fatal(err)
 	}

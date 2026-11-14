@@ -12,7 +12,7 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-// NewConnection opens the Runner's shared outbound gRPC connection.
+// NewConnection opens the Environment Runtime's shared outbound gRPC connection.
 func NewConnection(target string) (*grpc.ClientConn, error) {
 	return NewSecureConnection(target, insecure.NewCredentials())
 }
@@ -22,7 +22,7 @@ func NewSecureConnection(target string, transport credentials.TransportCredentia
 	return grpc.NewClient(target, observability.GRPCClientOption(), grpc.WithTransportCredentials(transport), grpc.WithNoProxy(), grpc.WithConnectParams(grpc.ConnectParams{Backoff: backoff.Config{BaseDelay: 500 * time.Millisecond, Multiplier: 2, Jitter: 0.2, MaxDelay: 30 * time.Second}, MinConnectTimeout: 10 * time.Second}))
 }
 
-// Authenticated adds the bearer used by the Runner's outbound gRPC services.
+// Authenticated adds the bearer used by the Environment Runtime's outbound gRPC services.
 func Authenticated(ctx context.Context, bearer string) context.Context {
 	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+bearer)
 }

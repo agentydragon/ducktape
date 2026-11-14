@@ -515,7 +515,7 @@ func (s *liveJournalIngress) Push(stream grpc.BidiStreamingServer[ingresspb.Push
 	return stream.Send(&ingresspb.Acknowledgement{Cursor: 1, Sealed: true})
 }
 
-func TestJournalAppendAndSealWakeDeliveryWithoutRunnerNotification(t *testing.T) {
+func TestJournalAppendAndSealWakeDeliveryWithoutRuntimeNotification(t *testing.T) {
 	source, store, _ := newTestSource(t, 0)
 	service := &liveJournalIngress{announced: make(chan struct{}), entrySeen: make(chan *eventlogpb.EventEntry, 1), sealSeen: make(chan *sessionpb.Sealed, 1), result: make(chan error, 1)}
 	target := startGRPCServer(t, func(server *grpc.Server) {

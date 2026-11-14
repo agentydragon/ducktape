@@ -10,10 +10,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/harnesses/codex/protocol"
 )
 
-// InitializeRequestID names the handshake request the Runner sends once per shared app-server.
+// InitializeRequestID names the handshake request the Environment Runtime sends once per shared app-server.
 const InitializeRequestID = "agentplane-initialize"
 
-// ServerCommand is the command line of the Runner's shared app-server. Every option in it applies to
+// ServerCommand is the command line of the Environment Runtime's shared app-server. Every option in it applies to
 // every hosted Session; per-Session settings go in each thread's own parameters.
 func ServerCommand(launch harness.LaunchConfig) ([]string, error) {
 	catalogURL, err := launch.PlatformURL(codexCatalogPath)

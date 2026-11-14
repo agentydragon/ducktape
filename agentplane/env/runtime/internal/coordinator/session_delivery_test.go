@@ -100,16 +100,16 @@ func (s *quiesceIngress) Push(stream grpc.BidiStreamingServer[ingresspb.PushFram
 }
 
 func TestIngressSupervisorPublishesSealedAcknowledgementToQuiesce(t *testing.T) {
-	runner, session := lifecycleTestSession(t)
+	runtime, session := lifecycleTestSession(t)
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
 	if err := session.Emit(ctx, &eventpb.Event{Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Text: "retained"}}}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runner.Quiesce(ctx, &sessionpb.QuiesceRequest{}); err != nil {
+	if _, err := runtime.Quiesce(ctx, &sessionpb.QuiesceRequest{}); err != nil {
 		t.Fatalf("accept quiesce: %v", err)
 	}
-	waitLifecycle(t, runner, func() bool { return currentSessionLifecycleStatus(runner).Stage == lifecycle.Flushing }, "quiesce to seal the journal")
+	waitLifecycle(t, runtime, func() bool { return currentSessionLifecycleStatus(runtime).Stage == lifecycle.Flushing }, "quiesce to seal the journal")
 	seal := session.EventJournal().SealState()
 	if seal == nil || seal.Cursor == 0 {
 		t.Fatalf("journal seal = %+v, want a nonzero cursor", seal)
@@ -127,7 +127,7 @@ func TestIngressSupervisorPublishesSealedAcknowledgementToQuiesce(t *testing.T) 
 	})
 	loopDone := make(chan error, 1)
 	go func() {
-		supervisor, err := runner.ingressSupervisor(configuration.Endpoint{Target: endpoint, Bearer: "ingress-token"}, runner.fail)
+		supervisor, err := runtime.ingressSupervisor(configuration.Endpoint{Target: endpoint, Bearer: "ingress-token"}, runtime.fail)
 		if err != nil {
 			loopDone <- err
 			return
@@ -148,22 +148,22 @@ func TestIngressSupervisorPublishesSealedAcknowledgementToQuiesce(t *testing.T) 
 	case <-ctx.Done():
 		t.Fatalf("ingress did not send its under-cursor acknowledgement: %v", ctx.Err())
 	}
-	waitLifecycle(t, runner, func() bool {
-		ack, found, err := retained.ReadAcknowledgement(ctx, runner.lifecycleState, session.ID())
+	waitLifecycle(t, runtime, func() bool {
+		ack, found, err := retained.ReadAcknowledgement(ctx, runtime.lifecycleState, session.ID())
 		return err == nil && found && ack.Cursor == seal.Cursor-1 && !ack.Sealed
 	}, "under-cursor ingress acknowledgement observation")
-	if ack, err := runner.store.ReadAcknowledgement(session.ID()); err != nil || ack == nil || ack.Cursor != seal.Cursor-1 || ack.Sealed {
+	if ack, err := runtime.store.ReadAcknowledgement(session.ID()); err != nil || ack == nil || ack.Cursor != seal.Cursor-1 || ack.Sealed {
 		t.Fatalf("persisted under-cursor acknowledgement = %+v, err %v", ack, err)
 	}
-	if stage := currentSessionLifecycleStatus(runner).Stage; stage != lifecycle.Flushing {
+	if stage := currentSessionLifecycleStatus(runtime).Stage; stage != lifecycle.Flushing {
 		t.Fatalf("quiesce accepted under-cursor acknowledgement at stage %v", stage)
 	}
 	close(service.releaseSeal)
-	waitLifecycle(t, runner, func() bool { return currentSessionLifecycleStatus(runner).Stage == lifecycle.Quiesced }, "exact sealed ingress acknowledgement")
-	if ack, err := runner.store.ReadAcknowledgement(session.ID()); err != nil || ack == nil || ack.Cursor != seal.Cursor || !ack.Sealed {
+	waitLifecycle(t, runtime, func() bool { return currentSessionLifecycleStatus(runtime).Stage == lifecycle.Quiesced }, "exact sealed ingress acknowledgement")
+	if ack, err := runtime.store.ReadAcknowledgement(session.ID()); err != nil || ack == nil || ack.Cursor != seal.Cursor || !ack.Sealed {
 		t.Fatalf("persisted sealed acknowledgement = %+v, err %v", ack, err)
 	}
-	if ack, found, err := retained.ReadAcknowledgement(ctx, runner.lifecycleState, session.ID()); err != nil || !found || ack.Cursor != seal.Cursor || !ack.Sealed {
+	if ack, found, err := retained.ReadAcknowledgement(ctx, runtime.lifecycleState, session.ID()); err != nil || !found || ack.Cursor != seal.Cursor || !ack.Sealed {
 		t.Fatalf("COSI sealed acknowledgement = %+v, found %t, err %v", ack, found, err)
 	}
 	if err := <-service.result; err != nil {
@@ -175,7 +175,7 @@ func TestIngressSupervisorPublishesSealedAcknowledgementToQuiesce(t *testing.T) 
 	}
 }
 
-func newBareRunner(t *testing.T) *Runtime {
+func newBareRuntime(t *testing.T) *Runtime {
 	t.Helper()
 	return newSessionTestRuntime(t, lifecycleConfig(t, "http://unused", t.TempDir(), nil, "/bin/false"))
 }

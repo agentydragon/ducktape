@@ -18,7 +18,7 @@ import (
 const idleSuspendAfter = 10 * time.Minute
 
 // The runner's clock is an hour behind the controller's, which the idle timer must not read.
-var runnerIdleSince = testNow.Add(-time.Hour)
+var runtimeIdleSince = testNow.Add(-time.Hour)
 
 // publishIdleSince simulates the runner's idle fact in a fresh Runtime snapshot.
 func publishIdleSince(t *testing.T, r *Reconciler, at *time.Time) {
@@ -64,16 +64,16 @@ func setIdleSuspendAfter(t *testing.T, c client.Client, after *time.Duration) {
 	}
 }
 
-// idleRunner is a running Sandbox whose runner has gone idle, with a clock the test advances through now.
-func idleRunner(t *testing.T, after *time.Duration) (r *Reconciler, c client.Client, now *time.Time) {
+// idleRuntime is a running Sandbox whose runner has gone idle, with a clock the test advances through now.
+func idleRuntime(t *testing.T, after *time.Duration) (r *Reconciler, c client.Client, now *time.Time) {
 	t.Helper()
-	r, c = runningWithRunner(t)
+	r, c = runningWithRuntime(t)
 	setPodReady(t, c, getPod(t, c), corev1.ConditionTrue)
 	now = new(time.Time)
 	*now = testNow
 	r.Now = func() time.Time { return *now }
 	setIdleSuspendAfter(t, c, after)
-	publishIdleSince(t, r, &runnerIdleSince)
+	publishIdleSince(t, r, &runtimeIdleSince)
 	return r, c, now
 }
 
@@ -89,7 +89,7 @@ func reconcileResult(t *testing.T, r *Reconciler) ctrl.Result {
 func durationPtr(d time.Duration) *time.Duration { return &d }
 
 func expectedIdleRecheck(remaining time.Duration) time.Duration {
-	return earliest(remaining, runtimeStateTimeout+runnerDisconnectGrace)
+	return earliest(remaining, runtimeStateTimeout+runtimeDisconnectGrace)
 }
 
 type countingStatusClient struct {
@@ -111,8 +111,8 @@ func (w *countingStatusWriter) Update(ctx context.Context, obj client.Object, op
 	return w.SubResourceWriter.Update(ctx, obj, opts...)
 }
 
-func TestARunnerIdleForIdleSuspendAfterSuspendsItsSandbox(t *testing.T) {
-	r, c, now := idleRunner(t, durationPtr(idleSuspendAfter))
+func TestARuntimeIdleForIdleSuspendAfterSuspendsItsSandbox(t *testing.T) {
+	r, c, now := idleRuntime(t, durationPtr(idleSuspendAfter))
 	quiescer := r.Quiescer.(*fakeQuiescer)
 	quiescer.result = QuiesceResult{Quiescing: true}
 
@@ -123,15 +123,15 @@ func TestARunnerIdleForIdleSuspendAfterSuspendsItsSandbox(t *testing.T) {
 		t.Fatalf("idleSuspendAt = %v, want %v", got, want)
 	}
 	*now = now.Add(idleSuspendAfter - time.Minute)
-	publishIdleSince(t, r, &runnerIdleSince)
+	publishIdleSince(t, r, &runtimeIdleSince)
 	if result := reconcileResult(t, r); quiescer.calls != 0 || result.RequeueAfter != expectedIdleRecheck(time.Minute) {
 		t.Fatalf("a minute early: quiesce calls = %d, requeue = %v; want 0 and the next idle or connection check", quiescer.calls, result.RequeueAfter)
 	}
 
 	*now = now.Add(time.Minute)
-	publishIdleSince(t, r, &runnerIdleSince)
+	publishIdleSince(t, r, &runtimeIdleSince)
 	reconcileOnce(t, r)
-	if quiescer.calls != 1 || quiescer.ifIdleSince == nil || !quiescer.ifIdleSince.Equal(runnerIdleSince) {
+	if quiescer.calls != 1 || quiescer.ifIdleSince == nil || !quiescer.ifIdleSince.Equal(runtimeIdleSince) {
 		t.Fatalf("quiesce calls = %d, ifIdleSince = %v; want one request carrying the runner's idle-since", quiescer.calls, quiescer.ifIdleSince)
 	}
 	suspended := getSandbox(t, c)
@@ -158,7 +158,7 @@ func TestARunnerIdleForIdleSuspendAfterSuspendsItsSandbox(t *testing.T) {
 }
 
 func TestIdleSuspensionIsOffUnlessTheSandboxAsksForIt(t *testing.T) {
-	r, c, now := idleRunner(t, durationPtr(idleSuspendAfter))
+	r, c, now := idleRuntime(t, durationPtr(idleSuspendAfter))
 	reconcileOnce(t, r)
 	if getSandbox(t, c).Status.IdleSuspendAt == nil {
 		t.Fatal("an enabled idle timer did not publish its deadline")
@@ -166,7 +166,7 @@ func TestIdleSuspensionIsOffUnlessTheSandboxAsksForIt(t *testing.T) {
 	setIdleSuspendAfter(t, c, nil)
 	reconcileOnce(t, r)
 	*now = now.Add(24 * time.Hour)
-	publishIdleSince(t, r, &runnerIdleSince)
+	publishIdleSince(t, r, &runtimeIdleSince)
 	reconcileOnce(t, r)
 	if calls := r.Quiescer.(*fakeQuiescer).calls; calls != 0 || getSandbox(t, c).Status.OperatingMode != sandboxapi.OperatingModeRunning {
 		t.Fatalf("an idle Sandbox with no idleSuspendAfter was asked to quiesce %d times", calls)
@@ -177,7 +177,7 @@ func TestIdleSuspensionIsOffUnlessTheSandboxAsksForIt(t *testing.T) {
 }
 
 func TestIdleSuspendAtDoesNotCauseStatusWritesAsTheCountdownAdvances(t *testing.T) {
-	r, c, now := idleRunner(t, durationPtr(idleSuspendAfter))
+	r, c, now := idleRuntime(t, durationPtr(idleSuspendAfter))
 	statusClient := &countingStatusClient{Client: r.Client}
 	r.Client = statusClient
 	*now = now.Add(123 * time.Millisecond)
@@ -194,7 +194,7 @@ func TestIdleSuspendAtDoesNotCauseStatusWritesAsTheCountdownAdvances(t *testing.
 	}
 
 	*now = now.Add(time.Minute)
-	publishIdleSince(t, r, &runnerIdleSince)
+	publishIdleSince(t, r, &runtimeIdleSince)
 	if result := reconcileResult(t, r); result.RequeueAfter != expectedIdleRecheck(idleSuspendAfter-time.Minute) {
 		t.Fatalf("countdown requeue = %v, want the next idle or connection check", result.RequeueAfter)
 	}
@@ -208,7 +208,7 @@ func TestIdleSuspendAtDoesNotCauseStatusWritesAsTheCountdownAdvances(t *testing.
 }
 
 func TestIdleSuspendDeadlineRestartsWithControllerMemoryTimer(t *testing.T) {
-	r, c, now := idleRunner(t, durationPtr(idleSuspendAfter))
+	r, c, now := idleRuntime(t, durationPtr(idleSuspendAfter))
 	*now = now.Add(123 * time.Millisecond)
 	reconcileOnce(t, r)
 	firstDeadline := getSandbox(t, c).Status.IdleSuspendAt
@@ -228,7 +228,7 @@ func TestIdleSuspendDeadlineRestartsWithControllerMemoryTimer(t *testing.T) {
 	if got != nil {
 		t.Fatalf("idleSuspendAt = %v after controller restart without a snapshot, want absent", got)
 	}
-	publishIdleSince(t, restarted, &runnerIdleSince)
+	publishIdleSince(t, restarted, &runtimeIdleSince)
 	reconcileOnce(t, restarted)
 	got = getSandbox(t, c).Status.IdleSuspendAt
 	wantRestartDeadline := metav1.NewTime(now.Add(idleSuspendAfter).Truncate(time.Second))
@@ -238,7 +238,7 @@ func TestIdleSuspendDeadlineRestartsWithControllerMemoryTimer(t *testing.T) {
 }
 
 func TestRuntimeReconnectWithSameIdleSinceRestartsTheFullIdleCountdown(t *testing.T) {
-	r, c, now := idleRunner(t, durationPtr(idleSuspendAfter))
+	r, c, now := idleRuntime(t, durationPtr(idleSuspendAfter))
 	quiescer := r.Quiescer.(*fakeQuiescer)
 	reconcileOnce(t, r)
 	firstDeadline := getSandbox(t, c).Status.IdleSuspendAt
@@ -259,20 +259,20 @@ func TestRuntimeReconnectWithSameIdleSinceRestartsTheFullIdleCountdown(t *testin
 	}
 
 	*now = now.Add(idleSuspendAfter - time.Second)
-	publishIdleSince(t, r, &runnerIdleSince)
+	publishIdleSince(t, r, &runtimeIdleSince)
 	if result := reconcileResult(t, r); quiescer.calls != 0 || result.RequeueAfter != expectedIdleRecheck(time.Second) {
 		t.Fatalf("one second before the reconnected countdown: quiesce calls = %d, requeue = %v; want 0 and one second", quiescer.calls, result.RequeueAfter)
 	}
 	*now = now.Add(time.Second)
-	publishIdleSince(t, r, &runnerIdleSince)
+	publishIdleSince(t, r, &runtimeIdleSince)
 	reconcileOnce(t, r)
-	if quiescer.calls != 1 || quiescer.ifIdleSince == nil || !quiescer.ifIdleSince.Equal(runnerIdleSince) {
+	if quiescer.calls != 1 || quiescer.ifIdleSince == nil || !quiescer.ifIdleSince.Equal(runtimeIdleSince) {
 		t.Fatalf("quiesce calls = %d, ifIdleSince = %v; want one request after the full reconnected countdown", quiescer.calls, quiescer.ifIdleSince)
 	}
 }
 
 func TestIdleSuspendAtClearsWhenConvergenceIsBlocked(t *testing.T) {
-	r, c, _ := idleRunner(t, durationPtr(idleSuspendAfter))
+	r, c, _ := idleRuntime(t, durationPtr(idleSuspendAfter))
 	reconcileOnce(t, r)
 	sandbox := getSandbox(t, c)
 	if sandbox.Status.IdleSuspendAt == nil {
@@ -289,24 +289,24 @@ func TestIdleSuspendAtClearsWhenConvergenceIsBlocked(t *testing.T) {
 }
 
 func TestSettingIdleSuspendAfterOnAnAlreadyIdleSandboxCountsFromWhenTheControllerFirstSawItIdle(t *testing.T) {
-	r, c, now := idleRunner(t, nil)
+	r, c, now := idleRuntime(t, nil)
 	reconcileOnce(t, r)
 	*now = now.Add(time.Hour)
 	setIdleSuspendAfter(t, c, durationPtr(idleSuspendAfter))
-	publishIdleSince(t, r, &runnerIdleSince)
+	publishIdleSince(t, r, &runtimeIdleSince)
 	reconcileOnce(t, r)
 	if calls := r.Quiescer.(*fakeQuiescer).calls; calls != 1 {
 		t.Fatalf("quiesce calls = %d, want 1: the runner had been idle longer than the new setting", calls)
 	}
 }
 
-func TestARunnerThatWorksAgainRestartsTheIdleTimer(t *testing.T) {
-	r, c, now := idleRunner(t, durationPtr(idleSuspendAfter))
+func TestARuntimeThatWorksAgainRestartsTheIdleTimer(t *testing.T) {
+	r, c, now := idleRuntime(t, durationPtr(idleSuspendAfter))
 	quiescer := r.Quiescer.(*fakeQuiescer)
 	reconcileOnce(t, r)
 
 	*now = now.Add(idleSuspendAfter - time.Minute)
-	publishIdleSince(t, r, &runnerIdleSince)
+	publishIdleSince(t, r, &runtimeIdleSince)
 	publishIdleSince(t, r, nil)
 	reconcileOnce(t, r)
 	if got := getSandbox(t, c).Status.IdleSuspendAt; got != nil {
@@ -333,13 +333,13 @@ func TestARunnerThatWorksAgainRestartsTheIdleTimer(t *testing.T) {
 	}
 }
 
-func TestARunnerThatRefusesToQuiesceKeepsItsSandboxRunningAndTheTimerStartsOver(t *testing.T) {
-	r, c, now := idleRunner(t, durationPtr(idleSuspendAfter))
+func TestARuntimeThatRefusesToQuiesceKeepsItsSandboxRunningAndTheTimerStartsOver(t *testing.T) {
+	r, c, now := idleRuntime(t, durationPtr(idleSuspendAfter))
 	quiescer := r.Quiescer.(*fakeQuiescer)
 	quiescer.err = status.Error(codes.Aborted, "the Sandbox is busy")
 	reconcileOnce(t, r)
 	*now = now.Add(idleSuspendAfter)
-	publishIdleSince(t, r, &runnerIdleSince)
+	publishIdleSince(t, r, &runtimeIdleSince)
 
 	result := reconcileResult(t, r)
 	if quiescer.calls != 1 || result.RequeueAfter != expectedIdleRecheck(idleSuspendAfter) {
@@ -356,20 +356,20 @@ func TestARunnerThatRefusesToQuiesceKeepsItsSandboxRunningAndTheTimerStartsOver(
 		t.Fatal("the refused request was repeated before the timer ran again")
 	}
 	*now = now.Add(idleSuspendAfter)
-	publishIdleSince(t, r, &runnerIdleSince)
+	publishIdleSince(t, r, &runtimeIdleSince)
 	reconcileOnce(t, r)
 	if quiescer.calls != 2 {
 		t.Fatalf("quiesce calls = %d, want 2 once the timer ran again", quiescer.calls)
 	}
 }
 
-func TestAnUnreachableIdleRunnerIsAskedAgainAtTheQuiesceDeadline(t *testing.T) {
-	r, c, now := idleRunner(t, durationPtr(idleSuspendAfter))
+func TestAnUnreachableIdleRuntimeIsAskedAgainAtTheQuiesceDeadline(t *testing.T) {
+	r, c, now := idleRuntime(t, durationPtr(idleSuspendAfter))
 	quiescer := r.Quiescer.(*fakeQuiescer)
 	quiescer.err = errors.New("runner unreachable")
 	reconcileOnce(t, r)
 	*now = now.Add(idleSuspendAfter)
-	publishIdleSince(t, r, &runnerIdleSince)
+	publishIdleSince(t, r, &runtimeIdleSince)
 
 	if result := reconcileResult(t, r); quiescer.calls != 1 || result.RequeueAfter != quiesceDeadline {
 		t.Fatalf("quiesce calls = %d, requeue = %v; want one failed request and a retry at the deadline", quiescer.calls, result.RequeueAfter)
@@ -385,7 +385,7 @@ func TestAnUnreachableIdleRunnerIsAskedAgainAtTheQuiesceDeadline(t *testing.T) {
 		t.Fatal("watch events bypassed the retry deadline")
 	}
 	*now = now.Add(quiesceDeadline)
-	publishIdleSince(t, r, &runnerIdleSince)
+	publishIdleSince(t, r, &runtimeIdleSince)
 	quiescer.err = nil
 	quiescer.result = QuiesceResult{Quiescing: true}
 	reconcileOnce(t, r)
@@ -400,7 +400,7 @@ func TestAnUnreachableIdleRunnerIsAskedAgainAtTheQuiesceDeadline(t *testing.T) {
 // A wake that lands while the runner enters lameduck leaves a runner that refuses every Session, so it is sealed
 // and replaced rather than recorded as an idle suspension the wake would never end.
 func TestAWakeDuringTheIdleQuiesceReplacesTheIncarnation(t *testing.T) {
-	r, c, now := idleRunner(t, durationPtr(idleSuspendAfter))
+	r, c, now := idleRuntime(t, durationPtr(idleSuspendAfter))
 	quiescer := r.Quiescer.(*fakeQuiescer)
 	quiescer.result = QuiesceResult{Quiescing: true}
 	quiescer.before = func() {
@@ -413,7 +413,7 @@ func TestAWakeDuringTheIdleQuiesceReplacesTheIncarnation(t *testing.T) {
 	}
 	reconcileOnce(t, r)
 	*now = now.Add(idleSuspendAfter)
-	publishIdleSince(t, r, &runnerIdleSince)
+	publishIdleSince(t, r, &runtimeIdleSince)
 
 	if _, err := r.Reconcile(context.Background(), request); err == nil {
 		t.Fatal("the suspension was written over a wake")
@@ -435,13 +435,13 @@ func TestAWakeDuringTheIdleQuiesceReplacesTheIncarnation(t *testing.T) {
 }
 
 func TestSuspendedBySaysWhoStoppedTheSandbox(t *testing.T) {
-	r, c, now := idleRunner(t, durationPtr(idleSuspendAfter))
+	r, c, now := idleRuntime(t, durationPtr(idleSuspendAfter))
 	if by := getSandbox(t, c).Status.SuspendedBy; by != nil {
 		t.Fatalf("a running Sandbox is suspended by %s", *by)
 	}
 	reconcileOnce(t, r)
 	*now = now.Add(idleSuspendAfter)
-	publishIdleSince(t, r, &runnerIdleSince)
+	publishIdleSince(t, r, &runtimeIdleSince)
 	reconcileOnce(t, r)
 	if by := getSandbox(t, c).Status.SuspendedBy; by == nil || *by != sandboxapi.SuspendedByIdle {
 		t.Fatalf("suspendedBy = %v, want Idle", by)

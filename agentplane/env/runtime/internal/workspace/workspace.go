@@ -14,7 +14,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// HelperMode is the private Runner CLI mode used to create a workspace directory.
+// HelperMode is the private Environment Runtime CLI mode used to create a workspace directory.
 const HelperMode = "--agentplane-runtime-workspace"
 
 // Config contains the workspace root and the optional process capability used

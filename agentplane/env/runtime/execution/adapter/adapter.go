@@ -14,7 +14,7 @@ import (
 
 const maxNativeBytes = 1 << 20
 
-// maxOpenConnections is an inherited Runner resource guard, not a Codex protocol limit.
+// maxOpenConnections is an inherited Runtime resource guard, not a Codex protocol limit.
 const maxOpenConnections = 8
 
 type Config struct {

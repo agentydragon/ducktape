@@ -37,7 +37,7 @@ func setBootstrap(t *testing.T, c client.Client, bootstrap string) {
 	}
 }
 
-func TestRunnerContainerMountsTheSandboxsLaunchFile(t *testing.T) {
+func TestRuntimeContainerMountsTheSandboxsLaunchFile(t *testing.T) {
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	setBootstrap(t, c, "echo test-bootstrap")
 	reconcileOnce(t, r)
@@ -109,7 +109,7 @@ func TestForeignLaunchConfigMapBlocksThePod(t *testing.T) {
 	}
 }
 
-func TestTemplateWithoutARunnerContainerIsRefused(t *testing.T) {
+func TestTemplateWithoutAnEnvironmentRuntimeContainerIsRefused(t *testing.T) {
 	template := testTemplate("test-image:v1")
 	template.Spec.Pod.Spec.Containers[0].Name = "not-the-runner"
 	r, c := newReconciler(t, true, template)

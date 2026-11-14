@@ -234,7 +234,7 @@ func TestCodexHandshakeAndUnsupportedServerRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The Runner initializes the shared app-server once; a Session's handshake only starts its thread.
+	// The Environment Runtime initializes the shared app-server once; a Session's handshake only starts its thread.
 	if threadID != "thread-created" || len(host.requests) != 1 {
 		t.Fatalf("unexpected Codex handshake: thread=%q requests=%d", threadID, len(host.requests))
 	}

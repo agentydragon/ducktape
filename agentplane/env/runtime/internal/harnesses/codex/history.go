@@ -109,7 +109,7 @@ func (a *codexAdapter) Reconcile(ctx context.Context, turnID string, resumed boo
 	return report, nil
 }
 
-// Read only turns selected by the runner's recovery window, plus owners of items that finish in a
+// Read only turns selected by the Runtime's recovery window, plus owners of items that finish in a
 // later turn. One snapshot serves all turns in a resume, including any compaction barrier in that
 // window. Later turns with no observed items still need a compaction check when validating earlier
 // items. The stdout reader remains free to deliver these replies.

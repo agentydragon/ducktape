@@ -47,7 +47,7 @@ const (
 	quiesceDeadline = time.Minute
 	// How long after an observation heartbeat timeout a runner still counts as connected.
 	// Lifecycle decisions require fresh state throughout this status grace.
-	runnerDisconnectGrace = time.Minute
+	runtimeDisconnectGrace = time.Minute
 )
 
 // Reconciler converges one Sandbox at a time: its state PVC, its Pod or VirtualMachine, and its
@@ -111,9 +111,9 @@ type workload struct {
 	vmi      *kubevirtv1.VirtualMachineInstance
 	launcher *corev1.Pod
 	// credential is the one the current or next incarnation runs with, once issued.
-	credential                 requester.Issued
-	runnerCredentialAccepted   bool
-	runnerIncarnationPublished bool
+	credential                  requester.Issued
+	runtimeCredentialAccepted   bool
+	runtimeIncarnationPublished bool
 }
 
 // incarnation is the Pod the runner runs in, if any.
@@ -124,7 +124,7 @@ func (w workload) incarnation() *corev1.Pod {
 	return w.launcher
 }
 
-func previouslyPublishedRunnerIncarnation(sandbox *sandboxapi.Sandbox, w workload) bool {
+func previouslyPublishedRuntimeIncarnation(sandbox *sandboxapi.Sandbox, w workload) bool {
 	incarnation := w.incarnation()
 	previous := sandbox.Status.Incarnation
 	return incarnation != nil && incarnation.UID != "" && previous != nil &&
@@ -172,7 +172,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	w, credentialGate, err := r.ensureRunnerCredential(ctx, &sandbox, w, sandboxRunning(&sandbox) && identityGate == nil)
+	w, credentialGate, err := r.ensureRuntimeCredential(ctx, &sandbox, w, sandboxRunning(&sandbox) && identityGate == nil)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -271,18 +271,18 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 	// Without an owned state PVC the Sandbox never had a runner. A retained published
 	// incarnation still needs sealing even when its Pod disappeared before deletion.
 	needsQuiesce := own && !sandboxSessionsQuiesced(sandbox)
-	var runner string
+	var runtimeUID string
 	if needsQuiesce {
 		var err error
-		if runner, err = r.unquiescedRunner(ctx, sandbox); err != nil {
+		if runtimeUID, err = r.unquiescedRuntime(ctx, sandbox); err != nil {
 			return w, nil, err
 		}
-		needsQuiesce = runner != ""
+		needsQuiesce = runtimeUID != ""
 	}
 	if needsQuiesce {
 		// Only a running runner seals, so a stopped Sandbox runs once more; the Runner Gateway
 		// refuses every new Session and command for a deleting Sandbox.
-		w, credentialGate, err := r.ensureRunnerCredential(ctx, sandbox, w, true)
+		w, credentialGate, err := r.ensureRuntimeCredential(ctx, sandbox, w, true)
 		if err != nil {
 			return w, nil, err
 		}
@@ -302,15 +302,15 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 		if err != nil || blocked != nil {
 			return w, blocked, err
 		}
-		if pod := w.incarnation(); pod != nil && string(pod.UID) != runner {
-			if !w.runnerIncarnationPublished && credentialGate != nil {
+		if pod := w.incarnation(); pod != nil && string(pod.UID) != runtimeUID {
+			if !w.runtimeIncarnationPublished && credentialGate != nil {
 				return w, credentialGate, nil
 			}
 			// Publish the accepted replacement route before issuing a call fenced to it.
 			// The Gateway must never receive an old incarnation's Quiesce for this Pod.
 			return w, &unready{reason: "Starting", message: "publishing the replacement incarnation before quiescing", retryAfter: time.Second}, nil
 		}
-		blocked, err = r.quiesce(ctx, sandbox, runner)
+		blocked, err = r.quiesce(ctx, sandbox, runtimeUID)
 		if err != nil || blocked == nil {
 			return w, blocked, err
 		}
@@ -344,17 +344,17 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 	return w, nil, r.Update(ctx, sandbox)
 }
 
-// unquiescedRunner conservatively seals a published incarnation after takeover.
+// unquiescedRuntime conservatively seals a published incarnation after takeover.
 // Losing controller memory cannot establish that a runner never admitted work.
-func (r *Reconciler) unquiescedRunner(ctx context.Context, sandbox *sandboxapi.Sandbox) (string, error) {
+func (r *Reconciler) unquiescedRuntime(ctx context.Context, sandbox *sandboxapi.Sandbox) (string, error) {
 	if sandbox.Status.Incarnation == nil {
 		return "", nil
 	}
-	runner := sandbox.Status.Incarnation.UID
-	if sandboxQuiescedIncarnation(sandbox, runner) {
+	runtimeUID := sandbox.Status.Incarnation.UID
+	if sandboxQuiescedIncarnation(sandbox, runtimeUID) {
 		return "", nil
 	}
-	return runner, nil
+	return runtimeUID, nil
 }
 
 func (r *Reconciler) trackRuntime(sandbox *sandboxapi.Sandbox, w workload) {
@@ -362,7 +362,7 @@ func (r *Reconciler) trackRuntime(sandbox *sandboxapi.Sandbox, w workload) {
 		return
 	}
 	pod := w.incarnation()
-	if !previouslyPublishedRunnerIncarnation(sandbox, w) || (isFirecrackerPod(pod) && pod.Annotations[FirecrackerRunningAnnotation] != "true") {
+	if !previouslyPublishedRuntimeIncarnation(sandbox, w) || (isFirecrackerPod(pod) && pod.Annotations[FirecrackerRunningAnnotation] != "true") {
 		pod = nil
 	}
 	credentialID := ""
@@ -382,23 +382,23 @@ func (r *Reconciler) quiesceBeforeStop(ctx context.Context, sandbox *sandboxapi.
 	if pod == nil {
 		return nil, nil
 	}
-	runner, err := r.unquiescedRunner(ctx, sandbox)
-	if err != nil || runner == "" || runner != string(pod.UID) {
+	runtimeUID, err := r.unquiescedRuntime(ctx, sandbox)
+	if err != nil || runtimeUID == "" || runtimeUID != string(pod.UID) {
 		return nil, err
 	}
 	if !sandboxQuiescing(sandbox) {
-		if held, err := r.holdSuspend(ctx, sandbox, runner); held != nil || err != nil {
+		if held, err := r.holdSuspend(ctx, sandbox, runtimeUID); held != nil || err != nil {
 			return held, err
 		}
 	}
-	return r.quiesce(ctx, sandbox, runner)
+	return r.quiesce(ctx, sandbox, runtimeUID)
 }
 
 // holdSuspend holds a suspend that has not begun quiescing while the incarnation's bootstrap or any
 // Session's setup runs, keeping delivery fenced while initialization finishes. The
 // runner's next fact enqueues the Sandbox, so no retry is set. A delete does not come here.
-func (r *Reconciler) holdSuspend(ctx context.Context, sandbox *sandboxapi.Sandbox, runner string) (*unready, error) {
-	facts := r.States.Snapshot(sandbox, runner).Facts
+func (r *Reconciler) holdSuspend(ctx context.Context, sandbox *sandboxapi.Sandbox, runtimeUID string) (*unready, error) {
+	facts := r.States.Snapshot(sandbox, runtimeUID).Facts
 	switch {
 	case facts.Bootstrap == BootstrapRunning:
 		return &unready{reason: "SuspendPending", message: "the Sandbox's bootstrap is running; the suspend waits for it"}, nil
@@ -417,21 +417,21 @@ func (r *Reconciler) holdSuspend(ctx context.Context, sandbox *sandboxapi.Sandbo
 // A runner that reports `Quiesced` on its direct state stream is recorded without another call. Other
 // stage reports enqueue the Sandbox; the persisted deadline throttles calls while a stage is absent
 // or stalled.
-func (r *Reconciler) quiesce(ctx context.Context, sandbox *sandboxapi.Sandbox, runner string) (*unready, error) {
-	snapshot := r.States.Snapshot(sandbox, runner)
+func (r *Reconciler) quiesce(ctx context.Context, sandbox *sandboxapi.Sandbox, runtimeUID string) (*unready, error) {
+	snapshot := r.States.Snapshot(sandbox, runtimeUID)
 	facts := snapshot.Facts
 	switch {
 	case snapshot.fresh(r.Now()) && facts.Stage == QuiesceQuiesced:
-		sandbox.Status.QuiescedIncarnation = &runner
+		sandbox.Status.QuiescedIncarnation = &runtimeUID
 		sandbox.Status.QuiesceAttempt = nil
 		return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: "the runner has quiesced every Session"}, nil
 	}
-	if attempt := sandbox.Status.QuiesceAttempt; attempt != nil && attempt.RunnerPodUID == runner {
+	if attempt := sandbox.Status.QuiesceAttempt; attempt != nil && attempt.RunnerPodUID == runtimeUID {
 		if remaining := attempt.AttemptedAt.Add(quiesceDeadline).Sub(r.Now()); remaining > 0 {
 			return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: "waiting to retry runner quiescence", retryAfter: remaining}, nil
 		}
 	}
-	sandbox.Status.QuiesceAttempt = &sandboxapi.QuiesceAttempt{RunnerPodUID: runner, AttemptedAt: metav1.NewTime(r.Now())}
+	sandbox.Status.QuiesceAttempt = &sandboxapi.QuiesceAttempt{RunnerPodUID: runtimeUID, AttemptedAt: metav1.NewTime(r.Now())}
 	// Publish the control-call phase with its durable attempt. A prior SuspendPending status has
 	// no stop stage, and the Gateway must be able to route this Quiesce before outer status update.
 	sandbox.Status.OperatingMode = sandboxOperatingMode(sandbox)
@@ -447,7 +447,7 @@ func (r *Reconciler) quiesce(ctx context.Context, sandbox *sandboxapi.Sandbox, r
 	if result.Quiescing {
 		return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: "the runner has not finished quiescing", retryAfter: quiesceDeadline}, nil
 	}
-	sandbox.Status.QuiescedIncarnation = &runner
+	sandbox.Status.QuiescedIncarnation = &runtimeUID
 	sandbox.Status.QuiesceAttempt = nil
 	return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: "the runner has quiesced every Session"}, nil
 }
@@ -593,7 +593,7 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 		}
 		return w, &unready{reason: "Starting", message: fmt.Sprintf("VM %s is being deleted for the Pod template", w.vm.Name)}, nil
 	}
-	if !validRunnerCredentialID(w.credential.ID) {
+	if !validRuntimeCredentialID(w.credential.ID) {
 		return w, &unready{reason: "RunnerCredentialMissing", message: "no runner credential is issued for the next Pod"}, nil
 	}
 	pod, blocked := render(sandbox, template, w.credential)
@@ -611,9 +611,9 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 		return w, nil, err
 	}
 	w.pod = pod
-	bound := runnerCredential(sandbox)
+	bound := runtimeCredentialBinding(sandbox)
 	bound.Kind, bound.PodUID = sandboxapi.RunnerCredentialKindPod, string(pod.UID)
-	if err := r.setRunnerCredential(ctx, sandbox, bound); err != nil {
+	if err := r.setRuntimeCredentialBinding(ctx, sandbox, bound); err != nil {
 		return w, nil, err
 	}
 	// Bind the record at once: the first binding after its fresh ID accepts that ID.
@@ -656,7 +656,7 @@ func render(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate, c
 	if blocked := withLaunch(sandbox, template, spec); blocked != nil {
 		return nil, blocked
 	}
-	if blocked := withRunnerTLS(template, spec, credential.SecretName); blocked != nil {
+	if blocked := withEnvironmentRuntimeTLS(template, spec, credential.SecretName); blocked != nil {
 		return nil, blocked
 	}
 	if template.Spec.Firecracker != nil {
@@ -720,7 +720,7 @@ func (r *Reconciler) updateStatus(ctx context.Context, sandbox *sandboxapi.Sandb
 	status.OperatingMode = sandboxOperatingMode(sandbox)
 	status.SuspendedBy, status.SuspendedAtWakeGeneration = sandboxSuspension(sandbox)
 	incarnation := w.incarnation()
-	if !w.runnerIncarnationPublished {
+	if !w.runtimeIncarnationPublished {
 		incarnation = nil
 	}
 	if incarnation != nil {
@@ -822,7 +822,7 @@ func runtimeConnectedCondition(sandbox *sandboxapi.Sandbox, workload metav1.Cond
 		condition.Reason, condition.Message = "NeverConnected", "the Sandbox Controller is waiting for the Runtime's first authenticated state"
 		return condition, 0
 	}
-	remaining := snapshot.LastSeen.Add(runtimeStateTimeout + runnerDisconnectGrace).Sub(now)
+	remaining := snapshot.LastSeen.Add(runtimeStateTimeout + runtimeDisconnectGrace).Sub(now)
 	if remaining > 0 {
 		condition.Status, condition.Reason, condition.Message = metav1.ConditionTrue, "Connected", "the Sandbox Controller recently observed this incarnation"
 		return condition, remaining
@@ -991,7 +991,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		setup = setup.WatchesRawSource(source.Channel(r.States.Events, &handler.EnqueueRequestForObject{}))
 	}
 	// A starting workload waits for the Policy Controller to issue its WorkloadCredential. The
-	// requester reads the record uncached, so this watch only spares the runnerCredentialRetry wait.
+	// requester reads the record uncached, so this watch only spares the runtimeCredentialRetry wait.
 	setup = setup.Owns(&workloadapi.WorkloadCredential{})
 	if r.KubeVirt {
 		setup = setup.Owns(&kubevirtv1.VirtualMachine{}).Watches(&kubevirtv1.VirtualMachineInstance{}, bySandboxLabel)

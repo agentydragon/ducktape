@@ -62,7 +62,7 @@ func (h *executionHealth) set(serving bool, err error) {
 
 const lifecycleTestTimeout = 10 * time.Second
 
-func codexHealthRunner(t *testing.T, timeout time.Duration) (*fixture, *executionHealth, string) {
+func codexHealthRuntime(t *testing.T, timeout time.Duration) (*fixture, *executionHealth, string) {
 	t.Helper()
 	marker := filepath.Join(t.TempDir(), "initialized")
 	health := &executionHealth{t: t}
@@ -79,7 +79,7 @@ func codexHealthRunner(t *testing.T, timeout time.Duration) (*fixture, *executio
 func TestCodexJoinedStartupWaitsForSeparateExecutionHealth(t *testing.T) {
 	// The dependency deadline exceeds the test timeout: readiness must wake on
 	// the Execution status event, rather than on the deadline timer.
-	r, health, marker := codexHealthRunner(t, 30*time.Second)
+	r, health, marker := codexHealthRuntime(t, 30*time.Second)
 	health.set(false, status.Error(codes.Unavailable, "starting"))
 	type result struct {
 		process *Process
@@ -123,7 +123,7 @@ func TestCodexJoinedStartupWaitsForSeparateExecutionHealth(t *testing.T) {
 }
 
 func TestCodexExecutionRefusalDrainsOverlappedAppServer(t *testing.T) {
-	r, health, marker := codexHealthRunner(t, 30*time.Second)
+	r, health, marker := codexHealthRuntime(t, 30*time.Second)
 	if _, err := requestCodexAppServer(r); err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestCodexExecutionRefusalDrainsOverlappedAppServer(t *testing.T) {
 }
 
 func TestCodexExecutorReadinessDeadlineConsumesJoinedDemand(t *testing.T) {
-	r, _, _ := codexHealthRunner(t, 2*time.Second)
+	r, _, _ := codexHealthRuntime(t, 2*time.Second)
 	if _, err := requestCodexAppServer(r); err != nil {
 		t.Fatal(err)
 	}

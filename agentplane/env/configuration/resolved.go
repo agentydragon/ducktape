@@ -47,7 +47,7 @@ type SVIDEndpoint struct {
 	ProxyAddress string `json:"proxy_address"`
 }
 
-// EnvironmentRuntimeControlConfiguration exposes the Runner as a Gateway-dialed gRPC server.
+// EnvironmentRuntimeControlConfiguration exposes the Environment Runtime as a Gateway-dialed gRPC server.
 type EnvironmentRuntimeControlConfiguration struct {
 	ListenAddress string                               `json:"listen_address"`
 	Security      environmentruntimetransport.Security `json:"security"`

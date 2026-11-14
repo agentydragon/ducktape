@@ -212,7 +212,7 @@ func TestCloseObservesBootstrapCompletionDuringStatusRead(t *testing.T) {
 	resources := &bootstrapStatusReadInterleavingState{
 		State: state.WrapCore(namespaced.NewState(inmem.Build)), entered: make(chan struct{}), release: make(chan struct{}),
 	}
-	r := newLifecycleRunnerWithState(t, config, resources)
+	r := newLifecycleRuntimeWithState(t, config, resources)
 	t.Cleanup(func() {
 		select {
 		case <-resources.release:
@@ -279,7 +279,7 @@ func TestCloseBootstrapStatusReadFailureRetainsOwner(t *testing.T) {
 	config.expectCloseError = true
 	failure := errors.New("injected bootstrap status read failure")
 	resources := &bootstrapStatusReadFailureState{State: state.WrapCore(namespaced.NewState(inmem.Build)), err: failure}
-	r := newLifecycleRunnerWithState(t, config, resources)
+	r := newLifecycleRuntimeWithState(t, config, resources)
 	t.Cleanup(func() { _ = os.WriteFile(release, nil, 0o600) })
 	waitForFile(t, started)
 	resources.fail.Store(true)
@@ -358,7 +358,7 @@ func TestBootstrapEventStorageFailureDoesNotLeaveBusyFact(t *testing.T) {
 	t.Cleanup(func() { _ = closer.Close() })
 	config.testBacking = closer
 	eventState := &bootstrapEventWriteFailureState{State: resources, err: storageErr}
-	r := newLifecycleRunnerWithState(t, config, eventState)
+	r := newLifecycleRuntimeWithState(t, config, eventState)
 	t.Cleanup(func() { _ = os.WriteFile(release, nil, 0o600) })
 	waitForFile(t, started)
 

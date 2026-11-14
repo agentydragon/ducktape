@@ -237,10 +237,10 @@ func TestVMTemplateGetsARunningVMWithStateOverVirtiofs(t *testing.T) {
 	if len(filesystems) != 4 || !filesystemNames[contract.State.VolumeName] || !filesystemNames[contract.EnvironmentRuntimeTLS.VolumeName] || !filesystemNames[contract.EnvironmentRuntimeTrust.VolumeName] || !filesystemNames[contract.EnvironmentRuntimeWorkloadTrust.VolumeName] {
 		t.Errorf("VM filesystems = %v, want state and runner TLS/trust/workload trust volumes over virtiofs", filesystems)
 	}
-	if trust := volume(vm, contract.EnvironmentRuntimeTrust.VolumeName); trust == nil || trust.ConfigMap == nil || trust.ConfigMap.Name != RunnerTrustBundleName {
+	if trust := volume(vm, contract.EnvironmentRuntimeTrust.VolumeName); trust == nil || trust.ConfigMap == nil || trust.ConfigMap.Name != EnvironmentRuntimeTrustBundleName {
 		t.Errorf("VM trust volume = %v, want the cluster bundle", trust)
 	}
-	if trust := volume(vm, contract.EnvironmentRuntimeWorkloadTrust.VolumeName); trust == nil || trust.ConfigMap == nil || trust.ConfigMap.Name != RunnerWorkloadTrustBundleName {
+	if trust := volume(vm, contract.EnvironmentRuntimeWorkloadTrust.VolumeName); trust == nil || trust.ConfigMap == nil || trust.ConfigMap.Name != EnvironmentRuntimeWorkloadTrustBundleName {
 		t.Errorf("VM workload trust volume = %v, want the workload CA bundle", trust)
 	}
 	if LaunchDiskSerial != contract.Disks.Launch.Serial || LaunchMountPath != contract.Disks.Launch.Mount || LaunchFile != contract.Files.Launch {
@@ -277,7 +277,7 @@ func TestRenderVMRejectsVirtiofsTagsOverQEMULimit(t *testing.T) {
 	template.Spec.StateVolume.Name = strings.Repeat("s", maxVirtiofsTagBytes-1) + "é"
 	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: sandboxName}}
 
-	vm, blocked := renderVM(sandbox, template, requester.Issued{ID: "0123456789abcdef0123456789abcdef", SecretName: runnerCredentialTestSecret})
+	vm, blocked := renderVM(sandbox, template, requester.Issued{ID: "0123456789abcdef0123456789abcdef", SecretName: runtimeCredentialTestSecret})
 	if vm != nil {
 		t.Fatal("rendered a VM with an overlength virtiofs tag")
 	}

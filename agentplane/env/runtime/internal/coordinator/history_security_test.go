@@ -60,8 +60,8 @@ func TestHistoryIngressUsesRuntimeOwnedWorkloadAPISource(t *testing.T) {
 		}
 	})
 	// History construction must reuse the source that Runtime opened for control TLS.
-	runner := &Runtime{security: opened, config: Config{Control: configuration.EnvironmentRuntimeControlConfiguration{Security: config}}}
-	supervisor, err := runner.ingressSupervisor(configuration.Endpoint{
+	runtime := &Runtime{security: opened, config: Config{Control: configuration.EnvironmentRuntimeControlConfiguration{Security: config}}}
+	supervisor, err := runtime.ingressSupervisor(configuration.Endpoint{
 		Target: "history.test:8443",
 		SVID:   &configuration.SVIDEndpoint{ServerURI: environmentruntimetransport.HistoryIngressURI, ProxyAddress: "127.0.0.1:18080"},
 	}, func(error) {})

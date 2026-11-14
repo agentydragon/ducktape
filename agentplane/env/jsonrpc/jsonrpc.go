@@ -63,7 +63,7 @@ func (h Header) IsRequest() bool { return h.HasID() && h.Method != "" }
 // IsResponse reports whether the frame answers a request.
 func (h Header) IsResponse() bool { return h.HasID() && h.Method == "" }
 
-// StringID returns the ID when it is a JSON string; every request this runner sends has one.
+// StringID returns the ID when it is a JSON string; every request this Runtime sends has one.
 func (h Header) StringID() (string, bool) {
 	var id string
 	return id, json.Unmarshal(h.ID, &id) == nil

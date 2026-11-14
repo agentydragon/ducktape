@@ -133,7 +133,7 @@ func (s *Session) Status() (*sessionpb.SessionStatus, *sessionpb.HarnessProcessS
 }
 
 // blockerNotification remembers only which autosuspend predicates have already
-// signaled Runner's observers. Status and admission always read the authorities.
+// signaled the Runtime's observers. Status and admission always read the authorities.
 type blockerNotification struct {
 	active  bool
 	pending bool

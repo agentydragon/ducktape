@@ -84,7 +84,7 @@ func New(config Config, backend environmentruntimepb.EnvironmentRuntimeServer) *
 }
 
 // Listen opens the configured authenticated control listener and registers the
-// Runner, executor stream, and standard gRPC health services.
+// Environment Runtime, executor stream, and standard gRPC health services.
 func (s *Server) Listen(executor executorpb.ExecutorServer) (net.Listener, *grpc.Server, error) {
 	transportCredentials, err := s.config.Security.ServerCredentials(environmentruntimetransport.GatewayURI, environmentruntimetransport.RuntimeProxyURI, environmentruntimetransport.SandboxControllerURI)
 	if err != nil {

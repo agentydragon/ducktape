@@ -127,14 +127,14 @@ func TestRuntimeCloseWaitsForRunningPreparationAndExecutionFence(t *testing.T) {
 		}
 		return newControllerExecutionHandle(nil), nil
 	}
-	r := newLifecycleRunnerWithState(t, config, store)
+	r := newLifecycleRuntimeWithState(t, config, store)
 	var releaseDemand, releaseFence sync.Once
 	t.Cleanup(func() {
 		releaseDemand.Do(func() { close(store.release) })
 		releaseFence.Do(func() { close(successor.release) })
 	})
 	client := startDirectExecutionTestClient(t, r, "test-incarnation")
-	if _, err := client.runner.CreateSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := client.runtime.CreateSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
 	store.armed.Store(true)
@@ -212,9 +212,9 @@ func TestEngineWatchFailureWakesBlockedAdoptionBeforeWorkerJoin(t *testing.T) {
 	config.deps.startExecution = func(context.Context, Config, string) (executionHandle, error) {
 		return newControllerExecutionHandle(nil), nil
 	}
-	r := newLifecycleRunnerWithState(t, config, store)
+	r := newLifecycleRuntimeWithState(t, config, store)
 	client := startDirectExecutionTestClient(t, r, "test-incarnation")
-	if _, err := client.runner.CreateSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := client.runtime.CreateSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
 	var release sync.Once
@@ -272,9 +272,9 @@ func TestCloseControllerFailureStopsBlockedOperationWithoutRuntimeRun(t *testing
 	config.deps.startExecution = func(context.Context, Config, string) (executionHandle, error) {
 		return newControllerExecutionHandle(nil), nil
 	}
-	r := newLifecycleRunnerWithState(t, config, store)
+	r := newLifecycleRuntimeWithState(t, config, store)
 	client := startDirectExecutionTestClient(t, r, "test-incarnation")
-	if _, err := client.runner.CreateSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := client.runtime.CreateSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
 	var release sync.Once
