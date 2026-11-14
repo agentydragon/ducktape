@@ -614,9 +614,9 @@ above; this operator path remains for a blocked Session. See [blocked Session re
 The sampler uses one generated typed `Executor` client for direct local-test and Gateway targets.
 The `Executor` service contract terminates at the Sandbox's Runner, which reaches only its configured
 loopback adapter; Gateway proxies the same service after authorizing the sampler and checking the
-Sandbox UID and incarnation. The configured Gateway target selects the per-Sandbox control Service
-and thus the Gateway replica holding that Runner's observation Lease. No caller-chosen executor URL
-crosses the API. The Runner's adapter holds its local WebSocket on the server-streaming
+Sandbox UID and incarnation. The configured Gateway target is the stable `runner-gateway` Service;
+each replica routes to its local Runner connection using the Sandbox UID and incarnation. No
+caller-chosen executor URL crosses the API. The Runner's adapter holds its local WebSocket on the server-streaming
 `OpenSession` connection. An active stream blocks executor Sandbox autosuspend until it closes.
 Dispatcher does not relay tools.
 

@@ -8,17 +8,28 @@ Former logical `OpenSession`/opening APIs have no compatibility path. The distin
 `Executor.OpenSession` remains an execution-connection handshake. References to the old logical
 name below preserve this ADR's historical decisions and examples.
 
+**Gateway routing supersession:** the current contract is in [runner control](runner_control.md) and
+the [Runner Gateway README](../runner_gateway/README.md). The leader-elected Controller binds the
+Sandbox UID and accepted workload Pod UID through direct `WatchState(observe_only=true)` and keeps
+lifecycle facts in memory. Callers use the stable `runner-gateway` Service; each Gateway replica
+opens an independent zero-epoch watch, dials the Runtime at its Pod IP, and can call using Sandbox
+UID, workload Pod UID and Runtime boot ID. Per-Sandbox control-Service and EndpointSlice creation
+and Gateway connection-Lease publication are removed; old route objects may remain inert while
+operational rollout holds are open. Dispatcher delivery Leases are unchanged. The Runtime receiver
+still tolerates legacy nonzero epochs during the rollback window, with cleanup gated on pinning. D1
+and the Lease-dependent routing and signaling details below preserve the superseded design as history.
+
 Scope: the responsibilities split across the services and custom resources that run a Sandbox (Pod
-or VM) and deliver work to the Sessions in it. This covers the control Service, readiness and
-runner health, quiesce, suspension, the Session message queue, and where each fact lives. It does
+or VM) and deliver work to the Sessions in it. This covers runner routing, readiness and runner
+health, quiesce, suspension, the Session message queue, and where each fact lives. It does
 not redesign storage, the History Service, or policy.
 
 ## What has to happen
 
 1. **Run a Sandbox.** Reconcile the `Sandbox` CR into a state volume and, while running, one Pod
    or VM. Kind (`pod` or `vm`) comes from the template.
-2. **Reach its runner.** Callers address `<sandbox>-control`; the replica holding the runner's
-   observation Lease answers.
+2. **Reach its runner.** Callers use the stable `runner-gateway` Service; any replica with a fresh
+   observation of the current Runtime can answer.
 3. **Say what state it is in.** Created, starting, booting, connected, ready, quiescing,
    suspended, tearing down, and why it is stuck when it is.
 4. **Quiesce** (today's "seal"; one operation, names in D3). Before a Pod or VM goes away (suspend or delete), stop admitting work,
@@ -35,11 +46,14 @@ not redesign storage, the History Service, or policy.
 ## Current state
 
 - **Sandbox Controller** (Go, `sandbox_controller/`): state PVC, Pod or VM, ServiceAccount, `PolicyBinding`, launch
-  ConfigMap, finalizer, and the `{sandbox}-control` Service. It drives quiesce: it calls `Runner.Quiesce` through the
-  gateway's runner proxy and records `status.quiescedIncarnation` on any quiesce and sets `Quiesced` on a deleting Sandbox only (`finalize`), beside the older sealed names. It
-  observes Runtime facts directly. `Ready` includes `WorkloadReady`, `EnvironmentRuntimeConnected` and `Bootstrapped`. `QuiesceResponse.stage` has
+  ConfigMap and finalizer. It directly observes each accepted Runtime with `WatchState(observe_only=true)`;
+  its lifecycle facts are in memory, fenced by Sandbox UID, accepted workload Pod UID, boot ID and
+  local stream generation. It drives quiesce: it calls `Runner.Quiesce` through the
+  gateway's runner proxy, records `status.quiescedIncarnation` on quiesce, and sets `Quiesced` on a
+  deleting Sandbox only (`finalize`), alongside the older sealed names. `Ready` includes
+  `WorkloadReady`, `EnvironmentRuntimeConnected` and `Bootstrapped`. `QuiesceResponse.stage` has
   one reader, the controller.
-- **Runner Gateway** (`runner_gateway/`): state observation and proxy of the runner's private `Runner` service. It writes per-Sandbox Leases and EndpointSlices; it does not create the `<sandbox>-control` Service (its `services` RBAC rule stays until the controller's image is pinned). logical Session records and durable commands belong to the Dispatcher; the Gateway owns no Session registry or database.
+- **Runner Gateway** (`runner_gateway/`): each replica independently observes and proxies the runner's private `Runner` service. The stable `runner-gateway` Service routes callers to any replica; there is no per-Sandbox control Service, Gateway connection Lease or EndpointSlice publication. Logical Session records and durable commands belong to the Dispatcher; the Gateway owns no Session registry or database.
 - **Integration app** (`app/`): submits Sandbox desired state and operator-owned grants through the
   Kubernetes API, reads Sandbox views, and attaches the output-only VM console. It acts as the
   requesting operator; the Sandbox Controller owns status and reconciled resources.
@@ -52,7 +66,7 @@ not redesign storage, the History Service, or policy.
 The current sender path is queued: the app and Notification Service submit per-operation commands to
 Session Dispatcher, which durably records them and delivers after Sandbox readiness. The app requests
 Sandbox lifecycle changes through Kubernetes; the runner restores retained native state as it starts.
-Live Runner reads use the UID/owner-fenced proxy through the per-Sandbox control Service. See the
+Live Runner reads use the UID/owner-fenced proxy through the stable `runner-gateway` Service. See the
 [service-boundary contract](service_boundaries.md) and [Runner Gateway README](../runner_gateway/README.md)
 for current callers and authorization gates.
 
@@ -80,28 +94,26 @@ flowchart LR
     K --> KDB[(Dispatcher database)]
     K -- writes spec.running, wakeGeneration on send --> CR
     K -- watches Ready and incarnation --> CR
-    K -- Runner calls through proxy --> GW[Runner Gateway]
+    K -- Runner proxy calls via stable Service --> GW[Runner Gateway]
     K -. placement when caller omits Sandbox .-> HS[History Service]
     App[App] -- creates, deletes, suspends, resumes --> CR[(Sandbox CR)]
     SC[Sandbox Controller] -- reconciles --> CR
     SC -- Quiesce through proxy --> GW
-    GW -- Lease, EndpointSlice --> L[(Leases)]
-    SC -- reads connectivity --> L
-    Runner -- control stream --> GW
+    SC -- direct observe_only WatchState --> Runner[Runtime]
+    GW -- independent zero-epoch WatchState and fenced calls --> Runner
     Runner -- journal push --> HS
-    Runner -- RunnerHeartbeat with facts --> GW
-    SC -- idle timer from idleSince --> L
+    Runner -- complete state snapshots --> SC
 ```
 
-| Component          | Owns                                                                                                                                                          | Does not own                                                                                                                           |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Sandbox CR         | Desired state (`spec.running`, template), current facts (`status`: incarnation, `quiescedIncarnation`, conditions)                                            | Anything per Session                                                                                                                   |
-| Sandbox Controller | Pod or VM, state volume, identity, the `<sandbox>-control` Service, quiesce sequencing, idle suspension, deletion, folding every layer's fact into conditions | Runner connection, Session records, queues                                                                                             |
-| Runner Gateway     | The runner connection and its authentication, the Lease and EndpointSlice, the proxy of `Runner`, per-method authorization                                    | Any Kubernetes object besides those two, Sessions, queues                                                                              |
-| Runner             | Harnesses, journal, admission, quiesce mechanics, idle state                                                                                                  | Policy about when to suspend                                                                                                           |
-| History Service    | Event log, fold, Session directory including the writing Sandbox                                                                                              | Routing, waking, suspending                                                                                                            |
-| Session Dispatcher | The durable queue of messages and Session creations, wake-on-send, send-side authorization (who may wake), delivery states                                    | Creating or deleting Sandboxes (it reads them and patches only `spec.running` and `spec.wakeGeneration` to wake), idle policy, history |
-| App                | Sandbox create, delete, suspend and resume and PolicyBinding (egress-grant) writes, through the Kubernetes API, with their checks; the VM console             | Conditions, quiesce, idle policy, delivery                                                                                             |
+| Component          | Owns                                                                                                                                                 | Does not own                                                                                                                           |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Sandbox CR         | Desired state (`spec.running`, template), current facts (`status`: incarnation, `quiescedIncarnation`, conditions)                                   | Anything per Session                                                                                                                   |
+| Sandbox Controller | Pod or VM, state volume, identity, direct Runtime observation, quiesce sequencing, idle suspension, deletion, folding observed facts into conditions | Gateway connection, Session records, queues                                                                                            |
+| Runner Gateway     | Independent Runtime observations and fenced `Runner` proxy calls, per-method authorization                                                           | Per-Sandbox Services, Leases and EndpointSlices, Sessions, queues                                                                      |
+| Runner             | Harnesses, journal, admission, quiesce mechanics, idle state                                                                                         | Policy about when to suspend                                                                                                           |
+| History Service    | Event log, fold, Session directory including the writing Sandbox                                                                                     | Routing, waking, suspending                                                                                                            |
+| Session Dispatcher | The durable queue of messages and Session creations, wake-on-send, send-side authorization (who may wake), delivery states                           | Creating or deleting Sandboxes (it reads them and patches only `spec.running` and `spec.wakeGeneration` to wake), idle policy, history |
+| App                | Sandbox create, delete, suspend and resume and PolicyBinding (egress-grant) writes, through the Kubernetes API, with their checks; the VM console    | Conditions, quiesce, idle policy, delivery                                                                                             |
 
 "Session Dispatcher" names the queue service; it is not a controller. Idle is a Sandbox-level fact (every Session in
 the Sandbox idle), which is why its policy sits on the Sandbox. There is no Sandbox Service: requesters write `spec` through one
@@ -129,7 +141,7 @@ Facts have different truth sources, so each gets its own condition and `Ready` i
 | ----------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | `Running`                     | controller (Pod or VMI)                                       | an incarnation exists and runs                                                                                                          |
 | `WorkloadReady`               | controller (Pod Ready)                                        | the incarnation's Pod is Ready                                                                                                          |
-| `EnvironmentRuntimeConnected` | gateway (connection Lease)                                    | a runner of this incarnation holds a live connection                                                                                    |
+| `EnvironmentRuntimeConnected` | Controller (direct observe-only `WatchState`)                 | a fresh snapshot is observed from the Runtime of this incarnation                                                                       |
 | `Bootstrapped`                | runner (bootstrap result, republished at each connect)        | the Sandbox's bootstrap ran to success; Sandbox-lifetime; False with reason `BootstrapFailed` if it failed or was interrupted           |
 | `Ready`                       | controller                                                    | all of the above for the current incarnation; reason `BootstrapFailed` if bootstrap failed, `SuspendPending` while a suspend waits (D3) |
 | `Quiesced`                    | controller, from the runner's directly observed quiesce stage | False with reason `Draining`, then `Flushing`; True once every final cursor is acknowledged                                             |
@@ -150,9 +162,9 @@ one actor: the controller writes them all; every other layer publishes a fact th
 changes and periodically. Facts stay in memory, fenced by Sandbox UID, Pod UID, boot ID and local
 stream generation. Leadership takeover and reconnect start fresh observation and idle timers.
 Stale facts cannot establish connectivity, idleness or quiescence; persisted quiesce attempts and
-terminal bootstrap failures survive leader changes. See [runner control](runner_control.md).
-The Gateway retains its connection Lease for proxy ownership until the separate protocol removal;
-it publishes no lifecycle facts there.
+terminal bootstrap failures survive leader changes. See [runner control](runner_control.md). Each
+Gateway replica observes independently and dials the current Runtime directly; it does not use or
+publish a connection Lease.
 
 ## D3. Quiescing is one operation; names say which stage a Sandbox is in
 
@@ -431,7 +443,7 @@ admission. The controller calls `Quiesce`; reads remain separately authorized.
 | Fact                                                                                                                                                      | Home                                           |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
 | Desired running, template, incarnations, conditions, `quiescedIncarnation`, the controller's last `quiesceAttempt`, the rendered spec of each incarnation | Sandbox CR (Kubernetes)                        |
-| Runner connected, boot state, `idleSince`, quiesce stage                                                                                                  | Lease annotations (Kubernetes, Sandbox-level)  |
+| Runner connected, boot state, `idleSince`, quiesce stage                                                                                                  | Controller memory from direct `WatchState`     |
 | Session events, directory, writing Sandbox, summaries                                                                                                     | History Service database                       |
 | Queued messages, their delivery state, queued Session creations                                                                                           | Dispatcher database                            |
 | Session journal and cursors                                                                                                                               | Runner volume, mirrored by the ingress         |

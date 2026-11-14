@@ -62,8 +62,8 @@ type config struct {
 // runnerGateway is how the service reaches a Sandbox's runner through the Runner Gateway's proxy.
 type runnerGateway struct {
 	TLS *peertls.ClientTLS `mapstructure:"tls"`
-	// ControlTarget is each Sandbox's control Service, a template of `{sandbox}` and `{namespace}` such as
-	// `{sandbox}-control.{namespace}.svc:8080`.
+	// ControlTarget is the stable Runner Gateway Service, a template of `{namespace}` such as
+	// `runner-gateway.{namespace}.svc:8080`.
 	ControlTarget         string  `mapstructure:"control_target"`
 	TokenFile             string  `mapstructure:"token_file"`
 	RequestTimeoutSeconds float64 `mapstructure:"request_timeout_s"`

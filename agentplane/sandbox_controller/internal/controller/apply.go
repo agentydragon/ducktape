@@ -38,12 +38,6 @@ func (r *Reconciler) applyOwned(ctx context.Context, sandbox *sandboxapi.Sandbox
 		return nil, err
 	}
 	owned := metav1.IsControlledBy(current, sandbox)
-	// A control Service created by the Gateway has a non-controller Sandbox reference.
-	if current.GetKind() == "Service" && metav1.GetControllerOf(current) == nil {
-		for _, owner := range current.GetOwnerReferences() {
-			owned = owned || (owner.APIVersion == sandboxapi.GroupVersion.String() && owner.Kind == "Sandbox" && owner.Name == sandbox.Name && owner.UID == sandbox.UID)
-		}
-	}
 	if !owned || !current.GetDeletionTimestamp().IsZero() {
 		return &unready{reason: conflictReason, message: fmt.Sprintf("%s %s is foreign or being deleted", current.GetKind(), current.GetName())}, nil
 	}

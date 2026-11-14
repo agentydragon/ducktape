@@ -7,7 +7,7 @@ shared TLS listener. The credential-holding Sandbox relay reaches that same list
 central-proxy CONNECT and presents its Runner SVID. Dispatcher and EnvironmentService methods
 retain their own caller rules, Dispatcher bearer audience and delegation policy. The worker delivers
 through the Runner proxy once
-the exact Sandbox is ready, with per-Sandbox Lease and PostgreSQL generation fencing.
+the exact Sandbox is ready, with a per-Sandbox delivery Lease and PostgreSQL generation fencing.
 
 The manual queue, replica and wake probes are documented in the
 [system tests](../../system_tests/README.md#dispatcher-queue-and-replicas).
@@ -115,8 +115,9 @@ The manual queue, replica and wake probes are documented in the
 - **Replica ownership**: a per-Sandbox Lease assigns delivery scheduling ownership while the Sandbox
   has a `QUEUED_IN_DISPATCHER` or `DELIVERING_TO_RUNNER` Dispatch or Session creation. Its PostgreSQL
   generation fences stale claims, settlements and recovery. A Sandbox without such work is no longer
-  renewed and its Lease lapses; the next work reacquires it. The Runner Gateway's separate connection
-  Lease still owns the runner stream; Dispatcher scheduling does not affect it. A new owner requeues
+  renewed and its Lease lapses; the next work reacquires it. Gateway replicas independently observe
+  the Controller-bound Runtime and can serve calls through the stable `runner-gateway` Service;
+  Gateway routing does not use or publish a connection Lease. A new Dispatcher owner requeues
   only that Sandbox's in-flight work, preserving at-least-once redelivery with the same command IDs.
 - **Runner statuses**: `ABORTED` (quiescing) returns the command to the queue until the Sandbox has a new
   incarnation; `UNAVAILABLE` and deadline retry with backoff;

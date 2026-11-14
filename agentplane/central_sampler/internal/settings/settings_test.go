@@ -658,10 +658,10 @@ func TestGatewayTemplateCannotInjectAddress(t *testing.T) {
 	s := fixtureSettings()
 	s.DirectExecutorTarget = ""
 	s.DirectExecutorInsecureLocaltest = false
-	s.GatewayTarget = "{sandbox}-control.{namespace}.svc.cluster.local:8080"
+	s.GatewayTarget = "runner-gateway.{namespace}.svc.cluster.local:8080"
 	s.GatewayTokenFile = "/fixture/token"
 	address, err := s.GatewayAddress("test", "executor")
-	if err != nil || address != "executor-control.test.svc.cluster.local:8080" {
+	if err != nil || address != "runner-gateway.test.svc.cluster.local:8080" {
 		t.Fatalf("address=%q err=%v", address, err)
 	}
 	for _, name := range []string{"bad.example", "UPPER", "", strings.Repeat("a", 64), "../other", "elsewhere:1234/"} {

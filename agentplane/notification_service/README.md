@@ -157,8 +157,8 @@ Configuration changes require a service restart.
 The URL must be an HTTP(S) origin; Go derives the gRPC host and port from it, using h2c for `http`
 and TLS for `https`. A peer `tls` block verifies its configured server SPIFFE URI and CA
 without presenting a client certificate. This block applies independently of the legacy Actions URL scheme.
-`runner_gateway` uses `control_target` and `token_file` for per-Sandbox
-runner live-state checks.
+`runner_gateway` uses `control_target` and `token_file` for runner proxy calls through the stable
+Runner Gateway Service.
 `history_service` and `session_dispatcher` each contain a `target` and `token_file`
 (`request_timeout_s` is optional for both). The Dispatcher setting is required. Each service checks
 its own token audience, so each token file holds a token projected for that service. Token paths refer

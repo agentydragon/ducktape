@@ -161,7 +161,7 @@ func TestManagerCacheSyncNeedsOnlyGrantedSandboxWatchKinds(t *testing.T) {
 	if _, err := kube.Clientset.RbacV1().Roles(ns).Create(ctx, &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "sandbox-controller"},
 		Rules: []rbacv1.PolicyRule{
-			{APIGroups: []string{""}, Resources: []string{"pods", "persistentvolumeclaims", "configmaps", "services", "events"}, Verbs: []string{"get", "list", "watch"}},
+			{APIGroups: []string{""}, Resources: []string{"pods", "persistentvolumeclaims", "configmaps", "events"}, Verbs: []string{"get", "list", "watch"}},
 			{APIGroups: []string{sandboxapi.GroupVersion.Group}, Resources: []string{"sandboxes", "sandboxtemplates"}, Verbs: []string{"get", "list", "watch"}},
 			{APIGroups: []string{policyapi.SchemeGroupVersion.Group}, Resources: []string{"identities", "workloadcredentials"}, Verbs: []string{"get", "list", "watch"}},
 		},
@@ -226,10 +226,7 @@ func TestManagerCacheSyncNeedsOnlyGrantedSandboxWatchKinds(t *testing.T) {
 // Exercise a real API server without KubeVirt and real SSA field ownership and manager watches.
 func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	ctrl.SetLogger(logr.FromSlogHandler(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
-	// Kubernetes defaults selector-less headless Services to dual-stack. Configure both
-	// families so their defaulted fields also pass validation on later drift updates.
 	kube, err := kubeapiserver.Start(
-		kubeapiserver.WithAPIServerFlag("service-cluster-ip-range", "10.0.0.0/24,fd00::/108"),
 		withRunnerCertificateCRD(t),
 	)
 	if err != nil {
@@ -401,23 +398,11 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	eventually(t, func() bool {
 		return objects.Get(ctx, launchKey, &launch) == nil && launch.UID != deletedUID && launch.Data[LaunchFile] == wantLaunch
 	})
-	var service corev1.Service
-	serviceKey := types.NamespacedName{Namespace: ns, Name: key.Name + sandboxapi.ControlServiceSuffix}
-	if err := objects.Get(ctx, serviceKey, &service); err != nil {
-		t.Fatal(err)
-	}
-	if err := objects.Patch(ctx, &service, client.RawPatch(types.MergePatchType, []byte(`{"spec":{"selector":{"wrong":"pod"},"ports":[{"port":8080,"targetPort":1234,"protocol":"TCP","name":"wrong"}]}}`))); err != nil {
-		t.Fatal(err)
-	}
-	eventually(t, func() bool {
-		return objects.Get(ctx, serviceKey, &service) == nil && len(service.Spec.Selector) == 0 && len(service.Spec.Ports) == 1 && service.Spec.Ports[0].Name == sandboxapi.ControlServicePortName && service.Spec.Ports[0].TargetPort.IntVal == sandboxapi.ControlServicePort
-	})
 	for _, test := range []struct {
 		name, reason string
 		foreign      client.Object
 	}{
 		{"foreign-launch", "ConfigMapConflict", &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "foreign-launch-launch", Namespace: ns}}},
-		{"foreign-service", "ServiceConflict", &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "foreign-service-control", Namespace: ns}, Spec: corev1.ServiceSpec{ClusterIP: corev1.ClusterIPNone}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if err := objects.Create(ctx, test.foreign); err != nil {

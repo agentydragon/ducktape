@@ -55,9 +55,8 @@ class RunnerGatewaySettings(BaseModel):
     tls: ClientTLS | None = None
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     control_target: str = Field(
-        description="Each Sandbox's control Service, a template of `{sandbox}` and `{namespace}` such as "
-        "`{sandbox}-control.{namespace}.svc:8080`. Lifecycle calls go there, to the replica holding the "
-        "runner connection."
+        description="Stable Runner Gateway Service target, typically `runner-gateway.{namespace}.svc:8080`; "
+        "the Gateway routes each lifecycle call using the Sandbox identity."
     )
     request_timeout_s: PositiveSeconds = 5
     token_file: Path = Field(

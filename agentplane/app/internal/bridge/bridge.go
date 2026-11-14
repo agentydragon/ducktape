@@ -1,5 +1,5 @@
 // Package bridge adapts the app's named Sandbox and thread contracts to the
-// Session Dispatcher and the per-Sandbox Runner Gateway.
+// Session Dispatcher and the Runner Gateway's Sandbox proxy.
 package bridge
 
 import (
@@ -186,7 +186,7 @@ func ParseSessionSpec(defaults *sessionpb.SessionSpec, fields map[string]any) (*
 	return merged, nil
 }
 
-// RunnerConfig configures per-call control Service connections.
+// RunnerConfig configures per-call connections to the Runner Gateway's Sandbox proxy.
 type RunnerConfig struct {
 	TLS            *peertls.ClientTLS
 	Namespace      string

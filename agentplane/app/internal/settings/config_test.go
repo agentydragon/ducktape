@@ -46,7 +46,7 @@ action_federation:
   scope: actions:operator
 sandbox_namespace: sandboxes
 runner_gateway_target: runner-gateway:9090
-runner_gateway_control_target: '{sandbox}-control.{namespace}.svc:8080'
+runner_gateway_control_target: 'runner-gateway.{namespace}.svc:8080'
 session_dispatcher_target: session-dispatcher:9090
 history_service_target: history:9090
 notifications_url: http://notifications:9090
@@ -81,7 +81,7 @@ func validTestConfig() Config {
 		SandboxNamespace:                    "sandboxes",
 		RunnerGatewayTarget:                 "runner-gateway:9090",
 		SessionDispatcherTarget:             "session-dispatcher:9090",
-		RunnerGatewayControlTarget:          "{sandbox}-control.{namespace}.svc:8080",
+		RunnerGatewayControlTarget:          "runner-gateway.{namespace}.svc:8080",
 		HistoryServiceTarget:                "history:9090",
 		PolicyServiceTarget:                 "policy-controller:8082",
 		PolicyServiceTokenFile:              "/var/run/policy/token",

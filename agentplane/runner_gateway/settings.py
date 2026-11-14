@@ -71,15 +71,18 @@ class Settings(BaseModel):
 
     rpc: Listener = Field(description="The shared TLS gRPC listener and its explicitly enabled auth modes.")
     gateway_tls: ClientTLS = Field(
-        description="Verify the Session Dispatcher SVID on this Gateway's named control-Service calls."
+        description="Verify the Session Dispatcher SVID on this Gateway's stable-Service calls."
     )
     proxy_port: int = Field(
-        default=8080, ge=1, le=65535, description="Port advertised in each Sandbox control EndpointSlice."
+        default=8080,
+        ge=1,
+        le=65535,
+        description="Legacy control EndpointSlice port, retained until the route-removal image is pinned.",
     )
     runner_control_target_template: str = Field(
-        default="{sandbox}-control.{namespace}.svc:8080",
+        default="runner-gateway.{namespace}.svc:8080",
         min_length=1,
-        description="Target or target template the Dispatcher uses for each Sandbox runner proxy.",
+        description="Stable Runner Gateway Service target or template used for each Sandbox runner proxy.",
     )
     dispatcher_audience: str = Field(min_length=1, description="Dispatcher caller TokenReview audience.")
     gateway_audience: str = Field(min_length=1, description="Gateway caller TokenReview audience.")

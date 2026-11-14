@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -20,13 +19,9 @@ import (
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
 	toolscache "k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
-
-// These records preserve legacy caller routing only; they grant no Runtime call authority.
-var errRunnerOwned = status.Error(codes.Unavailable, "another Gateway publishes this Sandbox control route")
 
 type fencedRunnerConn struct {
 	conn       *grpc.ClientConn
@@ -208,21 +203,12 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 		return err
 	}
 	var connection *runnerConnection
-	var routeEpoch uint64
-	var routeLeaseUID types.UID
 	defer func() {
 		if connection != nil {
 			g.connections.remove(connection, status.Error(codes.Unavailable, "runner observation ended"))
 		}
 		cancel()
 		_ = conn.Close()
-		if routeLeaseUID != "" {
-			releaseCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
-			defer stop()
-			if err := g.records.release(releaseCtx, destination.identity, routeLeaseUID, routeEpoch); err != nil && !errors.Is(err, errSupersededConnection) {
-				slog.Warn("legacy control route release failed", "sandbox", destination.identity.Name, "error", err)
-			}
-		}
 	}()
 	watch, err := environmentruntimepb.NewEnvironmentRuntimeClient(conn).WatchState(ctx, &environmentruntimepb.WatchStateRequest{
 		SandboxUid: destination.identity.Uid, IncarnationUid: destination.podUID,
@@ -291,11 +277,6 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 					attribute.String("runtime.boot_id", response.EnvironmentRuntimeBootId),
 				))
 			}
-			if err == nil {
-				if routeErr := g.maintainLegacyRoute(validateCtx, destination, &routeLeaseUID, &routeEpoch, response.EnvironmentRuntimeBootId); routeErr != nil {
-					slog.Warn("legacy control route publication failed", "sandbox", destination.identity.Name, "error", routeErr)
-				}
-			}
 			release()
 			if err != nil {
 				return err
@@ -309,30 +290,4 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 			liveness.Reset(timing.LivenessTimeout)
 		}
 	}
-}
-
-// maintainLegacyRoute keeps old per-Sandbox callers usable until the Service-routing
-// activation follows this image pin. A route claim never gates this replica's calls.
-func (g *Gateway) maintainLegacyRoute(ctx context.Context, destination runnerDestination, leaseUID *types.UID, epoch *uint64, bootID string) error {
-	if *leaseUID == "" {
-		next, uid, err := g.records.claim(ctx, destination.identity, destination.podUID)
-		*epoch, *leaseUID = next, uid
-		if errors.Is(err, errRunnerOwned) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-	}
-	if err := g.records.renew(ctx, destination.identity, *epoch, time.Now()); err != nil {
-		if errors.Is(err, errSupersededConnection) {
-			*leaseUID, *epoch = "", 0
-			return nil
-		}
-		return err
-	}
-	if err := g.records.pointControlEndpoints(ctx, destination.identity, *leaseUID, *epoch); err != nil {
-		return err
-	}
-	return g.records.recordBootID(ctx, destination.identity, *epoch, bootID)
 }
