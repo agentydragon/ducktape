@@ -259,7 +259,7 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
                 token_file=gateway_token,
                 request_timeout_s=2,
                 channel_credentials=server_credentials,
-                server_name=f"runner-gateway.{cluster.namespace}.svc.cluster.local",
+                server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
             )
             destination = SandboxDestination(
                 owner=ServiceAccount(namespace=cluster.namespace, name=sandbox),
