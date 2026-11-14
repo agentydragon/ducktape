@@ -111,7 +111,7 @@ flowchart LR
     actions -->|Action Pods, launched Sandboxes and their launcher grants| k8s
     policy --> k8s
     sandboxctl --> k8s
-    sandboxctl -->|Quiesce and suspend admission: gRPC| gw
+    sandboxctl -->|Quiesce and suspend admission: service SVID mTLS gRPC| gw
     sandboxctl -->|passive WatchState binds workload UID and observes facts: mTLS gRPC| runtime
     sandboxctl -->|passive WatchState binds workload UID and observes facts: mTLS gRPC| vmruntime
     runner -->|local Codex JSON-RPC over WebSocket, isolated mode| podexec

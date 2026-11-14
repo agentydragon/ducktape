@@ -11,7 +11,7 @@ from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from agentplane.environments.settings import Settings
-from agentplane.net.peertls.config import MTLS, SANDBOX_CONTROLLER_URI, SESSION_DISPATCHER_URI
+from agentplane.net.peertls.config import MTLS, SANDBOX_CONTROLLER_URI, SESSION_DISPATCHER_URI, ClientTLS
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import environment_sandbox, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment
@@ -65,8 +65,7 @@ class SandboxController(Construct):
         memory_request: Size = _DEFAULT_MEMORY_REQUEST,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
     ) -> None:
-        """The controller quiesces runners through the stable Runner Gateway Service under a token
-        of `gateway_audience`."""
+        """The controller quiesces runners through the stable Runner Gateway Service with its SVID."""
         super().__init__(scope, id)
         self.env = env
         self.gateway = gateway
@@ -94,13 +93,18 @@ class SandboxController(Construct):
             self, env, container=workload.container, name=NAME, uri=SANDBOX_CONTROLLER_URI
         )
         settings = Settings(
-            runner_gateway_tls=workload_tls.client_tls(SESSION_DISPATCHER_URI),
+            runner_gateway_tls=ClientTLS(
+                ca_file=Path(workload_tls.TRUST_BUNDLE_FILE),
+                server_uri=SESSION_DISPATCHER_URI,
+                cert_file=Path("/run/agentplane/sandbox-controller-client-tls/tls.crt"),
+                key_file=Path("/run/agentplane/sandbox-controller-client-tls/tls.key"),
+                client_uri=SANDBOX_CONTROLLER_URI,
+            ),
             runner_security=MTLS(tls=runner_tls),
             namespace=namespace,
             metrics_bind_address=f":{endpoint.port.number}",
             health_probe_bind_address=f":{_HEALTH_PORT}",
             runner_gateway_target=gateway_control_target,
-            runner_gateway_token_file=Path(_GATEWAY_TOKEN_DIR) / "token",
         )
         settings_file = SettingsFile(
             self,

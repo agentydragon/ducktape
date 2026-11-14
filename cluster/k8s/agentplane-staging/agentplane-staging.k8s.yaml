@@ -6589,6 +6589,9 @@ data:
     runner_gateway_tls:
       ca_file: /run/agentplane/workload-trust/ca-certificates.crt
       server_uri: spiffe://agentplane/session-dispatcher
+      cert_file: /run/agentplane/sandbox-controller-client-tls/tls.crt
+      key_file: /run/agentplane/sandbox-controller-client-tls/tls.key
+      client_uri: spiffe://agentplane/sandbox-controller
     runner_security:
       mode: mtls
       tls:
@@ -6599,7 +6602,6 @@ data:
     metrics_bind_address: :8080
     health_probe_bind_address: :8081
     runner_gateway_target: runner-gateway.{namespace}.svc:8080
-    runner_gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token
 immutable: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1
