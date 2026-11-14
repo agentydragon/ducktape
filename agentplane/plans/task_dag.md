@@ -1892,7 +1892,7 @@ a generic conversion framework now.
 
 **Unscheduled; operator, 2026-10-13 PDT.** Let the operator change a Sandbox's template, including a
 switch between VM and Pod, from the app, only while the Sandbox is suspended. Each incarnation
-already reads the current template ([controller contract](../sandbox_controller/SPEC.md#vms)); no
+already reads the current template ([controller contract](../environments/SPEC.md#vms)); no
 spec is replaced automatically; this is the explicit, operator-driven edit. Use the deployed
 [workspace layout contract](../docs/sandbox_storage.md) so a compatible kind switch keeps the
 workspace. Validate the
@@ -3910,18 +3910,17 @@ evidence and line-level steps for every track below; its stages are ordered by c
 | Plan stage                      | DAG node                                                                                                                                                                                                                               |
 | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 2. Layout under any service map | `GO_LAYOUT_FIXES`                                                                                                                                                                                                                      |
-| 3. The two-binary moves         | `ENVIRONMENTS_DIRECTORY`, `EXPLICIT_RESUME_BUDGET_REMOVAL`, `ENVIRONMENT_SERVICE_TO_ENVIRONMENTS`, `RUNTIME_PROXY_TO_ENVIRONMENTS`, `SESSIONS_BINARY_DIRECTORY`; `orchestration_v1` retirement is `SESSION_TOOL_SURFACE_CONSOLIDATION` |
+| 3. The two-binary moves         | `EXPLICIT_RESUME_BUDGET_REMOVAL`, `ENVIRONMENT_SERVICE_TO_ENVIRONMENTS`, `RUNTIME_PROXY_TO_ENVIRONMENTS`, `SESSIONS_BINARY_DIRECTORY`; `orchestration_v1` retirement is `SESSION_TOOL_SURFACE_CONSOLIDATION` |
 | 4. Local extractions            | `GO_LOCAL_EXTRACTIONS`                                                                                                                                                                                                                 |
 | 5. Waiting on service decisions | `NOTIFICATION_SERVICE_SPLIT`, `DISPATCHER_PERSISTENCE_MODEL_DESIGN`, `JOURNAL_REPRESENTATION_DESIGN`, `SERVICE_SETTINGS_RETHINK`                                                                                                       |
 | 6. Deferred                     | `PRIVILEGED_BACKEND_AUTH_DESIGN` (moves no files), `PROTO_PACKAGE_ALIGNMENT`                                                                                                                                                           |
 
-The stage 3 moves are not released. Sessions re-checking the live Identity landed in #16373.
+The remaining stage 3 moves are not released. Sessions re-checking the live Identity landed in #16373.
 
 ```mermaid
 flowchart LR
     PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: service SVIDs, section 15]
     GO_LAYOUT_FIXES[Candidate: stage 2 layout fixes]
-    ENVIRONMENTS_DIRECTORY[Ready: Sandbox Controller moves to environments/]
     EXPLICIT_RESUME_BUDGET_REMOVAL[Decided: explicit resume reserves no wake budget]
     ENVIRONMENT_SERVICE_TO_ENVIRONMENTS[Agreed: EnvironmentService into Environments]
     RUNTIME_PROXY_TO_ENVIRONMENTS[Agreed: Runtime proxy and Executor into Environments]
@@ -3929,15 +3928,11 @@ flowchart LR
     ENVIRONMENT_KEEP_ALIVE_HOLDS[Proposed design: keep-alive holds]
     GO_LOCAL_EXTRACTIONS[Unscheduled: stage 4 local extractions]
     RUNNER_GATEWAY_RENAME[Unscheduled: deployed names, section 15]
-    ENVIRONMENTS_DIRECTORY --> ENVIRONMENT_SERVICE_TO_ENVIRONMENTS
     EXPLICIT_RESUME_BUDGET_REMOVAL --> ENVIRONMENT_SERVICE_TO_ENVIRONMENTS
-    ENVIRONMENTS_DIRECTORY --> RUNTIME_PROXY_TO_ENVIRONMENTS
     PRIVILEGED_BACKEND_AUTH_DESIGN --> RUNTIME_PROXY_TO_ENVIRONMENTS
     ENVIRONMENT_SERVICE_TO_ENVIRONMENTS --> SESSIONS_BINARY_DIRECTORY
     RUNTIME_PROXY_TO_ENVIRONMENTS --> SESSIONS_BINARY_DIRECTORY
     SESSIONS_BINARY_DIRECTORY --> RUNNER_GATEWAY_RENAME
-    ENVIRONMENTS_DIRECTORY -. lands in .-> ENVIRONMENT_KEEP_ALIVE_HOLDS
-    GO_LAYOUT_FIXES -. files move once .-> ENVIRONMENTS_DIRECTORY
 ```
 
 ### `GO_LAYOUT_FIXES` — stage 2 layout fixes
@@ -3945,17 +3940,7 @@ flowchart LR
 **Candidate; not released.** The Go plan tracks that hold whatever the service map becomes:
 `env-execution-package-names`, `runner-era-names` (the app's share landed in #16394),
 `sampler-json-contract`, `egress-sidecar-runtime`, `llm-ingress-server-boundary` and
-`firecracker-host-guest`; `app-session-client-name` landed in #16394. Each is its own small PR;
-`ENVIRONMENTS_DIRECTORY` absorbs `runner-era-names`' `runnercontrol` → `runtimecontrol`
-rename so those files move once. **Exit:** each track's plan exit met on devel.
-
-### `ENVIRONMENTS_DIRECTORY` — the Sandbox Controller becomes the Environments binary
-
-**Ready; not released.** Move `sandbox_controller/` to `agentplane/environments/`, beside the
-EnvironmentService API at `environments/v1`, before EnvironmentService and the Runtime proxy arrive so
-their files land once. A pure move: the generated manifests must not change, so it needs no rollout.
-Update every Bazel label (`devinfra/ci/image_targets.json`, `system_tests/k3s/defs.bzl`,
-`cluster/cdk8s/agentplane/BUILD.bazel`) and doc reference in the same PR.
+`firecracker-host-guest`; `app-session-client-name` landed in #16394. Each is its own small PR. **Exit:** each track's plan exit met on devel.
 
 ### `EXPLICIT_RESUME_BUDGET_REMOVAL` — explicit resume reserves no wake budget
 
@@ -3970,8 +3955,8 @@ automatic wake's limit is unchanged.
 ### `ENVIRONMENT_SERVICE_TO_ENVIRONMENTS` — EnvironmentService moves into the Environments binary
 
 **Agreed direction; not released.** Operator, 2026-11-14 01:10 UTC: "merging environment service
-into sandbox controller sounds good to me". Blocked on `ENVIRONMENTS_DIRECTORY`,
-and `EXPLICIT_RESUME_BUDGET_REMOVAL`. Still to write: the every-replica
+into sandbox controller sounds good to me". Blocked on
+`EXPLICIT_RESUME_BUDGET_REMOVAL`. Still to write: the every-replica
 serving contract, since the Sandbox Controller is a leader-elected manager with no listener
 (listener lifecycle, readiness that never waits for leadership, auth resolver, Service, certificate
 identity and retargeted callers). Then move `runner_gateway/environments` with `lifecycle`,

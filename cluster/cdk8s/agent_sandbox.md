@@ -14,4 +14,4 @@ the release URL and the patch's controller image. Renovate finds that image in t
 manager, and an edit to the generated file alone fails `test_generate_manifests`.
 
 Agentplane has a separate Sandbox API and controller, documented in
-<../../agentplane/sandbox_controller/README.md>.
+<../../agentplane/environments/README.md>.

@@ -1,21 +1,21 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
-    name = "runnercontrol",
+    name = "runtimecontrol",
     srcs = [
         "observer.go",
         "quiescer.go",
         "suspender.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/sandbox_controller/internal/runnercontrol",
-    visibility = ["//agentplane/sandbox_controller/cmd:__pkg__"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/environments/internal/runtimecontrol",
+    visibility = ["//agentplane/environments/cmd:__pkg__"],
     deps = [
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
+        "//agentplane/environments/internal/controller",
         "//agentplane/identity/credentials/workloadid",
         "//agentplane/net/peertls",
         "//agentplane/observability",
         "//agentplane/proto:session_go_proto",
-        "//agentplane/sandbox_controller/internal/controller",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/environmentruntimeclient",
         "@com_github_sethvargo_go_retry//:go-retry",
@@ -29,12 +29,12 @@ go_library(
 )
 
 go_test(
-    name = "runnercontrol_test",
+    name = "runtimecontrol_test",
     srcs = [
         "observer_test.go",
         "quiescer_test.go",
     ],
-    embed = [":runnercontrol"],
+    embed = [":runtimecontrol"],
     deps = [
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/identity/credentials/workloadid",

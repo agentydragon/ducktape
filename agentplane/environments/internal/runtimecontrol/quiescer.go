@@ -1,4 +1,4 @@
-package runnercontrol
+package runtimecontrol
 
 import (
 	"context"
@@ -16,8 +16,8 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	sandboxcontroller "github.com/agentydragon/ducktape/agentplane/environments/internal/controller"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	sandboxcontroller "github.com/agentydragon/ducktape/agentplane/sandbox_controller/internal/controller"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

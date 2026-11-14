@@ -8,7 +8,7 @@ reports in its own condition (`KubernetesReady`, `ActionsReady`, `EgressReady`,
 `SessionInboxAccessReady`) under its own field manager; egress and the Notification service read
 through the shared `policy/reader` package. `EgressCredential` stays a separate kind. The Kubernetes reader is the
 [Policy Controller](../policy_controller/SPEC.md); the Sandbox Controller writes each Sandbox's
-binding ([SPEC](../sandbox_controller/SPEC.md#identity)).
+binding ([SPEC](../environments/SPEC.md#identity)).
 
 A person picks a set such as `shared-diagnostics` for a preset or a launch, instead of hundreds of
 per-namespace RoleBindings. Kubernetes still needs one RoleBinding per role and namespace, which the

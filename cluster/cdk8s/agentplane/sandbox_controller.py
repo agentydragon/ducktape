@@ -10,8 +10,8 @@ from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, MemoryResources
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
+from agentplane.environments.settings import Settings
 from agentplane.net.peertls.config import MTLS, SANDBOX_CONTROLLER_URI, SESSION_DISPATCHER_URI
-from agentplane.sandbox_controller.settings import Settings
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import environment_sandbox, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment

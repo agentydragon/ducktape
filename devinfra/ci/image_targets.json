@@ -275,8 +275,8 @@
       "registry": "forgejo"
     },
     "agentplane-sandbox-controller": {
-      "target": "//agentplane/sandbox_controller:image",
-      "test": "//agentplane/sandbox_controller/...",
+      "target": "//agentplane/environments:image",
+      "test": "//agentplane/environments/...",
       "registry": "forgejo"
     },
     "agentplane-runner-gateway": {

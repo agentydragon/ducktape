@@ -20,12 +20,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	sandboxcontroller "github.com/agentydragon/ducktape/agentplane/environments/internal/controller"
+	"github.com/agentydragon/ducktape/agentplane/environments/internal/runtimecontrol"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	sandboxcontroller "github.com/agentydragon/ducktape/agentplane/sandbox_controller/internal/controller"
-	"github.com/agentydragon/ducktape/agentplane/sandbox_controller/internal/runnercontrol"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 )
 
@@ -93,7 +93,7 @@ func run(c config) error {
 	if err != nil {
 		return err
 	}
-	quiescer := runnercontrol.GatewayQuiescer{Target: c.RunnerGatewayTarget, TokenFile: c.RunnerGatewayTokenFile, TLS: c.RunnerGatewayTLS}
+	quiescer := runtimecontrol.GatewayQuiescer{Target: c.RunnerGatewayTarget, TokenFile: c.RunnerGatewayTokenFile, TLS: c.RunnerGatewayTLS}
 	clientset, err := kubernetes.NewForConfig(restConfig)
 	if err != nil {
 		return err
@@ -102,7 +102,7 @@ func run(c config) error {
 	if err != nil {
 		return err
 	}
-	states := sandboxcontroller.NewRuntimeStates(runnercontrol.RuntimeWatcher{Security: c.RunnerSecurity}, time.Now)
+	states := sandboxcontroller.NewRuntimeStates(runtimecontrol.RuntimeWatcher{Security: c.RunnerSecurity}, time.Now)
 	if err := mgr.Add(states); err != nil {
 		return err
 	}
@@ -110,7 +110,7 @@ func run(c config) error {
 		Client: mgr.GetClient(), Objects: mgr.GetAPIReader(), KubeVirt: kubeVirt,
 		Quiescer: quiescer, States: states, Credentials: credentials, Now: time.Now,
 		FirecrackerStatus: sandboxcontroller.PodProxyFirecrackerStatusReader{Client: clientset},
-		Suspender:         runnercontrol.GatewaySuspender{Target: c.RunnerGatewayTarget, TokenFile: c.RunnerGatewayTokenFile, TLS: c.RunnerGatewayTLS},
+		Suspender:         runtimecontrol.GatewaySuspender{Target: c.RunnerGatewayTarget, TokenFile: c.RunnerGatewayTokenFile, TLS: c.RunnerGatewayTLS},
 	}
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return err

@@ -45,7 +45,7 @@ not redesign storage, the History Service, or policy.
 
 ## Current state
 
-- **Sandbox Controller** (Go, `sandbox_controller/`): state PVC, Pod or VM, ServiceAccount, `PolicyBinding`, launch
+- **Sandbox Controller** (Go, `environments/`): state PVC, Pod or VM, ServiceAccount, `PolicyBinding`, launch
   ConfigMap and finalizer. It directly observes each accepted Runtime with `WatchState(observe_only=true)`;
   its lifecycle facts are in memory, fenced by Sandbox UID, accepted workload Pod UID, boot ID and
   local stream generation. It drives quiesce: it calls `Runner.Quiesce` through the
@@ -491,7 +491,7 @@ stateDiagram-v2
 | TearingDown                   | `TEARING_DOWN`                                                                       |                                                                                                |
 
 `Starting`, `Stopped`, `Stopping`, `PodEnded`, `VMEnded`, `Sealing` and the conflict reasons exist today
-(`sandbox_controller/SPEC.md` § Status); this design adds `Booting`, `Degraded`, `Draining`, `Flushing`, `NeverRan`,
+(`environments/SPEC.md` § Status); this design adds `Booting`, `Degraded`, `Draining`, `Flushing`, `NeverRan`,
 `NotQuiesced` and `SuspendPending`. `_phase` keys `QUIESCING` on `status.stopStage: Quiescing`, not on
 `Quiesced`.
 
