@@ -70,18 +70,18 @@ own:
    [`PRIVILEGED_BACKEND_AUTH_DESIGN`](task_dag.md#privileged_backend_auth_design--one-service-authentication-mode)),
    with credential resolution through the same reader.
 3. Dispatcher, EnvironmentService and CLI addresses become opaque environment IDs.
-4. The Gateway's per-Sandbox connection Lease and connection-owned EndpointSlice are transitional.
+4. The Gateway's per-Sandbox connection Lease and EndpointSlice are transitional routing records.
    The selected contract lets any authenticated replica call the Runtime, which fences by Sandbox
-   UID, workload incarnation and boot ID from a Runtime-trusted binding; there is no connection
-   epoch. The direct Controller reader migration merged in #16324; #16328 removes Lease facts after
-   the new Controller runs on staging. The first receiver compatibility image makes epochs optional
-   for proxy/Executor calls but keeps exclusive `WatchState` adoption. After the separate
-   multi-replica `WatchState` receiver change is merged and pinned, remove Gateway connection
-   ownership, route callers through stable `runner-gateway` and remove the per-Sandbox
-   `<sandbox>-control` EndpointSlice. The [runtime state observation plan](runtime_state_observation.md) and
-   [task DAG](task_dag.md#runner_multi_replica_watchstate--remove-exclusive-runtime-watch-adoption)
-   record the rollout and image-pin holds. The Dispatcher delivery Lease is a separate scheduling
-   protocol and remains out of scope.
+   UID, workload incarnation and boot ID from the Controller-bound identity; connection epochs do
+   not authorize calls. The direct Controller reader and Lease-fact removal landed in #16324 and
+   #16328, and the receiver binding/independent-watch compatibility landed in #16345. Stage A pins
+   that Runtime receiver and cycles older live staging Runtimes, then publishes Gateway routes that
+   retain the existing Lease/EndpointSlice only for old callers. Stage B switches caller defaults to
+   the stable `runner-gateway` Service after all Gateways run A. Stage C removes the old route records
+   after all B callers have rolled out. The [runtime state observation plan](runtime_state_observation.md)
+   and [task DAG](task_dag.md#runner_gateway_independent_runtime_connections--let-every-gateway-call-a-bound-runtime)
+   record these holds. A later compatibility cleanup removes unused RBAC and legacy receiver epoch
+   fields. The Dispatcher delivery Lease is a separate scheduling protocol and remains out of scope.
 
 Service tests could then run against one fake `PolicyService` instead of envtest. The store stays
 an API server.

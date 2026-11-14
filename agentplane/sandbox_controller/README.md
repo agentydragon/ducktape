@@ -126,7 +126,8 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   ineligible immediately; connectivity keeps a one-minute grace. Reopening a stream restarts its
   full idle timer, including when `idle-since` is unchanged. Quiesce retry deadlines remain durable;
   only fresh observed quiescence or an acknowledged quiesce RPC completes a seal. Bootstrap failure
-  stays terminal for that incarnation. The current Gateway route still uses its connection Lease
+  stays terminal for that incarnation. Every Gateway replica can now call independently with Sandbox UID, incarnation and boot ID;
+  the current legacy route still uses its connection Lease
   and control EndpointSlice; its legacy nonzero watch can observe only the Controller-bound UID.
 - **Gotcha:** a deleted Sandbox whose runner cannot seal stays in `Quiescing`. To give up on the seal,
   remove the finalizer by hand: the PVC is owned, so it goes with the Sandbox, and the Pod or VM

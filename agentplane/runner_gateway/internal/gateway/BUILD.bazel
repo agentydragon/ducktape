@@ -37,8 +37,6 @@ go_library(
         "@io_k8s_apimachinery//pkg/api/meta",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/types",
-        "@io_k8s_client_go//informers/coordination/v1:coordination",
-        "@io_k8s_client_go//kubernetes",
         "@io_k8s_client_go//kubernetes/typed/coordination/v1:coordination",
         "@io_k8s_client_go//kubernetes/typed/discovery/v1:discovery",
         "@io_k8s_client_go//tools/cache",
@@ -71,6 +69,7 @@ go_test(
     ],
     embed = [":gateway"],
     deps = [
+        "//agentplane/env/runtime/control",
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/env/runtime/execution:executor_go_proto",
         "//agentplane/identity/auth",

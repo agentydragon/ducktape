@@ -253,12 +253,16 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
             sampler_pod = await _pod(cluster, core, SERVICE)
             stack.push_async_callback(capture_sampler_diagnostics, cluster, core)
             gateway_pod = await _pod(cluster, core, "runner-gateway")
-            await cluster.kubectl(
-                "wait",
-                f"endpointslice/{sandbox}-control",
-                f"--for=jsonpath={{.endpoints[0].addresses[0]}}={gateway_pod.status.pod_ip}",
-                "--timeout=60s",
-            )
+            # Controller readiness does not wait for legacy Gateway route publication.
+            # Wait for creation and routing within the same existing 60-second budget.
+            async with asyncio.timeout(60):
+                await cluster.kubectl("wait", f"endpointslice/{sandbox}-control", "--for=create", "--timeout=60s")
+                await cluster.kubectl(
+                    "wait",
+                    f"endpointslice/{sandbox}-control",
+                    f"--for=jsonpath={{.endpoints[0].addresses[0]}}={gateway_pod.status.pod_ip}",
+                    "--timeout=60s",
+                )
             # The per-Sandbox Service selects the replica holding this Sandbox's Runner stream.
             control_target = await _control_address(cluster, connection, sandbox, uid)
             sampler_token = await _bound_token(cluster, core, "runner-gateway", gateway_pod, SERVICE)

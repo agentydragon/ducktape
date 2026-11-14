@@ -99,9 +99,9 @@ func (g *Gateway) readWorkload(ctx context.Context, namespace, name string, obje
 	return nil
 }
 
-// validateRunnerDestination rechecks the workload on every runner heartbeat, independently of transport
-// authentication. It reads the Gateway's reader, the informer cache in production: the Lease's
-// resourceVersion compare-and-swap, not this read, fences which replica holds the runner.
+// validateRunnerDestination rechecks the workload on every Runtime heartbeat, independently of
+// transport authentication. Cached reads reject replaced workloads locally; the Runtime checks
+// Sandbox UID, incarnation and boot ID on every forwarded call, including from a stale replica.
 func (g *Gateway) validateRunnerDestination(ctx context.Context, expected runnerDestination) error {
 	if expected.identity.Namespace != g.config.Namespace {
 		return status.Error(codes.PermissionDenied, "runner is outside the Gateway namespace")

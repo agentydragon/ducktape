@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"sync"
 	"time"
 
@@ -26,7 +25,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var errRunnerOwned = status.Error(codes.Unavailable, runnerLeaseHeldByAnotherGateway)
+// These records preserve legacy caller routing only; they grant no Runtime call authority.
+var errRunnerOwned = status.Error(codes.Unavailable, "another Gateway publishes this Sandbox control route")
 
 type fencedRunnerConn struct {
 	conn       *grpc.ClientConn
@@ -61,7 +61,7 @@ type runnerObserver struct {
 
 // RunRunnerObservers keeps one observer per reachable Runner, reconciling each Sandbox that
 // RunnerDiscoveryHandler enqueues against the Gateway's reader (the informer cache in production), so
-// no Kubernetes read repeats on a timer. The existing Lease elects one Gateway replica; connection
+// no Kubernetes read repeats on a timer. Every replica observes independently; connection
 // availability never chooses command queue ownership.
 func (g *Gateway) RunRunnerObservers(ctx context.Context) error {
 	active := make(map[string]runnerObserver)
@@ -122,6 +122,13 @@ func (g *Gateway) reconcileObserver(ctx context.Context, name string, active map
 				return nil
 			}
 			current.cancel()
+			// Complete the old worker before starting its successor: a delayed snapshot
+			// from a canceled observer must not replace the new local connection.
+			select {
+			case <-current.done:
+			case <-readCtx.Done():
+				return readCtx.Err()
+			}
 		}
 		delete(active, name)
 	}
@@ -137,21 +144,16 @@ func (g *Gateway) reconcileObserver(ctx context.Context, name string, active map
 		defer workers.Done()
 		defer close(done)
 		defer cancel()
-		err := retry.Do(workerCtx, retry.NewConstant(time.Second), func(ctx context.Context) error {
+		_ = retry.Do(workerCtx, retry.NewConstant(time.Second), func(ctx context.Context) error {
 			err := g.observeRunner(ctx, destination)
-			if err == nil || ctx.Err() != nil || errors.Is(err, errRunnerOwned) {
+			if err == nil || ctx.Err() != nil {
 				return err
 			}
 			// Transport recovery does not wait for a Sandbox or Pod event.
-			// Each attempt claims a fresh epoch before accepting the new boot.
+			// Each attempt validates the current workload and learns its boot ID.
 			slog.Warn("runner observer reconnecting", "sandbox", destination.identity.Name, "error", err)
 			return retry.RetryableError(err)
 		})
-		if errors.Is(err, errRunnerOwned) {
-			// Another replica holds the runner's Lease. Its lapse changes nothing in the cache, so the
-			// claim is retried on the heartbeat cadence.
-			g.observerQueue.AddAfter(name, g.config.ControlTiming.HeartbeatInterval)
-		}
 	}()
 	return nil
 }
@@ -206,34 +208,24 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 		return err
 	}
 	var connection *runnerConnection
-	var epoch uint64
-	var leaseUID types.UID
+	var routeEpoch uint64
+	var routeLeaseUID types.UID
 	defer func() {
 		if connection != nil {
 			g.connections.remove(connection, status.Error(codes.Unavailable, "runner observation ended"))
 		}
 		cancel()
 		_ = conn.Close()
-		if leaseUID != "" {
-			// The old connection is no longer locally callable. A successor's
-			// higher-epoch WatchState prevents new old-epoch Runner admissions;
-			// already admitted remote work may still have an uncertain outcome.
-			// The API write needs its own bounded context after observer cancellation.
-			releaseCtx, stopRelease := context.WithTimeout(context.Background(), 5*time.Second)
-			if err := g.records.release(releaseCtx, destination.identity, leaseUID, epoch); err != nil && !errors.Is(err, errSupersededConnection) {
-				slog.Warn("runner connection Lease release failed", "sandbox", destination.identity.Name, "epoch", epoch, "error", err)
+		if routeLeaseUID != "" {
+			releaseCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
+			defer stop()
+			if err := g.records.release(releaseCtx, destination.identity, routeLeaseUID, routeEpoch); err != nil && !errors.Is(err, errSupersededConnection) {
+				slog.Warn("legacy control route release failed", "sandbox", destination.identity.Name, "error", err)
 			}
-			stopRelease()
 		}
 	}()
-	claimCtx, release := context.WithTimeout(ctx, timing.LivenessTimeout)
-	epoch, leaseUID, err = g.records.claim(claimCtx, destination.identity, destination.podUID)
-	release()
-	if err != nil {
-		return err
-	}
 	watch, err := environmentruntimepb.NewEnvironmentRuntimeClient(conn).WatchState(ctx, &environmentruntimepb.WatchStateRequest{
-		SandboxUid: destination.identity.Uid, IncarnationUid: destination.podUID, ConnectionEpoch: epoch,
+		SandboxUid: destination.identity.Uid, IncarnationUid: destination.podUID,
 	})
 	if err != nil {
 		return err
@@ -273,7 +265,7 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 			if err := g.config.RunnerSecurity.AuthorizePeer(watch.Context(), destination.peerURI); err != nil {
 				return status.Error(codes.Unauthenticated, "runner certificate is no longer valid")
 			}
-			if response.GetEnvironmentRuntimeBootId() == "" || response.GetSandboxUid() != destination.identity.Uid || response.GetIncarnationUid() != destination.podUID || response.GetConnectionEpoch() != epoch {
+			if response.GetEnvironmentRuntimeBootId() == "" || response.GetSandboxUid() != destination.identity.Uid || response.GetIncarnationUid() != destination.podUID || response.GetConnectionEpoch() != 0 {
 				return status.Error(codes.InvalidArgument, "runner state has invalid identity")
 			}
 			if connection != nil && connection.bootID != response.EnvironmentRuntimeBootId {
@@ -281,32 +273,27 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 			}
 			validateCtx, release := context.WithTimeout(ctx, timing.LivenessTimeout)
 			err = g.validateRunnerDestination(validateCtx, destination)
-			if err == nil {
-				// Refresh the claim before accepting the state or installing a local connection.
-				// A replacement observer may have claimed the Lease while the first state
-				// message was in flight; only the current holder can renew this epoch.
-				err = g.records.renew(validateCtx, destination.identity, epoch, time.Now())
-			}
 			if err == nil && connection == nil {
 				connection = &runnerConnection{
-					identity: destination.identity, podUID: destination.podUID, epoch: epoch,
+					identity: destination.identity, podUID: destination.podUID,
 					bootID: response.EnvironmentRuntimeBootId, ended: make(chan struct{}), closeDirect: cancel,
 				}
 				connection.direct = &fencedRunnerConn{conn: conn, connection: connection, identity: metadata.Pairs(
 					"agentplane-sandbox-uid", destination.identity.Uid,
 					"agentplane-incarnation-uid", destination.podUID,
 					"agentplane-environment-runtime-boot-id", response.EnvironmentRuntimeBootId,
-					"agentplane-connection-epoch", strconv.FormatUint(epoch, 10),
 				)}
 				connection.runner = environmentruntimepb.NewEnvironmentRuntimeClient(connection.direct)
-				// Install the callable connection before publishing verified boot identity.
-				err = g.connections.accept(connection)
-				if err == nil {
-					span.AddEvent("runner.control.ready", trace.WithAttributes(
-						attribute.String("sandbox.incarnation_uid", destination.podUID),
-						attribute.String("runtime.boot_id", response.EnvironmentRuntimeBootId),
-					))
-					err = g.records.recordBootID(validateCtx, destination.identity, epoch, response.EnvironmentRuntimeBootId)
+				// Publish the callable connection only after validating the workload and boot.
+				g.connections.accept(connection)
+				span.AddEvent("runner.control.ready", trace.WithAttributes(
+					attribute.String("sandbox.incarnation_uid", destination.podUID),
+					attribute.String("runtime.boot_id", response.EnvironmentRuntimeBootId),
+				))
+			}
+			if err == nil {
+				if routeErr := g.maintainLegacyRoute(validateCtx, destination, &routeLeaseUID, &routeEpoch, response.EnvironmentRuntimeBootId); routeErr != nil {
+					slog.Warn("legacy control route publication failed", "sandbox", destination.identity.Name, "error", routeErr)
 				}
 			}
 			release()
@@ -322,4 +309,30 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 			liveness.Reset(timing.LivenessTimeout)
 		}
 	}
+}
+
+// maintainLegacyRoute keeps old per-Sandbox callers usable until the Service-routing
+// activation follows this image pin. A route claim never gates this replica's calls.
+func (g *Gateway) maintainLegacyRoute(ctx context.Context, destination runnerDestination, leaseUID *types.UID, epoch *uint64, bootID string) error {
+	if *leaseUID == "" {
+		next, uid, err := g.records.claim(ctx, destination.identity, destination.podUID)
+		*epoch, *leaseUID = next, uid
+		if errors.Is(err, errRunnerOwned) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+	}
+	if err := g.records.renew(ctx, destination.identity, *epoch, time.Now()); err != nil {
+		if errors.Is(err, errSupersededConnection) {
+			*leaseUID, *epoch = "", 0
+			return nil
+		}
+		return err
+	}
+	if err := g.records.pointControlEndpoints(ctx, destination.identity, *leaseUID, *epoch); err != nil {
+		return err
+	}
+	return g.records.recordBootID(ctx, destination.identity, *epoch, bootID)
 }

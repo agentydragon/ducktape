@@ -16,11 +16,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	coordinationinformers "k8s.io/client-go/informers/coordination/v1"
-	"k8s.io/client-go/kubernetes"
 	coordinationclient "k8s.io/client-go/kubernetes/typed/coordination/v1"
 	discoveryclient "k8s.io/client-go/kubernetes/typed/discovery/v1"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/retry"
 )
 
@@ -35,6 +32,9 @@ type connectionHolder struct {
 	port int32
 }
 
+// CLEANUP(added 2026-11-14): Remove route records after this any-replica image is
+// pinned and callers switch from <sandbox>-control to the Gateway Service.
+// These records provide legacy routing only, never Runtime call authority.
 type connectionRecords struct {
 	coordination coordinationclient.CoordinationV1Interface
 	discovery    discoveryclient.DiscoveryV1Interface
@@ -383,41 +383,3 @@ func ownsSandbox(references []metav1.OwnerReference, sandbox *sandboxreader.Iden
 func stringPointer(value string) *string                     { return &value }
 func int32Pointer(value int32) *int32                        { return &value }
 func protocolPointer(value corev1.Protocol) *corev1.Protocol { return &value }
-
-func watchConnectionLeases(ctx context.Context, client kubernetes.Interface, namespace string, local *connections) error {
-	informer := coordinationinformers.NewTypedFilteredLeaseInformer(client, namespace, 0, nil, func(options *metav1.ListOptions) {
-		options.LabelSelector = environmentRuntimeConnectionLabel + "=true"
-	})
-	leaseUID := func(lease *coordinationv1.Lease) (string, uint64) {
-		if lease == nil || lease.Spec.LeaseTransitions == nil || len(lease.OwnerReferences) != 1 || lease.OwnerReferences[0].Kind != sandboxapi.SandboxKind {
-			return "", 0
-		}
-		return string(lease.OwnerReferences[0].UID), uint64(*lease.Spec.LeaseTransitions)
-	}
-	registration, err := informer.AddTypedEventHandler(coordinationinformers.LeaseHandlerFuncs{
-		AddFunc: func(lease *coordinationv1.Lease) {
-			uid, epoch := leaseUID(lease)
-			local.replaceLease("", uid, epoch)
-		},
-		UpdateFunc: func(previous, current *coordinationv1.Lease) {
-			previousUID, _ := leaseUID(previous)
-			uid, epoch := leaseUID(current)
-			local.replaceLease(previousUID, uid, epoch)
-		},
-		DeleteFunc: func(deleted coordinationinformers.DeletedLease) {
-			uid, _ := leaseUID(deleted.OptionalObj)
-			local.forgetLease(uid)
-		},
-	})
-	if err != nil {
-		return err
-	}
-	go informer.Run(ctx.Done())
-	if !cache.WaitForCacheSync(ctx.Done(), informer.HasSynced, registration.HasSynced) {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		return fmt.Errorf("connection Lease cache did not sync")
-	}
-	return nil
-}

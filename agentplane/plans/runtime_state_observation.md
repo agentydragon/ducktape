@@ -62,28 +62,107 @@ Dispatcher queue and command-delivery behavior remains owned by its separate del
 
 ## Migration and rollback
 
-1. **Controller readers.** The direct-reader migration merged in #16324. Keep Lease fact publication
-   and the shared codec until #16328 removes them after the new Controller is running on staging.
-   The direct-observer Controller image is already pinned. The receiver behavior described above is
-   introduced in this change without manifest settings or authorization allowlist changes.
-2. **Gateway removal.** After this receiver change lands, pin the Runtime image containing it before
-   routing callers through the stable `runner-gateway` Service. Image pinning does not replace a
-   Runtime already running in a Sandbox: before the zero-epoch Gateway cutover, verify the live
-   Runtime inventory and cycle older Sandboxes through suspend/resume so they start the pinned
-   receiver. An older live Runtime will not accept the new Gateway's zero-epoch watch until restarted;
-   the later Gateway must not revive the Lease protocol as a fallback for those processes. Then
-   remove connection-Lease claims, call-epoch checks and the per-Sandbox `<sandbox>-control`
-   EndpointSlice. Keep old Lease resources and permissions available through the Gateway image
-   rollback window.
-3. **Final compatibility cleanup.** After the epochless Gateway image is pinned, remove remaining
-   connection-Lease RBAC and epoch-protocol fields. Dispatcher delivery Leases are unchanged.
+The rollout has three ordered Gateway stages plus a later compatibility cleanup. The Runtime
+receiver landed in #16345; verify the target devel `runner-disk` pin contains that commit before the
+first Gateway stage. A pin updates templates for future Runtime processes; it does not upgrade a
+Pod, VMI or Firecracker guest already running. The Gateway receiver stage may merge and roll only
+after the pinned image is active and older live staging Runtimes have been inventoried and cycled.
+No staging inventory or cycling evidence is recorded in this plan yet.
 
-Rollback the Controller to Lease reads only with the old Gateway fact writer and codec restored as a
-pair. Until Gateway pinning, rollback to the old Gateway also requires a Runtime image accepting its
-epoch-bearing calls and the old Lease/EndpointSlice resources and permissions. Restore removed
-RBAC/proto compatibility before any later rollback to an old Gateway. A post-cutover Runtime that
-has not yet adopted a Controller binding cannot be made compatible by falling back to Gateway
-identity; restart it with the compatible receiver and let the Controller bind the current UID.
+### Staging Runtime inventory and cycle gate
+
+Build one row per Agentplane Sandbox in `agentplane-staging`, including suspended and stopping
+objects, then mark whether it currently has a Runtime process or a retained Firecracker checkpoint.
+Start from `sandboxes.agentplane.allegedly.works` and record the Sandbox name and UID, template,
+`status.operatingMode`, `status.stopStage`, `status.incarnation`, and
+`status.runnerCredential`. Join child objects by owner UID and the `agentplane.allegedly.works/sandbox`
+label; do not join on name alone. Read Pods, VirtualMachines, VMIs and their virt-launcher Pods so
+that the actual incarnation UID and image references are tied back to each Sandbox UID. A suspended
+Pod or KubeVirt VM has no live Runtime and will use the current template on its next start. A
+suspended Firecracker Sandbox retains its Pod and RAM checkpoint, so include its Runtime as old until
+proved otherwise.
+
+The staging read should use the exact Agentplane resource and label, for example:
+
+```sh
+kubectl get sandboxes.agentplane.allegedly.works -n agentplane-staging -o json
+kubectl get pods -n agentplane-staging -l agentplane.allegedly.works/sandbox -o json
+kubectl get virtualmachines.kubevirt.io -n agentplane-staging -l agentplane.allegedly.works/sandbox -o json
+kubectl get virtualmachineinstances.kubevirt.io -n agentplane-staging -l agentplane.allegedly.works/sandbox -o json
+```
+
+Extract only the fields below from those objects; Sandbox specs can contain bootstrap text and should
+not be copied wholesale into the inventory. Resolve the Sandbox-to-Pod/VMI chain by owner UID and
+check `status.runnerCredential.lastVmiUid` when matching the accepted VM incarnation.
+
+Record the Runtime artifact source for each backend:
+
+- Pod Sandbox: the Runtime binary is mounted from the runner disk image volume, normally
+  `spec.volumes[name=environment].image.reference`. The Environment Runtime container's
+  `status.containerStatuses[].imageID` identifies the tools container image, not the mounted
+  Runtime disk.
+- KubeVirt Sandbox: record the VMI's `spec.volumes[].containerDisk.image` for the runner disk, and
+  correlate the VMI UID with `status.runnerCredential.lastVmiUid` and its virt-launcher Pod. The
+  virt-launcher container's `imageID` is not the guest Runtime disk.
+- Firecracker Sandbox: record the launcher Pod's runner image volume reference
+  (`agentplane-firecracker-runner`), boot image volume, launcher container image and Pod UID. The
+  Runtime executes inside the guest from the runner disk. The supervisor status exposes Pod UID and
+  phase, while `EnvironmentRuntimeStatus` exposes a boot ID; neither reports the loaded Runtime
+  build or resolved image-volume digest.
+
+Compare these captured workload references with the target devel pin in
+`cluster/k8s/agentplane-staging/image-pins/kustomization.yaml`. Kubernetes workload status does not
+report the resolved OCI digest for image volumes, and Runtime status has no build-version field. If
+the workload reference is a mutable tag, its text alone does not prove the bytes loaded by a live
+Runtime; request the resolved digest from registry or node image metadata, or cycle it to a known
+pinned image and verify the new incarnation and boot ID. A `GetStatus` boot ID proves process
+identity, not source version.
+
+For old Pod and KubeVirt Runtime processes, use the Sandbox Controller's normal stop/resume path so
+it seals work, keeps the Sandbox UID and state PVC, and starts a new Pod or VMI from the current
+SandboxTemplate. Verify a new workload UID, Runtime boot ID and connected/ready status before
+counting that Sandbox cycled. A Firecracker suspend/resume restores the same Runtime process and
+cannot adopt a newer runner disk. Replacing a Firecracker launcher while it retains a checkpoint is
+not supported; keep the cutover blocked if an old Firecracker checkpoint is found. Do not claim a
+Sandbox cycle from a template pin change or a still-existing Pod/VMI specification.
+
+### A. Independent Runtime connections
+
+Merge and pin the Gateway receiver that opens an independent zero-epoch `WatchState` and calls every
+Runtime using Sandbox UID, workload UID and boot ID. It does not use Gateway Lease/epoch data to
+authorize Runtime watches or calls. Retain the existing Lease/EndpointSlice publication only to
+keep old per-Sandbox callers routed during this stage; its route epoch is not Runtime call ownership.
+The receiver-image pin and completed live-Runtime cycle above are merge and rollout holds. Preserve
+the old route records and permissions for rollback.
+
+### B. Stable-Service callers
+
+After every Gateway replica runs stage A, update caller defaults to the stable `runner-gateway`
+Service. The Gateway replicas continue publishing the old per-Sandbox routes while B caller images
+roll out, so callers still on the old address reach a compatible Gateway. Do not publish the stable
+route to old Gateway replicas that still require exclusive Runtime watch ownership.
+
+### C. Route-record removal
+
+After every B caller has rolled out and no caller targets `<sandbox>-control`, remove the Gateway's
+Lease and EndpointSlice route publication. All Gateway calls now use the stable Service, with
+Runtime fencing by Sandbox UID, incarnation UID and boot ID. Dispatcher delivery Leases remain
+unchanged. Keep the old route objects and permissions through the Gateway rollback window.
+
+### Later compatibility cleanup
+
+Only after C is pinned and the old Gateway rollback window has closed, remove unused connection-Lease
+RBAC and the receiver's legacy nonzero epoch fields/tolerance in a separate image-pin change. Keep
+leader-election Lease permission and Dispatcher delivery Lease behavior as required by their own
+owners. No Runtime-to-Gateway dial is introduced.
+
+Rollback from A or B requires restoring a Gateway image compatible with the deployed receiver and
+its route records. Rollback from C first restores the route publication and per-Sandbox caller
+configuration before deploying a Gateway that expects those routes. Until the later compatibility
+cleanup, the Runtime continues accepting both zero-epoch independent calls and legacy nonzero calls
+for the Controller-bound incarnation. A Runtime without the Controller binding cannot be made
+compatible by falling back to Gateway identity; restart it with the receiver and let the Controller
+bind the current UID.
 
 ## Acceptance
 

@@ -32,6 +32,7 @@ var (
 	// api is the API server the binary's tests share; each test's Sandbox is in a namespace of its own.
 	api        *kubeapiserver.Server
 	namespaces atomic.Int32
+	gateways   atomic.Int32
 
 	dispatcherAccount = auth.Account{Namespace: "test-dispatchers", Name: "test-dispatcher"}
 	appAccount        = auth.Account{Namespace: "test-apps", Name: "test-app"}
@@ -160,18 +161,25 @@ func newSandboxFixture(t *testing.T) *sandboxFixture {
 	return f
 }
 
-// newGateway is a Gateway replica serving the fixture's namespace that names itself holderName at
-// holderIP in the control routes it writes. It reads the API server directly, so a test sees its own
-// writes at once.
-func (f *sandboxFixture) newGateway(t *testing.T, holderName, holderIP string, executorCallers ...auth.Account) *Gateway {
+// newGateway is a Gateway replica serving the fixture's namespace. It reads the API server directly.
+func (f *sandboxFixture) newGateway(t *testing.T, executorCallers ...auth.Account) *Gateway {
 	t.Helper()
 	health := watchhealth.New()
 	health.MarkSynced()
-	return f.newGatewayReading(t, f.objects, health, holderName, holderIP, executorCallers...)
+	return f.newGatewayReading(t, f.objects, health, executorCallers...)
 }
 
 // newGatewayReading is newGateway reading Kubernetes objects through objects, whose health is health.
 func (f *sandboxFixture) newGatewayReading(
+	t *testing.T, objects client.Reader, health *watchhealth.Health, executorCallers ...auth.Account,
+) *Gateway {
+	replica := gateways.Add(1)
+	return f.newGatewayReplicaReading(t, objects, health,
+		fmt.Sprintf("test-gateway-%d", replica), fmt.Sprintf("192.0.2.%d", 1+(replica%254)), executorCallers...)
+}
+
+// newGatewayReplicaReading gives the replica an explicit holder identity and EndpointSlice address.
+func (f *sandboxFixture) newGatewayReplicaReading(
 	t *testing.T, objects client.Reader, health *watchhealth.Health, holderName, holderIP string, executorCallers ...auth.Account,
 ) *Gateway {
 	t.Helper()
@@ -182,17 +190,25 @@ func (f *sandboxFixture) newGatewayReading(
 		DispatcherAccount:        dispatcherAccount,
 		ExecutorCallers:          executorCallers,
 		SandboxControllerAccount: &controllerAccount,
-		HolderName:               holderName, HolderIP: holderIP, ProxyPort: sandboxapi.ControlServicePort,
+		HolderName:               holderName,
+		HolderIP:                 holderIP,
+		ProxyPort:                sandboxapi.ControlServicePort,
 		ControlTiming: ControlTiming{
-			HeartbeatInterval:  time.Second,
-			LivenessTimeout:    10 * time.Second,
-			LeaseTouchInterval: 5 * time.Second,
+			LivenessTimeout: 10 * time.Second,
 		},
 	}, f.callerAuth, objects, health, api.Clientset.CoordinationV1(), api.Clientset.DiscoveryV1())
 	if err != nil {
 		t.Fatal(err)
 	}
 	return gateway
+}
+
+// newGatewayReplica creates one Gateway with the supplied legacy control-route holder identity.
+func (f *sandboxFixture) newGatewayReplica(t *testing.T, holderName, holderIP string, executorCallers ...auth.Account) *Gateway {
+	t.Helper()
+	health := watchhealth.New()
+	health.MarkSynced()
+	return f.newGatewayReplicaReading(t, f.objects, health, holderName, holderIP, executorCallers...)
 }
 
 func (f *sandboxFixture) callerContext(token string) context.Context {

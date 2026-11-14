@@ -18,7 +18,7 @@ type executorServer struct {
 	gateway *Gateway
 }
 
-// Resolve each request through the current Sandbox and its elected Gateway-to-Runner connection. Gateway.Methods
+// Resolve each request through the current Sandbox and this replica's Runtime connection. Gateway.Methods
 // admitted the caller.
 func (s *executorServer) executionConnection(
 	ctx context.Context,
@@ -107,7 +107,7 @@ func forwardExecution[Response any](
 
 // OpenSession is the lifetime of one local Codex WebSocket. The Gateway streams every
 // initialization/notification response unchanged and closes its Runner stream when the caller
-// cancels or the elected Runner connection ends.
+// cancels or this replica's Runtime connection ends.
 func (s *executorServer) OpenSession(
 	request *executorpb.OpenSessionRequest,
 	stream grpc.ServerStreamingServer[executorpb.OpenSessionResponse],

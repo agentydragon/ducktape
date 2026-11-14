@@ -29,7 +29,7 @@ type environmentRuntimeProxy struct {
 	gateway *Gateway
 }
 
-// connection is the elected connection to the runner of the Sandbox the call's metadata names. Gateway.Methods
+// connection is this replica's authenticated Runtime connection for the Sandbox the call names. Gateway.Methods
 // admitted the caller.
 func (p *environmentRuntimeProxy) connection(ctx context.Context, writes, allowSuspending bool) (*runnerConnection, error) {
 	g := p.gateway

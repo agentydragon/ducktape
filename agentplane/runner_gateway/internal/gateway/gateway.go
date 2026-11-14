@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -11,7 +10,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"google.golang.org/grpc"
-	"k8s.io/client-go/kubernetes"
 	coordinationclient "k8s.io/client-go/kubernetes/typed/coordination/v1"
 	discoveryclient "k8s.io/client-go/kubernetes/typed/discovery/v1"
 	"k8s.io/client-go/util/workqueue"
@@ -41,35 +39,21 @@ type Config struct {
 	ExecutorCallers []auth.Account
 }
 
-// ControlTiming bounds stream liveness and Lease renewal work.
+// ControlTiming bounds Runtime observation liveness.
 type ControlTiming struct {
-	HeartbeatInterval  time.Duration
-	LivenessTimeout    time.Duration
-	LeaseTouchInterval time.Duration
+	LivenessTimeout time.Duration
 }
 
 func defaultControlTiming(timing ControlTiming) ControlTiming {
-	if timing.HeartbeatInterval == 0 {
-		timing.HeartbeatInterval = 10 * time.Second
-	}
 	if timing.LivenessTimeout == 0 {
 		timing.LivenessTimeout = 30 * time.Second
-	}
-	if timing.LeaseTouchInterval == 0 {
-		timing.LeaseTouchInterval = 15 * time.Second
 	}
 	return timing
 }
 
 func validateControlTiming(timing ControlTiming) error {
-	if timing.HeartbeatInterval <= 0 || timing.LivenessTimeout <= 0 ||
-		timing.LeaseTouchInterval <= 0 {
-		return fmt.Errorf("Gateway control timings must be positive")
-	}
-	if timing.HeartbeatInterval >= timing.LivenessTimeout ||
-		timing.LeaseTouchInterval >= timing.LivenessTimeout ||
-		timing.LivenessTimeout > time.Duration(leaseDurationSeconds)*time.Second {
-		return fmt.Errorf("Gateway control timing exceeds the runner liveness or Lease bound")
+	if timing.LivenessTimeout <= 0 || timing.LivenessTimeout > time.Duration(leaseDurationSeconds)*time.Second {
+		return fmt.Errorf("Gateway control timing exceeds the runner liveness or legacy route Lease bound")
 	}
 	return nil
 }
@@ -205,9 +189,4 @@ func (g *Gateway) RegisterExecutor(server *grpc.Server) {
 		return
 	}
 	executorpb.RegisterExecutorServer(server, &executorServer{gateway: g})
-}
-
-// WatchConnectionLeases must sync before the public gRPC services start accepting requests.
-func (g *Gateway) WatchConnectionLeases(ctx context.Context, client kubernetes.Interface) error {
-	return watchConnectionLeases(ctx, client, g.config.Namespace, g.connections)
 }

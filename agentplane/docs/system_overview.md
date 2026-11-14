@@ -209,11 +209,12 @@ embeds files through an embedding endpoint and owns its own PostgreSQL database
   retained history.
 - **Runner control uses native gRPC.** The Gateway dials each runner's private server using mTLS.
   It validates the certificate against the active Sandbox/workload and retains `<sandbox>-control`
-  routing and `<sandbox>-environment-runtime` proxy ownership Leases. The Sandbox Controller's
+  routing and `<sandbox>-environment-runtime` Leases solely for legacy route publication.
+  Every replica independently watches and calls the Runtime without a connection epoch. The Sandbox Controller's
   direct mTLS `observe_only` watch supplies the accepted workload UID and binds it for the Runtime
   process before the first facts snapshot; the Controller keeps those facts in memory per
   Sandbox, incarnation and boot. Gateway watches cannot select or replace that binding. The Gateway
-  publishes only connection identity and renewal metadata to its Lease. History push and ordinary Sandbox egress retain
+  publishes only legacy routing identity and renewal metadata to its Lease; it grants no Runtime call authority. History push and ordinary Sandbox egress retain
   their sidecar or VM relay paths; History terminates and verifies the Runtime SVID itself
   ([runner control](runner_control.md)).
 - **Telemetry uses Alloy as its collector.** SDK-instrumented services export OTLP/gRPC to Alloy.
