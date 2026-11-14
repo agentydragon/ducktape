@@ -98,19 +98,26 @@ The live gate reopens only after a successor journal reopen and its acknowledgem
 publication succeed for the current Running incarnation; same-incarnation re-entry stays closed.
 
 External authentication and Sandbox/incarnation/boot authorization remain in `runtime/control`.
-Gateway calls with an absent or zero connection epoch authorize against the successfully adopted
-incarnation independently of state-watch lifetime. Any authenticated Gateway replica may call;
-watch loss and same-incarnation observer replacement do not cancel this authority or its active
-execution streams. An incarnation change invalidates it. Supplied nonzero epochs retain the
-legacy live-watch checks. Gateway `WatchState` adoption still requires a nonzero epoch; the field
-remains during this receiver compatibility step.
-The Sandbox Controller's `observe_only` state watches carry epoch zero and never replace or
-cancel the Gateway's legacy watch. A passive watch can perform initial incarnation adoption,
-including a replacement workload restoring sealed state; once a watch has established an
-incarnation in this Runtime process, passive observers cannot change it. Gateway adoption retains
-its existing successor fencing path. Only the Controller's exact SPIFFE identity may open passive
-watches; every control and Executor call still requires the Gateway identity. Direct Session
-admission uses that authority and Runtime's gate. `CreateSession` acknowledges a durable
+The Sandbox Controller's authenticated `observe_only` state watch is the source of the Runtime's
+workload incarnation UID. It carries epoch zero and must name the current Pod or virt-launcher Pod;
+the Runtime reserves that UID and completes its ordinary lifecycle adoption before sending the
+first facts snapshot. The Runtime listener serves before this observation, and each Runtime
+process creates a fresh boot ID. Once bound, the UID cannot change during that process lifetime,
+including after a failed or uncertain adoption callback; reconnects may settle only the same UID.
+This lets a replacement workload restore retained state without allowing a Gateway to select or
+advance the workload identity. The Controller can open only passive watches with its exact SPIFFE
+identity; every control and Executor call still requires the Gateway identity.
+
+Gateway calls with an absent or zero connection epoch authorize against the Controller-bound
+incarnation and this Runtime boot, independently of Gateway state-watch lifetime. Any authenticated
+Gateway replica may call; Gateway watch loss and same-incarnation observer replacement do not
+cancel this authority or its active execution streams. A changed Sandbox UID, incarnation UID, or
+boot ID invalidates it. A Gateway `WatchState` request without an epoch or with epoch zero may
+observe only the already-bound incarnation and cannot establish or replace it. Supplied nonzero
+epochs retain the legacy live-watch checks for calls and the Gateway's connection-owner behavior
+for watches, still restricted to the Controller-bound incarnation. The epoch field remains during
+this receiver compatibility step. Direct Session admission uses Gateway identity and Runtime's
+gate. `CreateSession` acknowledges a durable
 reservation, without promising process readiness. Model lookup occurs outside the gate; the
 reservation rechecks its authorization and accepted revision before its retained write.
 Claude model lookup uses the local gRPC `model_config_target` without a bearer; the egress

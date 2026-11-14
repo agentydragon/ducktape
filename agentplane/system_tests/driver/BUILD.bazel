@@ -253,6 +253,8 @@ py_library(
         "//agentplane/central_sampler/api:sampler_pb2_grpc",
         "//agentplane/grpc:calls",
         "//agentplane/history_service:client",
+        "//agentplane/proto:identity_pb2",
+        "//agentplane/runner_gateway:client",
         "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_pb2_grpc",
         "//devinfra/testing:undeclared_outputs",
         "//model_catalog:catalog",

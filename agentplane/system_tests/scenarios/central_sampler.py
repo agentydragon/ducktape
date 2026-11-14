@@ -1811,6 +1811,9 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
         assert resumed.target.uid == deployed.sandbox_uid
         assert resumed.kubernetes_diagnostics.HasField("pod")
         assert resumed.kubernetes_diagnostics.pod.uid != previous_incarnation
+        # Controller readiness precedes the Gateway's independent Runtime watch. The scenario
+        # requires a callable replacement before exercising the sampler's incarnation notice.
+        await deployed.wait_for_runner(resumed.kubernetes_diagnostics.pod.uid)
 
         submitted = await deployed.dispatcher.SubmitInput(
             session_dispatcher_pb2.SubmitInputRequest(

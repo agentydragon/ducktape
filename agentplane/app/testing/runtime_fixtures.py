@@ -125,6 +125,8 @@ async def runner(
                 svid=SVIDEndpoint(server_uri="spiffe://agentplane/history-ingress", proxy_address=proxy),
             ),
             observe_control=False,
+            controller_credentials=gateway_service.controller_credentials(tmp_path / "controller-transport"),
+            incarnation_uid=sandbox.pod_uid,
         ) as started,
     ):
         await gateway_service.wait_for_runner(sandbox_control, sandbox.destination)

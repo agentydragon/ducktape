@@ -1,4 +1,4 @@
-// runtime_probe observes a disposable guest over the real Gateway mTLS protocol.
+// runtime_probe binds and observes a disposable guest using distinct Controller and Gateway SVIDs.
 package main
 
 import (
@@ -39,6 +39,7 @@ type observedChunk struct {
 func run() error {
 	address := flag.String("address", "192.0.2.2:9090", "guest Runtime endpoint")
 	tlsDir := flag.String("tls-dir", "", "directory containing Gateway tls.crt, tls.key and ca.crt")
+	controllerTLSDir := flag.String("controller-tls-dir", "", "directory containing Sandbox Controller tls.crt, tls.key and ca.crt")
 	namespace := flag.String("namespace", "firecracker-environment-proof", "Sandbox namespace")
 	sandbox := flag.String("sandbox-uid", "proof-sandbox", "Sandbox UID")
 	sandboxName := flag.String("sandbox-name", "proof-sandbox", "Sandbox name, which its WorkloadCredential and Runtime URI take")
@@ -52,8 +53,8 @@ func run() error {
 	hold := flag.Duration("hold", 0, "keep the native execution session open after reading output")
 	afterSeq := flag.Uint64("after-seq", 0, "exclusive last-consumed output sequence for resume")
 	flag.Parse()
-	if *tlsDir == "" || flag.NArg() != 0 {
-		return fmt.Errorf("--tls-dir is required; positional arguments are forbidden")
+	if *tlsDir == "" || *controllerTLSDir == "" || flag.NArg() != 0 {
+		return fmt.Errorf("--tls-dir and --controller-tls-dir are required; positional arguments are forbidden")
 	}
 	if *hold < 0 {
 		return fmt.Errorf("--hold cannot be negative")
@@ -105,6 +106,25 @@ func run() error {
 	// connection setup; expiring this context during --hold would fence our own RPCs.
 	setupTimer := time.AfterFunc(probeCallTimeout, cancel)
 	defer setupTimer.Stop()
+	controllerSecurity := transport.Security{Mode: transport.MutualTLS, TLS: &transport.Config{
+		CertFile: filepath.Join(*controllerTLSDir, "tls.crt"), KeyFile: filepath.Join(*controllerTLSDir, "tls.key"), CAFile: filepath.Join(*controllerTLSDir, "ca.crt"),
+	}}
+	controllerCredentials, err := controllerSecurity.ClientCredentials(uri)
+	if err != nil {
+		return err
+	}
+	controller, err := grpc.NewClient(*address, grpc.WithTransportCredentials(controllerCredentials), grpc.WithDisableRetry())
+	if err != nil {
+		return err
+	}
+	defer controller.Close()
+	binding, err := pb.NewEnvironmentRuntimeClient(controller).WatchState(ctx, &pb.WatchStateRequest{SandboxUid: *sandbox, IncarnationUid: *pod, ObserveOnly: true})
+	if err != nil {
+		return err
+	}
+	if _, err := binding.Recv(); err != nil {
+		return fmt.Errorf("Controller incarnation binding: %w", err)
+	}
 	client := pb.NewEnvironmentRuntimeClient(connection)
 	watch, err := client.WatchState(ctx, &pb.WatchStateRequest{SandboxUid: *sandbox, IncarnationUid: *pod, ConnectionEpoch: *epoch})
 	if err != nil {

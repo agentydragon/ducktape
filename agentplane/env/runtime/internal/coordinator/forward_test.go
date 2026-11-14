@@ -44,6 +44,7 @@ func testRunnerHealthAndFencing(t *testing.T, mode environmentruntimetransport.S
 	t.Helper()
 	runnerSecurity := environmentruntimetransport.Security{Mode: mode}
 	gatewaySecurity := environmentruntimetransport.Security{Mode: mode}
+	controllerSecurity := environmentruntimetransport.Security{Mode: mode}
 	var runnerURI string
 	if mode == environmentruntimetransport.MutualTLS {
 		ca := environmentruntimetransporttesting.NewCA(t)
@@ -54,7 +55,8 @@ func testRunnerHealthAndFencing(t *testing.T, mode environmentruntimetransport.S
 		}
 		runnerTLS := ca.Issue(t, runnerURI)
 		gatewayTLS := ca.Issue(t, environmentruntimetransport.GatewayURI)
-		runnerSecurity.TLS, gatewaySecurity.TLS = &runnerTLS, &gatewayTLS
+		controllerTLS := ca.Issue(t, environmentruntimetransport.SandboxControllerURI)
+		runnerSecurity.TLS, gatewaySecurity.TLS, controllerSecurity.TLS = &runnerTLS, &gatewayTLS, &controllerTLS
 	}
 	config := lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false")
 	config.Control = configuration.EnvironmentRuntimeControlConfiguration{ListenAddress: "127.0.0.1:0", Security: runnerSecurity}
@@ -85,6 +87,16 @@ func testRunnerHealthAndFencing(t *testing.T, mode environmentruntimetransport.S
 		t.Fatalf("pre-watch health = %v, error %v; want SERVING", health, err)
 	}
 
+	controllerCredentials, err := controllerSecurity.ClientCredentials(runnerURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	controllerConn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(controllerCredentials))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer controllerConn.Close()
+	bindTestIncarnation(t, environmentruntimepb.NewEnvironmentRuntimeClient(controllerConn), "sandbox-uid", "pod-uid-1")
 	watch, err := environmentruntimepb.NewEnvironmentRuntimeClient(conn).WatchState(ctx, &environmentruntimepb.WatchStateRequest{
 		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid-1", ConnectionEpoch: 1,
 	})
@@ -154,7 +166,7 @@ func testRunnerHealthAndFencing(t *testing.T, mode environmentruntimetransport.S
 	}
 
 	newWatch, err := environmentruntimepb.NewEnvironmentRuntimeClient(conn).WatchState(ctx, &environmentruntimepb.WatchStateRequest{
-		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid-2", ConnectionEpoch: 2,
+		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid-1", ConnectionEpoch: 2,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -163,10 +175,10 @@ func testRunnerHealthAndFencing(t *testing.T, mode environmentruntimetransport.S
 	if err != nil {
 		t.Fatal(err)
 	}
-	if second.GetIncarnationUid() != "pod-uid-2" || second.GetConnectionEpoch() != 2 {
+	if second.GetIncarnationUid() != "pod-uid-1" || second.GetConnectionEpoch() != 2 {
 		t.Fatalf("successor WatchState response = %v", second)
 	}
-	if _, err := statusClient.GetStatus(callContext("pod-uid-2", second.GetEnvironmentRuntimeBootId(), 2), &sessionpb.GetStatusRequest{}); err != nil {
+	if _, err := statusClient.GetStatus(callContext("pod-uid-1", second.GetEnvironmentRuntimeBootId(), 2), &sessionpb.GetStatusRequest{}); err != nil {
 		t.Fatalf("successor watcher was deactivated by its predecessor: %v", err)
 	}
 	staleExecution, err := executorpb.NewExecutorClient(conn).OpenSession(
@@ -267,6 +279,17 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 	defer cancel()
 	client := environmentruntimepb.NewEnvironmentRuntimeClient(conn)
 	watchCtx, cancelWatch := context.WithCancel(ctx)
+	controllerTLS := ca.Issue(t, environmentruntimetransport.SandboxControllerURI)
+	controllerCredentials, err := controllerTLS.ClientCredentials(runnerURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	controllerConn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(controllerCredentials))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer controllerConn.Close()
+	bindTestIncarnation(t, environmentruntimepb.NewEnvironmentRuntimeClient(controllerConn), "sandbox-uid", "pod-uid")
 	watch, err := client.WatchState(watchCtx, &environmentruntimepb.WatchStateRequest{
 		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid", ConnectionEpoch: 1,
 	})
@@ -369,6 +392,17 @@ func TestForwardRunnerRejectsUnconfiguredExecutionSession(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	controllerTLS := ca.Issue(t, environmentruntimetransport.SandboxControllerURI)
+	controllerCredentials, err := controllerTLS.ClientCredentials(runnerURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	controllerConn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(controllerCredentials))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer controllerConn.Close()
+	bindTestIncarnation(t, environmentruntimepb.NewEnvironmentRuntimeClient(controllerConn), "sandbox-uid", "pod-uid")
 	watch, err := environmentruntimepb.NewEnvironmentRuntimeClient(conn).WatchState(ctx, &environmentruntimepb.WatchStateRequest{
 		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid", ConnectionEpoch: 1,
 	})
@@ -515,7 +549,7 @@ func uint64String(value uint64) string {
 	return strconv.FormatUint(value, 10)
 }
 
-func TestControllerPassiveWatchCoexistsWithGatewayAndCannotControl(t *testing.T) {
+func TestControllerBindsRuntimeForIndependentAuthenticatedGatewayReplicas(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
 	runnerURI, err := (workloadid.ID{Namespace: "test", Name: "sandbox", CredentialID: "credential-id"}).URI()
 	if err != nil {
@@ -551,12 +585,26 @@ func TestControllerPassiveWatchCoexistsWithGatewayAndCannotControl(t *testing.T)
 	controllerConn := dial(environmentruntimetransport.SandboxControllerURI)
 	controller := environmentruntimepb.NewEnvironmentRuntimeClient(controllerConn)
 	gateway := environmentruntimepb.NewEnvironmentRuntimeClient(dial(environmentruntimetransport.GatewayURI))
+	gatewayB := environmentruntimepb.NewEnvironmentRuntimeClient(dial(environmentruntimetransport.GatewayURI))
 	ctx, cancel := context.WithTimeout(t.Context(), lifecycleTestTimeout)
 	defer cancel()
 	passiveCtx, cancelPassive := context.WithCancel(ctx)
 	defer cancelPassive()
 	passiveRequest := &environmentruntimepb.WatchStateRequest{
 		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid", ObserveOnly: true,
+	}
+	// A Gateway's service identity cannot choose the workload UID, even with a
+	// legacy high epoch. Both replicas wait for the Controller's credential-bound observation.
+	for _, client := range []environmentruntimepb.EnvironmentRuntimeClient{gateway, gatewayB} {
+		for _, epoch := range []uint64{0, 7} {
+			stream, err := client.WatchState(ctx, &environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid", ConnectionEpoch: epoch})
+			if err == nil {
+				_, err = stream.Recv()
+			}
+			if status.Code(err) != codes.Unavailable {
+				t.Fatalf("Gateway established incarnation before Controller: %v", err)
+			}
+		}
 	}
 	passive, err := controller.WatchState(passiveCtx, passiveRequest)
 	if err != nil {
@@ -569,6 +617,53 @@ func TestControllerPassiveWatchCoexistsWithGatewayAndCannotControl(t *testing.T)
 	if initial.GetConnectionEpoch() != 0 || initial.GetFacts() == nil || initial.GetEnvironmentRuntimeBootId() == "" || initial.GetIncarnationUid() != "pod-uid" {
 		t.Fatalf("passive snapshot = %v", initial)
 	}
+	gatewayWatchCtx, cancelGatewayWatch := context.WithCancel(ctx)
+	defer cancelGatewayWatch()
+	watchA, err := gateway.WatchState(gatewayWatchCtx, &environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshotA, err := watchA.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	watchB, err := gatewayB.WatchState(ctx, &environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshotB, err := watchB.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshotA.GetConnectionEpoch() != 0 || snapshotB.GetConnectionEpoch() != 0 || snapshotA.GetEnvironmentRuntimeBootId() != initial.GetEnvironmentRuntimeBootId() || snapshotB.GetEnvironmentRuntimeBootId() != initial.GetEnvironmentRuntimeBootId() {
+		t.Fatalf("independent Gateway snapshots: %v, %v", snapshotA, snapshotB)
+	}
+	call := func(uid, incarnation, boot string) context.Context {
+		return metadata.AppendToOutgoingContext(ctx, control.SandboxMetadata, uid, control.IncarnationMetadata, incarnation, control.BootMetadata, boot)
+	}
+	checkReplicas := func() {
+		t.Helper()
+		for _, client := range []environmentruntimepb.EnvironmentRuntimeClient{gateway, gatewayB} {
+			if _, err := client.GetStatus(call("sandbox-uid", "pod-uid", initial.GetEnvironmentRuntimeBootId()), &sessionpb.GetStatusRequest{}); err != nil {
+				t.Fatalf("current replica call: %v", err)
+			}
+			for _, stale := range []context.Context{call("sandbox-uid", "old-pod", initial.GetEnvironmentRuntimeBootId()), call("sandbox-uid", "pod-uid", "old-boot")} {
+				if _, err := client.GetStatus(stale, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
+					t.Fatalf("stale replica call admitted: %v", err)
+				}
+			}
+			if _, err := client.GetStatus(call("old-sandbox", "pod-uid", initial.GetEnvironmentRuntimeBootId()), &sessionpb.GetStatusRequest{}); status.Code(err) != codes.PermissionDenied {
+				t.Fatalf("foreign Sandbox call admitted: %v", err)
+			}
+		}
+	}
+	checkReplicas()
+	cancelGatewayWatch()
+	if _, err := watchA.Recv(); status.Code(err) != codes.Canceled {
+		t.Fatalf("Gateway A watch cancellation: %v", err)
+	}
+	checkReplicas()
+	// A legacy same-incarnation observer can overlap epochless observers during the roll.
 	watch, err := gateway.WatchState(ctx, &environmentruntimepb.WatchStateRequest{
 		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid", ConnectionEpoch: 7,
 	})
@@ -599,6 +694,8 @@ func TestControllerPassiveWatchCoexistsWithGatewayAndCannotControl(t *testing.T)
 		{name: "missing Sandbox", client: controller, request: &environmentruntimepb.WatchStateRequest{IncarnationUid: "pod-uid", ObserveOnly: true}, code: codes.InvalidArgument},
 		{name: "missing incarnation", client: controller, request: &environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox-uid", ObserveOnly: true}, code: codes.InvalidArgument},
 		{name: "passive epoch must be zero", client: controller, request: &environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid", ConnectionEpoch: 8, ObserveOnly: true}, code: codes.InvalidArgument},
+		{name: "Gateway cannot adopt old UID without epoch", client: gateway, request: &environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox-uid", IncarnationUid: "old-pod"}, code: codes.FailedPrecondition},
+		{name: "legacy Gateway cannot adopt old UID with high epoch", client: gatewayB, request: &environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox-uid", IncarnationUid: "old-pod", ConnectionEpoch: 999}, code: codes.FailedPrecondition},
 		{name: "passive cannot replace incarnation", client: controller, request: &environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox-uid", IncarnationUid: "replacement", ObserveOnly: true}, code: codes.FailedPrecondition},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -639,6 +736,7 @@ func TestControllerPassiveWatchCoexistsWithGatewayAndCannotControl(t *testing.T)
 	if _, err := passive.Recv(); status.Code(err) != codes.Canceled {
 		t.Fatalf("canceled passive watch = %v", err)
 	}
+	checkReplicas()
 	if _, err := gateway.GetStatus(callCtx, &sessionpb.GetStatusRequest{}); err != nil {
 		t.Fatalf("Gateway epoch after passive cancellation: %v", err)
 	}
@@ -711,5 +809,20 @@ func TestPassiveWatchAdoptsReplacementAfterRestoringSealedState(t *testing.T) {
 	}
 	if uid, found, err := r.state.SealedUID(); err != nil || found {
 		t.Fatalf("replacement retained prior seal = %q, found=%t, error=%v", uid, found, err)
+	}
+}
+
+// Bind through the same distinct Controller operation used by production. The
+// binding outlives this observation; Gateway tests cannot install it themselves.
+func bindTestIncarnation(t *testing.T, client environmentruntimepb.EnvironmentRuntimeClient, sandboxUID, incarnation string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), lifecycleTestTimeout)
+	defer cancel()
+	stream, err := client.WatchState(ctx, &environmentruntimepb.WatchStateRequest{SandboxUid: sandboxUID, IncarnationUid: incarnation, ObserveOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stream.Recv(); err != nil {
+		t.Fatalf("Controller initial binding: %v", err)
 	}
 }

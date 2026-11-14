@@ -80,6 +80,7 @@ type Server struct {
 
 	adoptionMu            sync.Mutex
 	mu                    sync.RWMutex
+	boundIncarnationUID   string
 	identity              *watch
 	watch                 *watch
 	highestEpoch          uint64
@@ -129,14 +130,24 @@ func (s *Server) Listen(executor executorpb.ExecutorServer) (net.Listener, *grpc
 }
 
 func (s *Server) directWatchContext(req *environmentruntimepb.WatchStateRequest, parent context.Context) (*watch, error) {
-	if req == nil || req.SandboxUid == "" || req.IncarnationUid == "" || req.ConnectionEpoch == 0 {
-		return nil, status.Error(codes.InvalidArgument, "sandbox UID, incarnation UID, and nonzero connection epoch are required")
+	if req == nil || req.SandboxUid == "" || req.IncarnationUid == "" {
+		return nil, status.Error(codes.InvalidArgument, "sandbox UID and incarnation UID are required")
 	}
 	if req.SandboxUid != s.config.SandboxUID {
 		return nil, status.Error(codes.PermissionDenied, "watch request names another Sandbox")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.identity == nil || !s.identity.ready {
+		return nil, status.Error(codes.Unavailable, "Sandbox Controller has not bound the Runtime incarnation")
+	}
+	if req.IncarnationUid != s.boundIncarnationUID {
+		return nil, status.Error(codes.FailedPrecondition, "Gateway watch cannot replace the Runtime incarnation")
+	}
+	if req.ConnectionEpoch == 0 {
+		ctx, cancel := context.WithCancel(parent)
+		return &watch{ctx: ctx, cancel: cancel, sandboxUID: req.SandboxUid, incarnationUID: req.IncarnationUid}, nil
+	}
 	if req.ConnectionEpoch < s.highestEpoch {
 		return nil, status.Error(codes.Aborted, "watch request has a stale connection epoch")
 	}
@@ -304,15 +315,16 @@ func (s *Server) WatchState(
 	if err != nil {
 		return err
 	}
-	if request.ObserveOnly {
+	if request.ObserveOnly || request.ConnectionEpoch == 0 {
 		defer current.cancel()
 	} else {
 		defer s.finishWatch(current)
 	}
-	if err := s.adoptWatch(current, request.ObserveOnly); err != nil {
-		return err
-	}
-	if !request.ObserveOnly {
+	if request.ObserveOnly {
+		if err := s.bindControllerWatch(current); err != nil {
+			return err
+		}
+	} else if request.ConnectionEpoch != 0 {
 		if err := s.markWatchReady(current); err != nil {
 			return err
 		}
@@ -320,7 +332,7 @@ func (s *Server) WatchState(
 	return s.forwardWatchState(
 		current.ctx, authorize,
 		func() (*environmentruntimepb.WatchStateResponse, error) {
-			if request.ObserveOnly {
+			if request.ObserveOnly || request.ConnectionEpoch == 0 {
 				if err := s.validatePassiveWatch(current); err != nil {
 					return nil, err
 				}
@@ -361,36 +373,32 @@ func (s *Server) authorizeControllerPeer(ctx context.Context) error {
 func (s *Server) validatePassiveWatch(current *watch) error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if (s.identity != nil && s.identity.incarnationUID != current.incarnationUID) ||
-		(s.highestIncarnationUID != "" && s.highestIncarnationUID != current.incarnationUID) ||
-		(s.watch != nil && s.watch.incarnationUID != current.incarnationUID) {
-		return status.Error(codes.FailedPrecondition, "observe-only watch cannot replace the Runtime incarnation")
+	if s.boundIncarnationUID != "" && s.boundIncarnationUID != current.incarnationUID {
+		return status.Error(codes.FailedPrecondition, "watch cannot replace the Runtime incarnation")
 	}
 	return nil
 }
 
-func (s *Server) adoptWatch(current *watch, passive bool) error {
-	// Gateway replacement still cancels its predecessor before waiting here.
-	// Serialize adoption so a passive observer cannot restore an earlier identity
-	// after a concurrent Gateway has adopted its successor.
+func (s *Server) bindControllerWatch(current *watch) error {
+	// Only the authenticated Controller names this process's workload incarnation.
+	// Reserve it before the lifecycle callback: an uncertain adoption cannot let a
+	// delayed observer restore another UID. Reconnect may settle only the same UID.
 	s.adoptionMu.Lock()
 	defer s.adoptionMu.Unlock()
 	if err := current.ctx.Err(); err != nil {
 		return status.FromContextError(err).Err()
 	}
-	if passive {
-		if err := s.validatePassiveWatch(current); err != nil {
-			return err
-		}
+	if err := s.validatePassiveWatch(current); err != nil {
+		return err
 	}
+	s.mu.Lock()
+	s.boundIncarnationUID = current.incarnationUID
+	s.mu.Unlock()
 	if err := s.config.AdoptIncarnation(current.ctx, current.incarnationUID); err != nil {
 		return err
 	}
 	s.mu.Lock()
-	if s.identity == nil || s.identity.incarnationUID != current.incarnationUID {
-		if s.identity != nil {
-			s.identity.cancel()
-		}
+	if s.identity == nil {
 		// Observer loss and another Gateway replica do not end identity-bound work.
 		// The caller stream and Runtime lifecycle retain their own cancellation.
 		ctx, cancel := context.WithCancel(context.Background())

@@ -205,6 +205,8 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                     ),
                     control_endpoint=control,
                     observe_control=False,
+                    controller_credentials=gateway.controller_credentials(tmp_path / "controller-transport"),
+                    incarnation_uid=sandbox.pod_uid,
                 ) as running_runner,
             ):
                 await gateway.wait_for_runner(gateway.gateway_client(gateway_token), sandbox.destination)

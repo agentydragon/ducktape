@@ -11,6 +11,7 @@ from agentplane.grpc.calls import call_unary, dial
 from agentplane.proto import session_pb2
 from agentplane.proto.identity_pb2 import SandboxDestination
 from agentplane.runner_gateway.api import (
+    INCARNATION_UID_HEADER,
     SANDBOX_HEADER,
     SANDBOX_NAMESPACE_HEADER,
     SANDBOX_OWNER_NAME_HEADER,
@@ -52,8 +53,12 @@ class SandboxControlClient:
         request: Message,
         *,
         timeout_s: float | None = None,
+        expected_incarnation_uid: str | None = None,
     ) -> T:
         """Call a Runner RPC through its control Service, fenced to the expected Sandbox identity."""
+        incarnation_metadata = (
+            ((INCARNATION_UID_HEADER, expected_incarnation_uid),) if expected_incarnation_uid is not None else ()
+        )
         async with dial(
             self.control_target.format(sandbox=destination.target.name, namespace=destination.target.namespace),
             channel_credentials=self.channel_credentials,
@@ -73,13 +78,19 @@ class SandboxControlClient:
                     (SANDBOX_UID_HEADER, destination.target.uid),
                     (SANDBOX_OWNER_NAMESPACE_HEADER, destination.owner.namespace),
                     (SANDBOX_OWNER_NAME_HEADER, destination.owner.name),
+                    *incarnation_metadata,
                 ),
             )
 
-    async def list_sessions(self, destination: SandboxDestination) -> list[session_pb2.SessionSummary]:
+    async def list_sessions(
+        self, destination: SandboxDestination, *, expected_incarnation_uid: str | None = None
+    ) -> list[session_pb2.SessionSummary]:
         """Read live runner inventory through its proxy, fenced to the expected Sandbox identity."""
         response = await self.runner_unary(
-            destination, lambda stub: stub.ListSessions, session_pb2.ListSessionsRequest()
+            destination,
+            lambda stub: stub.ListSessions,
+            session_pb2.ListSessionsRequest(),
+            expected_incarnation_uid=expected_incarnation_uid,
         )
         return list(response.sessions)
 
@@ -91,8 +102,8 @@ class SandboxRunner:
         self.control = control
         self.destination = destination
 
-    async def list_sessions(self) -> list[session_pb2.SessionSummary]:
-        return await self.control.list_sessions(self.destination)
+    async def list_sessions(self, *, expected_incarnation_uid: str | None = None) -> list[session_pb2.SessionSummary]:
+        return await self.control.list_sessions(self.destination, expected_incarnation_uid=expected_incarnation_uid)
 
     async def status(self) -> session_pb2.EnvironmentRuntimeStatus:
         return await self.control.runner_unary(

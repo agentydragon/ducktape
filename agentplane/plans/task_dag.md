@@ -2277,13 +2277,13 @@ after the History representation decision, over journal records?
 ## 12. The Runner Gateway serves the runner's own service
 
 The Gateway proxies the runner's `Runner` service with per-method authorization; commands use
-Dispatcher and typed Runner RPCs. The Sandbox Controller observes Runtime state directly. The
-selected replica contract allows any authenticated Gateway replica to connect to and call a Runtime;
-the Runtime fences requests by Sandbox UID, workload incarnation and boot ID, with no connection
-epoch. The [runtime state observation plan](runtime_state_observation.md) records the decision and
-the rollout. The direct Controller reader migration merged in #16324; #16328 removes Lease fact
-publication after the new Controller is running on staging. Gateway connection removal remains
-pending.
+Dispatcher and typed Runner RPCs. The Sandbox Controller's authenticated passive watch binds the
+Runtime workload UID before it publishes facts. The receiver contract permits any authenticated
+Gateway replica to call with the bound Sandbox/incarnation/boot identity and an absent or zero
+epoch; legacy nonzero call and watch epochs remain temporarily supported for that same UID. The
+[runtime state observation plan](runtime_state_observation.md) records the contract and rollout. The
+direct Controller reader migration merged in #16324; #16328 removes Lease fact publication after
+the new Controller is running on staging. Gateway connection removal remains pending.
 
 The [service-boundary contract](../docs/service_boundaries.md) and [Runner Gateway README](../runner_gateway/README.md)
 describe the current proxy. Live `Runner.ListSessions` remains part of the app and Notification
@@ -2293,10 +2293,8 @@ service caller contract. The separate destination-authority decision
 ```mermaid
 flowchart TD
     RUNNER_OBSERVATION_READINESS_RACE[Candidate: investigate runner readiness and routing race]
-    RUNNER_MULTI_REPLICA_WATCHSTATE[Blocked: remove exclusive Runtime WatchState epoch adoption]
-    RUNNER_GATEWAY_CONNECTION_LEASE_REMOVAL[Blocked: remove Gateway connection ownership after receiver image pin]
+    RUNNER_GATEWAY_CONNECTION_LEASE_REMOVAL[Blocked: remove Gateway connection ownership after receiver image pin and live Runtime verification]
     RUNNER_CONNECTION_LEASE_CLEANUP[Blocked: remove final connection-Lease RBAC and epoch protocol after Gateway image pin]
-    RUNNER_MULTI_REPLICA_WATCHSTATE --> RUNNER_GATEWAY_CONNECTION_LEASE_REMOVAL
     RUNNER_GATEWAY_CONNECTION_LEASE_REMOVAL --> RUNNER_CONNECTION_LEASE_CLEANUP
 ```
 
@@ -2325,21 +2323,16 @@ contract and its follow-on implementation below.
 **Exit:** either capture evidence that distinguishes the remaining failure boundary if the failure
 recurs, or close the incident follow-up if ordinary use shows no recurrence. Preserve UID/incarnation/boot fencing and stale-call denial.
 
-### `RUNNER_MULTI_REPLICA_WATCHSTATE` — remove exclusive Runtime watch adoption
-
-**Blocked on #16328 and the optional-epoch receiver image pin.** The current receiver compatibility
-change allows an absent epoch on proxy and Executor calls but keeps exclusive, epoch-bearing
-`WatchState` adoption. Remove that exclusive adoption while retaining Runtime-trusted
-Sandbox/incarnation/boot binding. Pin the receiver image before Gateway connection ownership changes.
-Exit: authenticated Gateway replicas can observe the same current Runtime without a connection epoch;
-stale identity metadata is rejected.
-
 ### `RUNNER_GATEWAY_CONNECTION_LEASE_REMOVAL` — remove Gateway connection ownership
 
-**Blocked on `RUNNER_MULTI_REPLICA_WATCHSTATE` and its receiver image pin.** Route callers through
-the stable `runner-gateway` Service; remove Gateway connection-Lease claims, call-epoch checks and
-the per-Sandbox `<sandbox>-control` EndpointSlice. Preserve per-method authorization and the
-Runtime-trusted identity binding; do not replay mutations with uncertain outcomes. Keep old Lease
+**Blocked until this receiver change lands, its Runtime image is pinned, and live Sandbox Runtimes
+are verified compatible.** Pinning the image does not replace existing Runtime processes. Inventory
+live Sandboxes and cycle older ones through suspend/resume before the zero-epoch Gateway cutover; an
+older Runtime cannot accept that watch mode until restarted. The later Gateway must not revive the
+Lease protocol as a fallback for older processes. Then route callers through the stable
+`runner-gateway` Service; remove Gateway connection-Lease claims, call-epoch checks and the
+per-Sandbox `<sandbox>-control` EndpointSlice. Preserve per-method authorization and the
+Controller-bound Runtime identity; do not replay mutations with uncertain outcomes. Keep old Lease
 objects and permissions through the Gateway image rollback window. Exit: image rollout and
 deterministic multi-replica coverage of failover, stale callers, Runtime restart, same-name
 replacement and uncertain outcomes.

@@ -17,6 +17,11 @@ async def test_runner_client_routes_with_complete_sandbox_identity(
 ) -> None:
     assert await sandbox_control.list_sessions(sandbox.destination) == []
 
+    assert await sandbox_control.list_sessions(sandbox.destination, expected_incarnation_uid=sandbox.pod_uid) == []
+    with pytest.raises(ServiceError) as wrong_workload:
+        await sandbox_control.list_sessions(sandbox.destination, expected_incarnation_uid="previous-workload")
+    assert wrong_workload.value.code.name == "ABORTED"
+
     stale = SandboxDestination()
     stale.CopyFrom(sandbox.destination)
     stale.target.uid = "stale-sandbox-incarnation"

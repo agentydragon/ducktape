@@ -5,8 +5,10 @@ Reconciles `Sandbox` into retained state and optional workspace PVCs and, while 
 [`agentplane/crds`](../crds/BUILD.bazel). The integration app submits Sandbox desired state and
 operator grants through the Kubernetes API; this controller reconciles each Sandbox and owns its
 status. Each runner serves mTLS on its workload network, and the Runner Gateway connects to the
-current incarnation using its per-incarnation certificate. History and telemetry use the egress
-sidecar's platform routes. `spec.bootstrap` and the Sandbox's identity reach its runner
+current incarnation using its per-incarnation certificate. The elected Controller observes Runtime
+facts directly with a narrow SVID; a compatible Runtime uses that authenticated watch to bind the
+current workload UID before publishing facts, while Gateway watches cannot select or replace the
+binding. History and telemetry use the egress sidecar's platform routes. `spec.bootstrap` and the Sandbox's identity reach its runner
 through the Sandbox's launch ConfigMap (a Pod mounts it, a VM gets it as a disk). Session launch
 defaults live in the app's preset catalog and are resolved before an opening reaches the Dispatcher.
 Deletion first has the runner seal every
@@ -114,16 +116,18 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   recorded cause; the Sandbox is to run, so the stop path seals it and replaces the incarnation.
   A restart between the call and the write ends the same way, at the cost of one incarnation.
 - **The elected leader watches Runtime directly.** `WatchState(observe_only=true)` uses the
-  Controller's own SVID and grants no Gateway command authority. `runtime_states.go` keeps snapshots
-  in memory by Sandbox UID and Pod UID, with boot ID and a local stream generation. A replacement
-  fences late callbacks. New leaders discover current incarnations through the initial cache list
-  and reopen watches; they wait for an authenticated snapshot before reporting connectivity or idle
+  Controller's own SVID and grants no Gateway command authority. On a compatible Runtime, this
+  authenticated request binds the current workload UID for that Runtime process before facts are
+  published; reconnects may retry only that UID. `runtime_states.go` keeps snapshots in memory by
+  Sandbox UID and Pod UID, with boot ID and a local stream generation. A replacement fences late
+  callbacks. New leaders discover current incarnations through the initial cache list and reopen
+  watches; they wait for an authenticated snapshot before reporting connectivity or idle
   eligibility. Lost streams retry after one second. A 30-second heartbeat timeout makes idle facts
   ineligible immediately; connectivity keeps a one-minute grace. Reopening a stream restarts its
   full idle timer, including when `idle-since` is unchanged. Quiesce retry deadlines remain durable;
   only fresh observed quiescence or an acknowledged quiesce RPC completes a seal. Bootstrap failure
-  stays terminal for that incarnation. The Gateway still owns its separate active call epoch,
-  connection Lease and control EndpointSlice during this reader migration.
+  stays terminal for that incarnation. The current Gateway route still uses its connection Lease
+  and control EndpointSlice; its legacy nonzero watch can observe only the Controller-bound UID.
 - **Gotcha:** a deleted Sandbox whose runner cannot seal stays in `Quiescing`. To give up on the seal,
   remove the finalizer by hand: the PVC is owned, so it goes with the Sandbox, and the Pod or VM
   with it.
