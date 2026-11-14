@@ -766,7 +766,8 @@ func publishSnapshot(t *testing.T, r *Reconciler, runner string, facts sandboxle
 		generation = r.States.nextGeneration
 	}
 	r.States.active[key] = &runtimeObservation{
-		sandbox: sandbox.DeepCopy(), pod: pod.DeepCopy(), cancel: func() {}, generation: generation,
+		sandbox: sandbox.DeepCopy(), pod: pod.DeepCopy(), credentialID: pod.Labels[sandboxapi.EnvironmentRuntimeCredentialMetadataKey],
+		cancel: func() {}, generation: generation,
 		snapshot: RuntimeSnapshot{
 			SandboxUID: sandbox.UID, PodUID: runner, BootID: "test-runner-boot",
 			LastSeen: r.Now(), Connected: true, Generation: generation, Facts: facts,

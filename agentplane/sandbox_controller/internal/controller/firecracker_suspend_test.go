@@ -64,9 +64,11 @@ func firecrackerIdleController(t *testing.T) (*Reconciler, client.Client, *time.
 	if pod == nil || !isFirecrackerPod(pod) {
 		t.Fatal("Firecracker launcher was not created")
 	}
+	pod.Status.PodIP = "10.0.0.1"
 	setPodReady(t, c, pod, corev1.ConditionTrue)
 	pod = getPod(t, c)
 	status.state.PodUID = string(pod.UID)
+	reconcileOnce(t, r) // Accept and publish this fixture's runner identity before its Runtime facts.
 	connect(t, r, string(pod.UID))
 	setIdleSuspendAfter(t, c, durationPtr(idleSuspendAfter))
 	publishIdleSince(t, r, &runnerIdleSince)
