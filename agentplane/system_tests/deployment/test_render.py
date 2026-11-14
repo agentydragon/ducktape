@@ -223,6 +223,7 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     app_container = _resource(docs, "Deployment", "app")["spec"]["template"]["spec"]["containers"][0]
     app_env = {entry["name"]: entry for entry in app_container["env"]}
     app_settings = yaml.safe_load(_resource(docs, "ConfigMap", "app-config")["data"]["config.yaml"])
+    assert "token_subjects" not in app_settings
     assert AnyHttpUrl(app_settings["connection_service_url"]) == AnyHttpUrl(fixture_chart.MCP_EDGE_SERVICE.url)
     assert "AGENTPLANE_CONNECTION_SERVICE_URL" not in app_env
     assert "AGENTPLANE_ACTIONS_OAUTH" not in {entry["name"] for entry in actions_container["env"]}

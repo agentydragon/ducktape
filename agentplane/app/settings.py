@@ -173,6 +173,7 @@ class Settings(BaseModel):
     )
     token_subjects: frozenset[str] = Field(
         default_factory=frozenset,
+        exclude_if=lambda value: not value,
         description="Kubernetes usernames accepted by TokenReview; an empty set accepts none.",
     )
     oidc: OIDCSettings | None = Field(
