@@ -13,7 +13,6 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 )
 
 from cluster.cdk8s import namespaces
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.haku_ci import runner
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -70,7 +69,3 @@ def chart(app: App) -> Chart:
         },
     )
     return chart
-
-
-def keda(chart: Chart, directory: RenderedDirectory, kyverno: Kustomization) -> Kustomization:
-    return flux_kustomization(chart, NAME, directory, timeout="5m", depends_on=[flux_kustomization_depends_on(kyverno)])

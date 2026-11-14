@@ -19,7 +19,6 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s import external_creds
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
@@ -81,15 +80,3 @@ def chart(app: App) -> Chart:
     # (devinfra/claude/claude_hook/creds_banner.sh).
     secret_copy.secret_copy(chart, "claude-forgejo-credentials", reader=secret_copy.reader(chart, _NAMESPACE))
     return chart
-
-
-def claude_sandbox_secrets(
-    chart: Chart, directory: RenderedDirectory, claude_rbac: Kustomization, external_secrets_operator: Kustomization
-) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        directory,
-        timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(claude_rbac, external_secrets_operator),
-    )

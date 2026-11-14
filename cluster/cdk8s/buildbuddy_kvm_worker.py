@@ -533,19 +533,3 @@ def buildbuddy_kvm_worker(
         ],
         depends_on=flux_kustomization_depends_on_many(executor, kubevirt, monitoring_crds, piraeus),
     )
-
-
-def autoscaler(
-    chart: Chart,
-    directory: RenderedDirectory,
-    worker: Kustomization,
-    keda_operator: Kustomization,
-    monitoring: Kustomization,
-    mimir_backend: Kustomization,
-) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        AUTOSCALER_NAME,
-        directory,
-        depends_on=flux_kustomization_depends_on_many(worker, keda_operator, monitoring, mimir_backend),
-    )

@@ -32,7 +32,6 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s import cilium, namespaces, node_scheduling
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.kubevirt.virtual_machine import container_disk_vm, domain_labels
@@ -412,22 +411,3 @@ def chart(app: App) -> Chart:
         ],
     )
     return chart
-
-
-def cpap_sync(
-    chart: Chart,
-    directory: RenderedDirectory,
-    external_secrets_operator: Kustomization,
-    kubevirt: Kustomization,
-    monitoring_crds: Kustomization,
-    cert_manager_environment: Kustomization,
-) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        directory,
-        timeout="30m",
-        depends_on=flux_kustomization_depends_on_many(
-            external_secrets_operator, kubevirt, monitoring_crds, cert_manager_environment
-        ),
-    )

@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
 
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import SecretStoreRef
 
@@ -204,7 +203,3 @@ def chart(app: App) -> Chart:
                     )
                 )
     return chart
-
-
-def external_creds(flux_chart: Chart, directory: RenderedDirectory) -> Kustomization:
-    return flux_kustomization(flux_chart, "external-creds", directory, retry_interval=None, wait=None, timeout="5m")

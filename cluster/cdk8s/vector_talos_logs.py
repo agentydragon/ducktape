@@ -13,7 +13,7 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s import namespaces
-from cluster.cdk8s.flux import ConfigMapArgs, Kustomization, RenderedDirectory, flux_kustomization
+from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import loki
 from cluster.cdk8s.namespaces import Vpa
@@ -146,7 +146,3 @@ def chart(app: App) -> Chart:
         ),
     )
     return chart
-
-
-def vector_talos_logs(chart: Chart, directory: RenderedDirectory) -> Kustomization:
-    return flux_kustomization(chart, NAME, directory, timeout="2m")

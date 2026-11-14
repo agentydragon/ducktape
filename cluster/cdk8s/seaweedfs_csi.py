@@ -13,7 +13,6 @@ from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepositorySpecRe
 from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade, HelmReleaseSpecUpgradeRemediation
 
 from cluster.cdk8s import namespaces, node_scheduling
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -261,7 +260,3 @@ def chart(app: App) -> Chart:
         parameters={"diskType": "ssd", "replication": "001"},
     )
     return chart
-
-
-def seaweedfs_csi(chart: Chart, directory: RenderedDirectory) -> Kustomization:
-    return flux_kustomization(chart, NAME, directory, timeout="10m")

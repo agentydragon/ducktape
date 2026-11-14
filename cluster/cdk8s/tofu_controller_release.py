@@ -28,7 +28,6 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import flux, terraform
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.image_automation import newest_ci_tag_policy
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
@@ -131,16 +130,3 @@ def chart(app: App) -> Chart:
             ),
         )
     return chart
-
-
-def tofu_controller(
-    chart: Chart, directory: RenderedDirectory, kyverno: Kustomization, flux_image_automation_ghcr: Kustomization
-) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        directory,
-        interval="10m0s",
-        timeout="10m0s",
-        depends_on=flux_kustomization_depends_on_many(kyverno, flux_image_automation_ghcr),
-    )

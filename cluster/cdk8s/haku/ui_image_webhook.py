@@ -23,7 +23,6 @@ from __future__ import annotations
 from cdk8s import ApiObjectMetadata, App, Chart
 from flux_receiver_crds.io.fluxcd.toolkit.notification import ReceiverSpecSecretRef, ReceiverSpecType
 
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -59,16 +58,3 @@ def chart(app: App) -> Chart:
         ],
     )
     return chart
-
-
-def haku_ui_image_webhook(
-    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization
-) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        directory,
-        retry_interval=None,
-        wait=None,
-        depends_on=flux_kustomization_depends_on_many(external_secrets_operator),
-    )
