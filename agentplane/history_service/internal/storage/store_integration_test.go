@@ -748,6 +748,48 @@ func TestAnIdentityWriterBindsByIncarnationAndSandbox(t *testing.T) {
 	assertError(t, err, ErrWriterMismatch)
 }
 
+func TestAServiceWriterKeepsItsCertificateAndExecutionIdentitySeparate(t *testing.T) {
+	store := testStore(t)
+	db := store.db
+	serviceWriter := ServiceWriter{SPIFFEID: "spiffe://agentplane/central-sampler"}
+	identity := Identity{Name: "test-central-agent", UID: "test-central-agent-uid"}
+	sessionID := uuid.New()
+	for range 2 {
+		if _, err := store.BindServiceWriter(t.Context(), sessionID, serviceWriter, testIdentitySandbox, &identity); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var serviceURI, identityName, identityUID string
+	var accountUID sql.NullString
+	if err := db.QueryRowContext(t.Context(), `SELECT writer_service_uri, writer_uid, execution_identity_name, execution_identity_uid
+		FROM session_history WHERE id=$1`, sessionID).Scan(&serviceURI, &accountUID, &identityName, &identityUID); err != nil {
+		t.Fatal(err)
+	}
+	if serviceURI != serviceWriter.SPIFFEID || accountUID.Valid || identityName != identity.Name || identityUID != identity.UID {
+		t.Fatalf("writer=%q account=%v execution identity=%s/%s", serviceURI, accountUID, identityName, identityUID)
+	}
+
+	listed := func(scope ReadScope) bool {
+		t.Helper()
+		sessions, err := store.WithReadScope(scope).RecordedSessions(t.Context(), 0, 1000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return slices.ContainsFunc(sessions, func(session RecordedSession) bool { return session.SessionID == sessionID })
+	}
+	if !listed(OwnedByIdentity(identity)) || listed(OwnedByIdentity(Identity{Name: identity.Name, UID: "successor"})) || listed(ReadScope{}) {
+		t.Fatal("service writer provenance widened or replaced the Session's execution Identity scope")
+	}
+
+	otherService := ServiceWriter{SPIFFEID: "spiffe://agentplane/actions"}
+	if _, err := store.BindServiceWriter(t.Context(), sessionID, otherService, testIdentitySandbox, &identity); !errors.Is(err, ErrWriterMismatch) {
+		t.Fatalf("different service writer: %v", err)
+	}
+	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, ""); !errors.Is(err, ErrWriterMismatch) {
+		t.Fatalf("ServiceAccount replaced service writer: %v", err)
+	}
+}
+
 // A replica predating Identity writers reads an Identity-bound row as unbound; the schema refuses
 // the ServiceAccount bind it would then write.
 func TestAnIdentityBoundRowRefusesAnOlderReplicasServiceAccountBind(t *testing.T) {

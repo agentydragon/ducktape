@@ -55,10 +55,15 @@ type Writer interface{ isWriter() }
 // ServiceAccountWriter is a runner or central sampler authenticated as a ServiceAccount.
 type ServiceAccountWriter struct{ Namespace, Name, UID string }
 
+// ServiceWriter is a first-party component authenticated by its exact service SPIFFE ID.
+// It deliberately does not manufacture a Kubernetes account identity.
+type ServiceWriter struct{ SPIFFEID string }
+
 // IdentityWriter is a runner whose workload credential names an Identity incarnation.
 type IdentityWriter struct{ Identity }
 
 func (ServiceAccountWriter) isWriter() {}
+func (ServiceWriter) isWriter()        {}
 func (IdentityWriter) isWriter()       {}
 
 // Identity is an Identity incarnation in the policy namespace.
@@ -203,11 +208,12 @@ type historyRow struct {
 func lockRow(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID) (*historyRow, error) {
 	var row historyRow
 	var namespace, name, uid *string
+	var serviceURI *string
 	var identityName, identityUID, executionIdentityName, executionIdentityUID *string
-	err := tx.QueryRowContext(ctx, `SELECT source_id, last_cursor, feed_state, writer_namespace, writer_name, writer_uid, sandbox_uid,
+	err := tx.QueryRowContext(ctx, `SELECT source_id, last_cursor, feed_state, writer_namespace, writer_name, writer_uid, writer_service_uri, sandbox_uid,
 		writer_identity_name, writer_identity_uid, execution_identity_name, execution_identity_uid
 		FROM session_history WHERE id = $1 FOR UPDATE`, sessionID).
-		Scan(&row.sourceID, &row.lastCursor, &row.feedState, &namespace, &name, &uid, &row.sandboxUID,
+		Scan(&row.sourceID, &row.lastCursor, &row.feedState, &namespace, &name, &uid, &serviceURI, &row.sandboxUID,
 			&identityName, &identityUID, &executionIdentityName, &executionIdentityUID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("%w: %s", ErrNotFound, sessionID)
@@ -221,6 +227,8 @@ func lockRow(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID) (*historyRow,
 		row.writer = ServiceAccountWriter{Namespace: *namespace, Name: *name, UID: *uid}
 	case identityUID != nil:
 		row.writer = IdentityWriter{Identity{Name: *identityName, UID: *identityUID}}
+	case serviceURI != nil:
+		row.writer = ServiceWriter{SPIFFEID: *serviceURI}
 	}
 	if executionIdentityUID != nil {
 		row.executionIdentity = &Identity{Name: *executionIdentityName, UID: *executionIdentityUID}
@@ -266,13 +274,24 @@ func (s *Store) BindSamplerWriter(ctx context.Context, sessionID uuid.UUID, writ
 	return s.bindWriter(ctx, sessionID, writer, sandbox, identity)
 }
 
-// writerColumns are writer_{namespace,name,uid} and writer_identity_{name,uid}.
+// BindServiceWriter retains a component's exact certificate identity, its central executor Sandbox,
+// and the separately authenticated execution Identity.
+func (s *Store) BindServiceWriter(ctx context.Context, sessionID uuid.UUID, writer ServiceWriter, sandbox Sandbox, identity *Identity) (Checkpoint, error) {
+	if writer.SPIFFEID == "" || sandbox.Namespace == "" || sandbox.Name == "" || sandbox.UID == "" {
+		return Checkpoint{}, ErrInvalidArgument
+	}
+	return s.bindWriter(ctx, sessionID, writer, sandbox, identity)
+}
+
+// writerColumns are writer_{namespace,name,uid}, writer_identity_{name,uid}, and writer_service_uri.
 func writerColumns(writer Writer) []any {
 	switch writer := writer.(type) {
 	case ServiceAccountWriter:
-		return []any{writer.Namespace, writer.Name, writer.UID, nil, nil}
+		return []any{writer.Namespace, writer.Name, writer.UID, nil, nil, nil}
 	case IdentityWriter:
-		return []any{nil, nil, nil, writer.Name, writer.UID}
+		return []any{nil, nil, nil, writer.Name, writer.UID, nil}
+	case ServiceWriter:
+		return []any{nil, nil, nil, nil, nil, writer.SPIFFEID}
 	default:
 		panic(fmt.Sprintf("unknown writer %T", writer))
 	}
@@ -307,10 +326,10 @@ func (s *Store) bindWriter(ctx context.Context, sessionID uuid.UUID, writer Writ
 			}
 			result, err := tx.ExecContext(ctx, `INSERT INTO session_history
 				(id, writer_namespace, writer_name, writer_uid, sandbox_namespace, sandbox_name, sandbox_uid,
-				writer_identity_name, writer_identity_uid, execution_identity_name, execution_identity_uid, source_id, last_cursor)
-				VALUES ($1, $2, $3, $4, $6, $7, $5, $8, $9, $10, $11, NULL, 0) ON CONFLICT DO NOTHING`,
+				writer_identity_name, writer_identity_uid, writer_service_uri, execution_identity_name, execution_identity_uid, source_id, last_cursor)
+				VALUES ($1, $2, $3, $4, $6, $7, $5, $8, $9, $10, $11, $12, NULL, 0) ON CONFLICT DO NOTHING`,
 				sessionID, written[0], written[1], written[2], sandboxUIDValue, namespace, name,
-				written[3], written[4], executionIdentityName, executionIdentityUID)
+				written[3], written[4], written[5], executionIdentityName, executionIdentityUID)
 			if err != nil {
 				return err
 			}
@@ -332,9 +351,9 @@ func (s *Store) bindWriter(ctx context.Context, sessionID uuid.UUID, writer Writ
 		case row.writer == nil:
 			if _, err := tx.ExecContext(ctx, `UPDATE session_history SET writer_namespace = $2, writer_name = $3, writer_uid = $4,
 				sandbox_namespace = COALESCE(sandbox_namespace, $6), sandbox_name = COALESCE(sandbox_name, $7), sandbox_uid = $5,
-				writer_identity_name = $8, writer_identity_uid = $9
+				writer_identity_name = $8, writer_identity_uid = $9, writer_service_uri = $10
 				WHERE id = $1`, sessionID, written[0], written[1], written[2], sandboxUIDValue, namespace, name,
-				written[3], written[4]); err != nil {
+				written[3], written[4], written[5]); err != nil {
 				return err
 			}
 			row.sandboxUID = optionalString(sandboxUID)

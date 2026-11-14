@@ -84,6 +84,51 @@ func TestDelegationTrustIsAnIndependentExactMethodSetting(t *testing.T) {
 	}
 }
 
+func TestServiceReaderAndDelegationTrustRequireExactSPIFFECallers(t *testing.T) {
+	const spiffe = `rpc:
+  listen_address: 0.0.0.0:8080
+  tls: {cert_file: /test/tls.crt, key_file: /test/tls.key}
+  auth:
+    - mode: kubernetes_bearer
+      audiences: [test-history-service, test-runner-ingress]
+    - mode: spiffe
+      ca_file: /test/workload-ca.crt
+reader_accounts: [test-agentplane/test-app]
+reader_service_callers: [spiffe://agentplane/app, spiffe://agentplane/notifications]
+service_delegation:
+  actors: [{spiffe_id: spiffe://agentplane/actions}]
+  methods: [/agentplane.history_service.HistoryService/ReadSessionEvents]
+token_audience: test-history-service
+policy_namespace: test-policies
+ingress:
+  token_audience: test-runner-ingress
+  writer_namespaces: [test-agentplane]
+  sampler_service_actor: spiffe://agentplane/central-sampler
+`
+	c, err := loadTestConfig(t, spiffe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(c.ReaderServiceCallers, []string{"spiffe://agentplane/app", "spiffe://agentplane/notifications"}) ||
+		c.ServiceDelegation == nil || len(c.ServiceDelegation.Actors) != 1 ||
+		c.ServiceDelegation.Actors[0].SPIFFEID != "spiffe://agentplane/actions" ||
+		c.Ingress.SamplerServiceActor != "spiffe://agentplane/central-sampler" {
+		t.Fatalf("service caller settings were not decoded: %+v", c)
+	}
+	for name, file := range map[string]string{
+		"reader service without SPIFFE": strings.Replace(spiffe, "    - mode: spiffe\n      ca_file: /test/workload-ca.crt\n", "", 1),
+		"invalid reader service":        strings.Replace(spiffe, "spiffe://agentplane/app", "spiffe://agentplane/agents/worker", 1),
+		"invalid delegation actor":      strings.Replace(spiffe, "spiffe://agentplane/actions", "spiffe://agentplane/agents/worker", 1),
+		"invalid sampler actor":         strings.Replace(spiffe, "spiffe://agentplane/central-sampler", "spiffe://agentplane/agents/worker", 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := loadTestConfig(t, file); err == nil {
+				t.Fatal("accepted invalid service trust")
+			}
+		})
+	}
+}
+
 // The sampler's grant to push as a delegating actor for a Session's Identity is its own setting,
 // and needs what Push admitting Identity writers needs: the policy namespace and the SPIFFE listener.
 func TestSamplerIdentityCallersNeedsSamplerAccountsThePolicyNamespaceAndTheSPIFFEListener(t *testing.T) {

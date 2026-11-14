@@ -31,9 +31,12 @@ type config struct {
 	MigrationTimeoutSeconds float64 `mapstructure:"migration_timeout_s"`
 	// ReaderAccounts may call the read API; their namespaces are the ones a reader's token may come from.
 	ReaderAccounts []auth.Account `mapstructure:"reader_accounts"`
+	// ReaderServiceCallers are exact component SPIFFE IDs admitted as backend-wide History readers.
+	ReaderServiceCallers []string `mapstructure:"reader_service_callers"`
 	// Delegation is a separate Action actor grant and only applies to its listed RPC methods.
-	Delegation    *delegationConfig `mapstructure:"delegation"`
-	TokenAudience string            `mapstructure:"token_audience"`
+	Delegation        *delegationConfig        `mapstructure:"delegation"`
+	ServiceDelegation *serviceDelegationConfig `mapstructure:"service_delegation"`
+	TokenAudience     string                   `mapstructure:"token_audience"`
 	// RequestTimeoutSeconds bounds a call's backend work and each write to a watch stream.
 	RequestTimeoutSeconds float64         `mapstructure:"request_timeout_s"`
 	RPC                   listener.Config `mapstructure:"rpc"`
@@ -57,6 +60,11 @@ type delegationConfig struct {
 	Methods         []string `mapstructure:"methods"`
 }
 
+type serviceDelegationConfig struct {
+	Actors  []auth.ServiceDelegator `mapstructure:"actors"`
+	Methods []string                `mapstructure:"methods"`
+}
+
 // ingressConfig is the runner journal's authorization and storage policy. Its RPC shares the service listener.
 type ingressConfig struct {
 	TokenAudience string `mapstructure:"token_audience"`
@@ -69,6 +77,8 @@ type ingressConfig struct {
 	// of its own, separate from announcing central Sessions; it requires policy_namespace and the
 	// SPIFFE listener, the one on which Push admits Identity writers.
 	SamplerIdentityCallers bool `mapstructure:"sampler_identity_callers"`
+	// SamplerServiceActor is the exact service SVID admitted to push central sampler journals.
+	SamplerServiceActor string `mapstructure:"sampler_service_actor"`
 	// SettleDeltas removes an item's streamed delta entries from stored history once its retained completion
 	// provably holds their concatenation. Off keeps every entry, for debugging.
 	SettleDeltas bool `mapstructure:"settle_deltas"`
@@ -148,11 +158,32 @@ func (c *config) validate() error {
 		!c.Delegation.IdentityCallers || len(c.Delegation.Methods) == 0) {
 		return errors.New("delegation requires an actor, identity_callers, and methods")
 	}
+	if err := auth.ValidateServiceCallers(c.ReaderServiceCallers); err != nil {
+		return fmt.Errorf("invalid reader_service_callers: %w", err)
+	}
+	if c.ServiceDelegation != nil && (len(c.ServiceDelegation.Actors) == 0 || len(c.ServiceDelegation.Methods) == 0) {
+		return errors.New("service_delegation requires actors and methods")
+	}
+	if c.ServiceDelegation != nil {
+		for _, actor := range c.ServiceDelegation.Actors {
+			if err := auth.ValidateServiceCallers([]string{actor.SPIFFEID}); err != nil {
+				return fmt.Errorf("invalid service_delegation actor: %w", err)
+			}
+		}
+	}
+	if c.Ingress.SamplerServiceActor != "" {
+		if err := auth.ValidateServiceCallers([]string{c.Ingress.SamplerServiceActor}); err != nil {
+			return fmt.Errorf("invalid ingress.sampler_service_actor: %w", err)
+		}
+	}
 	if err := c.RPC.Validate(); err != nil {
 		return fmt.Errorf("rpc listener: %w", err)
 	}
 	if c.Ingress.SamplerIdentityCallers && (len(c.Ingress.SamplerAccounts) == 0 || !c.RPC.Has(listener.SPIFFE)) {
 		return errors.New("ingress.sampler_identity_callers requires ingress.sampler_accounts and a spiffe rpc listener")
+	}
+	if (len(c.ReaderServiceCallers) > 0 || c.ServiceDelegation != nil || c.Ingress.SamplerServiceActor != "") && !c.RPC.Has(listener.SPIFFE) {
+		return errors.New("service callers require rpc spiffe client trust")
 	}
 	for _, audience := range []string{c.TokenAudience, c.Ingress.TokenAudience} {
 		if !c.RPC.AllowsBearerAudience(audience) {

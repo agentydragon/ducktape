@@ -227,18 +227,32 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 	// A watch or follow carries no deadline of its own, so the request timeout bounds its admission.
 	historyMethods := rpc.Methods(readerAuth)
 	var identityReader auth.IdentityUIDReader
-	if c.Delegation != nil || c.Ingress.SamplerIdentityCallers {
+	if c.Delegation != nil || c.ServiceDelegation != nil || c.Ingress.SamplerIdentityCallers || c.Ingress.SamplerServiceActor != "" {
 		if identityReader, err = kubernetesIdentityUIDs(c); err != nil {
 			return err
+		}
+	}
+	if len(c.ReaderServiceCallers) > 0 {
+		historyMethods, err = historyMethods.WithServiceCallers(rpc.ReadMethods(), c.ReaderServiceCallers)
+		if err != nil {
+			return fmt.Errorf("configure History service readers: %w", err)
 		}
 	}
 	if c.Delegation != nil {
 		delegator := auth.Delegator{
 			Account: c.Delegation.Actor, IdentityCallers: c.Delegation.IdentityCallers,
 		}
-		historyMethods, err = rpc.MethodsWithDelegation(readerAuth, delegator, identityReader, c.Delegation.Methods)
+		historyMethods, err = historyMethods.WithDelegation(c.Delegation.Methods, []auth.Delegator{delegator}, identityReader)
 		if err != nil {
 			return fmt.Errorf("configure History delegation: %w", err)
+		}
+	}
+	if c.ServiceDelegation != nil {
+		historyMethods, err = historyMethods.WithServiceDelegation(
+			c.ServiceDelegation.Methods, c.ServiceDelegation.Actors, identityReader,
+		)
+		if err != nil {
+			return fmt.Errorf("configure History service delegation: %w", err)
 		}
 	}
 	maps.Copy(methods, historyMethods)
@@ -251,6 +265,16 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 	if c.Ingress.SamplerIdentityCallers {
 		if pushRule, err = ingress.AllowDelegatingSamplers(pushRule, c.Ingress.SamplerAccounts, identityReader); err != nil {
 			return fmt.Errorf("configure sampler delegation: %w", err)
+		}
+	}
+	if c.Ingress.SamplerServiceActor != "" {
+		if pushRule, err = pushRule.AllowServiceCallers([]string{c.Ingress.SamplerServiceActor}); err != nil {
+			return fmt.Errorf("configure sampler service caller: %w", err)
+		}
+		if pushRule, err = pushRule.AllowServiceDelegationFrom(
+			[]auth.ServiceDelegator{{SPIFFEID: c.Ingress.SamplerServiceActor}}, identityReader,
+		); err != nil {
+			return fmt.Errorf("configure sampler service delegation: %w", err)
 		}
 	}
 	methods[session_ingresspb.SessionJournalIngress_Push_FullMethodName] = pushRule
@@ -274,8 +298,8 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 		History: storage.NewStore(ingressDB, storage.Options{
 			SettleDeltas: c.Ingress.SettleDeltas, CompactDeltas: c.Ingress.CompactDeltas,
 		}),
-		SamplerAccounts: c.Ingress.SamplerAccounts,
-		Timing:          ingress.Timing{IdleAck: ingressIdleAck, SilenceLimit: ingressSilenceLimit},
+		SamplerAccounts: c.Ingress.SamplerAccounts, SamplerServiceActor: c.Ingress.SamplerServiceActor,
+		Timing: ingress.Timing{IdleAck: ingressIdleAck, SilenceLimit: ingressSilenceLimit},
 	})
 	changes, unsubscribe, err := hub.Subscribe(storage.ChannelHistory)
 	if err != nil {
