@@ -10,22 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
 	apphttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/server/testauth"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/status"
-	authenticationv1 "k8s.io/api/authentication/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
-
-type systemStatusTokenReviewer struct{}
-
-func (systemStatusTokenReviewer) Create(context.Context, *authenticationv1.TokenReview, metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
-	return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
-		Authenticated: true,
-		Audiences:     []string{"agentplane"},
-		User:          authenticationv1.UserInfo{Username: "system:serviceaccount:fixture:reader"},
-	}}, nil
-}
 
 func TestSystemStatusUsesGeneratedProtoJSONAndCallerAuthentication(t *testing.T) {
 	checker, err := status.New([]status.Probe{
@@ -35,13 +23,8 @@ func TestSystemStatusUsesGeneratedProtoJSONAndCallerAuthentication(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	authentication, err := auth.New(auth.Config{
-		TokenReviews: systemStatusTokenReviewer{}, TokenAudience: "agentplane",
-		TokenSubjects: []string{"system:serviceaccount:fixture:reader"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	fixture := testauth.New(t)
+	authentication := fixture.Auth
 	server := newHTTPServer(authentication)
 	if err := apphttp.NewSystemStatusHandler(checker).RegisterRoutes(server); err != nil {
 		t.Fatal(err)
@@ -56,7 +39,7 @@ func TestSystemStatusUsesGeneratedProtoJSONAndCallerAuthentication(t *testing.T)
 	}
 
 	request = httptest.NewRequest(http.MethodGet, "/upstream/app/v1/system/status", nil)
-	request.Header.Set("Authorization", "Bearer fixture-token")
+	fixture.Authorize(request)
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
@@ -89,7 +72,7 @@ func TestSystemStatusUsesGeneratedProtoJSONAndCallerAuthentication(t *testing.T)
 	}
 
 	request = httptest.NewRequest(http.MethodGet, "/system/status", nil)
-	request.Header.Set("Authorization", "Bearer fixture-token")
+	fixture.Authorize(request)
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusNotFound {

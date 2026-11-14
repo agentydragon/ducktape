@@ -189,7 +189,7 @@ is [section 17](#17-two-binaries-and-the-go-layout).
 | TLS on the two plaintext hops            | 01:41, same release                                            | `PRIVILEGED_BACKEND_AUTH_DESIGN`                                    | Merged #16332; #16333 and #16334 in review                                                                      |
 | Any Gateway replica, no epoch            | 02:36, card "Any replica, no epoch"                            | [Section 12](#12-the-runner-gateway-serves-the-runners-own-service) | Merged #16324, #16328, #16330, #16345; #16361, #16362, #16365 in review, merged in that order across image pins |
 | One service authentication mode          | 04:56, "One auth mode can fire off"                            | `PRIVILEGED_BACKEND_AUTH_DESIGN`                                    | Stages 1–2 merged; stage 3 receivers part merged, part in review                                                |
-| Remove the app agent token               | 05:05, "Remove it now"                                         | `APP_AGENT_TOKEN_DECISION`                                          | Step 1 merged (#16347); step 2 in review (#16372)                                                               |
+| Remove the app agent token               | 05:05, "Remove it now"                                         | `APP_AGENT_TOKEN_DECISION`                                          | Callers and config merged (#16347, #16372, #16381); code removal in review                                      |
 | Environment rule slices                  | 04:58, "Okay this sounds good to me (these environment rules)" | `ENVIRONMENT_LIFECYCLE_RULES`                                       | `resume` merged (#16346); `bind_session` in review (#16351)                                                     |
 | Identity changes re-checked, not refused | 07:20, "okay, sounds good to me, sessions can re-check"        | `SANDBOX_IDENTITY_RECHECK`                                          | In review (#16373)                                                                                              |
 
@@ -3381,14 +3381,18 @@ Separate PRs, in this order:
 1. Stop minting the special token in `system_tests/driver/cluster.py` (`AGENT_SERVICE_ACCOUNT`), live
    suites and `system_tests/x/shared_cluster/allocation.py`; update `system_tests/README.md` "Running
    live". The k3s fixtures already use short-lived test-issued OIDC tokens (#15448).
-2. Remove `token_subjects` from `cluster/cdk8s/agentplane/app_settings.py` and
-   `system_tests/deployment/fixture_chart.py`. After that configuration rolls out, remove the app
-   settings field and `caller()`'s TokenReview path in `app/internal/auth/auth.go`.
+2. Remove `token_subjects` and the obsolete `token_audience` from `cluster/cdk8s/agentplane/app_settings.py` and
+   `system_tests/deployment/fixture_chart.py`. After both configuration omissions roll out, remove the app
+   settings fields and `caller()`'s TokenReview path in `app/internal/auth/auth.go`.
 3. Remove the `agentplane-agent` ServiceAccount and its token RBAC last, after the using images are
    pinned. Delete this node when its last piece lands.
 
-State at 07:40 UTC: step 1 merged in [#16347](https://github.com/agentydragon/ducktape/pull/16347);
-step 2's settings removal is in review in [#16372](https://github.com/agentydragon/ducktape/pull/16372).
+Step 1 merged in [#16347](https://github.com/agentydragon/ducktape/pull/16347);
+step 2's subject omission merged in [#16372](https://github.com/agentydragon/ducktape/pull/16372).
+The audience omission merged in [#16381](https://github.com/agentydragon/ducktape/pull/16381).
+Code removal is in review in [#16383](https://github.com/agentydragon/ducktape/pull/16383)
+(Codex, 2026-11-14 08:56 UTC) and waits for both omissions to reach staging; ServiceAccount and token-request RBAC
+removal waits for its image pin and the completed caller audit.
 
 The public route terminates TLS at the Gateway; it cannot deliver client mTLS to the app. App OIDC
 remains the operator authentication mechanism. The service SVID decision separately retires backend

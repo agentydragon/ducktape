@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/server/testauth"
 	upstreamproxy "github.com/agentydragon/ducktape/agentplane/app/internal/upstream"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
@@ -23,8 +23,6 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
-	authenticationv1 "k8s.io/api/authentication/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestWriteSSEPreservesJSONData(t *testing.T) {
@@ -51,31 +49,14 @@ func TestWriteSSEPreservesJSONData(t *testing.T) {
 	}
 }
 
-type acceptedTokenReviewer struct{}
-
-func (acceptedTokenReviewer) Create(_ context.Context, review *authenticationv1.TokenReview, _ metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
-	return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
-		Authenticated: true,
-		Audiences:     []string{"agentplane"},
-		User:          authenticationv1.UserInfo{Username: "system:serviceaccount:tools:runner"},
-	}}, nil
-}
-
-func newStreamTestAuth(t *testing.T) *auth.Auth {
+func newStreamTestAuth(t *testing.T) *testauth.Fixture {
 	t.Helper()
-	authentication, err := auth.New(auth.Config{
-		TokenReviews: acceptedTokenReviewer{}, TokenAudience: "agentplane",
-		TokenSubjects: []string{"system:serviceaccount:tools:runner"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return authentication
+	return testauth.New(t)
 }
 
 func TestOperatorStreamsAndProxyRoutesRejectWorkloadTokens(t *testing.T) {
 	authentication := newStreamTestAuth(t)
-	server := newHTTPServer(authentication)
+	server := newHTTPServer(authentication.Auth)
 	registerStreamingRoutes(server, streamingDependencies{})
 	ids := uuid.NewString()
 	for _, path := range []string{
@@ -89,11 +70,11 @@ func TestOperatorStreamsAndProxyRoutesRejectWorkloadTokens(t *testing.T) {
 	} {
 		t.Run(path, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodGet, path, nil)
-			request.Header.Set("Authorization", "Bearer accepted")
+			request.Header.Set("Authorization", "Bearer workload-token")
 			response := httptest.NewRecorder()
-			server.Handler(authentication).ServeHTTP(response, request)
-			if response.Code != http.StatusForbidden {
-				t.Fatalf("workload-token access to operator route = %d %s, want 403", response.Code, response.Body.String())
+			server.Handler(authentication.Auth).ServeHTTP(response, request)
+			if response.Code != http.StatusUnauthorized {
+				t.Fatalf("workload-token access to operator route = %d %s, want 401", response.Code, response.Body.String())
 			}
 		})
 	}
@@ -103,11 +84,11 @@ func TestOperatorStreamsAndProxyRoutesRejectWorkloadTokens(t *testing.T) {
 	} {
 		t.Run(route.method+" "+route.path, func(t *testing.T) {
 			request := httptest.NewRequest(route.method, route.path, nil)
-			request.Header.Set("Authorization", "Bearer accepted")
+			request.Header.Set("Authorization", "Bearer workload-token")
 			response := httptest.NewRecorder()
-			server.Handler(authentication).ServeHTTP(response, request)
-			if response.Code != http.StatusForbidden {
-				t.Fatalf("workload-token access to operator policy mutation = %d %s, want 403", response.Code, response.Body.String())
+			server.Handler(authentication.Auth).ServeHTTP(response, request)
+			if response.Code != http.StatusUnauthorized {
+				t.Fatalf("workload-token access to operator policy mutation = %d %s, want 401", response.Code, response.Body.String())
 			}
 		})
 	}
@@ -115,7 +96,7 @@ func TestOperatorStreamsAndProxyRoutesRejectWorkloadTokens(t *testing.T) {
 
 func TestHistoryFacadeRequiresAnAuthenticatedCaller(t *testing.T) {
 	authentication := newStreamTestAuth(t)
-	server := newHTTPServer(authentication)
+	server := newHTTPServer(authentication.Auth)
 	var gotPath, gotBearer string
 	upstream := &streamTestUpstream{forward: func(w http.ResponseWriter, _ *http.Request, _ context.Context, path, bearer string) error {
 		gotPath, gotBearer = path, bearer
@@ -128,15 +109,15 @@ func TestHistoryFacadeRequiresAnAuthenticatedCaller(t *testing.T) {
 
 	path := "/upstream/history/v1/sessions/9b6d568a-2253-43d7-a7d4-190e98359594/observations"
 	unauthenticated := httptest.NewRecorder()
-	server.Handler(authentication).ServeHTTP(unauthenticated, httptest.NewRequest(http.MethodGet, path, nil))
+	server.Handler(authentication.Auth).ServeHTTP(unauthenticated, httptest.NewRequest(http.MethodGet, path, nil))
 	if unauthenticated.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated History facade status = %d, want %d", unauthenticated.Code, http.StatusUnauthorized)
 	}
 
 	request := httptest.NewRequest(http.MethodGet, path+"?limit=30", nil)
-	request.Header.Set("Authorization", "Bearer accepted")
+	authentication.Authorize(request)
 	response := httptest.NewRecorder()
-	server.Handler(authentication).ServeHTTP(response, request)
+	server.Handler(authentication.Auth).ServeHTTP(response, request)
 	if response.Code != http.StatusOK || response.Body.String() != `{"observations":[]}` {
 		t.Fatalf("authenticated History facade response = %d %q", response.Code, response.Body.String())
 	}
@@ -179,7 +160,7 @@ func TestHistoryEntityGeneratedFacade(t *testing.T) {
 		t.Fatal(err)
 	}
 	authentication := newStreamTestAuth(t)
-	app := newHTTPServer(authentication)
+	app := newHTTPServer(authentication.Auth)
 	registerStreamingRoutes(app, streamingDependencies{HistoryHTTP: upstreamproxy.NewHandlerUpstream(generated, "")})
 	const id = "9b6d568a-2253-43d7-a7d4-190e98359594"
 	body, err := protojson.Marshal(&historypb.ReadThreadEntitiesRequest{Window: &historypb.ReadThreadEntitiesRequest_Range{
@@ -190,9 +171,9 @@ func TestHistoryEntityGeneratedFacade(t *testing.T) {
 	}
 	request := httptest.NewRequest(http.MethodPost, "/upstream/history/v1/sessions/"+id+"/entities", bytes.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Authorization", "Bearer accepted")
+	authentication.Authorize(request)
 	response := httptest.NewRecorder()
-	app.Handler(authentication).ServeHTTP(response, request)
+	app.Handler(authentication.Auth).ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("entity facade status = %d: %s", response.Code, response.Body.String())
 	}
@@ -215,9 +196,9 @@ func TestHistoryEntityGeneratedFacade(t *testing.T) {
 	}
 	request = httptest.NewRequest(http.MethodPost, "/upstream/history/v1/sessions/"+id+"/entities", bytes.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Authorization", "Bearer accepted")
+	authentication.Authorize(request)
 	response = httptest.NewRecorder()
-	app.Handler(authentication).ServeHTTP(response, request)
+	app.Handler(authentication.Auth).ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("keyed entity facade status = %d: %s", response.Code, response.Body.String())
 	}
@@ -227,9 +208,9 @@ func TestHistoryEntityGeneratedFacade(t *testing.T) {
 	}
 }
 
-func TestDispatcherFacadeRejectsWorkloadCommandPOSTs(t *testing.T) {
+func TestDispatcherFacadeRequiresOperatorSessionForCommands(t *testing.T) {
 	authentication := newStreamTestAuth(t)
-	server := newHTTPServer(authentication)
+	server := newHTTPServer(authentication.Auth)
 	forwarded := 0
 	upstream := &streamTestUpstream{forward: func(w http.ResponseWriter, _ *http.Request, _ context.Context, _, _ string) error {
 		forwarded++
@@ -241,25 +222,25 @@ func TestDispatcherFacadeRejectsWorkloadCommandPOSTs(t *testing.T) {
 	const body = `{"commandId":"stable","sandbox":"demo","sandboxUid":"uid-1"}`
 
 	unauthenticated := httptest.NewRecorder()
-	server.Handler(authentication).ServeHTTP(unauthenticated, httptest.NewRequest(http.MethodPost, prefix+":submitInput", strings.NewReader(body)))
+	server.Handler(authentication.Auth).ServeHTTP(unauthenticated, httptest.NewRequest(http.MethodPost, prefix+":submitInput", strings.NewReader(body)))
 	if unauthenticated.Code != http.StatusUnauthorized {
 		t.Fatalf("anonymous command status = %d, want 401", unauthenticated.Code)
 	}
 	for _, method := range []string{"submitInput", "changeModel", "changeReasoningEffort", "interruptTurn"} {
 		request := httptest.NewRequest(http.MethodPost, prefix+":"+method, strings.NewReader(body))
-		request.Header.Set("Authorization", "Bearer accepted")
+		authentication.Authorize(request)
 		response := httptest.NewRecorder()
-		server.Handler(authentication).ServeHTTP(response, request)
+		server.Handler(authentication.Auth).ServeHTTP(response, request)
 		if response.Code != http.StatusForbidden {
-			t.Fatalf("workload-token %s status = %d %s, want 403", method, response.Code, response.Body.String())
+			t.Fatalf("operator bearer without a browser session for %s = %d %s, want 403", method, response.Code, response.Body.String())
 		}
 	}
 	openingRequest := httptest.NewRequest(http.MethodGet, prefix+"/opening", nil)
-	openingRequest.Header.Set("Authorization", "Bearer accepted")
+	authentication.Authorize(openingRequest)
 	openingResponse := httptest.NewRecorder()
-	server.Handler(authentication).ServeHTTP(openingResponse, openingRequest)
+	server.Handler(authentication.Auth).ServeHTTP(openingResponse, openingRequest)
 	if openingResponse.Code != http.StatusForbidden {
-		t.Fatalf("workload-token opening read status = %d %s, want 403", openingResponse.Code, openingResponse.Body.String())
+		t.Fatalf("operator bearer without a browser session for opening read = %d %s, want 403", openingResponse.Code, openingResponse.Body.String())
 	}
 	if forwarded != 0 {
 		t.Fatalf("workload request reached Dispatcher %d times", forwarded)
@@ -472,7 +453,7 @@ func waitForStreamText(t *testing.T, response *streamingRecorder, text string) {
 
 func TestEnvironmentFacadeRequiresAppCallerAndForwardsManagementAndWatch(t *testing.T) {
 	authentication := newStreamTestAuth(t)
-	server := newHTTPServer(authentication)
+	server := newHTTPServer(authentication.Auth)
 	var gotPath, gotMethod, gotQuery string
 	upstream := &streamTestUpstream{forward: func(w http.ResponseWriter, request *http.Request, _ context.Context, path, bearer string) error {
 		gotPath, gotMethod, gotQuery = path, request.Method, request.URL.RawQuery
@@ -485,14 +466,14 @@ func TestEnvironmentFacadeRequiresAppCallerAndForwardsManagementAndWatch(t *test
 	registerStreamingRoutes(server, streamingDependencies{EnvironmentHTTP: upstream})
 	path := "/upstream/environments/v1/environments:watch"
 	unauthenticated := httptest.NewRecorder()
-	server.Handler(authentication).ServeHTTP(unauthenticated, httptest.NewRequest(http.MethodGet, path, nil))
+	server.Handler(authentication.Auth).ServeHTTP(unauthenticated, httptest.NewRequest(http.MethodGet, path, nil))
 	if unauthenticated.Code != http.StatusUnauthorized {
 		t.Fatalf("anonymous watch = %d", unauthenticated.Code)
 	}
 	request := httptest.NewRequest(http.MethodGet, path, nil)
-	request.Header.Set("Authorization", "Bearer accepted")
+	authentication.Authorize(request)
 	response := httptest.NewRecorder()
-	server.Handler(authentication).ServeHTTP(response, request)
+	server.Handler(authentication.Auth).ServeHTTP(response, request)
 	if response.Code != http.StatusOK || gotPath != "v1/environments:watch" {
 		t.Fatalf("watch = %d, path = %q", response.Code, gotPath)
 	}
@@ -505,9 +486,9 @@ func TestEnvironmentFacadeRequiresAppCallerAndForwardsManagementAndWatch(t *test
 		{http.MethodPatch, "/upstream/environments/v1/environments/test-envs/workspace:identity", "v1/environments/test-envs/workspace:identity", ""},
 	} {
 		request := httptest.NewRequest(methodPath.method, methodPath.path, nil)
-		request.Header.Set("Authorization", "Bearer accepted")
+		authentication.Authorize(request)
 		response := httptest.NewRecorder()
-		server.Handler(authentication).ServeHTTP(response, request)
+		server.Handler(authentication.Auth).ServeHTTP(response, request)
 		if response.Code != http.StatusOK || gotPath != methodPath.wantPath || gotMethod != methodPath.method || gotQuery != methodPath.wantQuery {
 			t.Fatalf("%s %s = %d, forwarded %s %s?%s", methodPath.method, methodPath.path, response.Code, gotMethod, gotPath, gotQuery)
 		}
@@ -516,7 +497,7 @@ func TestEnvironmentFacadeRequiresAppCallerAndForwardsManagementAndWatch(t *test
 
 func TestEnvironmentGetRequiresAppCallerAndForwardsOnlyTarget(t *testing.T) {
 	authentication := newStreamTestAuth(t)
-	server := newHTTPServer(authentication)
+	server := newHTTPServer(authentication.Auth)
 	var gotMethod, gotPath, gotQuery string
 	var calls int
 	upstream := &streamTestUpstream{forward: func(w http.ResponseWriter, request *http.Request, _ context.Context, path, bearer string) error {
@@ -531,15 +512,15 @@ func TestEnvironmentGetRequiresAppCallerAndForwardsOnlyTarget(t *testing.T) {
 	registerStreamingRoutes(server, streamingDependencies{EnvironmentHTTP: upstream})
 	path := "/upstream/environments/v1/environments/team-a/sandbox-1?target.uid=22222222-2222-4222-8222-222222222222"
 	unauthenticated := httptest.NewRecorder()
-	server.Handler(authentication).ServeHTTP(unauthenticated, httptest.NewRequest(http.MethodGet, path, nil))
+	server.Handler(authentication.Auth).ServeHTTP(unauthenticated, httptest.NewRequest(http.MethodGet, path, nil))
 	if unauthenticated.Code != http.StatusUnauthorized || calls != 0 {
 		t.Fatalf("anonymous get = %d, upstream calls = %d", unauthenticated.Code, calls)
 	}
 
 	request := httptest.NewRequest(http.MethodGet, path, nil)
-	request.Header.Set("Authorization", "Bearer accepted")
+	authentication.Authorize(request)
 	response := httptest.NewRecorder()
-	server.Handler(authentication).ServeHTTP(response, request)
+	server.Handler(authentication.Auth).ServeHTTP(response, request)
 	if response.Code != http.StatusOK || calls != 1 {
 		t.Fatalf("authenticated get = %d, upstream calls = %d", response.Code, calls)
 	}
@@ -551,13 +532,13 @@ func TestEnvironmentGetRequiresAppCallerAndForwardsOnlyTarget(t *testing.T) {
 
 func TestEnvironmentGeneratedFacadeRejectsUnknownAndDispatcherRoutes(t *testing.T) {
 	authentication := newStreamTestAuth(t)
-	server := newHTTPServer(authentication)
+	server := newHTTPServer(authentication.Auth)
 	generated, err := facade.NewHandler(t.Context(), "127.0.0.1:1", time.Second, environmentpb.RegisterEnvironmentServiceHandlerFromEndpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
 	registerStreamingRoutes(server, streamingDependencies{EnvironmentHTTP: upstreamproxy.NewHandlerUpstream(generated, "")})
-	handler := server.Handler(authentication)
+	handler := server.Handler(authentication.Auth)
 	for _, test := range []struct {
 		method, path string
 		status       int
@@ -568,7 +549,7 @@ func TestEnvironmentGeneratedFacadeRejectsUnknownAndDispatcherRoutes(t *testing.
 		{http.MethodGet, "/upstream/environments/v1/dispatches:watch", http.StatusNotFound},
 	} {
 		request := httptest.NewRequest(test.method, test.path, nil)
-		request.Header.Set("Authorization", "Bearer accepted")
+		authentication.Authorize(request)
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)
 		if response.Code != test.status {
@@ -579,7 +560,7 @@ func TestEnvironmentGeneratedFacadeRejectsUnknownAndDispatcherRoutes(t *testing.
 
 func TestEnvironmentGetCancelsUpstreamWithRequest(t *testing.T) {
 	authentication := newStreamTestAuth(t)
-	server := newHTTPServer(authentication)
+	server := newHTTPServer(authentication.Auth)
 	started := make(chan context.Context, 1)
 	canceled := make(chan error, 1)
 	upstream := &streamTestUpstream{forward: func(_ http.ResponseWriter, _ *http.Request, ctx context.Context, _, _ string) error {
@@ -591,11 +572,11 @@ func TestEnvironmentGetCancelsUpstreamWithRequest(t *testing.T) {
 	registerStreamingRoutes(server, streamingDependencies{EnvironmentHTTP: upstream})
 	ctx, cancel := context.WithCancel(context.Background())
 	request := httptest.NewRequest(http.MethodGet, "/upstream/environments/v1/environments/team-a/sandbox-1?target.uid=uid", nil).WithContext(ctx)
-	request.Header.Set("Authorization", "Bearer accepted")
+	authentication.Authorize(request)
 	response := httptest.NewRecorder()
 	done := make(chan struct{})
 	go func() {
-		server.Handler(authentication).ServeHTTP(response, request)
+		server.Handler(authentication.Auth).ServeHTTP(response, request)
 		close(done)
 	}()
 	select {

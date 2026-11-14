@@ -11,41 +11,27 @@ import (
 	"log/slog"
 	"maps"
 	"net/http"
-	"slices"
 	"strings"
 	"sync"
 	"time"
 
-	workloadauth "github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
-	authenticationv1 "k8s.io/api/authentication/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type Auth struct {
-	cfg      Config
-	oidc     *openID
-	oidcMu   sync.Mutex
-	pinned   *oidc.IDTokenVerifier
-	store    *sessionStore
-	signer   *cookieSigner
-	changes  ChangeSource
-	subjects map[string]struct{}
+	cfg     Config
+	oidc    *openID
+	oidcMu  sync.Mutex
+	pinned  *oidc.IDTokenVerifier
+	store   *sessionStore
+	signer  *cookieSigner
+	changes ChangeSource
 }
 
 // New constructs the auth boundary. OIDC discovery is deferred until a browser uses the login route.
 func New(cfg Config) (*Auth, error) {
-	a := &Auth{cfg: cfg, changes: cfg.SessionChanges, subjects: make(map[string]struct{}, len(cfg.TokenSubjects))}
-	for _, subject := range cfg.TokenSubjects {
-		if subject == "" {
-			return nil, errors.New("token subject allowlist entries must not be empty")
-		}
-		a.subjects[subject] = struct{}{}
-	}
-	if cfg.TokenAudience != "" && cfg.TokenReviews == nil {
-		return nil, errors.New("TokenReview client is required when token audience is set")
-	}
+	a := &Auth{cfg: cfg, changes: cfg.SessionChanges}
 	if cfg.OIDC == nil {
 		return a, nil
 	}
@@ -168,8 +154,7 @@ func traceAuth(r *http.Request, phase string) {
 	slog.InfoContext(r.Context(), "auth login phase", "trace_id", id, "path", r.URL.Path, "phase", phase)
 }
 
-// RequireCaller protects a route with an operator cookie, an operator's OIDC ID token, or a reviewed
-// Kubernetes token.
+// RequireCaller protects a route with an operator cookie or an operator's OIDC ID token.
 func (a *Auth) RequireCaller(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		caller, status, message := a.caller(r)
@@ -215,7 +200,6 @@ type CallerKind string
 
 const (
 	CallerOperator CallerKind = "operator"
-	CallerToken    CallerKind = "token"
 )
 
 type Caller struct {
@@ -557,10 +541,7 @@ func (a *Auth) caller(r *http.Request) (*Caller, int, string) {
 	if a.cfg.OIDC != nil && unverifiedIssuer(fields[1]) == a.cfg.OIDC.Issuer {
 		return a.idTokenCaller(r.Context(), fields[1])
 	}
-	if a.cfg.TokenReviews == nil || a.cfg.TokenAudience == "" {
-		return nil, http.StatusUnauthorized, "no session and no accepted token"
-	}
-	return a.tokenCaller(r, fields[1])
+	return nil, http.StatusUnauthorized, "no session and no accepted token"
 }
 
 // idTokenCaller accepts an operator's ID token as a cookie session's operator, with no session row.
@@ -604,42 +585,6 @@ func unverifiedIssuer(token string) string {
 		return ""
 	}
 	return claims.Issuer
-}
-
-func (a *Auth) tokenCaller(r *http.Request, token string) (*Caller, int, string) {
-	return reviewToken(r.Context(), a.cfg.TokenReviews, a.cfg.TokenAudience, a.subjects, token)
-}
-
-func reviewToken(ctx context.Context, reviews workloadauth.TokenReviews, audience string, subjects map[string]struct{}, bearer string) (*Caller, int, string) {
-	review, err := reviews.Create(ctx, &authenticationv1.TokenReview{
-		Spec: authenticationv1.TokenReviewSpec{Token: bearer, Audiences: []string{audience}},
-	}, metav1.CreateOptions{})
-	if err != nil {
-		return nil, http.StatusServiceUnavailable, "token review unavailable"
-	}
-	reason, username := "", ""
-	switch {
-	case review == nil || !review.Status.Authenticated:
-		reason = "unauthenticated"
-	case review.Status.User.Username == "":
-		reason = "missing_username"
-	default:
-		username = review.Status.User.Username
-		if !slices.Contains(review.Status.Audiences, audience) {
-			reason = "wrong_audience"
-		} else if _, ok := subjects[username]; !ok {
-			reason = "subject_not_allowed"
-		}
-	}
-	if reason != "" {
-		// Status.Error and the review spec can contain credentials. Log only curated identity.
-		slog.InfoContext(ctx, "TokenReview rejected caller", "reason", reason, "username", username)
-		if reason == "subject_not_allowed" {
-			return nil, http.StatusForbidden, "token subject is not accepted here"
-		}
-		return nil, http.StatusUnauthorized, "no session and no accepted token"
-	}
-	return &Caller{Kind: CallerToken, Principal: username}, 0, ""
 }
 
 // loginAttempt is the app's server-side state for one authorization-code flow.

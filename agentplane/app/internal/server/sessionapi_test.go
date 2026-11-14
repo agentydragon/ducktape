@@ -19,6 +19,7 @@ import (
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/bridge"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/server/testauth"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/threads"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -34,8 +35,6 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
-	authenticationv1 "k8s.io/api/authentication/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func sessionTestStringPtr(value string) *string { return &value }
@@ -111,21 +110,10 @@ func (p *sessionTestPeer) CreateSession(ctx context.Context, name, uid string, i
 	return &dispatcherpb.Session{SessionId: id.String(), Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: name, Uid: uid}}}}, Status: &dispatcherpb.SessionStatus{Materialization: dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_WAITING}}, nil
 }
 
-type sessionTokenReviewer struct{}
-
-func (sessionTokenReviewer) Create(_ context.Context, request *authenticationv1.TokenReview, _ metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
-	return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
-		Authenticated: request.Spec.Token == "accepted", Audiences: []string{"agentplane"},
-		User: authenticationv1.UserInfo{Username: "system:serviceaccount:tools:session-test"},
-	}}, nil
-}
-
-func sessionTestGateway(t *testing.T, peer *sessionTestPeer) http.Handler {
+func sessionTestGateway(t *testing.T, peer *sessionTestPeer) (http.Handler, *testauth.Fixture) {
 	t.Helper()
-	authentication, err := auth.New(auth.Config{TokenReviews: sessionTokenReviewer{}, TokenAudience: "agentplane", TokenSubjects: []string{"system:serviceaccount:tools:session-test"}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	fixture := testauth.New(t)
+	authentication := fixture.Auth
 	config := settings.Config{
 		SandboxNamespace: "test-sandboxes",
 		SandboxPresets:   map[string]settings.SandboxPreset{"work": {ThreadPreset: "default"}},
@@ -139,12 +127,14 @@ func sessionTestGateway(t *testing.T, peer *sessionTestPeer) http.Handler {
 	if err := registerSessionRoutes(server, &appService{sessions: handler}); err != nil {
 		t.Fatal(err)
 	}
-	return server.Handler(authentication)
+	return server.Handler(authentication), fixture
 }
 
-func sessionTestRequest(handler http.Handler, method, path, body string) *httptest.ResponseRecorder {
+func sessionTestRequest(fixture *testauth.Fixture, handler http.Handler, method, path, body string) *httptest.ResponseRecorder {
 	request := httptest.NewRequest(method, path, strings.NewReader(body))
-	request.Header.Set("Authorization", "Bearer accepted")
+	if fixture != nil {
+		fixture.Authorize(request)
+	}
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
@@ -161,9 +151,10 @@ func TestSessionPreservesHTTPTraceToDispatcher(t *testing.T) {
 		_ = provider.Shutdown(context.Background())
 	})
 	peer := &sessionTestPeer{sandbox: &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Namespace: "test-sandboxes", Name: "demo", Uid: "uid"}}}
-	handler := appHTTPHandler(sessionTestGateway(t, peer))
+	gateway, fixture := sessionTestGateway(t, peer)
+	handler := appHTTPHandler(gateway)
 	request := httptest.NewRequest(http.MethodPost, "/sandboxes/demo/sessions", strings.NewReader(`{"spec":{},"session_id":"b351b316-fdc4-4f50-a642-758992ae3323","sandbox_uid":"uid"}`))
-	request.Header.Set("Authorization", "Bearer accepted")
+	fixture.Authorize(request)
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("traceparent", "00-1234567890abcdef1234567890abcdef-1234567890abcdef-01")
 	response := httptest.NewRecorder()
@@ -202,9 +193,9 @@ func TestSessionGatewayPreservesPresetPresenceAndWireContract(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			peer := &sessionTestPeer{sandbox: &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Namespace: "test-sandboxes", Name: "demo", Uid: "uid"}, Configuration: &environmentpb.EnvironmentConfiguration{Preset: proto.String("work")}}}
-			handler := sessionTestGateway(t, peer)
+			handler, fixture := sessionTestGateway(t, peer)
 			body := `{"session_id":"` + id + `","sandbox_uid":"uid","spec":` + test.spec + test.setup + `}`
-			response := sessionTestRequest(handler, http.MethodPost, "/sandboxes/demo/sessions", body)
+			response := sessionTestRequest(fixture, handler, http.MethodPost, "/sandboxes/demo/sessions", body)
 			if response.Code != http.StatusCreated {
 				t.Fatalf("POST status %d: %s", response.Code, response.Body.String())
 			}
@@ -236,7 +227,8 @@ func TestSessionGatewayRejectsBeforeEffects(t *testing.T) {
 		`{"spec":{},"setup_script":"` + strings.Repeat("x", bridge.MaxSetupScriptCharacters+1) + `","session_id":"b351b316-fdc4-4f50-a642-758992ae3323","sandbox_uid":"uid"}`,
 	} {
 		peer := &sessionTestPeer{sandbox: &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Namespace: "test-sandboxes", Name: "demo", Uid: "uid"}}}
-		response := sessionTestRequest(sessionTestGateway(t, peer), http.MethodPost, "/sandboxes/demo/sessions", body)
+		handler, fixture := sessionTestGateway(t, peer)
+		response := sessionTestRequest(fixture, handler, http.MethodPost, "/sandboxes/demo/sessions", body)
 		if response.Code != http.StatusUnprocessableEntity || len(peer.calls) != 0 {
 			t.Fatalf("status %d effects %v: %s", response.Code, peer.calls, response.Body.String())
 		}
@@ -245,7 +237,8 @@ func TestSessionGatewayRejectsBeforeEffects(t *testing.T) {
 		peer := &sessionTestPeer{}
 		path := "/sandboxes/" + name + "/sessions"
 		body := `{"spec":{},"session_id":"b351b316-fdc4-4f50-a642-758992ae3323","sandbox_uid":"uid"}`
-		response := sessionTestRequest(sessionTestGateway(t, peer), http.MethodPost, path, body)
+		handler, fixture := sessionTestGateway(t, peer)
+		response := sessionTestRequest(fixture, handler, http.MethodPost, path, body)
 		if response.Code != http.StatusUnprocessableEntity || len(peer.calls) != 0 {
 			t.Fatalf("invalid Sandbox name %q: status %d effects %v: %s", name, response.Code, peer.calls, response.Body.String())
 		}
@@ -270,7 +263,8 @@ func TestSessionGatewayPreservesConflictAndUncertainOutcomes(t *testing.T) {
 		{"uid", false, &bridge.ServiceError{Code: codes.AlreadyExists, Details: "conflict"}, 409, codes.AlreadyExists, []string{"thread", "dispatch"}},
 	} {
 		peer := &sessionTestPeer{sandbox: &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Namespace: "test-sandboxes", Name: "demo", Uid: "uid"}}, failThread: test.failThread, failOpen: test.failOpen}
-		response := sessionTestRequest(sessionTestGateway(t, peer), http.MethodPost, "/sandboxes/demo/sessions", `{"spec":{},"session_id":"b351b316-fdc4-4f50-a642-758992ae3323","sandbox_uid":"`+test.uid+`"}`)
+		handler, fixture := sessionTestGateway(t, peer)
+		response := sessionTestRequest(fixture, handler, http.MethodPost, "/sandboxes/demo/sessions", `{"spec":{},"session_id":"b351b316-fdc4-4f50-a642-758992ae3323","sandbox_uid":"`+test.uid+`"}`)
 		var body struct {
 			Code   int32
 			Detail string
@@ -316,7 +310,7 @@ func TestGeneratedSessionRequestAcceptedByLegacyHuma(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	response := sessionTestRequest(server.Handler(nil), http.MethodPost, "/sandboxes/demo/sessions", string(encoded))
+	response := sessionTestRequest(nil, server.Handler(nil), http.MethodPost, "/sandboxes/demo/sessions", string(encoded))
 	if response.Code != http.StatusCreated || received == nil || received.Name != "demo" || received.Body.Spec["model"] != "test" || received.Body.SetupScript == nil || *received.Body.SetupScript != "" {
 		t.Fatalf("legacy status %d body %s received %+v", response.Code, response.Body.String(), received)
 	}
@@ -324,8 +318,8 @@ func TestGeneratedSessionRequestAcceptedByLegacyHuma(t *testing.T) {
 
 func TestSessionCanonicalizesAcceptedUUIDSpelling(t *testing.T) {
 	peer := &sessionTestPeer{sandbox: &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Namespace: "test-sandboxes", Name: "demo", Uid: "uid"}}}
-	handler := sessionTestGateway(t, peer)
-	response := sessionTestRequest(handler, http.MethodPost, "/sandboxes/demo/sessions", `{"session_id":"B351B316-FDC4-4F50-A642-758992AE3323","sandbox_uid":"uid","spec":{}}`)
+	handler, fixture := sessionTestGateway(t, peer)
+	response := sessionTestRequest(fixture, handler, http.MethodPost, "/sandboxes/demo/sessions", `{"session_id":"B351B316-FDC4-4F50-A642-758992AE3323","sandbox_uid":"uid","spec":{}}`)
 	if response.Code != http.StatusCreated {
 		t.Fatalf("status %d: %s", response.Code, response.Body.String())
 	}

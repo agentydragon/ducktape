@@ -183,9 +183,9 @@ current Sandbox identity and harness, while the central-sampler offer uses `cent
 with that same fixed executor environment. Dispatcher validates the placement against the selected
 Sandbox UID; this app flow does not create optional central attachments or environment-free central
 Sessions.
-The generated unary gateway runs the app-owned service in process after cookie-or-reviewed-workload-token
-admission and cookie CSRF checks. Token admission also supports explicitly authorized callers and
-integration tests; it does not make this a backend service API. The app calls the Dispatcher over gRPC.
+The generated unary gateway runs the app-owned service in process after operator-cookie-or-OIDC-ID-token
+admission and cookie CSRF checks. Operator ID-token admission also supports scripts and integration
+tests; it does not make this a backend service API. The app calls the Dispatcher over gRPC.
 
 The returned minimal `Session` contains its ID, placement, timestamps and nested `SessionStatus`; it
 does not expose the immutable spec or instructions. Its materialization state is placement-owner
@@ -321,7 +321,7 @@ as unavailable while it reconnects rather than treating its old data as current.
 ## Authentication and authorization
 
 Every API route needs a caller; only `/healthz`, `/readyz` and the `/auth/*` endpoints answer without
-one. The separate frontend serves public static files, including `/sw.js`. There are three credentials,
+one. The separate frontend serves public static files, including `/sw.js`. There are two credentials,
 and all are cryptographic:
 
 - **An operator's OIDC session.** The mounted `app-config` YAML's `oidc` section supplies the issuer,
@@ -340,19 +340,11 @@ and all are cryptographic:
   cookie, and no same-origin check applies, since browsers never send it on their own. The keys come
   from the issuer's discovery document; `oidc.static_ed25519_keys` pins keys instead, which the
   settings allow only for an issuer under the reserved `.test` domain. The k3s system tests use that.
-- **A Kubernetes token.** `Authorization: Bearer <token>` goes to TokenReview, which returns the
-  username the API server vouches for. The token has to carry the app's audience
-  (`token_audience` in the mounted YAML, `agentplane` by default), so a token minted for anything
-  else cannot be replayed here, and the username has to appear in the YAML `token_subjects` list,
-  or the app answers 403. The audience
-  would not be a gate on its own: RBAC decides which ServiceAccount a principal may mint a token
-  for, never which audience it asks for, so an unnamed subject is refused however it minted. Empty
-  -- the default -- accepts no token caller at all. Live system tests use an operator ID token from
-  the configured issuer rather than minting this app-specific ServiceAccount token.
-
   ```sh
   curl -H "Authorization: Bearer $AGENTPLANE_SYSTEM_TEST_TOKEN" https://agentplane-staging.allegedly.works/sandboxes
   ```
+
+Kubernetes ServiceAccount tokens are rejected; the app does not call TokenReview.
 
 Nothing is inferred from a request header, and nothing in front of the app authenticates for it:
 the gateway routes straight to the Service. A header set by an authenticating proxy, such as an

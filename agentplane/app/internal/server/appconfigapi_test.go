@@ -9,24 +9,17 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
 	apphttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/server/testauth"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/settings"
 	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"google.golang.org/grpc"
-	authenticationv1 "k8s.io/api/authentication/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestAppConfigRoutesUseGeneratedProtoJSONAndCallerAuthentication(t *testing.T) {
-	authentication, err := auth.New(auth.Config{
-		TokenReviews: appConfigTokenReviewer{}, TokenAudience: "agentplane",
-		TokenSubjects: []string{"system:serviceaccount:tools:runner"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	fixture := testauth.New(t)
+	authentication := fixture.Auth
 
 	config := settings.Config{
 		Models: runtimeconfig.ModelCatalog{
@@ -96,7 +89,7 @@ func TestAppConfigRoutesUseGeneratedProtoJSONAndCallerAuthentication(t *testing.
 		},
 	} {
 		request := httptest.NewRequest(http.MethodGet, test.path, nil)
-		request.Header.Set("Authorization", "Bearer accepted")
+		fixture.Authorize(request)
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)
 		if response.Code != http.StatusOK {
@@ -135,33 +128,18 @@ func (r *appConfigPolicySetNames) ListPolicySetNames(context.Context, *policypb.
 func appConfigInt64Pointer(value int64) *int64 { return &value }
 
 func TestSandboxFormReturnsUnavailableWhenPolicyServiceFails(t *testing.T) {
-	authentication, err := auth.New(auth.Config{
-		TokenReviews: appConfigTokenReviewer{}, TokenAudience: "agentplane",
-		TokenSubjects: []string{"system:serviceaccount:tools:runner"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	fixture := testauth.New(t)
+	authentication := fixture.Auth
 	server := newHTTPServer(authentication)
 	policySets := &appConfigPolicySetNames{err: errors.New("policy backend unavailable")}
 	if err := apphttp.NewAppConfigHandler(settings.Config{}, policySets).RegisterRoutes(server); err != nil {
 		t.Fatal(err)
 	}
 	request := httptest.NewRequest(http.MethodGet, "/upstream/app-config/v1/sandbox-form", nil)
-	request.Header.Set("Authorization", "Bearer accepted")
+	fixture.Authorize(request)
 	response := httptest.NewRecorder()
 	server.Handler(authentication).ServeHTTP(response, request)
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("GET sandbox form status = %d, want 503; body: %s", response.Code, response.Body.String())
 	}
-}
-
-type appConfigTokenReviewer struct{}
-
-func (appConfigTokenReviewer) Create(_ context.Context, _ *authenticationv1.TokenReview, _ metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
-	return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
-		Authenticated: true,
-		Audiences:     []string{"agentplane"},
-		User:          authenticationv1.UserInfo{Username: "system:serviceaccount:tools:runner"},
-	}}, nil
 }
