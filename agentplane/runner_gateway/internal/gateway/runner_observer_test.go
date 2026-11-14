@@ -21,7 +21,6 @@ import (
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"google.golang.org/grpc"
@@ -46,6 +45,7 @@ import (
 type observedRunner struct {
 	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
 	bootID       string
+	facts        *environmentruntimestatepb.EnvironmentRuntimeFacts
 	calls        atomic.Int32
 	quiesceCalls atomic.Int32
 }
@@ -54,7 +54,7 @@ func (r *observedRunner) WatchState(request *environmentruntimepb.WatchStateRequ
 	if err := stream.Send(&environmentruntimepb.WatchStateResponse{
 		SandboxUid:               request.SandboxUid,
 		EnvironmentRuntimeBootId: r.bootID, IncarnationUid: request.IncarnationUid, ConnectionEpoch: request.ConnectionEpoch,
-		Facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{Bootstrap: environmentruntimestatepb.EnvironmentRuntimeFacts_BOOTSTRAP_SUCCEEDED},
+		Facts: r.facts,
 	}); err != nil {
 		return err
 	}
@@ -78,7 +78,7 @@ func (r *observedRunner) Quiesce(context.Context, *sessionpb.QuiesceRequest) (*s
 	return &sessionpb.QuiesceResponse{Stage: sessionpb.QuiesceStage_QUIESCE_STAGE_QUIESCED}, nil
 }
 
-func TestRunnerObserverPublishesFactsAndFencesRPCs(t *testing.T) {
+func TestRunnerObserverPublishesIdentityAndFencesRPCs(t *testing.T) {
 	for _, mode := range []peertls.SecurityMode{peertls.MutualTLS, peertls.Insecure} {
 		t.Run(string(mode), func(t *testing.T) {
 			testRunnerObserver(t, mode)
@@ -86,7 +86,7 @@ func TestRunnerObserverPublishesFactsAndFencesRPCs(t *testing.T) {
 	}
 }
 
-// pauseAfterBootIDUpdate holds the first externally ready Lease update's response
+// pauseAfterBootIDUpdate holds the first verified boot identity update's response
 // after the API server has made it visible to other clients.
 type pauseAfterBootIDUpdate struct {
 	coordinationclient.CoordinationV1Interface
@@ -127,7 +127,7 @@ func (l *inspectReleaseLeases) Update(ctx context.Context, lease *coordinationv1
 
 func (p *pausedBootIDLeases) Update(ctx context.Context, lease *coordinationv1.Lease, options metav1.UpdateOptions) (*coordinationv1.Lease, error) {
 	updated, err := p.LeaseInterface.Update(ctx, lease, options)
-	if err == nil && updated.Annotations[sandboxlease.EnvironmentRuntimeBootIDAnnotation] != "" && p.parent.paused.CompareAndSwap(false, true) {
+	if err == nil && updated.Annotations[environmentRuntimeBootIDAnnotation] != "" && p.parent.paused.CompareAndSwap(false, true) {
 		close(p.parent.updated)
 		select {
 		case <-p.parent.release:
@@ -196,56 +196,40 @@ func TestFirstRunnerBootIDIsPublishedAfterLocalConnection(t *testing.T) {
 		t.Fatal("Runner boot ID was not published")
 	}
 
-	lease, err := api.Clientset.CoordinationV1().Leases(f.namespace).Get(t.Context(), testSandbox+sandboxlease.EnvironmentRuntimeLeaseSuffix, metav1.GetOptions{})
+	lease, err := api.Clientset.CoordinationV1().Leases(f.namespace).Get(t.Context(), testSandbox+environmentRuntimeLeaseSuffix, metav1.GetOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lease.Annotations[sandboxlease.PodUIDAnnotation] != string(f.pod.UID) ||
-		lease.Annotations[sandboxlease.EnvironmentRuntimeBootIDAnnotation] != runner.bootID ||
-		lease.Annotations[sandboxlease.BootstrapAnnotation] != "" ||
+	if lease.Annotations[podUIDAnnotation] != string(f.pod.UID) ||
+		lease.Annotations[environmentRuntimeBootIDAnnotation] != runner.bootID ||
 		lease.Spec.RenewTime == nil || lease.Spec.LeaseTransitions == nil {
-		t.Fatalf("first ready Lease update has unexpected facts: %#v", lease)
+		t.Fatalf("first boot identity update has unexpected metadata: %#v", lease)
 	}
 	route, err := api.Clientset.DiscoveryV1().EndpointSlices(f.namespace).Get(t.Context(), testSandbox+sandboxapi.ControlServiceSuffix, metav1.GetOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if route.Annotations[sandboxlease.ConnectionEpochAnnotation] != strconv.Itoa(int(*lease.Spec.LeaseTransitions)) ||
-		route.Annotations[sandboxlease.ConnectionLeaseUIDAnnotation] != string(lease.UID) ||
+	if route.Annotations[connectionEpochAnnotation] != strconv.Itoa(int(*lease.Spec.LeaseTransitions)) ||
+		route.Annotations[connectionLeaseUIDAnnotation] != string(lease.UID) ||
 		len(route.Endpoints) != 1 || len(route.Endpoints[0].Addresses) != 1 || route.Endpoints[0].Addresses[0] != g.config.HolderIP ||
 		route.Endpoints[0].Conditions.Ready == nil || !*route.Endpoints[0].Conditions.Ready {
 		t.Fatalf("control route is not ready at boot-ID publication: %#v", route)
 	}
 	connection, err := g.connections.holder(string(f.sandbox.UID))
 	if err != nil || connection.epoch != uint64(*lease.Spec.LeaseTransitions) || connection.podUID != string(f.pod.UID) || connection.bootID != runner.bootID {
-		t.Fatalf("first ready Lease update preceded a correctly fenced local connection: %v, %+v", err, connection)
+		t.Fatalf("first boot identity update preceded a correctly fenced local connection: %v, %+v", err, connection)
 	}
 	requestMetadata, _ := metadata.FromOutgoingContext(f.callerContext(f.appToken))
 	_, err = (&environmentRuntimeProxy{gateway: g}).GetStatus(metadata.NewIncomingContext(t.Context(), requestMetadata), &sessionpb.GetStatusRequest{})
 	if err != nil || runner.calls.Load() != 1 {
-		t.Fatalf("GetStatus at first ready Lease update = %v, runner calls = %d", err, runner.calls.Load())
+		t.Fatalf("GetStatus at first boot identity update = %v, runner calls = %d", err, runner.calls.Load())
 	}
 	close(release)
-	deadline := time.NewTimer(5 * time.Second)
-	defer deadline.Stop()
-	poll := time.NewTicker(time.Millisecond)
-	defer poll.Stop()
-	for {
-		select {
-		case err := <-finished:
-			t.Fatalf("Runner observer stopped before publishing facts: %v", err)
-		case <-deadline.C:
-			t.Fatal("Runner facts were not published after releasing boot-ID update")
-		case <-poll.C:
-			lease, err := api.Clientset.CoordinationV1().Leases(f.namespace).Get(t.Context(), lease.Name, metav1.GetOptions{})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if lease.Annotations[sandboxlease.BootstrapAnnotation] == "succeeded" {
-				cancel()
-				return
-			}
-		}
+	cancel()
+	select {
+	case <-finished:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Runner observer did not stop after releasing boot-ID update")
 	}
 }
 
@@ -266,7 +250,7 @@ type failingBootIDLeases struct {
 }
 
 func (f *failingBootIDLeases) Update(ctx context.Context, lease *coordinationv1.Lease, options metav1.UpdateOptions) (*coordinationv1.Lease, error) {
-	if lease.Annotations[sandboxlease.EnvironmentRuntimeBootIDAnnotation] != "" {
+	if lease.Annotations[environmentRuntimeBootIDAnnotation] != "" {
 		_, err := f.parent.local.holder(f.parent.sandboxUID)
 		f.parent.checked <- err
 		return nil, status.Error(codes.Internal, "injected boot-ID update rejection")
@@ -304,11 +288,11 @@ func TestRejectedBootIDPublicationRemovesLocalConnection(t *testing.T) {
 	if _, err := g.connections.holder(string(f.sandbox.UID)); status.Code(err) != codes.Unavailable {
 		t.Fatalf("rejected observation left a local connection callable: %v", err)
 	}
-	lease, err := api.Clientset.CoordinationV1().Leases(f.namespace).Get(t.Context(), testSandbox+sandboxlease.EnvironmentRuntimeLeaseSuffix, metav1.GetOptions{})
+	lease, err := api.Clientset.CoordinationV1().Leases(f.namespace).Get(t.Context(), testSandbox+environmentRuntimeLeaseSuffix, metav1.GetOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lease.Annotations[sandboxlease.EnvironmentRuntimeBootIDAnnotation] != "" {
+	if lease.Annotations[environmentRuntimeBootIDAnnotation] != "" {
 		t.Fatalf("rejected observation published readiness: %#v", lease.Annotations)
 	}
 }
@@ -346,11 +330,11 @@ func TestSupersededClaimCannotInstallConnectionBeforeBootID(t *testing.T) {
 	if _, err := g.connections.holder(string(f.sandbox.UID)); status.Code(err) != codes.Unavailable {
 		t.Fatalf("superseded observer installed a local connection: %v", err)
 	}
-	lease, err := api.Clientset.CoordinationV1().Leases(f.namespace).Get(t.Context(), testSandbox+sandboxlease.EnvironmentRuntimeLeaseSuffix, metav1.GetOptions{})
+	lease, err := api.Clientset.CoordinationV1().Leases(f.namespace).Get(t.Context(), testSandbox+environmentRuntimeLeaseSuffix, metav1.GetOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lease.Annotations[sandboxlease.EnvironmentRuntimeBootIDAnnotation] != "" || lease.Spec.LeaseTransitions == nil || uint64(*lease.Spec.LeaseTransitions) != newEpoch {
+	if lease.Annotations[environmentRuntimeBootIDAnnotation] != "" || lease.Spec.LeaseTransitions == nil || uint64(*lease.Spec.LeaseTransitions) != newEpoch {
 		t.Fatalf("superseded observer published readiness: %#v", lease)
 	}
 }
@@ -426,7 +410,14 @@ func testRunnerObserver(t *testing.T, mode peertls.SecurityMode) {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer(grpc.Creds(creds))
-	runner := &observedRunner{bootID: "test-runner-boot"}
+	runner := &observedRunner{
+		bootID: "test-runner-boot",
+		facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{
+			Bootstrap:     environmentruntimestatepb.EnvironmentRuntimeFacts_BOOTSTRAP_SUCCEEDED,
+			QuiesceStage:  environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_FLUSHING,
+			SetupsRunning: true,
+		},
+	}
 	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, runner)
 	executorpb.RegisterExecutorServer(server, &echoForwardExecutor{})
 	go func() { _ = server.Serve(listener) }()
@@ -526,12 +517,16 @@ func testRunnerObserver(t *testing.T, mode peertls.SecurityMode) {
 		t.Fatalf("existing-session unary call during quiescing = %v, %v", started, err)
 	}
 	stopExec()
-	lease, err := api.Clientset.CoordinationV1().Leases(f.namespace).Get(t.Context(), testSandbox+sandboxlease.EnvironmentRuntimeLeaseSuffix, metav1.GetOptions{})
+	lease, err := api.Clientset.CoordinationV1().Leases(f.namespace).Get(t.Context(), testSandbox+environmentRuntimeLeaseSuffix, metav1.GetOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lease.Annotations[sandboxlease.EnvironmentRuntimeBootIDAnnotation] != runner.bootID || lease.Annotations[sandboxlease.PodUIDAnnotation] != string(f.pod.UID) {
-		t.Fatalf("Runner connection did not publish its identities: %v", lease.Annotations)
+	if !maps.Equal(lease.Annotations, map[string]string{
+		environmentRuntimeBootIDAnnotation: runner.bootID,
+		podUIDAnnotation:                   string(f.pod.UID),
+		lastConnectedPodUIDAnnotation:      string(f.pod.UID),
+	}) {
+		t.Fatalf("Runner connection published unexpected metadata: %v", lease.Annotations)
 	}
 	other := f.newGateway(t, "test-other-gateway", "192.0.2.31")
 	if _, _, err := other.records.claim(t.Context(), destination.identity, destination.podUID); status.Code(err) != codes.Unavailable {

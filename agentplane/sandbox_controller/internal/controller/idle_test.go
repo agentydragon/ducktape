@@ -7,7 +7,6 @@ import (
 	"time"
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
@@ -24,7 +23,7 @@ var runnerIdleSince = testNow.Add(-time.Hour)
 // publishIdleSince simulates the runner's idle fact in a fresh Runtime snapshot.
 func publishIdleSince(t *testing.T, r *Reconciler, at *time.Time) {
 	t.Helper()
-	updateRuntimeFacts(t, r, func(facts *sandboxlease.EnvironmentRuntimeFacts) {
+	updateRuntimeFacts(t, r, func(facts *EnvironmentRuntimeFacts) {
 		facts.IdleSince = at
 	})
 }
@@ -221,7 +220,7 @@ func TestIdleSuspendDeadlineRestartsWithControllerMemoryTimer(t *testing.T) {
 	*now = now.Add(3 * time.Minute)
 	restarted := &Reconciler{
 		Client: r.Client, Objects: r.Objects, KubeVirt: r.KubeVirt,
-		Quiescer: r.Quiescer, Leases: r.Leases, Credentials: r.Credentials, Now: r.Now,
+		Quiescer: r.Quiescer, Credentials: r.Credentials, Now: r.Now,
 		States: NewRuntimeStates(nil, r.Now),
 	}
 	reconcileOnce(t, restarted)
@@ -423,7 +422,7 @@ func TestAWakeDuringTheIdleQuiesceReplacesTheIncarnation(t *testing.T) {
 		t.Fatalf("suspendedBy = %v, mode = %s; want no suspension recorded", got.Status.SuspendedBy, got.Status.OperatingMode)
 	}
 
-	publishQuiesceStage(t, r, sandboxlease.QuiesceDraining)
+	publishQuiesceStage(t, r, QuiesceDraining)
 	reconcileOnce(t, r)
 	if getSandbox(t, c).Status.StopStage != sandboxapi.StopStageQuiescing || getPod(t, c) == nil {
 		t.Fatalf("a runner in lameduck was not sealed before it was replaced: stopStage = %q", getSandbox(t, c).Status.StopStage)

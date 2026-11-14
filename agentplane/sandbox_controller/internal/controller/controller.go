@@ -11,8 +11,6 @@ import (
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
-	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -65,9 +63,7 @@ type Reconciler struct {
 	KubeVirt bool
 	// Seals a Sandbox's Sessions through its runner before it stops or is deleted.
 	Quiescer Quiescer
-	// Lease cache wiring remains until the separate writer cleanup. Lifecycle decisions use States.
-	Leases client.Reader
-	States *RuntimeStates
+	States   *RuntimeStates
 	// Requests each incarnation's WorkloadCredential, which the Policy Controller issues.
 	Credentials requester.Requester
 	// The current time, for observation freshness and idle timers.
@@ -409,7 +405,7 @@ func (r *Reconciler) quiesceBeforeStop(ctx context.Context, sandbox *sandboxapi.
 func (r *Reconciler) holdSuspend(ctx context.Context, sandbox *sandboxapi.Sandbox, runner string) (*unready, error) {
 	facts := r.States.Snapshot(sandbox, runner).Facts
 	switch {
-	case facts.Bootstrap == sandboxlease.BootstrapRunning:
+	case facts.Bootstrap == BootstrapRunning:
 		return &unready{reason: "SuspendPending", message: "the Sandbox's bootstrap is running; the suspend waits for it"}, nil
 	case facts.SetupsRunning:
 		return &unready{reason: "SuspendPending", message: "a Session's setup is running; the suspend waits for it"}, nil
@@ -430,7 +426,7 @@ func (r *Reconciler) quiesce(ctx context.Context, sandbox *sandboxapi.Sandbox, r
 	snapshot := r.States.Snapshot(sandbox, runner)
 	facts := snapshot.Facts
 	switch {
-	case snapshot.fresh(r.Now()) && facts.Stage == sandboxlease.QuiesceQuiesced:
+	case snapshot.fresh(r.Now()) && facts.Stage == QuiesceQuiesced:
 		sandbox.Status.QuiescedIncarnation = &runner
 		sandbox.Status.QuiesceAttempt = nil
 		return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: "the runner has quiesced every Session"}, nil
@@ -855,19 +851,17 @@ func runtimeBootstrappedCondition(sandbox *sandboxapi.Sandbox, incarnation *core
 	}
 	facts := snapshot.Facts
 	switch facts.Bootstrap {
-	case sandboxlease.BootstrapNone:
+	case BootstrapNone:
 		condition.Status = metav1.ConditionUnknown
 		condition.Reason, condition.Message = "BootstrapNotReported", "the Sandbox Controller has not received bootstrap status from the runner"
-	case sandboxlease.BootstrapRunning:
+	case BootstrapRunning:
 		condition.Reason, condition.Message = "BootstrapRunning", "the bootstrap is running"
-	case sandboxlease.BootstrapSucceeded:
+	case BootstrapSucceeded:
 		condition.Status, condition.Reason, condition.Message = metav1.ConditionTrue, "BootstrapSucceeded", "the bootstrap ran to success"
-	case sandboxlease.BootstrapFailed:
+	case BootstrapFailed:
 		condition.Reason, condition.Message = "BootstrapFailed", "the bootstrap failed and never runs again; the Sandbox is to be replaced"
-	case sandboxlease.BootstrapInterrupted:
+	case BootstrapInterrupted:
 		condition.Reason, condition.Message = "BootstrapFailed", "the bootstrap was interrupted and never runs again; the Sandbox is to be replaced"
-	case sandboxlease.BootstrapStateUnrecognised:
-		condition.Reason, condition.Message = "BootstrapStateUnrecognised", "the runner reports a bootstrap state this controller does not know"
 	}
 	return condition
 }
@@ -1036,12 +1030,4 @@ func (r *Reconciler) sandboxesNaming(index string) handler.EventHandler {
 		}
 		return out
 	})
-}
-
-// leaseTransitions is how many connections the Runner Gateway has accepted for the Sandbox.
-func leaseTransitions(lease *coordinationv1.Lease) int32 {
-	if lease.Spec.LeaseTransitions == nil {
-		return 0
-	}
-	return *lease.Spec.LeaseTransitions
 }

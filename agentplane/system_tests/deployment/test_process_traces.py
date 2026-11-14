@@ -73,6 +73,26 @@ def test_process_spans_are_exported_with_identity_and_parentage(tmp_path: Path) 
                                             )
                                         ],
                                     ),
+                                    Span.Event(
+                                        name="agentplane.gateway.runner.quiesce_stage_observed",
+                                        time_unix_nano=190,
+                                        attributes=[
+                                            KeyValue(
+                                                key="agentplane.environment_runtime.quiesce.stage",
+                                                value=AnyValue(string_value="quiesced"),
+                                            )
+                                        ],
+                                    ),
+                                    Span.Event(
+                                        name="agentplane.gateway.runner.quiesce_stage_published",
+                                        time_unix_nano=200,
+                                        attributes=[
+                                            KeyValue(
+                                                key="agentplane.environment_runtime.quiesce.stage",
+                                                value=AnyValue(string_value="quiesced"),
+                                            )
+                                        ],
+                                    ),
                                 ],
                             )
                         ],

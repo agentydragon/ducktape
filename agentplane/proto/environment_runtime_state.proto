@@ -1,4 +1,4 @@
-// Environment Runtime state published by WatchState and recorded on the connection Lease.
+// Environment Runtime state sent directly to WatchState observers.
 syntax = "proto3";
 
 package agentplane.proto;
@@ -6,8 +6,7 @@ package agentplane.proto;
 import "agentplane/proto/environment_lifecycle.proto";
 import "google/protobuf/timestamp.proto";
 
-// What Environment Runtime publishes for the Runner Gateway to record on the Sandbox's connection
-// Lease.
+// Lifecycle facts consumed directly by the Sandbox Controller.
 message EnvironmentRuntimeFacts {
   enum QuiesceStage {
     QUIESCE_STAGE_UNSPECIFIED = 0;  // not quiescing

@@ -8,7 +8,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -227,7 +226,7 @@ func TestFirecrackerDeletionWaitsForFreshRuntimeStateAfterResume(t *testing.T) {
 	if current := getPod(t, c); current == nil || current.UID != pod.UID {
 		t.Fatal("deletion removed the retained launcher while waiting for fresh Runtime state")
 	}
-	publishSnapshot(t, r, string(pod.UID), sandboxlease.EnvironmentRuntimeFacts{})
+	publishSnapshot(t, r, string(pod.UID), EnvironmentRuntimeFacts{})
 	reconcileOnce(t, r)
 	if calls := r.Quiescer.(*fakeQuiescer).calls; calls != 1 {
 		t.Fatalf("post-resume Runtime state made %d Quiesce calls, want one", calls)

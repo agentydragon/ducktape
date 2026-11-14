@@ -12,8 +12,6 @@ import (
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
-	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/sethvargo/go-retry"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -261,10 +259,6 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 	}()
 	liveness := time.NewTimer(timing.LivenessTimeout)
 	defer liveness.Stop()
-	var lastObservedStage sandboxlease.QuiesceStage
-	observedStageSeen := false
-	var lastPublishedStage sandboxlease.QuiesceStage
-	publishedStageSeen := false
 	for {
 		select {
 		case <-ctx.Done():
@@ -279,34 +273,19 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 			if err := g.config.RunnerSecurity.AuthorizePeer(watch.Context(), destination.peerURI); err != nil {
 				return status.Error(codes.Unauthenticated, "runner certificate is no longer valid")
 			}
-			if response.GetEnvironmentRuntimeBootId() == "" || response.GetSandboxUid() != destination.identity.Uid || response.GetIncarnationUid() != destination.podUID || response.GetConnectionEpoch() != epoch || response.GetFacts() == nil {
-				return status.Error(codes.InvalidArgument, "runner state has invalid identity or facts")
+			if response.GetEnvironmentRuntimeBootId() == "" || response.GetSandboxUid() != destination.identity.Uid || response.GetIncarnationUid() != destination.podUID || response.GetConnectionEpoch() != epoch {
+				return status.Error(codes.InvalidArgument, "runner state has invalid identity")
 			}
 			if connection != nil && connection.bootID != response.EnvironmentRuntimeBootId {
 				return status.Error(codes.Aborted, "runner boot changed")
 			}
-			facts, err := sandboxlease.FromProto(response.GetFacts())
-			if err != nil {
-				return status.Error(codes.InvalidArgument, "runner sent invalid facts")
-			}
-			if !observedStageSeen || facts.Stage != lastObservedStage {
-				observedStageSeen = true
-				lastObservedStage = facts.Stage
-				if stageName, ok := quiesceStageName(facts.Stage); ok {
-					recordRunnerQuiesceStage(watch.Context(), "agentplane.gateway.runner.quiesce_stage_observed", destination.identity, stageName)
-					span.AddEvent(
-						"agentplane.gateway.runner.quiesce_stage_observed",
-						trace.WithAttributes(attribute.String("agentplane.environment_runtime.quiesce.stage", stageName)),
-					)
-				}
-			}
 			validateCtx, release := context.WithTimeout(ctx, timing.LivenessTimeout)
 			err = g.validateRunnerDestination(validateCtx, destination)
-			if err == nil && connection == nil {
-				// Refresh the claim without publishing facts before local installation.
+			if err == nil {
+				// Refresh the claim before accepting the state or installing a local connection.
 				// A replacement observer may have claimed the Lease while the first state
 				// message was in flight; only the current holder can renew this epoch.
-				err = g.records.renew(validateCtx, destination.identity, epoch, time.Now(), nil)
+				err = g.records.renew(validateCtx, destination.identity, epoch, time.Now())
 			}
 			if err == nil && connection == nil {
 				connection = &runnerConnection{
@@ -320,30 +299,15 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 					"agentplane-connection-epoch", strconv.FormatUint(epoch, 10),
 				)}
 				connection.runner = environmentruntimepb.NewEnvironmentRuntimeClient(connection.direct)
-				// The claim already has a renewal. Publishing the boot ID can make the
-				// Controller mark this Sandbox Ready, so install the callable connection first.
+				// Install the callable connection before publishing verified boot identity.
 				err = g.connections.accept(connection)
 				if err == nil {
 					err = g.records.recordBootID(validateCtx, destination.identity, epoch, response.EnvironmentRuntimeBootId)
 				}
 			}
-			if err == nil {
-				err = g.records.renew(validateCtx, destination.identity, epoch, time.Now(), &facts)
-			}
 			release()
 			if err != nil {
 				return err
-			}
-			if !publishedStageSeen || facts.Stage != lastPublishedStage {
-				publishedStageSeen = true
-				lastPublishedStage = facts.Stage
-				if stageName, ok := quiesceStageName(facts.Stage); ok {
-					recordRunnerQuiesceStage(watch.Context(), "agentplane.gateway.runner.quiesce_stage_published", destination.identity, stageName)
-					span.AddEvent(
-						"agentplane.gateway.runner.quiesce_stage_published",
-						trace.WithAttributes(attribute.String("agentplane.environment_runtime.quiesce.stage", stageName)),
-					)
-				}
 			}
 			if !liveness.Stop() {
 				select {
@@ -354,29 +318,4 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 			liveness.Reset(timing.LivenessTimeout)
 		}
 	}
-}
-
-func quiesceStageName(stage sandboxlease.QuiesceStage) (string, bool) {
-	switch stage {
-	case sandboxlease.QuiesceNone:
-		return "none", true
-	case sandboxlease.QuiesceDraining:
-		return "draining", true
-	case sandboxlease.QuiesceFlushing:
-		return "flushing", true
-	case sandboxlease.QuiesceQuiesced:
-		return "quiesced", true
-	default:
-		return "", false
-	}
-}
-
-func recordRunnerQuiesceStage(ctx context.Context, spanName string, identity *sandboxreader.Identity, stage string) {
-	_, span := observability.Start(ctx, spanName)
-	span.SetAttributes(
-		attribute.String("sandbox.name", identity.Name),
-		attribute.String("sandbox.uid", identity.Uid),
-		attribute.String("agentplane.environment_runtime.quiesce.stage", stage),
-	)
-	span.End()
 }

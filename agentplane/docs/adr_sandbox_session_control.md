@@ -37,7 +37,7 @@ not redesign storage, the History Service, or policy.
 - **Sandbox Controller** (Go, `sandbox_controller/`): state PVC, Pod or VM, ServiceAccount, `PolicyBinding`, launch
   ConfigMap, finalizer, and the `{sandbox}-control` Service. It drives quiesce: it calls `Runner.Quiesce` through the
   gateway's runner proxy and records `status.quiescedIncarnation` on any quiesce and sets `Quiesced` on a deleting Sandbox only (`finalize`), beside the older sealed names. It
-  reads the connection Lease's facts. `Ready` is `WorkloadReady` AND `EnvironmentRuntimeConnected`. `QuiesceResponse.stage` has
+  observes Runtime facts directly. `Ready` includes `WorkloadReady`, `EnvironmentRuntimeConnected` and `Bootstrapped`. `QuiesceResponse.stage` has
   one reader, the controller.
 - **Runner Gateway** (`runner_gateway/`): state observation and proxy of the runner's private `Runner` service. It writes per-Sandbox Leases and EndpointSlices; it does not create the `<sandbox>-control` Service (its `services` RBAC rule stays until the controller's image is pinned). logical Session records and durable commands belong to the Dispatcher; the Gateway owns no Session registry or database.
 - **Integration app** (`app/`): submits Sandbox desired state and operator-owned grants through the
@@ -125,14 +125,14 @@ of a dialed-hostname Sandbox name. Revisit it if the per-connection writes ever 
 
 Facts have different truth sources, so each gets its own condition and `Ready` is their AND:
 
-| Condition                     | Source of truth                                                               | Meaning                                                                                                                                 |
-| ----------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `Running`                     | controller (Pod or VMI)                                                       | an incarnation exists and runs                                                                                                          |
-| `WorkloadReady`               | controller (Pod Ready)                                                        | the incarnation's Pod is Ready                                                                                                          |
-| `EnvironmentRuntimeConnected` | gateway (connection Lease)                                                    | a runner of this incarnation holds a live connection                                                                                    |
-| `Bootstrapped`                | runner (bootstrap result, republished at each connect)                        | the Sandbox's bootstrap ran to success; Sandbox-lifetime; False with reason `BootstrapFailed` if it failed or was interrupted           |
-| `Ready`                       | controller                                                                    | all of the above for the current incarnation; reason `BootstrapFailed` if bootstrap failed, `SuspendPending` while a suspend waits (D3) |
-| `Quiesced`                    | controller, from the runner's quiesce stage published on the connection Lease | False with reason `Draining`, then `Flushing`; True once every final cursor is acknowledged                                             |
+| Condition                     | Source of truth                                               | Meaning                                                                                                                                 |
+| ----------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `Running`                     | controller (Pod or VMI)                                       | an incarnation exists and runs                                                                                                          |
+| `WorkloadReady`               | controller (Pod Ready)                                        | the incarnation's Pod is Ready                                                                                                          |
+| `EnvironmentRuntimeConnected` | gateway (connection Lease)                                    | a runner of this incarnation holds a live connection                                                                                    |
+| `Bootstrapped`                | runner (bootstrap result, republished at each connect)        | the Sandbox's bootstrap ran to success; Sandbox-lifetime; False with reason `BootstrapFailed` if it failed or was interrupted           |
+| `Ready`                       | controller                                                    | all of the above for the current incarnation; reason `BootstrapFailed` if bootstrap failed, `SuspendPending` while a suspend waits (D3) |
+| `Quiesced`                    | controller, from the runner's directly observed quiesce stage | False with reason `Draining`, then `Flushing`; True once every final cursor is acknowledged                                             |
 
 The Sandbox's bootstrap runs once, at runner start and before any Session opens, and
 `Ready` includes `Bootstrapped`. Its outcome lives on the state volume, so each incarnation's runner republishes
@@ -145,22 +145,14 @@ Two rules make this safe. Conditions other than `Bootstrapped` are keyed to the 
 fact from incarnation N is never read as incarnation N+1's. And a condition is written by exactly
 one actor: the controller writes them all; every other layer publishes a fact the controller reads.
 
-**Decided: the Lease.** The gateway already writes it, Sandbox-owned, with the pod UID and boot ID. `EnvironmentRuntimeConnected` is
-its liveness (a gateway restart leaves a stale-but-honest record: `renewTime` plus duration; the controller requeues on
-expiry), and runner-reported facts (`Bootstrapped`, `idleSince`, the quiesce stage of D3) ride its annotations. Rejected:
-gRPC health from the gateway (the controller would hold a watch per Sandbox against a replica-sharded service, and a
-gateway outage would read as every runner down; if that node is built its output should still land as a fact the
-controller folds), and the gateway writing the Sandbox's status (two writers on one status, against "layers that act on
-CRs do not edit them"). A gateway rollout drops every connection at once; the controller must
-treat the reconnect window as connectivity lost, not as a Sandbox failure, and must not replace or
-restart anything because of it (no automatic spec replacement).
-
-**Runner facts and Lease writes.** `Runner.WatchState` publishes complete snapshots on fact
-changes and periodically. The Gateway records the facts with authenticated liveness on the Lease;
-readers use them only while the Lease names the current incarnation and remains live. Claiming a
-new observation clears previous facts until the runner reports again. The controller filters Lease
-watch events on facts and ownership changes rather than reconciling every renewal. Revisit write
-cadence only if measured etcd pressure requires it.
+**Direct observation.** The leader-elected Sandbox Controller opens a narrow, observe-only
+`Runner.WatchState` stream to each accepted Runtime incarnation. Complete snapshots arrive on
+changes and periodically. Facts stay in memory, fenced by Sandbox UID, Pod UID, boot ID and local
+stream generation. Leadership takeover and reconnect start fresh observation and idle timers.
+Stale facts cannot establish connectivity, idleness or quiescence; persisted quiesce attempts and
+terminal bootstrap failures survive leader changes. See [runner control](runner_control.md).
+The Gateway retains its connection Lease for proxy ownership until the separate protocol removal;
+it publishes no lifecycle facts there.
 
 ## D3. Quiescing is one operation; names say which stage a Sandbox is in
 
@@ -195,11 +187,10 @@ marker names the incarnation it was entered in:
 - **Journals.** Each Session's journal sealed at its final cursor in the earlier incarnation. The
   new incarnation continues it after that cursor with an entry recording that it resumed;
   [Reopening a sealed journal](#reopening-a-sealed-journal) decides how.
-- **Outside the runner.** Runner facts on the Lease are valid only while its `pod-uid` names the incarnation:
-  the Gateway's observation claim (`runner_gateway/internal/gateway/records.go`) rebuilds the Lease with only `pod-uid` and `environment-runtime-boot-id` on every
-  accepted connection, and the controller's shared Lease facts decoder (`sandboxes/lease/facts.go`) accepts facts only while `pod-uid`
-  equals the incarnation, so a stale `Quiesced` is never read for the new one. The controller's `quiescedIncarnation` is compared with
-  the current `status.incarnation`; after a resume they differ, which is what makes the new
+- **Outside the runner.** The Sandbox Controller observes `WatchState` directly and accepts facts only
+  for the current Sandbox UID, incarnation Pod UID, boot ID and local stream generation. Stale
+  `Quiesced` facts cannot seal a replacement incarnation. The controller's `quiescedIncarnation` is
+  compared with the current `status.incarnation`; after a resume they differ, which makes the new
   incarnation unquiesced there as well.
 
 **Names.** Today one word, "sealed", covers three different facts: the runner refuses new work, its
@@ -614,8 +605,8 @@ sequenceDiagram
 | The Dispatcher is its own service, not part of the gateway or the controller                                     | Decided | 2026-10-14 | D4             |
 | Idle policy lives in the Sandbox Controller, declarative, from runner-reported idleness                          | Decided | 2026-10-14 | D4             |
 | The controller creates the `<sandbox>-control` Service                                                           | Decided | 2026-10-13 | D1             |
-| Runner facts reach the controller on the connection Lease's annotations                                          | Decided | 2026-10-13 | D2             |
-| Facts ride a runner-only `RunnerHeartbeat`, sent on change and on connect                                        | Decided | 2026-10-14 | D2             |
+| Runner facts reach the controller directly over observe-only `WatchState`                                        | Decided | 2026-10-13 | D2             |
+| Facts arrive in complete `WatchState` snapshots on change and periodically                                       | Decided | 2026-10-14 | D2             |
 | Quiescing is one operation on the whole runner and interrupts inside it; the renames of D3                       | Decided | 2026-10-13 | D3             |
 | Resume is refused while a Sandbox is quiescing                                                                   | Decided | 2026-10-13 | D3             |
 | Automatic suspend is a conditional `Quiesce` carrying `if_idle_since`; no ingress-health gate                    | Decided | 2026-10-14 | D3             |

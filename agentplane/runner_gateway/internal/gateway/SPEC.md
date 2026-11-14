@@ -8,15 +8,15 @@ The release uses a bounded independent context because observer shutdown cancels
 It may clear only a Lease with the same Sandbox owner, Lease UID, holder Pod name, and connection
 epoch that this observer claimed. The update uses Kubernetes resource-version conflict detection and
 rechecks all fences after a conflict; a delayed release cannot clear a newer claim. It clears the
-holder, renewal and current boot/facts, but preserves the epoch and last verified Pod contact.
+holder, renewal and current boot ID, but preserves the epoch and last verified Pod contact.
 An orderly stop can therefore hand off without waiting for Lease expiry. A crashed or partitioned
 Gateway remains protected by the 30-second duration measured from each contender's own observation
 of the unchanged renewal, independent of clock skew.
 Closing the old client does not prove already admitted remote effects have finished. The Runner's
 newer `WatchState` epoch supersedes the old watch and blocks new old-epoch admissions; uncertain
-already admitted requests still remain uncertain. Clearing the boot, renewal and idle facts makes
-the Sandbox temporarily not connected and prevents stale idle facts from starting suspension while
-the new Gateway reconnects.
+already admitted requests still remain uncertain. Clearing the boot ID and renewal stops Gateway proxy admission while the next Gateway reconnects.
+The Sandbox Controller independently observes lifecycle facts directly from the Runtime; connection
+Lease metadata does not establish lifecycle readiness, idleness or quiescence.
 
 ## Environment Runtime proxy authorization
 

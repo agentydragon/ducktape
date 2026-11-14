@@ -145,7 +145,7 @@ func TestFirecrackerLostPrepareReplyRetriesPersistedGenerationAfterControllerRes
 
 	restarted := &Reconciler{
 		Client: r.Client, Objects: r.Objects, KubeVirt: r.KubeVirt,
-		Quiescer: r.Quiescer, Leases: r.Leases, Credentials: r.Credentials,
+		Quiescer: r.Quiescer, Credentials: r.Credentials,
 		Now: r.Now, FirecrackerStatus: r.FirecrackerStatus, Suspender: suspender,
 		States: NewRuntimeStates(nil, r.Now),
 	}

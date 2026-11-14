@@ -200,7 +200,8 @@ embeds files through an embedding endpoint and owns its own PostgreSQL database
 - **Runner control uses native gRPC.** The Gateway dials each runner's private server using mTLS.
   It validates the certificate against the active Sandbox/workload and retains `<sandbox>-control`
   routing and `<sandbox>-environment-runtime` proxy ownership Leases. The Sandbox Controller
-  separately watches Runtime facts over direct mTLS and keeps them in memory per incarnation. History push and ordinary Sandbox egress retain
+  watches Runtime facts solely over direct mTLS and keeps them in memory per incarnation;
+  the Gateway publishes only connection identity and renewal metadata to its Lease. History push and ordinary Sandbox egress retain
   their sidecar or VM relay paths; History terminates and verifies the Runtime SVID itself
   ([runner control](runner_control.md)).
 - **Telemetry uses Alloy as its collector.** SDK-instrumented services export OTLP/gRPC to Alloy.

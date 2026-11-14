@@ -36,14 +36,13 @@ Gateway proxy. Removing that replica ownership protocol is a separate change.
 One Gateway replica claims the runner Lease, then calls `Runner.WatchState` with the Sandbox UID,
 incarnation Pod UID and claimed epoch. For a VM, the incarnation UID is the virt-launcher Pod's.
 The runner adopts that incarnation before publishing its boot ID and facts, then sends snapshots
-on changes and periodically. The Gateway publishes validated facts and the boot ID to the Lease
-and exposes the existing `<sandbox>-control` proxy route. A claim without an observed boot ID is
+on changes and periodically. The Gateway records the boot ID on its connection Lease and exposes the existing `<sandbox>-control` proxy route. A claim without an observed boot ID is
 not a connected runner. Other replicas wait for the owner's Lease to expire before taking over:
 one Lease duration after they first saw its latest renewal, on their own clock, as client-go
 `leaderelection` measures it, so the owner's clock skew neither shortens nor extends the wait.
 The owning Gateway retries a lost observation after one second, without waiting for a Sandbox or Pod event.
 Each attempt claims a fresh Lease epoch. Unchanged internal notifications do not send snapshots;
-periodic heartbeats still publish unchanged facts.
+periodic heartbeats renew the connection Lease.
 
 Unary Runner calls and typed `Executor` calls carry the Sandbox UID, incarnation UID,
 runner boot ID and epoch in metadata. The runner rejects calls outside its active observer epoch
@@ -226,8 +225,7 @@ The Lease's `holderIdentity` is the Gateway Pod name, `leaseTransitions` the mon
 epoch, `renewTime` the last authenticated state snapshot and `leaseDurationSeconds` 30. Its
 `agentplane.allegedly.works/pod-uid` and
 `agentplane.allegedly.works/environment-runtime-boot-id` annotations bind the workload incarnation
-and Environment Runtime process. The Gateway still replaces the corresponding fact annotations
-until writer cleanup; the Sandbox Controller reads facts only from its direct observation.
+and Environment Runtime process. Lifecycle facts travel only over the Sandbox Controller's direct observation stream.
 
 Claiming the Lease uses resource-version conflict retries and refuses takeover of another live
 holder. The Gateway assigns a Sandbox-lifetime route epoch above both the retained EndpointSlice
@@ -240,7 +238,7 @@ EndpointSlice conflict retry re-reads the Lease and requires the exact Sandbox o
 holder name and transition count that authorized the publication. Missing epoch annotations are a
 legacy zero baseline; malformed present epochs and exhausted counters fail closed. It records the
 boot ID only after a valid `WatchState` response. Renewals that find another holder or a newer
-epoch fail the observation. A new claim clears old facts until the runner publishes them again.
+epoch fail the observation. A new claim clears the previous boot ID until the runner authenticates again.
 
 Lease and EndpointSlice are separate Kubernetes objects, so their read and write cannot be atomic.
 An old publication that validated immediately before a Lease replacement can briefly land; a
