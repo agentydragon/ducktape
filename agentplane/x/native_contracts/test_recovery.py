@@ -335,6 +335,23 @@ async def test_history_outage_replays_the_runtime_journal_and_resumes_the_reader
         assert len(events.of_kind(complete, "turn_completed")) == 2
         events.assert_contiguous(complete)
 
+        third_id = str(uuid4())
+        third = await dispatcher.submit_input(session_id, third_id, sandbox.name, sandbox.uid, "Reply AFTER HISTORY")
+        third_receipt = (await admitted(dispatcher, third)).admission
+        next_request = await model.request()
+        assert next_request.user_texts == ["Reply FIRST", "Reply OFFLINE", "Reply AFTER HISTORY"]
+        await model.reply(next_request, Text("AFTER HISTORY"))
+        await recorded(history_service, session_id, third_receipt.cursor - 1)
+
+    final_entries = list((await history_service.reader.read_session_events(session_id, limit=1000)).entries)
+    assert [*prefix, *resumed] == complete
+    assert [
+        row.event.command_admitted.command.command_id for row in events.of_kind(final_entries, "command_admitted")
+    ] == [first_id, second_id, third_id]
+    assert len(events.of_kind(final_entries, "turn_completed")) == 3
+    assert model.request_count == 3
+    events.assert_contiguous(final_entries)
+
 
 if __name__ == "__main__":
     pytest_bazel.main()
