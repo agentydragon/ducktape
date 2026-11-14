@@ -303,8 +303,8 @@ by L7 HTTP inspection of encrypted TLS. A different Gateway/DNS/L7-proxy setup r
 - `//cluster/validation:test_flux_build` and `:test_cluster_integration`: full offline Flux/Kustomize
   manifest rendering and dependency/health-check validation.
 - `//agentplane/app:test_settings`: application Settings environment parsing and OIDC source coexistence.
-- `//agentplane/action_service:config_test`: Go service Settings and catalog validation.
-- `//agentplane/action_service:integration_test`: Go startup, workload and MCP execution, and OAuth edge composition.
+- `//agentplane/action_service/cmd:config_test`: Go service Settings and catalog validation.
+- `//agentplane/action_service/cmd:integration_test`: Go startup, workload and MCP execution, and OAuth edge composition.
 - `//agentplane/app:test_action_api`, `//agentplane/action_service/internal/rpc:unit_test`, and
   `//agentplane/action_service/internal/rpc:integration_test`: signed app-federation flows, Go operator-token
   claim verification, and operator-only Action Service admission.
