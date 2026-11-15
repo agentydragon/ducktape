@@ -61,9 +61,6 @@ message NativeOperationInput {
   .ducktape.debundle.saved_analysis.SourceSpan initializer_span = 5;
   .ducktape.debundle.saved_analysis.SourceSpan call_span = 6;
   optional uint64 initializer_ordinal = 7;
-  .ducktape.debundle.saved_analysis.SavedBinding spread_source = 8;
-  .ducktape.debundle.saved_analysis.SourceSpan spread_source_span = 9;
-  .ducktape.debundle.saved_analysis.SourceSpan spread_token_span = 10;
 }
 
 message ProgramSummary {
@@ -81,7 +78,6 @@ message ProgramSummary {
   map<string, NativeOperationInputSites> native_operation_inputs = 11;
   map<string, InitializerCallEffectInputSites> initializer_call_effect_inputs = 12;
   map<string, ImportedPrimitiveArraySpreadInputSites> imported_primitive_array_spread_inputs = 13;
-  map<string, StableSetSites> stable_set_spreads = 14;
   map<string, InferredSetSites> inferred_set_constructions = 15;
   map<string, ArgumentInputSites> argument_inputs = 16;
   map<string, BindingNames> stable_imports = 17;
@@ -149,8 +145,6 @@ message ImportedPrimitiveArraySpreadInputSites { repeated ImportedPrimitiveArray
 message ArgumentInputSites { repeated ArgumentInput inputs = 1; }
 
 message InferredSetSites { map<uint32, InferredSetConstruction> sites = 1; }
-
-message StableSetSites { map<uint32, StableSetIterableUse> sites = 1; }
 
 message StableSetIterableUse {
   .ducktape.debundle.saved_analysis.SourceSpan source_span = 1;

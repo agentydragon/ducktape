@@ -1527,8 +1527,6 @@ rust_prost_transform(
     name = "spec_wire_serde_enums",
     prost_opts = [
         "btree_map=.",
-        "type_attribute=debundle.spec.VendorRole=#[derive(::serde::Serialize)]",
-        "type_attribute=debundle.spec.VendorRole=#[derive(::serde::Deserialize)]",
         "type_attribute=debundle.spec.WrapperShape=#[derive(::serde::Serialize)]",
         "type_attribute=debundle.spec.WrapperShape=#[derive(::serde::Deserialize)]",
         "type_attribute=debundle.spec.BindingSourceKind=#[derive(::serde::Serialize)]",
@@ -1602,7 +1600,6 @@ rust_prost_transform(
         "type_attribute=debundle.spec.InitializerExternalEffects=#[derive(::strum::Display)]",
         "type_attribute=debundle.spec.InitializerExternalEffects=#[serde(rename_all = \"snake_case\")]",
         "type_attribute=debundle.spec.InitializerExternalEffects=#[strum(serialize_all = \"snake_case\")]",
-        "type_attribute=debundle.spec.VendorRole=#[serde(rename_all = \"snake_case\")]",
         "type_attribute=debundle.spec.WrapperShape=#[serde(rename_all = \"snake_case\")]",
         "type_attribute=debundle.spec.BindingSourceKind=#[serde(rename_all = \"snake_case\")]",
         "type_attribute=debundle.spec.MemberPurity=#[serde(rename_all = \"snake_case\")]",

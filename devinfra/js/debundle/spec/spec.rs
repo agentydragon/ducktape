@@ -2454,7 +2454,6 @@ mod tests {
             );
         }
 
-        check(VendorRole::Worker, "worker");
         check(
             WrapperShape::NamedFromJsonDefault,
             "named_from_json_default",
@@ -2478,7 +2477,6 @@ mod tests {
             "returns_partial_namespace",
         );
         check(NativeCallIdentityKind::ObjectFreeze, "object_freeze");
-        check(NativeOperationKind::SetFromSetSpread, "set_from_set_spread");
         check(PartialSwapKind::Namespace, "namespace");
         check(SourceMatchIdentifierMode::AlphaAll, "alpha_all");
         check(SynchronousLoadDrainsMicrotasks::Never, "never");
@@ -2503,7 +2501,6 @@ mod tests {
             "private_metadata",
         );
 
-        assert_eq!(VendorRole::default(), VendorRole::Module);
         assert_eq!(MemberPurity::default(), MemberPurity::Default);
         assert_eq!(InitializerPurity::default(), InitializerPurity::Default);
         assert_eq!(MemberEffect::default(), MemberEffect::Default);

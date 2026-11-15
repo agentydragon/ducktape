@@ -26,7 +26,6 @@ program_premises:
 vendor:
   swap:
     identity: swap
-    role: worker
     level: swap
     package: fake-package
     version: '1'

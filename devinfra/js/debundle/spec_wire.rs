@@ -440,14 +440,12 @@ impl Wire for spec::VendorMark {
     fn to_proto(&self) -> Self::Proto {
         pb::VendorMark {
             identity: Some(self.identity.clone()),
-            role: Some(self.role as i32),
             level: Some(self.level.to_proto()),
         }
     }
     fn from_proto(v: Self::Proto) -> Result<Self> {
         Ok(Self {
             identity: required(v.identity)?,
-            role: pb::VendorRole::try_from(v.role.context("missing vendor role")?)?,
             level: required(v.level)?,
         })
     }
@@ -681,15 +679,13 @@ impl Wire for spec::CrossRefSelector {
     type Proto = pb::CrossRefSelector;
     fn to_proto(&self) -> Self::Proto {
         pb::CrossRefSelector {
-            references: self.references.clone(),
-            aliases: self.aliases.clone(),
+            references: Some(self.references.clone()),
             kind: self.kind.map(|kind| kind as i32),
         }
     }
     fn from_proto(v: Self::Proto) -> Result<Self> {
         Ok(Self {
-            references: v.references,
-            aliases: v.aliases,
+            references: required(v.references)?,
             kind: v.kind.map(pb::BindingSourceKind::try_from).transpose()?,
         })
     }

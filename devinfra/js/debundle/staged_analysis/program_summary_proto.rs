@@ -191,11 +191,6 @@ pub(super) fn snapshot<'a>(
                 })
             },
         )?,
-        stable_set_spreads: snapshot_map(&summary.stable_set_spreads, |sites| {
-            Ok(wire::StableSetSites {
-                sites: snapshot_map(sites, |value| snapshot_stable_set_use(value, ordinals))?,
-            })
-        })?,
         inferred_set_constructions: snapshot_map(&summary.inferred_set_constructions, |sites| {
             Ok(wire::InferredSetSites {
                 sites: snapshot_map(sites, |value| snapshot_set_construction(value, ordinals))?,
@@ -317,9 +312,6 @@ pub(super) fn restore(
                     .collect()
             },
         )?,
-        stable_set_spreads: restore_map(value.stable_set_spreads, |value| {
-            restore_map(value.sites, |value| restore_stable_set_use(value, ordinals))
-        })?,
         inferred_set_constructions: restore_map(value.inferred_set_constructions, |value| {
             restore_map(value.sites, |value| {
                 restore_set_construction(value, ordinals)
@@ -493,21 +485,6 @@ fn snapshot_native_operation_input(
         initializer_span: Some(input.initializer_span.to_proto()?),
         call_span: Some(input.call_span.to_proto()?),
         initializer_ordinal: Some(input.initializer_ordinal.to_proto()?),
-        spread_source: input
-            .spread_source
-            .as_ref()
-            .map(|binding| snapshot_binding(binding, ordinals))
-            .transpose()?,
-        spread_source_span: input
-            .spread_source_span
-            .as_ref()
-            .map(ProtoConvert::to_proto)
-            .transpose()?,
-        spread_token_span: input
-            .spread_token_span
-            .as_ref()
-            .map(ProtoConvert::to_proto)
-            .transpose()?,
     })
 }
 
@@ -515,10 +492,6 @@ fn restore_native_operation_input(
     value: wire::NativeOperationInput,
     ordinals: &ContextOrdinals,
 ) -> Result<ResolvedNativeOperationInput> {
-    let spread_source = value
-        .spread_source
-        .map(SavedBinding::from_proto)
-        .transpose()?;
     Ok(ResolvedNativeOperationInput {
         evidence: read(value.evidence, "NativeOperationInput.evidence")?,
         binding: restore_binding(value.binding, "NativeOperationInput.binding", ordinals)?,
@@ -539,17 +512,6 @@ fn restore_native_operation_input(
             value.initializer_ordinal,
             "NativeOperationInput.initializer_ordinal",
         )?,
-        spread_source: spread_source
-            .map(|binding| ordinals.restore_binding(binding))
-            .transpose()?,
-        spread_source_span: value
-            .spread_source_span
-            .map(swc_common::Span::from_proto)
-            .transpose()?,
-        spread_token_span: value
-            .spread_token_span
-            .map(swc_common::Span::from_proto)
-            .transpose()?,
     })
 }
 
@@ -712,7 +674,6 @@ mod tests {
             native_operation_inputs: BTreeMap::new(),
             initializer_call_effect_inputs: BTreeMap::new(),
             imported_primitive_array_spread_inputs: BTreeMap::new(),
-            stable_set_spreads: BTreeMap::new(),
             inferred_set_constructions: BTreeMap::new(),
             argument_inputs: BTreeMap::new(),
             stable_imports: BTreeMap::new(),

@@ -187,13 +187,7 @@ enum IntrinsicFamily {
 
 message VendorMark {
   optional string identity = 1;
-  optional VendorRole role = 2;
   VendorLevel level = 3;
-}
-
-enum VendorRole {
-  VENDOR_ROLE_MODULE = 0;
-  VENDOR_ROLE_WORKER = 1;
 }
 
 message VendorLevel {
@@ -328,7 +322,6 @@ enum BindingSourceKind {
 
 message CrossRefSelector {
   optional string references = 1;
-  optional string aliases = 2;
   optional BindingSourceKind kind = 3;
 }
 
@@ -564,14 +557,12 @@ enum NativeOperationKind {
   NATIVE_OPERATION_KIND_SYMBOL = 4;
   NATIVE_OPERATION_KIND_SYMBOL_FOR = 5;
   NATIVE_OPERATION_KIND_SET_FROM_PRIMITIVE_ARRAY = 6;
-  NATIVE_OPERATION_KIND_SET_FROM_SET_SPREAD = 7;
   // One static own-data function property read on the original Object constructor.
   NATIVE_OPERATION_KIND_OBJECT_OWN_DATA_FUNCTION_READ = 8;
   // Exact well-known Symbol data reads in a direct class initializer's method keys.
   NATIVE_OPERATION_KIND_SYMBOL_WELL_KNOWN_CLASS_KEYS = 9;
   // Exact class-key reads of own data properties with unknown primitive values.
   NATIVE_OPERATION_KIND_SYMBOL_PRIMITIVE_CLASS_KEYS = 10;
-  NATIVE_OPERATION_KIND_ARRAY_SPREAD_FROM_PRIMITIVE_ARRAYS = 11;
   NATIVE_OPERATION_KIND_PROMISE_RESOLVE = 12;
 }
 
