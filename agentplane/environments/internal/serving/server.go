@@ -136,7 +136,7 @@ func New(c Config, namespace string, apiConfig *rest.Config, scheme *runtime.Sch
 	maps.Copy(allMethods, methods)
 	var proxy *runtimeProxy
 	if c.RuntimeProxy != nil {
-		proxy, err = newRuntimeProxy(*c.RuntimeProxy, namespace, apiConfig, scheme, kube)
+		proxy, err = newRuntimeProxy(*c.RuntimeProxy, namespace, apiConfig, scheme)
 		if err != nil {
 			return nil, fmt.Errorf("Runtime proxy: %w", err)
 		}

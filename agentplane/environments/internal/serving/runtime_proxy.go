@@ -5,13 +5,11 @@ import (
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/environments/runtimeproxy"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"golang.org/x/sync/errgroup"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	toolscache "k8s.io/client-go/tools/cache"
 	kubevirtv1 "kubevirt.io/api/core/v1"
@@ -27,7 +25,7 @@ type runtimeProxy struct {
 	health  *watchhealth.Health
 }
 
-func newRuntimeProxy(c RuntimeProxyConfig, namespace string, apiConfig *rest.Config, scheme *runtime.Scheme, kube kubernetes.Interface) (*runtimeProxy, error) {
+func newRuntimeProxy(c RuntimeProxyConfig, namespace string, apiConfig *rest.Config, scheme *runtime.Scheme) (*runtimeProxy, error) {
 	if err := c.ValidateCredentials(); err != nil {
 		return nil, err
 	}
@@ -51,15 +49,11 @@ func newRuntimeProxy(c RuntimeProxyConfig, namespace string, apiConfig *rest.Con
 	}
 	// No bearer accounts or workload SVID resolver are installed on the proxy's methods.
 	// Only the four exact service allowlists confer authority; delegation stays absent.
-	resolved, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.Audience, []string{namespace})
-	if err != nil {
-		return nil, err
-	}
 	gateway, err := runtimeproxy.New(runtimeproxy.Config{
 		Namespace: namespace, RunnerSecurity: c.RunnerSecurity,
 		RuntimeReaders: c.Readers, SessionServices: c.SessionCallers,
 		ControllerServices: c.ControllerCallers, ExecutorServices: c.ExecutorCallers,
-	}, resolved, inventory, health)
+	}, nil, inventory, health)
 	if err != nil {
 		return nil, err
 	}

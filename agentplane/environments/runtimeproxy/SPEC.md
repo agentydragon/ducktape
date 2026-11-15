@@ -5,7 +5,12 @@ and authentication. Optional Environments registration uses the same fencing and
 its every-replica listener with independent routing caches. Its method grants admit only the four
 configured service-role allowlists; no bearer, workload Identity or delegation is granted. Its
 outbound Runtime peer is `spiffe://agentplane/runtime-proxy`. The Gateway registration remains until
-callers have moved, after which this serving package can become internal to Environments.
+callers have moved. `environments/runtimeproxy` is the final package home; retirement removes the
+Gateway import and its temporary Bazel visibility grant without moving these files again.
+
+Environments uses shared service-only admission without a TokenReview resolver or proxy bearer
+audience. Bearer metadata is refused even alongside an admitted service SVID. The retained
+Gateway's separately configured bearer rules remain during the caller migration.
 
 ## Runtime observation and independent Gateway connections
 

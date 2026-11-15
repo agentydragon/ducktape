@@ -18,6 +18,7 @@ on every replica, with independent routing watches and narrow service SVID grant
 `runtime-proxy` certificate is separate from the Controller's binding observer certificate. Deployment
 configuration and callers keep the Gateway path until the receiver image and grants have rolled.
 See [the receiver contract](SPEC.md#optional-runtime-proxy-and-executor-receiver).
+Proxy admission uses service SVIDs directly; `runtime_proxy` has no bearer audience setting.
 
 Reconciles `Sandbox` into retained state and optional workspace PVCs and, while running as the
 `Identity` its spec names, one Pod or KubeVirt VM from its `SandboxTemplate`. Contract: [`SPEC.md`](SPEC.md). The CRDs are in

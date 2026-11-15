@@ -12,7 +12,6 @@ import (
 // RuntimeProxyConfig configures the optional Runtime proxy receiver.
 type RuntimeProxyConfig struct {
 	RunnerSecurity    peertls.Security `mapstructure:"runner_security"`
-	Audience          string           `mapstructure:"audience"`
 	Readers           []string         `mapstructure:"readers"`
 	SessionCallers    []string         `mapstructure:"session_callers"`
 	ControllerCallers []string         `mapstructure:"controller_callers"`
@@ -20,9 +19,6 @@ type RuntimeProxyConfig struct {
 }
 
 func (c RuntimeProxyConfig) Validate() error {
-	if c.Audience == "" {
-		return errors.New("audience is required")
-	}
 	if err := c.RunnerSecurity.Validate(); err != nil {
 		return fmt.Errorf("runner_security: %w", err)
 	}
