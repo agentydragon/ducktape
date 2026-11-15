@@ -392,12 +392,13 @@ Pod. Callers without Sandbox certificates require a separate authentication desi
 
 ## Environments receiver migration
 
-Optional `environment_service.runtime_proxy` registers the same Runtime proxy and Executor wire
-services on `sandbox-controller:8082`. Every replica owns its routing cache and callable Runtime
-watches independently of leadership, while the Controller's incarnation-binding facts watch stays
-leader-only. This receiver presents the dedicated `runtime-proxy` SVID to Runtime; callers verify
-the existing Sandbox Controller server SVID and receive only their exact per-method service grants.
-It admits no bearer, workload Identity or delegated proxy calls. Sandbox/Pod/boot fences and uncertain
-outcomes remain unchanged. Deployment settings and callers retain the Gateway endpoint until the
-accepting image and receiver grants have rolled. See the
+Deployment enables `environment_service.runtime_proxy` to register the same Runtime proxy and
+Executor wire services on `sandbox-controller:8082`. Every replica owns its routing cache and
+callable Runtime watches independently of leadership, while the Controller's incarnation-binding
+facts watch stays leader-only. This receiver presents the dedicated `runtime-proxy` SVID to Runtime;
+callers verify the existing Sandbox Controller server SVID and receive only their exact per-method
+service grants. It admits no bearer, workload Identity or delegated proxy calls, and requires no
+proxy audience. Sandbox/Pod/boot fences and uncertain outcomes remain unchanged. Caller targets
+retain the Gateway endpoint until the receiver is Ready; the caller cutover follows separately.
+Enable receiver configuration only after its accepting image is pinned and running. See the
 [receiver contract](../environments/SPEC.md#optional-runtime-proxy-and-executor-receiver).

@@ -33,6 +33,7 @@ from cluster.cdk8s.agentplane import (
     actions,
     central_sampler,
     database,
+    environment_service,
     history_service,
     llm_ingress,
     runner_gateway,
@@ -196,6 +197,7 @@ class CentralSampler(Construct):
             EgressRule.to_entities(Entity.KUBE_APISERVER),
             database.egress(namespace),
             runner_gateway.service(namespace).egress(),
+            environment_service.service(namespace).egress(),
             history_service.service(namespace).egress(),
             llm_ingress.service(namespace).egress(),
         ]

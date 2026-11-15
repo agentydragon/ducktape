@@ -37,7 +37,7 @@ from agentplane.notification_service.settings import (
     Settings,
 )
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import database, workload_tls
+from cluster.cdk8s.agentplane import database, environment_service, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
@@ -260,6 +260,7 @@ class Notifications(Construct):
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 self.actions.egress(),
                 self.gateway.egress(),
+                environment_service.service(env.namespace).egress(),
                 self.history.egress(),
                 self.dispatcher.egress(),
                 database.egress(env.namespace),

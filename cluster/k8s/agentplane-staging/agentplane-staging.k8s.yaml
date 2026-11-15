@@ -3747,6 +3747,14 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
+            app.kubernetes.io/name: sandbox-controller
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8082"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
             app.kubernetes.io/name: history-service
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
@@ -6557,6 +6565,9 @@ spec:
             - mountPath: /run/agentplane/sandbox-controller-client-tls
               name: sandbox-controller-client-workload-tls
               readOnly: true
+            - mountPath: /run/agentplane/sandbox-controller-runtime-proxy-client-tls
+              name: sandbox-controller-runtime-proxy-client-workload-tls
+              readOnly: true
             - mountPath: /etc/agentplane-sandbox-controller
               name: configmap-sandbox-controller-settings
               readOnly: true
@@ -6586,6 +6597,9 @@ spec:
         - name: sandbox-controller-client-workload-tls
           secret:
             secretName: sandbox-controller-client-workload-tls
+        - name: sandbox-controller-runtime-proxy-client-workload-tls
+          secret:
+            secretName: sandbox-controller-runtime-proxy-client-workload-tls
         - configMap:
             name: sandbox-controller-settings
           name: configmap-sandbox-controller-settings
@@ -6644,6 +6658,29 @@ spec:
   secretName: sandbox-controller-client-workload-tls
   uris:
     - spiffe://agentplane/sandbox-controller
+  usages:
+    - digital signature
+    - client auth
+    - server auth
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: sandbox-controller-runtime-proxy-client-workload
+  namespace: agentplane-staging
+spec:
+  duration: 24h
+  issuerRef:
+    kind: ClusterIssuer
+    name: agentplane-workload
+  privateKey:
+    algorithm: ECDSA
+    rotationPolicy: Always
+    size: 256
+  renewBefore: 8h
+  secretName: sandbox-controller-runtime-proxy-client-workload-tls
+  uris:
+    - spiffe://agentplane/runtime-proxy
   usages:
     - digital signature
     - client auth
@@ -6711,6 +6748,22 @@ data:
           - /agentplane.environments.v1.EnvironmentService/GetEnvironment
           - /agentplane.environments.v1.EnvironmentService/WatchEnvironment
           - /agentplane.environments.v1.EnvironmentService/ResumeEnvironment
+      runtime_proxy:
+        runner_security:
+          mode: mtls
+          tls:
+            cert_file: /run/agentplane/sandbox-controller-runtime-proxy-client-tls/tls.crt
+            key_file: /run/agentplane/sandbox-controller-runtime-proxy-client-tls/tls.key
+            ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+        readers:
+          - spiffe://agentplane/app
+          - spiffe://agentplane/notifications
+        session_callers:
+          - spiffe://agentplane/sessions
+        controller_callers:
+          - spiffe://agentplane/sandbox-controller
+        executor_callers:
+          - spiffe://agentplane/central-sampler
       runtime_catalog:
         models:
           models:
@@ -7076,6 +7129,14 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
+            app.kubernetes.io/name: sandbox-controller
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8082"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
             app.kubernetes.io/name: agentplane-environment-runtime
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
@@ -7096,6 +7157,38 @@ spec:
     - fromEndpoints:
         - matchLabels:
             app.kubernetes.io/name: egress
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8082"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: sandbox-controller
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8082"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: runner-gateway
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8082"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: notifications
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8082"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: central-sampler
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
@@ -9462,6 +9555,14 @@ spec:
       toPorts:
         - ports:
             - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: sandbox-controller
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8082"
               protocol: TCP
     - toEndpoints:
         - matchLabels:

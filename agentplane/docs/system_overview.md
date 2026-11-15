@@ -302,7 +302,7 @@ flowchart LR
     dispatcher -->|central opens + commands: Gateway Sessions SVID mTLS :8083| central
     sandboxctl -->|every-replica inventory and guarded desired-state writes| k8s
     sandboxctl -->|Quiesce| gateway
-    sandboxctl -->|optional every-replica proxy: runtime-proxy SVID; independent watches and fenced calls| runtime
+    sandboxctl -->|every-replica proxy: runtime-proxy SVID; independent watches and fenced calls| runtime
     sandboxctl -->|passive WatchState binds workload UID and observes facts: mTLS gRPC| runtime
     dispatcher -->|Sandbox + independent environment-policy watches| k8s
     dispatcher -->|automatic wake: budget + guarded running/generation update| k8s
@@ -499,7 +499,7 @@ flowchart LR
     end
     history[History ingress]
     gateway -->|mTLS Runner / Executor; independent WatchState; UID and boot fences| runtime
-    sandboxctl -->|optional every-replica proxy / Executor: runtime-proxy SVID; independent watches and fenced calls| runtime
+    sandboxctl -->|every-replica proxy / Executor: runtime-proxy SVID; independent watches and fenced calls| runtime
     policy_api[Kubernetes PolicySets / PolicyBindings / Identities]
     gateway -->|list/watch grants; patch EnvironmentReady| policy_api
     sandboxctl[Sandbox Controller + EnvironmentService :8082] -->|passive WatchState binds workload UID and observes facts: mTLS gRPC| runtime
@@ -865,12 +865,12 @@ flowchart LR
     proxy -->|existing Runtime mTLS| runtime[Environment Runtime]
 ```
 
-## Optional Environments Runtime transport receiver
+## Environments Runtime transport receiver
 
-Environments accepts `environment_service.runtime_proxy` to register Runtime proxy and Executor on
-its existing every-replica listener. Deployment configuration remains unchanged in the receiver-code
-PR. The optional edges above become active only after its image is pinned and configuration enables
-it. The replica-local routing inventory and Runtime watches do not wait for leadership or reuse
-leader-only lifecycle facts. Caller role grants, UID/incarnation/boot fencing and uncertain mutation
-outcomes stay separate from the Controller's incarnation-binding watch. Gateway remains the serving
-path until callers have moved to the new receiver; no new Environments-to-Sessions edge is added.
+Deployment enables `environment_service.runtime_proxy` on the existing every-replica
+`sandbox-controller:8082` listener, registering Runtime proxy and Executor with exact service SVID
+grants. Each replica's routing inventory and Runtime watches operate independently of leadership
+and the leader's lifecycle facts. The dedicated outbound `runtime-proxy` SVID remains separate
+from the Controller's incarnation-binding observer; UID/incarnation/boot fencing and uncertain
+mutation outcomes stay unchanged. Callers keep using the retained Gateway endpoint until the
+separate caller configuration cutover. No new Environments-to-Sessions edge is added.

@@ -16,6 +16,7 @@ from agentplane.system_tests.scenarios import (
     egress,
     launch_presets,
     runner_credentials,
+    runtime_proxy,
     session_instructions,
     storage,
     suspend_resume,
@@ -25,6 +26,13 @@ from agentplane.system_tests.scenarios import (
 from agentplane.system_tests.suites.pod_worker import Worker
 
 type Scenario = Callable[[Worker], Awaitable[None]]
+
+
+async def environments_forwards_runtime_reads_and_refuses_stale_incarnations(worker: Worker) -> None:
+    async with worker.reused_sandbox() as case:
+        await runtime_proxy.environments_forwards_runtime_reads_and_refuses_stale_incarnations(
+            worker.cluster, case.sandbox
+        )
 
 
 async def an_agent_messages_another_which_reads_and_acknowledges_it(worker: Worker) -> None:
@@ -223,6 +231,7 @@ async def two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(worker: W
 
 
 SCENARIOS = (
+    pytest.param(environments_forwards_runtime_reads_and_refuses_stale_incarnations),
     pytest.param(the_model_call_itself_goes_through_the_proxy, marks=pytest.mark.scripted_model),
     pytest.param(
         the_standing_instruction_reaches_the_model_and_only_in_its_own_session, marks=pytest.mark.scripted_model

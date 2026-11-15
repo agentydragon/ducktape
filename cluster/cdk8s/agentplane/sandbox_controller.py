@@ -16,11 +16,20 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecSelector,
 )
 
-from agentplane.environments.settings import EnvironmentService, ServiceDelegation, ServiceDelegator, Settings
+from agentplane.environments.settings import (
+    EnvironmentService,
+    RuntimeProxy,
+    ServiceDelegation,
+    ServiceDelegator,
+    Settings,
+)
 from agentplane.identity.auth import listener as workload_listener
 from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
+    CENTRAL_SAMPLER_URI,
+    GATEWAY_RUNTIME_PROXY_URI,
+    GATEWAY_SESSIONS_URI,
     MTLS,
     NOTIFICATIONS_URI,
     SANDBOX_CONTROLLER_URI,
@@ -33,9 +42,12 @@ from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import (
     actions,
     app as app_component,
+    central_sampler,
     egress,
     environment_sandbox,
     environment_service,
+    notifications,
+    runner_gateway,
     workload_tls,
 )
 from cluster.cdk8s.agentplane.environment import Environment
@@ -205,6 +217,9 @@ class SandboxController(Construct):
         assert runner_tls.cert_file is not None
         assert runner_tls.key_file is not None
         assert runner_tls.ca_file is not None
+        proxy_tls = workload_tls.client_certificate(
+            self, env, container=workload.container, name=f"{NAME}-runtime-proxy", uri=GATEWAY_RUNTIME_PROXY_URI
+        )
         serving = EnvironmentService(
             rpc=workload_listener.Listener(
                 listen_address=f"0.0.0.0:{environment_endpoint.port.number}",
@@ -230,6 +245,13 @@ class SandboxController(Construct):
                 )
                 if authority.service_delegation_actor is not None
                 else None
+            ),
+            runtime_proxy=RuntimeProxy(
+                runner_security=MTLS(tls=proxy_tls),
+                readers=(APP_URI, NOTIFICATIONS_URI),
+                session_callers=(GATEWAY_SESSIONS_URI,),
+                controller_callers=(SANDBOX_CONTROLLER_URI,),
+                executor_callers=(CENTRAL_SAMPLER_URI,) if env.central_sampler is not None else (),
             ),
             runtime_catalog=env.runtime_catalog,
         )
@@ -338,7 +360,14 @@ class SandboxController(Construct):
         namespace = self.env.namespace
         endpoint = metrics(namespace)
         environment_endpoint = environment_service.service(namespace)
-        environment_callers = [egress.proxy(namespace).pods]
+        environment_callers = [
+            egress.proxy(namespace).pods,
+            endpoint.pods,
+            runner_gateway.service(namespace).pods,
+            notifications.service(namespace).pods,
+        ]
+        if self.env.central_sampler is not None:
+            environment_callers.append(central_sampler.pods(namespace))
         if self.env.app is not None:
             environment_callers.append(app_component.service(namespace).pods)
         if self.authority.service_delegation_actor is not None:
@@ -356,6 +385,7 @@ class SandboxController(Construct):
                 cilium.dns_egress(),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 self.gateway.egress(),
+                environment_endpoint.egress(),
                 EgressRule.to_endpoints(
                     environment_sandbox.pods(namespace).cilium, environment_sandbox.ENVIRONMENT_RUNTIME_SERVICE_PORT
                 ),
