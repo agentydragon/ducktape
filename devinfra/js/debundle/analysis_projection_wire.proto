@@ -1,6 +1,7 @@
 syntax = "proto3";
 package debundle.analysis_projection;
 
+import "devinfra/js/debundle/analysis_common.proto";
 import "devinfra/js/debundle/spec_wire.proto";
 
 // Resolved source-analysis inputs; authored vocabulary lives in spec_wire.proto.
@@ -27,18 +28,6 @@ message ChunkAnalysisInputs {
   repeated debundle.spec.NoAccessorInstallCallableContract no_accessor_install_callables = 10;
 }
 
-message NoAccessorInstallRef {
-  optional string defining_chunk = 1;
-  optional uint64 input_index = 2;
-}
-
-message BundleGlobalNames {
-  repeated string names = 1;
-  optional bool registered_symbols = 2;
-  optional bool fresh_collections = 3;
-  repeated NoAccessorInstallRef no_accessor_install_callables = 4;
-}
-
 enum KnownEffect {
   KNOWN_EFFECT_TYPESCRIPT_DECORATE_HELPER = 0;
   KNOWN_EFFECT_TYPESCRIPT_METADATA_DECORATE_HELPER = 1;
@@ -57,7 +46,7 @@ message AnalysisAssumptions {
   repeated string retained_record_factories = 1;
   repeated debundle.spec.ReentryFreeOperation reentry_free_operations = 2;
   optional debundle.spec.PredefinedGlobals predefined_globals = 3;
-  BundleGlobalNames bundle_globals = 4;
+  .debundle.analysis_common.BundleGlobalNames bundle_globals = 4;
   repeated debundle.spec.GlobalNames deferred_global_publications = 5;
   repeated debundle.spec.GlobalNames non_reentrant_global_membership = 6;
   repeated string declared_pure = 7;
@@ -81,13 +70,8 @@ message AnalysisAssumptions {
   repeated string fluent_bindings = 25;
 }
 
-message SourceDeclaration {
-  optional string binding = 1;
-  optional uint64 body_index = 2;
-}
-
 message ChunkSourceDeclarations {
-  repeated SourceDeclaration declarations = 1;
+  repeated .debundle.analysis_common.SourceDeclaration declarations = 1;
 }
 
 message AnalysisImportedPrimitiveArrayOperand {
@@ -95,12 +79,12 @@ message AnalysisImportedPrimitiveArrayOperand {
   optional string consumer_binding = 2;
   optional string provider_chunk = 3;
   debundle.spec.SourceMatchClaim provider_source_match = 4;
-  SourceDeclaration provider_declaration = 5;
+  .debundle.analysis_common.SourceDeclaration provider_declaration = 5;
   optional string audited_provider_source_sha256 = 6;
 }
 
 message AnalysisImportedPrimitiveArraySpreadInput {
-  SourceDeclaration consumer_declaration = 1;
+  .debundle.analysis_common.SourceDeclaration consumer_declaration = 1;
   debundle.spec.SourceMatchClaim source_match = 2;
   optional string audited_source_sha256 = 3;
   repeated AnalysisImportedPrimitiveArrayOperand operands = 4;
@@ -121,17 +105,9 @@ message AnalysisSourceSites {
   map<string, ChunkImportedPrimitiveArrayInputs> imported_primitive_array_spread_inputs = 7;
 }
 
-message NativeOperationSelectorProvenance {
-  oneof kind {
-    debundle.spec.SourceMatchClaim source_match = 1;
-    SourceDeclaration declaration = 2;
-    debundle.spec.ResolvedMemberSelector resolved_member = 3;
-  }
-}
-
 message AnalysisNativeOperationInput {
-  SourceDeclaration declaration = 1;
-  NativeOperationSelectorProvenance selector = 2;
+  .debundle.analysis_common.SourceDeclaration declaration = 1;
+  .debundle.analysis_common.NativeOperationSelectorProvenance selector = 2;
   optional debundle.spec.NativeOperationKind operation = 3;
   optional string audited_source_sha256 = 4;
 }

@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package ducktape.debundle.saved_analysis;
 
+import "devinfra/js/debundle/analysis_common.proto";
 import "devinfra/js/debundle/interop.proto";
 import "devinfra/js/debundle/spec_wire.proto";
 import "google/protobuf/empty.proto";
@@ -97,13 +98,6 @@ message BoundedInvocationFallbackSeed {
 enum BoundedInvocationFallbackUnknownPathReason {
   BOUNDED_INVOCATION_FALLBACK_UNKNOWN_PATH_REASON_SEED_UNAVAILABLE = 0;
   BOUNDED_INVOCATION_FALLBACK_UNKNOWN_PATH_REASON_RETAINED_REFERENCE_PATH_UNAVAILABLE = 1;
-}
-
-message BundleGlobalNames {
-  repeated string names = 1;
-  optional bool registered_symbols = 2;
-  optional bool fresh_collections = 3;
-  repeated NoAccessorInstallRef no_accessor_install_callables = 4;
 }
 
 // Persisted callable capabilities include dependencies hidden from report JSON.
@@ -291,19 +285,11 @@ message DescriptorCopyAuthorRef {
   string spec_location = 3;
 }
 
-message DescriptorCopyFactorySignature {
-  optional uint64 argument_count = 1;
-  optional uint64 object_argument = 2;
-  // Both key collections must be nonempty and exclude __proto__.
-  repeated string eager_own_data_keys = 3;
-  repeated string assigned_data_keys = 4;
-}
-
 message DescriptorCopyFactorySummary {
   optional string defining_module = 1;
   optional string export = 2;
   optional string author_location = 3;
-  repeated DescriptorCopyFactorySignature signatures = 4;
+  repeated .debundle.spec.DescriptorCopyFactorySignature signatures = 4;
 }
 
 message EffectiveInitializerCallReplacement {
@@ -911,7 +897,7 @@ enum NativeIntegrityGuard {
 message NativeIntegrityUse {
   optional .ducktape.debundle.saved_analysis.NativeIntegrityGuard guard = 1;
   repeated .ducktape.debundle.saved_analysis.ValueInputRef value_input_refs = 2;
-  repeated .ducktape.debundle.saved_analysis.NoAccessorInstallRef no_accessor_install_refs = 3;
+  repeated .debundle.analysis_common.NoAccessorInstallRef no_accessor_install_refs = 3;
   repeated .ducktape.debundle.saved_analysis.ProgramPremiseKey program_premises = 4;
 }
 
@@ -963,7 +949,7 @@ message NativeMutationWitness {
 message NativeOperationInputEvidence {
   optional .ducktape.debundle.saved_analysis.NativeOperationInputRef reference = 1;
   optional string spec_location = 2;
-  optional .ducktape.debundle.saved_analysis.NativeOperationSelectorProvenance selector = 3;
+  optional .debundle.analysis_common.NativeOperationSelectorProvenance selector = 3;
   optional .ducktape.debundle.saved_analysis.NativeInputKind operation = 4;
   optional string source_path = 5;
   optional string audited_source_sha256 = 6;
@@ -981,14 +967,6 @@ message NativeOperationInputUse {
   optional .ducktape.debundle.saved_analysis.NativeOperationInputEvidence evidence = 1;
   optional .ducktape.debundle.saved_analysis.SourceLocation source_location = 2;
   optional .ducktape.debundle.saved_analysis.SourceSpan span = 3;
-}
-
-message NativeOperationSelectorProvenance {
-  oneof value {
-    .debundle.spec.SourceMatchClaim source_match = 1;
-    .ducktape.debundle.saved_analysis.SourceDeclaration declaration = 2;
-    .debundle.spec.ResolvedMemberSelector resolved_member = 3;
-  }
 }
 
 message NativePrefixObservation {
@@ -1104,11 +1082,6 @@ enum NeverWrittenReach {
   NEVER_WRITTEN_REACH_GLOBAL_OBJECT = 1;
   // A write the census resolves to the family without an exact path.
   NEVER_WRITTEN_REACH_FAMILY = 2;
-}
-
-message NoAccessorInstallRef {
-  optional string defining_chunk = 1;
-  optional uint64 input_index = 2;
 }
 
 // The first ordered call admission condition that rejected the target and
@@ -1227,7 +1200,7 @@ message ProofDependencies {
   repeated ArgumentInputRef argument_inputs = 6;
   repeated HostBehaviorKey host_behavior = 7;
   repeated ProgramPremiseKey program_premises = 8;
-  repeated NoAccessorInstallRef no_accessor_install_callables = 9;
+  repeated .debundle.analysis_common.NoAccessorInstallRef no_accessor_install_callables = 9;
 }
 
 message PurityNodeId {
@@ -1374,11 +1347,6 @@ message ReentryFreeOperationUse {
   optional .debundle.spec.ReentryFreeOperation operation = 1;
   optional .ducktape.debundle.saved_analysis.SourceLocation source_location = 2;
   optional .ducktape.debundle.saved_analysis.SourceSpan span = 3;
-}
-
-message RetainedCallbackSignature {
-  optional uint64 argument_count = 1;
-  repeated uint64 callback_arguments = 2;
 }
 
 message ReturnedRecordSummary {
@@ -1657,11 +1625,6 @@ message SettledElements {
     google.protobuf.Empty primitive = 1;
     Records records = 2;
   }
-}
-
-message SourceDeclaration {
-  optional string binding = 1;
-  optional uint64 body_index = 2;
 }
 
 message SourceLocation {

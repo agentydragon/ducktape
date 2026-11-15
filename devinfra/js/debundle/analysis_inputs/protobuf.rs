@@ -20,7 +20,7 @@ use super::{
     ProgramPremiseKey,
 };
 use crate::saved_proto::{
-    ProtoConvert, decode_native_intrinsics, decode_set, decode_set_direct,
+    ProtoConvert, common_proto, decode_native_intrinsics, decode_set, decode_set_direct,
     encode_native_intrinsics, proto, required,
 };
 
@@ -189,27 +189,29 @@ impl ProtoConvert<proto::NativeInputKind> for NativeInputKind {
     }
 }
 
-impl ProtoConvert<proto::NativeOperationSelectorProvenance> for NativeOperationSelectorProvenance {
-    fn to_proto(&self) -> Result<proto::NativeOperationSelectorProvenance> {
-        use proto::native_operation_selector_provenance::Value;
-        Ok(proto::NativeOperationSelectorProvenance {
-            value: Some(match self {
-                Self::SourceMatch(claim) => Value::SourceMatch(spec_wire::Wire::to_proto(claim)),
-                Self::Declaration(declaration) => Value::Declaration(declaration.to_proto()?),
-                Self::ResolvedMember(member) => Value::ResolvedMember(member.clone()),
+impl ProtoConvert<common_proto::NativeOperationSelectorProvenance>
+    for NativeOperationSelectorProvenance
+{
+    fn to_proto(&self) -> Result<common_proto::NativeOperationSelectorProvenance> {
+        use common_proto::native_operation_selector_provenance::Kind;
+        Ok(common_proto::NativeOperationSelectorProvenance {
+            kind: Some(match self {
+                Self::SourceMatch(claim) => Kind::SourceMatch(spec_wire::Wire::to_proto(claim)),
+                Self::Declaration(declaration) => Kind::Declaration(declaration.to_proto()?),
+                Self::ResolvedMember(member) => Kind::ResolvedMember(member.clone()),
             }),
         })
     }
 
-    fn from_proto(value: proto::NativeOperationSelectorProvenance) -> Result<Self> {
-        use proto::native_operation_selector_provenance::Value;
+    fn from_proto(value: common_proto::NativeOperationSelectorProvenance) -> Result<Self> {
+        use common_proto::native_operation_selector_provenance::Kind;
         Ok(
-            match required(value.value, "NativeOperationSelectorProvenance.value")? {
-                Value::SourceMatch(value) => Self::SourceMatch(spec_wire::Wire::from_proto(value)?),
-                Value::Declaration(value) => {
+            match required(value.kind, "NativeOperationSelectorProvenance.kind")? {
+                Kind::SourceMatch(value) => Self::SourceMatch(spec_wire::Wire::from_proto(value)?),
+                Kind::Declaration(value) => {
                     Self::Declaration(SourceDeclaration::from_proto(value)?)
                 }
-                Value::ResolvedMember(value) => Self::ResolvedMember(value),
+                Kind::ResolvedMember(value) => Self::ResolvedMember(value),
             },
         )
     }
@@ -526,15 +528,15 @@ impl ProtoConvert<proto::ReturnedRecordSummary> for ReturnedRecordSummary {
     }
 }
 
-impl ProtoConvert<proto::SourceDeclaration> for SourceDeclaration {
-    fn to_proto(&self) -> Result<proto::SourceDeclaration> {
-        Ok(proto::SourceDeclaration {
+impl ProtoConvert<common_proto::SourceDeclaration> for SourceDeclaration {
+    fn to_proto(&self) -> Result<common_proto::SourceDeclaration> {
+        Ok(common_proto::SourceDeclaration {
             binding: Some(self.binding.clone()),
             body_index: Some(self.body_index.to_proto()?),
         })
     }
 
-    fn from_proto(value: proto::SourceDeclaration) -> Result<Self> {
+    fn from_proto(value: common_proto::SourceDeclaration) -> Result<Self> {
         Ok(Self {
             binding: required(value.binding, "SourceDeclaration.binding")?,
             body_index: usize::from_proto(required(
@@ -986,15 +988,15 @@ impl ProtoConvert<proto::NativeOperationInputRef> for NativeOperationInputRef {
     }
 }
 
-impl ProtoConvert<proto::NoAccessorInstallRef> for NoAccessorInstallRef {
-    fn to_proto(&self) -> Result<proto::NoAccessorInstallRef> {
-        Ok(proto::NoAccessorInstallRef {
+impl ProtoConvert<common_proto::NoAccessorInstallRef> for NoAccessorInstallRef {
+    fn to_proto(&self) -> Result<common_proto::NoAccessorInstallRef> {
+        Ok(common_proto::NoAccessorInstallRef {
             defining_chunk: Some(self.defining_chunk.clone()),
             input_index: Some(self.input_index.to_proto()?),
         })
     }
 
-    fn from_proto(value: proto::NoAccessorInstallRef) -> Result<Self> {
+    fn from_proto(value: common_proto::NoAccessorInstallRef) -> Result<Self> {
         Ok(Self {
             defining_chunk: required(value.defining_chunk, "NoAccessorInstallRef.defining_chunk")?,
             input_index: usize::from_proto(required(
@@ -1074,9 +1076,9 @@ impl ProtoConvert<proto::ProofDependencies> for ProofDependencies {
     }
 }
 
-impl ProtoConvert<proto::BundleGlobalNames> for BundleGlobalNames {
-    fn to_proto(&self) -> Result<proto::BundleGlobalNames> {
-        Ok(proto::BundleGlobalNames {
+impl ProtoConvert<common_proto::BundleGlobalNames> for BundleGlobalNames {
+    fn to_proto(&self) -> Result<common_proto::BundleGlobalNames> {
+        Ok(common_proto::BundleGlobalNames {
             names: self.names.iter().cloned().collect(),
             registered_symbols: Some(self.registered_symbols),
             fresh_collections: Some(self.fresh_collections),
@@ -1088,7 +1090,7 @@ impl ProtoConvert<proto::BundleGlobalNames> for BundleGlobalNames {
         })
     }
 
-    fn from_proto(value: proto::BundleGlobalNames) -> Result<Self> {
+    fn from_proto(value: common_proto::BundleGlobalNames) -> Result<Self> {
         Ok(Self {
             names: decode_set(value.names)?,
             registered_symbols: required(
@@ -1346,7 +1348,7 @@ mod tests {
     fn saved_capabilities_keep_zero_indexes_and_optional_locations() {
         use super::{
             CallbackFactoryEvidence, NativeInputKind, NativeOperationSelectorProvenance,
-            ProtoConvert, proto,
+            ProtoConvert, common_proto, proto,
         };
         let returned = ForeignReturn::Argument { index: 0 };
         assert_eq!(
@@ -1403,10 +1405,10 @@ mod tests {
         assert!(CallbackFactoryEvidence::from_proto(wire).is_err());
         assert!(
             NativeOperationSelectorProvenance::from_proto(
-                proto::NativeOperationSelectorProvenance {
-                    value: Some(
-                        proto::native_operation_selector_provenance::Value::Declaration(
-                            proto::SourceDeclaration {
+                common_proto::NativeOperationSelectorProvenance {
+                    kind: Some(
+                        common_proto::native_operation_selector_provenance::Kind::Declaration(
+                            common_proto::SourceDeclaration {
                                 binding: None,
                                 body_index: Some(0),
                             }

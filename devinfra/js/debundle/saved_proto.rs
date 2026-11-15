@@ -7,7 +7,9 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result, ensure};
 
+pub use analysis_common_proto::debundle::analysis_common as common_proto;
 pub use saved_analysis_proto::ducktape::debundle::saved_analysis as proto;
+pub use spec_wire_proto::debundle::spec as spec_proto;
 
 pub trait ProtoConvert<P>: Sized {
     fn to_proto(&self) -> Result<P>;
@@ -250,44 +252,14 @@ where
     }
 }
 
-impl crate::saved_proto::ProtoConvert<crate::saved_proto::proto::RetainedCallbackSignature>
-    for spec::RetainedCallbackSignature
-{
-    fn to_proto(&self) -> anyhow::Result<crate::saved_proto::proto::RetainedCallbackSignature> {
+impl ProtoConvert<spec_proto::RetainedCallbackSignature> for spec::RetainedCallbackSignature {
+    fn to_proto(&self) -> Result<spec_proto::RetainedCallbackSignature> {
         self.validate().map_err(anyhow::Error::msg)?;
-        Ok(crate::saved_proto::proto::RetainedCallbackSignature {
-            argument_count: Some(crate::saved_proto::ProtoConvert::to_proto(
-                &self.argument_count,
-            )?),
-            callback_arguments: self
-                .callback_arguments
-                .iter()
-                .map(ProtoConvert::to_proto)
-                .collect::<Result<_>>()?,
-        })
+        Ok(spec_wire::Wire::to_proto(self))
     }
-    fn from_proto(
-        value: crate::saved_proto::proto::RetainedCallbackSignature,
-    ) -> anyhow::Result<Self> {
-        let signature = Self {
-            argument_count: crate::saved_proto::ProtoConvert::from_proto(
-                crate::saved_proto::required(
-                    value.argument_count,
-                    "RetainedCallbackSignature.argument_count",
-                )?,
-            )?,
-            callback_arguments: decode_set(value.callback_arguments)?,
-        };
-        signature.validate().map_err(anyhow::Error::msg)?;
-        Ok(signature)
+    fn from_proto(value: spec_proto::RetainedCallbackSignature) -> Result<Self> {
+        spec_wire::Wire::from_proto(value)
     }
-}
-
-fn read_domain<T, P>(value: Option<P>, field: &str) -> Result<T>
-where
-    T: ProtoConvert<P>,
-{
-    T::from_proto(required(value, field)?)
 }
 
 pub(crate) fn decode_set<T, P>(items: Vec<P>) -> Result<BTreeSet<T>>
@@ -348,29 +320,15 @@ fn descriptor_copy_signature_is_valid(
     Ok(())
 }
 
-impl ProtoConvert<proto::DescriptorCopyFactorySignature> for spec::DescriptorCopyFactorySignature {
-    fn to_proto(&self) -> Result<proto::DescriptorCopyFactorySignature> {
+impl ProtoConvert<spec_proto::DescriptorCopyFactorySignature>
+    for spec::DescriptorCopyFactorySignature
+{
+    fn to_proto(&self) -> Result<spec_proto::DescriptorCopyFactorySignature> {
         descriptor_copy_signature_is_valid(self)?;
-        Ok(proto::DescriptorCopyFactorySignature {
-            argument_count: Some(self.argument_count.to_proto()?),
-            object_argument: Some(self.object_argument.to_proto()?),
-            eager_own_data_keys: self.eager_own_data_keys.iter().cloned().collect(),
-            assigned_data_keys: self.assigned_data_keys.iter().cloned().collect(),
-        })
+        Ok(spec_wire::Wire::to_proto(self))
     }
-    fn from_proto(value: proto::DescriptorCopyFactorySignature) -> Result<Self> {
-        let signature = Self {
-            argument_count: read_domain(
-                value.argument_count,
-                "DescriptorCopyFactorySignature.argument_count",
-            )?,
-            object_argument: read_domain(
-                value.object_argument,
-                "DescriptorCopyFactorySignature.object_argument",
-            )?,
-            eager_own_data_keys: decode_set(value.eager_own_data_keys)?,
-            assigned_data_keys: decode_set(value.assigned_data_keys)?,
-        };
+    fn from_proto(value: spec_proto::DescriptorCopyFactorySignature) -> Result<Self> {
+        let signature = spec_wire::Wire::from_proto(value)?;
         descriptor_copy_signature_is_valid(&signature)?;
         Ok(signature)
     }
@@ -718,7 +676,7 @@ mod tests {
             valid
         );
         for (count, positions) in [(2, vec![]), (2, vec![2]), (0, vec![0]), (3, vec![1, 1])] {
-            let wire = proto::RetainedCallbackSignature {
+            let wire = spec_proto::RetainedCallbackSignature {
                 argument_count: Some(count),
                 callback_arguments: positions,
             };

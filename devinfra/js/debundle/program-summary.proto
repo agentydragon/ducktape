@@ -2,7 +2,9 @@ syntax = "proto3";
 
 package debundle.program_summary;
 
+import "devinfra/js/debundle/analysis_common.proto";
 import "devinfra/js/debundle/saved-analysis.proto";
+import "devinfra/js/debundle/spec_wire.proto";
 import "google/protobuf/empty.proto";
 
 // Source-bound cross-module facts. Readers validate required evidence and
@@ -72,7 +74,7 @@ message ProgramSummary {
   map<string, ImportedCallables> imported_callables = 7;
   // Absent means the census is unavailable; present, even empty, means available.
   .ducktape.debundle.saved_analysis.NativeIntegrity native_integrity = 8;
-  .ducktape.debundle.saved_analysis.BundleGlobalNames bundle_globals = 9;
+  .debundle.analysis_common.BundleGlobalNames bundle_globals = 9;
   map<string, ValueInputSites> value_inputs = 10;
   map<string, NativeOperationInputSites> native_operation_inputs = 11;
   map<string, InitializerCallEffectInputSites> initializer_call_effect_inputs = 12;
@@ -118,7 +120,7 @@ message MemberNames { repeated string members = 1; }
 message ImportedMembers { map<string, MemberNames> bindings = 1; }
 
 message RetainedCallbackSignatures {
-  repeated .ducktape.debundle.saved_analysis.RetainedCallbackSignature signatures = 1;
+  repeated .debundle.spec.RetainedCallbackSignature signatures = 1;
 }
 
 message RetainedCallbackBindings {

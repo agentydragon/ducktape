@@ -1,0 +1,30 @@
+syntax = "proto3";
+package debundle.analysis_common;
+
+import "devinfra/js/debundle/spec_wire.proto";
+
+// Source-analysis records shared by the projected inputs and saved evidence.
+message NoAccessorInstallRef {
+  optional string defining_chunk = 1;
+  optional uint64 input_index = 2;
+}
+
+message BundleGlobalNames {
+  repeated string names = 1;
+  optional bool registered_symbols = 2;
+  optional bool fresh_collections = 3;
+  repeated NoAccessorInstallRef no_accessor_install_callables = 4;
+}
+
+message SourceDeclaration {
+  optional string binding = 1;
+  optional uint64 body_index = 2;
+}
+
+message NativeOperationSelectorProvenance {
+  oneof kind {
+    debundle.spec.SourceMatchClaim source_match = 1;
+    SourceDeclaration declaration = 2;
+    debundle.spec.ResolvedMemberSelector resolved_member = 3;
+  }
+}

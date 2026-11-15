@@ -818,6 +818,7 @@ rust_library(
     },
     deps = [
         ":analysis_codec",
+        ":analysis_common_rust_proto",
         ":analysis_model",
         ":analysis_projection_wire_rust_proto",
         ":binding_targets",
@@ -829,6 +830,7 @@ rust_library(
         ":source_identity",
         ":spec",
         ":spec_wire",
+        ":spec_wire_rust_proto",
         "@crates//:anyhow",
         "@crates//:imbl",
         "@crates//:petgraph",
@@ -1179,6 +1181,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
+        ":analysis_common_rust_proto",
         ":analysis_projection_wire_rust_proto",
         ":artifact",
         ":source_identity",
@@ -1208,7 +1211,9 @@ proto_library(
     srcs = ["program-summary.proto"],
     data = [":debundle_btree_maps"],
     deps = [
+        ":analysis_common_proto",
         ":saved_analysis_proto",
+        ":spec_wire_proto",
         "@protobuf//:empty_proto",
     ],
 )
@@ -1945,6 +1950,7 @@ proto_library(
     srcs = ["saved-analysis.proto"],
     data = [":saved_analysis_serde_enums"],
     deps = [
+        ":analysis_common_proto",
         ":interop_proto",
         ":spec_wire_proto",
         "@protobuf//:empty_proto",
@@ -2488,10 +2494,24 @@ rust_prost_transform(
 )
 
 proto_library(
+    name = "analysis_common_proto",
+    srcs = ["analysis_common.proto"],
+    deps = [":spec_wire_proto"],
+)
+
+rust_prost_library(
+    name = "analysis_common_rust_proto",
+    proto = ":analysis_common_proto",
+)
+
+proto_library(
     name = "analysis_projection_wire_proto",
     srcs = ["analysis_projection_wire.proto"],
     data = [":analysis_projection_wire_options"],
-    deps = [":spec_wire_proto"],
+    deps = [
+        ":analysis_common_proto",
+        ":spec_wire_proto",
+    ],
 )
 
 rust_prost_library(

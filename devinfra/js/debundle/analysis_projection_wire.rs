@@ -4,6 +4,7 @@ use analysis::analysis_inputs::{
     AnalysisImportedPrimitiveArraySpreadInput, BundleGlobalNames, KnownEffect, LocalEffectPolicy,
     NativeOperationSelectorProvenance, NoAccessorInstallRef, SourceDeclaration,
 };
+use analysis_common_proto::debundle::analysis_common as common_pb;
 use analysis_projection_wire_proto::debundle::analysis_projection as pb;
 use anyhow::{Context, Result, ensure};
 use spec_wire::{Wire, required, unique_map, unique_set};
@@ -217,39 +218,21 @@ impl AnalysisWire for crate::ChunkAnalysisInputs {
     }
 }
 impl AnalysisWire for NoAccessorInstallRef {
-    type Message = pb::NoAccessorInstallRef;
+    type Message = common_pb::NoAccessorInstallRef;
     fn to_wire(&self) -> Result<Self::Message> {
-        Ok(pb::NoAccessorInstallRef {
-            defining_chunk: Some(self.defining_chunk.clone()),
-            input_index: Some(self.input_index.to_proto()),
-        })
+        analysis::saved_proto::ProtoConvert::to_proto(self)
     }
-    fn from_wire(v: Self::Message) -> Result<Self> {
-        Ok(Self {
-            defining_chunk: required(v.defining_chunk)?,
-            input_index: required(v.input_index)?,
-        })
+    fn from_wire(value: Self::Message) -> Result<Self> {
+        analysis::saved_proto::ProtoConvert::from_proto(value)
     }
 }
 impl AnalysisWire for BundleGlobalNames {
-    type Message = pb::BundleGlobalNames;
+    type Message = common_pb::BundleGlobalNames;
     fn to_wire(&self) -> Result<Self::Message> {
-        Ok(pb::BundleGlobalNames {
-            names: self.names.to_proto(),
-            registered_symbols: Some(self.registered_symbols),
-            fresh_collections: Some(self.fresh_collections),
-            no_accessor_install_callables: self.no_accessor_install_callables.to_wire()?,
-        })
+        analysis::saved_proto::ProtoConvert::to_proto(self)
     }
-    fn from_wire(v: Self::Message) -> Result<Self> {
-        Ok(Self {
-            names: Wire::from_proto(v.names)?,
-            registered_symbols: required(v.registered_symbols)?,
-            fresh_collections: required(v.fresh_collections)?,
-            no_accessor_install_callables: AnalysisWire::from_wire(
-                v.no_accessor_install_callables,
-            )?,
-        })
+    fn from_wire(value: Self::Message) -> Result<Self> {
+        analysis::saved_proto::ProtoConvert::from_proto(value)
     }
 }
 impl AnalysisWire for AnalysisAssumptions {
@@ -409,18 +392,12 @@ impl AnalysisWire for AnalysisAssumptions {
     }
 }
 impl AnalysisWire for SourceDeclaration {
-    type Message = pb::SourceDeclaration;
+    type Message = common_pb::SourceDeclaration;
     fn to_wire(&self) -> Result<Self::Message> {
-        Ok(pb::SourceDeclaration {
-            binding: Some(self.binding.clone()),
-            body_index: Some(self.body_index.to_proto()),
-        })
+        analysis::saved_proto::ProtoConvert::to_proto(self)
     }
-    fn from_wire(v: Self::Message) -> Result<Self> {
-        Ok(Self {
-            binding: required(v.binding)?,
-            body_index: required(v.body_index)?,
-        })
+    fn from_wire(value: Self::Message) -> Result<Self> {
+        analysis::saved_proto::ProtoConvert::from_proto(value)
     }
 }
 impl AnalysisWire for AnalysisImportedPrimitiveArrayOperand {
@@ -525,29 +502,12 @@ impl AnalysisWire for crate::AnalysisSourceSites {
     }
 }
 impl AnalysisWire for NativeOperationSelectorProvenance {
-    type Message = pb::NativeOperationSelectorProvenance;
+    type Message = common_pb::NativeOperationSelectorProvenance;
     fn to_wire(&self) -> Result<Self::Message> {
-        use pb::native_operation_selector_provenance::Kind;
-        Ok(pb::NativeOperationSelectorProvenance {
-            kind: Some(match self {
-                Self::SourceMatch(v) => Kind::SourceMatch(v.to_proto()),
-                Self::Declaration(v) => Kind::Declaration(v.to_wire()?),
-                Self::ResolvedMember(v) => Kind::ResolvedMember(v.clone()),
-            }),
-        })
+        analysis::saved_proto::ProtoConvert::to_proto(self)
     }
-    fn from_wire(v: Self::Message) -> Result<Self> {
-        use pb::native_operation_selector_provenance::Kind;
-        Ok(
-            match v
-                .kind
-                .context("missing native operation selector provenance")?
-            {
-                Kind::SourceMatch(v) => Self::SourceMatch(Wire::from_proto(v)?),
-                Kind::Declaration(v) => Self::Declaration(AnalysisWire::from_wire(v)?),
-                Kind::ResolvedMember(v) => Self::ResolvedMember(v),
-            },
-        )
+    fn from_wire(value: Self::Message) -> Result<Self> {
+        analysis::saved_proto::ProtoConvert::from_proto(value)
     }
 }
 impl AnalysisWire for crate::AnalysisNativeOperationInput {
