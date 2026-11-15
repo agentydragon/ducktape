@@ -1,9 +1,9 @@
 {
   "schema_version": 2,
-  "observed_at_utc": "2026-11-15T08:42:26.994035+00:00",
+  "observed_at_utc": "2026-11-15T08:55:56.288893+00:00",
   "source": {
-    "base": "b9b280ef856546c67752cbb04331280d26559031",
-    "head": "a83552c866b300225ad2f80bfa3d2bd5708b5280",
+    "base": "01e85fd9d267be8b955d4e3bf753f2051261043f",
+    "head": "d747cd1c39829b1e1a8fafde84594b7abeabcb05",
     "pr": 16489,
     "branch": "agent/native-pod-services-partitions",
     "draft": true
@@ -43,6 +43,11 @@
       "description": "EnvironmentService is served and authorized by the Controller; the Gateway retains Dispatcher and Runner control.",
       "path": "cluster/cdk8s/agentplane/sandbox_controller.py",
       "label": "EnvironmentService receiver"
+    },
+    {
+      "description": "Central-sampler LLM ingress uses service identity delegation; scripted requests route by verified Session attribution. The native client account remains explicit in the partitioned central scenarios.",
+      "path": "agentplane/system_tests/driver/scripted_upstream.py",
+      "label": "Verified Session routing"
     }
   ],
   "remaining_changes": [
@@ -107,78 +112,63 @@
     }
   ],
   "validation": {
-    "summary": "Implementation checks passed",
-    "detail": "All three required checks passed for measured implementation 6e6ad85a4c9c28a86fed31d83a6ea760677c171b: 922 passing target summaries on verified synthetic merge f825f8a907f0f86de5d28b70cc023170374595a7, with parents fd2c5c1bbb4eb5f7bd3bbdab80b794ab4c880559 and that implementation head. The displayed final head adds only reviewed experiment records and README corrections. Both changed native suites and App acceptance pass. Passing summaries may include cached results. All six explicitly named fixture libraries build at the measured implementation. The manifest records final documentation-head CI separately.",
+    "implementation_checks_passed": true,
+    "summary": "Fixture libraries passed",
+    "detail": "Five explicitly named libraries build at the displayed source head: the central-sampler scenarios, App fixtures, App Sandbox owner, neutral Sandbox definitions and MCP operator fixtures. The 15 remaining App Pod scenario bodies match devel exactly; required test_pod and devel cleanup diagnostics have no remaining diff. Current-head required CI results and verified synthetic-merge parents are recorded separately in the manifest. Selector and Pod performance screens retain their earlier measured source pins and do not estimate performance of the final Session-routing rebase.",
     "links": [
       {
-        "label": "Implementation Bazel CI: passed",
-        "url": "https://github.com/agentydragon/ducktape/actions/runs/43694440686"
+        "label": "Current-head explicit fixture/scenario library build: passed",
+        "url": "https://app.buildbuddy.io/invocation/90016cc8-cbd7-4490-bbdb-9ab313dca925"
       },
       {
-        "label": "Implementation pre-commit: passed",
-        "url": "https://github.com/agentydragon/ducktape/actions/runs/43694440615"
+        "label": "Current-head configured runfiles query",
+        "url": "https://app.buildbuddy.io/invocation/4769ce31-d34a-4645-915a-8ffdea0c815d"
       },
       {
-        "label": "Implementation artifact/import check: passed",
-        "url": "https://github.com/agentydragon/ducktape/actions/runs/43694440590"
-      },
-      {
-        "label": "922 passing target summaries",
-        "url": "https://app.buildbuddy.io/invocation/e7da1861-e0e0-5558-85c7-01ad8a301b51"
-      },
-      {
-        "label": "Six explicit fixture library builds: passed",
-        "url": "https://app.buildbuddy.io/invocation/9688cc38-4ff6-4cb4-94a0-0c73f583c90e"
+        "label": "Current-head required CI results",
+        "url": "https://github.com/agentydragon/ducktape/actions/runs/43696717580"
       }
     ],
-    "implementation_ci": {
-      "source_head": "6e6ad85a4c9c28a86fed31d83a6ea760677c171b",
-      "tested_merge": "f825f8a907f0f86de5d28b70cc023170374595a7",
-      "merge_parents": [
-        "fd2c5c1bbb4eb5f7bd3bbdab80b794ab4c880559",
-        "6e6ad85a4c9c28a86fed31d83a6ea760677c171b"
-      ],
-      "invocation": "e7da1861-e0e0-5558-85c7-01ad8a301b51",
-      "result": "SUCCESS",
-      "test_target_summaries": 922,
-      "all_summaries_passed": true,
-      "all_fresh": false,
-      "rbe_internal_retry_count": "unknown"
-    },
-    "implementation_checks_passed": true
+    "explicit_build": {
+      "source": "d747cd1c39829b1e1a8fafde84594b7abeabcb05",
+      "invocation": "90016cc8-cbd7-4490-bbdb-9ab313dca925",
+      "targets": 5,
+      "status": "SUCCESS"
+    }
   },
   "records": {
-    "previous_report": "https://github.com/agentydragon/ducktape/blob/2161883d0f189b2d92f5d5e7e91a323d985b126a/agentplane-test-architecture/index.html",
+    "previous_report": "https://github.com/agentydragon/ducktape/blob/3b2be3f70026b24765b8537ae56da290d2f398d5/agentplane-test-architecture/index.html",
     "experiments": "https://github.com/agentydragon/ducktape/blob/a83552c866b300225ad2f80bfa3d2bd5708b5280/agentplane/debug/2026_11_15_app_fixture_cut.md"
   },
   "limits": [
     "No fleet latency/reliability window refreshed.",
     "A small passing screen does not establish a reliability-rate improvement.",
     "Source pins distinguish the initial screen from the post-worker-rebase implementation.",
-    "Complete required feedback and full historical PR selection have not been measured by the single-file selector screen."
+    "Complete required feedback and full historical PR selection have not been measured by the single-file selector screen.",
+    "Selector and Pod timing screens predate the final Session-routing rebase; sources remain pinned. That integration is validated separately by current-head correctness checks."
   ],
   "decision": "Keep the explicit App fixture boundary: the current selector screen removes unintended native tests from an App Client edit. Retain required CaseBatch. The current same-source two-shard layout was 6.9% slower and used 45.6% more TestRunner CPU; do not expand its qualification. No 30% complete-feedback saving is established.",
   "current_screens": [
     {
-      "title": "Rebased configured runfiles",
-      "url": "https://app.buildbuddy.io/invocation/31396b90-7966-4676-8072-14aaecfaabef",
+      "title": "Current configured runfiles",
+      "url": "https://app.buildbuddy.io/invocation/4769ce31-d34a-4645-915a-8ffdea0c815d",
       "result": "Zero agentplane/app/ runfiles in native Pod, central services and Gateway crash. App Pod retains eight.",
-      "scope": "Current implementation 6e6ad85a4c9c28a86fed31d83a6ea760677c171b. Earlier matched input query measured 4/5/5 \u2192 0/0/0 with App Pod 8 \u2192 8. No elapsed-time claim."
+      "scope": "Verified at displayed current source d747cd1c39829b1e1a8fafde84594b7abeabcb05. Earlier matched query measured 4/5/5 \u2192 0/0/0 and App Pod 8 \u2192 8. Action-input evidence, not elapsed-time savings."
     },
     {
-      "title": "Current production selector replay",
+      "title": "Pinned production selector replay",
       "url": "https://app.buildbuddy.io/invocation/20d7de33-6b2e-4200-b873-2ddc91b8bc18",
       "result": "App Client source edit: 79 \u2192 15 ordinary tests. Gateway 45 \u2192 45; Controller 20 \u2192 20. All 42 selection commands completed successfully.",
-      "scope": "Control 5dc6d1a567cb9f21db696a9ed26bf36e78c7d8f9 versus candidate 6e6ad85a4c9c28a86fed31d83a6ea760677c171b. Exact historical single-file before/after blobs; no full historical PR replay or frequency/latency estimate."
+      "scope": "Control 5dc6d1a567cb9f21db696a9ed26bf36e78c7d8f9 versus candidate 6e6ad85a4c9c28a86fed31d83a6ea760677c171b. Exact historical single-file before/after blobs; no full historical PR replay or frequency/latency estimate. These measured sources precede the final Session-routing rebase."
     },
     {
-      "title": "Current same-source ordinary-pytest screen",
+      "title": "Pinned same-source ordinary-pytest screen",
       "url": "https://app.buildbuddy.io/invocation/63ebfa7e-c7f1-472f-960e-f46d5fcaee52",
       "result": "Control 293.6s; two-shard maximum 313.9s (+6.9%). TestRunner CPU 719 \u2192 1,046 CPU-s (+45.6%). Bazel elapsed 323.1 \u2192 366.7s (+13.5%).",
-      "scope": "Both arms use 6e6ad85a4c9c28a86fed31d83a6ea760677c171b and a warm clean baseline. Identical 15-case inventories, all passed, no skips or extra physical test attempts. One pair; action screen only. This allocation fails the speed and compute screen."
+      "scope": "Both arms use 6e6ad85a4c9c28a86fed31d83a6ea760677c171b and a warm clean baseline. Identical 15-case inventories, all passed, no skips or extra physical test attempts. One pair; action screen only. This allocation fails the speed and compute screen. This pair predates the displayed final rebase."
     },
     {
-      "title": "Required matched control",
+      "title": "Pinned required matched control",
       "url": "https://app.buildbuddy.io/invocation/2f92a6ab-7b18-479f-ac13-8098bedca6cc",
       "result": "Required CaseBatch keeps one stack and two worker scopes. The two ordinary shards duplicated stack setup (55/53s) and cleanup (28/30s).",
       "scope": "Observed queue waits were ~0.06s per shard. Nested phase times overlap; do not add them to wall time. No cold-start, p90 or reliability-rate result."

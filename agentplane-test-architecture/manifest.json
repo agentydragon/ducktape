@@ -1,74 +1,75 @@
 {
-  "source_devel_commit": "b9b280ef856546c67752cbb04331280d26559031",
-  "implementation_head_commit": "a83552c866b300225ad2f80bfa3d2bd5708b5280",
+  "source_devel_commit": "01e85fd9d267be8b955d4e3bf753f2051261043f",
+  "implementation_head_commit": "d747cd1c39829b1e1a8fafde84594b7abeabcb05",
   "measured_implementation_commit": "6e6ad85a4c9c28a86fed31d83a6ea760677c171b",
-  "audited_at_utc": "2026-11-15T08:42:26.994035+00:00",
+  "audited_at_utc": "2026-11-15T08:55:56.288893+00:00",
   "published_at_utc": null,
-  "scope": "Current remaining experimental branch compared with its pinned devel base, current selector and same-source action screen. Earlier results remain immutable records. No fleet latency/reliability refresh.",
-  "publication_status": "Prepared for a gh-pages PR; deployment follows merge.",
+  "scope": "Current branch after final Session-routing rebase. Pinned earlier selector and action screens are explicitly distinct from current-head correctness checks.",
+  "publication_status": "Prepared for gh-pages PR; deployment follows merge.",
   "source_pr": "https://github.com/agentydragon/ducktape/pull/16489",
   "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16099",
   "performance_goal_qualified": false,
-  "publication_base_gh_pages_commit": "2161883d0f189b2d92f5d5e7e91a323d985b126a",
+  "publication_base_gh_pages_commit": "3b2be3f70026b24765b8537ae56da290d2f398d5",
   "records": {
-    "previous_report": "https://github.com/agentydragon/ducktape/blob/2161883d0f189b2d92f5d5e7e91a323d985b126a/agentplane-test-architecture/index.html",
+    "previous_report": "https://github.com/agentydragon/ducktape/blob/3b2be3f70026b24765b8537ae56da290d2f398d5/agentplane-test-architecture/index.html",
     "experiments": "https://github.com/agentydragon/ducktape/blob/a83552c866b300225ad2f80bfa3d2bd5708b5280/agentplane/debug/2026_11_15_app_fixture_cut.md"
   },
   "required_checks_passed": true,
   "visual_validation": {
-    "invocation": "https://app.buildbuddy.io/invocation/bd629b61-d57a-4584-b1d1-54f7cfb740b8",
-    "result": "PASSED; two real-browser cases and all eight captures reviewed",
+    "invocation": "https://app.buildbuddy.io/invocation/d7aae7fb-be0a-4d28-904c-95eb48e19ac1",
+    "result": "PASSED; two real-browser cases; all eight captures reviewed",
     "viewport_widths_css_px": [1440, 390],
     "pages": [
-      "Complete architecture report",
-      "Root architecture report card including source/audit metadata"
+      "Complete current architecture report",
+      "Root architecture card with current audit/base stamp"
     ],
-    "coverage": "Real pinned CDN assets; initial light/dark and live preference changes; deterministic_browser_context + VisualPage.capture; no document-level horizontal overflow.",
-    "source_head": "a83552c866b300225ad2f80bfa3d2bd5708b5280",
-    "source_overlay": "Temporary preview test and frozen report archive only; report QA, not a performance sample.",
-    "preview_archive_sha256": "6c73a072853a5bf031e8c68f6c89d357e7a0dee39ef3bff070ace1cff679b1ca",
+    "coverage": "Real pinned CDN assets, initial light/dark, live scheme changes, no document horizontal overflow; deterministic_browser_context + VisualPage.capture.",
+    "source_head": "d747cd1c39829b1e1a8fafde84594b7abeabcb05",
+    "source_overlay": "Temporary preview test plus frozen report archive only; report QA, not performance evidence.",
+    "preview_archive_sha256": "48b626110974b7ba56feef50c20db0dc66a93b6cdfb811c5c1d41b2d01786a76",
     "rendered_assets_sha256": {
       "agentplane-test-architecture/index.html": "acaafab1f0d262c8019b2b9ff32b7fc5daf5d289c92263d89518e489ae307988",
-      "agentplane-test-architecture/evidence.json": "09ce865db01833afdbccaaaa90cfb1bedf721bae851da8cd4b292d368e5c722c",
+      "agentplane-test-architecture/evidence.json": "9c381b2982861a0eac7fbcd04876f0ad360959bc16c790f75450461c1c829026",
       "index.html": "fbad7a9ffc325fcdf2aa08e9c0b5604d1f9c9adcb3a7503a3418d0a8fb08b301",
       "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
       "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
     },
     "capture_sha256": [
-      "08283ecc5509819fa83ddd4647962243fecbc7c574078bfed0ba8646640110b9",
-      "90c59d97667ebd7fc6525aca56edabfd78b357271bd63b4ef0ec2def6f85a983",
-      "e2c4e78f3f8d61532585f656fe01f7bd715419bfa694ee445668dda1f21744e9",
-      "72b4b98709fdb3399c73751f0315a316e4eb3fb079033712d8aa344d43f892c4",
-      "70554e57ede85d0b8d53411062fb4fb1c6332984f9434dd03c7efccab116ba99",
-      "ed1dc0b017753765e940a500c5e0cc58b85afe4e3b3cb20b5e45bd39694b04ee",
-      "e35070b7b9f4fff6d69f488fee638a9d1f3856d3abe87cfcc95866beec7b56eb",
-      "527d160686cff6566ccd2096bc8243ec78219ed4e441f2758cf9871e84da57ca"
+      "88c43b263e644dfb71f7760348e3451412491cc35f970bd90387a4f1c083108c",
+      "8b2cbab257ff23daf6d792c4db9466e0a31a8445d4427728f7c5f254088722fc",
+      "44fc549efee8fb623f6fc8e30291fd25dc035dca4a6bdd41f5f479cd576d7024",
+      "55220d0f2b942be90ef443a41c8deaff45e71ec78cce1089a7419c70e8bee7c4",
+      "deb4f0004d65a227f57b8c72f9ada88e295859d6886d617438ab344edee23e2c",
+      "d0168e8206834bc1051c73da2e0bc8e1d65abbc5136d7c015a157116d51e868b",
+      "375e50d10428f4ea0b8dfa274737028c5573054c9ff9da5ea4a860c295fe66df",
+      "fee71266785c42b6ebaffc412c04f0f4ac25718a40e923a1131aaa326bebf629"
     ],
-    "manifest_post_capture_changes": "Proof and final-head CI fields only; rendered audited_at_utc and source_devel_commit fields remain unchanged."
+    "manifest_post_capture_changes": "Proof and current-head CI fields only; rendered audited_at_utc and source_devel_commit remain unchanged."
   },
   "report_sha256": "acaafab1f0d262c8019b2b9ff32b7fc5daf5d289c92263d89518e489ae307988",
-  "evidence_sha256": "09ce865db01833afdbccaaaa90cfb1bedf721bae851da8cd4b292d368e5c722c",
+  "evidence_sha256": "9c381b2982861a0eac7fbcd04876f0ad360959bc16c790f75450461c1c829026",
   "root_navigation_sha256": "fbad7a9ffc325fcdf2aa08e9c0b5604d1f9c9adcb3a7503a3418d0a8fb08b301",
   "shared_assets_sha256": {
     "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
     "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
   },
+  "measured_source_archive_tag": "https://github.com/agentydragon/ducktape/tree/agentplane-app-fixtures-20261115-measured",
   "final_head_ci": {
-    "source_head": "a83552c866b300225ad2f80bfa3d2bd5708b5280",
+    "source_head": "d747cd1c39829b1e1a8fafde84594b7abeabcb05",
     "status": "SUCCESS",
-    "verified_at_utc": "2026-11-15T08:51:34.707008+00:00",
-    "run_url": "https://github.com/agentydragon/ducktape/actions/runs/43695697195",
-    "invocation": "cfa333b0-07b5-506b-b50a-6cea0211b90c",
-    "tested_merge": "a6bce223ac60c3cc5def7a2f82263add67408f5a",
+    "verified_at_utc": "2026-11-15T09:05:44.976051+00:00",
+    "run_url": "https://github.com/agentydragon/ducktape/actions/runs/43696717580",
+    "invocation": "0c127c0f-4203-57bf-9388-e08d805d1edf",
+    "tested_merge": "19b5e6f4a83335c78548a81fa51ad2e1cd1ea4d2",
     "merge_parents": [
-      "825fdd209c9b7d5a87f6b4e7c91016c73084ed0d",
-      "a83552c866b300225ad2f80bfa3d2bd5708b5280"
+      "7336f64ef8ae5caf03b67e11db8b26d1ee0d7325",
+      "d747cd1c39829b1e1a8fafde84594b7abeabcb05"
     ],
     "test_target_summaries": 923,
     "all_summaries_passed": true,
     "all_fresh": false,
     "rbe_internal_retry_count": "unknown",
-    "precommit": "https://github.com/agentydragon/ducktape/actions/runs/43695697177",
-    "artifact_import": "https://github.com/agentydragon/ducktape/actions/runs/43695697095"
+    "precommit": "https://github.com/agentydragon/ducktape/actions/runs/43696717507",
+    "artifact_import": "https://github.com/agentydragon/ducktape/actions/runs/43696717515"
   }
 }
