@@ -48,10 +48,11 @@ from agentplane.system_tests.deployment import runtime_grant, svid_box
 from agentplane.system_tests.driver import egress_decisions
 from agentplane.system_tests.driver.agent import Agent
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.policy_objects import PolicyObjects
 from agentplane.system_tests.driver.sandbox import Sandboxes
+from agentplane.system_tests.driver.scripted_agent import CLI, submission
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
-from agentplane.system_tests.scenarios.mcp import CLI, PolicyObjects, submission
 from agentplane.testing.scripted_model import Text
 from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
 

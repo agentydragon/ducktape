@@ -30,6 +30,7 @@ from agentplane.system_tests.driver.operator_login import (
     operator_bff_client,
     read_operator_credentials,
 )
+from agentplane.system_tests.driver.policy_objects import PolicyObjects
 from agentplane.system_tests.driver.sandbox import Sandboxes
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
@@ -62,25 +63,8 @@ class ActionResources:
             yield client, dispatcher, sandboxes
 
 
-@asynccontextmanager
-async def _policy_objects(cluster: Cluster) -> AsyncIterator[mcp.PolicyObjects]:
-    objects = mcp.PolicyObjects(cluster=cluster)
-    try:
-        yield objects
-    finally:
-        closing = asyncio.create_task(objects.delete_all())
-        try:
-            await asyncio.shield(closing)
-        except asyncio.CancelledError:
-            await closing
-            raise
-
-
 async def _executes_action(resources: ActionResources) -> None:
-    async with (
-        resources.open_case("executes") as (client, dispatcher, _),
-        _policy_objects(resources.cluster) as policies,
-    ):
+    async with resources.open_case("executes") as (client, dispatcher, _), PolicyObjects(resources.cluster) as policies:
         await run_harness_pair_in_own_sandboxes(
             resources.cluster,
             client,
@@ -123,7 +107,7 @@ async def _launcher_ownership(resources: ActionResources, credentials: OperatorC
     async with (
         resources.open_case("launcher") as (client, dispatcher, _),
         operator_bff_client(resources.base_url, credentials) as operator_bff,
-        _policy_objects(resources.cluster) as policies,
+        PolicyObjects(resources.cluster) as policies,
     ):
         await run_harness_pair_in_own_sandboxes(
             resources.cluster,
@@ -153,7 +137,7 @@ async def _oauth_linkage(
     async with (
         resources.open_case(server_id) as (client, dispatcher, sandboxes),
         operator_bff_client(resources.base_url, credentials) as operator_bff,
-        _policy_objects(resources.cluster) as policies,
+        PolicyObjects(resources.cluster) as policies,
     ):
         models = await models_offered_for(client, [harness])
         await mcp.operator_links_oauth_mcp_server(

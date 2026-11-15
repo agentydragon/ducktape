@@ -13,6 +13,7 @@ from agentplane.system_tests.driver import scenario
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.executor import Executor
 from agentplane.system_tests.driver.harness_pair import run_harness_pair, run_harness_pair_in_own_sandboxes
+from agentplane.system_tests.driver.policy_objects import PolicyObjects
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
@@ -21,7 +22,6 @@ from agentplane.system_tests.scenarios import (
     dispatcher_workload,
     egress,
     launch_presets,
-    mcp,
     runner_credentials,
     session_instructions,
     storage,
@@ -246,13 +246,9 @@ async def a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway(resour
 
 
 async def a_command_box_presents_its_own_svid(resources: Resources) -> None:
-    policy_objects = mcp.PolicyObjects(cluster=resources.cluster)
-    try:
-        async with resources.open() as (_, sandboxes):
-            caller = await sandboxes("systest-box-caller")
-            await egress.a_command_box_presents_its_own_svid(resources.cluster, caller, policy_objects)
-    finally:
-        await policy_objects.delete_all()
+    async with PolicyObjects(resources.cluster) as policy_objects, resources.open() as (_, sandboxes):
+        caller = await sandboxes("systest-box-caller")
+        await egress.a_command_box_presents_its_own_svid(resources.cluster, caller, policy_objects)
 
 
 async def a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes(resources: Resources) -> None:
