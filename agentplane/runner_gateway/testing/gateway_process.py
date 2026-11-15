@@ -251,8 +251,6 @@ async def run_gateway(
                     client_uri=runtime_transport.GATEWAY_SESSIONS_URI,
                 ),
                 runner_control_target_template=f"localhost:{rpc_listener.port}",
-                dispatcher_audience=dispatcher_audience,
-                gateway_audience=gateway_audience,
                 runner_security=runner_security,
                 dispatcher_service_callers={runtime_transport.APP_URI},
                 runtime_proxy_readers=[runtime_transport.APP_URI],

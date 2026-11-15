@@ -26,9 +26,9 @@ have separate exact grants. Dispatcher also admits live workload Identity SVIDs 
 configured typed service delegation. Kubernetes bearer credentials grant no admission. See the
 [proxy contract](../environments/runtimeproxy/SPEC.md) and [Dispatcher contract](dispatcher/SPEC.md).
 
-The required `rpc` block configures TLS and SPIFFE trust. Legacy receiver audiences, account grants,
-bearer delegation and `kubernetes_bearer` listener entries remain decodable but ignored until generated
-manifests omit them and the receiver rollout completes (stage 5 cleanup, 2026-11-15). Dispatcher
+The required `rpc` block configures TLS and SPIFFE trust. Receiver audiences, account grants and bearer
+delegation settings have retired. The shared listener schema still decodes `kubernetes_bearer`
+entries, but these receivers only use SPIFFE authentication. Dispatcher
 workers use the Sessions service SVID in `gateway_tls` to call the proxy across replicas. Neither
 caller credentials nor effective Identity metadata replace that service proof. The Sandbox
 Controller owns `Sandbox.status`; delivery leases and Runtime incarnation fencing are unchanged. Dispatcher

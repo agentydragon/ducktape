@@ -260,7 +260,6 @@ go_test(
     embed = [":main_lib"],
     deps = [
         "//agentplane/identity/auth",
-        "//agentplane/identity/auth/listener",
         "//agentplane/net/peertls",
         "//agentplane/runner_gateway/dispatcher",
         "//agentplane/testing/configtest",

@@ -309,22 +309,7 @@ class RunnerGateway(Construct):
             self,
             "settings",
             metadata=ApiObjectMetadata(name=f"{runner_gateway.NAME}-settings", namespace=namespace),
-            # CLEANUP(added 2026-11-15): Drop this projection when the decoded legacy fields retire.
-            content=yaml_config(
-                static_settings.model_dump(
-                    mode="json",
-                    exclude={
-                        "dispatcher_audience",
-                        "gateway_audience",
-                        "dispatcher_callers",
-                        "gateway_callers",
-                        "wake_callers",
-                        "sandbox_controller_account",
-                        "executor_callers",
-                        "delegation",
-                    },
-                )
-            ),
+            content=yaml_config(static_settings),
             path="/etc/agentplane-runner-gateway/settings/settings.yaml",
         )
         settings_file.mount_into(workload.container, env=Settings.config_file_env)
