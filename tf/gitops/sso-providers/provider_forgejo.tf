@@ -1,35 +1,9 @@
 # Forgejo — OIDC login for the git server
 
-resource "authentik_provider_oauth2" "forgejo" {
-  name               = "forgejo-oauth2"
-  client_id          = "forgejo"
-  client_type        = "confidential"
-  authorization_flow = data.authentik_flow.implicit_consent.id
-  invalidation_flow  = data.authentik_flow.invalidation.id
-  signing_key        = data.authentik_certificate_key_pair.self_signed.id
-
-  issuer_mode                = "per_provider"
-  include_claims_in_id_token = true
-
-  property_mappings = [
-    data.authentik_property_mapping_provider_scope.openid.id,
-    data.authentik_property_mapping_provider_scope.email.id,
-    data.authentik_property_mapping_provider_scope.profile.id,
-  ]
-
-  allowed_redirect_uris = [
-    {
-      matching_mode     = "strict"
-      url               = "https://git.allegedly.works/user/oauth2/authentik/callback"
-      redirect_uri_type = "authorization"
-    },
-  ]
-}
-
 resource "authentik_application" "forgejo" {
   name              = "Forgejo"
   slug              = "forgejo"
-  protocol_provider = authentik_provider_oauth2.forgejo.id
+  protocol_provider = authentik_provider_oauth2.confidential["forgejo"].id
   meta_description  = "Forgejo Git Repository Management"
   meta_publisher    = "Forgejo"
   meta_icon         = "https://cdn.simpleicons.org/forgejo"
@@ -56,7 +30,7 @@ resource "kubernetes_secret" "forgejo_oauth" {
   }
 
   data = {
-    key    = authentik_provider_oauth2.forgejo.client_id
-    secret = authentik_provider_oauth2.forgejo.client_secret
+    key    = authentik_provider_oauth2.confidential["forgejo"].client_id
+    secret = authentik_provider_oauth2.confidential["forgejo"].client_secret
   }
 }
