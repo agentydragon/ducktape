@@ -998,33 +998,44 @@ export { A, B, C };
 
 #[test]
 fn declared_imported_constructor_purity_emits_no_s_cycle() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            r#"import { Box as Provider } from "./vendorlib.js";
+    for (import, provider) in [
+        (
+            "import { Box as Provider } from './vendorlib.js';",
+            "export class Box { constructor(value) { this.value = value; } }\n",
+        ),
+        (
+            "import Provider from './vendorlib.js';",
+            "class Box { constructor(value) { this.value = value; } }\nexport { Box as default };\n",
+        ),
+    ] {
+        let source = format!(
+            r#"{import}
 const a = new Provider(1);
 const b = new Provider(2);
 const c = new Provider(3);
 console.log(a.value, b.value, c.value);
-export { a, b, c };
-"#,
-            vec![
-                logical_module("foo", &[Member::new("a"), Member::new("c")]),
-                logical_module("bar", &[Member::new("b")]),
-            ],
-        )
-        .with_extra_chunks(&[(
-            "static/vendorlib",
-            "export class Box { constructor(value) { this.value = value; } }\n",
-        )])
-        .with_extra_chunk_logical_modules(&[(
-            "static/vendorlib",
-            vec![logical_module(
-                "provider",
-                &[Member::new("Box").with_purity(MemberPurity::PureNew)],
-            )],
-        )]),
-    );
-    assert_entry_output(&fixture, "1 2 3\n");
+export {{ a, b, c }};
+"#
+        );
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module("foo", &[Member::new("a"), Member::new("c")]),
+                    logical_module("bar", &[Member::new("b")]),
+                ],
+            )
+            .with_extra_chunks(&[("static/vendorlib", provider)])
+            .with_extra_chunk_logical_modules(&[(
+                "static/vendorlib",
+                vec![logical_module(
+                    "provider",
+                    &[Member::new("Box").with_purity(MemberPurity::PureNew)],
+                )],
+            )]),
+        );
+        assert_entry_output(&fixture, "1 2 3\n");
+    }
 }
 
 #[test]

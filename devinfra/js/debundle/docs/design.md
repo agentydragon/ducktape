@@ -2413,8 +2413,11 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
 
   A `source_match` can select the defining class by structure without
   pinning its minified export name. Named and default imports receive the
-  contract under their local binding names. Selector resolution runs before
-  the cross-module purity oracle for this reason.
+  contract under their local binding names. The defining declaration must
+  be selectable: `class Box { ... }; export { Box as default };` provides a
+  local binding, while a direct `export default class` declaration is not
+  selectable. Selector resolution runs before the cross-module purity
+  oracle for this reason.
 
   `chunk_export_purity.<chunk>.pure_members` is the member-call form, for
   CJS-interop namespace exports whose factories are reached as member
