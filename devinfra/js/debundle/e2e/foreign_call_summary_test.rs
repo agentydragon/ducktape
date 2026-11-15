@@ -931,17 +931,22 @@ fn a_vendor_marked_provider_keeps_its_summary() {
     let bundle_root = CaseWorkspace::default();
     let bundle_path = bundle_root.path().join("replacement.mjs");
     write_text_file(
+        &bundle_root.path().join("package.json"),
+        r#"{"name":"fixture-provider","version":"1.0.0"}"#,
+    );
+    write_text_file(
         &bundle_path,
         &format!("{BOX}\nexport const replacement = {{ Box }};\n"),
     );
     let vendor_marks = [("static/peer.js", bundled_vendor_mark(bundle_path, &["Box"]))];
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_args(
         FixtureOpts::new(
             "import { Box } from './peer.js';\nconst wrapped = new Box(() => later);\nconst later = 42;\nconsole.log(wrapped.invoke());\n",
             modules(),
         )
         .with_extra_chunks(&[("static/peer", BOX)])
         .with_vendor_marks(&vendor_marks),
+        &["--package-root", &format!("fixture-provider={}", bundle_root.path().display())],
     );
     assert_preserved_entry_output(&fixture, "42\n");
 }
