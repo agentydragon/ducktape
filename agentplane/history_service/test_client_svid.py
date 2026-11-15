@@ -35,7 +35,7 @@ async def test_history_unary_and_watch_send_no_bearer_for_service_svid(monkeypat
     watch = Mock(return_value=stream)
     stub = type("Stub", (), {"GetSessionSummary": unary, "WatchSessionSummaries": watch})()
     monkeypatch.setattr(HistoryServiceClient, "stub", property(lambda _self: stub))
-    client = HistoryServiceClient("unused", token_file=None, request_timeout_s=1)
+    client = HistoryServiceClient("unused", request_timeout_s=1, channel_credentials=grpc.ssl_channel_credentials())
 
     await client.get_session_summary("session")
     watcher = client.watch_session_summaries()
@@ -46,8 +46,8 @@ async def test_history_unary_and_watch_send_no_bearer_for_service_svid(monkeypat
     watch_call = watch.call_args
     assert unary_call is not None
     assert watch_call is not None
-    assert unary_call.kwargs["metadata"] == ()
-    assert watch_call.kwargs["metadata"] == ()
+    assert unary_call.kwargs.get("metadata", ()) == ()
+    assert watch_call.kwargs.get("metadata", ()) == ()
     assert stream.cancelled
 
 
