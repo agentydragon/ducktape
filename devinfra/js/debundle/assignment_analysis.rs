@@ -78,10 +78,8 @@ pub struct AssignmentAnalysis {
     /// topological order. Precomputed at build time for
     /// `report_builders::build_quotient_scc_reports`.
     module_quotient_sccs: Vec<Vec<ModuleId>>,
-    /// Shared per-module ESM import ordering — the single source of
-    /// truth the emitter renders import declarations from and the
-    /// realizability gate's evaluation simulator mirrors. See
-    /// `esm_import_order::EsmImportOrder`.
+    /// Preferred policy and its linker order for diagnostics. The concrete
+    /// schedule below is the authority for validation and emission.
     import_order: EsmImportOrder,
     import_schedule: EsmImportSchedule,
     /// Planning and final validation share this verdict for the immutable
@@ -670,12 +668,21 @@ impl AssignmentAnalysis {
             &assignment,
             &emitted_modules(planned_modules.len(), entry_module_id),
         );
-        let import_schedule = EsmImportSchedule::from_policy(
+        let import_schedule = EsmImportSchedule::construct(
             entry_module_id,
+            &canonical_edges.pairs().collect(),
             &canonical_edges.i_successors,
             &emitted_modules(planned_modules.len(), entry_module_id),
             &import_order,
-        );
+        )
+        .unwrap_or_else(|_| {
+            EsmImportSchedule::from_policy(
+                entry_module_id,
+                &canonical_edges.i_successors,
+                &emitted_modules(planned_modules.len(), entry_module_id),
+                &import_order,
+            )
+        });
         let inputs = Arc::new(AssignmentInputs::build(
             chunk_id,
             dependency_graph,
@@ -703,14 +710,6 @@ impl AssignmentAnalysis {
     /// Tarjan walk.
     pub fn module_quotient_sccs(&self) -> &[Vec<ModuleId>] {
         &self.module_quotient_sccs
-    }
-
-    /// Shared per-module ESM import ordering. The emitter renders
-    /// every import-directive list through this; the candidate's exact
-    /// emitted-order simulation consumes this same object
-    /// (see `esm_import_order::EsmImportOrder` for the contract).
-    pub fn import_order(&self) -> &EsmImportOrder {
-        &self.import_order
     }
 
     /// Concrete schedule retained by the gate, effect sweeps and emitter.

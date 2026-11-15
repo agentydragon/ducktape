@@ -1,8 +1,6 @@
-//! Characterize current ESM import placement and complete-search policy.
-//!
-//! These acceptance results describe the current import-order implementation.
-//! A future scheduler may accept a different set of placements; the rejected
-//! placements below are not claims of semantic impossibility.
+//! Real-source ordering regressions: alternate schedules must remove accidental
+//! owner-name restrictions and preserve exact joint placement and Node output.
+//! The predecessor characterization commit demonstrates the old rejections.
 
 use debundle_e2e_graph_support::GraphFixture;
 use debundle_e2e_support::{parse_stdout_json, read_tree};
@@ -59,11 +57,11 @@ fn ordering_fixture() -> GraphFixture {
 }
 
 #[test]
-fn current_import_order_policy_accepts_before_middle_and_fixed_owner_placements() {
+fn valid_placement_is_independent_of_fresh_owner_name() {
     let fixture = ordering_fixture();
     let second = fixture.source_unit_for_binding("second");
 
-    for module in ["a_before", "c_middle", "b_base", "m_first"] {
+    for module in ["a_before", "c_middle", "z_after", "b_base", "m_first"] {
         check_batch(
             &fixture,
             json!([{"unit_id": second, "module": module}]),
@@ -73,27 +71,21 @@ fn current_import_order_policy_accepts_before_middle_and_fixed_owner_placements(
 }
 
 #[test]
-fn current_import_order_policy_rejects_the_after_placement_with_tdz_diagnostic() {
+fn derived_schedule_accepts_the_previously_rejected_after_placement_and_runs() {
     let fixture = ordering_fixture();
-    let result = check_batch(
-        &fixture,
-        json!([{
-            "unit_id": fixture.source_unit_for_binding("second"),
-            "module": "z_after",
-        }]),
-        false,
-    );
-    let cycles = result["validation"]["cycles"].as_array().unwrap();
-    assert!(
-        cycles
-            .iter()
-            .any(|cycle| cycle["rejection"] == "esm_evaluation_tdz"),
-        "{result}"
-    );
+    let changes = json!([{
+        "unit_id": fixture.source_unit_for_binding("second"),
+        "module": "z_after",
+    }]);
+    check_batch(&fixture, changes.clone(), true);
+    let path = fixture.root().join("apply.json");
+    fs::write(&path, serde_json::to_vec(&changes).unwrap()).unwrap();
+    fixture.assert_success(&["modules", "apply", "--assignments", path.to_str().unwrap()]);
+    fixture.assert_runs("alpha-first alpha-second\n");
 }
 
 #[test]
-fn current_import_order_policy_accepts_a_joint_batch_and_emits_runtime_order() {
+fn joint_batch_keeps_the_incoming_consumer_and_emits_runtime_order() {
     let fixture = GraphFixture::new(
         "const seed = 'alpha';\n\
          function readFirst() { return first; }\n\
@@ -116,18 +108,11 @@ fn current_import_order_policy_accepts_a_joint_batch_and_emits_runtime_order() {
     let second = fixture.source_unit_for_binding("second");
     let support = fixture.source_unit_for_binding("support");
 
-    let second_alone = check_batch(
+    // The old policy rejected this placement; the derived schedule repairs it.
+    check_batch(
         &fixture,
         json!([{"unit_id": second, "module": "z_after"}]),
-        false,
-    );
-    assert!(
-        second_alone["validation"]["cycles"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|cycle| cycle["rejection"] == "esm_evaluation_tdz"),
-        "{second_alone}"
+        true,
     );
     let support_alone = check_batch(
         &fixture,
@@ -161,7 +146,7 @@ fn current_import_order_policy_accepts_a_joint_batch_and_emits_runtime_order() {
 }
 
 #[test]
-fn current_complete_search_policy_bounds_required_residuals_by_new_owner_count() {
+fn derived_schedule_removes_the_old_two_fresh_owner_requirement() {
     let fixture = GraphFixture::new(
         "const seedOne = 'one';\n\
          function readFirstOne() { return firstOne; }\n\
@@ -221,20 +206,19 @@ fn current_complete_search_policy_bounds_required_residuals_by_new_owner_count()
         &extra_two,
     ];
 
-    let mut one_owner = common.to_vec();
-    one_owner.extend(["--max-new-modules", "1"]);
-    let exhausted = fixture.json(&one_owner);
+    let mut no_new_owners = common.to_vec();
+    no_new_owners.extend(["--max-new-modules", "0"]);
+    let exhausted = fixture.json(&no_new_owners);
     assert_eq!(exhausted["status"], "exhausted_no_peel", "{exhausted}");
     assert!(exhausted["plan"].is_null(), "{exhausted}");
 
-    let mut two_owners = common.to_vec();
-    two_owners.extend(["--max-new-modules", "2"]);
-    let found = fixture.json(&two_owners);
+    let mut one_owner = common.to_vec();
+    one_owner.extend(["--max-new-modules", "1"]);
+    let found = fixture.json(&one_owner);
     assert_eq!(found["status"], "found", "{found}");
     assert_eq!(found["residual_units_extracted"], 2, "{found}");
 
-    // This is the current fixed-owner/new-path policy's result. It does not
-    // claim that an alternate scheduler could not place both in one owner.
+    // A simultaneous two-destination batch must remain supported as well.
     let explicit = json!([
         {"unit_id": second_one, "module": "a_before"},
         {"unit_id": extra_two, "module": "zz_after"},

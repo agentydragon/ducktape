@@ -10,35 +10,13 @@ use rustc_hash::FxHashSet;
 use analysis::ids::ModuleId;
 
 use crate::esm_import_order::EsmImportOrder;
+use crate::esm_schedule::EsmImportSchedule;
 
-/// Simulator for ECMA-262 Phase-2 module evaluation order, used to
-/// decide whether Lemma 2's source-import reversal actually rescues
-/// a candidate asymmetric I-SCC at runtime.
-///
-/// The simulator models the graph-constrained import-ordering decisions the
-/// materializer makes, via the shared `EsmImportOrder` (the single
-/// source of truth both sides consume — see `esm_import_order`):
-///   - the chunk's emitted entry file imports **every**
-///     emitted logical module — binding imports for binding-owning
-///     plans, side-effect-only imports for binding-less plans — in
-///     `EsmImportOrder::sort_entry_imports` order (Lemma 2's
-///     source-import order). See `lowering::lower::prepare_candidate_emission_plan`.
-///   - every other module's intra-chunk imports (cross-module
-///     binding imports, phantom side-effect imports, entry-binding
-///     import — one merged list) follow
-///     `EsmImportOrder::sort_module_imports` (dependency-first
-///     linker order). See `lowering::module_output::prepare_module_emission`.
-///
-/// It then walks DFS from entry, records the post-order
-/// evaluation index per module, and verifies every cross-module
-/// constraining edge `(M, X)` evaluates the target `X` before the
-/// source `M`. Equivalent to asking whether the emitted ESM bundle
-/// would actually execute without TDZ on the constraining edges in
-/// the candidate SCC.
-/// Acyclic candidates may prefer source order among entry imports; dependencies
-/// still evaluate first. Cyclic candidates may interleave only entry-only
-/// leaves, which have no outgoing imports or non-entry importers. Thus this
-/// base-order simulation preserves every module-edge ordering check.
+/// Exact evaluation for the canonical graph used by incremental verdicts.
+/// Preserve the preferred policy when valid; otherwise derive a concrete ESM
+/// import schedule. When no schedule exists, retain the preferred traversal to
+/// render a rejection witness. The whole-assignment path and normal emission
+/// use the same constructor and concrete-list verifier.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(super) struct EsmEvaluationSimulator {
     /// Post-order index per module after DFS from entry. Lower
@@ -80,8 +58,16 @@ impl EsmEvaluationSimulator {
             nodes.extend(succs.iter().copied());
         }
         let import_order = EsmImportOrder::build(constraining_pairs, i_successors, &nodes);
-        let post_order =
-            simulate_esm_post_order(entry_module_id, i_successors, &nodes, &import_order);
+        let post_order = match EsmImportSchedule::construct(
+            entry_module_id,
+            constraining_pairs,
+            i_successors,
+            &nodes,
+            &import_order,
+        ) {
+            Ok(schedule) => schedule.post_order().clone(),
+            Err(_) => simulate_esm_post_order(entry_module_id, i_successors, &nodes, &import_order),
+        };
         Self {
             post_order,
             linker_order_available: constraining_pairs.is_empty()

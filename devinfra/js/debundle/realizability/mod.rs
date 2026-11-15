@@ -67,7 +67,6 @@ pub(crate) use effect_translation_validation::{
 };
 #[cfg(test)]
 use esm_simulator::EsmEvaluationSimulator;
-use esm_simulator::simulate_esm_post_order;
 use incremental_quotient::{IncrementalQuotient, QuotientOverlay};
 pub use incremental_quotient::{LadderDecision, ModuleAssignmentBatch, ModuleAssignmentDelta};
 pub(crate) use translation_validation::CandidateEmittedOrder;
@@ -279,8 +278,16 @@ fn verdict_from_canonical(
     }
     let pairs = canonical.pairs().collect();
     let policy = EsmImportOrder::build(&pairs, &canonical.i_successors, &nodes);
-    let schedule =
-        EsmImportSchedule::from_policy(entry_module_id, &canonical.i_successors, &nodes, &policy);
+    let schedule = EsmImportSchedule::construct(
+        entry_module_id,
+        &pairs,
+        &canonical.i_successors,
+        &nodes,
+        &policy,
+    )
+    .unwrap_or_else(|_| {
+        EsmImportSchedule::from_policy(entry_module_id, &canonical.i_successors, &nodes, &policy)
+    });
     verdict_from_canonical_scheduled(canonical, cross_rebinds, entry_module_id, &schedule)
 }
 
@@ -483,12 +490,23 @@ pub fn simulated_evaluation_post_order(
         assignment,
         &emitted_modules,
     );
-    simulate_esm_post_order(
+    EsmImportSchedule::construct(
         entry,
+        &canonical.pairs().collect(),
         &canonical.i_successors,
         &emitted_modules,
         &import_order,
     )
+    .unwrap_or_else(|_| {
+        EsmImportSchedule::from_policy(
+            entry,
+            &canonical.i_successors,
+            &emitted_modules,
+            &import_order,
+        )
+    })
+    .post_order()
+    .clone()
 }
 
 /// Mutable index over a working assignment: the incremental form of the

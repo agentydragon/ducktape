@@ -283,14 +283,12 @@ pub(super) fn prepare_module_emission<'output>(
             .into_iter()
             .map(|item| (entry_module_id, item)),
     );
-    // ONE ordering for every intra-chunk import — the same
-    // `EsmImportOrder::sort_module_imports` the gate's simulator
-    // uses for this module's DFS neighbor order. Runtime re-imports
-    // (other source chunks) follow; they're outside the per-chunk
-    // I-graph the gate reasons about.
+    // Binding, phantom and entry imports share the exact retained schedule.
+    // Check the complete target set before ordering. Runtime imports from
+    // other chunks follow; they are outside this intra-chunk I graph.
     assignment_analysis
         .import_schedule()
-        .sort_imports(module, &mut intra_chunk_imports);
+        .sort_imports(module, &mut intra_chunk_imports)?;
     let mut combined: Vec<ModuleItem> = intra_chunk_imports
         .into_iter()
         .map(|(_, item)| item)
