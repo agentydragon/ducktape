@@ -16,7 +16,7 @@ use crate::execution_evidence::SourceLocation;
 use crate::purity::Purity;
 use spec::{BuiltinGlobalRoot, CapturedValueKind, ResolvedMemberSelector, SourceMatchClaim};
 
-pub mod saved;
+mod protobuf;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -463,9 +463,6 @@ pub struct ResolvedInitializerCallEffectInput {
     pub returns_opaque_function_from_const_primitive: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effective_replacement: Option<EffectiveInitializerCallReplacement>,
-    /// Complete ordinary static dependency closure that evaluated before the
-    /// importer, with no path back to it. This proves the direct import read.
-    pub provider_dependency_closure: BTreeSet<String>,
 }
 
 /// Effective bundled implementation actually emitted for a swapped export.

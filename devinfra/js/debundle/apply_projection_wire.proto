@@ -1,0 +1,47 @@
+syntax = "proto3";
+package debundle.apply;
+
+import "devinfra/js/debundle/spec_wire.proto";
+
+message ApplyProjection {
+  uint32 format_version = 1;
+  TransformSpecSource source = 2;
+  debundle.spec.TransformSpec spec = 3;
+  map<string, ModuleRoots> module_roots_by_chunk = 4;
+  repeated ApplyPath rooted_paths = 5;
+}
+
+message TransformSpecSource {
+  oneof value {
+    bytes flat_path = 1;
+    CompileSpecTreeOptions tree = 2;
+  }
+}
+
+message CompileSpecTreeOptions {
+  bytes config_path = 1;
+  bytes modules_root = 2;
+  bytes vendor_marks_path = 3;
+  optional bytes source_root = 4;
+  bytes out_root = 5;
+}
+
+message ApplyPath {
+  oneof value {
+    debundle.spec.Unit input_root = 1;
+    debundle.spec.Unit js_list = 2;
+    debundle.spec.Unit embedded_loaders = 3;
+    string vendor_bundle = 4;
+    debundle.spec.Unit vendor_manifest = 5;
+    debundle.spec.Unit vendor_wrappers = 6;
+    debundle.spec.Unit reports = 7;
+    debundle.spec.Unit js_output = 8;
+    debundle.spec.Unit browser_assets = 9;
+    debundle.spec.Unit browser_output = 10;
+    debundle.spec.Unit browser_snapshot = 11;
+  }
+}
+
+message ModuleRoots {
+  repeated bytes paths = 1;
+}

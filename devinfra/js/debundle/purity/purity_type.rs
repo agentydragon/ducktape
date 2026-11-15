@@ -1,7 +1,9 @@
 use super::*;
 use crate::analysis_inputs::ProofDependencies;
 use crate::facts::abstract_domain::effect::{CoerceOperand, CoerceOperands};
+use crate::saved_proto::{ProtoConvert, proto};
 use analysis_model::PrimKinds;
+use anyhow::{Result, bail};
 use std::sync::Arc;
 
 /// Two-state expression-level purity with structured reasons.
@@ -389,6 +391,63 @@ impl Effects {
     }
 }
 
+impl ProtoConvert<i32> for PurityRule {
+    fn to_proto(&self) -> Result<i32> {
+        Ok(match self {
+            Self::AssignOrUpdate => proto::PurityRule::AssignOrUpdate,
+            Self::AwaitOrYield => proto::PurityRule::AwaitOrYield,
+            Self::DeleteOperator => proto::PurityRule::DeleteOperator,
+            Self::ThrowStmt => proto::PurityRule::ThrowStmt,
+            Self::DebuggerStmt => proto::PurityRule::DebuggerStmt,
+            Self::UnknownCall => proto::PurityRule::UnknownCall,
+            Self::ImpureFunctionCall => proto::PurityRule::ImpureFunctionCall,
+            Self::UnknownNew => proto::PurityRule::UnknownNew,
+            Self::UnknownMember => proto::PurityRule::UnknownMember,
+            Self::SuperProp => proto::PurityRule::SuperProp,
+            Self::TaggedTpl => proto::PurityRule::TaggedTpl,
+            Self::ArraySpread => proto::PurityRule::ArraySpread,
+            Self::ObjectSpread => proto::PurityRule::ObjectSpread,
+            Self::ObjectAssignProp => proto::PurityRule::ObjectAssignProp,
+            Self::ClassStaticObservable => proto::PurityRule::ClassStaticObservable,
+            Self::BareControlFlow => proto::PurityRule::BareControlFlow,
+            Self::CoercingOperator => proto::PurityRule::CoercingOperator,
+            Self::ToPropertyKeyCoercion => proto::PurityRule::ToPropertyKeyCoercion,
+            Self::IterationProtocol => proto::PurityRule::IterationProtocol,
+            Self::DestructuringPattern => proto::PurityRule::DestructuringPattern,
+            Self::OrderDependentRead => proto::PurityRule::OrderDependentRead,
+            Self::Other => proto::PurityRule::Other,
+        } as i32)
+    }
+
+    fn from_proto(value: i32) -> Result<Self> {
+        Ok(match proto::PurityRule::try_from(value)? {
+            proto::PurityRule::Unspecified => bail!("unspecified saved-analysis PurityRule"),
+            proto::PurityRule::AssignOrUpdate => Self::AssignOrUpdate,
+            proto::PurityRule::AwaitOrYield => Self::AwaitOrYield,
+            proto::PurityRule::DeleteOperator => Self::DeleteOperator,
+            proto::PurityRule::ThrowStmt => Self::ThrowStmt,
+            proto::PurityRule::DebuggerStmt => Self::DebuggerStmt,
+            proto::PurityRule::UnknownCall => Self::UnknownCall,
+            proto::PurityRule::ImpureFunctionCall => Self::ImpureFunctionCall,
+            proto::PurityRule::UnknownNew => Self::UnknownNew,
+            proto::PurityRule::UnknownMember => Self::UnknownMember,
+            proto::PurityRule::SuperProp => Self::SuperProp,
+            proto::PurityRule::TaggedTpl => Self::TaggedTpl,
+            proto::PurityRule::ArraySpread => Self::ArraySpread,
+            proto::PurityRule::ObjectSpread => Self::ObjectSpread,
+            proto::PurityRule::ObjectAssignProp => Self::ObjectAssignProp,
+            proto::PurityRule::ClassStaticObservable => Self::ClassStaticObservable,
+            proto::PurityRule::BareControlFlow => Self::BareControlFlow,
+            proto::PurityRule::CoercingOperator => Self::CoercingOperator,
+            proto::PurityRule::ToPropertyKeyCoercion => Self::ToPropertyKeyCoercion,
+            proto::PurityRule::IterationProtocol => Self::IterationProtocol,
+            proto::PurityRule::DestructuringPattern => Self::DestructuringPattern,
+            proto::PurityRule::OrderDependentRead => Self::OrderDependentRead,
+            proto::PurityRule::Other => Self::Other,
+        })
+    }
+}
+
 #[cfg(test)]
 impl Effects {
     /// The effects in evaluation order, as unit tests assert them; a call of an
@@ -509,6 +568,17 @@ impl PurityReason {
 mod tests {
     use super::*;
     use crate::analysis_inputs::ValueInputRef;
+
+    #[test]
+    fn saved_purity_rules_reject_unknown_values_instead_of_using_other() {
+        assert_eq!(
+            PurityRule::from_proto(PurityRule::Other.to_proto().unwrap()).unwrap(),
+            PurityRule::Other
+        );
+        for value in [0, i32::MAX] {
+            assert!(PurityRule::from_proto(value).is_err());
+        }
+    }
 
     fn dependency(chunk: &str, index: usize) -> ProofDependencies {
         ProofDependencies {

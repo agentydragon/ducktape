@@ -2,8 +2,8 @@
 //! output of a run, encoded independently of the process that computed it,
 //! behind a header naming what it was computed from (docs/bazel_integration.md).
 //!
-//! Layout: the header's byte length (`u32`, little-endian), the header as
-//! named MessagePack, then the body as `analysis_codec` output. The header
+//! Layout: the header's byte length (`u32`, little-endian), the protobuf header,
+//! then the body as `analysis_codec` output. The header
 //! reads without parsing any chunk, so a run stage can check it before it
 //! re-parses the sources the body's contexts refer to.
 //!
@@ -12,83 +12,48 @@
 //! instead would repeat the program-wide census per chunk (1.77 GB on the
 //! Claude CLI).
 
-use std::borrow::Cow;
-use std::collections::BTreeMap;
-
 use analysis::facts::ChunkFactAnalysis;
 use analysis::facts::saved::SavedChunkFactAnalysis;
-use analysis::purity::saved::{PuritySnapshot, SavedPurityGraph};
+use analysis::purity::saved::{PuritySnapshot, RestoredPurities};
+use analysis::saved_proto::ProtoConvert;
 use analysis_codec::ContextOrdinals;
+use analysis_header_proto::debundle::analysis_header as wire;
+use analysis_projection::AnalysisSpec;
+use analysis_stream_proto::debundle::analysis_stream as stream;
 use anyhow::{Context, Result, ensure};
-use serde::{Deserialize, Serialize};
+use prost::Message;
+use std::collections::BTreeMap;
 
 use super::ExportReentryReport;
 use super::program_summary::ProgramSummary;
-use super::saved_program_summary::SavedProgramSummary;
+use super::program_summary_proto;
 
 /// What an artifact was computed from; a reader recomputes it and refuses an
 /// artifact whose header differs.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct AnalysisArtifactHeader {
     pub analysis_engine_sha256: String,
-    /// `AnalysisSpec::encode` of the analysed projection, kept whole so a
-    /// mismatch can name what differs.
-    pub projection: Vec<u8>,
+    /// The analysed projection, kept whole so a mismatch can name what differs.
+    pub projection: AnalysisSpec,
     /// Parser-input SHA-256 of each analyzed chunk, by chunk name.
     pub chunk_sources: BTreeMap<String, String>,
+}
+
+/// Encode the independently readable, typed artifact header.
+pub fn encode_header(header: &AnalysisArtifactHeader) -> Result<Vec<u8>> {
+    Ok(wire::AnalysisHeader {
+        analysis_engine_sha256: header.analysis_engine_sha256.clone(),
+        projection: Some(header.projection.to_proto()?),
+        chunk_sources: header.chunk_sources.clone(),
+        format_version: Some(1),
+    }
+    .encode_to_vec())
 }
 
 pub struct AnalysisArtifactBody {
     pub program_summary: ProgramSummary,
     pub export_reentry: BTreeMap<String, ExportReentryReport>,
     pub chunks: BTreeMap<String, ChunkFactAnalysis>,
-}
-
-/// The top-level body and program summary select their saved representations
-/// here instead of implementing Serde on the runtime containers.
-#[derive(Serialize, Deserialize)]
-struct SavedAnalysisBody<'a> {
-    purity_graph: SavedPurityGraph,
-    program_summary: SavedProgramSummary<'a>,
-    export_reentry: Cow<'a, BTreeMap<String, ExportReentryReport>>,
-    chunks: BTreeMap<String, SavedChunkFactAnalysis<'a>>,
-}
-
-impl<'a> SavedAnalysisBody<'a> {
-    fn snapshot(body: &'a AnalysisArtifactBody, ordinals: &ContextOrdinals) -> Result<Self> {
-        let mut purities = PuritySnapshot::default();
-        let program_summary =
-            SavedProgramSummary::snapshot(&body.program_summary, ordinals, &mut purities)?;
-        let chunks = body
-            .chunks
-            .iter()
-            .map(|(name, chunk)| {
-                Ok((
-                    name.clone(),
-                    SavedChunkFactAnalysis::snapshot(chunk, ordinals, &mut purities)?,
-                ))
-            })
-            .collect::<Result<_>>()?;
-        Ok(Self {
-            purity_graph: purities.finish(),
-            program_summary,
-            export_reentry: Cow::Borrowed(&body.export_reentry),
-            chunks,
-        })
-    }
-
-    fn restore(self, ordinals: &ContextOrdinals) -> Result<AnalysisArtifactBody> {
-        let purities = self.purity_graph.restore()?;
-        Ok(AnalysisArtifactBody {
-            program_summary: self.program_summary.restore(ordinals, &purities)?,
-            export_reentry: self.export_reentry.into_owned(),
-            chunks: self
-                .chunks
-                .into_iter()
-                .map(|(name, chunk)| Ok((name, chunk.restore(ordinals, &purities)?)))
-                .collect::<Result<_>>()?,
-        })
-    }
 }
 
 /// `ordinals` numbers the contexts of every module the analysis read; a
@@ -98,9 +63,26 @@ pub fn write_artifact(
     body: &AnalysisArtifactBody,
     ordinals: &ContextOrdinals,
 ) -> Result<Vec<u8>> {
-    let header = rmp_serde::to_vec_named(header)?;
-    let saved = SavedAnalysisBody::snapshot(body, ordinals)?;
-    let body = analysis_codec::encode(&saved)?;
+    let header = encode_header(header)?;
+    let mut purities = PuritySnapshot::default();
+    let summary = program_summary_proto::snapshot(&body.program_summary, ordinals, &mut purities)?;
+    let mut chunks = BTreeMap::new();
+    for (name, chunk) in &body.chunks {
+        let facts = SavedChunkFactAnalysis::snapshot(chunk, ordinals, &mut purities)?;
+        chunks.insert(name.clone(), facts.to_proto()?);
+    }
+    let graph = purities.finish();
+    let wire = stream::AnalysisBody {
+        purity_graph: Some(graph),
+        program_summary: Some(summary),
+        export_reentry: body
+            .export_reentry
+            .iter()
+            .map(|(name, report)| Ok((name.clone(), report.to_proto()?)))
+            .collect::<Result<_>>()?,
+        chunks,
+    };
+    let body = analysis_codec::encode_protobuf(&wire)?;
     let mut bytes = Vec::with_capacity(4 + header.len() + body.len());
     bytes.extend_from_slice(&u32::try_from(header.len())?.to_le_bytes());
     bytes.extend_from_slice(&header);
@@ -120,12 +102,53 @@ pub fn read_header(bytes: &[u8]) -> Result<(AnalysisArtifactHeader, &[u8])> {
         rest.len()
     );
     let (header, body) = rest.split_at(length);
-    Ok((rmp_serde::from_slice(header)?, body))
+    let header = wire::AnalysisHeader::decode(header).context("decode analysis artifact header")?;
+    ensure!(
+        header.format_version == Some(1),
+        "unsupported analysis artifact header format"
+    );
+    ensure!(
+        !header.analysis_engine_sha256.is_empty(),
+        "analysis artifact header has no engine identity"
+    );
+    let projection = AnalysisSpec::from_proto(
+        header
+            .projection
+            .context("analysis artifact header has no projection")?,
+    )?;
+    Ok((
+        AnalysisArtifactHeader {
+            analysis_engine_sha256: header.analysis_engine_sha256,
+            projection,
+            chunk_sources: header.chunk_sources,
+        },
+        body,
+    ))
 }
 
 pub fn read_body(body: &[u8], ordinals: &ContextOrdinals) -> Result<AnalysisArtifactBody> {
-    let saved: SavedAnalysisBody<'_> = analysis_codec::decode(body)?;
-    saved.restore(ordinals)
+    let wire: stream::AnalysisBody = analysis_codec::decode_protobuf(body)?;
+    let purities = RestoredPurities::restore(wire.purity_graph.context("missing purity graph")?)?;
+    let program_summary = program_summary_proto::restore(
+        wire.program_summary.context("missing program summary")?,
+        ordinals,
+        &purities,
+    )?;
+    let export_reentry = wire
+        .export_reentry
+        .into_iter()
+        .map(|(name, report)| Ok((name, ExportReentryReport::from_proto(report)?)))
+        .collect::<Result<_>>()?;
+    let mut chunks = BTreeMap::new();
+    for (name, facts) in wire.chunks {
+        let facts = SavedChunkFactAnalysis::from_proto(facts)?.restore(ordinals, &purities)?;
+        chunks.insert(name, facts);
+    }
+    Ok(AnalysisArtifactBody {
+        program_summary,
+        export_reentry,
+        chunks,
+    })
 }
 
 #[cfg(test)]
@@ -310,7 +333,24 @@ mod tests {
     fn header() -> AnalysisArtifactHeader {
         AnalysisArtifactHeader {
             analysis_engine_sha256: "engine-digest-fixture".to_string(),
-            projection: b"projection-fixture".to_vec(),
+            projection: AnalysisSpec {
+                inputs: spec::LoadJsChunksArgs {
+                    input_root: "source".into(),
+                    js_list_path: "js-files.txt".into(),
+                    embedded_loaders_path: None,
+                },
+                host_behavior: Default::default(),
+                program_premises: Default::default(),
+                vendor: BTreeMap::new(),
+                chunk_export_purity: BTreeMap::new(),
+                chunk_analysis_inputs: BTreeMap::new(),
+                analysed_chunks: vec!["static/app".into(), "static/peer".into()],
+                entry_file: None,
+                prune_other_chunks: false,
+                declared_assumptions: BTreeMap::new(),
+                source_sites: Default::default(),
+                native_operation_inputs: BTreeMap::new(),
+            },
             chunk_sources: CHUNKS
                 .iter()
                 .map(|(name, _)| (name.to_string(), format!("{name}-digest-fixture")))
@@ -364,7 +404,12 @@ mod tests {
             let fresh = analyze(&artifact);
             let ordinals = ContextOrdinals::new(modules(&artifact));
             let (read, body) = read_header(&bytes).expect("header");
-            assert_eq!(read, header());
+            assert_eq!(read.analysis_engine_sha256, header().analysis_engine_sha256);
+            assert_eq!(read.chunk_sources, header().chunk_sources);
+            assert_eq!(
+                read.projection.encode().unwrap(),
+                header().projection.encode().unwrap()
+            );
             let decoded = read_body(body, &ordinals).expect("decode");
             assert_shared_imported_cause(&decoded);
             let debug_fresh = format!("{:?}", fresh.chunks);
@@ -374,6 +419,24 @@ mod tests {
                 write_artifact(&header(), &decoded, &ordinals).expect("re-encode"),
                 write_artifact(&header(), &fresh, &ordinals).expect("encode fresh"),
             );
+        });
+    }
+
+    #[test]
+    fn refuses_truncated_and_trailing_analysis_records() {
+        GLOBALS.set(&Globals::new(), || {
+            let artifact = bundle(&[0, 1]);
+            let body = analyze(&artifact);
+            let ordinals = ContextOrdinals::new(modules(&artifact));
+            let bytes = write_artifact(&header(), &body, &ordinals).expect("encode");
+            let (_, compressed) = read_header(&bytes).expect("header");
+
+            let truncated = &compressed[..compressed.len() - 1];
+            assert!(read_body(truncated, &ordinals).is_err());
+
+            let mut trailing = compressed.to_vec();
+            trailing.extend(zstd::encode_all(&b"unexpected"[..], 3).expect("extra frame"));
+            assert!(read_body(&trailing, &ordinals).is_err());
         });
     }
 
@@ -402,9 +465,9 @@ mod tests {
             .expect("write artifact");
             std::fs::write(
                 output.with_extension("raw"),
-                rmp_serde::to_vec_named(
-                    &body
-                        .chunks
+                format!(
+                    "{:?}",
+                    body.chunks
                         .iter()
                         .map(|(name, chunk)| {
                             (
@@ -417,8 +480,7 @@ mod tests {
                             )
                         })
                         .collect::<BTreeMap<_, _>>(),
-                )
-                .expect("raw encode"),
+                ),
             )
             .expect("write raw encoding");
         });

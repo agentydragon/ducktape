@@ -9,7 +9,8 @@ use analysis::loader_closure::{
     ChunkLoaderSurface, LoaderClosure, LoaderClosureFailureKind, LoaderClosureWitness,
     LoaderRequest, LoaderRequestTarget, SitePlacement,
 };
-use anyhow::Result;
+use analysis::saved_proto::{ProtoConvert, proto, required};
+use anyhow::{Result, bail, ensure};
 use artifact::reports::{
     ImportSpecifierKind, InteropUseKind, LoaderBinding, LoaderBindingUse, LoaderUseConsumer,
     SitePhase, StaticModuleRequestMode,
@@ -885,4 +886,393 @@ pub fn loader_surfaces(
             )
             .collect(),
     })
+}
+
+fn restore_loader_set<T: Ord + ProtoConvert<P>, P>(values: Vec<P>) -> Result<BTreeSet<T>> {
+    let mut result = BTreeSet::new();
+    for value in values {
+        ensure!(
+            result.insert(T::from_proto(value)?),
+            "duplicate saved loader proof key"
+        );
+    }
+    Ok(result)
+}
+
+impl ProtoConvert<proto::LoaderSiteWitness> for LoaderSiteWitness {
+    fn to_proto(&self) -> Result<proto::LoaderSiteWitness> {
+        Ok(proto::LoaderSiteWitness {
+            source_chunk: Some(self.source_chunk.clone()),
+            site: Some(self.site.to_proto()?),
+        })
+    }
+    fn from_proto(value: proto::LoaderSiteWitness) -> Result<Self> {
+        Ok(Self {
+            source_chunk: required(value.source_chunk, "LoaderSiteWitness.source_chunk")?,
+            site: LoaderSite::from_proto(required(value.site, "LoaderSiteWitness.site")?)?,
+        })
+    }
+}
+impl ProtoConvert<proto::ExportReentryLoaderRequest> for ExportReentryLoaderRequest {
+    fn to_proto(&self) -> Result<proto::ExportReentryLoaderRequest> {
+        Ok(proto::ExportReentryLoaderRequest {
+            source_chunk: Some(self.source_chunk.clone()),
+            specifier: Some(self.specifier.clone()),
+            target: Some(self.target.to_proto()?),
+            request_count: Some(self.request_count.to_proto()?),
+        })
+    }
+    fn from_proto(value: proto::ExportReentryLoaderRequest) -> Result<Self> {
+        Ok(Self {
+            source_chunk: required(
+                value.source_chunk,
+                "ExportReentryLoaderRequest.source_chunk",
+            )?,
+            specifier: required(value.specifier, "ExportReentryLoaderRequest.specifier")?,
+            target: LoaderRequestReportTarget::from_proto(required(
+                value.target,
+                "ExportReentryLoaderRequest.target",
+            )?)?,
+            request_count: ProtoConvert::from_proto(required(
+                value.request_count,
+                "ExportReentryLoaderRequest.request_count",
+            )?)?,
+        })
+    }
+}
+impl ProtoConvert<proto::ExportReentryLoaderFailure> for ExportReentryLoaderFailure {
+    fn to_proto(&self) -> Result<proto::ExportReentryLoaderFailure> {
+        Ok(proto::ExportReentryLoaderFailure {
+            reason: Some(self.reason.to_proto()?),
+            occurrences: Some(self.occurrences.to_proto()?),
+            first: Some(self.first.to_proto()?),
+        })
+    }
+    fn from_proto(value: proto::ExportReentryLoaderFailure) -> Result<Self> {
+        Ok(Self {
+            reason: LoaderClosureFailureKind::from_proto(required(
+                value.reason,
+                "ExportReentryLoaderFailure.reason",
+            )?)?,
+            occurrences: ProtoConvert::from_proto(required(
+                value.occurrences,
+                "ExportReentryLoaderFailure.occurrences",
+            )?)?,
+            first: LoaderClosureWitness::from_proto(required(
+                value.first,
+                "ExportReentryLoaderFailure.first",
+            )?)?,
+        })
+    }
+}
+impl ProtoConvert<proto::LoaderRequestReportTarget> for LoaderRequestReportTarget {
+    fn to_proto(&self) -> Result<proto::LoaderRequestReportTarget> {
+        use proto::loader_request_report_target::Value;
+        Ok(proto::LoaderRequestReportTarget {
+            value: Some(match self {
+                Self::Builtin(module) => Value::Builtin(module.to_proto()?),
+                Self::EmbeddedFile(loader) => Value::EmbeddedFile(loader.to_proto()?),
+                Self::Chunk(target) => Value::Chunk(target.to_proto()?),
+            }),
+        })
+    }
+    fn from_proto(value: proto::LoaderRequestReportTarget) -> Result<Self> {
+        use proto::loader_request_report_target::Value;
+        Ok(
+            match required(value.value, "LoaderRequestReportTarget.value")? {
+                Value::Builtin(value) => Self::Builtin(spec::HostModule::from_proto(value)?),
+                Value::EmbeddedFile(value) => {
+                    Self::EmbeddedFile(spec::EmbeddedLoader::from_proto(value)?)
+                }
+                Value::Chunk(value) => Self::Chunk(ExportReentryTarget::from_proto(value)?),
+            },
+        )
+    }
+}
+impl ProtoConvert<proto::ExportReentryLoaderDerivation> for ExportReentryLoaderDerivation {
+    fn to_proto(&self) -> Result<proto::ExportReentryLoaderDerivation> {
+        use proto::export_reentry_loader_derivation::{LoaderClosure, Value};
+        Ok(proto::ExportReentryLoaderDerivation {
+            value: Some(match self {
+                Self::NoSynchronousLoader => Value::NoSynchronousLoader(Default::default()),
+                Self::NoHostLoaderSites => Value::NoHostLoaderSites(Default::default()),
+                Self::LoaderClosure {
+                    closed,
+                    host_keys,
+                    premise_keys,
+                    requests,
+                    loaded_chunks,
+                    suspended_sites,
+                    premised_sites,
+                    outside_window_sites,
+                    unreachable_sites,
+                    failures,
+                    reentry_through,
+                } => Value::LoaderClosure(LoaderClosure {
+                    closed: Some(*closed),
+                    host_keys: host_keys
+                        .iter()
+                        .map(ProtoConvert::to_proto)
+                        .collect::<Result<_>>()?,
+                    premise_keys: premise_keys
+                        .iter()
+                        .map(ProtoConvert::to_proto)
+                        .collect::<Result<_>>()?,
+                    requests: requests
+                        .iter()
+                        .map(ProtoConvert::to_proto)
+                        .collect::<Result<_>>()?,
+                    loaded_chunks: loaded_chunks.clone(),
+                    suspended_sites: Some(suspended_sites.to_proto()?),
+                    premised_sites: Some(premised_sites.to_proto()?),
+                    outside_window_sites: Some(outside_window_sites.to_proto()?),
+                    unreachable_sites: Some(unreachable_sites.to_proto()?),
+                    failures: failures
+                        .iter()
+                        .map(ProtoConvert::to_proto)
+                        .collect::<Result<_>>()?,
+                    reentry_through: reentry_through.as_ref().map(|exports| {
+                        proto::ExportReentryExports {
+                            exports: exports.iter().cloned().collect(),
+                        }
+                    }),
+                }),
+            }),
+        })
+    }
+    fn from_proto(value: proto::ExportReentryLoaderDerivation) -> Result<Self> {
+        use proto::export_reentry_loader_derivation::Value;
+        Ok(
+            match required(value.value, "ExportReentryLoaderDerivation.value")? {
+                Value::NoSynchronousLoader(_) => Self::NoSynchronousLoader,
+                Value::NoHostLoaderSites(_) => Self::NoHostLoaderSites,
+                Value::LoaderClosure(value) => Self::LoaderClosure {
+                    closed: required(
+                        value.closed,
+                        "ExportReentryLoaderDerivation.loader_closure.closed",
+                    )?,
+                    host_keys: restore_loader_set(value.host_keys)?,
+                    premise_keys: restore_loader_set(value.premise_keys)?,
+                    requests: value
+                        .requests
+                        .into_iter()
+                        .map(ProtoConvert::from_proto)
+                        .collect::<Result<_>>()?,
+                    loaded_chunks: value.loaded_chunks,
+                    suspended_sites: ProtoConvert::from_proto(required(
+                        value.suspended_sites,
+                        "ExportReentryLoaderDerivation.loader_closure.suspended_sites",
+                    )?)?,
+                    premised_sites: ProtoConvert::from_proto(required(
+                        value.premised_sites,
+                        "ExportReentryLoaderDerivation.loader_closure.premised_sites",
+                    )?)?,
+                    outside_window_sites: ProtoConvert::from_proto(required(
+                        value.outside_window_sites,
+                        "ExportReentryLoaderDerivation.loader_closure.outside_window_sites",
+                    )?)?,
+                    unreachable_sites: ProtoConvert::from_proto(required(
+                        value.unreachable_sites,
+                        "ExportReentryLoaderDerivation.loader_closure.unreachable_sites",
+                    )?)?,
+                    failures: value
+                        .failures
+                        .into_iter()
+                        .map(ProtoConvert::from_proto)
+                        .collect::<Result<_>>()?,
+                    reentry_through: value
+                        .reentry_through
+                        .map(|value| restore_loader_set(value.exports))
+                        .transpose()?,
+                },
+            },
+        )
+    }
+}
+
+// InteropUseKind belongs to artifact, so this stage uses functions rather than
+// implementing analysis's trait for another crate's type.
+fn interop_use_kind_to_proto(kind: &InteropUseKind) -> i32 {
+    match kind {
+        InteropUseKind::ImportMetaRequireLiteralCall => {
+            proto::InteropUseKind::ImportMetaRequireLiteralCall as i32
+        }
+        InteropUseKind::ImportMetaRequireDynamicCall => {
+            proto::InteropUseKind::ImportMetaRequireDynamicCall as i32
+        }
+        InteropUseKind::ImportMetaRequireReference => {
+            proto::InteropUseKind::ImportMetaRequireReference as i32
+        }
+        InteropUseKind::GlobalThisRequire => proto::InteropUseKind::GlobalThisRequire as i32,
+        InteropUseKind::UnboundRequire => proto::InteropUseKind::UnboundRequire as i32,
+        InteropUseKind::EvaluatedRequireLiteralCall => {
+            proto::InteropUseKind::EvaluatedRequireLiteralCall as i32
+        }
+        InteropUseKind::EvaluatedRequireDynamicCall => {
+            proto::InteropUseKind::EvaluatedRequireDynamicCall as i32
+        }
+        InteropUseKind::UnboundModule => proto::InteropUseKind::UnboundModule as i32,
+        InteropUseKind::UnboundModuleExports => proto::InteropUseKind::UnboundModuleExports as i32,
+        InteropUseKind::UnboundExports => proto::InteropUseKind::UnboundExports as i32,
+        InteropUseKind::ImportMetaDynamicProperty => {
+            proto::InteropUseKind::ImportMetaDynamicProperty as i32
+        }
+        InteropUseKind::ImportMetaOtherProperty => {
+            proto::InteropUseKind::ImportMetaOtherProperty as i32
+        }
+        InteropUseKind::ImportMetaValue => proto::InteropUseKind::ImportMetaValue as i32,
+        InteropUseKind::TsImportEquals => proto::InteropUseKind::TsImportEquals as i32,
+        InteropUseKind::TsExportAssignment => proto::InteropUseKind::TsExportAssignment as i32,
+        InteropUseKind::DynamicImport => proto::InteropUseKind::DynamicImport as i32,
+    }
+}
+fn interop_use_kind_from_proto(kind: i32) -> Result<InteropUseKind> {
+    Ok(match proto::InteropUseKind::try_from(kind)? {
+        proto::InteropUseKind::ImportMetaRequireLiteralCall => {
+            InteropUseKind::ImportMetaRequireLiteralCall
+        }
+        proto::InteropUseKind::ImportMetaRequireDynamicCall => {
+            InteropUseKind::ImportMetaRequireDynamicCall
+        }
+        proto::InteropUseKind::ImportMetaRequireReference => {
+            InteropUseKind::ImportMetaRequireReference
+        }
+        proto::InteropUseKind::GlobalThisRequire => InteropUseKind::GlobalThisRequire,
+        proto::InteropUseKind::UnboundRequire => InteropUseKind::UnboundRequire,
+        proto::InteropUseKind::EvaluatedRequireLiteralCall => {
+            InteropUseKind::EvaluatedRequireLiteralCall
+        }
+        proto::InteropUseKind::EvaluatedRequireDynamicCall => {
+            InteropUseKind::EvaluatedRequireDynamicCall
+        }
+        proto::InteropUseKind::UnboundModule => InteropUseKind::UnboundModule,
+        proto::InteropUseKind::UnboundModuleExports => InteropUseKind::UnboundModuleExports,
+        proto::InteropUseKind::UnboundExports => InteropUseKind::UnboundExports,
+        proto::InteropUseKind::ImportMetaDynamicProperty => {
+            InteropUseKind::ImportMetaDynamicProperty
+        }
+        proto::InteropUseKind::ImportMetaOtherProperty => InteropUseKind::ImportMetaOtherProperty,
+        proto::InteropUseKind::ImportMetaValue => InteropUseKind::ImportMetaValue,
+        proto::InteropUseKind::TsImportEquals => InteropUseKind::TsImportEquals,
+        proto::InteropUseKind::TsExportAssignment => InteropUseKind::TsExportAssignment,
+        proto::InteropUseKind::DynamicImport => InteropUseKind::DynamicImport,
+        proto::InteropUseKind::Unspecified => bail!("unspecified saved-analysis interop use kind"),
+    })
+}
+
+impl ProtoConvert<proto::LoaderSite> for LoaderSite {
+    fn to_proto(&self) -> Result<proto::LoaderSite> {
+        use proto::loader_site::{
+            Interop, LoaderBindingUse, NamespaceRequest, StaticRequest, Value,
+        };
+        Ok(proto::LoaderSite {
+            value: Some(match self {
+                Self::Interop {
+                    kind,
+                    item,
+                    line,
+                    specifier,
+                    resolved_target,
+                } => Value::Interop(Interop {
+                    kind: Some(interop_use_kind_to_proto(kind)),
+                    item: Some(item.to_proto()?),
+                    line: line.as_ref().map(ProtoConvert::to_proto).transpose()?,
+                    specifier: specifier.clone(),
+                    resolved_target: resolved_target
+                        .as_ref()
+                        .map(ProtoConvert::to_proto)
+                        .transpose()?,
+                }),
+                Self::StaticRequest {
+                    specifier,
+                    resolved_target,
+                } => Value::StaticRequest(StaticRequest {
+                    specifier: Some(specifier.clone()),
+                    resolved_target: resolved_target
+                        .as_ref()
+                        .map(ProtoConvert::to_proto)
+                        .transpose()?,
+                }),
+                Self::LoaderBindingUse {
+                    item,
+                    line,
+                    call,
+                    specifier,
+                    resolved_target,
+                } => Value::LoaderBindingUse(LoaderBindingUse {
+                    item: Some(item.to_proto()?),
+                    line: line.as_ref().map(ProtoConvert::to_proto).transpose()?,
+                    call: Some(*call),
+                    specifier: specifier.clone(),
+                    resolved_target: resolved_target
+                        .as_ref()
+                        .map(ProtoConvert::to_proto)
+                        .transpose()?,
+                }),
+                Self::NamespaceRequest {
+                    item,
+                    specifier,
+                    resolved_target,
+                } => Value::NamespaceRequest(NamespaceRequest {
+                    item: Some(item.to_proto()?),
+                    specifier: Some(specifier.clone()),
+                    resolved_target: resolved_target
+                        .as_ref()
+                        .map(ProtoConvert::to_proto)
+                        .transpose()?,
+                }),
+                Self::TopLevelAwait => Value::TopLevelAwait(Default::default()),
+            }),
+        })
+    }
+    fn from_proto(value: proto::LoaderSite) -> Result<Self> {
+        use proto::loader_site::Value;
+        Ok(match required(value.value, "LoaderSite.value")? {
+            Value::Interop(value) => Self::Interop {
+                kind: interop_use_kind_from_proto(required(
+                    value.kind,
+                    "LoaderSite.interop.kind",
+                )?)?,
+                item: ProtoConvert::from_proto(required(value.item, "LoaderSite.interop.item")?)?,
+                line: value.line.map(usize::from_proto).transpose()?,
+                specifier: value.specifier,
+                resolved_target: value
+                    .resolved_target
+                    .map(ProtoConvert::from_proto)
+                    .transpose()?,
+            },
+            Value::StaticRequest(value) => Self::StaticRequest {
+                specifier: required(value.specifier, "LoaderSite.static_request.specifier")?,
+                resolved_target: value
+                    .resolved_target
+                    .map(ProtoConvert::from_proto)
+                    .transpose()?,
+            },
+            Value::LoaderBindingUse(value) => Self::LoaderBindingUse {
+                item: ProtoConvert::from_proto(required(
+                    value.item,
+                    "LoaderSite.loader_binding_use.item",
+                )?)?,
+                line: value.line.map(usize::from_proto).transpose()?,
+                call: required(value.call, "LoaderSite.loader_binding_use.call")?,
+                specifier: value.specifier,
+                resolved_target: value
+                    .resolved_target
+                    .map(ProtoConvert::from_proto)
+                    .transpose()?,
+            },
+            Value::NamespaceRequest(value) => Self::NamespaceRequest {
+                item: ProtoConvert::from_proto(required(
+                    value.item,
+                    "LoaderSite.namespace_request.item",
+                )?)?,
+                specifier: required(value.specifier, "LoaderSite.namespace_request.specifier")?,
+                resolved_target: value
+                    .resolved_target
+                    .map(ProtoConvert::from_proto)
+                    .transpose()?,
+            },
+            Value::TopLevelAwait(_) => Self::TopLevelAwait,
+        })
+    }
 }

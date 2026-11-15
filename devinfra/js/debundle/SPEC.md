@@ -353,6 +353,9 @@ entry points use the same implementation and identity. A reader rejects another
 analysis identity before decoding facts, checks parser-input digests, and
 requires exact canonical projection equality before using the facts. Previous
 compiled identities require regeneration; there is no compatibility fallback.
+The analysis header and both canonical projections use typed Protobuf schemas.
+The saved analysis body is one typed Protobuf message in a checksummed zstd
+frame; the header remains independently readable before body decompression.
 Saved graphs and snapshots retain their full executable identity and their
 source/spec checks, even when an analysis artifact can be reused. The standalone
 CLI remains one binary.

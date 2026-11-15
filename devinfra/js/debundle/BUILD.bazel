@@ -1,9 +1,13 @@
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
-load("@rules_rust_prost//:defs.bzl", "rust_prost_library")
+load("@rules_rust_prost//:defs.bzl", "rust_prost_library", "rust_prost_transform")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load(":analysis_identity.bzl", "analysis_identity")
 load(":optimized_cc_library.bzl", "optimized_cc_library")
+
+# The saved artifact schemas use distinct protobuf packages and are declared below.
+# gazelle:proto disable
 
 # Rust libraries are implementation details shared with the e2e subpackage.
 # Corpus integrations use the public executable / debundler flag below.
@@ -113,13 +117,13 @@ rust_library(
     edition = "2024",
     deps = [
         "@crates//:anyhow",
-        "@crates//:rmp-serde",
         "@crates//:serde",
         "@crates//:swc_atoms",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
         "@crates//:zstd",
+        "@rules_rust_prost//private/3rdparty/crates:prost",
     ],
 )
 
@@ -664,7 +668,7 @@ rust_library(
     name = "analysis",
     srcs = [
         "analysis_inputs.rs",
-        "analysis_inputs/saved.rs",
+        "analysis_inputs/protobuf.rs",
         "analysis_provenance.rs",
         "assignment_assembly.rs",
         "atomic_groups.rs",
@@ -795,15 +799,21 @@ rust_library(
         "purity/ts_enum_iife.rs",
         "reports/author_inputs.rs",
         "reports/mod.rs",
-        "reports/saved.rs",
+        "reports/protobuf.rs",
+        "reports/protobuf_test.rs",
         "reports/schema.rs",
         "reports/spec_lint.rs",
+        "saved_proto.rs",
         "swc_parallel.rs",
     ],
-    compile_data = [":standard_globals_json"],
+    compile_data = [
+        ":standard_globals_json",
+    ],
     crate_root = "lib.rs",
     edition = "2024",
-    rustc_env = {"STANDARD_GLOBALS_JSON": "$(execpath :standard_globals_json)"},
+    rustc_env = {
+        "STANDARD_GLOBALS_JSON": "$(execpath :standard_globals_json)",
+    },
     deps = [
         ":analysis_codec",
         ":analysis_model",
@@ -811,9 +821,11 @@ rust_library(
         ":graph_provenance",
         ":js_ast",
         ":report_io",
+        ":saved_analysis_rust_proto",
         ":selector_outcome",
         ":source_identity",
         ":spec",
+        ":spec_wire",
         "@crates//:anyhow",
         "@crates//:imbl",
         "@crates//:petgraph",
@@ -837,8 +849,8 @@ rust_test(
     edition = "2024",
     deps = [
         ":raw_js_test_support",
-        "@crates//:rmp-serde",
         "@crates//:swc_ecma_parser",
+        "@rules_rust_prost//private/3rdparty/crates:prost",
     ],
 )
 
@@ -1154,18 +1166,67 @@ rust_test(
 
 rust_library(
     name = "analysis_projection",
-    srcs = ["analysis_projection.rs"],
+    srcs = [
+        "analysis_projection.rs",
+        "analysis_projection_wire.rs",
+        "analysis_projection_wire_test.rs",
+    ],
     crate_root = "analysis_projection.rs",
     edition = "2024",
     deps = [
         ":analysis",
+        ":analysis_projection_wire_rust_proto",
         ":artifact",
         ":source_identity",
         ":spec",
+        ":spec_wire",
+        ":spec_wire_rust_proto",
         "@crates//:anyhow",
-        "@crates//:rmp-serde",
         "@crates//:serde",
+        "@rules_rust_prost//private/3rdparty/crates:prost",
     ],
+)
+
+proto_library(
+    name = "analysis_header_proto",
+    srcs = ["analysis_header.proto"],
+    data = [":debundle_btree_maps"],
+    deps = [":analysis_projection_wire_proto"],
+)
+
+rust_prost_library(
+    name = "analysis_header_rust_proto",
+    proto = ":analysis_header_proto",
+)
+
+proto_library(
+    name = "program_summary_proto",
+    srcs = ["program-summary.proto"],
+    data = [":debundle_btree_maps"],
+    deps = [
+        ":saved_analysis_proto",
+        "@protobuf//:empty_proto",
+    ],
+)
+
+rust_prost_library(
+    name = "program_summary_rust_proto",
+    proto = ":program_summary_proto",
+)
+
+proto_library(
+    name = "analysis_stream_proto",
+    srcs = ["analysis_stream.proto"],
+    data = [":debundle_btree_maps"],
+    deps = [
+        ":program_summary_proto",
+        ":saved_analysis_proto",
+    ],
+)
+
+rust_prost_library(
+    name = "analysis_stream_rust_proto",
+    proto = ":analysis_stream_proto",
 )
 
 rust_library(
@@ -1176,25 +1237,29 @@ rust_library(
     deps = [
         ":analysis",
         ":analysis_codec",
+        ":analysis_header_rust_proto",
         ":analysis_model",
         ":analysis_projection",
+        ":analysis_stream_rust_proto",
         ":artifact",
         ":chunk_analysis",
         ":graph_provenance",
         ":js_ast",
         ":prepare_chunks",
         ":program_analysis",
+        ":program_summary_rust_proto",
         ":source_identity",
         ":spec",
         ":vendor",
         "@crates//:anyhow",
         "@crates//:rayon",
-        "@crates//:rmp-serde",
         "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
+        "@crates//:zstd",
+        "@rules_rust_prost//private/3rdparty/crates:prost",
     ],
 )
 
@@ -1452,14 +1517,58 @@ rust_test(
     edition = "2024",
 )
 
+rust_prost_transform(
+    name = "debundle_btree_maps",
+    prost_opts = ["btree_map=."],
+)
+
+proto_library(
+    name = "spec_wire_proto",
+    srcs = ["spec_wire.proto"],
+    data = [":debundle_btree_maps"],
+)
+
+rust_prost_library(
+    name = "spec_wire_rust_proto",
+    proto = ":spec_wire_proto",
+)
+
+rust_library(
+    name = "spec_wire",
+    srcs = ["spec_wire.rs"],
+    edition = "2024",
+    deps = [
+        ":spec",
+        ":spec_wire_rust_proto",
+        "@crates//:anyhow",
+    ],
+)
+
+proto_library(
+    name = "apply_projection_wire_proto",
+    srcs = ["apply_projection_wire.proto"],
+    data = [":debundle_btree_maps"],
+    deps = [":spec_wire_proto"],
+)
+
+rust_prost_library(
+    name = "apply_projection_wire_rust_proto",
+    proto = ":apply_projection_wire_proto",
+)
+
 rust_library(
     name = "pipeline",
-    srcs = ["pipeline.rs"],
+    srcs = [
+        "apply_projection_codec.rs",
+        "apply_projection_codec_tests.rs",
+        "pipeline.rs",
+    ],
     crate_root = "pipeline.rs",
     edition = "2024",
     deps = [
         ":analysis",
         ":analysis_projection",
+        ":apply_projection_wire_rust_proto",
         ":artifact",
         ":emit_harness",
         ":final_global_resolution",
@@ -1475,6 +1584,8 @@ rust_library(
         ":spec",
         ":spec_modules",
         ":spec_tree",
+        ":spec_wire",
+        ":spec_wire_rust_proto",
         ":staged_analysis",
         ":vendor",
         ":write_tree",
@@ -1482,6 +1593,7 @@ rust_library(
         "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
+        "@rules_rust_prost//private/3rdparty/crates:prost",
     ],
 )
 
@@ -1691,6 +1803,20 @@ rust_test(
         ":selector_ir",
         ":source_identity",
     ],
+)
+
+proto_library(
+    name = "saved_analysis_proto",
+    srcs = ["saved-analysis.proto"],
+    deps = [
+        ":spec_wire_proto",
+        "@protobuf//:empty_proto",
+    ],
+)
+
+rust_prost_library(
+    name = "saved_analysis_rust_proto",
+    proto = ":saved_analysis_proto",
 )
 
 rust_prost_library(
@@ -2057,4 +2183,23 @@ rust_library(
         "@crates//:serde_json",
         "@crates//:thiserror",
     ],
+)
+
+proto_library(
+    name = "analysis_projection_wire_proto",
+    srcs = ["analysis_projection_wire.proto"],
+    data = [":debundle_btree_maps"],
+    deps = [":spec_wire_proto"],
+)
+
+rust_prost_library(
+    name = "analysis_projection_wire_rust_proto",
+    proto = ":analysis_projection_wire_proto",
+)
+
+rust_test(
+    name = "analysis_projection_test",
+    crate = ":analysis_projection",
+    edition = "2024",
+    deps = ["@crates//:serde_yaml"],
 )

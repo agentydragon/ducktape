@@ -7,6 +7,8 @@ use crate::analysis_inputs::ProofDependencies;
 use crate::facts::OwnerInitializationCoverageRefusalReason;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::item_views::{SplitDeclaratorProvenance, TopLevelItemView, var_decl_of_item};
+use crate::saved_proto::{ProtoConvert, proto, required};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 use std::collections::BTreeSet;
@@ -763,6 +765,28 @@ impl OriginalInitializer {
         .then_some(CompletedInitialization {
             owner,
             dependencies: evaluated.dependencies,
+        })
+    }
+}
+
+impl ProtoConvert<proto::CompletedInitialization> for CompletedInitialization {
+    fn to_proto(&self) -> Result<proto::CompletedInitialization> {
+        Ok(proto::CompletedInitialization {
+            owner: Some(self.owner.to_proto()?),
+            dependencies: Some(self.dependencies.to_proto()?),
+        })
+    }
+
+    fn from_proto(value: proto::CompletedInitialization) -> Result<Self> {
+        Ok(Self {
+            owner: SourceUnitOrdinal::from_proto(required(
+                value.owner,
+                "CompletedInitialization.owner",
+            )?)?,
+            dependencies: ProofDependencies::from_proto(required(
+                value.dependencies,
+                "CompletedInitialization.dependencies",
+            )?)?,
         })
     }
 }

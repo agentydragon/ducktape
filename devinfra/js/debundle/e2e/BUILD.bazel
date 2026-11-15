@@ -105,10 +105,12 @@ debundle_e2e_test(
     name = "apply_projection_test",
     saved_analysis_tools = True,
     deps = [
+        "//devinfra/js/debundle:apply_projection_wire_rust_proto",
         "//devinfra/js/debundle:graph_provenance",
         "//devinfra/js/debundle:spec",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
+        "@rules_rust_prost//private/3rdparty/crates:prost",
     ],
 )
 
@@ -116,7 +118,7 @@ debundle_e2e_test(
     name = "saved_analysis_parity_test",
     saved_analysis_tools = True,
     deps = [
-        "@crates//:rmp-serde",
+        "//devinfra/js/debundle:analysis_projection",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
     ],
@@ -131,7 +133,6 @@ debundle_e2e_test(
         "//devinfra/js/debundle:analysis_model",
         "//devinfra/js/debundle:analysis_projection",
         "//devinfra/js/debundle:staged_analysis",
-        "@crates//:rmp-serde",
         "@crates//:serde_yaml",
     ],
 )
@@ -164,7 +165,6 @@ debundle_e2e_test(
     saved_analysis_tools = True,
     deps = [
         "//devinfra/js/debundle:staged_analysis",
-        "@crates//:rmp-serde",
         "@crates//:serde_json",
     ],
 )

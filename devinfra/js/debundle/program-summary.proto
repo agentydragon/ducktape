@@ -1,0 +1,168 @@
+syntax = "proto3";
+
+package debundle.program_summary;
+
+import "devinfra/js/debundle/saved-analysis.proto";
+import "google/protobuf/empty.proto";
+
+// Source-bound cross-module facts. Readers validate required evidence and
+// binding identities. Maps and repeated fields use normal proto3 empty defaults.
+// Native map decoding uses protobuf duplicate-key semantics; completeness of
+// collection metadata is the trusted producer's responsibility.
+
+message ArgumentInput {
+  .ducktape.debundle.saved_analysis.ArgumentInputEvidence evidence = 1;
+  .ducktape.debundle.saved_analysis.SavedBinding binding = 2;
+  optional uint32 function_start = 3;
+}
+
+message ImportedPrimitiveArraySpreadInput {
+  .ducktape.debundle.saved_analysis.ImportedPrimitiveArraySpreadInputEvidence evidence = 1;
+  .ducktape.debundle.saved_analysis.SourceSpan consumer_initializer_span = 2;
+  repeated .ducktape.debundle.saved_analysis.SourceSpan spread_token_spans = 3;
+}
+
+message InferredSetConstruction {
+  .ducktape.debundle.saved_analysis.SavedBinding binding = 1;
+  .debundle.program_summary.InferredSetOperation operation = 2;
+  .ducktape.debundle.saved_analysis.ProofDependencies dependencies = 3;
+  .ducktape.debundle.saved_analysis.InferenceUse inference = 4;
+}
+
+message InferredSetOperation {
+  message ProtectedSpread {
+    .ducktape.debundle.saved_analysis.SavedBinding source = 1;
+    .debundle.program_summary.StableSetIterableUse interval = 2;
+  }
+  oneof value {
+    google.protobuf.Empty primitive_array = 1;
+    ProtectedSpread protected_spread = 2;
+  }
+}
+
+message InitializerCallEffectInput {
+  .ducktape.debundle.saved_analysis.InitializerCallEffectInputRef reference = 1;
+  .ducktape.debundle.saved_analysis.SavedBinding binding = 2;
+  .ducktape.debundle.saved_analysis.SavedBinding callee = 3;
+  .ducktape.debundle.saved_analysis.SourceSpan call_span = 4;
+  optional string source_sha256 = 5;
+  optional string provider_chunk = 6;
+  optional string provider_export = 7;
+  optional string provider_sha256 = 8;
+  optional bool returns_opaque_function_from_const_primitive = 9;
+  .ducktape.debundle.saved_analysis.EffectiveInitializerCallReplacement effective_replacement = 10;
+}
+
+message NativeOperationInput {
+  .ducktape.debundle.saved_analysis.NativeOperationInputEvidence evidence = 1;
+  .ducktape.debundle.saved_analysis.SavedBinding binding = 2;
+  .ducktape.debundle.saved_analysis.SourceSpan selected_statement_span = 3;
+  .ducktape.debundle.saved_analysis.SourceSpan declaration_span = 4;
+  .ducktape.debundle.saved_analysis.SourceSpan initializer_span = 5;
+  .ducktape.debundle.saved_analysis.SourceSpan call_span = 6;
+  optional uint64 initializer_ordinal = 7;
+  .ducktape.debundle.saved_analysis.SavedBinding spread_source = 8;
+  .ducktape.debundle.saved_analysis.SourceSpan spread_source_span = 9;
+  .ducktape.debundle.saved_analysis.SourceSpan spread_token_span = 10;
+}
+
+message ProgramSummary {
+  map<string, ImportedBindingPurities> bindings = 1;
+  map<string, ImportedValues> values = 2;
+  map<string, ImportedPrimitiveReads> primitive_reads = 3;
+  map<string, ImportedMembers> members = 4;
+  map<string, BindingNames> fluent = 5;
+  map<string, BindingNames> constructors = 6;
+  map<string, ImportedCallables> imported_callables = 7;
+  // Absent means the census is unavailable; present, even empty, means available.
+  .ducktape.debundle.saved_analysis.NativeIntegrity native_integrity = 8;
+  .ducktape.debundle.saved_analysis.BundleGlobalNames bundle_globals = 9;
+  map<string, ValueInputSites> value_inputs = 10;
+  map<string, NativeOperationInputSites> native_operation_inputs = 11;
+  map<string, InitializerCallEffectInputSites> initializer_call_effect_inputs = 12;
+  map<string, ImportedPrimitiveArraySpreadInputSites> imported_primitive_array_spread_inputs = 13;
+  map<string, StableSetSites> stable_set_spreads = 14;
+  map<string, InferredSetSites> inferred_set_constructions = 15;
+  map<string, ArgumentInputSites> argument_inputs = 16;
+  map<string, BindingNames> stable_imports = 17;
+  map<string, BindingNames> inline_callback_factories = 18;
+  map<string, ImportedMembers> callback_factory_members = 19;
+  map<string, RetainedCallbackBindings> retained_callback_factories = 20;
+  map<string, RetainedCallbackObjects> retained_callback_factory_members = 21;
+  map<string, RetainedCallbackBindings> retained_callback_constructors = 22;
+  map<string, BindingNames> no_reentry_exports = 23;
+  map<string, RetainedCallbackBindings> no_reentry_callback_exports = 24;
+  map<string, ImportedMembers> no_reentry_members = 25;
+  map<string, ImportedMembers> no_reentry_record_members = 26;
+  map<string, ImportedMembers> namespace_independent_members = 27;
+}
+
+// Collection-valued map entries need domain records because protobuf map values
+// cannot themselves be maps or repeated fields. Empty entries remain meaningful
+// and retain the producer's per-field set of chunk/binding keys.
+message ImportedBindingPurities {
+  map<string, .ducktape.debundle.saved_analysis.PurityNodeId> bindings = 1;
+}
+
+message ImportedValues {
+  map<string, .ducktape.debundle.saved_analysis.Value> bindings = 1;
+}
+
+message ImportedPrimitiveReads {
+  map<string, .ducktape.debundle.saved_analysis.ImportedPrimitiveRead> bindings = 1;
+}
+
+message ImportedCallables {
+  map<string, .ducktape.debundle.saved_analysis.CallableSummary> bindings = 1;
+}
+
+message BindingNames { repeated string bindings = 1; }
+
+message MemberNames { repeated string members = 1; }
+
+message ImportedMembers { map<string, MemberNames> bindings = 1; }
+
+message RetainedCallbackSignatures {
+  repeated .ducktape.debundle.saved_analysis.RetainedCallbackSignature signatures = 1;
+}
+
+message RetainedCallbackBindings {
+  map<string, RetainedCallbackSignatures> bindings = 1;
+}
+
+message RetainedCallbackMembers {
+  map<string, RetainedCallbackSignatures> members = 1;
+}
+
+message RetainedCallbackObjects {
+  map<string, RetainedCallbackMembers> bindings = 1;
+}
+
+message ValueInputSites { repeated ValueInput inputs = 1; }
+
+message NativeOperationInputSites { repeated NativeOperationInput inputs = 1; }
+
+message InitializerCallEffectInputSites { repeated InitializerCallEffectInput inputs = 1; }
+
+message ImportedPrimitiveArraySpreadInputSites { repeated ImportedPrimitiveArraySpreadInput inputs = 1; }
+
+message ArgumentInputSites { repeated ArgumentInput inputs = 1; }
+
+message InferredSetSites { map<uint32, InferredSetConstruction> sites = 1; }
+
+message StableSetSites { map<uint32, StableSetIterableUse> sites = 1; }
+
+message StableSetIterableUse {
+  .ducktape.debundle.saved_analysis.SourceSpan source_span = 1;
+  .ducktape.debundle.saved_analysis.SourceSpan spread_token_span = 2;
+  repeated .ducktape.debundle.saved_analysis.SavedBinding interval_bindings = 3;
+  .ducktape.debundle.saved_analysis.ProofDependencies dependencies = 4;
+}
+
+message ValueInput {
+  .ducktape.debundle.saved_analysis.ValueInputEvidence evidence = 1;
+  .ducktape.debundle.saved_analysis.SavedBinding binding = 2;
+  .ducktape.debundle.saved_analysis.SourceSpan declaration_span = 3;
+  .ducktape.debundle.saved_analysis.SourceSpan initializer_span = 4;
+  optional uint64 initializer_ordinal = 5;
+}

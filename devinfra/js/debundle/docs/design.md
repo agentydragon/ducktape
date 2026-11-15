@@ -2902,26 +2902,32 @@ resolution, so it can also run in another process:
   and top-level `await` checks and prints the same warnings, so its output,
   reports and exit code equal a run that computes the analysis.
 
+The analysis and apply projections import one compiled-spec vocabulary from
+`spec_wire.proto`. Bazel's prost rules generate message types; handwritten Rust
+conversions preserve required-field presence, optional empty values, internal
+selectors and canonical BTree collection order. YAML and report serialization
+continue to use the domain model's Serde implementations.
+
 Facts cross the process boundary through explicit saved representations and
 `analysis_codec`. Each saved binding contains its symbol and a
 first-occurrence ordinal for its hygiene context in the re-parsed modules; the
-reader restores it against its own SWC `Globals`. The codec itself writes
-ordinary named MessagePack and zstd, with no tuple or integer identity
-heuristics. See `docs/lessons_learned/cross_process_stage_b.md` for why simpler
+reader restores it against its own SWC `Globals`. Typed Protobuf messages carry
+the saved data, compressed in a checksummed zstd frame. See
+`docs/lessons_learned/cross_process_stage_b.md` for why simpler
 binding encodings are wrong.
 
 The runtime `ProgramSummary`, `AnalysisArtifactBody`, `ChunkFactAnalysis` and
-`StatementFacts` do not implement Serde. `SavedAnalysisBody::snapshot` selects the
-saved representation, and `restore` reconstructs runtime structures after the
-header has been checked. The analysis crate owns its saved fact and purity types
-beside the runtime structures; the staged artifact owns their composition.
+`StatementFacts` do not implement the saved wire format. Their explicit saved
+representations reconstruct runtime structures after the header has been
+checked. The analysis crate owns its saved fact and purity types beside the
+runtime structures; the staged artifact owns their composition.
 
 One postorder purity node table belongs to the entire saved body. Imported
 verdicts, statement verdicts, and completion-disagreement diagnostics all share
 its cause references, preserving spans and proof dependencies. By-value
 statement verdicts stay inline; shared `Arc` verdicts occupy the node table.
-These saved types use ordinary Serde. Runtime purity Serde always emits the
-report view, omitting causes and raw spans; no serialization scope changes it.
+Runtime purity Serde always emits the report view, omitting causes and raw
+spans; the saved protobuf representation carries both.
 All saved SWC bindings, including statement sets, nested execution effects,
 effect-coverage receipts, and program-summary inputs, use named
 symbol/context-ordinal fields.
@@ -2929,11 +2935,12 @@ symbol/context-ordinal fields.
 Trusted callable dependencies and source spans also use explicit saved records.
 The saved native census composes its span-bearing witnesses, and saved execution
 records carry their call-site spans. Runtime report Serde has fixed field
-selection. Nullable saved metadata fields require an explicit value, so an
-incomplete artifact cannot silently lose them.
+selection. Saved proof-bearing messages and their required identities are
+validated when read; optional diagnostics may be absent, and missing repeated
+fields have proto3's normal empty-collection meaning.
 
-Many unchanged Id-free facts and summary fields borrow their storage during
-writing. The codec uses ordinary named MessagePack and zstd. The compiled engine
+Readers restore the shared purity table before restoring chunk facts and check
+the compressed frame's checksum. The compiled engine
 digest invalidates artifacts from another implementation; readers require the
 matching engine.
 

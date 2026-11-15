@@ -1,0 +1,707 @@
+syntax = "proto3";
+package debundle.spec;
+
+// Shared compiled spec vocabulary. Paths are Linux OsStr bytes.
+// Nonoptional collections use proto3 empty defaults. Scalar-key maps are
+// generated as BTreeMap for deterministic encoding; enum-key entries use domain order.
+
+message Unit {}
+
+message TransformSpec {
+  LoadJsChunksArgs inputs = 1;
+  HostBehavior host_behavior = 2;
+  ProgramPremises program_premises = 3;
+  map<string, VendorMark> vendor = 4;
+  map<string, LogicalModules> logical_modules = 5;
+  map<string, ChunkRenames> chunk_renames = 6;
+  map<string, UnassignedMode> unassigned_mode = 7;
+  map<string, DependencyGraphOptions> chunk_analysis_options = 8;
+  map<string, ChunkExportPurity> chunk_export_purity = 9;
+  SwapVendorChunksConfig swap_vendor_chunks = 10;
+  MaterializeLogicalModulesConfig materialize_logical_modules = 11;
+  optional WriteJsTreeConfig write_js_tree = 12;
+  optional EmitBrowserHarnessConfig emit_browser_harness = 13;
+}
+
+message LoadJsChunksArgs {
+  optional bytes input_root = 1;
+  optional bytes js_list_path = 2;
+  optional bytes embedded_loaders_path = 3;
+}
+
+message HostBehavior {
+  optional SynchronousModuleLoader synchronous_module_loader = 1;
+  optional LoaderResultForEvaluatingModule loader_result_for_evaluating_module = 2;
+  optional SynchronousLoadRunsAppCallbacks synchronous_load_runs_app_callbacks = 3;
+  optional SynchronousLoadDrainsMicrotasks synchronous_load_drains_microtasks = 4;
+  repeated NodeBuiltinModule reentry_free_builtin_modules = 5;
+  repeated BunModule reentry_free_bun_modules = 6;
+  repeated EmbeddedLoader reentry_free_embedded_loaders = 7;
+  repeated ReentryFreeOperation reentry_free_operations = 8;
+  optional PredefinedGlobals predefined_globals = 9;
+  optional string note = 10;
+}
+
+enum SynchronousModuleLoader {
+  SYNCHRONOUS_MODULE_LOADER_UNSPECIFIED = 0;
+  SYNCHRONOUS_MODULE_LOADER_NONE = 1;
+  SYNCHRONOUS_MODULE_LOADER_PRESENT = 2;
+}
+
+enum LoaderResultForEvaluatingModule {
+  LOADER_RESULT_FOR_EVALUATING_MODULE_UNSPECIFIED = 0;
+  LOADER_RESULT_FOR_EVALUATING_MODULE_THROWS = 1;
+  LOADER_RESULT_FOR_EVALUATING_MODULE_RETURNS_PARTIAL_NAMESPACE = 2;
+  LOADER_RESULT_FOR_EVALUATING_MODULE_UNKNOWN = 3;
+}
+
+enum SynchronousLoadRunsAppCallbacks {
+  SYNCHRONOUS_LOAD_RUNS_APP_CALLBACKS_UNSPECIFIED = 0;
+  SYNCHRONOUS_LOAD_RUNS_APP_CALLBACKS_NEVER = 1;
+  SYNCHRONOUS_LOAD_RUNS_APP_CALLBACKS_UNKNOWN = 2;
+}
+
+enum SynchronousLoadDrainsMicrotasks {
+  SYNCHRONOUS_LOAD_DRAINS_MICROTASKS_UNSPECIFIED = 0;
+  SYNCHRONOUS_LOAD_DRAINS_MICROTASKS_NEVER = 1;
+  SYNCHRONOUS_LOAD_DRAINS_MICROTASKS_UNKNOWN = 2;
+}
+
+enum NodeBuiltinModule {
+  NODE_BUILTIN_MODULE_UNSPECIFIED = 0;
+  NODE_BUILTIN_MODULE_ASSERT = 1;
+  NODE_BUILTIN_MODULE_ASYNC_HOOKS = 2;
+  NODE_BUILTIN_MODULE_BUFFER = 3;
+  NODE_BUILTIN_MODULE_CHILD_PROCESS = 4;
+  NODE_BUILTIN_MODULE_CONSTANTS = 5;
+  NODE_BUILTIN_MODULE_CRYPTO = 6;
+  NODE_BUILTIN_MODULE_DNS = 7;
+  NODE_BUILTIN_MODULE_DNS_PROMISES = 8;
+  NODE_BUILTIN_MODULE_EVENTS = 9;
+  NODE_BUILTIN_MODULE_FS = 10;
+  NODE_BUILTIN_MODULE_FS_PROMISES = 11;
+  NODE_BUILTIN_MODULE_HTTP = 12;
+  NODE_BUILTIN_MODULE_HTTP2 = 13;
+  NODE_BUILTIN_MODULE_HTTPS = 14;
+  NODE_BUILTIN_MODULE_NET = 15;
+  NODE_BUILTIN_MODULE_OS = 16;
+  NODE_BUILTIN_MODULE_PATH = 17;
+  NODE_BUILTIN_MODULE_PATH_POSIX = 18;
+  NODE_BUILTIN_MODULE_PATH_WIN32 = 19;
+  NODE_BUILTIN_MODULE_PERF_HOOKS = 20;
+  NODE_BUILTIN_MODULE_PROCESS = 21;
+  NODE_BUILTIN_MODULE_QUERYSTRING = 22;
+  NODE_BUILTIN_MODULE_READLINE = 23;
+  NODE_BUILTIN_MODULE_STREAM = 24;
+  NODE_BUILTIN_MODULE_STREAM_CONSUMERS = 25;
+  NODE_BUILTIN_MODULE_STREAM_PROMISES = 26;
+  NODE_BUILTIN_MODULE_STRING_DECODER = 27;
+  NODE_BUILTIN_MODULE_TIMERS_PROMISES = 28;
+  NODE_BUILTIN_MODULE_TLS = 29;
+  NODE_BUILTIN_MODULE_TTY = 30;
+  NODE_BUILTIN_MODULE_URL = 31;
+  NODE_BUILTIN_MODULE_UTIL = 32;
+  NODE_BUILTIN_MODULE_UTIL_TYPES = 33;
+  NODE_BUILTIN_MODULE_VM = 34;
+  NODE_BUILTIN_MODULE_WORKER_THREADS = 35;
+  NODE_BUILTIN_MODULE_ZLIB = 36;
+  NODE_BUILTIN_MODULE_MODULE = 37;
+}
+
+enum BunModule {
+  BUN_MODULE_UNSPECIFIED = 0;
+  BUN_MODULE_BUN_FFI = 1;
+  BUN_MODULE_UNDICI = 2;
+  BUN_MODULE_WS = 3;
+}
+
+enum EmbeddedLoader {
+  EMBEDDED_LOADER_UNSPECIFIED = 0;
+  EMBEDDED_LOADER_TEXT = 1;
+  EMBEDDED_LOADER_NAPI = 2;
+}
+
+enum ReentryFreeOperation {
+  REENTRY_FREE_OPERATION_UNSPECIFIED = 0;
+  REENTRY_FREE_OPERATION_ASYNC_LOCAL_STORAGE_CONSTRUCT = 1;
+  REENTRY_FREE_OPERATION_PROMISE_RESOLVE = 2;
+}
+
+enum PredefinedGlobals {
+  PREDEFINED_GLOBALS_UNSPECIFIED = 0;
+  PREDEFINED_GLOBALS_UNKNOWN = 1;
+  PREDEFINED_GLOBALS_STANDARD = 2;
+  PREDEFINED_GLOBALS_BUN = 3;
+}
+
+message ProgramPremises {
+  optional ProcessPrototypeChainAccessors process_prototype_chain_accessors = 1;
+  optional NonLiteralLoaderCalls non_literal_loader_calls = 2;
+  optional IntrinsicsNeverWritten intrinsics_never_written = 3;
+  optional string note = 4;
+}
+
+enum ProcessPrototypeChainAccessors {
+  PROCESS_PROTOTYPE_CHAIN_ACCESSORS_UNSPECIFIED = 0;
+  PROCESS_PROTOTYPE_CHAIN_ACCESSORS_NONE = 1;
+  PROCESS_PROTOTYPE_CHAIN_ACCESSORS_UNKNOWN = 2;
+}
+
+enum NonLiteralLoaderCalls {
+  NON_LITERAL_LOADER_CALLS_UNSPECIFIED = 0;
+  NON_LITERAL_LOADER_CALLS_NATIVE_ADDONS_ONLY = 1;
+  NON_LITERAL_LOADER_CALLS_UNKNOWN = 2;
+}
+
+message IntrinsicsNeverWritten {
+  IntrinsicFamilies families = 1;
+  optional string note = 2;
+}
+
+message IntrinsicFamilies {
+  oneof value {
+    AllIntrinsicFamilies all = 1;
+    IntrinsicFamilySelection listed = 2;
+  }
+}
+
+enum AllIntrinsicFamilies {
+  ALL_INTRINSIC_FAMILIES_UNSPECIFIED = 0;
+  ALL_INTRINSIC_FAMILIES_ALL = 1;
+}
+
+enum IntrinsicFamily {
+  INTRINSIC_FAMILY_UNSPECIFIED = 0;
+  INTRINSIC_FAMILY_ERROR = 1;
+  INTRINSIC_FAMILY_FINALIZATION_REGISTRY = 2;
+  INTRINSIC_FAMILY_FUNCTION = 3;
+  INTRINSIC_FAMILY_OBJECT = 4;
+  INTRINSIC_FAMILY_ARRAY = 5;
+  INTRINSIC_FAMILY_MATH = 6;
+  INTRINSIC_FAMILY_REG_EXP = 7;
+  INTRINSIC_FAMILY_SYMBOL = 8;
+  INTRINSIC_FAMILY_PROMISE = 9;
+  INTRINSIC_FAMILY_MAP = 10;
+  INTRINSIC_FAMILY_SET = 11;
+  INTRINSIC_FAMILY_WEAK_MAP = 12;
+  INTRINSIC_FAMILY_WEAK_SET = 13;
+}
+
+message VendorMark {
+  optional string identity = 1;
+  optional VendorRole role = 2;
+  VendorLevel level = 3;
+}
+
+enum VendorRole {
+  VENDOR_ROLE_UNSPECIFIED = 0;
+  VENDOR_ROLE_MODULE = 1;
+  VENDOR_ROLE_WORKER = 2;
+}
+
+message VendorLevel {
+  oneof value {
+    SwapMark swap = 3;
+    PartialSwapMark partial_swap = 4;
+    BundledPartialSwapMark bundled_partial_swap = 5;
+  }
+}
+
+message SwapMark {
+  optional string package = 1;
+  optional string version = 2;
+  optional string subpath = 3;
+  optional WrapperShape wrapper_shape = 4;
+  repeated string default_export_aliases = 5;
+}
+
+enum WrapperShape {
+  WRAPPER_SHAPE_UNSPECIFIED = 0;
+  WRAPPER_SHAPE_NAMED_FROM_DEFAULT = 1;
+  WRAPPER_SHAPE_NAMED_FROM_JSON_DEFAULT = 2;
+  WRAPPER_SHAPE_NAMED_FROM_MODULE_DEFAULT = 3;
+}
+
+message PartialSwapMark {
+  map<string, PartialSwapPackage> packages = 1;
+  map<string, PartialSwapSymbol> symbols = 2;
+}
+
+message PartialSwapPackage {
+  optional string version = 1;
+  optional string subpath = 2;
+  optional string namespace = 3;
+}
+
+message PartialSwapSymbol {
+  optional string package = 1;
+  optional PartialSwapKind kind = 2;
+  optional string upstream_export = 3;
+  optional string local = 4;
+}
+
+enum PartialSwapKind {
+  PARTIAL_SWAP_KIND_UNSPECIFIED = 0;
+  PARTIAL_SWAP_KIND_MEMBER = 1;
+  PARTIAL_SWAP_KIND_NAMESPACE = 2;
+  PARTIAL_SWAP_KIND_DEFAULT = 3;
+  PARTIAL_SWAP_KIND_NAMED = 4;
+}
+
+message BundledPartialSwapMark {
+  BundledPartialSwapBundle bundle = 1;
+  map<string, BundledPartialSwapPackage> packages = 2;
+  map<string, PartialSwapSymbol> symbols = 3;
+}
+
+message BundledPartialSwapBundle {
+  optional bytes path = 1;
+}
+
+message BundledPartialSwapPackage {
+  optional string version = 1;
+  optional string subpath = 2;
+  optional string bundle_export = 3;
+  optional string namespace = 4;
+}
+
+message LogicalModule {
+  repeated Member members = 1;
+  repeated SourceMatchClaim source_matches = 2;
+  map<string, BindingAnnotation> annotations = 3;
+  repeated AnonymousStatement anonymous_statements = 4;
+  optional string comment = 5;
+  optional string note = 6;
+}
+
+message Member {
+  optional string name = 1;
+  RawMemberSelector selector = 2;
+}
+
+message RawMemberSelector {
+  optional BindingSelector binding = 1;
+  optional CrossRefSelector cross_ref = 2;
+  optional ReadsMemberSelector reads_member = 3;
+  optional MemberOfModuleSelector member_of_module = 4;
+  optional PassedToCallSelector passed_to_call = 5;
+  optional MakesDecorateCallSelector makes_decorate_call = 6;
+  optional IntrinsicAliasSelector intrinsic_alias = 7;
+}
+
+message BindingSelector {
+  optional string name = 1;
+  optional BindingSourceKind kind = 2;
+}
+
+enum BindingSourceKind {
+  BINDING_SOURCE_KIND_UNSPECIFIED = 0;
+  BINDING_SOURCE_KIND_IMPORT_SPECIFIER = 1;
+  BINDING_SOURCE_KIND_VARIABLE_DECLARATOR = 2;
+  BINDING_SOURCE_KIND_FUNCTION_DECLARATION = 3;
+  BINDING_SOURCE_KIND_CLASS_DECLARATION = 4;
+}
+
+message CrossRefSelector {
+  optional string references = 1;
+  optional string aliases = 2;
+  optional BindingSourceKind kind = 3;
+}
+
+message ReadsMemberSelector {
+  optional string member = 1;
+  optional string object = 2;
+  optional BindingSourceKind kind = 3;
+}
+
+message MemberOfModuleSelector {
+  optional string module = 1;
+  optional string member = 2;
+  optional BindingSourceKind kind = 3;
+}
+
+message PassedToCallSelector {
+  optional string callee_member = 1;
+  optional string object = 2;
+  optional uint64 arg_index = 3;
+  optional BindingSourceKind kind = 4;
+}
+
+message MakesDecorateCallSelector {
+  optional string class = 1;
+  optional string member = 2;
+  optional BindingSourceKind kind = 3;
+}
+
+message IntrinsicAliasSelector {
+  optional string property = 1;
+  optional string referenced_by = 2;
+}
+
+message SourceMatchClaim {
+  optional SourceMatchIdentifierMode identifiers = 1;
+  optional string match_source = 2;
+  repeated SourceMatchBinding bindings = 3;
+  optional string note = 4;
+}
+
+enum SourceMatchIdentifierMode {
+  SOURCE_MATCH_IDENTIFIER_MODE_UNSPECIFIED = 0;
+  SOURCE_MATCH_IDENTIFIER_MODE_EXACT = 1;
+  SOURCE_MATCH_IDENTIFIER_MODE_ALPHA_ALL = 2;
+}
+
+message SourceMatchBinding {
+  oneof value {
+    string local = 1;
+    SourceMatchBindingDetail detailed = 2;
+  }
+}
+
+message SourceMatchBindingDetail {
+  optional string local = 1;
+  optional string name = 2;
+}
+
+message BindingAnnotation {
+  optional bool retained_record_factory = 1;
+  optional MemberPurity purity = 2;
+  optional InitializerPurity initializer_purity = 3;
+  optional InitializerBindingEffects initializer_binding_effects = 4;
+  optional InitializerExternalEffects initializer_external_effects = 5;
+  optional MemberEffect effect = 6;
+  repeated string pure_members = 7;
+  repeated string no_sync_callback_members = 8;
+  optional string comment = 9;
+  optional string note = 10;
+}
+
+enum MemberPurity {
+  MEMBER_PURITY_UNSPECIFIED = 0;
+  MEMBER_PURITY_DEFAULT = 1;
+  MEMBER_PURITY_PURE = 2;
+  MEMBER_PURITY_PURE_NEW = 3;
+}
+
+enum InitializerPurity {
+  INITIALIZER_PURITY_UNSPECIFIED = 0;
+  INITIALIZER_PURITY_DEFAULT = 1;
+  INITIALIZER_PURITY_PURE = 2;
+}
+
+enum InitializerBindingEffects {
+  INITIALIZER_BINDING_EFFECTS_UNSPECIFIED = 0;
+  INITIALIZER_BINDING_EFFECTS_SOURCE_ONLY = 1;
+}
+
+enum InitializerExternalEffects {
+  INITIALIZER_EXTERNAL_EFFECTS_UNSPECIFIED = 0;
+  INITIALIZER_EXTERNAL_EFFECTS_ISOLATED = 1;
+  INITIALIZER_EXTERNAL_EFFECTS_PRIVATE_METADATA = 2;
+}
+
+enum MemberEffect {
+  MEMBER_EFFECT_UNSPECIFIED = 0;
+  MEMBER_EFFECT_DEFAULT = 1;
+  MEMBER_EFFECT_TYPESCRIPT_DECORATE_HELPER = 2;
+  MEMBER_EFFECT_TYPESCRIPT_METADATA_DECORATE_HELPER = 3;
+  MEMBER_EFFECT_TYPESCRIPT_METADATA_DECORATE_HELPER_WITH_MEMBER_DECORATORS = 4;
+  MEMBER_EFFECT_TYPESCRIPT_METADATA_DECORATE_HELPER_THREE_ARGS = 5;
+}
+
+message AnonymousStatement {
+  optional string match_source = 1;
+  optional SourceMatch source_match = 2;
+  optional NoReentryCall no_reentry_call = 3;
+  optional string note = 4;
+  optional string comment = 5;
+}
+
+message SourceMatch {
+  optional SourceMatchIdentifierMode identifiers = 1;
+  optional string target_binding = 2;
+  optional string match_source = 3;
+}
+
+message NoReentryCall {
+  repeated uint64 callback_arguments = 1;
+}
+
+message ChunkRenames {
+  repeated ChunkRenameMember members = 1;
+  map<string, BindingAnnotation> annotations = 2;
+}
+
+message ChunkRenameMember {
+  optional string name = 1;
+  ChunkRenameSelector selector = 2;
+}
+
+message ChunkRenameSelector {
+  BindingSelector binding = 1;
+}
+
+message UnassignedModeCatchallFile {
+  optional string target = 1;
+}
+
+message UnassignedModeCoarseAtomicGroups {
+  repeated string complete_partial_atomic_groups_for = 1;
+}
+
+message UnassignedMode {
+  oneof value {
+    Unit inline_in_entry = 1;
+    UnassignedModeCatchallFile catchall_file = 2;
+    Unit per_atomic_group = 3;
+    UnassignedModeCoarseAtomicGroups coarse_atomic_groups = 4;
+  }
+}
+
+message DependencyGraphOptions {
+  repeated ValueInputContract value_inputs = 1;
+  repeated NativeOperationInputContract native_operation_inputs = 2;
+  repeated InitializerCallEffectInputContract initializer_call_effect_inputs = 3;
+  repeated ImportedPrimitiveArraySpreadInputContract imported_primitive_array_spread_inputs = 4;
+  repeated CommutingStatementsContract commuting_statements = 5;
+  repeated NativeCallIdentityInputContract native_call_identity_inputs = 6;
+  repeated ArgumentInputContract argument_inputs = 7;
+  repeated NoAccessorInstallCallableContract no_accessor_install_callables = 8;
+  repeated GlobalNames deferred_global_publications = 9;
+  repeated GlobalNames non_reentrant_global_membership = 10;
+  optional bool dataflow_aware_s_chain = 11;
+  optional bool trusted_dataflow_summaries = 12;
+  AdmissionOverrides admission_overrides = 13;
+  optional bool local_property_effects = 14;
+}
+
+message ValueInputContract {
+  SourceMatchClaim source_match = 1;
+  CapturedValueContract value = 2;
+  optional string audited_source_sha256 = 3;
+  optional string expected_export = 4;
+  optional string note = 5;
+}
+
+message CapturedValueContract {
+  optional CapturedValueKind kind = 1;
+}
+
+enum CapturedValueKind {
+  CAPTURED_VALUE_KIND_UNSPECIFIED = 0;
+  CAPTURED_VALUE_KIND_ORDINARY_OBJECT = 1;
+}
+
+message NativeOperationInputContract {
+  SourceUnitSelector selector = 1;
+  optional NativeOperationKind operation = 2;
+  optional string audited_source_sha256 = 3;
+  optional string note = 4;
+}
+
+message SourceUnitSelector {
+  oneof value {
+    SourceMatchClaim source_match = 1;
+    ResolvedMemberSelector resolved_member = 2;
+  }
+}
+
+message ResolvedMemberSelector {
+  optional string module = 1;
+  optional string name = 2;
+}
+
+enum NativeOperationKind {
+  NATIVE_OPERATION_KIND_UNSPECIFIED = 0;
+  NATIVE_OPERATION_KIND_TEXT_ENCODER_EMPTY = 1;
+  NATIVE_OPERATION_KIND_MAP_EMPTY = 2;
+  NATIVE_OPERATION_KIND_WEAK_MAP_EMPTY = 3;
+  NATIVE_OPERATION_KIND_SET_EMPTY = 4;
+  NATIVE_OPERATION_KIND_SYMBOL = 5;
+  NATIVE_OPERATION_KIND_SYMBOL_FOR = 6;
+  NATIVE_OPERATION_KIND_SET_FROM_PRIMITIVE_ARRAY = 7;
+  NATIVE_OPERATION_KIND_SET_FROM_SET_SPREAD = 8;
+  NATIVE_OPERATION_KIND_OBJECT_OWN_DATA_FUNCTION_READ = 9;
+  NATIVE_OPERATION_KIND_SYMBOL_WELL_KNOWN_CLASS_KEYS = 10;
+  NATIVE_OPERATION_KIND_SYMBOL_PRIMITIVE_CLASS_KEYS = 11;
+  NATIVE_OPERATION_KIND_ARRAY_SPREAD_FROM_PRIMITIVE_ARRAYS = 12;
+  NATIVE_OPERATION_KIND_PROMISE_RESOLVE = 13;
+}
+
+message InitializerCallEffectInputContract {
+  ResolvedMemberSelector resolved_member = 1;
+  optional string audited_source_sha256 = 2;
+  optional string provider_chunk = 3;
+  optional string provider_export = 4;
+  optional string audited_provider_sha256 = 5;
+  optional bool returns_opaque_function_from_const_primitive = 6;
+  optional InitializerCallEffectiveReplacement effective_replacement = 7;
+  optional string note = 8;
+}
+
+message InitializerCallEffectiveReplacement {
+  optional string package = 1;
+  optional string bundle_export = 2;
+  optional PartialSwapKind symbol_kind = 3;
+  optional string upstream_export = 4;
+  optional string audited_bundle_sha256 = 5;
+}
+
+message ImportedPrimitiveArraySpreadInputContract {
+  SourceMatchClaim source_match = 1;
+  repeated ImportedPrimitiveArrayOperandContract operands = 2;
+  optional string audited_source_sha256 = 3;
+  ImportedPrimitiveArrayLifetimeContract lifetime = 4;
+  optional string note = 5;
+}
+
+message ImportedPrimitiveArrayOperandContract {
+  optional string selector_local = 1;
+  optional string provider_chunk = 2;
+  SourceMatchClaim provider_source_match = 3;
+  optional string audited_provider_source_sha256 = 4;
+}
+
+message ImportedPrimitiveArrayLifetimeContract {
+  optional bool identity_unchanged_through_spread = 1;
+  optional bool dense_own_data_primitive_contents_unchanged_through_spread = 2;
+  optional bool ordinary_array_prototype_chain_unchanged_through_spread = 3;
+  optional bool no_own_iterator_or_accessors_through_spread = 4;
+  optional bool no_rebinding_through_spread = 5;
+}
+
+message CommutingStatementsContract {
+  SourceUnitSelector a = 1;
+  SourceUnitSelector b = 2;
+  optional string note = 3;
+}
+
+message NativeCallIdentityInputContract {
+  SourceMatchClaim source_match = 1;
+  optional NativeCallIdentityKind callee = 2;
+  optional string audited_source_sha256 = 3;
+  optional string note = 4;
+}
+
+enum NativeCallIdentityKind {
+  NATIVE_CALL_IDENTITY_KIND_UNSPECIFIED = 0;
+  NATIVE_CALL_IDENTITY_KIND_OBJECT_FREEZE = 1;
+  NATIVE_CALL_IDENTITY_KIND_SET_EMPTY_PRIVATE_FIELD = 2;
+}
+
+message ArgumentInputContract {
+  SourceMatchClaim source_match = 1;
+  optional uint64 parameter_index = 2;
+  optional uint64 exact_arity = 3;
+  optional string audited_source_sha256 = 4;
+  optional string note = 5;
+}
+
+message NoAccessorInstallCallableContract {
+  SourceMatchClaim source_match = 1;
+  optional string note = 2;
+}
+
+enum BuiltinGlobalRoot {
+  BUILTIN_GLOBAL_ROOT_UNSPECIFIED = 0;
+  BUILTIN_GLOBAL_ROOT_GLOBAL_THIS = 1;
+  BUILTIN_GLOBAL_ROOT_WINDOW = 2;
+}
+
+message AdmissionOverrides {
+  optional bool a1_eval = 1;
+  optional bool a3_dynamic_import = 2;
+  optional bool a5_import_meta = 3;
+}
+
+message ChunkExportPurity {
+  // Absence selects defaults; a present empty message explicitly selects none.
+  SourceMarkers source_markers = 1;
+  repeated string pure_exports = 2;
+  repeated string pure_new_exports = 3;
+  map<string, MemberNames> pure_members = 4;
+  repeated string fluent_exports = 5;
+  repeated string callback_factory_exports = 6;
+  repeated string inline_callback_factory_exports = 7;
+  map<string, MemberNames> callback_factory_members = 8;
+  map<string, CallbackOverloads> retained_callback_factory_exports = 9;
+  map<string, DescriptorCopyOverloads> descriptor_copy_factory_exports = 10;
+  map<string, MemberCallbackOverloads> retained_callback_factory_members = 11;
+  map<string, CallbackOverloads> retained_callback_constructor_exports = 12;
+  repeated string no_reentry_exports = 13;
+  map<string, CallbackOverloads> no_reentry_callback_exports = 14;
+  map<string, MemberNames> no_reentry_members = 15;
+  map<string, MemberNames> no_reentry_record_members = 16;
+  map<string, MemberNames> namespace_independent_members = 17;
+}
+
+message RetainedCallbackSignature {
+  optional uint64 argument_count = 1;
+  repeated uint64 callback_arguments = 2;
+}
+
+message DescriptorCopyFactorySignature {
+  optional uint64 argument_count = 1;
+  optional uint64 object_argument = 2;
+  repeated string eager_own_data_keys = 3;
+  repeated string assigned_data_keys = 4;
+}
+
+message SwapVendorChunksConfig {
+  optional bytes output_manifest_path = 1;
+  optional bytes output_wrapper_dir = 2;
+  optional bool write = 3;
+}
+
+message MaterializeLogicalModulesConfig {
+  optional string file = 1;
+  optional bool prune_other_chunks = 2;
+  optional bytes report_out_dir = 3;
+  optional string target_dir = 4;
+}
+
+message WriteJsTreeConfig {
+  optional bytes out_dir = 1;
+}
+
+message EmitBrowserHarnessConfig {
+  optional bytes asset_summary_path = 1;
+  optional bytes out_dir = 2;
+  optional bytes snapshot_root = 3;
+}
+
+// A message is necessary for the listed branch of the families oneof.
+message IntrinsicFamilySelection {
+  repeated IntrinsicFamily families = 1;
+}
+
+message SourceMarkers {
+  repeated string markers = 1;
+}
+
+// Enum keys cannot be protobuf map keys.
+message GlobalNames {
+  optional BuiltinGlobalRoot root = 1;
+  repeated string names = 2;
+}
+
+// Protobuf map values cannot be repeated fields or maps directly.
+message MemberNames {
+  repeated string names = 1;
+}
+
+message CallbackOverloads {
+  repeated RetainedCallbackSignature signatures = 1;
+}
+
+message DescriptorCopyOverloads {
+  repeated DescriptorCopyFactorySignature signatures = 1;
+}
+
+message MemberCallbackOverloads {
+  map<string, CallbackOverloads> members = 1;
+}
+
+message LogicalModules {
+  map<string, LogicalModule> modules = 1;
+}

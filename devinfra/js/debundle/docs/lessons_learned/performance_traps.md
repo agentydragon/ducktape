@@ -48,10 +48,8 @@ may add constraints but never drop callback reads or rebinds. Scale fixtures:
 - Reparsed provider ASTs stayed live through parallel per-chunk analysis only
   because context ordinals were built at the end. Build `ContextOrdinals`
   (IDs only) right after cross-module analysis, then drop the ASTs.
-- Decoding inflated the whole compressed analysis into a `Vec<u8>` before
-  deserializing. Stream `rmp_serde` from the zstd decoder, then drain the rest
-  of the stream: stopping at the end of the MessagePack value would skip the
-  frame checksum and accept corruption.
+- A previous streaming decoder had to drain the zstd frame after reading its
+  value; stopping early skipped the frame checksum and accepted corruption.
 - Source-premise providers were reparsed after preparation released their AST,
   through a different source representation. Retention is an explicit input to
   preparation, and analysis-only retention borrows the original source

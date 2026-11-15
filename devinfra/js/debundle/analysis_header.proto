@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package debundle.analysis_header;
+
+import "devinfra/js/debundle/analysis_projection_wire.proto";
+
+// The body follows separately so a consumer can reject incompatible facts
+// before allocating and decoding the compressed program analysis.
+message AnalysisHeader {
+  string analysis_engine_sha256 = 1;
+  .debundle.analysis_projection.AnalysisSpec projection = 2;
+  map<string, string> chunk_sources = 3;
+  optional uint32 format_version = 4;
+}

@@ -1,5 +1,7 @@
 use super::*;
 use crate::execution_evidence::{AssumedEffectReason, ExecutionPrecisionLoss};
+use crate::saved_proto::{ProtoConvert, proto, required};
+use anyhow::{Result, bail, ensure};
 use source_identity::SourceUnitOrdinal;
 
 /// One value per syntactic position bucket. Collapses the repeated
@@ -1058,11 +1060,399 @@ pub struct StructuralChunkSourceFacts<'a> {
     pub top_level_await: Option<SourceUnitOrdinal>,
 }
 
+impl ProtoConvert<proto::CallbackFactoryBarrierFact> for CallbackFactoryBarrierFact {
+    fn to_proto(&self) -> Result<proto::CallbackFactoryBarrierFact> {
+        Ok(proto::CallbackFactoryBarrierFact {
+            namespace_binding: Some(self.namespace_binding.clone()),
+            member: Some(self.member.clone()),
+            argument_count: Some(self.argument_count.to_proto()?),
+            callback_arguments: self.callback_arguments.to_proto()?,
+            callback_source_units: self
+                .callback_source_units
+                .as_ref()
+                .map(|source_units| -> Result<_> {
+                    Ok(proto::CallbackSourceUnits {
+                        source_units: source_units.to_proto()?,
+                    })
+                })
+                .transpose()?,
+            rejection: Some(self.rejection.to_proto()?),
+        })
+    }
+
+    fn from_proto(value: proto::CallbackFactoryBarrierFact) -> Result<Self> {
+        Ok(Self {
+            namespace_binding: required(
+                value.namespace_binding,
+                "CallbackFactoryBarrierFact.namespace_binding",
+            )?,
+            member: required(value.member, "CallbackFactoryBarrierFact.member")?,
+            argument_count: usize::from_proto(required(
+                value.argument_count,
+                "CallbackFactoryBarrierFact.argument_count",
+            )?)?,
+            callback_arguments: BTreeSet::from_proto(value.callback_arguments)?,
+            callback_source_units: value
+                .callback_source_units
+                .map(|value| BTreeSet::from_proto(value.source_units))
+                .transpose()?,
+            rejection: CallbackFactoryBarrierRejection::from_proto(required(
+                value.rejection,
+                "CallbackFactoryBarrierFact.rejection",
+            )?)?,
+        })
+    }
+}
+
+impl ProtoConvert<proto::CallbackFactoryBarrierRejection> for CallbackFactoryBarrierRejection {
+    fn to_proto(&self) -> Result<proto::CallbackFactoryBarrierRejection> {
+        use proto::callback_factory_barrier_rejection::{
+            NamespaceCallArgument, NamespaceDynamicPropertyWrite, NamespaceMemberWrite, Value,
+        };
+        Ok(proto::CallbackFactoryBarrierRejection {
+            value: Some(match self {
+                Self::NamespaceMemberWrite { witness } => {
+                    Value::NamespaceMemberWrite(NamespaceMemberWrite {
+                        witness: Some(witness.to_proto()?),
+                    })
+                }
+                Self::NamespaceDynamicPropertyWrite { witness } => {
+                    Value::NamespaceDynamicPropertyWrite(NamespaceDynamicPropertyWrite {
+                        witness: Some(witness.to_proto()?),
+                    })
+                }
+                Self::NamespaceCallArgument { witness } => {
+                    Value::NamespaceCallArgument(NamespaceCallArgument {
+                        witness: Some(witness.to_proto()?),
+                    })
+                }
+                Self::UnsupportedGuard => Value::UnsupportedGuard(true),
+            }),
+        })
+    }
+
+    fn from_proto(value: proto::CallbackFactoryBarrierRejection) -> Result<Self> {
+        use proto::callback_factory_barrier_rejection::Value;
+        Ok(
+            match required(value.value, "CallbackFactoryBarrierRejection.value")? {
+                Value::NamespaceMemberWrite(value) => Self::NamespaceMemberWrite {
+                    witness: CallbackFactoryWriteWitness::from_proto(required(
+                        value.witness,
+                        "CallbackFactoryBarrierRejection.namespace_member_write.witness",
+                    )?)?,
+                },
+                Value::NamespaceDynamicPropertyWrite(value) => {
+                    Self::NamespaceDynamicPropertyWrite {
+                        witness: CallbackFactoryWriteWitness::from_proto(required(
+                            value.witness,
+                            "CallbackFactoryBarrierRejection.namespace_dynamic_property_write.witness",
+                        )?)?,
+                    }
+                }
+                Value::NamespaceCallArgument(value) => Self::NamespaceCallArgument {
+                    witness: CallbackFactoryCallArgumentWitness::from_proto(required(
+                        value.witness,
+                        "CallbackFactoryBarrierRejection.namespace_call_argument.witness",
+                    )?)?,
+                },
+                Value::UnsupportedGuard(present) => {
+                    ensure!(
+                        present,
+                        "invalid CallbackFactoryBarrierRejection.unsupported_guard marker"
+                    );
+                    Self::UnsupportedGuard
+                }
+            },
+        )
+    }
+}
+
+impl ProtoConvert<proto::CallbackFactoryCallArgumentWitness>
+    for CallbackFactoryCallArgumentWitness
+{
+    fn to_proto(&self) -> Result<proto::CallbackFactoryCallArgumentWitness> {
+        Ok(proto::CallbackFactoryCallArgumentWitness {
+            statement_ordinal: Some(self.statement_ordinal.to_proto()?),
+            call_span: Some(self.call_span.to_proto()?),
+            argument_index: Some(self.argument_index.to_proto()?),
+            namespace_binding: Some(self.namespace_binding.clone()),
+        })
+    }
+
+    fn from_proto(value: proto::CallbackFactoryCallArgumentWitness) -> Result<Self> {
+        Ok(Self {
+            statement_ordinal: SourceUnitOrdinal::from_proto(required(
+                value.statement_ordinal,
+                "CallbackFactoryCallArgumentWitness.statement_ordinal",
+            )?)?,
+            call_span: Span::from_proto(required(
+                value.call_span,
+                "CallbackFactoryCallArgumentWitness.call_span",
+            )?)?,
+            argument_index: usize::from_proto(required(
+                value.argument_index,
+                "CallbackFactoryCallArgumentWitness.argument_index",
+            )?)?,
+            namespace_binding: required(
+                value.namespace_binding,
+                "CallbackFactoryCallArgumentWitness.namespace_binding",
+            )?,
+        })
+    }
+}
+
+impl ProtoConvert<proto::CallbackFactoryWriteWitness> for CallbackFactoryWriteWitness {
+    fn to_proto(&self) -> Result<proto::CallbackFactoryWriteWitness> {
+        Ok(proto::CallbackFactoryWriteWitness {
+            statement_ordinal: Some(self.statement_ordinal.to_proto()?),
+            receiver_binding: Some(self.receiver_binding.clone()),
+            property: self.property.to_proto()?,
+        })
+    }
+
+    fn from_proto(value: proto::CallbackFactoryWriteWitness) -> Result<Self> {
+        Ok(Self {
+            statement_ordinal: SourceUnitOrdinal::from_proto(required(
+                value.statement_ordinal,
+                "CallbackFactoryWriteWitness.statement_ordinal",
+            )?)?,
+            receiver_binding: required(
+                value.receiver_binding,
+                "CallbackFactoryWriteWitness.receiver_binding",
+            )?,
+            property: Option::from_proto(value.property)?,
+        })
+    }
+}
+
+impl ProtoConvert<proto::CallbackFactoryUseFact> for CallbackFactoryUseFact {
+    fn to_proto(&self) -> Result<proto::CallbackFactoryUseFact> {
+        Ok(proto::CallbackFactoryUseFact {
+            imported_local: Some(self.imported_local.clone()),
+            evidence: self.evidence.to_proto()?,
+            kind: Some(self.kind.to_proto()?),
+            lexical_statement_ordinal: Some(self.lexical_statement_ordinal.to_proto()?),
+            source_location: self.source_location.to_proto()?,
+            span: Some(self.span.to_proto()?),
+        })
+    }
+
+    fn from_proto(value: proto::CallbackFactoryUseFact) -> Result<Self> {
+        Ok(Self {
+            imported_local: required(
+                value.imported_local,
+                "CallbackFactoryUseFact.imported_local",
+            )?,
+            evidence: Vec::from_proto(value.evidence)?,
+            kind: ProtoConvert::from_proto(required(value.kind, "CallbackFactoryUseFact.kind")?)?,
+            lexical_statement_ordinal: SourceUnitOrdinal::from_proto(required(
+                value.lexical_statement_ordinal,
+                "CallbackFactoryUseFact.lexical_statement_ordinal",
+            )?)?,
+            source_location: Option::from_proto(value.source_location)?,
+            span: Span::from_proto(required(value.span, "CallbackFactoryUseFact.span")?)?,
+        })
+    }
+}
+
+impl ProtoConvert<proto::ReturnedRecordUseFact> for ReturnedRecordUseFact {
+    fn to_proto(&self) -> Result<proto::ReturnedRecordUseFact> {
+        Ok(proto::ReturnedRecordUseFact {
+            imported_local: Some(self.imported_local.clone()),
+            evidence: Some(self.evidence.to_proto()?),
+            kind: Some(self.kind.to_proto()?),
+            lexical_statement_ordinal: Some(self.lexical_statement_ordinal.to_proto()?),
+            source_location: self.source_location.to_proto()?,
+            span: Some(self.span.to_proto()?),
+        })
+    }
+
+    fn from_proto(value: proto::ReturnedRecordUseFact) -> Result<Self> {
+        Ok(Self {
+            imported_local: required(value.imported_local, "ReturnedRecordUseFact.imported_local")?,
+            evidence: ProtoConvert::from_proto(required(
+                value.evidence,
+                "ReturnedRecordUseFact.evidence",
+            )?)?,
+            kind: ProtoConvert::from_proto(required(value.kind, "ReturnedRecordUseFact.kind")?)?,
+            lexical_statement_ordinal: SourceUnitOrdinal::from_proto(required(
+                value.lexical_statement_ordinal,
+                "ReturnedRecordUseFact.lexical_statement_ordinal",
+            )?)?,
+            source_location: Option::from_proto(value.source_location)?,
+            span: Span::from_proto(required(value.span, "ReturnedRecordUseFact.span")?)?,
+        })
+    }
+}
+
+impl ProtoConvert<proto::LocalRecordFactoryPurityCertificate>
+    for LocalRecordFactoryPurityCertificate
+{
+    fn to_proto(&self) -> Result<proto::LocalRecordFactoryPurityCertificate> {
+        Ok(proto::LocalRecordFactoryPurityCertificate {
+            call_span: Some(self.call_span.to_proto()?),
+            checked_owners: self.checked_owners.to_proto()?,
+            dependencies: Some(self.dependencies.to_proto()?),
+        })
+    }
+
+    fn from_proto(value: proto::LocalRecordFactoryPurityCertificate) -> Result<Self> {
+        Ok(Self {
+            call_span: Span::from_proto(required(
+                value.call_span,
+                "LocalRecordFactoryPurityCertificate.call_span",
+            )?)?,
+            checked_owners: BTreeSet::from_proto(value.checked_owners)?,
+            dependencies: ProtoConvert::from_proto(required(
+                value.dependencies,
+                "LocalRecordFactoryPurityCertificate.dependencies",
+            )?)?,
+        })
+    }
+}
+
+impl ProtoConvert<proto::SettledElements> for SettledElements {
+    fn to_proto(&self) -> Result<proto::SettledElements> {
+        use proto::settled_elements::{Records, Value};
+        Ok(proto::SettledElements {
+            value: Some(match self {
+                Self::Primitive => Value::Primitive(Default::default()),
+                Self::Records { shared_keys } => Value::Records(Records {
+                    shared_keys: shared_keys.to_proto()?,
+                }),
+            }),
+        })
+    }
+
+    fn from_proto(value: proto::SettledElements) -> Result<Self> {
+        use proto::settled_elements::Value;
+        Ok(match required(value.value, "SettledElements.value")? {
+            Value::Primitive(_) => Self::Primitive,
+            Value::Records(value) => Self::Records {
+                shared_keys: BTreeSet::from_proto(value.shared_keys)?,
+            },
+        })
+    }
+}
+
+impl ProtoConvert<i32> for DataflowOpacityCause {
+    fn to_proto(&self) -> Result<i32> {
+        Ok(match self {
+            Self::MemberWriteOrAlias => proto::DataflowOpacityCause::MemberWriteOrAlias,
+            Self::DynamicCellWrites => proto::DataflowOpacityCause::DynamicCellWrites,
+            Self::GlobalObjectAliasEscape => proto::DataflowOpacityCause::GlobalObjectAliasEscape,
+            Self::OpaqueAtInitCall => proto::DataflowOpacityCause::OpaqueAtInitCall,
+        } as i32)
+    }
+
+    fn from_proto(value: i32) -> Result<Self> {
+        Ok(match proto::DataflowOpacityCause::try_from(value)? {
+            proto::DataflowOpacityCause::Unspecified => {
+                bail!("unspecified saved-analysis DataflowOpacityCause")
+            }
+            proto::DataflowOpacityCause::MemberWriteOrAlias => Self::MemberWriteOrAlias,
+            proto::DataflowOpacityCause::DynamicCellWrites => Self::DynamicCellWrites,
+            proto::DataflowOpacityCause::GlobalObjectAliasEscape => Self::GlobalObjectAliasEscape,
+            proto::DataflowOpacityCause::OpaqueAtInitCall => Self::OpaqueAtInitCall,
+        })
+    }
+}
+
+impl ProtoConvert<i32> for ExportLinkage {
+    fn to_proto(&self) -> Result<i32> {
+        Ok(match self {
+            Self::Local => proto::ExportLinkage::Local,
+            Self::Dependency => proto::ExportLinkage::Dependency,
+        } as i32)
+    }
+
+    fn from_proto(value: i32) -> Result<Self> {
+        Ok(match proto::ExportLinkage::try_from(value)? {
+            proto::ExportLinkage::Unspecified => bail!("unspecified saved-analysis ExportLinkage"),
+            proto::ExportLinkage::Local => Self::Local,
+            proto::ExportLinkage::Dependency => Self::Dependency,
+        })
+    }
+}
+
+impl ProtoConvert<i32> for StatementKind {
+    fn to_proto(&self) -> Result<i32> {
+        Ok(match self {
+            Self::VarDecl => proto::StatementKind::VarDecl,
+            Self::FnDecl => proto::StatementKind::FnDecl,
+            Self::ClassDecl => proto::StatementKind::ClassDecl,
+            Self::Export => proto::StatementKind::Export,
+            Self::Import => proto::StatementKind::Import,
+            Self::SideEffect => proto::StatementKind::SideEffect,
+        } as i32)
+    }
+
+    fn from_proto(value: i32) -> Result<Self> {
+        Ok(match proto::StatementKind::try_from(value)? {
+            proto::StatementKind::Unspecified => bail!("unspecified saved-analysis StatementKind"),
+            proto::StatementKind::VarDecl => Self::VarDecl,
+            proto::StatementKind::FnDecl => Self::FnDecl,
+            proto::StatementKind::ClassDecl => Self::ClassDecl,
+            proto::StatementKind::Export => Self::Export,
+            proto::StatementKind::Import => Self::Import,
+            proto::StatementKind::SideEffect => Self::SideEffect,
+        })
+    }
+}
+
 #[cfg(test)]
 mod initializer_overlay_tests {
     use super::*;
     use crate::facts::sync_effects::{BindingEffectAuthority, BindingEffectCoverage};
     use raw_js_test_support::parse;
+
+    #[test]
+    fn callback_source_presence_and_certificate_authority_survive_direct_fields() {
+        let mut wire = proto::CallbackFactoryBarrierFact {
+            namespace_binding: Some("namespace".into()),
+            member: Some("register".into()),
+            argument_count: Some(1),
+            callback_arguments: vec![0],
+            callback_source_units: None,
+            rejection: Some(proto::CallbackFactoryBarrierRejection {
+                value: Some(
+                    proto::callback_factory_barrier_rejection::Value::UnsupportedGuard(true),
+                ),
+            }),
+        };
+        assert!(
+            CallbackFactoryBarrierFact::from_proto(wire.clone())
+                .unwrap()
+                .callback_source_units
+                .is_none()
+        );
+        let absent = analysis_codec::encode_protobuf(&wire).unwrap();
+        wire.callback_source_units = Some(proto::CallbackSourceUnits::default());
+        let present = analysis_codec::encode_protobuf(&wire).unwrap();
+        assert_ne!(absent, present);
+        assert!(
+            CallbackFactoryBarrierFact::from_proto(
+                analysis_codec::decode_protobuf(&present).unwrap()
+            )
+            .unwrap()
+            .callback_source_units
+            .unwrap()
+            .is_empty()
+        );
+        wire.callback_source_units = Some(proto::CallbackSourceUnits {
+            source_units: vec![0, 0],
+        });
+        assert!(CallbackFactoryBarrierFact::from_proto(wire).is_err());
+        let certificate = proto::LocalRecordFactoryPurityCertificate {
+            call_span: Some(proto::SourceSpan {
+                lo: Some(0),
+                hi: Some(0),
+            }),
+            checked_owners: Vec::new(),
+            dependencies: None,
+        };
+        assert!(LocalRecordFactoryPurityCertificate::from_proto(certificate).is_err());
+    }
 
     #[test]
     fn initializer_overlay_preserves_raw_receipts_and_other_effect_domains() {

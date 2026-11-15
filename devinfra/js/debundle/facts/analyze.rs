@@ -1,4 +1,6 @@
 use super::*;
+use crate::saved_proto::{ProtoConvert, proto, required};
+use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 
@@ -919,4 +921,68 @@ fn settle_statement_purity(
             && has_untrusted_at_init_unresolved_inline_fn_call(item, hints);
     }
     fact.purity = purity.verdict;
+}
+
+impl ProtoConvert<proto::ExportReentryPolicy> for ExportReentryPolicy {
+    fn to_proto(&self) -> Result<proto::ExportReentryPolicy> {
+        use proto::export_reentry_policy::Value;
+        Ok(proto::ExportReentryPolicy {
+            value: Some(match self {
+                Self::Conservative => Value::Conservative(Default::default()),
+                Self::NoStaticImporterReentry => Value::NoStaticImporterReentry(Default::default()),
+                Self::ReentryThrough(exports) => {
+                    Value::ReentryThrough(proto::ExportReentryExports {
+                        exports: exports.iter().cloned().collect(),
+                    })
+                }
+            }),
+        })
+    }
+
+    fn from_proto(value: proto::ExportReentryPolicy) -> Result<Self> {
+        use proto::export_reentry_policy::Value;
+        Ok(match required(value.value, "ExportReentryPolicy.value")? {
+            Value::Conservative(_) => Self::Conservative,
+            Value::NoStaticImporterReentry(_) => Self::NoStaticImporterReentry,
+            Value::ReentryThrough(selection) => {
+                let mut exports = BTreeSet::new();
+                for export in selection.exports {
+                    ensure!(
+                        exports.insert(export),
+                        "duplicate saved export reentry selection"
+                    );
+                }
+                Self::ReentryThrough(exports)
+            }
+        })
+    }
+}
+
+#[cfg(test)]
+mod protobuf_tests {
+    use super::*;
+
+    #[test]
+    fn saved_export_policy_preserves_empty_selection_as_a_distinct_policy() {
+        use proto::export_reentry_policy::Value;
+        for policy in [
+            ExportReentryPolicy::Conservative,
+            ExportReentryPolicy::NoStaticImporterReentry,
+            ExportReentryPolicy::ReentryThrough(BTreeSet::new()),
+            ExportReentryPolicy::ReentryThrough(BTreeSet::from(["value".into()])),
+        ] {
+            assert_eq!(
+                ExportReentryPolicy::from_proto(policy.to_proto().unwrap()).unwrap(),
+                policy
+            );
+        }
+        for value in [
+            None,
+            Some(Value::ReentryThrough(proto::ExportReentryExports {
+                exports: vec!["value".into(), "value".into()],
+            })),
+        ] {
+            assert!(ExportReentryPolicy::from_proto(proto::ExportReentryPolicy { value }).is_err());
+        }
+    }
 }

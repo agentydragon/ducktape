@@ -1172,7 +1172,7 @@ fn resolve_initializer_call_effect_inputs(
                     && imported.export == contract.provider_export,
                 "{request} provider identity disagrees with the direct import"
             );
-            let closure = resolved_closure_precedes_importer(
+            resolved_closure_precedes_importer(
                 chunk,
                 &imported.module,
                 &imported.source_specifier,
@@ -1200,7 +1200,6 @@ fn resolve_initializer_call_effect_inputs(
                 returns_opaque_function_from_const_primitive: contract
                     .returns_opaque_function_from_const_primitive,
                 effective_replacement,
-                provider_dependency_closure: closure,
             });
         }
         resolved.insert(chunk.clone(), entries);

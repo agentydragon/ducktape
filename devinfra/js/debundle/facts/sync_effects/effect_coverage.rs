@@ -3,6 +3,7 @@
 use super::completion::Completion;
 use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies};
 use crate::reports::schema::BindingEffectAuthorityReport;
+use crate::saved_proto::{ProtoConvert, proto, required};
 use analysis_codec::{ContextOrdinals, SavedBinding};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -848,6 +849,208 @@ fn local_call_key(call: &LocalCallReceipt) -> LocalCallKey {
     }
 }
 
+impl ProtoConvert<proto::LocalBodyIdentity> for LocalBodyIdentity {
+    fn to_proto(&self) -> Result<proto::LocalBodyIdentity> {
+        use proto::local_body_identity::{
+            Callable, Constructor, Imported, Native, RootInitializer, Value,
+        };
+        Ok(proto::LocalBodyIdentity {
+            value: Some(match self {
+                Self::RootInitializer {
+                    owner,
+                    initializer_span,
+                } => Value::RootInitializer(RootInitializer {
+                    owner: Some(owner.to_proto()?),
+                    initializer_span: Some(initializer_span.to_proto()?),
+                }),
+                Self::Callable { key, owner } => Value::Callable(Callable {
+                    key: Some(*key),
+                    owner: Some(owner.to_proto()?),
+                }),
+                Self::Constructor { class, owner } => Value::Constructor(Constructor {
+                    class: Some(*class),
+                    owner: Some(owner.to_proto()?),
+                }),
+                Self::Native {
+                    intrinsic,
+                    property,
+                } => Value::Native(Native {
+                    intrinsic: Some(intrinsic.to_proto()?),
+                    property: property.to_proto()?,
+                }),
+                Self::Imported {
+                    defining_module,
+                    export,
+                } => Value::Imported(Imported {
+                    defining_module: Some(defining_module.clone()),
+                    export: Some(export.clone()),
+                }),
+            }),
+        })
+    }
+
+    fn from_proto(value: proto::LocalBodyIdentity) -> Result<Self> {
+        use proto::local_body_identity::Value;
+        Ok(match required(value.value, "LocalBodyIdentity.value")? {
+            Value::RootInitializer(value) => Self::RootInitializer {
+                owner: SourceUnitOrdinal::from_proto(required(
+                    value.owner,
+                    "LocalBodyIdentity.root_initializer.owner",
+                )?)?,
+                initializer_span: Span::from_proto(required(
+                    value.initializer_span,
+                    "LocalBodyIdentity.root_initializer.initializer_span",
+                )?)?,
+            },
+            Value::Callable(value) => Self::Callable {
+                key: required(value.key, "LocalBodyIdentity.callable.key")?,
+                owner: SourceUnitOrdinal::from_proto(required(
+                    value.owner,
+                    "LocalBodyIdentity.callable.owner",
+                )?)?,
+            },
+            Value::Constructor(value) => Self::Constructor {
+                class: required(value.class, "LocalBodyIdentity.constructor.class")?,
+                owner: SourceUnitOrdinal::from_proto(required(
+                    value.owner,
+                    "LocalBodyIdentity.constructor.owner",
+                )?)?,
+            },
+            Value::Native(value) => Self::Native {
+                intrinsic: NativeIntrinsic::from_proto(required(
+                    value.intrinsic,
+                    "LocalBodyIdentity.native.intrinsic",
+                )?)?,
+                property: Option::from_proto(value.property)?,
+            },
+            Value::Imported(value) => Self::Imported {
+                defining_module: required(
+                    value.defining_module,
+                    "LocalBodyIdentity.imported.defining_module",
+                )?,
+                export: required(value.export, "LocalBodyIdentity.imported.export")?,
+            },
+        })
+    }
+}
+
+impl ProtoConvert<proto::LocalCallReceipt> for LocalCallReceipt {
+    fn to_proto(&self) -> Result<proto::LocalCallReceipt> {
+        Ok(proto::LocalCallReceipt {
+            caller: Some(self.caller.to_proto()?),
+            call_span: Some(self.call_span.to_proto()?),
+            target: Some(self.target.to_proto()?),
+            dependencies: Some(self.dependencies.to_proto()?),
+        })
+    }
+
+    fn from_proto(value: proto::LocalCallReceipt) -> Result<Self> {
+        Ok(Self {
+            caller: LocalBodyIdentity::from_proto(required(
+                value.caller,
+                "LocalCallReceipt.caller",
+            )?)?,
+            call_span: Span::from_proto(required(value.call_span, "LocalCallReceipt.call_span")?)?,
+            target: LocalBodyIdentity::from_proto(required(
+                value.target,
+                "LocalCallReceipt.target",
+            )?)?,
+            dependencies: Box::from_proto(required(
+                value.dependencies,
+                "LocalCallReceipt.dependencies",
+            )?)?,
+        })
+    }
+}
+
+impl ProtoConvert<proto::SavedBindingEffectCoverage> for SavedBindingEffectCoverage {
+    fn to_proto(&self) -> Result<proto::SavedBindingEffectCoverage> {
+        use proto::saved_binding_effect_coverage::{OrderedRootInitializer, Value};
+        Ok(proto::SavedBindingEffectCoverage {
+            value: Some(match self {
+                Self::Unclassified => Value::Unclassified(Default::default()),
+                Self::LegacyExecution => Value::LegacyExecution(Default::default()),
+                Self::OrderedRootInitializer { identity, receipt } => {
+                    Value::OrderedRootInitializer(OrderedRootInitializer {
+                        identity: Some(identity.to_proto()?),
+                        receipt: receipt.to_proto()?,
+                    })
+                }
+            }),
+        })
+    }
+
+    fn from_proto(value: proto::SavedBindingEffectCoverage) -> Result<Self> {
+        use proto::saved_binding_effect_coverage::Value;
+        Ok(
+            match required(value.value, "SavedBindingEffectCoverage.value")? {
+                Value::Unclassified(_) => Self::Unclassified,
+                Value::LegacyExecution(_) => Self::LegacyExecution,
+                Value::OrderedRootInitializer(value) => Self::OrderedRootInitializer {
+                    identity: SavedRootInitializerIdentity::from_proto(required(
+                        value.identity,
+                        "SavedBindingEffectCoverage.ordered_root_initializer.identity",
+                    )?)?,
+                    receipt: Option::from_proto(value.receipt)?,
+                },
+            },
+        )
+    }
+}
+
+impl ProtoConvert<proto::SavedLexicalBindingEffectReceipt> for SavedLexicalBindingEffectReceipt {
+    fn to_proto(&self) -> Result<proto::SavedLexicalBindingEffectReceipt> {
+        Ok(proto::SavedLexicalBindingEffectReceipt {
+            identity: Some(self.identity.to_proto()?),
+            read_dependencies: Some(self.read_dependencies.to_proto()?),
+            rebind_dependencies: Some(self.rebind_dependencies.to_proto()?),
+            calls: self.calls.to_proto()?,
+        })
+    }
+
+    fn from_proto(value: proto::SavedLexicalBindingEffectReceipt) -> Result<Self> {
+        Ok(Self {
+            identity: SavedRootInitializerIdentity::from_proto(required(
+                value.identity,
+                "SavedLexicalBindingEffectReceipt.identity",
+            )?)?,
+            read_dependencies: ProofDependencies::from_proto(required(
+                value.read_dependencies,
+                "SavedLexicalBindingEffectReceipt.read_dependencies",
+            )?)?,
+            rebind_dependencies: ProofDependencies::from_proto(required(
+                value.rebind_dependencies,
+                "SavedLexicalBindingEffectReceipt.rebind_dependencies",
+            )?)?,
+            calls: Vec::from_proto(value.calls)?,
+        })
+    }
+}
+
+impl ProtoConvert<proto::SavedRootInitializerIdentity> for SavedRootInitializerIdentity {
+    fn to_proto(&self) -> Result<proto::SavedRootInitializerIdentity> {
+        Ok(proto::SavedRootInitializerIdentity {
+            owner: Some(self.owner.to_proto()?),
+            binding: Some(self.binding.to_proto()?),
+            initializer_span: self.initializer_span.to_proto()?,
+        })
+    }
+
+    fn from_proto(value: proto::SavedRootInitializerIdentity) -> Result<Self> {
+        Ok(Self {
+            owner: SourceUnitOrdinal::from_proto(required(
+                value.owner,
+                "SavedRootInitializerIdentity.owner",
+            )?)?,
+            binding: SavedBinding::from_proto(required(
+                value.binding,
+                "SavedRootInitializerIdentity.binding",
+            )?)?,
+            initializer_span: Option::from_proto(value.initializer_span)?,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -884,6 +1087,57 @@ mod tests {
             }]),
             ..ProofDependencies::default()
         }
+    }
+
+    #[test]
+    fn saved_receipts_keep_distinct_proofs_and_reject_incomplete_authority() {
+        use proto::saved_binding_effect_coverage::Value;
+        let receipt = SavedLexicalBindingEffectReceipt {
+            identity: SavedRootInitializerIdentity {
+                owner: SourceUnitOrdinal(2),
+                binding: SavedBinding::from_parts("value".into(), 0),
+                initializer_span: Some(Span::new(BytePos(3), BytePos(9))),
+            },
+            read_dependencies: captured_value_input(1),
+            rebind_dependencies: captured_value_input(2),
+            calls: vec![test_call(
+                test_callable(3, 4),
+                10,
+                15,
+                test_callable(5, 6),
+                captured_value_input(7),
+            )],
+        };
+        let wire = receipt.to_proto().unwrap();
+        let restored = SavedLexicalBindingEffectReceipt::from_proto(wire.clone()).unwrap();
+        assert_eq!(restored.read_dependencies, receipt.read_dependencies);
+        assert_eq!(restored.rebind_dependencies, receipt.rebind_dependencies);
+        assert_eq!(restored.calls, receipt.calls);
+        assert_eq!(
+            restored.identity.initializer_span,
+            receipt.identity.initializer_span
+        );
+        let mut incomplete = wire;
+        incomplete.read_dependencies = None;
+        assert!(SavedLexicalBindingEffectReceipt::from_proto(incomplete).is_err());
+
+        for value in [
+            None,
+            Some(Value::OrderedRootInitializer(
+                proto::saved_binding_effect_coverage::OrderedRootInitializer {
+                    identity: None,
+                    receipt: None,
+                },
+            )),
+        ] {
+            assert!(
+                SavedBindingEffectCoverage::from_proto(proto::SavedBindingEffectCoverage { value })
+                    .is_err()
+            );
+        }
+        let mut missing_call_proof = receipt.calls[0].to_proto().unwrap();
+        missing_call_proof.dependencies = None;
+        assert!(LocalCallReceipt::from_proto(missing_call_proof).is_err());
     }
 
     #[test]

@@ -4,6 +4,8 @@
 //! conservatively assumed. Reports serialize them, while runtime and graph
 //! construction own their meaning here.
 
+use crate::saved_proto::{ProtoConvert, proto, required};
+use anyhow::{Result, bail, ensure};
 use js_ast::SourceLineIndex;
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
@@ -424,4 +426,753 @@ pub enum ExecutionOperation {
     GeneratorParameters,
     CallableInputs,
     ArrayIteration,
+}
+
+impl ProtoConvert<proto::SourceLocation> for SourceLocation {
+    fn to_proto(&self) -> Result<proto::SourceLocation> {
+        Ok(proto::SourceLocation {
+            source_path: Some(self.source_path.clone()),
+            start_line: Some(self.start_line.to_proto()?),
+            end_line: Some(self.end_line.to_proto()?),
+            start_column: self
+                .start_column
+                .map(|column| column.to_proto())
+                .transpose()?,
+        })
+    }
+    fn from_proto(value: proto::SourceLocation) -> Result<Self> {
+        Ok(Self {
+            source_path: required(value.source_path, "SourceLocation.source_path")?,
+            start_line: ProtoConvert::from_proto(required(
+                value.start_line,
+                "SourceLocation.start_line",
+            )?)?,
+            end_line: ProtoConvert::from_proto(required(
+                value.end_line,
+                "SourceLocation.end_line",
+            )?)?,
+            start_column: value.start_column.map(usize::from_proto).transpose()?,
+        })
+    }
+}
+impl ProtoConvert<proto::PossibleGetterLookupSite> for PossibleGetterLookupSite {
+    fn to_proto(&self) -> Result<proto::PossibleGetterLookupSite> {
+        ensure!(
+            self.span_start <= self.span_end,
+            "inverted possible-getter lookup span"
+        );
+        Ok(proto::PossibleGetterLookupSite {
+            lexical_owner: Some(self.lexical_owner.to_proto()?),
+            span_start: Some(self.span_start),
+            span_end: Some(self.span_end),
+        })
+    }
+    fn from_proto(value: proto::PossibleGetterLookupSite) -> Result<Self> {
+        let lookup = Self {
+            lexical_owner: ProtoConvert::from_proto(required(
+                value.lexical_owner,
+                "PossibleGetterLookupSite.lexical_owner",
+            )?)?,
+            span_start: required(value.span_start, "PossibleGetterLookupSite.span_start")?,
+            span_end: required(value.span_end, "PossibleGetterLookupSite.span_end")?,
+        };
+        ensure!(
+            lookup.span_start <= lookup.span_end,
+            "inverted possible-getter lookup span"
+        );
+        Ok(lookup)
+    }
+}
+impl ProtoConvert<proto::ExecutionPrecisionLoss> for ExecutionPrecisionLoss {
+    fn to_proto(&self) -> Result<proto::ExecutionPrecisionLoss> {
+        Ok(proto::ExecutionPrecisionLoss {
+            reason: Some(self.reason.to_proto()?),
+            reach: Some(self.reach.to_proto()?),
+            statement_ordinal: Some(self.statement_ordinal.to_proto()?),
+            source_location: self
+                .source_location
+                .as_ref()
+                .map(SourceLocation::to_proto)
+                .transpose()?,
+            span: Some(self.span.to_proto()?),
+        })
+    }
+    fn from_proto(value: proto::ExecutionPrecisionLoss) -> Result<Self> {
+        Ok(Self {
+            reason: ProtoConvert::from_proto(required(
+                value.reason,
+                "ExecutionPrecisionLoss.reason",
+            )?)?,
+            reach: ProtoConvert::from_proto(required(
+                value.reach,
+                "ExecutionPrecisionLoss.reach",
+            )?)?,
+            statement_ordinal: ProtoConvert::from_proto(required(
+                value.statement_ordinal,
+                "ExecutionPrecisionLoss.statement_ordinal",
+            )?)?,
+            source_location: value
+                .source_location
+                .map(SourceLocation::from_proto)
+                .transpose()?,
+            span: ProtoConvert::from_proto(required(value.span, "ExecutionPrecisionLoss.span")?)?,
+        })
+    }
+}
+impl ProtoConvert<proto::PossibleGetterPromotion> for PossibleGetterPromotion {
+    fn to_proto(&self) -> Result<proto::PossibleGetterPromotion> {
+        use proto::possible_getter_promotion::Value;
+        Ok(proto::PossibleGetterPromotion {
+            value: Some(match self {
+                Self::LazyOwner { source_owner } => Value::LazyOwner(source_owner.to_proto()?),
+                Self::RawCallbacks => Value::RawCallbacks(Default::default()),
+            }),
+        })
+    }
+    fn from_proto(value: proto::PossibleGetterPromotion) -> Result<Self> {
+        use proto::possible_getter_promotion::Value;
+        Ok(
+            match required(value.value, "PossibleGetterPromotion.value")? {
+                Value::LazyOwner(source_owner) => Self::LazyOwner {
+                    source_owner: ProtoConvert::from_proto(source_owner)?,
+                },
+                Value::RawCallbacks(_) => Self::RawCallbacks,
+            },
+        )
+    }
+}
+impl ProtoConvert<proto::HavocReach> for HavocReach {
+    fn to_proto(&self) -> Result<proto::HavocReach> {
+        use proto::havoc_reach::Value;
+        Ok(proto::HavocReach {
+            value: Some(match self {
+                Self::Bounded => Value::Bounded(Default::default()),
+                Self::Global { cause } => Value::Global(cause.to_proto()?),
+            }),
+        })
+    }
+    fn from_proto(value: proto::HavocReach) -> Result<Self> {
+        use proto::havoc_reach::Value;
+        Ok(match required(value.value, "HavocReach.value")? {
+            Value::Bounded(_) => Self::Bounded,
+            Value::Global(cause) => Self::Global {
+                cause: GlobalReachCause::from_proto(cause)?,
+            },
+        })
+    }
+}
+impl ProtoConvert<proto::ExecutionPrecisionLossReason> for ExecutionPrecisionLossReason {
+    fn to_proto(&self) -> Result<proto::ExecutionPrecisionLossReason> {
+        use proto::execution_precision_loss_reason::{
+            CallbackPoolLimit, UnsupportedOperation, Value,
+        };
+        Ok(proto::ExecutionPrecisionLossReason {
+            value: Some(match self {
+                Self::UnknownCallTarget => Value::UnknownCallTarget(Default::default()),
+                Self::MissingCallResult => Value::MissingCallResult(Default::default()),
+                Self::UnsupportedOperation {
+                    operation,
+                    ordered_field_read_refusal,
+                    ordered_call_admission_refusal,
+                } => Value::UnsupportedOperation(UnsupportedOperation {
+                    operation: Some(operation.to_proto()?),
+                    ordered_field_read_refusal: ordered_field_read_refusal
+                        .as_ref()
+                        .map(ProtoConvert::to_proto)
+                        .transpose()?,
+                    ordered_call_admission_refusal: ordered_call_admission_refusal
+                        .as_ref()
+                        .map(ProtoConvert::to_proto)
+                        .transpose()?,
+                }),
+                Self::UnsupportedConstruction { rejection } => {
+                    Value::UnsupportedConstruction(rejection.to_proto()?)
+                }
+                Self::RecursiveInvocation => Value::RecursiveInvocation(Default::default()),
+                Self::InvocationDepthLimit { limit } => {
+                    Value::InvocationDepthLimit(limit.to_proto()?)
+                }
+                Self::InvocationExpansionLimit { limit } => {
+                    Value::InvocationExpansionLimit(limit.to_proto()?)
+                }
+                Self::CallbackPoolLimit { limit, pool_size } => {
+                    Value::CallbackPoolLimit(CallbackPoolLimit {
+                        limit: Some(limit.to_proto()?),
+                        pool_size: Some(pool_size.to_proto()?),
+                    })
+                }
+            }),
+        })
+    }
+    fn from_proto(value: proto::ExecutionPrecisionLossReason) -> Result<Self> {
+        use proto::execution_precision_loss_reason::Value;
+        Ok(
+            match required(value.value, "ExecutionPrecisionLossReason.value")? {
+                Value::UnknownCallTarget(_) => Self::UnknownCallTarget,
+                Value::MissingCallResult(_) => Self::MissingCallResult,
+                Value::UnsupportedOperation(value) => Self::UnsupportedOperation {
+                    operation: ExecutionOperation::from_proto(required(
+                        value.operation,
+                        "ExecutionPrecisionLossReason.unsupported_operation.operation",
+                    )?)?,
+                    ordered_field_read_refusal: value
+                        .ordered_field_read_refusal
+                        .map(OrderedFieldReadRefusal::from_proto)
+                        .transpose()?,
+                    ordered_call_admission_refusal: value
+                        .ordered_call_admission_refusal
+                        .map(OrderedCallAdmissionRefusal::from_proto)
+                        .transpose()?,
+                },
+                Value::UnsupportedConstruction(value) => Self::UnsupportedConstruction {
+                    rejection: ConstructionRejection::from_proto(value)?,
+                },
+                Value::RecursiveInvocation(_) => Self::RecursiveInvocation,
+                Value::InvocationDepthLimit(value) => Self::InvocationDepthLimit {
+                    limit: usize::from_proto(value)?,
+                },
+                Value::InvocationExpansionLimit(value) => Self::InvocationExpansionLimit {
+                    limit: usize::from_proto(value)?,
+                },
+                Value::CallbackPoolLimit(value) => Self::CallbackPoolLimit {
+                    limit: usize::from_proto(required(
+                        value.limit,
+                        "ExecutionPrecisionLossReason.callback_pool_limit.limit",
+                    )?)?,
+                    pool_size: usize::from_proto(required(
+                        value.pool_size,
+                        "ExecutionPrecisionLossReason.callback_pool_limit.pool_size",
+                    )?)?,
+                },
+            },
+        )
+    }
+}
+impl ProtoConvert<proto::ConstructionRejection> for ConstructionRejection {
+    fn to_proto(&self) -> Result<proto::ConstructionRejection> {
+        use proto::construction_rejection::Value;
+        Ok(proto::ConstructionRejection {
+            value: Some(match self {
+                Self::SpreadArguments => Value::SpreadArguments(Default::default()),
+                Self::UncheckedConstructor => Value::UncheckedConstructor(Default::default()),
+                Self::ArgumentsToDefaultFields => {
+                    Value::ArgumentsToDefaultFields(Default::default())
+                }
+                Self::ClassUsedOutsideConstruction => {
+                    Value::ClassUsedOutsideConstruction(Default::default())
+                }
+                Self::ExportedClass => Value::ExportedClass(Default::default()),
+                Self::ClassMutated => Value::ClassMutated(Default::default()),
+                Self::ClassMembersEscaped => Value::ClassMembersEscaped(Default::default()),
+                Self::FieldMayExistOnObjectPrototype { property } => {
+                    Value::FieldMayExistOnObjectPrototype(property.clone())
+                }
+                Self::UndeclaredConstructorRead => {
+                    Value::UndeclaredConstructorRead(Default::default())
+                }
+                Self::UncheckedPropertySource { parameter } => {
+                    Value::UncheckedPropertySource(parameter.to_proto()?)
+                }
+            }),
+        })
+    }
+    fn from_proto(value: proto::ConstructionRejection) -> Result<Self> {
+        use proto::construction_rejection::Value;
+        Ok(
+            match required(value.value, "ConstructionRejection.value")? {
+                Value::SpreadArguments(_) => Self::SpreadArguments,
+                Value::UncheckedConstructor(_) => Self::UncheckedConstructor,
+                Value::ArgumentsToDefaultFields(_) => Self::ArgumentsToDefaultFields,
+                Value::ClassUsedOutsideConstruction(_) => Self::ClassUsedOutsideConstruction,
+                Value::ExportedClass(_) => Self::ExportedClass,
+                Value::ClassMutated(_) => Self::ClassMutated,
+                Value::ClassMembersEscaped(_) => Self::ClassMembersEscaped,
+                Value::FieldMayExistOnObjectPrototype(property) => {
+                    Self::FieldMayExistOnObjectPrototype { property }
+                }
+                Value::UndeclaredConstructorRead(_) => Self::UndeclaredConstructorRead,
+                Value::UncheckedPropertySource(parameter) => Self::UncheckedPropertySource {
+                    parameter: ProtoConvert::from_proto(parameter)?,
+                },
+            },
+        )
+    }
+}
+impl ProtoConvert<proto::AssumedEffectReason> for AssumedEffectReason {
+    fn to_proto(&self) -> Result<proto::AssumedEffectReason> {
+        use proto::assumed_effect_reason::{PossibleGetter, Value};
+        Ok(proto::AssumedEffectReason {
+            value: Some(match self {
+                Self::FallbackSummary { loss } => Value::FallbackSummary(loss.to_proto()?),
+                Self::OpaqueCallbackInvocation => {
+                    Value::OpaqueCallbackInvocation(Default::default())
+                }
+                Self::EscapedCallbackClosure => Value::EscapedCallbackClosure(Default::default()),
+                Self::PossibleSetter => Value::PossibleSetter(Default::default()),
+                Self::PossibleGetter { lookup, promotion } => {
+                    Value::PossibleGetter(PossibleGetter {
+                        lookup: Some(lookup.to_proto()?),
+                        promotion: Some(promotion.to_proto()?),
+                    })
+                }
+                Self::WholeBodyPromotion { operation } => {
+                    Value::WholeBodyPromotion(operation.to_proto()?)
+                }
+                Self::PrivateConstructorRestore => {
+                    Value::PrivateConstructorRestore(Default::default())
+                }
+                Self::UnresolvedCallClosure => Value::UnresolvedCallClosure(Default::default()),
+            }),
+        })
+    }
+    fn from_proto(value: proto::AssumedEffectReason) -> Result<Self> {
+        use proto::assumed_effect_reason::Value;
+        Ok(match required(value.value, "AssumedEffectReason.value")? {
+            Value::FallbackSummary(loss) => Self::FallbackSummary {
+                loss: ExecutionPrecisionLossReason::from_proto(loss)?,
+            },
+            Value::OpaqueCallbackInvocation(_) => Self::OpaqueCallbackInvocation,
+            Value::EscapedCallbackClosure(_) => Self::EscapedCallbackClosure,
+            Value::PossibleSetter(_) => Self::PossibleSetter,
+            Value::PossibleGetter(value) => Self::PossibleGetter {
+                lookup: PossibleGetterLookupSite::from_proto(required(
+                    value.lookup,
+                    "AssumedEffectReason.possible_getter.lookup",
+                )?)?,
+                promotion: PossibleGetterPromotion::from_proto(required(
+                    value.promotion,
+                    "AssumedEffectReason.possible_getter.promotion",
+                )?)?,
+            },
+            Value::WholeBodyPromotion(operation) => Self::WholeBodyPromotion {
+                operation: ExecutionOperation::from_proto(operation)?,
+            },
+            Value::PrivateConstructorRestore(_) => Self::PrivateConstructorRestore,
+            Value::UnresolvedCallClosure(_) => Self::UnresolvedCallClosure,
+        })
+    }
+}
+impl ProtoConvert<i32> for ExecutionOperation {
+    fn to_proto(&self) -> Result<i32> {
+        Ok(match self {
+            Self::MembershipProtocol => proto::ExecutionOperation::MembershipProtocol as i32,
+            Self::InstanceOfProtocol => proto::ExecutionOperation::InstanceOfProtocol as i32,
+            Self::DestructuringProtocol => proto::ExecutionOperation::DestructuringProtocol as i32,
+            Self::MemberRead => proto::ExecutionOperation::MemberRead as i32,
+            Self::ObjectSpread => proto::ExecutionOperation::ObjectSpread as i32,
+            Self::ArraySpread => proto::ExecutionOperation::ArraySpread as i32,
+            Self::ImplicitCoercion => proto::ExecutionOperation::ImplicitCoercion as i32,
+            Self::PropertyWrite => proto::ExecutionOperation::PropertyWrite as i32,
+            Self::ReturnedCallback => proto::ExecutionOperation::ReturnedCallback as i32,
+            Self::SuperclassConstruction => {
+                proto::ExecutionOperation::SuperclassConstruction as i32
+            }
+            Self::ObjectAssign => proto::ExecutionOperation::ObjectAssign as i32,
+            Self::OpaqueExecution => proto::ExecutionOperation::OpaqueExecution as i32,
+            Self::GeneratorParameters => proto::ExecutionOperation::GeneratorParameters as i32,
+            Self::CallableInputs => proto::ExecutionOperation::CallableInputs as i32,
+            Self::ArrayIteration => proto::ExecutionOperation::ArrayIteration as i32,
+        })
+    }
+    fn from_proto(value: i32) -> Result<Self> {
+        Ok(match proto::ExecutionOperation::try_from(value)? {
+            proto::ExecutionOperation::MembershipProtocol => Self::MembershipProtocol,
+            proto::ExecutionOperation::InstanceOfProtocol => Self::InstanceOfProtocol,
+            proto::ExecutionOperation::DestructuringProtocol => Self::DestructuringProtocol,
+            proto::ExecutionOperation::MemberRead => Self::MemberRead,
+            proto::ExecutionOperation::ObjectSpread => Self::ObjectSpread,
+            proto::ExecutionOperation::ArraySpread => Self::ArraySpread,
+            proto::ExecutionOperation::ImplicitCoercion => Self::ImplicitCoercion,
+            proto::ExecutionOperation::PropertyWrite => Self::PropertyWrite,
+            proto::ExecutionOperation::ReturnedCallback => Self::ReturnedCallback,
+            proto::ExecutionOperation::SuperclassConstruction => Self::SuperclassConstruction,
+            proto::ExecutionOperation::ObjectAssign => Self::ObjectAssign,
+            proto::ExecutionOperation::OpaqueExecution => Self::OpaqueExecution,
+            proto::ExecutionOperation::GeneratorParameters => Self::GeneratorParameters,
+            proto::ExecutionOperation::CallableInputs => Self::CallableInputs,
+            proto::ExecutionOperation::ArrayIteration => Self::ArrayIteration,
+            proto::ExecutionOperation::Unspecified => {
+                bail!("unspecified saved-analysis execution operation")
+            }
+        })
+    }
+}
+impl ProtoConvert<i32> for GlobalReachCause {
+    fn to_proto(&self) -> Result<i32> {
+        Ok(match self {
+            Self::UnknownCallee => proto::GlobalReachCause::UnknownCallee as i32,
+            Self::TaintedInput => proto::GlobalReachCause::TaintedInput as i32,
+            Self::BorrowedReceiver => proto::GlobalReachCause::BorrowedReceiver as i32,
+            Self::DynamicScope => proto::GlobalReachCause::DynamicScope as i32,
+            Self::ForeignRecord => proto::GlobalReachCause::ForeignRecord as i32,
+            Self::UnmodelledOperation => proto::GlobalReachCause::UnmodelledOperation as i32,
+            Self::EscapedCallbackPool => proto::GlobalReachCause::EscapedCallbackPool as i32,
+        })
+    }
+    fn from_proto(value: i32) -> Result<Self> {
+        Ok(match proto::GlobalReachCause::try_from(value)? {
+            proto::GlobalReachCause::UnknownCallee => Self::UnknownCallee,
+            proto::GlobalReachCause::TaintedInput => Self::TaintedInput,
+            proto::GlobalReachCause::BorrowedReceiver => Self::BorrowedReceiver,
+            proto::GlobalReachCause::DynamicScope => Self::DynamicScope,
+            proto::GlobalReachCause::ForeignRecord => Self::ForeignRecord,
+            proto::GlobalReachCause::UnmodelledOperation => Self::UnmodelledOperation,
+            proto::GlobalReachCause::EscapedCallbackPool => Self::EscapedCallbackPool,
+            proto::GlobalReachCause::Unspecified => {
+                bail!("unspecified saved-analysis global reach cause")
+            }
+        })
+    }
+}
+impl ProtoConvert<i32> for OrderedFieldReadRefusal {
+    fn to_proto(&self) -> Result<i32> {
+        Ok(match self {
+            Self::ReceiverNotSingleton => {
+                proto::OrderedFieldReadRefusal::ReceiverNotSingleton as i32
+            }
+            Self::ReceiverNotObject => proto::OrderedFieldReadRefusal::ReceiverNotObject as i32,
+            Self::BorrowedReceiver => proto::OrderedFieldReadRefusal::BorrowedReceiver as i32,
+            Self::UnsupportedRecordShape => {
+                proto::OrderedFieldReadRefusal::UnsupportedRecordShape as i32
+            }
+            Self::AllocationNotFresh => proto::OrderedFieldReadRefusal::AllocationNotFresh as i32,
+            Self::UnsettledReceiver => proto::OrderedFieldReadRefusal::UnsettledReceiver as i32,
+            Self::MissingField => proto::OrderedFieldReadRefusal::MissingField as i32,
+            Self::NonDataField => proto::OrderedFieldReadRefusal::NonDataField as i32,
+            Self::MissingHeapValue => proto::OrderedFieldReadRefusal::MissingHeapValue as i32,
+        })
+    }
+    fn from_proto(value: i32) -> Result<Self> {
+        Ok(match proto::OrderedFieldReadRefusal::try_from(value)? {
+            proto::OrderedFieldReadRefusal::ReceiverNotSingleton => Self::ReceiverNotSingleton,
+            proto::OrderedFieldReadRefusal::ReceiverNotObject => Self::ReceiverNotObject,
+            proto::OrderedFieldReadRefusal::BorrowedReceiver => Self::BorrowedReceiver,
+            proto::OrderedFieldReadRefusal::UnsupportedRecordShape => Self::UnsupportedRecordShape,
+            proto::OrderedFieldReadRefusal::AllocationNotFresh => Self::AllocationNotFresh,
+            proto::OrderedFieldReadRefusal::UnsettledReceiver => Self::UnsettledReceiver,
+            proto::OrderedFieldReadRefusal::MissingField => Self::MissingField,
+            proto::OrderedFieldReadRefusal::NonDataField => Self::NonDataField,
+            proto::OrderedFieldReadRefusal::MissingHeapValue => Self::MissingHeapValue,
+            proto::OrderedFieldReadRefusal::Unspecified => {
+                bail!("unspecified saved-analysis ordered field read refusal")
+            }
+        })
+    }
+}
+impl ProtoConvert<i32> for OrderedCallAdmissionRefusal {
+    fn to_proto(&self) -> Result<i32> {
+        Ok(match self {
+            Self::UnknownTarget => proto::OrderedCallAdmissionRefusal::UnknownTarget as i32,
+            Self::MultipleTargets => proto::OrderedCallAdmissionRefusal::MultipleTargets as i32,
+            Self::NonLocalTarget => proto::OrderedCallAdmissionRefusal::NonLocalTarget as i32,
+            Self::UnsupportedReceiver => {
+                proto::OrderedCallAdmissionRefusal::UnsupportedReceiver as i32
+            }
+            Self::ArrayIterationRowUnsupported => {
+                proto::OrderedCallAdmissionRefusal::ArrayIterationRowUnsupported as i32
+            }
+            Self::ArrayIterationIntrinsicsChanged => {
+                proto::OrderedCallAdmissionRefusal::ArrayIterationIntrinsicsChanged as i32
+            }
+            Self::ArrayIterationReceiverUnproved => {
+                proto::OrderedCallAdmissionRefusal::ArrayIterationReceiverUnproved as i32
+            }
+            Self::ArrayIterationCallbackUnsupported => {
+                proto::OrderedCallAdmissionRefusal::ArrayIterationCallbackUnsupported as i32
+            }
+            Self::ArrayIterationCapturingCallback => {
+                proto::OrderedCallAdmissionRefusal::ArrayIterationCapturingCallback as i32
+            }
+            Self::ArrayIterationCallbackIncomplete => {
+                proto::OrderedCallAdmissionRefusal::ArrayIterationCallbackIncomplete as i32
+            }
+        })
+    }
+    fn from_proto(value: i32) -> Result<Self> {
+        Ok(match proto::OrderedCallAdmissionRefusal::try_from(value)? {
+            proto::OrderedCallAdmissionRefusal::UnknownTarget => Self::UnknownTarget,
+            proto::OrderedCallAdmissionRefusal::MultipleTargets => Self::MultipleTargets,
+            proto::OrderedCallAdmissionRefusal::NonLocalTarget => Self::NonLocalTarget,
+            proto::OrderedCallAdmissionRefusal::UnsupportedReceiver => Self::UnsupportedReceiver,
+            proto::OrderedCallAdmissionRefusal::ArrayIterationRowUnsupported => {
+                Self::ArrayIterationRowUnsupported
+            }
+            proto::OrderedCallAdmissionRefusal::ArrayIterationIntrinsicsChanged => {
+                Self::ArrayIterationIntrinsicsChanged
+            }
+            proto::OrderedCallAdmissionRefusal::ArrayIterationReceiverUnproved => {
+                Self::ArrayIterationReceiverUnproved
+            }
+            proto::OrderedCallAdmissionRefusal::ArrayIterationCallbackUnsupported => {
+                Self::ArrayIterationCallbackUnsupported
+            }
+            proto::OrderedCallAdmissionRefusal::ArrayIterationCapturingCallback => {
+                Self::ArrayIterationCapturingCallback
+            }
+            proto::OrderedCallAdmissionRefusal::ArrayIterationCallbackIncomplete => {
+                Self::ArrayIterationCallbackIncomplete
+            }
+            proto::OrderedCallAdmissionRefusal::Unspecified => {
+                bail!("unspecified saved-analysis ordered call admission refusal")
+            }
+        })
+    }
+}
+
+#[cfg(test)]
+mod protobuf_tests {
+    use super::*;
+
+    #[test]
+    fn construction_rejection_preserves_zero_and_empty_payloads() {
+        for reason in [
+            ConstructionRejection::UncheckedPropertySource { parameter: 0 },
+            ConstructionRejection::FieldMayExistOnObjectPrototype {
+                property: String::new(),
+            },
+            ConstructionRejection::ExportedClass,
+        ] {
+            assert_eq!(
+                ConstructionRejection::from_proto(reason.to_proto().unwrap()).unwrap(),
+                reason
+            );
+        }
+    }
+
+    #[test]
+    fn saved_precision_loss_keeps_nested_refusals_optional_locations_and_hidden_spans() {
+        let original = ExecutionPrecisionLoss {
+            reason: ExecutionPrecisionLossReason::UnsupportedOperation {
+                operation: ExecutionOperation::MemberRead,
+                ordered_field_read_refusal: Some(OrderedFieldReadRefusal::AllocationNotFresh),
+                ordered_call_admission_refusal: None,
+            },
+            reach: HavocReach::Global {
+                cause: GlobalReachCause::BorrowedReceiver,
+            },
+            statement_ordinal: SourceUnitOrdinal(7),
+            source_location: Some(SourceLocation {
+                source_path: "source.js".into(),
+                start_line: 2,
+                end_line: 4,
+                start_column: Some(0),
+            }),
+            span: Span::new(BytePos(17), BytePos(29)),
+        };
+        let bytes = analysis_codec::encode_protobuf(&original.to_proto().unwrap()).unwrap();
+        let restored =
+            ExecutionPrecisionLoss::from_proto(analysis_codec::decode_protobuf(&bytes).unwrap())
+                .unwrap();
+        assert_eq!(restored, original);
+        let mut malformed = original.to_proto().unwrap();
+        malformed.source_location = None;
+        assert_eq!(
+            ExecutionPrecisionLoss::from_proto(malformed)
+                .unwrap()
+                .source_location,
+            None
+        );
+        for field in 0..4 {
+            let mut malformed = original.to_proto().unwrap();
+            match field {
+                0 => malformed.reason = None,
+                1 => malformed.reach = None,
+                2 => malformed.statement_ordinal = None,
+                3 => malformed.span = None,
+                _ => unreachable!(),
+            }
+            assert!(ExecutionPrecisionLoss::from_proto(malformed).is_err());
+        }
+        let mut malformed = original.to_proto().unwrap();
+        malformed.span.as_mut().unwrap().lo = Some(30);
+        assert!(ExecutionPrecisionLoss::from_proto(malformed).is_err());
+    }
+
+    #[test]
+    fn saved_evidence_rejects_false_markers_and_missing_nested_fields() {
+        assert!(HavocReach::from_proto(proto::HavocReach { value: None }).is_err());
+        assert!(
+            PossibleGetterPromotion::from_proto(proto::PossibleGetterPromotion { value: None })
+                .is_err()
+        );
+        assert!(
+            ConstructionRejection::from_proto(proto::ConstructionRejection { value: None })
+                .is_err()
+        );
+        assert!(
+            AssumedEffectReason::from_proto(proto::AssumedEffectReason { value: None }).is_err()
+        );
+        assert!(
+            ExecutionPrecisionLossReason::from_proto(proto::ExecutionPrecisionLossReason {
+                value: None
+            })
+            .is_err()
+        );
+        let valid = ExecutionPrecisionLossReason::UnsupportedOperation {
+            operation: ExecutionOperation::ObjectSpread,
+            ordered_field_read_refusal: None,
+            ordered_call_admission_refusal: Some(OrderedCallAdmissionRefusal::UnsupportedReceiver),
+        };
+        for operation in [0, -1, i32::MAX] {
+            let mut malformed = valid.to_proto().unwrap();
+            let Some(proto::execution_precision_loss_reason::Value::UnsupportedOperation(value)) =
+                &mut malformed.value
+            else {
+                unreachable!()
+            };
+            value.operation = Some(operation);
+            assert!(ExecutionPrecisionLossReason::from_proto(malformed).is_err());
+        }
+        for invalid in [0, -1, i32::MAX] {
+            for field in 0..2 {
+                let mut malformed = valid.to_proto().unwrap();
+                let Some(proto::execution_precision_loss_reason::Value::UnsupportedOperation(
+                    value,
+                )) = &mut malformed.value
+                else {
+                    unreachable!()
+                };
+                if field == 0 {
+                    value.ordered_field_read_refusal = Some(invalid);
+                } else {
+                    value.ordered_call_admission_refusal = Some(invalid);
+                }
+                assert!(ExecutionPrecisionLossReason::from_proto(malformed).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn precision_loss_reason_variants_preserve_zero_limits_and_optional_refusals() {
+        let mut reasons = vec![
+            ExecutionPrecisionLossReason::UnknownCallTarget,
+            ExecutionPrecisionLossReason::MissingCallResult,
+            ExecutionPrecisionLossReason::RecursiveInvocation,
+            ExecutionPrecisionLossReason::UnsupportedConstruction {
+                rejection: ConstructionRejection::ExportedClass,
+            },
+        ];
+        for limit in [0, 17, usize::MAX] {
+            reasons.push(ExecutionPrecisionLossReason::InvocationDepthLimit { limit });
+            reasons.push(ExecutionPrecisionLossReason::InvocationExpansionLimit { limit });
+            reasons.push(ExecutionPrecisionLossReason::CallbackPoolLimit {
+                limit,
+                pool_size: 0,
+            });
+        }
+        for ordered_field_read_refusal in [None, Some(OrderedFieldReadRefusal::MissingField)] {
+            for ordered_call_admission_refusal in
+                [None, Some(OrderedCallAdmissionRefusal::UnknownTarget)]
+            {
+                reasons.push(ExecutionPrecisionLossReason::UnsupportedOperation {
+                    operation: ExecutionOperation::MemberRead,
+                    ordered_field_read_refusal,
+                    ordered_call_admission_refusal,
+                });
+            }
+        }
+        for reason in reasons {
+            let bytes = analysis_codec::encode_protobuf(&reason.to_proto().unwrap()).unwrap();
+            let restored = ExecutionPrecisionLossReason::from_proto(
+                analysis_codec::decode_protobuf(&bytes).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(restored, reason);
+        }
+    }
+
+    #[test]
+    fn precision_loss_reason_requires_nested_evidence_fields() {
+        use proto::execution_precision_loss_reason::{
+            CallbackPoolLimit, UnsupportedOperation, Value,
+        };
+        for value in [
+            Value::UnsupportedOperation(UnsupportedOperation::default()),
+            Value::UnsupportedConstruction(proto::ConstructionRejection::default()),
+            Value::CallbackPoolLimit(CallbackPoolLimit {
+                limit: None,
+                pool_size: Some(0),
+            }),
+            Value::CallbackPoolLimit(CallbackPoolLimit {
+                limit: Some(0),
+                pool_size: None,
+            }),
+        ] {
+            assert!(
+                ExecutionPrecisionLossReason::from_proto(proto::ExecutionPrecisionLossReason {
+                    value: Some(value)
+                })
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn source_location_preserves_absent_and_zero_columns() {
+        for start_column in [None, Some(0), Some(27)] {
+            let location = SourceLocation {
+                source_path: "source.js".into(),
+                start_line: 1,
+                end_line: 2,
+                start_column,
+            };
+            let bytes = analysis_codec::encode_protobuf(&location.to_proto().unwrap()).unwrap();
+            assert_eq!(
+                SourceLocation::from_proto(analysis_codec::decode_protobuf(&bytes).unwrap(),)
+                    .unwrap(),
+                location
+            );
+            for field in 0..3 {
+                let mut malformed = location.to_proto().unwrap();
+                match field {
+                    0 => malformed.source_path = None,
+                    1 => malformed.start_line = None,
+                    2 => malformed.end_line = None,
+                    _ => unreachable!(),
+                }
+                assert!(SourceLocation::from_proto(malformed).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn possible_getter_lookup_preserves_owner_and_checks_span() {
+        for (owner, start, end) in [(0, 0, 0), (7, 17, 29)] {
+            let lookup = PossibleGetterLookupSite {
+                lexical_owner: SourceUnitOrdinal(owner),
+                span_start: start,
+                span_end: end,
+            };
+            let bytes = analysis_codec::encode_protobuf(&lookup.to_proto().unwrap()).unwrap();
+            assert_eq!(
+                PossibleGetterLookupSite::from_proto(
+                    analysis_codec::decode_protobuf(&bytes).unwrap(),
+                )
+                .unwrap(),
+                lookup
+            );
+            for field in 0..3 {
+                let mut malformed = lookup.to_proto().unwrap();
+                match field {
+                    0 => malformed.lexical_owner = None,
+                    1 => malformed.span_start = None,
+                    2 => malformed.span_end = None,
+                    _ => unreachable!(),
+                }
+                assert!(PossibleGetterLookupSite::from_proto(malformed).is_err());
+            }
+            let mut malformed = lookup.to_proto().unwrap();
+            malformed.span_start = Some(end + 1);
+            assert!(PossibleGetterLookupSite::from_proto(malformed).is_err());
+        }
+        assert!(
+            PossibleGetterLookupSite {
+                lexical_owner: SourceUnitOrdinal(0),
+                span_start: 1,
+                span_end: 0,
+            }
+            .to_proto()
+            .is_err()
+        );
+    }
 }

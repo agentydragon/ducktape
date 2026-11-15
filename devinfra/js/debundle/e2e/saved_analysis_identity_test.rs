@@ -365,7 +365,7 @@ fn identity_mismatch_is_refused() {
     let bytes = fs::read(&staged.artifact).unwrap();
     let (mut header, body) = staged_analysis::analysis_artifact::read_header(&bytes).unwrap();
     header.analysis_engine_sha256 = "another-compiled-engine".to_string();
-    let encoded = rmp_serde::to_vec_named(&header).unwrap();
+    let encoded = staged_analysis::analysis_artifact::encode_header(&header).unwrap();
     let mut corrupt = u32::try_from(encoded.len()).unwrap().to_le_bytes().to_vec();
     corrupt.extend(encoded);
     corrupt.extend(body);
@@ -405,7 +405,7 @@ fn source_mismatch_is_refused() {
     let (mut header, body) = staged_analysis::analysis_artifact::read_header(&bytes).unwrap();
     let source = header.chunk_sources.values_mut().next().unwrap();
     *source = "other-parser-input".to_string();
-    let encoded = rmp_serde::to_vec_named(&header).unwrap();
+    let encoded = staged_analysis::analysis_artifact::encode_header(&header).unwrap();
     let mut corrupt = u32::try_from(encoded.len()).unwrap().to_le_bytes().to_vec();
     corrupt.extend(encoded);
     corrupt.extend(body);
@@ -452,7 +452,7 @@ fn staged_invocations_keep_outputs_and_refuse_reused_reports_destinations() {
     let (mut header, body) =
         staged_analysis::analysis_artifact::read_header(&original_artifact).unwrap();
     header.analysis_engine_sha256 = "another-compiled-engine".to_string();
-    let encoded_header = rmp_serde::to_vec_named(&header).unwrap();
+    let encoded_header = staged_analysis::analysis_artifact::encode_header(&header).unwrap();
     let mut invalid_artifact = Vec::new();
     invalid_artifact.extend_from_slice(&u32::try_from(encoded_header.len()).unwrap().to_le_bytes());
     invalid_artifact.extend_from_slice(&encoded_header);

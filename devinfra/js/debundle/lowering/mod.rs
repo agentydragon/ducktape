@@ -521,9 +521,8 @@ pub fn materialize_logical_modules(
     let (program_summary, mut loaded_chunks) = match (&options.analysis, loaded) {
         (AnalysisMode::Load { base, .. }, Some((header, body))) => {
             let completed = completed(base)?;
-            if completed.encode()? != header.projection {
-                let differences =
-                    completed.differences(&AnalysisSpec::decode(&header.projection)?)?;
+            if completed.encode()? != header.projection.encode()? {
+                let differences = completed.differences(&header.projection)?;
                 bail!(
                     "analysis artifact was computed for another projection; differing: {}. Rerun `debundle spec project-analysis` and `debundle analyze`",
                     differences.join(", ")

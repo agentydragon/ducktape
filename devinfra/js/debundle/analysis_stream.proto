@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package debundle.analysis_stream;
+
+import "devinfra/js/debundle/saved-analysis.proto";
+import "devinfra/js/debundle/program-summary.proto";
+
+// A complete saved analysis, compressed as a single checksummed zstd frame.
+message AnalysisBody {
+  .ducktape.debundle.saved_analysis.SavedPurityGraph purity_graph = 1;
+  .debundle.program_summary.ProgramSummary program_summary = 2;
+  map<string, .ducktape.debundle.saved_analysis.ExportReentryReport> export_reentry = 3;
+  map<string, .ducktape.debundle.saved_analysis.SavedChunkFactAnalysis> chunks = 4;
+}

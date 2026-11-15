@@ -2,11 +2,15 @@
 //! compatibility while full graphs retain exact authored input provenance.
 
 use std::collections::BTreeMap;
+use std::ffi::OsStr;
 use std::fs;
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
+use apply_projection_wire_proto::debundle::apply::ApplyProjection;
 use debundle_e2e_support::saved_analysis::*;
 use debundle_e2e_support::*;
+use prost::Message;
 use serde_json::Value;
 
 fn project(spec: &Path, out: &Path) -> Vec<u8> {
@@ -411,39 +415,44 @@ fn tree_projection_is_shared_across_consumer_output_roots() {
         !String::from_utf8_lossy(&first_projection).contains("first-out"),
         "consumer output root leaked into projection"
     );
-    let projected: Value = serde_json::from_slice(&first_projection).unwrap();
+    let projected = ApplyProjection::decode(first_projection.as_slice())
+        .unwrap()
+        .spec
+        .unwrap();
     let output_root = "__debundle_apply_output_root__";
+    let vendor = projected.swap_vendor_chunks.unwrap();
     assert_eq!(
-        projected["spec"]["swap_vendor_chunks"]["output_manifest_path"],
-        format!("{output_root}/reports/vendor_swaps.json")
+        vendor.output_manifest_path.unwrap(),
+        format!("{output_root}/reports/vendor_swaps.json").as_bytes()
     );
     assert_eq!(
-        projected["spec"]["swap_vendor_chunks"]["output_wrapper_dir"],
-        format!("{output_root}/app/vendors/generated")
+        vendor.output_wrapper_dir.unwrap(),
+        format!("{output_root}/app/vendors/generated").as_bytes()
     );
     assert_eq!(
-        projected["spec"]["materialize_logical_modules"]["report_out_dir"],
-        format!("{output_root}/reports/tree")
+        projected
+            .materialize_logical_modules
+            .unwrap()
+            .report_out_dir
+            .unwrap(),
+        format!("{output_root}/reports/tree").as_bytes()
     );
-    assert_eq!(projected["spec"]["write_js_tree"]["out_dir"], output_root);
     assert_eq!(
-        projected["spec"]["emit_browser_harness"]["out_dir"],
-        output_root
+        projected.write_js_tree.unwrap().out_dir.unwrap(),
+        output_root.as_bytes()
     );
+    let harness = projected.emit_browser_harness.unwrap();
+    assert_eq!(harness.out_dir.unwrap(), output_root.as_bytes());
     assert_eq!(
-        staged.root().join(
-            projected["spec"]["emit_browser_harness"]["asset_summary_path"]
-                .as_str()
-                .unwrap()
-        ),
+        staged
+            .root()
+            .join(OsStr::from_bytes(&harness.asset_summary_path.unwrap())),
         staged.root().join("assets.json")
     );
     assert_eq!(
-        staged.root().join(
-            projected["spec"]["emit_browser_harness"]["snapshot_root"]
-                .as_str()
-                .unwrap()
-        ),
+        staged
+            .root()
+            .join(OsStr::from_bytes(&harness.snapshot_root.unwrap())),
         staged.root().join("snapshot")
     );
 

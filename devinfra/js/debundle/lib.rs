@@ -16,6 +16,9 @@
 //! `gate` crate; the spec-independent per-chunk chunk-analysis
 //! composer lives in the `chunk_analysis` crate. Both build on this core.
 
+#[macro_use]
+pub mod saved_proto;
+
 pub mod analysis_inputs;
 pub mod analysis_provenance;
 pub mod assignment_assembly;

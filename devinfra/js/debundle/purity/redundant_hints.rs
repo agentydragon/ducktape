@@ -181,3 +181,109 @@ pub(crate) fn detect_redundant_pure_member_hints(
     }
     out
 }
+
+use crate::saved_proto::{ProtoConvert, proto, required};
+
+impl ProtoConvert<proto::RedundantPurityHint> for RedundantPurityHint {
+    fn to_proto(&self) -> anyhow::Result<proto::RedundantPurityHint> {
+        Ok(proto::RedundantPurityHint {
+            binding_name: Some(self.binding_name.clone()),
+            reason: Some(self.reason.to_proto()?),
+            proof_basis: Some(self.proof_basis.to_proto()?),
+        })
+    }
+
+    fn from_proto(value: proto::RedundantPurityHint) -> anyhow::Result<Self> {
+        Ok(Self {
+            binding_name: required(value.binding_name, "RedundantPurityHint.binding_name")?,
+            reason: RedundantPurityReason::from_proto(required(
+                value.reason,
+                "RedundantPurityHint.reason",
+            )?)?,
+            proof_basis: RedundantPurityProofBasis::from_proto(required(
+                value.proof_basis,
+                "RedundantPurityHint.proof_basis",
+            )?)?,
+        })
+    }
+}
+
+impl ProtoConvert<proto::RedundantPureMemberHint> for RedundantPureMemberHint {
+    fn to_proto(&self) -> anyhow::Result<proto::RedundantPureMemberHint> {
+        Ok(proto::RedundantPureMemberHint {
+            binding_name: Some(self.binding_name.clone()),
+            property: Some(self.property.clone()),
+            reason: Some(self.reason.to_proto()?),
+        })
+    }
+
+    fn from_proto(value: proto::RedundantPureMemberHint) -> anyhow::Result<Self> {
+        Ok(Self {
+            binding_name: required(value.binding_name, "RedundantPureMemberHint.binding_name")?,
+            property: required(value.property, "RedundantPureMemberHint.property")?,
+            reason: RedundantPureMemberReason::from_proto(required(
+                value.reason,
+                "RedundantPureMemberHint.reason",
+            )?)?,
+        })
+    }
+}
+
+impl ProtoConvert<i32> for RedundantPurityReason {
+    fn to_proto(&self) -> anyhow::Result<i32> {
+        Ok(match self {
+            Self::InferredPureFunction => proto::RedundantPurityReason::InferredPureFunction,
+            Self::InferredPlainDataBinding => {
+                proto::RedundantPurityReason::InferredPlainDataBinding
+            }
+        } as i32)
+    }
+
+    fn from_proto(value: i32) -> anyhow::Result<Self> {
+        Ok(match proto::RedundantPurityReason::try_from(value)? {
+            proto::RedundantPurityReason::InferredPureFunction => Self::InferredPureFunction,
+            proto::RedundantPurityReason::InferredPlainDataBinding => {
+                Self::InferredPlainDataBinding
+            }
+            proto::RedundantPurityReason::Unspecified => {
+                anyhow::bail!("unspecified redundant purity reason")
+            }
+        })
+    }
+}
+
+impl ProtoConvert<i32> for RedundantPurityProofBasis {
+    fn to_proto(&self) -> anyhow::Result<i32> {
+        Ok(match self {
+            Self::WithoutPurityHints => proto::RedundantPurityProofBasis::WithoutPurityHints,
+            Self::WithOtherPurityHints => proto::RedundantPurityProofBasis::WithOtherPurityHints,
+        } as i32)
+    }
+
+    fn from_proto(value: i32) -> anyhow::Result<Self> {
+        Ok(match proto::RedundantPurityProofBasis::try_from(value)? {
+            proto::RedundantPurityProofBasis::WithoutPurityHints => Self::WithoutPurityHints,
+            proto::RedundantPurityProofBasis::WithOtherPurityHints => Self::WithOtherPurityHints,
+            proto::RedundantPurityProofBasis::Unspecified => {
+                anyhow::bail!("unspecified redundant purity proof basis")
+            }
+        })
+    }
+}
+
+impl ProtoConvert<i32> for RedundantPureMemberReason {
+    fn to_proto(&self) -> anyhow::Result<i32> {
+        Ok(match self {
+            Self::WhitelistedStaticCall => proto::RedundantPureMemberReason::WhitelistedStaticCall,
+        } as i32)
+    }
+
+    fn from_proto(value: i32) -> anyhow::Result<Self> {
+        Ok(match proto::RedundantPureMemberReason::try_from(value)? {
+            proto::RedundantPureMemberReason::WhitelistedStaticCall => Self::WhitelistedStaticCall,
+            proto::RedundantPureMemberReason::Unspecified => {
+                anyhow::bail!("unspecified redundant pure member reason")
+            }
+        })
+    }
+}

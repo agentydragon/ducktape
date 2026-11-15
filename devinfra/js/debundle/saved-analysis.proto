@@ -1,0 +1,1674 @@
+syntax = "proto3";
+
+package ducktape.debundle.saved_analysis;
+
+import "devinfra/js/debundle/spec_wire.proto";
+import "google/protobuf/empty.proto";
+
+// Saved semantic evidence. Proof and authority records retain presence where
+// absence could weaken a restored proof; diagnostic locations are optional.
+
+message ArgumentInputEvidence {
+  optional .ducktape.debundle.saved_analysis.ArgumentInputRef reference = 1;
+  optional string spec_location = 2;
+  optional .ducktape.debundle.saved_analysis.SourceMatchClaim source_match = 3;
+  optional string source_path = 4;
+  optional string audited_source_sha256 = 5;
+  optional string selected_binding = 6;
+  optional uint64 parameter_index = 7;
+  optional uint64 exact_arity = 8;
+  SourceLocation declaration_location = 9;
+}
+
+message ArgumentInputRef {
+  optional string defining_chunk = 1;
+  optional uint64 input_index = 2;
+}
+
+message AssumedEffectReason {
+  message PossibleGetter {
+    PossibleGetterLookupSite lookup = 1;
+    PossibleGetterPromotion promotion = 2;
+  }
+  oneof value {
+    ExecutionPrecisionLossReason fallback_summary = 1;
+    google.protobuf.Empty opaque_callback_invocation = 2;
+    google.protobuf.Empty escaped_callback_closure = 3;
+    google.protobuf.Empty possible_setter = 4;
+    PossibleGetter possible_getter = 5;
+    ExecutionOperation whole_body_promotion = 6;
+    google.protobuf.Empty private_constructor_restore = 7;
+    google.protobuf.Empty unresolved_call_closure = 8;
+  }
+}
+
+message BoundedInvocationFallbackCallSite {
+  optional uint64 top_level_owner = 1;
+  optional uint32 span_start = 2;
+  optional uint32 span_end = 3;
+}
+
+message BoundedInvocationFallbackInputPath {
+  message Retained {
+    optional .ducktape.debundle.saved_analysis.BoundedInvocationFallbackSeed seed = 1;
+    repeated .ducktape.debundle.saved_analysis.BoundedInvocationFallbackPathEdge edges = 2;
+  }
+  oneof value {
+    Retained retained = 1;
+    .ducktape.debundle.saved_analysis.BoundedInvocationFallbackUnknownPathReason unknown = 2;
+  }
+}
+
+message BoundedInvocationFallbackPathEdge {
+  // A selected accessor edge may have an unknown property.
+  message AccessorProperty {
+    optional string property = 1;
+  }
+  oneof value {
+    string object_property = 1;
+    google.protobuf.Empty unknown_object_property = 2;
+    uint32 array_element = 3;
+    google.protobuf.Empty unknown_array_property = 4;
+    AccessorProperty applied_getter = 5;
+    AccessorProperty applied_setter = 6;
+    google.protobuf.Empty closure_home_object = 7;
+    string closure_snapshot = 8;
+    string closure_cell = 9;
+    google.protobuf.Empty instance_retained_value = 10;
+    google.protobuf.Empty deferred_callback_retained_value = 11;
+    google.protobuf.Empty audited_result_retained_value = 12;
+    google.protobuf.Empty descriptor_map_retained_value = 13;
+    google.protobuf.Empty escaped_callback_pool_expansion = 14;
+    google.protobuf.Empty class_members_capability = 15;
+  }
+}
+
+message BoundedInvocationFallbackSeed {
+  oneof value {
+    uint64 argument = 1;
+    string captured_binding = 2;
+    google.protobuf.Empty escaped_callback_pool = 3;
+    string available_export_binding = 4;
+    google.protobuf.Empty available_export_callbacks = 5;
+  }
+}
+
+enum BoundedInvocationFallbackUnknownPathReason {
+  BOUNDED_INVOCATION_FALLBACK_UNKNOWN_PATH_REASON_UNSPECIFIED = 0;
+  BOUNDED_INVOCATION_FALLBACK_UNKNOWN_PATH_REASON_SEED_UNAVAILABLE = 1;
+  BOUNDED_INVOCATION_FALLBACK_UNKNOWN_PATH_REASON_RETAINED_REFERENCE_PATH_UNAVAILABLE = 2;
+}
+
+message BundleGlobalNames {
+  repeated string names = 1;
+  optional bool registered_symbols = 2;
+  optional bool fresh_collections = 3;
+  repeated NoAccessorInstallRef no_accessor_install_callables = 4;
+}
+
+// Persisted callable capabilities include dependencies hidden from report JSON.
+message CallableSummary {
+  repeated CallbackFactoryEvidence callback_factory_evidence = 1;
+  ReturnedRecordSummary returned_record = 2;
+  NamespaceWrapperSummary namespace_wrapper = 3;
+  CallbackObjectArguments callback_object_arguments = 4;
+  DescriptorCopyFactorySummary descriptor_copy_factory = 5;
+  ForeignCallSummary foreign_call = 6;
+  repeated string may_read_importer_cells = 7;
+}
+
+message CallbackFactoryBarrierFact {
+  optional string namespace_binding = 1;
+  optional string member = 2;
+  optional uint64 argument_count = 3;
+  repeated uint64 callback_arguments = 4;
+  CallbackSourceUnits callback_source_units = 5;
+  optional .ducktape.debundle.saved_analysis.CallbackFactoryBarrierRejection rejection = 6;
+}
+
+// Absence means source units are unknown; a present empty message means none.
+message CallbackSourceUnits {
+  repeated uint64 source_units = 1;
+}
+
+message CallbackFactoryBarrierRejection {
+  message NamespaceMemberWrite {
+    optional .ducktape.debundle.saved_analysis.CallbackFactoryWriteWitness witness = 1;
+  }
+  message NamespaceDynamicPropertyWrite {
+    optional .ducktape.debundle.saved_analysis.CallbackFactoryWriteWitness witness = 1;
+  }
+  message NamespaceCallArgument {
+    optional .ducktape.debundle.saved_analysis.CallbackFactoryCallArgumentWitness witness = 1;
+  }
+  oneof value {
+    NamespaceMemberWrite namespace_member_write = 1;
+    NamespaceDynamicPropertyWrite namespace_dynamic_property_write = 2;
+    NamespaceCallArgument namespace_call_argument = 3;
+    bool unsupported_guard = 4;
+  }
+}
+
+message CallbackFactoryCallArgumentWitness {
+  optional uint64 statement_ordinal = 1;
+  optional .ducktape.debundle.saved_analysis.SourceSpan call_span = 2;
+  optional uint64 argument_index = 3;
+  optional string namespace_binding = 4;
+}
+
+message CallbackFactoryEvidence {
+  message AuthorAssertion {
+    optional string defining_module = 1;
+    optional string export = 2;
+  }
+  message InferredImmutableWrapper {
+    optional string defining_module = 1;
+    optional string export = 2;
+    optional string local = 3;
+    .ducktape.debundle.saved_analysis.SourceLocation source_location = 4;
+  }
+  oneof value {
+    AuthorAssertion author_assertion = 1;
+    InferredImmutableWrapper inferred_immutable_wrapper = 2;
+  }
+}
+
+message CallbackFactoryUseFact {
+  optional string imported_local = 1;
+  repeated CallbackFactoryEvidence evidence = 2;
+  optional .ducktape.debundle.saved_analysis.CallbackFactoryUseKind kind = 3;
+  optional uint64 lexical_statement_ordinal = 4;
+  SourceLocation source_location = 5;
+  optional .ducktape.debundle.saved_analysis.SourceSpan span = 6;
+}
+
+enum CallbackFactoryUseKind {
+  CALLBACK_FACTORY_USE_KIND_UNSPECIFIED = 0;
+  CALLBACK_FACTORY_USE_KIND_CALL_TIMING = 1;
+  CALLBACK_FACTORY_USE_KIND_RETURN_SHAPE = 2;
+  CALLBACK_FACTORY_USE_KIND_CLOSED_RESULT_ROOT = 3;
+}
+
+message CallbackFactoryWriteWitness {
+  optional uint64 statement_ordinal = 1;
+  optional string receiver_binding = 2;
+  optional string property = 3;
+}
+
+message CallbackObjectArguments {
+  optional .ducktape.debundle.saved_analysis.CallbackFactoryEvidence wrapper = 1;
+  repeated uint64 object_arguments = 2;
+}
+
+enum ClassMembersPublicationWriter {
+  CLASS_MEMBERS_PUBLICATION_WRITER_UNSPECIFIED = 0;
+  CLASS_MEMBERS_PUBLICATION_WRITER_GLOBAL_OR_INTRINSIC_MEMBER_WRITE = 1;
+  CLASS_MEMBERS_PUBLICATION_WRITER_INSTANCE_MEMBER_WRITE = 2;
+  CLASS_MEMBERS_PUBLICATION_WRITER_OWN_DESCRIPTOR_MAP_MEMBER_WRITE = 3;
+  CLASS_MEMBERS_PUBLICATION_WRITER_UNTRACKED_RECEIVER_MEMBER_WRITE = 4;
+  CLASS_MEMBERS_PUBLICATION_WRITER_PUBLISHED_OBJECT_MEMBER_WRITE = 5;
+  CLASS_MEMBERS_PUBLICATION_WRITER_MEMBER_CHAIN_STORE = 6;
+  CLASS_MEMBERS_PUBLICATION_WRITER_POSSIBLE_CALLBACK_RETENTION = 7;
+  CLASS_MEMBERS_PUBLICATION_WRITER_BOUNDED_INVOCATION_FALLBACK = 8;
+  CLASS_MEMBERS_PUBLICATION_WRITER_NO_REENTRY_CALL_RETENTION = 9;
+  CLASS_MEMBERS_PUBLICATION_WRITER_LOCAL_OPERATION_FALLBACK = 10;
+  CLASS_MEMBERS_PUBLICATION_WRITER_THROW_VALUE_PUBLICATION = 11;
+  CLASS_MEMBERS_PUBLICATION_WRITER_UNTRACKED_LOCAL_STORE = 12;
+  CLASS_MEMBERS_PUBLICATION_WRITER_GENERATOR_CREATION = 13;
+  CLASS_MEMBERS_PUBLICATION_WRITER_OBJECT_ASSIGN_COPY = 14;
+  CLASS_MEMBERS_PUBLICATION_WRITER_METHOD_RECEIVER = 15;
+  CLASS_MEMBERS_PUBLICATION_WRITER_REFUSED_CONSTRUCTION_INSTANCE = 16;
+  CLASS_MEMBERS_PUBLICATION_WRITER_ACCESSOR_RECEIVER = 17;
+  CLASS_MEMBERS_PUBLICATION_WRITER_CLASS_REACH = 18;
+  CLASS_MEMBERS_PUBLICATION_WRITER_CLASS_SURFACE_MEMBER_WRITE = 19;
+}
+
+message CompletedInitialization {
+  optional uint64 owner = 1;
+  optional .ducktape.debundle.saved_analysis.ProofDependencies dependencies = 2;
+}
+
+message ConstructionRejection {
+  oneof value {
+    google.protobuf.Empty spread_arguments = 1;
+    google.protobuf.Empty unchecked_constructor = 2;
+    google.protobuf.Empty arguments_to_default_fields = 3;
+    google.protobuf.Empty class_used_outside_construction = 4;
+    google.protobuf.Empty exported_class = 5;
+    google.protobuf.Empty class_mutated = 6;
+    google.protobuf.Empty class_members_escaped = 7;
+    string field_may_exist_on_object_prototype = 8;
+    google.protobuf.Empty undeclared_constructor_read = 9;
+    uint64 unchecked_property_source = 10;
+  }
+}
+
+enum DataflowOpacityCause {
+  DATAFLOW_OPACITY_CAUSE_UNSPECIFIED = 0;
+  DATAFLOW_OPACITY_CAUSE_MEMBER_WRITE_OR_ALIAS = 1;
+  DATAFLOW_OPACITY_CAUSE_DYNAMIC_CELL_WRITES = 2;
+  DATAFLOW_OPACITY_CAUSE_GLOBAL_OBJECT_ALIAS_ESCAPE = 3;
+  DATAFLOW_OPACITY_CAUSE_OPAQUE_AT_INIT_CALL = 4;
+}
+
+message DeferredRecordMember {
+  optional string name = 1;
+  SourceLocation source_location = 2;
+  repeated string captures = 3;
+}
+
+message DescriptorCopyAuthorRef {
+  optional string defining_module = 1;
+  optional string export = 2;
+  optional string spec_location = 3;
+}
+
+message DescriptorCopyFactorySignature {
+  optional uint64 argument_count = 1;
+  optional uint64 object_argument = 2;
+  // Both key collections must be nonempty and exclude __proto__.
+  repeated string eager_own_data_keys = 3;
+  repeated string assigned_data_keys = 4;
+}
+
+message DescriptorCopyFactorySummary {
+  optional string defining_module = 1;
+  optional string export = 2;
+  optional string author_location = 3;
+  repeated DescriptorCopyFactorySignature signatures = 4;
+}
+
+message EffectiveInitializerCallReplacement {
+  optional string package = 1;
+  optional string bundle_path = 2;
+  optional string bundle_export = 3;
+  optional .debundle.spec.PartialSwapKind symbol_kind = 4;
+  optional string upstream_export = 5;
+  optional string bundle_sha256 = 6;
+}
+
+message EvaluationEffects {
+  repeated GlobalAccess global_accesses = 1;
+}
+
+enum ExecutionOperation {
+  EXECUTION_OPERATION_UNSPECIFIED = 0;
+  EXECUTION_OPERATION_MEMBERSHIP_PROTOCOL = 1;
+  EXECUTION_OPERATION_INSTANCE_OF_PROTOCOL = 2;
+  EXECUTION_OPERATION_DESTRUCTURING_PROTOCOL = 3;
+  EXECUTION_OPERATION_MEMBER_READ = 4;
+  EXECUTION_OPERATION_OBJECT_SPREAD = 5;
+  EXECUTION_OPERATION_ARRAY_SPREAD = 6;
+  EXECUTION_OPERATION_IMPLICIT_COERCION = 7;
+  EXECUTION_OPERATION_PROPERTY_WRITE = 8;
+  EXECUTION_OPERATION_RETURNED_CALLBACK = 9;
+  EXECUTION_OPERATION_SUPERCLASS_CONSTRUCTION = 10;
+  EXECUTION_OPERATION_OBJECT_ASSIGN = 11;
+  EXECUTION_OPERATION_OPAQUE_EXECUTION = 12;
+  EXECUTION_OPERATION_GENERATOR_PARAMETERS = 13;
+  EXECUTION_OPERATION_CALLABLE_INPUTS = 14;
+  EXECUTION_OPERATION_ARRAY_ITERATION = 15;
+}
+
+message ExecutionPrecisionLoss {
+  optional .ducktape.debundle.saved_analysis.ExecutionPrecisionLossReason reason = 1;
+  optional .ducktape.debundle.saved_analysis.HavocReach reach = 2;
+  optional uint64 statement_ordinal = 3;
+  optional .ducktape.debundle.saved_analysis.SourceLocation source_location = 4;
+  optional .ducktape.debundle.saved_analysis.SourceSpan span = 5;
+}
+
+message ExecutionPrecisionLossReason {
+  message UnsupportedOperation {
+    optional .ducktape.debundle.saved_analysis.ExecutionOperation operation = 1;
+    optional .ducktape.debundle.saved_analysis.OrderedFieldReadRefusal ordered_field_read_refusal = 2;
+    optional .ducktape.debundle.saved_analysis.OrderedCallAdmissionRefusal ordered_call_admission_refusal = 3;
+  }
+  message CallbackPoolLimit {
+    optional uint64 limit = 1;
+    optional uint64 pool_size = 2;
+  }
+  oneof value {
+    google.protobuf.Empty unknown_call_target = 1;
+    google.protobuf.Empty missing_call_result = 2;
+    UnsupportedOperation unsupported_operation = 3;
+    .ducktape.debundle.saved_analysis.ConstructionRejection unsupported_construction = 4;
+    google.protobuf.Empty recursive_invocation = 5;
+    uint64 invocation_depth_limit = 6;
+    uint64 invocation_expansion_limit = 7;
+    CallbackPoolLimit callback_pool_limit = 8;
+  }
+}
+
+enum ExportLinkage {
+  EXPORT_LINKAGE_UNSPECIFIED = 0;
+  EXPORT_LINKAGE_LOCAL = 1;
+  EXPORT_LINKAGE_DEPENDENCY = 2;
+}
+
+message ExportReentryClosureBlocker {
+  message NonEsmChunk {
+    optional string source_chunk = 1;
+  }
+  message TopLevelAwait {
+    optional string source_chunk = 1;
+  }
+  message OpenReplacementBundle {
+    optional string source_chunk = 1;
+  }
+  message UnsupportedStaticRequest {
+    optional string source_chunk = 1;
+    optional string specifier = 2;
+    .ducktape.debundle.saved_analysis.ExportReentryTarget resolved_target = 3;
+  }
+  message UnresolvedStaticRequest {
+    optional string source_chunk = 1;
+    optional string specifier = 2;
+  }
+  message MissingTargetChunk {
+    optional string source_chunk = 1;
+    optional string specifier = 2;
+    optional string target_chunk = 3;
+  }
+  message NonEntryStaticRequest {
+    optional string source_chunk = 1;
+    optional string specifier = 2;
+    .ducktape.debundle.saved_analysis.ExportReentryTarget resolved_target = 3;
+    optional string entry_file = 4;
+  }
+  message TargetCycle {
+    optional string target_chunk = 1;
+  }
+  oneof value {
+    NonEsmChunk non_esm_chunk = 1;
+    TopLevelAwait top_level_await = 2;
+    OpenReplacementBundle open_replacement_bundle = 3;
+    UnsupportedStaticRequest unsupported_static_request = 4;
+    UnresolvedStaticRequest unresolved_static_request = 5;
+    MissingTargetChunk missing_target_chunk = 6;
+    NonEntryStaticRequest non_entry_static_request = 7;
+    TargetCycle target_cycle = 8;
+  }
+}
+
+message ExportReentryGlobalBlocker {
+  message IncompleteArtifact {
+    optional uint64 present_chunks = 1;
+    optional uint64 expected_chunks = 2;
+  }
+  message NonOrdinaryStaticRequest {
+    optional string source_chunk = 1;
+    optional string specifier = 2;
+    .ducktape.debundle.saved_analysis.ExportReentryTarget resolved_target = 3;
+  }
+  oneof value {
+    IncompleteArtifact incomplete_artifact = 1;
+    NonOrdinaryStaticRequest non_ordinary_static_request = 2;
+  }
+}
+
+message ExportReentryHostBuiltinLeaf {
+  optional string source_chunk = 1;
+  optional string specifier = 2;
+  .ducktape.debundle.saved_analysis.HostModule builtin = 3;
+  optional uint64 request_count = 4;
+}
+
+message ExportReentryLoaderDerivation {
+  message LoaderClosure {
+    optional bool closed = 1;
+    repeated .ducktape.debundle.saved_analysis.HostBehaviorKey host_keys = 2;
+    repeated .ducktape.debundle.saved_analysis.ProgramPremiseKey premise_keys = 3;
+    repeated .ducktape.debundle.saved_analysis.ExportReentryLoaderRequest requests = 4;
+    repeated string loaded_chunks = 5;
+    optional uint64 suspended_sites = 6;
+    optional uint64 premised_sites = 7;
+    optional uint64 outside_window_sites = 8;
+    optional uint64 unreachable_sites = 9;
+    repeated .ducktape.debundle.saved_analysis.ExportReentryLoaderFailure failures = 10;
+    // Presence distinguishes an absent selection from a known empty selection.
+    ExportReentryExports reentry_through = 11;
+  }
+  oneof value {
+    google.protobuf.Empty no_synchronous_loader = 1;
+    google.protobuf.Empty no_host_loader_sites = 2;
+    LoaderClosure loader_closure = 3;
+  }
+}
+
+message ExportReentryLoaderFailure {
+  optional .ducktape.debundle.saved_analysis.LoaderClosureFailureKind reason = 1;
+  optional uint64 occurrences = 2;
+  .ducktape.debundle.saved_analysis.LoaderClosureWitness first = 3;
+}
+
+message ExportReentryLoaderRequest {
+  optional string source_chunk = 1;
+  optional string specifier = 2;
+  .ducktape.debundle.saved_analysis.LoaderRequestReportTarget target = 3;
+  optional uint64 request_count = 4;
+}
+
+message ExportReentryPolicy {
+  oneof value {
+    google.protobuf.Empty conservative = 1;
+    google.protobuf.Empty no_static_importer_reentry = 2;
+    ExportReentryExports reentry_through = 3;
+  }
+}
+
+message ExportReentryReport {
+  .ducktape.debundle.saved_analysis.HostBehavior host_behavior = 1;
+  .ducktape.debundle.saved_analysis.ProgramPremises program_premises = 2;
+  .ducktape.debundle.saved_analysis.ExportReentryPolicy policy = 3;
+  .ducktape.debundle.saved_analysis.ExportReentryLoaderDerivation loader = 4;
+  repeated .ducktape.debundle.saved_analysis.ExportReentryGlobalBlocker global_blockers = 5;
+  repeated .ducktape.debundle.saved_analysis.ExportReentryClosureBlocker closure_blockers = 6;
+  repeated .ducktape.debundle.saved_analysis.ExportReentryHostBuiltinLeaf host_builtin_leaves = 7;
+}
+
+message ExportReentryTarget {
+  optional string chunk = 1;
+  optional string file = 2;
+}
+
+message FirstClassMembersPublication {
+  optional .ducktape.debundle.saved_analysis.ClassMembersPublicationWriter writer = 1;
+  optional uint64 top_level_owner = 2;
+  optional uint32 span_start = 3;
+  optional uint32 span_end = 4;
+  optional .ducktape.debundle.saved_analysis.BoundedInvocationFallbackInputPath bounded_fallback_input_path = 6;
+  optional .ducktape.debundle.saved_analysis.BoundedInvocationFallbackCallSite bounded_fallback_callsite = 7;
+}
+
+message ForeignCallSummary {
+  optional string defining_module = 1;
+  optional string export = 2;
+  optional string local = 3;
+  SourceLocation source_location = 4;
+  optional .ducktape.debundle.saved_analysis.ForeignInvocation invocation = 5;
+  repeated ForeignReturn returns = 6;
+  repeated uint64 retained_arguments = 7;
+  repeated string retained_provider_captures = 8;
+  repeated string provider_cell_reads = 9;
+  repeated NativeIntrinsic native_constructions = 10;
+  optional string replacement_package = 11;
+  optional .ducktape.debundle.saved_analysis.ProofDependencies dependencies = 12;
+}
+
+enum ForeignInvocation {
+  FOREIGN_INVOCATION_UNSPECIFIED = 0;
+  FOREIGN_INVOCATION_CALL = 1;
+  FOREIGN_INVOCATION_CONSTRUCT = 2;
+}
+
+message ForeignReturn {
+  oneof value {
+    uint64 argument_index = 1;
+    google.protobuf.Empty fresh_allocation = 2;
+    google.protobuf.Empty primitive = 3;
+  }
+}
+
+message GlobalAccessEvidence {
+  optional .ducktape.debundle.saved_analysis.ProofDependencies dependencies = 1;
+  repeated AssumedEffectReason assumptions = 2;
+}
+
+enum GlobalAccessKind {
+  GLOBAL_ACCESS_KIND_UNSPECIFIED = 0;
+  GLOBAL_ACCESS_KIND_READ = 1;
+  GLOBAL_ACCESS_KIND_WRITE = 2;
+}
+
+message GlobalAccessSite {
+  optional uint64 lexical_owner = 1;
+  optional uint32 start = 2;
+  optional uint32 end = 3;
+  optional .ducktape.debundle.saved_analysis.GlobalAccessKind access = 4;
+  optional string property = 5;
+}
+
+enum GlobalReachCause {
+  GLOBAL_REACH_CAUSE_UNSPECIFIED = 0;
+  GLOBAL_REACH_CAUSE_UNKNOWN_CALLEE = 1;
+  GLOBAL_REACH_CAUSE_TAINTED_INPUT = 2;
+  GLOBAL_REACH_CAUSE_BORROWED_RECEIVER = 3;
+  GLOBAL_REACH_CAUSE_DYNAMIC_SCOPE = 4;
+  GLOBAL_REACH_CAUSE_FOREIGN_RECORD = 5;
+  GLOBAL_REACH_CAUSE_UNMODELLED_OPERATION = 6;
+  GLOBAL_REACH_CAUSE_ESCAPED_CALLBACK_POOL = 7;
+}
+
+message HavocReach {
+  oneof value {
+    google.protobuf.Empty bounded = 1;
+    GlobalReachCause global = 2;
+  }
+}
+
+message HostBehavior {
+  optional .debundle.spec.SynchronousModuleLoader synchronous_module_loader = 1;
+  optional .debundle.spec.LoaderResultForEvaluatingModule loader_result_for_evaluating_module = 2;
+  optional .debundle.spec.SynchronousLoadRunsAppCallbacks synchronous_load_runs_app_callbacks = 3;
+  optional .debundle.spec.SynchronousLoadDrainsMicrotasks synchronous_load_drains_microtasks = 4;
+  // Empty collections grant no host permissions.
+  repeated .debundle.spec.NodeBuiltinModule reentry_free_builtin_modules = 5;
+  repeated .debundle.spec.BunModule reentry_free_bun_modules = 6;
+  repeated .debundle.spec.EmbeddedLoader reentry_free_embedded_loaders = 7;
+  repeated .debundle.spec.ReentryFreeOperation reentry_free_operations = 8;
+  optional .debundle.spec.PredefinedGlobals predefined_globals = 9;
+  optional string note = 10;
+}
+
+message HostBehaviorKey {
+  oneof value {
+    google.protobuf.Empty loader_result_for_evaluating_module = 1;
+    google.protobuf.Empty synchronous_load_runs_app_callbacks = 2;
+    google.protobuf.Empty synchronous_load_drains_microtasks = 3;
+    .debundle.spec.NodeBuiltinModule reentry_free_builtin_module = 4;
+    .debundle.spec.BunModule reentry_free_bun_module = 5;
+    .debundle.spec.EmbeddedLoader reentry_free_embedded_loader = 6;
+    .debundle.spec.ReentryFreeOperation reentry_free_operation = 7;
+    google.protobuf.Empty predefined_globals = 8;
+  }
+}
+
+message HostModule {
+  oneof value {
+    .debundle.spec.NodeBuiltinModule node = 1;
+    .debundle.spec.BunModule bun = 2;
+  }
+}
+
+message ImportedPrimitiveArrayLifetimeContract {
+  optional bool identity_unchanged_through_spread = 1;
+  optional bool dense_own_data_primitive_contents_unchanged_through_spread = 2;
+  optional bool ordinary_array_prototype_chain_unchanged_through_spread = 3;
+  optional bool no_own_iterator_or_accessors_through_spread = 4;
+  optional bool no_rebinding_through_spread = 5;
+}
+
+message ImportedPrimitiveArrayOperandEvidence {
+  optional string selector_local = 1;
+  optional string consumer_binding = 2;
+  optional string provider_module = 3;
+  optional string provider_export = 4;
+  optional string provider_local = 5;
+  optional string source_specifier = 6;
+  optional .ducktape.debundle.saved_analysis.SourceMatchClaim provider_source_match = 7;
+  optional string provider_source_sha256 = 8;
+  repeated uint32 primitive_slots = 9;
+  SourceLocation provider_source_location = 10;
+}
+
+message ImportedPrimitiveArraySpreadInputEvidence {
+  optional .ducktape.debundle.saved_analysis.ImportedPrimitiveArraySpreadInputRef reference = 1;
+  optional string spec_location = 2;
+  optional .ducktape.debundle.saved_analysis.SourceMatchClaim consumer_source_match = 3;
+  optional string consumer_source_sha256 = 4;
+  optional string selected_consumer_binding = 5;
+  SourceLocation consumer_source_location = 6;
+  repeated ImportedPrimitiveArrayOperandEvidence operands = 7;
+  optional .ducktape.debundle.saved_analysis.ImportedPrimitiveArrayLifetimeContract lifetime = 8;
+}
+
+message ImportedPrimitiveArraySpreadInputRef {
+  optional string defining_chunk = 1;
+  optional uint64 input_index = 2;
+}
+
+message ImportedPrimitiveArraySpreadInputUse {
+  optional .ducktape.debundle.saved_analysis.ImportedPrimitiveArraySpreadInputEvidence evidence = 1;
+  optional uint64 operand_index = 2;
+}
+
+message ImportedPrimitiveRead {
+  optional uint32 kinds = 1;
+  optional string provider_module = 2;
+  repeated string dependency_closure = 3;
+  repeated PrimitiveExportCell source_cells = 4;
+}
+
+enum InferenceRule {
+  INFERENCE_RULE_UNSPECIFIED = 0;
+  INFERENCE_RULE_NATIVE_INTEGRITY = 1;
+  INFERENCE_RULE_NATIVE_CALL_IDENTITY = 2;
+  INFERENCE_RULE_NATIVE_OWN_DATA_READ = 3;
+  INFERENCE_RULE_EMPTY_COLLECTION_CONSTRUCTION = 4;
+  INFERENCE_RULE_LOCAL_CLASS_CONSTRUCTION = 5;
+  INFERENCE_RULE_PRIMITIVE_SET_ITERATION = 6;
+  INFERENCE_RULE_STABLE_PRIMITIVE_ARRAY_SPREAD = 7;
+  INFERENCE_RULE_IMPORTED_PRIMITIVE_ARRAY_SPREAD = 8;
+  INFERENCE_RULE_STABLE_FUNCTION = 9;
+  INFERENCE_RULE_STABLE_PROVIDER = 10;
+  INFERENCE_RULE_ARGUMENT_NO_ESCAPE = 11;
+  INFERENCE_RULE_RETURNED_RECORD = 12;
+  INFERENCE_RULE_NAMESPACE_WRAPPER = 13;
+  INFERENCE_RULE_OWN_PROPERTY_SOURCE_ORIGIN = 14;
+  INFERENCE_RULE_OWN_PROPERTY_SHAPE = 15;
+  INFERENCE_RULE_OWN_PROPERTY_PREFIX_STATE = 16;
+  INFERENCE_RULE_OWN_PROPERTY_NAMES_PROJECTION = 17;
+  INFERENCE_RULE_OWN_PROPERTY_DESCRIPTOR_PROJECTION = 18;
+  INFERENCE_RULE_DESCRIPTOR_COPY_PROVIDER = 19;
+  INFERENCE_RULE_DESCRIPTOR_COPY_FACTORY = 20;
+  INFERENCE_RULE_FOREIGN_CALL_SUMMARY = 21;
+}
+
+message InferenceUse {
+  optional .ducktape.debundle.saved_analysis.InferenceRule conclusion = 1;
+  repeated InferenceRule derivation_rules = 2;
+  repeated ValueInputRef value_input_refs = 3;
+  repeated DescriptorCopyAuthorRef descriptor_copy_author_refs = 4;
+  repeated ArgumentInputRef argument_input_refs = 5;
+  repeated NativeOperationInputRef native_operation_input_refs = 6;
+  repeated ImportedPrimitiveArraySpreadInputRef imported_primitive_array_spread_input_refs = 7;
+}
+
+message InitializerBindingEffectsUse {
+  message Applied {
+    optional string binding = 1;
+    optional uint64 narrowed_reads = 2;
+    optional uint64 narrowed_rebinds = 3;
+    optional uint64 narrowed_uninitialized_reads = 4;
+  }
+  message Contradicted {
+    optional string binding = 1;
+    repeated string reads = 2;
+    repeated string rebinds = 3;
+  }
+  oneof value {
+    Applied applied = 1;
+    Contradicted contradicted = 2;
+  }
+}
+
+message InitializerCallEffectInputRef {
+  optional string defining_chunk = 1;
+  optional uint64 input_index = 2;
+}
+
+message InitializerExternalEffectsUse {
+  optional string binding = 1;
+  optional .debundle.spec.InitializerExternalEffects effects = 2;
+}
+
+enum InteropUseKind {
+  INTEROP_USE_KIND_UNSPECIFIED = 0;
+  INTEROP_USE_KIND_IMPORT_META_REQUIRE_LITERAL_CALL = 1;
+  INTEROP_USE_KIND_IMPORT_META_REQUIRE_DYNAMIC_CALL = 2;
+  INTEROP_USE_KIND_IMPORT_META_REQUIRE_REFERENCE = 3;
+  INTEROP_USE_KIND_GLOBAL_THIS_REQUIRE = 4;
+  INTEROP_USE_KIND_UNBOUND_REQUIRE = 5;
+  INTEROP_USE_KIND_EVALUATED_REQUIRE_LITERAL_CALL = 6;
+  INTEROP_USE_KIND_EVALUATED_REQUIRE_DYNAMIC_CALL = 7;
+  INTEROP_USE_KIND_UNBOUND_MODULE = 8;
+  INTEROP_USE_KIND_UNBOUND_MODULE_EXPORTS = 9;
+  INTEROP_USE_KIND_UNBOUND_EXPORTS = 10;
+  INTEROP_USE_KIND_IMPORT_META_DYNAMIC_PROPERTY = 11;
+  INTEROP_USE_KIND_IMPORT_META_OTHER_PROPERTY = 12;
+  INTEROP_USE_KIND_IMPORT_META_VALUE = 13;
+  INTEROP_USE_KIND_TS_IMPORT_EQUALS = 14;
+  INTEROP_USE_KIND_TS_EXPORT_ASSIGNMENT = 15;
+  INTEROP_USE_KIND_DYNAMIC_IMPORT = 16;
+}
+
+message IntrinsicFamilies {
+  // Selecting a list, including an empty list, differs from selecting all.
+  message ListedIntrinsics {
+    repeated .debundle.spec.IntrinsicFamily families = 1;
+  }
+  oneof value {
+    .debundle.spec.AllIntrinsicFamilies all = 1;
+    ListedIntrinsics listed = 2;
+  }
+}
+
+message IntrinsicsNeverWritten {
+  optional .ducktape.debundle.saved_analysis.IntrinsicFamilies families = 1;
+  optional string note = 2;
+}
+
+enum Kind {
+  KIND_UNSPECIFIED = 0;
+  KIND_FUNCTION = 1;
+  KIND_CLASS = 2;
+  KIND_OBJECT = 3;
+  KIND_SET = 4;
+  KIND_ARRAY = 5;
+  KIND_MAP = 6;
+  KIND_WEAK_MAP = 7;
+  KIND_WEAK_SET = 8;
+  KIND_REG_EXP = 9;
+  KIND_REGISTRY = 10;
+  KIND_PROXY = 11;
+}
+
+enum LoaderClosureFailureKind {
+  LOADER_CLOSURE_FAILURE_KIND_UNSPECIFIED = 0;
+  LOADER_CLOSURE_FAILURE_KIND_UNDECLARED_HOST_BEHAVIOR = 1;
+  LOADER_CLOSURE_FAILURE_KIND_OPAQUE_LOADER_SITE = 2;
+  LOADER_CLOSURE_FAILURE_KIND_LOADER_FACTORY_REQUEST = 3;
+  LOADER_CLOSURE_FAILURE_KIND_UNRESOLVABLE_LOADER_REQUEST = 4;
+  LOADER_CLOSURE_FAILURE_KIND_NON_REENTRY_FREE_BUILTIN_REQUEST = 5;
+  LOADER_CLOSURE_FAILURE_KIND_NON_REENTRY_FREE_EMBEDDED_FILE = 6;
+  LOADER_CLOSURE_FAILURE_KIND_LOADER_REQUEST_REACHES_TARGET = 7;
+  LOADER_CLOSURE_FAILURE_KIND_LOADED_CLOSURE_REQUEST = 8;
+  LOADER_CLOSURE_FAILURE_KIND_LOADED_CLOSURE_TOP_LEVEL_AWAIT = 9;
+}
+
+message LoaderClosureWitness {
+  oneof value {
+    .ducktape.debundle.saved_analysis.HostBehaviorKey host_behavior = 1;
+    .ducktape.debundle.saved_analysis.LoaderSiteWitness site = 2;
+  }
+}
+
+message LoaderRequestReportTarget {
+  oneof value {
+    .ducktape.debundle.saved_analysis.HostModule builtin = 1;
+    .debundle.spec.EmbeddedLoader embedded_file = 2;
+    .ducktape.debundle.saved_analysis.ExportReentryTarget chunk = 3;
+  }
+}
+
+message LoaderSite {
+  message Interop {
+    optional .ducktape.debundle.saved_analysis.InteropUseKind kind = 1;
+    optional uint64 item = 2;
+    optional uint64 line = 3;
+    optional string specifier = 4;
+    .ducktape.debundle.saved_analysis.ExportReentryTarget resolved_target = 5;
+  }
+  message StaticRequest {
+    optional string specifier = 1;
+    .ducktape.debundle.saved_analysis.ExportReentryTarget resolved_target = 2;
+  }
+  message LoaderBindingUse {
+    optional uint64 item = 1;
+    optional uint64 line = 2;
+    optional bool call = 3;
+    optional string specifier = 4;
+    .ducktape.debundle.saved_analysis.ExportReentryTarget resolved_target = 5;
+  }
+  message NamespaceRequest {
+    optional uint64 item = 1;
+    optional string specifier = 2;
+    .ducktape.debundle.saved_analysis.ExportReentryTarget resolved_target = 3;
+  }
+  oneof value {
+    Interop interop = 1;
+    StaticRequest static_request = 2;
+    LoaderBindingUse loader_binding_use = 3;
+    NamespaceRequest namespace_request = 4;
+    google.protobuf.Empty top_level_await = 5;
+  }
+}
+
+message LoaderSiteWitness {
+  optional string source_chunk = 1;
+  .ducktape.debundle.saved_analysis.LoaderSite site = 2;
+}
+
+message LocalBodyIdentity {
+  message RootInitializer {
+    optional uint64 owner = 1;
+    optional .ducktape.debundle.saved_analysis.SourceSpan initializer_span = 2;
+  }
+  message Callable {
+    optional uint32 key = 1;
+    optional uint64 owner = 2;
+  }
+  message Constructor {
+    optional uint32 class = 1;
+    optional uint64 owner = 2;
+  }
+  message Native {
+    optional .ducktape.debundle.saved_analysis.NativeIntrinsic intrinsic = 1;
+    optional string property = 2;
+  }
+  message Imported {
+    optional string defining_module = 1;
+    optional string export = 2;
+  }
+  oneof value {
+    RootInitializer root_initializer = 1;
+    Callable callable = 2;
+    Constructor constructor = 3;
+    Native native = 4;
+    Imported imported = 5;
+  }
+}
+
+message LocalCallReceipt {
+  optional .ducktape.debundle.saved_analysis.LocalBodyIdentity caller = 1;
+  optional .ducktape.debundle.saved_analysis.SourceSpan call_span = 2;
+  optional .ducktape.debundle.saved_analysis.LocalBodyIdentity target = 3;
+  optional .ducktape.debundle.saved_analysis.ProofDependencies dependencies = 4;
+}
+
+message LocalRecordFactoryPurityCertificate {
+  optional .ducktape.debundle.saved_analysis.SourceSpan call_span = 1;
+  repeated uint64 checked_owners = 2;
+  optional .ducktape.debundle.saved_analysis.ProofDependencies dependencies = 3;
+}
+
+message LocalRecordFactoryRejection {
+  optional string factory_binding = 1;
+  optional .ducktape.debundle.saved_analysis.RecordFactoryRejectionReason reason = 2;
+  optional string property = 3;
+  optional .ducktape.debundle.saved_analysis.ConstructionRejection construction = 4;
+  optional uint64 first_callback_publication_owner = 5;
+  optional .ducktape.debundle.saved_analysis.FirstClassMembersPublication first_class_members_publication = 6;
+  optional uint64 lexical_statement_ordinal = 7;
+  optional .ducktape.debundle.saved_analysis.SourceLocation source_location = 8;
+  optional .ducktape.debundle.saved_analysis.SourceSpan span = 9;
+}
+
+message LocalRecordFactoryUse {
+  optional string factory_binding = 1;
+  repeated string prototype_properties = 2;
+  optional uint64 lexical_statement_ordinal = 3;
+  optional .ducktape.debundle.saved_analysis.SourceLocation source_location = 4;
+  optional .ducktape.debundle.saved_analysis.SourceSpan span = 5;
+}
+
+message NamespaceWrapperSummary {
+  optional string defining_module = 1;
+  optional string export = 2;
+  optional string local = 3;
+  SourceLocation source_location = 4;
+  optional .ducktape.debundle.saved_analysis.InferenceUse inference = 5;
+  optional .ducktape.debundle.saved_analysis.ProofDependencies dependencies = 6;
+}
+
+message NativeInputKind {
+  oneof value {
+    .debundle.spec.NativeOperationKind operation = 1;
+    .debundle.spec.NativeCallIdentityKind call_identity = 2;
+  }
+}
+
+message NativeIntegrityCheck {
+  optional .ducktape.debundle.saved_analysis.NativeIntegrityGuard guard = 1;
+  repeated string slots = 2;
+  repeated .ducktape.debundle.saved_analysis.NativeIntrinsic affected_roots = 3;
+}
+
+enum NativeIntegrityGuard {
+  NATIVE_INTEGRITY_GUARD_UNSPECIFIED = 0;
+  NATIVE_INTEGRITY_GUARD_ORDINARY_OBJECT_PROTOTYPE = 1;
+  NATIVE_INTEGRITY_GUARD_ARRAY_INTRINSICS = 2;
+  NATIVE_INTEGRITY_GUARD_HOST_PROMISE_RESOLVE = 3;
+  NATIVE_INTEGRITY_GUARD_NATIVE_CALL_IDENTITY = 4;
+  NATIVE_INTEGRITY_GUARD_SET_ITERABLE = 5;
+  NATIVE_INTEGRITY_GUARD_LOCAL_CLASS_CONSTRUCTION = 6;
+  NATIVE_INTEGRITY_GUARD_FOREIGN_CALL_SUMMARY = 7;
+  NATIVE_INTEGRITY_GUARD_MAPPED_FROM_ENTRIES = 8;
+}
+
+message NativeIntegrityUse {
+  optional .ducktape.debundle.saved_analysis.NativeIntegrityGuard guard = 1;
+  repeated .ducktape.debundle.saved_analysis.ValueInputRef value_input_refs = 2;
+  repeated .ducktape.debundle.saved_analysis.NoAccessorInstallRef no_accessor_install_refs = 3;
+  repeated .ducktape.debundle.saved_analysis.ProgramPremiseKey program_premises = 4;
+}
+
+enum NativeIntrinsic {
+  NATIVE_INTRINSIC_UNSPECIFIED = 0;
+  NATIVE_INTRINSIC_GLOBAL_OBJECT = 1;
+  NATIVE_INTRINSIC_UNKNOWN_GLOBAL_VALUE = 2;
+  NATIVE_INTRINSIC_TEXT_ENCODER = 3;
+  NATIVE_INTRINSIC_ERROR = 4;
+  NATIVE_INTRINSIC_FINALIZATION_REGISTRY = 5;
+  NATIVE_INTRINSIC_FUNCTION = 6;
+  NATIVE_INTRINSIC_OBJECT = 7;
+  NATIVE_INTRINSIC_ARRAY = 8;
+  NATIVE_INTRINSIC_MATH = 9;
+  NATIVE_INTRINSIC_REG_EXP = 10;
+  NATIVE_INTRINSIC_SYMBOL = 11;
+  NATIVE_INTRINSIC_PROMISE = 12;
+  NATIVE_INTRINSIC_MAP = 13;
+  NATIVE_INTRINSIC_SET = 14;
+  NATIVE_INTRINSIC_WEAK_MAP = 15;
+  NATIVE_INTRINSIC_WEAK_SET = 16;
+}
+
+enum NativeMutationOperation {
+  NATIVE_MUTATION_OPERATION_UNSPECIFIED = 0;
+  NATIVE_MUTATION_OPERATION_PROPERTY_ASSIGNMENT = 1;
+  NATIVE_MUTATION_OPERATION_BINDING_ASSIGNMENT = 2;
+  NATIVE_MUTATION_OPERATION_UPDATE = 3;
+  NATIVE_MUTATION_OPERATION_DELETE = 4;
+  NATIVE_MUTATION_OPERATION_MUTATION_CALL = 5;
+}
+
+message NativeMutationWitness {
+  optional string chunk_id = 1;
+  optional uint64 statement_ordinal = 2;
+  optional .ducktape.debundle.saved_analysis.SourceLocation source_location = 3;
+  optional .ducktape.debundle.saved_analysis.NativeMutationOperation operation = 4;
+  repeated .ducktape.debundle.saved_analysis.NativeIntrinsic receiver_roots = 5;
+  optional bool through_local_alias = 6;
+  optional string receiver_global = 7;
+  repeated .ducktape.debundle.saved_analysis.NativeIntrinsic affected_roots = 8;
+  repeated .ducktape.debundle.saved_analysis.NativeWriteSlot target_slots = 9;
+  repeated .ducktape.debundle.saved_analysis.NativeIntrinsic key_dependencies = 10;
+  repeated .ducktape.debundle.saved_analysis.NativeIntrinsic invalidated_key_dependencies = 11;
+  repeated .ducktape.debundle.saved_analysis.ValueInputRef value_input_refs = 12;
+  repeated .ducktape.debundle.saved_analysis.ValueInputEvidence value_input_evidence = 13;
+  optional .ducktape.debundle.saved_analysis.NativeUnreachableBranch unreachable_branch = 14;
+  optional .ducktape.debundle.saved_analysis.SourceSpan span = 15;
+}
+
+message NativeOperationInputEvidence {
+  optional .ducktape.debundle.saved_analysis.NativeOperationInputRef reference = 1;
+  optional string spec_location = 2;
+  optional .ducktape.debundle.saved_analysis.NativeOperationSelectorProvenance selector = 3;
+  optional .ducktape.debundle.saved_analysis.NativeInputKind operation = 4;
+  optional string source_path = 5;
+  optional string audited_source_sha256 = 6;
+  optional string selected_binding = 7;
+  SourceLocation declaration_location = 8;
+  SourceLocation initializer_location = 9;
+}
+
+message NativeOperationInputRef {
+  optional string defining_chunk = 1;
+  optional uint64 input_index = 2;
+}
+
+message NativeOperationInputUse {
+  optional .ducktape.debundle.saved_analysis.NativeOperationInputEvidence evidence = 1;
+  optional .ducktape.debundle.saved_analysis.SourceLocation source_location = 2;
+  optional .ducktape.debundle.saved_analysis.SourceSpan span = 3;
+}
+
+message NativeOperationSelectorProvenance {
+  oneof value {
+    .ducktape.debundle.saved_analysis.SourceMatchClaim source_match = 1;
+    .ducktape.debundle.saved_analysis.SourceDeclaration declaration = 2;
+    .ducktape.debundle.saved_analysis.ResolvedMemberSelector resolved_member = 3;
+  }
+}
+
+message NativePrefixObservation {
+  optional .ducktape.debundle.saved_analysis.NativeIntegrityGuard guard = 1;
+  repeated .ducktape.debundle.saved_analysis.NativeProgramPointStep program_point_path = 2;
+  optional string property = 3;
+  repeated .ducktape.debundle.saved_analysis.NativeIntrinsic prior_affected_roots = 4;
+  optional uint64 prior_blocking_prototype_mutations = 5;
+  optional bool uncertain_execution = 6;
+}
+
+enum NativeProgramPointKind {
+  NATIVE_PROGRAM_POINT_KIND_UNSPECIFIED = 0;
+  NATIVE_PROGRAM_POINT_KIND_EVALUATE = 1;
+  NATIVE_PROGRAM_POINT_KIND_INVOKE = 2;
+  NATIVE_PROGRAM_POINT_KIND_CALL = 3;
+  NATIVE_PROGRAM_POINT_KIND_OWN_PROPERTY = 4;
+  NATIVE_PROGRAM_POINT_KIND_HEAP = 5;
+  NATIVE_PROGRAM_POINT_KIND_CALLBACKS = 6;
+  NATIVE_PROGRAM_POINT_KIND_MODEL = 7;
+}
+
+message NativeProgramPointStep {
+  optional .ducktape.debundle.saved_analysis.NativeProgramPointKind kind = 1;
+  optional uint64 ordinal = 2;
+}
+
+message NativePropertyKey {
+  message Affixed {
+    optional string prefix = 1;
+    optional string suffix = 2;
+  }
+  oneof value {
+    string string = 1;
+    Affixed affixed = 2;
+    google.protobuf.Empty symbol_iterator = 3;
+    google.protobuf.Empty other_symbol = 4;
+    google.protobuf.Empty unknown = 5;
+  }
+}
+
+message NativePrototypeMutation {
+  // Missing means any property; present with no names means only symbol keys.
+  message NamedProperties {
+    repeated string names = 1;
+  }
+  optional string chunk_id = 1;
+  optional uint64 statement_ordinal = 2;
+  optional .ducktape.debundle.saved_analysis.SourceLocation source_location = 3;
+  optional .ducktape.debundle.saved_analysis.NativePrototypeMutationKind kind = 4;
+  optional NamedProperties properties = 5;
+  repeated .ducktape.debundle.saved_analysis.NativeIntrinsic key_dependencies = 6;
+  optional .ducktape.debundle.saved_analysis.SourceSpan span = 7;
+}
+
+enum NativePrototypeMutationKind {
+  NATIVE_PROTOTYPE_MUTATION_KIND_UNSPECIFIED = 0;
+  NATIVE_PROTOTYPE_MUTATION_KIND_WRITE = 1;
+  NATIVE_PROTOTYPE_MUTATION_KIND_DELETE = 2;
+  NATIVE_PROTOTYPE_MUTATION_KIND_REFLECTIVE = 3;
+  NATIVE_PROTOTYPE_MUTATION_KIND_ESCAPE = 4;
+  NATIVE_PROTOTYPE_MUTATION_KIND_DYNAMIC_SCOPE = 5;
+}
+
+message NativePrototypePropertyCheck {
+  optional string property = 1;
+  optional bool intact = 2;
+  optional uint64 blocking_mutation_count = 3;
+}
+
+message NativeReceiverPath {
+  oneof value {
+    google.protobuf.Empty global_object = 1;
+    .ducktape.debundle.saved_analysis.NativeIntrinsic constructor = 2;
+    .ducktape.debundle.saved_analysis.NativeIntrinsic prototype = 3;
+    .ducktape.debundle.saved_analysis.NativeIntrinsic descendant = 4;
+    google.protobuf.Empty array_iterator_prototype = 5;
+    google.protobuf.Empty set_iterator_prototype = 6;
+    google.protobuf.Empty unknown = 7;
+  }
+}
+
+message NativeUnreachableBranch {
+  optional .ducktape.debundle.saved_analysis.CallbackObjectArguments arguments = 1;
+  optional string imported_local = 2;
+  optional .ducktape.debundle.saved_analysis.SourceLocation wrapper_call_location = 3;
+  optional .ducktape.debundle.saved_analysis.SourceLocation callback_location = 4;
+  optional .ducktape.debundle.saved_analysis.SourceLocation guard_location = 5;
+  optional .ducktape.debundle.saved_analysis.SourceSpan guard_span = 6;
+  optional .ducktape.debundle.saved_analysis.SourceSpan wrapper_call_span = 7;
+  optional .ducktape.debundle.saved_analysis.SourceSpan callback_span = 8;
+}
+
+message NativeWriteSlot {
+  optional .ducktape.debundle.saved_analysis.NativeReceiverPath receiver = 1;
+  optional .ducktape.debundle.saved_analysis.NativePropertyKey key = 2;
+}
+
+message NeverWrittenOverride {
+  optional uint64 witness = 1;
+  optional string chunk_id = 2;
+  optional .ducktape.debundle.saved_analysis.SourceLocation source_location = 3;
+  repeated .ducktape.debundle.saved_analysis.NativeIntrinsic families = 4;
+  optional .ducktape.debundle.saved_analysis.NeverWrittenReach reach = 5;
+}
+
+enum NeverWrittenReach {
+  NEVER_WRITTEN_REACH_UNSPECIFIED = 0;
+  NEVER_WRITTEN_REACH_UNKNOWN_RECEIVER = 1;
+  NEVER_WRITTEN_REACH_GLOBAL_OBJECT = 2;
+  NEVER_WRITTEN_REACH_FAMILY = 3;
+}
+
+message NoAccessorInstallRef {
+  optional string defining_chunk = 1;
+  optional uint64 input_index = 2;
+}
+
+enum OrderedCallAdmissionRefusal {
+  ORDERED_CALL_ADMISSION_REFUSAL_UNSPECIFIED = 0;
+  ORDERED_CALL_ADMISSION_REFUSAL_UNKNOWN_TARGET = 1;
+  ORDERED_CALL_ADMISSION_REFUSAL_MULTIPLE_TARGETS = 2;
+  ORDERED_CALL_ADMISSION_REFUSAL_NON_LOCAL_TARGET = 3;
+  ORDERED_CALL_ADMISSION_REFUSAL_UNSUPPORTED_RECEIVER = 4;
+  ORDERED_CALL_ADMISSION_REFUSAL_ARRAY_ITERATION_ROW_UNSUPPORTED = 5;
+  ORDERED_CALL_ADMISSION_REFUSAL_ARRAY_ITERATION_INTRINSICS_CHANGED = 6;
+  ORDERED_CALL_ADMISSION_REFUSAL_ARRAY_ITERATION_RECEIVER_UNPROVED = 7;
+  ORDERED_CALL_ADMISSION_REFUSAL_ARRAY_ITERATION_CALLBACK_UNSUPPORTED = 8;
+  ORDERED_CALL_ADMISSION_REFUSAL_ARRAY_ITERATION_CAPTURING_CALLBACK = 9;
+  ORDERED_CALL_ADMISSION_REFUSAL_ARRAY_ITERATION_CALLBACK_INCOMPLETE = 10;
+}
+
+enum OrderedFieldReadRefusal {
+  ORDERED_FIELD_READ_REFUSAL_UNSPECIFIED = 0;
+  ORDERED_FIELD_READ_REFUSAL_RECEIVER_NOT_SINGLETON = 1;
+  ORDERED_FIELD_READ_REFUSAL_RECEIVER_NOT_OBJECT = 2;
+  ORDERED_FIELD_READ_REFUSAL_BORROWED_RECEIVER = 3;
+  ORDERED_FIELD_READ_REFUSAL_UNSUPPORTED_RECORD_SHAPE = 4;
+  ORDERED_FIELD_READ_REFUSAL_ALLOCATION_NOT_FRESH = 5;
+  ORDERED_FIELD_READ_REFUSAL_UNSETTLED_RECEIVER = 6;
+  ORDERED_FIELD_READ_REFUSAL_MISSING_FIELD = 7;
+  ORDERED_FIELD_READ_REFUSAL_NON_DATA_FIELD = 8;
+  ORDERED_FIELD_READ_REFUSAL_MISSING_HEAP_VALUE = 9;
+}
+
+enum OwnerInitializationCoverageRefusalReason {
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNSPECIFIED = 0;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNSUPPORTED_OWNER_KIND = 1;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_EXPORTED_OWNER = 2;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_SPLIT_DECLARATION = 3;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNSUPPORTED_BINDING_SHAPE = 4;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_MISSING_INITIALIZER = 5;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNSUPPORTED_INITIALIZER = 6;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_OWNER_BINDING_MISMATCH = 7;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_INITIALIZER_RESULT_UNPROVED = 8;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNPROVED_FIELD_STORE = 9;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_IMPORTED_BINDING_STORE = 10;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_CONST_BINDING_STORE = 11;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNINITIALIZED_BINDING_STORE = 12;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_CAPTURED_BINDING_STORE = 13;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_EXPORTED_BINDING_STORE = 14;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNPROVED_STATEMENT_OPERATION = 15;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_CALLBACK_CAPTURES_LIVE_CELL = 16;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNKNOWN_CALL = 17;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_PRECISION_LOSS = 18;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNINITIALIZED_READ = 19;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_INCOMPLETE_EXECUTION = 20;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_BINDING_NOT_INITIALIZED = 21;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_NO_EXECUTION_SUMMARY = 22;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_REFUSAL_UNAVAILABLE = 23;
+}
+
+message PossibleGetterLookupSite {
+  optional uint64 lexical_owner = 1;
+  optional uint32 span_start = 2;
+  optional uint32 span_end = 3;
+}
+
+message PossibleGetterPromotion {
+  oneof value {
+    uint64 lazy_owner = 1;
+    google.protobuf.Empty raw_callbacks = 2;
+  }
+}
+
+message PrimitiveExportCell {
+  optional string module = 1;
+  optional string export = 2;
+}
+
+enum ProgramPremiseKey {
+  PROGRAM_PREMISE_KEY_UNSPECIFIED = 0;
+  PROGRAM_PREMISE_KEY_PROCESS_PROTOTYPE_CHAIN_ACCESSORS = 1;
+  PROGRAM_PREMISE_KEY_NON_LITERAL_LOADER_CALLS = 2;
+  PROGRAM_PREMISE_KEY_INTRINSICS_NEVER_WRITTEN = 3;
+}
+
+message ProgramPremises {
+  optional .debundle.spec.ProcessPrototypeChainAccessors process_prototype_chain_accessors = 1;
+  optional .debundle.spec.NonLiteralLoaderCalls non_literal_loader_calls = 2;
+  optional .ducktape.debundle.saved_analysis.IntrinsicsNeverWritten intrinsics_never_written = 3;
+  optional string note = 4;
+}
+
+message ProofDependencies {
+  repeated ValueInputRef value_inputs = 1;
+  repeated NativeOperationInputRef native_operation_inputs = 2;
+  repeated InitializerCallEffectInputRef initializer_call_effect_inputs = 3;
+  repeated ImportedPrimitiveArraySpreadInputRef imported_primitive_array_spread_inputs = 4;
+  repeated DescriptorCopyAuthorRef descriptor_copy_authors = 5;
+  repeated ArgumentInputRef argument_inputs = 6;
+  repeated HostBehaviorKey host_behavior = 7;
+  repeated ProgramPremiseKey program_premises = 8;
+  repeated NoAccessorInstallRef no_accessor_install_callables = 9;
+}
+
+message PurityNodeId {
+  optional uint64 index = 1;
+}
+
+enum PurityRule {
+  PURITY_RULE_UNSPECIFIED = 0;
+  PURITY_RULE_ASSIGN_OR_UPDATE = 1;
+  PURITY_RULE_AWAIT_OR_YIELD = 2;
+  PURITY_RULE_DELETE_OPERATOR = 3;
+  PURITY_RULE_THROW_STMT = 4;
+  PURITY_RULE_DEBUGGER_STMT = 5;
+  PURITY_RULE_UNKNOWN_CALL = 6;
+  PURITY_RULE_IMPURE_FUNCTION_CALL = 7;
+  PURITY_RULE_UNKNOWN_NEW = 8;
+  PURITY_RULE_UNKNOWN_MEMBER = 9;
+  PURITY_RULE_SUPER_PROP = 10;
+  PURITY_RULE_TAGGED_TPL = 11;
+  PURITY_RULE_ARRAY_SPREAD = 12;
+  PURITY_RULE_OBJECT_SPREAD = 13;
+  PURITY_RULE_OBJECT_ASSIGN_PROP = 14;
+  PURITY_RULE_CLASS_STATIC_OBSERVABLE = 15;
+  PURITY_RULE_BARE_CONTROL_FLOW = 16;
+  PURITY_RULE_COERCING_OPERATOR = 17;
+  PURITY_RULE_TO_PROPERTY_KEY_COERCION = 18;
+  PURITY_RULE_ITERATION_PROTOCOL = 19;
+  PURITY_RULE_DESTRUCTURING_PATTERN = 20;
+  PURITY_RULE_ORDER_DEPENDENT_READ = 21;
+  PURITY_RULE_OTHER = 22;
+}
+
+enum RecordFactoryRejectionReason {
+  RECORD_FACTORY_REJECTION_REASON_UNSPECIFIED = 0;
+  RECORD_FACTORY_REJECTION_REASON_NOT_OBJECT_LITERAL = 1;
+  RECORD_FACTORY_REJECTION_REASON_SPREAD = 2;
+  RECORD_FACTORY_REJECTION_REASON_COMPUTED_KEY = 3;
+  RECORD_FACTORY_REJECTION_REASON_ACCESSOR = 4;
+  RECORD_FACTORY_REJECTION_REASON_PROTOTYPE_KEY = 5;
+  RECORD_FACTORY_REJECTION_REASON_DUPLICATE_KEY = 6;
+  RECORD_FACTORY_REJECTION_REASON_ARRAY_SHAPE = 7;
+  RECORD_FACTORY_REJECTION_REASON_UNSUPPORTED_VALUE = 8;
+  RECORD_FACTORY_REJECTION_REASON_UNPROVEN_BINDING = 9;
+  RECORD_FACTORY_REJECTION_REASON_UNPROVEN_MEMBER_READ = 10;
+  RECORD_FACTORY_REJECTION_REASON_TEMPLATE_SUBSTITUTION = 11;
+  RECORD_FACTORY_REJECTION_REASON_INCOMPLETE_EXECUTION = 12;
+  RECORD_FACTORY_REJECTION_REASON_EXPORTED_RESULT = 13;
+  RECORD_FACTORY_REJECTION_REASON_STATEMENT_SHAPE = 14;
+  RECORD_FACTORY_REJECTION_REASON_ARGUMENT_EFFECTS = 15;
+  RECORD_FACTORY_REJECTION_REASON_FACTORY_CALLEE_SHAPE = 16;
+  RECORD_FACTORY_REJECTION_REASON_FACTORY_NOT_HOISTED = 17;
+  RECORD_FACTORY_REJECTION_REASON_INITIALIZER_BINDING = 18;
+  RECORD_FACTORY_REJECTION_REASON_FACTORY_EXPORTED = 19;
+  RECORD_FACTORY_REJECTION_REASON_FACTORY_ESCAPED = 20;
+  RECORD_FACTORY_REJECTION_REASON_FACTORY_FLOW_IDENTITY = 21;
+  RECORD_FACTORY_REJECTION_REASON_FACTORY_PREFIX_IDENTITY = 22;
+  RECORD_FACTORY_REJECTION_REASON_FACTORY_BODY = 23;
+  RECORD_FACTORY_REJECTION_REASON_CONSTRUCTOR_PROOF = 24;
+}
+
+message RedundantPureMemberHint {
+  optional string binding_name = 1;
+  optional string property = 2;
+  optional .ducktape.debundle.saved_analysis.RedundantPureMemberReason reason = 3;
+}
+
+enum RedundantPureMemberReason {
+  REDUNDANT_PURE_MEMBER_REASON_UNSPECIFIED = 0;
+  REDUNDANT_PURE_MEMBER_REASON_WHITELISTED_STATIC_CALL = 1;
+}
+
+message RedundantPurityHint {
+  optional string binding_name = 1;
+  optional .ducktape.debundle.saved_analysis.RedundantPurityReason reason = 2;
+  optional .ducktape.debundle.saved_analysis.RedundantPurityProofBasis proof_basis = 3;
+}
+
+enum RedundantPurityProofBasis {
+  REDUNDANT_PURITY_PROOF_BASIS_UNSPECIFIED = 0;
+  REDUNDANT_PURITY_PROOF_BASIS_WITHOUT_PURITY_HINTS = 1;
+  REDUNDANT_PURITY_PROOF_BASIS_WITH_OTHER_PURITY_HINTS = 2;
+}
+
+enum RedundantPurityReason {
+  REDUNDANT_PURITY_REASON_UNSPECIFIED = 0;
+  REDUNDANT_PURITY_REASON_INFERRED_PURE_FUNCTION = 1;
+  REDUNDANT_PURITY_REASON_INFERRED_PLAIN_DATA_BINDING = 2;
+}
+
+message ReentryFreeOperationUse {
+  optional .debundle.spec.ReentryFreeOperation operation = 1;
+  optional .ducktape.debundle.saved_analysis.SourceLocation source_location = 2;
+  optional .ducktape.debundle.saved_analysis.SourceSpan span = 3;
+}
+
+message ResolvedMemberSelector {
+  optional string module = 1;
+  optional string name = 2;
+}
+
+message RetainedCallbackSignature {
+  optional uint64 argument_count = 1;
+  repeated uint64 callback_arguments = 2;
+}
+
+message ReturnedRecordSummary {
+  optional string defining_module = 1;
+  optional string export = 2;
+  optional string local = 3;
+  SourceLocation source_location = 4;
+  repeated DeferredRecordMember members = 5;
+  optional .ducktape.debundle.saved_analysis.InferenceUse inference = 6;
+  optional string replacement_package = 7;
+}
+
+message ReturnedRecordUseFact {
+  optional string imported_local = 1;
+  optional .ducktape.debundle.saved_analysis.ReturnedRecordSummary evidence = 2;
+  optional .ducktape.debundle.saved_analysis.ReturnedRecordUseKind kind = 3;
+  optional uint64 lexical_statement_ordinal = 4;
+  SourceLocation source_location = 5;
+  optional .ducktape.debundle.saved_analysis.SourceSpan span = 6;
+}
+
+enum ReturnedRecordUseKind {
+  RETURNED_RECORD_USE_KIND_UNSPECIFIED = 0;
+  RETURNED_RECORD_USE_KIND_CALL_TIMING = 1;
+  RETURNED_RECORD_USE_KIND_RETURN_CAPABILITY = 2;
+}
+
+message RootAttempt {
+  oneof value {
+    google.protobuf.Empty sealed = 1;
+    RootAttemptRewind rewound = 2;
+  }
+}
+
+enum RootAttemptRewind {
+  ROOT_ATTEMPT_REWIND_UNSPECIFIED = 0;
+  ROOT_ATTEMPT_REWIND_INCOMPLETE_EXECUTION = 1;
+  ROOT_ATTEMPT_REWIND_UNKNOWN_CALL = 2;
+  ROOT_ATTEMPT_REWIND_PRECISION_LOSS = 3;
+  ROOT_ATTEMPT_REWIND_UNINITIALIZED_READ = 4;
+  ROOT_ATTEMPT_REWIND_FALLBACK_ONLY_EFFECT = 5;
+  ROOT_ATTEMPT_REWIND_OPEN_EFFECT_LEDGER = 6;
+  ROOT_ATTEMPT_REWIND_LEXICAL_RECEIPT_UNSEALED = 7;
+}
+
+message SavedBinding { optional string symbol = 1; optional uint32 context_ordinal = 2; }
+
+message SavedBindingEffectCoverage {
+  message OrderedRootInitializer {
+    optional .ducktape.debundle.saved_analysis.SavedRootInitializerIdentity identity = 1;
+    optional SavedLexicalBindingEffectReceipt receipt = 2;
+  }
+  oneof value {
+    google.protobuf.Empty unclassified = 1;
+    google.protobuf.Empty legacy_execution = 2;
+    OrderedRootInitializer ordered_root_initializer = 3;
+  }
+}
+
+message SavedChunkFactAnalysis {
+  repeated SavedStatementFacts facts = 1;
+  optional uint64 top_level_await = 2;
+  repeated RedundantPurityHint redundant_purity_hints = 3;
+  repeated RedundantPureMemberHint redundant_pure_member_hints = 4;
+  repeated string unconsulted_purity_hints = 5;
+}
+
+message SavedConstructorFacts {
+  repeated SavedBinding reads = 1;
+  repeated SavedBinding rebinds = 2;
+  repeated SavedBinding calls = 3;
+  repeated SavedBinding unresolved_sources = 4;
+  optional bool unresolved_inline_fn = 5;
+}
+
+message SavedEffectCell {
+  message OwnProperty {
+    optional uint32 origin = 1;
+    optional string property = 2;
+  }
+  oneof value {
+    SavedBinding binding = 1;
+    string global_prop = 2;
+    uint32 array_contents = 3;
+    uint32 set_contents = 4;
+    uint32 object_shape = 5;
+    OwnProperty own_property = 6;
+  }
+}
+
+message SavedFallbackOnlyEffects {
+  repeated SavedAssumedBindingEffect reads = 1;
+  repeated SavedAssumedBindingEffect rebinds = 2;
+  repeated SavedAssumedBindingEffect uninitialized_reads = 3;
+}
+
+message SavedHeapContentAccesses {
+  repeated SavedEffectCell reads = 1;
+  repeated SavedEffectCell writes = 2;
+}
+
+message SavedHeapContentCells {
+  repeated SavedEffectCell allocations = 1;
+  repeated SavedEffectCell reads = 2;
+  repeated SavedEffectCell writes = 3;
+  optional bool opaque = 4;
+  optional bool observes_external_heap = 5;
+}
+
+message SavedLexicalBindingEffectReceipt {
+  optional .ducktape.debundle.saved_analysis.SavedRootInitializerIdentity identity = 1;
+  optional .ducktape.debundle.saved_analysis.ProofDependencies read_dependencies = 2;
+  optional .ducktape.debundle.saved_analysis.ProofDependencies rebind_dependencies = 3;
+  repeated LocalCallReceipt calls = 4;
+}
+
+message NativeIntegrity {
+  repeated NativeIntrinsic mutated = 1;
+  repeated NativePrototypeMutation prototype_mutations = 2;
+  repeated NativeMutationWitness witnesses = 3;
+  repeated ValueInputEvidence value_input_evidence = 4;
+  repeated ValueInputRef consumed_value_inputs = 5;
+  repeated HostBehaviorKey consumed_host_behavior = 6;
+  repeated NativeIntrinsic never_written = 7;
+  repeated NeverWrittenOverride never_written_overrides = 8;
+}
+
+message SavedPurity {
+  message NotPure {
+    repeated SavedReason reasons = 1;
+  }
+  oneof value {
+    ProofDependencies pure = 1;
+    NotPure not_pure = 2;
+  }
+}
+
+message SavedPurityDisagreement {
+  optional .ducktape.debundle.saved_analysis.SavedPurity prepared = 1;
+  optional .ducktape.debundle.saved_analysis.SavedPurity completed = 2;
+}
+
+message SavedPurityGraph {
+  repeated SavedPurity nodes = 1;
+}
+
+message SavedReason {
+  PurityRule rule = 1;
+  SourceLocation source_location = 2;
+  optional string detail = 3;
+  optional string author_guidance = 4;
+  optional string cause_ref = 5;
+  optional uint64 cause_node = 6;
+  SourceSpan span = 7;
+}
+
+message SavedRootInitializerIdentity {
+  optional uint64 owner = 1;
+  optional .ducktape.debundle.saved_analysis.SavedBinding binding = 2;
+  optional SourceSpan initializer_span = 3;
+}
+
+message SavedStatementFacts {
+  optional uint64 ordinal = 1;
+  optional ExportLinkage export_linkage = 2;
+  repeated uint64 stable_iterable_producers = 3;
+  SourceLocation source_location = 4;
+  repeated CallbackFactoryBarrierFact callback_factory_barriers = 5;
+  repeated SavedBinding declared = 6;
+  repeated SavedBinding local_bindings = 7;
+  repeated SavedBinding var_declared = 8;
+  repeated SavedBinding var_initializers = 9;
+  SavedBindingEffects reads = 10;
+  SavedBindingEffects rebinds = 11;
+  repeated SavedBinding member_write_roots = 12;
+  repeated SavedBinding local_effects = 13;
+  SavedBindingEffects calls = 14;
+  SavedConstructorFacts constructor = 15;
+  SavedSynchronousCalls synchronous_calls = 16;
+  SavedSynchronousPrefixEffects synchronous_prefix_effects = 17;
+  repeated SavedBinding at_init_unresolved_sources = 18;
+  optional bool at_init_unresolved_inline_fn = 19;
+  repeated SavedBinding first_order_unresolved_sources = 20;
+  optional bool first_order_unresolved_inline_fn = 21;
+  optional bool declares_direct_function = 22;
+  repeated string global_writes = 23;
+  repeated string global_reads = 24;
+  repeated DataflowOpacityCause havoc = 25;
+  repeated DataflowOpacityCause trusted_summary_discharged = 26;
+  optional .ducktape.debundle.saved_analysis.SavedHeapContentCells heap_contents = 27;
+  repeated SavedEffectCell heap_one_shot_allocations = 28;
+  repeated SavedEffectCell deferred_heap_allocations = 29;
+  repeated NativeIntegrityUse heap_native_integrity_uses = 30;
+  optional .ducktape.debundle.saved_analysis.SavedPurity purity = 31;
+  optional .ducktape.debundle.saved_analysis.StatementKind kind = 32;
+}
+
+message SavedBindingEffects {
+  repeated SavedBinding eager = 1;
+  repeated SavedBinding lazy = 2;
+  repeated SavedBinding first_order_lazy = 3;
+}
+
+// Presence distinguishes an unknown prefix from a known empty footprint.
+message SavedSynchronousPrefixEffects {
+  repeated SavedBinding reads = 1;
+  repeated SavedBinding rebinds = 2;
+}
+
+// Absence means aliases are unknown; a present empty message means none.
+message SavedGlobalObjectAliases {
+  repeated SavedBinding bindings = 1;
+}
+
+message SavedAssumedBindingEffect {
+  SavedBinding binding = 1;
+  AssumedEffectReason reason = 2;
+}
+
+message SavedBindingEffectSite {
+  SavedBinding binding = 1;
+  optional uint64 source_unit = 2;
+}
+
+message SavedPrivateOwnFieldRead {
+  optional uint64 source_unit = 1;
+  SourceSpan span = 2;
+}
+
+// Bindings are composite keys; these entries retain canonical binding order.
+message SavedSettledArrayElements {
+  SavedBinding binding = 1;
+  SettledElements elements = 2;
+}
+
+message SavedSynchronousCalls {
+  InitializerBindingEffectsUse initializer_binding_effects = 1;
+  InitializerExternalEffectsUse initializer_external_effects = 2;
+  CompletedInitialization completed_initialization = 3;
+  optional OwnerInitializationCoverageRefusalReason initialization_coverage_refusal = 4;
+  RootAttempt root_attempt = 5;
+  optional .ducktape.debundle.saved_analysis.EvaluationEffects evaluation_effects = 6;
+  repeated LocalRecordFactoryUse local_record_factory_uses = 7;
+  repeated LocalRecordFactoryRejection local_record_factory_rejections = 8;
+  LocalRecordFactoryPurityCertificate local_record_factory_purity = 9;
+  repeated SavedPrivateOwnFieldRead proven_private_own_field_reads = 10;
+  SourceSpan local_record_factory_heap_call = 11;
+  repeated SavedBindingEffectSite reads = 12;
+  repeated SavedBindingEffectSite rebinds = 13;
+  repeated SavedBinding uninitialized_reads = 14;
+  optional .ducktape.debundle.saved_analysis.SavedFallbackOnlyEffects fallback_only = 15;
+  optional bool complete = 16;
+  optional .ducktape.debundle.saved_analysis.SavedBindingEffectCoverage binding_effect_coverage = 17;
+  repeated SavedSettledArrayElements settled_array_elements = 18;
+  SavedGlobalObjectAliases global_object_aliases = 19;
+  optional .ducktape.debundle.saved_analysis.SavedHeapContentCells heap_contents = 20;
+  optional .ducktape.debundle.saved_analysis.SavedHeapContentAccesses non_assumed_heap_accesses = 21;
+  repeated ExecutionPrecisionLoss precision_losses = 22;
+  repeated NativeIntegrityCheck native_integrity_checks = 23;
+  repeated NativePrototypePropertyCheck native_prototype_property_checks = 24;
+  repeated NativePrefixObservation native_prefix_observations = 25;
+  repeated NativeIntegrityUse native_integrity_uses = 26;
+  repeated NativeOperationInputUse native_operation_input_uses = 27;
+  repeated ImportedPrimitiveArraySpreadInputUse imported_primitive_array_spread_input_uses = 28;
+  repeated InferenceUse inference_uses = 29;
+  repeated CallbackFactoryUseFact callback_factory_uses = 30;
+  repeated ReturnedRecordUseFact returned_record_uses = 31;
+  repeated ReentryFreeOperationUse author_host_contract_uses = 32;
+  SavedPurityDisagreement purity_disagreement = 33;
+}
+
+message SettledElements {
+  message Records {
+    repeated string shared_keys = 1;
+  }
+  oneof value {
+    google.protobuf.Empty primitive = 1;
+    Records records = 2;
+  }
+}
+
+message SourceDeclaration {
+  optional string binding = 1;
+  optional uint64 body_index = 2;
+}
+
+message SourceLocation {
+  optional string source_path = 1;
+  optional uint64 start_line = 2;
+  optional uint64 end_line = 3;
+  optional uint64 start_column = 4;
+}
+
+message SourceMatchBinding {
+  oneof value {
+    string local = 1;
+    .ducktape.debundle.saved_analysis.SourceMatchBindingDetail detailed = 2;
+  }
+}
+
+message SourceMatchBindingDetail {
+  optional string local = 1;
+  optional string name = 2;
+}
+
+message SourceMatchClaim {
+  optional .debundle.spec.SourceMatchIdentifierMode identifiers = 1;
+  optional string match_source = 2;
+  repeated .ducktape.debundle.saved_analysis.SourceMatchBinding bindings = 3;
+  optional string note = 4;
+}
+
+message SourceSpan { optional uint32 lo = 1; optional uint32 hi = 2; }
+
+enum StatementKind {
+  STATEMENT_KIND_UNSPECIFIED = 0;
+  STATEMENT_KIND_VAR_DECL = 1;
+  STATEMENT_KIND_FN_DECL = 2;
+  STATEMENT_KIND_CLASS_DECL = 3;
+  STATEMENT_KIND_EXPORT = 4;
+  STATEMENT_KIND_IMPORT = 5;
+  STATEMENT_KIND_SIDE_EFFECT = 6;
+}
+
+message Value {
+  message Allocation {
+    optional Kind kind = 1;
+    optional uint32 site = 2;
+  }
+  oneof value {
+    Allocation allocation = 1;
+    uint32 primitive_kinds = 2;
+    google.protobuf.Empty unavailable = 3;
+    google.protobuf.Empty top = 4;
+  }
+}
+
+message ValueInputEvidence {
+  optional .ducktape.debundle.saved_analysis.ValueInputRef reference = 1;
+  optional string spec_location = 2;
+  optional .ducktape.debundle.saved_analysis.SourceMatchClaim source_match = 3;
+  optional .debundle.spec.CapturedValueKind value_kind = 4;
+  optional string source_path = 5;
+  optional string audited_source_sha256 = 6;
+  optional string selected_binding = 7;
+  SourceLocation declaration_location = 8;
+  SourceLocation initializer_location = 9;
+  optional string expected_export = 10;
+}
+
+message ValueInputRef {
+  optional string defining_chunk = 1;
+  optional uint64 input_index = 2;
+}
+
+// Presence distinguishes unknown reentry from a known empty export set.
+message ExportReentryExports {
+  repeated string exports = 1;
+}
+
+// Access sites are composite keys; entries retain canonical site order.
+message GlobalAccess {
+  GlobalAccessSite site = 1;
+  GlobalAccessEvidence evidence = 2;
+}

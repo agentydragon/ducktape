@@ -676,6 +676,22 @@ pub struct RetainedCallbackSignature {
     pub callback_arguments: BTreeSet<usize>,
 }
 
+impl RetainedCallbackSignature {
+    pub fn validate(&self) -> std::result::Result<(), &'static str> {
+        if self.callback_arguments.is_empty() {
+            return Err("retained callback signature must list at least one callback argument");
+        }
+        if self
+            .callback_arguments
+            .iter()
+            .any(|position| *position >= self.argument_count)
+        {
+            return Err("retained callback signature position must be less than argument_count");
+        }
+        Ok(())
+    }
+}
+
 impl<'de> Deserialize<'de> for RetainedCallbackSignature {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]
@@ -685,24 +701,12 @@ impl<'de> Deserialize<'de> for RetainedCallbackSignature {
             callback_arguments: BTreeSet<usize>,
         }
         let signature = Signature::deserialize(deserializer)?;
-        if signature.callback_arguments.is_empty() {
-            return Err(serde::de::Error::custom(
-                "retained callback signature must list at least one callback argument",
-            ));
-        }
-        if signature
-            .callback_arguments
-            .iter()
-            .any(|position| *position >= signature.argument_count)
-        {
-            return Err(serde::de::Error::custom(
-                "retained callback signature position must be less than argument_count",
-            ));
-        }
-        Ok(Self {
+        let signature = Self {
             argument_count: signature.argument_count,
             callback_arguments: signature.callback_arguments,
-        })
+        };
+        signature.validate().map_err(serde::de::Error::custom)?;
+        Ok(signature)
     }
 }
 

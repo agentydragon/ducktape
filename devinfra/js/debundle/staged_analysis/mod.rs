@@ -4,6 +4,7 @@
 //! closure. Ownership planning, lowering and output reports depend on it.
 
 use analysis::facts::ExportReentryPolicy;
+use analysis::saved_proto::{ProtoConvert, proto, required};
 use analysis_artifact::{AnalysisArtifactBody, AnalysisArtifactHeader};
 use analysis_codec::ContextOrdinals;
 use analysis_projection::AnalysisSpec;
@@ -26,8 +27,8 @@ mod asserted_contracts;
 pub mod chunk_facts;
 pub mod loader_surface;
 pub mod program_summary;
+mod program_summary_proto;
 mod request;
-mod saved_program_summary;
 pub use loader_surface::{
     ExportReentryLoaderDerivation, ExportReentryLoaderFailure, ExportReentryLoaderRequest,
     LoaderRequestReportTarget, LoaderSite, LoaderSiteWitness,
@@ -319,7 +320,7 @@ pub fn analyze_program(
         .collect::<Result<BTreeMap<_, _>>>()?;
     let header = AnalysisArtifactHeader {
         analysis_engine_sha256: analysis_engine_sha256.to_string(),
-        projection: spec.encode()?,
+        projection: spec.clone(),
         chunk_sources: chunk_source_digests(graph_provenance),
     };
     let body = AnalysisArtifactBody {
@@ -636,5 +637,594 @@ fn report_target(target: ChunkId, file: &str, artifact: &ChunkBundle) -> ExportR
     ExportReentryTarget {
         chunk: artifact.chunk_table.name(target).to_string(),
         file: file.to_string(),
+    }
+}
+
+impl ProtoConvert<proto::ExportReentryTarget> for ExportReentryTarget {
+    fn to_proto(&self) -> Result<proto::ExportReentryTarget> {
+        Ok(proto::ExportReentryTarget {
+            chunk: Some(self.chunk.clone()),
+            file: Some(self.file.clone()),
+        })
+    }
+    fn from_proto(value: proto::ExportReentryTarget) -> Result<Self> {
+        Ok(Self {
+            chunk: required(value.chunk, "ExportReentryTarget.chunk")?,
+            file: required(value.file, "ExportReentryTarget.file")?,
+        })
+    }
+}
+impl ProtoConvert<proto::ExportReentryHostBuiltinLeaf> for ExportReentryHostBuiltinLeaf {
+    fn to_proto(&self) -> Result<proto::ExportReentryHostBuiltinLeaf> {
+        Ok(proto::ExportReentryHostBuiltinLeaf {
+            source_chunk: Some(self.source_chunk.clone()),
+            specifier: Some(self.specifier.clone()),
+            builtin: Some(self.builtin.to_proto()?),
+            request_count: Some(self.request_count.to_proto()?),
+        })
+    }
+    fn from_proto(value: proto::ExportReentryHostBuiltinLeaf) -> Result<Self> {
+        Ok(Self {
+            source_chunk: required(
+                value.source_chunk,
+                "ExportReentryHostBuiltinLeaf.source_chunk",
+            )?,
+            specifier: required(value.specifier, "ExportReentryHostBuiltinLeaf.specifier")?,
+            builtin: ProtoConvert::from_proto(required(
+                value.builtin,
+                "ExportReentryHostBuiltinLeaf.builtin",
+            )?)?,
+            request_count: ProtoConvert::from_proto(required(
+                value.request_count,
+                "ExportReentryHostBuiltinLeaf.request_count",
+            )?)?,
+        })
+    }
+}
+impl ProtoConvert<proto::ExportReentryReport> for ExportReentryReport {
+    fn to_proto(&self) -> Result<proto::ExportReentryReport> {
+        Ok(proto::ExportReentryReport {
+            host_behavior: Some(self.host_behavior.to_proto()?),
+            program_premises: Some(self.program_premises.to_proto()?),
+            policy: Some(self.policy.to_proto()?),
+            loader: Some(self.loader.to_proto()?),
+            global_blockers: self
+                .global_blockers
+                .iter()
+                .map(ProtoConvert::to_proto)
+                .collect::<Result<_>>()?,
+            closure_blockers: self
+                .closure_blockers
+                .iter()
+                .map(ProtoConvert::to_proto)
+                .collect::<Result<_>>()?,
+            host_builtin_leaves: self
+                .host_builtin_leaves
+                .iter()
+                .map(ProtoConvert::to_proto)
+                .collect::<Result<_>>()?,
+        })
+    }
+    fn from_proto(value: proto::ExportReentryReport) -> Result<Self> {
+        Ok(Self {
+            host_behavior: ProtoConvert::from_proto(required(
+                value.host_behavior,
+                "ExportReentryReport.host_behavior",
+            )?)?,
+            program_premises: ProtoConvert::from_proto(required(
+                value.program_premises,
+                "ExportReentryReport.program_premises",
+            )?)?,
+            policy: ProtoConvert::from_proto(required(
+                value.policy,
+                "ExportReentryReport.policy",
+            )?)?,
+            loader: ProtoConvert::from_proto(required(
+                value.loader,
+                "ExportReentryReport.loader",
+            )?)?,
+            global_blockers: value
+                .global_blockers
+                .into_iter()
+                .map(ProtoConvert::from_proto)
+                .collect::<Result<_>>()?,
+            closure_blockers: value
+                .closure_blockers
+                .into_iter()
+                .map(ProtoConvert::from_proto)
+                .collect::<Result<_>>()?,
+            host_builtin_leaves: value
+                .host_builtin_leaves
+                .into_iter()
+                .map(ProtoConvert::from_proto)
+                .collect::<Result<_>>()?,
+        })
+    }
+}
+impl ProtoConvert<proto::ExportReentryGlobalBlocker> for ExportReentryGlobalBlocker {
+    fn to_proto(&self) -> Result<proto::ExportReentryGlobalBlocker> {
+        use proto::export_reentry_global_blocker::{
+            IncompleteArtifact, NonOrdinaryStaticRequest, Value,
+        };
+        Ok(proto::ExportReentryGlobalBlocker {
+            value: Some(match self {
+                Self::IncompleteArtifact {
+                    present_chunks,
+                    expected_chunks,
+                } => Value::IncompleteArtifact(IncompleteArtifact {
+                    present_chunks: Some(present_chunks.to_proto()?),
+                    expected_chunks: Some(expected_chunks.to_proto()?),
+                }),
+                Self::NonOrdinaryStaticRequest {
+                    source_chunk,
+                    specifier,
+                    resolved_target,
+                } => Value::NonOrdinaryStaticRequest(NonOrdinaryStaticRequest {
+                    source_chunk: Some(source_chunk.clone()),
+                    specifier: Some(specifier.clone()),
+                    resolved_target: resolved_target
+                        .as_ref()
+                        .map(ProtoConvert::to_proto)
+                        .transpose()?,
+                }),
+            }),
+        })
+    }
+    fn from_proto(value: proto::ExportReentryGlobalBlocker) -> Result<Self> {
+        use proto::export_reentry_global_blocker::Value;
+        Ok(
+            match required(value.value, "ExportReentryGlobalBlocker.value")? {
+                Value::IncompleteArtifact(value) => Self::IncompleteArtifact {
+                    present_chunks: ProtoConvert::from_proto(required(
+                        value.present_chunks,
+                        "ExportReentryGlobalBlocker.incomplete_artifact.present_chunks",
+                    )?)?,
+                    expected_chunks: ProtoConvert::from_proto(required(
+                        value.expected_chunks,
+                        "ExportReentryGlobalBlocker.incomplete_artifact.expected_chunks",
+                    )?)?,
+                },
+                Value::NonOrdinaryStaticRequest(value) => Self::NonOrdinaryStaticRequest {
+                    source_chunk: required(
+                        value.source_chunk,
+                        "ExportReentryGlobalBlocker.non_ordinary_static_request.source_chunk",
+                    )?,
+                    specifier: required(
+                        value.specifier,
+                        "ExportReentryGlobalBlocker.non_ordinary_static_request.specifier",
+                    )?,
+                    resolved_target: value
+                        .resolved_target
+                        .map(ProtoConvert::from_proto)
+                        .transpose()?,
+                },
+            },
+        )
+    }
+}
+impl ProtoConvert<proto::ExportReentryClosureBlocker> for ExportReentryClosureBlocker {
+    fn to_proto(&self) -> Result<proto::ExportReentryClosureBlocker> {
+        use proto::export_reentry_closure_blocker::{
+            MissingTargetChunk, NonEntryStaticRequest, NonEsmChunk, OpenReplacementBundle,
+            TargetCycle, TopLevelAwait, UnresolvedStaticRequest, UnsupportedStaticRequest, Value,
+        };
+        Ok(proto::ExportReentryClosureBlocker {
+            value: Some(match self {
+                Self::NonEsmChunk { source_chunk } => Value::NonEsmChunk(NonEsmChunk {
+                    source_chunk: Some(source_chunk.clone()),
+                }),
+                Self::TopLevelAwait { source_chunk } => Value::TopLevelAwait(TopLevelAwait {
+                    source_chunk: Some(source_chunk.clone()),
+                }),
+                Self::OpenReplacementBundle { source_chunk } => {
+                    Value::OpenReplacementBundle(OpenReplacementBundle {
+                        source_chunk: Some(source_chunk.clone()),
+                    })
+                }
+                Self::UnsupportedStaticRequest {
+                    source_chunk,
+                    specifier,
+                    resolved_target,
+                } => Value::UnsupportedStaticRequest(UnsupportedStaticRequest {
+                    source_chunk: Some(source_chunk.clone()),
+                    specifier: Some(specifier.clone()),
+                    resolved_target: resolved_target
+                        .as_ref()
+                        .map(ProtoConvert::to_proto)
+                        .transpose()?,
+                }),
+                Self::UnresolvedStaticRequest {
+                    source_chunk,
+                    specifier,
+                } => Value::UnresolvedStaticRequest(UnresolvedStaticRequest {
+                    source_chunk: Some(source_chunk.clone()),
+                    specifier: Some(specifier.clone()),
+                }),
+                Self::MissingTargetChunk {
+                    source_chunk,
+                    specifier,
+                    target_chunk,
+                } => Value::MissingTargetChunk(MissingTargetChunk {
+                    source_chunk: Some(source_chunk.clone()),
+                    specifier: Some(specifier.clone()),
+                    target_chunk: Some(target_chunk.clone()),
+                }),
+                Self::NonEntryStaticRequest {
+                    source_chunk,
+                    specifier,
+                    resolved_target,
+                    entry_file,
+                } => Value::NonEntryStaticRequest(NonEntryStaticRequest {
+                    source_chunk: Some(source_chunk.clone()),
+                    specifier: Some(specifier.clone()),
+                    resolved_target: Some(resolved_target.to_proto()?),
+                    entry_file: Some(entry_file.clone()),
+                }),
+                Self::TargetCycle { target_chunk } => Value::TargetCycle(TargetCycle {
+                    target_chunk: Some(target_chunk.clone()),
+                }),
+            }),
+        })
+    }
+    fn from_proto(value: proto::ExportReentryClosureBlocker) -> Result<Self> {
+        use proto::export_reentry_closure_blocker::Value;
+        Ok(
+            match required(value.value, "ExportReentryClosureBlocker.value")? {
+                Value::NonEsmChunk(value) => Self::NonEsmChunk {
+                    source_chunk: required(
+                        value.source_chunk,
+                        "ExportReentryClosureBlocker.non_esm_chunk.source_chunk",
+                    )?,
+                },
+                Value::TopLevelAwait(value) => Self::TopLevelAwait {
+                    source_chunk: required(
+                        value.source_chunk,
+                        "ExportReentryClosureBlocker.top_level_await.source_chunk",
+                    )?,
+                },
+                Value::OpenReplacementBundle(value) => Self::OpenReplacementBundle {
+                    source_chunk: required(
+                        value.source_chunk,
+                        "ExportReentryClosureBlocker.open_replacement_bundle.source_chunk",
+                    )?,
+                },
+                Value::UnsupportedStaticRequest(value) => Self::UnsupportedStaticRequest {
+                    source_chunk: required(
+                        value.source_chunk,
+                        "ExportReentryClosureBlocker.unsupported_static_request.source_chunk",
+                    )?,
+                    specifier: required(
+                        value.specifier,
+                        "ExportReentryClosureBlocker.unsupported_static_request.specifier",
+                    )?,
+                    resolved_target: value
+                        .resolved_target
+                        .map(ProtoConvert::from_proto)
+                        .transpose()?,
+                },
+                Value::UnresolvedStaticRequest(value) => Self::UnresolvedStaticRequest {
+                    source_chunk: required(
+                        value.source_chunk,
+                        "ExportReentryClosureBlocker.unresolved_static_request.source_chunk",
+                    )?,
+                    specifier: required(
+                        value.specifier,
+                        "ExportReentryClosureBlocker.unresolved_static_request.specifier",
+                    )?,
+                },
+                Value::MissingTargetChunk(value) => Self::MissingTargetChunk {
+                    source_chunk: required(
+                        value.source_chunk,
+                        "ExportReentryClosureBlocker.missing_target_chunk.source_chunk",
+                    )?,
+                    specifier: required(
+                        value.specifier,
+                        "ExportReentryClosureBlocker.missing_target_chunk.specifier",
+                    )?,
+                    target_chunk: required(
+                        value.target_chunk,
+                        "ExportReentryClosureBlocker.missing_target_chunk.target_chunk",
+                    )?,
+                },
+                Value::NonEntryStaticRequest(value) => Self::NonEntryStaticRequest {
+                    source_chunk: required(
+                        value.source_chunk,
+                        "ExportReentryClosureBlocker.non_entry_static_request.source_chunk",
+                    )?,
+                    specifier: required(
+                        value.specifier,
+                        "ExportReentryClosureBlocker.non_entry_static_request.specifier",
+                    )?,
+                    resolved_target: ProtoConvert::from_proto(required(
+                        value.resolved_target,
+                        "ExportReentryClosureBlocker.non_entry_static_request.resolved_target",
+                    )?)?,
+                    entry_file: required(
+                        value.entry_file,
+                        "ExportReentryClosureBlocker.non_entry_static_request.entry_file",
+                    )?,
+                },
+                Value::TargetCycle(value) => Self::TargetCycle {
+                    target_chunk: required(
+                        value.target_chunk,
+                        "ExportReentryClosureBlocker.target_cycle.target_chunk",
+                    )?,
+                },
+            },
+        )
+    }
+}
+
+#[cfg(test)]
+mod protobuf_tests {
+    use super::*;
+    use analysis::analysis_inputs::{HostBehaviorKey, ProgramPremiseKey};
+    use analysis::loader_closure::{LoaderClosureFailureKind, LoaderClosureWitness};
+    use artifact::reports::InteropUseKind;
+
+    fn report(reentry_through: Option<BTreeSet<String>>) -> ExportReentryReport {
+        let target = ExportReentryTarget {
+            chunk: "dependency".into(),
+            file: "dir/entry.mjs".into(),
+        };
+        ExportReentryReport {
+            host_behavior: spec::HostBehavior {
+                note: Some("host audit".into()),
+                ..spec::HostBehavior::default()
+            },
+            program_premises: spec::ProgramPremises {
+                note: Some("program audit".into()),
+                ..spec::ProgramPremises::default()
+            },
+            policy: ExportReentryPolicy::Conservative,
+            loader: ExportReentryLoaderDerivation::LoaderClosure {
+                closed: false,
+                host_keys: [
+                    HostBehaviorKey::LoaderResultForEvaluatingModule,
+                    HostBehaviorKey::SynchronousLoadRunsAppCallbacks,
+                ]
+                .into(),
+                premise_keys: [ProgramPremiseKey::NonLiteralLoaderCalls].into(),
+                requests: [
+                    LoaderRequestReportTarget::Builtin(spec::HostModule::Node(
+                        spec::NodeBuiltinModule::Fs,
+                    )),
+                    LoaderRequestReportTarget::EmbeddedFile(spec::EmbeddedLoader::Text),
+                    LoaderRequestReportTarget::Chunk(target.clone()),
+                ]
+                .into_iter()
+                .map(|target| ExportReentryLoaderRequest {
+                    source_chunk: "entry".into(),
+                    specifier: "request".into(),
+                    target,
+                    request_count: 2,
+                })
+                .collect(),
+                loaded_chunks: vec!["dependency".into(), "provider".into()],
+                suspended_sites: 0,
+                premised_sites: 1,
+                outside_window_sites: 2,
+                unreachable_sites: 3,
+                failures: vec![
+                    ExportReentryLoaderFailure {
+                        reason: LoaderClosureFailureKind::LoaderRequestReachesTarget,
+                        occurrences: 2,
+                        first: LoaderClosureWitness::Site(LoaderSiteWitness {
+                            source_chunk: "entry".into(),
+                            site: LoaderSite::Interop {
+                                kind: InteropUseKind::EvaluatedRequireLiteralCall,
+                                item: 0,
+                                line: Some(0),
+                                specifier: Some(String::new()),
+                                resolved_target: Some(target.clone()),
+                            },
+                        }),
+                    },
+                    ExportReentryLoaderFailure {
+                        reason: LoaderClosureFailureKind::UndeclaredHostBehavior,
+                        occurrences: 1,
+                        first: LoaderClosureWitness::HostBehavior(
+                            HostBehaviorKey::SynchronousLoadRunsAppCallbacks,
+                        ),
+                    },
+                ],
+                reentry_through,
+            },
+            global_blockers: vec![
+                ExportReentryGlobalBlocker::IncompleteArtifact {
+                    present_chunks: 0,
+                    expected_chunks: 2,
+                },
+                ExportReentryGlobalBlocker::NonOrdinaryStaticRequest {
+                    source_chunk: "entry".into(),
+                    specifier: "opaque".into(),
+                    resolved_target: None,
+                },
+            ],
+            closure_blockers: vec![ExportReentryClosureBlocker::NonEntryStaticRequest {
+                source_chunk: "entry".into(),
+                specifier: "dependency".into(),
+                resolved_target: target,
+                entry_file: "entry.mjs".into(),
+            }],
+            host_builtin_leaves: vec![ExportReentryHostBuiltinLeaf {
+                source_chunk: "entry".into(),
+                specifier: "node:fs".into(),
+                builtin: spec::HostModule::Node(spec::NodeBuiltinModule::Fs),
+                request_count: 1,
+            }],
+        }
+    }
+
+    #[test]
+    fn saved_reentry_report_keeps_proof_keys_witnesses_targets_and_optional_empty_sets() {
+        let mut encodings = Vec::new();
+        for names in [None, Some(BTreeSet::new()), Some(["public".into()].into())] {
+            let original = report(names);
+            let bytes = analysis_codec::encode_protobuf(&original.to_proto().unwrap()).unwrap();
+            let restored =
+                ExportReentryReport::from_proto(analysis_codec::decode_protobuf(&bytes).unwrap())
+                    .unwrap();
+            assert_eq!(
+                serde_json::to_value(&restored).unwrap(),
+                serde_json::to_value(&original).unwrap()
+            );
+            assert!(!restored.loader.permits_export_reentry_proof());
+            encodings.push(bytes);
+        }
+        assert_ne!(encodings[0], encodings[1]);
+        assert_ne!(encodings[1], encodings[2]);
+    }
+
+    #[test]
+    fn saved_reentry_reports_reject_missing_proof_fields_and_duplicate_keys() {
+        let wire = report(None).to_proto().unwrap();
+        let mut malformed = wire.clone();
+        malformed.policy = None;
+        assert!(ExportReentryReport::from_proto(malformed).is_err());
+        let mut malformed = wire.clone();
+        let Some(proto::export_reentry_loader_derivation::Value::LoaderClosure(closure)) =
+            &mut malformed.loader.as_mut().unwrap().value
+        else {
+            unreachable!()
+        };
+        closure.closed = None;
+        assert!(ExportReentryReport::from_proto(malformed).is_err());
+        let mut malformed = wire;
+        let Some(proto::export_reentry_loader_derivation::Value::LoaderClosure(closure)) =
+            &mut malformed.loader.as_mut().unwrap().value
+        else {
+            unreachable!()
+        };
+        closure.host_keys.push(closure.host_keys[0]);
+        assert!(ExportReentryReport::from_proto(malformed).is_err());
+        let mut malformed = report(Some(BTreeSet::new())).to_proto().unwrap();
+        let Some(proto::export_reentry_loader_derivation::Value::LoaderClosure(closure)) =
+            &mut malformed.loader.as_mut().unwrap().value
+        else {
+            unreachable!()
+        };
+        closure.reentry_through.as_mut().unwrap().exports = vec!["public".into(), "public".into()];
+        assert!(ExportReentryReport::from_proto(malformed).is_err());
+    }
+
+    #[test]
+    fn saved_loader_sites_reject_missing_identity_fields_unknown_kinds_and_discriminants() {
+        let site = LoaderSite::Interop {
+            kind: InteropUseKind::ImportMetaRequireReference,
+            item: 1,
+            line: None,
+            specifier: None,
+            resolved_target: None,
+        };
+        let valid = site.to_proto().unwrap();
+        assert_eq!(LoaderSite::from_proto(valid.clone()).unwrap(), site);
+        for kind in [None, Some(0), Some(i32::MAX)] {
+            let mut malformed = valid.clone();
+            let Some(proto::loader_site::Value::Interop(value)) = &mut malformed.value else {
+                unreachable!()
+            };
+            value.kind = kind;
+            assert!(LoaderSite::from_proto(malformed).is_err());
+        }
+        let mut malformed = valid;
+        let Some(proto::loader_site::Value::Interop(value)) = &mut malformed.value else {
+            unreachable!()
+        };
+        value.item = None;
+        assert!(LoaderSite::from_proto(malformed).is_err());
+        assert!(LoaderSite::from_proto(proto::LoaderSite { value: None }).is_err());
+        assert!(
+            ExportReentryLoaderDerivation::from_proto(proto::ExportReentryLoaderDerivation {
+                value: None
+            })
+            .is_err()
+        );
+        assert!(
+            LoaderClosureWitness::<LoaderSiteWitness>::from_proto(proto::LoaderClosureWitness {
+                value: Some(proto::loader_closure_witness::Value::Site(
+                    proto::LoaderSiteWitness {
+                        source_chunk: Some("entry".into()),
+                        site: None
+                    }
+                ))
+            })
+            .is_err()
+        );
+        for kind in [0, i32::MAX] {
+            assert!(LoaderClosureFailureKind::from_proto(kind).is_err());
+        }
+        for value in [0, i32::MAX] {
+            assert!(
+                LoaderRequestReportTarget::from_proto(proto::LoaderRequestReportTarget {
+                    value: Some(proto::loader_request_report_target::Value::EmbeddedFile(
+                        value
+                    )),
+                })
+                .is_err()
+            );
+        }
+    }
+    #[test]
+    fn saved_loader_sites_keep_absent_and_present_zero_or_empty_diagnostics() {
+        let target = Some(ExportReentryTarget {
+            chunk: "provider".into(),
+            file: "entry.mjs".into(),
+        });
+        for site in [
+            LoaderSite::Interop {
+                kind: InteropUseKind::ImportMetaRequireReference,
+                item: 0,
+                line: None,
+                specifier: None,
+                resolved_target: None,
+            },
+            LoaderSite::Interop {
+                kind: InteropUseKind::ImportMetaRequireLiteralCall,
+                item: 0,
+                line: Some(0),
+                specifier: Some(String::new()),
+                resolved_target: target.clone(),
+            },
+            LoaderSite::StaticRequest {
+                specifier: "./provider".into(),
+                resolved_target: None,
+            },
+            LoaderSite::LoaderBindingUse {
+                item: 3,
+                line: Some(12),
+                call: false,
+                specifier: Some(String::new()),
+                resolved_target: target.clone(),
+            },
+            LoaderSite::NamespaceRequest {
+                item: 4,
+                specifier: "./provider".into(),
+                resolved_target: target,
+            },
+            LoaderSite::TopLevelAwait,
+        ] {
+            let wire = site.to_proto().unwrap();
+            let bytes = analysis_codec::encode_protobuf(&wire).unwrap();
+            assert_eq!(
+                LoaderSite::from_proto(analysis_codec::decode_protobuf(&bytes).unwrap()).unwrap(),
+                site
+            );
+        }
+        for derivation in [
+            ExportReentryLoaderDerivation::NoSynchronousLoader,
+            ExportReentryLoaderDerivation::NoHostLoaderSites,
+        ] {
+            let bytes = analysis_codec::encode_protobuf(&derivation.to_proto().unwrap()).unwrap();
+            let restored = ExportReentryLoaderDerivation::from_proto(
+                analysis_codec::decode_protobuf(&bytes).unwrap(),
+            )
+            .unwrap();
+            assert!(restored.permits_export_reentry_proof());
+            assert_eq!(
+                serde_json::to_value(restored).unwrap(),
+                serde_json::to_value(derivation).unwrap()
+            );
+        }
     }
 }

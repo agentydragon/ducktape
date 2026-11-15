@@ -19,6 +19,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::saved_proto::{ProtoConvert, proto, required};
+use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use spec::{
     EmbeddedLoader, HostBehavior, HostModule, LoaderResultForEvaluatingModule,
@@ -569,6 +571,84 @@ impl<W: Clone + Ord> IterativeRules for LoaderClosureRules<'_, W> {
             }
             _ => unreachable!("each key holds one fact family"),
         }
+    }
+}
+
+impl ProtoConvert<i32> for LoaderClosureFailureKind {
+    fn to_proto(&self) -> Result<i32> {
+        Ok(match self {
+            Self::UndeclaredHostBehavior => {
+                proto::LoaderClosureFailureKind::UndeclaredHostBehavior as i32
+            }
+            Self::OpaqueLoaderSite => proto::LoaderClosureFailureKind::OpaqueLoaderSite as i32,
+            Self::LoaderFactoryRequest => {
+                proto::LoaderClosureFailureKind::LoaderFactoryRequest as i32
+            }
+            Self::UnresolvableLoaderRequest => {
+                proto::LoaderClosureFailureKind::UnresolvableLoaderRequest as i32
+            }
+            Self::NonReentryFreeBuiltinRequest => {
+                proto::LoaderClosureFailureKind::NonReentryFreeBuiltinRequest as i32
+            }
+            Self::NonReentryFreeEmbeddedFile => {
+                proto::LoaderClosureFailureKind::NonReentryFreeEmbeddedFile as i32
+            }
+            Self::LoaderRequestReachesTarget => {
+                proto::LoaderClosureFailureKind::LoaderRequestReachesTarget as i32
+            }
+            Self::LoadedClosureRequest => {
+                proto::LoaderClosureFailureKind::LoadedClosureRequest as i32
+            }
+            Self::LoadedClosureTopLevelAwait => {
+                proto::LoaderClosureFailureKind::LoadedClosureTopLevelAwait as i32
+            }
+        })
+    }
+    fn from_proto(value: i32) -> Result<Self> {
+        Ok(match proto::LoaderClosureFailureKind::try_from(value)? {
+            proto::LoaderClosureFailureKind::UndeclaredHostBehavior => Self::UndeclaredHostBehavior,
+            proto::LoaderClosureFailureKind::OpaqueLoaderSite => Self::OpaqueLoaderSite,
+            proto::LoaderClosureFailureKind::LoaderFactoryRequest => Self::LoaderFactoryRequest,
+            proto::LoaderClosureFailureKind::UnresolvableLoaderRequest => {
+                Self::UnresolvableLoaderRequest
+            }
+            proto::LoaderClosureFailureKind::NonReentryFreeBuiltinRequest => {
+                Self::NonReentryFreeBuiltinRequest
+            }
+            proto::LoaderClosureFailureKind::NonReentryFreeEmbeddedFile => {
+                Self::NonReentryFreeEmbeddedFile
+            }
+            proto::LoaderClosureFailureKind::LoaderRequestReachesTarget => {
+                Self::LoaderRequestReachesTarget
+            }
+            proto::LoaderClosureFailureKind::LoadedClosureRequest => Self::LoadedClosureRequest,
+            proto::LoaderClosureFailureKind::LoadedClosureTopLevelAwait => {
+                Self::LoadedClosureTopLevelAwait
+            }
+            proto::LoaderClosureFailureKind::Unspecified => {
+                bail!("unspecified saved-analysis loader closure failure")
+            }
+        })
+    }
+}
+impl<W: ProtoConvert<proto::LoaderSiteWitness>> ProtoConvert<proto::LoaderClosureWitness>
+    for LoaderClosureWitness<W>
+{
+    fn to_proto(&self) -> Result<proto::LoaderClosureWitness> {
+        use proto::loader_closure_witness::Value;
+        Ok(proto::LoaderClosureWitness {
+            value: Some(match self {
+                Self::HostBehavior(key) => Value::HostBehavior(key.to_proto()?),
+                Self::Site(site) => Value::Site(site.to_proto()?),
+            }),
+        })
+    }
+    fn from_proto(value: proto::LoaderClosureWitness) -> Result<Self> {
+        use proto::loader_closure_witness::Value;
+        Ok(match required(value.value, "LoaderClosureWitness.value")? {
+            Value::HostBehavior(value) => Self::HostBehavior(HostBehaviorKey::from_proto(value)?),
+            Value::Site(value) => Self::Site(W::from_proto(value)?),
+        })
     }
 }
 

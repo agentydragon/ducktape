@@ -1,9 +1,8 @@
-//! Process-independent MessagePack encoding of analysis output.
+//! Process-independent identities and compressed Protobuf for saved analysis.
 //!
 //! Saved artifact data represents SWC bindings with [`SavedBinding`]. Callers
 //! convert runtime identities through [`ContextOrdinals`] before encoding and
-//! restore them after decoding. The codec itself uses ordinary named
-//! MessagePack and zstd; tuples and integers have no special meaning here.
+//! restore them after decoding.
 //!
 //! Spans need no mapping: every chunk is parsed into its own `SourceMap`, so a
 //! `BytePos` is already an offset from that chunk's file start.
@@ -12,7 +11,6 @@
 use std::collections::HashMap;
 
 use anyhow::{Context, Result};
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use swc_atoms::Atom;
 use swc_common::SyntaxContext;
@@ -26,6 +24,21 @@ const ZSTD_LEVEL: i32 = 3;
 pub struct SavedBinding {
     symbol: Atom,
     context_ordinal: u32,
+}
+
+impl SavedBinding {
+    pub fn symbol(&self) -> &Atom {
+        &self.symbol
+    }
+    pub fn context_ordinal(&self) -> u32 {
+        self.context_ordinal
+    }
+    pub fn from_parts(symbol: Atom, context_ordinal: u32) -> Self {
+        Self {
+            symbol,
+            context_ordinal,
+        }
+    }
 }
 
 /// First-occurrence ordinals of the hygiene contexts in a list of modules.
@@ -89,29 +102,25 @@ impl Visit for ContextOrdinals {
     }
 }
 
-/// zstd-compressed named MessagePack of an already process-independent value.
-pub fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>> {
+/// Compress one typed protobuf message; the checksum covers the entire frame.
+pub fn encode_protobuf<T: prost::Message>(value: &T) -> Result<Vec<u8>> {
+    use std::io::Write;
     let mut encoder = zstd::Encoder::new(Vec::new(), ZSTD_LEVEL)?;
-    let mut serializer = rmp_serde::Serializer::new(&mut encoder).with_struct_map();
-    value.serialize(&mut serializer)?;
+    encoder.include_checksum(true)?;
+    encoder.write_all(&value.encode_to_vec())?;
     Ok(encoder.finish()?)
 }
 
-/// Inverse of [`encode`]. The saved value's caller restores bindings with the
-/// corresponding [`ContextOrdinals`].
-pub fn decode<T: DeserializeOwned>(bytes: &[u8]) -> Result<T> {
-    // MessagePack reads individual markers and short fields. Buffer decoded
-    // bytes so each such read does not re-enter the decompressor.
-    let mut reader =
-        std::io::BufReader::new(zstd::Decoder::new(bytes).context("decompress analysis output")?);
-    let value = {
-        let mut deserializer = rmp_serde::Deserializer::new(&mut reader);
-        T::deserialize(&mut deserializer)?
-    };
-    // Deserializing one value may stop before the compressed frame's checksum
-    // or a later frame. Consume the remainder so corruption still fails.
-    std::io::copy(&mut reader, &mut std::io::sink()).context("decompress analysis output")?;
-    Ok(value)
+/// Decode exactly one complete zstd frame before accepting the protobuf.
+pub fn decode_protobuf<T: prost::Message + Default>(bytes: &[u8]) -> Result<T> {
+    use std::io::Read;
+    let mut decoder = zstd::Decoder::with_buffer(bytes)?.single_frame();
+    let mut decoded = Vec::new();
+    decoder
+        .read_to_end(&mut decoded)
+        .context("decompress analysis protobuf")?;
+    anyhow::ensure!(decoder.finish().is_empty(), "trailing compressed data");
+    T::decode(decoded.as_slice()).context("decode analysis protobuf")
 }
 
 #[cfg(test)]
@@ -156,10 +165,28 @@ mod tests {
         });
     }
 
+    #[derive(Clone, PartialEq, prost::Message)]
+    struct Record {
+        #[prost(string, tag = "1")]
+        value: String,
+    }
+
     #[test]
-    fn ordinary_tuples_round_trip_without_context_interpretation() {
-        let values = vec![("counter".to_string(), 0_u32), ("ordinary".to_string(), 7)];
-        let encoded = encode(&values).expect("encode tuple data");
-        assert_eq!(decode::<Vec<(String, u32)>>(&encoded).unwrap(), values);
+    fn protobuf_decompression_checks_complete_frames() {
+        let record = Record {
+            value: "payload".into(),
+        };
+        let bytes = encode_protobuf(&record).unwrap();
+        assert_eq!(decode_protobuf::<Record>(&bytes).unwrap(), record);
+        assert!(decode_protobuf::<Record>(&bytes[..bytes.len() - 1]).is_err());
+        let mut damaged = bytes.clone();
+        *damaged.last_mut().unwrap() ^= 1;
+        assert!(decode_protobuf::<Record>(&damaged).is_err());
+        let mut trailing = bytes;
+        trailing.extend([0xff; 4]);
+        assert!(decode_protobuf::<Record>(&trailing).is_err());
+        let mut extra_frame = encode_protobuf(&record).unwrap();
+        extra_frame.extend(encode_protobuf(&record).unwrap());
+        assert!(decode_protobuf::<Record>(&extra_frame).is_err());
     }
 }
