@@ -4,22 +4,31 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // runtimeOperationCoordinator owns accepted adoption and Quiesce operations for
 // one Runtime process. It is not a COSI controller: its request and worker slots
 // are live Go ownership, and restarting a controller must never replay an effect.
 type runtimeOperationCoordinator struct {
-	r          *Runtime
-	transition runtimeTransitionSequence
-	requests   chan *runtimeTransitionRequest
-	stopped    chan struct{}
-	done       chan struct{}
+	r        *Runtime
+	requests chan *runtimeTransitionRequest
+	stopped  chan struct{}
+	done     chan struct{}
+}
+
+type runtimeOperationWorker struct {
+	request *runtimeTransitionRequest
+	done    chan struct{}
+	cancel  context.CancelFunc
+	err     error
 }
 
 func (c *runtimeOperationCoordinator) run(ctx context.Context) {
 	defer close(c.done)
-	c.transition.engineCtx = ctx
+	var worker *runtimeOperationWorker
 	defer func() {
 		// A caller holds transitionMu until its accepted operation settles. Tell
 		// it the owner stopped before joining an effect worker; Close must be
@@ -31,17 +40,15 @@ func (c *runtimeOperationCoordinator) run(ctx context.Context) {
 		}
 		c.r.mu.Unlock()
 		close(c.stopped)
-		if c.transition.cancel != nil {
-			c.transition.cancel()
-		}
-		if c.transition.worker != nil {
-			<-c.transition.worker.done
+		if worker != nil {
+			worker.cancel()
+			<-worker.done
 		}
 	}()
 	for {
 		var workerDone <-chan struct{}
-		if c.transition.worker != nil {
-			workerDone = c.transition.worker.done
+		if worker != nil {
+			workerDone = worker.done
 		}
 		select {
 		case <-ctx.Done():
@@ -52,17 +59,51 @@ func (c *runtimeOperationCoordinator) run(ctx context.Context) {
 				close(request.done)
 				return
 			}
-			if err := c.transition.begin(request); err != nil {
-				c.r.fail(err)
+			if worker != nil {
+				c.r.fail(errors.New("Runtime transition superseded before settlement"))
 				return
 			}
+			opCtx, cancel := context.WithCancel(request.ctx)
+			accepted := &runtimeOperationWorker{request: request, done: make(chan struct{}), cancel: cancel}
+			worker = accepted
+			go func() {
+				accepted.err = c.execute(opCtx, ctx, request)
+				close(accepted.done)
+			}()
 		case <-workerDone:
+			if ctx.Err() != nil {
+				return
+			}
+			worker.cancel()
+			err := worker.err
+			if errors.Is(err, context.Canceled) {
+				err = status.Error(codes.Canceled, err.Error())
+			} else if errors.Is(err, context.DeadlineExceeded) {
+				err = status.Error(codes.DeadlineExceeded, err.Error())
+			}
+			worker.request.err = err
+			close(worker.request.done)
+			worker = nil
 		}
-		// A worker completion and owner cancellation can arrive together.
-		// Do not start the next effect after COSI ownership has ended.
-		if ctx.Err() != nil {
-			return
-		}
-		c.transition.reconcile()
 	}
+}
+
+func (c *runtimeOperationCoordinator) execute(ctx, engineCtx context.Context, request *runtimeTransitionRequest) error {
+	switch request.Kind {
+	case runtimeAdopt:
+		return c.r.runAdoption(ctx, engineCtx, request.UID)
+	case runtimeQuiesce:
+		return c.r.runQuiesce(ctx, engineCtx, request)
+	default:
+		return fmt.Errorf("unknown Runtime transition kind %d", request.Kind)
+	}
+}
+
+// Check both owners between effects: the caller may cancel independently of the
+// engine, and an engine exit must stop the sequence before its worker is joined.
+func transitionContextError(ctx, engineCtx context.Context) error {
+	if err := engineCtx.Err(); err != nil {
+		return err
+	}
+	return ctx.Err()
 }

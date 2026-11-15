@@ -8,36 +8,26 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type quiescePlan struct {
-	request              runtimeTransitionRequest
-	factsHaveIdleSince   bool
-	factsIdleSinceMicros int64
-}
-
-func (c *runtimeTransitionSequence) planQuiesce(request runtimeTransitionRequest) (quiescePlan, []runtimeTransitionStep, error) {
-	facts, err := c.r.facts()
+func (r *Runtime) runQuiesce(ctx, engineCtx context.Context, request *runtimeTransitionRequest) error {
+	if err := transitionContextError(ctx, engineCtx); err != nil {
+		return err
+	}
+	facts, err := r.facts()
 	if err != nil {
-		return quiescePlan{}, nil, err
+		return err
 	}
-	plan := quiescePlan{request: request}
-	if facts.IdleSince != nil {
-		plan.factsHaveIdleSince = true
-		plan.factsIdleSinceMicros = facts.IdleSince.AsTime().UnixMicro()
-	}
-	return plan, []runtimeTransitionStep{{kind: runtimeTransitionQuiesceSealing}}, nil
-}
-
-func (c *runtimeTransitionSequence) runQuiesceBarrier(ctx context.Context) (runtimeTransitionOutcome, error) {
-	r := c.r
 	r.mu.Lock()
+	if err := transitionContextError(ctx, engineCtx); err != nil {
+		r.mu.Unlock()
+		return err
+	}
 	if r.closing || r.failed || !r.startupComplete {
 		r.mu.Unlock()
-		return runtimeTransitionOutcome{}, status.Error(codes.Unavailable, "environment Runtime is unavailable")
+		return status.Error(codes.Unavailable, "environment Runtime is unavailable")
 	}
-	plan := c.quiesce
-	if !r.state.Lameduck() && plan.request.HasIdleSince && (!plan.factsHaveIdleSince || plan.factsIdleSinceMicros != plan.request.IdleSinceMicros || r.activeAdmissions != 0 || r.activeExecutionCalls != 0 || r.executionOwner.recovering() || r.idleSince == nil || r.idleSince.AsTime().UnixMicro() != plan.request.IdleSinceMicros) {
+	if !r.state.Lameduck() && request.HasIdleSince && (facts.IdleSince == nil || facts.IdleSince.AsTime().UnixMicro() != request.IdleSinceMicros || r.activeAdmissions != 0 || r.activeExecutionCalls != 0 || r.executionOwner.recovering() || r.idleSince == nil || r.idleSince.AsTime().UnixMicro() != request.IdleSinceMicros) {
 		r.mu.Unlock()
-		return runtimeTransitionOutcome{}, status.Error(codes.Aborted, "the Sandbox is busy or its idle_since differs")
+		return status.Error(codes.Aborted, "the Sandbox is busy or its idle_since differs")
 	}
 	r.admissionOpen = false
 	// Teardown supersedes a RAM-preserving suspend. Retire its separate gate
@@ -48,24 +38,24 @@ func (c *runtimeTransitionSequence) runQuiesceBarrier(ctx context.Context) (runt
 	if err := r.state.EnterLameduck(); err != nil {
 		r.mu.Unlock()
 		r.fail(err)
-		return runtimeTransitionOutcome{}, err
+		return err
 	}
 	uid, err := r.state.RequireIncarnationUID()
 	if err != nil {
 		r.mu.Unlock()
-		return runtimeTransitionOutcome{}, err
+		return err
 	}
 	current := r.desired
 	r.mu.Unlock()
 	if current.Mode == lifecycle.Quiescing && current.SealUID == uid {
 		progress, found, err := lifecycle.ReadStatus(ctx, r.lifecycleState)
 		if err != nil {
-			return runtimeTransitionOutcome{}, err
+			return err
 		}
 		if !found || progress.Generation != current.Generation || progress.Error == "" {
-			return runtimeTransitionOutcome{}, nil
+			return nil
 		}
 	}
 	_, err = r.publishDesired(ctx, lifecycle.Quiescing, uid, uid)
-	return runtimeTransitionOutcome{}, err
+	return err
 }
