@@ -6,9 +6,10 @@ Runtime in its PID1 container, PostgreSQL, and the existing envtest Kubernetes A
 ```sh
 bbr test //agentplane/x/native_contracts:test_recovery --nocache_test_results
 bbr test //agentplane/x/native_contracts:test_admission_reply_loss --nocache_test_results
+bbr test //agentplane/x/native_contracts:test_quiesce_cutoff --nocache_test_results
 ```
 
-The four Claude cases exercise:
+The four `test_recovery` cases exercise:
 
 - Completed-turn Runtime outage: Gateway reports `UNAVAILABLE`, History remains readable,
   the same journal restores the Session, Dispatcher returns the original receipt, and new input completes.
@@ -22,6 +23,10 @@ The four Claude cases exercise:
 - History outage: suspend the actual serving process while Runtime completes a turn, observe
   reader unavailability, then resume and verify journal catch-up and a contiguous cursor-resumed
   stream containing exactly the retained prefix and new entries.
+- Quiesce cutoff: hold a routed, authenticated Runtime command before its handler, seal and acknowledge
+  History through the real Controller Quiesce path, then release the command and verify it is refused
+  without changing the sealed journal. A new Pod incarnation adopts the retained Session and completes
+  the next input.
 
 These complement owner tests, including Runtime journal/admission, the native adapter restart
 matrix, Gateway incarnation fencing, History ingress ordering and service authorization. Direct

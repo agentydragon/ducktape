@@ -102,6 +102,63 @@ class SandboxCluster:
             _content_type=_MERGE_PATCH,
         )
 
+    async def replace_runner_pod(self) -> str:
+        """Author a new runner Pod and its Controller-owned credential binding."""
+        core = k8s_client.CoreV1Api(self.server.api)
+        await core.delete_namespaced_pod(self.name, self.namespace)
+        pod = await core.create_namespaced_pod(
+            self.namespace,
+            k8s_client.V1Pod(
+                metadata=k8s_client.V1ObjectMeta(
+                    name=self.name,
+                    labels={_RUNNER_CREDENTIAL_LABEL: _RUNNER_CREDENTIAL_ID},
+                    owner_references=[
+                        k8s_client.V1OwnerReference(
+                            api_version=sandbox_resource.SANDBOX_API_VERSION,
+                            kind=sandbox_resource.SANDBOX_KIND,
+                            name=self.name,
+                            uid=self.uid,
+                            controller=True,
+                        )
+                    ],
+                ),
+                spec=k8s_client.V1PodSpec(
+                    service_account_name=self.name,
+                    containers=[
+                        k8s_client.V1Container(name="environment-runtime", image="registry.test/runner:unused")
+                    ],
+                ),
+            ),
+        )
+        assert pod.metadata.uid is not None
+        pod_uid = pod.metadata.uid
+        await core.patch_namespaced_pod_status(
+            self.name,
+            self.namespace,
+            {"status": {"phase": "Running", "podIP": "127.0.0.1", "conditions": [{"type": "Ready", "status": "True"}]}},
+        )
+        credential = await self.custom_objects.patch_namespaced_custom_object(
+            GROUP,
+            VERSION,
+            self.namespace,
+            _WORKLOAD_CREDENTIALS_PLURAL,
+            self.name,
+            {"spec": {"binding": {"podUID": pod_uid}, "pod": {"name": self.name, "uid": pod_uid}}},
+            _content_type=_MERGE_PATCH,
+        )
+        generation = cast(dict[str, Any], credential)["metadata"]["generation"]
+        await self.custom_objects.patch_namespaced_custom_object_status(
+            GROUP,
+            VERSION,
+            self.namespace,
+            _WORKLOAD_CREDENTIALS_PLURAL,
+            self.name,
+            {"status": {"observedGeneration": generation, "acceptedBinding": {"podUID": pod_uid}}},
+            _content_type=_MERGE_PATCH,
+        )
+        await self.patch_sandbox_status({"status": {"incarnation": {"name": self.name, "uid": pod_uid}}})
+        return pod_uid
+
 
 @asynccontextmanager
 async def sandbox_cluster(server: KubernetesApiServer, *, name: str = SANDBOX) -> AsyncIterator[SandboxCluster]:
