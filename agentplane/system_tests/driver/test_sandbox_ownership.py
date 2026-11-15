@@ -5,6 +5,7 @@ import asyncio
 import pytest
 import pytest_bazel
 
+# gazelle:include_dep @pypi//protobuf
 from agentplane.proto.identity_pb2 import EnvironmentTarget
 from agentplane.system_tests.driver.sandbox_ownership import release_owned_sandboxes, remember_sandbox
 
