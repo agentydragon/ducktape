@@ -664,14 +664,9 @@ impl ProtoConvert<proto::BoundedInvocationFallbackInputPath>
                     )?,
                     edges: decode_items(value.edges)?,
                 },
-                Value::Unknown(value) => {
-                    let reason = BoundedInvocationFallbackUnknownPathReason::try_from(value)?;
-                    ensure!(
-                        reason != BoundedInvocationFallbackUnknownPathReason::Unspecified,
-                        "unspecified fallback path reason"
-                    );
-                    Self::Unknown { reason }
-                }
+                Value::Unknown(value) => Self::Unknown {
+                    reason: BoundedInvocationFallbackUnknownPathReason::try_from(value)?,
+                },
             },
         )
     }
@@ -1044,10 +1039,24 @@ mod tests {
 
     #[test]
     fn malformed_report_variants_cannot_become_valid_capabilities() {
+        let seed_unavailable = BoundedInvocationFallbackInputPath::Unknown {
+            reason: BoundedInvocationFallbackUnknownPathReason::SeedUnavailable,
+        };
+        let wire = seed_unavailable.to_proto().unwrap();
+        assert_eq!(
+            wire.value,
+            Some(proto::bounded_invocation_fallback_input_path::Value::Unknown(0))
+        );
+        assert_eq!(
+            BoundedInvocationFallbackInputPath::from_proto(wire).unwrap(),
+            seed_unavailable
+        );
         assert!(
             BoundedInvocationFallbackInputPath::from_proto(
                 proto::BoundedInvocationFallbackInputPath {
-                    value: Some(proto::bounded_invocation_fallback_input_path::Value::Unknown(0)),
+                    value: Some(
+                        proto::bounded_invocation_fallback_input_path::Value::Unknown(i32::MAX,)
+                    ),
                 }
             )
             .is_err()
