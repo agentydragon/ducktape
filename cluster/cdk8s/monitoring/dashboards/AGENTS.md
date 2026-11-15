@@ -12,7 +12,9 @@
   unexplained all-zero panels; record any explicit empty/all-zero allow-list exception and
   its reason in the PR.
 
-`cpap_gateway_disk.py` is a small Grafana Foundation SDK spike. Edit its typed builders;
-the Bazel `cpap_gateway_disk_json` target supplies the `cpap-gateway-disk.json` artifact
-to both deployment and the existing recorded-data visual test. Other dashboards remain
-authored JSON. The SDK's classic dashboard API keeps the existing Grafana Operator format.
+The Foundation SDK spike authors CPAP gateway disk, Flux cluster, and Rugged Power in
+Python. Edit their typed builders; `foundation_dashboard` supplies each hyphenated JSON
+artifact to deployment and the existing recorded-data visual tests. The shared Mimir
+reference uses `${DS_MIMIR}`; `FILE_DASHBOARDS` maps it to the literal provisioned UID
+`mimir`. Other dashboards remain authored JSON. The SDK's classic API retains the
+existing Grafana Operator format.

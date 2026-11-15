@@ -1,8 +1,8 @@
 # gazelle:ignore
 
-load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_library")
 load("//grafana/visual_tests:visual_test.bzl", "grafana_dashboard_visual_test")
+load(":foundation.bzl", "foundation_dashboard")
 
 exports_files(
     [
@@ -16,7 +16,11 @@ exports_files(
 
 filegroup(
     name = "dashboards",
-    srcs = glob(["*.json"]) + [":cpap-gateway-disk.json"],
+    srcs = glob(["*.json"]) + [
+        ":cpap-gateway-disk.json",
+        ":flux-cluster.json",
+        ":rugged-power.json",
+    ],
     visibility = [
         "//cluster/cdk8s/monitoring:__pkg__",
         "//grafana/skill:__pkg__",
@@ -24,36 +28,51 @@ filegroup(
 )
 
 py_library(
-    name = "cpap_gateway_disk",
-    srcs = ["cpap_gateway_disk.py"],
+    name = "foundation",
+    srcs = ["foundation.py"],
     deps = ["@pypi//grafana_foundation_sdk"],
 )
 
-py_binary(
-    name = "cpap_gateway_disk_bin",
-    main_module = "cluster.cdk8s.monitoring.dashboards.cpap_gateway_disk",
-    deps = [":cpap_gateway_disk"],
-)
-
-genrule(
-    name = "cpap_gateway_disk_raw",
-    outs = ["cpap-gateway-disk.raw.json"],
-    cmd = "$(location :cpap_gateway_disk_bin) > $@",
-    tools = [":cpap_gateway_disk_bin"],
-)
-
-js_run_binary(
-    name = "cpap_gateway_disk_json",
-    srcs = [":cpap_gateway_disk_raw"],
-    args = [
-        "--parser",
-        "json",
-        "cpap-gateway-disk.raw.json",
+py_library(
+    name = "cpap_gateway_disk",
+    srcs = ["cpap_gateway_disk.py"],
+    deps = [
+        ":foundation",
+        "@pypi//grafana_foundation_sdk",
     ],
-    chdir = package_name(),
-    stdout = "cpap-gateway-disk.json",
-    tool = "//devinfra:prettier_bin",
-    visibility = ["//cluster/cdk8s/monitoring:__pkg__"],
+)
+
+foundation_dashboard(
+    name = "cpap_gateway_disk_json",
+    module = "cpap_gateway_disk",
+)
+
+py_library(
+    name = "flux_cluster",
+    srcs = ["flux_cluster.py"],
+    deps = [
+        ":foundation",
+        "@pypi//grafana_foundation_sdk",
+    ],
+)
+
+foundation_dashboard(
+    name = "flux_cluster_json",
+    module = "flux_cluster",
+)
+
+py_library(
+    name = "rugged_power",
+    srcs = ["rugged_power.py"],
+    deps = [
+        ":foundation",
+        "@pypi//grafana_foundation_sdk",
+    ],
+)
+
+foundation_dashboard(
+    name = "rugged_power_json",
+    module = "rugged_power",
 )
 
 py_library(

@@ -301,7 +301,7 @@ def _dashboard(
     config_map: DashboardFile | None = None,
     grafana_com: GrafanaDashboardSpecGrafanaCom | None = None,
 ) -> None:
-    """`datasources` maps each dashboard input to a datasource name."""
+    """`datasources` maps each input to its literal datasource name or UID substitution."""
     GrafanaDashboard(
         chart,
         f"dashboard-{name}",
