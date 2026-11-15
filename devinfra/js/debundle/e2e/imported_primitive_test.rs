@@ -24,6 +24,16 @@ fn split_modules() -> Vec<LogicalModuleEntry> {
     ]
 }
 
+fn anchored_inversion_modules(computation: &'static str) -> Vec<LogicalModuleEntry> {
+    vec![
+        logical_module(
+            "compute",
+            &[Member::new(computation), Member::new("computed")],
+        ),
+        logical_module("anchors", &[Member::new("before"), Member::new("after")]),
+    ]
+}
+
 fn assert_primitive(peer: &str, import: &str, expression: &str, expected: &str) -> Fixture {
     let source = source(import, expression);
     let peers = [("static/peer", peer)];
@@ -140,14 +150,8 @@ fn assert_called_operation_receipt(fixture: &Fixture, binding: &str, callee: &st
 fn initialized_imported_read_has_a_receipt_for_an_actual_inversion() {
     let source = "import { limit as bytes } from './peer.js';\nconst before = 0;\nfunction read() { return bytes; }\nconst computed = read();\nconst after = 1;\nconsole.log(before, computed, after);\n";
     let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(
-            source,
-            vec![
-                logical_module("compute", &[Member::new("read"), Member::new("computed")]),
-                logical_module("anchors", &[Member::new("before"), Member::new("after")]),
-            ],
-        )
-        .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
+        FixtureOpts::new(source, anchored_inversion_modules("read"))
+            .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
     );
     assert_preserved_entry_output(&fixture, "0 2 1\n");
     let assessment = fixture.effect_translation_validation();
@@ -193,10 +197,7 @@ fn imported_primitive_read_uses_only_admitted_builtin_provider_closures() {
                   console.log(before, computed, after);\n";
     let peer = "import 'path';\nexport const limit = 2;\n";
     let peers = [("static/peer", peer)];
-    let modules = vec![
-        logical_module("compute", &[Member::new("add"), Member::new("computed")]),
-        logical_module("anchors", &[Member::new("before"), Member::new("after")]),
-    ];
+    let modules = anchored_inversion_modules("add");
 
     let admitted = run_fixture_with_graphs(
         FixtureOpts::new(source, modules.clone())
@@ -263,14 +264,8 @@ fn called_primitive_binary_return_has_a_receipt_for_an_actual_inversion() {
                   const after = 1;\n\
                   console.log(before, computed, after);\n";
     let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(
-            source,
-            vec![
-                logical_module("compute", &[Member::new("add"), Member::new("computed")]),
-                logical_module("anchors", &[Member::new("before"), Member::new("after")]),
-            ],
-        )
-        .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
+        FixtureOpts::new(source, anchored_inversion_modules("add"))
+            .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
     );
     assert_preserved_entry_output(&fixture, "0 258 1\n");
     let assessment = fixture.effect_translation_validation();
@@ -314,14 +309,8 @@ fn called_primitive_template_return_has_a_receipt_for_an_actual_inversion() {
                   const after = 1;\n\
                   console.log(before, computed, after);\n";
     let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(
-            source,
-            vec![
-                logical_module("compute", &[Member::new("render"), Member::new("computed")]),
-                logical_module("anchors", &[Member::new("before"), Member::new("after")]),
-            ],
-        )
-        .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
+        FixtureOpts::new(source, anchored_inversion_modules("render"))
+            .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
     );
     assert_preserved_entry_output(&fixture, "0 bytes:2 1\n");
     let assessment = fixture.effect_translation_validation();

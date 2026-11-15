@@ -2,6 +2,30 @@
 
 use debundle_e2e_support::*;
 
+fn expect_local_factory_late_read_conflict(source: &str) {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "values/dynamic",
+                    &[Member::new("dynamic"), Member::new("prefix")],
+                ),
+                logical_module(
+                    "values/later",
+                    &[
+                        Member::new("later"),
+                        Member::new("holder"),
+                        Member::new("retain"),
+                    ],
+                ),
+            ],
+        ),
+        &["values/dynamic", "values/later"],
+        &[],
+    );
+}
+
 #[test]
 fn unpublished_constructor_result_with_enum_array_stays_deferred() {
     let fixture = run_fixture(FixtureOpts::new(
@@ -593,9 +617,7 @@ const later = dynamic;\n"
 
 #[test]
 fn published_local_factory_result_keeps_later_read() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            r#"function retain(read) { return { read }; }
+    let source = r#"function retain(read) { return { read }; }
 const prefix = new globalThis.Date();
 const holder = retain(() => later);
 globalThis.saved = holder;
@@ -604,32 +626,13 @@ const dynamic = ((object) => {
   return 1;
 })({});
 const later = dynamic;
-"#,
-            vec![
-                logical_module(
-                    "values/dynamic",
-                    &[Member::new("dynamic"), Member::new("prefix")],
-                ),
-                logical_module(
-                    "values/later",
-                    &[
-                        Member::new("later"),
-                        Member::new("holder"),
-                        Member::new("retain"),
-                    ],
-                ),
-            ],
-        ),
-        &["values/dynamic", "values/later"],
-        &[],
-    );
+"#;
+    expect_local_factory_late_read_conflict(source);
 }
 
 #[test]
 fn called_local_factory_result_keeps_later_read() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            r#"function retain(read) { return { read }; }
+    let source = r#"function retain(read) { return { read }; }
 const prefix = new globalThis.Date();
 const holder = retain(() => later);
 holder.read();
@@ -638,32 +641,13 @@ const dynamic = ((object) => {
   return 1;
 })({});
 const later = dynamic;
-"#,
-            vec![
-                logical_module(
-                    "values/dynamic",
-                    &[Member::new("dynamic"), Member::new("prefix")],
-                ),
-                logical_module(
-                    "values/later",
-                    &[
-                        Member::new("later"),
-                        Member::new("holder"),
-                        Member::new("retain"),
-                    ],
-                ),
-            ],
-        ),
-        &["values/dynamic", "values/later"],
-        &[],
-    );
+"#;
+    expect_local_factory_late_read_conflict(source);
 }
 
 #[test]
 fn reassigned_local_factory_keeps_conservative_reachability() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            r#"function retain(read) { return { read }; }
+    let source = r#"function retain(read) { return { read }; }
 retain = function replacement(read) { return { read }; };
 const prefix = new globalThis.Date();
 const holder = retain(() => later);
@@ -672,32 +656,13 @@ const dynamic = ((object) => {
   return 1;
 })({});
 const later = dynamic;
-"#,
-            vec![
-                logical_module(
-                    "values/dynamic",
-                    &[Member::new("dynamic"), Member::new("prefix")],
-                ),
-                logical_module(
-                    "values/later",
-                    &[
-                        Member::new("later"),
-                        Member::new("holder"),
-                        Member::new("retain"),
-                    ],
-                ),
-            ],
-        ),
-        &["values/dynamic", "values/later"],
-        &[],
-    );
+"#;
+    expect_local_factory_late_read_conflict(source);
 }
 
 #[test]
 fn accessor_return_from_local_factory_keeps_conservative_reachability() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            r#"function retain(read) { return { get read() { return read(); } }; }
+    let source = r#"function retain(read) { return { get read() { return read(); } }; }
 const prefix = new globalThis.Date();
 const holder = retain(() => later);
 const dynamic = ((object) => {
@@ -705,25 +670,8 @@ const dynamic = ((object) => {
   return 1;
 })({});
 const later = dynamic;
-"#,
-            vec![
-                logical_module(
-                    "values/dynamic",
-                    &[Member::new("dynamic"), Member::new("prefix")],
-                ),
-                logical_module(
-                    "values/later",
-                    &[
-                        Member::new("later"),
-                        Member::new("holder"),
-                        Member::new("retain"),
-                    ],
-                ),
-            ],
-        ),
-        &["values/dynamic", "values/later"],
-        &[],
-    );
+"#;
+    expect_local_factory_late_read_conflict(source);
 }
 
 #[test]

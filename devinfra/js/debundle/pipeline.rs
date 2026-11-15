@@ -1721,6 +1721,75 @@ mod tests {
         snapshot_root: &'a Path,
     }
 
+    struct ExistingOutputsFixture {
+        _temp: tempfile::TempDir,
+        js_out: PathBuf,
+        harness_out: PathBuf,
+        request: TransformRequest,
+    }
+
+    fn existing_outputs_fixture() -> Result<ExistingOutputsFixture> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        let snapshot = root.join("snapshot");
+        let extracted = root.join("extracted");
+        let js_out = root.join("js-out");
+        let harness_out = root.join("harness-out");
+        fs::create_dir_all(snapshot.join("static"))?;
+        fs::create_dir_all(&extracted)?;
+        fs::create_dir_all(&js_out)?;
+        fs::create_dir_all(&harness_out)?;
+        fs::write(js_out.join("stale.txt"), "old")?;
+        fs::write(harness_out.join("stale.txt"), "old")?;
+        fs::write(
+            snapshot.join("index.html"),
+            r#"<!doctype html>
+<script type="module" src="./static/index.js"></script>
+"#,
+        )?;
+        fs::write(
+            snapshot.join("static/index.js"),
+            "globalThis.__value = 1;\n",
+        )?;
+        let js_list_path = extracted.join("js-files.txt");
+        fs::write(&js_list_path, "static/index.js\n")?;
+        let asset_summary_path = extracted.join("asset-summary.json");
+        fs::write(
+            &asset_summary_path,
+            serde_json::to_string(&AssetSummaryFixture {
+                entry_points: AssetSummaryEntryPoints { html: "index.html" },
+            })?,
+        )?;
+
+        let mut spec = empty_transform_spec();
+        spec.inputs = spec::LoadJsChunksArgs {
+            input_root: snapshot.clone(),
+            js_list_path,
+            embedded_loaders_path: None,
+        };
+        spec.write_js_tree = Some(spec::WriteJsTreeConfig {
+            out_dir: js_out.clone(),
+        });
+        spec.emit_browser_harness = Some(spec::EmitBrowserHarnessConfig {
+            asset_summary_path,
+            out_dir: harness_out.clone(),
+            snapshot_root: snapshot,
+        });
+        let spec_path = root.join("transform-spec.yaml");
+        fs::write(&spec_path, serde_yaml::to_string(&spec)?)?;
+
+        Ok(ExistingOutputsFixture {
+            _temp: temp,
+            js_out,
+            harness_out,
+            request: TransformRequest {
+                spec_source: TransformSpecSource::Flat { path: spec_path },
+                package_roots: HashMap::new(),
+                packages_root: None,
+            },
+        })
+    }
+
     #[test]
     fn run_transform_writes_spec_pipeline_outputs() -> Result<()> {
         js_ast::with_swc_globals(|| {
@@ -1839,69 +1908,17 @@ mod tests {
     #[test]
     fn non_empty_output_dirs_are_rejected() -> Result<()> {
         js_ast::with_swc_globals(|| {
-            let temp = tempfile::tempdir()?;
-            let root = temp.path();
-            let snapshot = root.join("snapshot");
-            let extracted = root.join("extracted");
-            let js_out = root.join("js-out");
-            let harness_out = root.join("harness-out");
-            fs::create_dir_all(snapshot.join("static"))?;
-            fs::create_dir_all(&extracted)?;
-            fs::create_dir_all(&js_out)?;
-            fs::create_dir_all(&harness_out)?;
-            fs::write(js_out.join("stale.txt"), "old")?;
-            fs::write(harness_out.join("stale.txt"), "old")?;
-            fs::write(
-                snapshot.join("index.html"),
-                r#"<!doctype html>
-<script type="module" src="./static/index.js"></script>
-"#,
-            )?;
-            fs::write(
-                snapshot.join("static/index.js"),
-                "globalThis.__value = 1;\n",
-            )?;
-            let js_list_path = extracted.join("js-files.txt");
-            fs::write(&js_list_path, "static/index.js\n")?;
-            let asset_summary_path = extracted.join("asset-summary.json");
-            fs::write(
-                &asset_summary_path,
-                serde_json::to_string(&AssetSummaryFixture {
-                    entry_points: AssetSummaryEntryPoints { html: "index.html" },
-                })?,
-            )?;
-
-            let mut spec = empty_transform_spec();
-            spec.inputs = spec::LoadJsChunksArgs {
-                input_root: snapshot.clone(),
-                js_list_path,
-                embedded_loaders_path: None,
-            };
-            spec.write_js_tree = Some(spec::WriteJsTreeConfig {
-                out_dir: js_out.clone(),
-            });
-            spec.emit_browser_harness = Some(spec::EmitBrowserHarnessConfig {
-                asset_summary_path,
-                out_dir: harness_out.clone(),
-                snapshot_root: snapshot,
-            });
-            let spec_path = root.join("transform-spec.yaml");
-            fs::write(&spec_path, serde_yaml::to_string(&spec)?)?;
-
+            let fixture = existing_outputs_fixture()?;
             let err = run_transform(
-                &TransformRequest {
-                    spec_source: TransformSpecSource::Flat { path: spec_path },
-                    package_roots: HashMap::new(),
-                    packages_root: None,
-                },
+                &fixture.request,
                 KEEP_GOING_RUN,
                 &analysis::diagnostics::Diagnostics::default(),
             )
             .expect_err("non-empty output directories should be rejected, not replaced");
-            assert!(js_out.join("stale.txt").exists());
-            assert!(harness_out.join("stale.txt").exists());
+            assert!(fixture.js_out.join("stale.txt").exists());
+            assert!(fixture.harness_out.join("stale.txt").exists());
             // Refused before any write: a later failure would leave `app/` or `reports/` behind.
-            for out_dir in [&js_out, &harness_out] {
+            for out_dir in [&fixture.js_out, &fixture.harness_out] {
                 assert!(!out_dir.join("app").exists(), "{err:#}");
                 assert!(!out_dir.join("reports").exists(), "{err:#}");
             }
@@ -1912,61 +1929,9 @@ mod tests {
     #[test]
     fn dry_run_runs_pipeline_checks_without_writing_outputs() -> Result<()> {
         js_ast::with_swc_globals(|| {
-            let temp = tempfile::tempdir()?;
-            let root = temp.path();
-            let snapshot = root.join("snapshot");
-            let extracted = root.join("extracted");
-            let js_out = root.join("js-out");
-            let harness_out = root.join("harness-out");
-            fs::create_dir_all(snapshot.join("static"))?;
-            fs::create_dir_all(&extracted)?;
-            fs::create_dir_all(&js_out)?;
-            fs::create_dir_all(&harness_out)?;
-            fs::write(js_out.join("stale.txt"), "old")?;
-            fs::write(harness_out.join("stale.txt"), "old")?;
-            fs::write(
-                snapshot.join("index.html"),
-                r#"<!doctype html>
-<script type="module" src="./static/index.js"></script>
-"#,
-            )?;
-            fs::write(
-                snapshot.join("static/index.js"),
-                "globalThis.__value = 1;\n",
-            )?;
-            let js_list_path = extracted.join("js-files.txt");
-            fs::write(&js_list_path, "static/index.js\n")?;
-            let asset_summary_path = extracted.join("asset-summary.json");
-            fs::write(
-                &asset_summary_path,
-                serde_json::to_string(&AssetSummaryFixture {
-                    entry_points: AssetSummaryEntryPoints { html: "index.html" },
-                })?,
-            )?;
-
-            let mut spec = empty_transform_spec();
-            spec.inputs = spec::LoadJsChunksArgs {
-                input_root: snapshot.clone(),
-                js_list_path,
-                embedded_loaders_path: None,
-            };
-            spec.write_js_tree = Some(spec::WriteJsTreeConfig {
-                out_dir: js_out.clone(),
-            });
-            spec.emit_browser_harness = Some(spec::EmitBrowserHarnessConfig {
-                asset_summary_path,
-                out_dir: harness_out.clone(),
-                snapshot_root: snapshot,
-            });
-            let spec_path = root.join("transform-spec.yaml");
-            fs::write(&spec_path, serde_yaml::to_string(&spec)?)?;
-
+            let fixture = existing_outputs_fixture()?;
             run_transform(
-                &TransformRequest {
-                    spec_source: TransformSpecSource::Flat { path: spec_path },
-                    package_roots: HashMap::new(),
-                    packages_root: None,
-                },
+                &fixture.request,
                 TransformRunOptions {
                     ownership_subset: None,
                     output: RunOutput::DryRun,
@@ -1984,12 +1949,12 @@ mod tests {
                 &analysis::diagnostics::Diagnostics::default(),
             )?;
 
-            assert!(js_out.join("stale.txt").exists());
-            assert!(harness_out.join("stale.txt").exists());
-            assert!(!js_out.join("app").exists());
-            assert!(!harness_out.join("app").exists());
-            assert!(!js_out.join("reports").exists());
-            assert!(!harness_out.join("reports").exists());
+            assert!(fixture.js_out.join("stale.txt").exists());
+            assert!(fixture.harness_out.join("stale.txt").exists());
+            assert!(!fixture.js_out.join("app").exists());
+            assert!(!fixture.harness_out.join("app").exists());
+            assert!(!fixture.js_out.join("reports").exists());
+            assert!(!fixture.harness_out.join("reports").exists());
             Ok(())
         })
     }
