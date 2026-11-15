@@ -14,8 +14,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// Config contains the per-process Gateway role wiring. Public callers use TokenReview;
-// runner connections use explicitly configured transport security and incarnation-fenced metadata.
+// Config contains the per-process proxy role wiring. Service-only receivers need no TokenReview
+// resolver; the retained Gateway may still configure bearer accounts during migration.
 type Config struct {
 	RuntimeReaders     []string
 	SessionServices    []string
@@ -66,7 +66,8 @@ type Gateway struct {
 }
 
 // New builds a Gateway reading Sandboxes, Pods and KubeVirt objects through objects, which in production is
-// an informer cache whose health is objectsHealth.
+// an informer cache whose health is objectsHealth. A nil callerAuth selects service-only admission
+// and requires every bearer-account role to be empty.
 func New(
 	config Config,
 	callerAuth *auth.Resolver,
@@ -76,8 +77,12 @@ func New(
 	if err := config.RunnerSecurity.Validate(); err != nil {
 		return nil, fmt.Errorf("runner security: %w", err)
 	}
-	if config.Namespace == "" || callerAuth == nil {
-		return nil, fmt.Errorf("Runtime proxy namespace and token resolver are required")
+	if config.Namespace == "" {
+		return nil, fmt.Errorf("Runtime proxy namespace is required")
+	}
+	if callerAuth == nil && (len(config.CallerAccounts) != 0 || config.DispatcherAccount != (auth.Account{}) ||
+		config.SandboxControllerAccount != nil || len(config.ExecutorCallers) != 0) {
+		return nil, fmt.Errorf("Runtime proxy bearer accounts require a token resolver")
 	}
 	if config.DispatcherAccount != (auth.Account{}) && (config.DispatcherAccount.Namespace == "" || config.DispatcherAccount.Name == "") {
 		return nil, fmt.Errorf("Gateway Dispatcher account is required")
@@ -117,26 +122,31 @@ func New(
 // Methods admits callers of the Environment Runtime proxy and the typed execution API. Only the Sandbox
 // controller may quiesce or change Firecracker suspension admission; with no controller configured, nobody may.
 func (g *Gateway) Methods() (auth.Methods, error) {
-	callers := auth.Accounts(g.callerAuth, g.config.CallerAccounts)
+	var callers, dispatcher, controllerRule, executors auth.Rule
 	var dispatchers []auth.Account
 	if g.config.DispatcherAccount != (auth.Account{}) {
 		dispatchers = []auth.Account{g.config.DispatcherAccount}
 	}
-	dispatcher := auth.Accounts(g.callerAuth, dispatchers)
 	var controllers []auth.Account
 	if g.config.SandboxControllerAccount != nil {
 		controllers = []auth.Account{*g.config.SandboxControllerAccount}
 	}
-	executors := auth.Accounts(g.callerAuth, g.config.ExecutorCallers)
-	controllerRule := auth.Accounts(g.callerAuth, controllers)
 	var err error
 	for _, entry := range []struct {
 		rule     *auth.Rule
+		accounts []auth.Account
 		services []string
 	}{
-		{&callers, g.config.RuntimeReaders}, {&dispatcher, g.config.SessionServices}, {&controllerRule, g.config.ControllerServices}, {&executors, g.config.ExecutorServices},
+		{&callers, g.config.CallerAccounts, g.config.RuntimeReaders},
+		{&dispatcher, dispatchers, g.config.SessionServices},
+		{&controllerRule, controllers, g.config.ControllerServices},
+		{&executors, g.config.ExecutorCallers, g.config.ExecutorServices},
 	} {
-		*entry.rule, err = entry.rule.AllowServiceCallers(entry.services)
+		if g.callerAuth == nil {
+			*entry.rule, err = auth.Services(entry.services)
+		} else {
+			*entry.rule, err = auth.Accounts(g.callerAuth, entry.accounts).AllowServiceCallers(entry.services)
+		}
 		if err != nil {
 			return nil, err
 		}

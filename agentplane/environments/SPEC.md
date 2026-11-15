@@ -51,7 +51,8 @@ The outbound client leaf must be `spiffe://agentplane/runtime-proxy`, separate f
 incarnation-binding observer identity. Incoming callers pin the existing
 `spiffe://agentplane/sandbox-controller` server identity. Exact service allowlists separate readers,
 Sessions commands, Controller lifecycle calls and Executor operations. The receiver grants no bearer,
-workload Identity or delegated proxy access, and does not expose `WatchState` to callers.
+workload Identity or delegated proxy access, and does not expose `WatchState` to callers. Its
+service-only admission needs no TokenReview resolver or `runtime_proxy.audience` setting.
 The Gateway continues to serve its old endpoint during migration, using the same
 [proxy implementation](runtimeproxy/SPEC.md). Caller targets change only after the receiving image
 and grants are deployed; the Gateway endpoint retires after all callers have rolled. Before reverting

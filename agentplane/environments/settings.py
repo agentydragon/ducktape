@@ -36,7 +36,6 @@ class Delegation(BaseModel):
 class RuntimeProxy(BaseModel):
     model_config = ConfigDict(extra="forbid")
     runner_security: Security
-    audience: str = Field(min_length=1)
     readers: tuple[ServiceSPIFFEID, ...] = ()
     session_callers: tuple[ServiceSPIFFEID, ...] = ()
     controller_callers: tuple[ServiceSPIFFEID, ...] = ()

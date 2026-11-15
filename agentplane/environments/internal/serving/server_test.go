@@ -181,7 +181,6 @@ func TestEveryReplicaServesAndFencesConcurrentResume(t *testing.T) {
 			Methods: []string{environmentpb.EnvironmentService_ResumeEnvironment_FullMethodName},
 		},
 		RuntimeProxy: &RuntimeProxyConfig{
-			Audience: "environment-serving-test",
 			RunnerSecurity: peertls.Security{
 				Mode: peertls.MutualTLS, TLS: &runtimeProxyCertificate,
 			},
@@ -678,7 +677,7 @@ func TestRuntimeProxyRejectsBindingObserverCredentials(t *testing.T) {
 	for _, uri := range []string{peertls.RuntimeProxyURI, peertls.SandboxControllerURI, peertls.GatewayURI} {
 		t.Run(uri, func(t *testing.T) {
 			leaf := ca.Issue(t, uri)
-			c := RuntimeProxyConfig{Audience: "test", RunnerSecurity: peertls.Security{Mode: peertls.MutualTLS, TLS: &leaf}}
+			c := RuntimeProxyConfig{RunnerSecurity: peertls.Security{Mode: peertls.MutualTLS, TLS: &leaf}}
 			err := c.ValidateCredentials()
 			if (err == nil) != (uri == peertls.RuntimeProxyURI) {
 				t.Fatalf("Runtime proxy credentials %s: %v", uri, err)

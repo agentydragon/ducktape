@@ -221,7 +221,6 @@ const environmentServiceSettings = `environment_service:
 const environmentRuntimeProxySettings = `  runtime_proxy:
     runner_security:
       mode: insecure
-    audience: test-runtime-proxy
 `
 
 func TestEnvironmentServiceIsOptInAndStrict(t *testing.T) {
@@ -273,26 +272,20 @@ func TestEnvironmentRuntimeProxyIsOptionalAndStrict(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtimeProxy := c.EnvironmentService.RuntimeProxy
-	if runtimeProxy == nil || runtimeProxy.Audience != "test-runtime-proxy" ||
+	if runtimeProxy == nil ||
 		runtimeProxy.RunnerSecurity.Mode != peertls.Insecure || len(runtimeProxy.Readers) != 0 ||
 		len(runtimeProxy.SessionCallers) != 0 || len(runtimeProxy.ControllerCallers) != 0 || len(runtimeProxy.ExecutorCallers) != 0 {
 		t.Fatalf("runtime_proxy defaults or settings were lost: %+v", runtimeProxy)
 	}
 
 	invalid := map[string]string{
-		"missing runner security": strings.Replace(environmentRuntimeProxySettings, "    runner_security:\n      mode: insecure\n", "", 1),
-		"missing audience":        strings.Replace(environmentRuntimeProxySettings, "    audience: test-runtime-proxy\n", "", 1),
-		"empty audience":          strings.Replace(environmentRuntimeProxySettings, "    audience: test-runtime-proxy\n", "    audience: \"\"\n", 1),
+		"missing runner security": "  runtime_proxy:\n    readers: [spiffe://agentplane/app]\n",
 		"invalid security mode":   strings.Replace(environmentRuntimeProxySettings, "      mode: insecure", "      mode: unknown", 1),
 		"unknown nested key":      environmentRuntimeProxySettings + "    unknown: true\n",
+		"obsolete audience":       environmentRuntimeProxySettings + "    audience: obsolete\n",
 	}
 	for _, field := range []string{"readers", "session_callers", "controller_callers", "executor_callers"} {
-		invalid[field+" service ID"] = strings.Replace(
-			environmentRuntimeProxySettings,
-			"    audience: test-runtime-proxy\n",
-			"    audience: test-runtime-proxy\n    "+field+": [spiffe://agentplane/unknown]\n",
-			1,
-		)
+		invalid[field+" service ID"] = environmentRuntimeProxySettings + "    " + field + ": [spiffe://agentplane/unknown]\n"
 	}
 	for name, runtimeProxySettings := range invalid {
 		t.Run(name, func(t *testing.T) {

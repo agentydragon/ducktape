@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
@@ -24,6 +25,24 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
+
+func TestBearerRolesRequireResolver(t *testing.T) {
+	account := auth.Account{Namespace: "test", Name: "caller"}
+	for name, role := range map[string]Config{
+		"readers":    {CallerAccounts: []auth.Account{account}},
+		"sessions":   {DispatcherAccount: account},
+		"controller": {SandboxControllerAccount: &account},
+		"executors":  {ExecutorCallers: []auth.Account{account}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			role.Namespace = "test"
+			role.RunnerSecurity = peertls.Security{Mode: peertls.Insecure}
+			if _, err := New(role, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "token resolver") {
+				t.Fatalf("configured bearer role without a resolver: %v", err)
+			}
+		})
+	}
+}
 
 // registerStandIns registers servicers that answer Unimplemented to every call the policy admitted.
 func registerStandIns(server *grpc.Server) {

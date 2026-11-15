@@ -51,9 +51,7 @@ def test_runtime_proxy_is_optional_with_empty_allowlists() -> None:
     assert receiver.runtime_proxy is None
     assert "runtime_proxy" not in receiver.model_dump(mode="json")
 
-    runtime_proxy = RuntimeProxy.model_validate(
-        {"runner_security": {"mode": "insecure"}, "audience": "test-runtime-proxy"}
-    )
+    runtime_proxy = RuntimeProxy.model_validate({"runner_security": {"mode": "insecure"}})
     assert runtime_proxy.readers == ()
     assert runtime_proxy.session_callers == ()
     assert runtime_proxy.controller_callers == ()
@@ -66,7 +64,6 @@ def test_runtime_proxy_roles_are_typed() -> None:
         | {
             "runtime_proxy": {
                 "runner_security": {"mode": "insecure"},
-                "audience": "test-runtime-proxy",
                 "readers": ["spiffe://agentplane/app"],
                 "session_callers": ["spiffe://agentplane/sessions"],
                 "controller_callers": ["spiffe://agentplane/sandbox-controller"],
@@ -84,10 +81,10 @@ def test_runtime_proxy_roles_are_typed() -> None:
 @pytest.mark.parametrize(
     "settings",
     [
-        {"audience": "test-runtime-proxy"},
-        {"runner_security": {"mode": "unsupported"}, "audience": "test-runtime-proxy"},
-        {"runner_security": {"mode": "insecure"}, "audience": ""},
-        {"runner_security": {"mode": "insecure"}, "audience": "test-runtime-proxy", "unknown": True},
+        {},
+        {"runner_security": {"mode": "unsupported"}},
+        {"runner_security": {"mode": "insecure"}, "audience": "obsolete"},
+        {"runner_security": {"mode": "insecure"}, "unknown": True},
     ],
 )
 def test_runtime_proxy_rejects_incomplete_or_unknown_settings(settings: dict[str, object]) -> None:
@@ -98,13 +95,7 @@ def test_runtime_proxy_rejects_incomplete_or_unknown_settings(settings: dict[str
 @pytest.mark.parametrize("field", ["readers", "session_callers", "controller_callers", "executor_callers"])
 def test_runtime_proxy_rejects_unknown_service_callers(field: str) -> None:
     with pytest.raises(ValidationError):
-        RuntimeProxy.model_validate(
-            {
-                "runner_security": {"mode": "insecure"},
-                "audience": "test-runtime-proxy",
-                field: ["spiffe://agentplane/unknown"],
-            }
-        )
+        RuntimeProxy.model_validate({"runner_security": {"mode": "insecure"}, field: ["spiffe://agentplane/unknown"]})
 
 
 @pytest.mark.parametrize(
