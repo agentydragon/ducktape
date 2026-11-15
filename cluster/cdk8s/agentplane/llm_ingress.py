@@ -38,7 +38,6 @@ from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, In
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
-from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _NAME = "llm-ingress"
@@ -67,7 +66,7 @@ def proxied_url(namespace: str) -> str:
 
 
 class LlmIngress(Construct):
-    """The LLM ingress's service workload, cluster TokenReview RBAC and settings ConfigMap.
+    """The LLM ingress's service workload, RBAC and settings ConfigMap.
     Fleet Cilium policy is added separately.
     """
 
@@ -97,7 +96,6 @@ class LlmIngress(Construct):
                 data={_CODEX_CATALOG_PATH.name: catalog},
             )
         )
-        # The ingress calls TokenReview as itself, so it keeps the helper's mounted token.
         workload = add_service_workload(
             self,
             env,
@@ -154,15 +152,6 @@ class LlmIngress(Construct):
             "/var/run/public-web-pki",
             Volume.from_config_map(self, "public-web-pki-volume", public_roots),
             read_only=True,
-        )
-        # Backend callers retain their Pod-bound TokenReview credentials. The
-        # proxy tunnels Sandbox TLS and asserts no caller identity.
-        token_reviewer_cluster_rbac(
-            self,
-            "token-reviewer",
-            name=f"{env.namespace}-llm-ingress-token-reviewer",
-            service_account_name=workload.account.name,
-            namespace=env.namespace,
         )
         reader_role_name = f"{_NAME}-sandbox-reader"
         reader_role = Role(

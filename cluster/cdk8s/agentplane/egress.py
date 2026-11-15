@@ -88,7 +88,6 @@ from cluster.cdk8s.providers.cert_manager.certificate import CertificatePrivateK
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
-from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 NAME = "egress"
@@ -647,17 +646,8 @@ class Egress(Construct):
         self._add_network_policy(self.runners)
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:
-        # TokenReview authenticates configured admin gRPC ServiceAccount callers. It grants no
-        # authority by itself; the admin service also checks the exact allowed caller.
-        token_reviewer_cluster_rbac(
-            self,
-            "token-reviewer",
-            name=f"{self.env.namespace}-egress-token-reviewer",
-            service_account_name=NAME,
-            namespace=self.env.namespace,
-        )
         # What the proxy reads to decide a request: policy sets, bindings, the Identities
-        # they name, credentials. No Pods (TokenReview already names the subject) and no Secrets (an
+        # they name, credentials. No Pods and no Secrets (an
         # EgressCredential names one, but the values live in a separate namespace
         # this Role doesn't grant). Its one write is its own EgressReady condition.
         role_rules = [

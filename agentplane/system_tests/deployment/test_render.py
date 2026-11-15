@@ -67,6 +67,16 @@ def _resource(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any
     return matches[0]
 
 
+def test_fixture_grants_no_tokenreviews(runfiles: Runfiles) -> None:
+    docs = _filled_fixture(runfiles).objects
+    for doc in docs:
+        if doc["kind"] in {"Role", "ClusterRole"}:
+            for rule in doc.get("rules", []):
+                assert "tokenreviews" not in rule.get("resources", []), doc["metadata"]["name"]
+        if doc["kind"] in {"RoleBinding", "ClusterRoleBinding"}:
+            assert "token-reviewer" not in doc["roleRef"]["name"], doc["metadata"]["name"]
+
+
 def _host_port(address: str) -> tuple[str, int]:
     parsed = urlsplit(address if "://" in address else f"//{address}")
     assert parsed.hostname is not None
@@ -786,10 +796,6 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     assert model.connection == "llm-ingress"
     assert model.provider_model == fixture_chart.GPT6_LUNA_RESPONSES.id
     assert model.api == "responses"
-    token_reviewer = _resource(docs, "ClusterRole", f"{NAMESPACE}-central-sampler-token-reviewer")
-    assert token_reviewer["rules"] == [
-        {"apiGroups": ["authentication.k8s.io"], "resources": ["tokenreviews"], "verbs": ["create"]}
-    ]
     database_uri = urlsplit(_resource(docs, "Secret", "postgres-central-sampler")["stringData"]["uri"])
     assert database_uri.username == "central_sampler"
     assert database_uri.path == "/central_sampler"

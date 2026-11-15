@@ -59,7 +59,6 @@ from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, gr
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
-from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 NAME = "actions"
@@ -472,15 +471,6 @@ class Actions(Construct):
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:
         namespace = self.env.namespace
-        # TokenReview authenticates backend ServiceAccount callers. Sandbox callers
-        # prove their SVID separately. A review grants none of the reviewed account's authority.
-        token_reviewer_cluster_rbac(
-            self,
-            "token-reviewer",
-            name=f"{namespace}-actions-token-reviewer",
-            service_account_name=NAME,
-            namespace=namespace,
-        )
         # The runtime policy and caller watch scopes are independent. Keep the policy
         # CR permissions in the policy namespace, and grant only ServiceAccount reads in
         # caller namespaces. No Secrets or serviceaccounts/token permissions are needed. The
