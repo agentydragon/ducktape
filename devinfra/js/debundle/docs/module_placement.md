@@ -15,10 +15,12 @@ may pass through rejected intermediate partitions; A0 is the scope reference,
 not a required intermediate point in the contraction sequence.
 
 An allowed final placement keeps fixed units and authored ownership fixed. Each
-whole movable residual body atom stays at its exact baseline owner, joins an
-allowed extracted existing owner, or joins an allowed fresh owner. Required atoms
-must enter extracted owners. A generated residual owner is not true entry. All
-existing owner anchors, including empty authored owners, persist.
+whole movable residual body atom stays at its baseline graph destination, joins
+an allowed extracted existing owner, or joins an allowed fresh owner. Required
+atoms must enter extracted owners. Generated residual destinations are distinct
+from true entry. Their emitted filenames are layout labels: rematerializing after
+extraction may renumber them. All existing owner anchors, including empty
+authored owners, persist.
 
 For a concrete partition, C is the initialization graph and I the full emitted
 import graph. Project same-owner edges away. The ONLY additional Gate projection
@@ -140,11 +142,13 @@ constraints and a separate proof; the boolean domain alone would be insufficient
 
 ## Constraint worklist and necessary contraction clauses
 
-After every contraction, project the canonical quotient and propagate these
-clauses to a fixed point. The current constructor rebuilds from the prepared
-source graph; the separate batch-prediction API maintains incident-edge buckets. Each clause records its source edges, domains,
-fixed-owner premises and query cap. A clause's alternatives need not individually
-be sufficient; every valid completion must satisfy at least one alternative.
+After every contraction, project the canonical quotient and apply the necessary
+deductions below. The current constructor rebuilds this projection from the
+prepared source graph; the separate batch-prediction API maintains incident-edge
+buckets. Dedicated routines detect forced equalities and generate compatible
+contraction alternatives. The report retains branch-category counts, not a
+provenance record for each individual clause. Each branch disjunction below is
+necessary as a whole; its individual alternatives need not be sufficient.
 
 1. Structural ownership is already contracted. Any remaining symmetric mandatory
    ownership edge forces endpoint equality.
@@ -196,13 +200,14 @@ contradiction. At least one of the clause's contractions is necessary.
 
 ## Constructor and coverage
 
-Maintain a canonical partition, domain intersections, anchor identities, and
-typed constraint clauses. Clone partitions for alternative contractions and
-reuse the prepared source graph for each quotient projection. Propagate deterministic contractions and contradictions first.
-When a necessary disjunction remains, choose a small explicit clause, try its
-compatible contraction alternatives, and recursively propagate. Deduplicate
-partitions by canonical block membership plus scope/domain state. Do not invoke
-a generic complete-assignment checker as the branch predicate.
+Maintain a canonical partition, domain intersections, and anchor identities.
+Clone partitions for alternative contractions and reuse the prepared source
+graph for each quotient projection. Propagate deterministic contractions and
+contradictions first. When a necessary disjunction remains, select its dedicated
+branch generator, try compatible contraction alternatives, and recursively
+propagate. Deduplicate partitions by canonical block membership plus scope/domain
+state. Do not invoke a generic complete-assignment checker as the branch
+predicate.
 
 A state needs a contraction when a domain, cap, C-cycle, entry or intrinsic
 schedule obstruction requires one. If none does, every remaining unanchored
@@ -210,9 +215,9 @@ block can receive its own permitted fresh path, the cap holds, and the schedule
 constructor supplies the witness. Evaluate positive residual gain against A0.
 If there is no gain, all atoms are anchored in residual baseline owners and no
 further coarsening can create gain; reject. Otherwise construct the exact batch
-and independently certify the complete assignment plus retained schedule once
-before reporting `found`. A certification disagreement is an internal error,
-not a branch failure or exhaustion proof.
+and independently certify the complete assignment through the canonical gate
+once before reporting `found`. A certification disagreement is an internal
+error, not a branch failure or exhaustion proof.
 
 Coverage follows by fixing any permitted accepted target P*. The initial
 partition refines P*. At every forced contraction, the necessary-constraint

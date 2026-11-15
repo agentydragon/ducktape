@@ -2,11 +2,10 @@
 
 `debundle modules propose` searches by default for a positive-gain placement of
 movable residual source units while keeping authored source-unit ownership
-fixed. It can leave atoms in their baseline generated residual owner, join an
-existing authored owner, or place them in a fresh authored/extracted owner.
-Fresh extracted owners are not generated residual-layout owners, and generated
-residual owners stay distinct from the true entry module. The search uses
-structural atoms and graph-derived constraints, then certifies a constructed
+fixed. Atoms may remain residual under the configured policy, join an existing
+authored owner, or move to a fresh authored/extracted owner. Fresh extracted
+owners are distinct from generated residual layout and true entry. The search
+uses structural atoms and graph-derived constraints, then certifies a constructed
 placement with the global canonical realizability gate. Its result is a graph
 placement witness or a scoped no-placement decision. Select `--strategy auto`
 only for the advisory atomic-DAG inventory.
@@ -47,9 +46,13 @@ complete mapping again.
 Review the semantic ownership and synthesized selectors before application.
 `found` means the exact graph placement passed the canonical gate. Selector
 resolution, materialization and runtime behavior remain separate evidence.
-Preview and application resolve the complete resulting spec, require every
-source-unit destination to match the plan, then run their normal full checks.
-Refresh the graph after editing.
+Preview and application resolve the complete authored-claim map and compare it
+with the starting graph's claims overlaid with the plan's logical destination
+changes. Omitted authored claims stay in place; unclaimed units continue through
+the configured residual policy. Generated `PerAtomicGroup` filenames may
+renumber when that residual layout is regenerated, so they are not stable plan
+identities. The commands then run their normal full checks. Refresh the graph
+after editing.
 
 The packaged [peel-more recipe](../skills/shared/examples/peel_more.py) follows
 this sequence in a worker snapshot and records each command's actual outcome.
@@ -77,10 +80,10 @@ Import/export scaffolding and authored units remain in place. Atoms containing
 authored units or scaffolding cannot move. Generated residual owners are
 distinct from entry and cannot be claimed as new authored destinations. New
 paths in the reserved `residual/` namespace are excluded. Fresh owner names are
-existential for acceptance; readable canonical labels provide stable output and
-do not restrict the search to lexical gaps. With `--into`, the supplied fresh
-paths are the available names and each resulting fresh owner uses a distinct
-path.
+existential for acceptance; readable canonical labels make a proposal
+deterministic without restricting the search to lexical gaps. With `--into`,
+the supplied fresh paths are the available names and each resulting fresh owner
+uses a distinct path.
 
 | Status              | Guarantee                                                                                                                                                               |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
