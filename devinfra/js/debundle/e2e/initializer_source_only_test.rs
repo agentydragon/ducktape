@@ -118,11 +118,13 @@ fn encoder_initializers_commute_with_independent_allocations() {
                 .collect(),
         ),
     );
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/codec.js",
-        &["encoder", "left", "right"],
-        &[],
+    // The retained import schedule is rooted at the program entry. Probe the
+    // codec after that entry evaluates, including its canonical back-import.
+    assert_generated_module_after_entry_script(
+        &fixture,
+        "const mod = await import('./static/app/modules/codec.js');\n\
+         console.log(Object.keys(mod).sort().join(','));\n",
+        "encoder,left,right\n",
     );
     assert_preserved_entry_output(&fixture, "0 a b\n");
 }
