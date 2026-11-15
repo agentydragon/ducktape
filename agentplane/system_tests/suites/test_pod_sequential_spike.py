@@ -9,8 +9,8 @@ import pytest_bazel
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.dispatcher_transport import native_client
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
-from agentplane.system_tests.suites import pod_runners
-from agentplane.system_tests.suites.pod_cases import SCENARIOS, Resources, Scenario
+from agentplane.system_tests.suites.pod_cases import SCENARIOS, Scenario
+from agentplane.system_tests.suites.pod_worker import Worker
 from util.net import Listener
 
 # gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
@@ -22,23 +22,21 @@ _CASES = sorted(SCENARIOS, key=lambda case: not any(mark.name == "exclusive_case
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
-async def resources(
+async def worker(
     cluster: Cluster, base_url: str, token: str, scripted_listener: Listener, tmp_path_factory: pytest.TempPathFactory
-) -> AsyncIterator[Resources]:
+) -> AsyncIterator[Worker]:
     upstream = ScriptedUpstream()
     async with (
         native_client(cluster, tmp_path_factory.mktemp("pod-sequential-dispatcher") / "token") as dispatcher,
         upstream.serving(listener=scripted_listener.socket),
-        pod_runners.Pool(cluster, base_url, token) as runner_pool,
+        Worker.open(cluster, base_url, token, upstream, dispatcher) as owned,
     ):
-        yield Resources(
-            cluster=cluster, base_url=base_url, token=token, scripted=upstream, dispatcher=dispatcher, pool=runner_pool
-        )
+        yield owned
 
 
 @pytest.mark.parametrize("case", _CASES, ids=lambda case: "test_" + case.__name__)
-async def test_pod_scenarios(case: Scenario, resources: Resources) -> None:
-    await case(resources)
+async def test_pod_scenarios(case: Scenario, worker: Worker) -> None:
+    await case(worker)
 
 
 if __name__ == "__main__":

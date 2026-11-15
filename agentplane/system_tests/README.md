@@ -55,6 +55,13 @@ scales the app to zero after OAuth consent.
 [`test_ollama_routes`](suites/live/test_ollama_routes.py) carry both `manual` and `no-remote-exec`;
 the [live-test instructions](#running-live) explain how to run them.
 
+The manual `test_pod_sequential_spike`, `test_pod_sequential_a_spike`, and
+`test_pod_sequential_b_spike` targets compare ordinary pytest execution with the bounded Pod
+runner. They call the same scenario functions, retain their marks, and run fresh-inventory storage
+checks first. The A/B targets partition the cases across two independent stacks; the ordinary
+`test_pod` target remains the required witness until feedback, resource cost, and failure isolation
+are qualified.
+
 Pod, MCP Actions, and VM harness cases use the same bounded batch runner. Pytest selection determines
 which callbacks run; each pytest item reports its own result and traced execution time. Fixtures
 own shared deployment/model-server lifetime, while each callback owns its clients, guests, and
