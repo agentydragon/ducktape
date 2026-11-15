@@ -26,6 +26,7 @@ go_library(
     deps = [
         "//agentplane/central_sampler/api:sampler_go_proto",
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
+        "//agentplane/environments/access",
         "//agentplane/grpc/bearer",
         "//agentplane/grpc/streaming",
         "//agentplane/identity/auth",
@@ -41,7 +42,6 @@ go_library(
         "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_go_proto",
         "//agentplane/runner_gateway/dispatcher/internal/placement",
         "//agentplane/runner_gateway/dispatcher/internal/terminalnotice",
-        "//agentplane/runner_gateway/environmentaccess",
         "//agentplane/runner_gateway/environments/lifecycle",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/environmentruntimeclient",
@@ -127,6 +127,7 @@ go_test(
     embed = [":dispatcher"],
     tags = ["requires_docker"],
     deps = [
+        "//agentplane/environments/access",
         "//agentplane/identity/auth",
         "//agentplane/identity/auth/grpc",
         "//agentplane/identity/auth/listener",
@@ -145,7 +146,6 @@ go_test(
         "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_go_proto",
         "//agentplane/runner_gateway/dispatcher/internal/placement",
         "//agentplane/runner_gateway/dispatcher/internal/terminalnotice",
-        "//agentplane/runner_gateway/environmentaccess",
         "//agentplane/runner_gateway/environments/lifecycle",
         "//agentplane/runner_gateway/migrations",
         "//agentplane/sandboxes/api",

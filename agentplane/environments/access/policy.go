@@ -1,5 +1,5 @@
-// Package environmentaccess parses and evaluates environment lifecycle rules.
-package environmentaccess
+// Package access parses and evaluates environment lifecycle rules.
+package access
 
 import (
 	"errors"

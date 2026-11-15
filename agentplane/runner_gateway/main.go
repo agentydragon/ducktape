@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environments/access"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
@@ -30,7 +31,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environmentaccess"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/internal/gateway"
@@ -255,10 +255,10 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	store := dispatcher.NewStore(db, c.QueueCap)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	environmentRules := environmentaccess.NewIndex()
+	environmentRules := access.NewIndex()
 	policyHealth := watchhealth.New()
 	policyWatches := reader.NewWatches(config, policyHealth)
-	if err := reader.WatchRules(policyWatches, environmentRules, c.PolicyNamespace, environmentaccess.Ready); err != nil {
+	if err := reader.WatchRules(policyWatches, environmentRules, c.PolicyNamespace, access.Ready); err != nil {
 		return fmt.Errorf("configure environment policy watches: %w", err)
 	}
 	go policyWatches.Run(ctx)
@@ -377,10 +377,10 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	}
 	// Native placement owns a policy reader independently of explicit resume. The selected
 	// Environments/Sessions split can move each consumer without sharing an in-process index.
-	dispatchEnvironmentRules := environmentaccess.NewIndex()
+	dispatchEnvironmentRules := access.NewIndex()
 	dispatchPolicyHealth := watchhealth.New()
 	dispatchPolicyWatches := reader.NewWatches(config, dispatchPolicyHealth)
-	if err := reader.WatchRules(dispatchPolicyWatches, dispatchEnvironmentRules, c.PolicyNamespace, environmentaccess.Ready); err != nil {
+	if err := reader.WatchRules(dispatchPolicyWatches, dispatchEnvironmentRules, c.PolicyNamespace, access.Ready); err != nil {
 		return fmt.Errorf("configure Dispatcher environment policy watches: %w", err)
 	}
 	go dispatchPolicyWatches.Run(ctx)

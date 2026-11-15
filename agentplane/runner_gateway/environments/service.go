@@ -41,7 +41,7 @@ type Service struct {
 	objects                client.WithWatch
 	sandboxes              *sandboxreader.Reader
 	runtime                runtimeconfig.Catalog
-	lifecycle              *lifecycle.Manager
+	lifecycle              lifecycle.EnvironmentServiceLifecycle
 	readers                sets.Set[auth.Account]
 	managers               sets.Set[auth.Account]
 	launchers              sets.Set[auth.Account]
@@ -55,7 +55,7 @@ func New(
 	namespace string,
 	objects client.WithWatch,
 	runtime runtimeconfig.Catalog,
-	lifecycleManager *lifecycle.Manager,
+	lifecycleManager lifecycle.EnvironmentServiceLifecycle,
 	readers sets.Set[auth.Account],
 	management ManagementOptions,
 ) (*Service, error) {

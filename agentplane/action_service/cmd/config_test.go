@@ -445,6 +445,47 @@ func TestSessionDelegationPeersAreSetExactlyWhenADelegationGroupCallsThem(t *tes
 	}
 }
 
+func TestEnvironmentServicePeerIsOptionalAndPinsControllerSVID(t *testing.T) {
+	if c, err := loadTestConfig(t, requiredFile); err != nil || c.EnvironmentService != nil {
+		t.Fatalf("omitted environment_service = %+v, error = %v", c.EnvironmentService, err)
+	}
+
+	const environment = `environment_service:
+  target: sandbox-controller.agentplane.svc:8082
+  request_timeout_s: 12
+  tls:
+    ca_file: /trust/ca.pem
+    server_uri: spiffe://agentplane/sandbox-controller
+    cert_file: /svid/actions.crt
+    key_file: /svid/actions.key
+    client_uri: spiffe://agentplane/actions
+`
+	c, err := loadTestConfig(t, requiredFile+environment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.EnvironmentService == nil || c.EnvironmentService.Target != "sandbox-controller.agentplane.svc:8082" ||
+		c.EnvironmentService.RequestTimeoutSeconds != 12 || c.EnvironmentService.TLS.ServerURI != peertls.SandboxControllerURI ||
+		c.EnvironmentService.TLS.ClientURI != peertls.ActionsURI {
+		t.Fatalf("environment_service = %+v", c.EnvironmentService)
+	}
+
+	for name, invalid := range map[string]string{
+		"missing target":    strings.Replace(environment, "  target: sandbox-controller.agentplane.svc:8082\n", "", 1),
+		"missing timeout":   strings.Replace(environment, "  request_timeout_s: 12\n", "", 1),
+		"missing SVID":      strings.Replace(environment, "  tls:\n    ca_file: /trust/ca.pem\n    server_uri: spiffe://agentplane/sandbox-controller\n    cert_file: /svid/actions.crt\n    key_file: /svid/actions.key\n    client_uri: spiffe://agentplane/actions\n", "", 1),
+		"wrong server URI":  strings.Replace(environment, peertls.SandboxControllerURI, peertls.SessionDispatcherURI, 1),
+		"wrong caller SVID": strings.Replace(environment, peertls.ActionsURI, peertls.AppURI, 1),
+		"partial SVID":      strings.Replace(environment, "    key_file: /svid/actions.key\n", "", 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := loadTestConfig(t, requiredFile+invalid); err == nil {
+				t.Fatal("accepted invalid environment_service configuration")
+			}
+		})
+	}
+}
+
 func TestListenerRequiresExplicitAddressAndAuthentication(t *testing.T) {
 	for _, fragment := range []string{
 		"rpc: {auth: [{mode: kubernetes_bearer, audiences: [test-actions]}]}\n",

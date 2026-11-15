@@ -1,4 +1,4 @@
-package environmentaccess
+package access
 
 import (
 	"fmt"

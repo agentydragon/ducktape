@@ -15,6 +15,28 @@ from the cdk8s-authored ConfigMap and is loaded at process startup. Reloader res
 when the ConfigMap changes. The file contains static settings and the path to the projected Runner
 Gateway token; token contents remain in the rotating read-only projected volume.
 
+## EnvironmentService listener
+
+`environment_service` optionally enables EnvironmentService on every replica, independently of
+leadership. Reconcilers and direct Runtime observation remain leader-only. RPCs use an uncached
+Kubernetes client, including watch streams and guarded desired-state mutations; they never use the
+leader's Runtime facts as inventory. Explicit resume has no database or wake-budget dependency.
+Automatic wake execution and its budget remain with Sessions.
+
+The listener uses `spiffe://agentplane/sandbox-controller`; configured per-method service roles,
+workload Identity resolution, typed delegation and handler authorization retain their existing
+semantics. Enabling it never grants additional Runtime control authority. Readiness and gRPC health
+require the bound local listener and healthy, synchronized policy watches, without waiting for
+leadership, reconciler progress or Runtime readiness. Liveness stays independent of those watches.
+Listener failure stops the process. Shutdown withdraws readiness, cancels policy watches and drains
+RPCs for up to five seconds before force-closing them. Leadership loss shuts down the manager and
+its RPC listener; clients reconnect and reconcile uncertain mutation outcomes without automatic replay.
+
+Omitting `environment_service` retains the controller-only process and existing readiness behavior.
+Deployment configuration enables the listener only after the accepting image is pinned; caller
+configuration changes follow the running receiver. Existing Gateway registration remains during
+that cutover.
+
 ## State PVC
 
 - Every Sandbox gets one PVC, `<sandbox>-state`, created from its `SandboxTemplate`'s claim when

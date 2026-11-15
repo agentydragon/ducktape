@@ -22,6 +22,7 @@ import (
 
 	sandboxcontroller "github.com/agentydragon/ducktape/agentplane/environments/internal/controller"
 	"github.com/agentydragon/ducktape/agentplane/environments/internal/runtimecontrol"
+	"github.com/agentydragon/ducktape/agentplane/environments/internal/serving"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
 	"github.com/agentydragon/ducktape/agentplane/observability"
@@ -118,7 +119,18 @@ func run(c config) error {
 	if err := mgr.AddHealthzCheck("ping", healthz.Ping); err != nil {
 		return err
 	}
-	if err := mgr.AddReadyzCheck("ping", healthz.Ping); err != nil {
+	ready := healthz.Ping
+	if c.EnvironmentService != nil {
+		server, err := serving.New(*c.EnvironmentService, c.Namespace, restConfig, scheme)
+		if err != nil {
+			return err
+		}
+		if err := mgr.Add(server); err != nil {
+			return err
+		}
+		ready = server.Check
+	}
+	if err := mgr.AddReadyzCheck("serving", ready); err != nil {
 		return err
 	}
 	return mgr.Start(ctrl.SetupSignalHandler())

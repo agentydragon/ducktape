@@ -101,7 +101,7 @@ class ClientTLS(BaseModel):
 
     ca_file: Path
     server_uri: str = Field(
-        pattern=r"^spiffe://agentplane/(runner-gateway|egress-proxy|history-ingress|notifications|llm-ingress|session-dispatcher|actions|policy-controller|central-sampler|mcp-edge)$"
+        pattern=r"^spiffe://agentplane/(runner-gateway|egress-proxy|history-ingress|notifications|llm-ingress|session-dispatcher|actions|policy-controller|central-sampler|mcp-edge|sandbox-controller)$"
     )
     cert_file: Path | None = None
     key_file: Path | None = None

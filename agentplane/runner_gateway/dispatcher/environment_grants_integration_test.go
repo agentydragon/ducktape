@@ -5,13 +5,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environments/access"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environmentaccess"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/google/uuid"
@@ -37,7 +37,7 @@ func nativeCreateRequest(sessionID, sandboxName, sandboxUID string) *dispatcherp
 }
 
 func addEnvironmentGrant(
-	rules *reader.Index[environmentaccess.Rule],
+	rules *reader.Index[access.Rule],
 	name string,
 	subject *policyapi.Identity,
 	operation string,
@@ -73,7 +73,7 @@ func TestIdentityNativeCreateRequiresCurrentBindSessionGrant(t *testing.T) {
 	ownerIdentity := &identitypb.Identity{Name: owner.Identity.Name, Uid: string(owner.Identity.UID)}
 	sandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
 	inventory := &authorityInventory{sandbox: sandbox, identity: ownerIdentity}
-	rules := environmentaccess.NewIndex()
+	rules := access.NewIndex()
 	rules.PutIdentity(owner.Identity)
 	var policyError error
 	store, dial := serveIdentitySVIDsWithPolicy(t, owner.Objects, environmentGrantPolicyNamespace, inventory, rules,
@@ -182,7 +182,7 @@ func TestIdentityNativeCreateRechecksTargetAfterSandboxLock(t *testing.T) {
 	ownerIdentity := &identitypb.Identity{Name: owner.Identity.Name, Uid: string(owner.Identity.UID)}
 	sandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
 	inventory := &authorityInventory{sandbox: sandbox, identity: ownerIdentity}
-	rules := environmentaccess.NewIndex()
+	rules := access.NewIndex()
 	rules.PutIdentity(owner.Identity)
 	addEnvironmentGrant(rules, "lock-bind-session", owner.Identity, "bind_session", policyapi.EnvironmentSelector{
 		BoundIdentity: &policyapi.BoundIdentitySelector{Name: ownerIdentity.GetName()},
@@ -257,7 +257,7 @@ func TestIdentityNativeCreateHidesSandboxDeletedWhileWaitingForLock(t *testing.T
 	identity := &identitypb.Identity{Name: owner.Identity.Name, Uid: string(owner.Identity.UID)}
 	sandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
 	inventory := &authorityInventory{sandbox: sandbox, identity: identity}
-	rules := environmentaccess.NewIndex()
+	rules := access.NewIndex()
 	rules.PutIdentity(owner.Identity)
 	addEnvironmentGrant(rules, "deleted-bind-session", owner.Identity, "bind_session", policyapi.EnvironmentSelector{
 		BoundIdentity: &policyapi.BoundIdentitySelector{Self: true},

@@ -7,7 +7,10 @@ import (
 	"os"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/environments/internal/serving"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	"github.com/go-viper/mapstructure/v2"
 
 	"gopkg.in/yaml.v3"
 )
@@ -17,13 +20,14 @@ const configFileEnv = "AGENTPLANE_SANDBOX_CONTROLLER_CONFIG_FILE"
 // config is the Sandbox Controller's deployment contract. Keep its YAML keys in sync with settings.py,
 // which renders the Deployment's required settings file.
 type config struct {
-	RunnerGatewayTLS       *peertls.ClientTLS `yaml:"runner_gateway_tls"`
-	RunnerSecurity         peertls.Security   `yaml:"runner_security"`
-	Namespace              string             `yaml:"namespace"`
-	MetricsBindAddress     string             `yaml:"metrics_bind_address"`
-	HealthProbeBindAddress string             `yaml:"health_probe_bind_address"`
-	RunnerGatewayTarget    string             `yaml:"runner_gateway_target"`
-	RunnerGatewayTokenFile string             `yaml:"runner_gateway_token_file"`
+	EnvironmentService     *serving.Config    `mapstructure:"environment_service"`
+	RunnerGatewayTLS       *peertls.ClientTLS `mapstructure:"runner_gateway_tls"`
+	RunnerSecurity         peertls.Security   `mapstructure:"runner_security"`
+	Namespace              string             `mapstructure:"namespace"`
+	MetricsBindAddress     string             `mapstructure:"metrics_bind_address"`
+	HealthProbeBindAddress string             `mapstructure:"health_probe_bind_address"`
+	RunnerGatewayTarget    string             `mapstructure:"runner_gateway_target"`
+	RunnerGatewayTokenFile string             `mapstructure:"runner_gateway_token_file"`
 }
 
 func defaultConfig() config {
@@ -43,8 +47,8 @@ func loadConfig() (config, error) {
 
 	c := defaultConfig()
 	decoder := yaml.NewDecoder(file)
-	decoder.KnownFields(true)
-	if err := decoder.Decode(&c); err != nil {
+	var settings map[string]any
+	if err := decoder.Decode(&settings); err != nil {
 		return config{}, fmt.Errorf("decode Sandbox Controller settings file: %w", err)
 	}
 	var extra any
@@ -54,6 +58,20 @@ func loadConfig() (config, error) {
 		}
 		return config{}, errors.New("Sandbox Controller settings file must contain one YAML document")
 	}
+	strict, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+		Result: &c, TagName: "mapstructure", ErrorUnused: true,
+		DecodeHook: mapstructure.ComposeDecodeHookFunc(mapstructure.TextUnmarshallerHookFunc(), listener.AuthenticationDecodeHook),
+		MatchName:  func(mapKey, fieldName string) bool { return mapKey == fieldName },
+	})
+	if err != nil {
+		return config{}, err
+	}
+	if err := strict.Decode(settings); err != nil {
+		return config{}, fmt.Errorf("decode Sandbox Controller settings file: %w", err)
+	}
+	if c.EnvironmentService != nil {
+		c.EnvironmentService.RuntimeCatalog.Models.NormalizeHarnessNames()
+	}
 	if err := c.validate(); err != nil {
 		return config{}, err
 	}
@@ -61,6 +79,11 @@ func loadConfig() (config, error) {
 }
 
 func (c config) validate() error {
+	if c.EnvironmentService != nil {
+		if err := c.EnvironmentService.Validate(); err != nil {
+			return fmt.Errorf("environment_service: %w", err)
+		}
+	}
 	if err := c.RunnerSecurity.Validate(); err != nil {
 		return fmt.Errorf("runner_security: %w", err)
 	}

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environments/access"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
@@ -12,7 +13,6 @@ import (
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environmentaccess"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
@@ -93,7 +93,7 @@ func TestServiceDelegatedResumeUsesEffectiveIdentityGrant(t *testing.T) {
 			if err := objects.Status().Update(t.Context(), sandbox); err != nil {
 				t.Fatal(err)
 			}
-			rules := environmentaccess.NewIndex()
+			rules := access.NewIndex()
 			caller := identity
 			if tc.other {
 				caller = other

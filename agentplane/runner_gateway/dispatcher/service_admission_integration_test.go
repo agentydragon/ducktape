@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environments/access"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
@@ -14,7 +15,6 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environmentaccess"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -75,7 +75,7 @@ func TestServiceActorsRetainSeparateProofAndIdentityScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
-	rules := environmentaccess.NewIndex()
+	rules := access.NewIndex()
 	ownerObject := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Name: owner.Name, UID: types.UID(owner.Uid)}}
 	rules.PutIdentity(ownerObject)
 	dispatcherpb.RegisterSessionDispatcherServer(server, &Service{Store: store, Sandboxes: inventory, DispatcherServices: sets.New(peertls.AppURI), EnvironmentRules: rules, PolicyReady: func() error { return nil }})

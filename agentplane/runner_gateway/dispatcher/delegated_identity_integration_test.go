@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environments/access"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadgrpc "github.com/agentydragon/ducktape/agentplane/identity/auth/grpc"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
@@ -17,7 +18,6 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environmentaccess"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -50,7 +50,7 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	ownerAccount := serviceAccountIdentityFor(owner.Principal.Account, owner.Principal.ServiceAccountUID)
 	ownerSandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
 	inventory := &authorityInventory{sandbox: ownerSandbox, identity: ownerIdentity}
-	rules := environmentaccess.NewIndex()
+	rules := access.NewIndex()
 	rules.PutIdentity(owner.Identity)
 	rules.PutIdentity(other.Identity)
 	var policyError error

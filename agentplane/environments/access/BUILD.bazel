@@ -1,9 +1,9 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
-    name = "environmentaccess",
+    name = "access",
     srcs = ["policy.go"],
-    importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/environmentaccess",
+    importpath = "github.com/agentydragon/ducktape/agentplane/environments/access",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
         "//agentplane/policy/api/v1alpha1",
@@ -13,9 +13,9 @@ go_library(
 )
 
 go_test(
-    name = "environmentaccess_test",
+    name = "access_test",
     srcs = ["policy_test.go"],
-    embed = [":environmentaccess"],
+    embed = [":access"],
     deps = [
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/policy/reader",

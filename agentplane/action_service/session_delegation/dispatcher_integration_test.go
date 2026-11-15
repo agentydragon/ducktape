@@ -14,6 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/session_delegation/contract"
+	"github.com/agentydragon/ducktape/agentplane/environments/access"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
@@ -23,7 +24,6 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environmentaccess"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
@@ -106,7 +106,7 @@ func TestAnIdentitysSessionActionsSucceedAgainstTheDispatcher(t *testing.T) {
 	environment := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{
 		Namespace: sandbox.Namespace, Name: sandbox.Name, UID: types.UID(sandbox.UID),
 	}, Spec: sandboxapi.SandboxSpec{Identity: &sandboxapi.IdentityRef{Name: ownerIdentity.GetName()}, Running: true}}
-	environmentRules := environmentaccess.NewIndex()
+	environmentRules := access.NewIndex()
 	environmentRules.PutIdentity(owner.Identity)
 	resolver, err := auth.NewResolver(actorReviews{}, "test-dispatcher", []string{integrationNamespace}, auth.WithVerdictTTL(0))
 	if err != nil {

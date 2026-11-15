@@ -2,10 +2,12 @@
 
 ## Ownership
 
-`lifecycle.Manager` owns current resume policy checks and the guarded desired-state update for an
-existing Sandbox. It runs in the Runner Gateway. It is shared in-process by the explicit RPC, the
-Dispatcher automatic-wake path, and EnvironmentService's read-only eligibility assessments. It does not own
-Sandbox reconciliation or readiness; those remain with the Sandbox Controller.
+`lifecycle.Manager` owns current resume policy checks, automatic-wake requests and the guarded
+desired-state update for an existing Sandbox. `NewManager` requires the shared wake budget used by
+automatic requests. `EnvironmentServiceManager` provides the same guarded explicit-resume operation
+and read-only eligibility assessments without automatic-wake execution or a budget dependency. The
+Gateway uses `Manager` for Dispatcher automatic wake; the EnvironmentService uses the budgetless
+surface. Neither owns Sandbox reconciliation or readiness; those remain with the Sandbox Controller.
 
 The Kubernetes client is uncached. Every operation identifies a target by namespace, name and UID,
 and reads the current controller-owned execution ServiceAccount or Identity. Explicit resume accepts
@@ -72,8 +74,10 @@ incarnation's transition.
 `Eligibility` describes current explicit-resume permission, including the typed
 `ALLOWED_IDENTITY_GRANT` reason. `AssessAutomaticWake` describes whether
 an automatic request is currently permitted, including `wakeOnSend` and the separate broker grant.
-Both are read-only and do not reserve budget. `RequestWake` applies that same automatic policy,
-reserves budget, then performs the guarded mutation. `WakeAssessment.ELIGIBLE` is an assessment only;
+Both are read-only and do not reserve budget. `AssessAutomaticWake` is available on the
+EnvironmentService manager so inventory retains its automatic-eligibility response. `RequestWake`,
+available only on the budget-backed `Manager`, applies that same automatic policy, reserves budget,
+then performs the guarded mutation. `WakeAssessment.ELIGIBLE` is an assessment only;
 `REQUESTED` records a successful mutation, with timestamp and observed generation on both.
 
 Expected wake and policy outcomes use the shared `agentplane.proto` lifecycle messages. gRPC errors

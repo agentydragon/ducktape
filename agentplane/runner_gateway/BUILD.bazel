@@ -199,6 +199,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway",
     visibility = ["//agentplane/runner_gateway:__subpackages__"],
     deps = [
+        "//agentplane/environments/access",
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/grpc/graceful",
         "//agentplane/identity/auth",
@@ -215,7 +216,6 @@ go_library(
         "//agentplane/postgres/migrate",
         "//agentplane/runner_gateway/dispatcher",
         "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_go_proto",
-        "//agentplane/runner_gateway/environmentaccess",
         "//agentplane/runner_gateway/environments",
         "//agentplane/runner_gateway/environments/lifecycle",
         "//agentplane/runner_gateway/internal/gateway",

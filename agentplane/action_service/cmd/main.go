@@ -490,15 +490,23 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 			return err
 		}
 		defer history.Close()
+		environmentConnection := dispatcher
+		if c.EnvironmentService != nil {
+			environmentConnection, err = dial(*c.EnvironmentService)
+			if err != nil {
+				return fmt.Errorf("dial Environment Service: %w", err)
+			}
+			defer environmentConnection.Close()
+		}
 		orchestrators, err := orchestrationExecutors(c.ActionGroups, d.Kube,
-			environmentpb.NewEnvironmentServiceClient(dispatcher), dispatcherpb.NewSessionDispatcherClient(dispatcher), historypb.NewHistoryServiceClient(history), time.Duration(c.DirectWaitSeconds*float64(time.Second)))
+			environmentpb.NewEnvironmentServiceClient(environmentConnection), dispatcherpb.NewSessionDispatcherClient(dispatcher), historypb.NewHistoryServiceClient(history), time.Duration(c.DirectWaitSeconds*float64(time.Second)))
 		if err != nil {
 			return err
 		}
 		maps.Copy(byGroup, orchestrators)
 	}
-	// The delegated Dispatcher peer is also the shared EnvironmentService listener. Its projected token and the
-	// History token are read for every call, and the executor adds the durable Action caller envelope to each one.
+	// The delegated Dispatcher peer also serves EnvironmentService unless its dedicated SVID peer is configured.
+	// Delegation remains attached to each EnvironmentService call, and dispatcher methods keep this connection.
 	if c.SessionDelegationDispatcher != nil {
 		dispatcherConn, err := workloadgrpc.DialDelegated(
 			c.SessionDelegationDispatcher.Target, c.SessionDelegationDispatcher.TokenFile,
@@ -510,6 +518,19 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 			return fmt.Errorf("dial delegated Environment Service and Session Dispatcher: %w", err)
 		}
 		defer dispatcherConn.Close()
+		environmentConn := dispatcherConn
+		if c.EnvironmentService != nil {
+			environmentConn, err = workloadgrpc.DialDelegated(
+				c.EnvironmentService.Target, c.EnvironmentService.TokenFile,
+				time.Duration(c.EnvironmentService.RequestTimeoutSeconds*float64(time.Second)),
+				c.EnvironmentService.TLS,
+				workloadgrpc.ClientInterceptors{},
+			)
+			if err != nil {
+				return fmt.Errorf("dial delegated Environment Service: %w", err)
+			}
+			defer environmentConn.Close()
+		}
 		historyConn, err := workloadgrpc.DialDelegated(
 			c.SessionDelegationHistory.Target, c.SessionDelegationHistory.TokenFile,
 			time.Duration(c.SessionDelegationHistory.RequestTimeoutSeconds*float64(time.Second)),
@@ -522,7 +543,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		defer historyConn.Close()
 		delegated, err := sessionDelegationExecutors(
 			c.ActionGroups,
-			environmentpb.NewEnvironmentServiceClient(dispatcherConn),
+			environmentpb.NewEnvironmentServiceClient(environmentConn),
 			dispatcherpb.NewSessionDispatcherClient(dispatcherConn),
 			historypb.NewHistoryServiceClient(historyConn),
 		)
