@@ -7,7 +7,7 @@ fixtures, per-action tracing, and the pytest deployment adapter. Retained node s
 
 The disposable stack used by the [CI system test suites](../README.md): the Agentplane services on a
 bare k3s inside the suite's own RBE action (no Cilium), which PR CI runs like any test.
-[`system_test_target.py`](system_test_target.py) is the pytest plugin that starts it and publishes it as
+[`pytest_plugin.py`](pytest_plugin.py) is the pytest plugin that starts it and publishes it as
 the deployment under test, with LLM ingress forwarding to the scenario's scripted model on the node.
 Pod suites include the deployment package's `environment_tools_harnesses_image`, which carries both pinned harnesses.
 
@@ -52,8 +52,10 @@ family with the VM resource estimate. Baseline fingerprints include the layer mo
 releases/images/configuration. `stack.py` owns fresh workload orchestration and cleanup;
 `vm/runtime.py` owns per-action VM volumes and guest evidence. The fingerprint includes
 `certificates.py` because its cleanup determines whether retained PKI is clean.
-Only VM suites load `vm/pytest_plugin.py`, which supplies the typed lifecycle extension; Pod/MCP
-runfiles omit VM runtime helpers.
+Every k3s entrypoint registers the same `deployment.pytest_plugin` module. Its ordinary session
+`deployment` fixture starts only when requested. The rendered runtime selects the Pod, KubeVirt or
+Firecracker lifecycle; plugin registration does not vary. All suites share the scenario tracing,
+scripted-model and batched-case reporting hooks in the parent conftest.
 
 A missing, unhealthy, dirty or incompatible baseline rebuilds cold. Snapshot publication follows BuildBuddy's default save policy; suites do not force a save after each action. Until a
 refreshed snapshot is saved, later actions can repeat the rebuild.

@@ -13,6 +13,9 @@ from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.scenarios import workload_trust
 from agentplane.system_tests.scenarios.firecracker import preserves_live_guest
 
+# gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
+pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
+
 
 @pytest.mark.scripted_model
 async def test_firecracker_preserves_live_guest(

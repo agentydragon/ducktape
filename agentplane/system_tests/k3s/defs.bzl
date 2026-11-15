@@ -236,7 +236,6 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath " + _CERT_MANAGER_INSTALL + ")",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath " + _TRUST_MANAGER_INSTALL + ")",
         "K3S_FIXTURE_RLOCATION": "$(rlocationpath " + config.fixture + ")",
-        "PYTEST_PLUGINS": "agentplane.system_tests.k3s.pytest_plugin,agentplane.system_tests.deployment.system_test_target" + (",agentplane.system_tests.driver.native_fixtures" if stack == "central_native" else "") + (",agentplane.system_tests.vm.pytest_plugin" if config.vm else ",agentplane.system_tests.firecracker.pytest_plugin" if config.firecracker else ""),
     }
     properties = {}
     suite_tags = K3S_TAGS + tags
@@ -300,9 +299,8 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         exec_properties = merged_properties,
         tags = suite_tags,
         deps = deps + [
-            "//agentplane/system_tests/deployment:system_test_target",
-            "//agentplane/system_tests/k3s:pytest_plugin",
-        ] + (["//agentplane/system_tests/driver:native_fixtures"] if stack == "central_native" else []) + (["//agentplane/system_tests/vm:pytest_plugin"] if config.vm else ["//agentplane/system_tests/firecracker:pytest_plugin"] if config.firecracker else []),
+            "//agentplane/system_tests/deployment:pytest_plugin",
+        ],
     )
 
 def k3s_tcg_vm_image_manifest(name):

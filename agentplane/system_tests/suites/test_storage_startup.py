@@ -16,6 +16,9 @@ from agentplane.system_tests.driver.executor import Executor
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE
 from agentplane.system_tests.scenarios import storage
 
+# gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
+pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
+
 
 @asynccontextmanager
 async def _stopped_controller(cluster: Cluster) -> AsyncIterator[None]:

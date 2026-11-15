@@ -274,18 +274,6 @@ py_test(
     ],
 )
 
-py_library(
-    name = "pytest_plugin",
-    srcs = ["pytest_plugin.py"],
-    deps = [
-        ":guest_logs",
-        ":runtime",
-        "//agentplane/system_tests/deployment:virtualization",
-        "//devinfra/testing:undeclared_outputs",
-        "@pypi//pytest",
-    ],
-)
-
 k3s_tcg_vm_image_manifest(
     name = "test_tcg_vmi_shutdown_image_manifest",
 )

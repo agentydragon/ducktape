@@ -37,6 +37,9 @@ from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.scenarios import mcp
 from util.net import Listener
 
+# gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
+pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
+
 # gazelle:include_dep @pypi//protobuf
 
 

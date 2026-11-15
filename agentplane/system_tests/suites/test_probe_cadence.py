@@ -9,17 +9,15 @@ import pytest
 import pytest_bazel
 from python.runfiles import Runfiles
 
+from agentplane.system_tests.deployment.pytest_plugin import load_stack_inputs
 from agentplane.system_tests.deployment.rendered_fixture import LocalModel
 from agentplane.system_tests.deployment.stack import Stack, running_stack
-from agentplane.system_tests.deployment.system_test_target import load_stack_inputs
 from agentplane.system_tests.driver.tracing import tracer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.net import Listener
 
-
-@pytest.fixture(scope="session")
-def deployment() -> None:
-    """This experiment owns each fresh stack instead of the ordinary session fixture."""
+# gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
+pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
 
 
 @pytest.mark.parametrize("arm", ["warmup", "control-a", "fast-a", "fast-b", "control-b"])

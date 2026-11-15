@@ -82,7 +82,7 @@ for VM image layout and lifecycle.
   the pair. Workspace storage runs alone before the pool is used ([`test_pod.py`](suites/test_pod.py),
   [`pod_runners.py`](suites/pod_runners.py), [`pod_cases.py`](suites/pod_cases.py)).
 - Test markers must agree with the selected stack backend; deployment setup rejects scripted-model
-  cases on the real-model stack and vice versa ([`system_test_target.py`](deployment/system_test_target.py)).
+  cases on the real-model stack and vice versa ([`pytest_plugin.py`](deployment/pytest_plugin.py)).
 
 ### Abrupt Gateway loss
 
