@@ -658,7 +658,11 @@ paths and source-unit IDs belong in the consuming repo.
   discovery completeness, proposal soundness, scope, honest termination and
   optimization equivalence. Exercise normal CLI application and emitted behavior,
   not only internal checker agreement. Complete search and its CI coverage are
-  release gates for the replacement workflow.
+  release gates for the replacement workflow. Update `AGENTS.md`, stable docs,
+  role skills, shared recipes and packaged executable examples alongside each
+  implemented CLI contract. Verify the packaged agent workflow before retiring
+  obsolete commands and instructions; installed skill edits are not the source
+  change.
 
 ### Planner CLI follow-ups
 
