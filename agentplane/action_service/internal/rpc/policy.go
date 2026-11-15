@@ -7,7 +7,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/policyview"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
@@ -22,11 +21,6 @@ func (s *Service) GetActionPolicy(ctx context.Context, request *action_servicepb
 	switch principal := admitted(ctx).principal.(type) {
 	case store.Owner:
 		own = policySubject(principal)
-	case store.ServiceReaderPrincipal:
-		if !s.gate.callers.Admits(auth.Account(principal.Account)) {
-			return nil, unauthenticated
-		}
-		own = reader.ServiceAccount{Namespace: principal.Account.Namespace, Name: principal.Account.Name}
 	case store.OperatorPrincipal:
 		viewer = policyview.Operator
 	}

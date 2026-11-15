@@ -32,7 +32,7 @@ func (s *served) link(t *testing.T, serverID string) *operator_action_servicepb.
 
 func TestAnOperatorLinksAndDisconnectsAnMCPServer(t *testing.T) {
 	provider := oauthprovider.New(t, oauthprovider.Options{Metadata: true, ExpiresIn: 3600})
-	s := serveWith(t, kube.TokenReviews(), &catalog.Catalog{}, provider.Server(testServer))
+	s := serveWith(t, &catalog.Catalog{}, provider.Server(testServer))
 	ctx := as(t, s.operatorToken)
 	unlinked := &operator_action_servicepb.McpServerLinkage{
 		ServerId: testServer, ServerUrl: provider.URL + "/mcp", Status: operator_action_servicepb.McpLinkageStatus_MCP_LINKAGE_STATUS_UNLINKED,
@@ -77,7 +77,7 @@ func TestAnMCPServerCallThatCannotBeServedFails(t *testing.T) {
 	provider := oauthprovider.New(t, oauthprovider.Options{})
 	unusable := provider.Server(testServer)
 	unusable.AuthorizationEndpoint, unusable.TokenEndpoint = nil, nil
-	s := serveWith(t, kube.TokenReviews(), &catalog.Catalog{}, unusable)
+	s := serveWith(t, &catalog.Catalog{}, unusable)
 	ctx := as(t, s.operatorToken)
 	_, err := s.operators.StartMcpServerLinkage(ctx, &operator_action_servicepb.StartMcpServerLinkageRequest{ServerId: "test-unknown"})
 	wantCode(t, "a link of an unknown server", err, codes.NotFound)
@@ -87,7 +87,7 @@ func TestAnMCPServerCallThatCannotBeServedFails(t *testing.T) {
 	wantCode(t, "a link of a server whose metadata is unusable", err, codes.FailedPrecondition)
 
 	provider = oauthprovider.New(t, oauthprovider.Options{Metadata: true})
-	s = serveWith(t, kube.TokenReviews(), &catalog.Catalog{}, provider.Server(testServer))
+	s = serveWith(t, &catalog.Catalog{}, provider.Server(testServer))
 	_, err = s.operators.StartMcpServerLinkage(as(t, s.operatorToken), &operator_action_servicepb.StartMcpServerLinkageRequest{
 		ServerId: testServer, Scopes: []string{"test-read", "test-unconfigured"},
 	})
@@ -141,7 +141,7 @@ func nextUpsert(t *testing.T, what string, stream linkageStream) *operator_actio
 func TestAnMCPServerWatchSendsEachChangeOfALinkageIncludingItsTokensExpiry(t *testing.T) {
 	// Each token lapses a few seconds after it is granted, and is not refreshed.
 	provider := oauthprovider.New(t, oauthprovider.Options{Metadata: true, ExpiresIn: 5})
-	s := serveWith(t, kube.TokenReviews(), &catalog.Catalog{}, provider.Server(testServer), provider.Server("test-other-server"))
+	s := serveWith(t, &catalog.Catalog{}, provider.Server(testServer), provider.Server("test-other-server"))
 	stream := s.watchLinkages(t, as(t, s.operatorToken))
 	if snapshot := linkageSnapshot(t, stream); len(snapshot) != 2 || snapshot[0].GetServerId() != "test-other-server" ||
 		snapshot[1].GetStatus() != operator_action_servicepb.McpLinkageStatus_MCP_LINKAGE_STATUS_UNLINKED {

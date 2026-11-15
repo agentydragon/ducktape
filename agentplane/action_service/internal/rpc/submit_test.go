@@ -13,11 +13,11 @@ import (
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -59,15 +59,16 @@ func (s *served) bind(t *testing.T, account auth.Account, rules ...policyapi.Rul
 	}); err != nil {
 		t.Fatal(err)
 	}
-	subject := policyapi.ServiceAccountRef{Namespace: account.Namespace, Name: account.Name}
+	subject := reader.Identity{Name: s.caller.Identity.Name, UID: types.UID(s.caller.Identity.UID)}
+	s.removeCallerBinding(t)
 	if err := policyObjects.Create(t.Context(), &policyapi.PolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Namespace: s.policy, Name: testPolicyBinder},
-		Spec:       policyapi.PolicyBindingSpec{Subject: policyapi.Subject{Namespace: subject.Namespace, Name: subject.Name}, PolicySets: []string{"test-set"}},
+		Spec:       policyapi.PolicyBindingSpec{Subject: policyapi.Subject{Identity: &policyapi.IdentityRef{Name: subject.Name}}, PolicySets: []string{"test-set"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := wait.PollUntilContextTimeout(t.Context(), 20*time.Millisecond, callDeadline, true, func(context.Context) (bool, error) {
-		bindings := s.index.ResolveBindings(reader.ServiceAccount(subject))
+		bindings := s.index.ResolveBindings(subject)
 		return len(bindings) == 1 && len(bindings[0].PolicySets) == 1, nil
 	}); err != nil {
 		t.Fatalf("the policy index never resolved the binding: %v", err)
@@ -88,7 +89,7 @@ func TestASubmissionNoPolicyDecidesWaitsForAnOperator(t *testing.T) {
 	s := serve(t)
 	request := envelope(t, "test-pending", "test-group", "test-action", map[string]any{"target": "test-target"})
 	request.Description = new("test description")
-	got, err := s.submitAs(t, callerToken, request)
+	got, err := s.submitAs(t, callerCertificate, request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,10 +100,10 @@ func TestASubmissionNoPolicyDecidesWaitsForAnOperator(t *testing.T) {
 	if got.GetIdempotencyKey() != request.GetIdempotencyKey() || !proto.Equal(got.GetAction(), request.GetAction()) ||
 		!proto.Equal(got.GetArguments(), request.GetArguments()) || got.GetTitle() != request.GetTitle() ||
 		got.GetDescription() != request.GetDescription() ||
-		got.GetCaller().GetNamespace() != callerAccount.Namespace || got.GetCaller().GetName() != callerAccount.Name {
+		got.GetCallerIdentity().GetName() != s.caller.Identity.Name || got.GetCallerIdentity().GetUid() != s.caller.Identity.UID {
 		t.Errorf("receipt %v does not carry the submission %v of %v", got, request, callerAccount)
 	}
-	read, err := s.client.GetActionRequest(as(t, callerToken), &action_servicepb.GetActionRequestRequest{RequestId: got.GetId()})
+	read, err := s.client.GetActionRequest(as(t, callerCertificate), &action_servicepb.GetActionRequestRequest{RequestId: got.GetId()})
 	if err != nil || !proto.Equal(read.GetActionRequest(), got) {
 		t.Errorf("the stored request reads %v, %v; want the receipt", read, err)
 	}
@@ -112,7 +113,7 @@ func TestASubmissionAPolicyAllowsArrivesAllowedWithTheObjectsItWasDecidedOn(t *t
 	s := serve(t)
 	s.bind(t, callerAccount, exactActions("test-group", "test-action"))
 
-	got, err := s.submitAs(t, callerToken, envelope(t, "test-allowed", "test-group", "test-action", map[string]any{}))
+	got, err := s.submitAs(t, callerCertificate, envelope(t, "test-allowed", "test-group", "test-action", map[string]any{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,11 +147,11 @@ func TestASubmissionAPolicyAllowsArrivesAllowedWithTheObjectsItWasDecidedOn(t *t
 	}
 
 	// An Action the policy does not list, and a caller no binding names, wait for an operator.
-	other, err := s.submitAs(t, callerToken, envelope(t, "test-other", "test-group", "test-other-action", map[string]any{}))
+	other, err := s.submitAs(t, callerCertificate, envelope(t, "test-other", "test-group", "test-other-action", map[string]any{}))
 	if err != nil || other.GetState() != pending {
 		t.Errorf("an Action no policy lists: %v, %v", other.GetState(), err)
 	}
-	unbound, err := s.submitAs(t, otherToken, envelope(t, "test-unbound", "test-group", "test-action", map[string]any{}))
+	unbound, err := s.submitAs(t, otherCertificate, envelope(t, "test-unbound", "test-group", "test-action", map[string]any{}))
 	if err != nil || unbound.GetState() != pending {
 		t.Errorf("a caller no binding names: %v, %v", unbound.GetState(), err)
 	}
@@ -163,7 +164,7 @@ func TestAPublicRepositoryPolicyAllowsOnlyWhatGitHubConfirmsPublic(t *testing.T)
 	}))
 	submit := func(key, owner, repository string) *action_servicepb.ActionRequest {
 		t.Helper()
-		got, err := s.submitAs(t, callerToken, envelope(t, key, "test-github", "get_file_contents", map[string]any{"owner": owner, "repo": repository}))
+		got, err := s.submitAs(t, callerCertificate, envelope(t, key, "test-github", "get_file_contents", map[string]any{"owner": owner, "repo": repository}))
 		if err != nil {
 			t.Fatalf("%s: %v", key, err)
 		}
@@ -190,20 +191,20 @@ func TestADecidedOnlySubmissionNoPolicyDecidesIsRefusedAndStoresNothing(t *testi
 	s.bind(t, callerAccount, exactActions("test-group", "test-action"))
 	undecided := envelope(t, "test-undecided", "test-group", "test-other-action", map[string]any{})
 	undecided.DecidedOnly = true
-	_, err := s.submitAs(t, callerToken, undecided)
+	_, err := s.submitAs(t, callerCertificate, undecided)
 	wantCode(t, "a decided-only submission no policy decides", err, codes.PermissionDenied)
-	if listed := s.listByKey(t, callerToken, undecided.GetIdempotencyKey()); len(listed) != 0 {
+	if listed := s.listByKey(t, callerCertificate, undecided.GetIdempotencyKey()); len(listed) != 0 {
 		t.Errorf("stored %v", listed)
 	}
 	// The key stays unused.
 	undecided.DecidedOnly = false
-	if got, err := s.submitAs(t, callerToken, undecided); err != nil || got.GetState() != pending {
+	if got, err := s.submitAs(t, callerCertificate, undecided); err != nil || got.GetState() != pending {
 		t.Errorf("the key once refused: %v, %v", got.GetState(), err)
 	}
 
 	decided := envelope(t, "test-decided", "test-group", "test-action", map[string]any{})
 	decided.DecidedOnly = true
-	if got, err := s.submitAs(t, callerToken, decided); err != nil || got.GetState() != allowed {
+	if got, err := s.submitAs(t, callerCertificate, decided); err != nil || got.GetState() != allowed {
 		t.Errorf("a decided-only submission a policy decides: %v, %v", got.GetState(), err)
 	}
 }
@@ -248,19 +249,19 @@ func TestASubmissionIsRefusedBeforeAnythingIsStored(t *testing.T) {
 		"no Action":                           {changed(func(r *action_servicepb.SubmitActionRequestRequest) { r.Action = nil }), codes.InvalidArgument},
 		"an input schema that cannot be used": {changed(action("test-broken", "test-action")), codes.Internal},
 	} {
-		_, err := s.submitAs(t, callerToken, tc.request)
+		_, err := s.submitAs(t, callerCertificate, tc.request)
 		wantCode(t, name, err, tc.code)
 	}
-	if listed, err := s.client.ListActionRequests(as(t, callerToken), &action_servicepb.ListActionRequestsRequest{}); err != nil || len(listed.GetActionRequests()) != 0 {
+	if listed, err := s.client.ListActionRequests(as(t, callerCertificate), &action_servicepb.ListActionRequestsRequest{}); err != nil || len(listed.GetActionRequests()) != 0 {
 		t.Errorf("stored %v, %v", listed, err)
 	}
 	// No refusal spent the key.
-	if _, err := s.submitAs(t, callerToken, changed(func(*action_servicepb.SubmitActionRequestRequest) {})); err != nil {
+	if _, err := s.submitAs(t, callerCertificate, changed(func(*action_servicepb.SubmitActionRequestRequest) {})); err != nil {
 		t.Errorf("the key after the refusals: %v", err)
 	}
 }
 
-func TestOnlyALabeledWorkloadSubmits(t *testing.T) {
+func TestOnlyAnAdmittedWorkloadIdentitySubmits(t *testing.T) {
 	s := serve(t)
 	request := envelope(t, "test-submitter", "test-group", "test-action", map[string]any{})
 	for name, tc := range map[string]struct {
@@ -268,7 +269,7 @@ func TestOnlyALabeledWorkloadSubmits(t *testing.T) {
 		code  codes.Code
 	}{
 		"an operator":                            {s.operatorToken, codes.PermissionDenied},
-		"a service reader":                       {readerToken, codes.Unauthenticated},
+		"a service reader":                       {readerCertificate, codes.PermissionDenied},
 		"an account without the caller label":    {unlabeledToken, codes.Unauthenticated},
 		"a labeled account outside the callers'": {outsiderToken, codes.Unauthenticated},
 	} {
@@ -286,17 +287,17 @@ func TestOnlyALabeledWorkloadSubmits(t *testing.T) {
 
 func TestAnIdempotencyKeyIsAcceptedOncePerAccountAndRecoversTheRequest(t *testing.T) {
 	s := serve(t)
-	first, err := s.submitAs(t, callerToken, envelope(t, "test-key", "test-group", "test-action", map[string]any{}))
+	first, err := s.submitAs(t, callerCertificate, envelope(t, "test-key", "test-group", "test-action", map[string]any{}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Whatever else the repeat says.
-	_, err = s.submitAs(t, callerToken, envelope(t, "test-key", "test-group", "test-other-action", map[string]any{"other": true}))
+	_, err = s.submitAs(t, callerCertificate, envelope(t, "test-key", "test-group", "test-other-action", map[string]any{"other": true}))
 	wantCode(t, "the key again", err, codes.AlreadyExists)
-	if listed := s.listByKey(t, callerToken, "test-key"); len(listed) != 1 || !proto.Equal(listed[0], first) {
+	if listed := s.listByKey(t, callerCertificate, "test-key"); len(listed) != 1 || !proto.Equal(listed[0], first) {
 		t.Errorf("recovered %v, want the first receipt %v", listed, first)
 	}
-	if got, err := s.submitAs(t, otherToken, envelope(t, "test-key", "test-group", "test-action", map[string]any{})); err != nil || got.GetId() == first.GetId() {
+	if got, err := s.submitAs(t, otherCertificate, envelope(t, "test-key", "test-group", "test-action", map[string]any{})); err != nil || got.GetId() == first.GetId() {
 		t.Errorf("another account's submission under the key: %v, %v", got, err)
 	}
 }
@@ -305,11 +306,11 @@ func TestASubmittedRequestIsWatchedUntilItFinishesOrTheClientsDeadline(t *testin
 	s := serve(t)
 	s.runWorker(t)
 	s.bind(t, callerAccount, exactActions("test-group", "test-action"))
-	ran, err := s.submitAs(t, callerToken, envelope(t, "test-runs", "test-group", "test-action", map[string]any{}))
+	ran, err := s.submitAs(t, callerCertificate, envelope(t, "test-runs", "test-group", "test-action", map[string]any{}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	watch, err := s.client.WatchActionRequest(as(t, callerToken), &action_servicepb.WatchActionRequestRequest{RequestId: ran.GetId()})
+	watch, err := s.client.WatchActionRequest(as(t, callerCertificate), &action_servicepb.WatchActionRequestRequest{RequestId: ran.GetId()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -329,13 +330,13 @@ func TestASubmittedRequestIsWatchedUntilItFinishesOrTheClientsDeadline(t *testin
 		t.Errorf("the watch ended at %v, result %v", last.GetState(), last.GetExecution().GetResult())
 	}
 
-	waiting, err := s.submitAs(t, callerToken, envelope(t, "test-waits", "test-group", "test-other-action", map[string]any{}))
+	waiting, err := s.submitAs(t, callerCertificate, envelope(t, "test-waits", "test-group", "test-other-action", map[string]any{}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
-	pendingWatch, err := s.client.WatchActionRequest(metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+callerToken),
+	pendingWatch, err := s.client.WatchActionRequest(context.WithValue(ctx, certificateConnectionKey{}, callerCertificate),
 		&action_servicepb.WatchActionRequestRequest{RequestId: waiting.GetId(), Until: action_servicepb.WatchUntil_WATCH_UNTIL_DECISION})
 	if err != nil {
 		t.Fatal(err)
@@ -350,11 +351,13 @@ func TestTheHTTPFacadeSubmits(t *testing.T) {
 	s := serve(t)
 	post := func(token, body string) (int, []byte) {
 		t.Helper()
-		call, err := http.NewRequestWithContext(t.Context(), http.MethodPost, s.url+"/v1/action-requests", strings.NewReader(body))
+		call, err := http.NewRequestWithContext(t.Context(), http.MethodPost, s.facadeURL(token)+"/v1/action-requests", strings.NewReader(body))
 		if err != nil {
 			t.Fatal(err)
 		}
-		call.Header.Set("Authorization", "Bearer "+token)
+		if !strings.HasPrefix(token, certificatePrefix) {
+			call.Header.Set("Authorization", "Bearer "+token)
+		}
 		response, err := http.DefaultClient.Do(call)
 		if err != nil {
 			t.Fatal(err)
@@ -372,12 +375,12 @@ func TestTheHTTPFacadeSubmits(t *testing.T) {
 			"arguments": {"target": ` + target + `}, "title": "test title"}`
 	}
 
-	code, answer := post(callerToken, body("test-http", `"test-target"`))
+	code, answer := post(callerCertificate, body("test-http", `"test-target"`))
 	submitted := &action_servicepb.SubmitActionRequestResponse{}
 	if code != http.StatusOK || protojson.Unmarshal(answer, submitted) != nil || submitted.GetActionRequest().GetState() != pending {
 		t.Fatalf("submission: %d %s", code, answer)
 	}
-	read, err := s.client.GetActionRequest(as(t, callerToken), &action_servicepb.GetActionRequestRequest{RequestId: submitted.GetActionRequest().GetId()})
+	read, err := s.client.GetActionRequest(as(t, callerCertificate), &action_servicepb.GetActionRequestRequest{RequestId: submitted.GetActionRequest().GetId()})
 	if err != nil || !proto.Equal(read.GetActionRequest(), submitted.GetActionRequest()) {
 		t.Errorf("the stored request %v, %v differs from the HTTP receipt", read, err)
 	}
@@ -385,11 +388,11 @@ func TestTheHTTPFacadeSubmits(t *testing.T) {
 		token, body string
 		code        int
 	}{
-		"the key again":                   {callerToken, body("test-http", `"test-target"`), http.StatusConflict},
-		"arguments the schema refuses":    {callerToken, body("test-http-invalid", `5`), http.StatusBadRequest},
+		"the key again":                   {callerCertificate, body("test-http", `"test-target"`), http.StatusConflict},
+		"arguments the schema refuses":    {callerCertificate, body("test-http-invalid", `5`), http.StatusBadRequest},
 		"an operator":                     {s.operatorToken, body("test-http-operator", `"test-target"`), http.StatusForbidden},
 		"an account without the label":    {unlabeledToken, body("test-http-unlabeled", `"test-target"`), http.StatusUnauthorized},
-		"a body that is not a submission": {callerToken, `[]`, http.StatusBadRequest},
+		"a body that is not a submission": {callerCertificate, `[]`, http.StatusBadRequest},
 	} {
 		if code, answer := post(tc.token, tc.body); code != tc.code {
 			t.Errorf("%s: %d %s, want %d", name, code, answer, tc.code)

@@ -25,9 +25,9 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/worker"
-	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	operatoroidc "github.com/agentydragon/ducktape/agentplane/identity/operator" // The API package has an operator projection helper.
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
@@ -35,7 +35,6 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
@@ -65,21 +64,14 @@ var (
 	// outsiderAccount is labeled, outside the namespaces whose workloads may call.
 	outsiderAccount = auth.Account{Namespace: "test-elsewhere", Name: "test-caller"}
 
-	caller      = principal(callerAccount)
-	otherCaller = principal(otherAccount)
-
 	kube *kubeapiserver.Server
 	// policyObjects writes PolicySets and PolicyBindings.
 	policyObjects client.Client
 	// Each proves its account, from a Pod running as it.
-	callerToken, otherToken, readerToken, labeledReaderToken, unlabeledToken, outsiderToken string
+	validKubernetesToken, unlabeledToken, outsiderToken string
 	// policyNamespaces numbers the policy namespaces.
 	policyNamespaces atomic.Int32
 )
-
-func principal(account auth.Account) store.CallerPrincipal {
-	return store.CallerPrincipal{Account: store.ServiceAccount{Namespace: account.Namespace, Name: account.Name}, ServiceAccountUID: "test-uid-" + account.Name}
-}
 
 func useAPIServer(server *kubeapiserver.Server) error {
 	kube = server
@@ -98,8 +90,7 @@ func useAPIServer(server *kubeapiserver.Server) error {
 		}
 	}
 	for token, account := range map[*string]auth.Account{
-		&callerToken: callerAccount, &otherToken: otherAccount, &readerToken: readerAccount,
-		&labeledReaderToken: labeledReaderAccount, &unlabeledToken: unlabeledAccount, &outsiderToken: outsiderAccount,
+		&validKubernetesToken: callerAccount, &unlabeledToken: unlabeledAccount, &outsiderToken: outsiderAccount,
 	} {
 		var err error
 		if *token, err = server.WorkloadToken(ctx, account, testAudience); err != nil {
@@ -123,18 +114,6 @@ func setCallerLabel(ctx context.Context, account auth.Account, labeled bool) err
 	return err
 }
 
-// labeledAccounts reads the caller label from each ServiceAccount on the API server, where the policy informer's
-// index will watch it.
-type labeledAccounts struct{}
-
-func (labeledAccounts) Admits(account auth.Account) bool {
-	found, err := kube.Clientset.CoreV1().ServiceAccounts(account.Namespace).Get(context.Background(), account.Name, metav1.GetOptions{})
-	return err == nil && found.Labels[callers.ServiceAccountLabelKey] == callers.ServiceAccountLabelValue
-}
-
-// AdmitsIdentity admits no Identity: this fixture's callers present bearers, which only name ServiceAccounts.
-func (labeledAccounts) AdmitsIdentity(auth.Identity) bool { return false }
-
 // served is the API over a database of its own, on a gRPC server with its HTTP facade, as main serves it.
 type served struct {
 	store  *store.Store
@@ -154,7 +133,10 @@ type served struct {
 	linkageRPC linkage_servicepb.LinkageServiceClient
 	health     healthpb.HealthClient
 	// url is the base URL of the HTTP facade.
-	url string
+	url                 string
+	certificateURLs     map[string]string
+	connections         *certificateConnections
+	caller, otherCaller store.IdentityPrincipal
 	// operatorToken is a token the issuer signed for the operator.
 	operatorToken string
 	// linkages are the OAuth linkages of the MCP servers the API serves.
@@ -166,16 +148,15 @@ const updatesConnection = "test-action-updates"
 
 func serve(t *testing.T) *served {
 	t.Helper()
-	return serveWith(t, kube.TokenReviews(), newCatalog(t, submissionCatalog))
+	return serveWith(t, newCatalog(t, submissionCatalog))
 }
 
-// serveWith serves the API over the groups and the linkages of the MCP servers, with workload tokens reviewed by
-// reviews, and a policy index of a namespace of its own.
-func serveWith(t *testing.T, reviews auth.TokenReviews, groups *catalog.Catalog, servers ...linkage.Server) *served {
+// serveWith serves the API with a policy index and live Identity credentials of its own.
+func serveWith(t *testing.T, groups *catalog.Catalog, servers ...linkage.Server) *served {
 	t.Helper()
 	namespace := newPolicyNamespace(t)
 	index := namespace.watch(t)
-	return serveWithPolicy(t, reviews, groups, namespace, index, servers...)
+	return serveWithPolicy(t, groups, namespace, index, servers...)
 }
 
 // policyNamespace is a namespace of one test's own, for its PolicySets and PolicyBindings.
@@ -298,10 +279,9 @@ func (s *served) submissions(t *testing.T) Submissions {
 	return Submissions{Executors: s.routes, Provider: policies.NewProvider(visibility)}
 }
 
-// serveWithPolicy serves the API over the groups and the linkages of the MCP servers with workload tokens reviewed by
-// reviews, reading Action policy from index, which holds the namespace's policy objects.
+// serveWithPolicy serves the API over real TLS, reading policy from the supplied index.
 func serveWithPolicy(
-	t *testing.T, reviews auth.TokenReviews, groups *catalog.Catalog, namespace policyNamespace, index *informer.Index,
+	t *testing.T, groups *catalog.Catalog, namespace policyNamespace, index *informer.Index,
 	servers ...linkage.Server,
 ) *served {
 	t.Helper()
@@ -334,20 +314,16 @@ func serveWithPolicy(
 	if s.linkages, err = linkage.New(db, configured, linkage.ClientMetadata{}); err != nil {
 		t.Fatal(err)
 	}
-	// Every call asks the TokenReview API again, so a revoked token is refused once the API server refuses it.
-	workloads, err := auth.NewResolver(reviews, testAudience, []string{testNamespace}, auth.WithVerdictTTL(0))
-	if err != nil {
-		t.Fatal(err)
-	}
 	operators, err := operatoroidc.NewVerifier(s.issuer.settings(operatoroidc.ProfileAuthentik))
 	if err != nil {
 		t.Fatal(err)
 	}
+	serverCredentials, svid := s.configureCertificates(t)
 	s.gate = NewGate(GateOptions{
-		Workloads: workloads, Callers: labeledAccounts{}, ReaderAccounts: []auth.Account{readerAccount, labeledReaderAccount},
+		SVID: svid, Callers: index, ServiceReaders: []string{peertls.NotificationsURI, peertls.AppURI},
 		Operators: operators,
 	})
-	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(s.gate.UnaryInterceptor), grpc.ChainStreamInterceptor(s.gate.StreamInterceptor))
+	grpcServer := grpc.NewServer(grpc.Creds(serverCredentials), grpc.ChainUnaryInterceptor(s.gate.UnaryInterceptor), grpc.ChainStreamInterceptor(s.gate.StreamInterceptor))
 	action_servicepb.RegisterActionServiceServer(grpcServer, NewService(s.store, updates, groups, s.gate, index, s.submissions(t)))
 	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, NewOperatorService(s.store, updates, s.gate, s.linkages))
 	linkage_servicepb.RegisterLinkageServiceServer(grpcServer, linkage.NewService(s.linkages))
@@ -358,52 +334,36 @@ func serveWithPolicy(
 	if err != nil {
 		t.Fatal(err)
 	}
-	httpListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	httpFacade, err := facade.NewHandler(
-		t.Context(), grpcListener.Addr().String(), 0,
-		action_servicepb.RegisterActionServiceHandlerFromEndpoint,
-		operator_action_servicepb.RegisterOperatorActionServiceHandlerFromEndpoint,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := &http.Server{Handler: httpFacade, ReadHeaderTimeout: callDeadline}
 	go func() { _ = grpcServer.Serve(grpcListener) }()
 	t.Cleanup(grpcServer.Stop)
-	go func() { _ = server.Serve(httpListener) }()
-	t.Cleanup(func() { server.Close() })
-	connection, err := grpc.NewClient(grpcListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { connection.Close() })
-	s.client = action_servicepb.NewActionServiceClient(connection)
-	s.operators = operator_action_servicepb.NewOperatorActionServiceClient(connection)
-	s.linkageRPC = linkage_servicepb.NewLinkageServiceClient(connection)
-	s.health = healthpb.NewHealthClient(connection)
-	s.url = "http://" + httpListener.Addr().String()
+	s.connectCertificates(t, grpcListener.Addr().String())
+	s.client = action_servicepb.NewActionServiceClient(s.connections)
+	s.operators = operator_action_servicepb.NewOperatorActionServiceClient(s.connections)
+	s.linkageRPC = linkage_servicepb.NewLinkageServiceClient(s.connections)
+	s.health = healthpb.NewHealthClient(s.connections)
 	return s
 }
 
-// as is a call context that presents the bearer, bounded by callDeadline.
+// as selects a named certificate connection locally, or presents an unchanged bearer on
+// the certificate-less TLS connection. Selectors are never sent as authorization metadata.
 func as(t *testing.T, token string) context.Context {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	t.Cleanup(cancel)
+	if strings.HasPrefix(token, certificatePrefix) {
+		return context.WithValue(ctx, certificateConnectionKey{}, token)
+	}
 	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)
 }
 
 // get is the HTTP facade's answer to a GET of path with the bearer, or with none when token is empty.
 func (s *served) get(t *testing.T, path, token string) (int, []byte) {
 	t.Helper()
-	call, err := http.NewRequestWithContext(t.Context(), http.MethodGet, s.url+path, nil)
+	call, err := http.NewRequestWithContext(t.Context(), http.MethodGet, s.facadeURL(token)+path, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if token != "" {
+	if token != "" && !strings.HasPrefix(token, certificatePrefix) {
 		call.Header.Set("Authorization", "Bearer "+token)
 	}
 	response, err := http.DefaultClient.Do(call)
@@ -419,7 +379,7 @@ func (s *served) get(t *testing.T, path, token string) (int, []byte) {
 }
 
 // submit stores a pending request of the owner, as admission would.
-func (s *served) submit(t *testing.T, owner store.CallerPrincipal, key string) store.ActionRequest {
+func (s *served) submit(t *testing.T, owner store.Owner, key string) store.ActionRequest {
 	t.Helper()
 	request, err := s.store.Submit(t.Context(), owner, store.ActionRequestInput{
 		IdempotencyKey: key, Action: store.ActionIdentity{Group: "test-group", Name: "test-action"},

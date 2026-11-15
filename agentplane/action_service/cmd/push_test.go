@@ -18,11 +18,11 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/push"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
@@ -97,7 +97,11 @@ func TestTheServiceDeliversWebPushAndGatesWebPushService(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	defer cancel()
-	connection, err := grpc.NewClient(service.address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	security, err := service.ca.Issue(t, peertls.NotificationsURI).ClientCredentials(peertls.ActionsURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection, err := grpc.NewClient(service.address, grpc.WithTransportCredentials(security))
 	if err != nil {
 		t.Fatal(err)
 	}

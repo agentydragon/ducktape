@@ -35,7 +35,7 @@ func TestWatchActionPolicyFollowsPolicyAndHealth(t *testing.T) {
 	namespace := newPolicyNamespace(t)
 	set := namespace.policySet(t, "watched-set", exactActions(testGroup, testAction))
 	index := namespace.watch(t)
-	s := serveWithPolicy(t, kube.TokenReviews(), &catalog.Catalog{}, namespace, index)
+	s := serveWithPolicy(t, &catalog.Catalog{}, namespace, index)
 	request := &action_servicepb.GetActionPolicyRequest{Subject: accountView(callerAccount)}
 	stream, err := s.client.WatchActionPolicy(as(t, s.operatorToken), request)
 	if err != nil {
@@ -86,7 +86,7 @@ func TestWatchActionPolicyUsesGetAuthorizationAndHTTPFacade(t *testing.T) {
 	namespace.policySet(t, "watched-set", exactActions(testGroup, testAction))
 	namespace.binding(t, "watched-binding", callerAccount, "watched-set")
 	index := namespace.watch(t)
-	s := serveWithPolicy(t, kube.TokenReviews(), &catalog.Catalog{}, namespace, index)
+	s := serveWithPolicy(t, &catalog.Catalog{}, namespace, index)
 	eventually(t, "the operator's binding diagnostics", func() bool {
 		view, err := s.readPolicy(t, s.operatorToken, accountView(callerAccount))
 		return err == nil && len(view.GetBindings()) == 1 && view.GetBindings()[0].GetReady() != nil
@@ -95,7 +95,7 @@ func TestWatchActionPolicyUsesGetAuthorizationAndHTTPFacade(t *testing.T) {
 		token   string
 		subject *identitypb.ServiceAccount
 	}{
-		"workload": {callerToken, nil},
+		"workload": {callerCertificate, nil},
 		"operator": {s.operatorToken, accountView(callerAccount)},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -149,30 +149,16 @@ func TestWatchActionPolicyUsesGetAuthorizationAndHTTPFacade(t *testing.T) {
 	}
 }
 
-func TestIdleActionPolicyWatchEndsWhenBearerIsRevoked(t *testing.T) {
+func TestIdleActionPolicyWatchEndsWhenCredentialIsRevoked(t *testing.T) {
 	s := serve(t)
-	account := auth.Account{Namespace: testNamespace, Name: "test-policy-watch-revoked"}
-	if err := setCallerLabel(t.Context(), account, true); err != nil {
-		t.Fatal(err)
-	}
-	pod, err := kube.Pod(t.Context(), account)
-	if err != nil {
-		t.Fatal(err)
-	}
-	token, err := kube.PodToken(t.Context(), pod, testAudience)
-	if err != nil {
-		t.Fatal(err)
-	}
-	stream, err := s.client.WatchActionPolicy(as(t, token), &action_servicepb.GetActionPolicyRequest{})
+	stream, err := s.client.WatchActionPolicy(as(t, callerCertificate), &action_servicepb.GetActionPolicyRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := stream.Recv(); err != nil {
 		t.Fatal(err)
 	}
-	if err := kube.Revoke(t.Context(), pod, token, testAudience); err != nil {
-		t.Fatal(err)
-	}
+	s.revokeCertificate(t, callerCertificate)
 	_, err = stream.Recv()
 	wantCode(t, "revoked policy watch", err, codes.Unauthenticated)
 }
@@ -254,7 +240,7 @@ func TestEachPrincipalReadsThePolicyOfTheAccountsItMayName(t *testing.T) {
 		namespace.binding(t, binding, account, "test-set")
 	}
 	index := namespace.watch(t)
-	s := serveWithPolicy(t, kube.TokenReviews(), &catalog.Catalog{}, namespace, index)
+	s := serveWithPolicy(t, &catalog.Catalog{}, namespace, index)
 	for name, tc := range map[string]struct {
 		token string
 		// subject is the account named, or nil for the caller's own.
@@ -265,20 +251,19 @@ func TestEachPrincipalReadsThePolicyOfTheAccountsItMayName(t *testing.T) {
 		bindings []string
 		operator bool
 	}{
-		"a caller's own":                 {token: callerToken, whose: callerAccount, bindings: []string{"test-caller-binding"}},
-		"its own, named by a caller":     {token: callerToken, subject: &callerAccount, whose: callerAccount, bindings: []string{"test-caller-binding"}},
-		"another account's, by a caller": {token: callerToken, subject: &otherAccount, whose: otherAccount, bindings: []string{"test-other-binding"}},
-		"an unlabeled account's":         {token: callerToken, subject: &unlabeledAccount, whose: unlabeledAccount, bindings: []string{"test-unlabeled-binding"}},
-		"an account no binding names":    {token: callerToken, subject: &unboundAccount, whose: unboundAccount},
-		"a labeled reader's own":         {token: labeledReaderToken, whose: labeledReaderAccount, bindings: []string{"test-labeled-reader-binding"}},
+		"its own, named by a caller":           {token: callerCertificate, subject: &callerAccount, whose: callerAccount, bindings: []string{"test-caller-binding"}},
+		"another account's, by a caller":       {token: callerCertificate, subject: &otherAccount, whose: otherAccount, bindings: []string{"test-other-binding"}},
+		"an unlabeled account's":               {token: callerCertificate, subject: &unlabeledAccount, whose: unlabeledAccount, bindings: []string{"test-unlabeled-binding"}},
+		"an account no binding names":          {token: callerCertificate, subject: &unboundAccount, whose: unboundAccount},
+		"a service reader has no policy grant": {token: secondReaderCertificate, code: codes.PermissionDenied},
 		"another account's, by a labeled reader": {
-			token: labeledReaderToken, subject: &callerAccount, whose: callerAccount, bindings: []string{"test-caller-binding"},
+			token: secondReaderCertificate, subject: &callerAccount, code: codes.PermissionDenied,
 		},
 		"an account's, by an operator": {
 			token: s.operatorToken, subject: &callerAccount, whose: callerAccount, bindings: []string{"test-caller-binding"}, operator: true,
 		},
-		"an unlabeled reader's own":                        {token: readerToken, code: codes.Unauthenticated},
-		"another account's, by an unlabeled reader":        {token: readerToken, subject: &callerAccount, code: codes.Unauthenticated},
+		"an unlabeled reader's own":                        {token: readerCertificate, code: codes.PermissionDenied},
+		"another account's, by an unlabeled reader":        {token: readerCertificate, subject: &callerAccount, code: codes.PermissionDenied},
 		"an unlabeled workload's own":                      {token: unlabeledToken, code: codes.Unauthenticated},
 		"another account's, by an unlabeled workload":      {token: unlabeledToken, subject: &callerAccount, code: codes.Unauthenticated},
 		"an operator's own, which it has none of":          {token: s.operatorToken, code: codes.InvalidArgument},
@@ -315,7 +300,7 @@ func TestASubjectMustNameBothItsNamespaceAndName(t *testing.T) {
 		"no namespace": {Name: callerAccount.Name},
 		"neither":      {},
 	} {
-		for _, token := range []string{callerToken, s.operatorToken} {
+		for _, token := range []string{callerCertificate, s.operatorToken} {
 			_, err := s.readPolicy(t, token, subject)
 			wantCode(t, name, err, codes.InvalidArgument)
 		}
@@ -335,7 +320,7 @@ func TestOnlyAnOperatorIsShownTheBindingDiagnostics(t *testing.T) {
 	}
 	create(t, binding)
 	index := namespace.watch(t)
-	s := serveWithPolicy(t, kube.TokenReviews(), &catalog.Catalog{}, namespace, index)
+	s := serveWithPolicy(t, &catalog.Catalog{}, namespace, index)
 	// The informer judges the binding once it has listed every kind, so its first ActionsReady is its last.
 	var ready *metav1.Condition
 	eventually(t, "the binding's ActionsReady", func() bool {
@@ -383,10 +368,10 @@ func TestOnlyAnOperatorIsShownTheBindingDiagnostics(t *testing.T) {
 		subject *identitypb.ServiceAccount
 		want    *action_servicepb.CallerActionPolicy
 	}{
-		"the subject itself":                {callerToken, nil, workloadView},
-		"another caller naming the subject": {otherToken, subject, workloadView},
-		"a labeled reader naming it":        {labeledReaderToken, subject, workloadView},
-		"an operator naming the subject":    {s.operatorToken, subject, operatorView},
+		"a workload naming the subject":     {callerCertificate, subject, workloadView},
+		"another caller naming the subject": {otherCertificate, subject, workloadView},
+
+		"an operator naming the subject": {s.operatorToken, subject, operatorView},
 	} {
 		// The index learns of the condition from its watch, after the API server holds it.
 		var got *action_servicepb.CallerActionPolicy
@@ -413,19 +398,20 @@ func TestAPolicyIndexWhoseWatchFailsShowsNothingAutoDecided(t *testing.T) {
 	namespace.policySet(t, "test-set", exactActions(testGroup, testAction))
 	namespace.binding(t, "test-binding", callerAccount, "test-set")
 	index := namespace.watch(t)
-	s := serveWithPolicy(t, kube.TokenReviews(), &catalog.Catalog{}, namespace, index)
-	if got, err := s.readPolicy(t, callerToken, nil); err != nil || !got.GetSynced() || len(got.GetAutoApproveIf()) != 1 {
+	s := serveWithPolicy(t, &catalog.Catalog{}, namespace, index)
+	if got, err := s.readPolicy(t, callerCertificate, accountView(callerAccount)); err != nil || !got.GetSynced() || len(got.GetAutoApproveIf()) != 1 {
 		t.Fatalf("the caller's policy while the index is available: %v, %v", got, err)
 	}
 
 	index.Health.RecordFailure(reader.PolicyBindings, errors.New("test: the watch failed"))
-	// The binding and its set are still on the API server, but nothing auto-decides.
+	// The binding and its set remain, but the workload fails closed and the operator sees unsynced policy.
+	_, err := s.readPolicy(t, callerCertificate, nil)
+	wantCode(t, "unavailable Identity binding index", err, codes.Unauthenticated)
 	unsynced := &action_servicepb.CallerActionPolicy{Subject: accountView(callerAccount)}
 	for name, tc := range map[string]struct {
 		token   string
 		subject *identitypb.ServiceAccount
 	}{
-		"the caller's own":             {callerToken, nil},
 		"the caller's, to an operator": {s.operatorToken, accountView(callerAccount)},
 	} {
 		if got, err := s.readPolicy(t, tc.token, tc.subject); err != nil || !proto.Equal(got, unsynced) {
@@ -440,14 +426,14 @@ func TestTheHTTPFacadeAnswersActionPolicyAsTheRPC(t *testing.T) {
 	namespace.binding(t, "test-caller-binding", callerAccount, "test-set")
 	namespace.binding(t, "test-other-binding", otherAccount, "test-set")
 	index := namespace.watch(t)
-	s := serveWithPolicy(t, kube.TokenReviews(), &catalog.Catalog{}, namespace, index)
+	s := serveWithPolicy(t, &catalog.Catalog{}, namespace, index)
 	named := fmt.Sprintf("?subject.namespace=%s&subject.name=%s", otherAccount.Namespace, otherAccount.Name)
 	for name, tc := range map[string]struct {
 		token, query string
 		subject      *identitypb.ServiceAccount
 	}{
-		"a caller's own":                 {callerToken, "", nil},
-		"another account's, by a caller": {callerToken, named, accountView(otherAccount)},
+		"a caller's own":                 {callerCertificate, "", nil},
+		"another account's, by a caller": {callerCertificate, named, accountView(otherAccount)},
 		"an account's, by an operator":   {s.operatorToken, named, accountView(otherAccount)},
 	} {
 		code, body := s.get(t, "/v1/action-policy"+tc.query, tc.token)
@@ -466,9 +452,9 @@ func TestTheHTTPFacadeAnswersActionPolicyAsTheRPC(t *testing.T) {
 		code         int
 	}{
 		"no bearer":                     {"", "", http.StatusUnauthorized},
-		"an unlabeled reader":           {readerToken, "", http.StatusUnauthorized},
+		"an unlabeled reader":           {readerCertificate, "", http.StatusForbidden},
 		"an operator naming no account": {s.operatorToken, "", http.StatusBadRequest},
-		"a subject without a name":      {callerToken, "?subject.namespace=" + testNamespace, http.StatusBadRequest},
+		"a subject without a name":      {callerCertificate, "?subject.namespace=" + testNamespace, http.StatusBadRequest},
 	} {
 		if code, body := s.get(t, "/v1/action-policy"+tc.query, tc.token); code != tc.code {
 			t.Errorf("%s: %d %s, want %d", name, code, body, tc.code)

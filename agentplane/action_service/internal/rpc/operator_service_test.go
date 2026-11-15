@@ -13,7 +13,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
-	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -42,7 +41,7 @@ const (
 
 func TestAnOperatorsDecisionIsRecordedAndAnAllowQueuesTheDispatch(t *testing.T) {
 	s := serve(t)
-	allowed := s.submit(t, caller, "test-allowed")
+	allowed := s.submit(t, s.caller, "test-allowed")
 	allowing := decision(allowed, allow)
 	allowing.DecisionNote = proto.String("test note for the caller")
 	got, err := s.decideAs(t, s.operatorToken, allowing)
@@ -65,7 +64,7 @@ func TestAnOperatorsDecisionIsRecordedAndAnAllowQueuesTheDispatch(t *testing.T) 
 		t.Errorf("the retry: %v, %v", retried, err)
 	}
 
-	denied := s.submit(t, caller, "test-denied")
+	denied := s.submit(t, s.caller, "test-denied")
 	got, err = s.decideAs(t, s.operatorToken, decision(denied, deny))
 	if err != nil || got.GetState() != action_servicepb.ActionState_ACTION_STATE_DENIED || got.GetExecution() != nil {
 		t.Errorf("the denied request: %v, %v", got, err)
@@ -77,11 +76,11 @@ func TestAnOperatorsDecisionIsRecordedAndAnAllowQueuesTheDispatch(t *testing.T) 
 
 func TestADecisionThatCannotBeRecordedFails(t *testing.T) {
 	s := serve(t)
-	decided := s.submit(t, caller, "test-decided")
+	decided := s.submit(t, s.caller, "test-decided")
 	if _, err := s.decideAs(t, s.operatorToken, decision(decided, allow)); err != nil {
 		t.Fatal(err)
 	}
-	pending := s.submit(t, caller, "test-pending")
+	pending := s.submit(t, s.caller, "test-pending")
 	expired := s.issuer.token(t, map[string]any{"exp": time.Now().Add(-time.Hour).Unix()})
 	for name, tc := range map[string]struct {
 		change func(*operator_action_servicepb.DecideActionRequestRequest)
@@ -127,18 +126,14 @@ func TestADecisionThatCannotBeRecordedFails(t *testing.T) {
 }
 
 func TestAWorkloadsBearerNeverReachesTheOperatorService(t *testing.T) {
-	reviews := &kubeapiserver.CountedReviews{TokenReviews: kube.TokenReviews()}
-	s := serveWith(t, reviews, &catalog.Catalog{})
-	request := s.submit(t, caller, "test-pending")
+	s := serveWith(t, &catalog.Catalog{})
+	request := s.submit(t, s.caller, "test-pending")
 	disconnection := &operator_action_servicepb.DisconnectMcpServerRequest{ServerId: testServer}
-	for _, token := range []string{callerToken, readerToken} {
+	for _, token := range []string{callerCertificate, readerCertificate, validKubernetesToken} {
 		_, err := s.decideAs(t, token, decision(request, allow))
 		wantCode(t, "a workload's decision", err, codes.Unauthenticated)
 		_, err = s.operators.DisconnectMcpServer(as(t, token), disconnection)
 		wantCode(t, "a workload's disconnection", err, codes.Unauthenticated)
-	}
-	if calls := reviews.Calls.Load(); calls != 0 {
-		t.Errorf("%d workload tokens reviewed", calls)
 	}
 	// An operator's reaches the service, which configures no MCP server.
 	_, err := s.operators.DisconnectMcpServer(as(t, s.operatorToken), disconnection)
@@ -149,7 +144,7 @@ func TestOfTwoOperatorsDecidingAtOnceOneDecidesAndTheOtherIsTold(t *testing.T) {
 	s := serve(t)
 	otherOperator := s.issuer.token(t, map[string]any{"sub": "test-other-operator"})
 	for i := range 10 {
-		request := s.submit(t, caller, fmt.Sprintf("test-contested-%d", i))
+		request := s.submit(t, s.caller, fmt.Sprintf("test-contested-%d", i))
 		var wg sync.WaitGroup
 		start := make(chan struct{})
 		errs := make([]error, 2)
@@ -177,7 +172,7 @@ func TestOfTwoOperatorsDecidingAtOnceOneDecidesAndTheOtherIsTold(t *testing.T) {
 		if won < 0 {
 			t.Fatalf("neither operator decided %s: %v", request.ID, errs)
 		}
-		got, err := s.client.GetActionRequest(as(t, readerToken), &action_servicepb.GetActionRequestRequest{RequestId: request.ID.String()})
+		got, err := s.client.GetActionRequest(as(t, readerCertificate), &action_servicepb.GetActionRequestRequest{RequestId: request.ID.String()})
 		wantSubject := []string{operatorSubject, "test-other-operator"}[won]
 		if err != nil || got.GetActionRequest().GetDecision().GetOperator().GetOperator().GetSubject() != wantSubject {
 			t.Errorf("the request carries %v, %v; want the Decision of %s", got.GetActionRequest().GetDecision(), err, wantSubject)
@@ -188,7 +183,7 @@ func TestOfTwoOperatorsDecidingAtOnceOneDecidesAndTheOtherIsTold(t *testing.T) {
 func TestADecisionRacingTheOwnersCancellationNeverLeavesADispatch(t *testing.T) {
 	s := serve(t)
 	for i := range 10 {
-		request := s.submit(t, caller, fmt.Sprintf("test-raced-%d", i))
+		request := s.submit(t, s.caller, fmt.Sprintf("test-raced-%d", i))
 		var wg sync.WaitGroup
 		start := make(chan struct{})
 		var decideErr, cancelErr error
@@ -199,7 +194,7 @@ func TestADecisionRacingTheOwnersCancellationNeverLeavesADispatch(t *testing.T) 
 		})
 		wg.Go(func() {
 			<-start
-			cancelled, cancelErr = s.cancel(t, callerToken, request)
+			cancelled, cancelErr = s.cancel(t, callerCertificate, request)
 		})
 		close(start)
 		wg.Wait()
@@ -223,11 +218,13 @@ func TestTheHTTPFacadeDecidesAndCancels(t *testing.T) {
 	s := serve(t)
 	post := func(path, token, body string) (int, []byte) {
 		t.Helper()
-		call, err := http.NewRequestWithContext(t.Context(), http.MethodPost, s.url+path, strings.NewReader(body))
+		call, err := http.NewRequestWithContext(t.Context(), http.MethodPost, s.facadeURL(token)+path, strings.NewReader(body))
 		if err != nil {
 			t.Fatal(err)
 		}
-		call.Header.Set("Authorization", "Bearer "+token)
+		if !strings.HasPrefix(token, certificatePrefix) {
+			call.Header.Set("Authorization", "Bearer "+token)
+		}
 		response, err := http.DefaultClient.Do(call)
 		if err != nil {
 			t.Fatal(err)
@@ -239,10 +236,10 @@ func TestTheHTTPFacadeDecidesAndCancels(t *testing.T) {
 		}
 		return response.StatusCode, answer
 	}
-	decided := s.submit(t, caller, "test-decided")
+	decided := s.submit(t, s.caller, "test-decided")
 	path := "/v1/operator/action-requests/" + decided.ID.String() + "/decision"
 	body := `{"verdict": "VERDICT_DENY", "expected_version": 1, "idempotency_key": "test-http-decision"}`
-	if code, answer := post(path, callerToken, body); code != http.StatusUnauthorized {
+	if code, answer := post(path, callerCertificate, body); code != http.StatusUnauthorized {
 		t.Errorf("a caller's decision: %d %s", code, answer)
 	}
 	code, answer := post(path, s.operatorToken, body)
@@ -251,12 +248,12 @@ func TestTheHTTPFacadeDecidesAndCancels(t *testing.T) {
 		t.Errorf("the operator's decision: %d %s", code, answer)
 	}
 
-	cancelled := s.submit(t, caller, "test-cancelled")
+	cancelled := s.submit(t, s.caller, "test-cancelled")
 	path = "/v1/action-requests/" + cancelled.ID.String() + ":cancel"
 	if code, answer := post(path, s.operatorToken, ""); code != http.StatusForbidden {
 		t.Errorf("an operator's cancellation: %d %s", code, answer)
 	}
-	code, answer = post(path, callerToken, "")
+	code, answer = post(path, callerCertificate, "")
 	withdrawn := &action_servicepb.CancelActionRequestResponse{}
 	if code != http.StatusOK || protojson.Unmarshal(answer, withdrawn) != nil ||
 		withdrawn.GetOutcome() != action_servicepb.CancellationOutcome_CANCELLATION_OUTCOME_CANCELLED {
