@@ -1,9 +1,9 @@
 # Constructive residual placement and exact import schedules
 
 Design derivation, 2026-11-15. The concrete schedule representation and shared
-validation/emission path are implemented. The construction below is the next
+validation/emission path are implemented. The construction below is the
 implementation contract; completion remains tracked in
-<../plans/module_placement.md>. The arguments describe the specified algorithms,
+`plans/module_placement.md`. The arguments describe the specified algorithms,
 not a claim that finite tests establish universal correctness.
 
 ## Model and boundary

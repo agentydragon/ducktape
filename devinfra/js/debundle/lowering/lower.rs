@@ -381,22 +381,15 @@ pub(super) fn prepare_candidate_emission_plan<'output>(
             ),
         ));
     }
-    // Order entry imports through the shared `EsmImportOrder`
-    // (Lemma 2, docs/design.md "The realizability theorem"): for
-    // acyclic imports graphs the order matches linker_order
-    // (dependency-first source), but for cyclic-I shapes accepted
-    // by the relaxed clause-3 rule the SCC members are reverse-
-    // sorted so DFS unwinds the dependency first in post-order.
-    // The gate's evaluation simulator sorts residual's DFS
-    // neighbors with the same call, so the emitted entry order and
-    // the simulated order are structurally identical.
+    // Render exactly the schedule retained by validation, including entry's
+    // complete fanout. A missing/extra target is an internal emission error.
     assignment_analysis.import_schedule().sort_imports(
         assignment_analysis
             .assignment()
             .entry_destination()
             .module_id(),
         &mut entry_imports,
-    );
+    )?;
     let entry_imports: Vec<ModuleItem> = entry_imports.into_iter().map(|(_, it)| it).collect();
     // Capture probe: a read-only walk of the un-renamed entry body with
     // the pending Chunk-scope map, reporting the reference-resolution

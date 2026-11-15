@@ -130,7 +130,15 @@ impl EsmImportSchedule {
     /// Sort the emitter's merged binding/phantom imports by this exact list.
     /// Several declarations may import one target; their stable relative order
     /// does not change ESM traversal.
-    pub fn sort_imports<T>(&self, module: ModuleId, imports: &mut [(ModuleId, T)]) {
+    pub fn sort_imports<T>(
+        &self,
+        module: ModuleId,
+        imports: &mut [(ModuleId, T)],
+    ) -> Result<(), ImportScheduleError> {
+        let actual: BTreeSet<_> = imports.iter().map(|(target, _)| *target).collect();
+        if actual != self.imports(module).iter().copied().collect() {
+            return Err(ImportScheduleError::ImportTargets { module });
+        }
         let positions: BTreeMap<_, _> = self
             .imports(module)
             .iter()
@@ -138,6 +146,7 @@ impl EsmImportSchedule {
             .map(|(position, &target)| (target, position))
             .collect();
         imports.sort_by_key(|(target, _)| positions[target]);
+        Ok(())
     }
 
     fn traverse(&self) -> BTreeMap<ModuleId, usize> {
@@ -181,6 +190,7 @@ fn required_targets(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     fn permutations(values: &[ModuleId]) -> Vec<Vec<ModuleId>> {
         if values.is_empty() {
@@ -342,6 +352,91 @@ mod tests {
                 EsmImportSchedule::from_imports(entry, &successors, &nodes, bad),
                 Err(ImportScheduleError::ImportTargets { module })
             );
+        }
+    }
+
+    fn raw_schedule_exists(
+        entry: ModuleId,
+        successors: &BTreeMap<ModuleId, BTreeSet<ModuleId>>,
+        nodes: &BTreeSet<ModuleId>,
+        pairs: &BTreeSet<(ModuleId, ModuleId)>,
+    ) -> bool {
+        let choices: Vec<_> = nodes
+            .iter()
+            .map(|&module| {
+                let targets = if module == entry {
+                    nodes
+                        .iter()
+                        .copied()
+                        .filter(|&node| node != entry)
+                        .collect::<Vec<_>>()
+                } else {
+                    successors
+                        .get(&module)
+                        .into_iter()
+                        .flatten()
+                        .copied()
+                        .collect()
+                };
+                (module, permutations(&targets))
+            })
+            .collect();
+        let mut digits = vec![0; choices.len()];
+        loop {
+            let imports = choices
+                .iter()
+                .zip(&digits)
+                .map(|((module, permutations), &digit)| (*module, permutations[digit].clone()))
+                .collect();
+            let mut finished = Vec::new();
+            oracle(entry, &imports, &mut BTreeSet::new(), &mut finished);
+            if pairs.iter().all(|(from, to)| {
+                finished.iter().position(|node| node == to)
+                    < finished.iter().position(|node| node == from)
+            }) {
+                return true;
+            }
+            let mut digit = 0;
+            while digit < digits.len() {
+                digits[digit] += 1;
+                if digits[digit] < choices[digit].1.len() {
+                    break;
+                }
+                digits[digit] = 0;
+                digit += 1;
+            }
+            if digit == digits.len() {
+                return false;
+            }
+        }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(128))]
+        #[test]
+        fn four_module_schedule_existence_matches_raw_import_permutations(
+            import_mask in 0u16..4096, constraint_mask in 0u16..4096,
+        ) {
+            let entry = ModuleId(3);
+            let nodes = BTreeSet::from([ModuleId(0), ModuleId(1), ModuleId(2), entry]);
+            let all_edges: Vec<_> = nodes.iter().flat_map(|&from| {
+                nodes.iter().copied().filter(move |&to| to != from).map(move |to| (from, to))
+            }).collect();
+            let mut successors = BTreeMap::<_, BTreeSet<_>>::new();
+            let mut pairs = BTreeSet::new();
+            for (bit, &(from, to)) in all_edges.iter().enumerate() {
+                if import_mask & (1 << bit) != 0 {
+                    successors.entry(from).or_default().insert(to);
+                    if constraint_mask & (1 << bit) != 0 { pairs.insert((from, to)); }
+                }
+            }
+            let exists = raw_schedule_exists(entry, &successors, &nodes, &pairs);
+            let policy = EsmImportOrder::build(&pairs, &successors, &nodes);
+            let result = EsmImportSchedule::construct(entry, &pairs, &successors, &nodes, &policy);
+            prop_assert_eq!(result.is_ok(), exists, "{:?}", result);
+            if let Ok(schedule) = result {
+                prop_assert!(schedule.tdz_pairs(&pairs).next().is_none());
+            }
         }
     }
 }

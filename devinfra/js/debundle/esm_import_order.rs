@@ -1,39 +1,13 @@
-//! Single source of truth for per-module ESM import-directive
-//! ordering, shared by the emitter (`lowering`) and the candidate's
-//! exact emitted-order simulation (`realizability`).
+//! Deterministic preferred import policy. `EsmImportSchedule` reifies this
+//! order and preserves it when valid; otherwise its exact constructor derives
+//! an alternative from the canonical graphs. Validation, effect sweeps and
+//! emission consume the retained concrete schedule, never independently rerun
+//! this policy. Linker positions remain useful diagnostic information.
 //!
-//! Both consumers must order import targets identically or the candidate's
-//! verdict stops describing the bundle the emitter produces: the
-//! simulator would predict one ECMA-262 Phase-2 evaluation order while
-//! the emitted source steers the runtime linker DFS into another, and
-//! an accepted spec could TDZ under Node (or a runnable spec could be
-//! rejected). The contract:
-//!
-//! - **Entry imports** (the chunk entry file's `import` directives,
-//!   one per emitted logical module): ordered by
-//!   [`EsmImportOrder::sort_entry_imports`] —
-//!   `source_import_position` ascending (docs/design.md "Lemma 2":
-//!   SCC dep rank ascending, intra-SCC linker position descending),
-//!   `ModuleId` ascending on ties. Acyclic import graphs prefer each module's
-//!   earliest source unit; DFS still evaluates its dependencies first. Cyclic
-//!   graphs retain the base order except for isolated entry-only leaves.
-//! - **Module imports** (every emitted logical module's intra-chunk
-//!   `import` directives: cross-module binding imports, phantom
-//!   side-effect imports, and the residual-entry import, merged into
-//!   ONE list): ordered by [`EsmImportOrder::sort_module_imports`] —
-//!   `linker_position` ascending (dependency-first toposort of the
-//!   constraining-edge subgraph; missing position sorts last),
-//!   `ModuleId` ascending on ties.
-//!
-//! The emitter renders import declarations in exactly these orders
-//! (`lowering/lower.rs`); the candidate uses the same orders as DFS
-//! neighbor order. The legacy graph gate uses the base order: acyclic imports
-//! always evaluate dependencies first regardless of entry import order. In
-//! cyclic graphs only entry-only leaves move; they cannot affect other modules'
-//! relative order and every constraint into one comes from entry, which runs
-//! last. Do not reintroduce
-//! per-side ordering rules (e.g. "phantom imports first") — encode
-//! any ordering requirement here so both sides inherit it.
+//! Entry prefers dependency ranks between import SCCs, reversed linker rank
+//! within each SCC. Other modules prefer dependency-first linker rank. Safe
+//! source-order refinements keep acyclic entry imports readable and interleave
+//! isolated leaves without changing constraints on connected modules.
 
 use std::collections::{BTreeMap, BTreeSet};
 

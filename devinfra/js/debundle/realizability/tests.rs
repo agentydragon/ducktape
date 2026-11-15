@@ -1496,10 +1496,9 @@ fn entry_dependency_is_rejected_by_reference_overlay_and_committed_gates() {
 }
 
 /// Modules 5 and 6 at-init read each other (Pass 1), so the verdict skips
-/// Pass 2. Separately, module 4 at-init reads module 1 while 1 lazily reads 4
-/// and 3 lazily reads 1: the ESM DFS enters 1 through 3 and evaluates 4
-/// first, a TDZ that collapsing {5, 6} does not rescue. The report lists it
-/// after the Pass-1 SCC as conditional.
+/// Pass 2. Independently, 2 and 4 both eagerly read 1, while 1 lazily imports
+/// both consumers. That star has no valid ESM traversal at ANY root. Collapsing
+/// {5, 6} cannot rescue it, so the report retains a conditional Pass-2 diagnosis.
 #[test]
 fn validation_reports_pass_two_after_collapsing_pass_one_as_conditional() {
     let nodes = (0..7)
@@ -1513,10 +1512,10 @@ fn validation_reports_pass_two_after_collapsing_pass_one_as_conditional() {
         })
         .collect();
     let edges = vec![
-        dependency_edge("e:23", "unit:2", "unit:3", DepKind::EagerUse, true),
+        dependency_edge("e:21", "unit:2", "unit:1", DepKind::EagerUse, true),
         dependency_edge("e:41", "unit:4", "unit:1", DepKind::EagerUse, true),
+        dependency_edge("e:12", "unit:1", "unit:2", DepKind::LazyUse, false),
         dependency_edge("e:14", "unit:1", "unit:4", DepKind::LazyUse, false),
-        dependency_edge("e:31", "unit:3", "unit:1", DepKind::LazyUse, false),
         dependency_edge("e:56", "unit:5", "unit:6", DepKind::EagerUse, true),
         dependency_edge("e:65", "unit:6", "unit:5", DepKind::EagerUse, true),
     ];
@@ -1560,7 +1559,7 @@ fn validation_reports_pass_two_after_collapsing_pass_one_as_conditional() {
                 crate::validation::BlockingRejection::MutualConstrainingCycle
             ),
             (
-                vec!["m1", "m4"],
+                vec!["m1", "m2", "m4"],
                 crate::validation::BlockingRejection::TdzAfterCollapsingPassOne
             ),
         ],
