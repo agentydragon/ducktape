@@ -1,8 +1,9 @@
 //! End-to-end coverage for `@Name` cross-reference member selectors through the
 //! **full lowering pipeline**. A `cross_ref` member pins
 //! its target by a relational edge to a separately-identified anchor member —
-//! "the function that references `@Anchor`", "the var-decl that aliases
-//! `@Anchor`" — instead of by the target's own minified name. These tests drive
+//! "the function that references `@Anchor`" or the variable declaration whose
+//! initializer references `@Anchor` — instead of by the target's own minified
+//! name. These tests drive
 //! the real `debundle` binary:
 //! the spec carries `cross_ref` selectors, and we assert the resolved binding
 //! lands in the right module and the emitted tree runs under Node.
@@ -81,10 +82,11 @@ export { EBt, UBt };
     assert_entry_output(&fixture, "42\n");
 }
 
-/// The re-export shape: `const HI = Acc` pinned as "the var-decl that aliases
-/// `@NodeAttributeAccessor`". Resolves to `HI` through the full pipeline.
+/// The re-export shape: `const HI = Acc` pinned by its reference to
+/// `@NodeAttributeAccessor` and its `variable_declarator` kind. Resolves to `HI`
+/// through the full pipeline.
 #[test]
-fn cross_ref_aliases_resolves_reexport() {
+fn cross_ref_references_resolves_reexport_declarator() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"class Acc { tag() { return "acc"; } }
 const HI = Acc;
@@ -98,15 +100,16 @@ export { Acc, HI };
             ),
             logical_module(
                 "aliases",
-                &[Member::cross_ref_aliases(
+                &[Member::cross_ref_references(
                     "CardsViewAccessor",
                     "NodeAttributeAccessor",
+                    Some("variable_declarator"),
                 )],
             ),
         ],
     ));
 
-    // The alias resolved to the minified binding HI (proven by the provenance
+    // The reference resolved to the minified binding HI (proven by the provenance
     // comment), exported under its readable name and importing the anchor class
     // (renamed `NodeAttributeAccessor`) it aliases.
     assert_module_exports(
@@ -125,18 +128,18 @@ export { Acc, HI };
 }
 
 /// **Multiple `cross_ref` members in one module, anchored in that same module.**
-/// Two alias re-exports (`const A2 = Acc1; const B2 = Acc2;`) are both `cross_ref`
-/// `aliases:` members in the **same** logical module, each anchoring on a class
-/// (`Acc1` / `Acc2`) that is itself pinned by `source_match` in that same module.
+/// Two re-export initializers (`const A2 = Acc1; const B2 = Acc2;`) are both
+/// `cross_ref.references` members in the **same** logical module, each anchoring
+/// on a class (`Acc1` / `Acc2`) that is itself pinned by `source_match` there.
 ///
 /// Regression gate for the same-module multi-`cross_ref` bug: the pre-resolution
 /// duplicate-binding gate grouped both still-unresolved cross_ref members under the
 /// empty `<unresolved>` binding and rejected the module before the cross-ref pass
-/// ran, even though each alias resolves to a distinct binding (`A2`, `B2`). The
+/// ran, even though each target resolves to a distinct binding (`A2`, `B2`). The
 /// gate must skip post-Stage-A selector members (whose binding is filled in later)
 /// — they are duplicate-checked against their real bindings once resolved.
 #[test]
-fn cross_ref_aliases_multiple_in_one_module_resolve_to_distinct_bindings() {
+fn cross_ref_references_multiple_declarators_resolve_to_distinct_bindings() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"class Acc1 { m1() { return "a1"; } }
 class Acc2 { m2() { return "a2"; } }
@@ -151,15 +154,23 @@ export { Acc1, Acc2, A2, B2 };
                 // Both anchors pinned structurally in this same module.
                 Member::source_alpha("FirstAccessor", r#"class $a { m1() { return "a1"; } }"#),
                 Member::source_alpha("SecondAccessor", r#"class $a { m2() { return "a2"; } }"#),
-                // Two cross_ref alias members anchored on those same-module anchors.
-                Member::cross_ref_aliases("FirstAccessorExport", "FirstAccessor"),
-                Member::cross_ref_aliases("SecondAccessorExport", "SecondAccessor"),
+                // Each variable initializer references its same-module anchor.
+                Member::cross_ref_references(
+                    "FirstAccessorExport",
+                    "FirstAccessor",
+                    Some("variable_declarator"),
+                ),
+                Member::cross_ref_references(
+                    "SecondAccessorExport",
+                    "SecondAccessor",
+                    Some("variable_declarator"),
+                ),
             ],
         )],
     ));
 
     // All four resolve into the one module: the two anchors under their readable
-    // names, and the two aliases each to their distinct binding (`A2`, `B2`).
+    // names, and the two reference-selected declarators to `A2` and `B2`.
     assert_module_exports(
         &fixture.out_root,
         "static/app/modules/exports.js",
@@ -171,7 +182,7 @@ export { Acc1, Acc2, A2, B2 };
         ],
         &[],
     );
-    // Each alias resolved to its own distinct binding: the first cross_ref to `A2`
+    // Each declarator resolved to its own distinct binding: the first cross_ref to `A2`
     // (`const A2 = Acc1`), the second to `B2` (`const B2 = Acc2`) — not both to the
     // shared `<unresolved>` sentinel. The combined provenance comment lists both
     // source bindings, and both distinct alias declarations are emitted.

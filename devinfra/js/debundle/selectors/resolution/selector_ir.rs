@@ -87,10 +87,6 @@ pub enum SelectorAtom {
         source_unit: SourceUnitTerm,
         referenced: SourceUnitTerm,
     },
-    SourceUnitAliasesSourceUnit {
-        source_unit: SourceUnitTerm,
-        aliased: SourceUnitTerm,
-    },
     ReadsMember {
         source_unit: SourceUnitTerm,
         member: StringTerm,
@@ -155,10 +151,6 @@ impl SelectorAtom {
             Self::SourceUnitReferencesSourceUnit {
                 source_unit,
                 referenced,
-            }
-            | Self::SourceUnitAliasesSourceUnit {
-                source_unit,
-                aliased: referenced,
             } => {
                 collect_source_unit_term_variables(source_unit, &mut variables);
                 collect_source_unit_term_variables(referenced, &mut variables);
@@ -262,13 +254,6 @@ impl SelectorAtom {
             } => Self::SourceUnitReferencesSourceUnit {
                 source_unit: remap_source_unit_term(source_unit, variable_map),
                 referenced: remap_source_unit_term(referenced, variable_map),
-            },
-            Self::SourceUnitAliasesSourceUnit {
-                source_unit,
-                aliased,
-            } => Self::SourceUnitAliasesSourceUnit {
-                source_unit: remap_source_unit_term(source_unit, variable_map),
-                aliased: remap_source_unit_term(aliased, variable_map),
             },
             Self::ReadsMember {
                 source_unit,
@@ -646,16 +631,6 @@ impl SelectorProgram {
                     "source_unit_references_source_unit.referenced",
                 )
             }
-            SelectorAtom::SourceUnitAliasesSourceUnit {
-                source_unit,
-                aliased,
-            } => {
-                self.validate_source_unit_term(
-                    source_unit,
-                    "source_unit_aliases_source_unit.source unit",
-                )?;
-                self.validate_source_unit_term(aliased, "source_unit_aliases_source_unit.aliased")
-            }
             SelectorAtom::ReadsMember {
                 source_unit,
                 member,
@@ -863,7 +838,6 @@ pub enum SelectorFact {
     SourceUnitReferencesBinding {
         source_unit: SourceUnitId,
         binding: String,
-        edge_kind: String,
     },
     MemberRead {
         statement_ordinal: SourceUnitOrdinal,

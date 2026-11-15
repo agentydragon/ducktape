@@ -72,14 +72,14 @@ selector. An anchor names a member anywhere in the chunk, except that
 esbuild emits a byte-identical helper per module, so the helpers' readable names
 repeat across modules.
 
-| Selector              | Pins the entity that…                                       | Required fields               |
-| --------------------- | ----------------------------------------------------------- | ----------------------------- |
-| `cross_ref`           | references, or aliases, `@Anchor`                           | `references` **or** `aliases` |
-| `reads_member`        | reads `.member` (optionally off `@object`)                  | `member`                      |
-| `member_of_module`    | consumes `<module>.<member>` at a use site                  | `module`, `member`            |
-| `passed_to_call`      | is passed as an argument to `.callee_member`                | `callee_member`               |
-| `makes_decorate_call` | is the callee decorating `@class`                           | `class`                       |
-| `intrinsic_alias`     | aliases `Object.<property>` and is read by `@referenced_by` | `property`, `referenced_by`   |
+| Selector              | Pins the entity that…                                       | Required fields             |
+| --------------------- | ----------------------------------------------------------- | --------------------------- |
+| `cross_ref`           | references `@Anchor`                                        | `references`                |
+| `reads_member`        | reads `.member` (optionally off `@object`)                  | `member`                    |
+| `member_of_module`    | consumes `<module>.<member>` at a use site                  | `module`, `member`          |
+| `passed_to_call`      | is passed as an argument to `.callee_member`                | `callee_member`             |
+| `makes_decorate_call` | is the callee decorating `@class`                           | `class`                     |
+| `intrinsic_alias`     | aliases `Object.<property>` and is read by `@referenced_by` | `property`, `referenced_by` |
 
 Each takes an optional `kind:` (`function_declaration`, `class_declaration`,
 `variable_declarator`, …) to disambiguate when several source units stand in the

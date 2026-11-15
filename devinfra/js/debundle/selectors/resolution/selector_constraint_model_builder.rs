@@ -161,18 +161,6 @@ fn lower_atom_constraint(
             "references_source_unit".to_string(),
             support_cache,
         ),
-        SelectorAtom::SourceUnitAliasesSourceUnit {
-            source_unit,
-            aliased,
-        } => add_cached_source_unit_pair_allowed_tuples(
-            model,
-            variables,
-            source_unit,
-            aliased,
-            &domains.aliases_unit,
-            "aliases_source_unit".to_string(),
-            support_cache,
-        ),
         SelectorAtom::ReadsMember {
             source_unit,
             member,
@@ -1038,7 +1026,6 @@ impl RelationSupportCache {
 #[derive(Debug, Default)]
 struct DerivedFactRequirements {
     references_unit: bool,
-    aliases_unit: bool,
     member_reads: bool,
     reads_member_of_unit: bool,
     module_member_uses: bool,
@@ -1055,9 +1042,6 @@ impl DerivedFactRequirements {
             match atom {
                 SelectorAtom::SourceUnitReferencesSourceUnit { .. } => {
                     requirements.references_unit = true;
-                }
-                SelectorAtom::SourceUnitAliasesSourceUnit { .. } => {
-                    requirements.aliases_unit = true;
                 }
                 SelectorAtom::ReadsMember { .. } => {
                     requirements.member_reads = true;
@@ -1096,9 +1080,8 @@ struct FactDomains {
     source_unit_kinds: BTreeSet<(SourceUnitId, String)>,
     source_unit_statement_ordinals: BTreeSet<(SourceUnitId, SourceUnitOrdinal)>,
     declared_bindings: BTreeSet<(SourceUnitId, String)>,
-    raw_source_unit_references_binding: BTreeSet<(SourceUnitId, String, String)>,
+    raw_source_unit_references_binding: BTreeSet<(SourceUnitId, String)>,
     references_unit: BTreeSet<(SourceUnitId, SourceUnitId)>,
-    aliases_unit: BTreeSet<(SourceUnitId, SourceUnitId)>,
     raw_member_reads: BTreeSet<(SourceUnitOrdinal, Option<String>, String)>,
     member_reads: BTreeSet<(SourceUnitId, String)>,
     reads_member_of_unit: BTreeSet<(SourceUnitId, SourceUnitId, String)>,
@@ -1173,17 +1156,11 @@ impl FactDomains {
                 SelectorFact::SourceUnitReferencesBinding {
                     source_unit,
                     binding,
-                    edge_kind,
-                    ..
                 } => {
                     self.add_source_unit(*source_unit);
                     self.add_string(binding);
-                    self.add_string(edge_kind);
-                    self.raw_source_unit_references_binding.insert((
-                        *source_unit,
-                        binding.clone(),
-                        edge_kind.clone(),
-                    ));
+                    self.raw_source_unit_references_binding
+                        .insert((*source_unit, binding.clone()));
                 }
                 SelectorFact::MemberRead {
                     statement_ordinal,
@@ -1295,7 +1272,7 @@ impl FactDomains {
         }
 
         if requirements.references_unit {
-            for (source_unit, binding, _edge_kind) in &self.raw_source_unit_references_binding {
+            for (source_unit, binding) in &self.raw_source_unit_references_binding {
                 if !source_units_with_declarations.contains(source_unit) {
                     continue;
                 }
@@ -1304,29 +1281,6 @@ impl FactDomains {
                         referenced_source_units
                             .iter()
                             .map(|referenced| (*source_unit, *referenced)),
-                    );
-                }
-            }
-        }
-
-        if requirements.aliases_unit {
-            let var_decl_source_units = self
-                .source_unit_kinds
-                .iter()
-                .filter_map(|(source_unit, kind)| (kind == "var_decl").then_some(*source_unit))
-                .collect::<BTreeSet<_>>();
-            for (source_unit, binding, edge_kind) in &self.raw_source_unit_references_binding {
-                if (edge_kind != "eager_use" && edge_kind != "hoisted_use")
-                    || !var_decl_source_units.contains(source_unit)
-                    || !source_units_with_declarations.contains(source_unit)
-                {
-                    continue;
-                }
-                if let Some(aliased_source_units) = source_units_by_binding.get(binding) {
-                    self.aliases_unit.extend(
-                        aliased_source_units
-                            .iter()
-                            .map(|aliased| (*source_unit, *aliased)),
                     );
                 }
             }
@@ -1451,7 +1405,7 @@ impl FactDomains {
 
         if requirements.intrinsic_alias_referenced_by {
             let mut raw_referencers_by_binding: BTreeMap<&str, Vec<SourceUnitId>> = BTreeMap::new();
-            for (referencer, binding, _edge_kind) in &self.raw_source_unit_references_binding {
+            for (referencer, binding) in &self.raw_source_unit_references_binding {
                 raw_referencers_by_binding
                     .entry(binding.as_str())
                     .or_default()
@@ -1505,10 +1459,6 @@ impl FactDomains {
             SelectorAtom::SourceUnitReferencesSourceUnit {
                 source_unit,
                 referenced,
-            }
-            | SelectorAtom::SourceUnitAliasesSourceUnit {
-                source_unit,
-                aliased: referenced,
             } => {
                 self.add_source_unit_term(source_unit);
                 self.add_source_unit_term(referenced);
@@ -1632,11 +1582,10 @@ mod tests {
         ConstraintValue::String(value.to_string())
     }
 
-    fn source_unit_reference(source_unit: usize, binding: &str, edge_kind: &str) -> SelectorFact {
+    fn source_unit_reference(source_unit: usize, binding: &str) -> SelectorFact {
         SelectorFact::SourceUnitReferencesBinding {
             source_unit: SourceUnitId(source_unit),
             binding: binding.to_string(),
-            edge_kind: edge_kind.to_string(),
         }
     }
 
@@ -1795,10 +1744,10 @@ mod tests {
             declared_binding(10, "a"),
             declared_binding(20, "b"),
             declared_binding(30, "c"),
-            source_unit_reference(10, "a", "eager_use"),
-            source_unit_reference(10, "b", "eager_use"),
-            source_unit_reference(20, "b", "eager_use"),
-            source_unit_reference(30, "a", "eager_use"),
+            source_unit_reference(10, "a"),
+            source_unit_reference(10, "b"),
+            source_unit_reference(20, "b"),
+            source_unit_reference(30, "a"),
         ]);
 
         let model = compile_selector_problem(&program, &facts).unwrap();
@@ -1953,10 +1902,6 @@ mod tests {
             VariableDomain::SourceUnit,
             Some("referenced_source_unit".to_string()),
         );
-        let aliased_source_unit = program.add_variable(
-            VariableDomain::SourceUnit,
-            Some("aliased_source_unit".to_string()),
-        );
         let reader_source_unit = program.add_variable(
             VariableDomain::SourceUnit,
             Some("reader_source_unit".to_string()),
@@ -1986,14 +1931,6 @@ mod tests {
             },
             referenced: SourceUnitTerm::Var {
                 id: referenced_source_unit,
-            },
-        });
-        program.add_atom(SelectorAtom::SourceUnitAliasesSourceUnit {
-            source_unit: SourceUnitTerm::Const {
-                source_unit: SourceUnitId(30),
-            },
-            aliased: SourceUnitTerm::Var {
-                id: aliased_source_unit,
             },
         });
         program.add_atom(SelectorAtom::ReadsMember {
@@ -2052,10 +1989,7 @@ mod tests {
             declared_binding(10, "target"),
             source_unit_fact(20, 1, "function"),
             declared_binding(20, "referrer"),
-            source_unit_reference(20, "target", "read"),
-            source_unit_fact(30, 2, "var_decl"),
-            declared_binding(30, "aliasStatement"),
-            source_unit_reference(30, "target", "eager_use"),
+            source_unit_reference(20, "target"),
             source_unit_fact(40, 3, "function"),
             declared_binding(40, "reader"),
             member_read(3, None, "size"),
@@ -2082,7 +2016,7 @@ mod tests {
             intrinsic_alias("define", "defineProperty"),
             source_unit_fact(90, 8, "function"),
             declared_binding(90, "aliasUser"),
-            source_unit_reference(90, "define", "read"),
+            source_unit_reference(90, "define"),
         ]);
 
         let model = compile_selector_problem(&program, &facts).unwrap();
@@ -2092,30 +2026,26 @@ mod tests {
             vec![source_unit(10)]
         );
         assert_eq!(
-            decoded_variable_domain(&model, ConstraintVariableId(1)),
-            vec![source_unit(10)]
-        );
-        assert_eq!(
-            satisfying_tuples_for(&model, &[ConstraintVariableId(2), ConstraintVariableId(6)]),
+            satisfying_tuples_for(&model, &[ConstraintVariableId(1), ConstraintVariableId(5)]),
             vec![
                 vec![source_unit(40), string("size")],
                 vec![source_unit(40), string("value")],
             ]
         );
         assert_eq!(
-            decoded_variable_domain(&model, ConstraintVariableId(3)),
+            decoded_variable_domain(&model, ConstraintVariableId(2)),
             vec![source_unit(50)]
         );
         assert_eq!(
-            decoded_variable_domain(&model, ConstraintVariableId(4)),
+            decoded_variable_domain(&model, ConstraintVariableId(3)),
             vec![source_unit(70)]
         );
         assert_eq!(
-            decoded_variable_domain(&model, ConstraintVariableId(5)),
+            decoded_variable_domain(&model, ConstraintVariableId(4)),
             vec![source_unit(90)]
         );
         assert_eq!(
-            decoded_variable_domain(&model, ConstraintVariableId(7)),
+            decoded_variable_domain(&model, ConstraintVariableId(6)),
             vec![source_unit(65)]
         );
     }

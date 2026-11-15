@@ -234,25 +234,8 @@ impl Member {
             name,
             RawMemberSelector {
                 cross_ref: Some(CrossRefSelector {
-                    references: Some(anchor.to_string()),
-                    aliases: None,
+                    references: anchor.to_string(),
                     kind: parse_kind(kind),
-                }),
-                ..Default::default()
-            },
-        )
-    }
-
-    /// Pin a member as the var-decl that **aliases** the anchor member
-    /// (`const T = @anchor`), re-exported under `name`.
-    pub fn cross_ref_aliases(name: &'static str, anchor: &'static str) -> Self {
-        Self::pinned(
-            name,
-            RawMemberSelector {
-                cross_ref: Some(CrossRefSelector {
-                    references: None,
-                    aliases: Some(anchor.to_string()),
-                    kind: None,
                 }),
                 ..Default::default()
             },

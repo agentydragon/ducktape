@@ -10,7 +10,6 @@
 
 mod selector_conflict;
 
-use analysis_model::DepKind;
 use source_identity::SourceUnitOrdinal;
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -2677,13 +2676,6 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
                 .or_insert(SourceUnitId(statement.ordinal.0));
         }
     }
-    let hoisted_functions = structural
-        .per_statement
-        .iter()
-        .filter(|statement| statement.kind == StatementKind::FnDecl)
-        .flat_map(|statement| statement.declared.iter().cloned())
-        .collect::<BTreeSet<_>>();
-    let is_hoisted = |id: &swc_ecma_ast::Id| hoisted_functions.contains(id);
     for statement in &structural.per_statement {
         let source_unit = SourceUnitId(statement.ordinal.0);
         store.push(SelectorFact::SourceUnit {
@@ -2705,46 +2697,17 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
             .reads
             .eager
             .iter()
-            .map(|binding| {
-                (
-                    binding,
-                    if is_hoisted(binding) {
-                        DepKind::HoistedUse
-                    } else {
-                        DepKind::EagerUse
-                    },
-                )
-            })
-            .chain(
-                statement
-                    .reads
-                    .lazy
-                    .iter()
-                    .map(|binding| (binding, DepKind::LazyUse)),
-            )
-            .chain(
-                statement
-                    .rebinds
-                    .eager
-                    .iter()
-                    .map(|binding| (binding, DepKind::EagerRebind)),
-            )
-            .chain(
-                statement
-                    .rebinds
-                    .first_order_lazy
-                    .iter()
-                    .map(|binding| (binding, DepKind::LazyRebind)),
-            )
+            .chain(statement.reads.lazy.iter())
+            .chain(statement.rebinds.eager.iter())
+            .chain(statement.rebinds.first_order_lazy.iter())
             .chain(
                 statement
                     .rebinds
                     .lazy
                     .iter()
-                    .filter(|binding| !statement.rebinds.first_order_lazy.contains(*binding))
-                    .map(|binding| (binding, DepKind::DeferredRebind)),
+                    .filter(|binding| !statement.rebinds.first_order_lazy.contains(*binding)),
             );
-        for (binding, edge_kind) in references {
+        for binding in references {
             let Some(&target_source_unit) = binding_source_unit.get(binding) else {
                 continue;
             };
@@ -2752,7 +2715,6 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
                 store.push(SelectorFact::SourceUnitReferencesBinding {
                     source_unit,
                     binding: binding.0.as_str().to_string(),
-                    edge_kind: edge_kind.to_string(),
                 });
             }
         }

@@ -244,7 +244,7 @@ configured use in `gaffer-private/main` at `ecb2fe1f1a6e` (2026-11-14), includin
 the authored specs, Tana canonical, baselines and fixtures. This is a list of
 audit candidates, not a removal decision. Schema: <spec/spec.rs>.
 
-- **Selectors:** `member_of_module`, `passed_to_call`, and `cross_ref.aliases`.
+- **Selectors:** `member_of_module` and `passed_to_call`.
 - **Analysis contracts:** `value_inputs`, `argument_inputs`, and
   `imported_primitive_array_spread_inputs`.
 - **Purity assertions:** `chunk_export_purity`'s `pure_new_exports` and
