@@ -23,8 +23,7 @@ service SVID in the exact `service_callers` allowlist. The receiver does not use
 ServiceAccount admission or TokenReview. The admitted service SPIFFE ID is the owner key; it is
 stored separately from account UIDs, and existing account-owned Sessions never become service-owned
 implicitly. Session UUID knowledge grants no authority. Service admission requires verified client
-TLS with the configured trust bundle and never falls back to bearer verification. The legacy
-`audience` and `allowed_accounts` settings remain decodable but are optional and do not grant access.
+TLS with the configured trust bundle and never falls back to bearer verification.
 
 The sampler acts for that Identity under the [delegated authorization contract](../docs/delegated_authorization.md): it
 authenticates as itself with its central sampler service SVID and holds no

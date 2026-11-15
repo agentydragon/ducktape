@@ -379,9 +379,7 @@ central Session into a native harness Session.
 
 `service_callers` grants exact service SPIFFE IDs access to Sampler RPCs and requires
 `listen_tls.client_ca_file`. It defaults empty, which admits no caller. Sampler RPCs require a
-verified client SVID and do not accept bearer tokens or perform account/Pod lookup. The legacy
-`audience` and `allowed_accounts` JSON fields remain decodable for rollout compatibility, but are
-optional and do not affect admission.
+verified client SVID and do not accept bearer tokens or perform account/Pod lookup.
 
 Sampler Session ownership distinguishes service SPIFFE IDs from ServiceAccount UIDs. Migration 18
 adds a separate service owner column without rewriting existing rows. A service cannot reopen or

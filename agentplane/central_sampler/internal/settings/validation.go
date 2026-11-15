@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/netip"
 	"regexp"
-	"slices"
 	"strings"
 	"time"
 
@@ -137,12 +136,7 @@ func (s Settings) Validate() error {
 			return invalidSettingWithCause("models.*.api", "anthropic_messages API requires anthropic_api_key connection auth", fmt.Errorf("model %s anthropic_messages API requires anthropic_api_key connection auth", model))
 		}
 	}
-	for _, account := range s.AllowedAccounts {
-		parts := strings.Split(account, "/")
-		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-			return invalidSetting("allowed_accounts", "must use namespace/name")
-		}
-	}
+
 	history := s.HistoryTarget != ""
 	if !history && (s.HistoryTokenFile != "" || s.HistoryTLS != nil) {
 		return invalidSetting("history_target,history_token_file,history_tls", "History transport settings require history_target")
@@ -354,8 +348,4 @@ func (s Settings) GatewayAddress(namespace, sandbox string) (string, error) {
 		}
 	}
 	return strings.ReplaceAll(strings.ReplaceAll(s.GatewayTarget, "{namespace}", namespace), "{sandbox}", sandbox), nil
-}
-
-func (s Settings) AllowsAccount(namespace, name string) bool {
-	return slices.Contains(s.AllowedAccounts, namespace+"/"+name)
 }
