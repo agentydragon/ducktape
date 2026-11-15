@@ -66,6 +66,8 @@ pub struct SearchWorkReport {
     pub partition_states: u64,
     /// Direct C/I graph projections constructed from typed source edges.
     pub quotient_projections: u64,
+    /// Cooperative checkpoints inside exact import-schedule construction.
+    pub schedule_checkpoints: u64,
     /// Equality contractions forced by domains, structural edges, C SCCs, or C->entry.
     pub forced_contractions: u64,
     /// Candidate equality contractions considered by obstruction clauses.

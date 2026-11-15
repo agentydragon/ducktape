@@ -624,6 +624,10 @@ paths and source-unit IDs belong in the consuming repo.
   work-count regressions, optimized profiling, fresh downstream residual gain,
   packaged skills/recipe checks and exact-head CI. Scheduling is part of this
   project, not a deferred follow-up. Keep incomplete and error outcomes honest.
+  The first optimized profile spent about 94% of sampled CPU in recursive
+  scheduling and exceeded its placement deadline. Finish SCC-local construction,
+  typed scheduler cancellation and retained-schedule certification, then rerun
+  performance and consumer acceptance before closing this item.
 
 ### Planner CLI follow-ups
 

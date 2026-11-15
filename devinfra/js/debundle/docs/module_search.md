@@ -74,7 +74,7 @@ The controls and defaults are:
 | `--only-units FILE`                  | Restrict movable units to a JSON array. Each included structural atom must be complete.                         |
 | `--max-new-modules N`                | Bound the number of fresh authored/extracted owners in the final placement.                                     |
 | `--max-checks N`                     | Explicit budget on analyzed partition states.                                                                   |
-| `--time-budget-ms N`                 | Explicit wall-clock budget. Exhausting either budget is incomplete.                                             |
+| `--time-budget-ms N`                 | Cooperative placement deadline after graph/baseline preparation. Exhausting either budget is incomplete.        |
 
 Import/export scaffolding and authored units remain in place. Atoms containing
 authored units or scaffolding cannot move. Generated residual owners are
@@ -129,6 +129,12 @@ arbitrary count of complete assignment retries; quotient projections and the
 other work counts expose what happened within those states. Exhausting the
 budget is `incomplete`; only full branch exhaustion establishes
 `exhausted_no_peel` in the reported scope.
+
+The time budget is polled inside schedule derivation as well as between placement
+steps. An interrupted schedule trial is neither an obstruction nor a proof of
+exhaustion. Individual graph construction, cloning and verification operations
+may finish before the next poll, so this is a cooperative deadline rather than a
+hard process timeout. Graph loading and accepted-baseline preparation precede it.
 
 The explicit `--strategy auto` branch remains a heuristic inventory for source
 review. Its readiness labels, diagnostics and empty output cannot establish that

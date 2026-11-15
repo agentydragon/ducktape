@@ -68,6 +68,8 @@ pub struct PlanWorkArgs {
     /// Explicit check budget. Exhaustion reports incomplete, never no peel.
     #[arg(long)]
     pub max_checks: Option<u64>,
+    /// Cooperative placement deadline after graph/baseline preparation, in ms.
+    /// Exhaustion reports incomplete; individual graph operations may overrun.
     #[arg(long)]
     pub time_budget_ms: Option<u64>,
 
