@@ -193,7 +193,6 @@ States as of 13:10 UTC.
 | Runtime proxy and Executor to Environments | 2026-11-15                        | `RUNTIME_PROXY_TO_ENVIRONMENTS`  | Receiver enabled on Environments; caller code accepting its server identity merged (#16696); retargeting callers and retiring the Gateway receiver follow                                                                                                     |
 | Runtime proxy caller audit                 | 2026-11-15                        | `RUNTIME_PROXY_CALLER_AUDIT`     | In review; the migrations it proposes are not released                                                                                                                                                                                                        |
 | Sessions binary directory                  | 2026-11-15 11:35                  | `SESSIONS_BINARY_DIRECTORY`      | Starts after the Runtime proxy move's exit                                                                                                                                                                                                                    |
-| Coherence sweep                            | 2026-11-15 12:59, card choice     | `REFACTOR_COHERENCE_AUDIT`       | Audit started; the stale auth sentences and the unread `action_execution.heartbeat_at` column come first                                                                                                                                                      |
 | App and CLI local extractions              | 2026-11-15 12:59, card choice     | `GO_LOCAL_EXTRACTIONS`           | App browser routes, app browser session store and CLI command families started; the other stage 4 extractions are not released                                                                                                                                |
 
 Finished and deleted since the 2026-11-14 ledger: the pre-cutover leftovers, any-replica Gateway
@@ -211,7 +210,6 @@ flowchart LR
     PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: stage 5, bearer admission retires]
     RUNTIME_PROXY_TO_ENVIRONMENTS[In flight: Runtime proxy into Environments]
     RUNTIME_PROXY_CALLER_AUDIT[In review: Runtime-proxy caller dispositions]
-    REFACTOR_COHERENCE_AUDIT[In flight: coherence sweep]
     GO_LOCAL_EXTRACTIONS[In flight: app and CLI extractions]
 ```
 
@@ -3641,7 +3639,6 @@ workload credential, and the gate. Platform component TokenReview retires under 
 
 ```mermaid
 flowchart LR
-    REFACTOR_COHERENCE_AUDIT[In flight: whole-refactor coherence audit]
     PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: one service authentication mode]
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     RUNNER_GATEWAY_RENAME[Unscheduled: deployed names follow the two-binary split]
@@ -3731,27 +3728,6 @@ service SVID, verified on staging (#16620, #16624). Stage 5 was released for imp
 2026-11-15 and is in flight; the [cutover readiness plan](service_svid_stage5_readiness.md) holds
 the per-receiver sequence and progress. App OIDC, MCP OAuth and Kubernetes API credentials keep
 their own contracts.
-
-#### `REFACTOR_COHERENCE_AUDIT` — the refactor reads as one design
-
-**Released by the operator, 2026-11-15 12:59 UTC (card choice); a Codex worker audits devel and
-opens one PR per finding.** Sweep devel for unused modules, functions, settings, proto
-fields, tables and columns; one name per concept across code, settings, manifests, protos and docs
-(Runner Gateway, History Service, ingress, control; Session for the raw stream, Thread for its
-projection; no "hub", "follow" or "shadow" left); READMEs, `SPEC.md` files and `docs/` describing the
-code as it is, without cutover narration; no compatibility branch, optional-with-fallback setting or
-`CLEANUP` tombstone whose condition is met; the system diagram in `agentplane/docs/system_overview.md`
-showing exactly the deployed services and the traffic between them in `cluster/cdk8s/agentplane`.
-Each removal needs its own evidence and any real prerequisite, and is fixed in a PR of its own; this
-node leaves with the last of them.
-
-**Pre-cutover leftovers, released 2026-11-14 01:41 UTC ("dispatch 1, 2"), landed:** Central Sampler
-migration 17 and its code cleanup ([#16323](https://github.com/agentydragon/ducktape/pull/16323),
-[#16331](https://github.com/agentydragon/ducktape/pull/16331)), and the Dispatcher's pre-Identity rows
-and reader fallbacks ([#16340](https://github.com/agentydragon/ducktape/pull/16340),
-[#16341](https://github.com/agentydragon/ducktape/pull/16341)); each PR states its staging loss.
-History's empty Sandbox UID is not a leftover: a central Session may have no Sandbox
-([Sandbox-free central Sessions](#sandbox-free-central-sessions)).
 
 #### `ACTION_BOX_RENAME` — Action boxes stop being called sandboxes
 
