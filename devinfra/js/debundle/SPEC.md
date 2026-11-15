@@ -4781,32 +4781,41 @@ empty.
 
 ## Realizability cut explanations
 
-When the full intra-chunk import graph is acyclic, entry imports prefer each
-module's earliest source unit. Dependency traversal still evaluates imported
-modules first. Cyclic graphs retain their rescue order except for entry-only
-leaves: modules imported only by entry with no imports of their own. These leaves
-can be interleaved by source unit without changing other modules' relative
-order. The candidate's exact emitted order still requires the ordinary
-relocation assessment.
+When the full intra-chunk import graph is acyclic, the preferred policy orders
+entry imports by each module's earliest source unit. In cyclic graphs, the
+preferred policy keeps its rescue order, with source-order interleaving only for
+entry-only leaves: modules imported only by entry with no imports of their own.
+These leaves can move without changing connected modules' relative order. The
+exact scheduler preserves that preference when it is valid; otherwise it
+constructs another concrete schedule if one exists. The candidate's exact
+emitted order still requires the ordinary relocation assessment.
 
 Assignment validation retains a concrete ordered import schedule for entry and
 all emitted modules. Its target sets must exactly cover canonical intra-chunk
 imports, including phantom imports and entry's universal fanout. Gate validation,
-candidate translation/effect sweeps and emission consume that same schedule.
-The current scheduling policy is unchanged; a supplied evaluation rank alone
-cannot replace traversal of the actual import lists.
+candidate translation/effect sweeps and accepted emission consume that same
+schedule. Canonical targets with no direct binding reference receive phantom
+side-effect imports, including deferred closure dependencies. Accepted output
+checks exact target equality. `--emit-on-rejection` can instead lower a marked
+reading-only tree under preferred diagnostic ordering; that rejected tree is
+not a certified schedule or an accepted program.
+
+The preferred policy supplies ordering choices; it is not an exhaustive
+acceptance rule. The exact constructor checks the full graph, and the
+[construction proof](docs/module_placement.md) describes its completeness.
 
 Each `cycles.json` entry names its `rejection`. `mutual_constraining_cycle`
-is a Pass-1 cycle of constraining edges. `esm_evaluation_tdz` is a Pass-2 TDZ
-proved under the materializer's linker order. Pass 2 runs only when Pass 1
-finds no cycle: a cyclic constraining subgraph has no linker order, hence no
-import order to check. A rejection with Pass-1 cycles instead adds
-`tdz_after_collapsing_pass_one` entries: Pass 2 on the same assignment with
-each Pass-1 SCC collapsed into one module, listing the original modules. They
-show what would still block once the Pass-1 SCCs are co-located; they are
-conditional and do not change the verdict. The bail summary opens with the
-Pass-1 root cause and labels each cycle's pass; `gate list` and
-`gate describe` show the same label.
+is a Pass-1 cycle of constraining edges. A Pass-2 `esm_evaluation_tdz` rejection
+means the exact constructor found no valid schedule; the emitted-order TDZ is
+one diagnostic witness from the preferred schedule, not proof that one policy
+is exhaustive. Pass-2 cycle diagnoses are reported only when Pass 1 has no
+blocking cycle. A rejection with Pass-1 cycles instead adds
+`tdz_after_collapsing_pass_one` entries: Pass 2 on the assignment with each
+Pass-1 SCC collapsed into one module, listing the original modules. They show
+what would still block once the Pass-1 SCCs are co-located; they are conditional
+and do not change the verdict. The bail summary opens with the Pass-1 root cause
+and labels each cycle's pass; `gate list` and `gate describe` show the same
+label.
 
 Every blocking SCC in `cycles.json` carries a `cut`: the constraining edges
 whose removal (co-locating each binding pair) makes the SCC realizable. Each
