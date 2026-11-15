@@ -76,9 +76,8 @@ TRUST_MANAGER_INSTALL = "//agentplane/system_tests/k3s/pki:trust_manager_install
 # Keep shared image facts here; each BUILD target selects the image groups it needs.
 # Fixture and guest references stay under baseline.FIXTURE_IMAGE_REPOSITORY: a stack removes
 # such images that its manifest does not declare.
-COMMON_SERVICE_IMAGES = {
+BACKEND_SERVICE_IMAGES = {
     "//agentplane/action_service:service_image": "git.allegedly.works/ducktape-ci/agentplane-action-service:unset",
-    "//agentplane/app:image": "git.allegedly.works/ducktape-ci/agentplane-app:unset",
     "//agentplane/egress/cmd:image": "git.allegedly.works/ducktape-ci/agentplane-egress-proxy:unset",
     "//agentplane/egress:sidecar_image": "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset",
     "//agentplane/history_service:service_image": "git.allegedly.works/ducktape-ci/agentplane-history-service:unset",
@@ -89,7 +88,9 @@ COMMON_SERVICE_IMAGES = {
     "//agentplane/environments:image": "git.allegedly.works/ducktape-ci/agentplane-sandbox-controller:unset",
     "@postgres_18_minimal_linux_amd64": "git.allegedly.works/ducktape-ci/agentplane-postgres:unset",
 }
-APP_FREE_SERVICE_IMAGES = {image: reference for image, reference in COMMON_SERVICE_IMAGES.items() if image != "//agentplane/app:image"}
+APP_IMAGES = {
+    "//agentplane/app:image": "git.allegedly.works/ducktape-ci/agentplane-app:unset",
+}
 HARNESSES_IMAGES = {
     "//agentplane/system_tests/deployment:environment_tools_harnesses_image": "git.allegedly.works/ducktape-ci/environment-tools:unset",
 }
@@ -140,10 +141,9 @@ FIRECRACKER_GUEST_IMAGES = {
     "//agentplane/system_tests/firecracker:boot_image": "git.allegedly.works/ducktape-ci/agentplane-environment-firecracker:unset",
 }
 
-_MCP_EDGE_IMAGES = {
+MCP_EDGE_IMAGES = {
     "//agentplane/mcp_edge:service_image": "git.allegedly.works/ducktape-ci/agentplane-mcp-edge:unset",
 }
-SERVICE_IMAGES = COMMON_SERVICE_IMAGES | _MCP_EDGE_IMAGES
 GENERIC_DEVICE_PLUGIN_IMAGE = {
     "@generic_device_plugin_linux_amd64": GENERIC_DEVICE_PLUGIN_REFERENCE,
 }

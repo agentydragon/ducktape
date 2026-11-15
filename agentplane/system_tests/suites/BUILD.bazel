@@ -1,7 +1,8 @@
 load("//agentplane/system_tests/deployment:render.bzl", "render_fixture")
 load(
     "//agentplane/system_tests/k3s:defs.bzl",
-    "COMMON_SERVICE_IMAGES",
+    "APP_IMAGES",
+    "BACKEND_SERVICE_IMAGES",
     "DELETION_TEST_DISK_IMAGE",
     "FIRECRACKER_GUEST_IMAGES",
     "GENERIC_DEVICE_PLUGIN_IMAGE",
@@ -12,9 +13,9 @@ load(
     "K3S_PERSISTENCE_PROPERTIES",
     "K3S_TAGS",
     "KVM_EXEC_PROPERTIES",
+    "MCP_EDGE_IMAGES",
     "PKI_IMAGES",
     "RUNNER_DISK_IMAGE",
-    "SERVICE_IMAGES",
     "VM_GUEST_BOOT_IMAGE",
     "VM_GUEST_ROOT_IMAGE",
     "VM_GUEST_ROOT_PROFILE_IMAGE",
@@ -36,28 +37,28 @@ exports_files(["test_vm.py"])
 image_manifest(
     name = "probe_image_manifest",
     testonly = True,
-    fixture = SERVICE_IMAGES | HARNESSES_IMAGES | RUNNER_DISK_IMAGE,
+    fixture = BACKEND_SERVICE_IMAGES | APP_IMAGES | MCP_EDGE_IMAGES | HARNESSES_IMAGES | RUNNER_DISK_IMAGE,
     pki = PKI_IMAGES,
 )
 
 image_manifest(
     name = "pod_image_manifest",
     testonly = True,
-    fixture = COMMON_SERVICE_IMAGES | HARNESSES_IMAGES | RUNNER_DISK_IMAGE,
+    fixture = BACKEND_SERVICE_IMAGES | APP_IMAGES | HARNESSES_IMAGES | RUNNER_DISK_IMAGE,
     pki = PKI_IMAGES,
 )
 
 image_manifest(
     name = "deletion_image_manifest",
     testonly = True,
-    fixture = COMMON_SERVICE_IMAGES | HARNESSES_IMAGES | DELETION_TEST_DISK_IMAGE,
+    fixture = BACKEND_SERVICE_IMAGES | APP_IMAGES | HARNESSES_IMAGES | DELETION_TEST_DISK_IMAGE,
     pki = PKI_IMAGES,
 )
 
 image_manifest(
     name = "vm_image_manifest",
     testonly = True,
-    fixture = COMMON_SERVICE_IMAGES | VM_RUNNER_DISK_IMAGE,
+    fixture = BACKEND_SERVICE_IMAGES | APP_IMAGES | VM_RUNNER_DISK_IMAGE,
     guest = VM_GUEST_BOOT_IMAGE | VM_GUEST_ROOT_IMAGE,
     pki = PKI_IMAGES,
     vm = VM_IMAGES,
@@ -66,7 +67,7 @@ image_manifest(
 image_manifest(
     name = "vm_profile_image_manifest",
     testonly = True,
-    fixture = COMMON_SERVICE_IMAGES | VM_RUNNER_DISK_IMAGE,
+    fixture = BACKEND_SERVICE_IMAGES | APP_IMAGES | VM_RUNNER_DISK_IMAGE,
     guest = VM_GUEST_BOOT_IMAGE | VM_GUEST_ROOT_PROFILE_IMAGE,
     pki = PKI_IMAGES,
     vm = VM_IMAGES,
@@ -75,7 +76,7 @@ image_manifest(
 image_manifest(
     name = "firecracker_image_manifest",
     testonly = True,
-    fixture = COMMON_SERVICE_IMAGES | RUNNER_DISK_IMAGE,
+    fixture = BACKEND_SERVICE_IMAGES | APP_IMAGES | RUNNER_DISK_IMAGE,
     guest = FIRECRACKER_GUEST_IMAGES,
     pki = PKI_IMAGES,
     vm = GENERIC_DEVICE_PLUGIN_IMAGE,
@@ -84,7 +85,7 @@ image_manifest(
 image_manifest(
     name = "real_model_image_manifest",
     testonly = True,
-    fixture = SERVICE_IMAGES | HARNESSES_IMAGES | RUNNER_DISK_IMAGE,
+    fixture = BACKEND_SERVICE_IMAGES | APP_IMAGES | MCP_EDGE_IMAGES | HARNESSES_IMAGES | RUNNER_DISK_IMAGE,
     pki = PKI_IMAGES,
 )
 
