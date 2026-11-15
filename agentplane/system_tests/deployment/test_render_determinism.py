@@ -11,6 +11,7 @@ from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 _EXPECTED_OUTPUTS = {
     "local-model-central.json",
+    "local-model-central-native.json",
     "local-model.json",
     "local-model-firecracker.json",
     "local-model-mcp-fixtures.json",
