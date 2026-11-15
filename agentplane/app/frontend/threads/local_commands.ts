@@ -7,7 +7,7 @@ import {
   DispatchSchema,
   type Dispatch,
 } from "../../../runner_gateway/dispatcher/api/session/session_dispatcher_pb";
-import { dispatchFromJson, normalizeDeliveryState, type CommandTarget } from "./client";
+import { dispatchFromJson, normalizeDeliveryState, savedInterruptResultFromJson, type CommandTarget } from "./client";
 
 /** A typed operation retained for lost-response recovery; Command protobuf belongs to the journal. */
 type PlainOperation =
@@ -101,7 +101,7 @@ function decode(text: string): LocalCommand {
     ) {
       throw new Error("Invalid locally retained interrupt result");
     }
-    interruptResult = dispatchFromJson(value.interruptResult);
+    interruptResult = savedInterruptResultFromJson(value.interruptResult);
     if (interruptResult.admission) checkAdmission(command, interruptResult.admission);
   }
   return {
