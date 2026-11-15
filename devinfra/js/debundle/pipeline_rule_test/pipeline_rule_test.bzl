@@ -4,6 +4,17 @@ load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
 
 _BaselineActions = provider(fields = ["actions"])
 
+def _package_root_fixture_impl(ctx):
+    package_root = ctx.actions.declare_directory(ctx.label.name)
+    ctx.actions.run_shell(
+        outputs = [package_root],
+        arguments = [package_root.path],
+        command = "mkdir -p \"$1\" && printf '%s\\n' '{\"name\":\"fixture-package\"}' > \"$1/package.json\"",
+    )
+    return [DefaultInfo(files = depset([package_root]))]
+
+package_root_fixture = rule(implementation = _package_root_fixture_impl)
+
 def _baseline_actions_impl(target, _ctx):
     return [_BaselineActions(actions = target.actions)]
 
