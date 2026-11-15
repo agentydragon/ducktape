@@ -22,7 +22,6 @@ from cdk8s_plus_34 import (
 )
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecPostgresql
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
-from seaweed_s3identity_crds.com.seaweedfs.seaweed import S3IdentitySpecReclaimPolicy
 
 from cluster.cdk8s import cilium, node_scheduling, pod_policy, probes, session_backup
 from cluster.cdk8s.cnpg import cluster
@@ -31,7 +30,6 @@ from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
-from cluster.cdk8s.seaweedfs import s3
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from util.settings_contract import env_name
@@ -82,17 +80,6 @@ def _database(chart: Chart) -> None:
         initdb=cluster.same_owner_initdb("ai_session_archive"),
         # The Restic snapshots are the durable backup; this database is a rebuildable projection.
         wal_archive=False,
-    )
-    # CLEANUP(added 2026-11-15): Keep the identity until credential finalization
-    # and per-filer key revocation are verified; delete it last.
-    # See cluster/docs/runbooks/seaweedfs_s3_retirement.md.
-    retired_bucket = "session-backup-db-backups"
-    s3.identity(
-        chart,
-        "retired-backup-identity",
-        name=retired_bucket,
-        namespace=NAMESPACE,
-        reclaim_policy=S3IdentitySpecReclaimPolicy.DELETE,
     )
 
 
