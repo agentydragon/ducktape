@@ -919,7 +919,6 @@ def test_native_recovery_profile_uses_bound_caller_without_app(runfiles: Runfile
 def test_firecracker_fixture_uses_production_construct_and_discloses_cilium_boundary(runfiles: Runfiles) -> None:
     fixture = rendered_fixture.read(runfiles.root() / os.environ["K3S_FIRECRACKER_FIXTURE_RLOCATION"])
     assert fixture.runtime is rendered_fixture.SandboxRuntime.FIRECRACKER
-    assert fixture.runtime is not rendered_fixture.SandboxRuntime.KUBEVIRT
     assert not any(doc["kind"] == "CiliumNetworkPolicy" for doc in fixture.objects)
 
     template = _resource(fixture.objects, "SandboxTemplate", environment_firecracker.NAME)["spec"]
