@@ -33,6 +33,7 @@ from agentplane.system_tests.driver.action_requests import (
     decision_response,
 )
 from agentplane.system_tests.driver.agent import RUNNER_ANSWERS_SECONDS, TURN_SECONDS, WORKING_DIRECTORY
+from agentplane.system_tests.driver.app_sandbox import suspend_and_delete, wait_until_running
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS
 from agentplane.system_tests.driver.mcp_connection import connected_session
@@ -42,7 +43,7 @@ from agentplane.system_tests.driver.operator_login import (
     follow_dex_authorization,
 )
 from agentplane.system_tests.driver.policy_objects import POLICY_READY_SECONDS, PolicyBindingPresentError, PolicyObjects
-from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes, suspend_and_delete, wait_until_running
+from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes
 from agentplane.system_tests.driver.scripted_agent import ScriptedAgent, play_cli_turn, submission
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer

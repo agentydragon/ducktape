@@ -18,6 +18,9 @@ from agentplane.system_tests.driver.ollama_catalog import ollama_cases
 from agentplane.system_tests.driver.sandbox import Sandboxes
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
+# gazelle:include_dep //agentplane/system_tests:app_fixtures
+pytest_plugins = ("agentplane.system_tests.app_fixtures",)
+
 # gazelle:include_dep @pypi//protobuf
 
 

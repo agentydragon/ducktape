@@ -14,7 +14,8 @@ from agentplane.system_tests.driver.sandbox import Sandboxes
 from agentplane.system_tests.scenarios import egress, session_instructions
 
 # gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
-pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
+# gazelle:include_dep //agentplane/system_tests:app_fixtures
+pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin", "agentplane.system_tests.app_fixtures")
 
 
 @pytest.mark.real_model

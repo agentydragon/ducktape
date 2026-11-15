@@ -26,6 +26,7 @@ from agentplane.proto import event_log_pb2, event_pb2, identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2
 from agentplane.system_tests.deployment import mcp_servers
 from agentplane.system_tests.driver.action_requests import action_request, assert_echoed_result, decide_pending_action
+from agentplane.system_tests.driver.app_sandbox import wait_until_running
 from agentplane.system_tests.driver.central_sampler import (
     MODEL,
     CentralStack,
@@ -34,7 +35,7 @@ from agentplane.system_tests.driver.central_sampler import (
 )
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.executor import Executor
-from agentplane.system_tests.driver.sandbox import SANDBOX_READY_SECONDS, wait_until_running
+from agentplane.system_tests.driver.sandbox import SANDBOX_READY_SECONDS
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.testing.codex_model import CodexModel

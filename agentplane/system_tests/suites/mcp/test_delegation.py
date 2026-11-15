@@ -21,6 +21,7 @@ from agentplane.grpc.calls import ServiceError
 from agentplane.mcp_edge.api.connection import connection_service_pb2
 from agentplane.proto import identity_pb2
 from agentplane.system_tests.deployment.stack import Stack
+from agentplane.system_tests.driver.app_sandbox import suspend_and_delete, wait_until_running
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.dispatcher_transport import native_client
 from agentplane.system_tests.driver.identity import (
@@ -31,10 +32,14 @@ from agentplane.system_tests.driver.identity import (
 from agentplane.system_tests.driver.mcp_connection import ExternalMCPSession, connected_session
 from agentplane.system_tests.driver.operator_login import OperatorCredentials
 from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
-from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, suspend_and_delete, wait_until_running
+from agentplane.system_tests.driver.sandbox import POD_TEMPLATE
 
 # gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
-pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
+# gazelle:include_dep //agentplane/system_tests/suites/mcp:operator_fixtures
+pytest_plugins = (
+    "agentplane.system_tests.deployment.pytest_plugin",
+    "agentplane.system_tests.suites.mcp.operator_fixtures",
+)
 
 _REQUIRED_TOOLS = {"environments__list", "environments__get", "sessions__create"}
 _UNGRANTED_TOOLS = {

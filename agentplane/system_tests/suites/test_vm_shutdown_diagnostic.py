@@ -6,14 +6,16 @@ from google.protobuf.json_format import MessageToDict
 from opentelemetry import trace
 
 from agentplane.app.testing.client import Client
+from agentplane.system_tests.driver.app_sandbox import sandbox_scope
 from agentplane.system_tests.driver.cluster import Cluster
-from agentplane.system_tests.driver.sandbox import VM_TEMPLATE, sandbox_scope
+from agentplane.system_tests.driver.sandbox import VM_TEMPLATE
 from agentplane.system_tests.vm import host_qemu
 from agentplane.system_tests.vm.shutdown_diagnostic import write_progress
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
-pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
+# gazelle:include_dep //agentplane/system_tests:app_fixtures
+pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin", "agentplane.system_tests.app_fixtures")
 
 pytestmark = pytest.mark.vm_sandboxes
 
