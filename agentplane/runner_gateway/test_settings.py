@@ -1,4 +1,4 @@
-"""Dispatcher settings retain the retired receiver shape during configuration rollout."""
+"""Dispatcher settings describe only the live receiver and its clients."""
 
 from typing import cast
 
@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from agentplane.runner_gateway.settings import Settings
 
 
-def _settings(runner_security: object, *, kubernetes_client_qps: float = 0) -> Settings:
+def _settings(*, kubernetes_client_qps: float = 0) -> Settings:
     return cast(
         Settings,
         Settings.model_validate(
@@ -23,7 +23,6 @@ def _settings(runner_security: object, *, kubernetes_client_qps: float = 0) -> S
                     "tls": {"cert_file": "/test/workload-cert", "key_file": "/test/workload-key"},
                     "auth": [{"mode": "spiffe", "ca_file": "/test/workload-ca"}],
                 },
-                "runner_security": runner_security,
                 "kubernetes_client_qps": kubernetes_client_qps,
             }
         ),
@@ -31,46 +30,42 @@ def _settings(runner_security: object, *, kubernetes_client_qps: float = 0) -> S
 
 
 @pytest.mark.parametrize(
-    "security",
+    ("key", "value"),
     [
-        {"mode": "mtls", "tls": {"cert_file": "/test/cert", "key_file": "/test/key"}},
-        {"mode": "insecure", "tls": {"cert_file": "/test/cert", "key_file": "/test/key", "ca_file": "/test/ca"}},
-        {"mode": "unknown"},
-        {"tls": {"cert_file": "/test/cert", "key_file": "/test/key", "ca_file": "/test/ca"}},
+        ("runner_security", {"mode": "insecure"}),
+        ("runtime_proxy_readers", ["spiffe://agentplane/app"]),
+        ("runtime_proxy_session_callers", ["spiffe://agentplane/sessions"]),
+        ("runtime_proxy_controller_callers", ["spiffe://agentplane/sandbox-controller"]),
+        ("executor_service_callers", ["spiffe://agentplane/central-sampler"]),
     ],
-    ids=["incomplete-mtls", "insecure-with-tls", "unknown-mode", "missing-mode"],
 )
-def test_gateway_rejects_ambiguous_runner_security(security: object) -> None:
-    with pytest.raises(ValidationError):
-        _settings(security)
-
-
-def test_dispatcher_no_longer_requires_direct_runtime_credentials() -> None:
-    source = _settings(None).model_dump(mode="json", exclude_none=True)
-    assert "runner_security" not in source
-    assert Settings.model_validate(source).runner_security is None
+def test_dispatcher_rejects_retired_runtime_settings(key: str, value: object) -> None:
+    source = _settings().model_dump(mode="json")
+    source[key] = value
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        Settings.model_validate(source)
 
 
 @pytest.mark.parametrize("qps", [-1, 0, 25.5])
 def test_gateway_accepts_kubernetes_client_qps_modes(qps: float) -> None:
-    assert _settings({"mode": "insecure"}, kubernetes_client_qps=qps).kubernetes_client_qps == qps
+    assert _settings(kubernetes_client_qps=qps).kubernetes_client_qps == qps
 
 
 @pytest.mark.parametrize("qps", [-2, -0.5, float("nan"), float("inf")])
 def test_gateway_rejects_invalid_kubernetes_client_qps(qps: float) -> None:
     with pytest.raises(ValidationError):
-        _settings({"mode": "insecure"}, kubernetes_client_qps=qps)
+        _settings(kubernetes_client_qps=qps)
 
 
 def test_shared_listener_svid_requires_tls() -> None:
-    source = _settings({"mode": "insecure"}).model_dump(mode="json")
+    source = _settings().model_dump(mode="json")
     source["rpc"]["tls"] = None
     with pytest.raises(ValidationError, match="spiffe requires tls"):
         Settings.model_validate(source)
 
 
 def test_control_service_tls_rejects_unrelated_identity() -> None:
-    source = _settings({"mode": "insecure"}).model_dump(mode="json")
+    source = _settings().model_dump(mode="json")
     source["gateway_tls"]["server_uri"] = "spiffe://agentplane/runner-gateway"
     with pytest.raises(
         ValidationError, match=r"gateway_tls\.server_uri must identify the Gateway or Environments Runtime proxy"
@@ -82,7 +77,7 @@ def test_control_service_tls_rejects_unrelated_identity() -> None:
     "server_uri", ["spiffe://agentplane/session-dispatcher", "spiffe://agentplane/sandbox-controller"]
 )
 def test_runtime_proxy_peer_accepts_each_cutover_receiver(server_uri: str) -> None:
-    source = _settings({"mode": "insecure"}).model_dump(mode="json")
+    source = _settings().model_dump(mode="json")
     source["runner_token_file"] = None
     source["gateway_tls"].update(
         server_uri=server_uri,
@@ -96,7 +91,7 @@ def test_runtime_proxy_peer_accepts_each_cutover_receiver(server_uri: str) -> No
 
 
 def test_gateway_sessions_svid_is_an_optional_tokenless_caller_mode() -> None:
-    source = _settings({"mode": "insecure"}).model_dump(mode="json")
+    source = _settings().model_dump(mode="json")
     source["runner_token_file"] = None
     source["gateway_tls"].update(
         cert_file="/test/sessions-cert", key_file="/test/sessions-key", client_uri="spiffe://agentplane/sessions"
@@ -122,7 +117,7 @@ def test_gateway_sessions_svid_is_an_optional_tokenless_caller_mode() -> None:
 
 
 def test_central_sampler_sessions_svid_is_an_optional_tokenless_caller_mode() -> None:
-    source = _settings({"mode": "insecure"}).model_dump(mode="json")
+    source = _settings().model_dump(mode="json")
     source["central_sampler"] = {
         "target": "sampler:8080",
         "token_file": None,
@@ -163,7 +158,7 @@ def test_central_sampler_sessions_svid_is_an_optional_tokenless_caller_mode() ->
 
 
 def test_service_settings_require_spiffe_listener_authentication() -> None:
-    source = _settings({"mode": "insecure"}).model_dump(mode="json")
+    source = _settings().model_dump(mode="json")
     source["rpc"]["auth"] = [{"mode": "kubernetes_bearer", "audiences": ["unused"]}]
     source["dispatcher_service_callers"] = ["spiffe://agentplane/actions"]
     with pytest.raises(ValidationError, match=r"service caller settings require rpc\.auth to include spiffe"):
@@ -171,21 +166,13 @@ def test_service_settings_require_spiffe_listener_authentication() -> None:
 
 
 def test_empty_service_settings_are_omitted_from_deployment_output() -> None:
-    source = _settings({"mode": "insecure"}).model_dump(mode="json")
-    new_optional_fields = {
-        "runtime_proxy_readers",
-        "runtime_proxy_session_callers",
-        "runtime_proxy_controller_callers",
-        "executor_service_callers",
-        "dispatcher_service_delegation",
-        "dispatcher_service_callers",
-        "wake_service_callers",
-    }
+    source = _settings().model_dump(mode="json")
+    new_optional_fields = {"dispatcher_service_delegation", "dispatcher_service_callers", "wake_service_callers"}
     assert new_optional_fields.isdisjoint(source)
 
 
 def test_dispatcher_service_delegation_is_scoped_to_dispatcher_and_action_provenance() -> None:
-    source = _settings({"mode": "insecure"}).model_dump(mode="json")
+    source = _settings().model_dump(mode="json")
     source["dispatcher_service_delegation"] = {
         "actors": [{"spiffe_id": "spiffe://agentplane/actions"}],
         "methods": ["/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput"],
@@ -213,17 +200,17 @@ def test_dispatcher_service_delegation_is_scoped_to_dispatcher_and_action_proven
 
 
 def test_static_settings_reject_runtime_inputs_and_legacy_namespace_authority() -> None:
-    source = _settings({"mode": "insecure"}).model_dump(mode="json")
+    source = _settings().model_dump(mode="json")
     source["dispatcher_database_url"] = "postgresql://secret.invalid/dispatcher"
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         Settings.model_validate(source)
 
-    source = _settings({"mode": "insecure"}).model_dump(mode="json")
+    source = _settings().model_dump(mode="json")
     source["pod_ip"] = "192.0.2.10"
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         Settings.model_validate(source)
 
-    source = _settings({"mode": "insecure"}).model_dump(mode="json")
+    source = _settings().model_dump(mode="json")
     source["delegation"] = {
         "actor": "test-app/actions",
         "identity_callers": False,
@@ -249,7 +236,7 @@ def test_runtime_inputs_are_not_settings_fields() -> None:
 def test_settings_ignore_static_environment_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AGENTPLANE_RUNNER_GATEWAY_SANDBOX_NAMESPACE", "environment-value")
     monkeypatch.setenv("AGENTPLANE_RUNNER_GATEWAY_RPC__LISTEN_ADDRESS", "127.0.0.1:9999")
-    settings = _settings({"mode": "insecure"})
+    settings = _settings()
     assert settings.sandbox_namespace == "test-sandboxes"
     assert settings.rpc.listen_address == ":8080"
 

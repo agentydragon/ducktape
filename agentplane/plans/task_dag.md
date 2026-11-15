@@ -189,7 +189,7 @@ States as of 14:55 UTC.
 | Track                                      | Operator release (UTC) | Node                             | State                                                                                                                                                                                                                                                                          |
 | ------------------------------------------ | ---------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Retire bearer admission (auth stage 5)     | 2026-11-15             | `PRIVILEGED_BACKEND_AUTH_DESIGN` | Receiver code merged for every receiver, History last (#16728, 14:35 UTC); retired keys omitted and fields deleted for Policy (#16718), Gateway (#16722) and the sampler (#16729); the other receivers' key and field removal, the shared TokenReview code and its RBAC follow |
-| Runtime proxy and Executor to Environments | 2026-11-15             | `RUNTIME_PROXY_TO_ENVIRONMENTS`  | Receiver retired (#16760), pinned and rolled; credential/config cleanup #16768, then the final obsolete permission/grant removal                                                                                                                                               |
+| Runtime proxy and Executor to Environments | 2026-11-15             | `RUNTIME_PROXY_TO_ENVIRONMENTS`  | Cutover and credential/permission cleanup (#16768, #16775) rolled and verified; retired settings decoder deletion completes the track                                                                                                                                          |
 | Runtime proxy caller audit                 | 2026-11-15             | `RUNTIME_PROXY_CALLER_AUDIT`     | Proposal merged (#16643); its dispositions await operator review, and the migrations it proposes are not released                                                                                                                                                              |
 | Sessions binary directory                  | 2026-11-15 11:35       | `SESSIONS_BINARY_DIRECTORY`      | Starts after the Runtime proxy move's exit                                                                                                                                                                                                                                     |
 
@@ -206,7 +206,7 @@ removed). Not released:
 ```mermaid
 flowchart LR
     PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: stage 5, bearer admission retires]
-    RUNTIME_PROXY_TO_ENVIRONMENTS[In flight: Runtime proxy into Environments]
+    RUNTIME_PROXY_TO_ENVIRONMENTS[Done: Runtime proxy into Environments]
     RUNTIME_PROXY_CALLER_AUDIT[Review: Runtime-proxy caller dispositions]
 ```
 
@@ -3886,7 +3886,7 @@ Identity landed in #16373.
 flowchart LR
     PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: stage 5, section 15]
     RUNTIME_PROXY_CALLER_AUDIT[Review: Runtime-proxy caller dispositions]
-    RUNTIME_PROXY_TO_ENVIRONMENTS[In flight: Runtime proxy and Executor into Environments]
+    RUNTIME_PROXY_TO_ENVIRONMENTS[Done: Runtime proxy and Executor into Environments]
     SESSIONS_BINARY_DIRECTORY[Released after the proxy cutover: the rest moves to session_dispatcher/]
     ENVIRONMENT_KEEP_ALIVE_HOLDS[Proposed design: keep-alive holds]
     GO_LOCAL_EXTRACTIONS[Unscheduled: stage 4 local extractions]
@@ -3898,20 +3898,15 @@ flowchart LR
 
 ### `RUNTIME_PROXY_TO_ENVIRONMENTS` — the Runtime proxy and Executor move into Environments
 
-**In flight, 2026-11-15: caller cutover (#16723) rolled and verified at 14:20 UTC.** Claude
-verified all five workloads 2/2 Ready without restarts or auth/TLS errors, and Dispatcher delivery
-reached Runtime admission through Environments. The Gateway receiver and direct Runtime watches
-are removed (#16760, merged as `84561b7e`), and Claude verified Gateway/Controller/App/Notifications
-`6147538` pins and rolls at 22:40–22:43 UTC (2026-11-15), all 2/2 Ready with no restarts or auth/TLS
-errors. Credential/mount and `runner_security` manifest cleanup is #16768. The final permission step
-removes unused Gateway Pod/VM and TokenReview RBAC, direct Runtime network rules, ignored proxy
-grants and Runtime admission for the retired Gateway SVID, preserving Dispatcher authority. Retired settings stay decodable until manifests omit them
-and that configuration has rolled.
-After the receiver-removal image is pinned and running, remove only the obsolete Gateway Runtime
-certificate/mounts, network permissions and proxy grants, and Runtime's old Gateway-SVID admission.
-Keep Dispatcher inventory/policy RBAC, automatic wake patches and delivery Leases. No cluster objects
-or retained state are deleted as a cutover shortcut. Verify the image/config rollout after each
-step; only then release the directory move. The proxy remains at its final `environments/runtimeproxy`
+**Done, 2026-11-15.** Caller cutover (#16723), receiver retirement (#16760), credential/mount
+cleanup (#16768) and final permission removal (#16775) are merged. Claude verified the cleanup
+rollout at 23:33 UTC: both Gateway Pods Ready on `6147538`, no restarts or warning/error logs,
+only listener/trust/Sessions-client/settings mounts; live settings omit `runner_security`, all
+`runtime_proxy_*` grants and `executor_service_callers`. Sessions continued producing events through
+Environments after the network change. The retired settings decoder fields are removed after
+this verification. Dispatcher inventory/policy RBAC, automatic wake patches and delivery Leases
+remain. No cluster objects or retained state were deleted as a cutover shortcut.
+The directory move may now proceed. The proxy remains at its final `environments/runtimeproxy`
 home. Deployed names and wire names stay unchanged. The operator
 also released the Runtime diagnostics API and App cutover after this transport migration; Session
 activity and Sandbox-independent Notifications remain their separately tracked contracts.
