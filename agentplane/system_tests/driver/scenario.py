@@ -7,9 +7,10 @@ from opentelemetry import trace
 
 from agentplane.app.testing.client import Client
 from agentplane.system_tests.driver import native_artifacts
+from agentplane.system_tests.driver.app_sandbox import sandbox_scope
 from agentplane.system_tests.driver.cleanup import finish_cleanup
 from agentplane.system_tests.driver.cluster import Cluster
-from agentplane.system_tests.driver.sandbox import Sandboxes, sandbox_scope
+from agentplane.system_tests.driver.sandbox import Sandboxes
 
 type ScenarioResources = Callable[[], AbstractAsyncContextManager[tuple[Client, Sandboxes]]]
 

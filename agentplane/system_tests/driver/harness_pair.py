@@ -4,10 +4,11 @@ from collections.abc import Awaitable, Callable
 
 from agentplane.app.testing.client import Client
 from agentplane.proto import session_pb2
+from agentplane.system_tests.driver.app_sandbox import sandbox_scope
 from agentplane.system_tests.driver.cleanup import resource_scope
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.offered_models import models_offered_for
-from agentplane.system_tests.driver.sandbox import Sandboxes, sandbox_scope
+from agentplane.system_tests.driver.sandbox import Sandboxes
 from agentplane.system_tests.driver.tracing import tracer
 
 # gazelle:include_dep @pypi//protobuf
