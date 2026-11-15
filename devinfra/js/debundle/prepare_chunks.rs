@@ -99,11 +99,12 @@ pub fn prepare_js_chunks(
     // predicates below cover spec-driven stages (logical modules, residual
     // modules, renames, vendor) and source-premise provider analysis. The
     // pass-through emission rewriter also canonicalizes specifiers in every
-    // emitted non-module file, so we keep its AST whenever it would rewrite this
-    // chunk's entry. The `has_rewritable_specifier` fact mirrors the
-    // canonicalizer's relative-path gate (`.` or `/` prefix) exactly and is
-    // computed during the first-pass `analyze_program_shallow` walk, so this
-    // second pass does not need to re-visit the AST.
+    // emitted non-module file, including literal `import.meta.require` calls,
+    // so we keep its AST whenever it would rewrite this chunk's entry. The
+    // `has_rewritable_specifier` fact mirrors the canonicalizer's relative-path
+    // gate (`.` or `/` prefix) exactly and is computed during the first-pass
+    // `analyze_program_shallow` walk, so this second pass does not need to
+    // re-visit the AST.
     let prepared_chunks = parsed_chunks
         .into_iter()
         .map(|(chunk_id, chunk_name, mut prepared)| {
