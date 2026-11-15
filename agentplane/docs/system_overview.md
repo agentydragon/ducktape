@@ -231,14 +231,14 @@ embeds files through an embedding endpoint and owns its own PostgreSQL database
 - **Sessions and Threads.** A Session is a runner's raw Event stream; a Thread is its conversation
   view, folded by the History Service. Runners push Events to the History Service, the only way into
   retained history.
-- **Runner control uses native gRPC.** Every Gateway replica independently dials each current
+- **Runner control uses native gRPC.** Every Environments proxy replica independently dials each current
   Runtime's private server using mTLS and opens a state watch. Its calls carry the live
   Sandbox UID, accepted workload Pod UID and observed Runtime boot ID. The Sandbox Controller's
   direct mTLS `observe_only` watch binds the workload UID before the first facts snapshot; the
   Controller keeps those facts in memory per Sandbox, incarnation and boot. Gateway watches cannot
-  select or replace that binding. Callers use the stable `runner-gateway` Service; no Gateway
+  select or replace that binding. Callers use `sandbox-controller:8082`; no Gateway
   connection Lease or per-Sandbox `<sandbox>-control` EndpointSlice decides Runtime call ownership.
-  Loss of one observation does not revoke another Gateway replica's calls or Runtime-owned admitted
+  Loss of one observation does not revoke another proxy replica's calls or Runtime-owned admitted
   work. History push and ordinary Sandbox egress retain
   their sidecar or VM relay paths; History terminates and verifies the Runtime SVID itself.
 - **Telemetry uses Alloy as its collector.** SDK-instrumented services export OTLP/gRPC to Alloy.
@@ -259,7 +259,7 @@ The app forwards authenticated Sandbox management requests to the Sandbox Contro
 EnvironmentService on every replica, which writes Sandbox desired state to Kubernetes. The
 Gateway no longer registers EnvironmentService. The elected Controller
 reconciles desired state, owns `Sandbox.status`, and holds
-deletion until the runner has sealed its Sessions through the Gateway. Notifications and the
+deletion until the runner has sealed its Sessions through the Environments proxy. Notifications and the
 Runner Gateway read Sandbox inventory directly. The Runner Gateway implements Dispatcher Session
 openings and durable command admission/delivery alongside the control stream; the app reads live
 runner inventory and diagnostics through the Runner Proxy, which checks the live Sandbox name, UID
@@ -485,7 +485,7 @@ flowchart LR
 
 ## Environment control and native Sessions
 
-The Gateway's Runtime proxy and Executor admit only exact component service SVIDs: App and Notifications for diagnostics, Sessions for native Session
+The Environments Runtime proxy and Executor admit only exact component service SVIDs: App and Notifications for diagnostics, Sessions for native Session
 operations, Sandbox Controller for lifecycle operations, and Central Sampler for Executor methods.
 These are independent method grants. Caller configuration activates each edge only after its image
 is pinned; the proxy's existing native Runtime mTLS identity remains separate.
@@ -494,7 +494,7 @@ is pinned; the proxy's existing native Runtime mTLS identity remains separate.
 flowchart LR
     gateway[Runner Gateway]
     services[Configured App, Notifications, Sessions, Controller and sampler service SVIDs]
-    services -->|service SVID only: method-scoped proxy and Executor grants| gateway
+    services -->|service SVID only: method-scoped proxy and Executor grants| sandboxctl
     subgraph environment_runtime[Environment Runtime process]
       runtime[Runtime admission and lifecycle]
       sessions[Session manager, adapters and journals]
@@ -505,7 +505,7 @@ flowchart LR
       sessions -->|journal inventory| delivery
     end
     history[History ingress]
-    gateway -->|mTLS Runner / Executor; independent WatchState; UID and boot fences| runtime
+    gateway -->|retained rollback receiver: independent WatchState, fenced mTLS| runtime
     sandboxctl -->|every-replica proxy / Executor: runtime-proxy SVID; independent watches and fenced calls| runtime
     policy_api[Kubernetes PolicySets / PolicyBindings / Identities]
     gateway -->|list/watch grants; patch EnvironmentReady| policy_api
@@ -862,9 +862,8 @@ flowchart LR
 ## Sessions role to the Runtime proxy
 
 The Dispatcher delivery worker presents its separate `spiffe://agentplane/sessions` certificate
-when dialing the stable Runtime proxy Service, including when a different Gateway replica holds
-the runner connection. It verifies the receiver's `spiffe://agentplane/session-dispatcher` server
-certificate. The receiver grants only Runtime Session operations to that Sessions role.
+when dialing `sandbox-controller:8082`, independently of which proxy replica watches the
+Runtime. It verifies the receiver's `spiffe://agentplane/sandbox-controller` server certificate. The receiver grants only Runtime Session operations to that Sessions role.
 The Gateway→central sampler hop also presents the Sessions certificate, following the explicit
 account-to-SVID ownership rewrite. A rollback to bearer requires the reviewed reverse ownership Job.
 
