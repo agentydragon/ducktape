@@ -23,11 +23,32 @@ This verifies deployment configuration, not successful execution of every RPC. T
 accepted the central Session smoke and the empty post-switch ownership inventory at 04:20 UTC;
 this audit did not repeat them. No claim that every caller has switched follows from Ready Pods.
 
-## Remaining stage 4 callers
+## Stage 4 follow-up, 2026-11-15
 
-Stage 4 is **incomplete**. Two caller families still select Kubernetes bearer authentication in
-both source and live settings. Keep their receiver bearer admission until their separate caller
-cutovers are merged, applied and verified.
+Actions' four Dispatcher/History peers switched in #16620. At 07:56 UTC, both Actions Pods were
+Ready with zero restarts, and the live settings selected the Actions SVID and no token file on
+those peers. The typed delegation grants and envelopes remain unchanged.
+A live `sessions/get` Action at 07:59 UTC succeeded with both Dispatcher Session and History
+sources reported as `observed`, exercising the delegated SVID reads.
+
+Before the sampler LLM caller switch, the approved read-only Job
+`sampler-identity-inventory-20261115-0750-v3` inspected every retained sampler Session at 07:55 UTC.
+It decoded `CreateSessionRequest.execution_identity` and checked both name and UID, without any
+environment filter. Its result was `{"inspected_count":2,"missing_count":0,"sessions":[]}`.
+The snapshot stayed inside the Job's emptyDir; the logs contain only the count and missing-record
+metadata. No rows were written, backfilled or deleted. There are no missing Sessions for which to
+collect creation/activity timestamps or liveness evidence.
+
+The sampler LLM caller configuration now selects `agentplane_ingress`, its existing service SVID,
+and typed execution Identity/Session delegation. Activation still needs merge, rollout and a
+successful central Session provider call. Stage 5 remains held pending that verification and its
+separate release. All projected tokens and receiver bearer admission stay in place.
+
+## Remaining stage 4 callers at the original audit
+
+At the 07:08 UTC snapshot, stage 4 was **incomplete**. Two caller families still selected Kubernetes
+bearer authentication in both source and live settings. Keep their receiver bearer admission until
+their separate caller cutovers are merged, applied and verified.
 
 | Caller and target                                              | Live selection and source                                                                                                                                                                                                       | Remaining work                                                                                                                                                           |
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -120,7 +141,8 @@ Do not run that Job as part of this audit.
 
 The live Deployment templates still project the following service audiences. Some are now unused;
 their presence alone does not prove that a caller still sends them. The Actions Dispatcher/History
-tokens and the sampler LLM token remain selected as described above.
+tokens and the sampler LLM token were still selected at the original snapshot above; see the
+stage 4 follow-up for their caller switches.
 
 | Workload           | Projected service-token audiences                                                                                                                           |
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -165,12 +187,10 @@ does not execute a receiver cutover or re-run the accepted live smoke.
 
 ## Questions for Claude
 
-- The sampler's SVID provider branch refuses a request without the recorded execution Identity
-  name and UID; bearer mode did not require that proof. Before its config PR, confirm how to
-  inventory and handle retained Sessions lacking it without dropping data or making a Sandbox,
-  Sandbox UID or a single environment attachment mandatory. The selected
+- Resolved: the coordinator authorized a read-only inventory before the sampler caller switch.
+  The inventory above found no retained Session missing execution Identity name/UID. No data
+  rewrite, new required field or environment requirement is introduced. The selected
   [Session model](session_environment_model.md#a-central-session-can-use-zero-one-or-many-environments)
-  permits zero or several central attachments.
-  This audit adds no new refusal or required field and proposes no automatic rewrite.
+  still permits zero or several central attachments.
 - Release stage 5 only after the two remaining caller families have been activated and verified;
   the stage 5 receiver/RBAC implementation remains held.

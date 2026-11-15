@@ -139,8 +139,7 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     llm_connection = config["connections"]["llm-ingress"]
     llm_service = llm_ingress.service(namespace)
     assert llm_connection["base_url"] == f"https://{llm_service.fqdn}:{llm_service.port.number}"
-    assert llm_connection["auth"] == {"type": "bearer", "credential_file": "/var/run/secrets/central-sampler/llm"}
-    assert llm_connection["tls"] == {"ca_file": workload_tls.TRUST_BUNDLE_FILE, "server_uri": LLM_INGRESS_URI}
+    assert llm_connection["auth"] == {"type": "agentplane_ingress"}
     assert "history_token_file" not in config
     assert "gateway_token_file" not in config
     volumes = {volume["name"]: volume for volume in pod["volumes"]}
@@ -148,9 +147,12 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     for tls, server_uri in (
         (config["history_tls"], HISTORY_SERVICE_URI),
         (config["gateway_tls"], SESSION_DISPATCHER_URI),
+        (llm_connection["tls"], LLM_INGRESS_URI),
     ):
         assert tls["server_uri"] == server_uri
         assert tls["client_uri"] == serving_certificate["spec"]["uris"][0]
+        assert tls["ca_file"] == config["listen_tls"]["client_ca_file"]
+        assert "configMap" in mounts[PurePosixPath(tls["ca_file"]).parent]
         for field in ("cert_file", "key_file"):
             path = PurePosixPath(tls[field])
             assert mounts[path.parent]["secret"]["secretName"] == serving_certificate["spec"]["secretName"]
@@ -218,6 +220,8 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     llm = yaml.safe_load(_resource(staging_manifests, "ConfigMap", "llm-ingress-settings")["data"]["settings.yaml"])
     assert llm["policy_namespace"] == namespace
     assert llm["central_sampler_accounts"] == [f"{namespace}/{central_sampler.NAME}"]
+    assert llm["central_sampler_services"] == [serving_certificate["spec"]["uris"][0]]
+    assert llm["central_sampler_identity_callers"] is True
 
     assert _admits(
         _resource(staging_manifests, "CiliumNetworkPolicy", central_sampler.NAME)["spec"],

@@ -44,7 +44,7 @@ from agentplane.central_sampler.settings import (
 from agentplane.env.config import GuestResources, ResourceLimits
 from agentplane.identity.operator.settings import OperatorOidcSettings
 from agentplane.llm_ingress.models import AttributionConfig, AttributionField, AttributionJsonHeader, VerifiedClaim
-from agentplane.net.peertls.config import LLM_INGRESS_URI, TLS
+from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, LLM_INGRESS_URI, TLS
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
 from agentplane.subjects import ServiceAccountRef
@@ -502,8 +502,8 @@ ENV = Environment(
                     f"https://{llm_ingress.service(STAGING_NAMESPACE).fqdn}:"
                     f"{llm_ingress.service(STAGING_NAMESPACE).port.number}"
                 ),
-                auth=AuthConfig(type="bearer", credential_file=Path("/var/run/secrets/central-sampler/llm")),
-                tls=workload_tls.client_tls(LLM_INGRESS_URI),
+                auth=AuthConfig(type="agentplane_ingress"),
+                tls=workload_tls.service_client_tls(LLM_INGRESS_URI, client_uri=CENTRAL_SAMPLER_URI),
             ),
             "anthropic-api": ConnectionConfig(
                 base_url="https://api.anthropic.com",

@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from pathlib import Path
 from typing import Any
 
 from agentplane_policyset_crds.works.allegedly.agentplane import PolicySetSpecRulesMethods
@@ -67,7 +66,7 @@ from agentplane.central_sampler.settings import (
 from agentplane.env.config import CodexReadiness
 from agentplane.env.runtime.harness import Harness
 from agentplane.identity.operator.settings import OperatorOidcSettings
-from agentplane.net.peertls.config import APP_URI, LLM_INGRESS_URI, POLICY_CONTROLLER_URI, TLS
+from agentplane.net.peertls.config import APP_URI, CENTRAL_SAMPLER_URI, LLM_INGRESS_URI, POLICY_CONTROLLER_URI, TLS
 from agentplane.notification_service.settings import NoticeDebounceSettings
 
 # gazelle:include_dep @pypi//protobuf
@@ -348,8 +347,8 @@ def central_sampler_props(*, model: Route) -> CentralSamplerProps:
         connections={
             "llm-ingress": ConnectionConfig(
                 base_url=f"https://{llm_ingress.service(NAMESPACE).fqdn}:{llm_ingress.service(NAMESPACE).port.number}",
-                auth=AuthConfig(type="bearer", credential_file=Path("/var/run/secrets/central-sampler/llm")),
-                tls=workload_tls.client_tls(LLM_INGRESS_URI),
+                auth=AuthConfig(type="agentplane_ingress"),
+                tls=workload_tls.service_client_tls(LLM_INGRESS_URI, client_uri=CENTRAL_SAMPLER_URI),
             )
         },
         max_live_sessions=2,

@@ -3148,12 +3148,14 @@ data:
         "llm-ingress": {
           "tls": {
             "ca_file": "/run/agentplane/workload-trust/ca-certificates.crt",
-            "server_uri": "spiffe://agentplane/llm-ingress"
+            "server_uri": "spiffe://agentplane/llm-ingress",
+            "cert_file": "/run/agentplane/workload-tls/tls.crt",
+            "key_file": "/run/agentplane/workload-tls/tls.key",
+            "client_uri": "spiffe://agentplane/central-sampler"
           },
           "base_url": "https://llm-ingress.agentplane-staging.svc.cluster.local:8080",
           "auth": {
-            "type": "bearer",
-            "credential_file": "/var/run/secrets/central-sampler/llm"
+            "type": "agentplane_ingress"
           }
         },
         "anthropic-api": {
