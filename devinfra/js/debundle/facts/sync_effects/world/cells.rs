@@ -192,6 +192,16 @@ impl<'a> CellTrace<'a> {
         }
     }
 
+    /// The currently installed frame is a GC root independently of World.
+    pub(in crate::facts::sync_effects) fn frame(
+        &mut self,
+        cells: &imbl::OrdMap<swc_ecma_ast::Id, LexicalCellId>,
+    ) {
+        for cell in cells.values() {
+            self.cell(*cell);
+        }
+    }
+
     pub(in crate::facts::sync_effects) fn retained(&mut self, captured: &'a Captured<Values>) {
         if self.callback_sets.insert(captured.cache_identity()) {
             self.values(&captured.values);
@@ -254,6 +264,47 @@ mod tests {
             initialization,
         });
         cells
+    }
+
+    #[test]
+    fn frame_roots_keep_transitively_captured_cells_alive() {
+        let mut cells = LexicalCells::default();
+        let captured_cell = cells.insert(LexicalCell {
+            values: Values::from([object(1)]),
+            kind: LocalBinding::Let,
+            initialization: CellInitialization::Initialized,
+        });
+        let binding: swc_ecma_ast::Id = ("value".into(), swc_common::SyntaxContext::empty());
+        let mut captures = super::super::super::value_model::CaptureInterner::default();
+        let closure = captures.intern(super::super::super::value_model::LexicalCaptures {
+            snapshots: Default::default(),
+            cells: [(binding.clone(), captured_cell)].into_iter().collect(),
+            home_object: None,
+        });
+        let frame_cell = cells.insert(LexicalCell {
+            values: Values::from([AbstractValue::Closure(
+                super::super::super::value_model::HeapAddress {
+                    scope: super::super::WorldScope::Application,
+                    callable: 1,
+                },
+                closure,
+            )]),
+            kind: LocalBinding::Const,
+            initialization: CellInitialization::Initialized,
+        });
+        let dead = cells.insert(LexicalCell {
+            values: Values::new(),
+            kind: LocalBinding::Let,
+            initialization: CellInitialization::Initialized,
+        });
+        let active = [(binding, frame_cell)].into_iter().collect();
+        let mut trace = super::CellTrace::new(&cells);
+        trace.frame(&active);
+        let (marked, work) = trace.finish();
+        cells.sweep(&marked, work);
+        assert!(cells.get(frame_cell).is_some());
+        assert!(cells.get(captured_cell).is_some());
+        assert!(cells.get(dead).is_none());
     }
 
     #[test]

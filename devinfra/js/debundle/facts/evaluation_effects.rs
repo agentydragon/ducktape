@@ -30,7 +30,7 @@ pub struct GlobalAccessSite {
     pub property: String,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct GlobalAccessEvidence {
     pub dependencies: ProofDependencies,
     pub assumptions: Vec<AssumedEffectReason>,
@@ -67,7 +67,7 @@ impl GlobalAccessEvidence {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub(crate) struct EvaluationEffects {
     pub global_accesses: BTreeMap<GlobalAccessSite, GlobalAccessEvidence>,
 }

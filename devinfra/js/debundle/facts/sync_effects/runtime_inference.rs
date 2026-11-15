@@ -547,6 +547,7 @@ impl RuntimeRules<'_, '_> {
         ) {
             executor.mark_allocation_opaque();
         }
+        let eligibility_ticket = executor.begin_invocation_eligibility(&operation);
         let value = match operation {
             RuntimeOperation::Heap(operation) => {
                 RuntimeValue::Heap(operation.execute(&mut executor))
@@ -642,8 +643,21 @@ impl RuntimeRules<'_, '_> {
                 RuntimeValue::Callbacks(runtime_callbacks::dispatch(&mut executor, operation))
             }
         };
-        let (state, observations, allocation_judgment, evaluation_effects) =
+        let eligibility_dependencies = eligibility_ticket.map(|_| executor.queries.dependencies());
+        let (mut state, observations, allocation_judgment, evaluation_effects) =
             executor.into_transfer();
+        if let Some(ticket) = eligibility_ticket {
+            state.finish_invocation_eligibility(
+                ticket,
+                &observations,
+                &value,
+                &allocation_judgment,
+                &evaluation_effects,
+                eligibility_dependencies
+                    .as_ref()
+                    .expect("an audit ticket carries dependencies"),
+            );
+        }
         context.propose(
             RuntimeKey::Result(point.clone()),
             RuntimeFact::Result(Box::new(RuntimeResult {

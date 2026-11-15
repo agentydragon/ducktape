@@ -147,3 +147,39 @@ pub(super) fn join_frames(frames: Vec<LocalFrame>) -> LocalFrame {
     }
     joined
 }
+
+/// Join frame bindings alongside a semantic World join. Even equal Worlds can
+/// have divergent frames. Scope refusal takes precedence, as before separation.
+pub(super) fn join_active_cells<'a>(
+    mut maps: impl Iterator<
+        Item = &'a imbl::OrdMap<swc_ecma_ast::Id, super::value_model::LexicalCellId>,
+    >,
+    joined: &mut Joined,
+) -> imbl::OrdMap<swc_ecma_ast::Id, super::value_model::LexicalCellId> {
+    let Some(first) = maps.next() else {
+        return imbl::OrdMap::new();
+    };
+    let mut active = first.clone();
+    let mut divergent = false;
+    for map in maps {
+        divergent |= map != first;
+        active = active
+            .into_iter()
+            .filter(|(binding, cell)| map.get(binding) == Some(cell))
+            .collect();
+    }
+    if divergent {
+        joined.refused = joined
+            .refused
+            .or(Some(super::world::join::JoinRefusal::DivergentActiveCells));
+        joined.world.reachability.incomplete = true;
+        // World::join previously bumped both revisions for any divergence,
+        // including a frame-only divergence. Do it here only if it did not.
+        if !joined.widened {
+            joined.world.revision.bump_prefix();
+            joined.world.revision.bump_reachability();
+        }
+        joined.widened = true;
+    }
+    active
+}

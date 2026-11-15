@@ -1700,7 +1700,7 @@ fn store_binding(
     }
     let Some(kind) = body.bindings.get(binding) else {
         frame.binding_selections.remove(binding);
-        if !context.world().active_cells.contains_key(binding)
+        if !context.active_cells().contains_key(binding)
             && let Some(effects) = context.store_module_binding(binding, &values)
         {
             frame.ledger.effects.compose(&effects);

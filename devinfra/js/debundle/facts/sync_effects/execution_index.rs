@@ -4665,7 +4665,7 @@ pub(super) struct IntrinsicWriteTarget {
 /// Conservative effects activated before a top-level item or callable body.
 /// This deliberately has no within-body ordering: all of a body's writes
 /// precede its first modeled native guard.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq)]
 pub(super) struct NativePointEffects {
     pub(super) roots: IntrinsicRoots,
     prototype_site_count: usize,

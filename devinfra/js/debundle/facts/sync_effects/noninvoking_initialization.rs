@@ -141,7 +141,7 @@ impl NativeConstructorCandidate {
 
 /// Terminal evidence for this source owner only. Never composed through a
 /// child ledger, generic Evaluate result, callee outcome or invocation memo.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub(crate) struct CompletedInitialization {
     owner: SourceUnitOrdinal,
     dependencies: ProofDependencies,

@@ -1604,3 +1604,8 @@ debundle_e2e_test(
         "@crates//:tempfile",
     ],
 )
+
+debundle_e2e_test(
+    name = "nested_tainted_reader_test",
+    env = {"DEBUNDLE_NESTED_MEMO_ELIGIBILITY": "1"},
+)

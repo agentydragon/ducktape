@@ -97,6 +97,10 @@ pub(in crate::facts::sync_effects) trait HeapContext:
     /// the kernel returns them in its ledger.
     fn world(&self) -> &World;
     fn world_mut(&mut self) -> &mut World;
+    fn active_cells(&self) -> &imbl::OrdMap<Id, super::super::value_model::LexicalCellId>;
+    fn active_cells_mut(
+        &mut self,
+    ) -> &mut imbl::OrdMap<Id, super::super::value_model::LexicalCellId>;
     /// Conditions under which the current settled prefix is valid at this
     /// moment: `World.prerequisites` plus whatever the adapter's queries have
     /// consumed since it was last folded in.

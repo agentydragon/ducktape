@@ -54,6 +54,7 @@ pub(in crate::facts::sync_effects) struct ProviderContext<'a> {
     /// The query's fresh heap: an isolated scope, so its cells never reach a
     /// caller's effects and no literal writability is proven.
     pub(in crate::facts::sync_effects) world: World,
+    active_cells: imbl::OrdMap<Id, super::super::value_model::LexicalCellId>,
     /// The retained-closure proof projects one closure and refuses a fork;
     /// an allocation-only body explores it.
     pub(in crate::facts::sync_effects) fork_policy: ForkPolicy,
@@ -166,6 +167,7 @@ impl<'a> ProviderContext<'a> {
             shadowed: shadowed.clone(),
             native_constructions: BTreeSet::new(),
             world: World::new(WorldScope::IsolatedProvider),
+            active_cells: imbl::OrdMap::new(),
             fork_policy,
         }
     }
@@ -435,6 +437,14 @@ impl HeapContext for ProviderContext<'_> {
     fn world(&self) -> &World {
         &self.world
     }
+    fn active_cells(&self) -> &imbl::OrdMap<Id, super::super::value_model::LexicalCellId> {
+        &self.active_cells
+    }
+    fn active_cells_mut(
+        &mut self,
+    ) -> &mut imbl::OrdMap<Id, super::super::value_model::LexicalCellId> {
+        &mut self.active_cells
+    }
     fn world_mut(&mut self) -> &mut World {
         &mut self.world
     }
@@ -575,6 +585,7 @@ impl NativeContext for ProviderContext<'_> {
 #[derive(Clone)]
 pub(in crate::facts::sync_effects) struct ProviderPath {
     world: World,
+    active_cells: imbl::OrdMap<Id, super::super::value_model::LexicalCellId>,
     unsupported_closures: BTreeSet<u32>,
     native_constructions: BTreeSet<NativeIntrinsic>,
 }
@@ -590,16 +601,12 @@ impl ProviderContext<'_> {
     /// identities are may-facts; a world the join refuses refuses the query.
     #[must_use]
     pub(in crate::facts::sync_effects) fn join(&mut self, leaves: Vec<ProviderPath>) -> bool {
-        let Joined {
-            world,
-            widened: _,
-            refused,
-        } = join_worlds(leaves.iter().map(|leaf| &leaf.world));
-        self.world = world;
-        for leaf in leaves {
-            self.unsupported_closures.extend(leaf.unsupported_closures);
-            self.native_constructions.extend(leaf.native_constructions);
-        }
+        let (mut path, refused) = ProviderPath::join(leaves);
+        path.unsupported_closures
+            .extend(std::mem::take(&mut self.unsupported_closures));
+        path.native_constructions
+            .extend(std::mem::take(&mut self.native_constructions));
+        self.enter(path);
         refused.is_none()
     }
 }
@@ -612,6 +619,7 @@ impl ControlContext for ProviderContext<'_> {
     fn branch(&self) -> ProviderPath {
         ProviderPath {
             world: self.world.clone(),
+            active_cells: self.active_cells.clone(),
             unsupported_closures: self.unsupported_closures.clone(),
             native_constructions: self.native_constructions.clone(),
         }
@@ -619,10 +627,12 @@ impl ControlContext for ProviderContext<'_> {
     fn enter(&mut self, path: ProviderPath) {
         let ProviderPath {
             world,
+            active_cells,
             unsupported_closures,
             native_constructions,
         } = path;
         self.world = world;
+        self.active_cells = active_cells;
         self.unsupported_closures = unsupported_closures;
         self.native_constructions = native_constructions;
     }
@@ -631,5 +641,91 @@ impl ControlContext for ProviderContext<'_> {
         // behavior. Only the shared transfers can certify an operation, and
         // there is no application state to summarize into.
         Disposition::Refused
+    }
+}
+
+impl ProviderPath {
+    fn join(leaves: Vec<Self>) -> (Self, Option<super::super::world::join::JoinRefusal>) {
+        let mut joined = join_worlds(leaves.iter().map(|leaf| &leaf.world));
+        let active_cells = super::super::alternatives::join_active_cells(
+            leaves.iter().map(|leaf| &leaf.active_cells),
+            &mut joined,
+        );
+        let Joined {
+            world,
+            widened: _,
+            refused,
+        } = joined;
+
+        let mut unsupported_closures = BTreeSet::new();
+        let mut native_constructions = BTreeSet::new();
+        for leaf in leaves {
+            unsupported_closures.extend(leaf.unsupported_closures);
+            native_constructions.extend(leaf.native_constructions);
+        }
+        (
+            Self {
+                world,
+                active_cells,
+                unsupported_closures,
+                native_constructions,
+            },
+            refused,
+        )
+    }
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::super::super::value_model::LexicalCellId;
+    use super::super::super::world::join::JoinRefusal;
+    use super::*;
+    use swc_common::SyntaxContext;
+
+    #[test]
+    fn divergent_frames_keep_max_leaf_revisions_plus_one() {
+        let mut left = ProviderPath {
+            world: World::new(WorldScope::IsolatedProvider),
+            active_cells: imbl::OrdMap::new(),
+            unsupported_closures: BTreeSet::new(),
+            native_constructions: BTreeSet::new(),
+        };
+        let mut right = left.clone();
+        left.world.revision = super::super::super::world::Revision {
+            prefix: 3,
+            reachability: 17,
+        };
+        right.world.revision = super::super::super::world::Revision {
+            prefix: 23,
+            reachability: 5,
+        };
+        right
+            .active_cells
+            .insert(("value".into(), SyntaxContext::empty()), LexicalCellId(0));
+        let (joined, refused) = ProviderPath::join(vec![left, right]);
+        assert_eq!(refused, Some(JoinRefusal::DivergentActiveCells));
+        assert_eq!(joined.world.revision.prefix, 24);
+        assert_eq!(joined.world.revision.reachability, 18);
+    }
+
+    #[test]
+    fn equal_worlds_still_refuse_divergent_provider_frames() {
+        let left = ProviderPath {
+            world: World::new(WorldScope::IsolatedProvider),
+            active_cells: imbl::OrdMap::new(),
+            unsupported_closures: BTreeSet::new(),
+            native_constructions: BTreeSet::new(),
+        };
+        let mut right = left.clone();
+        right
+            .active_cells
+            .insert(("value".into(), SyntaxContext::empty()), LexicalCellId(0));
+        let before = left.world.revision;
+        let (joined, refused) = ProviderPath::join(vec![left, right]);
+        assert_eq!(refused, Some(JoinRefusal::DivergentActiveCells));
+        assert!(joined.active_cells.is_empty());
+        assert!(joined.world.reachability.incomplete);
+        assert!(joined.world.revision.prefix > before.prefix);
+        assert!(joined.world.revision.reachability > before.reachability);
     }
 }

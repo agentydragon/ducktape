@@ -138,7 +138,7 @@ pub(super) fn create(
     }
     let captures = lexical_captures(
         index,
-        &context.world().active_cells,
+        context.active_cells(),
         &frame.environment,
         callable,
         context.capture_policy(),

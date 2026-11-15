@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use swc_common::Span;
 use swc_ecma_ast::Id;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(super) enum DomainCoverage {
     #[default]
     Unknown,
@@ -97,7 +97,7 @@ pub(crate) struct LexicalBindingEffectReceipt {
     pub(super) calls: Vec<LocalCallReceipt>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum BindingEffectCoverage {
     #[default]
@@ -348,7 +348,7 @@ impl LocalBodyIdentity {
 /// This describes only the operations of one execution. It never identifies
 /// or certifies a whole source owner, and may travel through invocation memos.
 #[must_use]
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(super) struct EffectCoverageFragment {
     initialization: Option<Box<InitializationEffectCoverage>>,
     lexical: Option<Box<LexicalEffectCoverage>>,
@@ -358,7 +358,7 @@ pub(super) struct EffectCoverageFragment {
 /// The three existing initialization domains remain independent, but are
 /// grouped behind one pointer so every recursive fragment does not carry
 /// three inline proof-dependency payloads.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 struct InitializationEffectCoverage {
     global_properties: DomainCoverage,
     general_heap: DomainCoverage,
@@ -368,7 +368,7 @@ struct InitializationEffectCoverage {
 /// Kept behind one pointer because `ProofDependencies` contains several
 /// inline set headers. This data is absent on the conservative default path,
 /// which is common in deep ordinary call execution.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 struct LexicalEffectCoverage {
     reads: DomainCoverage,
     rebinds: DomainCoverage,
@@ -744,6 +744,10 @@ impl EffectCoverageFragment {
 
     pub(super) fn uncertain_completion(&mut self) {
         self.completion = Completion::default();
+    }
+
+    pub(super) fn is_exact_normal(&self) -> bool {
+        self.completion.is_exact_normal()
     }
 
     pub(super) fn normal_dependencies(&self) -> Option<ProofDependencies> {

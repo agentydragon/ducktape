@@ -75,7 +75,6 @@ impl World {
         let World {
             scope,
             cells: _,
-            active_cells: _,
             module: _,
             surface: _,
             descriptors: _,
@@ -92,13 +91,6 @@ impl World {
         if worlds.iter().any(|world| world.scope != *scope) {
             refused = Some(JoinRefusal::DivergentScope);
         }
-        let active_cells = intersect_ord_maps(&each(worlds, |world| &world.active_cells));
-        if worlds
-            .iter()
-            .any(|world| world.active_cells != first.active_cells)
-        {
-            refused = refused.or(Some(JoinRefusal::DivergentActiveCells));
-        }
         let mut arrays = DenseArrays::join(&each(worlds, |world| &world.arrays), &mut widened);
         let mut surface =
             ObjectSurfaceStore::join(&each(worlds, |world| &world.surface), &mut widened);
@@ -112,7 +104,6 @@ impl World {
         let world = World {
             scope: *scope,
             cells: LexicalCells::join(&each(worlds, |world| &world.cells), &mut widened),
-            active_cells,
             module: ModuleBindings::join(&each(worlds, |world| &world.module), &mut widened),
             surface,
             descriptors: join_descriptor_maps(&each(worlds, |world| &world.descriptors)),
@@ -739,12 +730,10 @@ fn intersect_ord_maps<K: Ord + Clone, V: Clone + PartialEq>(
 
 #[cfg(test)]
 mod tests {
-    use super::super::cells::{CellInitialization, LexicalCell};
     use super::super::prefix_values::{PrefixValues, TopBindings};
     use super::super::{World, WorldScope};
     use super::{JoinRefusal, Joined};
     use crate::facts::abstract_domain::value::{Kind, Value};
-    use crate::facts::sync_effects::local_operations::LocalBinding;
     use crate::facts::sync_effects::value_model::{AbstractValue, DenseArray, Values};
     use std::sync::Arc;
     use swc_atoms::Atom;
@@ -846,54 +835,6 @@ mod tests {
         assert_eq!(joined.refused, Some(JoinRefusal::EmptySet));
         assert!(joined.widened);
         assert!(joined.world.reachability.incomplete);
-    }
-
-    #[test]
-    fn divergent_active_cells_are_refused_and_the_rest_still_joins() {
-        let mut left = world_with_prefix("a", object(1));
-        let mut right = left.clone();
-        let cell = right.cells.insert(LexicalCell {
-            values: Values::from([object(3)]),
-            kind: LocalBinding::Let,
-            initialization: CellInitialization::Initialized,
-        });
-        right.active_cells.insert(binding("x"), cell);
-        right
-            .module
-            .prefix_values
-            .insert(&binding("a"), Values::from([object(2)]));
-        left.publication.global_escaped_callbacks.insert(object(4));
-
-        let joined = World::join(&[&left, &right]);
-
-        assert_eq!(joined.refused, Some(JoinRefusal::DivergentActiveCells));
-        assert!(joined.widened);
-        assert!(joined.world.active_cells.is_empty());
-        assert!(joined.world.reachability.incomplete);
-        assert_eq!(
-            joined.world.module.prefix_values[&binding("a")],
-            Values::from([object(1), object(2)])
-        );
-        assert!(
-            joined
-                .world
-                .publication
-                .global_escaped_callbacks
-                .contains(&object(4))
-        );
-        // A cell missing on one path may hold anything there.
-        let joined_cell = joined.world.cells.slots[cell.0]
-            .as_deref()
-            .expect("cell survives the join");
-        assert!(
-            joined_cell
-                .values
-                .contains(&AbstractValue::Value(Value::Top))
-        );
-        assert_eq!(
-            joined_cell.initialization,
-            CellInitialization::MaybeInitialized
-        );
     }
 
     #[test]

@@ -45,8 +45,8 @@ pub(super) fn instantiate_parameter_cells(
             kind: LocalBinding::Parameter,
             initialization: CellInitialization::Uninitialized,
         });
-        world.active_cells.insert(binding.clone(), cell);
         world.revision.bump_prefix();
+        context.active_cells_mut().insert(binding.clone(), cell);
     }
 }
 
@@ -66,8 +66,8 @@ pub(super) fn instantiate_body_cells(
         if missing_activation_binding(body, binding, frame) {
             // A captured context can carry a prior activation's cell. Its
             // source binding is not this missing function value.
-            if context.world().active_cells.contains_key(binding) {
-                context.world_mut().active_cells.remove(binding);
+            if context.active_cells().contains_key(binding) {
+                context.active_cells_mut().remove(binding);
             }
             continue;
         }
@@ -91,7 +91,7 @@ pub(super) fn instantiate_body_cells(
                 LocalBinding::Let | LocalBinding::Const => CellInitialization::Uninitialized,
             },
         });
-        world.active_cells.insert(binding.clone(), cell);
+        context.active_cells_mut().insert(binding.clone(), cell);
         allocated = true;
     }
     if allocated {
@@ -112,7 +112,7 @@ pub(super) fn declared_binding_stored(
     let Some(values) = frame.environment.get(binding) else {
         return;
     };
-    let active = context.world().active_cells.get(binding).copied();
+    let active = context.active_cells().get(binding).copied();
     let id = match active {
         Some(id) => id,
         None => {
@@ -131,8 +131,8 @@ pub(super) fn declared_binding_stored(
                 kind: *kind,
                 initialization: CellInitialization::Initialized,
             });
-            world.active_cells.insert(binding.clone(), id);
             world.revision.bump_prefix();
+            context.active_cells_mut().insert(binding.clone(), id);
             id
         }
     };
@@ -153,7 +153,7 @@ pub(super) fn declarative_binding_operation(
     if !matches!(
         body.bindings.get(binding),
         Some(LocalBinding::Parameter | LocalBinding::Let | LocalBinding::Const)
-    ) || context.world().active_cells.contains_key(binding)
+    ) || context.active_cells().contains_key(binding)
         || context.cell_policy().owns(binding)
     {
         // Live captured cells and other activation kinds need their own
@@ -173,7 +173,7 @@ pub(super) fn store_captured(
     values: &super::super::value_model::Values,
     span: Span,
 ) -> Result<AllocationValue, RemainderDisposition> {
-    if let Some(id) = context.world().active_cells.get(binding).copied() {
+    if let Some(id) = context.active_cells().get(binding).copied() {
         let world = context.world_mut();
         if let Some((result, changed)) = world.cells.store_captured(id, values) {
             if changed {

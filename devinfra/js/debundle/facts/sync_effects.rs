@@ -25,6 +25,7 @@ mod runtime_callbacks;
 mod runtime_heap;
 mod runtime_inference;
 mod runtime_models;
+mod runtime_world;
 mod strict_provider;
 mod value_model;
 mod world;

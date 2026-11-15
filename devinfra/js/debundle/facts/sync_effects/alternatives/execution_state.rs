@@ -11,20 +11,23 @@
 
 use super::super::allocation_transfer::AllocationJudgment;
 use super::super::interpreter::{CallbackFallbackSummary, Outcome};
+use super::super::runtime_world::RuntimeWorld;
+use super::super::value_model::LexicalCellId;
 use super::super::world::World;
 use super::super::world::join::{JoinRefusal, Joined};
 use super::outcome::join_allocation_judgments;
 use super::{PathState, join_worlds};
+use imbl::OrdMap;
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
 use swc_ecma_ast::Id;
 
 /// The path-owned part of `ExecutionState`, with the running outcome of the
 /// activation that forked and the executor's allocation judgment.
 #[derive(Clone)]
 pub(in crate::facts::sync_effects) struct ExecutionPath {
-    pub(in crate::facts::sync_effects) world: Arc<World>,
+    pub(in crate::facts::sync_effects) world: RuntimeWorld,
+    pub(in crate::facts::sync_effects) active_cells: OrdMap<Id, LexicalCellId>,
     pub(in crate::facts::sync_effects) callback_fallback: CallbackFallbackSummary,
     pub(in crate::facts::sync_effects) fallback_callback_sizes: Option<(usize, usize)>,
     pub(in crate::facts::sync_effects) fallback_outcome: Outcome,
@@ -49,12 +52,19 @@ pub(in crate::facts::sync_effects) struct JoinedPath {
 }
 
 impl ExecutionPath {
-    pub(in crate::facts::sync_effects) fn join(leaves: Vec<Self>) -> JoinedPath {
+    pub(in crate::facts::sync_effects) fn join(
+        leaves: Vec<Self>,
+        run: &RuntimeWorld,
+    ) -> JoinedPath {
+        let mut joined = join_worlds(leaves.iter().map(|leaf| &*leaf.world));
+        let active_cells =
+            super::join_active_cells(leaves.iter().map(|leaf| &leaf.active_cells), &mut joined);
         let Joined {
             world,
             widened: _,
             refused,
-        } = join_worlds(leaves.iter().map(|leaf| leaf.world.as_ref()));
+        } = joined;
+        let world = run.joined(world);
         let allocation_judgment =
             join_allocation_judgments(leaves.iter().map(|leaf| &leaf.allocation_judgment));
         // The fallback's once-per-statement memos hold only where every leaf
@@ -90,6 +100,7 @@ impl ExecutionPath {
         for leaf in leaves {
             let ExecutionPath {
                 world: _,
+                active_cells: _,
                 callback_fallback: leaf_fallback,
                 fallback_callback_sizes: _,
                 fallback_outcome,
@@ -130,7 +141,8 @@ impl ExecutionPath {
         }
         JoinedPath {
             path: ExecutionPath {
-                world: Arc::new(world),
+                world,
+                active_cells,
                 callback_fallback,
                 fallback_callback_sizes,
                 fallback_outcome: Outcome::join(fallback_outcomes),
@@ -155,4 +167,95 @@ fn intersection<'a, T: Ord + Clone + 'a>(
         joined.retain(|item| set.contains(item));
     }
     joined
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::super::world::WorldScope;
+    use super::*;
+    use swc_common::SyntaxContext;
+
+    fn path() -> ExecutionPath {
+        ExecutionPath {
+            world: RuntimeWorld::new(World::new(WorldScope::Application)),
+            active_cells: OrdMap::new(),
+            callback_fallback: CallbackFallbackSummary::default(),
+            fallback_callback_sizes: None,
+            fallback_outcome: Outcome::default(),
+            fallback_local_owners: BTreeSet::new(),
+            fallback_local_deferred: BTreeMap::new(),
+            allocation_judgment: AllocationJudgment::Opaque,
+            outcome: Outcome::default(),
+        }
+    }
+
+    #[test]
+    fn equal_worlds_still_refuse_divergent_application_frames() {
+        let left = path();
+        let mut right = left.clone();
+        right
+            .active_cells
+            .insert(("value".into(), SyntaxContext::empty()), LexicalCellId(0));
+        let before = left.world.revision;
+        let old_version = left.world.version();
+        let run = left.world.clone();
+        let joined = ExecutionPath::join(vec![left, right], &run);
+        assert_eq!(joined.refused, Some(JoinRefusal::DivergentActiveCells));
+        assert!(joined.path.active_cells.is_empty());
+        assert!(joined.path.world.reachability.incomplete);
+        assert!(joined.path.world.revision.prefix > before.prefix);
+        assert!(joined.path.world.revision.reachability > before.reachability);
+        assert_ne!(joined.path.world.version(), old_version);
+    }
+
+    #[test]
+    fn empty_join_keeps_the_run_allocator_and_mints_a_unique_token() {
+        let run = RuntimeWorld::new(World::new(WorldScope::Application));
+        let empty = ExecutionPath::join(Vec::new(), &run);
+        assert_eq!(empty.refused, Some(JoinRefusal::EmptySet));
+        assert!(empty.path.world.reachability.incomplete);
+        let mut sibling = run.clone();
+        sibling.make_mut();
+        assert_ne!(empty.path.world.version(), run.version());
+        assert_ne!(empty.path.world.version(), sibling.version());
+    }
+
+    #[test]
+    fn divergent_frames_keep_max_leaf_revisions_plus_one() {
+        let mut left = path();
+        let mut right = left.clone();
+        left.world.make_mut().revision = super::super::super::world::Revision {
+            prefix: 3,
+            reachability: 17,
+        };
+        right.world.make_mut().revision = super::super::super::world::Revision {
+            prefix: 23,
+            reachability: 5,
+        };
+        right
+            .active_cells
+            .insert(("value".into(), SyntaxContext::empty()), LexicalCellId(0));
+        let run = left.world.clone();
+        let joined = ExecutionPath::join(vec![left, right], &run);
+        assert_eq!(joined.refused, Some(JoinRefusal::DivergentActiveCells));
+        assert_eq!(joined.path.world.revision.prefix, 24);
+        assert_eq!(joined.path.world.revision.reachability, 18);
+    }
+
+    #[test]
+    fn scope_refusal_precedes_frame_refusal_and_heap_still_joins() {
+        let mut left = path();
+        let mut right = left.clone();
+        right
+            .active_cells
+            .insert(("value".into(), SyntaxContext::empty()), LexicalCellId(0));
+        left.world.make_mut().arrays.unknown_contents.insert(1);
+        right.world.make_mut().scope = WorldScope::IsolatedProvider;
+        right.world.make_mut().arrays.unknown_contents.insert(2);
+        let run = left.world.clone();
+        let joined = ExecutionPath::join(vec![left, right], &run);
+        assert_eq!(joined.refused, Some(JoinRefusal::DivergentScope));
+        assert!(joined.path.world.arrays.unknown_contents.contains(&1));
+        assert!(joined.path.world.arrays.unknown_contents.contains(&2));
+    }
 }

@@ -215,7 +215,7 @@ pub struct CallbackFactoryWriteWitness {
     pub property: Option<String>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct SynchronousCalls {
     pub initializer_binding_effects:
         Option<Box<crate::reports::schema::InitializerBindingEffectsUse>>,
@@ -297,7 +297,7 @@ pub(crate) struct SynchronousCalls {
 /// both observed and assumed is observed. While the interpreter builds an
 /// invocation's outcome the maps are relative to that invocation; the
 /// enclosing statement re-tags them when an assumed path merges them.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub(crate) struct FallbackOnlyEffects {
     pub reads: BTreeMap<Id, AssumedEffectReason>,
     pub rebinds: BTreeMap<Id, AssumedEffectReason>,
@@ -370,7 +370,7 @@ impl SynchronousCalls {
 /// `call_span`; factory and class purity summaries remain unchanged. An
 /// author assertion may supply otherwise-unproved prototype premises, but
 /// native/source evidence can establish them without an assertion.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub(crate) struct LocalRecordFactoryPurityCertificate {
     pub call_span: swc_common::Span,
     pub checked_owners: BTreeSet<SourceUnitOrdinal>,

@@ -105,7 +105,7 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
     fn binding_values<'a>(&'a self, binding: &Id, frame: &'a LocalFrame) -> Option<&'a Values> {
         if self.executor.inputs.top_bindings.contains(binding) {
             self.executor.state.world.module.prefix_values.get(binding)
-        } else if let Some(cell) = self.executor.state.world.active_cells.get(binding) {
+        } else if let Some(cell) = self.executor.state.active_cells.get(binding) {
             Some(&self.executor.state.world.cells[cell.0].values)
         } else {
             frame.environment.get(binding)
@@ -467,7 +467,7 @@ impl BindingContext for LocalExecutionContext<'_, '_, '_> {
         }
         let values = self.executor.evaluate_binding(binding, &frame.environment);
         if self.executor.inputs.top_bindings.contains(binding)
-            || (self.executor.state.world.active_cells.contains_key(binding)
+            || (self.executor.state.active_cells.contains_key(binding)
                 && !self.body.bindings.contains_key(binding))
         {
             frame
@@ -498,7 +498,7 @@ impl BindingContext for LocalExecutionContext<'_, '_, '_> {
             EffectCoverageFragment::initialized_module_read()
         } else if normal
             && frame.initialized_bindings.contains(binding)
-            && !self.executor.state.world.active_cells.contains_key(binding)
+            && !self.executor.state.active_cells.contains_key(binding)
         {
             EffectCoverageFragment::no_effects()
         } else {
@@ -908,6 +908,14 @@ impl HeapContext for LocalExecutionContext<'_, '_, '_> {
     }
     fn world(&self) -> &World {
         &self.executor.state.world
+    }
+    fn active_cells(&self) -> &imbl::OrdMap<Id, super::super::value_model::LexicalCellId> {
+        &self.executor.state.active_cells
+    }
+    fn active_cells_mut(
+        &mut self,
+    ) -> &mut imbl::OrdMap<Id, super::super::value_model::LexicalCellId> {
+        &mut self.executor.state.active_cells
     }
     fn world_mut(&mut self) -> &mut World {
         self.executor.state.world_mut()

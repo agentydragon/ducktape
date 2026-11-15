@@ -12,7 +12,7 @@ pub(super) mod prefix_values;
 
 use super::allocation_transfer::LiteralHeap;
 use super::kernel::frame::CallableSelection;
-use super::value_model::{CallSite, Captured, Context, DenseArray, LexicalCellId, Values};
+use super::value_model::{CallSite, Captured, Context, DenseArray, Values};
 use crate::analysis_inputs::ProofDependencies;
 use crate::reports::schema::FirstClassMembersPublication;
 use cells::{CellTrace, LexicalCells};
@@ -45,7 +45,6 @@ pub(super) struct World {
     pub(super) scope: WorldScope,
     /// Arena of instantiated lexical cells; ids are never reused.
     pub(super) cells: LexicalCells,
-    pub(super) active_cells: OrdMap<Id, LexicalCellId>,
     pub(super) module: ModuleBindings,
     pub(super) surface: ObjectSurfaceStore,
     /// Captured own-descriptor maps by the call site that captured them.
@@ -165,7 +164,6 @@ impl World {
         Self {
             scope,
             cells: LexicalCells::default(),
-            active_cells: OrdMap::new(),
             module: ModuleBindings::default(),
             surface: ObjectSurfaceStore::default(),
             descriptors: OrdMap::new(),
@@ -211,7 +209,6 @@ impl World {
         let World {
             scope: _,
             cells: _,
-            active_cells,
             module,
             surface,
             descriptors,
@@ -270,9 +267,6 @@ impl World {
         }
         for captured in native.revoked_audited_results.values() {
             trace.retained(captured);
-        }
-        for cell in active_cells.values() {
-            trace.cell(*cell);
         }
     }
 }

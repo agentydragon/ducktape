@@ -218,7 +218,7 @@ pub(super) fn unknown() -> Values {
     Values::from([AbstractValue::Value(Value::Top)])
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(super) struct Outcome {
     pub(super) effects: SynchronousCalls,
     /// The callable body was entered, rather than only conservatively
@@ -556,7 +556,7 @@ pub(super) struct PrivateCallbackFactoryResult {
 /// Callback roots retained by a fallback stay escaped for the rest of the
 /// chunk. Cache their synchronous read closure once; initialization timing is
 /// checked against the current prefix when the summary is applied.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq)]
 pub(super) struct CallbackFallbackSummary {
     pub(super) expanded: BTreeSet<SourceUnitOrdinal>,
     pub(super) deferred: BTreeMap<Id, SourceUnitOrdinal>,
@@ -842,7 +842,7 @@ pub(super) struct NewEvaluation {
     operation_coverage: Option<EffectCoverageFragment>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq)]
 pub(super) struct RecordFactoryPrototypePremises {
     constructor_fields: BTreeSet<(u32, String)>,
     missing_input_fields: BTreeSet<(u32, String)>,
@@ -1190,13 +1190,17 @@ impl ExecutionInputs<'_> {
     }
 }
 
+#[path = "invocation_eligibility.rs"]
+mod invocation_eligibility;
+
 /// Execution-control state of the current run beside the semantic `World`.
 /// Observations of admission predicates are not here either; see
 /// [`Observations`].
 pub(super) struct ExecutionState {
     /// Program-prefix values, heap facts, reachability and identity-bearing
     /// cells, copy-on-write so a fork clones the handle, not the contents.
-    pub(super) world: Arc<World>,
+    pub(super) world: super::runtime_world::RuntimeWorld,
+    pub(super) active_cells: OrdMap<Id, LexicalCellId>,
     native_point_effects: NativePointEffects,
     activated_native_effects: BTreeSet<(SourceUnitOrdinal, Option<u32>)>,
     pub(super) author_host_contract_uses: Vec<crate::reports::schema::ReentryFreeOperationUse>,
@@ -1243,6 +1247,7 @@ pub(super) struct ExecutionState {
     /// Context lookup only; completed outcomes live in the shared fact store.
     invocation_memos: OrdMap<InvocationSignature, ProgramPoint>,
     export_callback_memos: ExportCallbackMemos,
+    eligibility: invocation_eligibility::EligibilityProbe,
 }
 
 /// Which export surface an export-callback walk starts from.
@@ -1362,7 +1367,7 @@ impl ExportCallbackMemos {
 /// returned in its `RuntimeResult`, and drained into the owner's
 /// `SynchronousCalls` by `execute_owner`. The fields are private so a fact
 /// enters only through a named admission predicate.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq)]
 pub(super) struct Observations {
     native_integrity_checks: BTreeSet<NativeIntegrityCheck>,
     native_prototype_property_checks: BTreeMap<String, NativePrototypePropertyCheck>,
@@ -1503,6 +1508,7 @@ impl ExecutionState {
     ) -> ExecutionPath {
         let ExecutionState {
             world,
+            active_cells,
             callback_fallback,
             fallback_callback_sizes,
             fallback_outcome,
@@ -1516,6 +1522,7 @@ impl ExecutionState {
             invocation_memos: _,
             // Validated against the world contents each walk read.
             export_callback_memos: _,
+            eligibility: _,
             // Control state: the same at the end of every leaf's body as at
             // the fork, because each leaf runs the same remaining body.
             active_class_member_promotions: _,
@@ -1549,6 +1556,7 @@ impl ExecutionState {
         } = self;
         ExecutionPath {
             world: world.clone(),
+            active_cells: active_cells.clone(),
             callback_fallback: callback_fallback.clone(),
             fallback_callback_sizes: *fallback_callback_sizes,
             fallback_outcome: fallback_outcome.clone(),
@@ -1567,6 +1575,7 @@ impl ExecutionState {
     ) -> (super::allocation_transfer::AllocationJudgment, Outcome) {
         let ExecutionPath {
             world,
+            active_cells,
             callback_fallback,
             fallback_callback_sizes,
             fallback_outcome,
@@ -1575,7 +1584,9 @@ impl ExecutionState {
             allocation_judgment,
             outcome,
         } = path;
+        self.eligibility.clear_retained("path_enter");
         self.world = world;
+        self.active_cells = active_cells;
         self.callback_fallback = callback_fallback;
         self.fallback_callback_sizes = fallback_callback_sizes;
         self.fallback_outcome = fallback_outcome;
@@ -1612,6 +1623,7 @@ impl Executor<'_, '_> {
     pub(super) fn checkpoint_root_attempt(&self) -> RootAttemptCheckpoint {
         let ExecutionState {
             world: _,
+            active_cells: _,
             callback_fallback: _,
             fallback_callback_sizes: _,
             fallback_outcome: _,
@@ -1635,6 +1647,7 @@ impl Executor<'_, '_> {
             invocation_memos: _,
             // Validated against whichever world is current, restored or not.
             export_callback_memos: _,
+            eligibility: _,
             // A source function of the program alone.
             class_member_effects: _,
             // Control state: an owner's body leaves it as it found it.
@@ -1686,6 +1699,7 @@ impl Executor<'_, '_> {
             observations,
             evaluation_effects,
         } = checkpoint;
+        self.state.eligibility.clear_retained("rewind");
         let attempted = self.state.world.clone();
         let (allocation_judgment, _) = self.state.enter(path);
         super::alternatives::separate_from_abandoned(&attempted, self.state.world_mut());
@@ -1709,6 +1723,7 @@ impl Executor<'_, '_> {
 
 impl ExecutionState {
     pub(super) fn clear_invocation_memos(&mut self, queries: &RuntimeQueries<'_, '_>) {
+        self.eligibility.clear_owner();
         for (_, point) in std::mem::take(&mut self.invocation_memos) {
             queries.retire_invocation_memo(point);
         }
@@ -1724,13 +1739,15 @@ impl ExecutionState {
 
     /// Detach the world from any shared fork before writing to it.
     pub(super) fn world_mut(&mut self) -> &mut World {
-        Arc::make_mut(&mut self.world)
+        self.eligibility.world_access();
+        self.world.make_mut()
     }
 
     /// Only RuntimeRules calls this, after the owner executor and every
     /// single-consumer transfer payload have unwound. The world lists its own
     /// roots; the control state adds the retained fallback returns.
     pub(super) fn reclaim_lexical_cells(&mut self, last_owner: bool) {
+        self.eligibility.clear_retained("gc");
         if !self.world.cells.collection_due(last_owner) {
             return;
         }
@@ -1740,6 +1757,7 @@ impl ExecutionState {
         assert!(self.invocation_memos.is_empty());
         let mut trace = CellTrace::new(&self.world.cells);
         self.world.trace_roots(&mut trace);
+        trace.frame(&self.active_cells);
         trace.values(&self.fallback_outcome.returns);
         let (marked, work) = trace.finish();
         self.world_mut().cells.sweep(&marked, work);
@@ -7420,6 +7438,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     pub(super) fn intern_captures(&mut self, captures: LexicalCaptures) -> CapturedContext {
+        self.state.eligibility.clear_retained("interner");
         self.state.capture_contexts.intern(captures)
     }
 
@@ -7460,6 +7479,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn intern_callback_set(&mut self, values: Values) -> Captured<Values> {
+        self.state.eligibility.clear_retained("interner");
         self.state.callback_sets.intern(values)
     }
 
@@ -9024,7 +9044,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     pub(super) fn closure_captures(&mut self, key: u32, captures: &Context) -> CapturedContext {
         let captured = lexical_captures(
             self.inputs.index,
-            &self.state.world.active_cells,
+            &self.state.active_cells,
             captures,
             key,
             self.inputs.capture_policy(),
@@ -10223,7 +10243,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 // missing prefix value for a local binding is TDZ.
                 Values::from([AbstractValue::Value(Value::Unavailable)])
             }
-        } else if let Some(cell) = self.state.world.active_cells.get(id) {
+        } else if let Some(cell) = self.state.active_cells.get(id) {
             self.state.world.cells[cell.0].values.clone()
         } else if let Some(values) = env.get(id) {
             values.clone()
@@ -10487,7 +10507,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         reached.extend(frame.environment.values().flatten().cloned());
         reached.extend(
             self.state
-                .world
                 .active_cells
                 .values()
                 .flat_map(|cell| self.state.world.cells[cell.0].values.iter().cloned()),
@@ -10498,7 +10517,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .iter()
                 .map(|object| AbstractValue::Value(Value::Alloc(Kind::Object, *object))),
         );
-        let cells: Vec<_> = self.state.world.active_cells.values().copied().collect();
+        let cells: Vec<_> = self.state.active_cells.values().copied().collect();
         self.havoc_cells(cells);
         self.publish_values(
             &reached,
@@ -10602,7 +10621,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     paths.push(self.state.path(&self.allocation_judgment, &outcome));
                     frames.push(frame);
                 }
-                let JoinedPath { path, refused } = ExecutionPath::join(paths);
+                let JoinedPath { path, refused } = ExecutionPath::join(paths, &self.state.world);
                 let mut context = LocalExecutionContext {
                     executor: self,
                     outcome: &mut outcome,
@@ -11204,7 +11223,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         fresh_checked_constructor: bool,
     ) -> Outcome {
         let outer_cells = std::mem::replace(
-            &mut self.state.world_mut().active_cells,
+            &mut self.state.active_cells,
             captured
                 .as_ref()
                 .map(|context| context.values.cells.clone())
@@ -11238,10 +11257,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .insert(AbstractValue::Value(Value::Unavailable));
         }
         if !outcome.complete || outcome.unknown_call {
-            let cells: Vec<_> = self.state.world.active_cells.values().copied().collect();
+            let cells: Vec<_> = self.state.active_cells.values().copied().collect();
             self.havoc_cells(cells);
         }
-        self.state.world_mut().active_cells = outer_cells;
+        self.state.active_cells = outer_cells;
         outcome
     }
 
@@ -11382,7 +11401,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     && body
                         .captured_writes()
                         .iter()
-                        .all(|binding| self.state.world.active_cells.contains_key(binding))
+                        .all(|binding| self.state.active_cells.contains_key(binding))
                     && body.free_reads().iter().all(|binding| {
                         env.contains_key(binding)
                             || self.inputs.top_bindings.contains(binding)
@@ -11486,7 +11505,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             && body
                 .captured_writes()
                 .iter()
-                .all(|binding| self.state.world.active_cells.contains_key(binding))
+                .all(|binding| self.state.active_cells.contains_key(binding))
             && body.free_reads().iter().all(|binding| {
                 env.contains_key(binding)
                     || self.inputs.top_bindings.contains(binding)
@@ -11547,9 +11566,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         // Source-summary lanes pre-evaluate assignments and flatten control flow.
         // They cannot preserve a live mutable capture's ordered value proof.
-        let cells: Vec<_> = self.state.world.active_cells.values().copied().collect();
+        let cells: Vec<_> = self.state.active_cells.values().copied().collect();
         self.havoc_cells(cells);
-        for (binding, cell) in &self.state.world.active_cells {
+        for (binding, cell) in &self.state.active_cells {
             env.insert(
                 binding.clone(),
                 self.state.world.cells[cell.0].values.clone(),
@@ -13988,7 +14007,8 @@ pub(crate) fn annotate_synchronous_calls(
         .map(|key| AbstractValue::Value(Value::Alloc(Kind::Function, key)))
         .collect();
     let state = ExecutionState {
-        world: Arc::new(world),
+        world: super::runtime_world::RuntimeWorld::new(world),
+        active_cells: OrdMap::new(),
         native_point_effects: index.initial_native_point_effects.clone(),
         activated_native_effects: BTreeSet::new(),
         author_host_contract_uses: Vec::new(),
@@ -14020,6 +14040,7 @@ pub(crate) fn annotate_synchronous_calls(
         active: BTreeSet::new(),
         invocation_memos: OrdMap::new(),
         export_callback_memos: ExportCallbackMemos::default(),
+        eligibility: invocation_eligibility::EligibilityProbe::new(),
     };
     let results =
         super::runtime_inference::infer_synchronous_execution(&inputs, state, facts.len());
