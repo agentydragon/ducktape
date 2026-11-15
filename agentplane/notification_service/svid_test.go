@@ -320,3 +320,56 @@ func TestAnIdentityMessagesAndSubscribesForAnIdentityRunSession(t *testing.T) {
 		t.Fatalf("the recipient Identity subscribes its Session: %v", err)
 	}
 }
+
+// Start the production listener so component allowlists cannot mask a TLS admission mismatch.
+func TestProductionListenerAdmitsOnlyGrantedServiceDiagnostics(t *testing.T) {
+	ca := peertlstesting.NewCA(t)
+	serving := ca.IssueWithUsage(t, peertls.NotificationsURI, x509.ExtKeyUsageServerAuth)
+	service := start(t, func(c *config) {
+		c.RPC.TLS = &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile}
+		c.RPC.Auth = append(c.RPC.Auth, &listener.SPIFFEAuth{CAFile: serving.CAFile})
+		c.OperatorReaderServices = []string{peertls.AppURI}
+	})
+	for _, attempt := range []struct {
+		name   string
+		uri    string
+		bearer bool
+		want   codes.Code
+	}{
+		{"granted App", peertls.AppURI, false, codes.NotFound},
+		{"ungranted service", peertls.ActionsURI, false, codes.PermissionDenied},
+		{"mixed bearer cannot rescue ungranted peer", peertls.ActionsURI, true, codes.Unauthenticated},
+	} {
+		t.Run(attempt.name, func(t *testing.T) {
+			leaf := ca.Issue(t, attempt.uri)
+			security, err := (&peertls.ClientTLS{
+				CAFile: leaf.CAFile, ServerURI: peertls.NotificationsURI,
+				CertFile: leaf.CertFile, KeyFile: leaf.KeyFile, ClientURI: attempt.uri,
+			}).Credentials()
+			if err != nil {
+				t.Fatal(err)
+			}
+			conn, err := grpc.NewClient(service.rpcAddress, grpc.WithTransportCredentials(security))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
+			defer cancel()
+			if attempt.bearer {
+				ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+sandboxToken)
+			}
+			caller := notificationspb.NewNotificationsClient(conn)
+			_, err = caller.ReadInbox(ctx, &notificationspb.ReadInboxRequest{SessionId: uuid.NewString()})
+			if status.Code(err) != attempt.want {
+				t.Fatalf("service diagnostics: got %v, want %v", err, attempt.want)
+			}
+			if attempt.uri == peertls.AppURI {
+				_, err = caller.ListInboxes(ctx, &notificationspb.ListInboxesRequest{})
+				if status.Code(err) != codes.PermissionDenied {
+					t.Fatalf("diagnostics grant admitted owner method: %v", err)
+				}
+			}
+		})
+	}
+}

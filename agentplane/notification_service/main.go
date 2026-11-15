@@ -264,7 +264,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 	}
 	maps.Copy(methods, notificationMethods)
 	serverOptions := append(methods.ServerOptions(options.RequestTimeout), observability.GRPCServerOption())
-	security, err := c.RPC.ServerCredentials(peertls.NotificationsURI)
+	security, err := c.RPC.ServerCredentialsWithServices(peertls.NotificationsURI)
 	if err != nil {
 		return err
 	}
