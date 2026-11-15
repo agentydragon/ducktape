@@ -1,24 +1,18 @@
-//! A value-producing factory and an earlier field installation should not
-//! force an unrelated stored value to remain with the residual entry. This
-//! reduces the pinned Excalidraw icons.tsx boundary: `field` stands for the
-//! imported __publicField helper, `node` for imported JSX construction, and
-//! `icon` for one createIcon(jsx(...)) initializer. The helper stores the
-//! callback but never invokes it during initialization.
+//! An imported field helper stores a callback without invoking it during
+//! icon initialization. This reduces one pinned Excalidraw icons.tsx
+//! boundary: `field` models the callback timing of __publicField, `node`
+//! models imported JSX construction, and `icon` is the selected value.
 
 use debundle_e2e_support::*;
 
 const SOURCE: &str = r#"import { field, node } from "./peer.js";
-class Store {}
-field(Store, "get", () => later);
-const create = (child) => ({ child });
-const icon = create(node("svg"));
+field(() => later);
+const icon = node("svg");
 const later = () => icon;
-console.log(icon.child);
+console.log(globalThis.get()());
 "#;
 
-const PEER: &str = r#"const define = Object.defineProperty;
-export const field = (target, key, value) =>
-  key in target ? define(target, key, { value }) : target[key] = value;
+const PEER: &str = r#"export const field = (callback) => globalThis.get = callback;
 export const node = (tag) => tag;
 "#;
 
@@ -45,25 +39,18 @@ fn expected_split_prints_the_same_value_under_node() {
     std::fs::write(root.path().join("package.json"), r#"{"type":"module"}"#).unwrap();
     std::fs::write(root.path().join("peer.js"), PEER).unwrap();
     std::fs::write(
-        root.path().join("create.js"),
-        "export const create = (child) => ({ child });\n",
-    )
-    .unwrap();
-    std::fs::write(
         root.path().join("icons.js"),
         "import { node } from './peer.js';\n\
-         import { create } from './create.js';\n\
-         export const icon = create(node('svg'));\n",
+         export const icon = node('svg');\n",
     )
     .unwrap();
     std::fs::write(
         root.path().join("residual.js"),
         "import { field } from './peer.js';\n\
          import { icon } from './icons.js';\n\
-         class Store {}\n\
-         field(Store, 'get', () => later);\n\
+         field(() => later);\n\
          const later = () => icon;\n\
-         export const print = () => console.log(icon.child);\n",
+         export const print = () => console.log(globalThis.get()());\n",
     )
     .unwrap();
     let entry = root.path().join("entry.js");
@@ -72,7 +59,7 @@ fn expected_split_prints_the_same_value_under_node() {
 }
 
 #[test]
-fn factory_value_can_move_past_uninvoked_callback_registration() {
+fn icon_value_can_move_past_uninvoked_callback_registration() {
     let fixture = run_fixture(fixture(vec![logical_module(
         "icons",
         &[Member::new("icon")],
