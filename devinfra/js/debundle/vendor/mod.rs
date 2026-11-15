@@ -38,6 +38,7 @@ pub use manifests::*;
 pub use output_imports::{
     MaterializedOutputChunkIndex, bundled_facade_import_source, resolve_partial_swap_import_target,
 };
+pub use passthrough::rewrite_peeled_module_imports;
 pub use plan::{
     BundledReplacementExportIdentity, VendorImportAction, VendorPlanOptions, VendorResolutionPlan,
     build_vendor_resolution_plan,
