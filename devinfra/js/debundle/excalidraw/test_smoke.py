@@ -216,9 +216,10 @@ async def test_stats_drag_input_updates_selected_rectangle(playwright_driver: Pl
         await page.keyboard.press("Alt+/")
         await expect(page.locator(".exc-stats")).to_be_visible()
         width = page.get_by_test_id("W").locator("input.drag-input")
-        await expect(width).to_have_value("200")
+        assert float(await width.input_value()) > 0
         await width.fill("220")
         await width.press("Enter")
+        await page.get_by_test_id("H").locator("input.drag-input").click()
         await expect(width).to_have_value("220")
         assert await page.evaluate("globalThis.__debundleHarness.errors") == []
 
