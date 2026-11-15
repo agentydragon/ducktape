@@ -1,12 +1,12 @@
 # Sandbox Controller
 
-The binary also accepts optional `environment_service` settings for an EnvironmentService listener
-on every replica (conventionally `:8082`), using the existing Sandbox Controller service SVID.
-This is independent of manager leadership; reconcilers and Runtime observation stay leader-only.
-The listener and its own policy watches determine readiness when enabled. See
-[the serving contract](SPEC.md#environmentservice-listener). Deployment settings must omit this block
-until the accepting image is pinned. Caller cutover and retiring the Gateway registration follow
-in separate rollout steps.
+Deployment enables EnvironmentService on every replica at `sandbox-controller:8082`, using the
+existing Sandbox Controller service SVID. Reconcilers and Runtime observation stay leader-only;
+the listener and its independent policy watches determine readiness on leaders and standbys. See
+[the serving contract](SPEC.md#environmentservice-listener). App and Actions continue using the
+Gateway until the receiver is verified on every replica. Retiring the Gateway registration follows
+caller cutover. Enabling `environment_service` requires the accepting Controller image to be pinned
+first; remove that configuration before rolling back to an image that cannot decode it.
 
 Reconciles `Sandbox` into retained state and optional workspace PVCs and, while running as the
 `Identity` its spec names, one Pod or KubeVirt VM from its `SandboxTemplate`. Contract: [`SPEC.md`](SPEC.md). The CRDs are in

@@ -17,11 +17,11 @@ The service definitions are `env/runtime/control/environment_runtime.proto` and 
 
 ## State observation and fencing
 
-The Controller binary can also serve EnvironmentService on every replica when its optional
-`environment_service` block is configured. This inventory/desired-state listener has no Runtime
-command client and does not change Runtime proxy traffic or the leader-only observation below.
-Its readiness depends on local serving and policy watches, independently of leadership. Caller
-cutover follows receiver image publication and deployment; the Gateway continues serving the API
+The Controller serves EnvironmentService on every replica at `sandbox-controller:8082`, using its
+existing service SVID. This inventory/desired-state listener has no Runtime command client and does
+not change Runtime proxy traffic or the leader-only observation below. Its readiness depends on
+local serving and policy watches, independently of leadership. App and Actions keep calling the
+Gateway until this receiver is verified on every replica; the Gateway continues serving the API
 during overlap. See [the Controller contract](../environments/SPEC.md#environmentservice-listener).
 
 The leader-elected Sandbox Controller independently opens `WatchState(observe_only=true)` directly

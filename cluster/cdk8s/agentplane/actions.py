@@ -297,6 +297,7 @@ class Actions(Construct):
         history_audience: str,
         dispatcher: ServiceRef,
         dispatcher_audience: str,
+        environment_service_endpoint: ServiceRef | None = None,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
         image_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
@@ -313,6 +314,7 @@ class Actions(Construct):
         self.history_audience = history_audience
         self.dispatcher = dispatcher
         self.dispatcher_audience = dispatcher_audience
+        self.environment_service_endpoint = environment_service_endpoint
         self.container_env = container_env or {}
         self.placement = placement
         self.registry_secret_name = registry_secret_name
@@ -712,6 +714,14 @@ class Actions(Construct):
                 *(
                     [self.dispatcher.egress(), self.history.egress()]
                     if self.env.actions.orchestration_v1 is not None or self.env.actions.session_delegation is not None
+                    else []
+                ),
+                *(
+                    [self.environment_service_endpoint.egress()]
+                    if self.environment_service_endpoint is not None
+                    and (
+                        self.env.actions.orchestration_v1 is not None or self.env.actions.session_delegation is not None
+                    )
                     else []
                 ),
                 *self.env.actions.extra_egress,

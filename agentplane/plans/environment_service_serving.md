@@ -71,7 +71,14 @@ behavior, and current Gateway server identity `spiffe://agentplane/session-dispa
 endpoint. Do not introduce `spiffe://agentplane/environments` or rename deployed objects before
 `RUNNER_GATEWAY_RENAME`.
 
-Inventory and separate connections by API before changing targets:
+Inventory and separate connections by API before changing targets. The Sandbox CLI is also a live
+EnvironmentService caller: [`cli/environments.go`](../cli/environments.go) currently shares
+`AGENTPLANE_SESSIONS_URL`. It needs
+a separately accepted EnvironmentService URL and a method-selected local SVID route before the old
+Gateway registration can retire; existing CLI processes and Sandbox launch configuration must be
+accounted for during that cutover. Keep the existing endpoint until those callers have moved.
+
+Service caller routing:
 
 | Caller        | Routing in this slice                                                                                                                                                                                                                                                                                                                                           |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -83,7 +90,8 @@ Inventory and separate connections by API before changing targets:
 ## Implementation rollout and rollback
 
 1. Land receiver/composition code and caller code accepting separate environment
-   targets, with the new settings optional or disabled. Keep manifests on existing settings and
+   targets, with the new settings optional or disabled. The CLI accepts a separate EnvironmentService
+   URL while preserving the current Sessions URL when it is absent. Keep manifests on existing settings and
    endpoints. During overlap both binaries import the existing public service implementation; move it
    into `environments/internal/service` only when the old Gateway registration retires. Move neither
    Dispatcher storage nor Runtime proxy/Executor in this slice. Pin those images before any ConfigMap
@@ -95,7 +103,8 @@ Inventory and separate connections by API before changing targets:
    peers/methods. Check the mounted server certificate, healthy policy watches and readiness on
    both Pods. Keep the old Gateway EnvironmentService registered.
 3. With the receiver image pinned and running, and auth stage 4's exact grants present, switch each
-   real EnvironmentService caller's target and verified server URI. Pin caller code before enabling
+   real EnvironmentService caller's target and verified server URI, including Sandbox CLI routes and
+   launch-time URLs after their accepting tools image is pinned. Pin caller code before enabling
    new caller settings; roll callers and verify their effective configuration. Long-lived watches
    reconnect and reauthorize normally. Update system overview diagrams in the implementation PRs.
 4. Only after all callers have rolled, remove the old registration and unused settings/RBAC in later

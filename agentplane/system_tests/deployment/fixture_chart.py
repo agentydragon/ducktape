@@ -64,7 +64,7 @@ from agentplane.central_sampler.settings import (
 )
 from agentplane.env.config import CodexReadiness
 from agentplane.env.runtime.harness import Harness
-from agentplane.net.peertls.config import APP_URI, LLM_INGRESS_URI, NOTIFICATIONS_URI, TLS
+from agentplane.net.peertls.config import LLM_INGRESS_URI, TLS
 from agentplane.notification_service.settings import NoticeDebounceSettings
 
 # gazelle:include_dep @pypi//protobuf
@@ -592,6 +592,14 @@ def add_backend_services(
         ServiceAccountRef(namespace=NAMESPACE, name=notifications.NAME): notifications.service(NAMESPACE).pods
     }
     orchestration_caller = actions.orchestration_callers(env)
+    environment_service_delegation_actor = (
+        ServiceAccountRef(namespace=NAMESPACE, name=actions.NAME) if env.actions.orchestration_v1 is not None else None
+    )
+    environment_service_delegated_methods = (
+        ("/agentplane.environments.v1.EnvironmentService/ResumeEnvironment",)
+        if environment_service_delegation_actor is not None
+        else ()
+    )
     gateway_callers = platform_callers | notifications_caller
     runner_gateway_workload.add_stable_services(chart, env)
     runner_gateway_workload.RunnerGateway(
@@ -601,22 +609,14 @@ def add_backend_services(
         dispatcher_callers=gateway_callers | orchestration_caller,
         environment_launchers=orchestration_caller,
         operator_callers=platform_callers,
-        operator_service_callers=frozenset({APP_URI}),
-        wake_service_callers=frozenset({APP_URI, NOTIFICATIONS_URI}),
-        delegation_actor=(
-            ServiceAccountRef(namespace=NAMESPACE, name=actions.NAME)
-            if env.actions.orchestration_v1 is not None
-            else None
-        ),
-        extra_delegated_methods=(
-            ("/agentplane.environments.v1.EnvironmentService/ResumeEnvironment",)
-            if env.actions.orchestration_v1 is not None
-            else ()
-        ),
+        operator_service_callers=sandbox_controller.OPERATOR_SERVICE_CALLERS,
+        wake_service_callers=sandbox_controller.WAKE_SERVICE_CALLERS,
+        delegation_actor=environment_service_delegation_actor,
+        extra_delegated_methods=environment_service_delegated_methods,
         gateway_callers=gateway_callers,
         wake_callers=env.wake_caller_accounts | orchestration_caller.keys(),
         database_url=dispatcher_database_url,
-        sandbox_controller=(
+        controller_peer=(
             ServiceAccountRef(namespace=NAMESPACE, name=sandbox_controller.NAME),
             sandbox_controller.pods(NAMESPACE),
         ),
@@ -651,6 +651,16 @@ def add_backend_services(
         gateway=runner_gateway.service(NAMESPACE),
         gateway_audience=runner_gateway.TOKEN_AUDIENCE,
         gateway_control_target=control_target,
+        authority=sandbox_controller.environment_service_authority(
+            env,
+            operator_callers=platform_callers,
+            launchers=orchestration_caller,
+            operator_service_callers=sandbox_controller.OPERATOR_SERVICE_CALLERS,
+            wake_callers=env.wake_caller_accounts | orchestration_caller.keys(),
+            wake_service_callers=sandbox_controller.WAKE_SERVICE_CALLERS,
+            delegation_actor=environment_service_delegation_actor,
+            extra_delegated_methods=environment_service_delegated_methods,
+        ),
         placement=None,
         registry_secret_name=None,
         memory_request=Size.mebibytes(48),
@@ -665,6 +675,9 @@ def add_backend_services(
         history_audience=history_service.TOKEN_AUDIENCE,
         dispatcher=runner_gateway_workload.dispatcher_service(NAMESPACE),
         dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
+        environment_service_endpoint=(
+            sandbox_controller.service(NAMESPACE) if environment_service_delegation_actor is not None else None
+        ),
         placement=None,
         registry_secret_name=None,
         image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
@@ -709,6 +722,7 @@ def add_app(chart: Chart, env: Environment) -> Construct:
         env,
         electric=None,
         database_url=app_database_url,
+        environment_service_endpoint=sandbox_controller.service(NAMESPACE),
         placement=None,
         registry_secret_name=None,
         memory_request=Size.mebibytes(48),

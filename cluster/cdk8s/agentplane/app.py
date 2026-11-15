@@ -99,6 +99,7 @@ class App(Construct):
         *,
         electric: ServiceRef | None,
         database_url: EnvValue,
+        environment_service_endpoint: ServiceRef | None = None,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
         memory_request: Size = _DEFAULT_MEMORY_REQUEST,
@@ -111,6 +112,7 @@ class App(Construct):
         self.props = env.app
         self.electric = electric
         self.database_url = database_url
+        self.environment_service_endpoint = environment_service_endpoint
         self.placement = placement
         self.registry_secret_name = registry_secret_name
         self.memory_request = memory_request
@@ -297,6 +299,11 @@ class App(Construct):
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 *self._oidc_egress_rules(),
                 runner_gateway.service(namespace).egress(),
+                *(
+                    [self.environment_service_endpoint.egress()]
+                    if self.environment_service_endpoint is not None
+                    else []
+                ),
                 session_dispatcher.service(namespace).egress(),
                 history_service.service(namespace).egress(),
                 notifications.service(namespace).egress(),
