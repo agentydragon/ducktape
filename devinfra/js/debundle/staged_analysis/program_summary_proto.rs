@@ -139,7 +139,6 @@ pub(super) fn snapshot<'a>(
                 bindings: snapshot_map(reads, ProtoConvert::to_proto)?,
             })
         })?,
-        members: snapshot_map(&summary.members, snapshot_members)?,
         fluent: snapshot_map(&summary.fluent, snapshot_names)?,
         constructors: snapshot_map(&summary.constructors, snapshot_names)?,
         imported_callables: snapshot_map(&summary.imported_callables, |callables| {
@@ -267,7 +266,6 @@ pub(super) fn restore(
         primitive_reads: restore_map(value.primitive_reads, |reads| {
             restore_map(reads.bindings, ProtoConvert::from_proto)
         })?,
-        members: restore_map(value.members, restore_members)?,
         fluent: restore_map(value.fluent, |value| restore_names(value.bindings))?,
         constructors: restore_map(value.constructors, |value| restore_names(value.bindings))?,
         imported_callables: restore_map(value.imported_callables, |callables| {
@@ -672,7 +670,6 @@ mod tests {
             bindings: BTreeMap::new(),
             values: BTreeMap::new(),
             primitive_reads: primitive_reads.clone(),
-            members: BTreeMap::new(),
             fluent: BTreeMap::new(),
             constructors: BTreeMap::new(),
             imported_callables: BTreeMap::new(),

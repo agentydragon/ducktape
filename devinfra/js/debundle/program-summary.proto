@@ -67,7 +67,6 @@ message ProgramSummary {
   map<string, ImportedBindingPurities> bindings = 1;
   map<string, ImportedValues> values = 2;
   map<string, ImportedPrimitiveReads> primitive_reads = 3;
-  map<string, ImportedMembers> members = 4;
   map<string, BindingNames> fluent = 5;
   map<string, BindingNames> constructors = 6;
   map<string, ImportedCallables> imported_callables = 7;
