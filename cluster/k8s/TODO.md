@@ -266,16 +266,6 @@ journal, tracked below. Talos boot-id/source attribution remains open in
       the guest since the authoritative Xid source is the wyrm2 **guest** journal, not the
       host.
 
-### Operational note: NixOS `node-vendor` label needs a manual apply after a switch
-
-`node-vendor=nixos` is set via `nix/nixos/hosts/*/default.nix` (`k8sWorker.nodeLabels`), but
-kubelet only applies `--node-labels` at **first registration**. On an already-registered node
-a `nixos-rebuild switch` restarts kubelet **without** adding the new label, so the
-`promtail-journal` DaemonSet won't schedule. After switching, verify with
-`kubectl get node <n> --show-labels` and, if missing, apply once by hand:
-`kubectl label node <n> node-vendor=nixos` (the nix config keeps it correct for future
-re-registration). Done for wyrm2 + rugged; iguana needs it whenever it's next online.
-
 ## GPU metrics (DCGM) — follow-ups
 
 DCGM exporter is live on wyrm2 (`cluster/cdk8s/dcgm_exporter/`) and feeding Mimir:

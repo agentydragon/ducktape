@@ -54,9 +54,6 @@ in
     nodeLabels = {
       "topology.kubernetes.io/region" = "roaming";
       "node.kubernetes.io/role" = "roaming";
-      # Scopes the journal-only promtail DaemonSet to systemd/journald nodes
-      # (the promtail-journal HelmRelease in cluster/cdk8s/monitoring/loki.py).
-      "node-vendor" = "nixos";
       # Kubelet applies this only at registration; the live node was labelled by hand.
       "storage.allegedly.works/piraeus-ready" = "true";
     };
