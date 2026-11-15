@@ -261,3 +261,41 @@ render_fixture(
     name = "mcp_manifests",
     renderer = ":mcp_deployment_bin",
 )
+
+py_library(
+    name = "history_deployment",
+    srcs = ["history_deployment.py"],
+    deps = [
+        "//agentplane/system_tests/deployment:fixture_chart",
+        "//agentplane/system_tests/deployment:fixture_database",
+        "//agentplane/system_tests/deployment:render_fixture",
+        "//agentplane/system_tests/deployment:rendered_fixture",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "recovery_deployment",
+    srcs = ["recovery_deployment.py"],
+    deps = [
+        "//agentplane/system_tests/deployment:fixture_chart",
+        "//agentplane/system_tests/deployment:fixture_database",
+        "//agentplane/system_tests/deployment:render_fixture",
+        "//agentplane/system_tests/deployment:rendered_fixture",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "mcp_deployment",
+    srcs = ["mcp_deployment.py"],
+    deps = [
+        "//agentplane/system_tests/deployment:dex",
+        "//agentplane/system_tests/deployment:fixture_chart",
+        "//agentplane/system_tests/deployment:fixture_database",
+        "//agentplane/system_tests/deployment:mcp_fixture_chart",
+        "//agentplane/system_tests/deployment:render_fixture",
+        "//agentplane/system_tests/deployment:rendered_fixture",
+        "@pypi//cdk8s",
+    ],
+)
