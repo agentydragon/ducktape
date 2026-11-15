@@ -893,6 +893,62 @@ async def _send_single_exec_cell(
         )
 
 
+async def _start_central_codex_turn(
+    deployed: CentralStack,
+    scripted: ScriptedUpstream,
+    session_id: str,
+    *,
+    cwd: str,
+    model_name: str,
+    setup_script: str,
+    expected_sandbox_uid: str,
+    command_id: str,
+    text: str,
+) -> tuple[CodexModel, ModelRequest[ResponsesRequest]]:
+    model = scripted.session_model(session_id, session_pb2.HARNESS_CODEX)
+    assert isinstance(model, CodexModel)
+    await _create_exact_codex_session(
+        deployed,
+        session_id,
+        cwd=cwd,
+        model_name=model_name,
+        setup_script=setup_script,
+        expected_sandbox_uid=expected_sandbox_uid,
+        timeout_s=15,
+    )
+    await _submit_exact_input(
+        deployed, session_id, expected_sandbox_uid=expected_sandbox_uid, command_id=command_id, text=text, timeout_s=15
+    )
+    await _wait_for_setup(deployed, session_id)
+    request = await asyncio.wait_for(model.request(), timeout=30)
+    return model, request
+
+
+async def _start_gateway_process(
+    model: CodexModel,
+    request: ModelRequest[ResponsesRequest],
+    *,
+    call_id: str,
+    command: str,
+    process_handle: str,
+    result_expression: str,
+    response_model: str,
+) -> ModelRequest[ResponsesRequest]:
+    await _send_single_exec_cell(
+        request,
+        call_id=call_id,
+        source=_gateway_process_start_cell(
+            command=command, process_handle=process_handle, yield_time_ms=1000, result_expression=result_expression
+        ),
+        response_model=response_model,
+    )
+    request = await asyncio.wait_for(model.request(), timeout=30)
+    assert any(
+        output.call_id == call_id and "session_id" in "\n".join(output.blocks) for output in request.tool_outputs
+    )
+    return request
+
+
 def _gateway_process_start_cell(
     *, command: str, process_handle: str, yield_time_ms: int, result_expression: str
 ) -> str:
@@ -920,46 +976,29 @@ async def gateway_roll_keeps_live_central_read_and_turn(
     """A real Gateway outage interrupts process/read, then the same call and turn finish."""
     session_id, first_command, second_command = str(uuid4()), str(uuid4()), str(uuid4())
     async with central_stack(cluster, tmp_path, template=executor.template) as deployed:
-        model = scripted.session_model(session_id, session_pb2.HARNESS_CODEX)
-        assert isinstance(model, CodexModel)
-        await _create_exact_codex_session(
+        model, request = await _start_central_codex_turn(
             deployed,
+            scripted,
             session_id,
             cwd=executor.cwd,
             model_name=MODEL,
             setup_script=":\n",
             expected_sandbox_uid=deployed.sandbox_uid,
-            timeout_s=15,
-        )
-        await _submit_exact_input(
-            deployed,
-            session_id,
-            expected_sandbox_uid=deployed.sandbox_uid,
             command_id=first_command,
             text="Start a process, wait for its result, and report the single side effect.",
-            timeout_s=15,
         )
-        await _wait_for_setup(deployed, session_id)
-        request = await asyncio.wait_for(model.request(), timeout=30)
         assert request.native.client_metadata.session_id == session_id
         command = "printf 'once\\n' >> gateway-roll-marker; sleep 20; printf 'finished\\n'"
-        await _send_single_exec_cell(
+        request = await _start_gateway_process(
+            model,
             request,
             call_id="start-live-process",
-            source=_gateway_process_start_cell(
-                command=command,
-                process_handle="gateway-roll-handle",
-                yield_time_ms=1000,
-                result_expression="{session_id: started.session_id, output: started.output}",
-            ),
+            command=command,
+            process_handle="gateway-roll-handle",
+            result_expression="{session_id: started.session_id, output: started.output}",
             response_model=MODEL,
         )
-        request = await asyncio.wait_for(model.request(), timeout=30)
         assert request.native.client_metadata.session_id == session_id
-        assert any(
-            output.call_id == "start-live-process" and "session_id" in "\n".join(output.blocks)
-            for output in request.tool_outputs
-        )
         await _wait_for_execution_progress(
             deployed, session_id, event_pb2.ExecutionProgress.KIND_PROCESS, event_pb2.ExecutionProgress.PHASE_RUNNING
         )
@@ -1174,42 +1213,25 @@ async def gateway_crash_settles_live_central_read_and_accepts_next_input(
     """A killed Gateway leaves its Lease held; the active read still settles truthfully."""
     session_id, first_command, second_command = str(uuid4()), str(uuid4()), str(uuid4())
     async with central_stack(cluster, tmp_path, template=executor.template) as deployed:
-        model = scripted.session_model(session_id, session_pb2.HARNESS_CODEX)
-        assert isinstance(model, CodexModel)
-        await _create_exact_codex_session(
+        model, request = await _start_central_codex_turn(
             deployed,
+            scripted,
             session_id,
             cwd=executor.cwd,
             model_name=MODEL,
             setup_script=":\n",
             expected_sandbox_uid=deployed.sandbox_uid,
-            timeout_s=15,
-        )
-        await _submit_exact_input(
-            deployed,
-            session_id,
-            expected_sandbox_uid=deployed.sandbox_uid,
             command_id=first_command,
             text="Keep one process running across an abrupt Gateway crash.",
-            timeout_s=15,
         )
-        await _wait_for_setup(deployed, session_id)
-        request = await asyncio.wait_for(model.request(), timeout=30)
-        await _send_single_exec_cell(
+        request = await _start_gateway_process(
+            model,
             request,
             call_id="start-crash-process",
-            source=_gateway_process_start_cell(
-                command="printf 'once\\n' >> gateway-crash-marker; sleep 90",
-                process_handle="gateway-crash-handle",
-                yield_time_ms=1000,
-                result_expression="started",
-            ),
+            command="printf 'once\\n' >> gateway-crash-marker; sleep 90",
+            process_handle="gateway-crash-handle",
+            result_expression="started",
             response_model=MODEL,
-        )
-        request = await asyncio.wait_for(model.request(), timeout=30)
-        assert any(
-            output.call_id == "start-crash-process" and "session_id" in "\n".join(output.blocks)
-            for output in request.tool_outputs
         )
         cursor, process_id, native_session_id = await _started_gateway_roll_process(
             deployed, session_id, "gateway-crash-marker"
@@ -1269,42 +1291,25 @@ async def gateway_retry_exhaustion_reports_unknown_and_accepts_next_input(
     """An outage beyond the resume budget settles the read without blocking History or input."""
     session_id, first_command, second_command = str(uuid4()), str(uuid4()), str(uuid4())
     async with central_stack(cluster, tmp_path, template=executor.template) as deployed:
-        model = scripted.session_model(session_id, session_pb2.HARNESS_CODEX)
-        assert isinstance(model, CodexModel)
-        await _create_exact_codex_session(
+        model, request = await _start_central_codex_turn(
             deployed,
+            scripted,
             session_id,
             cwd=executor.cwd,
             model_name=MODEL,
             setup_script=":\n",
             expected_sandbox_uid=deployed.sandbox_uid,
-            timeout_s=15,
-        )
-        await _submit_exact_input(
-            deployed,
-            session_id,
-            expected_sandbox_uid=deployed.sandbox_uid,
             command_id=first_command,
             text="Wait for one process through a sustained Gateway outage and report any uncertain outcome.",
-            timeout_s=15,
         )
-        await _wait_for_setup(deployed, session_id)
-        request = await asyncio.wait_for(model.request(), timeout=30)
-        await _send_single_exec_cell(
+        request = await _start_gateway_process(
+            model,
             request,
             call_id="start-budget-process",
-            source=_gateway_process_start_cell(
-                command="printf 'once\\n' >> gateway-budget-marker; sleep 300",
-                process_handle="gateway-budget-handle",
-                yield_time_ms=1000,
-                result_expression="started",
-            ),
+            command="printf 'once\\n' >> gateway-budget-marker; sleep 300",
+            process_handle="gateway-budget-handle",
+            result_expression="started",
             response_model=MODEL,
-        )
-        request = await asyncio.wait_for(model.request(), timeout=30)
-        assert any(
-            output.call_id == "start-budget-process" and "session_id" in "\n".join(output.blocks)
-            for output in request.tool_outputs
         )
         cursor, process_id, native_session_id = await _started_gateway_roll_process(
             deployed, session_id, "gateway-budget-marker"
@@ -1388,42 +1393,25 @@ async def gateway_outage_restarts_exec_server_then_notifies_model(
     """An in-flight read loses its native server during Gateway outage and the model sees the loss."""
     session_id, first_command, second_command = str(uuid4()), str(uuid4()), str(uuid4())
     async with central_stack(cluster, tmp_path, template=executor.template) as deployed:
-        model = scripted.session_model(session_id, session_pb2.HARNESS_CODEX)
-        assert isinstance(model, CodexModel)
-        await _create_exact_codex_session(
+        model, request = await _start_central_codex_turn(
             deployed,
+            scripted,
             session_id,
             cwd=executor.cwd,
             model_name=MODEL,
             setup_script=":\n",
             expected_sandbox_uid=deployed.sandbox_uid,
-            timeout_s=15,
-        )
-        await _submit_exact_input(
-            deployed,
-            session_id,
-            expected_sandbox_uid=deployed.sandbox_uid,
             command_id=first_command,
             text="Start one long-running process and continue this turn after any executor disruption.",
-            timeout_s=15,
         )
-        await _wait_for_setup(deployed, session_id)
-        request = await asyncio.wait_for(model.request(), timeout=30)
-        await _send_single_exec_cell(
+        request = await _start_gateway_process(
+            model,
             request,
             call_id="start-expiring-process",
-            source=_gateway_process_start_cell(
-                command="printf 'once\\n' >> gateway-loss-marker; sleep 120",
-                process_handle="gateway-loss-handle",
-                yield_time_ms=1000,
-                result_expression="started",
-            ),
+            command="printf 'once\\n' >> gateway-loss-marker; sleep 120",
+            process_handle="gateway-loss-handle",
+            result_expression="started",
             response_model=MODEL,
-        )
-        request = await asyncio.wait_for(model.request(), timeout=30)
-        assert any(
-            output.call_id == "start-expiring-process" and "session_id" in "\n".join(output.blocks)
-            for output in request.tool_outputs
         )
         await _wait_for_execution_progress(
             deployed, session_id, event_pb2.ExecutionProgress.KIND_PROCESS, event_pb2.ExecutionProgress.PHASE_RUNNING
