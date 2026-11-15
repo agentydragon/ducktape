@@ -513,7 +513,7 @@ func assertRuntimeProxyAuthorization(t *testing.T, ca *peertlstesting.CA, server
 	}
 
 	ctx, cancel := callContext(t)
-	delegated, err := workloadgrpc.WithDelegation(ctx, &delegationpb.Delegation{
+	encoded, err := auth.MarshalDelegation(&delegationpb.Delegation{
 		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: &identitypb.Identity{Name: "delegated-owner", Uid: "test-identity-uid"}},
 		Provenance: &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{
 			RequestId: "00000000-0000-4000-8000-000000000001", ExecutionId: "00000000-0000-4000-8000-000000000002",
@@ -523,6 +523,7 @@ func assertRuntimeProxyAuthorization(t *testing.T, ca *peertlstesting.CA, server
 		cancel()
 		t.Fatal(err)
 	}
+	delegated := metadata.AppendToOutgoingContext(ctx, auth.DelegationMetadataKey, string(encoded))
 	delegatedErr := grpcmethods.Method{Name: environmentruntimepb.EnvironmentRuntime_CreateSession_FullMethodName}.Call(delegated, connections[peertls.SessionsURI])
 	cancel()
 	if status.Code(delegatedErr) != codes.PermissionDenied {
