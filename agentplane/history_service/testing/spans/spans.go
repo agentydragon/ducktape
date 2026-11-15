@@ -1,4 +1,4 @@
-// Package spans builds runner journal spans of one streamed item, shaped like the staging frames the
+// Package spans builds Session journal spans of one streamed item, shaped like the staging frames the
 // delta templates match.
 package spans
 
@@ -43,7 +43,7 @@ func (s *Span) Native(frame map[string]any) uint64 {
 	return entry.Cursor
 }
 
-// Derived appends the runner's Event made from the native frames at sources and returns its cursor.
+// Derived appends the Event made from the native frames at sources and returns its cursor.
 func (s *Span) Derived(sources []uint64, event *eventpb.Event) uint64 {
 	entry := s.next()
 	entry.Event.Observation = event.Observation

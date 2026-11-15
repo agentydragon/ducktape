@@ -65,7 +65,7 @@ type serviceDelegationConfig struct {
 	Methods []string                `mapstructure:"methods"`
 }
 
-// ingressConfig is the runner journal's authorization and storage policy. Its RPC shares the service listener.
+// ingressConfig is the Session journal ingress's authorization and storage policy. Its RPC shares the service listener.
 type ingressConfig struct {
 	TokenAudience string `mapstructure:"token_audience"`
 	// WriterNamespaces are the namespaces whose ServiceAccounts may push: the ones Sandboxes run in.

@@ -14,9 +14,9 @@ import (
 
 // Settlement decides whether an item field's streamed deltas can leave stored history.
 //
-// settle is a pure function of one item's span of runner entries, ending at the entry that completes
+// settle is a pure function of one item's span of journal entries, ending at the entry that completes
 // the field. It settles only when every streamed delta of that field is a pair, a native frame
-// matching an exact template and the runner's derived delta made from it, and the retained native
+// matching an exact template and its derived delta, and the retained native
 // completion frame holds exactly their concatenation. Any doubt keeps every entry: what a settlement
 // drops (chunking, per-chunk timestamps and ids, frame serialization) is all it drops.
 
@@ -277,7 +277,7 @@ func sameInteger(want int64, got any) bool {
 	return ok && value == want
 }
 
-// completionHolds reports whether the retained completion frame, and the runner's completion Event,
+// completionHolds reports whether the retained completion frame and completion Event
 // hold exactly the concatenation.
 func completionHolds(deltas []delta, item target, completion *eventlogpb.EventEntry, frame map[string]any) bool {
 	var builder strings.Builder

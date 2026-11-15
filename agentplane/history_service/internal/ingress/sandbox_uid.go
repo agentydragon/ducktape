@@ -12,8 +12,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-// SandboxUIDResolver finds the Sandbox incarnation that owns the ServiceAccount its runner
-// authenticates as, which the controller names for the Sandbox itself.
+// SandboxUIDResolver finds the Sandbox incarnation owned by a ServiceAccount when an Environment Runtime
+// authenticates as that account. An account without a Sandbox owner has no Sandbox UID.
 type SandboxUIDResolver interface {
 	Resolve(context.Context, storage.ServiceAccountWriter) (string, error)
 }

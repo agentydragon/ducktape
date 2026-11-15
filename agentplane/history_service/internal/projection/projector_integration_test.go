@@ -377,7 +377,7 @@ func TestModelActivityIsTheLastEventThatCarriesModelOutput(t *testing.T) {
 
 func TestASessionEndsOnlyOnceItsHarnessLaunchHasAnOutcome(t *testing.T) {
 	f := newProjectorFixture(t)
-	// The runner announces a Session whose setup script runs before its harness starts.
+	// The Environment Runtime announces a Session whose setup script runs before its harness starts.
 	sessionID := f.retained(t, f.history, entry(1, &eventpb.Event{Observation: &eventpb.Event_SetupStarted{SetupStarted: &eventpb.SetupStarted{}}}))
 	f.recordFeed(t, sessionID, &sessionpb.Attached{
 		HarnessState:  sessionpb.HarnessState_HARNESS_STATE_STOPPED,

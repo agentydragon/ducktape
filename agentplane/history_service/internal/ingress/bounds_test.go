@@ -32,7 +32,7 @@ type authenticatedAcknowledgementSink struct {
 
 func (s authenticatedAcknowledgementSink) Context() context.Context { return s.ctx }
 
-// A runner that never pauses keeps the ingress's frame queue non-empty, so only the batch limits bound a
+// A journal writer that never pauses keeps the ingress's frame queue non-empty, so only the batch limits bound a
 // transaction. Each commit is one transaction, so the distinct transaction IDs on the stored entries count them.
 func TestABurstIsCommittedInBoundedBatches(t *testing.T) {
 	for name, burst := range map[string]struct {
@@ -40,7 +40,7 @@ func TestABurstIsCommittedInBoundedBatches(t *testing.T) {
 		text         string
 		transactions int
 	}{
-		// 128 entries to a commit; the last 104 commit when the runner closes its side.
+		// 128 entries to a commit; the last 104 commit when the writer closes its side.
 		"many-small-entries": {count: 1000, text: "x", transactions: 8},
 		// A commit before an entry that would take the batch past 1 MiB: ten of these entries fit.
 		"large-entries": {count: 40, text: strings.Repeat("x", 100*1024), transactions: 4},

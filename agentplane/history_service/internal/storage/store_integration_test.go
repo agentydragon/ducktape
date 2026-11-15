@@ -222,7 +222,7 @@ func TestAppendStoresObservationFieldNumbers(t *testing.T) {
 	batch := []*eventlogpb.EventEntry{entry(1), nativeEntry(2, "test-frame"), entry(3)}
 	batch[2].Event = nil
 	appendEntries(t, store, sessionID, batch...)
-	// The numbers are the runner Event's wire fields, independent of observation names.
+	// The numbers are the Event's wire fields, independent of observation names.
 	for cursor, want := range []int{4, 20, 0} {
 		var kind int
 		if err := db.QueryRowContext(t.Context(), "SELECT kind FROM session_event WHERE session_id = $1 AND cursor = $2", sessionID, cursor+1).Scan(&kind); err != nil {
@@ -564,7 +564,7 @@ func TestRemovedCursorsAreReportedWhereAPageReachesThem(t *testing.T) {
 				test.after, test.limit, cursors(page), removedRanges(page), test.wantCursors, test.wantRemoved)
 		}
 	}
-	// A runner replaying its journal sends the removed entries again; they are no longer stored to compare.
+	// A writer replaying its journal sends the removed entries again; they are no longer stored to compare.
 	if last := appendEntries(t, store, sessionID, entries(1, 5)...); last != 5 {
 		t.Fatalf("last cursor %d", last)
 	}
@@ -624,7 +624,7 @@ func TestSettlingStoreDropsMatchedChunksOnceTheirItemCompletes(t *testing.T) {
 		page.Settlements[0].CompletionCursor != 8 {
 		t.Fatalf("cursors %v, settled %v", got, settledRanges(page))
 	}
-	// A runner replaying the whole span, settled chunks included, is still an exact duplicate.
+	// A writer replaying the whole span, settled chunks included, is still an exact duplicate.
 	if last := appendEntries(t, store, sessionID, span...); last != 8 {
 		t.Fatalf("last cursor %d", last)
 	}
@@ -670,7 +670,7 @@ func TestSettlingStoreRetainsStderrAndCompletionWhileDroppingReasoningDeltas(t *
 	if got := settledRanges(page); !reflect.DeepEqual(got, []CursorRange{{3, 6}}) {
 		t.Fatalf("settled ranges %v", got)
 	}
-	// Replayed runner deltas must remain covered without duplicating the diagnostic.
+	// Replayed journal deltas must remain covered without duplicating the diagnostic.
 	appendEntries(t, store, sessionID, span...)
 	assertEntries(t, readPage(t, store, sessionID, 0, 128).Entries, page.Entries...)
 }

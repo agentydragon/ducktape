@@ -1,4 +1,4 @@
-// Package threadfold folds a Session's runner Event log into the rows its Thread readers
+// Package threadfold folds a Session's Event log into the rows its Thread readers
 // synchronize: items, confirmed inputs, lifecycle segments and command summaries, plus the payload
 // bodies they reference.
 //
@@ -27,7 +27,7 @@ const (
 	KindCommand        EntityKind = "command"
 )
 
-// ObservationNotUnderstoodError means the fold does not model an observation the runner recorded.
+// ObservationNotUnderstoodError means the fold does not model an observation the journal writer recorded.
 type ObservationNotUnderstoodError struct {
 	Cursor      uint64
 	Observation string
@@ -38,7 +38,7 @@ func (e *ObservationNotUnderstoodError) Error() string {
 }
 
 // ContractError means the batch, or the rows preloaded for it, break the fold's contract: a caller bug,
-// not a newer runner.
+// not a newer journal writer.
 type ContractError struct {
 	Cursor  uint64
 	Message string

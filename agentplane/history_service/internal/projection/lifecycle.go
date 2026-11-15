@@ -54,7 +54,7 @@ func projectLifecycle(
 		}
 	}
 	if attached == nil {
-		// Successful projection clears an earlier projection error even if imported history has no runner
+		// Successful projection clears an earlier projection error even if imported history has no Environment Runtime
 		// lifecycle snapshot. This does not manufacture EOF.
 		return SetOperational(ctx, tx, threadID, historypb.ThreadFeedStatus_THREAD_FEED_STATUS_ACTIVE, nil, nil)
 	}
@@ -121,8 +121,8 @@ func marshalEnd(end map[string]string) (json.RawMessage, error) {
 func projectAttached(attached *sessionpb.Attached, entry *eventlogpb.EventEntry) {
 	attached.LastCursor = entry.GetCursor()
 	event := entry.GetEvent()
-	// The runner's own rule (env/runtime/session/events.go): the first outcome settles the launch. An announcement from a
-	// runner that predates the field leaves it unspecified until then.
+	// The Environment Runtime's own rule (env/runtime/session/events.go): the first outcome settles the launch. An announcement from a
+	// Environment Runtime that predates the field leaves it unspecified until then.
 	undecided := attached.GetLaunchOutcome() == sessionpb.LaunchOutcome_LAUNCH_OUTCOME_UNSPECIFIED ||
 		attached.GetLaunchOutcome() == sessionpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING
 	decide := func(outcome sessionpb.LaunchOutcome) {

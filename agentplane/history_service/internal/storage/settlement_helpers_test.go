@@ -19,7 +19,7 @@ func reasoningSpanWithStderr() *spans.Span {
 	span := spans.CodexReasoning([][]string{{"Hel", "lo"}})
 	completion := span.Entries[len(span.Entries)-1]
 	span.Entries = span.Entries[:len(span.Entries)-1]
-	// Stdout and stderr can interleave before the runner projects the completion.
+	// Stdout and stderr can interleave before the Environment Runtime projects the completion.
 	span.Stderr("test harness diagnostic")
 	span.Derived(completion.GetEvent().GetSourceSequences(), completion.GetEvent())
 	return span

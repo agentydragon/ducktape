@@ -211,7 +211,7 @@ func bearing(t *testing.T, token string) context.Context {
 	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)
 }
 
-// record has the Session recorded as a runner's first push does, and returns its position.
+// record has the Session recorded as a journal writer's first push does, and returns its position.
 func (s testServer) record(t *testing.T) (uuid.UUID, uint64) {
 	t.Helper()
 	sessionID := uuid.New()
