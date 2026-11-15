@@ -38,10 +38,11 @@ pub use realizability::{
     EffectConflictRow, EffectCoverageReport, EffectOpacity, EffectRelocationAcceptanceScope,
     EffectRelocationAssessment, EffectRelocationConflict, EffectRelocationDecision,
     EffectTranslationValidationReport, EffectTranslationValidationResult, LadderDecision,
-    LegacyEdgeComparisonCounts, ModuleAssignmentDelta, RealizabilityIndex, RealizabilityVerdict,
-    SccDiagnosis, SccRejection, TranslationValidationEvidenceReport, TranslationValidationReport,
-    TranslationValidationResult, check_realizability, check_realizability_touching,
-    check_realizability_with_schedule, simulated_evaluation_post_order,
+    LegacyEdgeComparisonCounts, ModuleAssignmentBatch, ModuleAssignmentDelta, RealizabilityIndex,
+    RealizabilityVerdict, SccDiagnosis, SccRejection, TranslationValidationEvidenceReport,
+    TranslationValidationReport, TranslationValidationResult, check_realizability,
+    check_realizability_touching, check_realizability_with_schedule,
+    simulated_evaluation_post_order,
 };
 pub use validation::{
     AssignmentReport, AssignmentValidation, AtInitReadPosition, BlockingRejection,

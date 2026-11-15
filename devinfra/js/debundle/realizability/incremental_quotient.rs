@@ -36,6 +36,69 @@ pub enum ModuleAssignmentDelta {
     },
 }
 
+/// A simultaneous source-unit reassignment over one fixed module universe.
+///
+/// `ModuleId`s are canonical dense handles supplied by the caller. This batch
+/// can move source units among destination IDs in the caller's fixed module
+/// universe; it does not allocate or renumber modules. Rebuild the index and
+/// its assignment if that universe or the entry destination changes (for
+/// example, after inserting a path-sorted destination).
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
+pub struct ModuleAssignmentBatch {
+    destinations: BTreeMap<SourceUnitId, ModuleId>,
+}
+
+impl ModuleAssignmentBatch {
+    /// Build a simultaneous batch from its final per-source-unit mapping.
+    pub fn from_destinations(destinations: BTreeMap<SourceUnitId, ModuleId>) -> Self {
+        Self { destinations }
+    }
+
+    /// Combine existing single-target deltas into one simultaneous batch.
+    ///
+    /// A source unit may occur more than once only when every delta gives it
+    /// the same final destination. Conflicting destinations are ambiguous and
+    /// panic rather than making iteration order determine the post-state.
+    pub fn from_deltas(deltas: impl IntoIterator<Item = ModuleAssignmentDelta>) -> Self {
+        let mut destinations = BTreeMap::new();
+        for delta in deltas {
+            let ModuleAssignmentDelta::MoveSourceUnits { source_units, to } = delta;
+            for source_unit in source_units {
+                if let Some(previous) = destinations.insert(source_unit, to) {
+                    assert_eq!(
+                        previous, to,
+                        "one source unit cannot move to multiple destinations in a batch"
+                    );
+                }
+            }
+        }
+        Self { destinations }
+    }
+
+    /// The final destination for each source unit in this batch.
+    pub fn destinations(&self) -> &BTreeMap<SourceUnitId, ModuleId> {
+        &self.destinations
+    }
+
+    fn changed_destinations(
+        &self,
+        assignment: &ModuleAssignment,
+    ) -> BTreeMap<SourceUnitId, ModuleId> {
+        self.destinations
+            .iter()
+            .filter_map(|(&source_unit, &to)| {
+                (assignment.of(source_unit) != to).then_some((source_unit, to))
+            })
+            .collect()
+    }
+}
+
+impl From<ModuleAssignmentDelta> for ModuleAssignmentBatch {
+    fn from(delta: ModuleAssignmentDelta) -> Self {
+        Self::from_deltas([delta])
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub(super) struct ConstrainingBucket {
     pub(super) non_sequenced: BTreeSet<DependencyEdgeId>,
@@ -590,23 +653,24 @@ impl IncrementalQuotient {
         edge: &analysis::graph::DependencyEdge,
         assignment: &ModuleAssignment,
     ) {
-        // Gate-side view: keep cross-module at-init promoted edges.
-        // See [`analysis::graph::assignment_endpoints`] for why and
-        // `tests::promoted_edge_in_aggregator_cycle_is_unrealizable`
-        // for the regression fixture.
-        let Some((from, to)) = analysis::graph::assignment_endpoints(
-            edge,
-            assignment,
-            analysis::graph::EndpointView::Gate,
-        ) else {
+        debug_assert_eq!(
+            assignment.entry_destination().module_id(),
+            self.entry_module_id,
+            "an incremental index keeps one fixed entry destination"
+        );
+        // Committed and hypothetical paths share the gate projection so
+        // promoted-edge and fallback-entry semantics cannot drift.
+        let Some(contribution) = edge_contribution(edge, self.entry_module_id, |source_unit| {
+            assignment.of(source_unit)
+        }) else {
             return;
         };
-        if edge.reason.is_rebind() {
+        if contribution.kind == EdgeContributionKind::Rebind {
             self.cross_rebinds.insert(
                 edge.id,
                 CrossRebindEdge {
-                    from,
-                    to,
+                    from: contribution.from,
+                    to: contribution.to,
                     dependency_edge: edge.id,
                 },
             );
@@ -619,17 +683,33 @@ impl IncrementalQuotient {
         // I-graph or constraining-bucket mutation invalidates the
         // cached base simulator.
         self.invalidate_cached_simulator();
-        self.i_graph.increment_edge(from, to);
-        self.i_order.get_mut().insert_edge(&self.i_graph, from, to);
-        if !edge.reason.constrains_init_order() {
+        self.i_graph
+            .increment_edge(contribution.from, contribution.to);
+        self.i_order
+            .get_mut()
+            .insert_edge(&self.i_graph, contribution.from, contribution.to);
+        let EdgeContributionKind::Import {
+            constraining,
+            sequenced,
+        } = contribution.kind
+        else {
+            unreachable!("rebind contribution returned above")
+        };
+        if !constraining {
             return;
         }
-        self.constraining_graph.increment_edge(from, to);
-        self.constraining_order
-            .get_mut()
-            .insert_edge(&self.constraining_graph, from, to);
-        let bucket = self.constraining_buckets.entry((from, to)).or_default();
-        bucket.insert_edge(edge.id, edge.reason.is_sequenced());
+        self.constraining_graph
+            .increment_edge(contribution.from, contribution.to);
+        self.constraining_order.get_mut().insert_edge(
+            &self.constraining_graph,
+            contribution.from,
+            contribution.to,
+        );
+        let bucket = self
+            .constraining_buckets
+            .entry((contribution.from, contribution.to))
+            .or_default();
+        bucket.insert_edge(edge.id, sequenced);
     }
 
     pub(super) fn remove_current_edge(
@@ -637,17 +717,17 @@ impl IncrementalQuotient {
         edge: &analysis::graph::DependencyEdge,
         assignment: &ModuleAssignment,
     ) {
-        // Gate-side view: keep cross-module at-init promoted edges.
-        // Must mirror `add_current_edge` (see
-        // [`analysis::graph::assignment_endpoints`]).
-        let Some((from, to)) = analysis::graph::assignment_endpoints(
-            edge,
-            assignment,
-            analysis::graph::EndpointView::Gate,
-        ) else {
+        debug_assert_eq!(
+            assignment.entry_destination().module_id(),
+            self.entry_module_id,
+            "an incremental index keeps one fixed entry destination"
+        );
+        let Some(contribution) = edge_contribution(edge, self.entry_module_id, |source_unit| {
+            assignment.of(source_unit)
+        }) else {
             return;
         };
-        if edge.reason.is_rebind() {
+        if contribution.kind == EdgeContributionKind::Rebind {
             self.cross_rebinds.remove(&edge.id);
             // Mirror `add_current_edge`: rebind edits change the
             // touching verdict the tier-0 memo caches.
@@ -658,23 +738,70 @@ impl IncrementalQuotient {
         // I-graph or constraining-bucket mutation invalidates the
         // cached base simulator.
         self.invalidate_cached_simulator();
-        self.i_graph.decrement_edge(from, to);
-        self.i_order.get_mut().remove_edge(&self.i_graph, from, to);
-        if !edge.reason.constrains_init_order() {
+        self.i_graph
+            .decrement_edge(contribution.from, contribution.to);
+        self.i_order
+            .get_mut()
+            .remove_edge(&self.i_graph, contribution.from, contribution.to);
+        let EdgeContributionKind::Import {
+            constraining,
+            sequenced,
+        } = contribution.kind
+        else {
+            unreachable!("rebind contribution returned above")
+        };
+        if !constraining {
             return;
         }
-        self.constraining_graph.decrement_edge(from, to);
-        self.constraining_order
-            .get_mut()
-            .remove_edge(&self.constraining_graph, from, to);
-        let pair = (from, to);
+        self.constraining_graph
+            .decrement_edge(contribution.from, contribution.to);
+        self.constraining_order.get_mut().remove_edge(
+            &self.constraining_graph,
+            contribution.from,
+            contribution.to,
+        );
+        let pair = (contribution.from, contribution.to);
         let mut remove_bucket = false;
         if let Some(bucket) = self.constraining_buckets.get_mut(&pair) {
-            bucket.remove_edge(edge.id, edge.reason.is_sequenced());
+            bucket.remove_edge(edge.id, sequenced);
             remove_bucket = bucket.is_empty();
         }
         if remove_bucket {
             self.constraining_buckets.remove(&pair);
+        }
+    }
+
+    /// Commit a simultaneous assignment batch by removing and re-adding each
+    /// incident dependency edge once around the single final mapping.
+    pub(super) fn apply_batch(
+        &mut self,
+        dependency_graph: &DependencyGraph,
+        assignment: &mut ModuleAssignment,
+        batch: &ModuleAssignmentBatch,
+    ) {
+        debug_assert_eq!(
+            assignment.entry_destination().module_id(),
+            self.entry_module_id,
+            "an incremental index keeps one fixed entry destination"
+        );
+        let destinations = batch.changed_destinations(assignment);
+        if destinations.is_empty() {
+            return;
+        }
+
+        let source_units: Vec<_> = destinations.keys().copied().collect();
+        // `impacted_dependency_edges` deduplicates the union of incoming and
+        // outgoing edges. In particular, an edge whose endpoints both move is
+        // removed under the old mapping and added once under the final map.
+        let impacted_edges = impacted_dependency_edges(dependency_graph, &source_units);
+        for edge_id in &impacted_edges {
+            self.remove_current_edge(dependency_graph.edge(*edge_id), assignment);
+        }
+        for (&source_unit, &to) in &destinations {
+            assignment.set(source_unit, to);
+        }
+        for edge_id in &impacted_edges {
+            self.add_current_edge(dependency_graph.edge(*edge_id), assignment);
         }
     }
 
@@ -1207,15 +1334,23 @@ impl IncrementalQuotient {
         (i_successors, constraining_pairs)
     }
 
-    pub(super) fn overlay_for_move(
+    pub(super) fn overlay_for_batch(
         &self,
         dependency_graph: &DependencyGraph,
         assignment: &ModuleAssignment,
-        source_units: &[SourceUnitId],
-        to: ModuleId,
+        batch: &ModuleAssignmentBatch,
     ) -> QuotientOverlay {
-        let impacted_edges = impacted_dependency_edges(dependency_graph, source_units);
-        let source_units: BTreeSet<SourceUnitId> = source_units.iter().copied().collect();
+        debug_assert_eq!(
+            assignment.entry_destination().module_id(),
+            self.entry_module_id,
+            "an incremental index keeps one fixed entry destination"
+        );
+        let destinations = batch.changed_destinations(assignment);
+        if destinations.is_empty() {
+            return QuotientOverlay::default();
+        }
+        let source_units: Vec<_> = destinations.keys().copied().collect();
+        let impacted_edges = impacted_dependency_edges(dependency_graph, &source_units);
         let mut overlay = QuotientOverlay::default();
         for edge_id in impacted_edges {
             let edge = dependency_graph.edge(edge_id);
@@ -1224,22 +1359,15 @@ impl IncrementalQuotient {
             // the overlay never adds an entry -> target edge the gate lacks
             // when the target moves, nor cancels a real edge on the same
             // module pair when the caller leaves entry.
-            let current = edge_contribution(
-                edge,
-                assignment.entry_destination().module_id(),
-                |source_unit| assignment.of(source_unit),
-            );
-            let next = edge_contribution(
-                edge,
-                assignment.entry_destination().module_id(),
-                |source_unit| {
-                    if source_units.contains(&source_unit) {
-                        to
-                    } else {
-                        assignment.of(source_unit)
-                    }
-                },
-            );
+            let current = edge_contribution(edge, self.entry_module_id, |source_unit| {
+                assignment.of(source_unit)
+            });
+            let next = edge_contribution(edge, self.entry_module_id, |source_unit| {
+                destinations
+                    .get(&source_unit)
+                    .copied()
+                    .unwrap_or_else(|| assignment.of(source_unit))
+            });
             if current == next {
                 continue;
             }

@@ -121,10 +121,13 @@ fn full_overlay_verdict_matches_pure_gate_across_typed_moves() {
                 vec![SourceUnitId(first)]
             };
             let to = ModuleId((step + seed * 2) % 5);
-            let overlay =
-                index
-                    .quotient
-                    .overlay_for_move(&graph, index.assignment(), &source_units, to);
+            let batch = ModuleAssignmentBatch::from(ModuleAssignmentDelta::MoveSourceUnits {
+                source_units: source_units.clone(),
+                to,
+            });
+            let overlay = index
+                .quotient
+                .overlay_for_batch(&graph, index.assignment(), &batch);
             let mut post = index.assignment().clone();
             for &source_unit in &source_units {
                 post.set(source_unit, to);
@@ -147,6 +150,187 @@ fn full_overlay_verdict_matches_pure_gate_across_typed_moves() {
             }
         }
     }
+}
+
+fn assert_batch_agrees_across_paths(
+    index: &RealizabilityIndex,
+    dependency_graph: &DependencyGraph,
+    batch: &ModuleAssignmentBatch,
+) {
+    let mut post_assignment = index.assignment().clone();
+    for (&source_unit, &destination) in batch.destinations() {
+        post_assignment.set(source_unit, destination);
+    }
+
+    let hypothetical = index.verdict_after_batch(dependency_graph, batch);
+    let from_scratch = check_realizability(dependency_graph, &post_assignment);
+    assert_eq!(hypothetical, from_scratch, "hypothetical batch verdict");
+
+    let mut committed = index.clone();
+    committed.apply_batch(dependency_graph, batch);
+    assert_eq!(
+        committed.assignment().iter().collect::<Vec<_>>(),
+        post_assignment.iter().collect::<Vec<_>>()
+    );
+    assert_eq!(committed.verdict(), from_scratch, "committed batch verdict");
+}
+
+#[test]
+fn simultaneous_batches_can_repair_individually_rejected_moves() {
+    let source = "const a = b + 1; const b = a + 1; const c = d + 1; const d = c + 1;";
+    let dependency_graph = parse_and_build(source);
+    let mut assignment = ModuleAssignment::new(
+        &dependency_graph,
+        analysis::EntryDestination::from_module_id(ModuleId(0)),
+    );
+    assignment.set(SourceUnitId(0), ModuleId(1));
+    assignment.set(SourceUnitId(1), ModuleId(2));
+    assignment.set(SourceUnitId(2), ModuleId(3));
+    assignment.set(SourceUnitId(3), ModuleId(4));
+    let index = RealizabilityIndex::from_assignment(&dependency_graph, assignment);
+    assert_eq!(index.verdict().unrealizable_sccs.len(), 2);
+
+    let first_cycle =
+        ModuleAssignmentBatch::from_destinations(BTreeMap::from([(SourceUnitId(0), ModuleId(2))]));
+    let second_cycle =
+        ModuleAssignmentBatch::from_destinations(BTreeMap::from([(SourceUnitId(2), ModuleId(4))]));
+    assert!(
+        !index
+            .verdict_after_batch(&dependency_graph, &first_cycle)
+            .is_realizable()
+    );
+    assert!(
+        !index
+            .verdict_after_batch(&dependency_graph, &second_cycle)
+            .is_realizable()
+    );
+
+    // Each move closes one independent eager cycle. Only the final mapping
+    // removes both cycles, even though the two moves target different modules.
+    let repaired = ModuleAssignmentBatch::from_destinations(BTreeMap::from([
+        (SourceUnitId(0), ModuleId(2)),
+        (SourceUnitId(2), ModuleId(4)),
+    ]));
+    assert_batch_agrees_across_paths(&index, &dependency_graph, &repaired);
+    assert!(
+        index
+            .verdict_after_batch(&dependency_graph, &repaired)
+            .is_realizable()
+    );
+    assert_eq!(index.verdict().unrealizable_sccs.len(), 2);
+}
+
+#[test]
+fn simultaneous_batch_projects_edges_with_both_endpoints_moved_once() {
+    let dependency_graph = parse_and_build("const a = 1; const b = a + 1; const c = b + 1;");
+    let mut assignment = ModuleAssignment::new(
+        &dependency_graph,
+        analysis::EntryDestination::from_module_id(ModuleId(0)),
+    );
+    assignment.set(SourceUnitId(0), ModuleId(1));
+    assignment.set(SourceUnitId(1), ModuleId(2));
+    assignment.set(SourceUnitId(2), ModuleId(3));
+    let index = RealizabilityIndex::from_assignment(&dependency_graph, assignment);
+    let batch = ModuleAssignmentBatch::from_destinations(BTreeMap::from([
+        (SourceUnitId(0), ModuleId(4)),
+        (SourceUnitId(1), ModuleId(5)),
+    ]));
+    let overlay = index
+        .quotient
+        .overlay_for_batch(&dependency_graph, index.assignment(), &batch);
+
+    // The b -> a dependency changes from (2, 1) directly to (5, 4). It is
+    // not observed through either intermediate one-endpoint assignment.
+    assert_eq!(overlay.i_delta.get(&(ModuleId(2), ModuleId(1))), Some(&-1));
+    assert_eq!(overlay.i_delta.get(&(ModuleId(5), ModuleId(4))), Some(&1));
+    assert_eq!(overlay.i_delta.get(&(ModuleId(3), ModuleId(2))), Some(&-1));
+    assert_eq!(overlay.i_delta.get(&(ModuleId(3), ModuleId(5))), Some(&1));
+    assert_batch_agrees_across_paths(&index, &dependency_graph, &batch);
+}
+
+#[test]
+fn simultaneous_batch_activates_promoted_edge_from_final_mapping() {
+    let source = "const seed = \"S\"; const readSeed = () => seed; const sub1 = { foo: readSeed() }; const ids = sub1.foo + \"x\"; const consumed = ids; console.log(consumed);";
+    let dependency_graph = parse_and_build(source);
+    let promoted = dependency_graph
+        .iter_edges()
+        .find(|edge| {
+            edge.from == SourceUnitId(2)
+                && edge.to == SourceUnitId(0)
+                && matches!(edge.reason.role(), EdgeRole::PromotedAtInit { .. })
+        })
+        .expect("parsed fixture should include the promoted readSeed -> seed edge");
+    assert!(matches!(
+        promoted.reason.role(),
+        EdgeRole::PromotedAtInit {
+            callee_source_unit: SourceUnitId(1)
+        }
+    ));
+
+    let assignment = ModuleAssignment::new(
+        &dependency_graph,
+        analysis::EntryDestination::from_module_id(ModuleId(0)),
+    );
+    let index = RealizabilityIndex::from_assignment(&dependency_graph, assignment);
+    assert!(index.verdict().is_realizable());
+    let batch = ModuleAssignmentBatch::from_destinations(BTreeMap::from([
+        (SourceUnitId(1), ModuleId(1)),
+        (SourceUnitId(2), ModuleId(2)),
+        (SourceUnitId(3), ModuleId(3)),
+    ]));
+    let overlay = index
+        .quotient
+        .overlay_for_batch(&dependency_graph, index.assignment(), &batch);
+    let canonical = index.quotient.canonical_with_overlay(&overlay);
+    assert!(canonical.edges.contains_key(&(ModuleId(2), ModuleId(0))));
+
+    assert_batch_agrees_across_paths(&index, &dependency_graph, &batch);
+    let verdict = index.verdict_after_batch(&dependency_graph, &batch);
+    assert!(
+        !verdict.is_realizable(),
+        "promoted edge should close the entry cycle"
+    );
+    assert!(verdict.unrealizable_sccs.iter().any(|scc| {
+        scc.core
+            .constraining_dependency_edges
+            .contains(&promoted.id)
+    }));
+}
+
+#[test]
+fn empty_and_unchanged_batches_match_the_baseline() {
+    let dependency_graph = parse_and_build("const a = 1; const b = a + 1;");
+    let mut assignment = ModuleAssignment::new(
+        &dependency_graph,
+        analysis::EntryDestination::from_module_id(ModuleId(0)),
+    );
+    assignment.set(SourceUnitId(0), ModuleId(1));
+    assignment.set(SourceUnitId(1), ModuleId(2));
+    let index = RealizabilityIndex::from_assignment(&dependency_graph, assignment);
+    let original_assignment = index.assignment().iter().collect::<Vec<_>>();
+    let baseline = index.verdict();
+
+    let empty = ModuleAssignmentBatch::default();
+    let unchanged = ModuleAssignmentBatch::from_destinations(BTreeMap::from([
+        (SourceUnitId(0), ModuleId(1)),
+        (SourceUnitId(1), ModuleId(2)),
+    ]));
+    for batch in [&empty, &unchanged] {
+        let overlay =
+            index
+                .quotient
+                .overlay_for_batch(&dependency_graph, index.assignment(), batch);
+        assert!(overlay.is_empty());
+        assert_eq!(
+            index.verdict_after_batch(&dependency_graph, batch),
+            baseline
+        );
+        assert_batch_agrees_across_paths(&index, &dependency_graph, batch);
+    }
+    assert_eq!(
+        index.assignment().iter().collect::<Vec<_>>(),
+        original_assignment
+    );
 }
 
 #[test]
