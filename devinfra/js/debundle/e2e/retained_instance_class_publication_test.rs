@@ -296,7 +296,7 @@ fn class_members_escape_rejection<'a>(
 
 #[test]
 fn mapping_a_retained_instance_does_not_publish_class_members() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         MAP_SOURCE,
         modules(&["Box", "create", "first", "retained", "selected", "again"]),
     ));
@@ -317,7 +317,7 @@ fn mapping_a_retained_instance_does_not_publish_class_members() {
 
 #[test]
 fn locally_retained_instance_does_not_publish_class_members() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         LOCAL_SOURCE,
         modules(&["Box", "create", "first", "retained", "again"]),
     ));
@@ -330,7 +330,7 @@ fn locally_retained_instance_does_not_publish_class_members() {
 
 #[test]
 fn opaque_consumer_of_an_instance_still_blocks_later_construction() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             OPAQUE_SOURCE,
             vec![module(
@@ -362,7 +362,7 @@ fn bounded_pool_fallback_reports_the_original_retained_input_path() {
         .find(|line| line.starts_with("host("))
         .expect("opaque host call statement");
     let bindings = ["Box", "create", "first", "shelf", "reader", "again"];
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(&source, vec![module(&bindings, &[host_statement])])
             .with_extra_chunks(&BOUNDED_FALLBACK_PEER)
             .with_unassigned_mode(unassigned_mode_inline()),
@@ -421,7 +421,7 @@ fn bounded_pool_fallback_reports_the_original_retained_input_path() {
 
 #[test]
 fn projected_primitive_does_not_gain_constructed_instance_kind() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         PROJECTED_SOURCE,
         modules(&[
             "Box",
@@ -446,7 +446,7 @@ fn projected_primitive_does_not_gain_constructed_instance_kind() {
 
 #[test]
 fn repeated_aliases_are_iterated_without_claiming_unique_instances() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         ALIASED_SOURCE,
         modules(&["Box", "create", "first", "retained", "selected", "again"]),
     ));
@@ -462,7 +462,7 @@ fn repeated_aliases_are_iterated_without_claiming_unique_instances() {
 
 #[test]
 fn opaque_consumer_of_mapped_callbacks_still_publishes_class_capabilities() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             OPAQUE_MAPPED_RESULT_SOURCE,
             vec![module(
@@ -484,7 +484,7 @@ fn opaque_consumer_of_mapped_callbacks_still_publishes_class_capabilities() {
 
 #[test]
 fn invoking_an_opaque_mapped_element_preserves_callback_reach() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         INVOKED_MAPPED_RESULT_SOURCE,
         modules(&[
             "Box", "create", "first", "retained", "selected", "invoked", "again",
@@ -507,7 +507,7 @@ fn invoking_an_opaque_mapped_element_preserves_callback_reach() {
 
 #[test]
 fn mutation_during_iteration_invalidates_the_instance_read_proof() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         MUTATED_SOURCE,
         modules(&["Box", "create", "first", "retained", "selected", "again"]),
     ));
@@ -530,7 +530,7 @@ fn mutation_during_iteration_invalidates_the_instance_read_proof() {
 
 #[test]
 fn replaced_array_map_keeps_the_opaque_callback_path() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         REPLACED_MAP_SOURCE,
         vec![module(
             &["Box", "create", "first", "retained", "selected", "again"],
@@ -551,7 +551,7 @@ fn replaced_array_map_keeps_the_opaque_callback_path() {
 
 #[test]
 fn instance_getter_runs_and_refuses_the_own_data_read_proof() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         GETTER_SOURCE,
         vec![module(
             &["Box", "create", "first", "retained", "selected", "again"],
@@ -570,7 +570,7 @@ fn instance_getter_runs_and_refuses_the_own_data_read_proof() {
 
 #[test]
 fn array_slot_mutation_during_iteration_invalidates_the_source_receipt() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         MUTATED_ARRAY_SOURCE,
         modules(&["Box", "create", "first", "retained", "selected", "again"]),
     ));
@@ -586,7 +586,7 @@ fn array_slot_mutation_during_iteration_invalidates_the_source_receipt() {
 
 #[test]
 fn unknown_array_slot_prevents_instance_only_iteration() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             UNKNOWN_SOURCE,
             modules(&["Box", "create", "first", "retained", "selected", "again"]),
@@ -605,7 +605,7 @@ fn unknown_array_slot_prevents_instance_only_iteration() {
 
 #[test]
 fn class_prototype_mutation_during_iteration_revokes_constructor_proof() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         MUTATED_CLASS_SOURCE,
         vec![module(
             &["Box", "create", "first", "retained", "selected", "again"],

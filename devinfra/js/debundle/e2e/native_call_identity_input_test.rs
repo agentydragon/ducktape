@@ -47,9 +47,10 @@ fn empty_set_modules() -> Vec<LogicalModuleEntry> {
 
 #[test]
 fn exact_empty_set_private_field_breaks_false_constructor_reentry_cycle() {
-    let unproved = run_rejection_fixture(FixtureOpts::new(EMPTY_SET_SOURCE, empty_set_modules()));
+    let unproved =
+        run_rejection_fixture_with_graphs(FixtureOpts::new(EMPTY_SET_SOURCE, empty_set_modules()));
     assert!(!unproved.atomic_group_conflicts().is_empty());
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(EMPTY_SET_SOURCE, empty_set_modules()).with_native_call_identity_inputs(
             "static/app",
             vec![empty_set_field_input(EMPTY_SET_SOURCE, EMPTY_SET_CLASS)],
@@ -96,7 +97,7 @@ fn exact_empty_set_private_field_breaks_false_constructor_reentry_cycle() {
 fn exact_empty_set_input_does_not_certify_an_unrelated_host_getter() {
     let source =
         EMPTY_SET_SOURCE.replace("globalThis.neutral = '1';", "process.env.NEUTRAL = '1';");
-    let rejected = run_rejection_fixture(
+    let rejected = run_rejection_fixture_with_graphs(
         FixtureOpts::new(&source, empty_set_modules()).with_native_call_identity_inputs(
             "static/app",
             vec![empty_set_field_input(&source, EMPTY_SET_CLASS)],
@@ -139,7 +140,7 @@ fn selected_empty_set_field_does_not_certify_another_set_constructor() {
         "const registry = new Registry();",
         "const other = new Set;\nconst registry = new Registry();",
     );
-    let rejected = run_rejection_fixture(
+    let rejected = run_rejection_fixture_with_graphs(
         FixtureOpts::new(&source, empty_set_modules()).with_native_call_identity_inputs(
             "static/app",
             vec![empty_set_field_input(&source, EMPTY_SET_CLASS)],
@@ -279,12 +280,12 @@ fn modules(with_write: bool) -> Vec<LogicalModuleEntry> {
 fn exact_freeze_site_restores_complete_synchronous_call_under_opaque_write() {
     let control = SOURCE.replace("startupTarget.freeze = 1;\n", "");
     assert_preserved_entry_output(
-        &run_fixture(FixtureOpts::new(&control, modules(false))),
+        &run_fixture_with_graphs(FixtureOpts::new(&control, modules(false))),
         "first later\n",
     );
-    let unproved = run_rejection_fixture(FixtureOpts::new(SOURCE, modules(true)));
+    let unproved = run_rejection_fixture_with_graphs(FixtureOpts::new(SOURCE, modules(true)));
     assert!(!unproved.atomic_group_conflicts().is_empty());
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(SOURCE, modules(true)).with_native_call_identity_inputs(
             "static/app",
             vec![input(SOURCE, "makeRecord", FUNCTION)],
@@ -320,7 +321,7 @@ fn exact_freeze_site_restores_complete_synchronous_call_under_opaque_write() {
 fn uncalled_certified_freeze_records_its_heap_proof_use() {
     let function = "function makeRecord(name) { return Object.freeze({ name }); }";
     let source = format!("{function}\nconsole.log(typeof makeRecord);\nexport {{ makeRecord }};\n");
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             &source,
             vec![logical_module(
@@ -361,7 +362,7 @@ fn certified_fresh_record_freeze_does_not_observe_an_unrelated_live_array() {
     let source = format!(
         "{function}\nconst startupTarget = globalThis.plugin || {{}};\nstartupTarget.freeze = 1;\nconst values = [];\nconst frozen = makeRecord('ready');\nconst later = values.length;\nconsole.log(frozen.name, later);\nexport {{ frozen, later }};\n"
     );
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             &source,
             vec![
@@ -436,7 +437,7 @@ fn freeze_heap_proof_retains_nested_array_mutation() {
     let source = format!(
         "{function}\nconst startupTarget = globalThis.plugin || {{}};\nstartupTarget.freeze = 1;\nconst values = [];\nconst frozen = makeRecord();\nconst later = values.length;\nconsole.log(frozen.name, later);\nexport {{ frozen, later }};\n"
     );
-    let rejected = run_rejection_fixture(
+    let rejected = run_rejection_fixture_with_graphs(
         FixtureOpts::new(
             &source,
             vec![
@@ -683,7 +684,7 @@ fn an_unselected_freeze_call_keeps_the_opaque_barrier() {
             &format!("{other}\nconst startupTarget ="),
         )
         .replace("const early = makeRecord(", "const early = other(");
-    let rejected = run_rejection_fixture(
+    let rejected = run_rejection_fixture_with_graphs(
         FixtureOpts::new(&source, modules(true)).with_native_call_identity_inputs(
             "static/app",
             vec![input(&source, "makeRecord", FUNCTION)],

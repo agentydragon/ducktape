@@ -248,13 +248,13 @@ fn source_match_and_resolved_member_keep_the_same_site_and_dependencies() {
         "alias_module",
         &[Member::new("alias"), Member::new("value")],
     )];
-    let source_match = run_fixture(
+    let source_match = run_fixture_with_graphs(
         FixtureOpts::new(SOURCE, modules.clone()).with_native_operation_inputs(
             "static/app",
             vec![input(SOURCE, "var alias = Object.defineProperty;")],
         ),
     );
-    let resolved_member = run_fixture(
+    let resolved_member = run_fixture_with_graphs(
         FixtureOpts::new(SOURCE, modules).with_native_operation_inputs(
             "static/app",
             vec![relational_input(SOURCE, "alias_module", "alias")],
@@ -324,7 +324,7 @@ fn native_own_data_read_composes_exact_root_effect_coverage() {
         } else {
             opts
         };
-        let fixture = run_fixture(opts);
+        let fixture = run_fixture_with_graphs(opts);
         assert_preserved_entry_output(&fixture, "1 function\n");
         let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
         let execution = &node(&graph, "alias")["synchronous_execution"];
@@ -475,7 +475,7 @@ fn native_input_requires_exactly_one_selector_variant() {
 
 #[test]
 fn selected_original_object_read_removes_the_heap_frontier_cycle() {
-    let fixture = run_fixture(split(SOURCE, true));
+    let fixture = run_fixture_with_graphs(split(SOURCE, true));
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     let alias = node(&graph, "alias");
     assert_eq!(
@@ -490,7 +490,7 @@ fn selected_original_object_read_removes_the_heap_frontier_cycle() {
 
 #[test]
 fn intact_object_read_has_an_independent_source_certificate() {
-    let fixture = run_fixture(split(SOURCE_INFERRED, false));
+    let fixture = run_fixture_with_graphs(split(SOURCE_INFERRED, false));
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     let alias = node(&graph, "alias");
     assert_eq!(
@@ -544,7 +544,7 @@ fn exact_input_rejects_unsupported_and_stale_sites() {
 #[test]
 fn sibling_initializer_effect_survives_a_certified_read() {
     let source = "var alias = Object.defineProperty, other = external();\n";
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(source, vec![])
             .with_unassigned_mode(unassigned_mode_inline())
             .with_native_operation_inputs(
@@ -569,7 +569,7 @@ fn sibling_initializer_effect_survives_a_certified_read() {
 #[test]
 fn uncertified_second_native_read_in_one_declaration_stays_observable() {
     let source = "Object.entries = function replacement() {};\nvar alias = Object.defineProperty, other = Object.entries;\n";
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(source, vec![])
             .with_unassigned_mode(unassigned_mode_inline())
             .with_native_operation_inputs(
@@ -611,7 +611,7 @@ fn known_exact_slot_writes_contradict_only_the_relevant_premise() {
     }
     let source =
         "Object.entries = function replacement() {};\nvar alias = Object.defineProperty;\n";
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             source,
             vec![logical_module("alias", &[Member::new("alias")])],
@@ -653,7 +653,7 @@ fn known_exact_slot_write_in_an_imported_chunk_contradicts_the_input() {
 #[test]
 fn invoking_the_alias_keeps_call_heap_effects() {
     let source = "const sentinel = [1];\nvar alias = Object.defineProperty;\nconst after = alias(sentinel, 'x', { value: 2 });\nconsole.log(sentinel.x);\n";
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(source, vec![])
             .with_unassigned_mode(unassigned_mode_inline())
             .with_native_operation_inputs(

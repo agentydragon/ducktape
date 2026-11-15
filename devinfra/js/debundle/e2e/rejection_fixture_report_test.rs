@@ -7,7 +7,7 @@ const OPAQUE_RUNTIME_SOURCE: &str = "export function identity7(value) { return v
 
 #[test]
 fn missing_conflict_report_includes_case_path_and_cli_stderr() {
-    let fixture = run_rejection_fixture(mixed_selector_failure_fixture());
+    let fixture = run_rejection_fixture_with_graphs(mixed_selector_failure_fixture());
     assert!(!fixture.stderr.is_empty());
     for filename in ["cycles.json", "atomic_group_conflicts.json"] {
         let path = fixture.report_root.join(&fixture.chunk_id).join(filename);
@@ -52,7 +52,7 @@ console.log(identity7(x()));
     opts.extra_chunk_logical_modules = &provider_modules;
 
     let panic = match catch_unwind(AssertUnwindSafe(move || {
-        run_rejection_fixture_with_args(opts, &[], 3)
+        run_rejection_fixture_with_graphs_and_args(opts, &[], 3)
     })) {
         Ok(_) => panic!("the accepted fixture must disagree with the deliberately wrong exit code"),
         Err(panic) => panic,

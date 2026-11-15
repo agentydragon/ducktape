@@ -57,7 +57,7 @@ fn accepted_split() -> FixtureOpts<'static> {
 
 #[test]
 fn rejection_writes_marked_unrunnable_tree_without_harness() {
-    let rejected = run_emit_on_rejection_fixture(rejected_split());
+    let rejected = run_emit_on_rejection_fixture_with_graphs(rejected_split());
     let cycles = rejected.report_path("cycles.json");
     assert!(cycles.is_file(), "gate evidence is still written");
 
@@ -116,7 +116,7 @@ fn rejection_with_unresolved_claim_writes_no_tree() {
     )
     .with_unassigned_mode(unassigned_mode_inline())
     .with_browser_harness();
-    let rejected = run_emit_on_rejection_failure_fixture(opts);
+    let rejected = run_emit_on_rejection_failure_fixture_with_graphs(opts);
     assert!(
         rejected.report_path("cycles.json").is_file(),
         "the gate ran"
@@ -128,7 +128,7 @@ fn rejection_with_unresolved_claim_writes_no_tree() {
 
 #[test]
 fn rejection_without_flag_writes_no_tree() {
-    let rejected = run_rejection_fixture(rejected_split());
+    let rejected = run_rejection_fixture_with_graphs(rejected_split());
     assert!(rejected.report_path("cycles.json").is_file());
     assert!(!rejected.app_root().exists());
     assert!(!rejected.gate_rejected_marker().exists());

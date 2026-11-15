@@ -19,7 +19,7 @@ use debundle_e2e_support::*;
 
 #[test]
 fn eager_use_to_fndecl_is_not_emitted() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         r#"function f() { return "from-f"; }
 const x = f();
 console.log(x);

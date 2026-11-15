@@ -48,7 +48,7 @@ fn s_chain_skips_disjoint_global_property_writes() {
     // sets `{globalThis.alpha}` and `{globalThis.beta}` are
     // disjoint and the read sets are empty, so no S-edge is
     // warranted.
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             r#"const tagA = (globalThis.alpha = "alpha-val", "tag-a");
 const tagB = (globalThis.beta = "beta-val", "tag-b");
@@ -90,7 +90,7 @@ fn s_chain_skips_fresh_local_alloc_after_global_write() {
     //   boxedB.writes = {boxedB}
     //   boxedB.reads  = {Object}
     // No intersection — no S-edge.
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             r#"const tagA = (globalThis.tag = "first", "tag-a");
 const boxedB = Object.freeze({ kind: "fresh" });
@@ -129,7 +129,7 @@ fn unproven_constructor_calls_keep_conservative_s_edge() {
     // behavior: relaxing it requires proving the constructor
     // cell-confined (the kernel's construct rule, or a `pure_new` spec
     // annotation), not assuming it.
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             r#"function kind(value) { return value; }
 class Holder1 { constructor() { this.kind = kind("h1"); } }
@@ -160,7 +160,7 @@ fn checked_constructor_calls_need_no_trusted_summary() {
     // (one store to the fresh instance) and covers both initializers
     // without the trusted dataflow assumption: their cell sets are
     // disjoint, so no S-edge joins them.
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             r#"class Holder1 { constructor() { this.kind = "h1"; } }
 class Holder2 { constructor() { this.kind = "h2"; } }
@@ -199,7 +199,7 @@ fn trusted_constructor_calls_use_dataflow_summary() {
     // prior impure source_unit. In that trusted mode these two constructor
     // calls touch disjoint binding cells, so there is no S-edge
     // between them.
-    let fixture = run_fixture(trusted_dataflow_opts(
+    let fixture = run_fixture_with_graphs(trusted_dataflow_opts(
         r#"class Holder1 { constructor() { this.kind = "h1"; } }
 class Holder2 { constructor() { this.kind = "h2"; } }
 const instA = new Holder1();
@@ -233,7 +233,7 @@ fn s_chain_keeps_edge_when_writes_overlap() {
     // Both statements write `globalThis.shared` (the LAST one
     // wins, and any reader of `globalThis.shared` observes the
     // ordering). The edge must remain.
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             r#"const tagA = (globalThis.shared = "from-a", "tag-a");
 const tagB = (globalThis.shared = "from-b", "tag-b");
@@ -290,7 +290,7 @@ fn bail_out_keeps_s_edge_when_statement_uses_direct_eval() {
     // (chunk_admission_test pins that rejection); this fixture opts
     // out via the spec override so the per-statement dataflow bail-out
     // stays exercised on its own.
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             r#"const tagA = (globalThis.alpha = "alpha-val", "tag-a");
 const tagB = (eval("globalThis.beta = 'beta-val'"), "tag-b");
@@ -320,7 +320,7 @@ fn bail_out_keeps_s_edge_when_statement_writes_global_this_with_dynamic_key() {
     // `globalThis[<expr>] = ...` can't be reduced to a statically
     // known property cell — the statement must fall back to the
     // strict S-edge.
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             r#"const tagA = (globalThis.alpha = "alpha-val", "tag-a");
 const keyB = "beta";
@@ -350,7 +350,7 @@ fn bail_out_keeps_s_edge_when_statement_uses_function_constructor() {
     // `Function(...)` (and `new Function(...)`) compile a string to
     // executable code in the global scope — same risk class as
     // direct `eval`.
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             r#"const tagA = (globalThis.alpha = "alpha-val", "tag-a");
 const fnB = new Function("globalThis.beta = 'beta-val'");

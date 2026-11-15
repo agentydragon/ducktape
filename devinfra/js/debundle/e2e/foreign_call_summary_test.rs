@@ -25,7 +25,7 @@ fn reject(source: &str, provider: &str) {
 
 #[test]
 fn derived_constructor_retains_its_callback_until_instance_use() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "import { Box } from './peer.js';\nconst wrapped = new Box(() => later, 'label');\nconst later = 42;\nconsole.log(wrapped.invoke());\n",
             modules(),
@@ -90,7 +90,7 @@ fn class_fields_keep_typed_empty_keyed_collection_constructions() {
 
 #[test]
 fn callable_factories_use_shared_empty_keyed_collection_transfers() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "import { makeCache, makeRecord } from './peer.js';\nfunction localCache() { return new Map(); }\nconst cache = makeCache();\nconst record = makeRecord();\nconsole.log(cache instanceof Map, cache.size, record.nested.cache instanceof Map, record.nested.cache.size, localCache().size);\n",
             vec![],
@@ -579,7 +579,7 @@ fn strict_expression_returns_preserve_runtime_values_and_retained_arguments() {
     ] {
         let source = format!("import {{ make }} from './peer.js';\n{use_result}\n");
         let provider = format!("export function make(input, compare) {{ return {returned}; }}\n");
-        let fixture = run_fixture(
+        let fixture = run_fixture_with_graphs(
             FixtureOpts::new(&source, vec![]).with_extra_chunks(&[("static/peer", &provider)]),
         );
         assert_preserved_entry_output(&fixture, expected);
@@ -743,7 +743,7 @@ const later = 42;
 console.log(observed);
 "#
     );
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(&source, vec![])
             .with_extra_chunks(&[("static/peer", provider.as_str())])
             .with_unassigned_mode(unassigned_mode_inline()),
@@ -812,7 +812,7 @@ fn returned_result_keeps_set_insertion_conservative() {
 
 #[test]
 fn equal_retained_inputs_do_not_prove_result_identity_or_shape() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "import { wrap } from './peer.js';\nconst input = {};\nconst first = wrap(input);\nconst second = wrap(input);\nconst selected = first.value;\nconsole.log(first === second, selected === second.value);\n",
             vec![],

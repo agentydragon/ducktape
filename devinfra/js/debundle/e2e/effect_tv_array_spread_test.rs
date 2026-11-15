@@ -74,7 +74,7 @@ fn root_array_spread_of_module_arrays_keeps_its_receipt_across_an_inversion() {
 #[test]
 fn spread_reads_the_source_contents_at_its_initialization_prefix() {
     let source = "const first = ['a'];\nconst copy = [...first];\nconst pushed = first.push('b');\nconsole.log(copy.join(','), first.join(','), pushed);\n";
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         source,
         vec![
             logical_module("source", &[Member::new("first"), Member::new("copy")]),

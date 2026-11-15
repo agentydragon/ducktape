@@ -217,13 +217,17 @@ pub fn run_fixture(opts: FixtureOpts<'_>) -> Fixture {
 }
 
 pub fn run_fixture_with_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -> Fixture {
-    run_fixture_with_options(opts, extra_args, true)
+    run_fixture_with_options(opts, extra_args, false)
 }
 
-/// Run a fixture without `--graphs`, for CLI options that conflict with full
-/// graph export.
-pub fn run_fixture_without_graphs_with_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -> Fixture {
-    run_fixture_with_options(opts, extra_args, false)
+/// Run a fixture and export its dependency and program graphs for graph-backed
+/// assertions or follow-up CLI queries.
+pub fn run_fixture_with_graphs(opts: FixtureOpts<'_>) -> Fixture {
+    run_fixture_with_graphs_and_args(opts, &[])
+}
+
+pub fn run_fixture_with_graphs_and_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -> Fixture {
+    run_fixture_with_options(opts, extra_args, true)
 }
 
 fn run_fixture_with_options(opts: FixtureOpts<'_>, extra_args: &[&str], graphs: bool) -> Fixture {
@@ -303,7 +307,7 @@ pub struct GateOutcome {
 /// refuse: any exit other than acceptance or the gate-only rejection panics.
 pub fn run_fixture_to_gate_outcome(opts: FixtureOpts<'_>) -> GateOutcome {
     let setup = prepare_fixture(&opts);
-    let result = spawn_transform_with_args(&setup.spec_path, &["--graphs", "--emit-on-rejection"]);
+    let result = spawn_transform_with_args(&setup.spec_path, &["--emit-on-rejection"]);
     let accepted = match result.status.code() {
         Some(0) => true,
         Some(3) => false,
@@ -338,7 +342,7 @@ pub fn run_fixture_to_gate_outcome(opts: FixtureOpts<'_>) -> GateOutcome {
 /// Runs `opts` and asserts the realizability gate rejected it: returns the blocking SCC of
 /// `cycles.json` whose modules include every one of `modules`.
 pub fn expect_cycle_rejection(opts: FixtureOpts<'_>, modules: &[&str]) -> Value {
-    let cycles = run_rejection_fixture(opts).cycles();
+    let cycles = run_rejection_fixture_with_graphs(opts).cycles();
     cycles
         .iter()
         .find(|scc| {
@@ -369,7 +373,7 @@ pub fn expect_sequenced_cycle_rejection(opts: FixtureOpts<'_>, modules: &[&str])
 /// Runs `opts` and asserts the atomic-group check rejected it: some conflict of
 /// `atomic_group_conflicts.json` has claims in every one of `modules` and every one of `causes`.
 pub fn expect_atomic_conflict_rejection(opts: FixtureOpts<'_>, modules: &[&str], causes: &[&str]) {
-    let conflicts = run_rejection_fixture(opts).atomic_group_conflicts();
+    let conflicts = run_rejection_fixture_with_graphs(opts).atomic_group_conflicts();
     assert!(
         conflicts.iter().any(|conflict| {
             let claims = conflict["claims"].as_array().expect("conflict claims");
@@ -424,6 +428,10 @@ pub fn run_emit_on_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
     run_rejection_fixture_with_args(opts, &["--emit-on-rejection"], 3)
 }
 
+pub fn run_emit_on_rejection_fixture_with_graphs(opts: FixtureOpts<'_>) -> RejectedFixture {
+    run_rejection_fixture_with_graphs_and_args(opts, &["--emit-on-rejection"], 3)
+}
+
 /// The xfail form of a positive the gate still refuses: the split is valid
 /// (the tree emitted on rejection prints `expected_stdout`, the source's
 /// output) but not provable yet, and today's refusal is the typed candidate
@@ -439,7 +447,7 @@ pub fn assert_pending_split_preserves_output(
         opts,
         &["--emit-on-rejection"],
         3,
-        true,
+        false,
         "capability landed: convert this pending split to a positive",
     );
     assert_node_output(&rejected.entry_path(), expected_stdout, "");
@@ -453,6 +461,10 @@ pub fn assert_pending_split_preserves_output(
 /// the gate's rejection: the run exits 1 like any other refusal.
 pub fn run_emit_on_rejection_failure_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
     run_rejection_fixture_with_args(opts, &["--emit-on-rejection"], 1)
+}
+
+pub fn run_emit_on_rejection_failure_fixture_with_graphs(opts: FixtureOpts<'_>) -> RejectedFixture {
+    run_rejection_fixture_with_graphs_and_args(opts, &["--emit-on-rejection"], 1)
 }
 
 /// Asserts `entry_path` is a parseable module that opens with the
@@ -480,12 +492,12 @@ pub fn assert_gate_rejected_banner(entry_path: &Path, evidence_report: &Path) {
 }
 
 /// Like [`run_rejection_fixture`] but with `debundle run --dry-run`.
-/// Dry-run skips all emitted-JS and accept-path report writes but
-/// still materializes rejection evidence (`dependency_graph.json.gz` +
-/// `cycles.json` / `atomic_group_conflicts.json`) under the standard
-/// per-chunk report layout.
 pub fn run_dry_run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
     run_rejection_fixture_with_args(opts, &["--dry-run"], 1)
+}
+
+pub fn run_dry_run_rejection_fixture_with_graphs(opts: FixtureOpts<'_>) -> RejectedFixture {
+    run_rejection_fixture_with_graphs_and_args(opts, &["--dry-run"], 1)
 }
 
 /// Like [`run_dry_run_rejection_fixture`] but opts out of the default
@@ -561,14 +573,18 @@ pub fn run_rejection_fixture_with_args(
         opts,
         extra_args,
         exit_code,
-        true,
+        false,
         "expected spec to be rejected",
     )
 }
 
-/// Run a rejected fixture without `--graphs`, for CLI options that conflict
-/// with full graph export.
-pub fn run_rejection_fixture_without_graphs_with_args(
+/// Run a rejected fixture and export its dependency and program graphs for
+/// graph-backed assertions or follow-up CLI queries.
+pub fn run_rejection_fixture_with_graphs(opts: FixtureOpts<'_>) -> RejectedFixture {
+    run_rejection_fixture_with_graphs_and_args(opts, &[], 1)
+}
+
+pub fn run_rejection_fixture_with_graphs_and_args(
     opts: FixtureOpts<'_>,
     extra_args: &[&str],
     exit_code: i32,
@@ -577,7 +593,7 @@ pub fn run_rejection_fixture_without_graphs_with_args(
         opts,
         extra_args,
         exit_code,
-        false,
+        true,
         "expected spec to be rejected",
     )
 }

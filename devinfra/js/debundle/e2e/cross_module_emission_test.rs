@@ -157,7 +157,7 @@ fn partial_rebind_claim_does_not_pull_an_unclaimed_writer_into_a_named_module() 
         unassigned_mode_per_atomic_group(),
         unassigned_mode_coarse_atomic_groups(),
     ] {
-        let rejected = run_emit_on_rejection_fixture(
+        let rejected = run_emit_on_rejection_fixture_with_graphs(
             FixtureOpts::new(
                 UNCLAIMED_WRITER_SOURCE,
                 vec![logical_module("state", &[Member::new("mutable")])],
@@ -234,7 +234,7 @@ fn cross_destination_rebind_is_rejected_when_effect_order_does_not_change() {
     // Keep the declaration and deferred writer in separate explicit
     // destinations. The ESM statement order still matches source order, but
     // the writer module would assign through an imported, read-only binding.
-    let rejected = run_emit_on_rejection_fixture(FixtureOpts::new(
+    let rejected = run_emit_on_rejection_fixture_with_graphs(FixtureOpts::new(
         r#"let mutable = 0;
 function write() {
   mutable = 1;

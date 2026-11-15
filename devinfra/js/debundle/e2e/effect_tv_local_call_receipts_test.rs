@@ -8,7 +8,7 @@ use debundle_e2e_support::*;
 
 #[test]
 fn local_cell_read_effects_compose_without_an_allocation_result() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "const seed = 41;\nfunction readSeed() { return seed; }\nvar result = (readSeed(), readSeed());\nconsole.log(result);\n",
         vec![logical_module(
             "all",
@@ -75,7 +75,7 @@ fn local_cell_read_effects_compose_without_an_allocation_result() {
 
 #[test]
 fn single_local_call_seals_real_lexical_read_and_call_receipts() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "const seed = 41;\nfunction readSeed() { return seed; }\nvar result = readSeed();\nconsole.log(result);\n",
         vec![logical_module(
             "all",
@@ -156,7 +156,7 @@ fn inline_callee_creation_executes_with_exact_operation_receipts() {
 
 #[test]
 fn inline_callee_invocation_keeps_captured_reads_and_refuses_unsupported_bodies() {
-    let captured = run_fixture(
+    let captured = run_fixture_with_graphs(
         FixtureOpts::new(
             "const seed = 41;\nconst result = ((value) => value)((() => seed)());\nconsole.log(result);\n",
             vec![],
@@ -178,7 +178,7 @@ fn inline_callee_invocation_keeps_captured_reads_and_refuses_unsupported_bodies(
         "invoking the inline arrow must retain its captured read: {graph:#?}"
     );
 
-    let unsupported = run_fixture(
+    let unsupported = run_fixture_with_graphs(
         FixtureOpts::new(
             "const result = ((value) => value)((() => { for (let index = 0; index < 1; index++) {} return 42; })());\nconsole.log(result);\n",
             vec![],
@@ -192,7 +192,7 @@ fn inline_callee_invocation_keeps_captured_reads_and_refuses_unsupported_bodies(
         "unsupported callable syntax must keep the root from receiving local-operation authority: {execution:#}"
     );
 
-    let named = run_fixture(
+    let named = run_fixture_with_graphs(
         FixtureOpts::new(
             "const result = (function identity(value) { return value; })((function constant() { return 42; })());\nconsole.log(result);\n",
             vec![],
@@ -209,7 +209,7 @@ fn inline_callee_invocation_keeps_captured_reads_and_refuses_unsupported_bodies(
 
 #[test]
 fn single_aliased_call_keeps_complete_but_uncovered_fallback() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "const seed = 41;\nconst later = 99;\nfunction readSeed() { return seed; }\nconst alias = { run: readSeed, dormant: () => later }.run;\nvar result = alias();\nconsole.log(result);\n",
         vec![logical_module(
             "all",
@@ -281,7 +281,7 @@ fn single_aliased_call_keeps_complete_but_uncovered_fallback() {
 
 #[test]
 fn ordered_callback_return_retains_the_selected_call_and_read_receipts() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "const early = 7;\nconst holder = { callback: () => early };\nfunction mutate() { holder.callback = () => later; return 0; }\nfunction take(value) { return value; }\nconst selected = take(holder.callback, mutate());\nconst result = selected();\nconst later = (result, 42);\nconsole.log(result, later, holder.callback());\n",
         vec![
             logical_module("a_record", &[Member::new("early"), Member::new("holder")]),
@@ -362,7 +362,7 @@ fn ordered_callback_return_retains_the_selected_call_and_read_receipts() {
 #[test]
 fn default_callback_and_parameter_read_have_receipts_without_eager_returned_body_reads() {
     const SOURCE: &str = "const value = 1;\nfunction factory(callback = input => input) { callback(0); return () => value; }\nconst created = factory();\nconsole.log(created());\nexport { value, factory, created };\n";
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             SOURCE,
             vec![logical_module("create", &[Member::new("created")])],
@@ -416,7 +416,7 @@ fn default_callback_and_parameter_read_have_receipts_without_eager_returned_body
 
 #[test]
 fn ordered_forwarding_does_not_borrow_provenance_from_an_equal_memo_argument() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "const seed = 41;\nconst later = 99;\nfunction readSeed() { return seed; }\nconst alias = { run: readSeed, dormant: () => later }.run;\nfunction forward(value) { return value; }\nconst selected = (forward(readSeed), forward(alias));\nvar result = selected();\nconsole.log(result);\n",
         vec![logical_module(
             "all",
@@ -502,7 +502,7 @@ fn default_parameter_reads_and_writes_keep_later_parameters_in_tdz() {
 
 #[test]
 fn complete_aliased_local_calls_without_a_receipt_keep_fallback_authority() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "const seed = 41;\nconst later = 99;\nfunction readSeed() { return seed; }\nconst alias = { run: readSeed, dormant: () => later }.run;\nvar result = (alias(), alias());\nconsole.log(result);\n",
         vec![logical_module(
             "all",
@@ -642,7 +642,7 @@ fn local_call_receipts_retain_consumed_host_prefix_prerequisites_when_reordered(
         audited_source_sha256: source_sha256(SOURCE),
         note: Some("Neutral fixture audits this exact empty Promise.resolve call.".to_string()),
     };
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             SOURCE,
             vec![logical_module(
@@ -861,7 +861,7 @@ fn local_call_effect_receipts_refuse_unmodeled_operations_and_prologues() {
         let source = format!(
             "const seed = {seed};\n{helper}\nvar result = ({invocation}, {invocation});\nconsole.log(result);\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(
             &source,
             vec![logical_module(
                 "all",
@@ -932,7 +932,7 @@ fn imported_cell_reads_do_not_receive_local_module_cell_receipts() {
 
 #[test]
 fn refused_call_receipts_preserve_actual_argument_evaluation() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "const seed = 41;\nfunction readSeed() { return seed; }\nfunction actual() { console.log('argument'); return seed; }\nvar result = (readSeed(actual()), readSeed(actual()));\nconsole.log(result);\n",
         vec![logical_module(
             "all",
@@ -977,7 +977,7 @@ fn refused_call_receipts_preserve_actual_argument_evaluation() {
 
 #[test]
 fn abrupt_local_call_receipt_cannot_complete_root_initialization() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "const seed = 41;\nfunction readSeed() { throw seed; }\nvar result = (readSeed(), readSeed());\nconsole.log(result);\n",
         vec![logical_module(
             "all",

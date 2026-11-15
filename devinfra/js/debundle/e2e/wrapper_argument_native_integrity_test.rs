@@ -25,7 +25,7 @@ fn source_wrapper_arguments_discharge_only_the_unreachable_native_write() {
         ("static/wrapper", WRAPPER),
         ("static/namespace", NAMESPACE),
     ];
-    let fixture = run_fixture(opts(&chunks));
+    let fixture = run_fixture_with_graphs(opts(&chunks));
     assert_preserved_entry_output(&fixture, "0 Later\n");
     let program_graph = fixture.program_graph();
     let witness = program_graph

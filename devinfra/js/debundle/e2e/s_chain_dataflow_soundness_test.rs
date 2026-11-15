@@ -72,7 +72,7 @@ export { snapshot, value };
     )
     .with_unassigned_mode(unassigned_mode_inline());
     colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    let fixture = run_fixture(colocated);
+    let fixture = run_fixture_with_graphs(colocated);
     assert_preserved_entry_output(&fixture, "0 42\n");
     let graph = fixture.dependency_graph();
     assert_eager_edge(
@@ -115,7 +115,7 @@ export { snapshot, value };
     )
     .with_unassigned_mode(unassigned_mode_inline());
     colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    let fixture = run_fixture(colocated);
+    let fixture = run_fixture_with_graphs(colocated);
     assert_preserved_entry_output(&fixture, "0 42\n");
     let graph = fixture.dependency_graph();
     assert_eager_edge(
@@ -158,7 +158,7 @@ export { snapshot, value };
     )
     .with_unassigned_mode(unassigned_mode_inline());
     colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    let fixture = run_fixture(colocated);
+    let fixture = run_fixture_with_graphs(colocated);
     assert_preserved_entry_output(&fixture, "true 42\n");
     let graph = fixture.dependency_graph();
     assert_sequenced_edge(
@@ -183,7 +183,7 @@ export { snapshot, value };
 /// is the earlier statement.
 #[test]
 fn write_after_read_emits_sequenced_edge() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             r#"globalThis.flag = "first";
 const snapshot = globalThis.flag;
@@ -213,7 +213,7 @@ export { snapshot, limit };
 /// observable and must be preserved via the conservative fallback.
 #[test]
 fn console_log_pair_keeps_conservative_order() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             r#"const seed = "s";
 console.log("one");
@@ -249,7 +249,7 @@ export { seed, base };
 /// the call statement.
 #[test]
 fn at_init_call_writing_global_in_body_is_ordered_before_reader() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             r#"function setup() { globalThis.mode = "ready"; }
 setup();
@@ -279,7 +279,7 @@ export { got };
 /// after it.
 #[test]
 fn member_write_through_binding_is_ordered_before_reader() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             r#"const registry = {};
 registry.mode = "on";
@@ -313,7 +313,7 @@ export { registry, snap };
 /// initial assignment.
 #[test]
 fn global_prop_update_expr_records_write() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             r#"globalThis.count = 1;
 globalThis.count++;
@@ -345,7 +345,7 @@ export { got };
 /// chain so they stay ordered after the direct writer.
 #[test]
 fn global_this_alias_read_is_ordered_after_direct_writer() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             r#"const g = globalThis;
 globalThis.tag = "x";
@@ -380,7 +380,7 @@ fn settled_global_alias_member_read_is_a_precise_cell() {
         ("const got = (globalThis.consume?.(g), g.tag);", true),
         ("const got = g[globalThis.key];", true),
     ] {
-        let fixture = run_fixture(
+        let fixture = run_fixture_with_graphs(
             FixtureOpts::new(
                 &format!(
                     "const g = globalThis;\nglobalThis.tag = \"x\";\nglobalThis.other = \"y\";\n{reader}\nconsole.log(got);\nexport {{ g, got }};\n"
@@ -410,7 +410,7 @@ fn settled_global_alias_member_read_is_a_precise_cell() {
 /// `globalThis`; writes through it must hit the same cells.
 #[test]
 fn window_alias_prop_write_orders_reader() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             r#"globalThis.window = globalThis;
 window.tag = "w";
@@ -445,7 +445,7 @@ fn indirect_eval_is_a_barrier() {
     // (chunk_admission_test pins that rejection); this fixture opts
     // out via the spec override so the per-statement dataflow
     // bail-out stays exercised on its own.
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             r#"globalThis.alpha = "a";
 const tagB = ((0, eval)("globalThis.beta = globalThis.alpha + 'b'"), "t");

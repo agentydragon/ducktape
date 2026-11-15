@@ -17,7 +17,7 @@ fn local_declaration_operations_cover_private_cells_and_compose_receipts() {
         let source = format!(
             "const seed = 41;\nfunction readSeed() {{ {body} }}\nvar result = readSeed();\nconsole.log(result);\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(
             &source,
             vec![logical_module(
                 "all",

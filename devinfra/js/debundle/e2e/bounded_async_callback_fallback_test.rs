@@ -41,7 +41,7 @@ fn has_eager_read(fixture: &Fixture) -> bool {
 #[test]
 fn post_await_read_does_not_become_an_at_init_dependency() {
     let source = source("async", "await 0; return late;");
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             &source,
             vec![logical_module("value", &[Member::new("late")])],
@@ -61,7 +61,7 @@ fn post_await_read_allows_registration_before_its_late_value() {
         "const late = 'ready';",
         "const late = registration === undefined ? 'ready' : 'other';",
     );
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             &source,
             vec![
@@ -98,7 +98,7 @@ fn independently_invocable_prefix_reads_still_constrain_initialization() {
         ("async", "eval('void late'); await 0; return late;"),
     ] {
         let source = source(async_keyword, body);
-        let fixture = run_fixture(
+        let fixture = run_fixture_with_graphs(
             FixtureOpts::new(&source, Vec::new()).with_unassigned_mode(unassigned_mode_inline()),
         );
         assert!(
@@ -114,7 +114,7 @@ fn pre_await_call_to_another_owner_still_constrains_initialization() {
         "function helper() {{ return late; }}\n{}",
         source("async", "helper(); await 0; return 0;")
     );
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(&source, Vec::new()).with_unassigned_mode(unassigned_mode_inline()),
     );
     assert!(

@@ -195,7 +195,7 @@ const missingValue = pattern.notPresent;\n\
 const lastIndexValue = pattern.lastIndex;\n\
 const customValue = pattern.custom;\n\
 console.log(sourceText, missingValue, lastIndexValue, customValue, marker, globalThis.regexGetterReads, globalThis.regexOwnGetterReads);\n";
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             source,
             vec![logical_module("regex", &[Member::new("pattern")])],

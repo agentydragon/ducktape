@@ -665,7 +665,8 @@ fn returned_wrapper_does_not_invoke_its_callback_at_creation() {
         "static/peer",
         "export function factory(callback) { return () => callback(); }\n",
     )];
-    let fixture = run_fixture(FixtureOpts::new(SOURCE, modules()).with_extra_chunks(&peers));
+    let fixture =
+        run_fixture_with_graphs(FixtureOpts::new(SOURCE, modules()).with_extra_chunks(&peers));
     assert_preserved_entry_output(&fixture, "42\n");
     let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
     let evidence = &report["imported_callables"]["factory"]["callback_factory_evidence"][0];
@@ -1143,7 +1144,7 @@ fn audited_factory_keeps_callbacks_in_its_returned_object() {
     let contracts = [ChunkExportPurityBuilder::new("static/peer")
         .with_callback_factories(&["factory"])
         .build()];
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "import { factory } from './peer.js';\n\
          const wrapped = factory(() => later);\n\
@@ -1199,7 +1200,7 @@ fn available_imported_factory_without_eligible_call_has_no_proof_use() {
         "import { factory } from './peer.js';\nfactory(123);\nconsole.log(42);\n",
         "import { factory } from './peer.js';\nfunction use(factory) { return factory(() => 1); }\nconsole.log(use((callback) => callback()) + 41);\n",
     ] {
-        let fixture = run_fixture(
+        let fixture = run_fixture_with_graphs(
             FixtureOpts::new(source, vec![])
                 .with_extra_chunks(&peers)
                 .with_chunk_export_purity(&contracts),
@@ -1222,7 +1223,7 @@ fn nested_repeated_factory_use_keeps_lexical_site_and_top_level_owner() {
                   const pair = [wrap(), wrap()];\n\
                   const later = 42;\n\
                   console.log(pair[0](), pair[1]());\n";
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_extra_chunks(&[(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(source, vec![]).with_extra_chunks(&[(
         "static/peer",
         "export function factory(callback) { return () => callback(); }\n",
     )]));
@@ -1293,7 +1294,7 @@ fn nested_repeated_factory_use_keeps_lexical_site_and_top_level_owner() {
 
 #[test]
 fn private_factory_result_records_reachability_exemption() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "const wrapped = factory(() => later);\n\
          import { factory } from './peer.js';\n\
@@ -1352,10 +1353,11 @@ fn private_factory_result_requires_an_exact_initializer_and_retains_summary_evid
              globalThis.marker = 0;\nconst wrapped = {initializer};\n\
              const later = 42;\nconsole.log(globalThis.marker, wrapped());\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(&source, vec![]).with_extra_chunks(&[(
-            "static/peer",
-            "export function factory(callback) { return () => callback(); }\n",
-        )]));
+        let fixture =
+            run_fixture_with_graphs(FixtureOpts::new(&source, vec![]).with_extra_chunks(&[(
+                "static/peer",
+                "export function factory(callback) { return () => callback(); }\n",
+            )]));
         assert_preserved_entry_output(&fixture, &format!("{marker} 42\n"));
         let graph = fixture.dependency_graph();
         let wrapped = graph
@@ -1398,10 +1400,11 @@ fn callback_factory_privacy_does_not_cover_throwing_operands() {
     ] {
         let source =
             format!("import {{ factory }} from './peer.js';\nconst wrapped = {initializer};\n");
-        let fixture = run_fixture(FixtureOpts::new(&source, vec![]).with_extra_chunks(&[(
-            "static/peer",
-            "export function factory(callback) { return () => callback(); }\n",
-        )]));
+        let fixture =
+            run_fixture_with_graphs(FixtureOpts::new(&source, vec![]).with_extra_chunks(&[(
+                "static/peer",
+                "export function factory(callback) { return () => callback(); }\n",
+            )]));
         assert_preserved_entry_error(&fixture, "Error: operand");
         assert!(fixture.dependency_graph().nodes.iter().all(|node| {
             node.synchronous_execution.as_ref().is_none_or(|execution| {
@@ -1416,7 +1419,7 @@ fn callback_factory_privacy_does_not_cover_throwing_operands() {
 
 #[test]
 fn private_factory_result_retains_the_audited_summary() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "import { factory } from './peer.js';\nconst wrapped = factory(() => later);\nconst later = 42;\nconsole.log(wrapped.invoke());\n",
             vec![],
@@ -1463,10 +1466,11 @@ fn acyclic_exported_factory_result_keeps_its_initialization_exemption() {
         let source = format!(
             "import {{ factory }} from './peer.js';\n{declaration}\nconst later = 42;\nconsole.log(wrapped());\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(&source, vec![]).with_extra_chunks(&[(
-            "static/peer",
-            "export function factory(callback) { return () => callback(); }\n",
-        )]));
+        let fixture =
+            run_fixture_with_graphs(FixtureOpts::new(&source, vec![]).with_extra_chunks(&[(
+                "static/peer",
+                "export function factory(callback) { return () => callback(); }\n",
+            )]));
         assert_preserved_entry_output(&fixture, "42\n");
         assert_eq!(
             fixture
@@ -1485,7 +1489,7 @@ fn acyclic_exported_factory_result_keeps_its_initialization_exemption() {
 
 #[test]
 fn joined_imported_factories_preserve_behavior_without_false_direct_proof_use() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "import { factory as first } from './first.js';\n\
          import { factory as second } from './second.js';\n\
@@ -2650,7 +2654,7 @@ fn regex_literal_with_custom_to_primitive_keeps_key_with_later_value() {
         &["values/key", "values/later"],
         &["eager_use"],
     );
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         source,
         vec![logical_module_with_anon(
             "values",
@@ -2677,7 +2681,7 @@ fn regex_literal_with_custom_to_primitive_keeps_key_with_later_value() {
 
 #[test]
 fn strict_equality_and_known_primitive_operands_skip_coercion_callbacks() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "const object = { [Symbol.toPrimitive]() { return later; } };\n\
          const same = object === null;\n\
          const key = 'prefix' + (1 + 2);\n\
@@ -3925,7 +3929,7 @@ fn source_empty_map_record_factory_defers_members_and_getter() {
         "import { readLater } from './app.js';\nexport function factory() { const state = new Map(); return { put(key, value) { state.set(key, value); }, get size() { return state.size; }, label() { return readLater().name; } }; }\n",
     )];
     let source = "import { factory } from './peer.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nqueue.put('answer', 42);\nconsole.log(queue.size, queue.label(), readLater().name);\nexport { queue, Later };\n";
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             source,
             vec![
@@ -4154,7 +4158,7 @@ fn unused_or_ineligible_source_record_factory_has_no_graph_proof_use() {
         "import { factory } from './peer.js';\nfactory(123);\nconsole.log(42);\n",
         "import { factory } from './peer.js';\nfunction use(factory) { return factory(); }\nconsole.log(use(() => 42));\n",
     ] {
-        let fixture = run_fixture(
+        let fixture = run_fixture_with_graphs(
             FixtureOpts::new(source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
         );
         assert_preserved_entry_output(&fixture, "42\n");

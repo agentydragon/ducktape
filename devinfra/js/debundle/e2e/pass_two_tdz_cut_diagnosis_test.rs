@@ -57,7 +57,7 @@ fn pass_two_rejection_summary_names_tdz_binding_pair_and_lazy_closure() {
 
 #[test]
 fn pass_two_rejection_cycles_json_has_nonempty_cut() {
-    let rejected = run_rejection_fixture(residual_cycle_fixture());
+    let rejected = run_rejection_fixture_with_graphs(residual_cycle_fixture());
     let cycles_path = rejected
         .report_root
         .join("static")
@@ -133,7 +133,7 @@ export { read_c };
 }
 
 fn cycle_kinds(fixture: FixtureOpts<'_>) -> Vec<(usize, String)> {
-    let rejected = run_rejection_fixture(fixture);
+    let rejected = run_rejection_fixture_with_graphs(fixture);
     let cycles: Vec<Value> = read_json(
         &rejected
             .report_root

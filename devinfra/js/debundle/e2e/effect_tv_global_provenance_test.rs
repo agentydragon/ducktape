@@ -502,7 +502,7 @@ fn hoisted_functions_have_no_evaluation_write_but_function_expressions_do() {
 
 #[test]
 fn complete_execution_does_not_erase_missing_global_or_host_coverage() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "function write() { globalThis.marker = 1; }\nconst first = (write(), 1);\nconst second = globalThis.marker;\nconst tail = second;\nconsole.log(first, tail);\nexport { write, first, second, tail };\n",
         vec![logical_module(
             "all",
@@ -592,7 +592,7 @@ fn complete_execution_does_not_erase_missing_global_or_host_coverage() {
         ),
     ] {
         let source = format!("const value = {initializer};\nconsole.log('control');\n");
-        let fixture = run_fixture(FixtureOpts::new(
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(
             &source,
             vec![logical_module("all", &[Member::new("value")])],
         ));
@@ -615,7 +615,7 @@ fn complete_execution_does_not_erase_missing_global_or_host_coverage() {
         ("export const value = 1;", vec![Member::new("value")], 1),
     ] {
         let source = format!("{declaration}\nconsole.log('control');\n");
-        let fixture = run_fixture(FixtureOpts::new(
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(
             &source,
             vec![logical_module("all", &members)],
         ));

@@ -140,7 +140,7 @@ function branch() { return (leaf(), leaf()); }\n\
 function root() { return (branch(), branch()); }\n\
 var result = (root(), root());\n\
 console.log(result);\n";
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         source,
         vec![logical_module(
             "all",
@@ -576,7 +576,7 @@ fn returned_callable_operation_coverage_discharges_only_its_dataflow_barrier() {
 
 #[test]
 fn operation_coverage_does_not_change_strict_callable_purity() {
-    let rejected = run_rejection_fixture(returned_callable_commutation_fixture());
+    let rejected = run_rejection_fixture_with_graphs(returned_callable_commutation_fixture());
     let graph = rejected.dependency_graph();
     let result_id = source_unit_for_binding(&graph, "result");
     let result = graph

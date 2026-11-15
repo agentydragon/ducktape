@@ -155,8 +155,7 @@ fn atomic_group_with_source(fixture: &Fixture, source_fragment: &str) -> String 
 fn ownership_subset_with_per_atomic_group_keeps_selected_rename_and_groups_residual_statement() {
     let subset = write_subset(r#"{"modules":[{"chunk":"static/app","module":"features/public"}]}"#);
     let subset_path = subset.path().to_str().unwrap();
-    let fixture =
-        run_fixture_without_graphs_with_args(subset_spec(), &["--ownership-subset", subset_path]);
+    let fixture = run_fixture_with_args(subset_spec(), &["--ownership-subset", subset_path]);
 
     assert_module_exports(
         &fixture.out_root,
@@ -188,8 +187,7 @@ fn ownership_subset_with_per_atomic_group_keeps_selected_rename_and_groups_resid
 fn empty_ownership_subset_routes_all_claims_to_generated_atomic_groups() {
     let subset = write_subset(r#"{"modules":[]}"#);
     let subset_path = subset.path().to_str().unwrap();
-    let fixture =
-        run_fixture_without_graphs_with_args(subset_spec(), &["--ownership-subset", subset_path]);
+    let fixture = run_fixture_with_args(subset_spec(), &["--ownership-subset", subset_path]);
 
     assert!(
         !fixture
@@ -245,7 +243,7 @@ fn ownership_subset_keeps_full_spec_selector_duplicate_and_premise_guards() {
             ],
         )
         .with_unassigned_mode(mode.clone());
-        let rejected = run_rejection_fixture_without_graphs_with_args(
+        let rejected = run_rejection_fixture_with_args(
             invalid_selector,
             &["--ownership-subset", subset_path],
             1,
@@ -260,7 +258,7 @@ fn ownership_subset_keeps_full_spec_selector_duplicate_and_premise_guards() {
             ],
         )
         .with_unassigned_mode(mode.clone());
-        let rejected = run_rejection_fixture_without_graphs_with_args(
+        let rejected = run_rejection_fixture_with_args(
             duplicate_claim,
             &["--ownership-subset", subset_path],
             1,
@@ -279,11 +277,8 @@ fn ownership_subset_keeps_full_spec_selector_duplicate_and_premise_guards() {
     )
     .with_unassigned_mode(mode.clone())
     .with_program_premises(premise);
-        let rejected = run_rejection_fixture_without_graphs_with_args(
-            contradiction,
-            &["--ownership-subset", subset_path],
-            1,
-        );
+        let rejected =
+            run_rejection_fixture_with_args(contradiction, &["--ownership-subset", subset_path], 1);
         assert!(
             rejected.stderr.contains("intrinsics_never_written")
                 && rejected.stderr.contains("exact objects"),
@@ -311,7 +306,7 @@ fn empty_and_retained_subsets_use_every_normal_residual_policy() {
             } else {
                 r#"{"modules":[]}"#
             });
-            let fixture = run_fixture_without_graphs_with_args(
+            let fixture = run_fixture_with_args(
                 subset_spec().with_unassigned_mode(mode.clone()),
                 &["--ownership-subset", subset.path().to_str().unwrap()],
             );
@@ -363,7 +358,7 @@ fn omitting_an_explicit_catchall_claim_recreates_only_residual_ownership() {
         } else {
             format!(r#"{{"modules":[{{"chunk":"static/app","module":"{selected}"}}]}}"#)
         });
-        let fixture = run_fixture_without_graphs_with_args(
+        let fixture = run_fixture_with_args(
             FixtureOpts::new(
                 "export const first = 1;\nexport const omitted = 2;\nconsole.log(first, omitted);\n",
                 vec![logical_module("features/public", &[Member::new("first")]), logical_module("residual/unhandled", &[Member::renamed("renamed", "omitted")])],
@@ -394,7 +389,7 @@ fn subset_retains_full_context_cross_claim_anchors_imports_and_anonymous_claims(
             } else {
                 r#"{"modules":[{"chunk":"static/app","module":"features/run"}]}"#
             });
-            let fixture = run_fixture_without_graphs_with_args(
+            let fixture = run_fixture_with_args(
             FixtureOpts::new(
                 "import { seed } from './peer.js';\nfunction base(value) { return value + seed; }\nfunction wrapper(value) { return base(value); }\nconsole.log(wrapper(1));\nexport { wrapper };\n",
                 vec![
@@ -448,7 +443,7 @@ fn catchall_subset_still_rejects_a_real_nonmonotone_assignment_cycle() {
     let full = run_fixture(options());
     assert_preserved_entry_output(&full, "first\nmiddle\nlast\n");
     let subset = write_subset(r#"{"modules":[{"chunk":"static/app","module":"middle"}]}"#);
-    let rejected = run_rejection_fixture_without_graphs_with_args(
+    let rejected = run_rejection_fixture_with_args(
         options(),
         &["--ownership-subset", subset.path().to_str().unwrap()],
         1,
@@ -485,7 +480,7 @@ export const styles = (console.log("styles"), {});
 
     let retain_all =
         write_subset(r#"{"modules":[{"chunk":"static/app","module":"features/styles"}]}"#);
-    let rejected = run_rejection_fixture_without_graphs_with_args(
+    let rejected = run_rejection_fixture_with_args(
         options(),
         &["--ownership-subset", retain_all.path().to_str().unwrap()],
         1,
@@ -500,7 +495,7 @@ export const styles = (console.log("styles"), {});
     let retain_late = write_subset(
         r#"{"modules":[{"chunk":"static/app","module":"features/styles","anonymous_statements":[1]}]}"#,
     );
-    let fixture = run_fixture_without_graphs_with_args(
+    let fixture = run_fixture_with_args(
         options(),
         &["--ownership-subset", retain_late.path().to_str().unwrap()],
     );
@@ -547,7 +542,7 @@ fn ownership_subset_keeps_only_requested_readable_named_member() {
     let subset = write_subset(
         r#"{"modules":[{"chunk":"static/app","module":"features/values","bindings":["readableKeep"],"anonymous_statements":[]}]}"#,
     );
-    let fixture = run_fixture_without_graphs_with_args(
+    let fixture = run_fixture_with_args(
         named_subset_spec().with_unassigned_mode(unassigned_mode_inline()),
         &["--ownership-subset", subset.path().to_str().unwrap()],
     );
@@ -585,7 +580,7 @@ fn ownership_subset_empty_bindings_keeps_anonymous_claim_but_no_named_claims() {
         let subset = write_subset(&format!(
             r#"{{"modules":[{{"chunk":"static/app","module":"features/values","anonymous_statements":[0]{bindings}}}]}}"#,
         ));
-        let fixture = run_fixture_without_graphs_with_args(
+        let fixture = run_fixture_with_args(
             named_subset_spec(),
             &["--ownership-subset", subset.path().to_str().unwrap()],
         );
@@ -660,7 +655,7 @@ fn ownership_subset_rejects_invalid_named_selections_and_records() {
         ),
     ] {
         let subset = write_subset(&format!(r#"{{"modules":{modules}}}"#));
-        let rejected = run_rejection_fixture_without_graphs_with_args(
+        let rejected = run_rejection_fixture_with_args(
             named_subset_spec(),
             &["--ownership-subset", subset.path().to_str().unwrap()],
             1,
@@ -682,7 +677,7 @@ fn ownership_subset_named_selection_keeps_destructuring_companions_together() {
     let subset = write_subset(
         r#"{"modules":[{"chunk":"static/app","module":"values","bindings":["readableLeft"]}]}"#,
     );
-    let fixture = run_fixture_without_graphs_with_args(
+    let fixture = run_fixture_with_args(
         FixtureOpts::new(
             r#"const { left, right } = (() => {
   globalThis.evaluations = (globalThis.evaluations || 0) + 1;
@@ -722,7 +717,7 @@ fn ownership_subset_named_selection_keeps_every_shared_var_declaration_site() {
     let subset = write_subset(
         r#"{"modules":[{"chunk":"static/app","module":"values","bindings":["readableShared"]}]}"#,
     );
-    let fixture = run_fixture_without_graphs_with_args(
+    let fixture = run_fixture_with_args(
         FixtureOpts::new(
             r#"var shared = (console.log("first"), 1);
 var shared = (console.log("second"), 2);
@@ -782,7 +777,7 @@ fn ownership_subset_anonymous_index_controls_adopted_declarations() {
     let retain_statement = write_subset(
         r#"{"modules":[{"chunk":"static/app","module":"features/owner","bindings":["selected"],"anonymous_statements":[0]}]}"#,
     );
-    let retained = run_fixture_without_graphs_with_args(
+    let retained = run_fixture_with_args(
         options(),
         &[
             "--ownership-subset",
@@ -806,7 +801,7 @@ fn ownership_subset_anonymous_index_controls_adopted_declarations() {
     let release_statement = write_subset(
         r#"{"modules":[{"chunk":"static/app","module":"features/owner","bindings":["selected"],"anonymous_statements":[]}]}"#,
     );
-    let released = run_fixture_without_graphs_with_args(
+    let released = run_fixture_with_args(
         options(),
         &[
             "--ownership-subset",
@@ -864,7 +859,7 @@ fn ownership_subset_rejects_invalid_anonymous_indices_without_hiding_full_select
         let subset = write_subset(&format!(
             r#"{{"modules":[{{"chunk":"static/app","module":"features/owner","anonymous_statements":{indices}}}]}}"#
         ));
-        let rejected = run_rejection_fixture_without_graphs_with_args(
+        let rejected = run_rejection_fixture_with_args(
             options(),
             &["--ownership-subset", subset.path().to_str().unwrap()],
             1,
@@ -888,7 +883,7 @@ fn ownership_subset_rejects_invalid_anonymous_indices_without_hiding_full_select
     let subset = write_subset(
         r#"{"modules":[{"chunk":"static/app","module":"features/owner","anonymous_statements":[0]}]}"#,
     );
-    let rejected = run_rejection_fixture_without_graphs_with_args(
+    let rejected = run_rejection_fixture_with_args(
         invalid_full_spec,
         &["--ownership-subset", subset.path().to_str().unwrap()],
         1,

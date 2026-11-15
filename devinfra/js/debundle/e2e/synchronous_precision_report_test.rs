@@ -75,7 +75,7 @@ console.log(selected[0]);
 
 #[test]
 fn initialized_enum_own_data_read_is_complete_and_keeps_eager_dependency() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         r#"var Status = ((values) => ((values.READY = "ready"), values))(Status || {});
 const selected = [Status.READY];
 console.log(selected[0]);
@@ -196,7 +196,7 @@ fn skipped_local_mutations_keep_later_property_reads_conservative() {
 
 #[test]
 fn skipped_getter_installation_keeps_binding_effects_at_the_later_read() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         r#"const state = 'ready';
 const record = { name: 'original' };
 function change(value) {
@@ -266,7 +266,7 @@ fn skipped_local_mutations_invalidate_reads_in_the_same_statement() {
 
 #[test]
 fn opaque_body_does_not_cache_property_values_before_its_skipped_code() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         r#"function change(value) { value.name = { get current() { return state; }, toString() { return 'changed'; } }; }
 function read(record) {
   const selected = (change(...[record]), record.name);
@@ -306,7 +306,7 @@ fn skipped_operation_events_preserve_same_owner_getter_effects() {
         "const record = { name: 'original' };\nfunction tag(_, value) { Object.defineProperty(value, 'name', { get() { return state; } }); }\nconst selected = (tag`${record}`, record.name);\nvar state = 'changed';\nconsole.log(selected);\n",
         "const record = { name: 'original' };\nconst trigger = { get value() { return 0; }, set value(_) { Object.defineProperty(record, 'name', { get() { return state; } }); } };\nconst selected = (trigger.value++, record.name);\nvar state = 'changed';\nconsole.log(selected);\n",
     ] {
-        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(source, vec![]));
         assert_preserved_entry_output(&fixture, "undefined\n");
         let report = execution(&fixture, "selected");
         assert_reason(
@@ -328,7 +328,7 @@ fn stable_ts_enum_primitive_member_is_safe_as_computed_property_key() {
 const preferences = { [Status.READY]: true };
 console.log(preferences.ready);
 "#;
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(source, vec![]));
     assert_preserved_entry_output(&fixture, "true\n");
 
     let graph = fixture.dependency_graph();
@@ -386,7 +386,7 @@ const escaped = { [Escaped.READY]: true };
 
 console.log(rebound.rebound, reboundCalls, looped.looped, loopedCalls, mutated.mutated, dynamic.ready, accessor.accessor, getterCalls, escaped.ready);
 "#;
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(source, vec![]));
     assert_preserved_entry_output(&fixture, "true 1 true 1 true true true 1 true\n");
 
     let graph = fixture.dependency_graph();
@@ -677,7 +677,7 @@ fn small_callback_pool_formals_keep_callbacks_and_unknown_values() {
         let source = format!(
             "function read() {{ return later; }}\n{relay}\nconst result = JSON.stringify([relay, read]);\nconst later = 7;\nconsole.log(result);\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
         assert_preserved_entry_output(&fixture, "[null,null]\n");
         // Localize Top to this formal's invocation, not JSON.stringify or
         // the captured callback's separate invocation.
@@ -912,7 +912,7 @@ fn wide_acyclic_execution_reports_the_actual_expansion_bound() {
 
 #[test]
 fn property_absence_failure_reports_the_cross_chunk_write() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "import './mutation.js';\nclass Box { constructor(config) { this.value = config.value; } }\nconst result = new Box({ value: 3 });\nconsole.log(result.value);",
         vec![],
     ).with_extra_chunks(&[("static/mutation", "export function mutate() { const alias = globalThis.slot; alias.value = 1; }")]));
@@ -953,7 +953,7 @@ fn property_absence_failure_reports_the_cross_chunk_write() {
 
 #[test]
 fn unrelated_object_write_does_not_supply_native_mutation_evidence() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "import './mutation.js';\nclass Box { constructor(config) { this.value = config.value; } }\nconst result = new Box({ value: 3 });\nconsole.log(result.value);",
             vec![],
@@ -1117,7 +1117,7 @@ fn invoked_and_direct_native_writes_are_present_before_later_guards() {
 
 #[test]
 fn array_guard_references_a_direct_native_write_without_unknown_alias_widening() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "import './mutation.js';\nconst result = [1, 2].map(value => value + 1);\nconsole.log(result.join(','));",
             vec![],
@@ -1200,7 +1200,7 @@ fn mutation_witness_keeps_operation_and_known_native_alias_identity() {
         ),
     ] {
         let source = format!("export function mutate() {{ {body} }}");
-        let fixture = run_fixture(
+        let fixture = run_fixture_with_graphs(
             FixtureOpts::new("import './mutation.js';\nconsole.log(3);", vec![])
                 .with_extra_chunks(&[("static/mutation", &source)]),
         );
@@ -1225,7 +1225,7 @@ fn refined_global_key_witness_explains_its_cross_chunk_native_dependency() {
         "export const value = 1;",
         "export function replace() { Symbol.for = () => 'Array'; }",
     ] {
-        let fixture = run_fixture(FixtureOpts::new("import './mutation.js';\nconsole.log(3);", vec![]).with_extra_chunks(&[
+        let fixture = run_fixture_with_graphs(FixtureOpts::new("import './mutation.js';\nconsole.log(3);", vec![]).with_extra_chunks(&[
             ("static/mutation", "import './replacement.js';\nconst key = Symbol.for('example.registry');\nexport function mutate() { globalThis[key] = 1; }"),
             ("static/replacement", replacement),
         ]));
@@ -1359,7 +1359,7 @@ fn external_root_getter_keeps_published_source_callbacks_at_the_read() {
         "globalThis.syntheticHost = { get read() { return state; } };\nconst observed = syntheticHost.read;\nvar state = 'late';\nconsole.log(observed);\ndelete globalThis.syntheticHost;\n",
         "globalThis.syntheticHost = {};\nObject.defineProperty(globalThis.syntheticHost, 'read', { get() { return state; } });\nconst observed = syntheticHost.read;\nvar state = 'late';\nconsole.log(observed);\ndelete globalThis.syntheticHost;\n",
     ] {
-        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(source, vec![]));
         assert_preserved_entry_output(&fixture, "undefined\n");
         assert_reason(
             &execution(&fixture, "observed"),
@@ -1384,7 +1384,7 @@ fn external_binding_alias_proof_excludes_reassignment_private_and_skipped_values
         let source = format!(
             "globalThis.syntheticHost = {{ read: 'original' }};\n{setup}\nconst observed = alias.read;\nvar state = 'late';\nconsole.log(observed);\ndelete globalThis.syntheticHost;\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
         assert_preserved_entry_output(&fixture, "undefined\n");
         let graph = fixture.dependency_graph();
         let observed = source_unit_for_binding(&graph, "observed");
@@ -1412,7 +1412,7 @@ fn skipped_reach_keeps_distinct_captures_and_later_prefix_references() {
             "second undefined\n",
         ),
     ] {
-        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(source, vec![]));
         assert_preserved_entry_output(&fixture, expected);
         if readers == ["observed"] {
             assert_eq!(execution(&fixture, "before")["complete"], true);
@@ -1456,7 +1456,7 @@ fn completed_purity_retains_residual_evaluation_obligations() {
             None,
         ),
     ] {
-        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(source, vec![]));
         assert_preserved_entry_output(&fixture, output);
         let graph = fixture.dependency_graph();
         let value = graph
@@ -1483,7 +1483,7 @@ fn completed_purity_retains_residual_evaluation_obligations() {
         let source = format!(
             "const value = new {constructor}();\nconsole.log(value instanceof {constructor});\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
         assert_preserved_entry_output(&fixture, "true\n");
         let graph = fixture.dependency_graph();
         let value = graph
@@ -1516,7 +1516,7 @@ fn completed_owner_publication_retains_final_value_and_export_capabilities() {
         let source = format!(
             "const record = {{ value: () => 0 }};\nfunction install() {{ record.value = () => state; return 1; }}\n{declaration}\nconst observed = record.value();\nvar state = 'late';\nconsole.log(observed);\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
         assert_preserved_entry_output(&fixture, "undefined\n");
         let graph = fixture.dependency_graph();
         let observed = source_unit_for_binding(&graph, "observed");

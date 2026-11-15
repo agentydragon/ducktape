@@ -207,7 +207,7 @@ fn constructor_contract_does_not_defer_an_ordinary_call() {
 
 #[test]
 fn retention_does_not_assert_constructor_purity_or_remove_effect_order() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "import { Box } from './peer.js';\nconst before = console.log('before');\nconst wrapped = new Box(() => later);\nconst later = 42;\nconsole.log('after', wrapped.callback());\n",
         vec![logical_module("all", &[Member::new("before"), Member::new("wrapped"), Member::new("later")])],
     ).with_extra_chunks(&[("static/peer", "export class Box { constructor(callback) { console.log('construct'); this.callback = callback; } }\n")])
@@ -258,7 +258,7 @@ fn extraction_invocation_and_opaque_publication_promote_all_retained_callbacks()
             .into_iter()
             .map(Member::new)
             .collect();
-        let colocated = run_fixture(
+        let colocated = run_fixture_with_graphs(
             FixtureOpts::new(
                 &source,
                 vec![logical_module_with_anon(

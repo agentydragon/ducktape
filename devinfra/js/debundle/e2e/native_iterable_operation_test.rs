@@ -3,7 +3,7 @@ use debundle_e2e_support::*;
 
 #[test]
 fn same_declaration_primitive_set_spread_preserves_entry_and_exports() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         r#"console.log("before");
 var seed = new Set(["a", "b"]), sibling = new Set(["x"]), copied = new Set([...seed, "c"]);
 console.log("after", copied.size);
@@ -83,7 +83,7 @@ console.log("after", copied.size, [...copied].join(","));
 
 #[test]
 fn inferred_set_spread_interval_is_a_canonical_placement_constraint() {
-    let rejected = run_rejection_fixture(FixtureOpts::new(
+    let rejected = run_rejection_fixture_with_graphs(FixtureOpts::new(
         r#"var seed = new Set(["a"]), sibling = new Set(["x"]), copied = new Set([...seed, "c"]);
 console.log(copied.size);
 "#,
@@ -97,7 +97,7 @@ console.log(copied.size);
 
 #[test]
 fn replaced_set_iterator_keeps_its_callback_effects() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         r#"console.log("before");
 Set.prototype[Symbol.iterator] = function () { console.log("iterate"); return ["replacement"][Symbol.iterator](); };
 var seed = new Set(["a"]), sibling = new Set(["x"]), copied = new Set([...seed, "c"]);
@@ -124,7 +124,7 @@ console.log("after", copied.size);
 
 #[test]
 fn set_spread_reads_the_source_at_its_initialization_prefix() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         r#"var seed = new Set(["a"]), sibling = new Set(["x"]), copied = new Set([...seed, "c"]);
 const updated = seed.add("late");
 console.log([...copied].join(","), [...seed].join(","));
@@ -163,7 +163,7 @@ console.log([...copied].join(","), [...seed].join(","));
 
 #[test]
 fn accessor_iterable_keeps_the_unknown_protocol_fallback() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         r#"const source = {
     get [Symbol.iterator]() {
         console.log("iterator getter");
@@ -210,7 +210,7 @@ console.log("after");
 fn side_effecting_spread_source_runs_once_and_keeps_the_protocol_fallback() {
     // Node proves emitted observable behavior. Incomplete analysis below is
     // not a claim that the flattened interpreter projected the operand once.
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         r#"let calls = 0;
 function source() { calls++; console.log("source", calls); return new Set(["a"]); }
 const copied = new Set([...source(), "b"]);

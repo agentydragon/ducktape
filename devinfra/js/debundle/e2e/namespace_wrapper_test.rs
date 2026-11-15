@@ -60,7 +60,7 @@ console.log(
 );
 "#;
     let files = [("static/peer.js", WRAPPER), ("static/app/peer.js", WRAPPER)];
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             source,
             vec![
