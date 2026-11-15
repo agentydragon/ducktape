@@ -46,13 +46,7 @@ from agentplane.net.peertls.config import (
     ClientTLS,
     ServiceSPIFFEID,
 )
-from agentplane.runner_gateway.settings import (
-    CentralSamplerTarget,
-    DelegationSettings,
-    ServiceDelegation,
-    ServiceDelegator,
-    Settings,
-)
+from agentplane.runner_gateway.settings import CentralSamplerTarget, ServiceDelegation, ServiceDelegator, Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import (
@@ -102,10 +96,6 @@ def dispatcher_service(namespace: str) -> ServiceRef:
     )
 
 
-def _account(account: ServiceAccountRef) -> str:
-    return f"{account.namespace}/{account.name}"
-
-
 def add_stable_services(scope: Construct, env: Environment) -> None:
     """Keep stable Services in their root Flux owner, targeting the shared listener."""
     proxy = runner_gateway.service(env.namespace)
@@ -137,7 +127,7 @@ def add_stable_services(scope: Construct, env: Environment) -> None:
 
 
 class RunnerGateway(Construct):
-    """One TLS gRPC listener with per-method bearer or SVID auth, plus runner mTLS."""
+    """One TLS gRPC listener with per-method SVID admission, plus runner mTLS."""
 
     def __init__(
         self,
@@ -184,9 +174,6 @@ class RunnerGateway(Construct):
         # the stable Runner Gateway Service with its Sessions SVID.
         proxy_callers = {**gateway_callers, own_account: proxy.pods}
         self.proxy_callers = proxy_callers
-        dispatcher_accounts = frozenset(map(_account, dispatcher_callers))
-        gateway_accounts = frozenset(map(_account, proxy_callers))
-        central_sampler_account = ServiceAccountRef(namespace=namespace, name=central_sampler.NAME)
         workload = add_service_workload(
             self,
             env,
@@ -274,13 +261,10 @@ class RunnerGateway(Construct):
         assert serving_tls.cert_file is not None
         assert serving_tls.key_file is not None
         assert serving_tls.ca_file is not None
-        delegation = None
         dispatcher_service_delegation = None
         if delegation_actor is not None:
-            delegation = DelegationSettings(
-                actor=_account(delegation_actor),
-                # Session delegation names an Identity in policy_namespace as the effective caller.
-                identity_callers=True,
+            dispatcher_service_delegation = ServiceDelegation(
+                actors=(ServiceDelegator(spiffe_id=ACTIONS_URI, connection_provenance=False),),
                 methods=(
                     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput",
                     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ChangeModel",
@@ -294,15 +278,6 @@ class RunnerGateway(Construct):
                     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
                 ),
             )
-            actor = ServiceDelegator(spiffe_id=ACTIONS_URI, connection_provenance=False)
-            dispatcher_service_delegation = ServiceDelegation(
-                actors=(actor,),
-                methods=tuple(
-                    method
-                    for method in delegation.methods
-                    if method.startswith("/agentplane.runner_gateway.dispatcher.SessionDispatcher/")
-                ),
-            )
         static_settings = Settings(
             sandbox_namespace=namespace,
             policy_namespace=namespace,
@@ -310,12 +285,7 @@ class RunnerGateway(Construct):
             rpc=workload_listener.Listener(
                 listen_address=f"0.0.0.0:{proxy.pod_port}",
                 tls=workload_listener.TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
-                auth=[
-                    workload_listener.KubernetesBearerAuth(
-                        audiences=frozenset({session_dispatcher.TOKEN_AUDIENCE, runner_gateway.TOKEN_AUDIENCE})
-                    ),
-                    workload_listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file)),
-                ],
+                auth=[workload_listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file))],
             ),
             gateway_tls=ClientTLS(
                 ca_file=Path(sessions_tls.ca_file),
@@ -325,31 +295,36 @@ class RunnerGateway(Construct):
                 client_uri=GATEWAY_SESSIONS_URI,
             ),
             runner_control_target_template=runner_gateway.control_target(namespace),
-            dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
-            gateway_audience=runner_gateway.TOKEN_AUDIENCE,
             runner_security=MTLS(tls=TLS(cert_file=_RUNNER_TLS_CERT, key_file=_RUNNER_TLS_KEY, ca_file=_RUNNER_TLS_CA)),
             runtime_proxy_readers=[APP_URI, NOTIFICATIONS_URI],
             runtime_proxy_session_callers=[GATEWAY_SESSIONS_URI],
             runtime_proxy_controller_callers=[SANDBOX_CONTROLLER_URI],
             executor_service_callers=[CENTRAL_SAMPLER_URI] if central_sampler_target is not None else [],
-            dispatcher_callers=dispatcher_accounts,
             dispatcher_service_callers=frozenset({APP_URI, NOTIFICATIONS_URI}) | actions_orchestration_svids,
             wake_service_callers=wake_service_callers,
-            delegation=delegation,
             dispatcher_service_delegation=dispatcher_service_delegation,
-            gateway_callers=gateway_accounts,
-            wake_callers=frozenset(map(_account, wake_callers)) or None,
-            sandbox_controller_account=_account(controller_peer[0]),
             central_sampler=central_sampler_target,
-            executor_callers=(
-                frozenset({_account(central_sampler_account)}) if central_sampler_target is not None else frozenset()
-            ),
         )
         settings_file = SettingsFile(
             self,
             "settings",
             metadata=ApiObjectMetadata(name=f"{runner_gateway.NAME}-settings", namespace=namespace),
-            content=yaml_config(static_settings),
+            # CLEANUP(added 2026-11-15): Drop this projection when the decoded legacy fields retire.
+            content=yaml_config(
+                static_settings.model_dump(
+                    mode="json",
+                    exclude={
+                        "dispatcher_audience",
+                        "gateway_audience",
+                        "dispatcher_callers",
+                        "gateway_callers",
+                        "wake_callers",
+                        "sandbox_controller_account",
+                        "executor_callers",
+                        "delegation",
+                    },
+                )
+            ),
             path="/etc/agentplane-runner-gateway/settings/settings.yaml",
         )
         settings_file.mount_into(workload.container, env=Settings.config_file_env)

@@ -118,12 +118,7 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
         "cert_file": "/run/agentplane/workload-tls/tls.crt",
         "key_file": "/run/agentplane/workload-tls/tls.key",
     }
-    bearer_auth = one(item for item in settings["rpc"]["auth"] if item["mode"] == "kubernetes_bearer")
-    assert set(bearer_auth["audiences"]) == {session_dispatcher.TOKEN_AUDIENCE, runner_gateway.TOKEN_AUDIENCE}
-    spiffe_auth = one(item for item in settings["rpc"]["auth"] if item["mode"] == "spiffe")
-    assert spiffe_auth == {"mode": "spiffe", "ca_file": workload_tls.TRUST_BUNDLE_FILE}
-    assert settings["dispatcher_audience"] == session_dispatcher.TOKEN_AUDIENCE
-    assert settings["gateway_audience"] == runner_gateway.TOKEN_AUDIENCE
+    assert settings["rpc"]["auth"] == [{"mode": "spiffe", "ca_file": workload_tls.TRUST_BUNDLE_FILE}]
     assert settings["runtime_proxy_readers"] == [APP_URI, NOTIFICATIONS_URI]
     assert settings["runtime_proxy_session_callers"] == [GATEWAY_SESSIONS_URI]
     assert settings["runtime_proxy_controller_callers"] == [SANDBOX_CONTROLLER_URI]
@@ -151,19 +146,11 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
             "ca_file": f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/ca.crt",
         },
     }
-    assert set(settings["dispatcher_callers"]) == {
-        f"{staging.ENV.namespace}/{app.NAME}",
-        f"{staging.ENV.namespace}/{notifications.NAME}",
-        f"{staging.ENV.namespace}/{actions.NAME}",
-    }
     assert set(settings["dispatcher_service_callers"]) == {ACTIONS_URI, APP_URI, NOTIFICATIONS_URI}
     assert not any(key.startswith("environment_") for key in settings)
     assert "operator_callers" not in settings
     assert "runtime_catalog" not in settings
     assert set(settings["wake_service_callers"]) == {APP_URI, NOTIFICATIONS_URI}
-    assert f"{staging.ENV.namespace}/{notifications.NAME}" in settings["wake_callers"]
-    assert f"{staging.ENV.namespace}/{runner_gateway.NAME}" in settings["gateway_callers"]
-    assert f"{staging.ENV.namespace}/{app.NAME}" in settings["wake_callers"]
     for service_name in (runner_gateway.NAME, session_dispatcher.NAME):
         service = _resource(root_docs, "Service", service_name)["spec"]
         assert service["selector"]
@@ -220,10 +207,8 @@ def test_actions_delegation_is_explicit_for_each_receiving_backend(staging_manif
         _resource(staging_manifests, "ConfigMap", f"{history_service.NAME}-config")["data"]["config.yaml"]
     )
     assert history["policy_namespace"] == namespace
-    gateway_delegation = gateway["delegation"]
-    assert gateway_delegation["actor"] == actions_account
-    assert "caller_namespaces" not in gateway_delegation
-    assert gateway_delegation["identity_callers"] is True
+    gateway_delegation = gateway["dispatcher_service_delegation"]
+    assert gateway_delegation["actors"] == [{"spiffe_id": ACTIONS_URI, "connection_provenance": False}]
     assert gateway_delegation["methods"] == [
         "/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput",
         "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ChangeModel",
@@ -236,15 +221,6 @@ def test_actions_delegation_is_explicit_for_each_receiving_backend(staging_manif
         "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ListDispatches",
         "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
     ]
-    service_methods = set()
-    for key, prefix in (("dispatcher_service_delegation", "/agentplane.runner_gateway.dispatcher.SessionDispatcher/"),):
-        grant = gateway[key]
-        assert grant["actors"] == [{"spiffe_id": ACTIONS_URI, "connection_provenance": False}]
-        assert grant["methods"] == [method for method in gateway_delegation["methods"] if method.startswith(prefix)]
-        service_methods.update(grant["methods"])
-    assert service_methods == set(gateway_delegation["methods"])
-    assert "environment_service_delegation" not in gateway
-
     history_delegation = history["delegation"]
     assert history_delegation["actor"] == actions_account
     assert "caller_namespaces" not in history_delegation
@@ -282,16 +258,11 @@ def test_session_delegation_is_a_dispatcher_caller_without_wake_authority(scratc
     chart = runner_gateway_workload.serving_chart(scratch_app, env=env)
     docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
     settings = yaml.safe_load(_resource(docs, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"])
-    assert set(settings["dispatcher_callers"]) == {
-        f"{env.namespace}/{app.NAME}",
-        f"{env.namespace}/{notifications.NAME}",
-        f"{env.namespace}/{actions.NAME}",
-    }
     assert set(settings["dispatcher_service_callers"]) == {APP_URI, NOTIFICATIONS_URI}
     assert "operator_callers" not in settings
     assert "environment_launchers" not in settings
     assert "environment_service_launchers" not in settings
-    assert f"{env.namespace}/{actions.NAME}" not in settings["wake_callers"]
+    assert ACTIONS_URI not in settings.get("wake_service_callers", [])
 
 
 def test_gateway_settings_and_role_certificates_are_mounted(scratch_app: App) -> None:
