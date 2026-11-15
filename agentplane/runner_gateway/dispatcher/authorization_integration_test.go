@@ -19,6 +19,7 @@ import (
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
@@ -34,6 +35,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -224,6 +226,82 @@ func requireMissingSessionCommands(t *testing.T, client dispatcherpb.SessionDisp
 	}
 }
 
+type authoritySVIDServer struct {
+	store   *Store
+	address string
+	ca      *transporttesting.CA
+	counted *countingAuthorityDispatcher
+}
+
+func serveAuthoritySVIDServer(
+	t *testing.T,
+	objects client.Reader,
+	inventory *authorityInventory,
+	environmentRules *reader.Index[access.Rule],
+) authoritySVIDServer {
+	t.Helper()
+	svids, err := auth.NewSVIDResolver(objects, []string{caller.Namespace}, &resolver.Identities{PolicyNamespace: caller.Namespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := testStore(t, 10)
+	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, connected: true}
+	service := &Service{
+		Store: store, DispatcherCallers: sets.New[auth.Account](),
+		Sandboxes: inventory, EnvironmentRules: environmentRules, PolicyReady: func() error { return nil },
+		Hub: hub, WatchLease: 10 * time.Second,
+	}
+	counted := &countingAuthorityDispatcher{SessionDispatcherServer: service}
+	ca := transporttesting.NewCA(t)
+	serverCredential := ca.Issue(t, peertls.SessionDispatcherURI)
+	serverTLS, err := serverCredential.WorkloadServerTLSConfig(peertls.SessionDispatcherURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverTLS.NextProtos = []string{"h2", "http/1.1"}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer(append(Methods(auth.AnySubject(svids)).ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
+	dispatcherpb.RegisterSessionDispatcherServer(server, counted)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	return authoritySVIDServer{store: store, address: listener.Addr().String(), ca: ca, counted: counted}
+}
+
+func (s authoritySVIDServer) client(t *testing.T, uri string, leaf peertls.Config) dispatcherpb.SessionDispatcherClient {
+	t.Helper()
+	return authoritySVIDClient(t, s.address, uri, s.ca, leaf)
+}
+
+func requireRejectedLeavesAndMixedAuthentication(t *testing.T, server authoritySVIDServer, workloadURI string) {
+	t.Helper()
+	validOwner := server.client(t, workloadURI, server.ca.Issue(t, workloadURI))
+	invalidLeaves := map[string]peertls.Config{
+		"forged":  transporttesting.NewCA(t).Issue(t, workloadURI),
+		"expired": server.ca.IssueWithValidity(t, workloadURI, time.Now().Add(-time.Hour), time.Now().Add(-time.Minute), x509.ExtKeyUsageClientAuth),
+	}
+	for name, leaf := range invalidLeaves {
+		t.Run(name+"_leaf_rejected_before_dispatcher_handler", func(t *testing.T) {
+			_, err := server.client(t, workloadURI, leaf).ListSessions(authoritySVIDContext(t), &dispatcherpb.ListSessionsRequest{})
+			if err == nil {
+				t.Fatal("invalid workload leaf reached a successful Dispatcher RPC")
+			}
+			if calls := server.counted.listCalls.Load(); calls != 0 {
+				t.Fatalf("invalid workload leaf reached Dispatcher ListSessions handler %d times", calls)
+			}
+		})
+	}
+	mixed := metadata.AppendToOutgoingContext(authoritySVIDContext(t), "authorization", "Bearer foreign-bearer")
+	if _, err := validOwner.ListSessions(mixed, &dispatcherpb.ListSessionsRequest{}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("certificate plus bearer = %v, want Unauthenticated", err)
+	}
+	if calls := server.counted.listCalls.Load(); calls != 0 {
+		t.Fatalf("mixed credentials reached Dispatcher ListSessions handler %d times", calls)
+	}
+}
+
 func TestDispatcherServiceAccountSVIDDoesNotOwnSandboxIdentitySessions(t *testing.T) {
 	api, err := kubeapiserver.Start()
 	if err != nil {
@@ -241,61 +319,9 @@ func TestDispatcherServiceAccountSVIDDoesNotOwnSandboxIdentitySessions(t *testin
 	inventory := &authorityInventory{sandbox: ownerSandbox, identity: ownerIdentity}
 	environmentRules := access.NewIndex()
 	environmentRules.PutIdentity(owner.Identity)
-	svids, err := auth.NewSVIDResolver(owner.Objects, []string{caller.Namespace}, &resolver.Identities{PolicyNamespace: caller.Namespace})
-	if err != nil {
-		t.Fatal(err)
-	}
-	store := testStore(t, 10)
-	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, connected: true}
-	service := &Service{
-		Store: store, DispatcherCallers: sets.New[auth.Account](),
-		Sandboxes: inventory, EnvironmentRules: environmentRules, PolicyReady: func() error { return nil },
-		Hub: hub, WatchLease: 10 * time.Second,
-	}
-	counted := &countingAuthorityDispatcher{SessionDispatcherServer: service}
-	methods := Methods(auth.AnySubject(svids))
-	ca := transporttesting.NewCA(t)
-	serverCredential := ca.Issue(t, peertls.SessionDispatcherURI)
-	serverTLS, err := serverCredential.WorkloadServerTLSConfig(peertls.SessionDispatcherURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	serverTLS.NextProtos = []string{"h2", "http/1.1"}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
-	dispatcherpb.RegisterSessionDispatcherServer(server, counted)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-
-	validOwnerLeaf := ca.Issue(t, owner.URI)
-	invalidLeaves := map[string]peertls.Config{
-		"forged":  transporttesting.NewCA(t).Issue(t, owner.URI),
-		"expired": ca.IssueWithValidity(t, owner.URI, time.Now().Add(-time.Hour), time.Now().Add(-time.Minute), x509.ExtKeyUsageClientAuth),
-	}
-	for name, leaf := range invalidLeaves {
-		t.Run(name+"_leaf_rejected_before_dispatcher_handler", func(t *testing.T) {
-			client := authoritySVIDClient(t, listener.Addr().String(), owner.URI, ca, leaf)
-			_, err := client.ListSessions(authoritySVIDContext(t), &dispatcherpb.ListSessionsRequest{})
-			if err == nil {
-				t.Fatal("invalid workload leaf reached a successful Dispatcher RPC")
-			}
-			if calls := counted.listCalls.Load(); calls != 0 {
-				t.Fatalf("invalid workload leaf reached Dispatcher ListSessions handler %d times", calls)
-			}
-		})
-	}
-
-	ownerClient := authoritySVIDClient(t, listener.Addr().String(), owner.URI, ca, validOwnerLeaf)
-	mixed := metadata.AppendToOutgoingContext(authoritySVIDContext(t), "authorization", "Bearer foreign-bearer")
-	if _, err := ownerClient.ListSessions(mixed, &dispatcherpb.ListSessionsRequest{}); status.Code(err) != codes.Unauthenticated {
-		t.Fatalf("certificate plus bearer = %v, want Unauthenticated", err)
-	}
-	if calls := counted.listCalls.Load(); calls != 0 {
-		t.Fatalf("mixed credentials reached Dispatcher ListSessions handler %d times", calls)
-	}
+	authority := serveAuthoritySVIDServer(t, owner.Objects, inventory, environmentRules)
+	requireRejectedLeavesAndMixedAuthentication(t, authority, owner.URI)
+	ownerClient := authority.client(t, owner.URI, authority.ca.Issue(t, owner.URI))
 	sessionID := uuid.NewString()
 	request := &dispatcherpb.CreateSessionRequest{
 		SessionId: sessionID,
@@ -311,7 +337,7 @@ func TestDispatcherServiceAccountSVIDDoesNotOwnSandboxIdentitySessions(t *testin
 	}
 	identity := &identitypb.Identity{Name: "svid-session-owner", Uid: "00000000-0000-4000-8000-00000000a002"}
 	testPlacement(request.GetSpec(), ownerSandbox.Name, ownerSandbox.UID)
-	if _, err := store.CreateSessionWithPlacementForCaller(t.Context(), sessionID, ownerSandbox.Name, ownerSandbox.UID,
+	if _, err := authority.store.CreateSessionWithPlacementForCaller(t.Context(), sessionID, ownerSandbox.Name, ownerSandbox.UID,
 		request.GetSpec(), nil, nil,
 		SessionExecution{Identity: identity}, IdentityCaller{Identity: identity, Proof: IdentitySVID{}}); err != nil {
 		t.Fatalf("seed Identity-owned Session: %v", err)
@@ -320,7 +346,7 @@ func TestDispatcherServiceAccountSVIDDoesNotOwnSandboxIdentitySessions(t *testin
 		t.Fatalf("ServiceAccount SVID read an Identity-owned Session: %v, want NotFound", err)
 	}
 
-	foreignClient := authoritySVIDClient(t, listener.Addr().String(), foreign.URI, ca, ca.Issue(t, foreign.URI))
+	foreignClient := authority.client(t, foreign.URI, authority.ca.Issue(t, foreign.URI))
 	if _, err := foreignClient.GetSession(authoritySVIDContext(t), &dispatcherpb.GetSessionRequest{SessionId: sessionID}); status.Code(err) != codes.NotFound {
 		t.Fatalf("foreign workload Identity SVID read an Identity-owned Session: %v, want NotFound", err)
 	}
@@ -343,61 +369,9 @@ func TestDispatcherIdentitySVIDDoesNotInheritSameNamedAccountAuthority(t *testin
 	inventory := &authorityInventory{sandbox: ownerSandbox, identity: ownerIdentity}
 	environmentRules := access.NewIndex()
 	environmentRules.PutIdentity(owner.Identity)
-	svids, err := auth.NewSVIDResolver(owner.Objects, []string{caller.Namespace}, &resolver.Identities{PolicyNamespace: caller.Namespace})
-	if err != nil {
-		t.Fatal(err)
-	}
-	store := testStore(t, 10)
-	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, connected: true}
-	service := &Service{
-		Store: store, DispatcherCallers: sets.New[auth.Account](),
-		Sandboxes: inventory, EnvironmentRules: environmentRules, PolicyReady: func() error { return nil },
-		Hub: hub, WatchLease: 10 * time.Second,
-	}
-	counted := &countingAuthorityDispatcher{SessionDispatcherServer: service}
-	methods := Methods(auth.AnySubject(svids))
-	ca := transporttesting.NewCA(t)
-	serverCredential := ca.Issue(t, peertls.SessionDispatcherURI)
-	serverTLS, err := serverCredential.WorkloadServerTLSConfig(peertls.SessionDispatcherURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	serverTLS.NextProtos = []string{"h2", "http/1.1"}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
-	dispatcherpb.RegisterSessionDispatcherServer(server, counted)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-
-	validOwnerLeaf := ca.Issue(t, owner.URI)
-	invalidLeaves := map[string]peertls.Config{
-		"forged":  transporttesting.NewCA(t).Issue(t, owner.URI),
-		"expired": ca.IssueWithValidity(t, owner.URI, time.Now().Add(-time.Hour), time.Now().Add(-time.Minute), x509.ExtKeyUsageClientAuth),
-	}
-	for name, leaf := range invalidLeaves {
-		t.Run(name+"_leaf_rejected_before_dispatcher_handler", func(t *testing.T) {
-			client := authoritySVIDClient(t, listener.Addr().String(), owner.URI, ca, leaf)
-			_, err := client.ListSessions(authoritySVIDContext(t), &dispatcherpb.ListSessionsRequest{})
-			if err == nil {
-				t.Fatal("invalid workload leaf reached a successful Dispatcher RPC")
-			}
-			if calls := counted.listCalls.Load(); calls != 0 {
-				t.Fatalf("invalid workload leaf reached Dispatcher ListSessions handler %d times", calls)
-			}
-		})
-	}
-
-	ownerClient := authoritySVIDClient(t, listener.Addr().String(), owner.URI, ca, validOwnerLeaf)
-	mixed := metadata.AppendToOutgoingContext(authoritySVIDContext(t), "authorization", "Bearer foreign-bearer")
-	if _, err := ownerClient.ListSessions(mixed, &dispatcherpb.ListSessionsRequest{}); status.Code(err) != codes.Unauthenticated {
-		t.Fatalf("certificate plus bearer = %v, want Unauthenticated", err)
-	}
-	if calls := counted.listCalls.Load(); calls != 0 {
-		t.Fatalf("mixed credentials reached Dispatcher ListSessions handler %d times", calls)
-	}
+	authority := serveAuthoritySVIDServer(t, owner.Objects, inventory, environmentRules)
+	requireRejectedLeavesAndMixedAuthentication(t, authority, owner.URI)
+	ownerClient := authority.client(t, owner.URI, authority.ca.Issue(t, owner.URI))
 	sessionID := uuid.NewString()
 	_, err = ownerClient.CreateSession(authoritySVIDContext(t), &dispatcherpb.CreateSessionRequest{
 		SessionId: sessionID,
@@ -415,11 +389,11 @@ func TestDispatcherIdentitySVIDDoesNotInheritSameNamedAccountAuthority(t *testin
 	if err != nil || len(listed.GetSessions()) != 0 {
 		t.Fatalf("Identity SVID listed a Session through its same-named ServiceAccount: %v, %v", listed, err)
 	}
-	if calls := counted.listCalls.Load(); calls != 1 {
+	if calls := authority.counted.listCalls.Load(); calls != 1 {
 		t.Fatalf("valid owner ListSessions handler calls = %d, want 1", calls)
 	}
 
-	foreignClient := authoritySVIDClient(t, listener.Addr().String(), foreign.URI, ca, ca.Issue(t, foreign.URI))
+	foreignClient := authority.client(t, foreign.URI, authority.ca.Issue(t, foreign.URI))
 	if _, err := foreignClient.GetSession(authoritySVIDContext(t), &dispatcherpb.GetSessionRequest{SessionId: sessionID}); status.Code(err) != codes.NotFound {
 		t.Fatalf("foreign Sandbox SVID GetSession = %v, want NotFound", err)
 	}
