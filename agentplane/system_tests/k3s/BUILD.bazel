@@ -242,6 +242,7 @@ py_test(
 py_library(
     name = "pytest_plugin",
     srcs = ["pytest_plugin.py"],
+    visibility = ["//agentplane/system_tests:__subpackages__"],
     deps = [
         "@pypi//pytest",
         "@rules_python//python/runfiles",
