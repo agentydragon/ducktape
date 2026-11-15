@@ -9,7 +9,7 @@ use command_output::write_report;
 use graph_provenance::CurrentRoots;
 use graph_provenance::VerifiedGraphSourceContext;
 use peel::OutputFormat;
-use transform_command::ProjectAnalysisArgs;
+use transform_command::{ProjectAnalysisArgs, ProjectApplyArgs};
 
 use selector_codemod::match_selector::{
     MatchSelectorConfig, render_match_selector_text, run_match_selector,
@@ -171,6 +171,9 @@ enum SpecNsCommand {
     /// them unchanged.
     #[command(name = "project-analysis")]
     ProjectAnalysis(ProjectAnalysisArgs),
+    /// Internal Bazel action API for canonical apply inputs.
+    #[command(hide = true)]
+    ProjectApply(ProjectApplyArgs),
 }
 
 /// Args for `debundle spec stats`. Source is the on-disk modules tree;
@@ -539,6 +542,7 @@ pub(super) fn run(
         SpecNsCommand::AuditContracts(a) => run_audit_contracts(stderr, a, output),
         SpecNsCommand::Lint(args) => crate::spec_lint::run(stderr, args, output),
         SpecNsCommand::ProjectAnalysis(args) => args.run(stderr),
+        SpecNsCommand::ProjectApply(args) => args.run(),
         SpecNsCommand::ProposeCommutations(p) => crate::propose_commutations::run(
             p,
             source_context.context("propose-commutations verifies its graph before dispatch")?,

@@ -49,15 +49,15 @@ debundle_apply(
 
 ```
 
-| Rule                | Registered actions                                         | Default output                                               |
-| ------------------- | ---------------------------------------------------------- | ------------------------------------------------------------ |
-| `debundle_analysis` | `DebundleProjectAnalysis`, `DebundleAnalyze`               | Canonical `.analysis_projection` and saved `.analysis` files |
-| `debundle_apply`    | `DebundleApply`; optional on-demand `DebundleExportGraphs` | `<name>.out/` with emitted JavaScript and bounded reports    |
+| Rule                | Registered actions                                                       | Default output                                               |
+| ------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------ |
+| `debundle_analysis` | `DebundleProjectAnalysis`, `DebundleAnalyze`                             | Canonical `.analysis_projection` and saved `.analysis` files |
+| `debundle_apply`    | `DebundleProjectApply`, `DebundleApply`; optional `DebundleExportGraphs` | `<name>.out/` with emitted JavaScript and bounded reports    |
 
 `analysis` requires a direct `debundle_analysis` target with its typed provider;
 a filegroup or arbitrary artifact is not accepted. Building the analysis target
-never applies a spec or emits JavaScript. Adding apply targets never registers
-projection or Analyze actions. The ordinary Bazel dependency graph makes every
+never applies a spec or emits JavaScript. Adding apply targets registers their apply projection, but no source-analysis
+projection or Analyze action. The ordinary Bazel dependency graph makes every
 consumer depend on the same saved artifact; caching and action deduplication need
 no side cache or opt-in reuse flag.
 
@@ -69,6 +69,22 @@ engine still checks engine identity, source digests and the current spec's
 projection before consuming saved facts. The same input file alone is not enough
 to justify sharing facts computed under different assumptions. Never force a
 shared target by weakening those checks.
+
+`DebundleProjectApply` compiles the typed spec without parsing JavaScript. Its
+canonical output omits YAML comments, whitespace, and module-level `note` only.
+`DebundleApply` reads that projection, saved analysis, source/package inputs, and
+the optional ownership subset. Metadata-only changes that preserve the projection
+therefore reuse its cached output. Emitted `comment`, report notes, and
+conflict-relevant annotation notes remain inputs. Paths under the action execroot
+are stored relative to it and restored under the consumer's execroot.
+
+`apply_projection` exposes this canonical input. The hidden
+`spec project-apply` and `run --apply-projection` commands are an internal Bazel
+action interface. The projection is the authoritative spec; context flags identify
+report locations and do not check current YAML freshness. Bazel's declared
+producer inputs enforce that freshness. Native runs should use ordinary `run`
+with authored YAML. Full graphs refuse projected input and use the original YAML
+capture, including exact bytes and directory membership.
 
 Full exported dependency graphs belong to apply: they include authored graph
 options and module ownership. They consume the saved source facts and do not
@@ -194,8 +210,8 @@ bazelisk build //path/to:debundle \
 ```
 
 This can still run actions that produce source or package inputs. `native_inputs`
-does not select `DebundleProjectAnalysis`, `DebundleAnalyze`, or
-`DebundleApply`. The `analysis` group includes the projection and analysis
+does not select `DebundleProjectAnalysis`, `DebundleAnalyze`,
+`DebundleProjectApply`, or `DebundleApply`. The `analysis` group includes the projection and analysis
 artifact and runs Analyze; `dependency_graphs` also depends on that shared
 analysis artifact. `debundler` contains only the exact full CLI selected by the
 rule's `debundler` attribute or label flag. `projector` contains only the exact

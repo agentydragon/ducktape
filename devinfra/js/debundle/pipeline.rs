@@ -1,4 +1,5 @@
 use artifact::load_js_chunks;
+use serde::{Deserialize, Serialize};
 use source_identity::ChunkId;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
@@ -122,10 +123,145 @@ pub struct TransformRunOptions {
     pub residual_extraction_atoms: BTreeSet<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum TransformSpecSource {
     Flat { path: PathBuf },
     Tree(CompileSpecTreeOptions),
+}
+
+/// Canonical input for apply runs that do not export replayable graphs.
+/// Retain authored paths for report locations and every report/validation note.
+/// Only module-level `note` is unused by the transform pipeline.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ApplyProjection {
+    source: TransformSpecSource,
+    spec: TransformSpec,
+    module_roots_by_chunk: BTreeMap<String, Vec<PathBuf>>,
+    rooted_paths: BTreeSet<ApplyPath>,
+}
+
+/// Which spec paths were absolute beneath the producer root. Relative authored
+/// paths keep their exact spelling for native analysis compatibility.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum ApplyPath {
+    InputRoot,
+    JsList,
+    EmbeddedLoaders,
+    VendorBundle(String),
+    VendorManifest,
+    VendorWrappers,
+    Reports,
+    JsOutput,
+    BrowserAssets,
+    BrowserOutput,
+    BrowserSnapshot,
+}
+
+pub fn project_apply(cli: &TransformRequest, root: &Path, out: &Path) -> Result<()> {
+    let mut spec = load_transform_spec_source(&cli.spec_source)?;
+    validate_transform_spec(&spec)?;
+    for modules in spec.logical_modules.values_mut() {
+        for module in modules.values_mut() {
+            module.note = None;
+        }
+    }
+    let module_roots_by_chunk = match &cli.spec_source {
+        TransformSpecSource::Tree(tree) => graph_module_roots(&tree.config_path)?,
+        TransformSpecSource::Flat { .. } => BTreeMap::new(),
+    };
+    let root = std::path::absolute(root)?;
+    let relative = |path: &Path| -> Result<PathBuf> {
+        let path = std::path::absolute(path)?;
+        Ok(path.strip_prefix(&root).unwrap_or(&path).to_path_buf())
+    };
+    let mut source = cli.spec_source.clone();
+    map_spec_source_paths(&mut source, &relative)?;
+    let mut rooted_paths = BTreeSet::new();
+    map_apply_spec_paths(&mut spec, &mut |field, path| {
+        if let Ok(relative) = path.strip_prefix(&root) {
+            rooted_paths.insert(field);
+            Ok(relative.to_path_buf())
+        } else {
+            Ok(path.to_path_buf())
+        }
+    })?;
+    fs::write(
+        out,
+        serde_json::to_vec(&ApplyProjection {
+            source,
+            spec,
+            module_roots_by_chunk,
+            rooted_paths,
+        })?,
+    )
+    .with_context(|| format!("write apply projection {}", out.display()))
+}
+
+fn map_spec_source_paths(
+    source: &mut TransformSpecSource,
+    map: &impl Fn(&Path) -> Result<PathBuf>,
+) -> Result<()> {
+    match source {
+        TransformSpecSource::Flat { path } => *path = map(path)?,
+        TransformSpecSource::Tree(tree) => {
+            tree.config_path = map(&tree.config_path)?;
+            tree.modules_root = map(&tree.modules_root)?;
+            tree.vendor_marks_path = map(&tree.vendor_marks_path)?;
+            tree.out_root = map(&tree.out_root)?;
+            if let Some(root) = &mut tree.source_root {
+                *root = map(root)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Filesystem paths only: module IDs and specifiers are semantic strings.
+fn map_apply_spec_paths(
+    spec: &mut TransformSpec,
+    map: &mut impl FnMut(ApplyPath, &Path) -> Result<PathBuf>,
+) -> Result<()> {
+    spec.inputs.input_root = map(ApplyPath::InputRoot, &spec.inputs.input_root)?;
+    spec.inputs.js_list_path = map(ApplyPath::JsList, &spec.inputs.js_list_path)?;
+    for (field, path) in [
+        (
+            ApplyPath::EmbeddedLoaders,
+            &mut spec.inputs.embedded_loaders_path,
+        ),
+        (
+            ApplyPath::VendorManifest,
+            &mut spec.swap_vendor_chunks.output_manifest_path,
+        ),
+        (
+            ApplyPath::VendorWrappers,
+            &mut spec.swap_vendor_chunks.output_wrapper_dir,
+        ),
+        (
+            ApplyPath::Reports,
+            &mut spec.materialize_logical_modules.report_out_dir,
+        ),
+    ] {
+        if let Some(path) = path {
+            *path = map(field, path)?;
+        }
+    }
+    for (chunk, mark) in &mut spec.vendor {
+        if let spec::VendorLevel::BundledPartialSwap(swap) = &mut mark.level {
+            swap.bundle.path = map(ApplyPath::VendorBundle(chunk.clone()), &swap.bundle.path)?;
+        }
+    }
+    if let Some(write) = &mut spec.write_js_tree {
+        write.out_dir = map(ApplyPath::JsOutput, &write.out_dir)?;
+    }
+    if let Some(browser) = &mut spec.emit_browser_harness {
+        browser.asset_summary_path = map(ApplyPath::BrowserAssets, &browser.asset_summary_path)?;
+        browser.out_dir = map(ApplyPath::BrowserOutput, &browser.out_dir)?;
+        browser.snapshot_root = map(ApplyPath::BrowserSnapshot, &browser.snapshot_root)?;
+    }
+    Ok(())
 }
 
 pub fn run_transform(
@@ -151,6 +287,54 @@ pub fn run_transform_with_analysis(
     analysis: Option<AnalysisArtifactInput<'_>>,
     diagnostics: &analysis::diagnostics::Diagnostics,
 ) -> Result<()> {
+    run_transform_with_projection(
+        cli,
+        options,
+        analysis,
+        None,
+        &std::env::current_dir()?,
+        diagnostics,
+    )
+}
+
+/// Apply a canonical spec without reopening authored YAML. Full graph export
+/// requires the authored input capture and is deliberately unsupported here.
+pub fn run_transform_with_projection(
+    cli: &TransformRequest,
+    options: TransformRunOptions,
+    analysis: Option<AnalysisArtifactInput<'_>>,
+    projection_path: Option<&Path>,
+    projection_root: &Path,
+    diagnostics: &analysis::diagnostics::Diagnostics,
+) -> Result<()> {
+    let projection = projection_path
+        .map(|path| -> Result<ApplyProjection> {
+            anyhow::ensure!(analysis.is_some(), "--apply-projection requires --analysis");
+            anyhow::ensure!(
+                !options.graph_reports.enabled(),
+                "--apply-projection cannot export replayable graphs; use authored spec inputs"
+            );
+            let mut projection: ApplyProjection = serde_json::from_slice(&fs::read(path)?)?;
+            let root = std::path::absolute(projection_root)?;
+            let mut source = cli.spec_source.clone();
+            map_spec_source_paths(&mut source, &|path| {
+                let path = std::path::absolute(path)?;
+                Ok(path.strip_prefix(&root).unwrap_or(&path).to_path_buf())
+            })?;
+            anyhow::ensure!(
+                projection.source == source,
+                "apply projection was compiled for other spec paths or output roots"
+            );
+            map_apply_spec_paths(&mut projection.spec, &mut |field, path| {
+                Ok(if projection.rooted_paths.contains(&field) {
+                    root.join(path)
+                } else {
+                    path.to_path_buf()
+                })
+            })?;
+            Ok(projection)
+        })
+        .transpose()?;
     if let RunArtifacts::ReportsOnly { out_root } = &options.artifacts {
         anyhow::ensure!(analysis.is_some(), "--reports-only requires --analysis");
         anyhow::ensure!(
@@ -173,8 +357,13 @@ pub fn run_transform_with_analysis(
             );
         }
     }
-    let (spec, prepared) =
-        prepare_transform(cli, &options, None, analysis.map(|input| input.path))?;
+    let (spec, prepared) = prepare_transform(
+        cli,
+        &options,
+        None,
+        analysis.map(|input| input.path),
+        projection.as_ref(),
+    )?;
     let mode = match analysis {
         Some(AnalysisArtifactInput {
             path,
@@ -234,7 +423,7 @@ pub fn assess_candidate_effect_relocation(
     );
 
     let options = audit_options();
-    let (mut spec, prepared) = prepare_transform(cli, &options, None, Some(analysis.path))?;
+    let (mut spec, prepared) = prepare_transform(cli, &options, None, Some(analysis.path), None)?;
     let chunk_source = prepared
         .provenance
         .chunk_sources
@@ -323,7 +512,7 @@ pub fn project_analysis(
     diagnostics: &analysis::diagnostics::Diagnostics,
 ) -> Result<()> {
     let options = audit_options();
-    let (spec, prepared) = prepare_transform(cli, &options, None, None)?;
+    let (spec, prepared) = prepare_transform(cli, &options, None, None, None)?;
     let base = AnalysisSpec::from_transform(&spec, &prepared.source_root)?;
     let artifact = prepared.source.program.into_artifact();
     let projection = frontend_elaboration::project_analysis(
@@ -370,7 +559,8 @@ impl ContractAudit {
         expected_spec: &TransformSpec,
         diagnostics: &analysis::diagnostics::Diagnostics,
     ) -> Result<Self> {
-        let (spec, prepared) = prepare_transform(cli, &audit_options(), Some(expected_spec), None)?;
+        let (spec, prepared) =
+            prepare_transform(cli, &audit_options(), Some(expected_spec), None, None)?;
         run_prepared_transform(
             &spec,
             prepared.clone(),
@@ -452,7 +642,8 @@ pub enum AnnotationProbeRun {
 
 impl AnnotationProbe {
     pub fn prepare(cli: &TransformRequest, expected_spec: &TransformSpec) -> Result<Self> {
-        let (spec, prepared) = prepare_transform(cli, &audit_options(), Some(expected_spec), None)?;
+        let (spec, prepared) =
+            prepare_transform(cli, &audit_options(), Some(expected_spec), None, None)?;
         Ok(Self { spec, prepared })
     }
 
@@ -554,11 +745,14 @@ fn prepare_transform(
     options: &TransformRunOptions,
     expected_spec: Option<&TransformSpec>,
     loaded_analysis: Option<&Path>,
+    projection: Option<&ApplyProjection>,
 ) -> Result<(TransformSpec, PreparedTransform)> {
     let (roots, modules_directory) = provenance_roots(cli)?;
     let generation_command = canonical_generation_command(cli, options, &roots, loaded_analysis)?;
     let capture = InputCapture::start(roots, modules_directory, generation_command)?;
-    if let TransformSpecSource::Tree(tree) = &cli.spec_source {
+    if let TransformSpecSource::Tree(tree) = &cli.spec_source
+        && projection.is_none()
+    {
         // Capture the whole authored tree, including YAMLs outside the chunk
         // selected for this graph. Path membership is part of the analysis input.
         let members = graph_provenance::collect_yaml(&tree.modules_root)?;
@@ -571,7 +765,10 @@ fn prepare_transform(
             graph_provenance::read_bytes(path)?;
         }
     }
-    let spec = load_transform_spec_source(&cli.spec_source)?;
+    let spec = match projection {
+        Some(projection) => projection.spec.clone(),
+        None => load_transform_spec_source(&cli.spec_source)?,
+    };
     if let Some(expected) = expected_spec {
         anyhow::ensure!(
             serde_json::to_vec(&spec)? == serde_json::to_vec(expected)?,
@@ -579,7 +776,11 @@ fn prepare_transform(
         );
     }
     if let TransformSpecSource::Tree(tree) = &cli.spec_source {
-        capture.set_tree_scope(&tree.config_path, graph_module_roots(&tree.config_path)?)?;
+        let module_roots = match projection {
+            Some(projection) => projection.module_roots_by_chunk.clone(),
+            None => graph_module_roots(&tree.config_path)?,
+        };
+        capture.set_tree_scope(&tree.config_path, module_roots)?;
     }
     let source_root = match &cli.spec_source {
         TransformSpecSource::Tree(tree) => tree.source_root.clone(),

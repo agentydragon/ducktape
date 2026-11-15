@@ -323,8 +323,8 @@ matching analysis artifacts and executable.
 The public `debundle_analysis` rule registers projection and source-analysis
 actions only. It returns a typed provider containing the canonical projection and
 saved facts. Every `debundle_apply` requires that direct analysis target and
-registers only assignment, gates, translation validation, emission, and optional
-graph export. No combined rule creates analysis implicitly. Multiple apply
+registers its canonical apply projection, assignment, gates, translation
+validation, emission, and optional graph export. No combined rule creates analysis implicitly. Multiple apply
 specs share one source-fact computation when their semantic projections match;
 different analysis premises require separate explicit analysis targets. Engine,
 source and projection compatibility checks remain mandatory. Each consumer
@@ -352,6 +352,17 @@ compiled identities require regeneration; there is no compatibility fallback.
 Saved graphs and snapshots retain their full executable identity and their
 source/spec checks, even when an analysis artifact can be reused. The standalone
 CLI remains one binary.
+
+Default Bazel apply consumes a typed canonical spec projection. YAML comments,
+whitespace, and module-level `note` do not affect this projection. Emitted
+`comment` fields, report-relevant notes, annotation-conflict inputs, and semantic
+map entries remain inputs. The internal Bazel `spec project-apply` and `run --apply-projection` interface
+treats the projection as authoritative. Bazel dependencies enforce its freshness;
+context flags retain original authored paths for report locations only; `--projection-root` allows
+paths under that root to move between execution roots. The consumer still checks
+native analysis compatibility. Projected input cannot export full graphs: graph
+export continues to read exact authored files and capture their membership and
+bytes for replay validation.
 
 The analysis projection omits only fields explicitly declared as author-note
 provenance. Semantic map entries remain data even when a chunk, export, or

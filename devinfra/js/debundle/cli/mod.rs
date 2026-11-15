@@ -33,7 +33,7 @@ use lowering::FullReportKind;
 use peel::{AtomicGroupsArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs};
 use pipeline::{
     GATE_REJECTED_EXIT_CODE, GateRejected, RunArtifacts, RunOutput, TransformRunOptions,
-    run_transform_with_analysis,
+    run_transform_with_projection,
 };
 use std::io::{self, Write};
 use std::process::ExitCode;
@@ -348,6 +348,13 @@ pub(crate) struct RunArgs {
     /// or for another analysis projection, naming what differs.
     #[arg(long)]
     pub(crate) analysis: Option<std::path::PathBuf>,
+    /// Internal Bazel action input, authoritative in place of authored YAML.
+    /// Context flags identify report locations; they do not validate freshness.
+    #[arg(long, hide = true, requires = "analysis", conflicts_with = "graphs")]
+    pub(crate) apply_projection: Option<std::path::PathBuf>,
+    /// Current root of paths stored by `spec project-apply`.
+    #[arg(long, hide = true, requires = "apply_projection", default_value = ".")]
+    pub(crate) projection_root: std::path::PathBuf,
     /// Serialize complete dependency/program graphs for graph-backed queries.
     #[arg(long)]
     pub(crate) graphs: bool,
@@ -580,6 +587,8 @@ fn run_debundle_cli(
             transform: mut args,
             ownership_subset,
             analysis,
+            apply_projection,
+            projection_root,
             graphs,
             reports_only,
             effect_conflicts_jsonl,
@@ -604,7 +613,7 @@ fn run_debundle_cli(
             let keep_going = !args.fail_fast;
             let cli = args.context.resolve()?;
             command_diagnostics::run(stderr, |diagnostics| {
-                run_transform_with_analysis(
+                run_transform_with_projection(
                     &cli,
                     TransformRunOptions {
                         ownership_subset: ownership_subset
@@ -633,6 +642,8 @@ fn run_debundle_cli(
                             path,
                             analysis_engine_sha256,
                         }),
+                    apply_projection.as_deref(),
+                    &projection_root,
                     diagnostics,
                 )
             })?;

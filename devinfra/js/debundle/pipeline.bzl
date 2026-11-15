@@ -40,11 +40,24 @@ def _debundle_apply_impl(ctx):
         "projector": depset([saved.projector]),
         "native_inputs": depset(ctx.files.ownership_subset, transitive = [plan.inputs]),
     }
+    projection = ctx.actions.declare_file(ctx.label.name + ".apply_projection")
     _run_debundler(
         ctx,
-        inputs = depset([analysis] + ctx.files.ownership_subset, transitive = [plan.inputs]),
+        inputs = plan.inputs,
+        outputs = [projection],
+        command = _shell_execroot_path(ctx.executable.debundler.path) + " " + " ".join(
+            ["spec", "project-apply"] + plan.spec_args + plan.package_args +
+            ["--projection-root", "\"${OLDPWD}\"", "--out", shell.quote(projection.short_path)],
+        ),
+        mnemonic = "DebundleProjectApply",
+        progress = "Projecting debundle apply inputs for %{label}",
+    )
+    output_groups["apply_projection"] = depset([projection])
+    _run_debundler(
+        ctx,
+        inputs = depset([analysis, projection] + ctx.files.ownership_subset, transitive = [plan.source_inputs]),
         outputs = [out_dir],
-        command = _apply_command(ctx, plan, analysis, []),
+        command = _apply_command(ctx, plan, analysis, ["--apply-projection", shell.quote(projection.short_path), "--projection-root", "\"${OLDPWD}\""]),
         mnemonic = "DebundleApply",
         progress = "Applying debundle spec for %{label}",
     )
