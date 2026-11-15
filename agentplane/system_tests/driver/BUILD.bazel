@@ -393,24 +393,7 @@ py_library(
 py_library(
     name = "sandbox",
     srcs = ["sandbox.py"],
-    deps = [
-        ":cleanup_diagnostics",
-        ":cluster",
-        ":identity",
-        ":runtime_kind",
-        ":sandbox_ownership",
-        ":tracing",
-        "//agentplane:crd_group",
-        "//agentplane/app/testing:client",
-        "//agentplane/environments/v1:environment_service_pb2",
-        "//agentplane/proto:identity_pb2",
-        "//agentplane/system_tests/vm:boot_rcu",
-        "//agentplane/system_tests/vm:launcher_topology",
-        "//devinfra/testing:undeclared_outputs",
-        "@pypi//httpx",
-        "@pypi//opentelemetry_api",
-        "@pypi//protobuf",
-    ],
+    deps = ["//agentplane/environments/v1:environment_service_pb2"],
 )
 
 py_library(
@@ -427,26 +410,6 @@ py_library(
     name = "tracing",
     srcs = ["tracing.py"],
     deps = ["@pypi//opentelemetry_api"],
-)
-
-py_test(
-    name = "test_sandbox",
-    srcs = ["test_sandbox.py"],
-    deps = [
-        ":cluster",
-        ":runtime_kind",
-        ":sandbox",
-        "//:conftest",
-        "//agentplane/app/testing:client",
-        "//agentplane/environments/v1:environment_service_pb2",
-        "//agentplane/proto:identity_pb2",
-        "//agentplane/system_tests:conftest",
-        "@pypi//httpx",
-        "@pypi//opentelemetry_api",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
 )
 
 py_test(
@@ -496,6 +459,7 @@ py_library(
     name = "harness_pair",
     srcs = ["harness_pair.py"],
     deps = [
+        ":app_sandbox",
         ":cluster",
         ":offered_models",
         ":sandbox",
@@ -525,6 +489,7 @@ py_library(
     name = "scenario",
     srcs = ["scenario.py"],
     deps = [
+        ":app_sandbox",
         ":cleanup",
         ":cluster",
         ":native_artifacts",
@@ -888,6 +853,50 @@ py_test(
         "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/proto:identity_pb2",
         "//agentplane/system_tests:conftest",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "app_sandbox",
+    srcs = ["app_sandbox.py"],
+    deps = [
+        ":cleanup_diagnostics",
+        ":cluster",
+        ":identity",
+        ":runtime_kind",
+        ":sandbox",
+        ":sandbox_ownership",
+        ":tracing",
+        "//agentplane:crd_group",
+        "//agentplane/app/testing:client",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/proto:identity_pb2",
+        "//agentplane/system_tests/vm:boot_rcu",
+        "//agentplane/system_tests/vm:launcher_topology",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//httpx",
+        "@pypi//opentelemetry_api",
+        "@pypi//protobuf",
+    ],
+)
+
+py_test(
+    name = "test_app_sandbox",
+    srcs = ["test_app_sandbox.py"],
+    deps = [
+        ":app_sandbox",
+        ":cluster",
+        ":runtime_kind",
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/proto:identity_pb2",
+        "//agentplane/system_tests:conftest",
+        "@pypi//httpx",
+        "@pypi//opentelemetry_api",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
