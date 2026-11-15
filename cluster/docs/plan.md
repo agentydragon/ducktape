@@ -330,7 +330,7 @@ Most services lack network policies. Goal: default-deny per namespace.
 ### Scoped Historical Logs for `claude-sandbox`
 
 Agents in `claude-sandbox` can't reach Loki — the `ingress` CNP in `loki` only allows
-promtail/grafana/alloy/gatus/authentik, and Loki runs `auth_enabled: false` so the
+grafana/alloy/gatus/authentik, and Loki runs `auth_enabled: false` so the
 CNP is the entire access boundary. Without log access, post-mortems on dead pods
 (e.g. the 2026-05-24 `tana-mcp` livenessProbe kill) are limited to metrics +
 kubelet's short-lived previous-container buffer.
@@ -349,7 +349,7 @@ Options, from cheapest to cleanest:
   `namespace-diagnostics-reader` and `logs-configmaps-reader` binding sets in
   <agent_rbac.md>.
 - **C. Loki multi-tenancy.** Set `auth_enabled: true`, route per-namespace logs to
-  per-namespace tenants via Alloy/Promtail, grant tenant IDs. Touches every log
+  per-namespace tenants via Alloy, grant tenant IDs. Touches every log
   producer; almost certainly overkill.
 
 Grafana isn't a useful proxy here: OSS Grafana's Loki datasource has no

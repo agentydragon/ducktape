@@ -1,5 +1,5 @@
 """Vector on every Talos node, receiving Talos service logs on host loopback and forwarding them
-to Loki. NixOS nodes ship their journal through the separate promtail-journal HelmRelease.
+to Loki. NixOS nodes ship their journal through the separate alloy-journal HelmRelease.
 
 Scoped to Talos nodes by the `node-vendor=talos` label the Talos machine config sets
 (`cluster/terraform/main/logging.tf`). `vector.toml` is a `configMapGenerator` literal: its hash

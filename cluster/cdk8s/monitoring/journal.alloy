@@ -25,10 +25,6 @@ loki.source.journal "journal" {
   max_age       = "12h"
   relabel_rules = loki.relabel.journal.rules
   labels        = {job = "systemd-journal"}
-  legacy_position {
-    file = "/var/lib/alloy-journal/legacy-journal-positions.yaml"
-    name = "journal"
-  }
   forward_to = [loki.write.journal.receiver]
 }
 

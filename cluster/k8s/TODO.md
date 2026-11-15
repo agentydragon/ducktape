@@ -247,7 +247,7 @@ Authentik route work; these tighten them (operator-approved as follow-ups):
 ## Ship node logs to Loki (not just pod logs)
 
 Talos service and kernel logs are streamed to Loki through Vector; NixOS node journals
-are shipped by `promtail-journal`. This supersedes the earlier claim that guest-node
+are shipped by `alloy-journal`. This supersedes the earlier claim that guest-node
 kernel/service messages stay local. The remaining host-log gap is Atlas's Proxmox/PVE
 journal, tracked below. Talos boot-id/source attribution remains open in
 <../docs/plan.md> § "Host log capture". Broader GPU detect/quantify plan:
@@ -260,7 +260,7 @@ journal, tracked below. Talos boot-id/source attribution remains open in
       output for a rollout gate.
 - [ ] **atlas host journal** — the remaining log gap. atlas is the Proxmox/PVE hypervisor,
       **not a k8s node**, so no in-cluster DaemonSet can reach its journal. Ship it with a
-      host-level promtail/alloy systemd unit on atlas pushing to Loki over the Nebula mesh
+      host-level Alloy systemd unit on atlas pushing to Loki over the Nebula mesh
       (needs a mesh-reachable `loki-write` endpoint — `*.svc.cluster.local` doesn't resolve
       off-cluster). This is host config (Ansible), not the k8s GitOps tree. Lower value than
       the guest since the authoritative Xid source is the wyrm2 **guest** journal, not the

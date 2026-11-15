@@ -1,104 +1,4 @@
 apiVersion: v1
-kind: Node
-metadata:
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-  labels:
-    observability.allegedly.works/journal-collector: alloy
-    observability.allegedly.works/pod-collector: alloy
-  name: iguana
----
-apiVersion: v1
-kind: Node
-metadata:
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-  labels:
-    observability.allegedly.works/journal-collector: alloy
-    observability.allegedly.works/pod-collector: alloy
-  name: optiplex
----
-apiVersion: v1
-kind: Node
-metadata:
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-  labels:
-    observability.allegedly.works/journal-collector: alloy
-    observability.allegedly.works/pod-collector: alloy
-  name: ovh-ns1001419
----
-apiVersion: v1
-kind: Node
-metadata:
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-  labels:
-    observability.allegedly.works/journal-collector: alloy
-    observability.allegedly.works/pod-collector: alloy
-  name: ovh-ns102453
----
-apiVersion: v1
-kind: Node
-metadata:
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-  labels:
-    observability.allegedly.works/journal-collector: alloy
-    observability.allegedly.works/pod-collector: alloy
-  name: ovh-ns103656
----
-apiVersion: v1
-kind: Node
-metadata:
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-  labels:
-    observability.allegedly.works/journal-collector: alloy
-    observability.allegedly.works/pod-collector: alloy
-  name: ovh-ns103711
----
-apiVersion: v1
-kind: Node
-metadata:
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-  labels:
-    observability.allegedly.works/journal-collector: alloy
-    observability.allegedly.works/pod-collector: alloy
-  name: ovh-ns104952
----
-apiVersion: v1
-kind: Node
-metadata:
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-  labels:
-    observability.allegedly.works/journal-collector: alloy
-    observability.allegedly.works/pod-collector: alloy
-  name: ovh-ns104963
----
-apiVersion: v1
-kind: Node
-metadata:
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-  labels:
-    observability.allegedly.works/journal-collector: alloy
-    observability.allegedly.works/pod-collector: alloy
-  name: rugged
----
-apiVersion: v1
-kind: Node
-metadata:
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-  labels:
-    observability.allegedly.works/journal-collector: alloy
-    observability.allegedly.works/pod-collector: alloy
-  name: wyrm2
----
-apiVersion: v1
 kind: ConfigMap
 metadata:
   name: alloy-config
@@ -462,27 +362,16 @@ data:
       }
       forward_to = [prometheus.remote_write.mimir.receiver]
     }
-    // The node label is the per-node migration gate (loki.POD_COLLECTOR_LABEL).
-    // Import requires a stopped Promtail snapshot and a first-start reset of ONLY this
-    // log component's unused state: see docs/promtail-alloy-cutover.md.
     discovery.kubernetes "pod_logs" {
       role = "pod"
       selectors {
         role  = "pod"
         field = string.format("spec.nodeName=%s", sys.env("NODE_NAME"))
       }
-      attach_metadata {
-        node = true
-      }
     }
 
     discovery.relabel "pod_logs" {
       targets = discovery.kubernetes.pod_logs.targets
-      rule {
-        source_labels = ["__meta_kubernetes_node_label_observability_allegedly_works_pod_collector"]
-        regex         = "alloy"
-        action        = "keep"
-      }
       // Match Promtail chart 6.x's app fallback and its useful, bounded labels.
       rule {
         source_labels = ["__meta_kubernetes_pod_controller_name"]
@@ -546,9 +435,8 @@ data:
     }
 
     loki.source.file "pods" {
-      targets               = local.file_match.pods.targets
-      legacy_positions_file = "/var/lib/alloy-node/legacy-pod-positions.yaml"
-      forward_to            = [loki.process.pods.receiver]
+      targets    = local.file_match.pods.targets
+      forward_to = [loki.process.pods.receiver]
     }
 
     loki.process "pods" {
@@ -653,10 +541,6 @@ data:
       max_age       = "12h"
       relabel_rules = loki.relabel.journal.rules
       labels        = {job = "systemd-journal"}
-      legacy_position {
-        file = "/var/lib/alloy-journal/legacy-journal-positions.yaml"
-        name = "journal"
-      }
       forward_to = [loki.write.journal.receiver]
     }
 
@@ -772,15 +656,6 @@ spec:
         runAsUser: 0
       storagePath: /var/lib/alloy-node
     controller:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: observability.allegedly.works/pod-collector
-                    operator: NotIn
-                    values:
-                      - drained
       tolerations:
         - effect: NoSchedule
           key: node-role.kubernetes.io/control-plane
@@ -858,7 +733,6 @@ spec:
     controller:
       nodeSelector:
         feature.node.kubernetes.io/system-os_release.ID: nixos
-        observability.allegedly.works/journal-collector: alloy
       tolerations:
         - effect: NoSchedule
           operator: Exists
