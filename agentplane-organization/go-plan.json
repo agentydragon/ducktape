@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
-  "source_sha": "26dc93a444ab38ebeb0bf7030dc88711b2ccf3c1",
-  "observed_at_utc": "2026-11-15T13:50:00Z",
+  "source_sha": "6c912fd595bfebd96292e6682f552cafde211dc2",
+  "observed_at_utc": "2026-11-15T14:15:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1339,
-    "directories": 244,
+    "files": 1340,
+    "directories": 246,
     "production": 739,
-    "tests": 600
+    "tests": 601
   },
   "legend": {
     "=": "Intentional retained owner with an explicit package rationale",
@@ -1003,8 +1003,8 @@
       "id": "app",
       "path": "agentplane/app",
       "counts": {
-        "files": 79,
-        "directories": 21
+        "files": 80,
+        "directories": 23
       },
       "directories": [
         {
@@ -1084,29 +1084,51 @@
         },
         {
           "path": "agentplane/app/internal/httpapi",
-          "production": 2,
+          "production": 4,
           "tests": 0,
           "files": [
             "agentplane/app/internal/httpapi/appconfigapi.go",
+            "agentplane/app/internal/httpapi/errors.go",
+            "agentplane/app/internal/httpapi/gateway.go",
             "agentplane/app/internal/httpapi/statusapi.go"
           ]
         },
         {
-          "path": "agentplane/app/internal/httpapi/sessions",
+          "path": "agentplane/app/internal/httpapi/operator",
           "production": 1,
           "tests": 1,
           "files": [
+            "agentplane/app/internal/httpapi/operator/routes.go",
+            "agentplane/app/internal/httpapi/operator/routes_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/app/internal/httpapi/sessions",
+          "production": 2,
+          "tests": 1,
+          "files": [
             "agentplane/app/internal/httpapi/sessions/handler.go",
-            "agentplane/app/internal/httpapi/sessions/handler_test.go"
+            "agentplane/app/internal/httpapi/sessions/handler_test.go",
+            "agentplane/app/internal/httpapi/sessions/routes.go"
+          ]
+        },
+        {
+          "path": "agentplane/app/internal/httpapi/streams",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/app/internal/httpapi/streams/routes.go",
+            "agentplane/app/internal/httpapi/streams/routes_test.go"
           ]
         },
         {
           "path": "agentplane/app/internal/httpapi/threads",
-          "production": 1,
+          "production": 2,
           "tests": 1,
           "files": [
             "agentplane/app/internal/httpapi/threads/handler.go",
-            "agentplane/app/internal/httpapi/threads/handler_test.go"
+            "agentplane/app/internal/httpapi/threads/handler_test.go",
+            "agentplane/app/internal/httpapi/threads/routes.go"
           ]
         },
         {
@@ -1141,31 +1163,24 @@
         },
         {
           "path": "agentplane/app/internal/server",
-          "production": 11,
-          "tests": 14,
+          "production": 5,
+          "tests": 13,
           "files": [
             "agentplane/app/internal/server/action_facade_test.go",
             "agentplane/app/internal/server/appconfigapi_test.go",
-            "agentplane/app/internal/server/appservice.go",
-            "agentplane/app/internal/server/environment_runtime_api.go",
             "agentplane/app/internal/server/environment_runtime_api_test.go",
-            "agentplane/app/internal/server/operatorapi.go",
-            "agentplane/app/internal/server/operatorapi_test.go",
             "agentplane/app/internal/server/policy_facade_test.go",
             "agentplane/app/internal/server/policyapi_test.go",
+            "agentplane/app/internal/server/routes.go",
             "agentplane/app/internal/server/runtime.go",
-            "agentplane/app/internal/server/sandboxapi.go",
             "agentplane/app/internal/server/schema_export.go",
             "agentplane/app/internal/server/schema_export_test.go",
             "agentplane/app/internal/server/server.go",
             "agentplane/app/internal/server/server_test.go",
-            "agentplane/app/internal/server/sessionapi.go",
             "agentplane/app/internal/server/sessionapi_test.go",
             "agentplane/app/internal/server/staging_config_test.go",
             "agentplane/app/internal/server/statusapi_test.go",
-            "agentplane/app/internal/server/streamapi.go",
             "agentplane/app/internal/server/streamapi_test.go",
-            "agentplane/app/internal/server/threadreadapi.go",
             "agentplane/app/internal/server/threadreadapi_test.go",
             "agentplane/app/internal/server/trace_relay.go",
             "agentplane/app/internal/server/trace_relay_test.go"
@@ -1240,11 +1255,7 @@
         "agentplane/app/frontend/settings/",
         "agentplane/app/frontend/threads/"
       ],
-      "pending_tracks": [
-        "app-http-owners",
-        "settings-single-source",
-        "protobuf-alignment"
-      ],
+      "pending_tracks": ["settings-single-source", "protobuf-alignment"],
       "goal_note": "Operator OIDC login, browser sessions and authenticated caller projection; App-specific Session creation and Runner/Gateway client composition; Browser route registration, resource views and process composition",
       "decision": {
         "state": "REWORK",
@@ -1266,7 +1277,9 @@
           "agentplane/app/internal/historydata",
           "agentplane/app/internal/historywatch",
           "agentplane/app/internal/httpapi",
+          "agentplane/app/internal/httpapi/operator",
           "agentplane/app/internal/httpapi/sessions",
+          "agentplane/app/internal/httpapi/streams",
           "agentplane/app/internal/httpapi/threads",
           "agentplane/app/internal/httperror",
           "agentplane/app/internal/migrations",
@@ -1419,7 +1432,7 @@
           "role": "App config and status HTTP handlers behind the generated AppService routes",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Resource-owned handlers from app-http-owners for the app's configuration and runtime status reads, with explicit inputs instead of the aggregate server's dependency bag.",
+          "reason": "Resource-owned handlers from app-http-owners (landed in #16725) for the app's configuration and runtime status reads, with explicit inputs instead of the aggregate server's dependency bag. Shared route errors and gateway registration helpers (`errors.go`, `gateway.go`) since #16725.",
           "gate": "No move planned; preserve the generated AppService routes and caller authorization.",
           "evidence_paths": [
             "agentplane/app/internal/httpapi/appconfigapi.go",
@@ -1428,21 +1441,55 @@
           "declared_packages": ["httpapi"],
           "pending_tracks": [],
           "counts": {
-            "non_test": 2,
+            "non_test": 4,
             "tests": 0
           }
         },
         {
-          "path": "agentplane/app/internal/httpapi/sessions",
-          "role": "Session HTTP handler behind the generated AppService routes",
+          "path": "agentplane/app/internal/httpapi/operator",
+          "role": "The public one-shot MCP linkage callback.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "The Session resource handler extracted from the aggregate server (app-http-owners), with explicit Dispatcher, History and Environment inputs.",
+          "reason": "Moved from `server/operatorapi.go` by #16725.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/app/internal/httpapi/operator/routes.go"
+          ],
+          "declared_packages": ["operator"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/app/internal/httpapi/sessions",
+          "role": "Session and Environment Runtime status routes and handler behind the generated AppService routes",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "The Session resource handler extracted from the aggregate server (app-http-owners; #16725 moved its route registration beside it), with explicit Dispatcher, History and Environment inputs.",
           "gate": "No move planned; preserve the generated AppService routes, caller authorization and drain behavior.",
           "evidence_paths": [
             "agentplane/app/internal/httpapi/sessions/handler.go"
           ],
           "declared_packages": ["sessions"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 2,
+            "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/app/internal/httpapi/streams",
+          "role": "Raw HTTP/SSE stream facades: upstream, auth, inventory, console and drain inputs, existing output.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Moved from `server/streamapi.go` by #16725; the package comment states its boundary.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/app/internal/httpapi/streams/routes.go"
+          ],
+          "declared_packages": ["streams"],
           "pending_tracks": [],
           "counts": {
             "non_test": 1,
@@ -1451,10 +1498,10 @@
         },
         {
           "path": "agentplane/app/internal/httpapi/threads",
-          "role": "Thread read, metadata and watch HTTP handler behind the generated AppService routes",
+          "role": "Thread read, metadata and watch routes and handler behind the generated AppService routes",
           "decision": "retain",
           "target_paths": [],
-          "reason": "The first resource-owned handler of app-http-owners: explicit store, History, Environment, runtime-status, update and drain inputs instead of the aggregate server's dependency bag.",
+          "reason": "The first resource-owned handler of app-http-owners (landed in #16725, which moved its route registration beside it): explicit store, History, Environment, runtime-status, update and drain inputs instead of the aggregate server's dependency bag.",
           "gate": "No move planned; preserve the generated AppService routes, caller authorization and drain behavior.",
           "evidence_paths": [
             "agentplane/app/internal/httpapi/threads/handler.go"
@@ -1462,7 +1509,7 @@
           "declared_packages": ["threads"],
           "pending_tracks": [],
           "counts": {
-            "non_test": 1,
+            "non_test": 2,
             "tests": 1
           }
         },
@@ -1515,24 +1562,17 @@
         },
         {
           "path": "agentplane/app/internal/server",
-          "role": "Browser route registration, resource views and process composition",
-          "decision": "design",
-          "target_paths": [
-            "agentplane/app/internal/server",
-            "agentplane/app/internal/httpapi",
-            "agentplane/app/internal/httpapi/threads",
-            "agentplane/app/internal/httpapi/sessions",
-            "agentplane/app/internal/httpapi/streams",
-            "agentplane/app/cmd"
-          ],
-          "reason": "The appService receiver aggregates unrelated route dependencies, while Run wires database/Kubernetes/streams. Separate route owners through narrow inputs; generated browser schema remains one contract.",
+          "role": "Browser process composition: `Run`, the root route registrar, the trace relay and schema export",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "#16725 removed the aggregate `appService`: `server.Run` owns construction, backend clients and lifecycle, and a root registrar (`routes.go`) composes the resource owners under `app/internal/httpapi` and keeps authentication and per-route caller policy; the trace relay and schema export stay here.",
           "gate": "",
           "evidence_paths": ["agentplane/app/internal/httpapi/appconfigapi.go"],
           "declared_packages": ["server"],
-          "pending_tracks": ["app-http-owners"],
+          "pending_tracks": [],
           "counts": {
-            "non_test": 11,
-            "tests": 14
+            "non_test": 5,
+            "tests": 13
           }
         },
         {
@@ -9729,62 +9769,6 @@
       "proposed_file_targets": []
     },
     {
-      "id": "app-http-owners",
-      "title": "Split browser routes into resource owners",
-      "components": ["app"],
-      "source_paths": [
-        "agentplane/app/internal/server/appservice.go",
-        "agentplane/app/internal/server/threadreadapi.go",
-        "agentplane/app/internal/server/sessionapi.go",
-        "agentplane/app/internal/server/environment_runtime_api.go",
-        "agentplane/app/internal/server/streamapi.go",
-        "agentplane/app/internal/server/runtime.go"
-      ],
-      "target_paths": [
-        "agentplane/app/internal/httpapi",
-        "agentplane/app/internal/httpapi/threads",
-        "agentplane/app/internal/httpapi/sessions",
-        "agentplane/app/internal/httpapi/streams",
-        "agentplane/app/cmd"
-      ],
-      "source_owner": "agentplane/app/internal/server",
-      "status": "READY",
-      "summary": "Replace the aggregate appService dependency bag with resource-owned route handlers. Keep the app as the browser client/composition layer and keep generated AppService/OpenAPI output stable.",
-      "how": [
-        "Define narrow Thread, Session/environment and streaming handler inputs; keep a root registrar that composes them.",
-        "Thread, Session, config and status handlers are extracted under `app/internal/httpapi` (#16320, #16326, #16329); extract the remaining routes in `environment_runtime_api.go` (formerly `runnerapi.go`) and the streaming facades in `streamapi.go` next, as separate reviewable PRs.",
-        "Separate Run wiring from route implementation after constructors no longer need private httpServer/appService fields. Keep schema export using the same registrations."
-      ],
-      "gate": "Released by the operator 2026-11-15 12:59 UTC (card choice; DAG `GO_LOCAL_EXTRACTIONS`) with the app browser routes, the app browser session store and CLI command families, built by one Codex worker in that order: CLI, then the session store, then the app routes. Each extraction's first PR states its local contract in the PR body and the package doc comment. Go receiver methods cannot move independently while implementing one generated aggregate servicer. Choose explicit delegation/composition without duplicate schemas or backend APIs in the app.",
-      "preserve": "Browser API/schema, authorization, SSE cancellation, backend independence and Thread-versus-History ownership.",
-      "validation": [
-        "//agentplane/app/internal/server:server_test",
-        "//agentplane/app/internal/server:threadreadapi_test",
-        "//agentplane/app/internal/server:sessionapi_test",
-        "//agentplane/app/internal/server:streamapi_test",
-        "//agentplane/app/internal/server:schema_export_test"
-      ],
-      "evidence_paths": [
-        "agentplane/app/internal/server/appservice.go",
-        "agentplane/app/internal/server/threadreadapi.go",
-        "agentplane/app/internal/server/sessionapi.go",
-        "agentplane/app/internal/server/environment_runtime_api.go",
-        "agentplane/app/internal/server/streamapi.go",
-        "agentplane/app/internal/server/runtime.go",
-        "agentplane/app/internal/server/BUILD.bazel"
-      ],
-      "dependencies": [],
-      "priority": 3,
-      "group": "app-cli",
-      "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; split by the named responsibility and keep all callers/tests with it.",
-      "kind": "responsibility extraction",
-      "path_moves": [],
-      "file_splits": [],
-      "deleted_paths": [],
-      "stage": 4,
-      "proposed_file_targets": []
-    },
-    {
       "id": "sampler-execution-state",
       "title": "Give process/cell state and SQL conversion explicit owners",
       "components": ["central_sampler"],
@@ -10903,7 +10887,7 @@
       ],
       "source_owner": "agentplane/net/peertls + identity + per-target clients",
       "candidate_target": null,
-      "summary": "Operator, 2026-11-14, `PRIVILEGED_BACKEND_AUTH_DESIGN` option 2: \"One auth mode can fire off\". Every first-party service-to-service call authenticates its caller by a service SVID over mTLS with verified server TLS; the `kubernetes_bearer` listener mode, Agentplane's TokenReview code, projected token audiences and the `tokenreviews` RBAC go, and Kubernetes authentication stays only toward the Kubernetes API. A service acting for an Identity proves itself with its certificate plus the typed delegation envelope. The app's `agentplane-agent` TokenReview bearer goes separately (operator, 05:05–05:06 UTC): #16383 (merged 2026-11-14) removed the app's Kubernetes bearer admission and its token settings; #16387 (merged 2026-11-14) removed the account and its TokenReview RBAC. The decision record is in #16342. The migration removes code paths inside files and moves none: `net/peertls` and `identity/auth` stay the owners. Stage 4 (every first-party caller presents its service SVID) finished on staging (#16637, 2026-11-15). Stage 5, removing bearer admission, was released on 2026-11-15 and is in progress per receiver: the transitional plaintext RPC listeners are gone (#16661), and receiver code that refuses Kubernetes bearers has merged for Notifications, LLM ingress, PolicyService, Egress Admin (#16678), Actions (#16680), the Gateway (#16690) and EnvironmentService (#16681, with its TokenReview and account machinery). The sampler receiver (#16688) is in review and History is next; manifests drop the retired keys after each image pin.",
+      "summary": "Operator, 2026-11-14, `PRIVILEGED_BACKEND_AUTH_DESIGN` option 2: \"One auth mode can fire off\". Every first-party service-to-service call authenticates its caller by a service SVID over mTLS with verified server TLS; the `kubernetes_bearer` listener mode, Agentplane's TokenReview code, projected token audiences and the `tokenreviews` RBAC go, and Kubernetes authentication stays only toward the Kubernetes API. A service acting for an Identity proves itself with its certificate plus the typed delegation envelope. The app's `agentplane-agent` TokenReview bearer goes separately (operator, 05:05–05:06 UTC): #16383 (merged 2026-11-14) removed the app's Kubernetes bearer admission and its token settings; #16387 (merged 2026-11-14) removed the account and its TokenReview RBAC. The decision record is in #16342. The migration removes code paths inside files and moves none: `net/peertls` and `identity/auth` stay the owners. Stage 4 (every first-party caller presents its service SVID) finished on staging (#16637, 2026-11-15). Stage 5, removing bearer admission, was released on 2026-11-15 and is in progress per receiver: the transitional plaintext RPC listeners are gone (#16661), and receiver code that refuses Kubernetes bearers has merged for Notifications, LLM ingress, PolicyService, Egress Admin (#16678), Actions (#16680), the Gateway (#16690) and EnvironmentService (#16681, with its TokenReview and account machinery). The sampler receiver merged too (#16688); History's is in review (#16728). Manifests drop the retired keys after each image pin, then the decoder fields go (Gateway #16722, sampler #16729).",
       "how": [
         "Runs as its own staged migration, owned by the DAG node `PRIVILEGED_BACKEND_AUTH_DESIGN`: inventory, issue and mount service SVIDs, receivers admit exact service SPIFFE IDs beside bearers (#16350), callers present SVIDs after the receivers' images are pinned, then bearer admission, TokenReview and its RBAC go.",
         "This plan moves no file in `net/peertls`, `identity/auth` or the listener configuration while the migration runs. The two-binary split grants the Runtime proxy's methods to the Sessions binary's service SVID (target binaries cut line: Runtime calls)."
@@ -11062,7 +11046,6 @@
       "work": [
         "mcp-edge-command-action-client",
         "action-service-grpcgate",
-        "app-http-owners",
         "sampler-execution-state",
         "sampler-request-preparation",
         "sampler-content-persistence",
@@ -11073,7 +11056,7 @@
         "sampler-codehost-ownership",
         "sandbox-controller-lifecycle"
       ],
-      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. Lifecycle owners come last and need race tests; the Sandbox Controller's waits for the stage 3 merge. The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717) and the session store (#16720) landed and the app routes are in progress (#16725). The rest are not released."
+      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. Lifecycle owners come last and need race tests; the Sandbox Controller's waits for the stage 3 merge. The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. The rest are not released."
     },
     {
       "stage": 5,
@@ -11102,12 +11085,12 @@
   ],
   "scope_coverage": {
     "top_level_areas": 36,
-    "go_packages": 244,
-    "go_files": 1339,
+    "go_packages": 246,
+    "go_files": 1340,
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "26dc93a444ab38ebeb0bf7030dc88711b2ccf3c1",
+    "review_source_sha": "6c912fd595bfebd96292e6682f552cafde211dc2",
     "review_slices": [
       {
         "slice": "action_service",
@@ -11118,8 +11101,8 @@
       {
         "slice": "app",
         "components": ["app"],
-        "packages": 21,
-        "go_files": 79
+        "packages": 23,
+        "go_files": 80
       },
       {
         "slice": "central_sampler",
@@ -11342,13 +11325,6 @@
       "title": "Move the Sessions binary to `session_dispatcher/`",
       "readiness": "HELD",
       "first_step": "Released to start once the Gateway no longer serves the Runtime proxy: move the rest of `runner_gateway/` to `session_dispatcher/`, with the app split as the PR's second commit."
-    },
-    {
-      "id": "next-4",
-      "track": "app-http-owners",
-      "title": "Split browser routes into resource owners",
-      "readiness": "READY",
-      "first_step": "In progress: #16725 (open) extracts the remaining route owners (`environment_runtime_api.go`, `streamapi.go` facades) under `app/internal/httpapi`."
     }
   ],
   "maintenance": {
