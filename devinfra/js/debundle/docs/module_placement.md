@@ -38,13 +38,22 @@ C acyclicity alone is insufficient.
 ## Exact scheduler with successful-subtree commitment
 
 First preserve the current policy if its concrete schedule verifies. Otherwise
-construct a schedule directly from I and C. The following algorithm is exact,
-without enumerating all import-list permutations.
+reject constraining edges into entry and decompose the nonentry I graph into
+SCCs. Process the condensation in dependency-first order. Components without
+internal C edges retain their preferred module import lists without search.
+For each remaining component, construct an internal traversal using only its
+internal I and C edges. Possible first roots have no incoming internal C edge.
+The following component algorithm is exact, without enumerating all import-list
+permutations.
 
 Maintain white/gray/black colors, active stack, and a reversible schedule trail.
 At frame u, only choices among currently white actual I successors can affect
 DFS. Process or append nonwhite targets deterministically; they do not recurse.
-At entry the actual target set is all emitted nonentry modules.
+All colors and trial import lists are local to the current component. External
+dependencies have already finished; imports into true entry skip the active
+entry. These external targets are restored to each completed module's import
+list. Entry first imports the chosen component roots in dependency-first order,
+then its remaining required targets, which have already been visited.
 
 Before trying white v, compute R = Reach(I induced by current white vertices, v).
 Reject this trial if there is a C edge w -> a with w in R and a either v or a
@@ -110,6 +119,11 @@ internal traversal. C edges between SCCs follow dependency-first order.
 This equivalence supplies an intrinsically UNSAT SCC S: every possible first root
 fails its exact local scheduler. A failure at one entry point or one partial DFS
 state alone is NOT such a certificate.
+
+The constructor applies this decomposition before recursive trials. Independent
+components therefore do not enlarge a trial's visited sets, constraint scans or
+rollback state. The global work is decomposition, bucketing and final schedule
+verification; recursive search depends on individual constrained components.
 
 ## Finest partition and domains
 
@@ -215,9 +229,14 @@ block can receive its own permitted fresh path, the cap holds, and the schedule
 constructor supplies the witness. Evaluate positive residual gain against A0.
 If there is no gain, all atoms are anchored in residual baseline owners and no
 further coarsening can create gain; reject. Otherwise construct the exact batch
-and independently certify the complete assignment through the canonical gate
-once before reporting `found`. A certification disagreement is an internal
-error, not a branch failure or exhaustion proof.
+and independently certify the complete assignment plus retained schedule once
+before reporting `found`. Certification remaps the retained schedule by logical
+owner identity into the final module universe. Only unused isolated explicit
+fresh-owner anchors and entry's corresponding fanout targets may disappear.
+The independent verifier checks the exact required target sets, runs DFS and
+checks all constraining edges; it does not repeat schedule construction.
+A certification disagreement is an internal error, not a branch failure or
+exhaustion proof.
 
 Coverage follows by fixing any permitted accepted target P*. The initial
 partition refines P*. At every forced contraction, the necessary-constraint
