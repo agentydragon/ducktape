@@ -2,53 +2,57 @@
   "source_devel_commit": "aaa39328e439c7ceda96588ef7bd9b0d55c0125e",
   "implementation_head_commit": "08b3b7de08e28c94ee9c5fcd6ad7023ad29cd1b5",
   "measured_implementation_commit": "49d109ff43eee720bfd84548330131bbbea0bd8d",
-  "audited_at_utc": "2026-11-15T10:13:37.674387+00:00",
+  "audited_at_utc": "2026-11-15T10:56:40.111672+00:00",
   "published_at_utc": null,
-  "scope": "Current branch after rebase and the measured four-worker default. Pinned selector/shard screens remain distinct from the six same-source concurrency actions.",
+  "scope": "Pinned experimental branch comparison plus independent devel port PR #16659. The six earlier 15-case actions and four new full 22-case actions are separate cohorts; complete required-feedback improvement remains unqualified.",
   "publication_status": "Prepared for gh-pages PR; deployment follows merge.",
   "source_pr": "https://github.com/agentydragon/ducktape/pull/16489",
   "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16099",
   "performance_goal_qualified": false,
-  "publication_base_gh_pages_commit": "9d3d923b0686c6e2dea570206e3a5bc6c416e212",
+  "publication_base_gh_pages_commit": "196b4a5b4df4c3f9816ede2d837e0c33495c8a99",
   "records": {
-    "previous_report": "https://github.com/agentydragon/ducktape/blob/9d3d923b0686c6e2dea570206e3a5bc6c416e212/agentplane-test-architecture/index.html",
+    "previous_report": "https://github.com/agentydragon/ducktape/blob/196b4a5b4df4c3f9816ede2d837e0c33495c8a99/agentplane-test-architecture/index.html",
     "experiments": "https://github.com/agentydragon/ducktape/blob/08b3b7de08e28c94ee9c5fcd6ad7023ad29cd1b5/agentplane/debug/2026_11_15_pod_concurrency.md"
   },
   "required_checks_passed": true,
-  "report_sha256": "d082be8f4809d20f9a278a845b338da1e283b647a63df4d7d7624db54edac2ec",
-  "evidence_sha256": "9c82f52472741e723130d7edd8423fe0dc7fde3970563c81b6e7d9ecb516802a",
-  "root_navigation_sha256": "2c26ba257be8653de9136ce377cc9a2e5651c5949ffa52122dbc7e155df531d0",
+  "report_sha256": "1d33aad58c9666b5b96a4bf8b7298585d8c7250ad425cfb15499a0d7e9e4140d",
+  "evidence_sha256": "680ac26063da6f690774402bea73cb6d3c626e9e474a5ef8c0a5ce6a3ff0bd89",
+  "root_navigation_sha256": "f5dfa213826b74b2e5212336d771e875892666e05dd779c40cf67a82e938fee3",
   "shared_assets_sha256": {
     "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
     "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
   },
   "measured_source_archive_tag": "https://github.com/agentydragon/ducktape/tree/agentplane-pod-concurrency-20261115",
   "visual_validation": {
-    "invocation": "https://app.buildbuddy.io/invocation/1296c310-308d-4505-89f9-f52e541d989a",
-    "result": "PASSED; two real-browser cases; all eight captures reviewed",
+    "invocation": "https://app.buildbuddy.io/invocation/dfc96d99-da72-4824-a428-8f653940ca75",
+    "result": "PASSED; two real-browser cases; all eight captures manually reviewed",
     "viewport_widths_css_px": [1440, 390],
-    "coverage": "Real pinned CDN assets, desktop/mobile initial light/dark, live preference changes, no document horizontal overflow; deterministic_browser_context + VisualPage.capture.",
-    "source_head": "08b3b7de08e28c94ee9c5fcd6ad7023ad29cd1b5",
-    "source_overlay": "Temporary preview package plus frozen report archive only; report QA, not performance evidence.",
-    "preview_archive_sha256": "ee6d25db00f3e7205c95d582a54a8211384a23959ebc32816096ea052a559639",
+    "coverage": "Real pinned CDN assets, desktop/mobile initial light/dark, live preference changes, table values and root navigation, no document horizontal overflow; deterministic_browser_context and VisualPage.capture.",
+    "source_head": "d46827cb676f6e2c09044f6a3fce4a465440df0f",
+    "source_overlay": "Temporary preview package and frozen report archive only; report QA is separate from performance evidence.",
+    "preview_archive_sha256": "3e2be3a9f53f70fd49d460e30d97da09368c41b20256a4712bc1d7e1630a1c16",
     "capture_sha256": [
-      "6c7599dd8253c4edab17eb5bb5395846da521025cff1b75be3b8e2b05cb8d2c0",
-      "b93aed0ea403464781eca148e890916d3fc0a88e0bb93395df47cac148adc05c",
-      "00d8b2b62810591efd2081349776f10b8a3e519c84a33483f1455120ad58a7b0",
-      "87552c744e091a7f367cb891b64bc49057f26b4f6fb49a40af32d075d8bcc0d5",
-      "312fcfe7d7de2ec14a1624647fe2f23a10d7210d073d4ebd7ceb70601cbf8904",
-      "38f7a36bc9110befb5e55ec308d9bc5f14deef68af72ae4f553b3aedb5e31796",
-      "f32b08f2d827a8d60a492bbc65c4c40bf8cdc53dcd3650d89a1a384741a94b65",
-      "a2d6915a89ba44011699a57170e9ea94eb73cbb1b04d53be0a6e5d09847cab81"
+      "140d607910a3e0e00a4b5e982c1292c76622261041eeee26bf3157a29496828b",
+      "2921f97851912bf34a75d89512a67b0a0dbc71f71c575c3e028bc0f857ccb309",
+      "dffdb29d5a3e92d08d5dba6e3d201206d450b3c8700fa1fe9dc40442cb187c8e",
+      "47166115f4bee69d021af9b6b521b84197519c6e948ff8e6b0f0cb4240a87394",
+      "3b12e0c59336b56f7d0b173fe0f1ed24b2e5567548a709158c6bd37684dc5162",
+      "2b294fb3af8780895dd7bc380d434fa83ffa20c85c0da8ff9d8b785a60774811",
+      "6e0f8ea876927812cf97cff8466c702c1a2ad19a4a7b916d1dcd0fc63a929e60",
+      "6810c71988a5ef4dd5a0934f4215aa23c89ec070ac176a5bf7f18e248e7bdd8d"
     ],
     "rendered_assets_sha256": {
-      "agentplane-test-architecture/index.html": "d082be8f4809d20f9a278a845b338da1e283b647a63df4d7d7624db54edac2ec",
-      "agentplane-test-architecture/evidence.json": "9c82f52472741e723130d7edd8423fe0dc7fde3970563c81b6e7d9ecb516802a",
-      "index.html": "2c26ba257be8653de9136ce377cc9a2e5651c5949ffa52122dbc7e155df531d0",
+      "agentplane-test-architecture/index.html": "1d33aad58c9666b5b96a4bf8b7298585d8c7250ad425cfb15499a0d7e9e4140d",
+      "agentplane-test-architecture/evidence.json": "680ac26063da6f690774402bea73cb6d3c626e9e474a5ef8c0a5ce6a3ff0bd89",
+      "index.html": "f5dfa213826b74b2e5212336d771e875892666e05dd779c40cf67a82e938fee3",
       "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
       "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
     },
-    "manifest_post_capture_changes": "Proof, file hashes and current-head CI metadata only; rendered source/audit stamp unchanged. Previous proof records remain in the pinned prior report."
+    "manifest_post_capture_changes": "Visual proof metadata only; rendered audit stamp and assets unchanged.",
+    "earlier_preview_attempt": {
+      "invocation": "https://app.buildbuddy.io/invocation/80b73eb6-35ee-4d53-8a76-70dd5f4fae48",
+      "result": "Failed root-card readiness assertion because the copied preview expected the old word concurrency; corrected to the new all 22 cases text. Sibling manifests were also included in the final archive."
+    }
   },
   "final_head_ci": {
     "source_head": "08b3b7de08e28c94ee9c5fcd6ad7023ad29cd1b5",
@@ -71,5 +75,34 @@
       "test_pod": 15,
       "test_pod_platform": 7
     }
+  },
+  "devel_port_source_commit": "d46827cb676f6e2c09044f6a3fce4a465440df0f",
+  "devel_port_base_commit": "4cf5c0fc70082586047be40bc574ba6c755b0999",
+  "devel_port_window": {
+    "start": "2026-11-15T10:32:34.304589Z",
+    "end": "2026-11-15T10:56:28.445669Z"
+  },
+  "devel_port_ci": {
+    "source_head": "d46827cb676f6e2c09044f6a3fce4a465440df0f",
+    "tested_merge": "b65c1647f53e3629d0e0b40c1cbab3dacaa70914",
+    "merge_parents": [
+      "1ac357923030bb5c2e38d5f92f3541c23a0a61e6",
+      "d46827cb676f6e2c09044f6a3fce4a465440df0f"
+    ],
+    "status": "SUCCESS",
+    "verified_at_utc": "2026-11-15T10:45:01.119562+00:00",
+    "run_url": "https://github.com/agentydragon/ducktape/actions/runs/43704519240",
+    "invocation": "a0a9e4a0-7739-5260-80eb-02ccaf8f9183",
+    "fresh_junit_cases": 22,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "observed_peak_cases": 4,
+    "cleanup": "complete",
+    "observed_case_limit_env": null,
+    "default_used": 4,
+    "precommit": "https://github.com/agentydragon/ducktape/actions/runs/43704519215",
+    "artifact_import": "https://github.com/agentydragon/ducktape/actions/runs/43704519202",
+    "scope": "Independent exact-head PR acceptance, not one of the four matched performance actions."
   }
 }

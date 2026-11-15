@@ -122,7 +122,7 @@
         return html`<${Container} size="lg" py="xl">
           <${Anchor} href="../">All reports<//>
           <${Title} order=${1} mt="md">Agentplane CI: current branch plan<//>
-          ${paragraph("A current comparison of devel and experimental PR #16489 after rebasing. The goal is good PR regression coverage with at least 30% faster complete required feedback, allowing up to 25% more compute. That latency improvement is not yet proven.")}
+          ${paragraph("A pinned comparison of experimental PR #16489 and its devel base, plus an independent measured concurrency port to devel. The goal is good PR regression coverage with at least 30% faster complete required feedback, allowing up to 25% more compute. That latency improvement is not yet proven.")}
           <${Paper} withBorder p="md" radius="md">
             <${Stack} gap="xs">
               <${Text}>${"Reviewed " + data.observed_at_utc}<//>
@@ -154,11 +154,53 @@
             ><${Anchor} href="#branch">Remaining branch changes<//>
             <${Anchor} href="#pytest-fixtures">Fixture ownership<//
             ><${Anchor} href="#next">Next work<//>
+            <${Anchor} href="#devel-pod-concurrency">Devel concurrency<//>
             <${Anchor} href="#validation">Validation<//>
           <//>
           <${Alert} mt="lg" color="blue" title="Current decision">
             ${data.decision}
           <//>
+          ${
+            data.devel_pod_concurrency &&
+            html`<${Section}
+              id="devel-pod-concurrency"
+              title="Independent devel port: all 22 Pod cases"
+            >
+              ${paragraph(data.devel_pod_concurrency.decision)}
+              <${Rows}
+                headers=${["Case slots", "Fresh passes", "Mean action (s)", "Mean case envelope (s)", "Mean CPU (s)", "Maximum action memory (GiB)", "Immutable runs"]}
+                rows=${data.devel_pod_concurrency.rows.map((row) => [
+                  row.slots,
+                  row.passes + "/" + row.runs,
+                  row.mean_action_seconds.toFixed(1),
+                  row.mean_case_envelope_seconds.toFixed(1),
+                  row.mean_cpu_seconds.toFixed(1),
+                  row.max_action_memory_gib.toFixed(2),
+                  html`<${Group} gap="xs"
+                    >${row.invocations.map((id, index) => html`<${Anchor} key=${id} href=${"https://app.buildbuddy.io/invocation/" + id}>${"Run " + (index + 1)}<//>`)}<//
+                  >`,
+                ])}
+              />
+              ${paragraph(data.devel_pod_concurrency.scope)}
+              ${paragraph(data.devel_pod_concurrency.memory_finding)}
+              ${paragraph("Observation window: " + data.devel_pod_concurrency.window_start_utc + " to " + data.devel_pod_concurrency.window_end_utc)}
+              <${Stack} gap="xs">
+                <${Anchor}
+                  style=${{ overflowWrap: "anywhere" }}
+                  href=${repo + "/commit/" + data.devel_pod_concurrency.source_base}
+                  >${"devel base " + data.devel_pod_concurrency.source_base}<//
+                >
+                <${Anchor}
+                  style=${{ overflowWrap: "anywhere" }}
+                  href=${repo + "/commit/" + data.devel_pod_concurrency.source_head}
+                  >${"Fixed benchmark source " + data.devel_pod_concurrency.source_head}<//
+                >
+                <${Anchor} href=${repo + "/pull/16659"}
+                  >Independent devel PR #16659<//
+                >
+              <//>
+            <//>`
+          }
           <${Section} id="devel" title="What devel already has">
             ${paragraph("These mechanisms are part of the rebased base and are not claimed as new improvements in this PR.")}
             <${Rows}
