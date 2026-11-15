@@ -11,7 +11,7 @@
 //!   direct literal `import.meta.require` / `new Worker` sources that
 //!   resolve to another chunk are rewritten to the artifact-relative form.
 //! * **Boundary-rename name mapping** (the old `rename_vendor_exports`
-//!   caller side): named imports of a `boundary_rename` / `swap`
+//!   caller side): named imports of a whole-chunk `swap`
 //!   chunk's entry are renamed from vendor-local to public export
 //!   names.
 //! * **Partial-swap directive surgery** (the old

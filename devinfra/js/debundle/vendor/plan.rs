@@ -71,16 +71,12 @@ pub struct VendorPlanOptions<'a> {
 }
 
 pub struct VendorResolutionPlan {
-    /// `boundary_rename` + `swap` marks in chunk-path order, each with
+    /// Whole-chunk `swap` marks in chunk-path order, each with
     /// its vendor-local → public export mapping (possibly empty).
     pub(crate) boundary_renames: Vec<BoundaryRenamePlan>,
     pub(crate) full_swaps: Vec<FullSwapPlan>,
     pub(crate) partial_swaps: BTreeMap<ChunkId, ChunkPartialSwapPlan>,
     pub(crate) bundled_partial_swaps: BTreeMap<ChunkId, ChunkBundledPartialSwapPlan>,
-    /// `suppress`-marked chunks: hands-off for every rewrite — the
-    /// pass-through emission rewriter skips their files entirely, so
-    /// their emitted directives stay byte-identical to the prepared input.
-    pub(crate) suppressed: BTreeSet<ChunkId>,
 }
 
 /// Effective emitted identity of one selected bundled replacement export.
@@ -178,7 +174,7 @@ impl VendorResolutionPlan {
 
     /// Boundary-rename mapping consult for construction-time naming:
     /// vendor-local export name → public
-    /// name for a `boundary_rename` / `swap` chunk. Load-bearing:
+    /// name for a whole-chunk `swap`. Load-bearing:
     /// source ASTs reach lowering with the vendor-local names, and the
     /// public name is applied at import construction.
     pub fn boundary_public_export_name(&self, chunk: ChunkId, vendor_local: &str) -> Option<&str> {
@@ -269,11 +265,7 @@ impl VendorResolutionPlan {
             .collect()
     }
 
-    pub fn is_suppressed(&self, chunk: ChunkId) -> bool {
-        self.suppressed.contains(&chunk)
-    }
-
-    /// Entry file of a `boundary_rename` / `swap` chunk — the only file
+    /// Entry file of a whole-chunk `swap` — the only file
     /// whose named imports the boundary mapping applies to.
     pub(crate) fn boundary_entry_file(&self, chunk: ChunkId) -> Option<&str> {
         self.boundary_renames
@@ -416,11 +408,6 @@ pub fn build_vendor_resolution_plan(
         );
     }
 
-    let suppressed = vendor
-        .iter()
-        .filter(|(_, mark)| matches!(mark.level, VendorLevel::Suppress))
-        .map(|(chunk_path, _)| resolved_chunks[chunk_path.as_str()].chunk_id)
-        .collect();
     let plan = VendorResolutionPlan {
         boundary_renames: plan_boundary_renames(artifact, vendor, &resolved_chunks)?,
         full_swaps: plan_full_swaps(artifact, vendor, &resolved_chunks, options)?,
@@ -431,7 +418,6 @@ pub fn build_vendor_resolution_plan(
             &resolved_chunks,
             options,
         )?,
-        suppressed,
     };
     validate_consumer_shapes(artifact, references, &plan)?;
     validate_full_swap_import_alignment(artifact, references, &plan)?;
@@ -521,13 +507,7 @@ fn validate_consumer_shapes(
                 }),
         )
         .collect();
-    let boundary_mapped_chunks: BTreeMap<ChunkId, &BTreeMap<String, String>> = plan
-        .boundary_renames
-        .iter()
-        .filter(|boundary| !boundary.mapping.is_empty())
-        .map(|boundary| (boundary.chunk_id, &boundary.mapping))
-        .collect();
-    if swapped_by_chunk.is_empty() && boundary_mapped_chunks.is_empty() {
+    if swapped_by_chunk.is_empty() {
         return Ok(());
     }
     let chunk_table = &artifact.chunk_table;
@@ -540,7 +520,6 @@ fn validate_consumer_shapes(
         if full_swap_chunks.contains(&caller_chunk_id) {
             continue;
         }
-        let caller_suppressed = plan.is_suppressed(caller_chunk_id);
         let caller_chunk_name = chunk_table.name(caller_chunk_id);
         for file_path in list_chunk_file_paths(&chunk_artifact.js) {
             let Some(ast) = chunk_artifact
@@ -571,35 +550,6 @@ fn validate_consumer_shapes(
                 ) else {
                     continue;
                 };
-                // Boundary-renamed names are applied by the pass-through
-                // rewriter (and by lowering's import construction);
-                // suppress files are skipped by both, so a suppress
-                // consumer spelling a vendor-local name would emit a
-                // dangling import name.
-                if caller_suppressed
-                    && target_chunk_id != caller_chunk_id
-                    && let Some(mapping) = boundary_mapped_chunks.get(&target_chunk_id)
-                    && let ModuleDecl::Import(import) = decl
-                {
-                    for specifier in &import.specifiers {
-                        let ImportSpecifier::Named(named) = specifier else {
-                            continue;
-                        };
-                        let imported = named
-                            .imported
-                            .as_ref()
-                            .map(module_export_name)
-                            .unwrap_or_else(|| named.local.sym.to_string());
-                        if let Some(public) = mapping.get(&imported)
-                            && public != &imported
-                        {
-                            bail!(
-                                "partial-swap consumer gate: {consumer} is in a suppress-marked chunk and imports vendor-local name `{imported}` from boundary-renamed vendor chunk {}; suppress files are hands-off, so the import would not be renamed to the public export `{public}`",
-                                chunk_table.name(target_chunk_id),
-                            );
-                        }
-                    }
-                }
                 let Some(swapped) = swapped_by_chunk.get(&target_chunk_id) else {
                     continue;
                 };
@@ -624,7 +574,6 @@ fn validate_consumer_shapes(
                     decl,
                     swapped.symbols,
                     swapped.bundled,
-                    caller_suppressed,
                     &consumer,
                     chunk_table.name(target_chunk_id),
                 )?;
@@ -689,7 +638,6 @@ fn check_consumer_shape_has_live_rewrite(
     decl: &ModuleDecl,
     symbols: &BTreeMap<String, PartialSwapSymbol>,
     bundled: bool,
-    caller_suppressed: bool,
     consumer: &str,
     target_chunk_name: &str,
 ) -> Result<()> {
@@ -699,29 +647,11 @@ fn check_consumer_shape_has_live_rewrite(
         target_chunk_name,
         symbols.contains_key("default"),
         || symbols.keys().cloned().collect::<Vec<_>>().join(","),
-        |imported| {
-            if !symbols.contains_key(imported) {
-                return Ok(());
-            }
-            // Named imports of swapped names have a live
-            // rewrite at both application sites — unless the
-            // consumer file is hands-off (suppress chunk).
-            if caller_suppressed {
-                bail!(
-                    "partial-swap consumer gate: {consumer} is in a suppress-marked chunk and imports swapped name `{imported}` from partially-swapped vendor chunk {target_chunk_name}; suppress files are not rewritten and the stripped chunk no longer exports it",
-                );
-            }
-            Ok(())
-        },
+        |_| Ok(()),
         |orig| {
             let Some(symbol) = symbols.get(orig) else {
                 return Ok(());
             };
-            if caller_suppressed {
-                bail!(
-                    "partial-swap consumer gate: {consumer} is in a suppress-marked chunk and re-exports swapped name `{orig}` from partially-swapped vendor chunk {target_chunk_name}; suppress files are not rewritten and the stripped chunk no longer exports it",
-                );
-            }
             if bundled || matches!(symbol.kind, PartialSwapKind::Member) {
                 bail!(
                     "partial-swap consumer gate: {consumer} re-exports swapped name `{orig}` from partially-swapped vendor chunk {target_chunk_name}; this re-export shape has no live rewrite (kind=member symbols and bundled swaps cannot be expressed as re-exports) and the stripped chunk no longer exports it",
@@ -738,14 +668,12 @@ fn plan_boundary_renames(
     resolved_chunks: &BTreeMap<&str, ResolvedVendorChunk>,
 ) -> Result<Vec<BoundaryRenamePlan>> {
     let mut plans = Vec::new();
-    for (chunk_path, _mark) in vendor.iter().filter(|(_, mark)| {
-        matches!(
-            mark.level,
-            VendorLevel::BoundaryRename | VendorLevel::Swap(_)
-        )
-    }) {
+    for (chunk_path, _mark) in vendor
+        .iter()
+        .filter(|(_, mark)| matches!(mark.level, VendorLevel::Swap(_)))
+    {
         let chunk = &resolved_chunks[chunk_path.as_str()];
-        let vendor_ast = vendor_entry_ast(artifact, "boundary_rename", chunk)?;
+        let vendor_ast = vendor_entry_ast(artifact, "swap", chunk)?;
         let mapping = collect_and_validate_boundary_mapping(&vendor_ast.module, chunk_path)?;
         plans.push(BoundaryRenamePlan {
             chunk_id: chunk.chunk_id,

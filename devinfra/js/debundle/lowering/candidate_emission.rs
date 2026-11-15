@@ -88,8 +88,7 @@ impl CandidateEmissionDraft {
         //   canonicalization, boundary-rename name mapping, and
         //   partial-swap consumer surgery from the vendor plan
         //   (materialized module bodies were constructed from the same
-        //   plan during lowering; suppress-marked chunks are skipped
-        //   wholesale; excluded full-swap chunks are never rewritten);
+        //   plan during lowering; full-swap chunks are excluded);
         // * the vendor residual computation for each partially-swapped
         //   chunk — the canonicalize → self-rewrite → strip composition as
         //   one function body.

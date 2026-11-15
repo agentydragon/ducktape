@@ -1102,13 +1102,12 @@ fn vendor_marked_provider_keeps_its_primitive_facts() {
         "4 * bytes + 256",
     );
     let peers = [("static/peer", "export const limit = 2;\n")];
+    let bundle_root = CaseWorkspace::default();
+    let bundle_path = bundle_root.path().join("replacement.mjs");
+    write_text_file(&bundle_path, "export const replacement = { limit: 2 };\n");
     let vendor_marks = [(
         "static/peer.js",
-        VendorMark {
-            identity: "neutral-provider".into(),
-            role: Default::default(),
-            level: VendorLevel::Suppress,
-        },
+        bundled_vendor_mark(bundle_path, &["limit"]),
     )];
     let fixture = run_fixture(
         FixtureOpts::new(&source, split_modules())

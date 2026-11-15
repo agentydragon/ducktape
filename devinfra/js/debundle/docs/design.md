@@ -4132,14 +4132,11 @@ and records none.
 
 ## Vendor chunk swapping
 
-The `vendor` spec map classifies chunks as vendor code at one of four
-levels: `suppress` (annotation only — the chunk and its callers pass
-through byte-identical), `boundary_rename` (rewrite caller imports
-from vendor-local names to the vendor's public export names),
-`swap` (replace the whole chunk with an upstream npm package), and
-`partial_swap` / `bundled_partial_swap` (swap a subset of the chunk's
-exports against upstream packages and strip the swapped bodies from
-the residual chunk). Soundness edges that are deliberate contracts
+The `vendor` spec map selects `swap` to replace a whole chunk with an
+upstream npm package, or `partial_swap` / `bundled_partial_swap` to replace
+a subset of its exports and strip the swapped bodies from the residual
+chunk. Whole-chunk swaps map caller imports from vendor-local names to the
+vendor's public export names. Soundness edges that are deliberate contracts
 rather than missing features are documented here.
 
 ### Full swap: callers retain imports for removed chunks
@@ -4165,8 +4162,7 @@ lowering's import construction for materialized module bodies, and
 the pass-through emission rewriter for files emitted without
 lowering. Shapes with no live rewrite — `import * as M` namespace
 imports of the chunk, `export *` from the chunk, re-exports of
-`kind: member` symbols or bundled-swap symbols, and any rewrite-needing
-consumer inside a hands-off `suppress`-marked chunk — are rejected by
+`kind: member` symbols or bundled-swap symbols — are rejected by
 the **plan-time consumer gate**
 (`vendor/plan.rs::validate_consumer_shapes`) before any output is
 written.
