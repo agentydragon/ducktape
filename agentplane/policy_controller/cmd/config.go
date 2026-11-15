@@ -23,7 +23,6 @@ type config struct {
 	AccountsNamespace      string                     `yaml:"accounts_namespace"`
 	MetricsBindAddress     string                     `yaml:"metrics_bind_address"`
 	HealthProbeBindAddress string                     `yaml:"health_probe_bind_address"`
-	GRPCBindAddress        string                     `yaml:"grpc_bind_address"`
 	GRPCTLS                *peertls.ServerTLSListener `yaml:"grpc_tls"`
 	GRPCAudience           string                     `yaml:"grpc_audience"`
 	ReaderAccounts         []string                   `yaml:"reader_accounts"`
@@ -35,7 +34,7 @@ type config struct {
 }
 
 func defaultConfig() config {
-	return config{MetricsBindAddress: ":8080", HealthProbeBindAddress: ":8081", GRPCBindAddress: ":8082", GRPCAudience: "agentplane-policy"}
+	return config{MetricsBindAddress: ":8080", HealthProbeBindAddress: ":8081", GRPCAudience: "agentplane-policy"}
 }
 
 func loadConfig() (config, error) {
@@ -62,13 +61,14 @@ func loadConfig() (config, error) {
 }
 
 func (c config) validate() error {
-	if c.GRPCTLS != nil {
-		if err := c.GRPCTLS.Validate(); err != nil {
-			return fmt.Errorf("grpc_tls: %w", err)
-		}
-		if c.GRPCTLS.Listen == c.GRPCBindAddress {
-			return errors.New("grpc_tls.listen must differ from grpc_bind_address")
-		}
+	if c.GRPCTLS == nil {
+		return errors.New("grpc_tls is required")
+	}
+	if err := c.GRPCTLS.Validate(); err != nil {
+		return fmt.Errorf("grpc_tls: %w", err)
+	}
+	if c.GRPCTLS.Listen == c.MetricsBindAddress || c.GRPCTLS.Listen == c.HealthProbeBindAddress {
+		return errors.New("grpc_tls.listen must differ from metrics and health listeners")
 	}
 	for _, setting := range []struct {
 		name       string

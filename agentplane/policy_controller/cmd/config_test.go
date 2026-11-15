@@ -14,6 +14,9 @@ func requiredSettings() map[string]any {
 	return map[string]any{
 		"policy_namespace": "policies", "subject_namespaces": []string{"agents", "tools"},
 		"accounts_namespace": "accounts",
+		"grpc_tls": map[string]any{
+			"listen": ":8083", "cert_file": "/run/server/tls.crt", "key_file": "/run/server/tls.key",
+		},
 	}
 }
 
@@ -39,7 +42,9 @@ func TestSettingsComeFromTheFile(t *testing.T) {
 	settings := requiredSettings()
 	settings["metrics_bind_address"] = ":9090"
 	settings["health_probe_bind_address"] = ":9091"
-	settings["grpc_bind_address"] = ":9092"
+	settings["grpc_tls"] = map[string]any{
+		"listen": ":9092", "cert_file": "/run/server/tls.crt", "key_file": "/run/server/tls.key",
+	}
 	settings["grpc_audience"] = "custom-policy"
 	settings["reader_accounts"] = []string{"policies/reader"}
 	settings["writer_accounts"] = []string{"policies/app"}
@@ -53,25 +58,32 @@ func TestSettingsComeFromTheFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	if c.PolicyNamespace != "policies" || !slices.Equal(c.SubjectNamespaces, []string{"agents", "tools"}) || c.AccountsNamespace != "accounts" ||
-		c.MetricsBindAddress != ":9090" || c.HealthProbeBindAddress != ":9091" || c.GRPCBindAddress != ":9092" || c.GRPCAudience != "custom-policy" ||
+		c.MetricsBindAddress != ":9090" || c.HealthProbeBindAddress != ":9091" || c.GRPCTLS == nil || c.GRPCTLS.Listen != ":9092" || c.GRPCAudience != "custom-policy" ||
 		!slices.Equal(c.ReaderAccounts, []string{"policies/reader"}) || !slices.Equal(c.WriterAccounts, []string{"policies/app"}) {
 		t.Fatalf("settings were not read: %+v", c)
 	}
 }
 
-func TestBindAddressesDefaultWhenOmitted(t *testing.T) {
+func TestNonGRPCBindAddressesDefaultWhenOmitted(t *testing.T) {
 	writeSettings(t, requiredSettings())
 	c, err := loadConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.MetricsBindAddress != ":8080" || c.HealthProbeBindAddress != ":8081" || c.GRPCBindAddress != ":8082" || c.GRPCAudience != "agentplane-policy" {
+	if c.MetricsBindAddress != ":8080" || c.HealthProbeBindAddress != ":8081" || c.GRPCTLS == nil || c.GRPCTLS.Listen != ":8083" || c.GRPCAudience != "agentplane-policy" {
 		t.Fatalf("defaults were lost: %+v", c)
 	}
 }
 
-func TestOptionalGRPCTLSListenerRequiresSeparateAddressAndAbsoluteFiles(t *testing.T) {
+func TestRequiredGRPCTLSListenerUsesAbsoluteFiles(t *testing.T) {
 	settings := requiredSettings()
+	delete(settings, "grpc_tls")
+	writeSettings(t, settings)
+	if _, err := loadConfig(); err == nil {
+		t.Fatal("accepted missing grpc_tls")
+	}
+
+	settings = requiredSettings()
 	settings["grpc_tls"] = map[string]any{
 		"listen": ":8083", "cert_file": "/run/agentplane/workload-tls/tls.crt", "key_file": "/run/agentplane/workload-tls/tls.key",
 	}
@@ -84,7 +96,7 @@ func TestOptionalGRPCTLSListenerRequiresSeparateAddressAndAbsoluteFiles(t *testi
 	for name, tlsSettings := range map[string]map[string]any{
 		"missing key":          {"listen": ":8083", "cert_file": "/run/cert.pem"},
 		"relative certificate": {"listen": ":8083", "cert_file": "cert.pem", "key_file": "/run/key.pem"},
-		"same listener":        {"listen": ":8082", "cert_file": "/run/cert.pem", "key_file": "/run/key.pem"},
+		"same health listener": {"listen": ":8081", "cert_file": "/run/cert.pem", "key_file": "/run/key.pem"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			settings := requiredSettings()
@@ -99,7 +111,6 @@ func TestOptionalGRPCTLSListenerRequiresSeparateAddressAndAbsoluteFiles(t *testi
 
 func TestPolicyServiceServiceAllowlistRequiresExplicitClientCA(t *testing.T) {
 	for name, tlsSettings := range map[string]map[string]any{
-		"no TLS listener": nil,
 		"no client CA": {
 			"listen": ":8083", "cert_file": "/run/server/tls.crt", "key_file": "/run/server/tls.key",
 		},
@@ -107,9 +118,7 @@ func TestPolicyServiceServiceAllowlistRequiresExplicitClientCA(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			settings := requiredSettings()
 			settings["reader_services"] = []string{"spiffe://agentplane/actions"}
-			if tlsSettings != nil {
-				settings["grpc_tls"] = tlsSettings
-			}
+			settings["grpc_tls"] = tlsSettings
 			writeSettings(t, settings)
 			if _, err := loadConfig(); err == nil {
 				t.Fatal("accepted service callers without grpc_tls.client_ca_file")

@@ -171,30 +171,18 @@ func run(c config) error {
 	register := func(server *grpc.Server) {
 		policypb.RegisterPolicyServiceServer(server, api)
 	}
-	server := grpc.NewServer(serverOptions...)
-	register(server)
-	listener, err := net.Listen("tcp", c.GRPCBindAddress)
+	credentials, err := c.GRPCTLS.Credentials(peertls.PolicyControllerURI)
 	if err != nil {
 		return err
 	}
-	listeners := []grpcListener{{server: server, listener: listener}}
-	if c.GRPCTLS != nil {
-		credentials, err := c.GRPCTLS.Credentials(peertls.PolicyControllerURI)
-		if err != nil {
-			server.Stop()
-			listener.Close()
-			return err
-		}
-		tlsServer := grpc.NewServer(append(slices.Clone(serverOptions), grpc.Creds(credentials))...)
-		register(tlsServer)
-		tlsListener, err := net.Listen("tcp", c.GRPCTLS.Listen)
-		if err != nil {
-			server.Stop()
-			listener.Close()
-			return err
-		}
-		listeners = append(listeners, grpcListener{server: tlsServer, listener: tlsListener})
+	server := grpc.NewServer(append(slices.Clone(serverOptions), grpc.Creds(credentials))...)
+	register(server)
+	listener, err := net.Listen("tcp", c.GRPCTLS.Listen)
+	if err != nil {
+		server.Stop()
+		return err
 	}
+	listeners := []grpcListener{{server: server, listener: listener}}
 	if err := mgr.Add(policyListener{listeners: listeners}); err != nil {
 		for _, endpoint := range listeners {
 			endpoint.server.Stop()

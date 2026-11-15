@@ -11412,7 +11412,6 @@ data:
     accounts_namespace: agentplane-staging-k8s-accounts
     metrics_bind_address: :8080
     health_probe_bind_address: :8081
-    grpc_bind_address: :8082
     grpc_tls:
       listen: :8083
       cert_file: /run/agentplane/workload-tls/tls.crt
@@ -11501,9 +11500,6 @@ spec:
             - containerPort: 8080
               name: metrics
               protocol: TCP
-            - containerPort: 8082
-              name: grpc
-              protocol: TCP
             - containerPort: 8083
               name: grpc-tls
               protocol: TCP
@@ -11586,10 +11582,6 @@ spec:
       port: 8080
       protocol: TCP
       targetPort: 8080
-    - name: grpc
-      port: 8082
-      protocol: TCP
-      targetPort: 8082
     - name: grpc-tls
       port: 8083
       protocol: TCP
@@ -11693,8 +11685,6 @@ spec:
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
-            - port: "8082"
-              protocol: TCP
             - port: "8083"
               protocol: TCP
 ---

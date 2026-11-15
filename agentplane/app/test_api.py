@@ -5,6 +5,7 @@ from __future__ import annotations
 import errno
 import json
 import socket
+from pathlib import Path
 
 import httpx
 import pytest
@@ -15,8 +16,10 @@ from agentplane import sandbox_resource
 from agentplane.app.testing.replication_process import AppProcess, spawn_go_app
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.environments.v1 import environment_service_pb2
+from agentplane.net.peertls.config import POLICY_CONTROLLER_URI
 from agentplane.proto import identity_pb2
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
+from agentplane.testing.tls import make_ca
 from util.net import listen_tcp
 from util.testing.postgres import DatabaseNames, create_temporary_database
 
@@ -25,14 +28,19 @@ pytest_plugins = ("agentplane.app.integration_fixtures",)
 
 
 async def test_go_app_serves_a_parent_owned_listener(
-    postgres_admin_url: str, database_names: DatabaseNames, sandbox: SandboxCluster
+    postgres_admin_url: str, database_names: DatabaseNames, sandbox: SandboxCluster, tmp_path: Path
 ) -> None:
     # The normal serving path must migrate a fresh database before it reports readiness.
     with create_temporary_database(postgres_admin_url, database_names()) as db_url, listen_tcp() as listener:
+        policy_ca = make_ca("unused Policy Service API test trust")
+        policy_ca_file = tmp_path / "policy-service-ca.pem"
+        policy_ca_file.write_bytes(policy_ca.cert_pem)
         config: dict[str, object] = {
             "database_url": db_url,
             "kubeconfig": str(sandbox.server.kubeconfig),
             "sandbox_namespace": sandbox.namespace,
+            "policy_service_target": "127.0.0.1:1",
+            "policy_service_tls": {"ca_file": str(policy_ca_file), "server_uri": POLICY_CONTROLLER_URI},
         }
         async with spawn_go_app(config, listener=listener) as app:
             assert app.url == f"http://{listener.host}:{listener.port}"

@@ -47,6 +47,13 @@ sandbox_namespace: sandboxes
 runner_gateway_target: runner-gateway:9090
 runner_gateway_control_target: 'runner-gateway.{namespace}.svc:8080'
 session_dispatcher_target: session-dispatcher:9090
+policy_service_target: policy-controller:8083
+policy_service_tls:
+  ca_file: /run/agentplane/workload-trust/ca.pem
+  server_uri: spiffe://agentplane/policy-controller
+  cert_file: /run/agentplane/app/tls.crt
+  key_file: /run/agentplane/app/tls.key
+  client_uri: spiffe://agentplane/app
 history_service_target: history:9090
 notifications_url: http://notifications:9090
 listen_address: 0.0.0.0:8080
@@ -81,7 +88,8 @@ func validTestConfig() Config {
 		SessionDispatcherTarget:             "session-dispatcher:9090",
 		RunnerGatewayControlTarget:          "runner-gateway.{namespace}.svc:8080",
 		HistoryServiceTarget:                "history:9090",
-		PolicyServiceTarget:                 "policy-controller:8082",
+		PolicyServiceTarget:                 "policy-controller:8083",
+		PolicyServiceTLS:                    &peertls.ClientTLS{CAFile: "/run/trust/ca.pem", ServerURI: peertls.PolicyControllerURI},
 		PolicyServiceTokenFile:              "/var/run/policy/token",
 		NotificationsURL:                    "http://notifications:9090",
 		NotificationsTokenFile:              "/var/run/notifications/token",
@@ -116,10 +124,14 @@ func TestConfigValidateAcceptsExistingSettingsContract(t *testing.T) {
 
 func TestPolicyServiceTLSRequiresThePolicyControllerIdentity(t *testing.T) {
 	config := validTestConfig()
-	config.PolicyServiceTLS = &peertls.ClientTLS{CAFile: "/run/agentplane/workload-trust/ca.pem", ServerURI: peertls.PolicyControllerURI}
 	if err := config.validate(); err != nil {
 		t.Fatalf("valid Policy Service TLS rejected: %v", err)
 	}
+	config.PolicyServiceTLS = nil
+	if err := config.validate(); err == nil || !strings.Contains(err.Error(), "policy_service_tls is required") {
+		t.Fatalf("missing Policy Service TLS error = %v", err)
+	}
+	config = validTestConfig()
 	config.PolicyServiceTLS.ServerURI = peertls.CentralSamplerURI
 	if err := config.validate(); err == nil {
 		t.Fatal("accepted TLS for a different service identity")
@@ -233,6 +245,22 @@ func TestLoadEnvironmentServicePeerUsesControllerTargetAndSVID(t *testing.T) {
 	if config.SessionDispatcherTarget != "session-dispatcher:9090" || config.RunnerGatewayTarget != "runner-gateway:9090" {
 		t.Fatalf("EnvironmentService peer changed other targets: dispatcher=%q runtime=%q", config.SessionDispatcherTarget, config.RunnerGatewayTarget)
 	}
+}
+
+func TestLoadConfigRequiresPolicyServiceTargetAndTLS(t *testing.T) {
+	t.Run("target", func(t *testing.T) {
+		writeConfig(t, strings.Replace(validSettingsYAML, "policy_service_target: policy-controller:8083\n", "", 1))
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "policy_service_target is required") {
+			t.Fatalf("missing policy target error = %v", err)
+		}
+	})
+	t.Run("TLS", func(t *testing.T) {
+		settings := strings.Replace(validSettingsYAML, "policy_service_tls:\n  ca_file: /run/agentplane/workload-trust/ca.pem\n  server_uri: spiffe://agentplane/policy-controller\n  cert_file: /run/agentplane/app/tls.crt\n  key_file: /run/agentplane/app/tls.key\n  client_uri: spiffe://agentplane/app\n", "", 1)
+		writeConfig(t, settings)
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "policy_service_tls is required") {
+			t.Fatalf("missing policy TLS error = %v", err)
+		}
+	})
 }
 
 func TestEnvironmentServicePeerRejectsPartialOrWrongAuthentication(t *testing.T) {

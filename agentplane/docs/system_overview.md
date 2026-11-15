@@ -97,7 +97,7 @@ flowchart LR
     app -->|service SVID mTLS: operator watches and health| notif
     app -->|mTLS plus operator authority: Action and MCP Linkage RPCs| actions
     app -->|mTLS peer plus operator OIDC: ConnectionService and health| edge
-    app -->|PolicyService gRPC: App SVID mTLS| policy
+    app -->|PolicyService gRPC :8083: App SVID mTLS| policy
     edge -->|authenticated ActionService gRPC| actions
     edge -->|public MCP client metadata: gRPC| actions
     notif -->|Action history: gRPC mTLS, Notifications SVID| actions

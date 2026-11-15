@@ -18,6 +18,7 @@ from agentplane.app.oidc import OIDCSettings
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.app.settings import FrontendConfig, Settings
 from agentplane.env.runtime.harness import Harness
+from agentplane.net.peertls.config import APP_URI, POLICY_CONTROLLER_URI
 from agentplane.sandboxes.runtimeconfig.model_catalog import (
     WORKSPACE_ROOT,
     Catalog,
@@ -38,6 +39,7 @@ from cluster.cdk8s.agentplane import (
     policy_controller,
     runner_gateway,
     session_dispatcher,
+    workload_tls,
 )
 from cluster.cdk8s.agentplane.egress import (
     BUILDBUDDY_POLICY,
@@ -207,6 +209,7 @@ def settings(
             f"{session_dispatcher.service(namespace).fqdn}:{session_dispatcher.service(namespace).port.number}"
         ),
         policy_service_target=policy_controller.tls_target(namespace),
+        policy_service_tls=workload_tls.service_client_tls(POLICY_CONTROLLER_URI, client_uri=APP_URI),
         runner_gateway_control_target=runner_gateway.control_target(namespace),
         history_service_target=(
             f"{history_service.service(namespace).fqdn}:{history_service.service(namespace).port.number}"

@@ -49,7 +49,6 @@ from agentplane.app.testing.thread_browser import (
     scripted_runner,
 )
 from agentplane.app.testing.thread_test_support import ThreadHTTP
-from agentplane.grpc.serving import serving
 from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.channels import Channel
 from agentplane.history_service.client import HistoryServiceClient
@@ -65,6 +64,7 @@ from agentplane.history_service.fold.models import (
 from agentplane.history_service.testing.electric_service import ElectricService
 from agentplane.history_service.testing.history import History
 from agentplane.history_service.testing.protojson import thread_entity_from_record, thread_entity_state_json
+from agentplane.net.peertls.config import POLICY_CONTROLLER_URI, ClientTLS
 from agentplane.policy.v1 import policy_service_pb2, policy_service_pb2_grpc
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner_gateway.client import SandboxControlClient
@@ -74,10 +74,22 @@ from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_clus
 from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
+from agentplane.testing.tls import issue_workload_leaf, make_ca
 from devinfra.testing.output_writer import BoundTestOutputs
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.frontend_visual.capture import VisualPage
 from util.testing.frontend_visual.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
+
+
+@asynccontextmanager
+async def serving_tls(server: grpc.aio.Server, address: str, credentials: grpc.ServerCredentials) -> AsyncIterator[int]:
+    port = server.add_secure_port(address, credentials)
+    await server.start()
+    try:
+        yield port
+    finally:
+        await server.stop(grace=0)
+
 
 # gazelle:include_dep //agentplane/app:integration_fixtures
 pytest_plugins = ("agentplane.app.testing.thread_browser", "agentplane.app.integration_fixtures")
@@ -291,10 +303,17 @@ async def test_environment_identity_change_obeys_real_gateway_and_kubernetes_adm
 
     policy = grpc.aio.server()
     policy_service_pb2_grpc.add_PolicyServiceServicer_to_server(IdentityWatch(), policy)
+    policy_ca = make_ca("Policy Service browser test")
+    policy_ca_file = tmp_path / "policy-service-ca.pem"
+    policy_ca_file.write_bytes(policy_ca.cert_pem)
+    policy_certificate, policy_key = issue_workload_leaf(policy_ca, POLICY_CONTROLLER_URI, tmp_path)
+    policy_server_credentials = grpc.ssl_server_credentials(
+        [(policy_key.read_bytes(), policy_certificate.read_bytes())]
+    )
     policy_token = tmp_path / "identity-watch-token"
     policy_token.write_text("test-policy-service-token")
     async with (
-        serving(policy, "127.0.0.1:0", grace_s=0) as policy_port,
+        serving_tls(policy, "127.0.0.1:0", policy_server_credentials) as policy_port,
         app_process(
             db_url,
             history=event_logs.reader,
@@ -306,6 +325,9 @@ async def test_environment_identity_change_obeys_real_gateway_and_kubernetes_adm
             config={
                 "policy_service_target": f"127.0.0.1:{policy_port}",
                 "policy_service_token_file": str(policy_token),
+                "policy_service_tls": ClientTLS(ca_file=policy_ca_file, server_uri=POLICY_CONTROLLER_URI).model_dump(
+                    mode="json"
+                ),
             },
         ) as app,
         http2_proxy(app.url, certificate) as ingress,

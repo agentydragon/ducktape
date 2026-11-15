@@ -38,8 +38,9 @@ from agentplane.app.testing.notifications import FakeNotifications
 from agentplane.environments.testing.process import run_environment_service
 from agentplane.grpc.serving import serving
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.net.peertls.config import APP_URI, ClientTLS
+from agentplane.net.peertls.config import APP_URI, POLICY_CONTROLLER_URI, ClientTLS
 from agentplane.notification_service.api.notifications import notifications_pb2_grpc
+from agentplane.testing.tls import make_ca
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.db_url import render_postgresql_url
 from util.net import Listener, listen_tcp
@@ -605,12 +606,17 @@ async def app_process(
             ),
             serving(notices, "127.0.0.1:0", grace_s=0) as notices_port,
         ):
+            policy_ca = make_ca("unused Policy Service test trust")
+            policy_ca_file = Path(directory) / "policy-service-ca.pem"
+            policy_ca_file.write_bytes(policy_ca.cert_pem)
             settings: dict[str, object] = {
                 "database_url": database_url,
                 "kubeconfig": str(sandboxes.kubeconfig),
                 "sandbox_namespace": sandboxes.namespace,
                 "history_service_target": history.target,
                 "history_service_token_file": str(history.token_file),
+                "policy_service_target": "127.0.0.1:1",
+                "policy_service_tls": {"ca_file": str(policy_ca_file), "server_uri": POLICY_CONTROLLER_URI},
                 "notifications_url": f"http://127.0.0.1:{notices_port}",
                 "notifications_token_file": str(token),
             }

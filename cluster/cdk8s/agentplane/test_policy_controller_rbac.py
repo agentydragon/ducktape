@@ -71,17 +71,20 @@ def test_policy_controller_has_a_workload_server_certificate(staging_manifests: 
     )
 
 
-def test_policy_controller_serves_tls_on_a_separate_port(staging_manifests: list[dict[str, Any]]) -> None:
+def test_policy_controller_serves_policyservice_only_over_tls(staging_manifests: list[dict[str, Any]]) -> None:
     settings = _settings(staging_manifests)
+    assert "grpc_bind_address" not in settings
     tls = settings["grpc_tls"]
     assert tls["listen"] == f":{policy_controller.tls_service(STAGING_NAMESPACE).pod_port}"
     assert settings["reader_services"] == settings["writer_services"] == [APP_URI]
     assert "client_ca_file" in tls
-    # During the caller cutover, the former App bearer grant remains available.
+    # The former App bearer grant remains available while bearer admission is rolled back separately.
     assert settings["reader_accounts"] == settings["writer_accounts"] == [f"{STAGING_NAMESPACE}/app"]
     deployment = _role(staging_manifests, "Deployment", policy_controller.NAME, STAGING_NAMESPACE)
     pod = deployment["spec"]["template"]["spec"]
     container = one(pod["containers"])
+    container_ports = {port["containerPort"] for port in container["ports"]}
+    assert container_ports == {8080, 8081, 8083}
     volumes = {v["name"]: v for v in pod["volumes"]}
     mounts = {PurePosixPath(m["mountPath"]): volumes[m["name"]] for m in container["volumeMounts"]}
     for field in ("cert_file", "key_file"):
@@ -93,13 +96,17 @@ def test_policy_controller_serves_tls_on_a_separate_port(staging_manifests: list
             if doc["kind"] == "Certificate" and doc["spec"]["secretName"] == secret_name
         )
         assert certificate["spec"]["uris"] == [POLICY_CONTROLLER_URI]
-    assert policy_controller.tls_service(STAGING_NAMESPACE).pod_port in {
-        port["containerPort"] for port in container["ports"]
-    }
     service = _role(staging_manifests, "Service", policy_controller.NAME, STAGING_NAMESPACE)
-    assert policy_controller.tls_service(STAGING_NAMESPACE).port.number in {
-        port["port"] for port in service["spec"]["ports"]
+    service_ports = {port["port"] for port in service["spec"]["ports"]}
+    assert service_ports == {policy_controller.metrics(STAGING_NAMESPACE).port.number, 8083}
+    network_policy = _role(staging_manifests, "CiliumNetworkPolicy", policy_controller.NAME, STAGING_NAMESPACE)["spec"]
+    ingress_ports = {
+        port["port"]
+        for rule in network_policy["ingress"]
+        for group in rule.get("toPorts", [])
+        for port in group["ports"]
     }
+    assert ingress_ports == {"8080", "8083"}
 
 
 def test_service_account_writes_are_scoped_to_the_accounts_namespace(staging_manifests: list[dict[str, Any]]) -> None:

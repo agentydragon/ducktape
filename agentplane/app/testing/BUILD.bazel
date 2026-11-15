@@ -67,6 +67,7 @@ py_library(
         "//agentplane/history_service:client",
         "//agentplane/net/peertls:config",
         "//agentplane/notification_service/api/notifications:notifications_pb2_grpc",
+        "//agentplane/testing:tls",
         "//devinfra/testing:undeclared_outputs",
         "//util:db_url",
         "//util:net",
