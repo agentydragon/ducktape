@@ -254,7 +254,6 @@ audit candidates, not a removal decision. Schema: <spec/spec.rs>.
 - **Host contracts:** `host_behavior.reentry_free_operations`.
 - **Vendor variants:** plain `partial_swap`.
 - **Decorator effects:** `typescript_decorate_helper`.
-- **Native operation variant:** `native_operation_inputs`'s `promise_resolve`.
 
 For each candidate, check consumers in both repositories, including public
 specs and generated configuration; compare existing e2e contracts with simpler

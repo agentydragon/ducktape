@@ -1421,42 +1421,22 @@ pub fn resolve_imported_callable_summaries(
                 .insert(export, reason);
         }
     }
-    for input in selected_native_operation_inputs
-        .values()
-        .flatten()
-        .filter(|input| {
-            matches!(
-                input.evidence.operation,
-                NativeInputKind::Operation(
-                    spec::NativeOperationKind::Symbol
-                        | spec::NativeOperationKind::PromiseResolve
-                        | spec::NativeOperationKind::TextEncoderEmpty
-                        | spec::NativeOperationKind::MapEmpty
-                        | spec::NativeOperationKind::WeakMapEmpty
-                        | spec::NativeOperationKind::SetEmpty
-                )
-            )
-        })
-    {
+    for input in selected_native_operation_inputs.values().flatten() {
+        let name = match input.evidence.operation {
+            NativeInputKind::Operation(spec::NativeOperationKind::Symbol) => Some("Symbol"),
+            operation => operation.empty_constructor_name(),
+        };
+        let Some(name) = name else {
+            continue;
+        };
         if let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
             facts
                 .known_global_native_operation_mutation_owner(input.evidence.operation)
                 .map(|owner| (module, owner))
         }) {
             bail!(
-                "{} is contradicted by a positively identified global {} replacement or operation mutation in provider {module}, source unit {}",
+                "{} is contradicted by a positively identified global {name} replacement or operation mutation in provider {module}, source unit {}",
                 input.evidence.spec_location,
-                match input.evidence.operation {
-                    NativeInputKind::Operation(spec::NativeOperationKind::Symbol) => "Symbol",
-                    NativeInputKind::Operation(spec::NativeOperationKind::TextEncoderEmpty) =>
-                        "TextEncoder",
-                    NativeInputKind::Operation(spec::NativeOperationKind::MapEmpty) => "Map",
-                    NativeInputKind::Operation(spec::NativeOperationKind::WeakMapEmpty) => {
-                        "WeakMap"
-                    }
-                    NativeInputKind::Operation(spec::NativeOperationKind::SetEmpty) => "Set",
-                    _ => "Promise",
-                },
                 owner.0
             );
         }

@@ -3334,38 +3334,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 {
                     return false;
                 }
-                let site = CallSite::from(call.span);
-                let native_input = self
-                    .inputs
-                    .index
-                    .native_operation_input_evidence
-                    .get(&site)
-                    .filter(|evidence| {
-                        evidence.operation
-                            == NativeInputKind::Operation(spec::NativeOperationKind::PromiseResolve)
-                    });
-                let native_integrity_intact = self.native_guard_intact(
+                if !self.native_guard_intact(
                     NativeIntegrityGuard::HostPromiseResolve,
                     &[
                         IntrinsicSlot::Global(NativeIntrinsic::Promise),
                         IntrinsicSlot::Static(NativeIntrinsic::Promise, "resolve"),
                     ],
-                );
-                if !native_integrity_intact && native_input.is_none() {
+                ) {
                     return false;
-                }
-                if !native_integrity_intact && let Some(evidence) = native_input {
-                    dependencies
-                        .native_operation_inputs
-                        .insert(evidence.reference.clone());
-                    self.observations.record_native_operation_input_use(
-                        call.span,
-                        crate::reports::schema::NativeOperationInputUse {
-                            evidence: evidence.clone(),
-                            source_location: None,
-                            span: call.span,
-                        },
-                    );
                 }
                 spec::ReentryFreeOperation::PromiseResolve
             }

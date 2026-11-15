@@ -2016,11 +2016,8 @@ unshadowed global constructor. The former allows a named import alias (`as M`)
 but not a subsequent local alias; the latter rejects a shadowed, aliased,
 replaced, computed, detached, or optional callee. Both reject arguments and
 spreads. Visible global/`Promise` mutation and dynamic scope disable the
-Promise contract. When opaque in-source receiver effects defeat the
-Promise/global integrity guard, `promise_resolve` must be paired with a
-source-selected `native_operation_inputs` `promise_resolve` assertion for that
-same initializer. This pair admits only the exact call's native identity and
-host timing; it does not repair global integrity or affect other calls. The
+Promise contract. Opaque in-source receiver effects that defeat the
+Promise/global integrity guard also disable the Promise contract. The host
 assertions only suppress the opaque synchronous callback-reentry fallback after
 the callee and arguments have evaluated. Purity, ordering, possible throws,
 return shape, later method calls, and module-loader reentry retain their
@@ -2042,9 +2039,7 @@ establish timing only; their provenance must not be presented as an
 unconditional inferred native guarantee. A successful use also adds the exact
 `reentry_free_operation` key to typed proof dependencies, so evaluation,
 covered-owner and relocation evidence retain the host assertion they consumed.
-When a same-site `promise_resolve` native input substitutes for a failed
-integrity guard, its exact input reference enters the same dependencies. A
-refused, unselected or unused operation contributes neither dependency.
+A refused, unselected or unused operation contributes no host dependency.
 
 ### Reentry-free builtin modules
 
@@ -3028,7 +3023,6 @@ the facts came from a saved artifact.
 | `weak_map_empty`           | Top-level simple binding initialized by direct bare zero-argument `new WeakMap()`                                                          | Original global `WeakMap` data binding                                      |
 | `set_empty`                | Top-level simple binding initialized by direct bare zero-argument `new Set()`                                                              | Original global `Set` data binding                                          |
 | `symbol`                   | Top-level simple binding initialized by a direct `Symbol(...)` call with zero or one syntactically primitive argument                      | `%Symbol%`                                                                  |
-| `promise_resolve`          | Top-level simple binding initialized by a zero-argument `Promise.resolve()`                                                                | `%Promise%`, `%Promise.resolve%`                                            |
 | `set_from_primitive_array` | Top-level simple binding initialized by `new Set([primitive literals or earlier stable primitive bindings])` over a dense, nonspread array | `%Set%`, `%Set.prototype%`, `%Array.prototype%`, `%ArrayIteratorPrototype%` |
 | `callee: object_freeze`    | Top-level function whose sole statement returns `Object.freeze(arg)` with one nonspread argument                                           | `%Object%`, `%Object.freeze%` at that call                                  |
 
@@ -3086,10 +3080,9 @@ emission allows, including reentry. It is not a snapshot: a later or deferred
 replacement could move before the site in an emitted schedule. At that site the
 slots' flags read author-asserted, and a consumer that would otherwise need the
 census takes the axiom instead, recording the input in
-`native_operation_input_uses` and its proof dependencies. A `promise_resolve`
-input applies only together with `host_behavior.reentry_free_operations:
-[promise_resolve]`. An asserted operation still evaluates its callee and
-arguments with their effects and throws; the input grants no family-wide
+`native_operation_input_uses` and its proof dependencies. An asserted operation
+still evaluates its callee and arguments with their effects and throws; the
+input grants no family-wide
 integrity, purity, return shape or guarantee at another site, and A11 remains
 the external obligation for code outside the analyzed program.
 

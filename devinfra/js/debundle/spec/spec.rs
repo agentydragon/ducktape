@@ -1155,7 +1155,6 @@ pub enum NativeOperationKind {
     SetEmpty,
     Symbol,
     SetFromPrimitiveArray,
-    PromiseResolve,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]

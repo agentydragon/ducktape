@@ -1336,9 +1336,6 @@ fn native_operation_call_name(operation: NativeInputKind) -> &'static str {
         NativeInputKind::Operation(spec::NativeOperationKind::Symbol) => {
             "direct Symbol(...) call (unsupported Symbol call shape)"
         }
-        NativeInputKind::Operation(spec::NativeOperationKind::PromiseResolve) => {
-            "direct Promise.resolve() call (unsupported Promise.resolve call shape)"
-        }
         _ => "supported native operation",
     }
 }
@@ -1359,9 +1356,6 @@ fn native_operation_mutation_name(operation: NativeInputKind) -> &'static str {
         }
         NativeInputKind::Operation(spec::NativeOperationKind::SetEmpty) => {
             "global Set replacement or accessor installation"
-        }
-        NativeInputKind::Operation(spec::NativeOperationKind::PromiseResolve) => {
-            "global Promise replacement or Promise.resolve overwrite, accessor installation, or deletion"
         }
         _ => "native operation mutation",
     }
@@ -7394,7 +7388,7 @@ impl ExecutionIndex {
     /// exact call or construction site its consumer queries.
     fn intrinsic_axioms(&self) -> BTreeMap<u32, IntrinsicIntact> {
         use IntrinsicSlot::{ArrayIteratorPrototype, Global, Prototype, Static};
-        use NativeIntrinsic::{Array, Object, Promise, Set, Symbol, WeakMap};
+        use NativeIntrinsic::{Array, Object, Set, Symbol, WeakMap};
         use spec::{NativeCallIdentityKind as Callee, NativeOperationKind as Operation};
         const SET_FROM_ARRAY: &[IntrinsicSlot] = &[
             Global(Set),
@@ -7412,12 +7406,6 @@ impl ExecutionIndex {
                     NativeInputKind::Operation(Operation::Symbol) => {
                         (input.call_span, vec![Global(Symbol)])
                     }
-                    // The host Promise timing check, only with the matching
-                    // `reentry_free_operations` entry.
-                    NativeInputKind::Operation(Operation::PromiseResolve) => (
-                        input.call_span,
-                        vec![Global(Promise), Static(Promise, "resolve")],
-                    ),
                     // A fresh Set value-flow origin and Set-content allocation
                     // cell at the constructor, and constructor purity. Later
                     // Set methods and iteration keep their own checks.
@@ -8335,9 +8323,6 @@ impl ExecutionIndex {
                 NativeInputKind::Operation(spec::NativeOperationKind::Symbol) => {
                     "must select a nonoptional, nonspread, direct top-level Symbol call"
                 }
-                NativeInputKind::Operation(spec::NativeOperationKind::PromiseResolve) => {
-                    "must select a nonoptional, nonspread, direct top-level Promise.resolve() call"
-                }
                 _ => "must select an ordinary direct top-level native call",
             });
         }
@@ -8370,30 +8355,6 @@ impl ExecutionIndex {
                     .is_none()
                     .then_some("selected an unsupported native Symbol call row")
             }
-            NativeInputKind::Operation(spec::NativeOperationKind::PromiseResolve) => {
-                let ValueExpr::Member(receiver, Some(member), MemberKey::Static, _) = callee else {
-                    return Some("must select a direct uncomputed Promise.resolve() call");
-                };
-                let ValueExpr::Binding(promise) = receiver.as_ref() else {
-                    return Some("must select a direct uncomputed Promise.resolve() call");
-                };
-                if member != "resolve" || promise.0.as_ref() != "Promise" {
-                    return Some(
-                        "operation does not match the selected direct Promise.resolve() initializer",
-                    );
-                }
-                if self.declared_bindings().contains(promise) {
-                    return Some(
-                        "selects a shadowed Promise binding; only the original unshadowed global Promise binding is supported",
-                    );
-                }
-                if !args.is_empty() || !call.no_reentry_candidate {
-                    return Some(
-                        "has an unsupported Promise.resolve call shape; use one ordinary direct zero-argument call with no spread",
-                    );
-                }
-                None
-            }
             _ => Some("operation does not match the selected native call"),
         }
     }
@@ -8415,21 +8376,6 @@ impl ExecutionIndex {
             NativeInputKind::Operation(spec::NativeOperationKind::Symbol) => {
                 self.known_global_symbol_mutation()
             }
-            NativeInputKind::Operation(spec::NativeOperationKind::PromiseResolve) => [
-                NativeWriteSlot {
-                    receiver: NativeReceiverPath::GlobalObject,
-                    key: NativePropertyKey::String("Promise".to_owned()),
-                },
-                NativeWriteSlot {
-                    receiver: NativeReceiverPath::Constructor(NativeIntrinsic::Promise),
-                    key: NativePropertyKey::String("resolve".to_owned()),
-                },
-            ]
-            .iter()
-            .find_map(|slot| match self.source_slot_overlap(slot) {
-                NativeSlotOverlap::Known(owner) => Some(owner),
-                NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
-            }),
             _ => None,
         }
     }
