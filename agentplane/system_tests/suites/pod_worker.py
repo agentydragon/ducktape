@@ -11,7 +11,7 @@ from agentplane.app.testing.client import Client
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver import scenario
-from agentplane.system_tests.driver.cleanup import CleanupError, finish_cleanup
+from agentplane.system_tests.driver.cleanup import close_resources, resource_scope
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.sandbox import Sandboxes
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
@@ -19,17 +19,6 @@ from agentplane.system_tests.driver.tracing import tracer
 
 # Generated EnvironmentDescriptor interfaces import protobuf stubs.
 # gazelle:include_dep @pypi//protobuf
-
-
-async def _close(resources: AsyncExitStack, error: BaseException | None = None) -> None:
-    result = await finish_cleanup(resources.aclose())
-    if result.failure is not None:
-        cause = (
-            result.failure if error is None else BaseExceptionGroup("Case and cleanup failed", [error, result.failure])
-        )
-        raise CleanupError("Pod worker resources could not be released") from cause
-    if error is None and result.cancellation is not None:
-        raise result.cancellation
 
 
 @dataclass(frozen=True)
@@ -71,7 +60,7 @@ class Worker:
 
     async def discard(self, error: BaseException | None = None) -> None:
         self._sandbox = None
-        await _close(self._owned.pop_all(), error)
+        await close_resources(self._owned.pop_all(), error)
 
     @asynccontextmanager
     async def reused_sandbox(self) -> AsyncIterator[SandboxCase]:
@@ -105,19 +94,8 @@ class Worker:
     @asynccontextmanager
     async def fresh_sandboxes(self) -> AsyncIterator[FreshCase]:
         await self.discard()
-        async with AsyncExitStack() as owned:
-            error: BaseException | None = None
-            try:
-                async with self.scripted.case_scope():
-                    client, create = await owned.enter_async_context(
-                        scenario.open_resources(
-                            self.cluster, self.base_url, self.token, tracer, native_diagnostics=False
-                        )
-                    )
-                    yield FreshCase(client, create)
-            except BaseException as caught:
-                error = caught
-                raise
-            finally:
-                # Close with no body exception so failed guest deletion cannot be hidden by it.
-                await _close(owned.pop_all(), error)
+        async with resource_scope() as owned, self.scripted.case_scope():
+            client, create = await owned.enter_async_context(
+                scenario.open_resources(self.cluster, self.base_url, self.token, tracer, native_diagnostics=False)
+            )
+            yield FreshCase(client, create)

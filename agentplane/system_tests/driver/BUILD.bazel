@@ -495,6 +495,7 @@ py_library(
     name = "harness_pair",
     srcs = ["harness_pair.py"],
     deps = [
+        ":cleanup",
         ":cluster",
         ":offered_models",
         ":sandbox",
@@ -509,7 +510,10 @@ py_test(
     name = "test_harness_pair",
     srcs = ["test_harness_pair.py"],
     deps = [
+        ":cleanup",
+        ":cluster",
         ":harness_pair",
+        ":sandbox",
         "//:conftest",
         "//agentplane/app/testing:client",
         "//agentplane/proto:session_pb2",

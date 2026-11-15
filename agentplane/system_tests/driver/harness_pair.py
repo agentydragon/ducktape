@@ -4,6 +4,7 @@ from collections.abc import Awaitable, Callable
 
 from agentplane.app.testing.client import Client
 from agentplane.proto import session_pb2
+from agentplane.system_tests.driver.cleanup import resource_scope
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.offered_models import models_offered_for
 from agentplane.system_tests.driver.sandbox import Sandboxes, sandbox_scope
@@ -40,7 +41,8 @@ async def run_harness_pair_in_own_sandboxes(
     #   cursors carry over, mutating cases (a policy granted while running) don't fit, and the second
     #   harness could pass on state the first left behind.
     async def scoped(harness: session_pb2.Harness, model: str) -> None:
-        async with sandbox_scope(cluster, client, tracer) as sandboxes:
+        async with resource_scope() as resources:
+            sandboxes = await resources.enter_async_context(sandbox_scope(cluster, client, tracer))
             await run(harness, model, sandboxes)
 
     await run_harness_pair(client, scoped)
