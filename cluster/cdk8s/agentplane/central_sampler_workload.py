@@ -23,6 +23,7 @@ from agentplane.central_sampler.settings import Settings
 from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.net.peertls.config import (
     CENTRAL_SAMPLER_URI,
+    GATEWAY_SESSIONS_URI,
     HISTORY_SERVICE_URI,
     SESSION_DISPATCHER_URI,
     ServerTLSListener,
@@ -95,6 +96,7 @@ class CentralSampler(Construct):
                 listen=f"0.0.0.0:{self.tls_service.pod_port}",
                 cert_file=Path(workload_tls.CERT_FILE),
                 key_file=Path(workload_tls.KEY_FILE),
+                client_ca_file=Path(workload_tls.TRUST_BUNDLE_FILE),
             ),
             connections=dict(props.connections),
             actions=props.actions,
@@ -102,6 +104,7 @@ class CentralSampler(Construct):
             platform_instructions=platform_instructions(env, session_runtime=SessionRuntime.CENTRAL_SAMPLER),
             audience=central_sampler.TOKEN_AUDIENCE,
             allowed_accounts={f"{namespace}/{runner_gateway.NAME}"},
+            service_callers=[GATEWAY_SESSIONS_URI],
             code_mode_host=Path("/usr/local/bin/codex-code-mode-host"),
             # The sandbox exec-server resolves this binary through its normal PATH.
             executor_codex="codex",

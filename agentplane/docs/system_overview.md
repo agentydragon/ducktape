@@ -366,7 +366,7 @@ flowchart LR
     llm[LLM ingress]
     responses[Responses API providers]
     anthropic[Anthropic Messages API]
-    dispatcher -->|Sampler gRPC: open, input, controls| sampler
+    dispatcher -->|Sampler gRPC: bearer; exact Sessions SVID also admitted| sampler
     sampler -->|continuation, commands and ownership leases| db
     db -->|NOTIFY: central_sampler_work| sampler
     db -->|NOTIFY: central_sampler_outbox| sampler
@@ -378,6 +378,11 @@ flowchart LR
     sampler -->|Responses API| llm -->|model API| responses
     sampler -->|Anthropic Messages API| anthropic
 ```
+
+The sampler's TLS listener trusts the workload bundle and admits exactly
+`spiffe://agentplane/sessions`, the owner stored by the explicit Gateway-account Session rewrite.
+The Gateway still uses its bearer until the separate caller switch after this receiver rollout.
+The sampler retains its bearer account allowlist and plaintext listener during the overlap.
 
 The staging picker gives direct Anthropic models only to the central sampler, keeping them out of the
 subscription-backed Codex and Claude harnesses. The Anthropic key is copied by ESO from the existing

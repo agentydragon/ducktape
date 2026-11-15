@@ -14,7 +14,12 @@ from more_itertools import one
 
 from agentplane.env.runtime.harness import Harness
 from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, LLM_INGRESS_URI, POLICY_CONTROLLER_URI
+from agentplane.net.peertls.config import (
+    CENTRAL_SAMPLER_URI,
+    GATEWAY_SESSIONS_URI,
+    LLM_INGRESS_URI,
+    POLICY_CONTROLLER_URI,
+)
 from cluster.cdk8s.agentplane import (
     central_sampler,
     history_service,
@@ -117,10 +122,14 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     assert "executor_reconnect_timeout_seconds" not in config
     assert "turn_timeout_seconds" not in config
     assert config["audience"] == central_sampler.TOKEN_AUDIENCE
+    assert config["allowed_accounts"] == [f"{namespace}/{runner_gateway.NAME}"]
+    assert config["service_callers"] == [GATEWAY_SESSIONS_URI]
+    assert config["listen"] == f"0.0.0.0:{central_sampler.PORT}"
     assert config["listen_tls"] == {
         "listen": f"0.0.0.0:{central_sampler.TLS_PORT}",
         "cert_file": workload_tls.CERT_FILE,
         "key_file": workload_tls.KEY_FILE,
+        "client_ca_file": workload_tls.TRUST_BUNDLE_FILE,
     }
     platform_instructions = config["platform_instructions"]
     assert platform_instructions
