@@ -1,18 +1,19 @@
 # Journal contention and Runtime stop, 2026-11-15
 
-The Runtime stopped after a Session journal latched `SQLITE_BUSY`. The error propagation and
-150-second cleanup deadline are explained by the code. **The original lock holder and failing SQL
-statement are not established.** Recovery after restart does not establish that the lock lasted
-until exit: the journal remains failed even after contention disappears.
+The Runtime stopped after a Session journal latched `SQLITE_BUSY`. A retained diagnostic command
+started scanning every live Session journal twenty seconds before the failure. Its unfinished
+read-only `SELECT` could block a DELETE-mode commit; the characterization below reproduces that
+mechanism. **The incident-time lock holder and failing SQL statement are still not directly
+observed.** Restart clears the journal's latched error even if the original contention has ended.
 
-The investigation also reproduces a cleanup defect: a failed journal can prevent a Session's
-lifecycle controller from reaching its halt branch. No serving code, timeout, retry policy or
-fail-stop policy changes accompany this note.
+The separate cleanup stall is fixed by [#16506](https://github.com/agentydragon/ducktape/pull/16506).
+Runtime-wide fail-stop and ownership fences remain unchanged.
 
 ## Evidence and source boundary
 
-The coordinator supplied the previous-container log excerpts below; this investigation did not
-retrieve those logs. Times are UTC on November 15 in Sandbox `codex-cleanup-tls`.
+The coordinator supplied the previous-container log excerpts below. Follow-up read-only retrieval
+of the retained Runtime logs independently confirmed them. Times are UTC on November 15 in Sandbox
+`codex-cleanup-tls`; the retrieved log timestamps use `-08:00`.
 
 | Time               | Reported observation                                                                                                                                                                                                          |
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -80,6 +81,46 @@ These findings provide no supported normal code path for a second leaked Journal
 prove that every opener lived inside the Runtime process. A transient external reader that has
 already exited is also consistent with successful recovery after restart.
 
+## Retained diagnostic reader
+
+A retained native tool call at `01:18:57.773 UTC` launched Python in the companion executor to scan
+every path matching `/state/sessions/*/journal.sqlite`, in sorted order. For each file its code
+used `sqlite3.connect(f"file:{path}?mode=ro", uri=True)`, iterated
+`SELECT cursor,payload FROM event_entry`, and decoded the protobuf payload inside that loop. There
+was no explicit transaction, paging or cursor close between decoded rows. The scan's target set
+includes the affected `521ae64c…` journal. The five earlier retained SQLite diagnostic calls, from
+`01:15:07` through `01:16:51`, targeted a different Session's journal.
+
+The relevant shape, with no retained Session content, is:
+
+```python
+for path in sorted(glob.glob("/state/sessions/*/journal.sqlite")):
+    connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    for cursor, payload in connection.execute("SELECT cursor,payload FROM event_entry"):
+        # The incident command decoded each protobuf payload here.
+        ...
+```
+
+The tool wrapper requested a ten-second yield and printed only `result.output`, discarding the
+child process status and any continuation handle. At `01:19:07.943 UTC` it returned an empty
+output. That wrapper completion does not establish that the child had exited. No retained child
+completion or cursor position identifies which file it was reading at `01:19:17.547 UTC`.
+The originating harness turn was interrupted at `01:19:17.727 UTC`.
+
+This establishes a real external SQLite opener immediately before the incident. A slow scan of the
+affected journal is a concrete candidate for a reader-blocked `COMMIT`, without a second Runtime or
+leaked Journal. It is not a recovered process/lock snapshot, so attributing the exact failed commit
+to that reader remains an inference. Current file inspection found distinct journal inodes and no
+symlinks or hard-link aliases; it cannot establish incident-time aliases or locks.
+
+`TestUnfinishedReadOnlyScanFailsCommitAndLeavesJournalFailed` in
+[journal tests](../journal/journal_test.go) reproduces the mechanism using a separate read-only
+connection and an unfinished `SELECT`, with no explicit read transaction or busy-timeout override.
+The writer's batch successfully stages an event, establishing that `BEGIN` and the write succeeded;
+its `COMMIT` then returns typed `SQLITE_BUSY` while the reader cursor remains open. Closing that
+cursor leaves the Journal failed and its published checkpoint unchanged. The test passes on the
+existing serving code; it characterizes contention, not a new serving-code regression.
+
 An idle Session is still a possible journal writer: [`Host.readStderr`](../codexappserver/host.go)
 records shared Codex app-server diagnostics in every attached Session. Routed stdout frames also
 enter Session batches. Neither requires a running turn in that Session. The supplied excerpts do
@@ -133,7 +174,8 @@ The two supplied timestamps differ by `150.002s`. They establish deadline exhaus
 running beyond its deadline by another interval. The deferred Close reports the already failed
 shared result, explaining both the cleanup log and joined terminal error.
 
-There is a concrete way the failed Session prevents native-stop proof:
+At the incident revision, the failed Session could prevent native-stop proof as follows
+([#16506](https://github.com/agentydragon/ducktape/pull/16506) fixes this path):
 
 1. [`sessionLifecycleController.Reconcile`](../session/controller.go) calls `dispatchControl`
    before entering its non-Running shutdown branch while its phase is not `Halted`.
@@ -161,6 +203,14 @@ prove which barrier remained incomplete.
 
 ## Checks and remaining evidence
 
+- `bbr test //agentplane/env/runtime/journal:journal_test --test_output=errors`
+  passed with the unfinished read-only scan characterization
+  ([invocation](https://app.buildbuddy.io/invocation/a86f04d1-8bf1-4503-aa6c-b2455b668196)).
+  The test leaves the production busy timeout unchanged and demonstrates the `COMMIT` failure after
+  successful staging. No live journal was opened by this follow-up investigation.
+- `bbr test //agentplane/env/runtime/journal:journal_test //agentplane/env/runtime/session:session_test --test_output=errors`
+  passed both baseline targets from cache on `787b5834`
+  ([invocation](https://app.buildbuddy.io/invocation/ddae5073-95ab-4c33-b64d-8c81929430c3)).
 - `bbr test //agentplane/env/runtime/session:session_test_binary --test_filter=TestDiagnosePoisonedJournalPreventsHalt --test_output=all`
   passed the temporary characterization ([invocation](https://app.buildbuddy.io/invocation/8410357c-9b4e-4b71-81e1-3c46ca706264)).
   Its first build attempt failed because the diagnostic incorrectly used generic `Publish` for
@@ -168,8 +218,7 @@ prove which barrier remained incomplete.
 - `bbr test //agentplane/env/runtime/journal:journal_test //agentplane/env/runtime/ingress:ingress_test //agentplane/env/runtime/internal/coordinator:coordinator_test --test_output=errors`
   passed all three targets from cache ([invocation](https://app.buildbuddy.io/invocation/abaffafa-52eb-40bf-ae40-e2838d1cd681)).
   These cover journal contention/rollback, History failure and Runtime cleanup ownership; they do
-  not establish the incident's lock owner. No system suite or live mutation was needed for this
-  documentation-only change.
+  not establish the incident's lock owner. No system suite injects the incident diagnostic reader.
 
 To settle the original cause, the missing evidence is the first failing SQL boundary
 (`BEGIN`, operation or `COMMIT`), its caller/stack and journal inode, plus contemporaneous open
@@ -180,12 +229,6 @@ recover those facts. Diagnostic instrumentation would need a separate change; no
 here. Increasing `busy_timeout` or blindly retrying cannot identify or repair the cause.
 
 ## Proposals
-
-Proposal for a separate cleanup change: preserve the existing Runtime-wide fail-stop and ownership
-fences, but let failed-journal Sessions reach native halt/cleanup without requiring a successful
-ordinary command-dispatch query. Add a regression that expects cleanup progress from the failed
-journal state above, preserving uncertain History rather than inventing successful durable writes.
-The original lock holder remains an independent investigation.
 
 If Session-local storage failures should instead leave other Sessions running, that is a separate
 policy decision: it must cover shared app-server readers, History supervision and admission/fence
