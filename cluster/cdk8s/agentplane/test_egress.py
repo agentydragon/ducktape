@@ -20,6 +20,7 @@ from agentplane.net.peertls.config import (
     CENTRAL_SAMPLER_URI,
     HISTORY_SERVICE_URI,
     LLM_INGRESS_URI,
+    SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
 )
 from agentplane.subjects import ServiceAccountRef
@@ -28,6 +29,7 @@ from cluster.cdk8s.agentplane import (
     binding_delegation,
     central_sampler,
     environment_sandbox,
+    environment_service,
     history_service,
     kubernetes_account_ref,
     llm_ingress,
@@ -361,6 +363,8 @@ def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dic
     history_origin = f"{history.fqdn}:{history.port.number}"
     history_route = platform_routes.history_grpc(namespace)
     history_url = f"http://{history_route.local_target}"
+    environments = environment_service.service(namespace)
+    environments_route = platform_routes.environments_grpc(namespace)
     dispatcher_origin = (
         f"{session_dispatcher.service(namespace).fqdn}:{session_dispatcher.service(namespace).port.number}"
     )
@@ -374,6 +378,7 @@ def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dic
     assert "projected_token_audiences" not in proxy_settings
     assert f"{destination.fqdn}:{destination.pod_port}" in proxy_settings["tls_passthrough_targets"]
     assert f"{history.fqdn}:{history.pod_port}" in proxy_settings["tls_passthrough_targets"]
+    assert f"{environments.fqdn}:{environments.pod_port}" in proxy_settings["tls_passthrough_targets"]
 
     configured: list[tuple[str, Any]] = []
     for item in catalog_manifests:
@@ -387,12 +392,15 @@ def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dic
         assert route["server_uri"] == SESSION_DISPATCHER_URI
 
     history_configured: list[dict[str, Any]] = []
+    environments_configured: list[dict[str, Any]] = []
     for item in catalog_manifests:
         if item["kind"] != "ConfigMap" or "settings.yaml" not in item.get("data", {}):
             continue
         routes = yaml.safe_load(item["data"]["settings.yaml"]).get("workload_routes", {})
         assert history_origin not in routes, "Runtime's History ingress already sends opaque TLS"
         platform = yaml.safe_load(item["data"]["settings.yaml"]).get("platform_routes", {}).get("routes", {})
+        if "environments" in platform:
+            environments_configured.append(platform["environments"])
         if "history" in platform:
             history_configured.append(platform["history"])
     assert history_configured
@@ -400,6 +408,12 @@ def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dic
         assert route["service_prefixes"] == ["/agentplane.history_service.HistoryService/"]
         assert route["upstream"] == f"{history.fqdn}:{history.pod_port}"
         assert route["transport"] == {"mode": "tls_connect", "server_uri": HISTORY_SERVICE_URI}
+
+    assert environments_configured
+    for route in environments_configured:
+        assert route["service_prefixes"] == ["/agentplane.environments.v1.EnvironmentService/"]
+        assert route["upstream"] == f"{environments.fqdn}:{environments.pod_port}"
+        assert route["transport"] == {"mode": "tls_connect", "server_uri": SANDBOX_CONTROLLER_URI}
 
     pod_template = _by_name(catalog_manifests, "SandboxTemplate", "environment-tools")
     pod_runner = one(
@@ -410,6 +424,7 @@ def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dic
     pod_env = {entry["name"]: entry["value"] for entry in pod_runner["env"] if "value" in entry}
     assert pod_env["AGENTPLANE_SESSIONS_URL"] == service_url
     assert pod_env["AGENTPLANE_HISTORY_URL"] == history_url
+    assert pod_env["AGENTPLANE_ENVIRONMENTS_URL"] == f"http://{environments_route.local_target}"
     assert not any(name.startswith("AGENTPLANE_") and name.endswith("_CREDENTIAL") for name in pod_env)
     assert all(
         source.get("serviceAccountToken", {}).get("audience") != session_dispatcher.TOKEN_AUDIENCE
@@ -427,6 +442,10 @@ def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dic
     )
     assert vm_runtime["harness_environment"]["values"]["AGENTPLANE_HISTORY_URL"] == (
         f"http://{environment_sandbox.launcher_relay.GUEST_GATEWAY}:{history_route.listen_port}"
+    )
+
+    assert vm_runtime["harness_environment"]["values"]["AGENTPLANE_ENVIRONMENTS_URL"] == (
+        f"http://{environment_sandbox.launcher_relay.GUEST_GATEWAY}:{environments_route.listen_port}"
     )
 
 

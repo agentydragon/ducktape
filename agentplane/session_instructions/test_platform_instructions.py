@@ -10,6 +10,7 @@ def test_platform_guide_describes_the_selected_runtime(runtime: SessionRuntime) 
         egress_api_url="http://test-egress.invalid",
         actions_service_url="http://test-actions.invalid",
         sessions_service_url="http://test-sessions.invalid",
+        environments_service_url="http://test-environments.invalid",
         session_runtime=runtime,
     )
 

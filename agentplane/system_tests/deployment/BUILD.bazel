@@ -270,6 +270,7 @@ py_library(
         "//cluster/cdk8s/agentplane:egress_credentials",
         "//cluster/cdk8s/agentplane:environment",
         "//cluster/cdk8s/agentplane:environment_sandbox",
+        "//cluster/cdk8s/agentplane:environment_service",
         "//cluster/cdk8s/agentplane:environment_vm",
         "//cluster/cdk8s/agentplane:history_service",
         "//cluster/cdk8s/agentplane:kubernetes_accounts",

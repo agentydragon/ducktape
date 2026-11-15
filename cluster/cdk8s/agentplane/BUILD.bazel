@@ -101,6 +101,7 @@ py_library(
         ":egress_credentials",
         ":egress_policies",
         ":environment",
+        ":environment_service",
         ":kubernetes_account_ref",
         ":llm_ingress",
         ":notifications",
@@ -265,8 +266,10 @@ py_library(
     deps = [
         ":actions",
         ":app",
+        ":egress",
         ":environment",
         ":environment_sandbox",
+        ":environment_service",
         ":service_workload",
         ":workload_tls",
         "//agentplane:subjects",
@@ -807,6 +810,7 @@ py_library(
     name = "chart",
     srcs = ["chart.py"],
     deps = [
+        ":environment_service",
         ":workload_certificate_admission",
         ":actions",
         ":app",
@@ -1076,6 +1080,7 @@ py_test(
         ":egress",
         ":egress_staging_credentials",
         ":environment_sandbox",
+        ":environment_service",
         ":history_service",
         ":kubernetes_account_ref",
         ":kubernetes_accounts",
@@ -1396,7 +1401,9 @@ py_test(
         ":actions",
         ":app",
         ":conftest",
+        ":egress",
         ":environment_sandbox",
+        ":environment_service",
         ":runner_gateway",
         ":sandbox_controller",
         ":staging",
@@ -1650,6 +1657,7 @@ py_library(
     ],
     deps = [
         ":egress",
+        ":environment_service",
         ":history_service",
         ":llm_ingress",
         ":notifications",
@@ -1882,4 +1890,10 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
+)
+
+py_library(
+    name = "environment_service",
+    srcs = ["environment_service.py"],
+    deps = ["//cluster/cdk8s:service_ref"],
 )

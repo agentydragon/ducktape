@@ -13,7 +13,9 @@ from agentplane.runner_gateway.settings import Settings as GatewaySettings
 from cluster.cdk8s.agentplane import (
     actions,
     app,
+    egress,
     environment_sandbox,
+    environment_service,
     runner_gateway,
     sandbox_controller,
     staging,
@@ -194,7 +196,7 @@ def test_environment_receiver_can_watch_policy_and_mutate_only_desired_state(
 def test_environment_receiver_network_reachability_matches_enabled_callers(
     staging_manifests: list[dict[str, Any]],
 ) -> None:
-    endpoint = sandbox_controller.service(staging.ENV.namespace)
+    endpoint = environment_service.service(staging.ENV.namespace)
     policy = _resource(staging_manifests, "CiliumNetworkPolicy", sandbox_controller.NAME)["spec"]
     allowed = {
         source["matchLabels"]["app.kubernetes.io/name"]
@@ -206,7 +208,7 @@ def test_environment_receiver_network_reachability_matches_enabled_callers(
         )
         for source in rule.get("fromEndpoints", [])
     }
-    callers = [app.service(staging.ENV.namespace)]
+    callers = [app.service(staging.ENV.namespace), egress.proxy(staging.ENV.namespace)]
     if staging.ENV.actions.orchestration_v1 is not None or staging.ENV.actions.session_delegation is not None:
         callers.append(actions.service(staging.ENV.namespace))
     assert allowed == {caller.pods.selector["app.kubernetes.io/name"] for caller in callers}

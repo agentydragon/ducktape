@@ -39,7 +39,8 @@ Use the configured proxy and CA trust. Service addresses and authentication are:
 | --- | --- | --- |
 | Egress rules | {{ egress_api_url }} | Authenticated automatically |
 | Actions | {{ actions_service_url }} | Authenticated automatically |
-| Sessions and environments | {{ sessions_service_url }} | Authenticated automatically |
+| Sessions | {{ sessions_service_url }} | Authenticated automatically |
+| Environments | {{ environments_service_url }} | Authenticated automatically |
 
 The `agentplane` command calls these APIs for you. Its service commands read their base URLs and
 optional credentials from your `AGENTPLANE_*` environment variables, so a command needs no URL, header
