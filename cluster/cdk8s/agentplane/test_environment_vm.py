@@ -28,7 +28,7 @@ def _environment_vm_manifests(
 ) -> dict[str, dict[str, Any]]:
     chart = Chart(app, "test")
     env = replace(staging.ENV, vm_console_autologin=console_autologin)
-    config_map = ConfigMap(
+    guest_config = ConfigMap(
         chart,
         "environment-vm-config",
         metadata=ApiObjectMetadata(name=f"{environment_vm.NAME}-config", namespace=env.namespace),
@@ -48,7 +48,7 @@ def _environment_vm_manifests(
         env,
         template_name=environment_vm.NAME,
         root_image=environment_vm.ROOT_IMAGE,
-        config_map=config_map,
+        config_map=guest_config,
         labels={},
         state_volume={
             "name": "state",
