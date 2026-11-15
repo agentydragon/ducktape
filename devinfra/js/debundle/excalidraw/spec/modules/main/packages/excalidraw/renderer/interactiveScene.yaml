@@ -1,0 +1,62 @@
+# Original home: packages/excalidraw/renderer/interactiveScene.ts
+source_matches:
+  - match: |
+      var selected = ({ canvas, elementsMap, visibleElements, selectedElements, allElementsMap, scale, appState, renderConfig, device }) => {
+        if (canvas === null) return { atLeastOneVisibleElement: !1, elementsMap };
+        STMT_LIST;
+      };
+    bindings:
+      - local: selected
+        name: _renderInteractiveScene
+
+  - match: |
+      var selected = (context, appState) => {
+        ANYTHING(appState.selectedLinearElement, "selectedLinearElement is null");
+        let { segmentMidPointHoveredCoords } = appState.selectedLinearElement;
+        STMT_LIST;
+      };
+    bindings:
+      - local: selected
+        name: renderElbowArrowMidPointHighlight
+
+  - match: |
+      var selected = (context, appState, elementsMap) => {
+        let { elementId, hoverPointIndex } = appState.selectedLinearElement;
+        STMT_LIST;
+      };
+    bindings:
+      - local: selected
+        name: renderLinearElementPointHighlight
+
+  - match: |
+      var selected = (point, context, appState) => {
+        context.fillStyle = "rgba(105, 101, 219, 0.4)", EXPR;
+      };
+    bindings:
+      - local: selected
+        name: highlightPoint
+
+  - match: |
+      var selected = (context, width, height, cx, cy, angle) => {
+        context.beginPath(), context.ellipse(cx, cy, width / 2, height / 2, angle, 0, Math.PI * 2), context.stroke();
+      };
+    bindings:
+      - local: selected
+        name: strokeEllipseWithRotation
+
+  - match: |
+      var selected = (context, appState, point, radius, isSelected, isPhantomPoint = !1) => {
+        context.strokeStyle = "#5e5ad8", SEQ_EXPRS;
+      };
+    bindings:
+      - local: selected
+        name: renderSingleLinearPoint
+
+  - match: |
+      var selected = (context, appState, element, elementsMap) => {
+        let [x1, y1, x2, y2] = EXPR, width = x2 - x1, height = y2 - y1;
+        context.strokeStyle = "rgb(0,118,255)", SEQ_EXPRS;
+      };
+    bindings:
+      - local: selected
+        name: renderFrameHighlight

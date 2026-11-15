@@ -1340,5 +1340,32 @@ async def test_element_render_helpers(playwright_driver: Playwright, origin: str
         assert result["fillRestored"] == "#008000"
 
 
+async def test_interactive_scene_helpers(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const scene = await import('./main/packages/excalidraw/renderer/interactiveScene.js');
+                const elementsMap = new Map([['example', {}]]);
+                const empty = scene._renderInteractiveScene({canvas: null, elementsMap});
+                const canvas = document.createElement('canvas');
+                canvas.width = canvas.height = 40;
+                const ctx = canvas.getContext('2d');
+                ctx.strokeStyle = '#ff0000';
+                scene.strokeEllipseWithRotation(ctx, 20, 10, 20, 20, 0);
+                return {
+                    empty: empty.atLeastOneVisibleElement === false && empty.elementsMap === elementsMap,
+                    painted: ctx.getImageData(20, 15, 1, 1).data[3] > 0,
+                    outsideUntouched: ctx.getImageData(1, 1, 1, 1).data[3] === 0,
+                };
+            }"""
+        )
+        assert result == {"empty": True, "painted": True, "outsideUntouched": True}
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

@@ -63,6 +63,10 @@ fn claimed_modules_export_their_entry_points() {
                 "renderSelectionElement",
             ],
         ),
+        (
+            "main/packages/excalidraw/renderer/interactiveScene.js",
+            &["_renderInteractiveScene", "strokeEllipseWithRotation"],
+        ),
         ("editor/packages/excalidraw/scene/Scene.js", &["Scene"]),
         (
             "editor/packages/excalidraw/snapping.js",
