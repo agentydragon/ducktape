@@ -3113,7 +3113,7 @@ effect. The operator selected a Dispatcher Session record as a prerequisite for 
 Session-targeted command, including privileged calls and interrupts. Dispatcher now enforces
 that prerequisite for queued commands and interrupts; the Gateway limits direct Runtime Session mutations
 to the combined Gateway/Dispatcher workload. See the [Dispatcher contract](../runner_gateway/dispatcher/SPEC.md#method-scope)
-and [Gateway proxy contract](../runner_gateway/internal/gateway/SPEC.md). On deletion, fail commands known not to
+and [Gateway proxy contract](../environments/runtimeproxy/SPEC.md). On deletion, fail commands known not to
 have left Dispatcher, report unknown when in-flight admission or effects cannot be established, and never
 redirect accepted work. `SESSION_DELETION_FENCE` tracks the remaining bounded outcome-evidence
 boundary; central-Session authority remains separate. The
@@ -4041,10 +4041,15 @@ flowchart LR
 
 ### `RUNTIME_PROXY_TO_ENVIRONMENTS` — the Runtime proxy and Executor move into Environments
 
-**Agreed direction; not released.** The Dispatcher already calls the proxy over the network, so
+**Released by operator, 2026-11-15; receiver implementation in flight.** The Dispatcher already calls the proxy over the network, so
 the move adds no hop. The proxy grants `CreateSession`, `SubmitInput`, `ChangeModel`,
 `ChangeReasoningEffort` and `InterruptTurn` to the Sessions binary's service SVID instead of the
-combined Gateway account; receivers before senders. **Exit:** Runtime calls reach Environments
+combined Gateway account; receivers before senders. Sequence: accepting receiver code with optional
+settings; enable after its image is pinned; retarget and roll callers; retire the Gateway receiver
+and obsolete grants only after cutover. Keep deployed names and wire names unchanged. The operator
+also released the Runtime diagnostics API and App cutover after this transport migration; Session
+activity and Sandbox-independent Notifications remain their separately tracked contracts.
+**Exit:** Runtime calls reach Environments
 through its Service, and nothing in `runner_gateway/` calls a Runtime.
 
 ### `RUNTIME_PROXY_CALLER_AUDIT` — route callers through their owning APIs

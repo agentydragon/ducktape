@@ -19,6 +19,8 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher",
     visibility = [
+        # Cross-service queue-to-Runtime acceptance moved with the proxy.
+        "//agentplane/environments/runtimeproxy:__pkg__",
         # The Session-delegation executor's test runs it against a real Dispatcher.
         "//agentplane/action_service/session_delegation:__pkg__",
         "//agentplane/runner_gateway:__subpackages__",

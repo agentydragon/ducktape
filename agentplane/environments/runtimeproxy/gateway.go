@@ -1,4 +1,4 @@
-package gateway
+package runtimeproxy
 
 import (
 	"fmt"
@@ -53,7 +53,8 @@ func validateControlTiming(timing ControlTiming) error {
 	return nil
 }
 
-// Gateway serves the per-Sandbox Runner proxy and dials each Runner's authenticated gRPC server.
+// Gateway serves the per-Sandbox Runtime proxy and dials authenticated Runtimes.
+// Both processes use this owner until callers have moved to Environments.
 type Gateway struct {
 	config      Config
 	callerAuth  *auth.Resolver
@@ -75,10 +76,10 @@ func New(
 	if err := config.RunnerSecurity.Validate(); err != nil {
 		return nil, fmt.Errorf("runner security: %w", err)
 	}
-	if config.Namespace == "" || len(config.CallerAccounts) == 0 || callerAuth == nil {
-		return nil, fmt.Errorf("Gateway namespace, caller policy and token resolvers are required")
+	if config.Namespace == "" || callerAuth == nil {
+		return nil, fmt.Errorf("Runtime proxy namespace and token resolver are required")
 	}
-	if config.DispatcherAccount.Namespace == "" || config.DispatcherAccount.Name == "" {
+	if config.DispatcherAccount != (auth.Account{}) && (config.DispatcherAccount.Namespace == "" || config.DispatcherAccount.Name == "") {
 		return nil, fmt.Errorf("Gateway Dispatcher account is required")
 	}
 	config.ControlTiming = defaultControlTiming(config.ControlTiming)
@@ -117,7 +118,11 @@ func New(
 // controller may quiesce or change Firecracker suspension admission; with no controller configured, nobody may.
 func (g *Gateway) Methods() (auth.Methods, error) {
 	callers := auth.Accounts(g.callerAuth, g.config.CallerAccounts)
-	dispatcher := auth.Accounts(g.callerAuth, []auth.Account{g.config.DispatcherAccount})
+	var dispatchers []auth.Account
+	if g.config.DispatcherAccount != (auth.Account{}) {
+		dispatchers = []auth.Account{g.config.DispatcherAccount}
+	}
+	dispatcher := auth.Accounts(g.callerAuth, dispatchers)
 	var controllers []auth.Account
 	if g.config.SandboxControllerAccount != nil {
 		controllers = []auth.Account{*g.config.SandboxControllerAccount}

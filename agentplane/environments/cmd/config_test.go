@@ -218,6 +218,12 @@ const environmentServiceSettings = `environment_service:
     methods: [/agentplane.environments.v1.EnvironmentService/ResumeEnvironment]
 `
 
+const environmentRuntimeProxySettings = `  runtime_proxy:
+    runner_security:
+      mode: insecure
+    audience: test-runtime-proxy
+`
+
 func TestEnvironmentServiceIsOptInAndStrict(t *testing.T) {
 	t.Setenv(configFileEnv, writeSettings(t, validSettings))
 	c, err := loadConfig()
@@ -229,7 +235,7 @@ func TestEnvironmentServiceIsOptInAndStrict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.EnvironmentService == nil || c.EnvironmentService.RPC.ListenAddress != ":8082" ||
+	if c.EnvironmentService == nil || c.EnvironmentService.RPC.ListenAddress != ":8082" || c.EnvironmentService.RuntimeProxy != nil ||
 		len(c.EnvironmentService.ServiceReaders) != 1 || c.EnvironmentService.ServiceReaders[0] != peertls.AppURI {
 		t.Fatalf("lost EnvironmentService peer roles: %+v", c.EnvironmentService)
 	}
@@ -246,6 +252,53 @@ func TestEnvironmentServiceIsOptInAndStrict(t *testing.T) {
 			t.Setenv(configFileEnv, writeSettings(t, validSettings+invalid))
 			if _, err := loadConfig(); err == nil {
 				t.Fatal("accepted invalid EnvironmentService settings")
+			}
+		})
+	}
+}
+
+func TestEnvironmentRuntimeProxyIsOptionalAndStrict(t *testing.T) {
+	t.Setenv(configFileEnv, writeSettings(t, validSettings+environmentServiceSettings))
+	c, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.EnvironmentService.RuntimeProxy != nil {
+		t.Fatalf("omitted runtime_proxy was populated: %+v", c.EnvironmentService.RuntimeProxy)
+	}
+
+	t.Setenv(configFileEnv, writeSettings(t, validSettings+environmentServiceSettings+environmentRuntimeProxySettings))
+	c, err = loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeProxy := c.EnvironmentService.RuntimeProxy
+	if runtimeProxy == nil || runtimeProxy.Audience != "test-runtime-proxy" ||
+		runtimeProxy.RunnerSecurity.Mode != peertls.Insecure || len(runtimeProxy.Readers) != 0 ||
+		len(runtimeProxy.SessionCallers) != 0 || len(runtimeProxy.ControllerCallers) != 0 || len(runtimeProxy.ExecutorCallers) != 0 {
+		t.Fatalf("runtime_proxy defaults or settings were lost: %+v", runtimeProxy)
+	}
+
+	invalid := map[string]string{
+		"missing runner security": strings.Replace(environmentRuntimeProxySettings, "    runner_security:\n      mode: insecure\n", "", 1),
+		"missing audience":        strings.Replace(environmentRuntimeProxySettings, "    audience: test-runtime-proxy\n", "", 1),
+		"empty audience":          strings.Replace(environmentRuntimeProxySettings, "    audience: test-runtime-proxy\n", "    audience: \"\"\n", 1),
+		"invalid security mode":   strings.Replace(environmentRuntimeProxySettings, "      mode: insecure", "      mode: unknown", 1),
+		"unknown nested key":      environmentRuntimeProxySettings + "    unknown: true\n",
+	}
+	for _, field := range []string{"readers", "session_callers", "controller_callers", "executor_callers"} {
+		invalid[field+" service ID"] = strings.Replace(
+			environmentRuntimeProxySettings,
+			"    audience: test-runtime-proxy\n",
+			"    audience: test-runtime-proxy\n    "+field+": [spiffe://agentplane/unknown]\n",
+			1,
+		)
+	}
+	for name, runtimeProxySettings := range invalid {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(configFileEnv, writeSettings(t, validSettings+environmentServiceSettings+runtimeProxySettings))
+			if _, err := loadConfig(); err == nil {
+				t.Fatal("accepted invalid runtime_proxy settings")
 			}
 		})
 	}

@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
@@ -18,11 +20,13 @@ import (
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	grpc_health_v1 "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 	corev1 "k8s.io/api/core/v1"
@@ -30,6 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	kubevirtv1 "kubevirt.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -99,7 +104,7 @@ func TestEveryReplicaServesAndFencesConcurrentResume(t *testing.T) {
 	}
 
 	scheme := runtime.NewScheme()
-	for _, add := range []func(*runtime.Scheme) error{clientgoscheme.AddToScheme, sandboxapi.AddToScheme, policyapi.AddToScheme} {
+	for _, add := range []func(*runtime.Scheme) error{clientgoscheme.AddToScheme, sandboxapi.AddToScheme, policyapi.AddToScheme, kubevirtv1.AddToScheme} {
 		if err := add(scheme); err != nil {
 			t.Fatal(err)
 		}
@@ -160,6 +165,7 @@ func TestEveryReplicaServesAndFencesConcurrentResume(t *testing.T) {
 
 	ca := peertlstesting.NewCA(t)
 	serverCertificate := ca.Issue(t, peertls.SandboxControllerURI)
+	runtimeProxyCertificate := ca.Issue(t, peertls.RuntimeProxyURI)
 	c := Config{
 		RPC: listener.Config{
 			ListenAddress: "127.0.0.1:0",
@@ -173,6 +179,16 @@ func TestEveryReplicaServesAndFencesConcurrentResume(t *testing.T) {
 		ServiceDelegation: &ServiceDelegationConfig{
 			Actors:  []auth.ServiceDelegator{{SPIFFEID: peertls.ActionsURI}},
 			Methods: []string{environmentpb.EnvironmentService_ResumeEnvironment_FullMethodName},
+		},
+		RuntimeProxy: &RuntimeProxyConfig{
+			Audience: "environment-serving-test",
+			RunnerSecurity: peertls.Security{
+				Mode: peertls.MutualTLS, TLS: &runtimeProxyCertificate,
+			},
+			Readers:           []string{peertls.AppURI},
+			SessionCallers:    []string{peertls.SessionsURI},
+			ControllerCallers: []string{peertls.SandboxControllerURI},
+			ExecutorCallers:   []string{peertls.CentralSamplerURI},
 		},
 	}
 	leaseDuration, renewDeadline, retryPeriod := 6*time.Second, 4*time.Second, time.Second
@@ -230,6 +246,8 @@ func TestEveryReplicaServesAndFencesConcurrentResume(t *testing.T) {
 	secondClient, secondConnection := environmentClient(t, ca, second.server)
 	t.Cleanup(func() { _ = firstConnection.Close() })
 	t.Cleanup(func() { _ = secondConnection.Close() })
+	assertRuntimeProxyAuthorization(t, ca, first.server)
+	assertRuntimeProxyAuthorization(t, ca, second.server)
 	target := &identitypb.EnvironmentTarget{Namespace: servingTestNamespace, Name: sandboxName, Uid: string(sandbox.UID)}
 	request := resumeRequest(target, initialGeneration)
 
@@ -381,6 +399,9 @@ func TestEveryReplicaServesAndFencesConcurrentResume(t *testing.T) {
 		}
 	}
 	stopReplica(leader)
+	if leader.server.proxy.health.Available() {
+		t.Fatal("stopped leader retained a ready Runtime proxy inventory")
+	}
 	streamDone := make(chan error, 1)
 	go func() {
 		for {
@@ -406,6 +427,9 @@ func TestEveryReplicaServesAndFencesConcurrentResume(t *testing.T) {
 	}
 	if standby.server.Check(nil) != nil {
 		t.Fatal("standby listener stopped during leader takeover")
+	}
+	if !standby.server.proxy.health.Available() {
+		t.Fatal("standby Runtime proxy inventory did not remain ready during leader takeover")
 	}
 	callCtx, cancel = callContext(t)
 	resumed, err := standbyClient.ResumeEnvironment(callCtx, resumeRequest(target, initialGeneration+1))
@@ -440,6 +464,100 @@ func clientConnection(t *testing.T, ca *peertlstesting.CA, server *Server, servi
 		t.Fatal(err)
 	}
 	return connection
+}
+
+func assertRuntimeProxyAuthorization(t *testing.T, ca *peertlstesting.CA, server *Server) {
+	t.Helper()
+	if err := server.Check(nil); err != nil {
+		t.Fatalf("EnvironmentService is not ready without a connected Runtime: %v", err)
+	}
+	callers := []string{
+		peertls.AppURI, peertls.SessionsURI, peertls.SandboxControllerURI,
+		peertls.CentralSamplerURI, peertls.ActionsURI,
+	}
+	connections := make(map[string]*grpc.ClientConn, len(callers))
+	for _, caller := range callers {
+		connections[caller] = clientConnection(t, ca, server, caller)
+		connection := connections[caller]
+		t.Cleanup(func() { _ = connection.Close() })
+	}
+	waitForHealthStatus(t, grpc_health_v1.NewHealthClient(connections[peertls.ActionsURI]), grpc_health_v1.HealthCheckResponse_SERVING)
+	for _, method := range grpcmethods.Of(environmentruntimepb.EnvironmentRuntime_ServiceDesc) {
+		allowed := runtimeProxyEnvironmentCaller(method.Name)
+		for _, caller := range callers {
+			ctx, cancel := callContext(t)
+			err := method.Call(ctx, connections[caller])
+			cancel()
+			want := codes.PermissionDenied
+			if caller == allowed && allowed != "" {
+				want = codes.InvalidArgument
+			}
+			if got := status.Code(err); got != want {
+				t.Errorf("Runtime proxy %s caller %s: %v, want %s", method.Name, caller, err, want)
+			}
+		}
+	}
+	for _, method := range grpcmethods.Of(executorpb.Executor_ServiceDesc) {
+		for _, caller := range callers {
+			ctx, cancel := callContext(t)
+			err := method.Call(ctx, connections[caller])
+			cancel()
+			want := codes.PermissionDenied
+			if caller == peertls.CentralSamplerURI {
+				want = codes.InvalidArgument
+			}
+			if got := status.Code(err); got != want {
+				t.Errorf("Runtime proxy %s caller %s: %v, want %s", method.Name, caller, err, want)
+			}
+		}
+	}
+
+	ctx, cancel := callContext(t)
+	delegated, err := workloadgrpc.WithDelegation(ctx, &delegationpb.Delegation{
+		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: &identitypb.Identity{Name: "delegated-owner", Uid: "test-identity-uid"}},
+		Provenance: &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{
+			RequestId: "00000000-0000-4000-8000-000000000001", ExecutionId: "00000000-0000-4000-8000-000000000002",
+		}},
+	})
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	delegatedErr := grpcmethods.Method{Name: environmentruntimepb.EnvironmentRuntime_CreateSession_FullMethodName}.Call(delegated, connections[peertls.SessionsURI])
+	cancel()
+	if status.Code(delegatedErr) != codes.PermissionDenied {
+		t.Fatalf("Runtime proxy accepted delegated service authority: %v", delegatedErr)
+	}
+
+	ctx, cancel = callContext(t)
+	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer ignored-token")
+	bearerErr := grpcmethods.Method{Name: environmentruntimepb.EnvironmentRuntime_ListSessions_FullMethodName}.Call(ctx, connections[peertls.AppURI])
+	cancel()
+	if status.Code(bearerErr) != codes.Unauthenticated {
+		t.Fatalf("Runtime proxy accepted bearer metadata with an SVID: %v", bearerErr)
+	}
+}
+
+func runtimeProxyEnvironmentCaller(method string) string {
+	switch method {
+	case environmentruntimepb.EnvironmentRuntime_ListSessions_FullMethodName,
+		environmentruntimepb.EnvironmentRuntime_GetStatus_FullMethodName:
+		return peertls.AppURI
+	case environmentruntimepb.EnvironmentRuntime_CreateSession_FullMethodName,
+		environmentruntimepb.EnvironmentRuntime_SubmitInput_FullMethodName,
+		environmentruntimepb.EnvironmentRuntime_ChangeModel_FullMethodName,
+		environmentruntimepb.EnvironmentRuntime_ChangeReasoningEffort_FullMethodName,
+		environmentruntimepb.EnvironmentRuntime_InterruptTurn_FullMethodName:
+		return peertls.SessionsURI
+	case environmentruntimepb.EnvironmentRuntime_Quiesce_FullMethodName,
+		environmentruntimepb.EnvironmentRuntime_PrepareSuspend_FullMethodName,
+		environmentruntimepb.EnvironmentRuntime_ResumeAdmission_FullMethodName:
+		return peertls.SandboxControllerURI
+	case environmentruntimepb.EnvironmentRuntime_WatchState_FullMethodName:
+		return ""
+	default:
+		panic("unclassified Runtime proxy method: " + method)
+	}
 }
 
 func delegatedEnvironmentClient(
@@ -552,4 +670,18 @@ func eventuallyRPCCode(
 func callContext(t *testing.T) (context.Context, context.CancelFunc) {
 	t.Helper()
 	return context.WithTimeout(t.Context(), 10*time.Second)
+}
+
+func TestRuntimeProxyRejectsBindingObserverCredentials(t *testing.T) {
+	ca := peertlstesting.NewCA(t)
+	for _, uri := range []string{peertls.RuntimeProxyURI, peertls.SandboxControllerURI, peertls.GatewayURI} {
+		t.Run(uri, func(t *testing.T) {
+			leaf := ca.Issue(t, uri)
+			c := RuntimeProxyConfig{Audience: "test", RunnerSecurity: peertls.Security{Mode: peertls.MutualTLS, TLS: &leaf}}
+			err := c.ValidateCredentials()
+			if (err == nil) != (uri == peertls.RuntimeProxyURI) {
+				t.Fatalf("Runtime proxy credentials %s: %v", uri, err)
+			}
+		})
+	}
 }

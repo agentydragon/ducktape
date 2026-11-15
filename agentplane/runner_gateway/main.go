@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/environments/access"
+	gateway "github.com/agentydragon/ducktape/agentplane/environments/runtimeproxy"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
@@ -31,7 +32,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/wake"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/internal/gateway"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/internal/sandboxinventory"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/migrations"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"

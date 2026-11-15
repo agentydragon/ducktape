@@ -1,4 +1,11 @@
-# Gateway connection and authorization contracts
+# Runtime proxy connection and authorization contracts
+
+The implementation is shared during the receiver migration. Gateway retains its existing endpoint
+and authentication. Optional Environments registration uses the same fencing and forwarding, on
+its every-replica listener with independent routing caches. Its method grants admit only the four
+configured service-role allowlists; no bearer, workload Identity or delegation is granted. Its
+outbound Runtime peer is `spiffe://agentplane/runtime-proxy`. The Gateway registration remains until
+callers have moved, after which this serving package can become internal to Environments.
 
 ## Runtime observation and independent Gateway connections
 

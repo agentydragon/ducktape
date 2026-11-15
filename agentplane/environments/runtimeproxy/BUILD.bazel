@@ -1,7 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
-    name = "gateway",
+    name = "runtimeproxy",
     srcs = [
         "connections.go",
         "executor.go",
@@ -11,8 +11,11 @@ go_library(
         "runner_observer.go",
         "sandboxes.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/internal/gateway",
-    visibility = ["//agentplane/runner_gateway:__subpackages__"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/environments/runtimeproxy",
+    visibility = [
+        "//agentplane/environments:__subpackages__",
+        "//agentplane/runner_gateway:__subpackages__",
+    ],
     deps = [
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/env/runtime/execution:executor_go_proto",
@@ -58,7 +61,7 @@ go_test(
         "proxy_test.go",
         "runner_observer_test.go",
     ],
-    embed = [":gateway"],
+    embed = [":runtimeproxy"],
     deps = [
         "//agentplane/env/runtime/control",
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
@@ -106,7 +109,7 @@ go_test(
         "queue_runner_integration_test.go",
         "queue_runner_integration_testmain_test.go",
     ],
-    embed = [":gateway"],
+    embed = [":runtimeproxy"],
     tags = ["requires_docker"],
     deps = [
         "//agentplane/env/runtime/control:environment_runtime_go_proto",

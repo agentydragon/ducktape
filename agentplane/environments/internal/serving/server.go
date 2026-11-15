@@ -39,6 +39,7 @@ type Server struct {
 	watches      *reader.Watches
 	policyHealth *watchhealth.Health
 	rpcHealth    *health.Server
+	proxy        *runtimeProxy
 	mu           sync.RWMutex
 	address      string
 	serving      bool
@@ -133,14 +134,30 @@ func New(c Config, namespace string, apiConfig *rest.Config, scheme *runtime.Sch
 	}
 	allMethods := auth.HealthMethods()
 	maps.Copy(allMethods, methods)
+	var proxy *runtimeProxy
+	if c.RuntimeProxy != nil {
+		proxy, err = newRuntimeProxy(*c.RuntimeProxy, namespace, apiConfig, scheme, kube)
+		if err != nil {
+			return nil, fmt.Errorf("Runtime proxy: %w", err)
+		}
+		proxyMethods, err := proxy.gateway.Methods()
+		if err != nil {
+			return nil, err
+		}
+		maps.Copy(allMethods, proxyMethods)
+	}
 	options := append(allMethods.ServerOptions(0), grpc.Creds(credentials), observability.GRPCServerOption(),
 		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{MinTime: 30 * time.Second}))
 	server := grpc.NewServer(options...)
 	environmentpb.RegisterEnvironmentServiceServer(server, service)
+	if proxy != nil {
+		proxy.gateway.RegisterProxy(server)
+		proxy.gateway.RegisterExecutor(server)
+	}
 	rpcHealth := health.NewServer()
 	rpcHealth.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
 	healthpb.RegisterHealthServer(server, rpcHealth)
-	return &Server{config: c, server: server, watches: watches, policyHealth: policyHealth, rpcHealth: rpcHealth}, nil
+	return &Server{config: c, server: server, watches: watches, policyHealth: policyHealth, rpcHealth: rpcHealth, proxy: proxy}, nil
 }
 
 // NeedLeaderElection keeps RPCs and their independent policy watches running on standbys.
@@ -158,6 +175,9 @@ func (s *Server) Check(*http.Request) error {
 	if !s.serving || !s.policyHealth.Available() {
 		return errors.New("EnvironmentService is not ready")
 	}
+	if s.proxy != nil && !s.proxy.health.Available() {
+		return errors.New("Runtime proxy inventory is not ready")
+	}
 	return nil
 }
 
@@ -172,6 +192,16 @@ func (s *Server) Start(ctx context.Context) error {
 	watchesDone := make(chan struct{})
 	go func() { defer close(watchesDone); s.watches.Run(ctx) }()
 	defer func() { <-watchesDone }()
+	var proxyDone chan struct{}
+	var proxyErr error
+	if s.proxy != nil {
+		proxyDone = make(chan struct{})
+		go func() {
+			defer close(proxyDone)
+			proxyErr = s.proxy.run(ctx)
+		}()
+		defer func() { <-proxyDone }()
+	}
 	served := make(chan error, 1)
 	go func() { served <- s.server.Serve(listener) }()
 	s.mu.Lock()
@@ -180,6 +210,10 @@ func (s *Server) Start(ctx context.Context) error {
 	defer s.server.Stop()
 	for {
 		changed := s.policyHealth.Changed()
+		var proxyChanged <-chan struct{}
+		if s.proxy != nil {
+			proxyChanged = s.proxy.health.Changed()
+		}
 		status := healthpb.HealthCheckResponse_NOT_SERVING
 		if s.Check(nil) == nil {
 			status = healthpb.HealthCheckResponse_SERVING
@@ -188,6 +222,12 @@ func (s *Server) Start(ctx context.Context) error {
 		select {
 		case <-changed:
 			continue
+		case <-proxyChanged:
+			continue
+		case <-proxyDone:
+			if ctx.Err() == nil {
+				err = fmt.Errorf("Runtime proxy stopped unexpectedly: %w", proxyErr)
+			}
 		case err = <-served:
 			if ctx.Err() == nil {
 				err = fmt.Errorf("EnvironmentService listener stopped unexpectedly: %w", err)
