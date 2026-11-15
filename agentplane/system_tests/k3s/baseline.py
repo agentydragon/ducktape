@@ -18,7 +18,7 @@ import tarfile
 import tempfile
 import threading
 import time
-from collections.abc import Iterator, Sequence, Set
+from collections.abc import Callable, Iterator, Sequence, Set
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -417,9 +417,23 @@ class K3s:
                 log.write(json.dumps({"undeclared_images": undeclared, "output": output}) + "\n")
 
     def report_storage(self, stage: str) -> None:
-        """Capture the filesystem and kubelet signals behind node-pressure evictions."""
+        """Capture node-pressure evidence without turning a diagnostic timeout into a fixture failure."""
         output = undeclared_outputs_dir() / "storage" / stage
         output.mkdir(parents=True, exist_ok=True)
+
+        def capture(name: str, collect: Callable[[], str]) -> None:
+            try:
+                content = collect()
+            except subprocess.TimeoutExpired as exc:
+                # communicate() returns captured bytes on timeout even with text=True.
+                partial = b"".join(
+                    part.encode() if isinstance(part, str) else part
+                    for part in (exc.stdout, exc.stderr)
+                    if part is not None
+                ).decode(errors="replace")
+                content = f"{partial}\nDiagnostic command timed out: {exc}\n"
+            (output / name).write_text(content)
+
         paths = ["/", "/workspace", "/var/lib/kubelet", str(self.data_dir / "agent/containerd")]
         paths.append(str(self.data_dir / "agent/containerd/io.containerd.snapshotter.v1.overlayfs"))
         for name, command in [
@@ -428,20 +442,24 @@ class K3s:
             ("containerd-usage.txt", ["du", "-x", "-B1", "--max-depth=2", str(self.data_dir / "agent/containerd")]),
             ("images.txt", [str(self.binary), "ctr", "--address", CONTAINERD_SOCKET, "-n", "k8s.io", "images", "ls"]),
         ]:
-            (output / name).write_text(run(*command, check=False, timeout=15))
-        (output / "cri-images.json").write_text(self.crictl("images", "-o", "json", check=False))
+            capture(name, lambda command=command: run(*command, check=False, timeout=15))
+        capture("cri-images.json", lambda: self.crictl("images", "-o", "json", check=False))
         for name, resource in [
             ("summary.json", "/api/v1/nodes/env/proxy/stats/summary"),
             ("config.json", "/api/v1/nodes/env/proxy/configz"),
             ("metrics.txt", "/api/v1/nodes/env/proxy/metrics"),
         ]:
-            (output / name).write_text(
-                self.kubectl("get", "--raw", resource, "--request-timeout=5s", check=False, timeout=10)
+            capture(
+                name,
+                lambda resource=resource: self.kubectl(
+                    "get", "--raw", resource, "--request-timeout=5s", check=False, timeout=10
+                ),
             )
-        (output / "resources.yaml").write_text(
-            self.kubectl(
+        capture(
+            "resources.yaml",
+            lambda: self.kubectl(
                 "get", "nodes,pods,events", "-A", "-o", "yaml", "--request-timeout=5s", check=False, timeout=10
-            )
+            ),
         )
 
     @contextlib.contextmanager

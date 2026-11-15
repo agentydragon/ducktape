@@ -2,6 +2,7 @@
 
 import errno
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -444,6 +445,46 @@ def test_enabling_cgroup_controllers_drains_children_forked_during_the_move(
     assert not pending
     assert moved == (["101", "303"] if vanishes else ["101", "202", "303"])
     assert enabled == ["+cpu +memory"]
+
+
+@pytest.mark.parametrize("timed_out", ["filesystem", "cri", "summary", "resources"])
+def test_storage_diagnostics_keep_partial_timeout_output_and_continue(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, timed_out: str
+) -> None:
+    k3s = baseline.K3s(tmp_path, tmp_path / "unused-k3s")
+    monkeypatch.setattr(baseline, "undeclared_outputs_dir", lambda: tmp_path)
+
+    def collect(kind: str) -> str:
+        if kind == timed_out:
+            raise subprocess.TimeoutExpired([kind], 10, output=b"partial stdout", stderr=b"partial stderr")
+        return kind
+
+    monkeypatch.setattr(baseline, "run", lambda *args, **kwargs: collect("filesystem"))
+    monkeypatch.setattr(k3s, "crictl", lambda *args, **kwargs: collect("cri"))
+    monkeypatch.setattr(k3s, "kubectl", lambda *args, **kwargs: collect("summary" if "--raw" in args else "resources"))
+
+    k3s.report_storage("before-import")
+
+    output = tmp_path / "storage" / "before-import"
+    expected = {
+        "filesystems.txt": "filesystem",
+        "inodes.txt": "filesystem",
+        "containerd-usage.txt": "filesystem",
+        "images.txt": "filesystem",
+        "cri-images.json": "cri",
+        "summary.json": "summary",
+        "config.json": "summary",
+        "metrics.txt": "summary",
+        "resources.yaml": "resources",
+    }
+    assert {path.name for path in output.iterdir()} == expected.keys()
+    for name, kind in expected.items():
+        content = (output / name).read_text()
+        if kind == timed_out:
+            assert "partial stdoutpartial stderr" in content
+            assert "Diagnostic command timed out" in content
+        else:
+            assert content == kind
 
 
 if __name__ == "__main__":
