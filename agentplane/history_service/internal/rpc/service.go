@@ -1,10 +1,8 @@
 // Package api serves the History Service's HistoryService gRPC API: the reads of retained Session history and
 // of its folded Threads, raw entry follows and summary change watches.
 //
-// Methods admits a ServiceAccount proving itself by a bearer reviewed on that call
-// (agentplane/docs/grpc_services.md), or a workload SVID naming an Identity, which reads the Sessions
-// retained as executing as that Identity incarnation: a public Session UUID is not itself authority to read
-// a transcript.
+// Methods admits a live workload SVID subject. An Identity reads only Sessions retained as executing
+// as that Identity incarnation: a public Session UUID is not itself authority to read a transcript.
 package rpc
 
 import (
@@ -50,11 +48,10 @@ type Options struct {
 	WatchLease time.Duration
 }
 
-// Methods admits a reviewed ServiceAccount or an Identity SVID to the read API. The handler scopes
-// ordinary callers to their retained execution Identity and keeps the configured
-// Pod-bound backend readers explicit.
-func Methods(resolver *auth.Resolver) auth.Methods {
-	rule := auth.ReviewedServiceAccountOrIdentity(resolver)
+// Methods admits a workload SVID naming a live ServiceAccount or Identity. The handler scopes
+// ordinary callers to their retained execution Identity and keeps configured readers explicit.
+func Methods(subjects auth.SubjectResolver) auth.Methods {
+	rule := auth.AnySubject(subjects)
 	return auth.Methods{
 		historypb.HistoryService_ReadSessionEvents_FullMethodName:        rule,
 		historypb.HistoryService_FollowSession_FullMethodName:            rule,
@@ -86,33 +83,17 @@ func ReadMethods() []string {
 }
 
 // MethodsWithServiceCallers adds exact component peers to every configured read method.
-func MethodsWithServiceCallers(resolver *auth.Resolver, callers []string) (auth.Methods, error) {
-	return Methods(resolver).WithServiceCallers(ReadMethods(), callers)
-}
-
-// MethodsWithDelegation adds an explicit Action actor grant to the configured full RPC names.
-func MethodsWithDelegation(
-	resolver *auth.Resolver,
-	delegator auth.Delegator,
-	identities auth.IdentityUIDReader,
-	delegatedMethods []string,
-) (auth.Methods, error) {
-	methods, err := Methods(resolver).WithDelegation(
-		delegatedMethods, []auth.Delegator{delegator}, identities,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("configure delegated History methods: %w", err)
-	}
-	return methods, nil
+func MethodsWithServiceCallers(subjects auth.SubjectResolver, callers []string) (auth.Methods, error) {
+	return Methods(subjects).WithServiceCallers(ReadMethods(), callers)
 }
 
 // MethodsWithServiceDelegation adds exact service actors to the configured read methods.
 func MethodsWithServiceDelegation(
-	resolver *auth.Resolver,
+	subjects auth.SubjectResolver,
 	actors []auth.ServiceDelegator,
 	identities auth.IdentityUIDReader,
 ) (auth.Methods, error) {
-	methods, err := Methods(resolver).WithServiceDelegation(ReadMethods(), actors, identities)
+	methods, err := Methods(subjects).WithServiceDelegation(ReadMethods(), actors, identities)
 	if err != nil {
 		return nil, fmt.Errorf("configure delegated History service methods: %w", err)
 	}

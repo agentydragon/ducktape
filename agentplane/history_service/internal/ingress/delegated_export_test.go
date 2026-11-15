@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	transport "github.com/agentydragon/ducktape/agentplane/net/peertls"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -15,7 +16,6 @@ import (
 func TestTheExporterActsForTheIdentityASessionExecutesAs(t *testing.T) {
 	fixture := newSamplerExportFixture(t, newSamplerExportPlan(0, 0, false), newSamplerExportPlan(0, 0, false), newSamplerExportPlan(0, 0, false))
 	identity := &identitypb.Identity{Name: fixture.identity.Identity.Name, Uid: string(fixture.identity.Identity.UID)}
-	sampler := auth.Account{Namespace: testNamespace, Name: "test-central-sampler"}
 
 	delegated := fixture.openSessionExecutingAs(t, identity)
 	if err := fixture.source.ChangeModels(t.Context(), delegated, 2, "test-model-delegated"); err != nil {
@@ -28,12 +28,12 @@ func TestTheExporterActsForTheIdentityASessionExecutesAs(t *testing.T) {
 	cursor := assertSamplerHistoryMatchesSource(t, fixture, delegated, "test-model-delegated")
 	assertSamplerExportCheckpoint(t, fixture, delegated, &cursor)
 	var writerName, identityName, identityUID string
-	if err := fixture.historyDB.QueryRowContext(t.Context(), "SELECT writer_name, execution_identity_name, execution_identity_uid FROM session_history WHERE id=$1", delegated).
+	if err := fixture.historyDB.QueryRowContext(t.Context(), "SELECT writer_service_uri, execution_identity_name, execution_identity_uid FROM session_history WHERE id=$1", delegated).
 		Scan(&writerName, &identityName, &identityUID); err != nil {
 		t.Fatal(err)
 	}
-	if writerName != sampler.Name || identityName != identity.Name || identityUID != identity.Uid {
-		t.Fatalf("History binding writer=%s identity=%s/%s, want the sampler acting for %v", writerName, identityName, identityUID, identity)
+	if writerName != transport.CentralSamplerURI || identityName != identity.Name || identityUID != identity.Uid {
+		t.Fatalf("History binding writer=%s identity=%s/%s, want the central sampler acting for %v", writerName, identityName, identityUID, identity)
 	}
 
 	fixture.ingress.mu.Lock()
@@ -42,10 +42,10 @@ func TestTheExporterActsForTheIdentityASessionExecutesAs(t *testing.T) {
 	if len(admissions) != 1 {
 		t.Fatalf("History admitted %d pushes, want one delegated Session", len(admissions))
 	}
-	acting, ok := admissions[0].(auth.DelegatedIdentityAdmission)
-	if !ok || acting.Actor.Account != sampler || acting.EffectiveCaller != (auth.Identity{Name: identity.Name, UID: identity.Uid}) ||
+	acting, ok := admissions[0].(auth.DelegatedServiceIdentityAdmission)
+	if !ok || acting.Actor.SPIFFEID != transport.CentralSamplerURI || acting.EffectiveCaller != (auth.Identity{Name: identity.Name, UID: identity.Uid}) ||
 		acting.Provenance.GetSession().GetSessionId() != delegated {
-		t.Fatalf("the Identity Session's push was admitted as %#v, want %v acting for %v", admissions[0], sampler, identity)
+		t.Fatalf("the Identity Session's push was admitted as %#v, want %s acting for %v", admissions[0], transport.CentralSamplerURI, identity)
 	}
 	if err := fixture.identity.Objects.Delete(t.Context(), fixture.identity.Identity); err != nil {
 		t.Fatal(err)

@@ -60,29 +60,29 @@ ingress contract](../docs/runner_control.md#event-ingress): runners push each Se
 journal here, one call per Session. Sandbox Runtime opens end-to-end mTLS through the sidecar
 and central proxy's exact-authority CONNECT passthrough to `rpc.listen_address`.
 History presents `spiffe://agentplane/history-ingress`, verifies the client SVID against the
-Agentplane workload CA with an explicit clientAuth EKU, and resolves its Sandbox UID and accepted
-credential generation from live Sandbox status. The caller remains that Sandbox's controller-owned
-ServiceAccount, including its canonical UID. A deleted Sandbox, stale credential or missing bound
-Pod is refused before the ingress handler. No header selects the caller and the proxy asserts none.
-The runner-ingress projected-token audience is absent from Sandbox templates and proxy audiences.
+Agentplane workload CA with an explicit clientAuth EKU, and resolves its Identity, WorkloadCredential,
+and Sandbox owner from live Kubernetes records. A deleted Sandbox, stale credential, changed Identity
+incarnation, or missing bound Pod is refused before the ingress handler. No header selects the caller
+and the proxy asserts none. The runner-ingress projected-token audience is absent from Sandbox
+templates and proxy audiences.
 
-`rpc` configures the shared native gRPC listener, its server TLS files and explicit authentication modes.
-With SPIFFE enabled, `Push` admits Sandbox SVIDs and configured sampler bearer accounts; bearer-only
-listeners retain namespace-scoped writer admission. A ServiceAccount reads only with a bearer of the read
-audience, never with an SVID. Presenting a certificate together with bearer or delegation metadata is refused.
-The first accepted announcement binds the Session to the pushing ServiceAccount (namespace, name,
-UID) in `session_history`; other accounts get `PERMISSION_DENIED`.
+`rpc` configures the shared native gRPC listener and server TLS files. History admits live workload SVIDs
+for Identity reads and runner `Push` calls, plus explicitly configured service SVIDs for component reads
+and central sampler writes. Bearer credentials do not admit History calls. A workload certificate cannot
+be combined with authorization metadata. The first accepted runner announcement binds the Session to the
+workload Identity and its owning Sandbox in `session_history`; a different Identity or Sandbox gets
+`PERMISSION_DENIED`.
 
-The required `policy_namespace` lets `Push` admit a Sandbox SVID whose WorkloadCredential
-names an Identity in that namespace (absent, such a writer is refused). The record must be in
+The required `policy_namespace` lets History admit a Sandbox SVID whose WorkloadCredential
+names an Identity in that namespace (absent, such a caller is refused). The record must be in
 `ingress.writer_namespaces` and controlled by a Sandbox: the Session binds to the Identity
 incarnation (name, UID) and is pinned to that Sandbox, so a successor Identity of the same name, the
-same Identity running another Sandbox, or a ServiceAccount writer is refused, and an Identity writer
-cannot take a ServiceAccount-bound Session. The read API admits a Sandbox SVID naming an Identity
+same Identity running another Sandbox, or a different writer is refused, and an Identity runner
+cannot take a Session bound to another writer kind. The read API admits a Sandbox SVID naming an Identity
 and serves it exactly the Sessions retained as executing as that Identity incarnation. An Identity runner's announced `execution_identity` must
-be its own Identity. ServiceAccount authentication records the component that wrote history, not
-Session ownership. The writer kinds are exclusive in `session_history` (`history_writer_one_kind`), so a
-replica predating Identity or service writers cannot bind an account over one. Entries commit through
+be its own Identity. Service SVIDs are admitted only by their configured method rules. The writer kinds
+are exclusive in `session_history` (`history_writer_one_kind`), so a replica predating Identity or service
+writers cannot bind a legacy account writer over one. Entries commit through
 `Store.Append`, which accepts exact replays and refuses gaps and conflicting entries, and each
 acknowledgement follows its commit. The ingress queues at most 16 decoded frames and commits
 at most 128 entries or 1 MiB of serialized entries per transaction (one oversized entry forms its
@@ -160,11 +160,11 @@ Normal read scope is applied in SQL before pagination, projection, or evidence l
 summary reads and batches, Sandbox discovery, raw event and observation pages, Thread entities,
 entity evidence, native frame lookup, follows and their removed ranges, and opened-Session watch
 events. Normal watch positions are ordinals over the caller's retained Sessions, so a cursor does
-not reveal gaps from another principal; configured backend readers retain the existing service-wide
-opening cursor. Each RPC is admitted by the workload-auth resolver, whose accepted TokenReview verdict is
-cached only for its configured short TTL. Watch/follow streams end at their lease so continued reads
-require a newly authorized call. Configured `reader_accounts` remain restricted to their actual
-Pod-bound proof for the backend-wide policy. Errors carry a gRPC status and fixed detail:
+not reveal gaps from another principal; configured backend service readers retain the existing
+service-wide opening cursor. Each RPC resolves its workload credential against live Kubernetes
+records. Watch/follow streams end at their lease so continued reads require a newly authorized call.
+Legacy `reader_accounts` settings remain decodable for deployment compatibility but do not grant
+bearer access. Errors carry a gRPC status and fixed detail:
 
 | Status              | Cause                                                                             |
 | ------------------- | --------------------------------------------------------------------------------- |
@@ -409,29 +409,19 @@ Identity on the admitted sampler path; an executor account name cannot establish
 Native announcements cannot claim central metadata. The same cursor, exact-replay,
 writer fencing and commit-before-ack rules apply.
 
-When the Agentplane chart configures a central sampler, it also enables
-`ingress.sampler_identity_callers`. Direct History deployments must opt in explicitly.
+The chart retains the legacy `ingress.sampler_identity_callers` setting for YAML compatibility. It no
+longer grants sampler account or bearer writes.
 
-`ingress.sampler_identity_callers` (requires sampler accounts and the SPIFFE listener, on which `Push`
-admits Identity writers) additionally lets those accounts push as
-delegating actors under the [delegated authorization contract](../docs/delegated_authorization.md),
-naming the Identity a Session executes as and the Session itself. The middleware verifies the
-sampler's token and grant and reads the Identity live, so a stale or missing incarnation is refused
-before the handler; the sampler stays the writer, and the Identity is retained as the Session's
-execution Identity only when the announcement names the same one and the same Session, in a
-`sampler_announce`. A sampler pushing as itself keeps relaying the recorded Identity as above.
-Announcing a central Session never implies this grant.
-
-`ingress.sampler_service_actor` admits one exact service SPIFFE ID as a direct central producer and
+`ingress.sampler_service_actor` admits one exact service SPIFFE ID as a central producer and
 delegating actor. A direct service push can announce a central Session without an execution Identity.
 To push a Session with an Identity, the actor must include typed Session provenance; History checks
 that the envelope names the canonical announcement UUID and that its live effective Identity matches
 the announcement. `session_history` retains the service SPIFFE ID as writer provenance and the
-effective Identity separately. It never synthesizes a ServiceAccount writer. Existing sampler bearer
-accounts and their writer records remain supported during rollout. Central outboxes retain evidence
-in sampler PostgreSQL while History is unavailable. Raw boundary and execution-progress observations
-remain retained evidence; source-linked normalized Events drive the ordinary Thread fold. History
-does not own the provider continuation. See the [sampler contract](../central_sampler/SPEC.md).
+effective Identity separately. It does not create or rewrite legacy ServiceAccount writer rows.
+Central outboxes retain evidence in sampler PostgreSQL while History is unavailable. Raw boundary
+and execution-progress observations remain retained evidence; source-linked normalized Events drive
+the ordinary Thread fold. History does not own the provider continuation. See the
+[sampler contract](../central_sampler/SPEC.md).
 
 The SessionSpec placement cutover's History migration 8 moved a legacy archived
 `SessionSpec.harness` value into `historical_harness` on retained feed and summary snapshots when

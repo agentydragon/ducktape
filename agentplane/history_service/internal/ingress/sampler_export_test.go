@@ -4,8 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"net"
-	"os"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -22,10 +20,14 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
+	transport "github.com/agentydragon/ducktape/agentplane/net/peertls"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
@@ -148,7 +150,7 @@ type samplerExportFixture struct {
 	historyDB *sql.DB
 	source    *exportfixture.Source
 	target    string
-	token     string
+	tls       *transport.ClientTLS
 	// identity is a live Identity the sampler may act for; ingress records how each push was admitted.
 	identity  workloadauthtesting.IdentityWorkload
 	ingress   *samplerExportIngressServer
@@ -188,45 +190,53 @@ func newSamplerExportFixture(t *testing.T, plans ...*samplerExportPlan) samplerE
 	}
 	samplerSource := exportfixture.New(samplerDB, 30*time.Second)
 
-	account := auth.Account{Namespace: testNamespace, Name: "test-central-sampler"}
-	principals, err := auth.NewResolver(kube.TokenReviews(), testAudience, []string{testNamespace})
+	ca := transporttesting.NewCA(t)
+	serverCredentials := ca.Issue(t, transport.HistoryIngressURI)
+	serverTLS, err := serverCredentials.WorkloadServerTLSConfigWithServices(transport.HistoryIngressURI, false)
 	if err != nil {
 		t.Fatal(err)
 	}
+	clientCredentials := ca.Issue(t, transport.CentralSamplerURI)
+	exportTLS := &transport.ClientTLS{
+		CAFile: serverCredentials.CAFile, ServerURI: transport.HistoryIngressURI,
+		CertFile: clientCredentials.CertFile, KeyFile: clientCredentials.KeyFile, ClientURI: transport.CentralSamplerURI,
+	}
 	service := &Service{
-		History:         history,
-		Timing:          Timing{IdleAck: 10 * time.Second, SilenceLimit: 30 * time.Second},
-		SamplerAccounts: []auth.Account{account},
+		History: history, Timing: Timing{IdleAck: 10 * time.Second, SilenceLimit: 30 * time.Second},
+		SamplerServiceActor: transport.CentralSamplerURI,
 	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Push as deployed: the SVID-or-accounts rule, with the sampler granted the delegated mode for
-	// the Identities of the policy namespace.
+	// Push as deployed: runners use live workload SVIDs and the central sampler is an exact service
+	// SVID that may delegate the live Identity a Session executes as.
 	named := workloadauthtesting.NewIdentityWorkload(t, kube, testNamespace, "test-export-identity-"+uuid.NewString()[:8], samplerExportPolicyNamespace)
 	identities, err := auth.KubernetesIdentityUIDs(named.Objects, samplerExportPolicyNamespace)
 	if err != nil {
 		t.Fatal(err)
 	}
-	pushRule, err := AllowDelegatingSamplers(auth.SVIDOrAccounts(principals, []auth.Account{account}), []auth.Account{account}, identities)
+	svids, err := auth.NewKubernetesSVIDResolver(kube.Config, []string{testNamespace}, &resolver.Identities{PolicyNamespace: samplerExportPolicyNamespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pushRule, err := auth.AnySubject(svids).AllowServiceCallers([]string{transport.CentralSamplerURI})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pushRule, err = pushRule.AllowServiceDelegationFrom([]auth.ServiceDelegator{{SPIFFEID: transport.CentralSamplerURI}}, identities)
 	if err != nil {
 		t.Fatal(err)
 	}
 	methods := auth.Methods{session_ingresspb.SessionJournalIngress_Push_FullMethodName: pushRule}
-	server := grpc.NewServer(methods.ServerOptions(time.Second)...)
+	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	ingressServer := &samplerExportIngressServer{service: service, plans: plans}
 	session_ingresspb.RegisterSessionJournalIngressServer(server, ingressServer)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
 
-	token := workloadToken(t, account)
-	tokenFile := filepath.Join(t.TempDir(), "central-sampler-workload-token")
-	if err := os.WriteFile(tokenFile, []byte(token), 0600); err != nil {
-		t.Fatal(err)
-	}
 	return samplerExportFixture{
-		history: history, historyDB: historyDB, samplerDB: samplerDB, source: samplerSource, target: listener.Addr().String(), token: tokenFile,
+		history: history, historyDB: historyDB, samplerDB: samplerDB, source: samplerSource, target: listener.Addr().String(), tls: exportTLS,
 		identity: named, ingress: ingressServer,
 	}
 }
@@ -269,7 +279,7 @@ func (f samplerExportFixture) openSessionWithAPI(t *testing.T, identity *identit
 
 func startSamplerExport(ctx context.Context, f samplerExportFixture, sessionID string) <-chan error {
 	done := make(chan error, 1)
-	go func() { done <- historyexport.ExportSession(ctx, f.source.Outbox(), sessionID, f.target, f.token, nil) }()
+	go func() { done <- historyexport.ExportSession(ctx, f.source.Outbox(), sessionID, f.target, "", f.tls) }()
 	return done
 }
 

@@ -1,7 +1,7 @@
-// Package ingress serves SessionJournalIngress: a journal writer pushes each Session's journal here, one call per Session.
+// Package ingress serves SessionJournalIngress: a runner pushes each Session's journal here, one call per Session.
 //
 // Contract: agentplane/docs/runner_control.md § Event ingress. Every acknowledgement follows a commit, so the
-// writer's resume point is always durable here; Store.Append accepts exact replays and serializes concurrent
+// runner's resume point is always durable here; Store.Append accepts exact replays and serializes concurrent
 // calls for one Session, so any replica serves any call.
 package ingress
 
@@ -10,7 +10,6 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"slices"
 	"time"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
@@ -35,7 +34,7 @@ const (
 	commitByteLimit  = 1024 * 1024
 )
 
-// Timing paces a call. Journal writers heartbeat on an idle call at the rate the protocol names, so a deployment
+// Timing paces a call. Runners heartbeat on an idle call at the rate the protocol names, so a deployment
 // serves with the protocol's values; only a test shortens them.
 type Timing struct {
 	// IdleAck is how long the ingress waits for a frame before it repeats its acknowledgement.
@@ -51,32 +50,19 @@ type Service struct {
 	SandboxUIDs         SandboxUIDResolver
 	History             *storage.Store
 	Timing              Timing
-	SamplerAccounts     []auth.Account
 	SamplerServiceActor string
 }
 
 type pushStream = grpc.BidiStreamingServer[session_ingresspb.PushFrame, session_ingresspb.Acknowledgement]
 
-// pusher is a Push caller: an accountPusher, an identityPusher or a delegatingSamplerPusher.
+// pusher is a Push caller: a Sandbox Identity or an exact service actor.
 type pusher interface{ isPusher() }
 
-// accountPusher is an Environment Runtime or central sampler authenticated as a ServiceAccount.
-type accountPusher struct{ storage.ServiceAccountWriter }
-
-// identityPusher is an Environment Runtime authenticated as an Identity, with the Sandbox owning its workload
+// identityPusher is a runner authenticated as an Identity, with the Sandbox owning its workload
 // credential.
 type identityPusher struct {
 	writer  storage.IdentityWriter
 	sandbox storage.Sandbox
-}
-
-// delegatingSamplerPusher is a central sampler acting for the Identity a Session executes as. The
-// sampler stays the journal writer; the Identity, verified live by the middleware, is the Session's
-// retained execution Identity, and sessionID is the Session its envelope names.
-type delegatingSamplerPusher struct {
-	actor     storage.ServiceAccountWriter
-	identity  storage.Identity
-	sessionID string
 }
 
 type serviceSamplerPusher struct{ actor storage.ServiceWriter }
@@ -87,21 +73,9 @@ type delegatingServiceSamplerPusher struct {
 	sessionID string
 }
 
-func (accountPusher) isPusher()                  {}
 func (identityPusher) isPusher()                 {}
-func (delegatingSamplerPusher) isPusher()        {}
 func (serviceSamplerPusher) isPusher()           {}
 func (delegatingServiceSamplerPusher) isPusher() {}
-
-// AllowDelegatingSamplers grants each configured sampler account the delegated mode on the Push
-// rule: asserting the Identity a central Session executes as, resolved live by identities.
-func AllowDelegatingSamplers(push auth.Rule, samplers []auth.Account, identities auth.IdentityUIDReader) (auth.Rule, error) {
-	delegators := make([]auth.Delegator, 0, len(samplers))
-	for _, sampler := range samplers {
-		delegators = append(delegators, auth.Delegator{Account: sampler, IdentityCallers: true})
-	}
-	return push.AllowDelegationFrom(delegators, identities)
-}
 
 func (s *Service) Push(stream pushStream) error {
 	ctx := stream.Context()
@@ -114,18 +88,6 @@ func (s *Service) Push(stream pushStream) error {
 	case auth.IdentityAdmission:
 		if caller, err = newIdentityPusher(admission.Caller); err != nil {
 			return err
-		}
-	case auth.DelegatedIdentityAdmission:
-		session := admission.Provenance.GetSession()
-		if session == nil {
-			return status.Error(codes.PermissionDenied, "a delegating sampler names the Session it pushes")
-		}
-		caller = delegatingSamplerPusher{
-			actor: storage.ServiceAccountWriter{
-				Namespace: admission.Actor.Account.Namespace, Name: admission.Actor.Account.Name, UID: admission.Actor.ServiceAccountUID,
-			},
-			identity:  storage.Identity{Name: admission.EffectiveCaller.Name, UID: admission.EffectiveCaller.UID},
-			sessionID: session.GetSessionId(),
 		}
 	case auth.ServiceAdmission:
 		caller = serviceSamplerPusher{actor: storage.ServiceWriter{SPIFFEID: admission.Caller.SPIFFEID}}
@@ -140,31 +102,12 @@ func (s *Service) Push(stream pushStream) error {
 			sessionID: session.GetSessionId(),
 		}
 	default:
-		principal, err := auth.Caller(ctx)
-		if err != nil {
-			return err
-		}
-		caller = accountPusher{storage.ServiceAccountWriter{
-			Namespace: principal.Account.Namespace, Name: principal.Account.Name, UID: principal.ServiceAccountUID,
-		}}
+		return status.Error(codes.PermissionDenied, "caller cannot write a Session journal")
 	}
 	frames := readFrames(stream)
 	defer frames.stop()
 	c := &pushCall{history: s.History, timing: s.Timing, stream: stream, frames: frames, log: slog.Default(), service: s}
 	return c.failure(c.run(ctx, caller))
-}
-
-// samplerWriter is the ServiceAccount a central sampler pushes as, whether as itself or acting for
-// an Identity; an Environment Runtime is no sampler.
-func samplerWriter(caller pusher) (storage.ServiceAccountWriter, bool) {
-	switch caller := caller.(type) {
-	case accountPusher:
-		return caller.ServiceAccountWriter, true
-	case delegatingSamplerPusher:
-		return caller.actor, true
-	default:
-		return storage.ServiceAccountWriter{}, false
-	}
 }
 
 func samplerServiceWriter(caller pusher) (storage.ServiceWriter, bool) {
@@ -178,7 +121,7 @@ func samplerServiceWriter(caller pusher) (storage.ServiceWriter, bool) {
 	}
 }
 
-// newIdentityPusher pins an Identity-authenticated Environment Runtime to the Sandbox that controls its workload credential, as
+// newIdentityPusher pins an Identity runner to the Sandbox that controls its workload credential, as
 // the Sandbox controller's ownerReference names it. A record no Sandbox controls writes no history.
 func newIdentityPusher(caller auth.IdentityPrincipal) (identityPusher, error) {
 	owner, ok := caller.Workload.Owner.(auth.ControllerOwner)
@@ -198,6 +141,16 @@ type pushCall struct {
 	frames  *frameReader
 	log     *slog.Logger
 	service *Service
+	// revalidate overrides stream admission checks in focused journal tests. Production calls leave
+	// it nil and revalidate the admitted workload on every durable write.
+	revalidate func(context.Context) error
+}
+
+func (c *pushCall) revalidateStream(ctx context.Context) error {
+	if c.revalidate != nil {
+		return c.revalidate(ctx)
+	}
+	return auth.RevalidateStream(ctx)
 }
 
 func (c *pushCall) run(ctx context.Context, caller pusher) error {
@@ -215,15 +168,9 @@ func (c *pushCall) run(ctx context.Context, caller pusher) error {
 	var sandboxUID string
 	var executionIdentity *storage.Identity
 	if sampler != nil {
-		if serviceActor, ok := samplerServiceWriter(caller); ok {
-			if c.service.SamplerServiceActor == "" || serviceActor.SPIFFEID != c.service.SamplerServiceActor {
-				return status.Error(codes.PermissionDenied, "central sampler service is not authorized")
-			}
-		} else {
-			account, ok := samplerWriter(caller)
-			if !ok || !slices.Contains(c.service.SamplerAccounts, auth.Account{Namespace: account.Namespace, Name: account.Name}) {
-				return status.Error(codes.PermissionDenied, "central sampler producer is not authorized")
-			}
+		serviceActor, ok := samplerServiceWriter(caller)
+		if !ok || c.service.SamplerServiceActor == "" || serviceActor.SPIFFEID != c.service.SamplerServiceActor {
+			return status.Error(codes.PermissionDenied, "central sampler service is not authorized")
 		}
 		announce = sampler.GetSession()
 		executor := sampler.GetExecutor()
@@ -246,22 +193,14 @@ func (c *pushCall) run(ctx context.Context, caller pusher) error {
 			return status.Error(codes.PermissionDenied, "central Sessions require a sampler announcement")
 		}
 		switch caller := caller.(type) {
-		case delegatingSamplerPusher, delegatingServiceSamplerPusher, serviceSamplerPusher:
+		case delegatingServiceSamplerPusher, serviceSamplerPusher:
 			return status.Error(codes.PermissionDenied, "a delegating sampler announces a central Session")
-		case accountPusher:
-			if c.service.SandboxUIDs != nil {
-				var err error
-				sandboxUID, err = c.service.SandboxUIDs.Resolve(ctx, caller.ServiceAccountWriter)
-				if err != nil {
-					return err
-				}
-			}
 		case identityPusher:
 			sandboxUID = caller.sandbox.UID
 		}
 	}
 	// The Dispatcher records the Identity a Session executes as; only a writer that can vouch for it
-	// is retained: an Environment Runtime running as that Identity, a central sampler acting for it, or a
+	// is retained: an Identity runner running as it, a central sampler acting for it, or a
 	// configured central sampler relaying it.
 	if identity := announce.GetExecutionIdentity(); identity != nil {
 		if identity.GetName() == "" || identity.GetUid() == "" {
@@ -271,12 +210,7 @@ func (c *pushCall) run(ctx context.Context, caller pusher) error {
 		switch caller := caller.(type) {
 		case identityPusher:
 			if announced != caller.writer.Identity {
-				return status.Error(codes.PermissionDenied, "session execution identity does not match the Environment Runtime's authenticated Identity")
-			}
-			executionIdentity = &announced
-		case delegatingSamplerPusher:
-			if announced != caller.identity {
-				return status.Error(codes.PermissionDenied, "session execution identity does not match the delegated Identity")
+				return status.Error(codes.PermissionDenied, "session execution identity does not match the runner identity")
 			}
 			executionIdentity = &announced
 		case delegatingServiceSamplerPusher:
@@ -284,17 +218,9 @@ func (c *pushCall) run(ctx context.Context, caller pusher) error {
 				return status.Error(codes.PermissionDenied, "session execution identity does not match the delegated Identity")
 			}
 			executionIdentity = &announced
-		case accountPusher:
-			if sampler != nil {
-				executionIdentity = &announced
-			}
 		case serviceSamplerPusher:
 			return status.Error(codes.PermissionDenied, "a service sampler must delegate the Session execution Identity")
 		}
-	} else if _, delegating := caller.(delegatingSamplerPusher); delegating {
-		// A Session with no Identity is the sampler's own to push; acting for one it does not
-		// execute as would misattribute the journal.
-		return status.Error(codes.PermissionDenied, "the delegated Identity is not the session execution identity")
 	} else if _, delegating := caller.(delegatingServiceSamplerPusher); delegating {
 		return status.Error(codes.PermissionDenied, "the delegated Identity is not the session execution identity")
 	}
@@ -306,34 +232,17 @@ func (c *pushCall) run(ctx context.Context, caller pusher) error {
 	if sessionID.String() != announce.GetSessionId() {
 		return status.Error(codes.InvalidArgument, "the Session ID is not a canonical UUID")
 	}
-	if delegating, ok := caller.(delegatingSamplerPusher); ok && delegating.sessionID != announce.GetSessionId() {
-		return status.Error(codes.PermissionDenied, "the announced Session is not the one the delegation names")
-	}
 	if delegating, ok := caller.(delegatingServiceSamplerPusher); ok && delegating.sessionID != announce.GetSessionId() {
 		return status.Error(codes.PermissionDenied, "the announced Session is not the one the delegation names")
 	}
 	c.log = c.log.With("session_id", sessionID)
 	var checkpoint storage.Checkpoint
-	if err := auth.RevalidateStream(ctx); err != nil {
+	if err := c.revalidateStream(ctx); err != nil {
 		return err
 	}
 	switch caller := caller.(type) {
-	case accountPusher:
-		if sampler != nil {
-			executor := sampler.GetExecutor()
-			checkpoint, err = c.history.BindSamplerWriter(ctx, sessionID, caller.ServiceAccountWriter, storage.Sandbox{
-				Namespace: executor.GetTarget().GetNamespace(), Name: executor.GetTarget().GetName(), UID: sandboxUID,
-			}, executionIdentity)
-		} else {
-			checkpoint, err = c.history.BindWriter(ctx, sessionID, caller.ServiceAccountWriter, sandboxUID)
-		}
 	case identityPusher:
 		checkpoint, err = c.history.BindIdentityWriter(ctx, sessionID, caller.writer, caller.sandbox, executionIdentity)
-	case delegatingSamplerPusher:
-		executor := sampler.GetExecutor()
-		checkpoint, err = c.history.BindSamplerWriter(ctx, sessionID, caller.actor, storage.Sandbox{
-			Namespace: executor.GetTarget().GetNamespace(), Name: executor.GetTarget().GetName(), UID: sandboxUID,
-		}, executionIdentity)
 	case serviceSamplerPusher:
 		executor := sampler.GetExecutor()
 		checkpoint, err = c.history.BindServiceWriter(ctx, sessionID, caller.actor, storage.Sandbox{
@@ -350,7 +259,7 @@ func (c *pushCall) run(ctx context.Context, caller pusher) error {
 	}
 	if checkpoint.Seal != nil && announce.IncarnationUid != nil {
 		// An incarnation other than the one that sealed continues the journal; the same one gets the seal back.
-		if err := auth.RevalidateStream(ctx); err != nil {
+		if err := c.revalidateStream(ctx); err != nil {
 			return err
 		}
 		if checkpoint, err = c.history.ReopenSealed(ctx, sessionID, announce.GetIncarnationUid(), announce.GetLastCursor()); err != nil {
@@ -363,7 +272,7 @@ func (c *pushCall) run(ctx context.Context, caller pusher) error {
 	if checkpoint.Seal != nil {
 		return nil
 	}
-	j := &journal{history: c.history, sessionID: sessionID, announce: announce, committed: checkpoint.Cursor, last: checkpoint.Cursor}
+	j := &journal{history: c.history, sessionID: sessionID, announce: announce, committed: checkpoint.Cursor, last: checkpoint.Cursor, revalidate: c.revalidateStream}
 	if err := j.commit(ctx); err != nil {
 		return err
 	}
@@ -376,7 +285,7 @@ func (c *pushCall) receive(ctx context.Context, j *journal) error {
 		frame, timedOut, err := c.frames.next(c.timing.IdleAck)
 		switch {
 		case errors.Is(err, io.EOF):
-			// The writer reconnects and resumes after the last acknowledgement; keep what arrived.
+			// The runner reconnects and resumes after the last acknowledgement; keep what arrived.
 			return j.commit(ctx)
 		case err != nil:
 			return err
@@ -384,7 +293,7 @@ func (c *pushCall) receive(ctx context.Context, j *journal) error {
 			if silent += c.timing.IdleAck; silent >= c.timing.SilenceLimit {
 				return status.Error(codes.Unavailable, "no frame within the silence limit")
 			}
-			if err := auth.RevalidateStream(ctx); err != nil {
+			if err := c.revalidateStream(ctx); err != nil {
 				return err
 			}
 			if err := c.acknowledge(j.committed, false); err != nil {
@@ -399,7 +308,7 @@ func (c *pushCall) receive(ctx context.Context, j *journal) error {
 				if err := c.commitAndAcknowledge(ctx, j); err != nil {
 					return err
 				}
-			} else if err := auth.RevalidateStream(ctx); err != nil {
+			} else if err := c.revalidateStream(ctx); err != nil {
 				return err
 			}
 		case *session_ingresspb.PushFrame_Entry:
@@ -466,12 +375,13 @@ func (c *pushCall) failure(err error) error {
 	}
 }
 
-// journal is one call's view of a Session: what it committed and what the writer may send next.
+// journal is one call's view of a Session: what it committed and what the runner may send next.
 type journal struct {
-	history   *storage.Store
-	sessionID uuid.UUID
-	announce  *sessionpb.Attached
-	committed uint64
+	history    *storage.Store
+	sessionID  uuid.UUID
+	announce   *sessionpb.Attached
+	revalidate func(context.Context) error
+	committed  uint64
 	// last is the cursor of the last entry this call carried, or the committed cursor before it carried any.
 	last uint64
 	// started is set by the call's first entry, which may start anywhere through one past the committed
@@ -497,7 +407,7 @@ func (j *journal) take(entry *eventlogpb.EventEntry, size int) error {
 
 func (j *journal) commit(ctx context.Context) error {
 	if len(j.batch) > 0 {
-		if err := auth.RevalidateStream(ctx); err != nil {
+		if err := j.revalidate(ctx); err != nil {
 			return err
 		}
 		committed, err := j.history.Append(ctx, j.sessionID, j.batch)
@@ -508,7 +418,7 @@ func (j *journal) commit(ctx context.Context) error {
 	}
 	// The announced snapshot is stored once history covers it.
 	if !j.snapshotRecorded && j.committed >= j.announce.GetLastCursor() {
-		if err := auth.RevalidateStream(ctx); err != nil {
+		if err := j.revalidate(ctx); err != nil {
 			return err
 		}
 		if err := j.history.RecordFeedState(ctx, j.sessionID, &historypb.SessionFeedState{Attached: j.announce}); err != nil {
@@ -526,7 +436,7 @@ func (j *journal) seal(ctx context.Context, sealed *sessionpb.Sealed) error {
 	if err := j.commit(ctx); err != nil {
 		return err
 	}
-	if err := auth.RevalidateStream(ctx); err != nil {
+	if err := j.revalidate(ctx); err != nil {
 		return err
 	}
 	return j.history.RecordFeedState(ctx, j.sessionID, &historypb.SessionFeedState{Attached: j.announce, Sealed: sealed})
@@ -565,7 +475,7 @@ func (f *frameReader) stop() { close(f.done) }
 
 func (f *frameReader) ready() bool { return len(f.queue) > 0 }
 
-// next returns the next frame; io.EOF once the writer has closed its side of the call; or timedOut after
+// next returns the next frame; io.EOF once the runner has closed its side of the call; or timedOut after
 // timeout without either.
 func (f *frameReader) next(timeout time.Duration) (frame *session_ingresspb.PushFrame, timedOut bool, err error) {
 	timer := time.NewTimer(timeout)

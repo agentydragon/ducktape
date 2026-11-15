@@ -22,9 +22,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing/spans"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
-	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
@@ -45,8 +46,7 @@ const callDeadline = 30 * time.Second
 
 var (
 	kube *kubeapiserver.Server
-	// readerToken proves the reader's ServiceAccount and writerToken a Sandbox's, each for both the
-	// read API's audience and the ingress's.
+	// These valid legacy bearer tokens are used only for rejection checks.
 	readerToken, writerToken string
 )
 
@@ -80,83 +80,22 @@ type running struct {
 	reads      historypb.HistoryServiceClient
 	health     healthpb.HealthClient
 	ingress    session_ingresspb.SessionJournalIngressClient
+	runner     *identitypb.Identity
 	stop       func() error
 }
 
 // start serves with settings for the test database; tune adjusts the rest.
 func start(t *testing.T, tune func(*config)) running {
 	t.Helper()
-	c := defaultConfig()
-	c.DatabaseURL = integrationDatabase.URL
-	c.ReaderAccounts = []auth.Account{{Namespace: "test-reader-namespace", Name: "test-reader"}}
-	c.TokenAudience, c.Ingress.TokenAudience = "test-history-service", "test-runner-ingress"
-	c.RPC.Auth = []listener.Authentication{&listener.KubernetesBearerAuth{Audiences: []string{c.TokenAudience, c.Ingress.TokenAudience}}}
-	// Keep bearer-only Push namespace-scoped: the journal test admits a writer; the
-	// caller-contract test rejects a reader.
-	c.Ingress.WriterNamespaces = []string{"test-sandbox-namespace"}
-	// The fold waits for a commit's wakeup rather than for its next cycle.
-	c.FoldIntervalSeconds = 3600
-	if tune != nil {
-		tune(&c)
-	}
-	listen := func() net.Listener {
-		listener, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatal(err)
-		}
-		return listener
-	}
-	readsListener := listen()
-	ctx, cancel := context.WithCancel(t.Context())
-	served := make(chan error, 1)
-	go func() {
-		served <- serve(ctx, c, kube.Clientset, readsListener)
-	}()
-	var stopped bool
-	stop := func() error {
-		if stopped {
-			return nil
-		}
-		stopped = true
-		cancel()
-		select {
-		case err := <-served:
-			return err
-		case <-time.After(callDeadline):
-			return errors.New("the service did not stop")
-		}
-	}
-	t.Cleanup(func() { _ = stop() })
-	dial := func(socket net.Listener) *grpc.ClientConn {
-		security, err := (*peertls.ClientTLS)(nil).Credentials()
-		for _, method := range c.RPC.Auth {
-			if spiffe, ok := method.(*listener.SPIFFEAuth); ok {
-				security, err = (&peertls.ClientTLS{CAFile: spiffe.CAFile, ServerURI: peertls.HistoryIngressURI}).Credentials()
-			}
-		}
-		if err != nil {
-			t.Fatal(err)
-		}
-		connection, err := grpc.NewClient(socket.Addr().String(), grpc.WithTransportCredentials(security))
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { connection.Close() })
-		return connection
-	}
-	readsConnection := dial(readsListener)
-	return running{
-		rpcAddress: readsListener.Addr().String(),
-		reads:      historypb.NewHistoryServiceClient(readsConnection), health: healthpb.NewHealthClient(readsConnection),
-		ingress: session_ingresspb.NewSessionJournalIngressClient(readsConnection), stop: stop,
-	}
+	return startWithSVIDs(t, peertlstesting.NewCA(t), tune)
 }
 
 func bearing(t *testing.T, token string) context.Context {
 	t.Helper()
+	_ = token
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	t.Cleanup(cancel)
-	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)
+	return ctx
 }
 
 func journalEntry(cursor uint64) *eventlogpb.EventEntry {
@@ -170,12 +109,12 @@ func journalEntry(cursor uint64) *eventlogpb.EventEntry {
 // pushJournal returns once the Session journal's last entry is acknowledged.
 func pushJournal(t *testing.T, service running, sessionID uuid.UUID, entries ...*eventlogpb.EventEntry) {
 	t.Helper()
-	push, err := service.ingress.Push(bearing(t, writerToken))
+	push, err := service.ingress.Push(bearing(t, ""))
 	if err != nil {
 		t.Fatal(err)
 	}
 	frames := []*session_ingresspb.PushFrame{
-		{Frame: &session_ingresspb.PushFrame_Announce{Announce: &sessionpb.Attached{SessionId: sessionID.String()}}},
+		{Frame: &session_ingresspb.PushFrame_Announce{Announce: &sessionpb.Attached{SessionId: sessionID.String(), ExecutionIdentity: service.runner}}},
 	}
 	for _, entry := range entries {
 		frames = append(frames, &session_ingresspb.PushFrame{Frame: &session_ingresspb.PushFrame_Entry{Entry: entry}})
@@ -340,7 +279,8 @@ func TestEachMethodEnforcesItsCallerContract(t *testing.T) {
 	if got := status.Code(err); got != codes.NotFound {
 		t.Errorf("a writer without a matching principal on the read API: %v, want NotFound", got)
 	}
-	push, err := service.ingress.Push(bearing(t, readerToken))
+	pushCtx := metadata.AppendToOutgoingContext(bearing(t, ""), "authorization", "Bearer "+readerToken)
+	push, err := service.ingress.Push(pushCtx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -476,7 +416,7 @@ func TestAListenerThatFailsEndsTheServiceWithItsError(t *testing.T) {
 	closed.Close()
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	defer cancel()
-	if err := serve(ctx, c, kube.Clientset, closed); err == nil || errors.Is(err, context.Canceled) {
+	if err := serve(ctx, c, closed); err == nil || errors.Is(err, context.Canceled) {
 		t.Errorf("serve returned %v, want the listener's error", err)
 	}
 }
@@ -570,6 +510,6 @@ func TestRunServesTheReadAPIAndTheIngressOnOneConfiguredListener(t *testing.T) {
 		return err
 	}
 	if got := status.Code(push(readTarget)); got != codes.Unauthenticated {
-		t.Errorf("Push on the ingress port: %v, want Unauthenticated", got)
+		t.Errorf("Push without an SVID resolver: %v, want Unauthenticated", got)
 	}
 }

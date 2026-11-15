@@ -1,4 +1,4 @@
-// Command history-service accepts Session journals through the ingress (agentplane/docs/runner_control.md § Event
+// Command history-service takes the Session journals runners push (agentplane/docs/runner_control.md § Event
 // ingress), serves retained Session history, and folds it into Threads.
 package main
 
@@ -42,8 +42,6 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -51,7 +49,7 @@ import (
 const (
 	// shutdownGrace bounds how long open calls may finish once the process is told to stop.
 	shutdownGrace = 5 * time.Second
-	// Journal writers heartbeat on an idle call at the rate agentplane/docs/runner_control.md § Event ingress names, so the
+	// A runner heartbeats an idle call at the rate agentplane/docs/runner_control.md § Event ingress names, so the
 	// ingress serves with the protocol's pacing.
 	ingressIdleAck      = 10 * time.Second
 	ingressSilenceLimit = 30 * time.Second
@@ -62,8 +60,7 @@ func kubernetesConfig(c config) (*rest.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Every read and every push is a TokenReview; client-go's default of 5 requests per second (burst 10) would
-	// queue them client-side. API Priority and Fairness bounds the load on the server.
+	// Subject records are read live for each request; don't queue them behind client-go's small default burst.
 	kubeConfig.QPS = -1
 	return kubeConfig, nil
 }
@@ -108,30 +105,9 @@ func openDatabase(ctx context.Context, databaseURL string, connections int) (*sq
 	return db, nil
 }
 
-func readerNamespaces(accounts []auth.Account, servedNamespaces []string, extra ...auth.Account) []string {
-	namespaces := sets.New(servedNamespaces...)
-	for _, account := range accounts {
-		namespaces.Insert(account.Namespace)
-	}
-	for _, account := range extra {
-		if account.Namespace != "" {
-			namespaces.Insert(account.Namespace)
-		}
-	}
-	return sets.List(namespaces)
-}
-
-// run serves on the configured addresses, authenticating callers with the cluster's TokenReview API.
+// run serves on the configured addresses, authenticating workload certificates against live Kubernetes records.
 func run(ctx context.Context, c config) error {
 	if err := migrate.Run(ctx, c.DatabaseURL, migrations.Up, migrate.WithMigrationTimeout(seconds(c.MigrationTimeoutSeconds))); err != nil {
-		return err
-	}
-	kubeConfig, err := kubernetesConfig(c)
-	if err != nil {
-		return err
-	}
-	kube, err := kubernetes.NewForConfig(kubeConfig)
-	if err != nil {
 		return err
 	}
 	rpcListener, err := netlistener.Open(c.RPC.ListenAddress)
@@ -139,31 +115,12 @@ func run(ctx context.Context, c config) error {
 		return err
 	}
 	defer rpcListener.Close()
-	return serve(ctx, c, kube, rpcListener)
+	return serve(ctx, c, rpcListener)
 }
 
-// serve answers the read API and journal ingress on one native gRPC listener until ctx ends.
-func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener net.Listener) error {
-	var delegatedNamespaces []auth.Account
-	if c.Delegation != nil {
-		delegatedNamespaces = append(delegatedNamespaces, c.Delegation.Actor)
-	}
-	readerAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.TokenAudience,
-		readerNamespaces(c.ReaderAccounts, c.Ingress.WriterNamespaces, delegatedNamespaces...))
-	if err != nil {
-		return err
-	}
-	writerAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.Ingress.TokenAudience, c.Ingress.WriterNamespaces)
-	if err != nil {
-		return err
-	}
-	// A ServiceAccount reads with a bearer only, even when the shared transport also admits Sandbox
-	// certificates; a certificate reads only as the Identity it names.
-	readerListener := listener.Config{
-		ListenAddress: c.RPC.ListenAddress, TLS: c.RPC.TLS,
-		Auth: []listener.Authentication{&listener.KubernetesBearerAuth{Audiences: []string{c.TokenAudience}}},
-	}
-	var svids, readerSVIDs *auth.SVIDResolver
+// serve answers the read API and runner ingress on one native gRPC listener until ctx ends.
+func serve(ctx context.Context, c config, rpcListener net.Listener) error {
+	var svids *auth.SVIDResolver
 	if c.RPC.Has(listener.SPIFFE) {
 		base, err := kubernetesConfig(c)
 		if err != nil {
@@ -174,20 +131,6 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 		if err != nil {
 			return err
 		}
-		readerSVIDs = svids
-		for _, method := range c.RPC.Auth {
-			if spiffe, ok := method.(*listener.SPIFFEAuth); ok {
-				readerListener.Auth = append(readerListener.Auth, spiffe)
-			}
-		}
-	}
-	readerAuth, err = readerAuth.WithListenerAuthentication(readerListener, readerSVIDs)
-	if err != nil {
-		return err
-	}
-	writerAuth, err = writerAuth.WithListenerAuthentication(c.RPC, svids)
-	if err != nil {
-		return err
 	}
 	// Schema initialization precedes the runtime pools; the read API's pool never writes.
 	readURL, err := readOnly(c.DatabaseURL)
@@ -225,9 +168,9 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 	})
 	methods := auth.HealthMethods()
 	// A watch or follow carries no deadline of its own, so the request timeout bounds its admission.
-	historyMethods := rpc.Methods(readerAuth)
+	historyMethods := rpc.Methods(svids)
 	var identityReader auth.IdentityUIDReader
-	if c.Delegation != nil || c.ServiceDelegation != nil || c.Ingress.SamplerIdentityCallers || c.Ingress.SamplerServiceActor != "" {
+	if c.ServiceDelegation != nil || c.Ingress.SamplerServiceActor != "" {
 		if identityReader, err = kubernetesIdentityUIDs(c); err != nil {
 			return err
 		}
@@ -236,15 +179,6 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 		historyMethods, err = historyMethods.WithServiceCallers(rpc.ReadMethods(), c.ReaderServiceCallers)
 		if err != nil {
 			return fmt.Errorf("configure History service readers: %w", err)
-		}
-	}
-	if c.Delegation != nil {
-		delegator := auth.Delegator{
-			Account: c.Delegation.Actor, IdentityCallers: c.Delegation.IdentityCallers,
-		}
-		historyMethods, err = historyMethods.WithDelegation(c.Delegation.Methods, []auth.Delegator{delegator}, identityReader)
-		if err != nil {
-			return fmt.Errorf("configure History delegation: %w", err)
 		}
 	}
 	if c.ServiceDelegation != nil {
@@ -256,17 +190,8 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 		}
 	}
 	maps.Copy(methods, historyMethods)
-	// SPIFFE listeners admit authenticated workload SVIDs and only named sampler accounts by bearer.
-	// A bearer-only listener admits any ServiceAccount the writer resolver accepts in its namespaces.
-	pushRule := auth.AnySubject(writerAuth)
-	if c.RPC.Has(listener.SPIFFE) {
-		pushRule = auth.SVIDOrAccounts(writerAuth, c.Ingress.SamplerAccounts)
-	}
-	if c.Ingress.SamplerIdentityCallers {
-		if pushRule, err = ingress.AllowDelegatingSamplers(pushRule, c.Ingress.SamplerAccounts, identityReader); err != nil {
-			return fmt.Errorf("configure sampler delegation: %w", err)
-		}
-	}
+	// Runner writes resolve a live workload SVID; central sampler writes use their exact service actor.
+	pushRule := auth.AnySubject(svids)
 	if c.Ingress.SamplerServiceActor != "" {
 		if pushRule, err = pushRule.AllowServiceCallers([]string{c.Ingress.SamplerServiceActor}); err != nil {
 			return fmt.Errorf("configure sampler service caller: %w", err)
@@ -294,12 +219,11 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(server, healthServer)
 	session_ingresspb.RegisterSessionJournalIngressServer(server, &ingress.Service{
-		SandboxUIDs: ingress.NewServiceAccountSandboxUIDResolver(kube),
 		History: storage.NewStore(ingressDB, storage.Options{
 			SettleDeltas: c.Ingress.SettleDeltas, CompactDeltas: c.Ingress.CompactDeltas,
 		}),
-		SamplerAccounts: c.Ingress.SamplerAccounts, SamplerServiceActor: c.Ingress.SamplerServiceActor,
-		Timing: ingress.Timing{IdleAck: ingressIdleAck, SilenceLimit: ingressSilenceLimit},
+		SamplerServiceActor: c.Ingress.SamplerServiceActor,
+		Timing:              ingress.Timing{IdleAck: ingressIdleAck, SilenceLimit: ingressSilenceLimit},
 	})
 	changes, unsubscribe, err := hub.Subscribe(storage.ChannelHistory)
 	if err != nil {
