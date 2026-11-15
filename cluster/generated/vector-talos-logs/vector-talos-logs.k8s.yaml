@@ -28,19 +28,23 @@ spec:
       automountServiceAccountToken: false
       containers:
         - args:
-            - --config
-            - /etc/vector/vector.toml
+            - run
+            - /etc/alloy/talos.alloy
+            - --stability.level=experimental
+            - --storage.path=/tmp/alloy
+            - --server.http.listen-addr=127.0.0.1:12347
+            - --disable-reporting
           env:
             - name: NODE_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
-            - name: VECTOR_LOG
-              value: warn
-            - name: VECTOR_DANGEROUSLY_ALLOW_ENV_VAR_INTERPOLATION
-              value: "true"
-          image: docker.io/timberio/vector:0.58.0-distroless-libc@sha256:6c93dfe2554cc7e38316d618961cd657d5271c7a7aa727e0007502b28cb82c2e
-          name: vector
+            - name: TALOS_LISTEN_ADDRESS
+              value: 127.0.0.1:13333
+            - name: LOKI_PUSH_URL
+              value: http://loki-write.loki.svc.cluster.local:3100/loki/api/v1/push
+          image: docker.io/grafana/alloy:v1.21.1@sha256:4039c971193053a84e53dd9ed3e7d4561c069256b024631cd3498a353ed7ece8
+          name: alloy
           readinessProbe:
             initialDelaySeconds: 5
             periodSeconds: 10
@@ -54,8 +58,15 @@ spec:
             requests:
               cpu: 50m
               memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            runAsUser: 473
           volumeMounts:
-            - mountPath: /etc/vector
+            - mountPath: /etc/alloy
               name: config
               readOnly: true
       dnsPolicy: ClusterFirstWithHostNet

@@ -226,7 +226,7 @@ def _network_policy(chart: Chart) -> None:
         metadata=ApiObjectMetadata(name="ingress", namespace=NAME),
         endpoint_selector={"app.kubernetes.io/name": NAME},
         ingress=[
-            # Vector Talos-log receiver → Loki (Talos node logs). The receiver runs in
+            # Alloy Talos-log receiver → Loki (Talos node logs). The receiver runs in
             # hostNetwork so it can bind only 127.0.0.1:13333; Cilium represents it as
             # host on the local node and remote-node after a cross-node service hop.
             IngressRule.from_entities(Entity.HOST, Entity.REMOTE_NODE, ports=(3100,)),

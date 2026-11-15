@@ -1543,21 +1543,6 @@ py_library(
 )
 
 py_library(
-    name = "vector_talos_logs",
-    srcs = ["vector_talos_logs.py"],
-    deps = [
-        ":artifact_generators",
-        ":flux",
-        ":manifest_roots",
-        ":namespaces",
-        "//cluster/cdk8s/monitoring:loki",
-        "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
-        "@pypi//tomli_w",
-    ],
-)
-
-py_library(
     name = "generate_manifests_lib",
     srcs = ["generate_manifests.py"],
     data = [
@@ -1633,7 +1618,6 @@ py_library(
         ":tofu_controller_release",
         ":user_agentydragon",
         ":valkey",
-        ":vector_talos_logs",
         ":volsync",
         ":vpa",
         ":website",
@@ -1760,6 +1744,7 @@ py_library(
         "//cluster/cdk8s/monitoring:rules",
         "//cluster/cdk8s/monitoring:smokeping",
         "//cluster/cdk8s/monitoring:stack",
+        "//cluster/cdk8s/monitoring:talos_logs",
         "//cluster/cdk8s/monitoring:tempo",
         "//cluster/cdk8s/nix_cache:attic",
         "//cluster/cdk8s/nix_cache:flux_kustomizations",

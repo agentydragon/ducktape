@@ -1,4 +1,4 @@
-# Ship Talos service logs off-node to the in-cluster Vector receiver.
+# Ship Talos service logs off-node to the in-cluster Alloy receiver.
 #
 # Talos has no journald; machine.logging.destinations streams newline-delimited JSON to a
 # local endpoint. The vector-talos-logs DaemonSet (cluster/generated/vector-talos-logs/) joins

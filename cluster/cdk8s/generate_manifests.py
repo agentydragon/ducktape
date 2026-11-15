@@ -75,7 +75,6 @@ from cluster.cdk8s import (
     tofu_controller_release,
     user_agentydragon,
     valkey,
-    vector_talos_logs,
     volsync,
     vpa,
     website,
@@ -231,6 +230,7 @@ from cluster.cdk8s.monitoring import (
     rules as monitoring_rules,
     smokeping,
     stack as monitoring_stack,
+    talos_logs,
     tempo,
 )
 from cluster.cdk8s.nix_cache import attic as nix_cache_attic, flux_kustomizations as nix_cache_flux_kustomizations
@@ -1331,16 +1331,16 @@ def generate_manifests(root: Path) -> None:
         valkey_kustomization,
         seaweedfs_operator_kustomization,
     )
-    vector_talos_logs_artifact = artifact("vector-talos-logs", vector_talos_logs.OUTPUT_DIR)
+    talos_logs_artifact = artifact("vector-talos-logs", talos_logs.OUTPUT_DIR)
     flux.flux_kustomization(
         flux_chart,
-        vector_talos_logs.NAME,
+        talos_logs.NAME,
         write_directory(
             root,
-            vector_talos_logs_artifact,
-            vector_talos_logs.chart,
-            namespace=vector_talos_logs.NAMESPACE,
-            config_map_generator=[vector_talos_logs.CONFIG_MAP],
+            talos_logs_artifact,
+            talos_logs.chart,
+            namespace=talos_logs.NAMESPACE,
+            config_map_generator=[talos_logs.CONFIG_MAP],
         ),
         timeout="2m",
     )
@@ -2297,7 +2297,7 @@ def generate_manifests(root: Path) -> None:
             study_casino_artifact,
             talos_cloud_controller_manager_artifact,
             user_agentydragon_artifact,
-            vector_talos_logs_artifact,
+            talos_logs_artifact,
             vpa_artifact,
             website_artifact,
             home_switch_module,

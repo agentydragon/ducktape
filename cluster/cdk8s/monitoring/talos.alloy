@@ -1,0 +1,51 @@
+logging {
+  level = "warn"
+}
+
+// Talos sends newline-delimited JSON, not syslog. tcplog keeps connections open
+// while idle; loki.source.syslog's idle timeout can lose events with Talos's sender.
+otelcol.receiver.tcplog "talos" {
+  listen_address = sys.env("TALOS_LISTEN_ADDRESS")
+  output {
+    logs = [otelcol.processor.attributes.talos.input]
+  }
+}
+
+otelcol.processor.attributes "talos" {
+  // Keep the original JSON body rather than wrapping it in an OTLP envelope.
+  action {
+    key    = "loki.format"
+    action = "insert"
+    value  = "raw"
+  }
+  output {
+    logs = [otelcol.exporter.loki.talos.input]
+  }
+}
+
+otelcol.exporter.loki "talos" {
+  forward_to = [loki.relabel.talos.receiver]
+}
+
+loki.relabel "talos" {
+  rule {
+    target_label = "job"
+    replacement  = "talos-node"
+  }
+  rule {
+    target_label = "node"
+    replacement  = sys.env("NODE_NAME")
+  }
+  rule {
+    action = "labelkeep"
+    regex  = "job|node"
+  }
+  forward_to = [loki.write.talos.receiver]
+}
+
+loki.write "talos" {
+  endpoint {
+    url                 = sys.env("LOKI_PUSH_URL")
+    max_backoff_retries = 0
+  }
+}
