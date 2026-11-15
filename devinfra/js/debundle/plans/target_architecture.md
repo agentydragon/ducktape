@@ -208,10 +208,12 @@ spec's emitted order, with only the premises the spec declares:
   the TypeScript enum form, a formatter called with literals, an imported
   namespace-export helper, and a handful of local callees that need a declared
   premise.
-- **Soundness evidence so far.** It refuses all 129 Node-divergent fixtures
-  and all 79 orders the current engine refuses in the e2e suite; every
-  acceptance rule added has a refused sibling that Node shows order-dependent.
-  It has not had an independent review, and it runs only as a report.
+- **Soundness evidence so far.** Existing fixtures pass, but the
+  [independent audit](../debug/2026_11_10_statement_class_independent_audit.md)
+  found eleven accepted reorderings with divergent Node behavior, including
+  default-export cells and observable abrupt completion in the base classifier.
+  Optional intrinsic, enum and helper rules have further counterexamples.
+  It remains report-only; precision and cost results do not establish soundness.
 - **Preconditions it relies on.** No top-level `await` in the program; no
   direct `eval` or `with` in a split chunk; every static import resolves
   (unseen dynamically imported chunks run in a later job); a chunk on a
