@@ -260,8 +260,8 @@ async def central_stack(
             reader_token = directory / "history-reader-token"
             reader_token.write_text(await _bound_token(cluster, core, caller_account, caller, HISTORY_READER_AUDIENCE))
             sandbox = "systest-central-" + uuid4().hex[:8]
-            target = await cleanup.enter_async_context(_owned_native_sandbox(cluster, sandbox, template))
-            sandbox, uid = target.name, target.uid
+            sandbox_target = await cleanup.enter_async_context(_owned_native_sandbox(cluster, sandbox, template))
+            sandbox, uid = sandbox_target.name, sandbox_target.uid
             with tracer.start_as_current_span(
                 "system_test.central_sampler.sandbox.ready",
                 attributes={"sandbox.name": sandbox, "sandbox.uid": uid, "sandbox.template": template},
@@ -269,7 +269,7 @@ async def central_stack(
                 await cluster.kubectl("wait", f"sandbox/{sandbox}", "--for=condition=Ready=True", "--timeout=300s")
             ready = json.loads(await cluster.kubectl("get", "sandbox", sandbox, "-o", "json"))
             incarnation = ready["status"]["incarnation"]["uid"]
-            target = await _address(cluster, core, SERVICE, 8080)
+            sampler_target = await _address(cluster, core, SERVICE, 8080)
             sampler_pod = await _pod(cluster, core, SERVICE)
             stack.push_async_callback(capture_sampler_diagnostics, cluster, core)
             gateway_pod = await _pod(cluster, core, "runner-gateway")
@@ -292,7 +292,7 @@ async def central_stack(
                 owner=ServiceAccount(namespace=cluster.namespace, name=sandbox),
                 target=EnvironmentTarget(namespace=cluster.namespace, name=sandbox, uid=uid),
             )
-            sampler_channel = await stack.enter_async_context(dial(target))
+            sampler_channel = await stack.enter_async_context(dial(sampler_target))
             dispatcher_channel = await stack.enter_async_context(
                 dial(
                     await _address(cluster, core, "session-dispatcher", 8080),

@@ -364,6 +364,7 @@ py_library(
     name = "sandbox",
     srcs = ["sandbox.py"],
     deps = [
+        ":cleanup_diagnostics",
         ":cluster",
         ":identity",
         ":sandbox_ownership",

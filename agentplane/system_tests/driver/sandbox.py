@@ -20,6 +20,7 @@ from agentplane.app.testing.client import Client
 from agentplane.crd_group import GROUP
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import identity_pb2
+from agentplane.system_tests.driver.cleanup_diagnostics import cleanup_without_masking
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.identity import (
     LAUNCH_DEFAULT_POLICY_SETS,
@@ -65,25 +66,40 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
                         readiness_error.add_note(f"Passive host QEMU readiness snapshot failed: {diagnostic_error!r}")
                 await suspend_and_delete(cluster, client, target.name, target.uid)
 
-            try:
-                await release_owned_sandboxes(owned, release_one)
-            except BaseException as cleanup_error:
-                if isinstance(exc, asyncio.CancelledError):
+            if isinstance(exc, asyncio.CancelledError):
+                try:
+                    await release_owned_sandboxes(owned, release_one)
+                except BaseException as cleanup_error:
                     if cleanup_error is not exc:
                         raise exc from cleanup_error
                     raise
-                raise
+            else:
+                await cleanup_without_masking(exc, lambda: release_owned_sandboxes(owned, release_one))
             return False
 
         launched_identities: list[ScenarioIdentity] = []
 
-        async def delete_launched_identities() -> None:
+        async def delete_launched_identities(
+            _exc_type: type[BaseException] | None, exc: BaseException | None, _traceback: TracebackType | None
+        ) -> bool:
+            cleanup_errors: list[Exception] = []
             for identity in reversed(launched_identities):
-                await delete_scenario_identity(cluster, identity)
+                try:
+                    await delete_scenario_identity(cluster, identity)
+                except Exception as cleanup_error:
+                    if exc is None:
+                        cleanup_errors.append(cleanup_error)
+                    else:
+                        exc.add_note(f"Scenario Identity cleanup also failed ({type(cleanup_error).__name__}).")
+            if cleanup_errors:
+                if len(cleanup_errors) == 1:
+                    raise cleanup_errors[0]
+                raise ExceptionGroup("Scenario Identity cleanup failed", cleanup_errors)
+            return False
 
         # Run after every Sandbox is released so its WorkloadCredential no longer references the
         # Identity. Deletion uses the exact Identity UID and retries while controller-owned refs clear.
-        cleanup.push_async_callback(delete_launched_identities)
+        cleanup.push_async_exit(delete_launched_identities)
         cleanup.push_async_exit(release_owned)
 
         async def create(
