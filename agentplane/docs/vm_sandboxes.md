@@ -79,7 +79,9 @@ lost.
   data but no signature, or with only a partition table, is formatted too; the layouts never produce
   one, and a zero-scan helper that refused it was dropped for that.
 - Stopping and starting a VM creates a new VMI on the same VM and disks. The VM supports neither live
-  migration nor RAM suspension.
+  migration nor RAM suspension. Adding live migration needs more than KubeVirt: the Runtime is bound
+  to its virt-launcher Pod UID, and a migration that kept the Runtime under a new launcher Pod would
+  need a trusted migration authority to transfer that binding; a new Gateway watch is not one.
 - Commands reach a VM Sandbox through the runner's private gRPC server. There is no guest exec path; `virt-launcher`
   is not the guest. The operator console is output-only: the integration app attaches the VMI's serial
   console with its own `virtualmachineinstances/console` permission and relays it to a logged-in operator.
