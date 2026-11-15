@@ -50,12 +50,6 @@ def metrics(namespace: str) -> ServiceRef:
     )
 
 
-def service(namespace: str) -> ServiceRef:
-    return ServiceRef(
-        name=NAME, port=Port(name="grpc", number=8082), pods=Pods(namespace=namespace, labels=tuple(_LABELS.items()))
-    )
-
-
 def tls_service(namespace: str) -> ServiceRef:
     return ServiceRef(
         name=NAME,
@@ -89,7 +83,6 @@ class PolicyController(Construct):
         self.env = env
         namespace = env.namespace
         endpoint = metrics(namespace)
-        grpc_service = service(namespace)
         grpc_tls_service = tls_service(namespace)
         settings = Settings(
             policy_namespace=namespace,
@@ -97,7 +90,6 @@ class PolicyController(Construct):
             accounts_namespace=accounts_namespace,
             metrics_bind_address=f":{endpoint.port.number}",
             health_probe_bind_address=f":{_HEALTH_PORT}",
-            grpc_bind_address=f":{grpc_service.pod_port}",
             grpc_tls=ServerTLSListener(
                 listen=f":{grpc_tls_service.pod_port}",
                 cert_file=Path(workload_tls.CERT_FILE),
@@ -123,7 +115,7 @@ class PolicyController(Construct):
         workload = add_service_workload(
             self,
             env,
-            serves=[endpoint, grpc_service, grpc_tls_service],
+            serves=[endpoint, grpc_tls_service],
             container="policy-controller",
             image=f"{_IMAGE}:unset",
             extra_ports=[Port(name="health", number=_HEALTH_PORT).container_port()],
@@ -160,9 +152,7 @@ class PolicyController(Construct):
             endpoint_selector=endpoint.pods.selector,
             ingress=[
                 cilium.SCRAPERS.admit(endpoint.pod_port),
-                Pods(namespace=namespace, labels=()).admit(
-                    service(namespace).pod_port, tls_service(namespace).pod_port
-                ),
+                Pods(namespace=namespace, labels=()).admit(tls_service(namespace).pod_port),
             ],
             egress=[cilium.dns_egress(), EgressRule.to_entities(Entity.KUBE_APISERVER)],
         )

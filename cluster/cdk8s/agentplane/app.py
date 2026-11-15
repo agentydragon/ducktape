@@ -35,7 +35,6 @@ from agentplane.net.peertls.config import (
     HISTORY_SERVICE_URI,
     MCP_EDGE_URI,
     NOTIFICATIONS_URI,
-    POLICY_CONTROLLER_URI,
     SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
 )
@@ -140,7 +139,6 @@ class App(Construct):
         settings.notifications_token_file = None
         settings.actions_tls = workload_tls.service_client_tls(ACTIONS_URI, client_uri=APP_URI)
         settings.connection_service_tls = workload_tls.service_client_tls(MCP_EDGE_URI, client_uri=APP_URI)
-        settings.policy_service_tls = workload_tls.service_client_tls(POLICY_CONTROLLER_URI, client_uri=APP_URI)
         settings.policy_service_token_file = None
         config = SettingsFile(
             self,

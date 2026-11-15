@@ -218,7 +218,6 @@ func defaultConfig() Config {
 		NotificationsRequestTimeoutSeconds:  5,
 		RunnerGatewayTokenFile:              "/var/run/secrets/agentplane-runner-gateway/token",
 		SessionDispatcherTokenFile:          "/var/run/secrets/agentplane-session-dispatcher/token",
-		PolicyServiceTarget:                 "policy-controller:8082",
 		PolicyServiceTokenFile:              "/var/run/secrets/agentplane-policy/token",
 		SessionDispatcherRequestTimeoutSecs: 20,
 		HistoryServiceTokenFile:             "/var/run/secrets/agentplane-history-service/token",
@@ -418,6 +417,9 @@ func (c Config) validate() error {
 		if strings.TrimSpace(value) == "" {
 			return fmt.Errorf("%s is required", name)
 		}
+	}
+	if c.PolicyServiceTLS == nil {
+		return errors.New("policy_service_tls is required")
 	}
 	for _, caller := range []struct {
 		name, tokenFile, serverURI string

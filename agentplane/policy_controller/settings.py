@@ -31,10 +31,7 @@ class Settings(BaseModel):
     health_probe_bind_address: str = Field(
         default=":8081", min_length=1, description="Where /healthz and /readyz are served."
     )
-    grpc_bind_address: str = Field(default=":8082", min_length=1, description="PolicyService gRPC listener.")
-    grpc_tls: ServerTLSListener | None = Field(
-        default=None, description="Optional server-authenticated TLS listener for PolicyService."
-    )
+    grpc_tls: ServerTLSListener = Field(description="Server-authenticated TLS listener for PolicyService.")
     grpc_audience: str = Field(default="agentplane-policy", min_length=1, description="PolicyService token audience.")
     reader_accounts: Set[str] = Field(
         default_factory=frozenset, description="Accounts allowed to read all policy resources."
@@ -75,9 +72,7 @@ class Settings(BaseModel):
 
     @model_validator(mode="after")
     def service_client_trust(self) -> Self:
-        if (self.reader_services or self.writer_services) and (
-            self.grpc_tls is None or self.grpc_tls.client_ca_file is None
-        ):
+        if (self.reader_services or self.writer_services) and self.grpc_tls.client_ca_file is None:
             raise ValueError("PolicyService service allowlists require grpc_tls.client_ca_file")
         return self
 

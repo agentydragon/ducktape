@@ -138,8 +138,8 @@ class Settings(BaseModel):
     history_service_tls: ClientTLS | None = None
     notifications_tls: ClientTLS | None = None
     actions_tls: ClientTLS | None = None
-    policy_service_tls: ClientTLS | None = Field(
-        default=None, description="Verify the Policy Controller server SVID for PolicyService gRPC calls."
+    policy_service_tls: ClientTLS = Field(
+        description="Verify the Policy Controller server SVID for PolicyService gRPC calls."
     )
 
     sandbox_namespace: str = Field(
@@ -157,7 +157,7 @@ class Settings(BaseModel):
         default=None,
         description="Optional separate Sandbox Controller EnvironmentService endpoint; omission uses the Session Dispatcher peer.",
     )
-    policy_service_target: str = Field(default="policy-controller:8082", min_length=1)
+    policy_service_target: str = Field(min_length=1)
     policy_service_token_file: Path | None = Path("/var/run/secrets/agentplane-policy/token")
     runner_gateway_control_target: str = Field(
         min_length=1,

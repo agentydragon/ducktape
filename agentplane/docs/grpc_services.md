@@ -54,11 +54,10 @@ follows it; code that differs converges on it.
 ## Authentication
 
 - Backend caller authentication is independent of transport. App → Policy Service and Dispatcher →
-  Central Sampler continue to send their rotating ServiceAccount bearer, while verified server-only TLS validates
-  the destination workload-CA SVID, exact service URI and `serverAuth` usage. These clients send no client
-  certificate. Other routes remain on their configured transport until their own cutover; the approved first-party
-  target authenticates callers with service SVID mTLS. A nil `ClientTLS` is an explicit plaintext setting for legacy
-  and test routes; an invalid configured TLS value fails without downgrading.
+  Central Sampler use service SVIDs over mutual TLS, verifying the destination workload-CA SVID, exact service URI
+  and `serverAuth` usage. Their legacy bearer admission remains configured for the separate auth cleanup. Other
+  routes retain their configured caller and transport until their own cutover. A nil `ClientTLS` is an explicit
+  plaintext setting for legacy and test routes; an invalid configured TLS value fails without downgrading.
 - Sandbox workload listeners authenticate the Runtime SVID with the shared
   `peertls` server credentials. `identity/auth.SVIDResolver` resolves
   the verified peer against the live Sandbox and its accepted runner credential, yielding the
@@ -146,11 +145,11 @@ edge protocols.
   to the gateway replica holding a Sandbox's runner: the client takes that target and opens and
   closes the channel around the call.
 - The stub is annotated `<Service>AsyncStub` and built as `<Service>Stub(channel)`.
-- Go bearer clients with TLS configured use `agentplane/grpc/bearer.Dial` and `peertls.ClientTLS`; the App's generated
-  Policy facade uses `facade.NewHandlerWithOptions` with the same server-only setting. Those channels verify the
-  configured service SVID and keep bearer authentication. Other Go backend routes retain their explicit configured
-  transport; the approved first-party target is mutual TLS with service SVIDs. Runtime connections that carry its
-  SVID use verified TLS. Python callers that use `agentplane/grpc/calls.py` can open a local plaintext channel to the
+- Go clients use `agentplane/grpc/bearer.Dial` with `peertls.ClientTLS` where configured; its token file is optional
+  when the caller uses an SVID. The App's generated Policy facade uses `facade.NewHandlerWithOptions` with its
+  configured TLS and optional caller credential. Other Go backend routes retain their explicit configured
+  transport. Runtime connections that carry an SVID use verified TLS. Python callers that use
+  `agentplane/grpc/calls.py` can open a local plaintext channel to the
   credential-holding sidecar; service routes from that sidecar use verified TLS through CONNECT. The sidecar's
   explicit telemetry route to Alloy is plaintext. A client that receives Session Events adds
   `LARGE_EVENT_RECEIVE_OPTIONS` (`agentplane/grpc/options.py`).
@@ -181,8 +180,9 @@ Everything that holds a connection is closed by a context manager, never by a ha
 
 - `grpc.aio.server()`, register servicers, then serve through the shared context manager;
   `stop(grace=5)` on shutdown. A second gRPC listener is used when a route needs its own transport or network
-  boundary. Policy Controller and Central Sampler keep plaintext listeners alongside their backend TLS listeners
-  during the TLS cutover; Runner Gateway has a separate runner-facing listener behind its network fence.
+  boundary. Central Sampler and MCP Edge retain plaintext listeners during their staged listener removal; Policy
+  Controller serves PolicyService only over TLS. Runner Gateway has a separate runner-facing listener behind its
+  network fence.
 - A Go server normally serves gRPC with `grpc.Server.Serve`. LLM ingress uses `grpc.Server.ServeHTTP`
   on its shared TLS HTTP/2 listener alongside provider-native inference HTTP; both protocols retain
   service-owned authentication. Servers stop with [`graceful.Stop`](../grpc/graceful/stop.go): calls in flight finish until the shutdown deadline. HTTP

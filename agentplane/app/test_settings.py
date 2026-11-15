@@ -23,8 +23,8 @@ from agentplane.net.peertls.config import (
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
 
 
-def _settings(**updates: object) -> Settings:
-    fields: dict[str, object] = {
+def _settings_fields() -> dict[str, object]:
+    return {
         "models": ModelCatalog(models=[], harnesses={}),
         "egress_admin_url": "http://egress.test:8080",
         "connection_service_url": "http://mcp-edge.test:8080",
@@ -41,8 +41,16 @@ def _settings(**updates: object) -> Settings:
         "session_dispatcher_target": "session-dispatcher.test:8080",
         "runner_gateway_control_target": "runner-gateway.{namespace}.svc:8080",
         "history_service_target": "history.test:8080",
+        "policy_service_target": "policy-controller.test:8083",
+        "policy_service_tls": ClientTLS(
+            ca_file=Path("/var/run/agentplane/trust/ca.pem"), server_uri=POLICY_CONTROLLER_URI
+        ),
         "notifications_url": "http://notifications.test:8080",
     }
+
+
+def _settings(**updates: object) -> Settings:
+    fields = _settings_fields()
     fields.update(updates)
     return Settings.model_validate(fields)
 
@@ -55,6 +63,18 @@ def _svid(server_uri: str) -> ClientTLS:
         key_file=Path("/var/run/agentplane/app/tls.key"),
         client_uri=APP_URI,
     )
+
+
+def test_policy_service_requires_tls_and_an_explicit_target() -> None:
+    fields = _settings_fields()
+    del fields["policy_service_tls"]
+    with pytest.raises(ValidationError, match="policy_service_tls"):
+        Settings.model_validate(fields)
+
+    fields = _settings_fields()
+    del fields["policy_service_target"]
+    with pytest.raises(ValidationError, match="policy_service_target"):
+        Settings.model_validate(fields)
 
 
 def test_service_svids_clear_only_omitted_legacy_token_defaults() -> None:

@@ -39,6 +39,10 @@ not override it. Locally, write `config.yaml`:
 policy_namespace: agentplane-staging
 subject_namespaces: [agentplane-staging]
 accounts_namespace: agentplane-staging-k8s-accounts
+grpc_tls:
+  listen: ":8083"
+  cert_file: /run/agentplane/workload-tls/tls.crt
+  key_file: /run/agentplane/workload-tls/tls.key
 ```
 
 ```bash
@@ -77,10 +81,11 @@ Lease in the policy namespace.
 - Most tests drive `Reconcile` directly, against controller-runtime's fake client or a real API
   server; only role creation is tested through the controller's watches.
 
-The same binary also serves `PolicyService` gRPC on `:8082` using TokenReview with the
-`agentplane-policy` audience. Its read watches run on every replica independently of reconciliation
+The same binary serves `PolicyService` over verified TLS on `:8083`. The App verifies the
+Policy Controller server SVID. Its read watches run on every replica independently of reconciliation
 leader election. Operator grant, revoke and Identity delete calls admit `writer_accounts` separately
 from the workload read/watch resolver. `reader_services` admits exact service SPIFFE IDs to the
 policy read methods; `writer_services` admits exact service SPIFFE IDs only to the write methods.
 Both service allowlists require `grpc_tls.client_ca_file`, and a service identity must be explicitly
-listed for each role it needs. See the [service contract](SPEC.md#policy-resource-watches).
+listed for each role it needs. The `agentplane-policy` bearer audience and TokenReview admission remain
+available to configured callers. See the [service contract](SPEC.md#policy-resource-watches).
