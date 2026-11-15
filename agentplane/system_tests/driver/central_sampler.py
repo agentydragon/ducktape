@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from types import TracebackType
 from uuid import uuid4
 
 import grpc
@@ -21,8 +22,14 @@ from agentplane.proto.identity_pb2 import EnvironmentTarget, SandboxDestination,
 from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
 from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
+from agentplane.system_tests.driver.cleanup_diagnostics import cleanup_without_masking
 from agentplane.system_tests.driver.cluster import Cluster
-from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS, scenario_identity
+from agentplane.system_tests.driver.identity import (
+    LAUNCH_DEFAULT_POLICY_SETS,
+    create_scenario_identity,
+    delete_scenario_identity,
+)
+from agentplane.system_tests.driver.sandbox_ownership import release_owned_sandboxes, remember_sandbox
 from agentplane.system_tests.driver.tls import service_credentials
 from agentplane.system_tests.driver.tracing import tracer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -117,6 +124,53 @@ async def _delete_sandbox(cluster: Cluster, name: str, uid: str) -> None:
         await cluster.kubectl("wait", f"sandbox/{name}", "--for=delete", "--timeout=120s")
 
 
+@asynccontextmanager
+async def _owned_native_sandbox(cluster: Cluster, name: str, template: str) -> AsyncIterator[EnvironmentTarget]:
+    """Own the acknowledged native Sandbox before readiness work and release its Identity last."""
+    async with AsyncExitStack() as cleanup:
+        identity = await create_scenario_identity(cluster, name, list(LAUNCH_DEFAULT_POLICY_SETS))
+        created = json.loads(
+            await cluster.kubectl(
+                "create",
+                "-f",
+                "-",
+                "-o",
+                "json",
+                body={
+                    "apiVersion": SANDBOX_API_VERSION,
+                    "kind": "Sandbox",
+                    "metadata": {"name": name, "namespace": cluster.namespace},
+                    "spec": {"template": template, "running": True, "identity": {"name": identity["name"]}},
+                },
+            )
+        )
+        metadata = created["metadata"]
+        target = EnvironmentTarget(namespace=metadata["namespace"], name=metadata["name"], uid=metadata["uid"])
+        owned: list[EnvironmentTarget] = []
+        remember_sandbox(owned, target)
+
+        async def release(target: EnvironmentTarget) -> None:
+            await _delete_sandbox(cluster, target.name, target.uid)
+
+        async def release_owned(
+            _exc_type: type[BaseException] | None, exc: BaseException | None, _traceback: TracebackType | None
+        ) -> bool:
+            await cleanup_without_masking(exc, lambda: release_owned_sandboxes(owned, release))
+            return False
+
+        async def delete_identity(
+            _exc_type: type[BaseException] | None, exc: BaseException | None, _traceback: TracebackType | None
+        ) -> bool:
+            await cleanup_without_masking(exc, lambda: delete_scenario_identity(cluster, identity))
+            return False
+
+        # Register only after create returned the exact Sandbox UID. An unknown create outcome
+        # leaves the Identity for recovery because that Sandbox may already reference it.
+        cleanup.push_async_exit(delete_identity)
+        cleanup.push_async_exit(release_owned)
+        yield target
+
+
 async def _diagnostics(cluster: Cluster) -> None:
     with tracer.start_as_current_span(
         "system_test.central_sampler.diagnostics", record_exception=False, set_status_on_exception=False
@@ -206,27 +260,8 @@ async def central_stack(
             reader_token = directory / "history-reader-token"
             reader_token.write_text(await _bound_token(cluster, core, caller_account, caller, HISTORY_READER_AUDIENCE))
             sandbox = "systest-central-" + uuid4().hex[:8]
-            # Entered before the Sandbox's cleanup, so it is deleted after the Sandbox that acts as it.
-            identity = await cleanup.enter_async_context(
-                scenario_identity(cluster, sandbox, list(LAUNCH_DEFAULT_POLICY_SETS))
-            )
-            created = json.loads(
-                await cluster.kubectl(
-                    "create",
-                    "-f",
-                    "-",
-                    "-o",
-                    "json",
-                    body={
-                        "apiVersion": SANDBOX_API_VERSION,
-                        "kind": "Sandbox",
-                        "metadata": {"name": sandbox, "namespace": cluster.namespace},
-                        "spec": {"template": template, "running": True, "identity": {"name": identity}},
-                    },
-                )
-            )
-            uid = created["metadata"]["uid"]
-            cleanup.push_async_callback(_delete_sandbox, cluster, sandbox, uid)
+            target = await cleanup.enter_async_context(_owned_native_sandbox(cluster, sandbox, template))
+            sandbox, uid = target.name, target.uid
             with tracer.start_as_current_span(
                 "system_test.central_sampler.sandbox.ready",
                 attributes={"sandbox.name": sandbox, "sandbox.uid": uid, "sandbox.template": template},
