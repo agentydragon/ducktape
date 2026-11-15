@@ -246,7 +246,7 @@ Authentik route work; these tighten them (operator-approved as follow-ups):
 
 ## Ship node logs to Loki (not just pod logs)
 
-Talos service and kernel logs are streamed to Loki through Vector; NixOS node journals
+Talos service and kernel logs are streamed to Loki through Alloy; NixOS node journals
 are shipped by `alloy-journal`. This supersedes the earlier claim that guest-node
 kernel/service messages stay local. The remaining host-log gap is Atlas's Proxmox/PVE
 journal, tracked below. Talos boot-id/source attribution remains open in
