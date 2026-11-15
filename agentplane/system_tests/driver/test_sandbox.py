@@ -444,6 +444,44 @@ async def test_scope_preserves_multiple_cleanup_failures(cluster: Cluster, monke
     }
 
 
+async def test_scope_keeps_scenario_error_when_sandbox_and_identity_cleanup_fail(
+    cluster: Cluster, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = create_autospec(Client, instance=True)
+    created = _create_targets(client, ("owned",))["owned"]
+    monkeypatch.setattr(sandbox, "wait_until_running", _ready_for_targets({"owned": created}))
+    scenario_error = AssertionError("scenario failure")
+    events: list[str] = []
+
+    async def fail_sandbox_cleanup(_cluster: Cluster, _client: Client, name: str, uid: object) -> None:
+        assert (name, uid) == (created.name, created.uid)
+        events.append("sandbox cleanup")
+        raise RuntimeError("sandbox cleanup failure")
+
+    async def fail_identity_cleanup(_cluster: Cluster, identity: dict[str, str]) -> None:
+        assert identity["name"] == "owned"
+        events.append("identity cleanup")
+        raise RuntimeError("identity cleanup failure")
+
+    monkeypatch.setattr(sandbox, "suspend_and_delete", fail_sandbox_cleanup)
+    monkeypatch.setattr(sandbox, "delete_scenario_identity", fail_identity_cleanup)
+
+    async def use_scope() -> None:
+        async with sandbox.sandbox_scope(cluster, client, trace.get_tracer(__name__)) as create:
+            await create("owned")
+            raise scenario_error
+
+    with pytest.raises(AssertionError, match="scenario failure") as raised:
+        await use_scope()
+
+    assert raised.value is scenario_error
+    assert raised.value.__notes__ == [
+        "Sandbox cleanup also failed (RuntimeError).",
+        "Scenario Identity cleanup also failed (RuntimeError).",
+    ]
+    assert events == ["sandbox cleanup", "identity cleanup"]
+
+
 async def test_scope_cleans_failed_boot_and_preserves_its_error(
     cluster: Cluster, monkeypatch: pytest.MonkeyPatch
 ) -> None:
