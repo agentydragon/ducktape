@@ -6,7 +6,7 @@ by the integration app at runtime and are never checked in here.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from agentplane_policybinding_crds.works.allegedly.agentplane import (
     PolicyBinding,
@@ -175,6 +175,23 @@ def _policy_set(scope: Construct, id: str, *, metadata: ApiObjectMetadata, rules
     policy_set_object = PolicySet(scope, id, metadata=metadata, spec=PolicySetSpec(rules=rules))
     for rule in policy_set_object.to_json()["spec"]["rules"]:
         parse_action_rule(rule)
+
+
+def _exact_actions_policy_set(
+    scope: Construct,
+    name: str,
+    *,
+    description: str,
+    actions: Mapping[str, Sequence[str]],
+    additional_rules: Sequence[PolicySetSpecRules] = (),
+) -> None:
+    """Create a named staging PolicySet for an exact Action allowlist."""
+    _policy_set(
+        scope,
+        name,
+        metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE, annotations={"description": description}),
+        rules=[AutoApproveIf.exact_actions(actions=actions), *additional_rules],
+    )
 
 
 def _account_binding(
@@ -428,32 +445,20 @@ def add_staging_action_policies(
         automount_token=False,
     )
 
-    _policy_set(
+    _exact_actions_policy_set(
         scope,
-        "github-reads",
-        metadata=ApiObjectMetadata(
-            name=GITHUB_READS_SET,
-            namespace=_NAMESPACE,
-            annotations={
-                "description": "The reviewed read-only subset of GitHub MCP's default catalog; every other GitHub Action stays on the human path."
-            },
-        ),
-        rules=[AutoApproveIf.exact_actions(actions={"github": _GITHUB_READS_ACTIONS})],
+        GITHUB_READS_SET,
+        description="The reviewed read-only subset of GitHub MCP's default catalog; every other GitHub Action stays on the human path.",
+        actions={"github": _GITHUB_READS_ACTIONS},
     )
     # `get_me` returns only the authenticated caller's own GitHub identity and has no
     # repository or mutation surface. Kept separate so a caller can be granted the
     # identity read without widening repository-scoped GitHub sets.
-    _policy_set(
+    _exact_actions_policy_set(
         scope,
-        "github-identity-reads",
-        metadata=ApiObjectMetadata(
-            name=GITHUB_IDENTITY_READS_SET,
-            namespace=_NAMESPACE,
-            annotations={
-                "description": "The caller's own GitHub identity read, with no repository or mutation surface."
-            },
-        ),
-        rules=[AutoApproveIf.exact_actions(actions={"github": ["get_me"]})],
+        GITHUB_IDENTITY_READS_SET,
+        description="The caller's own GitHub identity read, with no repository or mutation surface.",
+        actions={"github": ["get_me"]},
     )
     # The GitHub reads every coder-like agent gets: any repository a live, unauthenticated lookup
     # confirms public (`github_public_repository` positively confirms visibility rather than
@@ -902,142 +907,84 @@ def add_staging_action_policies(
     # exactly what that account can already do, and `exec` inside it is not narrower than
     # `provision` of it. What decides whether this is safe for an account is that account's own
     # egress and Kubernetes authority, which is why this set is bound per caller and not by default.
-    _policy_set(
+    _exact_actions_policy_set(
         scope,
-        "sandbox-self",
-        metadata=ApiObjectMetadata(
-            name=SANDBOX_SELF_SET,
-            namespace=_NAMESPACE,
-            annotations={
-                "description": (
-                    "Auto-approves every sandbox Action: a caller's own boxes, which act only as that caller, "
-                    "and reads of the templates they are made from."
-                )
-            },
+        SANDBOX_SELF_SET,
+        description=(
+            "Auto-approves every sandbox Action: a caller's own boxes, which act only as that caller, "
+            "and reads of the templates they are made from."
         ),
-        rules=[AutoApproveIf.exact_actions(actions={SANDBOX_GROUP: sorted(action.value for action in Action)})],
+        actions={SANDBOX_GROUP: sorted(action.value for action in Action)},
     )
 
     # Home Assistant's read-only surface (see _HOME_ASSISTANT_READS_ACTIONS above for the
     # reviewed tool list and exclusions).
-    _policy_set(
+    _exact_actions_policy_set(
         scope,
-        "home-assistant-reads",
-        metadata=ApiObjectMetadata(
-            name=HOME_ASSISTANT_READS_SET,
-            namespace=_NAMESPACE,
-            annotations={
-                "description": "The reviewed read-only subset of Home Assistant MCP's default catalog, and the read-only REST routes the egress proxy presents Home Assistant's reader token on; every other Home Assistant Action stays on the human path."
-            },
-        ),
-        rules=[
-            AutoApproveIf.exact_actions(actions={"home_assistant": _HOME_ASSISTANT_READS_ACTIONS}),
-            *home_assistant_read_egress_rules(),
-        ],
+        HOME_ASSISTANT_READS_SET,
+        description="The reviewed read-only subset of Home Assistant MCP's default catalog, and the read-only REST routes the egress proxy presents Home Assistant's reader token on; every other Home Assistant Action stays on the human path.",
+        actions={"home_assistant": _HOME_ASSISTANT_READS_ACTIONS},
+        additional_rules=home_assistant_read_egress_rules(),
     )
 
     # Gmail's and Google Calendar's read-only surfaces (see the _GMAIL_READS_ACTIONS /
     # _GOOGLE_CALENDAR_READS_ACTIONS lists above for the reviewed tool lists and exclusions).
-    _policy_set(
+    _exact_actions_policy_set(
         scope,
-        "gmail-reads",
-        metadata=ApiObjectMetadata(
-            name=GMAIL_READS_SET,
-            namespace=_NAMESPACE,
-            annotations={
-                "description": "The reviewed read-only subset of the Gmail MCP backend's catalog; every write stays on the human path."
-            },
-        ),
-        rules=[AutoApproveIf.exact_actions(actions={"gmail": _GMAIL_READS_ACTIONS})],
+        GMAIL_READS_SET,
+        description="The reviewed read-only subset of the Gmail MCP backend's catalog; every write stays on the human path.",
+        actions={"gmail": _GMAIL_READS_ACTIONS},
     )
-    _policy_set(
+    _exact_actions_policy_set(
         scope,
-        "google-calendar-reads",
-        metadata=ApiObjectMetadata(
-            name=GOOGLE_CALENDAR_READS_SET,
-            namespace=_NAMESPACE,
-            annotations={
-                "description": "The reviewed read-only subset of the Google Calendar MCP backend's catalog; create_event stays on the human path."
-            },
-        ),
-        rules=[AutoApproveIf.exact_actions(actions={"google_calendar": _GOOGLE_CALENDAR_READS_ACTIONS})],
+        GOOGLE_CALENDAR_READS_SET,
+        description="The reviewed read-only subset of the Google Calendar MCP backend's catalog; create_event stays on the human path.",
+        actions={"google_calendar": _GOOGLE_CALENDAR_READS_ACTIONS},
     )
 
-    _policy_set(
+    _exact_actions_policy_set(
         scope,
-        "tana-reads",
-        metadata=ApiObjectMetadata(
-            name=TANA_READS_SET,
-            namespace=_NAMESPACE,
-            annotations={
-                "description": "The reviewed read-only subset of the Tana MCP backend's catalog, plus get_or_create_calendar_node; every other write and open_node stay on the human path."
-            },
-        ),
-        rules=[AutoApproveIf.exact_actions(actions={"tana": _TANA_READS_ACTIONS})],
+        TANA_READS_SET,
+        description="The reviewed read-only subset of the Tana MCP backend's catalog, plus get_or_create_calendar_node; every other write and open_node stay on the human path.",
+        actions={"tana": _TANA_READS_ACTIONS},
     )
-    _policy_set(
+    _exact_actions_policy_set(
         scope,
-        "grocy-sf-reads",
-        metadata=ApiObjectMetadata(
-            name=GROCY_SF_READS_SET,
-            namespace=_NAMESPACE,
-            annotations={
-                "description": "The reviewed read-only subset of the Grocy SF MCP backend's catalog, and the GET-only REST routes the egress proxy presents Grocy's service-account password on; every write, open_product_stock included, stays on the human path."
-            },
-        ),
-        rules=[
-            AutoApproveIf.exact_actions(actions={"grocy_sf": _GROCY_SF_READS_ACTIONS}),
-            *grocy_sf_read_egress_rules(),
-        ],
+        GROCY_SF_READS_SET,
+        description="The reviewed read-only subset of the Grocy SF MCP backend's catalog, and the GET-only REST routes the egress proxy presents Grocy's service-account password on; every write, open_product_stock included, stays on the human path.",
+        actions={"grocy_sf": _GROCY_SF_READS_ACTIONS},
+        additional_rules=grocy_sf_read_egress_rules(),
     )
 
     # SSH MCP's `list_targets`: it names which machine/user targets are configured and whether
     # each one's local key is present -- no hostname is dialed, no command runs, and no secret
     # material is returned. Every other `ssh` Action (running a command against a target) stays
     # on the human path.
-    _policy_set(
+    _exact_actions_policy_set(
         scope,
-        "ssh-reads",
-        metadata=ApiObjectMetadata(
-            name=SSH_READS_SET,
-            namespace=_NAMESPACE,
-            annotations={
-                "description": "Auto-approves the SSH MCP backend's list_targets, which only names configured targets and key availability; every other SSH Action stays on the human path."
-            },
-        ),
-        rules=[AutoApproveIf.exact_actions(actions={"ssh": ["list_targets"]})],
+        SSH_READS_SET,
+        description="Auto-approves the SSH MCP backend's list_targets, which only names configured targets and key availability; every other SSH Action stays on the human path.",
+        actions={"ssh": ["list_targets"]},
     )
 
-    _policy_set(
+    _exact_actions_policy_set(
         scope,
-        "orchestration-presets",
-        metadata=ApiObjectMetadata(
-            name=ORCHESTRATION_PRESETS_SET,
-            namespace=_NAMESPACE,
-            annotations={
-                "description": (
-                    "Auto-approves orchestration_v1's list_launch_presets, which only lists the reviewed launch "
-                    "presets; a launch always waits for the operator."
-                )
-            },
+        ORCHESTRATION_PRESETS_SET,
+        description=(
+            "Auto-approves orchestration_v1's list_launch_presets, which only lists the reviewed launch "
+            "presets; a launch always waits for the operator."
         ),
-        rules=[AutoApproveIf.exact_actions(actions={ORCHESTRATION_GROUP: ["list_launch_presets"]})],
+        actions={ORCHESTRATION_GROUP: ["list_launch_presets"]},
     )
 
-    _policy_set(
+    _exact_actions_policy_set(
         scope,
-        "kubernetes-inspection-reads",
-        metadata=ApiObjectMetadata(
-            name=KUBERNETES_INSPECTION_READS_SET,
-            namespace=_NAMESPACE,
-            annotations={
-                "description": (
-                    "Auto-approves kubernetes_admin's node stats and node/Pod resource-usage reads; every "
-                    "other kubernetes_admin Action stays on the human path."
-                )
-            },
+        KUBERNETES_INSPECTION_READS_SET,
+        description=(
+            "Auto-approves kubernetes_admin's node stats and node/Pod resource-usage reads; every "
+            "other kubernetes_admin Action stays on the human path."
         ),
-        rules=[AutoApproveIf.exact_actions(actions={"kubernetes_admin": _KUBERNETES_INSPECTION_READS_ACTIONS})],
+        actions={"kubernetes_admin": _KUBERNETES_INSPECTION_READS_ACTIONS},
     )
 
     # The OpenClaw Pod is hosted in its own namespace; keep its Action authorization here with
