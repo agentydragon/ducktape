@@ -209,7 +209,7 @@ separate traces, which can be joined by `session.id`, `thread.id` or `sandbox.ui
 
 Use bounded identity and outcome attributes only: no credentials, headers, request bodies or model
 content. Common case/scenario/readiness and cleanup spans separate Sandbox suspend acceptance,
-effective suspension, delete acceptance and actual deletion ([`sandbox.py`](driver/app_sandbox.py)). See the
+effective suspension, delete acceptance and actual deletion ([`app_sandbox.py`](driver/app_sandbox.py)). See the
 [deployment guide](deployment/README.md) for export paths and the [VM guide](vm/README.md) for retained
 guest artifacts. VM journals live under `vm-artifacts/journals/<state-volume>/<machine-id>/`; inspect
 or verify them with `journalctl --directory=<machine-id-directory>` or
@@ -275,7 +275,7 @@ Keep test output with proxy and app decision evidence. The transcript explains w
 attempted; decision history is authoritative for what the proxy served. Teardown watches the live
 inventory until the created Sandbox's exact UID has effective `Suspended` mode before requesting
 deletion. It rejects a replacement UID and does not reconnect a dropped watch; a delete acknowledgment
-does not prove deletion completed ([`sandbox.py`](driver/app_sandbox.py)). After teardown, confirm no
+does not prove deletion completed ([`app_sandbox.py`](driver/app_sandbox.py)). After teardown, confirm no
 `systest-*` Sandboxes remain in the selected namespace (the command below uses the default):
 
 ```bash
