@@ -1,0 +1,21 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane/app/testing:__pkg__"],
+)
+
+py_library(
+    name = "process",
+    srcs = ["process.py"],
+    data = ["//agentplane/environments/testing/serving_fixture"],
+    deps = [
+        "//agentplane/net/peertls:config",
+        "//agentplane/testing:go_process",
+        "//agentplane/testing:tls",
+        "//devinfra/testing:undeclared_outputs",
+        "//util:net",
+        "@pypi//grpcio",
+        "@rules_python//python/runfiles",
+    ],
+)
