@@ -1,6 +1,8 @@
 package dispatcher
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 	"testing"
 	"time"
@@ -57,6 +59,47 @@ func addEnvironmentGrant(
 			PolicySets: []string{name}, ExpiresAt: expiresAt,
 		},
 	})
+}
+
+func acquireSandboxAdvisoryLock(t *testing.T, store *Store, sandboxUID string) *sql.Conn {
+	t.Helper()
+	gate, err := store.DB.Conn(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = gate.Close() })
+	rollbackContext := context.WithoutCancel(t.Context())
+	t.Cleanup(func() { _, _ = gate.ExecContext(rollbackContext, "ROLLBACK") })
+	if _, err := gate.ExecContext(t.Context(), "BEGIN"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gate.ExecContext(t.Context(), "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "sandbox:"+sandboxUID); err != nil {
+		t.Fatal(err)
+	}
+	return gate
+}
+
+func waitForCreateSessionBlockedBySandboxLock(t *testing.T, store *Store, gate *sql.Conn) {
+	t.Helper()
+	var gatePID int
+	if err := gate.QueryRowContext(t.Context(), "SELECT pg_backend_pid()").Scan(&gatePID); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var blocked bool
+		if err := store.DB.QueryRowContext(t.Context(), `SELECT EXISTS (
+			SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)))`, gatePID).Scan(&blocked); err != nil {
+			t.Fatal(err)
+		}
+		if blocked {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("CreateSession did not wait on the fixture's Sandbox lock")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func TestIdentityNativeCreateRequiresCurrentBindSessionGrant(t *testing.T) {
@@ -191,43 +234,14 @@ func TestIdentityNativeCreateRechecksTargetAfterSandboxLock(t *testing.T) {
 	client := dial(owner.URI)
 	request := nativeCreateRequest(uuid.NewString(), sandbox.Name, sandbox.UID)
 
-	gate, err := store.DB.Conn(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = gate.Close() })
-	if _, err := gate.ExecContext(t.Context(), "BEGIN"); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _, _ = gate.ExecContext(t.Context(), "ROLLBACK") }()
-	if _, err := gate.ExecContext(t.Context(), "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "sandbox:"+sandbox.UID); err != nil {
-		t.Fatal(err)
-	}
+	gate := acquireSandboxAdvisoryLock(t, store, sandbox.UID)
 	createDone := make(chan error, 1)
 	go func() {
 		_, err := client.CreateSession(t.Context(), request)
 		createDone <- err
 	}()
 	// Observe the CreateSession transaction blocked by this fixture's lock before changing the target.
-	var gatePID int
-	if err := gate.QueryRowContext(t.Context(), "SELECT pg_backend_pid()").Scan(&gatePID); err != nil {
-		t.Fatal(err)
-	}
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		var blocked bool
-		if err := store.DB.QueryRowContext(t.Context(), `SELECT EXISTS (
-			SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)))`, gatePID).Scan(&blocked); err != nil {
-			t.Fatal(err)
-		}
-		if blocked {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("CreateSession did not wait on the fixture's Sandbox lock")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	waitForCreateSessionBlockedBySandboxLock(t, store, gate)
 
 	inventory.mu.Lock()
 	inventory.identity = &identitypb.Identity{Name: "rebound-identity", Uid: uuid.NewString()}
@@ -266,43 +280,14 @@ func TestIdentityNativeCreateHidesSandboxDeletedWhileWaitingForLock(t *testing.T
 	client := dial(owner.URI)
 	request := nativeCreateRequest(uuid.NewString(), sandbox.Name, sandbox.UID)
 
-	gate, err := store.DB.Conn(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = gate.Close() })
-	if _, err := gate.ExecContext(t.Context(), "BEGIN"); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _, _ = gate.ExecContext(t.Context(), "ROLLBACK") }()
-	if _, err := gate.ExecContext(t.Context(), "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "sandbox:"+sandbox.UID); err != nil {
-		t.Fatal(err)
-	}
+	gate := acquireSandboxAdvisoryLock(t, store, sandbox.UID)
 	createDone := make(chan error, 1)
 	go func() {
 		_, err := client.CreateSession(t.Context(), request)
 		createDone <- err
 	}()
 	// Observe the CreateSession transaction blocked by this fixture's lock before changing the target.
-	var gatePID int
-	if err := gate.QueryRowContext(t.Context(), "SELECT pg_backend_pid()").Scan(&gatePID); err != nil {
-		t.Fatal(err)
-	}
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		var blocked bool
-		if err := store.DB.QueryRowContext(t.Context(), `SELECT EXISTS (
-			SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)))`, gatePID).Scan(&blocked); err != nil {
-			t.Fatal(err)
-		}
-		if blocked {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("CreateSession did not wait on the fixture's Sandbox lock")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	waitForCreateSessionBlockedBySandboxLock(t, store, gate)
 	if _, err := gate.ExecContext(t.Context(), "INSERT INTO deleted_sandbox (sandbox_uid) VALUES ($1)", sandbox.UID); err != nil {
 		t.Fatal(err)
 	}
