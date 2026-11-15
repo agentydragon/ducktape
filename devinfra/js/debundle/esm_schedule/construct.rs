@@ -30,7 +30,7 @@ struct Traversal {
 
 struct Constructor<'a, E> {
     imports: &'a BTreeMap<ModuleId, Vec<ModuleId>>,
-    pairs: &'a BTreeSet<(ModuleId, ModuleId)>,
+    constraints: &'a BTreeMap<ModuleId, Vec<ModuleId>>,
     poll: &'a mut dyn FnMut() -> Result<(), E>,
 }
 
@@ -130,11 +130,14 @@ impl EsmImportSchedule {
             }
             internal_imports[index].insert(module, internal);
         }
-        let mut internal_pairs = vec![BTreeSet::new(); components.len()];
+        let mut internal_constraints = vec![BTreeMap::<_, Vec<_>>::new(); components.len()];
         for &(consumer, dependency) in pairs {
             poll()?;
             if consumer != entry && component_of[&consumer] == component_of[&dependency] {
-                internal_pairs[component_of[&consumer]].insert((consumer, dependency));
+                internal_constraints[component_of[&consumer]]
+                    .entry(consumer)
+                    .or_default()
+                    .push(dependency);
             }
         }
         let entry_rank: BTreeMap<_, _> = policy
@@ -152,22 +155,22 @@ impl EsmImportSchedule {
             poll()?;
             let mut candidates = components[index].clone();
             candidates.sort_by_key(|module| entry_rank[module]);
-            let pairs = &internal_pairs[index];
-            if pairs.is_empty() {
+            let constraints = &internal_constraints[index];
+            if constraints.is_empty() {
                 // With no internal constraints every traversal of this SCC is
                 // valid. Its external dependencies are already finished.
                 roots.push(candidates[0]);
                 continue;
             }
             let mut constrained_dependencies = BTreeSet::new();
-            for &(_, dependency) in pairs {
+            for &dependency in constraints.values().flatten() {
                 poll()?;
                 constrained_dependencies.insert(dependency);
             }
             let chosen = {
                 let mut constructor = Constructor {
                     imports: &internal_imports[index],
-                    pairs,
+                    constraints,
                     poll: &mut poll,
                 };
                 let mut chosen = None;
@@ -275,6 +278,9 @@ impl<E> Constructor<'_, E> {
 
     fn complete(&mut self, root: ModuleId, state: &mut Traversal) -> Result<bool, E> {
         self.poll()?;
+        if self.conflicts_with_ancestor(root, root, state)? {
+            return Ok(false);
+        }
         let mut reachable = BTreeSet::from([root]);
         let mut work = vec![root];
         while let Some(node) = work.pop() {
@@ -282,22 +288,13 @@ impl<E> Constructor<'_, E> {
             for &target in self.imports[&node].as_slice() {
                 self.poll()?;
                 if self.white(target, state) && reachable.insert(target) {
+                    if self.conflicts_with_ancestor(target, root, state)? {
+                        return Ok(false);
+                    }
                     work.push(target);
                 }
             }
         }
-        // Every initially-white reachable consumer must finish in this subtree,
-        // before root and its active ancestors. Such a read cannot be repaired
-        // by a different import order within this trial.
-        for &(consumer, dependency) in self.pairs {
-            self.poll()?;
-            if reachable.contains(&consumer)
-                && (dependency == root || state.active.contains(&dependency))
-            {
-                return Ok(false);
-            }
-        }
-
         state.active.insert(root);
         state.imports.insert(root, Vec::new());
         loop {
@@ -346,11 +343,115 @@ impl<E> Constructor<'_, E> {
         state.finished.insert(root);
         Ok(true)
     }
+
+    /// Every initially-white reachable consumer finishes before root and its
+    /// active ancestors. Check exactly those consumers as they are discovered,
+    /// stopping before the rest of an already impossible closure is visited.
+    fn conflicts_with_ancestor(
+        &mut self,
+        consumer: ModuleId,
+        root: ModuleId,
+        state: &Traversal,
+    ) -> Result<bool, E> {
+        if let Some(dependencies) = self.constraints.get(&consumer) {
+            for &dependency in dependencies {
+                self.poll()?;
+                if dependency == root || state.active.contains(&dependency) {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_discovered_conflict_skips_the_remaining_reachability_walk() {
+        for tail_size in [0, 32, 4_096] {
+            let (root, consumer, active) = (ModuleId(0), ModuleId(1), ModuleId(tail_size + 2));
+            let mut imports = BTreeMap::from([
+                (root, (1..active.0).map(ModuleId).collect()),
+                (consumer, vec![root, active]),
+                (active, vec![root]),
+            ]);
+            for node in 2..active.0 {
+                imports.insert(ModuleId(node), vec![root]);
+            }
+            // Preserve both terms of the rejection predicate: the current
+            // root and any already active ancestor.
+            for dependency in [root, active] {
+                let constraints = BTreeMap::from([(consumer, vec![dependency])]);
+                let mut state = Traversal {
+                    active: BTreeSet::from([active]),
+                    ..Traversal::default()
+                };
+                let mut checkpoints = 0;
+                let mut poll = || {
+                    checkpoints += 1;
+                    Ok::<_, ()>(())
+                };
+                let mut constructor = Constructor {
+                    imports: &imports,
+                    constraints: &constraints,
+                    poll: &mut poll,
+                };
+                assert!(!constructor.complete(root, &mut state).unwrap());
+                assert_eq!(state.active, BTreeSet::from([active]));
+                assert!(state.finished.is_empty());
+                assert!(state.imports.is_empty());
+                assert!(checkpoints < 10, "{tail_size}: {checkpoints} checkpoints");
+            }
+        }
+    }
+
+    #[test]
+    fn a_trial_does_not_scan_constraints_of_finished_consumers() {
+        for finished_count in [2, 32, 4_096] {
+            let (root, active) = (ModuleId(0), ModuleId(1));
+            let mut imports =
+                BTreeMap::from([(root, vec![active]), (active, vec![root, ModuleId(2)])]);
+            let mut constraints = BTreeMap::new();
+            for node in 2..finished_count + 2 {
+                let next = if node == finished_count + 1 {
+                    active
+                } else {
+                    ModuleId(node + 1)
+                };
+                imports.insert(ModuleId(node), vec![next]);
+                if next != active {
+                    constraints.insert(ModuleId(node), vec![next]);
+                }
+            }
+            // The chain was a successful sibling subtree inside this same
+            // original SCC. Only root is still white in the parent frame.
+            let mut state = Traversal {
+                active: BTreeSet::from([active]),
+                finished: (2..finished_count + 2).map(ModuleId).collect(),
+                ..Traversal::default()
+            };
+            let mut checkpoints = 0;
+            let mut poll = || {
+                checkpoints += 1;
+                Ok::<_, ()>(())
+            };
+            let mut constructor = Constructor {
+                imports: &imports,
+                constraints: &constraints,
+                poll: &mut poll,
+            };
+            assert!(constructor.complete(root, &mut state).unwrap());
+            assert!(state.finished.contains(&root));
+            assert_eq!(state.imports[&root], vec![active]);
+            assert!(
+                checkpoints < 10,
+                "{finished_count}: {checkpoints} checkpoints"
+            );
+        }
+    }
 
     #[test]
     fn an_acyclic_constraining_star_can_be_intrinsically_unschedulable() {

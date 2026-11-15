@@ -124,6 +124,14 @@ The constructor applies this decomposition before recursive trials. Independent
 components therefore do not enlarge a trial's visited sets, constraint scans or
 rollback state. The global work is decomposition, bucketing and final schedule
 verification; recursive search depends on individual constrained components.
+Within each component, bucket C edges by consumer once. As a trial discovers a
+white I-reachable consumer, check its C dependencies against the root and active
+ancestors immediately. This tests the same rejection predicate as collecting
+the complete reachable set and then scanning C: every discovered vertex belongs
+to that set, and a successful walk checks every member. A conflict can therefore
+stop reachability early, and unreachable or finished consumers add no constraint
+scans to that trial. Failed nested trials can still repeat work; this change
+does not establish a polynomial bound.
 
 ## Finest partition and domains
 
