@@ -4,7 +4,7 @@
 //! this verdict is reported beside it.
 //!
 //! The emitted order is the exact ESM loader model over the emitter's own
-//! import lists and `EsmImportOrder`, cyclic or not: module bodies in DFS
+//! concrete `EsmImportSchedule`, cyclic or not: module bodies in DFS
 //! post-order from the entry, each body in source order. A sweep in that
 //! order finds every swapped statement pair that conflicts without
 //! enumerating pairs.

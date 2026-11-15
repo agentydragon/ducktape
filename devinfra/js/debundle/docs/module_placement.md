@@ -271,9 +271,10 @@ black-box acceptance callback. Whether broad closure clauses are fast enough
 requires measurement; do not describe this derivation alone as completing the
 production performance obligation.
 
-The report counts analyzed partitions, quotient projections, forced contractions,
-contraction attempts, clause categories and final certifications. Optimized
-profiles separately assess source preparation, SCC/reachability work, failed
+The report counts analyzed partitions, quotient projections, cooperative schedule
+checkpoints, forced contractions, contraction attempts, clause categories and
+final certifications. Optimized profiles separately assess source preparation,
+SCC/reachability work, failed
 schedule trials and memory; these are not all separate report counters.
 For chains/fanouts with unrestricted new ownership the finest partition should
 already yield maximal extraction. With one fresh owner, deterministic compatible

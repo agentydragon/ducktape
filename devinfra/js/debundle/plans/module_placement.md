@@ -1,7 +1,8 @@
 # Constructive module placement delivery
 
-Status: 331 test targets pass; measured scheduler optimization in progress, 2026-11-15. This plan replaces
-the earlier assignment-enumeration architecture. The mathematical model,
+Status: implemented and validated, 2026-11-15. Broad-placement performance
+follow-up remains W9 in <../TODO.md>. This plan replaces the earlier
+assignment-enumeration architecture. The mathematical model,
 algorithms and general coverage arguments live in
 [the placement design](../docs/module_placement.md). The pinned historical
 inventory remains in [the audit](../debug/2026_11_15_module_tooling_audit.md).
@@ -71,7 +72,7 @@ preferences must not silently change these meanings.
    allowing configured residual layouts to be regenerated,
    and refuse stale/ambiguous realization before writing. Pin default dispatch,
    explicit advisory mode and contradictory option errors in real CLI tests.
-7. **Performance and downstream acceptance — measured follow-through in progress.** Run
+7. **Performance and downstream acceptance — measured and validated.** Run
    chain/fanout work-count regressions, an optimized prepared-query profile and a
    fresh copied-consumer propose/check/preview/apply/materialize workflow. Require
    positive residual gain, no authored-owner disturbance and exact preservation
@@ -82,10 +83,12 @@ preferences must not silently change these meanings.
 
 The first fresh optimized unscoped profile found about 94% of sampled CPU inside
 recursive schedule construction, exceeding a ten-second placement budget because
-the scheduler did not poll it. This is required work in this project: solve
-independent import SCCs locally, add typed cooperative cancellation that returns
-`incomplete`, certify the retained schedule without deriving it twice, and rerun
-the optimized profile and full consumer workflow on the resulting engine.
+the scheduler did not poll it. The implementation now solves independent import
+SCCs locally, supports typed cooperative cancellation that returns `incomplete`,
+and certifies the retained schedule without deriving it twice. A subsequent
+profile identified repeated reachability and constraint scans; C rows are now
+indexed by consumer and checked on discovery, preserving the exact rejection
+predicate while allowing early exit. Work-count regressions pin both changes.
 
 ## Correctness boundaries
 
@@ -126,10 +129,54 @@ schedule trials can repeat work.
 - [x] Integrate the constructive generator and complete-default CLI.
 - [x] Pass raw placement/import permutation oracles and real CLI/Node regressions.
 - [x] Bound chain/fanout partition work and final certification counts.
-- [ ] Keep scheduler work local to import SCCs and interruptible by placement deadlines.
+- [x] Keep scheduler work local to import SCCs and interruptible by placement deadlines.
 - [x] Reconcile SPEC, design, CLI docs, AGENTS, skills and shipped recipe.
-- [ ] Profile the optimized implementation and complete fresh downstream acceptance.
-- [ ] Publish final commits and verify exact-head CI.
+- [x] Profile the optimized implementation and complete fresh downstream acceptance.
+- [x] Publish implementation commits and verify exact-head CI.
+
+## Validation evidence
+
+The final implementation at `93c39be9252841d01189d48d49482f4bda92eeaf` passes
+[all 331 Debundle test targets](https://app.buildbuddy.io/invocation/8351464b-30a6-4dda-bdcf-c29a32b19987),
+including independent raw-spec/Node and import-permutation oracles, real CLI
+contracts, structural work counts, skill frontmatter and the packaged workflow
+recipe. The
+[optimized build](https://app.buildbuddy.io/invocation/6417b045-af1b-41ce-ad94-7ef2b33b0dd1)
+produced a 99,843,032-byte engine with SHA-256
+`f03cd9593b01da36831f28bfca1427b649f6e4e444c4c0686150f1bfc60640cc`;
+the downloaded artifact digest matches the invocation's advertised artifact.
+
+The fresh copied-consumer baseline completed in 307.728 seconds. On its matching
+graph, with a 256-partition limit and a 10,000-ms placement budget:
+
+| Query scope                                            | Outcome                  | Partitions | Schedule checkpoints | Command wall |
+| ------------------------------------------------------ | ------------------------ | ---------: | -------------------: | -----------: |
+| 1,073 movable atoms, new destinations, one fresh owner | `incomplete/time_budget` |         11 |                    0 |      21.717s |
+| 1,073 movable atoms, default existing/new destinations | `incomplete/time_budget` |          1 |          300,044,181 |      19.012s |
+| One required residual atom, one fresh destination      | `found`                  |          1 |                1,105 |      11.140s |
+
+The scoped witness extracts one residual unit with zero existing-unit moves,
+one forced contraction and one final certification. Its normal plan check passed
+in 13.412 seconds; the no-write preview passed in 26.477 seconds and the single
+application passed in 26.225 seconds. These are single-run observations, including
+command preparation. The fresh post-apply materialization passed in 302.242 seconds:
+one residual source unit was extracted, zero existing authored owners moved,
+all 9,708 omitted units retained their ownership, and the source-unit set was
+unchanged. Every ownership change matches the checked plan. Generated residual
+ownership was compared through one group bijection, with no label changes in
+this run. The broad queries do not establish no-peel results, and
+their similar wall times before and after the last scheduler change do not
+support a broad-query speedup claim.
+
+The implementation revision's
+[Bazel CI](https://github.com/agentydragon/ducktape/actions/runs/43734222565/job/132873139894),
+pre-commit, Nix and visual checks passed. Publication and the latest exact-head
+checks are attached to [PR #16644](https://github.com/agentydragon/ducktape/pull/16644).
+
+Current large-graph performance follow-up is W9 in <../TODO.md>. A cooperative
+placement deadline begins after graph loading and baseline preparation; total
+command wall time is not the placement time. Neither budget expiration nor a
+finite runtime test establishes complete exhaustion.
 
 Owner reorganization is a subsequent scope extension only if it demonstrably
 unblocks useful residual reduction. It is not needed for this fixed-owner

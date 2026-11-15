@@ -54,8 +54,8 @@ impl ImportLocalRenameSink<'_> {
 /// tagged with the provider's `ModuleId`. UNSORTED — the caller
 /// merges these with phantom side-effect imports and the
 /// residual-entry import and orders the whole list through the
-/// shared `EsmImportOrder::sort_module_imports` (the same rule the
-/// realizability gate's evaluation simulator applies), so the
+/// verified `EsmImportSchedule` retained by assignment analysis (the same
+/// concrete target lists checked by the realizability gate), so the
 /// emitted order and the gate's predicted order cannot diverge.
 ///
 /// Providers are processed in ascending index order so import-local

@@ -13,8 +13,8 @@ plans and evidence live here:
 - <plans/relational_selectors.md> — the remaining selector-language work.
 - <plans/automated_spec_workflows.md> — single-input selector authoring and
   diagnostic workflows.
-- <plans/module_placement.md> — constructive residual placement, shared graph
-  constraints and prediction, exact application and completeness/test obligations.
+- <plans/module_placement.md> — completed constructive placement delivery and
+  validation evidence; the remaining measured performance work is W9 below.
 - <plans/purity_analysis.md> — purity annotation and redundant-hint follow-ups.
 - <plans/native_receiver_identity.md> — native receiver identity and its
   descriptor, alias, method-receiver and initialization proof obligations.
@@ -613,21 +613,24 @@ paths and source-unit IDs belong in the consuming repo.
   treat a failed coarse heuristic as evidence that the authored owner boundary
   is intrinsically impossible or hide it with purity assertions.
 
-- **W9 — Complete and validate constructive residual placement.**
-  Follow <plans/module_placement.md> for the delivery checklist and
-  <docs/module_placement.md> for the derivation and coverage proofs. Whole-batch
-  prediction and shared concrete import schedules are implemented. Integrate the
-  constraint-driven finest-partition constructor and complete-default CLI;
-  remove production Cartesian assignment enumeration. Preserve exact Gate
-  projection, authored owners, global ESM semantics and all omitted assignments.
-  Finish independent raw-spec/Node and import-permutation oracles, structural
-  work-count regressions, optimized profiling, fresh downstream residual gain,
-  packaged skills/recipe checks and exact-head CI. Scheduling is part of this
-  project, not a deferred follow-up. Keep incomplete and error outcomes honest.
-  The first optimized profile spent about 94% of sampled CPU in recursive
-  scheduling and exceeded its placement deadline. Finish SCC-local construction,
-  typed scheduler cancellation and retained-schedule certification, then rerun
-  performance and consumer acceptance before closing this item.
+- **W9 — Reduce measured broad-placement cost.** Complete construction, exact
+  SCC-local scheduling, cooperative deadlines and retained-schedule certification
+  are implemented; <plans/module_placement.md> tracks delivery evidence. A fresh
+  optimized 1,073-atom query with one new owner reached only 11 partitions in a
+  ten-second placement budget, with repeated canonical quotient construction
+  prominent in the profile. A separate default-scope query spent its budget in
+  one constrained import component. These are `incomplete`, not no-peel results.
+  Consumer-indexed early-conflict checks bound avoidable scans in the regression
+  tests, but the final broad query still reached its time budget in that first
+  component. Profile repeated trials and deadline-polling cost before choosing
+  the next scheduler optimization; retain independent raw-import oracles and
+  cancellation checks.
+  For repeated quotient work, investigate updating canonical edge contributions
+  through the existing simultaneous batch machinery rather than rebuilding
+  every state. Preserve Gate activation, changing module universes, exact domains
+  and contraction-clause coverage with from-scratch differentials and work-count
+  tests. Close when broad queries show a measured gain at the same scope and
+  limits, not by narrowing scope, weakening the gate or relabeling incompleteness.
 
 ### Planner CLI follow-ups
 
