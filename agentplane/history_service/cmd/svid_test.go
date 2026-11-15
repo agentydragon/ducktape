@@ -29,8 +29,8 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
-// startWithSVIDs serves History with workload certificates from ca enabled on its listener.
-func startWithSVIDs(t *testing.T, ca *peertlstesting.CA, tune func(*config)) running {
+// svidConfig configures History with a verified workload listener and the envtest API.
+func svidConfig(t *testing.T, ca *peertlstesting.CA) config {
 	t.Helper()
 	serving := ca.IssueWithUsage(t, peertls.HistoryIngressURI, x509.ExtKeyUsageServerAuth)
 	kubeconfig := filepath.Join(t.TempDir(), "kubeconfig")
@@ -52,6 +52,13 @@ func startWithSVIDs(t *testing.T, ca *peertlstesting.CA, tune func(*config)) run
 	c.ReaderServiceCallers = []string{peertls.AppURI}
 	c.Ingress.WriterNamespaces = []string{"test-sandbox-namespace"}
 	c.FoldIntervalSeconds = 3600
+	return c
+}
+
+// startWithSVIDs serves History with workload certificates from ca enabled on its listener.
+func startWithSVIDs(t *testing.T, ca *peertlstesting.CA, tune func(*config)) running {
+	t.Helper()
+	c := svidConfig(t, ca)
 	if tune != nil {
 		tune(&c)
 	}
