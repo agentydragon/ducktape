@@ -14,7 +14,7 @@ use super::statement_facts::{
 };
 use super::*;
 use crate::facts::sync_effects::SavedBindingEffectCoverage;
-use crate::purity::saved::{PuritySnapshot, RestoredPurities, SavedPurity};
+use crate::purity::saved::{PurityNodeId, PuritySnapshot, RestoredPurities};
 use crate::reports::saved::{
     SavedExecutionPrecisionLoss, SavedLocalRecordFactoryRejection, SavedLocalRecordFactoryUse,
     SavedNativeOperationInputUse, SavedReentryFreeOperationUse,
@@ -327,7 +327,7 @@ struct SavedStatementFacts<'a> {
     heap_one_shot_allocations: BTreeSet<SavedEffectCell>,
     deferred_heap_allocations: BTreeSet<SavedEffectCell>,
     heap_native_integrity_uses: Cow<'a, [crate::reports::schema::NativeIntegrityUse]>,
-    purity: SavedPurity,
+    purity: PurityNodeId,
     kind: StatementKind,
 }
 
@@ -521,8 +521,8 @@ struct SavedSynchronousCalls<'a> {
 
 #[derive(Serialize, Deserialize)]
 struct SavedPurityDisagreement {
-    prepared: SavedPurity,
-    completed: SavedPurity,
+    prepared: PurityNodeId,
+    completed: PurityNodeId,
 }
 
 impl<'a> SavedSynchronousCalls<'a> {
@@ -774,13 +774,11 @@ mod tests {
         let saved = SavedSynchronousCalls::snapshot(&calls, &ordinals, &mut snapshot)
             .expect("execution facts snapshot");
         let cause_id = snapshot.snapshot(&cause);
-        let graph = snapshot.finish();
+        let graph = snapshot.encode();
         let bytes = rmp_serde::to_vec_named(&(graph, saved)).expect("ordinary encode");
-        let (graph, saved): (
-            crate::purity::saved::SavedPurityGraph,
-            SavedSynchronousCalls<'_>,
-        ) = rmp_serde::from_slice(&bytes).expect("ordinary decode");
-        let purities = graph.restore().expect("valid graph");
+        let (graph, saved): (Vec<u8>, SavedSynchronousCalls<'_>) =
+            rmp_serde::from_slice(&bytes).expect("ordinary decode");
+        let purities = RestoredPurities::decode(&graph).expect("valid graph");
         let calls = saved
             .restore(&ordinals, &purities)
             .expect("valid execution facts");

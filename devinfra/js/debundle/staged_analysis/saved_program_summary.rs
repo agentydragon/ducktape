@@ -700,9 +700,7 @@ mod tests {
 
         let decoded: SavedProgramSummary<'static> =
             serde_json::from_value(saved_json).expect("explicit None native census decodes");
-        let restored_purities = PuritySnapshot::default()
-            .finish()
-            .restore()
+        let restored_purities = RestoredPurities::decode(&PuritySnapshot::default().encode())
             .expect("empty purity graph restores");
         let restored = decoded
             .restore(&ordinals, &restored_purities)

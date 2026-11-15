@@ -557,18 +557,7 @@ pub struct ImportedPrimitiveRead {
     pub source_cells: BTreeSet<PrimitiveExportCell>,
 }
 
-/// One `program_premises` assertion consumed by a proof (SPEC.md § Program
-/// premises).
-#[derive(
-    Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, strum::Display,
-)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum ProgramPremiseKey {
-    ProcessPrototypeChainAccessors,
-    NonLiteralLoaderCalls,
-    IntrinsicsNeverWritten,
-}
+pub use saved_purity_proto::debundle::saved_purity::ProgramPremiseKey;
 
 /// Global properties that hold only fresh ordinary objects created by
 /// analyzed code (SPEC.md § Bundle-owned globals).
