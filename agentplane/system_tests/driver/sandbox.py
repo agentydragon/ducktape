@@ -29,9 +29,10 @@ from agentplane.system_tests.driver.identity import (
     delete_scenario_identity,
 )
 from agentplane.system_tests.driver.sandbox_ownership import release_owned_sandboxes, remember_sandbox
+from agentplane.system_tests.driver.runtime_kind import RunnerCredentialKind, runner_credential_kind
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.vm import boot_rcu
-from agentplane.system_tests.vm.launcher_topology import assert_admitted_launcher_topology, is_vm_template
+from agentplane.system_tests.vm.launcher_topology import assert_admitted_launcher_topology
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 POD_TEMPLATE = "environment-tools"
@@ -157,18 +158,25 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
                 except Exception as diagnostic_error:
                     error.add_note(f"Sandbox readiness diagnostics failed: {diagnostic_error!r}")
                 if (
-                    is_vm_template(template)
-                    and failed_view is not None
+                    failed_view is not None
                     and failed_view.target.namespace == created.namespace
                     and failed_view.target.name == created.name
                     and failed_view.target.uid == created.uid
+                    and runner_credential_kind(failed_view) is RunnerCredentialKind.VM
                 ):
                     failed_vm_readiness[created.uid] = (failed_view, error)
                 raise
-            if is_vm_template(template):
+            kind = runner_credential_kind(view)
+            if kind is None:
+                raise SandboxNotReadyError(
+                    f"Sandbox {view.target.name} ({view.target.uid}) reached Ready without a runner credential binding",
+                    last_view=view,
+                )
+            if kind is RunnerCredentialKind.VM:
                 if not view.kubernetes_diagnostics.HasField("pod"):
                     raise SandboxNotReadyError(
-                        f"VM Sandbox {view.target.name} ({view.target.uid}) reached Ready without a launcher Pod identity"
+                        f"VM Sandbox {view.target.name} ({view.target.uid}) reached Ready without a launcher Pod identity",
+                        last_view=view,
                     )
                 await assert_admitted_launcher_topology(
                     cluster, view.target.name, view.target.uid, view.kubernetes_diagnostics.pod

@@ -368,6 +368,7 @@ py_library(
         ":cluster",
         ":identity",
         ":sandbox_ownership",
+        ":runtime_kind",
         ":tracing",
         "//agentplane:crd_group",
         "//agentplane/app/testing:client",
@@ -402,6 +403,7 @@ py_test(
     srcs = ["test_sandbox.py"],
     deps = [
         ":cluster",
+        ":runtime_kind",
         ":sandbox",
         "//:conftest",
         "//agentplane/app/testing:client",
@@ -674,5 +676,14 @@ py_test(
         "//agentplane/system_tests:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "runtime_kind",
+    srcs = ["runtime_kind.py"],
+    deps = [
+        "//agentplane/environments/v1:environment_service_pb2",
+        "@pypi//protobuf",
     ],
 )
