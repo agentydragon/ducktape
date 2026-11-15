@@ -88,7 +88,7 @@ fn exhaustive_negative_and_explicit_budget_exhaustion_are_distinct() {
 }
 
 #[test]
-fn time_budget_also_interrupts_combinations_skipped_by_required_unit_filters() {
+fn budgets_also_interrupt_combinations_skipped_by_required_unit_filters() {
     let mut source = String::from("const seed = 'alpha';\n");
     for index in 0..30 {
         let operand = if index == 0 {
@@ -113,8 +113,6 @@ fn time_budget_also_interrupts_combinations_skipped_by_required_unit_filters() {
         "a_before".to_string(),
         "--only-units".to_string(),
         only,
-        "--time-budget-ms".to_string(),
-        "50".to_string(),
         "--format".to_string(),
         "json".to_string(),
     ];
@@ -124,15 +122,25 @@ fn time_budget_also_interrupts_combinations_skipped_by_required_unit_filters() {
     // The sole permitted move rejects on global ESM evaluation. The remaining
     // billion combinations are out of scope, but still must honor the budget.
     let before = read_tree(&fixture.modules);
-    let started = std::time::Instant::now();
-    let output = fixture.command(&args.iter().map(String::as_str).collect::<Vec<_>>());
-    assert_eq!(output.status.code(), Some(1), "{output:?}");
-    let report = parse_stdout_json(&output);
-    assert_eq!(report["status"], "incomplete", "{report}");
-    assert_eq!(report["stop_reason"], "time_budget", "{report}");
-    assert!(report["plan"].is_null());
-    assert!(started.elapsed() < std::time::Duration::from_secs(10));
-    assert_eq!(read_tree(&fixture.modules), before);
+    for (flag, limit, reason) in [
+        ("--time-budget-ms", "50", "time_budget"),
+        ("--max-checks", "1", "max_checks"),
+    ] {
+        let mut args: Vec<_> = args.iter().map(String::as_str).collect();
+        args.extend([flag, limit]);
+        let started = std::time::Instant::now();
+        let output = fixture.command(&args);
+        assert_eq!(output.status.code(), Some(1), "{output:?}");
+        let report = parse_stdout_json(&output);
+        assert_eq!(report["status"], "incomplete", "{report}");
+        assert_eq!(report["stop_reason"], reason, "{report}");
+        if reason == "max_checks" {
+            assert_eq!(report["checks"], 1);
+        }
+        assert!(report["plan"].is_null());
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
+        assert_eq!(read_tree(&fixture.modules), before);
+    }
 }
 
 #[test]
