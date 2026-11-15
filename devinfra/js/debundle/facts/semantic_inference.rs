@@ -16,7 +16,7 @@ use super::statement_facts::StructuralStatementFacts;
 use super::value_flow::ChunkValueFlow;
 use crate::analysis_inputs::{
     ArgumentInputRef, DescriptorCopyAuthorRef, DescriptorCopyFactorySummary, NativeIntrinsic,
-    ProofDependencies, ResolvedArgumentInput,
+    NativeIntrinsicBindings, ProofDependencies, ResolvedArgumentInput,
 };
 use crate::analysis_provenance::{InferenceRule, InferenceUse};
 use crate::inference::{

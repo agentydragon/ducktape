@@ -307,21 +307,20 @@ where
 pub(crate) fn encode_native_intrinsics(
     items: &BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
 ) -> Result<Vec<i32>> {
-    items
-        .iter()
-        .map(|item| Ok(item.to_proto()? as i32))
-        .collect()
+    Ok(items.iter().map(|item| *item as i32).collect())
 }
 
 pub(crate) fn decode_native_intrinsics(
     items: Vec<i32>,
 ) -> Result<BTreeSet<crate::analysis_inputs::NativeIntrinsic>> {
-    decode_set(
-        items
-            .into_iter()
-            .map(proto::NativeIntrinsic::try_from)
-            .collect::<std::result::Result<Vec<_>, _>>()?,
-    )
+    let mut values = BTreeSet::new();
+    for value in items {
+        ensure!(
+            values.insert(proto::NativeIntrinsic::try_from(value)?),
+            "duplicate saved set member"
+        );
+    }
+    Ok(values)
 }
 
 fn descriptor_copy_signature_is_valid(

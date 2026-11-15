@@ -586,9 +586,9 @@ impl ProtoConvert<proto::NativeReceiverPath> for NativeReceiverPath {
         Ok(proto::NativeReceiverPath {
             value: Some(match self {
                 Self::GlobalObject => Value::GlobalObject(Default::default()),
-                Self::Constructor(root) => Value::Constructor(root.to_proto()? as i32),
-                Self::Prototype(root) => Value::Prototype(root.to_proto()? as i32),
-                Self::Descendant(root) => Value::Descendant(root.to_proto()? as i32),
+                Self::Constructor(root) => Value::Constructor(*root as i32),
+                Self::Prototype(root) => Value::Prototype(*root as i32),
+                Self::Descendant(root) => Value::Descendant(*root as i32),
                 Self::ArrayIteratorPrototype => Value::ArrayIteratorPrototype(Default::default()),
                 Self::SetIteratorPrototype => Value::SetIteratorPrototype(Default::default()),
                 Self::Unknown => Value::Unknown(Default::default()),
@@ -600,20 +600,10 @@ impl ProtoConvert<proto::NativeReceiverPath> for NativeReceiverPath {
         Ok(match required(value.value, "NativeReceiverPath.value")? {
             Value::GlobalObject(_) => Self::GlobalObject,
             Value::Constructor(value) => {
-                Self::Constructor(crate::analysis_inputs::NativeIntrinsic::from_proto(
-                    proto::NativeIntrinsic::try_from(value)?,
-                )?)
+                Self::Constructor(proto::NativeIntrinsic::try_from(value)?)
             }
-            Value::Prototype(value) => {
-                Self::Prototype(crate::analysis_inputs::NativeIntrinsic::from_proto(
-                    proto::NativeIntrinsic::try_from(value)?,
-                )?)
-            }
-            Value::Descendant(value) => {
-                Self::Descendant(crate::analysis_inputs::NativeIntrinsic::from_proto(
-                    proto::NativeIntrinsic::try_from(value)?,
-                )?)
-            }
+            Value::Prototype(value) => Self::Prototype(proto::NativeIntrinsic::try_from(value)?),
+            Value::Descendant(value) => Self::Descendant(proto::NativeIntrinsic::try_from(value)?),
             Value::ArrayIteratorPrototype(_) => Self::ArrayIteratorPrototype,
             Value::SetIteratorPrototype(_) => Self::SetIteratorPrototype,
             Value::Unknown(_) => Self::Unknown,
@@ -962,17 +952,23 @@ mod tests {
         let mut duplicate = check.to_proto().unwrap();
         duplicate.affected_roots.push(duplicate.affected_roots[0]);
         assert!(NativeIntegrityCheck::from_proto(duplicate).is_err());
-        for value in [0, i32::MAX] {
-            let mut invalid = check.to_proto().unwrap();
-            invalid.affected_roots = vec![value];
-            assert!(NativeIntegrityCheck::from_proto(invalid).is_err());
-            assert!(
-                NativeReceiverPath::from_proto(proto::NativeReceiverPath {
-                    value: Some(proto::native_receiver_path::Value::Constructor(value)),
-                })
-                .is_err()
-            );
-        }
+        let mut invalid = check.to_proto().unwrap();
+        invalid.affected_roots = vec![i32::MAX];
+        assert!(NativeIntegrityCheck::from_proto(invalid).is_err());
+        assert!(
+            NativeReceiverPath::from_proto(proto::NativeReceiverPath {
+                value: Some(proto::native_receiver_path::Value::Constructor(i32::MAX)),
+            })
+            .is_err()
+        );
+        let mut first_variant = check.to_proto().unwrap();
+        first_variant.affected_roots = vec![NativeIntrinsic::GlobalObject as i32];
+        assert_eq!(
+            NativeIntegrityCheck::from_proto(first_variant)
+                .unwrap()
+                .affected_roots,
+            BTreeSet::from([NativeIntrinsic::GlobalObject])
+        );
         let empty = proto::NativeIntegrityCheck {
             guard: Some(NativeIntegrityGuard::ArrayIntrinsics as i32),
             slots: Vec::new(),

@@ -18,6 +18,7 @@ use analysis::analysis_inputs::{
     NoAccessorInstallRef, PrimitiveExportCell, ResolvedArgumentInput, ResolvedBindingValueInput,
     ResolvedInitializerCallEffectInput, ResolvedNativeOperationInput, ResolvedNoAccessorInstall,
     SelectedBindingValueInput, SelectedNativeOperationInput, ValueInputEvidence, ValueInputRef,
+    native_intrinsic_for_family,
 };
 use analysis::cross_module_purity::{
     CallableSummaryInputs, ExportValueSource, ModulePurityFacts, ResolvedCallableSummaries,
@@ -762,7 +763,7 @@ pub fn collect_program_summary(
                         .families
                         .families()
                         .into_iter()
-                        .map(Into::into)
+                        .map(native_intrinsic_for_family)
                         .collect()
                 })
                 .unwrap_or_default(),

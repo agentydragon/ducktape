@@ -1944,6 +1944,11 @@ proto_library(
 rust_prost_transform(
     name = "saved_analysis_serde_enums",
     prost_opts = [
+        "type_attribute=ducktape.debundle.saved_analysis.NativeIntrinsic=#[derive(::serde::Serialize)]",
+        "type_attribute=ducktape.debundle.saved_analysis.NativeIntrinsic=#[derive(::serde::Deserialize)]",
+        "type_attribute=ducktape.debundle.saved_analysis.NativeIntrinsic=#[derive(::strum::Display)]",
+        "type_attribute=ducktape.debundle.saved_analysis.NativeIntrinsic=#[serde(rename_all = \"snake_case\")]",
+        "type_attribute=ducktape.debundle.saved_analysis.NativeIntrinsic=#[strum(serialize_all = \"snake_case\")]",
         "type_attribute=ducktape.debundle.saved_analysis.ExecutionOperation=#[derive(::serde::Serialize)]",
         "type_attribute=ducktape.debundle.saved_analysis.ExecutionOperation=#[derive(::serde::Deserialize)]",
         "type_attribute=ducktape.debundle.saved_analysis.ExecutionOperation=#[derive(::strum::Display)]",

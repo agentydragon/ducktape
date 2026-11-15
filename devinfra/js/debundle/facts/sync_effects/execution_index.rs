@@ -17,8 +17,8 @@ use super::value_model::{
 use crate::analysis_inputs::{
     AnalysisInputs, BundleGlobalNames, HostBehaviorKey, InferredSetConstruction,
     InferredSetOperation, NamespaceWrapperSummary, NativeInputKind, NativeIntegrity,
-    NativeIntrinsic, NativeOperationInputEvidence, NoAccessorInstallRef, ProgramPremiseKey,
-    ProofDependencies, ResolvedBindingValueInput, ResolvedNativeOperationInput,
+    NativeIntrinsic, NativeIntrinsicBindings, NativeOperationInputEvidence, NoAccessorInstallRef,
+    ProgramPremiseKey, ProofDependencies, ResolvedBindingValueInput, ResolvedNativeOperationInput,
     ResolvedNoAccessorInstall, SelectedBindingValueInput, SelectedNativeOperationInput,
     ValueInputEvidence, ValueInputRef,
 };

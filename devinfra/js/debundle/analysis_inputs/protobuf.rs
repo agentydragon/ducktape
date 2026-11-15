@@ -17,8 +17,8 @@ use super::{
 };
 use super::{
     EffectiveInitializerCallReplacement, ForeignInvocation, ForeignReturn, HostBehaviorKey,
-    ImportedPrimitiveArrayOperandEvidence, NativeInputKind, NativeIntrinsic,
-    NativeOperationSelectorProvenance, ProgramPremiseKey,
+    ImportedPrimitiveArrayOperandEvidence, NativeInputKind, NativeOperationSelectorProvenance,
+    ProgramPremiseKey,
 };
 use crate::saved_proto::{
     ProtoConvert, decode_native_intrinsics, decode_set, encode_native_intrinsics, proto, required,
@@ -326,51 +326,6 @@ impl ProtoConvert<proto::ImportedPrimitiveArrayOperandEvidence>
                 .provider_source_location
                 .map(ProtoConvert::from_proto)
                 .transpose()?,
-        })
-    }
-}
-
-impl ProtoConvert<proto::NativeIntrinsic> for NativeIntrinsic {
-    fn to_proto(&self) -> Result<proto::NativeIntrinsic> {
-        Ok(match self {
-            Self::GlobalObject => proto::NativeIntrinsic::GlobalObject,
-            Self::UnknownGlobalValue => proto::NativeIntrinsic::UnknownGlobalValue,
-            Self::TextEncoder => proto::NativeIntrinsic::TextEncoder,
-            Self::Error => proto::NativeIntrinsic::Error,
-            Self::FinalizationRegistry => proto::NativeIntrinsic::FinalizationRegistry,
-            Self::Function => proto::NativeIntrinsic::Function,
-            Self::Object => proto::NativeIntrinsic::Object,
-            Self::Array => proto::NativeIntrinsic::Array,
-            Self::Math => proto::NativeIntrinsic::Math,
-            Self::RegExp => proto::NativeIntrinsic::RegExp,
-            Self::Symbol => proto::NativeIntrinsic::Symbol,
-            Self::Promise => proto::NativeIntrinsic::Promise,
-            Self::Map => proto::NativeIntrinsic::Map,
-            Self::Set => proto::NativeIntrinsic::Set,
-            Self::WeakMap => proto::NativeIntrinsic::WeakMap,
-            Self::WeakSet => proto::NativeIntrinsic::WeakSet,
-        })
-    }
-
-    fn from_proto(value: proto::NativeIntrinsic) -> Result<Self> {
-        Ok(match value {
-            proto::NativeIntrinsic::GlobalObject => Self::GlobalObject,
-            proto::NativeIntrinsic::UnknownGlobalValue => Self::UnknownGlobalValue,
-            proto::NativeIntrinsic::TextEncoder => Self::TextEncoder,
-            proto::NativeIntrinsic::Error => Self::Error,
-            proto::NativeIntrinsic::FinalizationRegistry => Self::FinalizationRegistry,
-            proto::NativeIntrinsic::Function => Self::Function,
-            proto::NativeIntrinsic::Object => Self::Object,
-            proto::NativeIntrinsic::Array => Self::Array,
-            proto::NativeIntrinsic::Math => Self::Math,
-            proto::NativeIntrinsic::RegExp => Self::RegExp,
-            proto::NativeIntrinsic::Symbol => Self::Symbol,
-            proto::NativeIntrinsic::Promise => Self::Promise,
-            proto::NativeIntrinsic::Map => Self::Map,
-            proto::NativeIntrinsic::Set => Self::Set,
-            proto::NativeIntrinsic::WeakMap => Self::WeakMap,
-            proto::NativeIntrinsic::WeakSet => Self::WeakSet,
-            proto::NativeIntrinsic::Unspecified => anyhow::bail!("unspecified native intrinsic"),
         })
     }
 }
@@ -1339,11 +1294,29 @@ impl ProtoConvert<proto::NativeIntegrity> for NativeIntegrity {
 mod tests {
     use crate::analysis_inputs::{
         ArgumentInputRef, CallableSummary, ForeignCallSummary, ForeignInvocation, ForeignReturn,
-        NamespaceWrapperSummary, ProofDependencies, ValueInputRef,
+        NamespaceWrapperSummary, NativeIntrinsic, ProofDependencies, ValueInputRef,
     };
     use crate::analysis_provenance::{InferenceRule, InferenceUse};
     use crate::execution_evidence::SourceLocation;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn native_intrinsics_keep_report_names_and_strict_saved_sets() {
+        use crate::saved_proto::{decode_native_intrinsics, encode_native_intrinsics};
+
+        assert_eq!(
+            serde_json::to_value(NativeIntrinsic::UnknownGlobalValue).unwrap(),
+            "unknown_global_value"
+        );
+        assert_eq!(NativeIntrinsic::RegExp.to_string(), "reg_exp");
+        assert_eq!(NativeIntrinsic::GlobalObject as i32, 0);
+
+        let families = BTreeSet::from([NativeIntrinsic::Array, NativeIntrinsic::Symbol]);
+        let encoded = encode_native_intrinsics(&families).unwrap();
+        assert_eq!(decode_native_intrinsics(encoded.clone()).unwrap(), families);
+        assert!(decode_native_intrinsics([encoded.clone(), encoded].concat()).is_err());
+        assert!(decode_native_intrinsics(vec![i32::MAX]).is_err());
+    }
 
     #[test]
     fn saved_host_prerequisites_preserve_keys_and_reject_unknown_values() {

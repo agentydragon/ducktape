@@ -875,7 +875,7 @@ impl ProtoConvert<proto::LocalBodyIdentity> for LocalBodyIdentity {
                     intrinsic,
                     property,
                 } => Value::Native(Native {
-                    intrinsic: Some(intrinsic.to_proto()? as i32),
+                    intrinsic: Some(*intrinsic as i32),
                     property: property.to_proto()?,
                 }),
                 Self::Imported {
@@ -917,8 +917,9 @@ impl ProtoConvert<proto::LocalBodyIdentity> for LocalBodyIdentity {
                 )?)?,
             },
             Value::Native(value) => Self::Native {
-                intrinsic: NativeIntrinsic::from_proto(proto::NativeIntrinsic::try_from(
-                    required(value.intrinsic, "LocalBodyIdentity.native.intrinsic")?,
+                intrinsic: NativeIntrinsic::try_from(required(
+                    value.intrinsic,
+                    "LocalBodyIdentity.native.intrinsic",
                 )?)?,
                 property: Option::from_proto(value.property)?,
             },
