@@ -8118,25 +8118,34 @@ data:
         - updates.push.services.mozilla.com
     session_dispatcher:
       target: session-dispatcher.agentplane-staging.svc.cluster.local:8080
-      token_file: /var/run/secrets/actions/dispatcher
+      token_file: ""
       request_timeout_s: 15
       tls:
         ca_file: /run/agentplane/workload-trust/ca-certificates.crt
         server_uri: spiffe://agentplane/session-dispatcher
+        cert_file: /run/agentplane/workload-tls/tls.crt
+        key_file: /run/agentplane/workload-tls/tls.key
+        client_uri: spiffe://agentplane/actions
     history_service:
       target: history-service.agentplane-staging.svc.cluster.local:8080
-      token_file: /var/run/secrets/actions/history
+      token_file: ""
       request_timeout_s: 15
       tls:
         ca_file: /run/agentplane/workload-trust/ca-certificates.crt
         server_uri: spiffe://agentplane/history-ingress
+        cert_file: /run/agentplane/workload-tls/tls.crt
+        key_file: /run/agentplane/workload-tls/tls.key
+        client_uri: spiffe://agentplane/actions
     session_delegation_dispatcher:
       target: session-dispatcher.agentplane-staging.svc.cluster.local:8080
-      token_file: /var/run/secrets/actions/dispatcher
+      token_file: ""
       request_timeout_s: 40
       tls:
         ca_file: /run/agentplane/workload-trust/ca-certificates.crt
         server_uri: spiffe://agentplane/session-dispatcher
+        cert_file: /run/agentplane/workload-tls/tls.crt
+        key_file: /run/agentplane/workload-tls/tls.key
+        client_uri: spiffe://agentplane/actions
     environment_service:
       target: sandbox-controller.agentplane-staging.svc.cluster.local:8082
       token_file: ""
@@ -8149,11 +8158,14 @@ data:
         client_uri: spiffe://agentplane/actions
     session_delegation_history:
       target: history-service.agentplane-staging.svc.cluster.local:8080
-      token_file: /var/run/secrets/actions/history
+      token_file: ""
       request_timeout_s: 40
       tls:
         ca_file: /run/agentplane/workload-trust/ca-certificates.crt
         server_uri: spiffe://agentplane/history-ingress
+        cert_file: /run/agentplane/workload-tls/tls.crt
+        key_file: /run/agentplane/workload-tls/tls.key
+        client_uri: spiffe://agentplane/actions
 immutable: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1
