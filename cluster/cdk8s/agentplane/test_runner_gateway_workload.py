@@ -199,7 +199,6 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
 
 def test_actions_delegation_is_explicit_for_each_receiving_backend(staging_manifests: list[dict[str, Any]]) -> None:
     namespace = staging.ENV.namespace
-    actions_account = f"{namespace}/{actions.NAME}"
     gateway = yaml.safe_load(
         _resource(staging_manifests, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"]
     )
@@ -221,10 +220,8 @@ def test_actions_delegation_is_explicit_for_each_receiving_backend(staging_manif
         "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ListDispatches",
         "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
     ]
-    history_delegation = history["delegation"]
-    assert history_delegation["actor"] == actions_account
-    assert "caller_namespaces" not in history_delegation
-    assert history_delegation["identity_callers"] is True
+    history_delegation = history["service_delegation"]
+    assert history_delegation["actors"] == [{"spiffe_id": ACTIONS_URI, "connection_provenance": False}]
     assert history_delegation["methods"] == [
         "/agentplane.history_service.HistoryService/ReadSessionEvents",
         "/agentplane.history_service.HistoryService/FollowSession",
@@ -238,10 +235,6 @@ def test_actions_delegation_is_explicit_for_each_receiving_backend(staging_manif
         "/agentplane.history_service.HistoryService/WatchSessionSummaries",
     ]
     assert history["reader_service_callers"] == [ACTIONS_URI, APP_URI, NOTIFICATIONS_URI]
-    assert history["service_delegation"] == {
-        "actors": [{"spiffe_id": ACTIONS_URI, "connection_provenance": False}],
-        "methods": history_delegation["methods"],
-    }
 
 
 def test_session_delegation_is_a_dispatcher_caller_without_wake_authority(scratch_app: App) -> None:
