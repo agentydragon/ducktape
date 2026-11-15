@@ -20,7 +20,7 @@ import (
 
 const (
 	// Deviation: upstream reads whole files with fs/readFile. Its base64 reply exceeds the
-	// Runner relay's 1 MiB message bound for files above ~750 KiB, so reads use fs/readBlock.
+	// Environment Runtime relay's 1 MiB message bound for files above ~750 KiB, so reads use fs/readBlock.
 	viewImageBlockBytes = 512 * 1024
 	// Deviation: upstream has no view_image size limit. The result travels to the host as one
 	// base64 code-mode frame, bounded by maxCodeModeFrame.

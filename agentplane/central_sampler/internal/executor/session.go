@@ -50,7 +50,7 @@ func nativeFramePhase(direction string) (eventpb.ExecutionProgress_Phase, error)
 }
 
 // typedExecutorClient keeps the sampler's narrow stream interface injectable in tests while
-// using the same generated Executor client for direct Runner and Gateway targets.
+// using the same generated Executor client for direct Environment Runtime and Gateway proxy targets.
 type typedExecutorClient struct{ executorpb.ExecutorClient }
 
 func (c typedExecutorClient) OpenSession(ctx context.Context, req *executorpb.OpenSessionRequest, opts ...grpc.CallOption) (executorSessionStream, error) {
