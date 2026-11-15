@@ -33,6 +33,22 @@ class Delegation(BaseModel):
     methods: tuple[str, ...] = Field(min_length=1)
 
 
+class RuntimeProxy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    runner_security: Security
+    audience: str = Field(min_length=1)
+    readers: tuple[ServiceSPIFFEID, ...] = ()
+    session_callers: tuple[ServiceSPIFFEID, ...] = ()
+    controller_callers: tuple[ServiceSPIFFEID, ...] = ()
+    executor_callers: tuple[ServiceSPIFFEID, ...] = ()
+
+    @model_validator(mode="after")
+    def file_credentials(self) -> Self:
+        if self.runner_security.mode == "mtls" and self.runner_security.tls.workload_api_socket is not None:
+            raise ValueError("Runtime proxy runner_security requires file-backed client credentials")
+        return self
+
+
 class EnvironmentService(BaseModel):
     """Every-replica RPC settings, enabled only after the accepting image is pinned."""
 
@@ -53,6 +69,7 @@ class EnvironmentService(BaseModel):
     wake_service_callers: tuple[ServiceSPIFFEID, ...] = ()
     service_delegation: ServiceDelegation | None = None
     delegation: Delegation | None = None
+    runtime_proxy: RuntimeProxy | None = Field(default=None, exclude_if=lambda value: value is None)
     runtime_catalog: Catalog | None = None
 
     @model_validator(mode="after")

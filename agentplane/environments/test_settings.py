@@ -6,7 +6,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from agentplane.environments.settings import EnvironmentService, Settings
+from agentplane.environments.settings import EnvironmentService, RuntimeProxy, Settings
 
 
 def receiver_settings() -> dict[str, object]:
@@ -44,6 +44,67 @@ def test_receiver_roles_and_typed_delegation() -> None:
     assert settings.service_operators == ("spiffe://agentplane/app",)
     assert settings.service_delegation is not None
     assert settings.service_delegation.actors[0].spiffe_id == "spiffe://agentplane/actions"
+
+
+def test_runtime_proxy_is_optional_with_empty_allowlists() -> None:
+    receiver = EnvironmentService.model_validate(receiver_settings())
+    assert receiver.runtime_proxy is None
+    assert "runtime_proxy" not in receiver.model_dump(mode="json")
+
+    runtime_proxy = RuntimeProxy.model_validate(
+        {"runner_security": {"mode": "insecure"}, "audience": "test-runtime-proxy"}
+    )
+    assert runtime_proxy.readers == ()
+    assert runtime_proxy.session_callers == ()
+    assert runtime_proxy.controller_callers == ()
+    assert runtime_proxy.executor_callers == ()
+
+
+def test_runtime_proxy_roles_are_typed() -> None:
+    receiver = EnvironmentService.model_validate(
+        receiver_settings()
+        | {
+            "runtime_proxy": {
+                "runner_security": {"mode": "insecure"},
+                "audience": "test-runtime-proxy",
+                "readers": ["spiffe://agentplane/app"],
+                "session_callers": ["spiffe://agentplane/sessions"],
+                "controller_callers": ["spiffe://agentplane/sandbox-controller"],
+                "executor_callers": ["spiffe://agentplane/runner-gateway"],
+            }
+        }
+    )
+    assert receiver.runtime_proxy is not None
+    assert receiver.runtime_proxy.readers == ("spiffe://agentplane/app",)
+    assert receiver.runtime_proxy.session_callers == ("spiffe://agentplane/sessions",)
+    assert receiver.runtime_proxy.controller_callers == ("spiffe://agentplane/sandbox-controller",)
+    assert receiver.runtime_proxy.executor_callers == ("spiffe://agentplane/runner-gateway",)
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {"audience": "test-runtime-proxy"},
+        {"runner_security": {"mode": "unsupported"}, "audience": "test-runtime-proxy"},
+        {"runner_security": {"mode": "insecure"}, "audience": ""},
+        {"runner_security": {"mode": "insecure"}, "audience": "test-runtime-proxy", "unknown": True},
+    ],
+)
+def test_runtime_proxy_rejects_incomplete_or_unknown_settings(settings: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        RuntimeProxy.model_validate(settings)
+
+
+@pytest.mark.parametrize("field", ["readers", "session_callers", "controller_callers", "executor_callers"])
+def test_runtime_proxy_rejects_unknown_service_callers(field: str) -> None:
+    with pytest.raises(ValidationError):
+        RuntimeProxy.model_validate(
+            {
+                "runner_security": {"mode": "insecure"},
+                "audience": "test-runtime-proxy",
+                field: ["spiffe://agentplane/unknown"],
+            }
+        )
 
 
 @pytest.mark.parametrize(

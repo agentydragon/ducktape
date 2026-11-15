@@ -30,6 +30,7 @@ type Config struct {
 	WakeServiceCallers []string                 `mapstructure:"wake_service_callers"`
 	ServiceDelegation  *ServiceDelegationConfig `mapstructure:"service_delegation"`
 	Delegation         *DelegationConfig        `mapstructure:"delegation"`
+	RuntimeProxy       *RuntimeProxyConfig      `mapstructure:"runtime_proxy"`
 	RuntimeCatalog     runtimeconfig.Catalog    `mapstructure:"runtime_catalog"`
 }
 
@@ -47,6 +48,11 @@ type DelegationConfig struct {
 func (c Config) Validate() error {
 	if c.PolicyNamespace == "" || c.Audience == "" {
 		return errors.New("policy_namespace and audience are required")
+	}
+	if c.RuntimeProxy != nil {
+		if err := c.RuntimeProxy.Validate(); err != nil {
+			return fmt.Errorf("runtime_proxy: %w", err)
+		}
 	}
 	if err := c.RPC.Validate(); err != nil {
 		return fmt.Errorf("rpc: %w", err)

@@ -200,6 +200,7 @@ go_library(
     visibility = ["//agentplane/runner_gateway:__subpackages__"],
     deps = [
         "//agentplane/environments/access",
+        "//agentplane/environments/runtimeproxy",
         "//agentplane/grpc/graceful",
         "//agentplane/identity/auth",
         "//agentplane/identity/auth/listener",
@@ -216,7 +217,6 @@ go_library(
         "//agentplane/runner_gateway/dispatcher",
         "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_go_proto",
         "//agentplane/runner_gateway/dispatcher/wake",
-        "//agentplane/runner_gateway/internal/gateway",
         "//agentplane/runner_gateway/internal/sandboxinventory",
         "//agentplane/runner_gateway/migrations",
         "//agentplane/sandboxes/api",

@@ -24,8 +24,10 @@ methods, with independent per-method authorization. Only the Pod-bound Gateway/D
 can proxy Runtime Session creation and commands; `gateway_callers` grants read-only diagnostics.
 Startup reviews `runner_token_file` with the Gateway audience and verifies its Pod name, current UID
 and ServiceAccount against Kubernetes before serving. The Kubernetes API must answer that
-TokenReview and Pod read; failure prevents startup. See the [proxy contract](internal/gateway/SPEC.md).
-The Sandbox Controller owns `Sandbox.status`.
+TokenReview and Pod read; failure prevents startup. See the [proxy contract](../environments/runtimeproxy/SPEC.md).
+The Sandbox Controller owns `Sandbox.status`. Environments can also register the shared Runtime
+proxy and Executor through its optional receiver settings; deployments and callers retain the
+Gateway endpoint until that receiver image and its grants have rolled.
 
 The required `rpc` settings block configures this shared TLS listener. It enables SPIFFE and
 Kubernetes bearer authentication, with exactly the Dispatcher and Gateway audiences. Dispatcher
@@ -87,7 +89,7 @@ conversation and from Runner admission.
   `AGENTPLANE_RUNNER_GATEWAY_*` variables do not override file values. The independent `delegation`
   policy names an Actions actor and exact Dispatcher RPC methods; it grants no Runtime proxy or
   Executor authority. EnvironmentService roles and delegation belong to the Controller settings.
-- `internal/gateway/`: direct Runner connections, authenticated proxy and Sandbox/Pod validation.
+- [`../environments/runtimeproxy/`](../environments/runtimeproxy/): shared direct Runtime connections, proxy and Sandbox/Pod validation during the receiver migration.
 - `internal/sandboxinventory/`: informer-backed Sandbox reads and the uncached Identity reader that supply the Dispatcher contract.
 - `dispatcher/`: durable admission, watch, delivery, guarded wake and scheduling ownership.
 - `migrations/`: Goose migrations for the Dispatcher database.

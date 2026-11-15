@@ -18,7 +18,7 @@ Gateway token; token contents remain in the rotating read-only projected volume.
 ## EnvironmentService listener
 
 `environment_service` optionally enables EnvironmentService on every replica, independently of
-leadership. Reconcilers and direct Runtime observation remain leader-only. RPCs use an uncached
+leadership. Reconcilers and the Controller's observe-only Runtime facts remain leader-only. RPCs use an uncached
 Kubernetes client, including watch streams and guarded desired-state mutations; they never use the
 leader's Runtime facts as inventory. Explicit resume has no database or wake-budget dependency.
 Automatic wake execution and its budget remain with Sessions.
@@ -36,6 +36,26 @@ Omitting `environment_service` retains the controller-only process and existing 
 Deployment configuration enables the listener only after the accepting image is pinned; caller
 configuration changes follow the running receiver. The Gateway does not register EnvironmentService;
 restoring it for rollback requires its accepting image before callers are retargeted.
+
+## Optional Runtime proxy and Executor receiver
+
+`environment_service.runtime_proxy` registers the existing EnvironmentRuntime proxy and Executor
+wire services on the same every-replica listener. It is omitted in deployment configuration until
+its accepting image is pinned. Each replica owns an independent Sandbox/Pod inventory and Runtime
+watch, including standbys; it never consumes the leader's lifecycle facts. Readiness additionally
+requires a synchronized, healthy routing inventory, but no connected Runtime. Inventory or observer
+supervisor failure stops the process. Losing a Runtime watch removes only that replica's callable
+connection; calls retain Sandbox UID, Pod UID and boot-ID fencing and no automatic mutation replay.
+
+The outbound client leaf must be `spiffe://agentplane/runtime-proxy`, separate from the Controller's
+incarnation-binding observer identity. Incoming callers pin the existing
+`spiffe://agentplane/sandbox-controller` server identity. Exact service allowlists separate readers,
+Sessions commands, Controller lifecycle calls and Executor operations. The receiver grants no bearer,
+workload Identity or delegated proxy access, and does not expose `WatchState` to callers.
+The Gateway continues to serve its old endpoint during migration, using the same
+[proxy implementation](runtimeproxy/SPEC.md). Caller targets change only after the receiving image
+and grants are deployed; the Gateway endpoint retires after all callers have rolled. Before reverting
+an image that accepts this setting, remove the setting and verify its ConfigMap and rollout.
 
 ## State PVC
 

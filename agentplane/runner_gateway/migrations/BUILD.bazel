@@ -7,6 +7,8 @@ go_library(
     embedsrcs = glob(["dispatcher/*.sql"]),
     importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/migrations",
     visibility = [
+        # Cross-service queue-to-Runtime acceptance moved with the proxy.
+        "//agentplane/environments/runtimeproxy:__pkg__",
         # The Session-delegation executor's test runs it against a real Dispatcher.
         "//agentplane/action_service/session_delegation:__pkg__",
         "//agentplane/runner_gateway:__subpackages__",

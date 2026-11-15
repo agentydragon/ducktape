@@ -118,8 +118,8 @@ own fresh Runtime observation; the proxy call carries Sandbox UID, current workl
 observed Runtime boot ID, which Runtime checks against the Controller-bound identity. These checks
 span separate requests, so the reviewed contract should say where identity is bound and where it is
 revalidated, including replacement between the Dispatcher check and proxy resolution. See
-[`proxy.go`](../runner_gateway/internal/gateway/proxy.go),
-[`sandboxes.go`](../runner_gateway/internal/gateway/sandboxes.go) with the UID fence in
+[`proxy.go`](../environments/runtimeproxy/proxy.go),
+[`sandboxes.go`](../environments/runtimeproxy/sandboxes.go) with the UID fence in
 [`reader.go`](../sandboxes/sandboxreader/reader.go), and
 [`runner_client.go`](../runner_gateway/dispatcher/runner_client.go).
 

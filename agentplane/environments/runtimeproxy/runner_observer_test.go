@@ -1,4 +1,4 @@
-package gateway
+package runtimeproxy
 
 import (
 	"context"
@@ -109,7 +109,14 @@ func TestRunnerObserverPublishesIdentityAndFencesRPCs(t *testing.T) {
 }
 
 func TestAnyGatewayReplicaObservesAndCallsOneRuntime(t *testing.T) {
+	for _, uri := range []string{peertls.GatewayURI, peertls.RuntimeProxyURI} {
+		t.Run(uri, func(t *testing.T) { testAnyReplicaObservesAndCallsOneRuntime(t, uri) })
+	}
+}
+
+func testAnyReplicaObservesAndCallsOneRuntime(t *testing.T, uri string) {
 	f := newSandboxFixture(t)
+	f.gatewayTLS = f.ca.Issue(t, uri)
 	gatewayA := f.newGateway(t)
 	gatewayB := f.newGateway(t)
 	destinationA, backend := startProductionRuntime(t, f, gatewayA)

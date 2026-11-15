@@ -82,7 +82,7 @@ listener through the stable `runner-gateway` Service.
   grants only `ListSessions` and `GetStatus`. Runtime Session creation and commands admit only the
   verified combined Gateway/Dispatcher workload; clients use SessionDispatcher with their existing
   direct or delegated authority. Only `sandbox_controller_account` may `Quiesce`; unset, nobody may.
-  Executor permissions stay separate. See the [proxy contract](../runner_gateway/internal/gateway/SPEC.md).
+  Executor permissions stay separate. See the [proxy contract](../environments/runtimeproxy/SPEC.md).
 - **Replica.** Any Gateway replica with a fresh observation of the current Sandbox incarnation can
   serve the request. A replica without a matching local Runtime connection answers `UNAVAILABLE`.
 - **Deadline.** The proxy propagates the caller's remaining gRPC deadline; a call without one waits until
@@ -389,3 +389,15 @@ central CONNECT for Rules, Notification, Dispatcher, Action
 and LLM routes; each service verifies the actual peer itself. Runtime dials History with its own
 certificate. Kubernetes retains its destination-audience token, bound to the Sandbox's recorded
 Pod. Callers without Sandbox certificates require a separate authentication design.
+
+## Environments receiver migration
+
+Optional `environment_service.runtime_proxy` registers the same Runtime proxy and Executor wire
+services on `sandbox-controller:8082`. Every replica owns its routing cache and callable Runtime
+watches independently of leadership, while the Controller's incarnation-binding facts watch stays
+leader-only. This receiver presents the dedicated `runtime-proxy` SVID to Runtime; callers verify
+the existing Sandbox Controller server SVID and receive only their exact per-method service grants.
+It admits no bearer, workload Identity or delegated proxy calls. Sandbox/Pod/boot fences and uncertain
+outcomes remain unchanged. Deployment settings and callers retain the Gateway endpoint until the
+accepting image and receiver grants have rolled. See the
+[receiver contract](../environments/SPEC.md#optional-runtime-proxy-and-executor-receiver).
