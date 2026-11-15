@@ -1,15 +1,15 @@
 """Planner for archiving old USPS Informed Delivery emails."""
 
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 
 from pydantic import BaseModel
 
-from gmail_api.labels import SystemLabel
 from gmail_archiver.date_patterns import DAYS_OF_WEEK, MONTHS
 from gmail_archiver.inbox import GmailInbox
 from gmail_archiver.models import Email
-from gmail_archiver.plan import LABEL_AUTO_CLEANED, Plan
+from gmail_archiver.plan import Plan
+from gmail_archiver.planners.age_archive import plan_age_archive
 
 
 class USPSDelivery(BaseModel):
@@ -47,43 +47,13 @@ class UspsPlanner:
     DAYS_THRESHOLD = 7
 
     def plan(self, inbox: GmailInbox) -> Plan:
-        plan = Plan(planner=self)
-
-        # Fetch messages with batch/usps-informed-delivery label that are in inbox
-        messages = inbox.fetch_messages("label:batch/usps-informed-delivery label:INBOX")
-
-        cutoff_date = datetime.now(UTC) - timedelta(days=self.DAYS_THRESHOLD)
-
-        for message in messages:
-            parsed = parse_usps(message)
-
-            if not parsed or not parsed.expected_delivery_date:
-                plan.add_action(
-                    message=message, labels_to_add=[], labels_to_remove=[], reason="Could not parse delivery date"
-                )
-                continue
-
-            # Make date timezone-aware for comparison
-            delivery_date = parsed.expected_delivery_date
-            if delivery_date.tzinfo is None:
-                delivery_date = delivery_date.replace(tzinfo=UTC)
-
-            if delivery_date >= cutoff_date:
-                plan.add_action(
-                    message=message,
-                    labels_to_add=[],
-                    labels_to_remove=[],
-                    reason=f"Too recent (within {self.DAYS_THRESHOLD} days)",
-                )
-            else:
-                plan.add_action(
-                    message=message,
-                    labels_to_add=[LABEL_AUTO_CLEANED],
-                    labels_to_remove=[SystemLabel.INBOX],
-                    reason=f"Old enough (> {self.DAYS_THRESHOLD} days)",
-                )
-
-        # Count actual archive operations
-        archive_count = sum(1 for pa in plan.actions.values() if SystemLabel.INBOX in pa.action.labels_to_remove)
-        plan.add_message(f"Archiving {archive_count} old deliveries (> {self.DAYS_THRESHOLD} days)")
-        return plan
+        return plan_age_archive(
+            inbox,
+            planner=self,
+            query="label:batch/usps-informed-delivery label:INBOX",
+            days_threshold=self.DAYS_THRESHOLD,
+            parse=parse_usps,
+            date_from=lambda parsed: parsed.expected_delivery_date if parsed is not None else None,
+            missing_date_reason="Could not parse delivery date",
+            archive_item_plural="deliveries",
+        )
