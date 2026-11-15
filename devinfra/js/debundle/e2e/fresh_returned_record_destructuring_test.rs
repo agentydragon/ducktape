@@ -66,7 +66,7 @@ const { selected: last } = factory();
 console.log(first, middle, last);
 export { first, middle, last };
 "#;
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         source,
         vec![
             logical_module("outer", &[Member::new("first"), Member::new("last")]),
