@@ -485,7 +485,6 @@ pub enum NativeProgramPointKind {
     Evaluate,
     Invoke,
     Call,
-    OwnProperty,
     Heap,
     Callbacks,
     Model,

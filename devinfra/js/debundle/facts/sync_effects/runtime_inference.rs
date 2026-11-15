@@ -287,8 +287,7 @@ impl RuntimeQueries<'_, '_> {
     }
 
     fn child_point(&self, kind: NativeProgramPointKind) -> ProgramPoint {
-        let ordinal = self.next_child.get();
-        self.next_child.set(ordinal + 1);
+        let ordinal = self.next_child_ordinal();
         let mut point = self.point.clone();
         point.path.push((kind, ordinal));
         point
@@ -297,7 +296,7 @@ impl RuntimeQueries<'_, '_> {
     pub(super) fn project_own_property(&self, query: OwnPropertyQuery) -> Option<OwnPropertyProof> {
         // Own-property projections have no nested interpreter, but they still
         // occupy a child ordinal so later native observations keep their path.
-        self.next_child_ordinal();
+        let _ordinal = self.next_child_ordinal();
         let proof = self.inputs.project_own_property(query);
         if let Some(proof) = &proof {
             self.dependencies.borrow_mut().extend(&proof.dependencies);
