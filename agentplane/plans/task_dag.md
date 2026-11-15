@@ -4010,7 +4010,7 @@ Identity landed in #16373.
 ```mermaid
 flowchart LR
     PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: service SVIDs, section 15]
-    RUNTIME_PROXY_CALLER_AUDIT[Unscheduled: audit direct Runtime-proxy callers]
+    RUNTIME_PROXY_CALLER_AUDIT[In review: Runtime-proxy caller dispositions]
     RUNTIME_PROXY_TO_ENVIRONMENTS[Agreed: Runtime proxy and Executor into Environments]
     SESSIONS_BINARY_DIRECTORY[Held: the rest moves to session_dispatcher/]
     ENVIRONMENT_KEEP_ALIVE_HOLDS[Proposed design: keep-alive holds]
@@ -4031,14 +4031,19 @@ through its Service, and nothing in `runner_gateway/` calls a Runtime.
 
 ### `RUNTIME_PROXY_CALLER_AUDIT` — route callers through their owning APIs
 
-**Unscheduled; requested by operator, 2026-11-15.** Inventory every caller of the proxy to
-Environment Runtimes, including Notifications' subscription-time `ListSessions` check, and its exact
-methods and grants. Determine which operations belong behind EnvironmentService or Session
-Dispatcher APIs and which need privileged Runtime access. The proxy may become a private/privileged
-API; do not treat its current caller set as the intended public boundary. **Exit:** every caller has
-an explicit disposition, required higher-level APIs and migration work are tracked, and retained
-proxy callers have narrow, reviewed authority. This audit does not block the approved serving move
-or authorize new proxy grants.
+**In review; audit released by operator, 2026-11-15.** The
+[caller inventory and disposition proposal](runtime_proxy_callers.md) records the production paths,
+exact methods and grants, direct Runtime channels and test-only clients. Recommend moving App
+Runtime diagnostics behind EnvironmentService, moving Notifications' subscription validation to
+Sessions, and retaining only narrow Sessions delivery, sampler Executor and Controller-internal
+transport authority. Notifications' admitted-versus-materialized subscription behavior needs explicit
+review; App archival safety follows `SESSION_LIVE_STATUS_OWNERSHIP_DESIGN` rather than silently
+choosing current-status ownership here. The plan tracks required APIs, caller/grant retirement,
+rollout and acceptance; those migrations are not released by this audit.
+
+**Exit:** reviewed caller dispositions, including the Notification availability choice, with the
+remaining migration work dispatched separately. The audit does not block the agreed physical proxy
+move, authorize new grants or require a Sandbox/single attachment on a Session.
 
 ### `SESSIONS_BINARY_DIRECTORY` — what remains becomes the Sessions binary
 
