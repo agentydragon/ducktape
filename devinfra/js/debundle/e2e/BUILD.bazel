@@ -1,4 +1,4 @@
-load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
 load(":defs.bzl", "debundle_e2e_test")
 
 package(default_testonly = True)
@@ -442,6 +442,7 @@ rust_library(
     name = "support",
     srcs = [
         "support/ast_assertions.rs",
+        "support/case_commands.rs",
         "support/failure_workspace.rs",
         "support/fixture_spec.rs",
         "support/mod.rs",
@@ -1645,4 +1646,23 @@ debundle_e2e_test(
     name = "failure_workspace_test",
     saved_analysis_tools = True,
     deps = ["@crates//:serde_json"],
+)
+
+rust_binary(
+    name = "replay_fixture",
+    srcs = ["replay_fixture.rs"],
+    edition = "2024",
+    deps = [
+        ":support",
+        "@crates//:clap",
+    ],
+)
+
+debundle_e2e_test(
+    name = "replay_fixture_test",
+    saved_analysis_tools = True,
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
 )

@@ -19,6 +19,12 @@ The library's existing public test helpers are re-exported by `mod.rs`:
   returned staged invocation remains usable after its setup owner is dropped.
   `case.json` records the original root, and per-test names plus process/case IDs
   distinguish concurrent failures. Successful cases remove their temporary files.
+- `case_commands.rs` records commands associated with a concrete path inside an
+  owned case. Raw stdout/stderr, status, argv, cwd and child environment changes
+  live in `.case-commands/<id>/`. Debundle commands also snapshot source/spec
+  inputs, consumed analysis/graph files, external dependencies and the previous
+  output state. The shared guard runs after raw output is recorded. Executable
+  SHA-256 identities are computed when a failure is retained.
 - `mod.rs` owns flat-fixture setup, CLI/Node execution, and report
   fixtures. Runtime-only `extra_files` are mirrored
   into `app/` after transformation and before exit handling; on a failed exit, mirroring
@@ -31,3 +37,27 @@ needs to express malformed wire input; a typed builder must not make those cases
 unrepresentable. AST assertions complement, rather than replace, Node behavior checks.
 
 `graph_support.rs` is a separate crate (`debundle_e2e_graph_support`) for helpers that read typed graph reports; its `effect_validation.rs` module owns effect translation validation fixtures and operation-receipt assertions.
+
+## Replay a retained case
+
+List the commands, then replay one into a fresh directory with its executable
+supplied explicitly:
+
+```bash
+bb run //devinfra/js/debundle/e2e:replay_fixture -- list /path/to/retained-case
+bb run //devinfra/js/debundle/e2e:replay_fixture -- run /path/to/retained-case 00000001 \
+  --out /path/to/fresh-replay --binary /absolute/path/to/debundle
+```
+
+The same command works for recorded Node/Bun observations with their runtime
+executable. The helper checks its hash against `tools.json`; use
+`--allow-tool-change` deliberately when comparing tool versions. It forwards raw
+output and the child exit status.
+
+Replay restores the selected command's inputs and previous outputs, including
+intentional nonempty-output refusals. Only spec path fields are relocated; the
+retained originals and JS strings stay intact. Owned flat/staged commands run
+from their case root so their canonical analysis projections use relative input
+paths. Saved graph queries use the CLI's existing `--spec-root`,
+`--graph-source-root` and package-root relocation support, preserving graph
+compatibility checks. Each replay has its own output tree.
