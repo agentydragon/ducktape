@@ -1,4 +1,4 @@
-"""Runner Gateway rejects ambiguous control security in its authored deployment settings."""
+"""Dispatcher settings retain the retired receiver shape during configuration rollout."""
 
 from typing import cast
 
@@ -45,9 +45,10 @@ def test_gateway_rejects_ambiguous_runner_security(security: object) -> None:
         _settings(security)
 
 
-def test_gateway_requires_explicit_runner_security_mode() -> None:
-    with pytest.raises(ValidationError):
-        _settings(None)
+def test_dispatcher_no_longer_requires_direct_runtime_credentials() -> None:
+    source = _settings(None).model_dump(mode="json", exclude_none=True)
+    assert "runner_security" not in source
+    assert Settings.model_validate(source).runner_security is None
 
 
 @pytest.mark.parametrize("qps", [-1, 0, 25.5])

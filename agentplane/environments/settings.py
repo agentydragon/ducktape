@@ -111,8 +111,8 @@ class Settings(BaseModel):
     )
     runner_gateway_target: str = Field(
         min_length=1,
-        description="Where the controller quiesces a Sandbox's runner through the stable Runner Gateway Service: "
-        "one target, or a template such as `runner-gateway.{namespace}.svc:8080`.",
+        description="Where the controller quiesces a Sandbox's Runtime through the Environments proxy Service: "
+        "one target, or a template such as `sandbox-controller.{namespace}.svc:8082`.",
     )
     runner_gateway_token_file: Path | None = Field(
         default=None, description="Projected token path; absent when the controller presents its service SVID."

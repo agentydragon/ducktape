@@ -86,7 +86,7 @@ async def history_service(
         api=api_server,
         directory=tmp_path,
         writer_namespaces=(sandbox.namespace,),
-        svid_ca=gateway_service.environment_runtime_ca,
+        svid_ca=gateway_service.environment_service.ca,
         policy_namespace=sandbox.namespace,
     ) as service:
         yield service
@@ -112,8 +112,10 @@ async def start_runtime(
     tmp_path: Path,
 ) -> AsyncIterator[Callable[[], Awaitable[RunnerProcess]]]:
     environment = {**config.harness_environment, "ANTHROPIC_AUTH_TOKEN": launches.TOKEN, "OTEL_SDK_DISABLED": "true"}
-    remote = gateway_service.gateway_client(request_timeout_s=2)
-    controller_credentials = gateway_service.controller_credentials(tmp_path / "controller-transport")
+    remote = gateway_service.environment_runtime_client(request_timeout_s=2)
+    controller_credentials = gateway_service.environment_service.channel_credentials(
+        "spiffe://agentplane/sandbox-controller"
+    )
     async with model_config() as model_endpoint, AsyncExitStack() as processes:
         command = launches.command(
             config, control=control, ingress=ingress, model_config_target=model_endpoint, runner_binary=runtime_binary
@@ -131,7 +133,7 @@ async def start_runtime(
             process = RunnerProcess(container)
             processes.push_async_callback(stop, process)
             await bind_incarnation(control, sandbox.uid, sandbox.pod_uid, controller_credentials)
-            await gateway_service.wait_for_runner(remote, sandbox.destination)
+            await gateway_service.environment_service.wait_for_runner(remote, sandbox.destination)
             return process
 
         yield start

@@ -124,8 +124,8 @@ func TestReplaceOutgoingMetadataDropsTheCallersMetadata(t *testing.T) {
 }
 
 func TestExpandTarget(t *testing.T) {
-	template := sandboxapi.RunnerGatewayTargetTemplate()
-	if got := ExpandTarget(template, "one", "agentplane-staging"); got != "runner-gateway.agentplane-staging.svc:8080" {
+	template := sandboxapi.RuntimeProxyTargetTemplate()
+	if got := ExpandTarget(template, "one", "agentplane-staging"); got != "sandbox-controller.agentplane-staging.svc:8082" {
 		t.Fatalf("target = %q", got)
 	}
 }

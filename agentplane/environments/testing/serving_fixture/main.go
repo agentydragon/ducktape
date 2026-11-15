@@ -7,12 +7,14 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/agentydragon/ducktape/agentplane/environments/internal/serving"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -46,7 +48,24 @@ func run() error {
 		}
 	}
 	namespace := os.Getenv("ENVIRONMENTS_TEST_NAMESPACE")
-	callers := []string{os.Getenv("ENVIRONMENTS_TEST_CALLER_URI")}
+	callers := split(os.Getenv("ENVIRONMENTS_TEST_CALLERS"))
+	var runtimeProxy *serving.RuntimeProxyConfig
+	if certFile := os.Getenv("ENVIRONMENTS_TEST_RUNTIME_PROXY_CERT"); certFile != "" {
+		runtimeProxy = &serving.RuntimeProxyConfig{
+			RunnerSecurity: peertls.Security{
+				Mode: peertls.MutualTLS,
+				TLS: &peertls.Config{
+					CertFile: certFile,
+					KeyFile:  os.Getenv("ENVIRONMENTS_TEST_RUNTIME_PROXY_KEY"),
+					CAFile:   os.Getenv("ENVIRONMENTS_TEST_RUNTIME_PROXY_CA"),
+				},
+			},
+			Readers:           split(os.Getenv("ENVIRONMENTS_TEST_RUNTIME_READERS")),
+			SessionCallers:    split(os.Getenv("ENVIRONMENTS_TEST_RUNTIME_SESSION_CALLERS")),
+			ControllerCallers: split(os.Getenv("ENVIRONMENTS_TEST_RUNTIME_CONTROLLER_CALLERS")),
+			ExecutorCallers:   split(os.Getenv("ENVIRONMENTS_TEST_RUNTIME_EXECUTOR_CALLERS")),
+		}
+	}
 	server, err := serving.New(serving.Config{
 		PolicyNamespace: namespace,
 		Audience:        "test-environments",
@@ -56,9 +75,23 @@ func run() error {
 			Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: os.Getenv("ENVIRONMENTS_TEST_CA")}},
 		},
 		ServiceReaders: callers, ServiceManagers: callers, ServiceOperators: callers,
+		RuntimeProxy: runtimeProxy,
 	}, namespace, config, scheme)
 	if err != nil {
 		return err
 	}
 	return server.Start(ctx)
+}
+
+func split(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	var values []string
+	for _, item := range strings.Split(value, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			values = append(values, item)
+		}
+	}
+	return values
 }

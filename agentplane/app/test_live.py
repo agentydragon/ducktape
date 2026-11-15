@@ -107,7 +107,9 @@ async def gateway_service(
 
 @pytest.fixture
 def namespace_gateway(gateway_service: GatewayProcess, app_token_file: Path) -> GatewayAccess:
-    return GatewayAccess(gateway_service.target, None, gateway_service.client_tls)
+    return GatewayAccess(
+        gateway_service.target, None, gateway_service.client_tls, gateway_service.environment_service.ca
+    )
 
 
 async def _watch_results(response: httpx.Response) -> AsyncIterator[dict[str, object]]:

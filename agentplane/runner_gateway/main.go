@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -14,7 +13,6 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/environments/access"
-	gateway "github.com/agentydragon/ducktape/agentplane/environments/runtimeproxy"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
@@ -39,14 +37,12 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	toolscache "k8s.io/client-go/tools/cache"
-	kubevirtv1 "kubevirt.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
@@ -106,21 +102,9 @@ func listenAndServe(ctx context.Context, c config) error {
 
 // serve uses the supplied shared gRPC listener.
 func serve(ctx context.Context, c config, rpcListener net.Listener) error {
-	if err := c.RunnerSecurity.Validate(); err != nil {
-		return err
-	}
 	rpcCredentials, err := c.RPC.ServerCredentialsWithServices(peertls.SessionDispatcherURI)
 	if err != nil {
 		return fmt.Errorf("Gateway RPC listener TLS: %w", err)
-	}
-	if c.RunnerSecurity.Mode == peertls.MutualTLS {
-		identity, err := c.RunnerSecurity.TLS.LocalIdentity(x509.ExtKeyUsageClientAuth)
-		if err != nil {
-			return err
-		}
-		if identity != peertls.GatewayURI {
-			return errors.New("Gateway runner certificate has the wrong identity")
-		}
 	}
 	config, err := kubernetesConfig(c)
 	if err != nil {
@@ -143,28 +127,16 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	if err := workloadapi.AddToScheme(scheme); err != nil {
 		return err
 	}
-	if err := kubevirtv1.AddToScheme(scheme); err != nil {
-		return err
-	}
 	objects, err := client.NewWithWatch(config, client.Options{Scheme: scheme})
 	if err != nil {
 		return err
 	}
 	inventoryHealth := watchhealth.New()
-	// A reflector names its type as the Go type; the health transport names a kind by its path.
-	kindByType := make(map[string]watchhealth.Kind)
-	for kind, object := range map[watchhealth.Kind]client.Object{
-		"sandboxes": &sandboxapi.Sandbox{}, "pods": &corev1.Pod{},
-		"virtualmachineinstances": &kubevirtv1.VirtualMachineInstance{}, "virtualmachines": &kubevirtv1.VirtualMachine{},
-	} {
-		kindByType[fmt.Sprintf("%T", object)] = kind
-	}
-	// KubeVirt informers start on the first VM Sandbox's read, so clusters without KubeVirt never watch it.
 	inventory, err := cache.New(inventoryHealth.Config(config, watchhealth.KindByPath), cache.Options{
 		Scheme: scheme, Mapper: objects.RESTMapper(),
 		DefaultNamespaces: map[string]cache.Config{c.Namespace: {}},
 		DefaultWatchErrorHandler: func(ctx context.Context, r *toolscache.Reflector, err error) {
-			inventoryHealth.WatchErrorHandler(kindByType[r.TypeDescription()])(ctx, r, err)
+			inventoryHealth.WatchErrorHandler("sandboxes")(ctx, r, err)
 		},
 	})
 	if err != nil {
@@ -193,24 +165,6 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 		&resolver.Identities{PolicyNamespace: c.PolicyNamespace})
 	if err != nil {
 		return fmt.Errorf("configure Gateway SVID authentication: %w", err)
-	}
-	g, err := gateway.New(gateway.Config{
-		RunnerSecurity: c.RunnerSecurity,
-		RuntimeReaders: c.RuntimeProxyReaders, SessionServices: c.RuntimeProxySessionCallers,
-		ControllerServices: c.RuntimeProxyControllerCallers, ExecutorServices: c.ExecutorServiceCallers,
-		Namespace: c.Namespace,
-	}, inventory, inventoryHealth)
-	if err != nil {
-		return err
-	}
-	for _, watched := range []client.Object{&sandboxapi.Sandbox{}, &corev1.Pod{}} {
-		informer, err := inventory.GetInformer(ctx, watched)
-		if err != nil {
-			return err
-		}
-		if _, err := informer.AddEventHandler(g.RunnerDiscoveryHandler()); err != nil {
-			return err
-		}
 	}
 	failed := make(chan error, 8)
 	go func() {
@@ -285,13 +239,6 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 			return fmt.Errorf("configure service delegation: %w", err)
 		}
 	}
-	// Delegation remains scoped to the configured Dispatcher methods. The Gateway proxy and Executor
-	// retain their separate method-scoped grants.
-	proxyMethods, err := g.Methods()
-	if err != nil {
-		return fmt.Errorf("configure Runtime proxy service admission: %w", err)
-	}
-	maps.Copy(methods, proxyMethods)
 	serverOptions := methods.ServerOptions(0)
 	if rpcCredentials != nil {
 		serverOptions = append(serverOptions, grpc.Creds(rpcCredentials))
@@ -306,16 +253,9 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	)...)
 	dispatcherpb.RegisterSessionDispatcherServer(server, service)
 	defer server.Stop()
-	g.RegisterProxy(server)
-	g.RegisterExecutor(server)
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(server, healthServer)
 	go func() { reportUnexpected(ctx, failed, "gRPC listener", server.Serve(rpcListener)) }()
-	observersStopped := make(chan struct{})
-	go func() {
-		defer close(observersStopped)
-		reportUnexpected(ctx, failed, "Runner observer supervisor", g.RunRunnerObservers(ctx))
-	}()
 
 	// Serving once the gRPC listener accepts calls.
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
@@ -331,12 +271,6 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	closing, release := context.WithTimeout(context.Background(), 5*time.Second)
 	defer release()
 	graceful.Stop(closing, server)
-	// Finish observer shutdown so this replica closes its direct Runtime streams.
-	select {
-	case <-observersStopped:
-	case <-time.After(10 * time.Second):
-		slog.Warn("Runner observers did not finish before Gateway shutdown")
-	}
 	return result
 }
 

@@ -11,6 +11,7 @@ go_binary(
         "//agentplane/identity/auth/listener",
         "//agentplane/identity/credentials/api/v1alpha1",
         "//agentplane/kubeclient",
+        "//agentplane/net/peertls",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/sandboxes/api",
         "@io_k8s_apimachinery//pkg/runtime",

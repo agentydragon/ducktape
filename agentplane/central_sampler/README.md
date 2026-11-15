@@ -123,13 +123,13 @@ Session delegation, then enable its explicit sampler trust setting. Deploy the s
 adding `actions` to its strict settings. Rollback removes client activation first, then receiver
 trust, before reverting images. Retain Action receipts and the additive attribution schema.
 
-Set `gateway_target` to `runner-gateway.{namespace}.svc:8080` for the stable shared Runner Gateway Service.
-Each Gateway replica observes Runtimes independently, so the load-balanced Service works with
+Set `gateway_target` to `sandbox-controller.{namespace}.svc:8082` for the Environments Runtime proxy.
+Each Environments replica observes Runtimes independently, so the load-balanced Service works with
 multiple replicas. Fixed targets support single-process fixtures. Templates accept DNS-label
 executor names and only these two placeholders. A fixed
-`direct_executor_target` supports standalone fixtures without Gateway only when
+`direct_executor_target` supports standalone fixtures without the proxy only when
 `direct_executor_insecure_localtest` is explicitly true and the target is a loopback IP address.
-Choose exactly one Gateway or direct execution target. Gateway service-SVID mode verifies the
+Choose exactly one proxy or direct execution target. Proxy service-SVID mode verifies the
 receiver and sends no bearer. Optional `history_target` enables retained History export with either
 `history_token_file` or the sampler service SVID in `history_tls`.
 

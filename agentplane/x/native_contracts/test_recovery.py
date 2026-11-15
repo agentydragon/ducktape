@@ -60,7 +60,7 @@ async def test_runtime_transport_outage_retains_history_and_accepts_next_input(
     model: ScriptedModel,
     spec: session_pb2.SessionSpec,
 ) -> None:
-    remote = gateway_service.gateway_client(request_timeout_s=2)
+    remote = gateway_service.environment_runtime_client(request_timeout_s=2)
     session_id = uuid4()
     process = await start_runtime()
     await dispatcher.unary(
@@ -137,13 +137,15 @@ async def test_runtime_admission_is_idempotent_after_restart_without_dispatcher_
 ) -> None:
     process = await start_runtime()
     session_id = await create_session(dispatcher, spec)
-    remote = gateway_service.gateway_client("spiffe://agentplane/sessions")
+    remote = gateway_service.environment_runtime_client("spiffe://agentplane/sessions")
     command_id = str(uuid4())
     request = environment_runtime_pb2.SubmitInputRequest(
         session_id=session_id, command_id=command_id, text="Reply ORIGINAL"
     )
     with pytest.raises(ServiceError) as unauthorized:
-        await gateway_service.gateway_client().runner_unary(sandbox.destination, lambda stub: stub.SubmitInput, request)
+        await gateway_service.environment_runtime_client().runner_unary(
+            sandbox.destination, lambda stub: stub.SubmitInput, request
+        )
     assert unauthorized.value.code == grpc.StatusCode.PERMISSION_DENIED
     # Both calls reach the Runtime RPC. No Dispatcher SubmitInput row can answer them.
     first = await remote.runner_unary(sandbox.destination, lambda stub: stub.SubmitInput, request)
@@ -222,7 +224,7 @@ async def test_active_runtime_crash_preserves_history_and_does_not_resubmit_the_
     after_crash = await history_service.reader.read_session_events(session_id, limit=len(retained))
     assert list(after_crash.entries) == retained
     await start_runtime()
-    remote = gateway_service.gateway_client()
+    remote = gateway_service.environment_runtime_client()
     await runtime_ready(remote, sandbox, session_id)
     recovered = await recorded(
         history_service,
@@ -287,7 +289,7 @@ async def test_history_outage_replays_the_runtime_journal_and_resumes_the_reader
     second = await dispatcher.submit_input(session_id, second_id, sandbox.name, sandbox.uid, "Reply OFFLINE")
     second_receipt = (await admitted(dispatcher, second)).admission
     request = await model.request()
-    remote = gateway_service.gateway_client()
+    remote = gateway_service.environment_runtime_client()
     async with HistoryServiceClient(
         history_service.read_target,
         request_timeout_s=0.5,

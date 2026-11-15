@@ -41,5 +41,5 @@ from util.testing.postgres_fixtures import (
 
 @pytest.fixture
 def remote(sandbox_control: SandboxControlClient, runner: RunningRunner) -> SandboxControlClient:
-    """The app-authenticated client routed through the real Go Runner Gateway."""
+    """The app-authenticated client routed through the real Environments Runtime proxy."""
     return sandbox_control

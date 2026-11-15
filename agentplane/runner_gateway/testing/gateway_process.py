@@ -16,10 +16,9 @@ import grpc
 import yaml
 from python.runfiles import Runfiles
 
-from agentplane.grpc.calls import ServiceError
+from agentplane.environments.testing.process import EnvironmentServiceProcess, run_environment_service
 from agentplane.identity.auth import listener as workload_listener
 from agentplane.net.peertls import config as runtime_transport
-from agentplane.proto.identity_pb2 import SandboxDestination
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.settings import Settings
 from agentplane.testing.go_process import GoProcess, go_process
@@ -59,13 +58,12 @@ def _migrate(binary: Path, database_url: str, log_path: Path) -> None:
 
 @dataclass
 class GatewayProcess:
-    """Addresses and process controls for one full Gateway process."""
+    """Dispatcher process controls plus its separately addressed Environments peer."""
 
     process: asyncio.subprocess.Process
     target: str
     log_path: Path
-    environment_runtime_ca: CertificateAuthority
-    environment_runtime_ca_file: Path
+    environment_service: EnvironmentServiceProcess
     dispatcher_audience: str
     gateway_audience: str
     service_certificates: dict[str, tuple[Path, Path]]
@@ -79,7 +77,7 @@ class GatewayProcess:
     def service_tls(self, service: str) -> runtime_transport.ClientTLS:
         cert_file, key_file = self.service_certificates[service]
         return runtime_transport.ClientTLS(
-            ca_file=self.environment_runtime_ca_file,
+            ca_file=self.environment_service.ca_file,
             server_uri=_SESSION_DISPATCHER_URI,
             cert_file=cert_file,
             key_file=key_file,
@@ -96,60 +94,21 @@ class GatewayProcess:
             certificate_chain = client_certificate[0].read_bytes()
             private_key = client_certificate[1].read_bytes()
         return grpc.ssl_channel_credentials(
-            root_certificates=self.environment_runtime_ca_file.read_bytes(),
+            root_certificates=self.environment_service.ca_file.read_bytes(),
             private_key=private_key,
             certificate_chain=certificate_chain,
         )
 
-    def issue_environment_runtime_tls(self, uri: str, directory: Path) -> runtime_transport.TLS:
-        """Issue an Environment Runtime peer certificate trusted by this Gateway process."""
-        directory.mkdir(parents=True, exist_ok=True)
-        cert_file, key_file = issue_workload_leaf(self.environment_runtime_ca, uri, directory)
-        return runtime_transport.TLS(
-            cert_file=str(cert_file), key_file=str(key_file), ca_file=str(self.environment_runtime_ca_file)
-        )
-
-    def controller_credentials(self, directory: Path) -> grpc.ChannelCredentials:
-        """Issue the separate Controller peer used to bind test Runtime incarnations."""
-        directory.mkdir(parents=True, exist_ok=True)
-        certificate = issue_workload_leaf(
-            self.environment_runtime_ca, "spiffe://agentplane/sandbox-controller", directory
-        )
-        return self.channel_credentials(client_certificate=certificate)
-
-    def gateway_client(
+    def environment_runtime_client(
         self, service: str = runtime_transport.APP_URI, *, request_timeout_s: float = 20
     ) -> SandboxControlClient:
+        """Call Runtime through this explicitly separate Environments listener."""
         return SandboxControlClient(
-            control_target=self.target,
+            control_target=self.environment_service.target,
             token_file=None,
             request_timeout_s=request_timeout_s,
-            channel_credentials=self.service_credentials(service),
+            channel_credentials=self.environment_service.channel_credentials(service),
         )
-
-    async def _check_process(self) -> None:
-        if self.process.returncode is not None:
-            raise RuntimeError(
-                f"Runner Gateway exited with {self.process.returncode}; see undeclared output {self.log_path}"
-            )
-
-    async def wait_for_runner(
-        self, client: SandboxControlClient, destination: SandboxDestination, *, timeout_s: float = 15
-    ) -> None:
-        """Probe the real Runner proxy until the Runner Connect stream is serving calls."""
-        deadline = asyncio.get_running_loop().time() + timeout_s
-        while True:
-            await self._check_process()
-            try:
-                await client.list_sessions(destination)
-                return
-            except ServiceError as error:
-                if error.code not in (grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.ABORTED):
-                    raise
-            remaining = deadline - asyncio.get_running_loop().time()
-            if remaining <= 0:
-                raise TimeoutError(f"Runner proxy did not connect to Sandbox {destination.target.name}")
-            await asyncio.sleep(min(0.05, remaining))
 
     async def stop(self) -> None:
         self._close_listener()
@@ -178,19 +137,13 @@ async def run_gateway(
     database_url: str,
     namespace: str,
     pod_name: str = "gateway",
-    controller_enabled: bool = False,
-    executor_services: Sequence[str] = (),
+    runtime_proxy_controller_callers: Sequence[str] = (),
+    runtime_proxy_executor_callers: Sequence[str] = (),
     dispatcher_audience: str,
     gateway_audience: str,
     environment_runtime_ca: CertificateAuthority | None = None,
 ) -> AsyncIterator[GatewayProcess]:
-    """Migrate the supplied database, then run the full Gateway on deployment-shaped settings.
-
-    The Kubernetes API and PostgreSQL database are owned by the caller. The Goose migration
-    runner applies the schema before the server starts. Platform and Sandbox RPCs share one TLS
-    listener, with exact service SVID grants and live workload Identity admission. Runner
-    connections use each active Sandbox's direct mTLS gRPC server.
-    """
+    """Run the Dispatcher and an independent production Environments Runtime proxy peer."""
     binary = Runfiles.CreateOrRaise().root() / _GATEWAY_BINARY
     migration_log = undeclared_outputs_dir() / f"go-runner-gateway-migration-{uuid4().hex}.log"
     await asyncio.to_thread(_migrate, binary, database_url, migration_log)
@@ -198,113 +151,96 @@ async def run_gateway(
     log_path = undeclared_outputs_dir() / f"go-runner-gateway-{uuid4().hex}.log"
     # The database URL and Pod fields stay out of the file, as in deployment, where they come from
     # runtime sources. Exact service roles exercise the authoring schema and Go loader contract.
-    with ExitStack() as listeners:
-        rpc_listener = listeners.enter_context(listen_tcp())
-        with tempfile.TemporaryDirectory() as settings_dir:
-            settings_directory = Path(settings_dir)
-            if environment_runtime_ca is None:
-                environment_runtime_ca = make_ca("Environment Runtime transport test CA")
-            environment_runtime_ca_file, _ = write_ca(
-                environment_runtime_ca, settings_directory, "environment-runtime-ca"
-            )
-            gateway_tls_directory = settings_directory / "gateway-tls"
-            gateway_tls_directory.mkdir()
-            gateway_cert, gateway_key = issue_workload_leaf(
-                environment_runtime_ca, "spiffe://agentplane/runner-gateway", gateway_tls_directory
-            )
-            rpc_tls_directory = settings_directory / "rpc-tls"
-            rpc_tls_directory.mkdir()
-            rpc_cert, rpc_key = issue_workload_leaf(
-                environment_runtime_ca, _SESSION_DISPATCHER_URI, rpc_tls_directory, dns_name="localhost"
-            )
-            rpc_settings = workload_listener.Listener(
-                listen_address=f"fd:{rpc_listener.socket.fileno()}",
-                tls=workload_listener.TLS(cert_file=rpc_cert, key_file=rpc_key),
-                auth=[workload_listener.SPIFFEAuth(ca_file=environment_runtime_ca_file)],
-            )
-            runner_security = runtime_transport.MTLS(
-                tls=runtime_transport.TLS(
-                    cert_file=str(gateway_cert), key_file=str(gateway_key), ca_file=str(environment_runtime_ca_file)
+    if environment_runtime_ca is None:
+        environment_runtime_ca = make_ca("Environment Runtime transport test CA")
+    async with run_environment_service(
+        kubeconfig,
+        namespace,
+        caller_uri=runtime_transport.APP_URI,
+        environment_runtime_ca=environment_runtime_ca,
+        runtime_proxy_controller_callers=runtime_proxy_controller_callers,
+        runtime_proxy_executor_callers=runtime_proxy_executor_callers,
+    ) as environment_service:
+        with ExitStack() as listeners:
+            rpc_listener = listeners.enter_context(listen_tcp())
+            with tempfile.TemporaryDirectory() as settings_dir:
+                settings_directory = Path(settings_dir)
+                environment_runtime_ca_file, _ = write_ca(
+                    environment_runtime_ca, settings_directory, "environment-runtime-ca"
                 )
-            )
-            service_certificates = {}
-            for service in (
-                runtime_transport.APP_URI,
-                runtime_transport.GATEWAY_SESSIONS_URI,
-                runtime_transport.SANDBOX_CONTROLLER_URI,
-                runtime_transport.CENTRAL_SAMPLER_URI,
-            ):
-                directory = settings_directory / service.rsplit("/", 1)[-1]
-                directory.mkdir()
-                service_certificates[service] = issue_workload_leaf(environment_runtime_ca, service, directory)
-            sessions_cert, sessions_key = service_certificates[runtime_transport.GATEWAY_SESSIONS_URI]
-            effective_settings = Settings(
-                sandbox_namespace=namespace,
-                policy_namespace=namespace,
-                kubeconfig=kubeconfig,
-                rpc=rpc_settings,
-                gateway_tls=runtime_transport.ClientTLS(
-                    ca_file=environment_runtime_ca_file,
-                    server_uri=_SESSION_DISPATCHER_URI,
-                    cert_file=sessions_cert,
-                    key_file=sessions_key,
-                    client_uri=runtime_transport.GATEWAY_SESSIONS_URI,
-                ),
-                runner_control_target_template=f"localhost:{rpc_listener.port}",
-                runner_security=runner_security,
-                dispatcher_service_callers={runtime_transport.APP_URI},
-                runtime_proxy_readers=[runtime_transport.APP_URI],
-                runtime_proxy_session_callers=[runtime_transport.GATEWAY_SESSIONS_URI],
-                runtime_proxy_controller_callers=[runtime_transport.SANDBOX_CONTROLLER_URI]
-                if controller_enabled
-                else [],
-                executor_service_callers=list(executor_services),
-            )
-            settings = effective_settings.model_dump(mode="json", exclude_none=True)
-            settings_path = settings_directory / "settings.yaml"
-            settings_path.write_text(yaml.safe_dump(settings, sort_keys=False))
-            environment = {
-                **os.environ,
-                Settings.config_file_env: str(settings_path),
-                Settings.dispatcher_database_url_env: _wire_database_url(database_url),
-                Settings.pod_name_env: pod_name,
-            }
-            credentials = grpc.ssl_channel_credentials(root_certificates=environment_runtime_ca_file.read_bytes())
-
-            def process_context(generation: int):
-                generation_log = log_path.with_name(f"{log_path.stem}-{generation}{log_path.suffix}")
-                return go_process(
-                    binary,
-                    env=environment,
-                    stderr=generation_log,
-                    health_port=rpc_listener.port,
-                    grace_s=10,
-                    pass_fds=(rpc_listener.socket.fileno(),),
-                    health_credentials=credentials,
+                rpc_tls_directory = settings_directory / "rpc-tls"
+                rpc_tls_directory.mkdir()
+                rpc_cert, rpc_key = issue_workload_leaf(
+                    environment_runtime_ca, _SESSION_DISPATCHER_URI, rpc_tls_directory, dns_name="localhost"
                 )
-
-            generation = 0
-            async with AsyncExitStack() as process_stack:
-                started = await process_stack.enter_async_context(process_context(generation))
-
-                async def restart_process(while_stopped: Callable[[], Awaitable[None]] | None) -> GoProcess:
-                    nonlocal generation
-                    await process_stack.aclose()
-                    if while_stopped is not None:
-                        await while_stopped()
-                    generation += 1
-                    return await process_stack.enter_async_context(process_context(generation))
-
-                gateway = GatewayProcess(
-                    process=started.process,
-                    target=f"localhost:{rpc_listener.port}",
-                    log_path=started.stderr,
-                    environment_runtime_ca=environment_runtime_ca,
-                    environment_runtime_ca_file=environment_runtime_ca_file,
-                    dispatcher_audience=dispatcher_audience,
-                    gateway_audience=gateway_audience,
-                    service_certificates=service_certificates,
-                    _restart=restart_process,
-                    _close_listener=rpc_listener.socket.close,
+                rpc_settings = workload_listener.Listener(
+                    listen_address=f"fd:{rpc_listener.socket.fileno()}",
+                    tls=workload_listener.TLS(cert_file=rpc_cert, key_file=rpc_key),
+                    auth=[workload_listener.SPIFFEAuth(ca_file=environment_runtime_ca_file)],
                 )
-                yield gateway
+                service_certificates = {}
+                for service in (
+                    runtime_transport.APP_URI,
+                    runtime_transport.GATEWAY_SESSIONS_URI,
+                    runtime_transport.SANDBOX_CONTROLLER_URI,
+                    runtime_transport.CENTRAL_SAMPLER_URI,
+                ):
+                    directory = settings_directory / service.rsplit("/", 1)[-1]
+                    directory.mkdir()
+                    service_certificates[service] = issue_workload_leaf(environment_runtime_ca, service, directory)
+                effective_settings = Settings(
+                    sandbox_namespace=namespace,
+                    policy_namespace=namespace,
+                    kubeconfig=kubeconfig,
+                    rpc=rpc_settings,
+                    gateway_tls=environment_service.tls_for(runtime_transport.GATEWAY_SESSIONS_URI),
+                    runner_control_target_template=environment_service.target,
+                    dispatcher_service_callers={runtime_transport.APP_URI},
+                )
+                settings = effective_settings.model_dump(mode="json", exclude_none=True)
+                settings_path = settings_directory / "settings.yaml"
+                settings_path.write_text(yaml.safe_dump(settings, sort_keys=False))
+                environment = {
+                    **os.environ,
+                    Settings.config_file_env: str(settings_path),
+                    Settings.dispatcher_database_url_env: _wire_database_url(database_url),
+                    Settings.pod_name_env: pod_name,
+                }
+                credentials = grpc.ssl_channel_credentials(root_certificates=environment_runtime_ca_file.read_bytes())
+
+                def process_context(generation: int):
+                    generation_log = log_path.with_name(f"{log_path.stem}-{generation}{log_path.suffix}")
+                    return go_process(
+                        binary,
+                        env=environment,
+                        stderr=generation_log,
+                        health_port=rpc_listener.port,
+                        grace_s=10,
+                        pass_fds=(rpc_listener.socket.fileno(),),
+                        health_credentials=credentials,
+                    )
+
+                generation = 0
+                async with AsyncExitStack() as process_stack:
+                    started = await process_stack.enter_async_context(process_context(generation))
+
+                    async def restart_process(while_stopped: Callable[[], Awaitable[None]] | None) -> GoProcess:
+                        nonlocal generation
+                        await process_stack.aclose()
+                        if while_stopped is not None:
+                            await while_stopped()
+                        generation += 1
+                        return await process_stack.enter_async_context(process_context(generation))
+
+                    gateway = GatewayProcess(
+                        process=started.process,
+                        target=f"localhost:{rpc_listener.port}",
+                        log_path=started.stderr,
+                        environment_service=environment_service,
+                        dispatcher_audience=dispatcher_audience,
+                        gateway_audience=gateway_audience,
+                        service_certificates=service_certificates,
+                        _restart=restart_process,
+                        _close_listener=rpc_listener.socket.close,
+                    )
+                    yield gateway

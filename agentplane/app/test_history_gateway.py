@@ -108,7 +108,7 @@ async def test_production_bridge_reads_runner_history_across_gateway_restarts(
     starts = [entry for entry in first_turn if entry.event.WhichOneof("observation") == "harness_started"]
     assert starts[-1].event.harness_started.resumed is False
     await runner.restart()
-    await gateway_service.wait_for_runner(sandbox_control, sandbox.destination)
+    await gateway_service.environment_service.wait_for_runner(sandbox_control, sandbox.destination)
     stopped = await runner_client.status()
     assert not stopped.processes
     (stopped_session,) = [row for row in stopped.sessions if row.session_id == str(thread)]
@@ -153,7 +153,7 @@ async def test_production_bridge_reads_runner_history_across_gateway_restarts(
     assert resumed_session.native_session_id == native_session_id
     assert len(resumed.processes) == 1
     await runner.restart()
-    await gateway_service.wait_for_runner(sandbox_control, sandbox.destination)
+    await gateway_service.environment_service.wait_for_runner(sandbox_control, sandbox.destination)
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(15), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
     ):
@@ -212,7 +212,7 @@ async def test_dispatcher_resumes_a_dormant_session_and_proxy_reports_it(
     # This exercises orderly runner shutdown and recovery. Killing the harness
     # directly is a process-loss failure, which is reported as FAILED.
     await runner.restart()
-    await gateway_service.wait_for_runner(sandbox_control, sandbox.destination)
+    await gateway_service.environment_service.wait_for_runner(sandbox_control, sandbox.destination)
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
     ):

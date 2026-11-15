@@ -2,15 +2,15 @@
 
 The runner serves native gRPC on one private listener: `Runner`, `Executor` and standard gRPC
 health. The Environments proxy derives its address from the current workload's Pod IP and the runner port;
-KubeVirt forwards that port into the guest. Gateway workloads and the Sandbox Controller may reach it; method authorization separates their roles. History Event
+KubeVirt forwards that port into the guest. Environments proxy and Controller binding-observer peers reach it with separate method authority. History Event
 ingress remains a separate outbound platform route.
 
-Runner configuration requires `control.listen_address` and `control.security.mode`; the Gateway
-requires the matching `runner_security.mode`. Each explicitly selects `mtls` or `insecure`. `mtls`
+Runner configuration requires `control.listen_address` and `control.security.mode`; the Environments proxy
+requires the matching `environment_service.runtime_proxy.runner_security.mode`. Each explicitly selects `mtls` or `insecure`. `mtls`
 requires a `tls` block with absolute `cert_file`, `key_file` and `ca_file` paths, or a local
 `workload_api_socket` Unix URI. A file-backed block may add `client_ca_file`, which then alone
 verifies the client certificates this side serves; `ca_file` keeps verifying its own chain and the
-servers it dials. Firecracker Runtime selects the Workload API; the Gateway uses
+servers it dials. Firecracker Runtime selects the Workload API; the proxy uses
 projected files. Source forms cannot be mixed. `insecure` rejects a TLS block. Missing/unknown modes and partial or contradictory configuration fail startup.
 The service definitions are `env/runtime/control/environment_runtime.proto` and `env/runtime/execution/executor.proto`;
 `proto/environment_runtime_state.proto` defines the facts published by `Runner.WatchState`.
@@ -31,7 +31,7 @@ Sandbox UID and current workload Pod UID; for a VM, the incarnation is the virt-
 Runtime uses this watch to bind the incarnation for its process lifetime and completes ordinary
 lifecycle adoption before returning the first snapshot. Each Runtime process has a fresh boot ID.
 The Controller supplies the current workload UID to a new process, and reconnects may retry that
-UID; neither the Controller nor a Gateway may change the binding after adoption begins. The
+UID; neither the Controller nor a proxy may change the binding after adoption begins. The
 Controller keeps bootstrap, quiesce, setup, idle and blocker facts in memory keyed by Sandbox UID,
 incarnation UID and boot ID.
 A local watch generation fences callbacks from replaced streams. A new leader relists Sandboxes
@@ -42,9 +42,8 @@ Quiesce attempts remain persisted, and an unobserved published incarnation must 
 stop or deletion. Bootstrap failure remains terminal for its incarnation.
 
 Every Environments proxy replica independently opens a direct `WatchState` to the current Runtime.
-The retained Gateway receiver also watches until its separate retirement. The
-Controller's authenticated `observe_only` watch binds the Runtime to the
-Sandbox UID and accepted workload Pod UID before Gateway watches arrive; a proxy can observe that
+The Controller's authenticated `observe_only` watch binds the Runtime to the
+Sandbox UID and accepted workload Pod UID before proxy watches arrive; a proxy can observe that
 binding but cannot select or advance it. Each replica learns the Runtime boot ID from its own
 authenticated watch and can serve calls for the current incarnation. The stable `sandbox-controller:8082`
 Service routes callers to any replica. Observation loss removes that replica's callable connection
@@ -73,7 +72,7 @@ runner journal; a repeated ID with a different operation or payload fails `ALREA
 Every Environments replica serves `agentplane.env.runtime.control.EnvironmentRuntime` on
 `sandbox-controller:8082` and forwards unary calls over its own direct Runtime connection. App,
 Notifications, Sessions, central sampler and Controller lifecycle callers pin the Sandbox Controller
-server SVID. The Gateway receiver remains available for rollback until their rollout is complete.
+server SVID. The Gateway registers no Runtime proxy or Executor receiver and starts no Runtime watches.
 
 - **Sandbox.** The caller names it in the `x-agentplane-sandbox` header. A missing or repeated header is
   `INVALID_ARGUMENT`, an unknown Sandbox `NOT_FOUND`.
@@ -221,9 +220,9 @@ the operator.
 
 ## Runtime routing
 
-Gateway replicas connect to the current Runtime using its Pod IP and private listener. No
+Environments proxy replicas connect to the current Runtime using its Pod IP and private listener. No
 per-Sandbox `<sandbox>-control` EndpointSlice or connection Lease decides which replica may call.
-All caller traffic uses the stable `runner-gateway` Service; the Runtime identity in each call
+Runtime proxy caller traffic uses the stable `sandbox-controller:8082` Service; the Runtime identity in each call
 provides stale-Sandbox, stale-workload and stale-process fencing. The Dispatcher delivery Lease is
 unrelated and remains part of durable command scheduling.
 
@@ -248,7 +247,7 @@ any Environments replica through `sandbox-controller:8082`.
   It waits for preceding admissions; subsequent new-work calls fail `ABORTED`. Final ingress acknowledgement
   is required for `QUIESCED`.
 
-Any Gateway replica with a current observation may call the Runtime. Runtime connectivity is
+Any Environments replica with a current observation may call the Runtime. Runtime connectivity is
 independent of Dispatcher scheduling ownership. Transport reconnect never replays calls; durable
 command retry uses the original command ID. Process identities in diagnostics are per-spawn UUIDs,
 not command addresses.
@@ -265,9 +264,9 @@ becomes ready after its native conversation preparation/reconciliation, without 
 
 ## Authentication and incarnation binding
 
-Cluster and k3s Gateways dial the runner's private TLS listener using mTLS. The runner accepts the Gateway
-certificate identity; a bearer cannot replace a certificate.
-Public Gateway callers still use their existing workload bearers and per-method authorization.
+Cluster and k3s Environments proxies dial the Runtime's private TLS listener using mTLS and the
+`spiffe://agentplane/runtime-proxy` client identity. A bearer cannot replace a certificate. Proxy
+callers require exact per-method service SVID grants; public Session callers use Dispatcher.
 
 Standalone behavior tests can explicitly select insecure transport at both endpoints. It supplies
 plaintext without peer authentication; it never fabricates a certificate identity. Live Sandbox/Pod/VM
@@ -276,7 +275,7 @@ remain enforced.
 Every Sandbox incarnation gets a credential; k3s keeps real cert-manager/trust-manager and
 mTLS in every stack. Bad mTLS credentials never trigger an insecure retry.
 
-The Gateway's certificate has URI SAN `spiffe://agentplane/runner-gateway`. Each Environment Runtime
+The proxy's certificate has URI SAN `spiffe://agentplane/runtime-proxy`. Each Environment Runtime
 certificate has exactly one URI SAN, its WorkloadCredential's
 `spiffe://agentplane/<namespace>/<sandbox-name>/<credential-id>`.
 Certificates must chain to the configured trust roots and permit the peer's client/server EKU.
@@ -284,7 +283,7 @@ A CA-valid certificate with the wrong URI is rejected.
 
 Before each workload incarnation the Sandbox Controller requests a credential through the
 Sandbox's [WorkloadCredential](workload_authentication.md#workloadcredentials); the Policy
-Controller mints its ID and cert-manager issues its certificate into a distinct Secret. The workload carries that ID. Gateway authorization checks the current Sandbox UID, current incarnation Pod, owner
+Controller mints its ID and cert-manager issues its certificate into a distinct Secret. The workload carries that ID. Proxy authorization checks the current Sandbox UID, current incarnation Pod, owner
 chain and credential ID. VM authorization checks the launcher, VMI and Sandbox-owned VM.
 An old credential ID never authorizes a replacement workload. Names and addresses
 are not identity evidence.
@@ -292,12 +291,12 @@ are not identity evidence.
 cert-manager owns leaf renewal through the `agentplane-workload` ClusterIssuer, the
 [Agentplane workload CA](workload_authentication.md#the-workload-ca), an intermediate signed by
 the cluster internal CA. trust-manager distributes the workload CA alone, which every SVID peer
-verifies against. A Pod or KubeVirt runner's control listener verifies the Gateway's client SVID
+verifies against. A Pod or KubeVirt runner's control listener verifies the proxy's client SVID
 against it (`client_ca_file`), so a `cluster-internal-ca` leaf naming
 `spiffe://agentplane/runner-gateway` is refused. A Firecracker launcher serves the workload CA alone
 as the guest's Workload API bundle for the `agentplane` trust domain, so the guest's listener refuses
-that leaf too; the guest Runtime receives no cluster bundle. The Gateway's `runner_security` and the
-egress sidecar verify server SVIDs against the workload CA too, so the Gateway refuses a
+that leaf too; the guest Runtime receives no cluster bundle. The Environments proxy's `environment_service.runtime_proxy.runner_security` and the
+egress sidecar verify server SVIDs against the workload CA too, so the proxy refuses a
 `cluster-internal-ca` leaf naming a runner's URI at that runner's address.
 Pods use projected credential files; KubeVirt guests use a mounted Secret filesystem. Firecracker
 launchers stream the same material through the host-initiated vsock Workload API to the root guest
@@ -312,29 +311,28 @@ checked on continuing observation.
 
 The certificate authenticates the Sandbox workload, not every process within it. Code able to read
 the runner's private key can act as that workload. No runner certificate authenticates as the
-Gateway, and certificates do not replace command authorization or journal deduplication.
+Runtime proxy, and certificates do not replace command authorization or journal deduplication.
 
-### Coordinated transport and authentication cutover
+### Receiver retirement and rollback
 
-This change requires matching runner, Sandbox Controller, Gateway and template configuration.
-Old runner binaries do not serve the private mTLS listener. Before updating the Gateway,
-quiesce and suspend existing runners through the old Gateway and wait for their retained journal
-state to flush. Preserve Sandbox objects and state PVCs. Provision the Issuer, Gateway Certificate,
-trust bundle and network policy, then deploy the matching services and templates. Resume the Sandboxes after certificates become Ready. Verify
-`EnvironmentRuntimeConnected`, bootstrap readiness, journal/history continuity and a new admitted command for
-Pod and VM runners. A ready Pod alone does not establish control connectivity.
+All Runtime proxy callers target Environments before the Gateway receiver is removed. Gateway
+receiver retirement keeps its old settings decodable and leaves deployed certificates, mounts and
+network permissions until an image without Runtime calls is pinned and running. Manifest cleanup
+then removes those unused resources and fields; strict code decoders remove the fields only after
+that configuration has rolled. The Dispatcher keeps its workload/policy inventory, wake permissions
+and independent delivery Leases.
 
-Rollback also requires matching binaries and configuration: quiesce through the working Gateway,
-restore the prior Gateway, Controller and template versions together, and resume against retained
-state. Do not retry an uncertain command with a new command ID; reconcile the journal admission
-receipt first. Certificate resources can remain while rolling back; prior runners do not use them.
+Rollback first restores a Gateway image with the receiver, its Runtime client certificate, method
+grants and network permissions. Confirm the listener and Runtime observations are healthy before
+restoring caller targets and exact server pins together. Roll callers after Flux applies their
+settings, then check readiness, auth/TLS errors, diagnostics, native admission, Executor and idle
+quiesce/suspend. Keep retained Sandbox state, journals, identities and History. Never retry an
+uncertain command under a fresh command ID.
 
 ## Heartbeat and liveness
 
-`WatchState` publishes a snapshot on a fact change and every 10 seconds while idle. The Controller
-and Gateway each end their separate observation after 30 seconds without a snapshot. The Gateway also
-ends observation after 30 seconds without a snapshot, on transport failure, or on identity or
-ownership loss. Healthy observations have no age limit. It supervises a new observation while the
+`WatchState` publishes a snapshot on a fact change and every 10 seconds while idle. The Controller and Environments proxy end their separate observations after 30 seconds without a
+snapshot. Proxy observation also ends on transport failure or identity/ownership loss. Healthy observations have no age limit. It supervises a new observation while the
 workload remains current. A live observation establishes control connectivity, not harness readiness,
 command admission or native execution. Losing it does not establish that admitted work failed.
 
@@ -359,7 +357,7 @@ flowchart LR
     PROXY -.->|opaque TLS tunnel| PLATFORM
 ```
 
-Runner control stays on the Gateway's direct mTLS connection; its private key and control calls do
+Runner control stays on the Environments proxy's direct mTLS connection; its private key and control calls do
 not pass through HTTP interception. Separately, the egress sidecar relays runner HTTP(S) traffic to
 the central proxy. With TLS transport and SPIFFE authentication selected, the sidecar presents the
 same per-incarnation Runner certificate to the proxy's TLS-enabled forward listener under
@@ -392,7 +390,7 @@ and LLM routes; each service verifies the actual peer itself. Runtime dials Hist
 certificate. Kubernetes retains its destination-audience token, bound to the Sandbox's recorded
 Pod. Callers without Sandbox certificates require a separate authentication design.
 
-## Environments receiver migration
+## Environments receiver
 
 Deployment enables `environment_service.runtime_proxy` to register the same Runtime proxy and
 Executor wire services on `sandbox-controller:8082`. Every replica owns its routing cache and

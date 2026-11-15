@@ -2,7 +2,7 @@ load("//devinfra/python:defs.bzl", "py_library")
 
 package(
     default_testonly = True,
-    default_visibility = ["//agentplane/app/testing:__pkg__"],
+    default_visibility = ["//agentplane:__subpackages__"],
 )
 
 py_library(
@@ -10,12 +10,17 @@ py_library(
     srcs = ["process.py"],
     data = ["//agentplane/environments/testing/serving_fixture"],
     deps = [
+        "//agentplane/grpc:calls",
         "//agentplane/net/peertls:config",
+        "//agentplane/proto:identity_pb2",
+        "//agentplane/runner_gateway:client",
         "//agentplane/testing:go_process",
         "//agentplane/testing:tls",
         "//devinfra/testing:undeclared_outputs",
         "//util:net",
         "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//types_protobuf",  # keep: mypy follows generated SandboxDestination stubs
         "@rules_python//python/runfiles",
     ],
 )

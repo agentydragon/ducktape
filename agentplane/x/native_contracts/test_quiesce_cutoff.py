@@ -65,8 +65,10 @@ async def start_runtime(
 ) -> AsyncIterator[Callable[[str], Awaitable[tuple[RunnerProcess, str]]]]:
     """Start the same real Runtime binary on a caller-supplied Pod incarnation UID."""
     environment = {**config.harness_environment, "ANTHROPIC_AUTH_TOKEN": launches.TOKEN, "OTEL_SDK_DISABLED": "true"}
-    remote = gateway_service.gateway_client(request_timeout_s=2)
-    controller_credentials = gateway_service.controller_credentials(tmp_path / "controller-transport")
+    remote = gateway_service.environment_runtime_client(request_timeout_s=2)
+    controller_credentials = gateway_service.environment_service.channel_credentials(
+        "spiffe://agentplane/sandbox-controller"
+    )
     async with model_config() as model_endpoint, AsyncExitStack() as processes:
         command = launches.command(
             config, control=control, ingress=ingress, model_config_target=model_endpoint, runner_binary=runtime_binary
@@ -259,14 +261,16 @@ async def test_routed_interrupt_cannot_cross_quiesce_history_seal(
     gate = config.state_dir / _GATE_DIRECTORY
     # This distinct, real controller caller crosses the public Gateway and waits for Runtime's
     # close-admission -> terminate-harness -> seal-journal -> History acknowledgement barrier.
-    controller = gateway_service.gateway_client("spiffe://agentplane/sandbox-controller", request_timeout_s=30)
+    controller = gateway_service.environment_runtime_client(
+        "spiffe://agentplane/sandbox-controller", request_timeout_s=30
+    )
     delayed_call: asyncio.Task[environment_runtime_pb2.InterruptTurnResponse] | None = None
     diagnostic_dir = undeclared_outputs_dir() / "quiesce-cutoff"
     try:
         await asyncio.to_thread(gate.mkdir, parents=True, exist_ok=True)
         await asyncio.to_thread((gate / "command").write_text, delayed_id)
         delayed_call = asyncio.create_task(
-            gateway_service.gateway_client("spiffe://agentplane/sessions").runner_unary(
+            gateway_service.environment_runtime_client("spiffe://agentplane/sessions").runner_unary(
                 sandbox.destination,
                 lambda stub: stub.InterruptTurn,
                 environment_runtime_pb2.InterruptTurnRequest(

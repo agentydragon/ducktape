@@ -81,34 +81,31 @@ class Settings(BaseModel):
 
     rpc: Listener = Field(description="The shared TLS gRPC listener and its explicitly enabled auth modes.")
     gateway_tls: ClientTLS = Field(
-        description="Verify the Session Dispatcher SVID and optionally authenticate with the Sessions role SVID."
+        description="Verify the Environments SVID and authenticate with the Sessions role SVID."
     )
     runner_control_target_template: str = Field(
-        default="runner-gateway.{namespace}.svc:8080",
+        default="sandbox-controller.{namespace}.svc:8082",
         min_length=1,
-        description="Stable Runner Gateway Service target or template used for each Sandbox runner proxy.",
+        description="Stable Environments Service target or template used for each Sandbox Runtime proxy.",
     )
     runtime_proxy_readers: list[ServiceSPIFFEID] = Field(
         default_factory=list,
         exclude_if=lambda value: not value,
-        description="Exact service SPIFFE IDs admitted to Runtime diagnostics.",
+        description="Ignored retired Runtime diagnostic grants; the receiver lives in Environments.",
     )
     runtime_proxy_session_callers: list[ServiceSPIFFEID] = Field(
-        default_factory=list,
-        exclude_if=lambda value: not value,
-        description="Exact Sessions-role service IDs admitted to Runtime Session operations.",
+        default_factory=list, exclude_if=lambda value: not value, description="Ignored retired Runtime Session grants."
     )
     runtime_proxy_controller_callers: list[ServiceSPIFFEID] = Field(
         default_factory=list,
         exclude_if=lambda value: not value,
-        description="Exact controller service IDs admitted to Runtime lifecycle operations.",
+        description="Ignored retired Runtime lifecycle grants.",
     )
     executor_service_callers: list[ServiceSPIFFEID] = Field(
-        default_factory=list,
-        exclude_if=lambda value: not value,
-        description="Exact service SPIFFE IDs admitted to Executor methods.",
+        default_factory=list, exclude_if=lambda value: not value, description="Ignored retired Executor grants."
     )
-    runner_security: Security
+    # CLEANUP(2026-11-15): drop after manifests omit it and configuration has rolled.
+    runner_security: Security | None = Field(default=None, description="Ignored retired direct Runtime transport.")
     dispatcher_service_delegation: ServiceDelegation | None = Field(default=None, exclude_if=lambda value: not value)
     dispatcher_service_callers: Set[ServiceSPIFFEID] = Field(
         default_factory=frozenset,

@@ -14,7 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// Config contains the per-process Gateway role wiring. Callers use exact service SVID grants;
+// Config contains the per-replica Environments proxy wiring. Callers use exact service SVID grants;
 // runner connections use explicitly configured transport security and incarnation-fenced metadata.
 type Config struct {
 	RuntimeReaders     []string
@@ -46,7 +46,7 @@ func validateControlTiming(timing ControlTiming) error {
 }
 
 // Gateway serves the per-Sandbox Runtime proxy and dials authenticated Runtimes.
-// Both processes use this owner until callers have moved to Environments.
+// Environments owns the receiver and its independent Runtime observation.
 type Gateway struct {
 	config      Config
 	sandboxes   *sandboxResolver
@@ -133,7 +133,7 @@ func (g *Gateway) RegisterProxy(server *grpc.Server) {
 }
 
 // RegisterExecutor enables the typed execution path only when its own caller allowlist is
-// configured. Existing Gateway deployments therefore keep the RPC absent by default.
+// configured. Environments keeps the RPC absent without an Executor grant.
 func (g *Gateway) RegisterExecutor(server *grpc.Server) {
 	if len(g.config.ExecutorServices) == 0 {
 		return

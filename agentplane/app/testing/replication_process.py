@@ -41,7 +41,7 @@ from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.net.peertls.config import APP_URI, POLICY_CONTROLLER_URI, ClientTLS
 from agentplane.notification_service.api.notifications import notifications_pb2_grpc
-from agentplane.testing.tls import make_ca
+from agentplane.testing.tls import CertificateAuthority, make_ca
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.db_url import render_postgresql_url
 from util.net import Listener, listen_tcp
@@ -62,6 +62,7 @@ class GatewayAccess:
     target: str
     token_file: Path | None
     tls: ClientTLS | None = None
+    environment_runtime_ca: CertificateAuthority | None = None
 
 
 @dataclass(frozen=True)
@@ -624,7 +625,12 @@ async def app_process(
             }
             if gateway is not None:
                 environments = await backends.enter_async_context(
-                    run_environment_service(sandboxes.kubeconfig, sandboxes.namespace, caller_uri=APP_URI)
+                    run_environment_service(
+                        sandboxes.kubeconfig,
+                        sandboxes.namespace,
+                        caller_uri=APP_URI,
+                        environment_runtime_ca=gateway.environment_runtime_ca,
+                    )
                 )
                 settings["environment_service"] = EnvironmentServicePeer(
                     target=environments.target, request_timeout_s=20, tls=environments.tls
@@ -632,15 +638,15 @@ async def app_process(
                 # Empty Go strings clear legacy defaults; YAML null would leave those defaults intact.
                 settings.update(
                     {
-                        "runner_gateway_target": gateway.target,
-                        "runner_gateway_control_target": gateway.target,
+                        "runner_gateway_target": environments.target,
+                        "runner_gateway_control_target": environments.target,
                         "session_dispatcher_target": gateway.target,
                         "runner_gateway_token_file": str(gateway.token_file) if gateway.token_file else "",
                         "session_dispatcher_token_file": str(gateway.token_file) if gateway.token_file else "",
                     }
                 )
+                settings["runner_gateway_tls"] = environments.tls.model_dump(mode="json")
                 if gateway.tls is not None:
-                    settings["runner_gateway_tls"] = gateway.tls.model_dump(mode="json")
                     settings["session_dispatcher_tls"] = gateway.tls.model_dump(mode="json")
             if electric_url is not None:
                 settings["electric_url"] = electric_url
