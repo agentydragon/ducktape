@@ -6,9 +6,6 @@ NAME = "runner-gateway"
 TOKEN_AUDIENCE = "agentplane-runner-gateway"
 _LABELS = {"app.kubernetes.io/name": NAME}
 
-GATEWAY_TLS_SECRET = "agentplane-runner-gateway-tls"
-GATEWAY_TLS_MOUNT_PATH = "/run/agentplane/runner-tls"
-
 
 def service(namespace: str) -> ServiceRef:
     return ServiceRef(

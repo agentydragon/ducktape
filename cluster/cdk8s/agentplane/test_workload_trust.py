@@ -19,7 +19,6 @@ from agentplane.net.peertls.config import (
     APP_URI,
     CENTRAL_SAMPLER_URI,
     EGRESS_PROXY_URI,
-    GATEWAY_ENVIRONMENTS_URI,
     GATEWAY_RUNTIME_PROXY_URI,
     GATEWAY_SESSIONS_URI,
     HISTORY_SERVICE_URI,
@@ -286,7 +285,6 @@ def test_service_svids_are_mounted_with_client_and_server_usage(staging_manifest
         APP_URI,
         CENTRAL_SAMPLER_URI,
         EGRESS_PROXY_URI,
-        GATEWAY_ENVIRONMENTS_URI,
         GATEWAY_RUNTIME_PROXY_URI,
         GATEWAY_SESSIONS_URI,
         HISTORY_SERVICE_URI,
@@ -324,27 +322,6 @@ def test_service_svids_are_mounted_with_client_and_server_usage(staging_manifest
             for pod in deployments.values()
             for volume in pod.get("volumes", [])
         ), f"{uri} Secret {secret_name} is not mounted read-only in a service Deployment"
-
-    gateway = deployments[runner_gateway.NAME]
-    caller_secrets = [
-        certificates[uri]["spec"]["secretName"]
-        for uri in (GATEWAY_SESSIONS_URI, GATEWAY_RUNTIME_PROXY_URI, GATEWAY_ENVIRONMENTS_URI)
-    ]
-    assert len(set(caller_secrets)) == len(caller_secrets)
-    caller_mounts = []
-    for secret_name in caller_secrets:
-        volume = one(
-            volume for volume in gateway["volumes"] if volume.get("secret", {}).get("secretName") == secret_name
-        )
-        caller_mounts.append(
-            one(
-                mount
-                for container in gateway["containers"]
-                for mount in container.get("volumeMounts", [])
-                if mount["name"] == volume["name"] and mount["readOnly"]
-            )
-        )
-    assert len({mount["mountPath"] for mount in caller_mounts}) == len(caller_mounts)
 
 
 def test_the_workload_ca_chains_to_the_cluster_root_and_its_bundle_carries_it_alone(scratch_app: App) -> None:

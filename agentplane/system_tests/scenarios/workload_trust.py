@@ -34,9 +34,9 @@ from agentplane.system_tests.driver.tls import service_root_certificates
 # cluster/cdk8s/agentplane/egress.py: `proxy()` and its listener port.
 _PROXY_SERVICE = "service/egress"
 _PROXY_PORT = 8888
-# cluster/cdk8s/agentplane/runner_gateway.py `GATEWAY_TLS_SECRET`, and the runner's control port.
-_GATEWAY_SECRET = "agentplane-runner-gateway-tls"
-_GATEWAY_URI = "spiffe://agentplane/runner-gateway"
+# cluster/cdk8s/agentplane/sandbox_controller.py issues the proxy's Runtime client credential.
+_RUNTIME_PROXY_SECRET = "sandbox-controller-runtime-proxy-client-workload-tls"
+_RUNTIME_PROXY_URI = "spiffe://agentplane/runtime-proxy"
 _RUNNER_CONTROL_PORT = 9090
 _HTTP2_PREFACE = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
 # An empty SETTINGS frame: length 0, type 0x4, no flags, stream 0.
@@ -218,18 +218,18 @@ async def _runner_control_target(cluster: Cluster, pod: str, route: RunnerContro
             yield f"{address}:{_RUNNER_CONTROL_PORT}"
 
 
-async def a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner(
+async def a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_runner(
     cluster: Cluster, view: environment_service_pb2.EnvironmentDescriptor, *, route: RunnerControlRoute
 ) -> None:
-    impostor = await _cluster_ca_leaf(cluster, _GATEWAY_URI)
-    gateway = await _secret_pem(cluster, cluster.namespace, _GATEWAY_SECRET)
+    impostor = await _cluster_ca_leaf(cluster, _RUNTIME_PROXY_URI)
+    proxy = await _secret_pem(cluster, cluster.namespace, _RUNTIME_PROXY_SECRET)
     roots = await service_root_certificates(cluster)
     async with _runner_control_target(cluster, view.kubernetes_diagnostics.pod.name, route) as target:
-        assert await _answers_http2(target, roots=roots, certificate=gateway), "the Gateway's own SVID was refused"
+        assert await _answers_http2(target, roots=roots, certificate=proxy), "the proxy's own SVID was refused"
         assert not await _answers_http2(target, roots=roots, certificate=impostor), (
-            f"a cluster-internal-ca leaf naming {_GATEWAY_URI} authenticated to a runner's control listener"
+            f"a cluster-internal-ca leaf naming {_RUNTIME_PROXY_URI} authenticated to a runner's control listener"
         )
-    # The Gateway's own connection still holds: a Sandbox is Ready only while its runner is connected.
+    # The Controller's independent Runtime observation still reports the Sandbox Ready.
     await cluster.kubectl(
         "wait",
         f"sandbox.agentplane.allegedly.works/{view.target.name}",

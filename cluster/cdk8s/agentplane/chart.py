@@ -4,9 +4,8 @@ disk) and the tests (synthesize it in memory via `cdk8s.Testing`) build.
 
 The caller names the Pod execution environment the chart offers and the image it runs
 (`environment_template_name`, `environment_tools_image`), plus any Secret a runner workload reads as a file
-(`environment_runtime_key_files`). The chart provisions the Gateway certificate from the
-Agentplane workload CA (`cluster_ca.WORKLOAD_ISSUER`); the Sandbox Controller provisions a unique leaf Certificate
-for each workload incarnation from the same CA.
+(`environment_runtime_key_files`). Workload service identities and each Runtime incarnation
+use the Agentplane workload CA (`cluster_ca.WORKLOAD_ISSUER`).
 """
 
 from __future__ import annotations
@@ -15,12 +14,6 @@ from collections.abc import Sequence
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ConfigMap
-from cert_manager_crds.io.cert_manager import (
-    Certificate,
-    CertificateSpec,
-    CertificateSpecPrivateKeyRotationPolicy,
-    CertificateSpecUsages,
-)
 from constructs import Construct
 
 from agentplane.session_instructions.platform_instructions import SessionRuntime
@@ -56,12 +49,9 @@ from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment
 from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME as REGISTRY_SECRET_NAME
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.cert_manager.certificate import CertificatePrivateKey
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 
-RUNNER_GATEWAY_CERTIFICATE = "agentplane-runner-gateway"
-RUNNER_GATEWAY_SECRET = runner_gateway.GATEWAY_TLS_SECRET
 RUNNER_TRUST_BUNDLE = cluster_ca.BUNDLE
 RUNNER_TRUST_BUNDLE_KEY = cluster_ca.BUNDLE_KEY
 
@@ -84,24 +74,6 @@ class Namespace(Construct):
         )
 
 
-def add_runner_certificates(scope: Construct, env: Environment) -> None:
-    """Provision the Gateway leaf."""
-    Certificate(
-        scope,
-        "runner-gateway-certificate",
-        metadata=ApiObjectMetadata(name=RUNNER_GATEWAY_CERTIFICATE, namespace=env.namespace),
-        spec=CertificateSpec(
-            secret_name=RUNNER_GATEWAY_SECRET,
-            uris=["spiffe://agentplane/runner-gateway"],
-            duration="24h",
-            renew_before="8h",
-            private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
-            usages=[CertificateSpecUsages.DIGITAL_SIGNATURE, CertificateSpecUsages.CLIENT_AUTH],
-            issuer_ref=cluster_ca.WORKLOAD_ISSUER,
-        ),
-    )
-
-
 def environment_chart(
     app: App,
     env: Environment,
@@ -115,7 +87,6 @@ def environment_chart(
     may keep adding objects to the returned chart and they are still checked."""
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
     Namespace(chart, "namespace", env)
-    add_runner_certificates(chart, env)
     NetworkPolicy(
         chart,
         "otel-egress",

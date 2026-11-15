@@ -1,7 +1,7 @@
 """The Gateway workload with embedded startup migrations.
 
 The public API and stable Service address are defined in `runner_gateway.py`; this module wires
-the Gateway's public listeners and direct mTLS connections to runner Pods."""
+the Dispatcher listener and its Environments and sampler client connections."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
-from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Duration, JsonPatch, Size
+from cdk8s import ApiObjectMetadata, App, Chart, Duration, Size
 from cdk8s_plus_34 import (
     ApiResource,
     ContainerResources,
@@ -35,14 +35,10 @@ from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
     CENTRAL_SAMPLER_URI,
-    GATEWAY_ENVIRONMENTS_URI,
-    GATEWAY_RUNTIME_PROXY_URI,
     GATEWAY_SESSIONS_URI,
-    MTLS,
     NOTIFICATIONS_URI,
     SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
-    TLS,
     ClientTLS,
     ServiceSPIFFEID,
 )
@@ -66,7 +62,6 @@ from cluster.cdk8s.agentplane import (
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
-from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.probes import tls_grpc_probe
@@ -77,9 +72,6 @@ from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset"
-_RUNNER_TLS_CERT = f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/tls.crt"
-_RUNNER_TLS_KEY = f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/tls.key"
-_RUNNER_TLS_CA = f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/ca.crt"
 _GRPC_PORT = 8080
 
 _DEFAULT_MEMORY_REQUEST = Size.mebibytes(256)
@@ -127,7 +119,7 @@ def add_stable_services(scope: Construct, env: Environment) -> None:
 
 
 class RunnerGateway(Construct):
-    """One TLS gRPC listener with per-method SVID admission, plus runner mTLS."""
+    """The Dispatcher listener and its narrow Sessions client SVID."""
 
     def __init__(
         self,
@@ -208,7 +200,7 @@ class RunnerGateway(Construct):
                 memory=MemoryResources(request=memory_request, limit=memory_limit),
             ),
             termination_grace=Duration.seconds(60),
-            # A Recreate drops delivery and every runner connection, so the Gateway rolls
+            # A Recreate drops Dispatcher admission and delivery, so the Gateway rolls
             # (a surged replica is Ready before the old one goes) even where the environment recreates.
             replica_profile=replace(
                 env.replicas,
@@ -226,20 +218,6 @@ class RunnerGateway(Construct):
         )
         sessions_tls = workload_tls.client_certificate(
             self, env, container=workload.container, name=f"{runner_gateway.NAME}-sessions", uri=GATEWAY_SESSIONS_URI
-        )
-        workload_tls.client_certificate(
-            self,
-            env,
-            container=workload.container,
-            name=f"{runner_gateway.NAME}-runtime-proxy",
-            uri=GATEWAY_RUNTIME_PROXY_URI,
-        )
-        workload_tls.client_certificate(
-            self,
-            env,
-            container=workload.container,
-            name=f"{runner_gateway.NAME}-environments",
-            uri=GATEWAY_ENVIRONMENTS_URI,
         )
         assert sessions_tls.cert_file is not None
         assert sessions_tls.key_file is not None
@@ -295,7 +273,6 @@ class RunnerGateway(Construct):
                 client_uri=GATEWAY_SESSIONS_URI,
             ),
             runner_control_target_template=environment_service.control_target(namespace),
-            runner_security=MTLS(tls=TLS(cert_file=_RUNNER_TLS_CERT, key_file=_RUNNER_TLS_KEY, ca_file=_RUNNER_TLS_CA)),
             runtime_proxy_readers=[APP_URI, NOTIFICATIONS_URI],
             runtime_proxy_session_callers=[GATEWAY_SESSIONS_URI],
             runtime_proxy_controller_callers=[SANDBOX_CONTROLLER_URI],
@@ -313,38 +290,6 @@ class RunnerGateway(Construct):
             path="/etc/agentplane-runner-gateway/settings/settings.yaml",
         )
         settings_file.mount_into(workload.container, env=Settings.config_file_env)
-        trust_projection = k8s.ProjectedVolumeSource(
-            default_mode=0o440,
-            sources=[
-                k8s.VolumeProjection(
-                    secret=k8s.SecretProjection(
-                        name=runner_gateway.GATEWAY_TLS_SECRET,
-                        items=[
-                            k8s.KeyToPath(key="tls.crt", path="tls.crt"),
-                            k8s.KeyToPath(key="tls.key", path="tls.key"),
-                        ],
-                    )
-                ),
-                # The workload CA alone: it issues every runner's server SVID and the Gateway's own leaf.
-                k8s.VolumeProjection(
-                    config_map=k8s.ConfigMapProjection(
-                        name=cluster_ca.WORKLOAD_BUNDLE, items=[k8s.KeyToPath(key=cluster_ca.BUNDLE_KEY, path="ca.crt")]
-                    )
-                ),
-            ],
-        )
-        # cdk8s-plus Container.mount consumes its IStorage interface; a projected volume has no
-        # cdk8s-plus wrapper, so append the generated typed Kubernetes structs directly.
-        deployment = ApiObject.of(workload.deployment)
-        deployment.add_json_patch(
-            JsonPatch.add("/spec/template/spec/volumes/-", k8s.Volume(name="runner-tls", projected=trust_projection))
-        )
-        deployment.add_json_patch(
-            JsonPatch.add(
-                "/spec/template/spec/containers/0/volumeMounts/-",
-                k8s.VolumeMount(name="runner-tls", mount_path=runner_gateway.GATEWAY_TLS_MOUNT_PATH, read_only=True),
-            )
-        )
         self._add_rbac(workload.account, namespace)
 
     def add_platform_resources(self) -> None:

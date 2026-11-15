@@ -128,17 +128,8 @@ spec:
             - mountPath: /run/agentplane/runner-gateway-sessions-client-tls
               name: runner-gateway-sessions-client-workload-tls
               readOnly: true
-            - mountPath: /run/agentplane/runner-gateway-runtime-proxy-client-tls
-              name: runner-gateway-runtime-proxy-client-workload-tls
-              readOnly: true
-            - mountPath: /run/agentplane/runner-gateway-environments-client-tls
-              name: runner-gateway-environments-client-workload-tls
-              readOnly: true
             - mountPath: /etc/agentplane-runner-gateway/settings
               name: configmap-runner-gateway-settings
-              readOnly: true
-            - mountPath: /run/agentplane/runner-tls
-              name: runner-tls
               readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
@@ -169,31 +160,9 @@ spec:
         - name: runner-gateway-sessions-client-workload-tls
           secret:
             secretName: runner-gateway-sessions-client-workload-tls
-        - name: runner-gateway-runtime-proxy-client-workload-tls
-          secret:
-            secretName: runner-gateway-runtime-proxy-client-workload-tls
-        - name: runner-gateway-environments-client-workload-tls
-          secret:
-            secretName: runner-gateway-environments-client-workload-tls
         - configMap:
             name: runner-gateway-settings
           name: configmap-runner-gateway-settings
-        - name: runner-tls
-          projected:
-            defaultMode: 288
-            sources:
-              - secret:
-                  items:
-                    - key: tls.crt
-                      path: tls.crt
-                    - key: tls.key
-                      path: tls.key
-                  name: agentplane-runner-gateway-tls
-              - configMap:
-                  items:
-                    - key: ca-certificates.crt
-                      path: ca.crt
-                  name: agentplane-workload-ca-bundle
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -252,52 +221,6 @@ spec:
     - client auth
     - server auth
 ---
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: runner-gateway-runtime-proxy-client-workload
-  namespace: agentplane-staging
-spec:
-  duration: 24h
-  issuerRef:
-    kind: ClusterIssuer
-    name: agentplane-workload
-  privateKey:
-    algorithm: ECDSA
-    rotationPolicy: Always
-    size: 256
-  renewBefore: 8h
-  secretName: runner-gateway-runtime-proxy-client-workload-tls
-  uris:
-    - spiffe://agentplane/runtime-proxy
-  usages:
-    - digital signature
-    - client auth
-    - server auth
----
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: runner-gateway-environments-client-workload
-  namespace: agentplane-staging
-spec:
-  duration: 24h
-  issuerRef:
-    kind: ClusterIssuer
-    name: agentplane-workload
-  privateKey:
-    algorithm: ECDSA
-    rotationPolicy: Always
-    size: 256
-  renewBefore: 8h
-  secretName: runner-gateway-environments-client-workload-tls
-  uris:
-    - spiffe://agentplane/environments
-  usages:
-    - digital signature
-    - client auth
-    - server auth
----
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -332,12 +255,6 @@ data:
       - spiffe://agentplane/sandbox-controller
     executor_service_callers:
       - spiffe://agentplane/central-sampler
-    runner_security:
-      mode: mtls
-      tls:
-        cert_file: /run/agentplane/runner-tls/tls.crt
-        key_file: /run/agentplane/runner-tls/tls.key
-        ca_file: /run/agentplane/runner-tls/ca.crt
     dispatcher_service_delegation:
       actors:
         - spiffe_id: spiffe://agentplane/actions
