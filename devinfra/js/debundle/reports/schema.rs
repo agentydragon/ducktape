@@ -127,17 +127,7 @@ pub struct NeverWrittenOverride {
 }
 
 /// How an overridden witness reaches a named family.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum NeverWrittenReach {
-    /// The receiver may be any native object.
-    UnknownReceiver,
-    /// A write to the global object, whose unknown key may name a binding or
-    /// which couples every prototype slot.
-    GlobalObject,
-    /// A write the census resolves to the family without an exact path.
-    Family,
-}
+pub use saved_native_proto::debundle::saved_native::NeverWrittenReach;
 
 /// One applied `commuting_statements` premise: the pair's source units
 /// (`unit:N` keys into `nodes`) and the `sequenced` edges (`edges[].id`) it
@@ -405,16 +395,7 @@ pub struct NativeUnreachableBranch {
     pub(crate) callback_span: swc_common::Span,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::Display)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum NativeMutationOperation {
-    PropertyAssignment,
-    BindingAssignment,
-    Update,
-    Delete,
-    MutationCall,
-}
+pub use saved_native_proto::debundle::saved_native::NativeMutationOperation;
 
 #[derive(
     Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, strum::Display,
@@ -459,15 +440,7 @@ pub struct NativePrototypeMutation {
     pub(crate) span: swc_common::Span,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum NativePrototypeMutationKind {
-    Write,
-    Delete,
-    Reflective,
-    Escape,
-    DynamicScope,
-}
+pub use saved_native_proto::debundle::saved_native::NativePrototypeMutationKind;
 
 /// An evaluated property-specific absence obligation, including its source blockers.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
