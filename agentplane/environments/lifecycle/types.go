@@ -1,12 +1,10 @@
-// Package lifecycle owns policy and guarded desired-state changes for existing Sandboxes.
+// Package lifecycle shares policy and guarded Sandbox writes across environment lifecycle owners.
 package lifecycle
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"strconv"
-	"time"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 )
@@ -37,19 +35,6 @@ type ServiceWakeCaller struct{ SPIFFEID string }
 func (AccountWakeCaller) isWakeCaller()  {}
 func (IdentityWakeCaller) isWakeCaller() {}
 func (ServiceWakeCaller) isWakeCaller()  {}
-
-// WakeBudgetKey is whose budget a wake attempt spends. ServiceAccounts and Identities use their
-// namespace, name, and UID; service callers use their exact SPIFFE ID.
-type WakeBudgetKey struct {
-	Namespace, Name, UID string
-	ServiceSPIFFEID      string
-}
-
-// WakeBudget reserves a bounded automatic wake attempt without depending on Dispatcher storage.
-// Implementations share reservations across replicas. Explicit resume does not reserve budget.
-type WakeBudget interface {
-	ReserveWakeAttempt(context.Context, WakeBudgetKey, string, int64) (time.Duration, error)
-}
 
 // NewResumeToken creates the opaque precondition returned by Discovery for a particular target
 // UID and wake generation. It is deterministic and is not a capability; the lifecycle manager

@@ -9,13 +9,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environments/internal/resume"
 	"github.com/agentydragon/ducktape/agentplane/environments/internal/service/view"
+	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
@@ -41,7 +42,7 @@ type Service struct {
 	objects                client.WithWatch
 	sandboxes              *sandboxreader.Reader
 	runtime                runtimeconfig.Catalog
-	lifecycle              lifecycle.EnvironmentServiceLifecycle
+	lifecycle              *resume.Manager
 	readers                sets.Set[auth.Account]
 	managers               sets.Set[auth.Account]
 	launchers              sets.Set[auth.Account]
@@ -55,7 +56,7 @@ func New(
 	namespace string,
 	objects client.WithWatch,
 	runtime runtimeconfig.Catalog,
-	lifecycleManager lifecycle.EnvironmentServiceLifecycle,
+	lifecycleManager *resume.Manager,
 	readers sets.Set[auth.Account],
 	management ManagementOptions,
 ) (*Service, error) {

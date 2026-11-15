@@ -5,11 +5,12 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/environments/access"
+	"github.com/agentydragon/ducktape/agentplane/environments/internal/resume"
+	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"google.golang.org/grpc/codes"
@@ -25,8 +26,8 @@ func TestIdentityResumeProjectionAndDelegatedAdmissionFollowCurrentGrant(t *test
 	rules := access.NewIndex()
 	rules.PutIdentity(identity)
 	var policyError error
-	manager, err := lifecycle.NewManager(lifecycle.Options{
-		Namespace: discoveryNamespace, Objects: objects, WakeBudget: unusedWakeBudget{},
+	manager, err := resume.NewManager(lifecycle.Options{
+		Namespace: discoveryNamespace, Objects: objects,
 		EnvironmentRules: rules, PolicyReady: func() error { return policyError },
 	})
 	if err != nil {

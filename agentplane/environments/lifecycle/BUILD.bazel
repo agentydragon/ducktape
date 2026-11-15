@@ -5,14 +5,12 @@ package(default_visibility = ["//agentplane:__subpackages__"])
 go_library(
     name = "lifecycle",
     srcs = [
-        "environment_service.go",
-        "manager.go",
+        "policy.go",
         "types.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle",
+    importpath = "github.com/agentydragon/ducktape/agentplane/environments/lifecycle",
     deps = [
         "//agentplane/environments/access",
-        "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/identity/auth",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/policy/reader",

@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/environments/access"
+	"github.com/agentydragon/ducktape/agentplane/environments/internal/resume"
+	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
@@ -13,7 +15,6 @@ import (
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/google/uuid"
@@ -112,8 +113,8 @@ func TestServiceDelegatedResumeUsesEffectiveIdentityGrant(t *testing.T) {
 					Spec:       policyapi.PolicyBindingSpec{Subject: policyapi.Subject{Identity: &policyapi.IdentityRef{Name: caller.Name}}, PolicySets: []string{"test-resume"}},
 				})
 			}
-			manager, err := lifecycle.NewManager(lifecycle.Options{
-				Namespace: namespace, Objects: objects, WakeBudget: unusedWakeBudget{},
+			manager, err := resume.NewManager(lifecycle.Options{
+				Namespace: namespace, Objects: objects,
 				EnvironmentRules: rules, PolicyReady: func() error { return nil },
 				OperatorServiceCallers: []string{peertls.ActionsURI},
 			})
@@ -226,7 +227,7 @@ func TestServiceManagerCreateAdmission(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	manager, err := lifecycle.NewManager(lifecycle.Options{Namespace: namespace, Objects: objects, WakeBudget: unusedWakeBudget{}})
+	manager, err := resume.NewManager(lifecycle.Options{Namespace: namespace, Objects: objects})
 	if err != nil {
 		t.Fatal(err)
 	}

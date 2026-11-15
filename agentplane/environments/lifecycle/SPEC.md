@@ -2,12 +2,17 @@
 
 ## Ownership
 
-`lifecycle.Manager` owns current resume policy checks, automatic-wake requests and the guarded
-desired-state update for an existing Sandbox. `NewManager` requires the shared wake budget used by
-automatic requests. `EnvironmentServiceManager` provides the same guarded explicit-resume operation
-and read-only eligibility assessments without automatic-wake execution or a budget dependency. The
-Gateway uses `Manager` for Dispatcher automatic wake; the EnvironmentService uses the budgetless
-surface. Neither owns Sandbox reconciliation or readiness; those remain with the Sandbox Controller.
+Explicit `ResumeEnvironment` handling lives in
+[`environments/internal/resume`](../internal/resume/manager.go). Its manager accepts no budget and
+cannot issue automatic wake requests. Dispatcher constructs
+[`dispatcher/wake.Manager`](../../runner_gateway/dispatcher/wake/manager.go), whose constructor
+requires the shared PostgreSQL wake budget and accepts only automatic-wake grants.
+
+Both owners use `lifecycle.Policy` for uncached authorization, read-only projections and the same
+guarded write loop. Automatic writes require a Dispatcher reservation callback, invoked after
+reauthorization and immediately before each patch attempt. Budget keys and reservation execution
+belong to Dispatcher; the shared package has no budget or EnvironmentService wire dependency.
+Neither owner reconciles Sandboxes or determines readiness; those stay with the Sandbox Controller.
 
 The Kubernetes client is uncached. Every operation identifies a target by namespace, name and UID,
 and reads the current controller-owned execution ServiceAccount or Identity. Explicit resume accepts
@@ -75,8 +80,8 @@ incarnation's transition.
 `ALLOWED_IDENTITY_GRANT` reason. `AssessAutomaticWake` describes whether
 an automatic request is currently permitted, including `wakeOnSend` and the separate broker grant.
 Both are read-only and do not reserve budget. `AssessAutomaticWake` is available on the
-EnvironmentService manager so inventory retains its automatic-eligibility response. `RequestWake`,
-available only on the budget-backed `Manager`, applies that same automatic policy, reserves budget,
+explicit-resume manager so inventory retains its automatic-eligibility response. `RequestWake`,
+available only on Dispatcher's budget-backed `wake.Manager`, applies that same automatic policy, reserves budget,
 then performs the guarded mutation. `WakeAssessment.ELIGIBLE` is an assessment only;
 `REQUESTED` records a successful mutation, with timestamp and observed generation on both.
 
@@ -86,8 +91,8 @@ facts proto does not import the API proto; the EnvironmentService proto owns its
 
 ## API boundary
 
-The manager is an in-process component shared by `EnvironmentService` and Dispatcher automatic
-wake. Only `EnvironmentService` is registered as a public environment API. Its list/get operations
+The two owners share in-process policy and guarded-write code, not a manager instance or policy
+index. Environments makes no call to Sessions. Only `EnvironmentService` is registered as a public environment API. Its list/get operations
 remain read-only; explicit resume uses the policy and mutation contract above.
 The public service exposes no suspend operation. Any future public suspend API requires a separately
 reviewed authority and retry contract.

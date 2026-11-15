@@ -7,6 +7,9 @@ the listener and its independent policy watches determine readiness on leaders a
 service SVIDs. Actions preserves effective-Identity delegation for list/get/resume and the separate
 launcher grant for reviewed orchestration. Managed Sandbox CLIs use the dedicated local EnvironmentService route. The Gateway no longer
 registers EnvironmentService or accepts its obsolete settings; automatic wake stays with Sessions.
+Explicit resume is implemented in `internal/resume` without a wake-budget dependency. Dispatcher
+owns automatic wake execution and budgeting; the two owners share `environments/lifecycle` policy
+and guarded writes, with independent policy views and no Environments-to-Sessions call.
 Enabling `environment_service` requires the accepting Controller image to be pinned first; remove
 that configuration before rolling back to an image that cannot decode it.
 

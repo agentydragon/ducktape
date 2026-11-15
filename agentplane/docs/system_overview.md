@@ -247,7 +247,7 @@ for resident Session work and History export wakeups.
 
 The app forwards authenticated Sandbox management requests to the Sandbox Controller
 EnvironmentService on every replica, which writes Sandbox desired state to Kubernetes. The
-Gateway retains the API for callers still moving to the new receiver. The elected Controller
+Gateway no longer registers EnvironmentService. The elected Controller
 reconciles desired state, owns `Sandbox.status`, and holds
 deletion until the runner has sealed its Sessions through the Gateway. Notifications and the
 Runner Gateway read Sandbox inventory directly. The Runner Gateway implements Dispatcher Session
@@ -276,8 +276,6 @@ flowchart LR
     subgraph unified[Runner Gateway]
         dispatcher[Dispatcher API and durable delivery]
         rpc[Shared TLS RPC listener :8080<br/>bearer and Sandbox SVID auth]
-        environments[EnvironmentService API]
-        lifecycle[Shared lifecycle manager]
         gateway[Runner proxy and state observation]
     end
     pod[Managed Pod agent process and CLI]
@@ -294,7 +292,6 @@ flowchart LR
     actions -->|caller-delegated EnvironmentService list/get/resume; reviewed launches: Actions SVID mTLS| sandboxctl
     actions -->|Actions SVID mTLS: Session commands; typed envelope for delegation| dispatcher
     actions -->|Actions SVID mTLS: Session reads; typed envelope for delegation| history
-    environments -->|resume + eligibility| lifecycle
     app -->|per-Sandbox Runner Proxy: live inventory + diagnostics| gateway
     dispatcher -->|Pod-bound workload token: wrapped Codex and Claude opens + commands| gateway
     dispatcher -->|central opens + commands: bearer over verified server TLS| central
@@ -302,8 +299,7 @@ flowchart LR
     sandboxctl -->|Quiesce| gateway
     sandboxctl -->|passive WatchState binds workload UID and observes facts: mTLS gRPC| runtime
     dispatcher -->|Sandbox + independent environment-policy watches| k8s
-    dispatcher -->|automatic wake assessment + request| lifecycle
-    lifecycle -->|guarded running + generation update| k8s
+    dispatcher -->|automatic wake: budget + guarded running/generation update| k8s
     pod -.->|Session gRPC over HTTPS_PROXY/CONNECT; EnvironmentService gRPC :3130| sidecar
     guest -.->|Session gRPC over HTTPS_PROXY/CONNECT; EnvironmentService gRPC :3130| relay
     sidecar -.->|mTLS proxy hop and CONNECT| egress
@@ -333,8 +329,11 @@ and retains the effective creator and actor separately. These consumers share an
 not an in-process index. The integration app uses its own Pod-bound
 token as a distinct operator broker; it does not forward browser identity. Resume acceptance is not
 readiness, and no resume path replays Session input or creates a grant.
-Dispatcher automatic wake uses the same lifecycle manager with the original effective caller
-and the `wakeOnSend` and `wake_callers` checks.
+Explicit resume is internal to Environments and accepts no wake budget. Dispatcher owns automatic
+wake execution and PostgreSQL budgeting, preserving the original effective caller and the
+`wakeOnSend` and `wake_callers` checks. Both owners use the same `environments/lifecycle`
+authorization and guarded-write code with independent policy views; Environments does not call
+Sessions. Conflicts reread and reauthorize, while an uncertain patch outcome is never replayed.
 The opt-in Session tools also forward the effective caller to Dispatcher commands and retained
 History reads. Those receivers enforce their own same-principal checks; the existing
 `orchestration_v1` broker path retains its separate authority.

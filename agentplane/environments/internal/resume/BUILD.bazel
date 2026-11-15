@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//agentplane/environments:__subpackages__"])
+
+go_library(
+    name = "resume",
+    srcs = ["manager.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/environments/internal/resume",
+    deps = [
+        "//agentplane/environments/lifecycle",
+        "//agentplane/environments/v1:environment_service_go_proto",
+        "//agentplane/proto:environment_lifecycle_go_proto",
+        "//agentplane/proto:identity_go_proto",
+        "//agentplane/sandboxes/api",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+    ],
+)

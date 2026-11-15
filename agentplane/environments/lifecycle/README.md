@@ -1,12 +1,15 @@
 # Environment lifecycle manager
 
-`lifecycle.Manager` is the Runner Gateway's backend-owned policy and mutation point for resuming an
-existing Sandbox. `NewManager` requires the shared wake budget used by Dispatcher's automatic
-`RequestWake` path. `EnvironmentServiceManager` exposes the same guarded explicit resume and
-read-only `Eligibility` and `AssessAutomaticWake` assessments without automatic wake execution or
-a budget dependency. Both reread the exact Sandbox UID and current execution binding through an
-uncached Kubernetes client. Explicit Identity grants come from the consumer's typed policy reader
-and require healthy, synchronized watches.
+Explicit resume belongs to [`environments/internal/resume`](../internal/resume/manager.go).
+Automatic wake execution and its budget contract belong to
+[`runner_gateway/dispatcher/wake`](../../runner_gateway/dispatcher/wake/manager.go). Only the latter
+requires a shared budget and exposes `RequestWake`; explicit resume accepts no budget.
+
+Both use `lifecycle.Policy` for read-only eligibility and the shared guarded-write loop, preserving
+one implementation of authorization, optimistic conflict retry and uncertain patch outcomes. The
+shared package neither handles RPC requests nor owns a budget. Both owners reread the exact Sandbox
+UID and current execution binding through an uncached Kubernetes client. Explicit Identity grants
+come from the consumer's typed policy reader and require healthy, synchronized watches.
 
 Ordinary ServiceAccount self-resume is retired. Explicit resume accepts an Identity with a current
 `environment` grant for `resume`, or a direct Pod-bound ServiceAccount in `operator_callers`.
