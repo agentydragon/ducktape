@@ -8,7 +8,18 @@ from cluster.cdk8s.monitoring.dashboards.foundation import (
     mimir_query,
     mimir_table_query,
     series_options,
+    storage_tier_variable,
 )
+
+_CNPG_BYTES = 'max by (node, namespace, job, datname) (cnpg_pg_database_size_bytes{datname!~"template0|template1"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{node=~"$node"}))'
+
+_COLLECTION_BYTES = 'sum by (node, collection) (max by (node, collection, pod) (SeaweedFS_volumeServer_total_disk_size{namespace="seaweedfs",type="normal",collection!=""} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="seaweedfs",node=~"$node"})))'
+
+_LOGICAL_BUCKET_BYTES = 'max by (bucket) (SeaweedFS_s3_bucket_size_bytes{namespace="seaweedfs",bucket!=""})'
+
+_PHYSICAL_BUCKET_BYTES = 'max by (bucket) (SeaweedFS_s3_bucket_physical_size_bytes{namespace="seaweedfs",bucket!=""})'
+
+_CLICKHOUSE_BYTES = '(max by (node, namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTables{namespace="clickhouse"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="clickhouse",node=~"$node"})) + max by (node, namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTablesSystem{namespace="clickhouse"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="clickhouse",node=~"$node"})))'
 
 
 def _bytes_panel(
@@ -43,7 +54,6 @@ def build_dashboard() -> dashboard.Dashboard:
         tags=["cluster", "storage", "workload", "collector"],
         graph_tooltip=dashboard.DashboardCursorSync.CROSSHAIR,
         time=dashboard.DashboardDashboardTime(from_val="now-24h"),
-        week_start="",
         refresh="5m",
         schema_version=39,
         version=1,
@@ -61,7 +71,7 @@ def build_dashboard() -> dashboard.Dashboard:
             _bytes_panel(
                 6,
                 "CNPG database size by machine now",
-                'sort_desc(max by (node, namespace, job, datname) (cnpg_pg_database_size_bytes{datname!~"template0|template1"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{node=~"$node"})))',
+                f"sort_desc({_CNPG_BYTES})",
                 legend="{{node}} {{namespace}} {{job}} {{datname}}",
                 description="CNPG exporter database-size values from pods on the selected machine. This database metric is not total PGDATA filesystem use; replicas report their own copies and must not be added across machines as unique data.",
                 position=dashboard.GridPos(y=7),
@@ -70,7 +80,7 @@ def build_dashboard() -> dashboard.Dashboard:
             _bytes_panel(
                 7,
                 "Largest CNPG databases by machine over time",
-                'topk(10, max by (node, namespace, job, datname) (cnpg_pg_database_size_bytes{datname!~"template0|template1"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{node=~"$node"})))',
+                f"topk(10, {_CNPG_BYTES})",
                 legend="{{node}} {{namespace}} {{job}} {{datname}}",
                 description="CNPG exporter database-size values from pods on the selected machine. This database metric is not total PGDATA filesystem use; replicas report their own copies and must not be added across machines as unique data.",
                 position=dashboard.GridPos(x=12, y=7),
@@ -98,7 +108,7 @@ def build_dashboard() -> dashboard.Dashboard:
             _bytes_panel(
                 14,
                 "SeaweedFS collection bytes by machine now",
-                'sort_desc(sum by (node, collection) (max by (node, collection, pod) (SeaweedFS_volumeServer_total_disk_size{namespace="seaweedfs",type="normal",collection!=""} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="seaweedfs",node=~"$node"}))))',
+                f"sort_desc({_COLLECTION_BYTES})",
                 legend="{{node}} {{collection}}",
                 description="Collection bytes reported by volume-server pods on the selected machine. Each replica is counted on its storage node; these collector values overlap physical bucket bytes.",
                 position=dashboard.GridPos(y=26),
@@ -107,7 +117,7 @@ def build_dashboard() -> dashboard.Dashboard:
             _bytes_panel(
                 15,
                 "Largest SeaweedFS collections by machine over time",
-                'topk(10, sum by (node, collection) (max by (node, collection, pod) (SeaweedFS_volumeServer_total_disk_size{namespace="seaweedfs",type="normal",collection!=""} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="seaweedfs",node=~"$node"}))))',
+                f"topk(10, {_COLLECTION_BYTES})",
                 legend="{{node}} {{collection}}",
                 description="Collection bytes reported by volume-server pods on the selected machine over time. Each replica is counted on its storage node; these collector values overlap physical bucket bytes.",
                 position=dashboard.GridPos(x=12, y=26),
@@ -120,7 +130,7 @@ def build_dashboard() -> dashboard.Dashboard:
             _bytes_panel(
                 10,
                 "SeaweedFS S3 logical bucket size now (cluster-wide)",
-                'sort_desc(max by (bucket) (SeaweedFS_s3_bucket_size_bytes{namespace="seaweedfs",bucket!=""}))',
+                f"sort_desc({_LOGICAL_BUCKET_BYTES})",
                 legend="{{bucket}}",
                 description="Logical S3 object bytes by bucket across the cluster. The Machine selector does not apply because this metric has no storage-node ownership.",
                 position=dashboard.GridPos(y=36),
@@ -129,7 +139,7 @@ def build_dashboard() -> dashboard.Dashboard:
             _bytes_panel(
                 11,
                 "Largest SeaweedFS S3 logical buckets over time (cluster-wide)",
-                'topk(10, max by (bucket) (SeaweedFS_s3_bucket_size_bytes{namespace="seaweedfs",bucket!=""}))',
+                f"topk(10, {_LOGICAL_BUCKET_BYTES})",
                 legend="{{bucket}}",
                 description="Logical S3 object bytes by bucket across the cluster. The Machine selector does not apply because this metric has no storage-node ownership; logical bytes omit replicas.",
                 position=dashboard.GridPos(x=12, y=36),
@@ -137,7 +147,7 @@ def build_dashboard() -> dashboard.Dashboard:
             _bytes_panel(
                 12,
                 "SeaweedFS S3 physical bucket size now (cluster-wide)",
-                'sort_desc(max by (bucket) (SeaweedFS_s3_bucket_physical_size_bytes{namespace="seaweedfs",bucket!=""}))',
+                f"sort_desc({_PHYSICAL_BUCKET_BYTES})",
                 legend="{{bucket}}",
                 description="S3-reported physical bucket bytes across the cluster. The Machine selector does not apply because this metric has no storage-node ownership.",
                 position=dashboard.GridPos(y=45),
@@ -146,7 +156,7 @@ def build_dashboard() -> dashboard.Dashboard:
             _bytes_panel(
                 13,
                 "Largest SeaweedFS S3 physical buckets over time (cluster-wide)",
-                'topk(10, max by (bucket) (SeaweedFS_s3_bucket_physical_size_bytes{namespace="seaweedfs",bucket!=""}))',
+                f"topk(10, {_PHYSICAL_BUCKET_BYTES})",
                 legend="{{bucket}}",
                 description="S3-reported physical bucket bytes across the cluster. The Machine selector does not apply because this metric has no storage-node ownership; these overlap with collection-level replica bytes.",
                 position=dashboard.GridPos(x=12, y=45),
@@ -157,7 +167,7 @@ def build_dashboard() -> dashboard.Dashboard:
             _bytes_panel(
                 16,
                 "ClickHouse MergeTree bytes by machine now",
-                'sort_desc((max by (node, namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTables{namespace="clickhouse"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="clickhouse",node=~"$node"})) + max by (node, namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTablesSystem{namespace="clickhouse"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="clickhouse",node=~"$node"}))))',
+                f"sort_desc({_CLICKHOUSE_BYTES})",
                 legend="{{node}} {{pod}}",
                 description="MergeTree bytes reported by ClickHouse pods on the selected machine, including the existing system-table metric. This per-pod collector detail is separate from host filesystem and Piraeus pool use.",
                 position=dashboard.GridPos(y=55),
@@ -166,7 +176,7 @@ def build_dashboard() -> dashboard.Dashboard:
             _bytes_panel(
                 17,
                 "ClickHouse MergeTree bytes by machine over time",
-                '(max by (node, namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTables{namespace="clickhouse"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="clickhouse",node=~"$node"})) + max by (node, namespace, pod) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTablesSystem{namespace="clickhouse"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="clickhouse",node=~"$node"})))',
+                _CLICKHOUSE_BYTES,
                 legend="{{node}} {{pod}}",
                 description="MergeTree bytes reported by ClickHouse pods on the selected machine, including the existing system-table metric. This per-pod collector detail is separate from host filesystem and Piraeus pool use.",
                 position=dashboard.GridPos(x=12, y=55),
@@ -174,18 +184,7 @@ def build_dashboard() -> dashboard.Dashboard:
         ],
         templating=dashboard.DashboardDashboardTemplating(
             list_val=[
-                dashboard.VariableModel(
-                    type_val=dashboard.VariableType.CUSTOM,
-                    name="storage_tier",
-                    label="Storage tier",
-                    query="SSD : ssd,HDD : hdd,Both : ssd|hdd",
-                    current=dashboard.VariableOption(selected=True, text="Both", value="ssd|hdd"),
-                    options=[
-                        dashboard.VariableOption(selected=False, text="SSD", value="ssd"),
-                        dashboard.VariableOption(selected=False, text="HDD", value="hdd"),
-                        dashboard.VariableOption(selected=True, text="Both", value="ssd|hdd"),
-                    ],
-                ),
+                storage_tier_variable(),
                 dashboard.VariableModel(
                     name="node",
                     label="Machine",
@@ -198,18 +197,6 @@ def build_dashboard() -> dashboard.Dashboard:
                     include_all=True,
                     definition='label_values(kube_node_labels{label_storage_allegedly_works_tier=~"$storage_tier"}, node)',
                 ),
-            ]
-        ),
-        annotations=dashboard.AnnotationContainer(
-            list_val=[
-                dashboard.AnnotationQuery(
-                    name="Annotations & Alerts",
-                    datasource=common.DataSourceRef(type_val="grafana", uid="-- Grafana --"),
-                    hide=True,
-                    icon_color="rgba(0, 211, 255, 1)",
-                    type_val="dashboard",
-                    built_in=1,
-                )
             ]
         ),
     )

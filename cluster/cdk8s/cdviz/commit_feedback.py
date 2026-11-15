@@ -1,10 +1,16 @@
 """Commit to CI feedback dashboard."""
 
+from collections.abc import Sequence
 from textwrap import dedent
 
 from grafana_foundation_sdk.models import common, dashboard, text
 
-from cluster.cdk8s.monitoring.dashboards.foundation import field_override, postgres_query, series_options
+from cluster.cdk8s.monitoring.dashboards.foundation import (
+    field_override,
+    postgres_datasource,
+    postgres_query,
+    series_options,
+)
 
 _FEEDBACK_CTE = dedent("""\
         WITH feedback AS (
@@ -23,6 +29,10 @@ def _feedback_query(body: str, *, ctes: str = "") -> str:
     select = dedent(body).strip("\n")
     extra_ctes = dedent(ctes).strip("\n")
     return f"{_FEEDBACK_CTE}{extra_ctes}\n{select}"
+
+
+def _feedback_select(projections: Sequence[str], tail: str, *, ctes: str = "") -> str:
+    return _feedback_query("SELECT\n  " + ",\n  ".join(projections) + "\n" + dedent(tail).strip(), ctes=ctes)
 
 
 def _column(
@@ -45,6 +55,79 @@ def _latency_columns() -> list[dashboard.DashboardFieldConfigSourceOverrides]:
         _column("n", "Heads (N)"),
         *[_column(f"p{quantile}_seconds", f"P{quantile}", unit="s", decimals=1) for quantile in (50, 90, 99)],
     ]
+
+
+_VERDICT_OBSERVED = "first_verdict IN ('red', 'green') AND first_verdict_seconds IS NOT NULL"
+_TREND_SERIES = (("red", 50, "#F2495C"), ("red", 90, "#FF9830"), ("green", 50, "#73BF69"), ("green", 90, "#56A64B"))
+
+
+def _percentile(column: str, quantile: int, *, where: str | None = None) -> str:
+    expression = f"PERCENTILE_CONT({quantile / 100:.2f}) WITHIN GROUP (ORDER BY {column})"
+    return expression + (f" FILTER (WHERE {where})" if where is not None else "")
+
+
+def _latency_projections(column: str, quantiles: tuple[int, ...], *, where: str | None = None) -> list[str]:
+    return [f"{_percentile(column, q, where=where)} AS p{q}_seconds" for q in quantiles]
+
+
+def _timed_rates_query() -> str:
+    age = "$__timeTo()::timestamptz - feedback.arrived_at"
+    threshold = "limits.seconds * INTERVAL '1 second'"
+    eligible = f"{age} >= {threshold}"
+    denominator = f"NULLIF(COUNT(*) FILTER (WHERE {eligible}), 0)"
+    projections = [
+        "limits.label",
+        f"COUNT(*) FILTER (WHERE {eligible}) AS eligible_heads",
+        f"COUNT(*) FILTER (WHERE {age} < {threshold}) AS still_observing",
+    ]
+    for predicate, count_name, rate_name in (
+        (
+            "feedback.first_verdict IN ('red', 'green') AND feedback.first_verdict_seconds <= limits.seconds",
+            "heads_with_verdict",
+            "verdict_rate_percent",
+        ),
+        ("feedback.green_seconds <= limits.seconds", "heads_green", "green_rate_percent"),
+    ):
+        count = f"COUNT(*) FILTER (WHERE {eligible} AND {predicate})"
+        projections.extend((f"{count} AS {count_name}", f"100.0 * {count} / {denominator} AS {rate_name}"))
+    return _feedback_select(
+        projections,
+        """\
+            FROM feedback
+            CROSS JOIN limits
+            GROUP BY limits.label, limits.seconds
+            ORDER BY limits.seconds
+            """,
+        ctes="""\
+            , limits(label, seconds) AS (
+              VALUES ('5 minutes'::text, 300), ('10 minutes'::text, 600), ('20 minutes'::text, 1200)
+            )
+            """,
+    )
+
+
+def _choice_variable(
+    name: str,
+    label: str,
+    description: str,
+    choices: tuple[tuple[str, str], ...],
+    selected: str,
+    *,
+    allow_custom_value: bool = True,
+) -> dashboard.VariableModel:
+    return dashboard.VariableModel(
+        type_val=dashboard.VariableType.CUSTOM,
+        name=name,
+        label=label,
+        description=description,
+        hide=dashboard.VariableHide.DONT_HIDE,
+        query=", ".join(text if text == value else f"{text} : {value}" for text, value in choices),
+        current=dashboard.VariableOption(text={value: text for text, value in choices}[selected], value=selected),
+        options=[
+            dashboard.VariableOption(text=text, value=value, selected=value == selected) for text, value in choices
+        ],
+        allow_custom_value=allow_custom_value,
+    )
 
 
 def build_dashboard() -> dashboard.Dashboard:
@@ -73,25 +156,19 @@ def build_dashboard() -> dashboard.Dashboard:
                 id_val=2,
                 targets=[
                     postgres_query(
-                        sql=_feedback_query(
-                            """\
-                                SELECT
-                                  COUNT(*) FILTER (WHERE first_verdict IN ('red', 'green') AND first_verdict_seconds IS NOT NULL) AS n,
-                                  PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY first_verdict_seconds)
-                                    FILTER (WHERE first_verdict IN ('red', 'green') AND first_verdict_seconds IS NOT NULL) AS p50_seconds,
-                                  PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY first_verdict_seconds)
-                                    FILTER (WHERE first_verdict IN ('red', 'green') AND first_verdict_seconds IS NOT NULL) AS p90_seconds,
-                                  PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY first_verdict_seconds)
-                                    FILTER (WHERE first_verdict IN ('red', 'green') AND first_verdict_seconds IS NOT NULL) AS p99_seconds
-                                FROM feedback
-                                """
+                        sql=_feedback_select(
+                            [
+                                f"COUNT(*) FILTER (WHERE {_VERDICT_OBSERVED}) AS n",
+                                *_latency_projections("first_verdict_seconds", (50, 90, 99), where=_VERDICT_OBSERVED),
+                            ],
+                            "FROM feedback",
                         ),
                         ref_id="feedback_2",
                     )
                 ],
                 title="First verdict latency",
                 description="P50/P90/P99 from arrival to the first red or green verdict. N counts only heads with a verdict; null quantiles with N=0 are intentionally blank, not zero.",
-                datasource=common.DataSourceRef(type_val="grafana-postgresql-datasource", uid="cdviz"),
+                datasource=postgres_datasource(),
                 grid_pos=dashboard.GridPos(h=5, y=6),
                 field_config=_table_fields(_latency_columns()),
             ),
@@ -100,13 +177,13 @@ def build_dashboard() -> dashboard.Dashboard:
                 id_val=3,
                 targets=[
                     postgres_query(
-                        sql=_feedback_query(
+                        sql=_feedback_select(
+                            [
+                                "verdicts.verdict",
+                                "COUNT(latencies.seconds) AS n",
+                                *_latency_projections("latencies.seconds", (50, 90)),
+                            ],
                             """\
-                                SELECT
-                                  verdicts.verdict,
-                                  COUNT(latencies.seconds) AS n,
-                                  PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY latencies.seconds) AS p50_seconds,
-                                  PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY latencies.seconds) AS p90_seconds
                                 FROM verdicts
                                 LEFT JOIN latencies
                                   ON latencies.verdict = verdicts.verdict
@@ -130,7 +207,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 ],
                 title="First red vs first green",
                 description="Independent first-red and first-green clocks, so a recovered head contributes to both. N counts heads with that observed timestamp; absent samples stay blank.",
-                datasource=common.DataSourceRef(type_val="grafana-postgresql-datasource", uid="cdviz"),
+                datasource=postgres_datasource(),
                 grid_pos=dashboard.GridPos(h=5, x=12, y=6),
                 field_config=_table_fields(
                     [
@@ -146,23 +223,20 @@ def build_dashboard() -> dashboard.Dashboard:
                 id_val=4,
                 targets=[
                     postgres_query(
-                        sql=_feedback_query(
+                        sql=_feedback_select(
+                            [
+                                "GREATEST(DATE_BIN(${bucket:sqlstring}::interval, arrived_at, TIMESTAMPTZ '2000-01-03 00:00:00+00'), $__timeFrom()::timestamptz) AS time",
+                                *[
+                                    f'{_percentile("first_verdict_seconds", q, where=f"first_verdict = '{verdict}' AND first_verdict_seconds IS NOT NULL")} AS "{verdict.title()} p{q}"'
+                                    for verdict, q, _ in _TREND_SERIES
+                                ],
+                            ],
                             """\
-                                SELECT
-                                  GREATEST(DATE_BIN(${bucket:sqlstring}::interval, arrived_at, TIMESTAMPTZ '2000-01-03 00:00:00+00'), $__timeFrom()::timestamptz) AS time,
-                                  PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY first_verdict_seconds)
-                                    FILTER (WHERE first_verdict = 'red' AND first_verdict_seconds IS NOT NULL) AS "Red p50",
-                                  PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY first_verdict_seconds)
-                                    FILTER (WHERE first_verdict = 'red' AND first_verdict_seconds IS NOT NULL) AS "Red p90",
-                                  PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY first_verdict_seconds)
-                                    FILTER (WHERE first_verdict = 'green' AND first_verdict_seconds IS NOT NULL) AS "Green p50",
-                                  PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY first_verdict_seconds)
-                                    FILTER (WHERE first_verdict = 'green' AND first_verdict_seconds IS NOT NULL) AS "Green p90"
                                 FROM feedback
                                 WHERE first_verdict_seconds IS NOT NULL
                                 GROUP BY 1
                                 ORDER BY 1
-                                """
+                                """,
                         ),
                         ref_id="feedback_4",
                         format="time_series",
@@ -170,7 +244,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 ],
                 title="First-verdict latency (${bucket:text} buckets)",
                 description="Arrival cohorts grouped by Bucket size, aligned to UTC midnight with weeks beginning Monday. Only observed red/green verdicts contribute; missing buckets mean no samples, not zero latency. The first partial bucket is plotted at the range start so large buckets remain visible.",
-                datasource=common.DataSourceRef(type_val="grafana-postgresql-datasource", uid="cdviz"),
+                datasource=postgres_datasource(),
                 grid_pos=dashboard.GridPos(w=16, y=11),
                 options=series_options(sort=common.SortOrder.ASCENDING),
                 field_config=dashboard.FieldConfigSource(
@@ -182,10 +256,8 @@ def build_dashboard() -> dashboard.Dashboard:
                         ),
                     ),
                     overrides=[
-                        field_override("Red p50", {"color": {"mode": "fixed", "fixedColor": "#F2495C"}}),
-                        field_override("Red p90", {"color": {"mode": "fixed", "fixedColor": "#FF9830"}}),
-                        field_override("Green p50", {"color": {"mode": "fixed", "fixedColor": "#73BF69"}}),
-                        field_override("Green p90", {"color": {"mode": "fixed", "fixedColor": "#56A64B"}}),
+                        field_override(f"{verdict.title()} p{q}", {"color": {"mode": "fixed", "fixedColor": color}})
+                        for verdict, q, color in _TREND_SERIES
                     ],
                 ),
             ),
@@ -214,7 +286,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 ],
                 title="Head outcomes",
                 description="Counts by exact-head state in the arrival cohort. Canceled and superseded are separate from red/green verdicts; pending and unknown remain visible.",
-                datasource=common.DataSourceRef(type_val="grafana-postgresql-datasource", uid="cdviz"),
+                datasource=postgres_datasource(),
                 grid_pos=dashboard.GridPos(w=8, x=16, y=11),
                 field_config=_table_fields(
                     [_column("heads", "Heads"), field_override("state", {"displayName": "Outcome"})]
@@ -223,57 +295,10 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="table",
                 id_val=6,
-                targets=[
-                    postgres_query(
-                        sql=_feedback_query(
-                            """\
-                                SELECT
-                                  limits.label,
-                                  COUNT(*) FILTER (
-                                    WHERE $__timeTo()::timestamptz - feedback.arrived_at >= limits.seconds * INTERVAL '1 second'
-                                  ) AS eligible_heads,
-                                  COUNT(*) FILTER (
-                                    WHERE $__timeTo()::timestamptz - feedback.arrived_at < limits.seconds * INTERVAL '1 second'
-                                  ) AS still_observing,
-                                  COUNT(*) FILTER (
-                                    WHERE $__timeTo()::timestamptz - feedback.arrived_at >= limits.seconds * INTERVAL '1 second'
-                                      AND feedback.first_verdict IN ('red', 'green')
-                                      AND feedback.first_verdict_seconds <= limits.seconds
-                                  ) AS heads_with_verdict,
-                                  100.0 * COUNT(*) FILTER (
-                                    WHERE $__timeTo()::timestamptz - feedback.arrived_at >= limits.seconds * INTERVAL '1 second'
-                                      AND feedback.first_verdict IN ('red', 'green')
-                                      AND feedback.first_verdict_seconds <= limits.seconds
-                                  ) / NULLIF(COUNT(*) FILTER (
-                                    WHERE $__timeTo()::timestamptz - feedback.arrived_at >= limits.seconds * INTERVAL '1 second'
-                                  ), 0) AS verdict_rate_percent,
-                                  COUNT(*) FILTER (
-                                    WHERE $__timeTo()::timestamptz - feedback.arrived_at >= limits.seconds * INTERVAL '1 second'
-                                      AND feedback.green_seconds <= limits.seconds
-                                  ) AS heads_green,
-                                  100.0 * COUNT(*) FILTER (
-                                    WHERE $__timeTo()::timestamptz - feedback.arrived_at >= limits.seconds * INTERVAL '1 second'
-                                      AND feedback.green_seconds <= limits.seconds
-                                  ) / NULLIF(COUNT(*) FILTER (
-                                    WHERE $__timeTo()::timestamptz - feedback.arrived_at >= limits.seconds * INTERVAL '1 second'
-                                  ), 0) AS green_rate_percent
-                                FROM feedback
-                                CROSS JOIN limits
-                                GROUP BY limits.label, limits.seconds
-                                ORDER BY limits.seconds
-                                """,
-                            ctes="""\
-                                , limits(label, seconds) AS (
-                                  VALUES ('5 minutes'::text, 300), ('10 minutes'::text, 600), ('20 minutes'::text, 1200)
-                                )
-                                """,
-                        ),
-                        ref_id="feedback_6",
-                    )
-                ],
+                targets=[postgres_query(sql=_timed_rates_query(), ref_id="feedback_6")],
                 title="Verdict / green within 5 / 10 / 20 minutes",
                 description="Both rates use every head at least the threshold old as of the dashboard end, including censored heads. Still-observing counts arrivals younger than that threshold. Verdict counts first red or green; green counts heads with observed all-required-gates green. Empty denominators have blank rates, not 0%.",
-                datasource=common.DataSourceRef(type_val="grafana-postgresql-datasource", uid="cdviz"),
+                datasource=postgres_datasource(),
                 grid_pos=dashboard.GridPos(h=6, w=24, y=20),
                 field_config=_table_fields(
                     [
@@ -338,7 +363,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 ],
                 title="Required-policy replay coverage",
                 description="Latest observed policy replay is taken as of the selected dashboard end; the timestamp is shown in the table. Coverage counts do not establish historical eligibility, and equal gate counts alone do not mean a head is green. The recent-head table retains exact missing gate names and per-head policy observation time.",
-                datasource=common.DataSourceRef(type_val="grafana-postgresql-datasource", uid="cdviz"),
+                datasource=postgres_datasource(),
                 grid_pos=dashboard.GridPos(h=4, w=24, y=26),
                 field_config=_table_fields(
                     [
@@ -404,7 +429,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 ],
                 title="Recent exact-head feedback",
                 description="One row per head, newest arrival first. Null timing fields indicate that verdict has not been observed; the URL points to the PR or commit when available.",
-                datasource=common.DataSourceRef(type_val="grafana-postgresql-datasource", uid="cdviz"),
+                datasource=postgres_datasource(),
                 grid_pos=dashboard.GridPos(h=10, w=24, y=30),
                 field_config=_table_fields(
                     [
@@ -484,57 +509,42 @@ def build_dashboard() -> dashboard.Dashboard:
         ],
         templating=dashboard.DashboardDashboardTemplating(
             list_val=[
-                dashboard.VariableModel(
-                    type_val=dashboard.VariableType.CUSTOM,
-                    name="scope",
-                    label="Scope",
-                    hide=dashboard.VariableHide.DONT_HIDE,
-                    description="PR includes heads with an associated PR number; devel includes unassociated devel/main branch heads; all also includes unknown PR associations.",
-                    query="PR, devel, all",
-                    current=dashboard.VariableOption(text="PR", value="PR"),
-                    options=[
-                        dashboard.VariableOption(selected=True, text="PR", value="PR"),
-                        dashboard.VariableOption(selected=False, text="devel", value="devel"),
-                        dashboard.VariableOption(selected=False, text="all", value="all"),
-                    ],
+                _choice_variable(
+                    "scope",
+                    "Scope",
+                    "PR includes heads with an associated PR number; devel includes unassociated devel/main branch heads; all also includes unknown PR associations.",
+                    (("PR", "PR"), ("devel", "devel"), ("all", "all")),
+                    "PR",
                 ),
-                dashboard.VariableModel(
-                    type_val=dashboard.VariableType.CUSTOM,
-                    name="clock",
-                    label="Clock",
-                    hide=dashboard.VariableHide.DONT_HIDE,
-                    description="Default to the observed PR head event clock. Choose Workflow creation proxy for fallback-only comparisons; all pools both clocks and is a descriptive mixed-clock view.",
-                    query="PR head event, Workflow creation proxy, all",
-                    current=dashboard.VariableOption(text="PR head event", value="PR head event"),
-                    options=[
-                        dashboard.VariableOption(selected=True, text="PR head event", value="PR head event"),
-                        dashboard.VariableOption(
-                            selected=False, text="Workflow creation proxy", value="Workflow creation proxy"
-                        ),
-                        dashboard.VariableOption(selected=False, text="all", value="all"),
-                    ],
+                _choice_variable(
+                    "clock",
+                    "Clock",
+                    "Default to the observed PR head event clock. Choose Workflow creation proxy for fallback-only comparisons; all pools both clocks and is a descriptive mixed-clock view.",
+                    (
+                        ("PR head event", "PR head event"),
+                        ("Workflow creation proxy", "Workflow creation proxy"),
+                        ("all", "all"),
+                    ),
+                    "PR head event",
                 ),
-                dashboard.VariableModel(
-                    type_val=dashboard.VariableType.CUSTOM,
-                    name="bucket",
-                    label="Bucket size",
-                    hide=dashboard.VariableHide.DONT_HIDE,
-                    description="Arrival-cohort size for the latency trend. Other panels use the full selected time range.",
-                    query="1m : 1 minute, 5m : 5 minutes, 15m : 15 minutes, 30m : 30 minutes, 1h : 1 hour, 3h : 3 hours, 6h : 6 hours, 12h : 12 hours, 1d : 1 day, 1w : 1 week",
-                    current=dashboard.VariableOption(text="1h", value="1 hour"),
+                _choice_variable(
+                    "bucket",
+                    "Bucket size",
+                    "Arrival-cohort size for the latency trend. Other panels use the full selected time range.",
+                    (
+                        ("1m", "1 minute"),
+                        ("5m", "5 minutes"),
+                        ("15m", "15 minutes"),
+                        ("30m", "30 minutes"),
+                        ("1h", "1 hour"),
+                        ("3h", "3 hours"),
+                        ("6h", "6 hours"),
+                        ("12h", "12 hours"),
+                        ("1d", "1 day"),
+                        ("1w", "1 week"),
+                    ),
+                    "1 hour",
                     allow_custom_value=False,
-                    options=[
-                        dashboard.VariableOption(selected=False, text="1m", value="1 minute"),
-                        dashboard.VariableOption(selected=False, text="5m", value="5 minutes"),
-                        dashboard.VariableOption(selected=False, text="15m", value="15 minutes"),
-                        dashboard.VariableOption(selected=False, text="30m", value="30 minutes"),
-                        dashboard.VariableOption(selected=True, text="1h", value="1 hour"),
-                        dashboard.VariableOption(selected=False, text="3h", value="3 hours"),
-                        dashboard.VariableOption(selected=False, text="6h", value="6 hours"),
-                        dashboard.VariableOption(selected=False, text="12h", value="12 hours"),
-                        dashboard.VariableOption(selected=False, text="1d", value="1 day"),
-                        dashboard.VariableOption(selected=False, text="1w", value="1 week"),
-                    ],
                 ),
             ]
         ),

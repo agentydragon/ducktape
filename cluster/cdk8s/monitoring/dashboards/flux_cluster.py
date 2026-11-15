@@ -16,7 +16,7 @@ def _readiness_stat(zero_color: str = "red", nonzero_color: str = "green") -> st
         stat.Panel()
         .datasource(mimir())
         .unit("short")
-        .color_scheme(FieldColor())
+        .color_scheme(FieldColor().mode(dashboard.FieldColorModeId.THRESHOLDS))
         .thresholds(
             ThresholdsConfig().steps(
                 [dashboard.Threshold(color=zero_color), dashboard.Threshold(color=nonzero_color, value=1)]
@@ -123,7 +123,7 @@ def build_dashboard() -> dashboard.Dashboard:
             .title("GitRepository artifact size")
             .grid_pos(dashboard.GridPos(h=8, x=12, y=14))
             .unit("decbytes")
-            .tooltip(VizTooltipOptions())
+            .tooltip(VizTooltipOptions().mode(common.TooltipDisplayMode.SINGLE))
             .with_target(
                 mimir_query(
                     'kube_customresource_flux_gitrepository_artifact_size_bytes{namespace=~"$namespace"}',

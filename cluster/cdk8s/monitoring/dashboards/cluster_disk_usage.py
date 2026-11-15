@@ -10,6 +10,7 @@ from cluster.cdk8s.monitoring.dashboards.foundation import (
     mimir_query,
     mimir_table_query,
     series_options,
+    storage_tier_variable,
 )
 
 _COMPONENT_BYTES = '(sum by (node, device, component) (disk_usage:component_used_bytes{node=~"$node"}) or label_replace(disk_usage:unattributed_bytes{node=~"$node"}, "component", "Unattributed", "", "") or label_replace(disk_usage:filesystem_free_bytes{node=~"$node"} - disk_usage:filesystem_avail_bytes{node=~"$node"}, "component", "Reserved (root only)", "", "") or label_replace(disk_usage:filesystem_avail_bytes{node=~"$node"}, "component", "Free", "", ""))'
@@ -27,6 +28,14 @@ def _filesystem_bytes_fields() -> dashboard.FieldConfigSource:
     )
 
 
+def _component_color_overrides() -> list[dashboard.DashboardFieldConfigSourceOverrides]:
+    return [
+        field_override("Free", {"color": {"mode": "fixed", "fixedColor": "rgba(115, 191, 105, 0.35)"}}),
+        field_override("Unattributed", {"color": {"mode": "fixed", "fixedColor": "orange"}}),
+        field_override("Reserved (root only)", {"color": {"mode": "fixed", "fixedColor": "#8e8e8e"}}),
+    ]
+
+
 def build_dashboard() -> dashboard.Dashboard:
     return dashboard.Dashboard(
         uid="cluster-disk-usage",
@@ -34,7 +43,6 @@ def build_dashboard() -> dashboard.Dashboard:
         tags=["cluster", "disk", "storage", "filesystem", "ext4", "xfs"],
         graph_tooltip=dashboard.DashboardCursorSync.CROSSHAIR,
         time=dashboard.DashboardDashboardTime(from_val="now-24h"),
-        week_start="",
         refresh="5m",
         schema_version=39,
         version=1,
@@ -111,12 +119,7 @@ def build_dashboard() -> dashboard.Dashboard:
                     ),
                 ),
                 field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(unit="bytes"),
-                    overrides=[
-                        field_override("Free", {"color": {"mode": "fixed", "fixedColor": "rgba(115, 191, 105, 0.35)"}}),
-                        field_override("Unattributed", {"color": {"mode": "fixed", "fixedColor": "orange"}}),
-                        field_override("Reserved (root only)", {"color": {"mode": "fixed", "fixedColor": "#8e8e8e"}}),
-                    ],
+                    defaults=dashboard.FieldConfig(unit="bytes"), overrides=_component_color_overrides()
                 ),
             ),
             dashboard.Panel(
@@ -179,11 +182,7 @@ def build_dashboard() -> dashboard.Dashboard:
                             line_width=0, fill_opacity=85, axis_placement=common.AxisPlacement.AUTO, axis_soft_min=0
                         ),
                     ),
-                    overrides=[
-                        field_override("Free", {"color": {"mode": "fixed", "fixedColor": "rgba(115, 191, 105, 0.35)"}}),
-                        field_override("Unattributed", {"color": {"mode": "fixed", "fixedColor": "orange"}}),
-                        field_override("Reserved (root only)", {"color": {"mode": "fixed", "fixedColor": "#8e8e8e"}}),
-                    ],
+                    overrides=_component_color_overrides(),
                 ),
             ),
             dashboard.Panel(
@@ -298,18 +297,7 @@ def build_dashboard() -> dashboard.Dashboard:
         ],
         templating=dashboard.DashboardDashboardTemplating(
             list_val=[
-                dashboard.VariableModel(
-                    type_val=dashboard.VariableType.CUSTOM,
-                    name="storage_tier",
-                    label="Storage tier",
-                    query="SSD : ssd,HDD : hdd,Both : ssd|hdd",
-                    current=dashboard.VariableOption(selected=True, text="Both", value="ssd|hdd"),
-                    options=[
-                        dashboard.VariableOption(selected=False, text="SSD", value="ssd"),
-                        dashboard.VariableOption(selected=False, text="HDD", value="hdd"),
-                        dashboard.VariableOption(selected=True, text="Both", value="ssd|hdd"),
-                    ],
-                ),
+                storage_tier_variable(),
                 dashboard.VariableModel(
                     name="node",
                     label="Machine",
@@ -322,18 +310,6 @@ def build_dashboard() -> dashboard.Dashboard:
                     include_all=True,
                     definition='label_values(kube_node_labels{label_storage_allegedly_works_tier=~"$storage_tier"}, node)',
                 ),
-            ]
-        ),
-        annotations=dashboard.AnnotationContainer(
-            list_val=[
-                dashboard.AnnotationQuery(
-                    name="Annotations & Alerts",
-                    datasource=common.DataSourceRef(type_val="grafana", uid="-- Grafana --"),
-                    hide=True,
-                    icon_color="rgba(0, 211, 255, 1)",
-                    type_val="dashboard",
-                    built_in=1,
-                )
             ]
         ),
     )

@@ -11,7 +11,15 @@ _BUCKET_FILTER = 'bucket=~"$bucket"'
 
 
 def _metric_panel(
-    id: int, title: str, expr: str, *, description: str, legend: str, unit: str, decimals: int
+    id: int,
+    title: str,
+    expr: str,
+    *,
+    description: str,
+    legend: str,
+    unit: str,
+    decimals: int,
+    width: int = _SERIES_WIDTH,
 ) -> dashboard.Panel:
     index = id - 3
     return dashboard.Panel(
@@ -22,10 +30,7 @@ def _metric_panel(
         datasource=mimir(),
         targets=[mimir_query(expr, legend=legend).build()],
         grid_pos=dashboard.GridPos(
-            h=_SERIES_HEIGHT,
-            w=24 if id == 11 else _SERIES_WIDTH,
-            x=(index % 2) * _SERIES_WIDTH,
-            y=10 + (index // 2) * _SERIES_HEIGHT,
+            h=_SERIES_HEIGHT, w=width, x=(index % 2) * _SERIES_WIDTH, y=10 + (index // 2) * _SERIES_HEIGHT
         ),
         options=series_options(sort=common.SortOrder.DESCENDING, legend_calcs=("lastNotNull", "max")),
         field_config=dashboard.FieldConfigSource(
@@ -41,7 +46,6 @@ def build_dashboard() -> dashboard.Dashboard:
         tags=["cluster", "seaweedfs", "s3", "operations"],
         graph_tooltip=dashboard.DashboardCursorSync.CROSSHAIR,
         time=dashboard.DashboardDashboardTime(from_val="now-1h"),
-        week_start="",
         refresh="1m",
         schema_version=39,
         version=1,
@@ -179,6 +183,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 legend="{{service}}",
                 unit="bytes",
                 decimals=0,
+                width=24,
             ),
         ],
         templating=dashboard.DashboardDashboardTemplating(
@@ -194,18 +199,6 @@ def build_dashboard() -> dashboard.Dashboard:
                     include_all=True,
                     all_value=".*",
                     definition='label_values(SeaweedFS_s3_request_total{namespace="seaweedfs"}, bucket)',
-                )
-            ]
-        ),
-        annotations=dashboard.AnnotationContainer(
-            list_val=[
-                dashboard.AnnotationQuery(
-                    name="Annotations & Alerts",
-                    datasource=common.DataSourceRef(type_val="grafana", uid="-- Grafana --"),
-                    hide=True,
-                    icon_color="rgba(0, 211, 255, 1)",
-                    type_val="dashboard",
-                    built_in=1,
                 )
             ]
         ),

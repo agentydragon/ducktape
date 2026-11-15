@@ -11,10 +11,19 @@ from cluster.cdk8s.monitoring.dashboards.foundation import (
     mimir_query,
     mimir_table_query,
     series_options,
+    storage_tier_variable,
 )
 
 _STORAGE_TIER = 'max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~"$node", label_storage_allegedly_works_tier=~"$storage_tier"})'
 _EXPORTER_NODES = 'max by (namespace, pod, node) (kube_pod_info{pod=~"prometheus-node-exporter-.+"})'
+
+
+def _physical_disk_rate(metric: str) -> str:
+    return f'sum by (node, device) (((rate(node_disk_{metric}_total{{device!~"^(loop|ram|fd|dm-|sr|drbd).*"}}[5m]) * on (namespace, pod) group_left (node) {_EXPORTER_NODES}) * on (node) group_left () {_STORAGE_TIER}))'
+
+
+def _top_container_writers(metric: str) -> str:
+    return f'topk(${{topk}}, sum by (namespace, pod, container, node, device) (rate(container_fs_{metric}_total{{namespace!="", pod!="", container!="", container!="POD", node=~"$node"}}[5m]) * on (node) group_left () {_STORAGE_TIER}))'
 
 
 def build_dashboard() -> dashboard.Dashboard:
@@ -24,7 +33,6 @@ def build_dashboard() -> dashboard.Dashboard:
         tags=["cluster", "storage", "io"],
         graph_tooltip=dashboard.DashboardCursorSync.CROSSHAIR,
         time=dashboard.DashboardDashboardTime(from_val="now-1h"),
-        week_start="",
         refresh="1m",
         schema_version=39,
         version=1,
@@ -41,12 +49,7 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=2,
-                targets=[
-                    mimir_query(
-                        f'sum by (node, device) (((rate(node_disk_written_bytes_total{{device!~"^(loop|ram|fd|dm-|sr|drbd).*"}}[5m]) * on (namespace, pod) group_left (node) {_EXPORTER_NODES}) * on (node) group_left () {_STORAGE_TIER}))',
-                        legend="{{node}} {{device}}",
-                    ).build()
-                ],
+                targets=[mimir_query(_physical_disk_rate("written_bytes"), legend="{{node}} {{device}}").build()],
                 title="Physical disk write throughput",
                 description="Block-device writes on nodes in the selected storage tier; DRBD logical devices are excluded.",
                 datasource=mimir(),
@@ -57,12 +60,7 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=4,
-                targets=[
-                    mimir_query(
-                        f'sum by (node, device) (((rate(node_disk_writes_completed_total{{device!~"^(loop|ram|fd|dm-|sr|drbd).*"}}[5m]) * on (namespace, pod) group_left (node) {_EXPORTER_NODES}) * on (node) group_left () {_STORAGE_TIER}))',
-                        legend="{{node}} {{device}}",
-                    ).build()
-                ],
+                targets=[mimir_query(_physical_disk_rate("writes_completed"), legend="{{node}} {{device}}").build()],
                 title="Physical disk write IOPS",
                 description="Completed block-device writes per second on nodes in the selected storage tier; DRBD logical devices are excluded.",
                 datasource=mimir(),
@@ -73,12 +71,7 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=6,
-                targets=[
-                    mimir_query(
-                        f'sum by (node, device) (((rate(node_disk_io_time_seconds_total{{device!~"^(loop|ram|fd|dm-|sr|drbd).*"}}[5m]) * on (namespace, pod) group_left (node) {_EXPORTER_NODES}) * on (node) group_left () {_STORAGE_TIER}))',
-                        legend="{{node}} {{device}}",
-                    ).build()
-                ],
+                targets=[mimir_query(_physical_disk_rate("io_time_seconds"), legend="{{node}} {{device}}").build()],
                 title="Physical disk busy fraction",
                 description="Fraction of the last five minutes each block device had I/O in flight on nodes in the selected storage tier.",
                 datasource=mimir(),
@@ -93,7 +86,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 id_val=8,
                 targets=[
                     mimir_table_query(
-                        f'topk(${{topk}}, sum by (namespace, pod, container, node, device) (rate(container_fs_writes_bytes_total{{namespace!="", pod!="", container!="", container!="POD", node=~"$node"}}[5m]) * on (node) group_left () {_STORAGE_TIER}))',
+                        _top_container_writers("writes_bytes"),
                         legend="{{namespace}}/{{pod}} {{container}} {{node}} {{device}}",
                     ).build()
                 ],
@@ -109,7 +102,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 id_val=10,
                 targets=[
                     mimir_table_query(
-                        f'topk(${{topk}}, sum by (namespace, pod, container, node, device) (rate(container_fs_writes_total{{namespace!="", pod!="", container!="", container!="POD", node=~"$node"}}[5m]) * on (node) group_left () {_STORAGE_TIER}))',
+                        _top_container_writers("writes"),
                         legend="{{namespace}}/{{pod}} {{container}} {{node}} {{device}}",
                     ).build()
                 ],
@@ -235,18 +228,7 @@ def build_dashboard() -> dashboard.Dashboard:
         ],
         templating=dashboard.DashboardDashboardTemplating(
             list_val=[
-                dashboard.VariableModel(
-                    type_val=dashboard.VariableType.CUSTOM,
-                    name="storage_tier",
-                    label="Storage tier",
-                    query="SSD : ssd,HDD : hdd,Both : ssd|hdd",
-                    current=dashboard.VariableOption(selected=True, text="Both", value="ssd|hdd"),
-                    options=[
-                        dashboard.VariableOption(selected=False, text="SSD", value="ssd"),
-                        dashboard.VariableOption(selected=False, text="HDD", value="hdd"),
-                        dashboard.VariableOption(selected=True, text="Both", value="ssd|hdd"),
-                    ],
-                ),
+                storage_tier_variable(),
                 dashboard.VariableModel(
                     name="node",
                     label="Cluster node",
@@ -272,18 +254,6 @@ def build_dashboard() -> dashboard.Dashboard:
                         dashboard.VariableOption(selected=False, text="50", value="50"),
                     ],
                 ),
-            ]
-        ),
-        annotations=dashboard.AnnotationContainer(
-            list_val=[
-                dashboard.AnnotationQuery(
-                    name="Annotations & Alerts",
-                    datasource=common.DataSourceRef(type_val="grafana", uid="-- Grafana --"),
-                    hide=True,
-                    icon_color="rgba(0, 211, 255, 1)",
-                    type_val="dashboard",
-                    built_in=1,
-                )
             ]
         ),
     )

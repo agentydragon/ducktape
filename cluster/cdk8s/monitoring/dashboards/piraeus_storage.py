@@ -76,6 +76,22 @@ def _pool_total(metric: str) -> str:
     return f"sum by (storage_pool) ({_pool_metric(metric)})"
 
 
+def _table_series(ref_ids: str, labels: tuple[str, ...]) -> list[dashboard.DataTransformerConfig]:
+    return [
+        dashboard.DataTransformerConfig(
+            id_val=transform,
+            filter_val=dashboard.MatcherConfig(id_val="byRefId", options=f"/^{ref_id}$/"),
+            topic="series",
+            options=options,
+        )
+        for ref_id in ref_ids
+        for transform, options in (
+            ("labelsToFields", {}),
+            ("filterFieldsByName", {"include": {"names": ["Time", *labels, f"Value #{ref_id}"]}}),
+        )
+    ]
+
+
 def build_dashboard() -> dashboard.Dashboard:
     return dashboard.Dashboard(
         uid="piraeus-storage",
@@ -83,7 +99,6 @@ def build_dashboard() -> dashboard.Dashboard:
         tags=["cluster", "storage", "piraeus", "lvm"],
         graph_tooltip=dashboard.DashboardCursorSync.CROSSHAIR,
         time=dashboard.DashboardDashboardTime(from_val="now-24h"),
-        week_start="",
         refresh="5m",
         schema_version=39,
         version=1,
@@ -160,78 +175,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=10, w=24, y=15),
                 transformations=[
-                    dashboard.DataTransformerConfig(
-                        id_val="labelsToFields",
-                        filter_val=dashboard.MatcherConfig(id_val="byRefId", options="/^A$/"),
-                        topic="series",
-                        options={},
-                    ),
-                    dashboard.DataTransformerConfig(
-                        id_val="filterFieldsByName",
-                        filter_val=dashboard.MatcherConfig(id_val="byRefId", options="/^A$/"),
-                        topic="series",
-                        options={"include": {"names": ["Time", "node", "storage_pool", "Value #A"]}},
-                    ),
-                    dashboard.DataTransformerConfig(
-                        id_val="labelsToFields",
-                        filter_val=dashboard.MatcherConfig(id_val="byRefId", options="/^B$/"),
-                        topic="series",
-                        options={},
-                    ),
-                    dashboard.DataTransformerConfig(
-                        id_val="filterFieldsByName",
-                        filter_val=dashboard.MatcherConfig(id_val="byRefId", options="/^B$/"),
-                        topic="series",
-                        options={"include": {"names": ["Time", "node", "storage_pool", "Value #B"]}},
-                    ),
-                    dashboard.DataTransformerConfig(
-                        id_val="labelsToFields",
-                        filter_val=dashboard.MatcherConfig(id_val="byRefId", options="/^C$/"),
-                        topic="series",
-                        options={},
-                    ),
-                    dashboard.DataTransformerConfig(
-                        id_val="filterFieldsByName",
-                        filter_val=dashboard.MatcherConfig(id_val="byRefId", options="/^C$/"),
-                        topic="series",
-                        options={"include": {"names": ["Time", "node", "storage_pool", "Value #C"]}},
-                    ),
-                    dashboard.DataTransformerConfig(
-                        id_val="labelsToFields",
-                        filter_val=dashboard.MatcherConfig(id_val="byRefId", options="/^D$/"),
-                        topic="series",
-                        options={},
-                    ),
-                    dashboard.DataTransformerConfig(
-                        id_val="filterFieldsByName",
-                        filter_val=dashboard.MatcherConfig(id_val="byRefId", options="/^D$/"),
-                        topic="series",
-                        options={"include": {"names": ["Time", "node", "storage_pool", "Value #D"]}},
-                    ),
-                    dashboard.DataTransformerConfig(
-                        id_val="labelsToFields",
-                        filter_val=dashboard.MatcherConfig(id_val="byRefId", options="/^E$/"),
-                        topic="series",
-                        options={},
-                    ),
-                    dashboard.DataTransformerConfig(
-                        id_val="filterFieldsByName",
-                        filter_val=dashboard.MatcherConfig(id_val="byRefId", options="/^E$/"),
-                        topic="series",
-                        options={"include": {"names": ["Time", "node", "storage_pool", "Value #E"]}},
-                    ),
-                    dashboard.DataTransformerConfig(
-                        id_val="labelsToFields",
-                        filter_val=dashboard.MatcherConfig(id_val="byRefId", options="/^F$/"),
-                        topic="series",
-                        options={},
-                    ),
-                    dashboard.DataTransformerConfig(
-                        id_val="filterFieldsByName",
-                        filter_val=dashboard.MatcherConfig(id_val="byRefId", options="/^F$/"),
-                        topic="series",
-                        options={"include": {"names": ["Time", "node", "storage_pool", "Value #F"]}},
-                    ),
+                    *_table_series("ABCDEF", ("node", "storage_pool")),
                     dashboard.DataTransformerConfig(id_val="merge", options={}),
                     dashboard.DataTransformerConfig(
                         id_val="organize",
@@ -385,57 +329,17 @@ def build_dashboard() -> dashboard.Dashboard:
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=14, w=24, y=48),
                 transformations=[
-                    dashboard.DataTransformerConfig(
-                        id_val="labelsToFields",
-                        filter_val=dashboard.MatcherConfig(id_val="byRefId", options="/^A$/"),
-                        topic="series",
-                        options={},
-                    ),
-                    dashboard.DataTransformerConfig(
-                        id_val="filterFieldsByName",
-                        filter_val=dashboard.MatcherConfig(id_val="byRefId", options="/^A$/"),
-                        topic="series",
-                        options={
-                            "include": {
-                                "names": [
-                                    "Time",
-                                    "node",
-                                    "storage_pool",
-                                    "phase",
-                                    "resource",
-                                    "persistentvolume",
-                                    "namespace",
-                                    "persistentvolumeclaim",
-                                    "Value #A",
-                                ]
-                            }
-                        },
-                    ),
-                    dashboard.DataTransformerConfig(
-                        id_val="labelsToFields",
-                        filter_val=dashboard.MatcherConfig(id_val="byRefId", options="/^B$/"),
-                        topic="series",
-                        options={},
-                    ),
-                    dashboard.DataTransformerConfig(
-                        id_val="filterFieldsByName",
-                        filter_val=dashboard.MatcherConfig(id_val="byRefId", options="/^B$/"),
-                        topic="series",
-                        options={
-                            "include": {
-                                "names": [
-                                    "Time",
-                                    "node",
-                                    "storage_pool",
-                                    "phase",
-                                    "resource",
-                                    "persistentvolume",
-                                    "namespace",
-                                    "persistentvolumeclaim",
-                                    "Value #B",
-                                ]
-                            }
-                        },
+                    *_table_series(
+                        "AB",
+                        (
+                            "node",
+                            "storage_pool",
+                            "phase",
+                            "resource",
+                            "persistentvolume",
+                            "namespace",
+                            "persistentvolumeclaim",
+                        ),
                     ),
                     dashboard.DataTransformerConfig(id_val="merge", options={}),
                     dashboard.DataTransformerConfig(
@@ -508,48 +412,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=11, w=24, y=63),
                 transformations=[
-                    dashboard.DataTransformerConfig(
-                        id_val="labelsToFields",
-                        filter_val=dashboard.MatcherConfig(id_val="byRefId", options="/^A$/"),
-                        topic="series",
-                        options={},
-                    ),
-                    dashboard.DataTransformerConfig(
-                        id_val="filterFieldsByName",
-                        filter_val=dashboard.MatcherConfig(id_val="byRefId", options="/^A$/"),
-                        topic="series",
-                        options={
-                            "include": {"names": ["Time", "namespace", "persistentvolumeclaim", "node", "Value #A"]}
-                        },
-                    ),
-                    dashboard.DataTransformerConfig(
-                        id_val="labelsToFields",
-                        filter_val=dashboard.MatcherConfig(id_val="byRefId", options="/^B$/"),
-                        topic="series",
-                        options={},
-                    ),
-                    dashboard.DataTransformerConfig(
-                        id_val="filterFieldsByName",
-                        filter_val=dashboard.MatcherConfig(id_val="byRefId", options="/^B$/"),
-                        topic="series",
-                        options={
-                            "include": {"names": ["Time", "namespace", "persistentvolumeclaim", "node", "Value #B"]}
-                        },
-                    ),
-                    dashboard.DataTransformerConfig(
-                        id_val="labelsToFields",
-                        filter_val=dashboard.MatcherConfig(id_val="byRefId", options="/^C$/"),
-                        topic="series",
-                        options={},
-                    ),
-                    dashboard.DataTransformerConfig(
-                        id_val="filterFieldsByName",
-                        filter_val=dashboard.MatcherConfig(id_val="byRefId", options="/^C$/"),
-                        topic="series",
-                        options={
-                            "include": {"names": ["Time", "namespace", "persistentvolumeclaim", "node", "Value #C"]}
-                        },
-                    ),
+                    *_table_series("ABC", ("namespace", "persistentvolumeclaim", "node")),
                     dashboard.DataTransformerConfig(id_val="merge", options={}),
                     dashboard.DataTransformerConfig(
                         id_val="organize",
@@ -619,18 +482,6 @@ def build_dashboard() -> dashboard.Dashboard:
                     include_all=True,
                     definition=f"label_values({_pool_metric('capacity')}, node)",
                 ),
-            ]
-        ),
-        annotations=dashboard.AnnotationContainer(
-            list_val=[
-                dashboard.AnnotationQuery(
-                    name="Annotations & Alerts",
-                    datasource=common.DataSourceRef(type_val="grafana", uid="-- Grafana --"),
-                    hide=True,
-                    icon_color="rgba(0, 211, 255, 1)",
-                    type_val="dashboard",
-                    built_in=1,
-                )
             ]
         ),
     )
