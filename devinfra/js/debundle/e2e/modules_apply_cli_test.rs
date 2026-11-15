@@ -184,27 +184,19 @@ fn apply_ignores_modules_owned_by_other_chunks() {
         &[],
     );
     assert!(run.result.status.success(), "{}", run.result.stderr);
-    let modules = run.root().join("modules");
-    let graph = run.report_root.join("main/dependency_graph.json.gz");
-    let source = run.root().join("snapshot");
-    let config = run.root().join("spec_config.yaml");
-    let proposed = process::debundle_output(
-        Command::new(debundler_path())
-            .args(["modules", "propose", "--strategy", "auto", "--graph"])
-            .arg(&graph)
-            .arg("--modules")
-            .arg(&modules)
-            .arg("--tree-config")
-            .arg(&config)
-            .args(["--size-cap-lines", "1", "--format", "json"]),
-    )
-    .unwrap_or_else(|err| panic!("{err}"));
-    assert!(
-        proposed.status.success(),
-        "{}",
-        String::from_utf8_lossy(&proposed.stderr)
-    );
-    let report: serde_json::Value = serde_json::from_slice(&proposed.stdout).unwrap();
+    let fixture = GraphFixture::from_tree_run(run, "modules");
+    let config = fixture.root().join("spec_config.yaml");
+    let config = config.to_str().unwrap();
+    let report = fixture.json(&[
+        "modules",
+        "propose",
+        "--strategy",
+        "auto",
+        "--tree-config",
+        config,
+        "--size-cap-lines",
+        "1",
+    ]);
     let proposal = report["proposals"]
         .as_array()
         .unwrap()
@@ -215,9 +207,9 @@ fn apply_ignores_modules_owned_by_other_chunks() {
                 .is_some_and(|ids| ids.contains(&json!("a")))
         })
         .expect("main binding is proposed");
-    let batch = run.root().join("apply.json");
+    let batch_path = fixture.root().join("apply.json");
     fs::write(
-        &batch,
+        &batch_path,
         serde_json::to_vec(&json!([{
             "proposal_id": proposal["proposed_module_id"],
             "source_unit_ids": proposal["source_unit_ids"],
@@ -227,27 +219,18 @@ fn apply_ignores_modules_owned_by_other_chunks() {
         .unwrap(),
     )
     .unwrap();
-    let applied = process::debundle_output(
-        Command::new(debundler_path())
-            .args(["modules", "apply", "--batch"])
-            .arg(&batch)
-            .arg("--modules")
-            .arg(&modules)
-            .arg("--tree-config")
-            .arg(&config)
-            .arg("--graph")
-            .arg(&graph)
-            .arg("--source-root")
-            .arg(&source)
-            .args(["--size-cap-lines", "1"])
-            .arg("--dry-run"),
-    )
-    .unwrap_or_else(|err| panic!("{err}"));
-    assert!(
-        applied.status.success(),
-        "{}",
-        String::from_utf8_lossy(&applied.stderr)
-    );
+    let batch = batch_path.to_str().unwrap();
+    fixture.assert_success(&[
+        "modules",
+        "apply",
+        "--batch",
+        batch,
+        "--tree-config",
+        config,
+        "--size-cap-lines",
+        "1",
+        "--dry-run",
+    ]);
 }
 
 #[test]
@@ -261,26 +244,19 @@ fn apply_preserves_case_sensitive_chunk_root() {
         &[],
     );
     assert!(run.result.status.success(), "{}", run.result.stderr);
-    let modules = run.root().join("modules");
-    let graph = run.report_root.join("main/dependency_graph.json.gz");
-    let config = run.root().join("spec_config.yaml");
-    let proposed = process::debundle_output(
-        Command::new(debundler_path())
-            .args(["modules", "propose", "--strategy", "auto", "--graph"])
-            .arg(&graph)
-            .arg("--modules")
-            .arg(&modules)
-            .arg("--tree-config")
-            .arg(&config)
-            .args(["--size-cap-lines", "1", "--format", "json"]),
-    )
-    .unwrap_or_else(|err| panic!("{err}"));
-    assert!(
-        proposed.status.success(),
-        "{}",
-        String::from_utf8_lossy(&proposed.stderr)
-    );
-    let report: serde_json::Value = serde_json::from_slice(&proposed.stdout).unwrap();
+    let fixture = GraphFixture::from_tree_run(run, "modules");
+    let config = fixture.root().join("spec_config.yaml");
+    let config = config.to_str().unwrap();
+    let report = fixture.json(&[
+        "modules",
+        "propose",
+        "--strategy",
+        "auto",
+        "--tree-config",
+        config,
+        "--size-cap-lines",
+        "1",
+    ]);
     let proposal = report["proposals"]
         .as_array()
         .unwrap()
@@ -291,9 +267,9 @@ fn apply_preserves_case_sensitive_chunk_root() {
                 .is_some_and(|ids| ids.contains(&json!("a")))
         })
         .expect("binding is proposed");
-    let batch = run.root().join("apply.json");
+    let batch_path = fixture.root().join("apply.json");
     fs::write(
-        &batch,
+        &batch_path,
         serde_json::to_vec(&json!([{
             "proposal_id": proposal["proposed_module_id"],
             "source_unit_ids": proposal["source_unit_ids"],
@@ -303,44 +279,32 @@ fn apply_preserves_case_sensitive_chunk_root() {
         .unwrap(),
     )
     .unwrap();
-    let applied = process::debundle_output(
-        Command::new(debundler_path())
-            .args(["modules", "apply", "--batch"])
-            .arg(&batch)
-            .arg("--modules")
-            .arg(&modules)
-            .arg("--tree-config")
-            .arg(&config)
-            .arg("--graph")
-            .arg(&graph)
-            .arg("--source-root")
-            .arg(run.root().join("snapshot"))
-            .args(["--size-cap-lines", "1"]),
-    )
-    .unwrap_or_else(|err| panic!("{err}"));
+    let batch = batch_path.to_str().unwrap();
+    fixture.assert_success(&[
+        "modules",
+        "apply",
+        "--batch",
+        batch,
+        "--tree-config",
+        config,
+        "--size-cap-lines",
+        "1",
+    ]);
     assert!(
-        applied.status.success(),
-        "{}",
-        String::from_utf8_lossy(&applied.stderr)
+        fixture
+            .modules
+            .join("chunks/Main/services/foo.yaml")
+            .is_file()
     );
-    assert!(modules.join("chunks/Main/services/foo.yaml").is_file());
-    assert!(!modules.join("chunks/main/services/foo.yaml").exists());
-    let out_root = run.root().join("rerun");
-    let emitted = process::debundle_output(
-        Command::new(debundler_path())
-            .args(["run", "--graphs"])
-            .args(tree_spec_args(run.root()))
-            .arg("--out-root")
-            .arg(&out_root),
-    )
-    .unwrap_or_else(|err| panic!("{err}"));
     assert!(
-        emitted.status.success(),
-        "{}",
-        String::from_utf8_lossy(&emitted.stderr)
+        !fixture
+            .modules
+            .join("chunks/main/services/foo.yaml")
+            .exists()
     );
-    assert_module_exports(&out_root, "app/main/services/foo.js", &["foo"], &[]);
-    assert_node_output(&out_root.join("app/main/entry.js"), "4\n", "");
+    let emitted = fixture.rerun();
+    assert_module_exports(emitted.path(), "app/main/services/foo.js", &["foo"], &[]);
+    assert_node_output(&emitted.path().join("app/main/entry.js"), "4\n", "");
 }
 
 fn provider_fixture() -> (GraphFixture, serde_json::Value) {

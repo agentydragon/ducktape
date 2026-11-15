@@ -60,11 +60,18 @@ impl GraphFixture {
             "{}",
             run.result.stderr
         );
-        let modules_root = run.root().join("modules/main");
+        Self::from_tree_run(run, "modules/main")
+    }
+
+    /// Wrap a tree run using a custom module root relative to its case directory.
+    /// The owned run keeps its case and command journal alive.
+    pub fn from_tree_run(run: TreeRun, modules_root: impl AsRef<Path>) -> Self {
+        let graph = run.report_root.join("main/dependency_graph.json.gz");
+        let modules = run.root().join(modules_root);
         Self {
-            graph: run.report_root.join("main/dependency_graph.json.gz"),
-            modules: modules_root,
             run,
+            modules,
+            graph,
         }
     }
 
@@ -220,7 +227,8 @@ impl GraphFixture {
         fs::copy(&fresh_graph, &self.graph).expect("refresh fixture graph from the real pipeline");
     }
 
-    fn rerun(&self) -> CaseWorkspace {
+    /// Run the current tree spec through the real pipeline in an owned child workspace.
+    pub fn rerun(&self) -> CaseWorkspace {
         let rerun = self.run.workspace().child();
         let out = self.run_current_spec(rerun.path());
         assert!(
