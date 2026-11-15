@@ -641,17 +641,20 @@ fn emit_proposals(
         .map(|_| CandidateEdgeStats::default())
         .collect();
     for &(s, t) in residual_edges {
-        let (Some(&cs), Some(&ct)) = (
-            source_unit_to_candidate.get(&s),
-            source_unit_to_candidate.get(&t),
-        ) else {
+        let Some(&cs) = source_unit_to_candidate.get(&s) else {
             continue;
         };
-        if cs == ct {
+        let ct = source_unit_to_candidate.get(&t).copied();
+        if ct == Some(cs) {
             edge_stats[cs].internal += 1;
         } else {
+            // A size-capped target is still a residual dependency. Only its
+            // proposal ID is unavailable; omitting it must not make the source
+            // look independently ready to extract.
             edge_stats[cs].to_residual += 1;
-            edge_stats[cs].residual_targets.insert(ct);
+            if let Some(ct) = ct {
+                edge_stats[cs].residual_targets.insert(ct);
+            }
         }
     }
     for (source_unit, module_path) in active_edges {

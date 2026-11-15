@@ -1283,6 +1283,10 @@ specs can omit the flag when `--modules` already names that chunk's tree.
 `landable_today` means the proposed source-unit set has no outgoing residual-class
 dependency and its anonymous source units are addressable. It does not guarantee a
 structural selector can be synthesized or that the final edit passes the gate.
+Dependencies on size-capped classes still count in
+`edges_to_other_residual_classes` and block readiness. The referenced-proposal ID
+list includes only emitted target proposals; inspect size-cap diagnostics for
+prerequisites omitted from that list.
 Proposal rows also expose bounded `observed_consumers` metadata for incoming
 raw edges entering added source units. Read the `value_reads`, `writes`, and
 `scheduling_or_promoted_context` views as observed source-unit/module evidence,

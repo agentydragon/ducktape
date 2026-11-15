@@ -10,6 +10,100 @@ use std::fs;
 use std::process::Command;
 
 #[test]
+fn capped_prerequisite_keeps_consumer_blocked_and_grouped_control_applies() {
+    let fixture = GraphFixture::new(
+        "const anchor = 1;\nconst dep =\n  2;\nconst consumer = dep + 1;\nexport { anchor, consumer };\n",
+        &[(
+            "anchor.yaml",
+            "members: [{selector: {binding: {name: anchor}}}]\n",
+        )],
+    );
+    let capped = fixture.json(&["modules", "propose", "--size-cap-lines", "1"]);
+    let consumer = capped["proposals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["binding_ids"] == json!(["consumer"]))
+        .expect("consumer fits the cap even though its prerequisite does not");
+    assert_eq!(
+        consumer["status"], "blocked_residual_dependency",
+        "{capped}"
+    );
+    assert_eq!(consumer["landable_today"], false, "{capped}");
+    assert!(
+        consumer["edges_to_other_residual_classes"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    let batch = fixture.root().join("apply.json");
+    fs::write(
+        &batch,
+        serde_json::to_vec(&json!([{
+            "proposal_id": consumer["proposed_module_id"],
+            "source_unit_ids": consumer["source_unit_ids"],
+            "module": "helpers/chain",
+            "readable_names": {"consumer": "consumer"}
+        }]))
+        .unwrap(),
+    )
+    .unwrap();
+    fixture.assert_rejected_unchanged(
+        &[
+            "modules",
+            "apply",
+            "--batch",
+            batch.to_str().unwrap(),
+            "--size-cap-lines",
+            "1",
+        ],
+        &["not a graph-ready"],
+    );
+
+    let uncapped = fixture.json(&["modules", "propose"]);
+    let grouped = uncapped["proposals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["binding_ids"] == json!(["consumer", "dep"]))
+        .expect("the full dependency group fits the default cap");
+    assert_eq!(grouped["landable_today"], true, "{uncapped}");
+    fs::write(
+        &batch,
+        serde_json::to_vec(&json!([{
+            "proposal_id": grouped["proposed_module_id"],
+            "source_unit_ids": grouped["source_unit_ids"],
+            "module": "helpers/chain",
+            "readable_names": {"dep": "dep", "consumer": "consumer"}
+        }]))
+        .unwrap(),
+    )
+    .unwrap();
+    fixture.assert_success(&["modules", "apply", "--batch", batch.to_str().unwrap()]);
+    let out_root = fixture.root().join("grouped");
+    let emitted = process::debundle_output(
+        Command::new(debundler_path())
+            .arg("run")
+            .args(tree_spec_args(fixture.root()))
+            .arg("--out-root")
+            .arg(&out_root),
+    )
+    .unwrap();
+    assert!(
+        emitted.status.success(),
+        "{}",
+        String::from_utf8_lossy(&emitted.stderr)
+    );
+    let probe = out_root.join("probe.mjs");
+    fs::write(
+        &probe,
+        "import { anchor, consumer } from './app/main/entry.js';\nconsole.log(anchor, consumer);\n",
+    )
+    .unwrap();
+    assert_node_output(&probe, "1 3\n", "");
+}
+
+#[test]
 fn applies_renamed_multi_declarator_with_cross_initializer_reference() {
     let fixture = GraphFixture::new("var a = 1000, b = 15, c = b + 5;\n", &[]);
     let report = fixture.json(&["modules", "propose"]);
