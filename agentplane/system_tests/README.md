@@ -37,6 +37,7 @@ scales the app to zero after OAuth consent.
 | `//agentplane/system_tests/suites/mcp:test_actions`                    | MCP Actions and operator decisions                             |
 | `//agentplane/system_tests/suites/mcp:test_services_mcp`               | MCP discovery, external identity and policy binding            |
 | `//agentplane/system_tests/suites/mcp:test_services_central`           | Central sampler setup, suspend/resume and Gateway recovery     |
+| `//agentplane/system_tests/suites/mcp:test_services`                   | Central sampler Action approval and concurrent code-mode cells |
 | `//agentplane/system_tests/suites/mcp:test_sampler_roll`               | Sampler replacement with live executor work                    |
 | `//agentplane/system_tests/suites/mcp:test_gateway_crash`              | Abrupt Gateway loss during a live executor read                |
 | `//agentplane/system_tests/suites/mcp:test_history_outage`             | History outage during an active central-sampler turn           |

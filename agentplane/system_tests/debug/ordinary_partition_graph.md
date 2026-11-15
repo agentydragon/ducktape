@@ -14,6 +14,7 @@ This does not establish the 30% complete-feedback goal.
 | `suites:test_pod_platform`         | Seven workload-trust, certificate-reissue and Egress-credential cases     | Real controllers, issuers, Gateway and proxy; native fixture identities     |
 | `suites/mcp:test_services_mcp`     | Three discovery, consented-identity and Policy-binding cases              | Real App/MCP deployment, OAuth fixtures and Action Service                  |
 | `suites/mcp:test_services_central` | Four setup, retained-answer, suspend/resume and Gateway-recovery cases    | Real central services and Pod-bound native readers                          |
+| `suites/mcp:test_services`         | Delegated Action approval while other code-mode cells progress            | Full App-backed central services and authenticated operator BFF             |
 | `suites:test_vm`                   | Unchanged complete VM scenario, both harnesses and process-trace contract | Fresh K3s/KubeVirt stack with hardware acceleration                         |
 | `suites:test_firecracker`          | Unchanged wrong-issuer and checkpoint/thaw cases                          | Fresh K3s/Firecracker stack without incidental Notification deployment      |
 
@@ -29,9 +30,13 @@ MCP provenance helper are byte-identical to `bf57990ed4`; the helper retains all
 30 assertions inherited from devel. These are source audits, not executed-case
 or complete semantic-equivalence proof.
 
-Each ordinary target collects its own complete roster. The former combined
-Services entrypoint, duplicate Pod bindings and superseded manual partition/
-capacity targets are removed. Historical experiments remain reproducible at
+Devel added the delegated Action case after the frozen comparisons below. It
+remains in `test_services` on its existing full fixture; the seven older cases
+run only in the two partitions. The frozen 3+4 comparison does not measure this
+additional case or qualify the current rebased graph.
+
+Each ordinary target collects its own complete roster. Duplicate Pod bindings
+and superseded manual partition/capacity targets are removed. Historical experiments remain reproducible at
 their immutable recorded source, including `22014e7b` on
 `agent/ci-system-screen-22014e7b`.
 
