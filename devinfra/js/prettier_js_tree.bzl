@@ -16,7 +16,7 @@ def prettier_js_tree(
         src,
         out_dir = None,
         input_subdir = "",
-        prettier = Label("//:node_modules/prettier"),
+        prettier = Label("//:node_modules/prettier/dir"),
         prettier_config = Label("//:prettierrc"),
         visibility = None):
     """Format every `.js` file in a tree and copy every other file byte-for-byte.
@@ -28,15 +28,16 @@ def prettier_js_tree(
         Defaults to `name`.
       input_subdir: Optional relative directory inside `src` to format. When set,
         that directory's contents become the output tree root.
-      prettier: Target that makes the caller's pinned `prettier` npm package
-        available to a caller-package `js_binary`. Defaults to Ducktape's pin.
+      prettier: Target for the caller's pinned `prettier` npm package directory
+        (typically `//:node_modules/prettier/dir`). Defaults to Ducktape's pin.
       prettier_config: Single-file target for the Prettier configuration.
         Defaults to Ducktape's configuration.
       visibility: Visibility of the output target.
 
-    The `src` and `prettier_config` labels are declared action inputs. `prettier`
-    is a runtime dependency of the helper binary, so external callers can use
-    their own npm workspace's Prettier package and configuration.
+    The `src`, `prettier_config`, and `prettier` labels are declared action inputs.
+    The Prettier package's runfiles path is passed to the helper so external
+    callers use their own npm workspace's package instead of relying on Node's
+    module lookup from Ducktape's entry point.
     """
     _validate_relative_path(input_subdir, "input_subdir", allow_empty = True)
     if out_dir == None:
@@ -56,11 +57,12 @@ def prettier_js_tree(
     config_label = str(prettier_config)
     js_run_binary(
         name = name,
-        srcs = [src, prettier_config],
+        srcs = [src, prettier_config, prettier],
         args = [
             "$(location {})".format(src_label),
             "$(RULEDIR)/{}".format(out_dir),
             "$(location {})".format(config_label),
+            "$(rlocationpath {})".format(str(prettier)),
             input_subdir,
         ],
         copy_srcs_to_bin = False,

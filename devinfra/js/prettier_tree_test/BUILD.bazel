@@ -26,7 +26,7 @@ prettier_js_tree(
     name = "formatted_app",
     src = ":fixture_tree",
     input_subdir = "app",
-    prettier = "//:node_modules/prettier",
+    prettier = "//:node_modules/prettier/dir",
     prettier_config = ":custom_prettierrc.cjs",
 )
 

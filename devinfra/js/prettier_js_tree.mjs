@@ -1,9 +1,9 @@
 // Format JavaScript files from a declared input tree and copy all other bytes unchanged.
 //
-// argv: <input-tree> <output-tree> <prettier-config> [input-subdir]
+// argv: <input-tree> <output-tree> <prettier-config> <prettier-package-runfiles-path> [input-subdir]
 import { promises as fs } from "node:fs";
+import { createRequire } from "node:module";
 import * as path from "node:path";
-import prettier from "prettier";
 
 function isWithin(root, candidate) {
   const relative = path.relative(root, candidate);
@@ -21,11 +21,21 @@ function validateSubdir(subdir) {
 }
 
 const execroot = process.env.JS_BINARY__EXECROOT ?? process.cwd();
-const [inputArg, outputArg, configArg, inputSubdir = ""] = process.argv.slice(2);
-if (!inputArg || !outputArg || !configArg) {
-  throw new Error("usage: prettier_js_tree.mjs <input-tree> <output-tree> <prettier-config> [input-subdir]");
+const runfilesDir = process.env.JS_BINARY__RUNFILES;
+const [inputArg, outputArg, configArg, prettierPackageArg, inputSubdir = ""] = process.argv.slice(2);
+if (!inputArg || !outputArg || !configArg || !prettierPackageArg) {
+  throw new Error(
+    "usage: prettier_js_tree.mjs <input-tree> <output-tree> <prettier-config> <prettier-package-runfiles-path> [input-subdir]"
+  );
+}
+if (!runfilesDir) {
+  throw new Error("JS_BINARY__RUNFILES is required to resolve the caller's Prettier package");
 }
 validateSubdir(inputSubdir);
+
+const prettierPackageDir = path.resolve(runfilesDir, prettierPackageArg);
+const prettierRequire = createRequire(path.join(prettierPackageDir, "package.json"));
+const prettier = prettierRequire("prettier");
 
 const sourceRoot = path.resolve(execroot, inputArg);
 const inputCandidate = path.resolve(sourceRoot, inputSubdir || ".");
