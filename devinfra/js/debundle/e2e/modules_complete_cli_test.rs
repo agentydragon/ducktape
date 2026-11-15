@@ -113,8 +113,6 @@ fn entry_constraints_exhaust_a_large_required_scope_without_filtered_enumeration
         "a_before".to_string(),
         "--only-units".to_string(),
         only,
-        "--format".to_string(),
-        "json".to_string(),
     ];
     for unit in units {
         args.extend(["--require".to_string(), unit]);

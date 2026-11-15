@@ -38,14 +38,9 @@ pub(crate) struct ModuleReferenceNeeds<'a> {
     pub(crate) residual_entry_imports: BTreeMap<String, EntryExport>,
     pub(crate) missing_residual_exports: BTreeSet<String>,
     pub(crate) runtime_reimports: BTreeMap<Id, &'a RuntimeImportInfo>,
-    /// Side-effect-only providers: modules this module has a constraining
-    /// edge to (via at-init call promotion) but whose bindings aren't
-    /// directly referenced in this module's body. Without an explicit
-    /// ESM `import "./<provider>.js";` here, ESM DFS wouldn't see the
-    /// dependency and would evaluate this module's body before the
-    /// provider's body — a runtime TDZ on any of the provider's
-    /// declared bindings the call chain transitively reads. See
-    /// `accepted_spec_runs_under_node_test::early_entry_importer_…`.
+    /// Canonical initialization or deferred import targets with no direct
+    /// binding import in this body. Emit them as side-effect imports so actual
+    /// ESM traversal has exactly the topology validated by the schedule.
     pub(crate) phantom_side_effect_providers: BTreeSet<usize>,
 }
 
@@ -302,57 +297,37 @@ pub(crate) fn plan_module_reference_needs<'a>(
         module_index,
         assignment_analysis,
         &needs.cross_module_imports_by_provider,
+        !needs.residual_entry_imports.is_empty(),
         &mut needs.phantom_side_effect_providers,
     );
 
     Ok(needs)
 }
 
-/// Phantom side-effect providers (Lemma 2's emit-side fix):
-///
-/// Walk this module's source_units' outgoing constraining edges in the
-/// dependency graph. Any target module not already in
-/// `cross_module_imports_by_provider` (and not residual) needs a
-/// side-effect-only ESM import so the linker visits it as a
-/// dependency. Without this, at-init promotion records the
-/// constraint at the ducktape level but ESM doesn't see it (the
-/// actual `import` for the read target lives in the residual
-/// function decl's home, not in this module), so DFS might evaluate
-/// this module's body before the provider's.
-///
-/// Skip residual: it's entry, the root of every chunk's import
-/// tree. Adding a side-effect import of entry from a peeled module
-/// is redundant — entry is always reachable.
+/// Materialize every canonical import target that has no binding import.
+/// Besides initialization promotion, deferred read closures can introduce lazy
+/// import edges without a directly referenced local in the naturalized body.
+/// Reading the retained target lists keeps phantom routing in the same model as
+/// validation, including imports to true entry.
 fn collect_phantom_side_effect_providers(
     module_index: usize,
     assignment_analysis: &AssignmentAnalysis,
     cross_module_imports_by_provider: &BTreeMap<usize, BTreeMap<String, String>>,
+    has_entry_binding_import: bool,
     phantom_side_effect_providers: &mut BTreeSet<usize>,
 ) {
-    let module_id = ModuleId(module_index);
-    let residual = assignment_analysis
+    let entry = assignment_analysis
         .assignment()
         .entry_destination()
         .module_id();
-    let dependency_graph = assignment_analysis.inputs().dependency_graph();
-    for (source_unit_id, source_unit_module) in assignment_analysis.assignment().iter() {
-        if source_unit_module != module_id {
-            continue;
-        }
-        for &edge_id in dependency_graph.out_edges_of(source_unit_id) {
-            let edge = dependency_graph.edge(edge_id);
-            if !edge.reason.constrains_init_order() {
-                continue;
-            }
-            let target_module = assignment_analysis.assignment().of(edge.to);
-            if target_module == module_id || target_module == residual {
-                continue;
-            }
-            let ModuleId(target_index) = target_module;
-            if cross_module_imports_by_provider.contains_key(&target_index) {
-                continue;
-            }
-            phantom_side_effect_providers.insert(target_index);
+    for &target in assignment_analysis
+        .import_schedule()
+        .imports(ModuleId(module_index))
+    {
+        if !cross_module_imports_by_provider.contains_key(&target.0)
+            && !(target == entry && has_entry_binding_import)
+        {
+            phantom_side_effect_providers.insert(target.0);
         }
     }
 }

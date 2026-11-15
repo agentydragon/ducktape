@@ -177,13 +177,9 @@ pub(super) fn prepare_module_emission<'output>(
     };
     // All intra-chunk imports (cross-module binding imports, phantom
     // side-effect imports, and the entry-destination import) are
-    // collected as `(target ModuleId, decl)` pairs and ordered by ONE
-    // shared rule — `EsmImportOrder::sort_module_imports` — below.
-    // The realizability gate's evaluation simulator sorts this
-    // module's DFS neighbors with the same call, so the emitted
-    // import order and the gate's predicted evaluation order cannot
-    // diverge. See `esm_import_order` and
-    // `accepted_spec_runs_under_node_test::early_entry_importer_…`.
+    // collected as `(target ModuleId, decl)` pairs and ordered through
+    // the concrete schedule retained by validation. Accepted output checks
+    // exact target equality; rejected diagnostic output remains unverified.
     let mut intra_chunk_imports = cross_module_imports_for_plan(
         &plan.target_file,
         cross_module_imports_by_provider,
@@ -196,6 +192,7 @@ pub(super) fn prepare_module_emission<'output>(
     // `phantom_side_effect_imports`.
     intra_chunk_imports.extend(phantom_side_effect_imports(
         &plan.target_file,
+        entry_file,
         phantom_side_effect_providers,
         assignment_analysis,
     ));
@@ -286,9 +283,7 @@ pub(super) fn prepare_module_emission<'output>(
     // Binding, phantom and entry imports share the exact retained schedule.
     // Check the complete target set before ordering. Runtime imports from
     // other chunks follow; they are outside this intra-chunk I graph.
-    assignment_analysis
-        .import_schedule()
-        .sort_imports(module, &mut intra_chunk_imports)?;
+    assignment_analysis.sort_candidate_imports(module, &mut intra_chunk_imports)?;
     let mut combined: Vec<ModuleItem> = intra_chunk_imports
         .into_iter()
         .map(|(_, item)| item)
