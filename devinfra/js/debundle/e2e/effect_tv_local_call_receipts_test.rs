@@ -2,7 +2,6 @@
 //! calls, callbacks and their retained prefix dependencies.
 
 use debundle_e2e_graph_support::effect_validation::*;
-use debundle_e2e_graph_support::reflective_provider::{REFLECT_CHUNKS, REFLECT_FILES};
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
