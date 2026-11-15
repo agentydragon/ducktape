@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
-  "source_sha": "916285311099e47e17d21a7125fc4b8f32bf3975",
-  "observed_at_utc": "2026-11-14T23:45:00Z",
+  "source_sha": "c2549d48c3c3d99e05ceb831f8835f2aa07f4120",
+  "observed_at_utc": "2026-11-15T05:12:19Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1286,
-    "directories": 227,
-    "production": 704,
-    "tests": 582
+    "files": 1304,
+    "directories": 233,
+    "production": 715,
+    "tests": 589
   },
   "legend": {
     "=": "Intentional retained owner with an explicit package rationale",
@@ -46,12 +46,13 @@
       },
       {
         "name": "sandbox-controller",
-        "text": "Leader-elected controller-runtime manager with no database and no API. Since #16324 it observes each Runtime's `WatchState` directly with its own certificate and keeps idle timers in memory; it still asks Runtimes to quiesce through the Gateway proxy.",
+        "text": "Leader-elected controller-runtime manager with no database. Since #16324 it observes each Runtime's `WatchState` directly with its own certificate and keeps idle timers in memory; it still asks Runtimes to quiesce through the Gateway proxy. Since #16542 and #16556 every replica also serves EnvironmentService on 8082; reconcilers stay leader-only.",
         "evidence_paths": [
           "agentplane/environments/cmd/main.go",
           "agentplane/environments/internal/runtimecontrol/observer.go",
           "agentplane/environments/internal/runtimecontrol/quiescer.go",
-          "agentplane/environments/internal/controller/idle.go"
+          "agentplane/environments/internal/controller/idle.go",
+          "agentplane/environments/internal/serving/server.go"
         ]
       }
     ],
@@ -161,15 +162,18 @@
         "id": "serving",
         "title": "Every-replica serving in the Environments binary",
         "status": "PROPOSED",
-        "today": "The Sandbox Controller is a leader-elected manager with no listener.",
-        "proposal": "Carried from #16311; EnvironmentService's part is written out in `agentplane/plans/environment_service_serving.md` (#16437, merged 2026-11-14); releasing the move is the operator's open question. The gRPC server (EnvironmentService, proxy, Executor) gets its own non-leader-elected lifecycle, readiness, TLS identity, audience, TokenReview/SVID and delegation settings, Service and projected credentials. Readiness means the listener and its dependencies work and never waits for leadership. Shutdown stops accepting, drains streams and joins serving work without holding up reconciliation handoff. Watches and live reads keep today's freshness and stream re-authorization.",
-        "evidence_paths": ["agentplane/environments/cmd/main.go"]
+        "today": "Since #16542 (merged 2026-11-15) and #16556 (enabled on staging) every Controller replica serves EnvironmentService on 8082 from `environments/internal/serving`, as `plans/environment_service_serving.md` (#16437) specifies; the Runtime proxy and Executor are still served only by the Gateway.",
+        "proposal": "Carried from #16311. EnvironmentService's part landed as written; the proxy and Executor follow (runner-gateway-connections-proxy, agreed, not released). The gRPC server (EnvironmentService, proxy, Executor) gets its own non-leader-elected lifecycle, readiness, TLS identity, audience, TokenReview/SVID and delegation settings, Service and projected credentials. Readiness means the listener and its dependencies work and never waits for leadership. Shutdown stops accepting, drains streams and joins serving work without holding up reconciliation handoff. Watches and live reads keep today's freshness and stream re-authorization.",
+        "evidence_paths": [
+          "agentplane/environments/cmd/main.go",
+          "agentplane/environments/internal/serving/server.go"
+        ]
       },
       {
         "id": "rollout",
         "title": "Rollout order",
         "status": "PROPOSED",
-        "today": "One binary serves every caller today.",
+        "today": "EnvironmentService is served by the Gateway and by every Controller replica; the App (#16565) and Actions launcher (#16566) cutovers are open. Every other call still goes to the Gateway.",
         "proposal": "Carried from #16311. Receivers before senders; settings in code before manifests set them. Deploy the Environments serving path behind an unused Service and exercise auth, readiness and multi-replica behaviour with the app unavailable; then retarget callers (destination audiences, credentials, cdk8s, RBAC, the system overview diagram). Remove old wiring only after traffic has left and the last safe rollback image and config pair is recorded, and never combine an RBAC removal with a deployment that still needs the grant. Acceptance: identity change raced against admission in both orders, explicit and automatic wake from different replicas, non-leader serving and leader handoff, and a mixed-version rollout and rollback.",
         "evidence_paths": ["agentplane/runner_gateway/README.md"]
       }
@@ -208,10 +212,19 @@
       "id": "action_service",
       "path": "agentplane/action_service",
       "counts": {
-        "files": 153,
-        "directories": 22
+        "files": 155,
+        "directories": 23
       },
       "directories": [
+        {
+          "path": "agentplane/action_service/actionresult",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/action_service/actionresult/results.go",
+            "agentplane/action_service/actionresult/results_test.go"
+          ]
+        },
         {
           "path": "agentplane/action_service/callers",
           "production": 1,
@@ -544,6 +557,7 @@
           "agentplane/action_service/internal/rpc/fixture_test.go"
         ],
         "reviewed_package_paths": [
+          "agentplane/action_service/actionresult",
           "agentplane/action_service/callers",
           "agentplane/action_service/cmd",
           "agentplane/action_service/docs",
@@ -569,6 +583,23 @@
         ]
       },
       "package_decisions": [
+        {
+          "path": "agentplane/action_service/actionresult",
+          "role": "Converts a retained ActionRequest into the MCP result its tool returns.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Added by #16423 so the Action Service and the central sampler's code-mode Actions return the same result shape.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/action_service/actionresult/results.go"
+          ],
+          "declared_packages": ["actionresult"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 1
+          }
+        },
         {
           "path": "agentplane/action_service/callers",
           "role": "Stable caller label constants used by workload admission and policy objects.",
@@ -1587,17 +1618,18 @@
       "id": "central_sampler",
       "path": "agentplane/central_sampler",
       "counts": {
-        "files": 148,
-        "directories": 21
+        "files": 157,
+        "directories": 23
       },
       "directories": [
         {
           "path": "agentplane/central_sampler/cmd",
-          "production": 1,
+          "production": 2,
           "tests": 1,
           "files": [
             "agentplane/central_sampler/cmd/main.go",
-            "agentplane/central_sampler/cmd/main_test.go"
+            "agentplane/central_sampler/cmd/main_test.go",
+            "agentplane/central_sampler/cmd/ownership.go"
           ]
         },
         {
@@ -1607,6 +1639,15 @@
           "files": [
             "agentplane/central_sampler/historyexport/exporter.go",
             "agentplane/central_sampler/historyexport/exporter_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/central_sampler/internal/actions",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/central_sampler/internal/actions/client.go",
+            "agentplane/central_sampler/internal/actions/client_test.go"
           ]
         },
         {
@@ -1678,6 +1719,16 @@
           ]
         },
         {
+          "path": "agentplane/central_sampler/internal/ownershiprewrite",
+          "production": 1,
+          "tests": 2,
+          "files": [
+            "agentplane/central_sampler/internal/ownershiprewrite/rewrite.go",
+            "agentplane/central_sampler/internal/ownershiprewrite/rewrite_integration_test.go",
+            "agentplane/central_sampler/internal/ownershiprewrite/rewrite_testmain_test.go"
+          ]
+        },
+        {
           "path": "agentplane/central_sampler/internal/promptimage",
           "production": 1,
           "tests": 1,
@@ -1698,11 +1749,13 @@
         },
         {
           "path": "agentplane/central_sampler/internal/residentruntime",
-          "production": 13,
-          "tests": 12,
+          "production": 14,
+          "tests": 13,
           "files": [
             "agentplane/central_sampler/internal/residentruntime/anthropic_test.go",
             "agentplane/central_sampler/internal/residentruntime/codemode.go",
+            "agentplane/central_sampler/internal/residentruntime/codemode_actions.go",
+            "agentplane/central_sampler/internal/residentruntime/codemode_actions_test.go",
             "agentplane/central_sampler/internal/residentruntime/codemode_host.go",
             "agentplane/central_sampler/internal/residentruntime/codemode_test.go",
             "agentplane/central_sampler/internal/residentruntime/integration_testmain_test.go",
@@ -1798,9 +1851,10 @@
         },
         {
           "path": "agentplane/central_sampler/internal/toolcontract",
-          "production": 4,
+          "production": 5,
           "tests": 1,
           "files": [
+            "agentplane/central_sampler/internal/toolcontract/action_definition.go",
             "agentplane/central_sampler/internal/toolcontract/description.go",
             "agentplane/central_sampler/internal/toolcontract/description_test.go",
             "agentplane/central_sampler/internal/toolcontract/rejection.go",
@@ -1913,12 +1967,14 @@
         "reviewed_package_paths": [
           "agentplane/central_sampler/cmd",
           "agentplane/central_sampler/historyexport",
+          "agentplane/central_sampler/internal/actions",
           "agentplane/central_sampler/internal/codemode",
           "agentplane/central_sampler/internal/content",
           "agentplane/central_sampler/internal/eventcodec",
           "agentplane/central_sampler/internal/executor",
           "agentplane/central_sampler/internal/jsonwire",
           "agentplane/central_sampler/internal/outputbuffer",
+          "agentplane/central_sampler/internal/ownershiprewrite",
           "agentplane/central_sampler/internal/promptimage",
           "agentplane/central_sampler/internal/providerio",
           "agentplane/central_sampler/internal/residentruntime",
@@ -1946,7 +2002,7 @@
           "declared_packages": ["main"],
           "pending_tracks": [],
           "counts": {
-            "non_test": 1,
+            "non_test": 2,
             "tests": 1
           }
         },
@@ -1961,6 +2017,23 @@
             "agentplane/central_sampler/historyexport/exporter.go"
           ],
           "declared_packages": ["historyexport"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/central_sampler/internal/actions",
+          "role": "The central sampler's delegated Action Service client for code-mode Actions, acting as the retained Session Identity.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Added by #16423.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/central_sampler/internal/actions/client.go"
+          ],
+          "declared_packages": ["actions"],
           "pending_tracks": [],
           "counts": {
             "non_test": 1,
@@ -2081,6 +2154,23 @@
           }
         },
         {
+          "path": "agentplane/central_sampler/internal/ownershiprewrite",
+          "role": "Manifest-scoped Session owner cutover (`central-sampler ownership inventory|forward|reverse`), run as one-off Jobs from the sampler image.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Added by #16439 for the sampler Session ownership migration before the Gateway-to-sampler SVID switch.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/central_sampler/internal/ownershiprewrite/rewrite.go"
+          ],
+          "declared_packages": ["ownershiprewrite"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 2
+          }
+        },
+        {
           "path": "agentplane/central_sampler/internal/promptimage",
           "role": "Bounded model-image preparation",
           "decision": "retain",
@@ -2131,8 +2221,8 @@
           "declared_packages": ["residentruntime"],
           "pending_tracks": ["sampler-resident-session"],
           "counts": {
-            "non_test": 13,
-            "tests": 12
+            "non_test": 14,
+            "tests": 13
           }
         },
         {
@@ -2208,7 +2298,7 @@
           "declared_packages": ["toolcontract"],
           "pending_tracks": [],
           "counts": {
-            "non_test": 4,
+            "non_test": 5,
             "tests": 1
           }
         },
@@ -4168,10 +4258,19 @@
       "id": "environments",
       "path": "agentplane/environments",
       "counts": {
-        "files": 39,
-        "directories": 3
+        "files": 44,
+        "directories": 5
       },
       "directories": [
+        {
+          "path": "agentplane/environments/access",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/environments/access/policy.go",
+            "agentplane/environments/access/policy_test.go"
+          ]
+        },
         {
           "path": "agentplane/environments/cmd",
           "production": 2,
@@ -4231,6 +4330,16 @@
             "agentplane/environments/internal/runtimecontrol/quiescer_test.go",
             "agentplane/environments/internal/runtimecontrol/suspender.go"
           ]
+        },
+        {
+          "path": "agentplane/environments/internal/serving",
+          "production": 2,
+          "tests": 1,
+          "files": [
+            "agentplane/environments/internal/serving/config.go",
+            "agentplane/environments/internal/serving/server.go",
+            "agentplane/environments/internal/serving/server_test.go"
+          ]
         }
       ],
       "context_paths": ["agentplane/environments/v1/environment_service.proto"],
@@ -4255,12 +4364,29 @@
           "agentplane/environments/internal/controller/children_integration_test.go"
         ],
         "reviewed_package_paths": [
+          "agentplane/environments/access",
           "agentplane/environments/cmd",
           "agentplane/environments/internal/controller",
-          "agentplane/environments/internal/runtimecontrol"
+          "agentplane/environments/internal/runtimecontrol",
+          "agentplane/environments/internal/serving"
         ]
       },
       "package_decisions": [
+        {
+          "path": "agentplane/environments/access",
+          "role": "Environment rules (`bind_session` and the rule index) shared by the Environments and Sessions binaries.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Moved from `runner_gateway/environmentaccess` by #16542, outside `internal/` because Session admission imports it too; each binary builds its own rule index.",
+          "gate": "",
+          "evidence_paths": ["agentplane/environments/access/policy.go"],
+          "declared_packages": ["access"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 1
+          }
+        },
         {
           "path": "agentplane/environments/cmd",
           "role": "Sandbox Controller config and controller-runtime manager process assembly.",
@@ -4324,6 +4450,24 @@
           "counts": {
             "non_test": 3,
             "tests": 2
+          }
+        },
+        {
+          "path": "agentplane/environments/internal/serving",
+          "role": "Every-replica EnvironmentService gRPC listener on 8082: settings, auth, policy watches, readiness and graceful stop.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Added by #16542 and enabled on staging by #16556. It serves the `runner_gateway/environments` handlers from the Environments binary until those packages move under `environments/internal/service`.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/environments/internal/serving/config.go",
+            "agentplane/environments/internal/serving/server.go"
+          ],
+          "declared_packages": ["serving"],
+          "pending_tracks": ["environment-service-to-sandbox-controller"],
+          "counts": {
+            "non_test": 2,
+            "tests": 1
           }
         }
       ],
@@ -5670,36 +5814,38 @@
       "id": "llm_ingress",
       "path": "agentplane/llm_ingress",
       "counts": {
-        "files": 12,
-        "directories": 1
+        "files": 13,
+        "directories": 2
       },
       "directories": [
         {
-          "path": "agentplane/llm_ingress",
+          "path": "agentplane/llm_ingress/cmd",
+          "production": 1,
+          "tests": 0,
+          "files": ["agentplane/llm_ingress/cmd/main.go"]
+        },
+        {
+          "path": "agentplane/llm_ingress/internal/server",
           "production": 5,
           "tests": 7,
           "files": [
-            "agentplane/llm_ingress/codex_catalog.go",
-            "agentplane/llm_ingress/codex_catalog_test.go",
-            "agentplane/llm_ingress/config.go",
-            "agentplane/llm_ingress/config_test.go",
-            "agentplane/llm_ingress/delegated_attribution_test.go",
-            "agentplane/llm_ingress/ingress_test.go",
-            "agentplane/llm_ingress/main.go",
-            "agentplane/llm_ingress/model_config.go",
-            "agentplane/llm_ingress/model_config_test.go",
-            "agentplane/llm_ingress/model_config_workload_test.go",
-            "agentplane/llm_ingress/server.go",
-            "agentplane/llm_ingress/workload_ingress_test.go"
+            "agentplane/llm_ingress/internal/server/codex_catalog.go",
+            "agentplane/llm_ingress/internal/server/codex_catalog_test.go",
+            "agentplane/llm_ingress/internal/server/config.go",
+            "agentplane/llm_ingress/internal/server/config_test.go",
+            "agentplane/llm_ingress/internal/server/delegated_attribution_test.go",
+            "agentplane/llm_ingress/internal/server/ingress_test.go",
+            "agentplane/llm_ingress/internal/server/model_config.go",
+            "agentplane/llm_ingress/internal/server/model_config_test.go",
+            "agentplane/llm_ingress/internal/server/model_config_workload_test.go",
+            "agentplane/llm_ingress/internal/server/runtime.go",
+            "agentplane/llm_ingress/internal/server/server.go",
+            "agentplane/llm_ingress/internal/server/workload_ingress_test.go"
           ]
         }
       ],
       "context_paths": ["agentplane/llm_ingress/v1/model_config.proto"],
-      "pending_tracks": [
-        "llm-ingress-server-boundary",
-        "settings-single-source",
-        "protobuf-alignment"
-      ],
+      "pending_tracks": ["settings-single-source", "protobuf-alignment"],
       "goal_note": "LLM ingress command, HTTP/gRPC server and verified forwarding behavior",
       "decision": {
         "state": "REWORK",
@@ -5708,37 +5854,50 @@
         "reason": "Package decisions below name each current responsibility, proposed targets and its extraction/naming gate. Existing shared transactions and mutable lifecycle state are constraints to resolve, not blanket reasons to retain every file arrangement.",
         "evidence_paths": [
           "agentplane/llm_ingress/BUILD.bazel",
-          "agentplane/llm_ingress/codex_catalog.go",
-          "agentplane/llm_ingress/config.go",
+          "agentplane/llm_ingress/internal/server/codex_catalog.go",
+          "agentplane/llm_ingress/internal/server/config.go",
           "agentplane/llm_ingress/README.md",
           "agentplane/llm_ingress/settings.py",
           "agentplane/llm_ingress/v1/model_config.proto",
           "cluster/cdk8s/agentplane/llm_ingress.py"
         ],
-        "reviewed_package_paths": ["agentplane/llm_ingress"]
+        "reviewed_package_paths": [
+          "agentplane/llm_ingress/cmd",
+          "agentplane/llm_ingress/internal/server"
+        ]
       },
       "package_decisions": [
         {
-          "path": "agentplane/llm_ingress",
-          "role": "LLM ingress command, HTTP/gRPC server and verified forwarding behavior",
-          "decision": "move",
-          "target_paths": [
-            "agentplane/llm_ingress/cmd",
-            "agentplane/llm_ingress/internal/server"
-          ],
-          "reason": "This 3.4k-LOC executable package mixes process startup and server composition with HTTP/gRPC handling, identity attribution, model configuration and seven tests. Move the server contract and tests under internal/server; keep cmd as the binary wrapper.",
-          "gate": "Move all Go implementation and tests together; preserve root Python settings/models, ModelConfig wire contract, image entrypoint, healthprobe and attribution behavior.",
-          "evidence_paths": [
-            "agentplane/llm_ingress/BUILD.bazel",
-            "agentplane/llm_ingress/codex_catalog.go",
-            "agentplane/llm_ingress/config.go",
-            "agentplane/llm_ingress/README.md",
-            "agentplane/llm_ingress/settings.py",
-            "agentplane/llm_ingress/v1/model_config.proto",
-            "cluster/cdk8s/agentplane/llm_ingress.py"
-          ],
+          "path": "agentplane/llm_ingress/cmd",
+          "role": "LLM ingress process entry point: runs `server.Run` and exits with its code.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Split from the ingress `main.go` by #16441; the executable and image labels are unchanged.",
+          "gate": "",
+          "evidence_paths": ["agentplane/llm_ingress/cmd/main.go"],
           "declared_packages": ["main"],
-          "pending_tracks": ["llm-ingress-server-boundary"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
+          }
+        },
+        {
+          "path": "agentplane/llm_ingress/internal/server",
+          "role": "LLM ingress server runtime: configuration, model config, Codex catalog, workload and delegated ingress.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Moved under `internal/server` by #16441, with all package tests.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/llm_ingress/internal/server/codex_catalog.go",
+            "agentplane/llm_ingress/internal/server/config.go",
+            "agentplane/llm_ingress/internal/server/model_config.go",
+            "agentplane/llm_ingress/internal/server/runtime.go",
+            "agentplane/llm_ingress/internal/server/server.go"
+          ],
+          "declared_packages": ["server"],
+          "pending_tracks": [],
           "counts": {
             "non_test": 5,
             "tests": 7
@@ -7605,7 +7764,7 @@
       "id": "runner_gateway",
       "path": "agentplane/runner_gateway",
       "counts": {
-        "files": 72,
+        "files": 73,
         "directories": 12
       },
       "directories": [
@@ -7654,6 +7813,15 @@
           ]
         },
         {
+          "path": "agentplane/runner_gateway/dispatcher/api/session/dispatchstate",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/runner_gateway/dispatcher/api/session/dispatchstate/state.go",
+            "agentplane/runner_gateway/dispatcher/api/session/dispatchstate/state_test.go"
+          ]
+        },
+        {
           "path": "agentplane/runner_gateway/dispatcher/internal/placement",
           "production": 1,
           "tests": 1,
@@ -7668,15 +7836,6 @@
           "tests": 0,
           "files": [
             "agentplane/runner_gateway/dispatcher/internal/terminalnotice/terminalnotice.go"
-          ]
-        },
-        {
-          "path": "agentplane/runner_gateway/environmentaccess",
-          "production": 1,
-          "tests": 1,
-          "files": [
-            "agentplane/runner_gateway/environmentaccess/policy.go",
-            "agentplane/runner_gateway/environmentaccess/policy_test.go"
           ]
         },
         {
@@ -7716,9 +7875,10 @@
         },
         {
           "path": "agentplane/runner_gateway/environments/lifecycle",
-          "production": 2,
+          "production": 3,
           "tests": 1,
           "files": [
+            "agentplane/runner_gateway/environments/lifecycle/environment_service.go",
             "agentplane/runner_gateway/environments/lifecycle/manager.go",
             "agentplane/runner_gateway/environments/lifecycle/service_test.go",
             "agentplane/runner_gateway/environments/lifecycle/types.go"
@@ -7799,9 +7959,9 @@
         "reviewed_package_paths": [
           "agentplane/runner_gateway",
           "agentplane/runner_gateway/dispatcher",
+          "agentplane/runner_gateway/dispatcher/api/session/dispatchstate",
           "agentplane/runner_gateway/dispatcher/internal/placement",
           "agentplane/runner_gateway/dispatcher/internal/terminalnotice",
-          "agentplane/runner_gateway/environmentaccess",
           "agentplane/runner_gateway/environments",
           "agentplane/runner_gateway/environments/internal/management",
           "agentplane/runner_gateway/environments/internal/view",
@@ -7865,6 +8025,25 @@
           }
         },
         {
+          "path": "agentplane/runner_gateway/dispatcher/api/session/dispatchstate",
+          "role": "One `NormalizeDeliveryState` for the Dispatcher's delivery-state wire enum.",
+          "decision": "move",
+          "target_paths": [
+            "agentplane/session_dispatcher/dispatcher/api/session/dispatchstate"
+          ],
+          "reason": "Added by #16483 in place of five copies. It sits beside the Dispatcher API proto and moves with `dispatcher/` to `session_dispatcher/`.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/runner_gateway/dispatcher/api/session/dispatchstate/state.go"
+          ],
+          "declared_packages": ["dispatchstate"],
+          "pending_tracks": ["runner-gateway-command"],
+          "counts": {
+            "non_test": 1,
+            "tests": 1
+          }
+        },
+        {
           "path": "agentplane/runner_gateway/dispatcher/internal/placement",
           "role": "Maps dispatch/session identities to stable placement records.",
           "decision": "move",
@@ -7907,23 +8086,6 @@
           "counts": {
             "non_test": 1,
             "tests": 0
-          }
-        },
-        {
-          "path": "agentplane/runner_gateway/environmentaccess",
-          "role": "Parses and evaluates `environment` rules over the shared policy reader for EnvironmentService's resume authorization.",
-          "decision": "move",
-          "target_paths": ["agentplane/environments/access"],
-          "reason": "A rule parser over the shared policy reader, like `inboxaccess` and egress `policy`. Both binaries enforce environment rules since #16351 (resume in EnvironmentService, `bind_session` in Session admission), so it moves to `environments/access`, public, beside the Environments binary that owns environments.",
-          "gate": "Moves with EnvironmentService (stage 3). Keep the rule type's parse and refusal behavior.",
-          "evidence_paths": [
-            "agentplane/runner_gateway/environmentaccess/policy.go"
-          ],
-          "declared_packages": ["environmentaccess"],
-          "pending_tracks": ["environment-service-to-sandbox-controller"],
-          "counts": {
-            "non_test": 1,
-            "tests": 1
           }
         },
         {
@@ -8002,7 +8164,7 @@
           "declared_packages": ["lifecycle", "lifecycle_test"],
           "pending_tracks": ["environment-service-to-sandbox-controller"],
           "counts": {
-            "non_test": 2,
+            "non_test": 3,
             "tests": 1
           }
         },
@@ -8815,135 +8977,6 @@
       "review_size": "One PR per component; avoid clause-only PRs below 200 changed LOC by grouping a component's names."
     },
     {
-      "id": "llm-ingress-server-boundary",
-      "title": "Separate LLM ingress process entry from server runtime",
-      "status": "PLANNED",
-      "components": ["llm_ingress"],
-      "source_paths": [
-        "agentplane/llm_ingress/codex_catalog.go",
-        "agentplane/llm_ingress/codex_catalog_test.go",
-        "agentplane/llm_ingress/config.go",
-        "agentplane/llm_ingress/config_test.go",
-        "agentplane/llm_ingress/delegated_attribution_test.go",
-        "agentplane/llm_ingress/ingress_test.go",
-        "agentplane/llm_ingress/main.go",
-        "agentplane/llm_ingress/model_config.go",
-        "agentplane/llm_ingress/model_config_test.go",
-        "agentplane/llm_ingress/model_config_workload_test.go",
-        "agentplane/llm_ingress/server.go",
-        "agentplane/llm_ingress/workload_ingress_test.go",
-        "agentplane/llm_ingress/BUILD.bazel"
-      ],
-      "target_paths": [
-        "agentplane/llm_ingress/cmd",
-        "agentplane/llm_ingress/internal/server"
-      ],
-      "package_renames": [],
-      "deleted_paths": [],
-      "path_moves": [
-        {
-          "from": "agentplane/llm_ingress/codex_catalog.go",
-          "to": "agentplane/llm_ingress/internal/server/codex_catalog.go"
-        },
-        {
-          "from": "agentplane/llm_ingress/codex_catalog_test.go",
-          "to": "agentplane/llm_ingress/internal/server/codex_catalog_test.go"
-        },
-        {
-          "from": "agentplane/llm_ingress/config.go",
-          "to": "agentplane/llm_ingress/internal/server/config.go"
-        },
-        {
-          "from": "agentplane/llm_ingress/config_test.go",
-          "to": "agentplane/llm_ingress/internal/server/config_test.go"
-        },
-        {
-          "from": "agentplane/llm_ingress/delegated_attribution_test.go",
-          "to": "agentplane/llm_ingress/internal/server/delegated_attribution_test.go"
-        },
-        {
-          "from": "agentplane/llm_ingress/ingress_test.go",
-          "to": "agentplane/llm_ingress/internal/server/ingress_test.go"
-        },
-        {
-          "from": "agentplane/llm_ingress/model_config.go",
-          "to": "agentplane/llm_ingress/internal/server/model_config.go"
-        },
-        {
-          "from": "agentplane/llm_ingress/model_config_test.go",
-          "to": "agentplane/llm_ingress/internal/server/model_config_test.go"
-        },
-        {
-          "from": "agentplane/llm_ingress/model_config_workload_test.go",
-          "to": "agentplane/llm_ingress/internal/server/model_config_workload_test.go"
-        },
-        {
-          "from": "agentplane/llm_ingress/server.go",
-          "to": "agentplane/llm_ingress/internal/server/server.go"
-        },
-        {
-          "from": "agentplane/llm_ingress/workload_ingress_test.go",
-          "to": "agentplane/llm_ingress/internal/server/workload_ingress_test.go"
-        }
-      ],
-      "file_splits": [
-        {
-          "from": "agentplane/llm_ingress/main.go",
-          "parts": [
-            {
-              "path": "agentplane/llm_ingress/cmd/main.go",
-              "symbols": [
-                "main (reduced to process wrapper calling server.Run and os.Exit)"
-              ]
-            },
-            {
-              "path": "agentplane/llm_ingress/internal/server/runtime.go",
-              "symbols": [
-                "Run (former main body, returning exit code 2 for config failure and 1 for runtime/tracing failure)",
-                "kubernetesIdentityUIDs",
-                "serve",
-                "rpcHandler",
-                "newModelConfigServer",
-                "kubernetesConfig",
-                "configureLogging"
-              ]
-            }
-          ]
-        }
-      ],
-      "summary": "Move config, request serving, identity attribution, model configuration, catalog behavior and all seven tests under internal/server. main.go has substantive wiring, so split its functions explicitly: internal/server.Run owns the current setup/lifecycle and returns the existing exit status; cmd/main.go becomes only the os.Exit(server.Run()) process wrapper.",
-      "how": [
-        "Move the eleven complete production/test files listed in path_moves under internal/server and update package declarations and Bazel targets.",
-        "Split main.go by function as shown in file_splits; do not move the current file unchanged. Keep private server/config helpers in the package that owns their types.",
-        "Update ingress_test.go runfiles x_defs from the old package import path to internal/server; update the binary dependency while retaining the root image target and /usr/local/bin/server entrypoint.",
-        "Leave Python settings.py/models.py, cdk8s deployment config and v1/model_config.proto in their current contract owners."
-      ],
-      "gate": "Keep all seven package tests with the implementation. Validate the moved server tests and image packaging at current labels, then confirm the new runfiles import path and command exit behavior. This is a package/ownership move only.",
-      "preserve": "SVID/TokenReview exclusivity; delegated actor versus effective Identity; caller header stripping; provider pass-through; model catalog behavior; HTTP and gRPC health behavior; image executable name and healthprobe packaging. No ModelConfig RPC full-name, YAML setting, or stored-data changes.",
-      "validation": [
-        "//agentplane/llm_ingress:ingress_test",
-        "//agentplane/llm_ingress:image",
-        "//agentplane/llm_ingress:test_models"
-      ],
-      "evidence_paths": [
-        "agentplane/llm_ingress/BUILD.bazel",
-        "agentplane/llm_ingress/main.go",
-        "agentplane/llm_ingress/server.go",
-        "agentplane/llm_ingress/README.md",
-        "agentplane/llm_ingress/settings.py",
-        "agentplane/llm_ingress/models.py",
-        "agentplane/llm_ingress/v1/model_config.proto",
-        "cluster/cdk8s/agentplane/llm_ingress.py"
-      ],
-      "dependencies": [],
-      "kind": "organization",
-      "source_owner": "agentplane/llm_ingress",
-      "priority": 9,
-      "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; keep one coherent responsibility and all callers/tests together.",
-      "stage": 2,
-      "proposed_file_targets": []
-    },
-    {
       "source_paths": [
         "agentplane/runner_gateway/environments/collection.go",
         "agentplane/runner_gateway/environments/management.go",
@@ -8965,27 +8998,18 @@
         "agentplane/runner_gateway/dispatcher/wake.go",
         "agentplane/runner_gateway/dispatcher/store.go",
         "agentplane/environments/cmd/main.go",
-        "agentplane/runner_gateway/environmentaccess"
+        "agentplane/runner_gateway/environments/lifecycle/environment_service.go",
+        "agentplane/environments/internal/serving/server.go"
       ],
       "target_paths": [
         "agentplane/environments/internal/service",
         "agentplane/environments/internal/service/lifecycle",
         "agentplane/environments/internal/service/management",
         "agentplane/environments/internal/service/view",
-        "agentplane/environments/cmd",
-        "agentplane/environments/access"
+        "agentplane/environments/cmd"
       ],
       "dependencies": [],
-      "path_moves": [
-        {
-          "from": "agentplane/runner_gateway/environmentaccess/policy.go",
-          "to": "agentplane/environments/access/policy.go"
-        },
-        {
-          "from": "agentplane/runner_gateway/environmentaccess/policy_test.go",
-          "to": "agentplane/environments/access/policy_test.go"
-        }
-      ],
+      "path_moves": [],
       "file_splits": [],
       "deleted_paths": [],
       "proposed_file_targets": [],
@@ -8993,20 +9017,17 @@
       "id": "environment-service-to-sandbox-controller",
       "title": "Move EnvironmentService into the Environments binary",
       "components": ["runner_gateway", "environments"],
-      "status": "AGREED DIRECTION",
+      "status": "READY",
       "kind": "service boundary move",
       "stage": 3,
       "priority": 1,
-      "summary": "Operator, 2026-11-14 direction discussion: merging EnvironmentService into the Sandbox Controller \"sounds good\". The service code is self-contained: `runner_gateway/environments` and its `lifecycle`, `internal/management` and `internal/view` packages import shared Agentplane packages and generated protos, never Gateway or Dispatcher internals. Three in-process couplings with the Dispatcher, plus the Sandbox Controller not serving gRPC today, decide the merge's shape. Under the agreed two-binary shape (target binaries) the Sandbox Controller is the Environments binary, at `agentplane/environments/` since #16407; the Runtime proxy and Executor follow (runner-gateway-connections-proxy). Automatic wake stays with the Dispatcher (Operator, 2026-11-14 05:19 UTC, card \"Choose which binary performs automatic wakes after the split\": \"Sessions binary wakes\".)",
+      "summary": "Released by the operator to Codex worker 539294ae (\"okay - let's go implement this\", relayed 2026-11-15 05:08 UTC) and in progress. #16542 (merged 2026-11-15) serves EnvironmentService on every Controller replica on 8082 from `environments/internal/serving`, behind opt-in settings, and moved `environmentaccess` to `environments/access`; #16556 enabled it on staging with both Controller Pods Ready. Reconcilers and Runtime observation stay leader-only. The handlers still live in `runner_gateway/environments` (with `lifecycle`, `internal/management` and `internal/view`), and both the Gateway and the Controller serve them until callers move. Automatic wake stays with the Dispatcher (operator, 2026-11-14 05:19 UTC, card \"Choose which binary performs automatic wakes after the split\": \"Sessions binary wakes\"); explicit resume reserves no budget (#16375) and Sessions re-check the live Identity (#16373).",
       "how": [
-        "Write the remaining merge contract: (a) wake is decided: the Dispatcher keeps `RequestWake`'s automatic policy check and its budget and writes the Sandbox spec itself, so EnvironmentService carries only explicit resume; split `lifecycle` along that line.",
-        "(b) wake budget: only automatic wake reserves one, in the Dispatcher's PostgreSQL (`dispatcher/wake.go` `ReserveWakeAttempt`). Explicit resume reserves none since #16375 (merged 2026-11-14), so the Environments side needs no database.",
-        "(c) identity fence, decided 2026-11-14 and landed in #16373: EnvironmentService patches `spec.identity` itself under optimistic locking, and admission, placement and delivery re-check the live Identity (cut line: identity fence).",
-        "(d) serving: the Sandbox Controller is a leader-elected controller-runtime manager with no listener; EnvironmentService adds an every-replica gRPC listener with its own lifecycle, readiness that never waits for leadership, auth resolver, Service, certificate identity and retargeted callers (cut line: serving). Written in `agentplane/plans/environment_service_serving.md` (#16437, merged 2026-11-14): a non-leader listener on port 8082 on every replica, readiness from the listener and policy watches only, the existing `sandbox-controller` Service and `spiffe://agentplane/sandbox-controller` certificate. Releasing the move is the operator's open question.",
-        "Then move the four packages whole, with tests, to `environments/internal/service` (package `environments` becomes `service`), with `lifecycle`, `management` and `view` under it, beside the API at `environments/v1`. The only importer outside the Gateway, orchestration_v1's `fixture_test.go` (`environments` and `lifecycle`), must first be retired (orchestration-v1-retirement) or rewritten against a test server, since `internal/` closes those packages. Retarget every caller, RBAC, manifests and the system overview diagram, image before config, with the rollback stated.",
-        "`environmentaccess` (environment rules, #16346) moves in the same PR to `environments/access` (package `access`), outside `internal/`: since #16351 Session admission enforces `bind_session` with it, so the Sessions binary imports it too, and each binary builds its own rule index."
+        "Move callers, receivers before senders: the App to `sandbox-controller:8082` with its SVID (#16565, open); the Actions launcher grant on both receivers (#16566, open), then the Actions caller; then the Sandbox CLI route, keeping the Gateway API for existing Sandboxes.",
+        "Retire the Gateway's EnvironmentService registration, settings and RBAC once its traffic has left and the last safe rollback image and config pair is recorded.",
+        "Move the four packages whole, with tests, to `environments/internal/service` (package `environments` becomes `service`), with `lifecycle`, `management` and `view` under it, beside the API at `environments/v1`; `environments/internal/serving` then imports them from there. The only importer outside the Gateway, orchestration_v1's `fixture_test.go` (`environments` and `lifecycle`), must first be retired (orchestration-v1-retirement) or rewritten against a test server, since `internal/` closes those packages. The automatic half of `lifecycle` stays with the Dispatcher. Update RBAC, manifests and the system overview diagram, image before config, with the rollback stated."
       ],
-      "gate": "Direction agreed; automatic wake decided 2026-11-14 (stays with the Dispatcher). The wake budget (b) and identity fence (c) landed (#16375, #16373); the serving contract (d) is written in `agentplane/plans/environment_service_serving.md` (#16437, merged 2026-11-14); releasing the move waits for the operator; #16311's draft of them is carried into the cut line and the PR is closed as superseded. No database moves.",
+      "gate": "Released; serving and `environments/access` landed (#16542, #16556). Each caller cutover lands only after its receiver grant is live on both receivers. No database moves.",
       "preserve": "The EnvironmentService wire API and per-method authorization; identity changes only while nothing runs, and no delivery under a changed Identity; automatic wake's rate limit; wake assessments; resume authorization.",
       "validation": [
         "//agentplane/runner_gateway/environments:environments_test",
@@ -9221,6 +9242,14 @@
         {
           "from": "agentplane/runner_gateway/migrations/upgrade_integration_test.go",
           "to": "agentplane/session_dispatcher/migrations/upgrade_integration_test.go"
+        },
+        {
+          "from": "agentplane/runner_gateway/dispatcher/api/session/dispatchstate/state.go",
+          "to": "agentplane/session_dispatcher/dispatcher/api/session/dispatchstate/state.go"
+        },
+        {
+          "from": "agentplane/runner_gateway/dispatcher/api/session/dispatchstate/state_test.go",
+          "to": "agentplane/session_dispatcher/dispatcher/api/session/dispatchstate/state_test.go"
         }
       ],
       "package_renames": [],
@@ -10929,7 +10958,7 @@
     {
       "stage": 2,
       "title": "Fix layout inside components no direction changes",
-      "work": ["runner-era-names", "llm-ingress-server-boundary"],
+      "work": ["runner-era-names"],
       "result": "Command placement, package names, runner-era names and bounded adapter extractions in components whose boundaries no agreed or open service decision touches. Each is decided or has a concrete boundary."
     },
     {
@@ -10992,18 +11021,18 @@
   ],
   "scope_coverage": {
     "top_level_areas": 36,
-    "go_packages": 227,
-    "go_files": 1286,
+    "go_packages": 233,
+    "go_files": 1304,
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "916285311099e47e17d21a7125fc4b8f32bf3975",
+    "review_source_sha": "c2549d48c3c3d99e05ceb831f8835f2aa07f4120",
     "review_slices": [
       {
         "slice": "action_service",
         "components": ["action_service"],
-        "packages": 22,
-        "go_files": 153
+        "packages": 23,
+        "go_files": 155
       },
       {
         "slice": "app",
@@ -11014,8 +11043,8 @@
       {
         "slice": "central_sampler",
         "components": ["central_sampler"],
-        "packages": 21,
-        "go_files": 148
+        "packages": 23,
+        "go_files": 157
       },
       {
         "slice": "cli",
@@ -11056,8 +11085,8 @@
       {
         "slice": "environments",
         "components": ["environments"],
-        "packages": 3,
-        "go_files": 39
+        "packages": 5,
+        "go_files": 44
       },
       {
         "slice": "firecracker",
@@ -11098,8 +11127,8 @@
       {
         "slice": "llm_ingress",
         "components": ["llm_ingress"],
-        "packages": 1,
-        "go_files": 12
+        "packages": 2,
+        "go_files": 13
       },
       {
         "slice": "mcp_edge",
@@ -11165,7 +11194,7 @@
         "slice": "runner_gateway",
         "components": ["runner_gateway"],
         "packages": 12,
-        "go_files": 72
+        "go_files": 73
       },
       {
         "slice": "sandboxes",
@@ -11221,27 +11250,20 @@
     },
     {
       "id": "next-2",
-      "track": "llm-ingress-server-boundary",
-      "title": "Separate LLM ingress process entry from server runtime",
-      "readiness": "PLANNED",
-      "first_step": "Move the eleven complete production/test files listed in path_moves under internal/server and update package declarations and Bazel targets."
+      "track": "environment-service-to-sandbox-controller",
+      "title": "Move EnvironmentService into the Environments binary",
+      "readiness": "READY",
+      "first_step": "Land the open caller PRs (#16565 App, #16566 Actions launcher grant), then the Actions caller and the Sandbox CLI route; the every-replica listener landed in #16542 and runs on staging (#16556)."
     },
     {
       "id": "next-3",
-      "track": "environment-service-to-sandbox-controller",
-      "title": "Move EnvironmentService into the Environments binary",
-      "readiness": "AGREED DIRECTION",
-      "first_step": "Once the operator releases the move: add EnvironmentService's every-replica listener as `plans/environment_service_serving.md` (#16437) specifies; the wake budget and identity fence already landed (#16375, #16373)."
-    },
-    {
-      "id": "next-4",
       "track": "runner-gateway-connections-proxy",
       "title": "Move the Runtime proxy and Executor into the Environments binary",
       "readiness": "AGREED DIRECTION",
       "first_step": "After the connection Lease removal, move internal/gateway into the Environments binary behind EnvironmentService's listener."
     },
     {
-      "id": "next-5",
+      "id": "next-4",
       "track": "runner-gateway-command",
       "title": "Move the Sessions binary to `session_dispatcher/`",
       "readiness": "HELD",
