@@ -253,19 +253,6 @@ class App(Construct):
             Volume.from_config_map(self, "public-web-pki-volume", public_roots),
             read_only=True,
         )
-        for volume, audience, mount_path in [
-            ("runner-gateway-token", runner_gateway.TOKEN_AUDIENCE, "/var/run/secrets/agentplane-runner-gateway"),
-            ("history-service-token", history_service.TOKEN_AUDIENCE, "/var/run/secrets/agentplane-history-service"),
-            ("egress-admin-token", egress.ADMIN_GRPC_AUDIENCE, "/var/run/secrets/agentplane-egress-admin"),
-            (
-                "session-dispatcher-token",
-                session_dispatcher.TOKEN_AUDIENCE,
-                "/var/run/secrets/agentplane-session-dispatcher",
-            ),
-            ("notifications-token", notifications.TOKEN_AUDIENCE, "/var/run/secrets/agentplane-notifications"),
-            ("policy-token", policy_controller.TOKEN_AUDIENCE, "/var/run/secrets/agentplane-policy"),
-        ]:
-            workload.project_tokens(volume, mount_path, {"token": audience})
         return workload
 
     def _add_http_route(self) -> None:

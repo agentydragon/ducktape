@@ -140,9 +140,6 @@ spec:
             - mountPath: /run/agentplane/runner-tls
               name: runner-tls
               readOnly: true
-            - mountPath: /var/run/secrets/agentplane-runner-gateway
-              name: runner-gateway-token
-              readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -197,17 +194,6 @@ spec:
                     - key: ca-certificates.crt
                       path: ca.crt
                   name: agentplane-workload-ca-bundle
-        - name: runner-gateway-token
-          projected:
-            sources:
-              - serviceAccountToken:
-                  audience: agentplane-runner-gateway
-                  expirationSeconds: 3600
-                  path: token
-              - serviceAccountToken:
-                  audience: central-sampler
-                  expirationSeconds: 3600
-                  path: central-sampler
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget

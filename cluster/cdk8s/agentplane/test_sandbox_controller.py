@@ -82,18 +82,6 @@ def test_controller_settings_are_mounted_and_gateway_token_is_projected(
     assert cert_mount["readOnly"] is True
     assert cert_volume["secret"]["secretName"] == f"{sandbox_controller.NAME}-client-workload-tls"
 
-    # Keep the projected bearer available for rollback until stage 5 removes it.
-    token_path = PurePosixPath("/var/run/secrets/agentplane-runner-gateway/token")
-    token_mount = one(mount for mount in container["volumeMounts"] if mount["mountPath"] == str(token_path.parent))
-    token_volume = one(volume for volume in pod["volumes"] if volume["name"] == token_mount["name"])
-    assert token_mount["readOnly"] is True
-    token_source = one(
-        source["serviceAccountToken"]
-        for source in token_volume["projected"]["sources"]
-        if source.get("serviceAccountToken", {}).get("path") == token_path.name
-    )
-    assert token_source["audience"] == runner_gateway.TOKEN_AUDIENCE
-
     controller_policy = _resource(staging_manifests, "CiliumNetworkPolicy", sandbox_controller.NAME)["spec"]
     runtime_label = environment_sandbox.pods("agentplane").selector["app.kubernetes.io/name"]
     assert any(

@@ -48,7 +48,6 @@ from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 
-_GATEWAY_TOKEN_DIR = "/var/run/secrets/agentplane-runner-gateway"
 _SETTINGS_PATH = "/etc/agentplane-sandbox-controller/config.yaml"
 
 NAME = environment_service.NAME
@@ -258,7 +257,6 @@ class SandboxController(Construct):
         )
         settings_file.mount_into(workload.container, env=Settings.config_file_env)
         workload_tls.mount_trust_bundle(self, workload.container)
-        workload.project_tokens("runner-gateway-token", _GATEWAY_TOKEN_DIR, {"token": gateway_audience})
         role_name = NAME.removeprefix("agentplane-")
         Role(
             self,

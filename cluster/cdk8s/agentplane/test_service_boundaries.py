@@ -6,14 +6,7 @@ from typing import Any
 import pytest_bazel
 from more_itertools import one
 
-from cluster.cdk8s.agentplane import (
-    app,
-    history_service,
-    notifications,
-    runner_gateway,
-    sandbox_controller,
-    session_dispatcher,
-)
+from cluster.cdk8s.agentplane import app, history_service, notifications, runner_gateway, sandbox_controller
 
 
 def _resource(documents: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
@@ -68,16 +61,9 @@ def test_environment_management_and_dispatcher_wake_have_separate_authority(
     )
 
 
-def test_notifications_use_current_service_tokens_without_app_egress(staging_manifests: list[dict[str, Any]]) -> None:
+def test_notifications_have_their_own_account_without_app_egress(staging_manifests: list[dict[str, Any]]) -> None:
     pod = _resource(staging_manifests, "Deployment", notifications.NAME)["spec"]["template"]["spec"]
     assert pod["serviceAccountName"] == notifications.NAME
-    tokens = one(volume for volume in pod["volumes"] if volume["name"] == "service-tokens")
-    assert {source["serviceAccountToken"]["audience"] for source in tokens["projected"]["sources"]} == {
-        "agentplane-egress",
-        runner_gateway.TOKEN_AUDIENCE,
-        history_service.TOKEN_AUDIENCE,
-        session_dispatcher.TOKEN_AUDIENCE,
-    }
     policy = _resource(staging_manifests, "CiliumNetworkPolicy", notifications.NAME.removeprefix("agentplane-"))["spec"]
     assert not any(
         target["matchLabels"].get("app.kubernetes.io/name") == app.NAME

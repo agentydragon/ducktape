@@ -14,7 +14,6 @@ from cdk8s import App, Testing as Cdk8sTesting  # alias avoids pytest collecting
 from more_itertools import one
 
 from agentplane.env.runtime.harness import Harness
-from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.net.peertls.config import (
     CENTRAL_SAMPLER_URI,
     GATEWAY_SESSIONS_URI,
@@ -111,16 +110,6 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
         for mount in container["volumeMounts"]
     )
 
-    token_volume = one(volume for volume in pod["volumes"] if volume["name"] == "caller-tokens")
-    token_paths = {
-        token["serviceAccountToken"]["path"]: token["serviceAccountToken"]["audience"]
-        for token in token_volume["projected"]["sources"]
-    }
-    assert token_paths == {
-        "llm": WORKLOAD_TOKEN_AUDIENCE,
-        "gateway": runner_gateway.TOKEN_AUDIENCE,
-        "history": history_service.RUNNER_INGRESS_AUDIENCE,
-    }
     config = json.loads(_resource(staging_manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"])
     assert "database_url" not in config
     assert "executor_reconnect_timeout_seconds" not in config

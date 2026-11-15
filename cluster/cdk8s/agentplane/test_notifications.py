@@ -6,7 +6,6 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
-from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, NOTIFICATIONS_URI, SESSION_DISPATCHER_URI
 from cluster.cdk8s.agentplane import (
     actions as action_service,
@@ -141,20 +140,6 @@ def test_notifications_use_the_configured_dispatcher(staging_manifests: list[dic
         assert tls["cert_file"]
         assert tls["key_file"]
         assert tls["ca_file"] == workload_tls.TRUST_BUNDLE_FILE
-
-    deployment = one(
-        doc
-        for doc in staging_manifests
-        if doc["kind"] == "Deployment" and doc["metadata"]["name"] == notifications.NAME
-    )
-    pod = deployment["spec"]["template"]["spec"]
-    token_volume = one(volume for volume in pod["volumes"] if volume["name"] == "service-tokens")
-    tokens = {
-        source["serviceAccountToken"]["path"]: source["serviceAccountToken"]
-        for source in token_volume["projected"]["sources"]
-    }
-    assert tokens["actions"]["audience"] == WORKLOAD_TOKEN_AUDIENCE
-    assert tokens["dispatcher"]["audience"] == session_dispatcher.TOKEN_AUDIENCE
 
     policy = one(
         doc

@@ -191,6 +191,10 @@ flowchart LR
     click index href "../x/indexing/app.py" "Git index API"
 ```
 
+First-party backend calls use mounted service SVIDs and the workload trust bundle. Their Pods
+do not project destination-audience ServiceAccount tokens; Kubernetes API credentials remain
+separate.
+
 Each runner incarnation has one Secret, issued by the Policy Controller for the Sandbox's
 `WorkloadCredential`. The Sandbox Controller projects it to Environment Runtime and the egress
 sidecar only; workload containers have no mount. The KubeVirt launcher relay gets that same Secret
