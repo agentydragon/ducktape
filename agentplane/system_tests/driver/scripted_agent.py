@@ -17,7 +17,6 @@ from agentplane.app.testing.client import Client
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.system_tests.deployment import mcp_servers
 from agentplane.system_tests.driver.agent import Agent
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
@@ -108,9 +107,6 @@ class ScriptedAgent:
         self, group: str, action: str, arguments: dict[str, Any], *, title: str, wait: bool
     ) -> action_service_pb2.ActionRequest:
         return await self.run(*submission(group, action, arguments, title=title, wait=wait))
-
-    async def submit_echo(self, group: str, message: str, *, wait: bool) -> action_service_pb2.ActionRequest:
-        return await self.submit(group, mcp_servers.ECHO, {"message": message}, title="Echo a test marker", wait=wait)
 
     async def read_action_policy(self) -> action_service_pb2.CallerActionPolicy:
         """Read the Action policy resolved for this session's Identity."""

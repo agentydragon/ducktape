@@ -65,13 +65,20 @@ class PolicyObjects:
             except BaseException as error:
                 cleanup_error = error
 
+            if exc is not None:
+                if cleanup_error is not None:
+                    exc.add_note(
+                        "Policy resource cleanup also failed "
+                        f"({len(cleanup_error.exceptions) if isinstance(cleanup_error, BaseExceptionGroup) else 1} "
+                        "resource(s)); cleanup details are suppressed to preserve the original failure."
+                    )
+                return False
+
             if cancellation is not None:
                 if cleanup_error is not None and cleanup_error is not cancellation:
                     raise cancellation from cleanup_error
                 raise cancellation
             if cleanup_error is not None:
-                if isinstance(exc, asyncio.CancelledError):
-                    raise exc from cleanup_error
                 raise cleanup_error
         return False
 
@@ -160,5 +167,11 @@ class PolicyObjects:
                         )
 
     async def _delete_all(self) -> None:
+        failures: list[BaseException] = []
         for plural, name in reversed(self.created):
-            await self.cluster.kubectl("delete", plural, name, "--ignore-not-found")
+            try:
+                await self.cluster.kubectl("delete", plural, name, "--ignore-not-found")
+            except BaseException as error:
+                failures.append(error)
+        if failures:
+            raise BaseExceptionGroup("Policy resource cleanup failed", failures)

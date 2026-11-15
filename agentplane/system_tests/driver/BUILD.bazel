@@ -573,7 +573,6 @@ py_library(
         "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/proto:session_pb2",
         "//agentplane/runner_gateway/dispatcher:testing_client",
-        "//agentplane/system_tests/deployment:mcp_servers",
         "//agentplane/testing:scripted_model",
         "@pypi//more_itertools",
         "@pypi//protobuf",
