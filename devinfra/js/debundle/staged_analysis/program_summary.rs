@@ -120,8 +120,6 @@ pub struct ProgramSummary {
     /// provider primitive slots for each selected spread.
     pub imported_primitive_array_spread_inputs:
         BTreeMap<String, Vec<analysis::analysis_inputs::ResolvedImportedPrimitiveArraySpreadInput>>,
-    pub stable_set_spreads:
-        BTreeMap<String, BTreeMap<u32, analysis::analysis_inputs::StableSetIterableUse>>,
     pub inferred_set_constructions:
         BTreeMap<String, BTreeMap<u32, analysis::analysis_inputs::InferredSetConstruction>>,
     pub argument_inputs: BTreeMap<String, Vec<ResolvedArgumentInput>>,
@@ -916,7 +914,6 @@ pub fn collect_program_summary(
         initializer_call_effect_inputs,
         imported_primitive_array_spread_inputs: callable_summaries
             .imported_primitive_array_spread_inputs,
-        stable_set_spreads: callable_summaries.stable_set_spreads,
         inferred_set_constructions: callable_summaries.inferred_set_constructions,
         argument_inputs: callable_summaries.argument_inputs,
         inline_callback_factories: exports!(

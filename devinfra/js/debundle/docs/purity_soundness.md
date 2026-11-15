@@ -358,7 +358,7 @@ author premise for one exact direct native initializer. The schema admits
 `operation: set_empty`,
 `operation: symbol`, `operation: symbol_for`, `operation: promise_resolve`,
 `operation: set_from_primitive_array`,
-`operation: set_from_set_spread`, `operation: object_own_data_function_read`,
+`operation: object_own_data_function_read`,
 `operation: symbol_well_known_class_keys`, and
 `operation: symbol_primitive_class_keys`.
 For `symbol` and `symbol_for`, the canonical selector engine identifies one
@@ -527,31 +527,19 @@ across the analyzed program, including aliases, reflection and restoration;
 opaque witness paths remain visible and are the author's audit obligation.
 Only this exact site seeds a fresh native Set origin in the shared value-flow
 solve. The shared heap graph records its Set-content allocation and tracks
-reachable content effects. The existing constructor-purity rule may use the
-author-backed native protocol dependency for the selected fresh primitive
-array. Later Set method identity, own iterator shape and
-Set-spread protocol are separate obligations, so this input does not remove
-their barriers.
-
-For `set_from_set_spread`, the direct Set argument is a dense array literal
-whose first element is one spread of an identifier and whose remaining
-elements are primitive literals. The author independently asserts original
-Set construction and Set iterator/next identities at this exact call. The
-source-only certificate additionally requires the source identifier to name
-an earlier selected fresh primitive Set in one original top-level declaration;
-every intervening split-view source unit must itself be an independently
-selected primitive Set constructor. All bindings in that interval must have
-the same explicit destination, so lowering's source-order declarator split
-preserves the interval in one emitted module. This certificate is established
-before and without seeded value-flow facts; it contributes the spread's fresh
-Set identity to the single shared flow solve. Purity, synchronous callback
-analysis, and the Set-content graph consume the same exact-site dependencies.
-Unknown receiver/key native-write witnesses remain visible, and source-known
-writes to required slots in any analyzed chunk reject the input. An own
-iterator override, alias mutation, callback, separate output, or other
-unproved source unit in the interval rejects the source certificate. Later
-Set methods and escaped observations remain on their ordinary conservative
+reachable content effects. The constructor-purity rule may use the
+author-backed native protocol dependency for this primitive array. Later Set
+method identity and escaped observations retain their ordinary conservative
 paths.
+
+Set-spread construction is inferred separately. The source must be a direct
+identifier read of an earlier fresh primitive-array Set, and every
+intervening declarator is an independently proved primitive-array Set in the
+same original declaration. The integrity premise
+also requires the Set iterator and iterator `next` slots. The inferred interval
+dependencies enter the shared value-flow and graph analyses, which keep the
+interval co-located. This proof grants no identity to later Set methods or
+escaped observations.
 The own-data read operation selects a single direct `Object.<name>` initializer
 whose name is in the shared native own-data function-reference table. An
 unshadowed `Object` binding is checked by the canonical source index; the

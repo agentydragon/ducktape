@@ -132,12 +132,6 @@ fn certified_fresh_sets_split_after_unrelated_constructor_heap_barrier() {
                     "sibling",
                     NativeOperationKind::SetFromPrimitiveArray,
                 ),
-                selected_native_input(
-                    SOURCE,
-                    DECLARATION,
-                    "merged",
-                    NativeOperationKind::SetFromSetSpread,
-                ),
             ],
         ),
     );
@@ -159,7 +153,7 @@ fn certified_fresh_sets_split_after_unrelated_constructor_heap_barrier() {
         graph.edges.iter().any(|edge| {
             edge.source == merged && edge.target == seed && edge.edge_kind == DepKind::EagerUse
         }),
-        "certified spread lost its source Set allocation dependency: {graph:#?}"
+        "inferred spread lost its source Set allocation dependency: {graph:#?}"
     );
     let observation = graph
         .nodes
@@ -263,7 +257,7 @@ fn direct_borrowed_root_keeps_its_runtime_prefix_and_contents_frontier() {
 }
 
 #[test]
-fn certified_same_output_set_spread_removes_only_its_constructor_barrier() {
+fn inferred_set_spread_preserves_factory_callback_composition() {
     const DECLARATION: &str =
         "var seed = new Set(['a']), sibling = new Set(['b']), merged = new Set([...seed, 'c']);";
     const SOURCE: &str = "globalThis.saved = () => factory();\nvar seed = new Set(['a']), sibling = new Set(['b']), merged = new Set([...seed, 'c']);\nfunction factory() { return LaterError; }\nclass LaterError extends Error {}\nconsole.log(merged.size, LaterError.name);\nexport { factory, LaterError };\n";
@@ -280,12 +274,6 @@ fn certified_same_output_set_spread_removes_only_its_constructor_barrier() {
                 DECLARATION,
                 "sibling",
                 NativeOperationKind::SetFromPrimitiveArray,
-            ),
-            selected_native_input(
-                SOURCE,
-                DECLARATION,
-                "merged",
-                NativeOperationKind::SetFromSetSpread,
             ),
         ]
     };
@@ -307,43 +295,20 @@ fn certified_same_output_set_spread_removes_only_its_constructor_barrier() {
             ],
         )
     };
-    let inferred = run_fixture_with_graphs(
-        opts().with_native_operation_inputs("static/app", inputs()[..2].to_vec()),
-    );
-    assert_preserved_entry_output(&inferred, "2 LaterError\n");
-    let inferred_graph = serde_json::to_value(inferred.dependency_graph()).unwrap();
-    assert!(
-        json_node_declaring(&inferred_graph, "merged")["synchronous_execution"]["inference_uses"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|proof| proof["conclusion"] == "primitive_set_iteration"),
-        "the census-proved spread retains inferred provenance: {inferred_graph}"
-    );
     let fixture =
         run_fixture_with_graphs(opts().with_native_operation_inputs("static/app", inputs()));
     assert_preserved_entry_output(&fixture, "2 LaterError\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    let uses = json_execution_rows(&graph, "native_operation_input_uses");
-    assert_eq!(
-        uses.len(),
-        3,
-        "all exact Set operations must retain evidence: {graph}"
-    );
     assert!(
-        uses.iter()
-            .any(|use_site| use_site["evidence"]["operation"] == "set_from_set_spread")
-    );
-    assert!(
-        !json_has_unknown_call_target(json_node_declaring(&graph, "merged")),
-        "certified spread must remove its exact constructor frontier: {graph}"
+        json_node_declaring(&graph, "merged")["synchronous_execution"]["inference_uses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|proof| proof["conclusion"] == "primitive_set_iteration"),
+        "the census-proved spread retains inferred provenance: {graph}"
     );
 }
 
-/// A repeated `var` whose construction sits at a later declaration site: the
-/// input's template pins that site, so provider validation finds the Set
-/// construction there. (Resolving the binding's first, bare site instead
-/// finds no declaration in the selected statement and rejects the spec.)
 #[test]
 fn repeated_var_input_selects_the_matched_declaration_site() {
     const DECLARATION: &str = "var seed = new Set(['a']);";
@@ -366,217 +331,19 @@ fn repeated_var_input_selects_the_matched_declaration_site() {
 }
 
 #[test]
-fn set_spread_requires_every_intervening_constructor_and_one_output_module() {
-    const DECLARATION: &str =
-        "var seed = new Set([1]), sibling = new Set([2]), merged = new Set([...seed, 3]);";
-    let source = format!("{DECLARATION}\nconsole.log(merged.size);\nexport {{}};\n");
-    let seed = selected_native_input(
+fn inferred_spread_keeps_later_alias_mutation_order() {
+    let source = "var seed = new Set([1]), merged = new Set([...seed, 3]);\nconst alias = merged;\nalias.add(4);\nconst after = merged.has(4);\nconsole.log(after);\nexport {};\n";
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         &source,
-        DECLARATION,
-        "seed",
-        NativeOperationKind::SetFromPrimitiveArray,
-    );
-    let sibling = selected_native_input(
-        &source,
-        DECLARATION,
-        "sibling",
-        NativeOperationKind::SetFromPrimitiveArray,
-    );
-    let spread = selected_native_input(
-        &source,
-        DECLARATION,
-        "merged",
-        NativeOperationKind::SetFromSetSpread,
-    );
-    let same_output = || {
-        FixtureOpts::new(
-            &source,
-            vec![logical_module(
-                "sets",
-                &[
-                    Member::new("seed"),
-                    Member::new("sibling"),
-                    Member::new("merged"),
-                ],
-            )],
-        )
-    };
-    expect_rejection_containing_all(
-        same_output()
-            .with_native_operation_inputs("static/app", vec![seed.clone(), spread.clone()]),
-        &["uncertified intervening source unit"],
-    );
-    expect_rejection_containing_all(
-        FixtureOpts::new(
-            &source,
-            vec![
-                logical_module("seed", &[Member::new("seed"), Member::new("sibling")]),
-                logical_module("merged", &[Member::new("merged")]),
+        vec![logical_module(
+            "sets",
+            &[
+                Member::new("seed"),
+                Member::new("merged"),
+                Member::new("alias"),
             ],
-        )
-        .with_native_operation_inputs("static/app", vec![seed, sibling, spread]),
-        &["atomic-group conflict"],
-    );
-}
-
-#[test]
-fn set_spread_interval_accepts_zero_or_multiple_inert_siblings() {
-    for siblings in [0, 2] {
-        let middle = (0..siblings)
-            .map(|index| format!("sibling{index} = new Set([{index}]), "))
-            .collect::<String>();
-        let declaration =
-            format!("var seed = new Set([1]), {middle}merged = new Set([...seed, 3]);");
-        let source = format!("{declaration}\nconsole.log(merged.size);\nexport {{}};\n");
-        let mut bindings = vec![Member::new("seed")];
-        let mut inputs = vec![selected_native_input(
-            &source,
-            &declaration,
-            "seed",
-            NativeOperationKind::SetFromPrimitiveArray,
-        )];
-        for index in 0..siblings {
-            let name = ["sibling0", "sibling1"][index];
-            bindings.push(Member::new(name));
-            inputs.push(selected_native_input(
-                &source,
-                &declaration,
-                name,
-                NativeOperationKind::SetFromPrimitiveArray,
-            ));
-        }
-        bindings.push(Member::new("merged"));
-        inputs.push(selected_native_input(
-            &source,
-            &declaration,
-            "merged",
-            NativeOperationKind::SetFromSetSpread,
-        ));
-        let fixture = run_fixture(
-            FixtureOpts::new(&source, vec![logical_module("sets", &bindings)])
-                .with_native_operation_inputs("static/app", inputs),
-        );
-        assert_preserved_entry_output(&fixture, "2\n");
-    }
-}
-
-#[test]
-fn set_spread_rejects_intervening_mutators_and_callbacks() {
-    for intervening in [
-        "seed.add(4)",
-        "(seed[Symbol.iterator] = function* () { yield 9; })",
-        "unknown()",
-    ] {
-        let declaration = format!(
-            "var seed = new Set([1]), intervening = {intervening}, merged = new Set([...seed, 3]);"
-        );
-        let source = format!("{declaration}\nconsole.log(merged.size);\nexport {{}};\n");
-        let inputs = vec![
-            selected_native_input(
-                &source,
-                &declaration,
-                "seed",
-                NativeOperationKind::SetFromPrimitiveArray,
-            ),
-            selected_native_input(
-                &source,
-                &declaration,
-                "merged",
-                NativeOperationKind::SetFromSetSpread,
-            ),
-        ];
-        expect_rejection_containing_all(
-            FixtureOpts::new(
-                &source,
-                vec![logical_module(
-                    "sets",
-                    &[
-                        Member::new("seed"),
-                        Member::new("intervening"),
-                        Member::new("merged"),
-                    ],
-                )],
-            )
-            .with_native_operation_inputs("static/app", inputs),
-            &["uncertified intervening source unit"],
-        );
-    }
-}
-
-#[test]
-fn set_spread_rejects_native_protocol_replacement_in_another_chunk() {
-    const DECLARATION: &str = "var seed = new Set([1]), merged = new Set([...seed, 3]);";
-    const MUTATION: &str = "const proto = Set.prototype; Object.defineProperty(proto, 'add', { value: function replacement() {} }); export {};\n";
-    let source = format!(
-        "import './mutation.js';\n{DECLARATION}\nconsole.log(merged.size);\nexport {{}};\n"
-    );
-    let inputs = vec![
-        selected_native_input(
-            &source,
-            DECLARATION,
-            "seed",
-            NativeOperationKind::SetFromPrimitiveArray,
-        ),
-        selected_native_input(
-            &source,
-            DECLARATION,
-            "merged",
-            NativeOperationKind::SetFromSetSpread,
-        ),
-    ];
-    expect_rejection_containing_all(
-        FixtureOpts::new(
-            &source,
-            vec![logical_module(
-                "sets",
-                &[Member::new("seed"), Member::new("merged")],
-            )],
-        )
-        .with_extra_chunks(&[("static/mutation", MUTATION)])
-        .with_native_operation_inputs("static/app", inputs),
-        &[
-            "required Set construction protocol slot write",
-            "static/mutation",
-        ],
-    );
-}
-
-#[test]
-fn certified_spread_keeps_later_alias_mutation_order() {
-    const DECLARATION: &str = "var seed = new Set([1]), merged = new Set([...seed, 3]);";
-    let source = format!(
-        "{DECLARATION}\nconst alias = merged;\nalias.add(4);\nconst after = merged.has(4);\nconsole.log(after);\nexport {{}};\n"
-    );
-    let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(
-            &source,
-            vec![logical_module(
-                "sets",
-                &[
-                    Member::new("seed"),
-                    Member::new("merged"),
-                    Member::new("alias"),
-                ],
-            )],
-        )
-        .with_native_operation_inputs(
-            "static/app",
-            vec![
-                selected_native_input(
-                    &source,
-                    DECLARATION,
-                    "seed",
-                    NativeOperationKind::SetFromPrimitiveArray,
-                ),
-                selected_native_input(
-                    &source,
-                    DECLARATION,
-                    "merged",
-                    NativeOperationKind::SetFromSetSpread,
-                ),
-            ],
-        ),
-    );
+        )],
+    ));
     assert_preserved_entry_output(&fixture, "true\n");
     let graph = fixture.dependency_graph();
     let unit = |ordinal| {

@@ -13307,12 +13307,9 @@ pub(crate) fn prepare_synchronous_call_index_with_source_facts(
     let author_set_inputs = index
         .native_operation_input_evidence
         .iter()
-        .filter(|(site, evidence)| {
+        .filter(|(_, evidence)| {
             evidence.operation
                 == NativeInputKind::Operation(spec::NativeOperationKind::SetFromPrimitiveArray)
-                || (evidence.operation
-                    == NativeInputKind::Operation(spec::NativeOperationKind::SetFromSetSpread)
-                    && hints.stable_set_spreads.contains_key(&site.allocation_id()))
         })
         .map(|(site, evidence)| (site.allocation_id(), evidence.clone()))
         .collect();

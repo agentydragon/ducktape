@@ -931,12 +931,12 @@ globalThis`) marks the bindings it flows into (transitively,
   write-after-write and write-after-read order in both graph modes, including
   for pure readers the S-chain omits. A barrier depends on the current
   frontier, later observations depend on the barrier, and the frontier resets
-  there. A selected `set_from_primitive_array` operation adds a typed fresh
-  Set origin; a separately certified `set_from_set_spread` operation adds one
-  only when its spread reads a selected fresh Set across a source-order
-  interval of certified inert constructors in one declaration, and the gate
-  refuses a placement that splits that interval. Construction identity does
-  not establish later method or iterator identity, so unsupported Set
+  there. A selected `set_from_primitive_array` premise or the intact native
+  protocol census can add a typed fresh Set origin. Automatic Set-spread
+  inference adds one when the spread reads an earlier fresh primitive Set
+  across a source-order interval of certified inert constructors in one
+  declaration; the graph keeps that interval co-located. Construction identity
+  does not establish later method or iterator identity, so unsupported Set
   observations stay barriers. These facts constrain scheduling only: they do
   not reclassify calls as pure or establish a no-reentry/descriptor-integrity
   premise. In particular, `trusted_dataflow_summaries` does not make an array

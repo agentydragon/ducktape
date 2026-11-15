@@ -30,7 +30,6 @@ use super::{
 
 pub(crate) fn native_set_allocation_roots(
     inputs: &[crate::analysis_inputs::ResolvedNativeOperationInput],
-    stable_spreads: &BTreeMap<u32, crate::analysis_inputs::StableSetIterableUse>,
     inferred: &BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>,
 ) -> BTreeMap<u32, crate::analysis_inputs::ProvenSetAllocation> {
     let mut allocations: BTreeMap<_, _> = inferred
@@ -50,11 +49,6 @@ pub(crate) fn native_set_allocation_roots(
                     == crate::analysis_inputs::NativeInputKind::Operation(
                         spec::NativeOperationKind::SetFromPrimitiveArray,
                     )
-                    || (input.evidence.operation
-                        == crate::analysis_inputs::NativeInputKind::Operation(
-                            spec::NativeOperationKind::SetFromSetSpread,
-                        )
-                        && stable_spreads.contains_key(&input.call_span.lo.0))
             })
             .map(|input| {
                 (

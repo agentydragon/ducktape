@@ -532,7 +532,6 @@ impl<'a> ModulePurityFacts<'a> {
             None => crate::facts::complete_chunk_structural_with_inputs(
                 source,
                 &inputs.assumptions.native_operation_inputs,
-                &inputs.stable_set_spreads,
                 &inputs.inferred_set_constructions,
                 &inputs.assumptions.argument_inputs,
             ),
@@ -797,11 +796,6 @@ pub fn resolve_imported_purities(
                     .get(key)
                     .cloned()
                     .unwrap_or_default(),
-                stable_set_spreads: callable_summaries
-                    .stable_set_spreads
-                    .get(key)
-                    .cloned()
-                    .unwrap_or_default(),
                 assumptions: crate::analysis_inputs::AnalysisAssumptions {
                     captured_value_inputs: callable_summaries
                         .value_inputs
@@ -1019,8 +1013,6 @@ pub struct ResolvedCallableSummaries {
         SourceModuleKey,
         Vec<crate::analysis_inputs::AnalysisImportedPrimitiveArraySpreadInput>,
     >,
-    pub stable_set_spreads:
-        BTreeMap<SourceModuleKey, BTreeMap<u32, crate::analysis_inputs::StableSetIterableUse>>,
     pub inferred_set_constructions:
         BTreeMap<SourceModuleKey, BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>>,
     pub argument_inputs:
@@ -1547,14 +1539,6 @@ pub fn resolve_imported_callable_summaries(
             owner.0
         );
     }
-    let mut stable_set_spreads = BTreeMap::new();
-    let no_spreads = BTreeMap::new();
-    for (module, inputs) in &resolved_native_operation_inputs {
-        let uses = crate::facts::certify_stable_set_spreads(inputs)?;
-        if !uses.is_empty() {
-            stable_set_spreads.insert(module.clone(), uses);
-        }
-    }
     if selected_native_operation_inputs
         .values()
         .flatten()
@@ -1579,33 +1563,6 @@ pub fn resolve_imported_callable_summaries(
             .unwrap_or("native_operation_inputs");
         bail!(
             "{request} is contradicted by a positively identified required Set construction protocol slot write in provider {module}, source unit {}",
-            owner.0
-        );
-    }
-    if selected_native_operation_inputs
-        .values()
-        .flatten()
-        .any(|input| {
-            input.evidence.operation
-                == NativeInputKind::Operation(spec::NativeOperationKind::SetFromSetSpread)
-        })
-        && let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
-            facts
-                .known_set_spread_protocol_mutation_owner()
-                .map(|owner| (module, owner))
-        })
-    {
-        let request = selected_native_operation_inputs
-            .values()
-            .flatten()
-            .find(|input| {
-                input.evidence.operation
-                    == NativeInputKind::Operation(spec::NativeOperationKind::SetFromSetSpread)
-            })
-            .map(|input| input.evidence.spec_location.as_str())
-            .unwrap_or("native_operation_inputs");
-        bail!(
-            "{request} is contradicted by a positively identified required Set spread protocol slot write in provider {module}, source unit {}",
             owner.0
         );
     }
@@ -1686,7 +1643,6 @@ pub fn resolve_imported_callable_summaries(
                 resolved_native_operation_inputs
                     .get(module)
                     .map_or(&[][..], Vec::as_slice),
-                stable_set_spreads.get(module).unwrap_or(&no_spreads),
                 inferred_set_constructions
                     .get(module)
                     .unwrap_or(&BTreeMap::new()),
@@ -2054,7 +2010,6 @@ pub fn resolve_imported_callable_summaries(
         imported_primitive_array_spread_inputs: BTreeMap::new(),
         selected_imported_primitive_array_spread_inputs:
             selected_imported_primitive_array_spread_inputs.clone(),
-        stable_set_spreads,
         inferred_set_constructions,
         argument_inputs: argument_inputs.clone(),
         structural_flows,

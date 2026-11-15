@@ -7,13 +7,12 @@
 use super::*;
 use crate::analysis_inputs::{
     AnalysisInputs, ImportedPrimitiveArrayOperandEvidence, InferredSetConstruction,
-    InferredSetOperation, NativeInputKind, NativeOperationInputEvidence, ProofDependencies,
-    ResolvedImportedPrimitiveArraySpreadInput, ResolvedNativeOperationInput, StableSetIterableUse,
+    InferredSetOperation, NativeOperationInputEvidence, ProofDependencies,
+    ResolvedImportedPrimitiveArraySpreadInput,
 };
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::semantic_inference::{SemanticFacts, SemanticKey};
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
-use anyhow::{Result, bail};
 use source_identity::SourceUnitOrdinal;
 use std::sync::Arc;
 
@@ -73,85 +72,6 @@ pub(crate) struct TopLevelNativeIterableOperandSite {
     pub(crate) operation_span: Span,
     pub(crate) operand: NativeIterableOperandOrigin,
     pub(crate) owner: SourceUnitOrdinal,
-}
-
-/// Certify the one-way source/schedule premise before value-flow inference.
-/// The input constructor and every intervening source unit are independently
-/// selected primitive-Set operations in the same original declaration. No
-/// graph result, flow identity or assignment is consulted here; the interval
-/// must stay in one output module, which the gate stage enforces.
-pub fn certify_stable_set_spreads(
-    inputs: &[ResolvedNativeOperationInput],
-) -> Result<BTreeMap<u32, StableSetIterableUse>> {
-    let by_ordinal: BTreeMap<_, _> = inputs
-        .iter()
-        .filter(|input| {
-            input.evidence.operation
-                == NativeInputKind::Operation(spec::NativeOperationKind::SetFromPrimitiveArray)
-        })
-        .map(|input| (input.initializer_ordinal.0, input))
-        .collect();
-    let mut stable = BTreeMap::new();
-    for spread in inputs.iter().filter(|input| {
-        input.evidence.operation
-            == NativeInputKind::Operation(spec::NativeOperationKind::SetFromSetSpread)
-    }) {
-        let Some(source) = spread.spread_source.as_ref() else {
-            bail!(
-                "{} has no exact Set spread source",
-                spread.evidence.spec_location
-            );
-        };
-        let seed = by_ordinal.values().find(|input| {
-            input.binding == *source
-                && input.initializer_ordinal < spread.initializer_ordinal
-                && input.selected_statement_span == spread.selected_statement_span
-        });
-        let Some(seed) = seed else {
-            bail!(
-                "{} requires an earlier certified fresh primitive Set in the same original declaration",
-                spread.evidence.spec_location
-            );
-        };
-        let mut dependencies = ProofDependencies::default();
-        let mut interval_bindings = Vec::new();
-        dependencies
-            .native_operation_inputs
-            .insert(spread.evidence.reference.clone());
-        for ordinal in seed.initializer_ordinal.0..spread.initializer_ordinal.0 {
-            let Some(input) = by_ordinal.get(&ordinal) else {
-                bail!(
-                    "{} has an uncertified intervening source unit",
-                    spread.evidence.spec_location
-                );
-            };
-            if input.selected_statement_span != spread.selected_statement_span {
-                bail!(
-                    "{} has an intervening Set constructor outside its original declaration",
-                    spread.evidence.spec_location
-                );
-            }
-            dependencies
-                .native_operation_inputs
-                .insert(input.evidence.reference.clone());
-            interval_bindings.push(input.binding.clone());
-        }
-        interval_bindings.push(spread.binding.clone());
-        stable.insert(
-            spread.call_span.lo.0,
-            StableSetIterableUse {
-                source_span: spread
-                    .spread_source_span
-                    .expect("validated spread has operand span"),
-                spread_token_span: spread
-                    .spread_token_span
-                    .expect("validated spread has token span"),
-                interval_bindings,
-                dependencies,
-            },
-        );
-    }
-    Ok(stable)
 }
 
 #[derive(Debug, Clone, Default)]
@@ -273,30 +193,20 @@ impl SetIterableProof {
             .map(|(site, evidence)| {
                 (
                     *site,
-                    hints.stable_set_spreads.get(site).map_or_else(
-                        || ProofDependencies {
-                            native_operation_inputs: BTreeSet::from([evidence.reference.clone()]),
-                            ..ProofDependencies::default()
-                        },
-                        |stable| stable.dependencies.clone(),
-                    ),
+                    ProofDependencies {
+                        native_operation_inputs: BTreeSet::from([evidence.reference.clone()]),
+                        ..ProofDependencies::default()
+                    },
                 )
             })
             .collect();
         let spreads: Vec<_> = hints
-            .stable_set_spreads
+            .inferred_set_constructions
             .values()
-            .chain(
-                hints
-                    .inferred_set_constructions
-                    .values()
-                    .filter_map(|proof| match &proof.operation {
-                        InferredSetOperation::ProtectedSpread { interval, .. } => {
-                            Some(interval.as_ref())
-                        }
-                        InferredSetOperation::PrimitiveArray => None,
-                    }),
-            )
+            .filter_map(|proof| match &proof.operation {
+                InferredSetOperation::ProtectedSpread { interval, .. } => Some(interval.as_ref()),
+                InferredSetOperation::PrimitiveArray => None,
+            })
             .collect();
         let protected_intervals = spreads
             .iter()

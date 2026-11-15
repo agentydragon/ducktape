@@ -10,7 +10,6 @@ use serde::Serialize;
 use source_identity::{SourceUnitId, SourceUnitOrdinal, StatementId};
 use swc_ecma_ast::{Id, ModuleItem};
 
-use crate::analysis_inputs::StableSetIterableUse;
 use crate::{
     BindingKind, DependencyGraph, LocalBindings, ModuleAssignment, ModuleId, SourceUnitClass,
 };
@@ -410,37 +409,6 @@ pub enum PlacementProjectionViolation {
         requested_destination: usize,
         source_destination: ModuleId,
     },
-    StableSetIntervalDestinationSplit {
-        interval_index: usize,
-        bindings: Vec<Id>,
-        destinations: Vec<ModuleId>,
-    },
-    StableSetIntervalMissingSourceProjection {
-        interval_index: usize,
-        binding: Id,
-    },
-}
-
-impl PlacementProjectionViolation {
-    /// Render one typed violation for a human-facing refusal message. Policy
-    /// decisions consume the enum above, never this diagnostic text.
-    pub fn diagnostic(&self) -> String {
-        match self {
-            Self::StableSetIntervalDestinationSplit {
-                interval_index,
-                bindings,
-                ..
-            } => format!(
-                "certified Set spread interval {interval_index} (bindings {}) spans several output modules",
-                bindings
-                    .iter()
-                    .map(|binding| format!("`{}`", binding.0))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-            _ => format!("{self:?}"),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -522,7 +490,7 @@ impl PlacementProjection<'_> {
 
 /// Inputs are all final, canonical products already present in materialization:
 /// the assignment, retained source-layout pass, complete AST body, final
-/// whole-statement requests, ownership catalogue, and typed stable intervals.
+/// whole-statement requests, and ownership catalogue.
 pub struct PlacementProjectionInput<'a> {
     pub graph: &'a DependencyGraph,
     pub assignment: &'a ModuleAssignment,
@@ -533,7 +501,6 @@ pub struct PlacementProjectionInput<'a> {
     pub module_count: usize,
     pub destructuring_groups: &'a [DestructuringDeclaratorGroup],
     pub nested_var_statements: &'a [NestedVarStatement],
-    pub stable_set_intervals: &'a [StableSetIterableUse],
 }
 
 /// Project source-unit owners into the exact destination maps used by the
@@ -855,32 +822,6 @@ pub fn project_placement<'a>(input: PlacementProjectionInput<'a>) -> PlacementPr
             continue;
         }
         statement_map.insert(statement, source_destination.0);
-    }
-
-    for (interval_index, interval) in input.stable_set_intervals.iter().enumerate() {
-        let mut destinations = BTreeSet::new();
-        for binding in &interval.interval_bindings {
-            match binding_destinations.get(binding) {
-                Some(destination) => {
-                    destinations.insert(*destination);
-                }
-                None => violations.push(
-                    PlacementProjectionViolation::StableSetIntervalMissingSourceProjection {
-                        interval_index,
-                        binding: binding.clone(),
-                    },
-                ),
-            }
-        }
-        if destinations.len() > 1 {
-            violations.push(
-                PlacementProjectionViolation::StableSetIntervalDestinationSplit {
-                    interval_index,
-                    bindings: interval.interval_bindings.clone(),
-                    destinations: destinations.into_iter().collect(),
-                },
-            );
-        }
     }
 
     let complete = unresolved_checks.is_empty();
