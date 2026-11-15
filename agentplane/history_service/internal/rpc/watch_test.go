@@ -22,7 +22,7 @@ type watching struct {
 
 func (s testServer) watch(t *testing.T, request *historypb.WatchSessionSummariesRequest) watching {
 	t.Helper()
-	stream, err := s.client.WatchSessionSummaries(bearing(t, readerToken), request)
+	stream, err := s.client.WatchSessionSummaries(callContext(t), request)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -47,6 +47,7 @@ func startWithSVIDs(t *testing.T, ca *peertlstesting.CA, tune func(*config)) run
 	c.TokenAudience, c.Ingress.TokenAudience = "test-history-service", "test-runner-ingress"
 	c.Kubeconfig, c.PolicyNamespace = kubeconfig, testPolicyNamespace
 	c.RPC.TLS = &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile}
+	// Retain the legacy declaration for compatibility coverage; serve builds History admission from SVID rules.
 	c.RPC.Auth = []listener.Authentication{
 		&listener.KubernetesBearerAuth{Audiences: []string{c.TokenAudience, c.Ingress.TokenAudience}},
 		&listener.SPIFFEAuth{CAFile: serving.CAFile},
@@ -129,14 +130,14 @@ func TestSharedListenerPreservesHistoryReadAndWriterPolicies(t *testing.T) {
 	workload := workloadauthtesting.NewIdentityWorkload(t, kube, "test-sandbox-namespace", "svid-"+uuid.NewString(), testPolicyNamespace).Workload
 	ca := peertlstesting.NewCA(t)
 	service := startWithSVIDs(t, ca, nil)
-	_, err := service.reads.GetSessionSummary(bearing(t, readerToken), &historypb.GetSessionSummaryRequest{SessionId: uuid.NewString()})
-	// The explicitly granted service SVID reads through the shared listener.
+	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
+	defer cancel()
+	_, err := service.reads.GetSessionSummary(ctx, &historypb.GetSessionSummaryRequest{SessionId: uuid.NewString()})
+	// The explicitly granted App SVID reads through the shared production listener.
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("backend reader: %v", err)
 	}
 	conn := svidConnection(t, ca, service, workload.URI)
-	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
-	defer cancel()
 	_, err = historypb.NewHistoryServiceClient(conn).GetSessionSummary(ctx, &historypb.GetSessionSummaryRequest{SessionId: uuid.NewString()})
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("an Identity SVID read outside its retained Sessions: %v", err)

@@ -253,7 +253,6 @@ func TestEnvironmentRuntimeWritesAsItsIdentityPinnedToItsSandbox(t *testing.T) {
 	other := workloadauthtesting.NewIdentityWorkload(t, kube, namespace, "test-other-sandbox", testPolicyNamespace)
 	account := workloadauthtesting.NewWorkload(t, kube, namespace, "test-account-sandbox")
 	service, _ := newService(t, testTiming)
-	service.SandboxUIDs = NewServiceAccountSandboxUIDResolver(kube.Clientset)
 	connect := serveSVIDIngress(t, service, namespace)
 
 	session := uuid.New()

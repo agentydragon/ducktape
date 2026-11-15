@@ -185,8 +185,8 @@ func newServiceAccessServer(
 	return testServer{service: service, hub: hub, history: history, db: db}, connect
 }
 
-// bearing supplies the test's normal call deadline; all admitted calls use the client SVID.
-func bearing(t *testing.T, _ string) context.Context {
+// callContext supplies the test's normal call deadline; all admitted calls use the client SVID.
+func callContext(t *testing.T) context.Context {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	t.Cleanup(cancel)
@@ -311,7 +311,7 @@ func TestSessionHistoryIsReadOverGRPC(t *testing.T) {
 	if _, err := server.history.Append(t.Context(), sessionID, []*eventlogpb.EventEntry{testEntry(1), testEntry(2), testEntry(3)}); err != nil {
 		t.Fatal(err)
 	}
-	ctx := bearing(t, readerToken)
+	ctx := callContext(t)
 
 	events, err := server.client.ReadSessionEvents(ctx, &historypb.ReadSessionEventsRequest{SessionId: sessionID.String(), AfterCursor: 1, Limit: 1})
 	if err != nil {
@@ -396,7 +396,7 @@ func TestServiceReaderAndDelegatedServiceUseSeparateReadScopes(t *testing.T) {
 	// Identity-owned and legacy ServiceAccount-owned Sessions.
 	directReader := connect(t, peertls.NotificationsURI)
 	for _, sessionID := range []uuid.UUID{owned, foreign, legacy} {
-		page, err := directReader.ReadSessionEvents(bearing(t, ""), request(sessionID))
+		page, err := directReader.ReadSessionEvents(callContext(t), request(sessionID))
 		if err != nil || len(page.GetEntries()) != 1 {
 			t.Errorf("allowlisted direct reader of %s = %+v, %v", sessionID, page, err)
 		}
@@ -409,7 +409,7 @@ func TestServiceReaderAndDelegatedServiceUseSeparateReadScopes(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			client := connect(t, actor)
-			if _, err := client.ReadSessionEvents(bearing(t, ""), request(owned)); status.Code(err) != codes.PermissionDenied {
+			if _, err := client.ReadSessionEvents(callContext(t), request(owned)); status.Code(err) != codes.PermissionDenied {
 				t.Fatalf("direct service read = %v, want PermissionDenied", err)
 			}
 		})
@@ -430,7 +430,7 @@ func TestServiceReaderAndDelegatedServiceUseSeparateReadScopes(t *testing.T) {
 
 func TestAnUnfoldedOrUnknownSessionReadsAsNotFoundWhereItHasNoHistory(t *testing.T) {
 	server := newServer(t, time.Minute)
-	ctx := bearing(t, readerToken)
+	ctx := callContext(t)
 	sessionID := uuid.NewString()
 	entity := &historypb.EntityKey{EntityKind: historypb.ThreadEntityKind_THREAD_ENTITY_KIND_ITEM, EntityId: "test-entity"}
 	for name, call := range map[string]func() error{
@@ -466,7 +466,7 @@ func TestAnUnfoldedOrUnknownSessionReadsAsNotFoundWhereItHasNoHistory(t *testing
 func TestACallThatOutlastsTheRequestTimeoutIsAbandoned(t *testing.T) {
 	server := newServerTimingOut(t, time.Hour, time.Nanosecond)
 	sessionID, _ := server.record(t)
-	_, err := server.client.GetSessionSummary(bearing(t, readerToken), &historypb.GetSessionSummaryRequest{SessionId: sessionID.String()})
+	_, err := server.client.GetSessionSummary(callContext(t), &historypb.GetSessionSummaryRequest{SessionId: sessionID.String()})
 	if got := status.Code(err); got != codes.DeadlineExceeded {
 		t.Errorf("%v, want DeadlineExceeded", got)
 	}
