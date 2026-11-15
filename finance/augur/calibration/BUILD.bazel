@@ -197,7 +197,6 @@ py_test(
         "//finance/augur/model:series",
         "//finance/augur/model:testing",
         "//finance/evidence:markets",
-        "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -207,7 +206,18 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    deps = ["//finance/augur/fit:synthetic_evidence"],
+    deps = [
+        ":calibration",
+        ":catalog",
+        ":platform",
+        "//finance/augur/fit:synthetic_evidence",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:series",
+        "//finance/augur/model:testing",
+        "//finance/evidence:markets",
+        "@pypi//numpy",
+        "@pypi//pytest",
+    ],
 )
 
 py_test(
