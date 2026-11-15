@@ -178,7 +178,7 @@ func TestAnIdentitySVIDReadsTheSessionsItsIdentityExecuted(t *testing.T) {
 	for acknowledged := uint64(0); acknowledged < 1; {
 		ack, err := push.Recv()
 		if err != nil {
-			t.Fatalf("the Identity runner's push ended unacknowledged: %v", err)
+			t.Fatalf("the Environment Runtime's push ended unacknowledged: %v", err)
 		}
 		acknowledged = ack.GetCursor()
 	}

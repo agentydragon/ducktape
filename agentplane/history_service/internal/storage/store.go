@@ -1,4 +1,4 @@
-// Package storage keeps each Session's committed runner Event prefix, with the settlement and
+// Package storage keeps each Session's committed Event prefix, with the settlement and
 // removal records that account for entries no longer stored.
 package storage
 
@@ -52,14 +52,14 @@ var (
 // Each UID tells apart a subject recreated under the same name.
 type Writer interface{ isWriter() }
 
-// ServiceAccountWriter is a runner or central sampler authenticated as a ServiceAccount.
+// ServiceAccountWriter is an Environment Runtime or central sampler authenticated as a ServiceAccount.
 type ServiceAccountWriter struct{ Namespace, Name, UID string }
 
 // ServiceWriter is a first-party component authenticated by its exact service SPIFFE ID.
 // It deliberately does not manufacture a Kubernetes account identity.
 type ServiceWriter struct{ SPIFFEID string }
 
-// IdentityWriter is a runner whose workload credential names an Identity incarnation.
+// IdentityWriter is an Environment Runtime whose workload credential names an Identity incarnation.
 type IdentityWriter struct{ Identity }
 
 func (ServiceAccountWriter) isWriter() {}
@@ -249,14 +249,14 @@ func (row *historyRow) checkpoint() (Checkpoint, error) {
 	return checkpoint, nil
 }
 
-// BindWriter binds the Session to a ServiceAccount runner if it has no writer yet, creating its row;
+// BindWriter binds the Session to a ServiceAccount writer if it has no writer yet, creating its row;
 // any other writer is refused. Of two concurrent first writers, the row lock lets one bind and
 // refuses the other. The account is writer provenance and establishes no execution owner.
 func (s *Store) BindWriter(ctx context.Context, sessionID uuid.UUID, writer ServiceAccountWriter, sandboxUID string) (Checkpoint, error) {
 	return s.bindWriter(ctx, sessionID, writer, Sandbox{Namespace: writer.Namespace, Name: writer.Name, UID: sandboxUID}, nil)
 }
 
-// BindIdentityWriter is BindWriter for a runner authenticated as an Identity, pinned to the Sandbox
+// BindIdentityWriter is BindWriter for an Environment Runtime authenticated as an Identity, pinned to the Sandbox
 // that owns its workload credential. identity, the Identity the Dispatcher recorded the Session as
 // executing as, is retained independently of writer provenance.
 func (s *Store) BindIdentityWriter(ctx context.Context, sessionID uuid.UUID, writer IdentityWriter, sandbox Sandbox, identity *Identity) (Checkpoint, error) {
@@ -323,7 +323,7 @@ func (s *Store) bindWriter(ctx context.Context, sessionID uuid.UUID, writer Writ
 		if err := tx.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM session_history WHERE id = $1)", sessionID).Scan(&exists); err != nil {
 			return err
 		}
-		// Only a first push takes the session lock, so a reconnecting runner never waits on another's.
+		// Only a first push takes the session lock, so a reconnecting writer never waits on another's.
 		if !exists {
 			if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock($1)", sessionLock); err != nil {
 				return err
@@ -444,7 +444,7 @@ func (s *Store) RecordedSessions(ctx context.Context, afterPosition uint64, limi
 
 // Append replays exact duplicates or extends the prefix, serializing concurrent writers by Session ID,
 // and returns the Session's last cursor. Validation, settlement of the items the batch completes, and
-// the new checkpoint commit together; on any error the entire batch rolls back. An empty batch is a checkpoint read, not an inferred runner high-water mark.
+// the new checkpoint commit together; on any error the entire batch rolls back. An empty batch is a checkpoint read, not an inferred writer high-water mark.
 func (s *Store) Append(ctx context.Context, sessionID uuid.UUID, entries []*eventlogpb.EventEntry) (uint64, error) {
 	var lastCursor uint64
 	err := postgres.Transaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
@@ -456,7 +456,7 @@ func (s *Store) Append(ctx context.Context, sessionID uuid.UUID, entries []*even
 		for _, entry := range entries {
 			cursor, sourceID := entry.GetCursor(), entry.GetOrigin().GetSourceId()
 			if cursor == 0 || sourceID == "" || entry.GetOrigin().GetSequence() != cursor {
-				return conflict("invalid runner origin at %d", cursor)
+				return conflict("invalid journal origin at %d", cursor)
 			}
 			if row.sourceID != nil && *row.sourceID != sourceID {
 				return conflict("source changed at %d", cursor)
@@ -591,7 +591,7 @@ func (s *Store) ReopenSealed(ctx context.Context, sessionID uuid.UUID, incarnati
 	return checkpoint, err
 }
 
-// RecordFeedState records only a covered runner snapshot; delayed copiers cannot rewind it or drop a seal.
+// RecordFeedState records only a covered writer snapshot; delayed copiers cannot rewind it or drop a seal.
 func (s *Store) RecordFeedState(ctx context.Context, sessionID uuid.UUID, feed *historypb.SessionFeedState) error {
 	return postgres.Transaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
 		row, err := lockRow(ctx, tx, sessionID)
@@ -600,7 +600,7 @@ func (s *Store) RecordFeedState(ctx context.Context, sessionID uuid.UUID, feed *
 		}
 		next := proto.Clone(feed).(*historypb.SessionFeedState)
 		if next.GetAttached() == nil || next.GetAttached().GetSessionId() != sessionID.String() {
-			return conflict("feed snapshot does not match the bound runner session")
+			return conflict("feed snapshot does not match the bound Session")
 		}
 		if next.GetAttached().GetLastCursor() > row.lastCursor {
 			return conflict("feed snapshot is ahead of committed history")

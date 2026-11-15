@@ -6,7 +6,7 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 )
 
-// ReadSessionEvents pages through a Session's retained runner entries.
+// ReadSessionEvents pages through a Session's retained journal entries.
 func (r *Reader) ReadSessionEvents(ctx context.Context, request *historypb.ReadSessionEventsRequest) (*historypb.ReadSessionEventsResponse, error) {
 	sessionID, err := parseSessionID(request.GetSessionId())
 	if err != nil {

@@ -20,7 +20,7 @@ import (
 // fold cannot advance until they are repaired or rebuilt.
 var ErrInconsistentFold = errors.New("inconsistent thread fold")
 
-// ReplicationError means the runner stream conflicts with the archived prefix or skips an entry, or the
+// ReplicationError means the journal writer stream conflicts with the archived prefix or skips an entry, or the
 // fold's epoch must be reset.
 type ReplicationError struct {
 	// Cursor is the entry the conflict was found at, when it names one.
@@ -78,7 +78,7 @@ func insertEntity(ctx context.Context, tx *sql.Tx, entity *historypb.ThreadEntit
 	return stored, err
 }
 
-// RecordEmptyThreadFold materializes an authenticated runner's empty prefix, without inventing an Event or its
+// RecordEmptyThreadFold materializes an authenticated writer's empty prefix, without inventing an Event or its
 // source. It reports whether it did: a Thread that already has a fold is left alone.
 func RecordEmptyThreadFold(ctx context.Context, tx *sql.Tx, threadID uuid.UUID, projectionEpoch string) (bool, error) {
 	var exists bool

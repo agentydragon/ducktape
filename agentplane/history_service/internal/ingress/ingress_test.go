@@ -58,7 +58,7 @@ func workloadToken(t *testing.T, account auth.Account) string {
 	return token
 }
 
-// testTiming is short enough to wait out, long enough that a loaded runner does not end a live call.
+// testTiming is short enough to wait out, long enough that a loaded journal writer does not end a live call.
 var testTiming = Timing{IdleAck: 100 * time.Millisecond, SilenceLimit: time.Second}
 
 type testIngress struct {
@@ -119,7 +119,7 @@ func newService(t *testing.T, timing Timing) (*Service, *sql.DB) {
 	return &Service{History: storage.NewStore(db, storage.Options{SettleDeltas: true}), Timing: timing}, db
 }
 
-// call is a runner's Push call: frames go out as the test sends them, and acknowledgements are read back.
+// call is a journal writer's Push call: frames go out as the test sends them, and acknowledgements are read back.
 type call struct {
 	t      *testing.T
 	stream grpc.BidiStreamingClient[session_ingresspb.PushFrame, session_ingresspb.Acknowledgement]
@@ -325,7 +325,7 @@ func TestResumeReplaysExactDuplicatesAndContinuesAfterARestart(t *testing.T) {
 	c := first.push(t, concat([]*session_ingresspb.PushFrame{announce(sessionID, 0, "")}, entries(1, 2))...)
 	c.acknowledged(2, false)
 	c.cancel()
-	// A new ingress process, and a runner that recorded only the first acknowledgement.
+	// A new ingress process, and a journal writer that recorded only the first acknowledgement.
 	second := newIngress(t)
 	c = second.push(t, announce(sessionID, 3, ""))
 	c.acknowledged(2, false)
@@ -370,7 +370,7 @@ func TestALaterIncarnationAnnouncingAtTheSealCursorReplacesTheSnapshot(t *testin
 	ingress, sessionID := newIngress(t), uuid.New()
 	c := ingress.push(t, concat([]*session_ingresspb.PushFrame{announce(sessionID, 2, "")}, entries(1, 2), []*session_ingresspb.PushFrame{sealed(2, "test-incarnation-1")})...)
 	c.acknowledged(2, true)
-	// A resumed runner has appended nothing yet, so it announces the cursor the seal ended at.
+	// A resumed writer has appended nothing yet, so it announces the cursor the seal ended at.
 	c = ingress.push(t, announce(sessionID, 2, "test-incarnation-2"))
 	c.acknowledged(2, false)
 	c.send(entries(3)...)
@@ -562,7 +562,7 @@ func TestEntriesAreAcknowledgedWithoutWaitingForAnIdleInterval(t *testing.T) {
 	c.acknowledged(2, false)
 }
 
-func TestTheRunnerClosingItsSideKeepsWhatArrived(t *testing.T) {
+func TestTheJournalWriterClosingItsSideKeepsWhatArrived(t *testing.T) {
 	ingress, sessionID := newIngress(t), uuid.New()
 	c := ingress.push(t, concat([]*session_ingresspb.PushFrame{announce(sessionID, 0, "")}, entries(1, 2))...)
 	if err := c.stream.CloseSend(); err != nil {

@@ -1,7 +1,7 @@
-// Package ingress serves SessionJournalIngress: a runner pushes each Session's journal here, one call per Session.
+// Package ingress serves SessionJournalIngress: a journal writer pushes each Session's journal here, one call per Session.
 //
 // Contract: agentplane/docs/runner_control.md § Event ingress. Every acknowledgement follows a commit, so the
-// runner's resume point is always durable here; Store.Append accepts exact replays and serializes concurrent
+// writer's resume point is always durable here; Store.Append accepts exact replays and serializes concurrent
 // calls for one Session, so any replica serves any call.
 package ingress
 
@@ -35,7 +35,7 @@ const (
 	commitByteLimit  = 1024 * 1024
 )
 
-// Timing paces a call. Runners heartbeat on an idle call at the rate the protocol names, so a deployment
+// Timing paces a call. Journal writers heartbeat on an idle call at the rate the protocol names, so a deployment
 // serves with the protocol's values; only a test shortens them.
 type Timing struct {
 	// IdleAck is how long the ingress waits for a frame before it repeats its acknowledgement.
@@ -60,10 +60,10 @@ type pushStream = grpc.BidiStreamingServer[session_ingresspb.PushFrame, session_
 // pusher is a Push caller: an accountPusher, an identityPusher or a delegatingSamplerPusher.
 type pusher interface{ isPusher() }
 
-// accountPusher is a runner or central sampler authenticated as a ServiceAccount.
+// accountPusher is an Environment Runtime or central sampler authenticated as a ServiceAccount.
 type accountPusher struct{ storage.ServiceAccountWriter }
 
-// identityPusher is a runner authenticated as an Identity, with the Sandbox owning its workload
+// identityPusher is an Environment Runtime authenticated as an Identity, with the Sandbox owning its workload
 // credential.
 type identityPusher struct {
 	writer  storage.IdentityWriter
@@ -155,7 +155,7 @@ func (s *Service) Push(stream pushStream) error {
 }
 
 // samplerWriter is the ServiceAccount a central sampler pushes as, whether as itself or acting for
-// an Identity; a runner is no sampler.
+// an Identity; an Environment Runtime is no sampler.
 func samplerWriter(caller pusher) (storage.ServiceAccountWriter, bool) {
 	switch caller := caller.(type) {
 	case accountPusher:
@@ -178,7 +178,7 @@ func samplerServiceWriter(caller pusher) (storage.ServiceWriter, bool) {
 	}
 }
 
-// newIdentityPusher pins an Identity runner to the Sandbox that controls its workload credential, as
+// newIdentityPusher pins an Identity-authenticated Environment Runtime to the Sandbox that controls its workload credential, as
 // the Sandbox controller's ownerReference names it. A record no Sandbox controls writes no history.
 func newIdentityPusher(caller auth.IdentityPrincipal) (identityPusher, error) {
 	owner, ok := caller.Workload.Owner.(auth.ControllerOwner)
@@ -261,7 +261,7 @@ func (c *pushCall) run(ctx context.Context, caller pusher) error {
 		}
 	}
 	// The Dispatcher records the Identity a Session executes as; only a writer that can vouch for it
-	// is retained: an Identity runner running as it, a central sampler acting for it, or a
+	// is retained: an Environment Runtime running as that Identity, a central sampler acting for it, or a
 	// configured central sampler relaying it.
 	if identity := announce.GetExecutionIdentity(); identity != nil {
 		if identity.GetName() == "" || identity.GetUid() == "" {
@@ -271,7 +271,7 @@ func (c *pushCall) run(ctx context.Context, caller pusher) error {
 		switch caller := caller.(type) {
 		case identityPusher:
 			if announced != caller.writer.Identity {
-				return status.Error(codes.PermissionDenied, "session execution identity does not match the runner identity")
+				return status.Error(codes.PermissionDenied, "session execution identity does not match the Environment Runtime's authenticated Identity")
 			}
 			executionIdentity = &announced
 		case delegatingSamplerPusher:
@@ -376,7 +376,7 @@ func (c *pushCall) receive(ctx context.Context, j *journal) error {
 		frame, timedOut, err := c.frames.next(c.timing.IdleAck)
 		switch {
 		case errors.Is(err, io.EOF):
-			// The runner reconnects and resumes after the last acknowledgement; keep what arrived.
+			// The writer reconnects and resumes after the last acknowledgement; keep what arrived.
 			return j.commit(ctx)
 		case err != nil:
 			return err
@@ -466,7 +466,7 @@ func (c *pushCall) failure(err error) error {
 	}
 }
 
-// journal is one call's view of a Session: what it committed and what the runner may send next.
+// journal is one call's view of a Session: what it committed and what the writer may send next.
 type journal struct {
 	history   *storage.Store
 	sessionID uuid.UUID
@@ -565,7 +565,7 @@ func (f *frameReader) stop() { close(f.done) }
 
 func (f *frameReader) ready() bool { return len(f.queue) > 0 }
 
-// next returns the next frame; io.EOF once the runner has closed its side of the call; or timedOut after
+// next returns the next frame; io.EOF once the writer has closed its side of the call; or timedOut after
 // timeout without either.
 func (f *frameReader) next(timeout time.Duration) (frame *session_ingresspb.PushFrame, timedOut bool, err error) {
 	timer := time.NewTimer(timeout)

@@ -338,7 +338,7 @@ func TestEachMethodEnforcesItsCallerContract(t *testing.T) {
 	// The read API admits reviewed ServiceAccounts, then scopes reads to the
 	// retained execution principal. An unknown Session stays hidden.
 	if got := status.Code(err); got != codes.NotFound {
-		t.Errorf("a runner without a matching principal on the read API: %v, want NotFound", got)
+		t.Errorf("a writer without a matching principal on the read API: %v, want NotFound", got)
 	}
 	push, err := service.ingress.Push(bearing(t, readerToken))
 	if err != nil {

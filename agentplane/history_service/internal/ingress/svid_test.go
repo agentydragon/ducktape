@@ -246,7 +246,7 @@ func readsAs(t *testing.T, history *storage.Store, identity *policyapi.Identity,
 	return slices.ContainsFunc(sessions, func(session storage.RecordedSession) bool { return session.SessionID == sessionID })
 }
 
-func TestAnIdentityRunnerWritesAsItsIdentityPinnedToItsSandbox(t *testing.T) {
+func TestEnvironmentRuntimeWritesAsItsIdentityPinnedToItsSandbox(t *testing.T) {
 	namespace := "history-identity-" + uuid.NewString()
 	first := workloadauthtesting.NewIdentityWorkload(t, kube, namespace, "test-first-sandbox", testPolicyNamespace)
 	sibling := workloadauthtesting.RunAs(t, workloadauthtesting.NewWorkload(t, kube, namespace, "test-sibling-sandbox"), first.Identity)
@@ -284,7 +284,7 @@ func TestAnIdentityRunnerWritesAsItsIdentityPinnedToItsSandbox(t *testing.T) {
 		refused := connect(first.URI).open(t, "")
 		refused.send(test.frame)
 		if code := refused.refused(); code != test.code {
-			t.Fatalf("an Identity runner announced %s: %v, want %v", name, code, test.code)
+			t.Fatalf("an Environment Runtime announced %s: %v, want %v", name, code, test.code)
 		}
 	}
 

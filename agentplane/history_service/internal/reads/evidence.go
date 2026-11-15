@@ -150,7 +150,7 @@ func (r *Reader) ReadNativeFrames(ctx context.Context, request *historypb.ReadNa
 	return response, nil
 }
 
-// findEntity returns the entity's cursor and the Session's runner source, in the caller's still-current epoch.
+// findEntity returns the entity's cursor and the Session's journal writer source, in the caller's still-current epoch.
 func findEntity(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, projectionEpoch string, key *historypb.EntityKey) (uint64, string, error) {
 	kind, err := threadfold.StoredEntityKind(key.GetEntityKind())
 	if err != nil {

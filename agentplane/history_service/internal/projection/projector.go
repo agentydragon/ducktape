@@ -22,7 +22,7 @@ const stalledMessage = "Session history projection stalled; retained events and 
 var errCheckpointAdvanced = errors.New("projection checkpoint advanced during fetch; retry from checkpoint")
 
 // permanentError marks an unfoldable prefix after its failure was retained under the lease.
-// Without a materialized checkpoint, the runner's diagnostic is the only failure surface.
+// Without a materialized checkpoint, the journal writer's diagnostic is the only failure surface.
 type permanentError struct{ cause error }
 
 func (e *permanentError) Error() string { return e.cause.Error() }

@@ -70,7 +70,7 @@ func scanSession(ctx context.Context, db *sql.DB, sessionID uuid.UUID) (scan, er
 
 // RunSession uses bounded reads and one write transaction per eligible completion. Dry runs use
 // read-only transactions. Apply fences ingress and the projector, and refuses a changed raw prefix.
-// Restarting skips recorded settlements; no runner events or provider calls are replayed.
+// Restarting skips recorded settlements; no source journal entries or provider calls are replayed.
 func RunSession(ctx context.Context, db *sql.DB, sessionID uuid.UUID, apply bool) (Result, error) {
 	found, err := scanSession(ctx, db, sessionID)
 	if err != nil {
