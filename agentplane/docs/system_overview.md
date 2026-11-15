@@ -33,7 +33,7 @@ flowchart LR
         hs[History TLS RPC :8080: readers and JournalIngress]
         notif[Notification TLS RPC :8080; signed webhook HTTP :8081]
         actions[Action TLS RPC :8080]
-        edge["MCP edge<br/>gRPC 8080 + mTLS 8443"]
+        edge["MCP edge<br/>mTLS gRPC 8443 + HTTP 8081"]
         egress[Egress proxy]
         egressRules[Rules and EgressAdmin TLS gRPC :8081]
         llm[LLM inference HTTP and ModelConfig RPC over TLS :8080]
@@ -673,7 +673,7 @@ flowchart LR
     github([GitHub / web-push])
     app[Integration app]
     actions[Action Service]
-    edge["MCP edge<br/>gRPC 8080 + mTLS 8443<br/>/v1 handler in process"]
+    edge["MCP edge<br/>mTLS gRPC 8443 + HTTP 8081<br/>/v1 handler in process"]
     k8s[Kubernetes API]
     subgraph box[Action box Pod]
         workload[Box workload]
