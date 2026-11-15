@@ -76,17 +76,9 @@ impl ProtoConvert<proto::InferenceUse> for InferenceUse {
     fn from_proto(value: proto::InferenceUse) -> Result<Self> {
         let conclusion =
             InferenceRule::try_from(required(value.conclusion, "InferenceUse.conclusion")?)?;
-        ensure!(
-            conclusion != InferenceRule::Unspecified,
-            "unspecified inference rule"
-        );
         let mut derivation_rules = BTreeSet::new();
         for rule in value.derivation_rules {
             let rule = InferenceRule::try_from(rule)?;
-            ensure!(
-                rule != InferenceRule::Unspecified,
-                "unspecified inference rule"
-            );
             ensure!(derivation_rules.insert(rule), "duplicate inference rule");
         }
         Ok(Self {
@@ -100,5 +92,83 @@ impl ProtoConvert<proto::InferenceUse> for InferenceUse {
                 value.imported_primitive_array_spread_input_refs,
             )?,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zero_valued_saved_enums_keep_json_names() {
+        use crate::analysis_inputs::{ForeignInvocation, ProgramPremiseKey};
+        use crate::execution_evidence::{
+            ExecutionOperation, GlobalReachCause, OrderedCallAdmissionRefusal,
+            OrderedFieldReadRefusal,
+        };
+        use crate::loader_closure::LoaderClosureFailureKind;
+
+        let cases = [
+            (
+                serde_json::to_value(ExecutionOperation::MembershipProtocol).unwrap(),
+                "membership_protocol",
+            ),
+            (
+                serde_json::to_value(GlobalReachCause::UnknownCallee).unwrap(),
+                "unknown_callee",
+            ),
+            (
+                serde_json::to_value(OrderedFieldReadRefusal::ReceiverNotSingleton).unwrap(),
+                "receiver_not_singleton",
+            ),
+            (
+                serde_json::to_value(OrderedCallAdmissionRefusal::UnknownTarget).unwrap(),
+                "unknown_target",
+            ),
+            (
+                serde_json::to_value(InferenceRule::NativeIntegrity).unwrap(),
+                "native_integrity",
+            ),
+            (
+                serde_json::to_value(ForeignInvocation::Call).unwrap(),
+                "call",
+            ),
+            (
+                serde_json::to_value(ProgramPremiseKey::ProcessPrototypeChainAccessors).unwrap(),
+                "process_prototype_chain_accessors",
+            ),
+            (
+                serde_json::to_value(LoaderClosureFailureKind::UndeclaredHostBehavior).unwrap(),
+                "undeclared_host_behavior",
+            ),
+        ];
+        for (value, expected) in cases {
+            assert_eq!(value, expected);
+        }
+    }
+
+    #[test]
+    fn inference_rule_zero_keeps_presence_and_duplicate_checks() {
+        let inference = InferenceUse {
+            conclusion: InferenceRule::NativeIntegrity,
+            derivation_rules: BTreeSet::from([InferenceRule::NativeIntegrity]),
+            value_input_refs: BTreeSet::new(),
+            descriptor_copy_author_refs: BTreeSet::new(),
+            argument_input_refs: BTreeSet::new(),
+            native_operation_input_refs: BTreeSet::new(),
+            imported_primitive_array_spread_input_refs: BTreeSet::new(),
+        };
+        let wire = inference.to_proto().unwrap();
+        assert_eq!(wire.conclusion, Some(0));
+        assert_eq!(wire.derivation_rules, vec![0]);
+        assert_eq!(InferenceUse::from_proto(wire.clone()).unwrap(), inference);
+
+        let mut missing = wire.clone();
+        missing.conclusion = None;
+        assert!(InferenceUse::from_proto(missing).is_err());
+
+        let mut duplicate = wire;
+        duplicate.derivation_rules.push(0);
+        assert!(InferenceUse::from_proto(duplicate).is_err());
     }
 }

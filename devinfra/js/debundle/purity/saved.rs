@@ -209,7 +209,7 @@ mod tests {
         use proto::saved_purity::Value;
         assert!(RestoredPurities::restore(proto::SavedPurityGraph { nodes: vec![] }).is_ok());
         let mut incomplete_dependencies = ProofDependencies::default().to_proto().unwrap();
-        incomplete_dependencies.program_premises.push(0);
+        incomplete_dependencies.program_premises.push(i32::MAX);
         for value in [None, Some(Value::Pure(incomplete_dependencies))] {
             let graph = proto::SavedPurityGraph {
                 nodes: vec![proto::SavedPurity { value }],

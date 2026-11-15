@@ -463,10 +463,6 @@ impl ProtoConvert<proto::HavocReach> for HavocReach {
             Value::Bounded(_) => Self::Bounded,
             Value::Global(cause) => {
                 let cause = GlobalReachCause::try_from(cause)?;
-                ensure!(
-                    cause != GlobalReachCause::Unspecified,
-                    "unspecified global reach cause"
-                );
                 Self::Global { cause }
             }
         })
@@ -524,27 +520,14 @@ impl ProtoConvert<proto::ExecutionPrecisionLossReason> for ExecutionPrecisionLos
                         value.operation,
                         "ExecutionPrecisionLossReason.unsupported_operation.operation",
                     )?)?;
-                    ensure!(
-                        operation != ExecutionOperation::Unspecified,
-                        "unspecified execution operation"
-                    );
                     let ordered_field_read_refusal = value
                         .ordered_field_read_refusal
                         .map(OrderedFieldReadRefusal::try_from)
                         .transpose()?;
-                    ensure!(
-                        ordered_field_read_refusal != Some(OrderedFieldReadRefusal::Unspecified),
-                        "unspecified ordered field read refusal"
-                    );
                     let ordered_call_admission_refusal = value
                         .ordered_call_admission_refusal
                         .map(OrderedCallAdmissionRefusal::try_from)
                         .transpose()?;
-                    ensure!(
-                        ordered_call_admission_refusal
-                            != Some(OrderedCallAdmissionRefusal::Unspecified),
-                        "unspecified ordered call admission refusal"
-                    );
                     Self::UnsupportedOperation {
                         operation,
                         ordered_field_read_refusal,
@@ -673,10 +656,6 @@ impl ProtoConvert<proto::AssumedEffectReason> for AssumedEffectReason {
             },
             Value::WholeBodyPromotion(operation) => {
                 let operation = ExecutionOperation::try_from(operation)?;
-                ensure!(
-                    operation != ExecutionOperation::Unspecified,
-                    "unspecified execution operation"
-                );
                 Self::WholeBodyPromotion { operation }
             }
             Value::PrivateConstructorRestore(_) => Self::PrivateConstructorRestore,
@@ -774,12 +753,26 @@ mod protobuf_tests {
             })
             .is_err()
         );
+        let reach = HavocReach::Global {
+            cause: GlobalReachCause::UnknownCallee,
+        };
+        assert_eq!(
+            HavocReach::from_proto(reach.to_proto().unwrap()).unwrap(),
+            reach
+        );
+        let promotion = AssumedEffectReason::WholeBodyPromotion {
+            operation: ExecutionOperation::MembershipProtocol,
+        };
+        assert_eq!(
+            AssumedEffectReason::from_proto(promotion.to_proto().unwrap()).unwrap(),
+            promotion
+        );
         let valid = ExecutionPrecisionLossReason::UnsupportedOperation {
             operation: ExecutionOperation::ObjectSpread,
             ordered_field_read_refusal: None,
             ordered_call_admission_refusal: Some(OrderedCallAdmissionRefusal::UnsupportedReceiver),
         };
-        for operation in [0, -1, i32::MAX] {
+        for operation in [-1, i32::MAX] {
             let mut malformed = valid.to_proto().unwrap();
             let Some(proto::execution_precision_loss_reason::Value::UnsupportedOperation(value)) =
                 &mut malformed.value
@@ -789,7 +782,7 @@ mod protobuf_tests {
             value.operation = Some(operation);
             assert!(ExecutionPrecisionLossReason::from_proto(malformed).is_err());
         }
-        for invalid in [0, -1, i32::MAX] {
+        for invalid in [-1, i32::MAX] {
             for field in 0..2 {
                 let mut malformed = valid.to_proto().unwrap();
                 let Some(proto::execution_precision_loss_reason::Value::UnsupportedOperation(
@@ -826,15 +819,24 @@ mod protobuf_tests {
                 pool_size: 0,
             });
         }
-        for ordered_field_read_refusal in [None, Some(OrderedFieldReadRefusal::MissingField)] {
-            for ordered_call_admission_refusal in
-                [None, Some(OrderedCallAdmissionRefusal::UnknownTarget)]
-            {
-                reasons.push(ExecutionPrecisionLossReason::UnsupportedOperation {
-                    operation: ExecutionOperation::MemberRead,
-                    ordered_field_read_refusal,
-                    ordered_call_admission_refusal,
-                });
+        for operation in [
+            ExecutionOperation::MembershipProtocol,
+            ExecutionOperation::MemberRead,
+        ] {
+            for ordered_field_read_refusal in [
+                None,
+                Some(OrderedFieldReadRefusal::ReceiverNotSingleton),
+                Some(OrderedFieldReadRefusal::MissingField),
+            ] {
+                for ordered_call_admission_refusal in
+                    [None, Some(OrderedCallAdmissionRefusal::UnknownTarget)]
+                {
+                    reasons.push(ExecutionPrecisionLossReason::UnsupportedOperation {
+                        operation,
+                        ordered_field_read_refusal,
+                        ordered_call_admission_refusal,
+                    });
+                }
             }
         }
         for reason in reasons {

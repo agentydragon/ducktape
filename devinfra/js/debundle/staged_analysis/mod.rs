@@ -1160,7 +1160,7 @@ mod protobuf_tests {
             })
             .is_err()
         );
-        for kind in [0, i32::MAX] {
+        for kind in [-1, i32::MAX] {
             let mut malformed = report(None).to_proto().unwrap();
             let Some(proto::export_reentry_loader_derivation::Value::LoaderClosure(closure)) =
                 &mut malformed.loader.as_mut().unwrap().value

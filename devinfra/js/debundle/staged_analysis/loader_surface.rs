@@ -954,10 +954,6 @@ impl ProtoConvert<proto::ExportReentryLoaderFailure> for ExportReentryLoaderFail
             value.reason,
             "ExportReentryLoaderFailure.reason",
         )?)?;
-        ensure!(
-            reason != proto::LoaderClosureFailureKind::Unspecified,
-            "unspecified saved-analysis loader closure failure"
-        );
         Ok(Self {
             reason,
             occurrences: ProtoConvert::from_proto(required(
@@ -971,6 +967,7 @@ impl ProtoConvert<proto::ExportReentryLoaderFailure> for ExportReentryLoaderFail
         })
     }
 }
+
 impl ProtoConvert<proto::LoaderRequestReportTarget> for LoaderRequestReportTarget {
     fn to_proto(&self) -> Result<proto::LoaderRequestReportTarget> {
         use proto::loader_request_report_target::Value;
@@ -1059,10 +1056,6 @@ impl ProtoConvert<proto::ExportReentryLoaderDerivation> for ExportReentryLoaderD
                         BTreeSet::new(),
                         |mut keys, key| {
                             let key = ProgramPremiseKey::try_from(key)?;
-                            ensure!(
-                                key != ProgramPremiseKey::Unspecified,
-                                "unspecified program premise"
-                            );
                             ensure!(keys.insert(key), "duplicate program premise");
                             Ok(keys)
                         },
@@ -1288,5 +1281,32 @@ impl ProtoConvert<proto::LoaderSite> for LoaderSite {
             },
             Value::TopLevelAwait(_) => Self::TopLevelAwait,
         })
+    }
+}
+
+#[cfg(test)]
+mod protobuf_tests {
+    use super::*;
+
+    #[test]
+    fn first_failure_kind_is_zero_but_reason_presence_is_required() {
+        let failure = ExportReentryLoaderFailure {
+            reason: LoaderClosureFailureKind::UndeclaredHostBehavior,
+            occurrences: 1,
+            first: LoaderClosureWitness::HostBehavior(
+                HostBehaviorKey::SynchronousLoadRunsAppCallbacks,
+            ),
+        };
+        let mut wire = failure.to_proto().unwrap();
+        assert_eq!(wire.reason, Some(0));
+        assert_eq!(
+            ExportReentryLoaderFailure::from_proto(wire.clone())
+                .unwrap()
+                .reason,
+            LoaderClosureFailureKind::UndeclaredHostBehavior
+        );
+
+        wire.reason = None;
+        assert!(ExportReentryLoaderFailure::from_proto(wire).is_err());
     }
 }

@@ -232,10 +232,6 @@ impl ProtoConvert<proto::NativeIntegrityUse> for NativeIntegrityUse {
                 BTreeSet::new(),
                 |mut keys, key| {
                     let key = ProgramPremiseKey::try_from(key)?;
-                    ensure!(
-                        key != ProgramPremiseKey::Unspecified,
-                        "unspecified program premise"
-                    );
                     ensure!(keys.insert(key), "duplicate program premise");
                     Ok(keys)
                 },

@@ -412,10 +412,6 @@ impl ProtoConvert<proto::ForeignCallSummary> for ForeignCallSummary {
             value.invocation,
             "ForeignCallSummary.invocation",
         )?)?;
-        ensure!(
-            invocation != ForeignInvocation::Unspecified,
-            "unspecified foreign invocation"
-        );
         Ok(Self {
             defining_module: required(value.defining_module, "ForeignCallSummary.defining_module")?,
             export: required(value.export, "ForeignCallSummary.export")?,
@@ -1156,10 +1152,6 @@ impl ProtoConvert<proto::ProofDependencies> for ProofDependencies {
         let mut program_premises = BTreeSet::new();
         for key in value.program_premises {
             let key = ProgramPremiseKey::try_from(key)?;
-            ensure!(
-                key != ProgramPremiseKey::Unspecified,
-                "unspecified program premise"
-            );
             ensure!(program_premises.insert(key), "duplicate program premise");
         }
         Ok(Self {
@@ -1417,6 +1409,25 @@ mod tests {
     }
 
     #[test]
+    fn first_program_premise_round_trips_and_duplicate_keys_are_rejected() {
+        use crate::saved_proto::ProtoConvert;
+        let dependencies = ProofDependencies {
+            program_premises: [super::super::ProgramPremiseKey::ProcessPrototypeChainAccessors]
+                .into(),
+            ..ProofDependencies::default()
+        };
+        let mut wire = dependencies.to_proto().unwrap();
+        assert_eq!(wire.program_premises, vec![0]);
+        assert_eq!(
+            ProofDependencies::from_proto(wire.clone()).unwrap(),
+            dependencies
+        );
+
+        wire.program_premises.push(0);
+        assert!(ProofDependencies::from_proto(wire).is_err());
+    }
+
+    #[test]
     fn saved_capabilities_keep_zero_indexes_and_optional_locations() {
         use super::{
             CallbackFactoryEvidence, NativeInputKind, NativeOperationSelectorProvenance,
@@ -1646,6 +1657,10 @@ mod tests {
         let mut missing_proof = wire.clone();
         missing_proof.foreign_call.as_mut().unwrap().dependencies = None;
         assert!(CallableSummary::from_proto(missing_proof).is_err());
+
+        let mut missing_invocation = wire.clone();
+        missing_invocation.foreign_call.as_mut().unwrap().invocation = None;
+        assert!(CallableSummary::from_proto(missing_invocation).is_err());
 
         let absent_capability = CallableSummary::default();
         let wire = absent_capability

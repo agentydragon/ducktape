@@ -967,7 +967,7 @@ mod tests {
             .to_proto()
             .expect("complete proof");
         assert!(ProofDependencies::from_proto(dependencies.clone()).is_ok());
-        dependencies.program_premises.push(0);
+        dependencies.program_premises.push(i32::MAX);
         assert!(ProofDependencies::from_proto(dependencies).is_err());
         let mut duplicate = ProofDependencies::default().to_proto().unwrap();
         duplicate.program_premises = vec![1, 1];
