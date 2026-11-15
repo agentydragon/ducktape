@@ -25,6 +25,7 @@ from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_f
 
 from agentplane.system_tests.k3s import baseline
 from agentplane.system_tests.vm import boot_rcu, guest_logs, host_qemu, infrastructure, shutdown_diagnostic
+from agentplane.system_tests.vm.env_flags import strict_env_flag
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 _NAMESPACE_PREFIX = "vm-tcg-shutdown-"
@@ -69,87 +70,6 @@ def _cycle_count() -> int:
     if count not in range(1, 4):
         raise ValueError(f"{_CYCLES_ENV} must be an integer from 1 to 3, got {value!r}")
     return count
-
-
-def _debug_kernel_args() -> bool:
-    match os.environ.get(_DEBUG_KERNEL_ARGS_ENV, "0"):
-        case "0":
-            return False
-        case "1":
-            return True
-        case value:
-            raise ValueError(f"{_DEBUG_KERNEL_ARGS_ENV} must be '0' or '1', got {value!r}")
-
-
-def _boot_rcu_observer() -> bool:
-    match os.environ.get(_BOOT_RCU_ENV, "0"):
-        case "0":
-            return False
-        case "1":
-            return True
-        case value:
-            raise ValueError(f"{_BOOT_RCU_ENV} must be '0' or '1', got {value!r}")
-
-
-def _shutdown_sysrq() -> bool:
-    match os.environ.get(_SHUTDOWN_SYSRQ_ENV, "0"):
-        case "0":
-            return False
-        case "1":
-            return True
-        case value:
-            raise ValueError(f"{_SHUTDOWN_SYSRQ_ENV} must be '0' or '1', got {value!r}")
-
-
-def _synthetic_slice_probe() -> bool:
-    match os.environ.get(_SYNTHETIC_SLICE_ENV, "0"):
-        case "0":
-            return False
-        case "1":
-            return True
-        case value:
-            raise ValueError(f"{_SYNTHETIC_SLICE_ENV} must be '0' or '1', got {value!r}")
-
-
-def _cgroup_pilot() -> bool:
-    match os.environ.get(_CGROUP_PILOT_ENV, "0"):
-        case "0":
-            return False
-        case "1":
-            return True
-        case value:
-            raise ValueError(f"{_CGROUP_PILOT_ENV} must be '0' or '1', got {value!r}")
-
-
-def _cgroup_stress() -> bool:
-    match os.environ.get(_CGROUP_STRESS_ENV, "0"):
-        case "0":
-            return False
-        case "1":
-            return True
-        case value:
-            raise ValueError(f"{_CGROUP_STRESS_ENV} must be '0' or '1', got {value!r}")
-
-
-def _delegated_cgroup_stress() -> bool:
-    match os.environ.get(_DELEGATED_CGROUP_STRESS_ENV, "0"):
-        case "0":
-            return False
-        case "1":
-            return True
-        case value:
-            raise ValueError(f"{_DELEGATED_CGROUP_STRESS_ENV} must be '0' or '1', got {value!r}")
-
-
-def _skip_virtiofs_shutdown_policy() -> bool:
-    """Skip only the namespace-scoped virtiofs native-sidecar rule when explicitly requested."""
-    match os.environ.get(_SKIP_VIRTIOFS_POLICY_ENV, "0"):
-        case "0":
-            return False
-        case "1":
-            return True
-        case value:
-            raise ValueError(f"{_SKIP_VIRTIOFS_POLICY_ENV} must be '0' or '1', got {value!r}")
 
 
 def _layout_paths(runfiles: Runfiles, images: dict[str, str]) -> dict[str, Path]:
@@ -1151,29 +1071,29 @@ def test_shutdown_policy_cleanup_after_generation_failure_ignores_missing_cluste
 
 def test_virtiofs_policy_skip_is_opt_in_and_rejects_other_values(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(_SKIP_VIRTIOFS_POLICY_ENV, raising=False)
-    assert _skip_virtiofs_shutdown_policy() is False
+    assert strict_env_flag(_SKIP_VIRTIOFS_POLICY_ENV) is False
 
     monkeypatch.setenv(_SKIP_VIRTIOFS_POLICY_ENV, "1")
-    assert _skip_virtiofs_shutdown_policy() is True
+    assert strict_env_flag(_SKIP_VIRTIOFS_POLICY_ENV) is True
 
     monkeypatch.setenv(_SKIP_VIRTIOFS_POLICY_ENV, "0")
-    assert _skip_virtiofs_shutdown_policy() is False
+    assert strict_env_flag(_SKIP_VIRTIOFS_POLICY_ENV) is False
 
     monkeypatch.setenv(_SKIP_VIRTIOFS_POLICY_ENV, "true")
     with pytest.raises(ValueError, match="must be '0' or '1'"):
-        _skip_virtiofs_shutdown_policy()
+        strict_env_flag(_SKIP_VIRTIOFS_POLICY_ENV)
 
 
 def test_shutdown_policy_cycle_count_and_debug_args_are_bounded_opt_ins(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(_CYCLES_ENV, raising=False)
     monkeypatch.delenv(_DEBUG_KERNEL_ARGS_ENV, raising=False)
     assert _cycle_count() == 1
-    assert _debug_kernel_args() is False
+    assert strict_env_flag(_DEBUG_KERNEL_ARGS_ENV) is False
 
     monkeypatch.setenv(_CYCLES_ENV, "3")
     monkeypatch.setenv(_DEBUG_KERNEL_ARGS_ENV, "1")
     assert _cycle_count() == 3
-    assert _debug_kernel_args() is True
+    assert strict_env_flag(_DEBUG_KERNEL_ARGS_ENV) is True
 
     for value in ("0", "4", "abc"):
         monkeypatch.setenv(_CYCLES_ENV, value)
@@ -1181,7 +1101,7 @@ def test_shutdown_policy_cycle_count_and_debug_args_are_bounded_opt_ins(monkeypa
             _cycle_count()
     monkeypatch.setenv(_DEBUG_KERNEL_ARGS_ENV, "true")
     with pytest.raises(ValueError, match="must be '0' or '1'"):
-        _debug_kernel_args()
+        strict_env_flag(_DEBUG_KERNEL_ARGS_ENV)
 
 
 def test_shutdown_policy_debug_kernel_args_change_only_guest_boot_args() -> None:
@@ -1202,12 +1122,12 @@ def test_shutdown_policy_debug_kernel_args_change_only_guest_boot_args() -> None
 
 def test_boot_rcu_observer_is_opt_in_and_changes_only_guest_boot_args(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(_BOOT_RCU_ENV, raising=False)
-    assert _boot_rcu_observer() is False
+    assert strict_env_flag(_BOOT_RCU_ENV) is False
     monkeypatch.setenv(_BOOT_RCU_ENV, "1")
-    assert _boot_rcu_observer() is True
+    assert strict_env_flag(_BOOT_RCU_ENV) is True
     monkeypatch.setenv(_BOOT_RCU_ENV, "true")
     with pytest.raises(ValueError, match="must be '0' or '1'"):
-        _boot_rcu_observer()
+        strict_env_flag(_BOOT_RCU_ENV)
 
     images = {
         "agentplane-vm-guest-boot:unset": "boot",
@@ -1225,12 +1145,12 @@ def test_boot_rcu_observer_is_opt_in_and_changes_only_guest_boot_args(monkeypatc
 
 def test_synthetic_slice_probe_is_opt_in_and_changes_only_guest_boot_args(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(_SYNTHETIC_SLICE_ENV, raising=False)
-    assert _synthetic_slice_probe() is False
+    assert strict_env_flag(_SYNTHETIC_SLICE_ENV) is False
     monkeypatch.setenv(_SYNTHETIC_SLICE_ENV, "1")
-    assert _synthetic_slice_probe() is True
+    assert strict_env_flag(_SYNTHETIC_SLICE_ENV) is True
     monkeypatch.setenv(_SYNTHETIC_SLICE_ENV, "true")
     with pytest.raises(ValueError, match="must be '0' or '1'"):
-        _synthetic_slice_probe()
+        strict_env_flag(_SYNTHETIC_SLICE_ENV)
 
     images = {
         "agentplane-vm-guest-boot:unset": "boot",
@@ -1287,12 +1207,12 @@ def test_synthetic_slice_success_requires_ordered_exact_guest_lines(
 
 def test_cgroup_pilot_is_opt_in_and_changes_only_guest_boot_args(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(_CGROUP_PILOT_ENV, raising=False)
-    assert _cgroup_pilot() is False
+    assert strict_env_flag(_CGROUP_PILOT_ENV) is False
     monkeypatch.setenv(_CGROUP_PILOT_ENV, "1")
-    assert _cgroup_pilot() is True
+    assert strict_env_flag(_CGROUP_PILOT_ENV) is True
     monkeypatch.setenv(_CGROUP_PILOT_ENV, "true")
     with pytest.raises(ValueError, match="must be '0' or '1'"):
-        _cgroup_pilot()
+        strict_env_flag(_CGROUP_PILOT_ENV)
 
     images = {
         "agentplane-vm-guest-boot:unset": "boot",
@@ -1350,12 +1270,12 @@ def test_cgroup_pilot_requires_all_ordered_exact_results_before_acpi(
 
 def test_cgroup_stress_is_opt_in_and_changes_only_guest_boot_args(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(_CGROUP_STRESS_ENV, raising=False)
-    assert _cgroup_stress() is False
+    assert strict_env_flag(_CGROUP_STRESS_ENV) is False
     monkeypatch.setenv(_CGROUP_STRESS_ENV, "1")
-    assert _cgroup_stress() is True
+    assert strict_env_flag(_CGROUP_STRESS_ENV) is True
     monkeypatch.setenv(_CGROUP_STRESS_ENV, "true")
     with pytest.raises(ValueError, match="must be '0' or '1'"):
-        _cgroup_stress()
+        strict_env_flag(_CGROUP_STRESS_ENV)
 
     images = {
         "agentplane-vm-guest-boot:unset": "boot",
@@ -1540,12 +1460,12 @@ def test_delegated_cgroup_stress_requires_owned_descendant_witness_and_clean_pai
 
 def test_delegated_cgroup_stress_is_opt_in_and_adds_only_its_guest_boot_arg(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(_DELEGATED_CGROUP_STRESS_ENV, raising=False)
-    assert _delegated_cgroup_stress() is False
+    assert strict_env_flag(_DELEGATED_CGROUP_STRESS_ENV) is False
     monkeypatch.setenv(_DELEGATED_CGROUP_STRESS_ENV, "1")
-    assert _delegated_cgroup_stress() is True
+    assert strict_env_flag(_DELEGATED_CGROUP_STRESS_ENV) is True
     monkeypatch.setenv(_DELEGATED_CGROUP_STRESS_ENV, "true")
     with pytest.raises(ValueError, match="must be '0' or '1'"):
-        _delegated_cgroup_stress()
+        strict_env_flag(_DELEGATED_CGROUP_STRESS_ENV)
 
     images = {
         "agentplane-vm-guest-boot:unset": "boot",
@@ -1914,14 +1834,14 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
     all_images = vm_images | guest_images
     (output / "input-images.json").write_text(json.dumps(image_manifest, indent=2, sort_keys=True))
     cycle_count = _cycle_count()
-    skip_virtiofs_policy = _skip_virtiofs_shutdown_policy()
-    debug_kernel_args = _debug_kernel_args()
-    boot_rcu_observe = _boot_rcu_observer()
-    shutdown_sysrq = _shutdown_sysrq()
-    synthetic_slice_probe = _synthetic_slice_probe()
-    cgroup_pilot = _cgroup_pilot()
-    cgroup_stress = _cgroup_stress()
-    delegated_cgroup_stress = _delegated_cgroup_stress()
+    skip_virtiofs_policy = strict_env_flag(_SKIP_VIRTIOFS_POLICY_ENV)
+    debug_kernel_args = strict_env_flag(_DEBUG_KERNEL_ARGS_ENV)
+    boot_rcu_observe = strict_env_flag(_BOOT_RCU_ENV)
+    shutdown_sysrq = strict_env_flag(_SHUTDOWN_SYSRQ_ENV)
+    synthetic_slice_probe = strict_env_flag(_SYNTHETIC_SLICE_ENV)
+    cgroup_pilot = strict_env_flag(_CGROUP_PILOT_ENV)
+    cgroup_stress = strict_env_flag(_CGROUP_STRESS_ENV)
+    delegated_cgroup_stress = strict_env_flag(_DELEGATED_CGROUP_STRESS_ENV)
     if synthetic_slice_probe and not boot_rcu_observe:
         raise ValueError(f"{_SYNTHETIC_SLICE_ENV}=1 requires {_BOOT_RCU_ENV}=1 for PID 1 and timer evidence")
     if cgroup_pilot and not boot_rcu_observe:
