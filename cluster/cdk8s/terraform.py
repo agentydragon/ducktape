@@ -1,7 +1,6 @@
 """Ducktape's tofu-controller `Terraform` CRs, built on `providers/tofu_controller`. Each one runs
 as `tf-runner` in flux-system and keeps its state in the OVH tofu-state Postgres. `gitops_terraform`
-builds the one for each `tf/gitops/<name>` module, reading the module's own artifact
-(`gitops_module`).
+builds the one for each `tf/gitops/<name>` module, reading the module's own artifact.
 
 tofu-controller replans whenever its source's artifact revision moves. The `ducktape`
 GitRepository's revision is the `devel` commit, so a CR reading it would replan on every
@@ -39,8 +38,7 @@ from tofu_controller.io.fluxcd.contrib.infra import (
     TerraformV1Alpha2SpecVars,
 )
 
-from cluster.cdk8s import ducktape_flux, flux
-from cluster.cdk8s.artifact_generators import artifact
+from cluster.cdk8s import flux
 from cluster.cdk8s.flux import artifact_directory
 from cluster.cdk8s.secret_ref import SecretKey
 from cluster.cdk8s.tofu_state import db
@@ -59,11 +57,6 @@ _RUNNER_RESOURCES = TerraformV1Alpha2SpecRunnerPodTemplateSpecResources(
         "memory": TerraformV1Alpha2SpecRunnerPodTemplateSpecResourcesRequests.from_string("512Mi"),
     }
 )
-
-
-def gitops_module(name: str) -> ArtifactGeneratorSpecArtifacts:
-    """The artifact packaging the `tf/gitops/<name>` module, which its `gitops_terraform` CR reads."""
-    return artifact(f"tf-gitops-{name}", f"{ducktape_flux.TF_GITOPS_ROOT}/{name}")
 
 
 def gitops_state_schema(name: str) -> str:
@@ -162,9 +155,9 @@ def gitops_terraform(
     volumes: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumes] = (),
     volume_mounts: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumeMounts] = (),
 ) -> TerraformV1Alpha2:
-    """The module `module` packages (`gitops_module`), run from that artifact and, unless
-    `auto_apply=False`, auto-approved. Without auto-apply each run plans and waits for a person to
-    set `approvePlan` to that plan's id, so drift is reported but nothing changes unasked.
+    """The `module` artifact packages a `tf/gitops` directory that the runner reads. Unless
+    `auto_apply=False`, each plan is auto-approved. Without auto-apply each run plans and waits
+    for a person to set `approvePlan` to that plan's id, so drift is reported but nothing changes unasked.
     The module directory's name is the CR's name and, underscored, its state schema unless
     `schema` names the one its state already lives in.
 

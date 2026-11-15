@@ -1,20 +1,21 @@
 """Typed cdk8s synthesis for source-watcher ArtifactGenerator resources.
 
-The entry point builds each consumer's artifact before its Kustomization node, which
-reads `sourceRef` and `path` off it, and passes every artifact here last.
+The entry point builds the two resources early. Each active consumer adds its artifact to the
+real resource before constructing the Kustomization that reads it; parked artifacts can still
+use `artifact()` without being added to either generated resource.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart, JsonPatch
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDependsOn,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
 from source_watcher_crds.io.fluxcd.extensions.source import (
-    ArtifactGenerator,
+    ArtifactGenerator as _ArtifactGenerator,
     ArtifactGeneratorSpec,
     ArtifactGeneratorSpecArtifacts,
     ArtifactGeneratorSpecArtifactsCopy,
@@ -82,23 +83,34 @@ def artifact_generators(flux_chart: Chart) -> Kustomization:
     )
 
 
-def write_artifact_generators(
-    root: Path,
-    *,
-    ducktape: Sequence[ArtifactGeneratorSpecArtifacts],
-    flux_system: Sequence[ArtifactGeneratorSpecArtifacts],
-) -> None:
-    """Synthesize one ArtifactGenerator per source repository from the artifacts its consumers read."""
-    app = App()
-    chart = Chart(app, "artifact-generators", disable_resource_name_hashes=True)
-    for name, artifacts, source in (
-        ("ducktape-artifacts", ducktape, _DUCKTAPE_SOURCE),
-        ("flux-system-artifacts", flux_system, _FLUX_SYSTEM_SOURCE),
-    ):
-        ArtifactGenerator(
-            chart,
-            name,
-            metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
-            spec=ArtifactGeneratorSpec(artifacts=list(artifacts), sources=[source]),
-        )
+class ArtifactGenerator(_ArtifactGenerator):
+    """Incrementally append typed artifact specs to this source-watcher resource."""
+
+    def add_artifact(
+        self, name: str, *directories: str, files: Mapping[str, str] | None = None
+    ) -> ArtifactGeneratorSpecArtifacts:
+        spec = artifact(name, *directories, files=files)
+        self.add_json_patch(JsonPatch.add("/spec/artifacts/-", spec))
+        return spec
+
+
+def artifact_generator_resources(chart: Chart) -> tuple[ArtifactGenerator, ArtifactGenerator]:
+    """Build the two source-watcher resources that accept artifacts from their consumers."""
+    ducktape = ArtifactGenerator(
+        chart,
+        "ducktape-artifacts",
+        metadata=ApiObjectMetadata(name="ducktape-artifacts", namespace=NAMESPACE),
+        spec=ArtifactGeneratorSpec(artifacts=[], sources=[_DUCKTAPE_SOURCE]),
+    )
+    flux_system = ArtifactGenerator(
+        chart,
+        "flux-system-artifacts",
+        metadata=ApiObjectMetadata(name="flux-system-artifacts", namespace=NAMESPACE),
+        spec=ArtifactGeneratorSpec(artifacts=[], sources=[_FLUX_SYSTEM_SOURCE]),
+    )
+    return ducktape, flux_system
+
+
+def write_artifact_generators(root: Path, app: App) -> None:
+    """Write the source-watcher resources already populated by their consumers."""
     write_app(root, _ARTIFACT_GENERATORS_DIR, app)
