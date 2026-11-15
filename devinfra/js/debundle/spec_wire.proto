@@ -557,13 +557,7 @@ enum NativeOperationKind {
   NATIVE_OPERATION_KIND_SYMBOL = 4;
   NATIVE_OPERATION_KIND_SYMBOL_FOR = 5;
   NATIVE_OPERATION_KIND_SET_FROM_PRIMITIVE_ARRAY = 6;
-  // One static own-data function property read on the original Object constructor.
-  NATIVE_OPERATION_KIND_OBJECT_OWN_DATA_FUNCTION_READ = 8;
-  // Exact well-known Symbol data reads in a direct class initializer's method keys.
-  NATIVE_OPERATION_KIND_SYMBOL_WELL_KNOWN_CLASS_KEYS = 9;
-  // Exact class-key reads of own data properties with unknown primitive values.
-  NATIVE_OPERATION_KIND_SYMBOL_PRIMITIVE_CLASS_KEYS = 10;
-  NATIVE_OPERATION_KIND_PROMISE_RESOLVE = 12;
+  NATIVE_OPERATION_KIND_PROMISE_RESOLVE = 7;
 }
 
 message InitializerCallEffectInputContract {
