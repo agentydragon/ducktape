@@ -8137,6 +8137,16 @@ data:
       tls:
         ca_file: /run/agentplane/workload-trust/ca-certificates.crt
         server_uri: spiffe://agentplane/session-dispatcher
+    environment_service:
+      target: sandbox-controller.agentplane-staging.svc.cluster.local:8082
+      token_file: ""
+      request_timeout_s: 40
+      tls:
+        ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+        server_uri: spiffe://agentplane/sandbox-controller
+        cert_file: /run/agentplane/workload-tls/tls.crt
+        key_file: /run/agentplane/workload-tls/tls.key
+        client_uri: spiffe://agentplane/actions
     session_delegation_history:
       target: history-service.agentplane-staging.svc.cluster.local:8080
       token_file: /var/run/secrets/actions/history

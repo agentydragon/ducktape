@@ -10,8 +10,9 @@ history and browser sync, notifications, actions and egress) and direct API defi
 
 The Controller serves EnvironmentService on each replica at `sandbox-controller:8082`, with
 `spiffe://agentplane/sandbox-controller`. Its independent policy watches and uncached Kubernetes
-reads do not require leadership. App calls this receiver; Actions and Sandbox CLIs still use the
-Gateway EnvironmentService during caller cutover. Runtime-proxy calls remain at the Gateway.
+reads do not require leadership. App and Actions use this receiver with service SVIDs; Actions
+preserves typed delegation. Existing Sandbox CLI processes retain the Gateway API during overlap.
+Runtime-proxy calls remain at the Gateway.
 
 Managed Sandbox CLIs use a separate `AGENTPLANE_ENVIRONMENTS_URL` on the local platform listener.
 Its exact EnvironmentService prefix selects Sandbox-SVID TLS through central CONNECT to
@@ -102,7 +103,7 @@ flowchart LR
     edge -->|public MCP client metadata: gRPC| actions
     notif -->|Action history: gRPC mTLS, Notifications SVID| actions
     actions -->|Session commands: broker or delegated caller, gRPC| gw
-    actions -->|delegated EnvironmentService list/get/resume: gRPC, service actor grant available| gw
+    actions -->|EnvironmentService: Actions SVID mTLS; typed delegation for list/get/resume| sandboxctl
     actions -->|Session reads: broker or delegated caller, gRPC| hs
     app -->|service SVID mTLS: admin reads| egress
     app --> electric
@@ -291,7 +292,7 @@ flowchart LR
     app -->|Session creation + commands| dispatcher
     app -->|Dispatch watch for the browser: gRPC| dispatcher
     app -->|operator EnvironmentService facade: App SVID mTLS| sandboxctl
-    actions -->|caller-delegated EnvironmentService list/get; resume when enabled: gRPC| environments
+    actions -->|caller-delegated EnvironmentService list/get/resume; reviewed launches: Actions SVID mTLS| sandboxctl
     actions -->|Session commands: broker or delegated caller, gRPC| dispatcher
     actions -->|Session reads: broker or delegated caller, gRPC| history
     environments -->|resume + eligibility| lifecycle
