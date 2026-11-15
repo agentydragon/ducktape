@@ -15,69 +15,59 @@ use debundle_e2e_support::*;
 /// `peek` of one piece of module state.
 struct StateShape {
     id: &'static str,
-    name: &'static str,
     provider: &'static str,
 }
 
 const STATE_SHAPES: &[StateShape] = &[
     StateShape {
         id: "let_rebound",
-        name: "rebound let",
         provider: "let count = 0;\n\
                    export function next() { return ++count; }\n\
                    export function peek() { return count; }\n",
     },
     StateShape {
         id: "var_reassigned",
-        name: "reassigned var",
         provider: "var count = 0;\n\
                    export function next() { count = count + 1; return count; }\n\
                    export function peek() { return count; }\n",
     },
     StateShape {
         id: "object_property",
-        name: "object property",
         provider: "const state = { count: 0 };\n\
                    export function next() { return ++state.count; }\n\
                    export function peek() { return state.count; }\n",
     },
     StateShape {
         id: "array_contents",
-        name: "array contents",
         provider: "const items = [];\n\
                    export function next() { items.push(1); return items.length; }\n\
                    export function peek() { return items.length; }\n",
     },
     StateShape {
         id: "array_element",
-        name: "array element",
         provider: "const cells = [0];\n\
                    export function next() { cells[0] = cells[0] + 1; return cells[0]; }\n\
                    export function peek() { return cells[0]; }\n",
     },
     StateShape {
         id: "map_entries",
-        name: "map entries",
         provider: "const entries = new Map();\n\
                    export function next() { entries.set(entries.size, 1); return entries.size; }\n\
                    export function peek() { return entries.size; }\n",
     },
     StateShape {
         id: "class_static_field",
-        name: "class static field",
         provider: "class Counter { static count = 0; }\n\
                    export function next() { return ++Counter.count; }\n\
                    export function peek() { return Counter.count; }\n",
     },
     StateShape {
         id: "function_property",
-        name: "function property",
         provider: "export function next() { next.count = (next.count || 0) + 1; return next.count; }\n\
                    export function peek() { return next.count || 0; }\n",
     },
     StateShape {
         id: "closure_cell",
-        name: "closure cell",
         provider: "function makeCounter() {\n\
                      let count = 0;\n\
                      return { next() { return ++count; }, peek() { return count; } };\n\
@@ -88,21 +78,18 @@ const STATE_SHAPES: &[StateShape] = &[
     },
     StateShape {
         id: "function_rebound",
-        name: "rebound function",
         provider: "let current = () => 0;\n\
                    export function next() { const value = current() + 1; current = () => value; return value; }\n\
                    export function peek() { return current(); }\n",
     },
     StateShape {
         id: "global_property",
-        name: "global property",
         provider: "globalThis.sweepCount = 0;\n\
                    export function next() { return ++globalThis.sweepCount; }\n\
                    export function peek() { return globalThis.sweepCount; }\n",
     },
     StateShape {
         id: "object_alias",
-        name: "alias of mutable object",
         provider: "const state = { count: 0 };\n\
                    const view = state;\n\
                    export function next() { state.count = state.count + 1; return state.count; }\n\
@@ -115,7 +102,6 @@ const STATE_SHAPES: &[StateShape] = &[
 /// chunks between the entry and `static/state`.
 struct AccessPath {
     id: &'static str,
-    name: &'static str,
     imports: &'static str,
     helpers: &'static str,
     write: &'static str,
@@ -126,7 +112,6 @@ struct AccessPath {
 const ACCESS_PATHS: &[AccessPath] = &[
     AccessPath {
         id: "named_imports",
-        name: "named imports",
         imports: "import { next, peek } from './state.js';\n",
         helpers: "",
         write: "next()",
@@ -135,7 +120,6 @@ const ACCESS_PATHS: &[AccessPath] = &[
     },
     AccessPath {
         id: "reexport_facade",
-        name: "re-export facade",
         imports: "import { next, peek } from './facade.js';\n",
         helpers: "",
         write: "next()",
@@ -147,7 +131,6 @@ const ACCESS_PATHS: &[AccessPath] = &[
     },
     AccessPath {
         id: "import_local_export_facade",
-        name: "import and local export facade",
         imports: "import { next, peek } from './facade.js';\n",
         helpers: "",
         write: "next()",
@@ -159,7 +142,6 @@ const ACCESS_PATHS: &[AccessPath] = &[
     },
     AccessPath {
         id: "namespace_import",
-        name: "namespace import",
         imports: "import * as state from './state.js';\n",
         helpers: "",
         write: "state.next()",
@@ -168,7 +150,6 @@ const ACCESS_PATHS: &[AccessPath] = &[
     },
     AccessPath {
         id: "separate_wrapper_chunks",
-        name: "separate wrapper chunks",
         imports: "import { write } from './writer.js';\nimport { read } from './reader.js';\n",
         helpers: "",
         write: "write()",
@@ -186,7 +167,6 @@ const ACCESS_PATHS: &[AccessPath] = &[
     },
     AccessPath {
         id: "arrow_wrapper_chunk",
-        name: "arrow wrapper chunk",
         imports: "import { read, write } from './wrappers.js';\n",
         helpers: "",
         write: "write()",
@@ -200,7 +180,6 @@ const ACCESS_PATHS: &[AccessPath] = &[
     },
     AccessPath {
         id: "exported_object_methods",
-        name: "exported object methods",
         imports: "import { api } from './api.js';\n",
         helpers: "",
         write: "api.write()",
@@ -213,7 +192,6 @@ const ACCESS_PATHS: &[AccessPath] = &[
     },
     AccessPath {
         id: "local_wrapper_functions",
-        name: "local wrapper functions",
         imports: "import { next, peek } from './state.js';\n",
         helpers: "function write() { return next(); }\nfunction read() { return peek(); }\n",
         write: "write()",
@@ -222,7 +200,6 @@ const ACCESS_PATHS: &[AccessPath] = &[
     },
     AccessPath {
         id: "local_arrow_wrappers",
-        name: "local arrow wrappers",
         imports: "import { next, peek } from './state.js';\n",
         helpers: "const write = () => next();\nconst read = () => peek();\n",
         write: "write()",
@@ -231,7 +208,6 @@ const ACCESS_PATHS: &[AccessPath] = &[
     },
     AccessPath {
         id: "provider_invoked_callbacks",
-        name: "provider-invoked callbacks",
         imports: "import { next, peek } from './state.js';\nimport { apply } from './apply.js';\n",
         helpers: "",
         write: "apply(next)",
@@ -243,7 +219,6 @@ const ACCESS_PATHS: &[AccessPath] = &[
     },
     AccessPath {
         id: "native_invoked_callbacks",
-        name: "native-invoked callbacks",
         imports: "import { next, peek } from './state.js';\n",
         helpers: "",
         write: "[0].map(next)[0]",
@@ -252,7 +227,6 @@ const ACCESS_PATHS: &[AccessPath] = &[
     },
     AccessPath {
         id: "immediately_invoked_functions",
-        name: "immediately invoked functions",
         imports: "import { next, peek } from './state.js';\n",
         helpers: "",
         write: "(() => next())()",
@@ -261,7 +235,6 @@ const ACCESS_PATHS: &[AccessPath] = &[
     },
     AccessPath {
         id: "reader_second_importer_chunk",
-        name: "reader in a second importer chunk",
         imports: "import { next } from './state.js';\nimport { read } from './reader.js';\n",
         helpers: "",
         write: "next()",
@@ -273,7 +246,6 @@ const ACCESS_PATHS: &[AccessPath] = &[
     },
     AccessPath {
         id: "getter_exported_object",
-        name: "getter on an exported object",
         imports: "import { next } from './state.js';\nimport { view } from './view.js';\n",
         helpers: "",
         write: "next()",
@@ -285,7 +257,6 @@ const ACCESS_PATHS: &[AccessPath] = &[
     },
     AccessPath {
         id: "template_reader",
-        name: "template interpolation of the reader",
         imports: "import { next, peek } from './state.js';\n",
         helpers: "",
         write: "next()",
@@ -298,7 +269,6 @@ const ACCESS_PATHS: &[AccessPath] = &[
 /// or one of its properties directly.
 struct DirectRead {
     id: &'static str,
-    name: &'static str,
     provider: &'static str,
     imports: &'static str,
     write: &'static str,
@@ -310,7 +280,6 @@ struct DirectRead {
 const DIRECT_READS: &[DirectRead] = &[
     DirectRead {
         id: "live_binding",
-        name: "live binding",
         provider: "export let count = 0;\nexport function next() { return ++count; }\n",
         imports: "import { count, next } from './state.js';\n",
         write: "next()",
@@ -319,7 +288,6 @@ const DIRECT_READS: &[DirectRead] = &[
     },
     DirectRead {
         id: "live_binding_reexport",
-        name: "live binding through a re-export",
         provider: "export let count = 0;\nexport function next() { return ++count; }\n",
         imports: "import { count, next } from './facade.js';\n",
         write: "next()",
@@ -331,7 +299,6 @@ const DIRECT_READS: &[DirectRead] = &[
     },
     DirectRead {
         id: "live_binding_object_literal",
-        name: "live binding in an object literal",
         provider: "export let count = 0;\nexport function next() { return ++count; }\n",
         imports: "import { count, next } from './state.js';\n",
         write: "next()",
@@ -340,7 +307,6 @@ const DIRECT_READS: &[DirectRead] = &[
     },
     DirectRead {
         id: "live_default_export_binding",
-        name: "live default export binding",
         provider: "let count = 0;\nexport { count as default };\nexport function next() { return ++count; }\n",
         imports: "import count, { next } from './state.js';\n",
         write: "next()",
@@ -349,7 +315,6 @@ const DIRECT_READS: &[DirectRead] = &[
     },
     DirectRead {
         id: "imported_object_property",
-        name: "property of an imported object",
         provider: "export const state = { count: 0 };\nexport function next() { return ++state.count; }\n",
         imports: "import { next, state } from './state.js';\n",
         write: "next()",
@@ -358,7 +323,6 @@ const DIRECT_READS: &[DirectRead] = &[
     },
     DirectRead {
         id: "imported_array_length",
-        name: "length of an imported array",
         provider: "export const items = [];\nexport function next() { items.push(1); return items.length; }\n",
         imports: "import { items, next } from './state.js';\n",
         write: "next()",
@@ -367,7 +331,6 @@ const DIRECT_READS: &[DirectRead] = &[
     },
     DirectRead {
         id: "imported_array_element",
-        name: "element of an imported array",
         provider: "export const cells = [0];\nexport function next() { cells[0] = cells[0] + 1; return cells[0]; }\n",
         imports: "import { cells, next } from './state.js';\n",
         write: "next()",
@@ -376,7 +339,6 @@ const DIRECT_READS: &[DirectRead] = &[
     },
     DirectRead {
         id: "namespace_member_live_binding",
-        name: "namespace member live binding",
         provider: "export let count = 0;\nexport function next() { return ++count; }\n",
         imports: "import * as state from './state.js';\n",
         write: "state.next()",
@@ -385,7 +347,6 @@ const DIRECT_READS: &[DirectRead] = &[
     },
     DirectRead {
         id: "class_static_field_live_binding",
-        name: "live binding in a class static field",
         provider: "export let count = 0;\nexport function next() { return ++count; }\n",
         imports: "import { count, next } from './state.js';\n",
         write: "next()",
@@ -394,7 +355,6 @@ const DIRECT_READS: &[DirectRead] = &[
     },
     DirectRead {
         id: "importer_side_setter_live_binding",
-        name: "live binding written by the provider's importer-side setter",
         provider: "export let count = 0;\nexport function set(value) { count = value; return value; }\n",
         imports: "import { count, set } from './state.js';\n",
         write: "set(1)",
@@ -431,7 +391,6 @@ struct SweepCase {
     family: SweepFamily,
     scenario_index: usize,
     variant_index: usize,
-    label: String,
     imports: &'static str,
     helpers: &'static str,
     first: &'static str,
@@ -442,7 +401,6 @@ struct SweepCase {
 
 struct SweepScenario {
     id: String,
-    label: String,
     imports: &'static str,
     helpers: &'static str,
     write: &'static str,
@@ -456,19 +414,9 @@ fn append_scenario_cases(
     scenario_index: usize,
     scenario: SweepScenario,
 ) {
-    for (order_index, (order_id, order_label, first, second)) in [
-        (
-            "writer_then_reader",
-            "writer then reader",
-            scenario.write,
-            scenario.read,
-        ),
-        (
-            "reader_then_writer",
-            "reader then writer",
-            scenario.read,
-            scenario.write,
-        ),
+    for (order_index, (order_id, first, second)) in [
+        ("writer_then_reader", scenario.write, scenario.read),
+        ("reader_then_writer", scenario.read, scenario.write),
     ]
     .into_iter()
     .enumerate()
@@ -484,10 +432,6 @@ fn append_scenario_cases(
                 family,
                 scenario_index,
                 variant_index: order_index * 2 + flow_index,
-                label: format!(
-                    "{} / {order_label} / dataflow_aware={dataflow_aware}",
-                    scenario.label
-                ),
                 imports: scenario.imports,
                 helpers: scenario.helpers,
                 first,
@@ -517,7 +461,6 @@ fn case_registry() -> Vec<SweepCase> {
                     shape_index * ACCESS_PATHS.len() + path_index,
                     SweepScenario {
                         id: format!("state/{}/{}", shape.id, path.id),
-                        label: format!("{} / {}", shape.name, path.name),
                         imports: path.imports,
                         helpers: path.helpers,
                         write: path.write,
@@ -537,7 +480,6 @@ fn case_registry() -> Vec<SweepCase> {
             scenario_index,
             SweepScenario {
                 id: format!("direct/{}", direct.id),
-                label: direct.name.to_owned(),
                 imports: direct.imports,
                 helpers: "",
                 write: direct.write,
@@ -558,7 +500,6 @@ fn case_registry() -> Vec<SweepCase> {
             scenario_index,
             SweepScenario {
                 id: format!("stateless/{}", path.id),
-                label: format!("stateless / {}", path.name),
                 imports: path.imports,
                 helpers: path.helpers,
                 write: path.write,
@@ -612,7 +553,6 @@ fn digest_roster(cases: &[SweepCase]) -> String {
         let mut bytes = Vec::new();
         for part in [
             case.id.as_str(),
-            case.label.as_str(),
             case.imports,
             case.helpers,
             case.first,
