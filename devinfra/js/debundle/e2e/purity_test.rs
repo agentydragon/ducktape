@@ -1207,12 +1207,12 @@ const Base = k.object({ id: 1 });
 const A = k.object({ a: 1 }).describe("a");
 const B = Base.extend({ b: 2 }).describe("b");
 const C = k.object({ c: 1 }).describe("c");
-console.log(A.shape.a, A.d, B.shape.b, B.d, C.shape.c, C.d);
+console.log(A.shape.a, A.d, B.shape.id, B.shape.b, B.d, C.shape.c, C.d);
 export { A, B, C };
 "#;
 
 const FLUENT_VENDORLIB: &str = "const zodish = { object(shape) { return { shape, \
-describe(d) { return { shape: this.shape, d }; }, extend(more) { return zodish.object(more); \
+describe(d) { return { shape: this.shape, d }; }, extend(more) { return zodish.object({ ...this.shape, ...more }); \
 } }; } };\nexport { zodish as e4 };\n";
 
 #[test]
@@ -1253,7 +1253,7 @@ fn asserted_fluent_export_chains_emit_no_s_cycle() {
             .with_fluent_exports(&["e4"])
             .build()]),
     );
-    assert_preserved_entry_output(&fixture, "1 a 2 b 1 c\n");
+    assert_preserved_entry_output(&fixture, "1 a 1 2 b 1 c\n");
     assert_module_exports(
         &fixture.out_root,
         "static/app/modules/mod_a.js",
