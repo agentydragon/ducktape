@@ -1,8 +1,9 @@
 # Ordinary partitioned system-test graph
 
 The architecture branch implements the tested system-subtree composition as
-ordinary Bazel targets. Exact-head ordinary CI passes at `5ffba10981`, including
-the partitioned cases and affected build/aspect checks. Representative PR
+ordinary Bazel targets. Historical exact-head ordinary CI passes at `5ffba10981`,
+including the partitioned cases and affected build/aspect checks. The later
+rebased-source validation is recorded below. Representative PR
 comparisons, cold/burst capacity and whole-PR reliability remain unqualified.
 This does not establish the 30% complete-feedback goal.
 
@@ -105,6 +106,20 @@ driver paths have 47, including all six partitions. These are reverse-dependency
 closures, not historical base/head Bazel-diff replays or whole-PR target counts.
 The architecture PR itself changes graph-wide inputs and takes the full sweep.
 
+### Rebased source with the newer devel contracts
+
+At `7114637397306a4883eeacedf0bb0a7e20817179`, rebased onto devel
+`79db05f39e2e6c8c08ad8f9a2dfb8680d81e4d16`, all three required hosted checks
+pass, including ordinary test invocation
+[`6a98412b`](https://app.buildbuddy.io/invocation/6a98412b-cdc0-5789-ba75-5fc4c048b46b).
+Its case/artifact denominator is not independently audited in this note. Focused
+[`7ddb93cb`](https://app.buildbuddy.io/invocation/7ddb93cb-5819-4937-8d9e-ded097240b3c)
+passes five test targets and the named central-sampler scenario library with
+lint: History reader, Thread routes, renderer, retained delegated Action and MCP
+services. Devel's new Action case and updated MCP service-SPIFFE provenance
+assertion are retained; the renderer validates its TLS Path settings from JSON.
+These are correctness checks, not a repeat of the frozen performance comparison.
+
 ## Reliability repair
 
 Rebased ordinary CI at `bf57990ed4` exposed a branch-introduced test defect:
@@ -122,7 +137,9 @@ The old combined Services target also retained an unused direct protobuf
 dependency after its helper extraction. Removing it passes the target and
 helper type checks in
 [`eb67d122`](https://app.buildbuddy.io/invocation/eb67d122-b54a-46a0-990c-e27776a387cd).
-The ordinary partition removes that combined entrypoint entirely.
+The original seven-case combined entrypoint is replaced by the disjoint
+partitions. The retained `test_services` entrypoint now owns only devel's newer
+delegated-Action case on the full App-backed fixture.
 
 ## Resources and remaining qualification
 
@@ -147,8 +164,10 @@ and executes for 271.636 seconds. VM waits 94.300 seconds and executes for
 Gateway budget, finishes at 23:05:13. Removing all KVM waiting would therefore
 save at most about 120 seconds from this observed test tail, holding other work
 fixed: the managed tail would take over. This is a conditional bound, not a
-measured scaling improvement or an explanation of the queue's cause. Cold/burst
-measurements and actual queue ownership remain necessary.
+measured scaling improvement. The later reviewed admission snapshot finds all
+three compatible workers occupied at the configured maximum, so faster scale-up
+cannot fix this saturated window. Cold/burst measurements, per-action admission
+attribution and actual resource accounting remain necessary.
 
 Remaining acceptance requires:
 
