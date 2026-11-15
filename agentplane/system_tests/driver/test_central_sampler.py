@@ -68,7 +68,7 @@ async def test_acknowledged_native_sandbox_waits_for_release_after_cancellation(
         events.append("identity-deleted")
 
     delete_identity.side_effect = delete_identity_after_release
-    monkeypatch.setattr(central_sampler, "_delete_sandbox", release)
+    monkeypatch.setattr(central_sampler.sandbox_cleanup, "delete_sandbox", release)
     entered = asyncio.Event()
 
     async def use_sandbox() -> None:
@@ -112,7 +112,7 @@ async def test_native_cleanup_keeps_scenario_failure_and_records_cleanup_failure
 
     monkeypatch.setattr(central_sampler, "create_scenario_identity", AsyncMock(return_value=identity))
     monkeypatch.setattr(central_sampler, "delete_scenario_identity", delete_identity)
-    monkeypatch.setattr(central_sampler, "_delete_sandbox", fail_release)
+    monkeypatch.setattr(central_sampler.sandbox_cleanup, "delete_sandbox", fail_release)
 
     with pytest.raises(AssertionError, match="scenario failed") as raised:
         async with central_sampler._owned_native_sandbox(cluster, "owned-sandbox", "pod"):
@@ -146,10 +146,10 @@ async def test_native_delete_preconditions_the_acknowledged_uid(monkeypatch: pyt
         yield object()
 
     monkeypatch.setattr(cluster, "api_client", api_client)
-    monkeypatch.setattr(central_sampler.k8s, "CustomObjectsApi", FakeCustomObjectsApi)
+    monkeypatch.setattr(central_sampler.sandbox_cleanup.k8s, "CustomObjectsApi", FakeCustomObjectsApi)
 
     with pytest.raises(ApiException) as raised:
-        await central_sampler._delete_sandbox(cluster, "owned-sandbox", "owned-uid")
+        await central_sampler.sandbox_cleanup.delete_sandbox(cluster, "owned-sandbox", "owned-uid")
 
     assert raised.value.status == 409
     assert len(delete_options) == 1
