@@ -1,6 +1,6 @@
 """Query agent container logs from Loki.
 
-Promtail ships every pod's stdout/stderr to Loki with standard stream labels
+Node-local Alloy ships every pod's stdout/stderr to Loki with standard stream labels
 (`namespace`, `pod`, `container`, ...). Agent pods are named
 `<agent_type>-<slug>-<agent_run_id[:8]>`, so a run's logs are the streams whose
 `pod` label ends in the run-id's 8-char prefix. Container logs are not persisted

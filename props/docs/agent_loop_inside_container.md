@@ -178,7 +178,7 @@ Critic-dev uses `start_critic` → `wait_until_critic_completed` → `wait_until
 | Aspect         | Decision                                                                |
 | -------------- | ----------------------------------------------------------------------- |
 | LLM calls      | Logged by LLM proxy to `llm_requests` table                             |
-| Container logs | Shipped by Promtail to Loki, fetched by `GET /api/runs/{id}/logs`       |
+| Container logs | Shipped by Alloy to Loki, fetched by `GET /api/runs/{id}/logs`          |
 | Access         | Critic-dev agents and humans read logs through the backend's RLS checks |
 | Cost tracking  | `llm_request_costs` and `llm_run_costs` views (per-request/run)         |
 
