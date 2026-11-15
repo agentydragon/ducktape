@@ -1,5 +1,5 @@
-//! Saved per-chunk analysis. Verdicts are explicit saved data; unchanged
-//! non-purity facts retain the existing codec and borrow their storage on write.
+//! Saved per-chunk analysis. Snapshot into generated protobuf while preserving
+//! explicit binding, effect-cell, and shared-purity conversions.
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -63,34 +63,36 @@ fn restore_position_bucketed(
     })
 }
 
-struct SavedConstructorFacts {
-    reads: BTreeSet<SavedBinding>,
-    rebinds: BTreeSet<SavedBinding>,
-    calls: BTreeSet<SavedBinding>,
-    unresolved_sources: BTreeSet<SavedBinding>,
-    unresolved_inline_fn: bool,
+fn snapshot_constructor(
+    facts: &ConstructorFacts,
+    ordinals: &ContextOrdinals,
+) -> Result<proto::SavedConstructorFacts> {
+    Ok(proto::SavedConstructorFacts {
+        reads: snapshot_bindings(&facts.reads, ordinals)?.to_proto()?,
+        rebinds: snapshot_bindings(&facts.rebinds, ordinals)?.to_proto()?,
+        calls: snapshot_bindings(&facts.calls, ordinals)?.to_proto()?,
+        unresolved_sources: snapshot_bindings(&facts.unresolved_sources, ordinals)?.to_proto()?,
+        unresolved_inline_fn: Some(facts.unresolved_inline_fn),
+    })
 }
 
-impl SavedConstructorFacts {
-    fn snapshot(facts: &ConstructorFacts, ordinals: &ContextOrdinals) -> Result<Self> {
-        Ok(Self {
-            reads: snapshot_bindings(&facts.reads, ordinals)?,
-            rebinds: snapshot_bindings(&facts.rebinds, ordinals)?,
-            calls: snapshot_bindings(&facts.calls, ordinals)?,
-            unresolved_sources: snapshot_bindings(&facts.unresolved_sources, ordinals)?,
-            unresolved_inline_fn: facts.unresolved_inline_fn,
-        })
-    }
-
-    fn restore(self, ordinals: &ContextOrdinals) -> Result<ConstructorFacts> {
-        Ok(ConstructorFacts {
-            reads: restore_bindings(self.reads, ordinals)?,
-            rebinds: restore_bindings(self.rebinds, ordinals)?,
-            calls: restore_bindings(self.calls, ordinals)?,
-            unresolved_sources: restore_bindings(self.unresolved_sources, ordinals)?,
-            unresolved_inline_fn: self.unresolved_inline_fn,
-        })
-    }
+fn restore_constructor(
+    value: proto::SavedConstructorFacts,
+    ordinals: &ContextOrdinals,
+) -> Result<ConstructorFacts> {
+    Ok(ConstructorFacts {
+        reads: restore_bindings(BTreeSet::from_proto(value.reads)?, ordinals)?,
+        rebinds: restore_bindings(BTreeSet::from_proto(value.rebinds)?, ordinals)?,
+        calls: restore_bindings(BTreeSet::from_proto(value.calls)?, ordinals)?,
+        unresolved_sources: restore_bindings(
+            BTreeSet::from_proto(value.unresolved_sources)?,
+            ordinals,
+        )?,
+        unresolved_inline_fn: required(
+            value.unresolved_inline_fn,
+            "SavedConstructorFacts.unresolved_inline_fn",
+        )?,
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -130,52 +132,53 @@ impl SavedEffectCell {
     }
 }
 
-struct SavedHeapContentCells {
-    allocations: BTreeSet<SavedEffectCell>,
-    reads: BTreeSet<SavedEffectCell>,
-    writes: BTreeSet<SavedEffectCell>,
-    opaque: bool,
+fn snapshot_heap_cells(
+    cells: &HeapContentCells,
+    ordinals: &ContextOrdinals,
+) -> Result<proto::SavedHeapContentCells> {
+    Ok(proto::SavedHeapContentCells {
+        allocations: snapshot_effect_cells(&cells.allocations, ordinals)?.to_proto()?,
+        reads: snapshot_effect_cells(&cells.reads, ordinals)?.to_proto()?,
+        writes: snapshot_effect_cells(&cells.writes, ordinals)?.to_proto()?,
+        opaque: Some(cells.opaque),
+        observes_external_heap: Some(cells.observes_external_heap),
+    })
 }
 
-impl SavedHeapContentCells {
-    fn snapshot(cells: &HeapContentCells, ordinals: &ContextOrdinals) -> Result<Self> {
-        Ok(Self {
-            allocations: snapshot_effect_cells(&cells.allocations, ordinals)?,
-            reads: snapshot_effect_cells(&cells.reads, ordinals)?,
-            writes: snapshot_effect_cells(&cells.writes, ordinals)?,
-            opaque: cells.opaque,
-        })
-    }
+fn restore_heap_cells(
+    value: proto::SavedHeapContentCells,
+    ordinals: &ContextOrdinals,
+) -> Result<HeapContentCells> {
+    Ok(HeapContentCells {
+        allocations: restore_effect_cells(BTreeSet::from_proto(value.allocations)?, ordinals)?,
+        reads: restore_effect_cells(BTreeSet::from_proto(value.reads)?, ordinals)?,
+        writes: restore_effect_cells(BTreeSet::from_proto(value.writes)?, ordinals)?,
+        opaque: required(value.opaque, "SavedHeapContentCells.opaque")?,
+        observes_external_heap: required(
+            value.observes_external_heap,
+            "SavedHeapContentCells.observes_external_heap",
+        )?,
+    })
 
-    fn restore(self, ordinals: &ContextOrdinals) -> Result<HeapContentCells> {
-        Ok(HeapContentCells {
-            allocations: restore_effect_cells(self.allocations, ordinals)?,
-            reads: restore_effect_cells(self.reads, ordinals)?,
-            writes: restore_effect_cells(self.writes, ordinals)?,
-            opaque: self.opaque,
-        })
-    }
+
+fn snapshot_heap_accesses(
+    accesses: &HeapContentAccesses,
+    ordinals: &ContextOrdinals,
+) -> Result<proto::SavedHeapContentAccesses> {
+    Ok(proto::SavedHeapContentAccesses {
+        reads: snapshot_effect_cells(&accesses.reads, ordinals)?.to_proto()?,
+        writes: snapshot_effect_cells(&accesses.writes, ordinals)?.to_proto()?,
+    })
 }
 
-struct SavedHeapContentAccesses {
-    reads: BTreeSet<SavedEffectCell>,
-    writes: BTreeSet<SavedEffectCell>,
-}
-
-impl SavedHeapContentAccesses {
-    fn snapshot(accesses: &HeapContentAccesses, ordinals: &ContextOrdinals) -> Result<Self> {
-        Ok(Self {
-            reads: snapshot_effect_cells(&accesses.reads, ordinals)?,
-            writes: snapshot_effect_cells(&accesses.writes, ordinals)?,
-        })
-    }
-
-    fn restore(self, ordinals: &ContextOrdinals) -> Result<HeapContentAccesses> {
-        Ok(HeapContentAccesses {
-            reads: restore_effect_cells(self.reads, ordinals)?,
-            writes: restore_effect_cells(self.writes, ordinals)?,
-        })
-    }
+fn restore_heap_accesses(
+    value: proto::SavedHeapContentAccesses,
+    ordinals: &ContextOrdinals,
+) -> Result<HeapContentAccesses> {
+    Ok(HeapContentAccesses {
+        reads: restore_effect_cells(BTreeSet::from_proto(value.reads)?, ordinals)?,
+        writes: restore_effect_cells(BTreeSet::from_proto(value.writes)?, ordinals)?,
+    })
 }
 
 fn snapshot_effect_cells(
@@ -242,228 +245,210 @@ impl SavedFallbackOnlyEffects {
     }
 }
 
-pub struct SavedChunkFactAnalysis<'a> {
-    facts: Vec<SavedStatementFacts<'a>>,
-    top_level_await: Option<SourceUnitOrdinal>,
-    redundant_purity_hints: Cow<'a, [RedundantPurityHint]>,
-    redundant_pure_member_hints: Cow<'a, [RedundantPureMemberHint]>,
-    unconsulted_purity_hints: Cow<'a, BTreeSet<String>>,
+/// Snapshot directly into the artifact schema. Binding ordinals and purity nodes
+/// remain explicit because they depend on state shared across the whole artifact.
+pub fn snapshot_chunk_facts<'a>(
+    analysis: &'a ChunkFactAnalysis,
+    ordinals: &ContextOrdinals,
+    purities: &mut PuritySnapshot<'a>,
+) -> Result<proto::SavedChunkFactAnalysis> {
+    Ok(proto::SavedChunkFactAnalysis {
+        facts: analysis
+            .facts
+            .iter()
+            .map(|fact| snapshot_statement(fact, ordinals, purities))
+            .collect::<Result<_>>()?,
+        top_level_await: analysis.top_level_await.to_proto()?,
+        redundant_purity_hints: analysis.redundant_purity_hints.to_proto()?,
+        redundant_pure_member_hints: analysis.redundant_pure_member_hints.to_proto()?,
+        unconsulted_purity_hints: analysis.unconsulted_purity_hints.to_proto()?,
+    })
 }
 
-impl<'a> SavedChunkFactAnalysis<'a> {
-    pub fn snapshot(
-        analysis: &'a ChunkFactAnalysis,
-        ordinals: &ContextOrdinals,
-        purities: &mut PuritySnapshot<'a>,
-    ) -> Result<Self> {
-        Ok(Self {
-            facts: analysis
-                .facts
-                .iter()
-                .map(|fact| SavedStatementFacts::snapshot(fact, ordinals, purities))
-                .collect::<Result<_>>()?,
-            top_level_await: analysis.top_level_await,
-            redundant_purity_hints: Cow::Borrowed(&analysis.redundant_purity_hints),
-            redundant_pure_member_hints: Cow::Borrowed(&analysis.redundant_pure_member_hints),
-            unconsulted_purity_hints: Cow::Borrowed(&analysis.unconsulted_purity_hints),
-        })
-    }
-
-    pub fn restore(
-        self,
-        ordinals: &ContextOrdinals,
-        purities: &RestoredPurities,
-    ) -> Result<ChunkFactAnalysis> {
-        Ok(ChunkFactAnalysis {
-            facts: self
-                .facts
-                .into_iter()
-                .map(|fact| fact.restore(ordinals, purities))
-                .collect::<Result<_>>()?,
-            top_level_await: self.top_level_await,
-            redundant_purity_hints: self.redundant_purity_hints.into_owned(),
-            redundant_pure_member_hints: self.redundant_pure_member_hints.into_owned(),
-            unconsulted_purity_hints: self.unconsulted_purity_hints.into_owned(),
-        })
-    }
+pub fn restore_chunk_facts(
+    value: proto::SavedChunkFactAnalysis,
+    ordinals: &ContextOrdinals,
+    purities: &RestoredPurities,
+) -> Result<ChunkFactAnalysis> {
+    Ok(ChunkFactAnalysis {
+        facts: value
+            .facts
+            .into_iter()
+            .map(|fact| restore_statement(fact, ordinals, purities))
+            .collect::<Result<_>>()?,
+        top_level_await: Option::from_proto(value.top_level_await)?,
+        redundant_purity_hints: Vec::from_proto(value.redundant_purity_hints)?,
+        redundant_pure_member_hints: Vec::from_proto(value.redundant_pure_member_hints)?,
+        unconsulted_purity_hints: BTreeSet::from_proto(value.unconsulted_purity_hints)?,
+    })
 }
 
-struct SavedStatementFacts<'a> {
-    ordinal: SourceUnitOrdinal,
-    export_linkage: Option<ExportLinkage>,
-    stable_iterable_producers: Cow<'a, BTreeSet<SourceUnitOrdinal>>,
-    source_location: Cow<'a, Option<SourceLocation>>,
-    callback_factory_barriers: Cow<'a, [CallbackFactoryBarrierFact]>,
-    declared: BTreeSet<SavedBinding>,
-    local_bindings: BTreeSet<SavedBinding>,
-    var_declared: BTreeSet<SavedBinding>,
-    var_initializers: BTreeSet<SavedBinding>,
-    reads: PositionBucketed<BTreeSet<SavedBinding>>,
-    rebinds: PositionBucketed<BTreeSet<SavedBinding>>,
-    member_write_roots: BTreeSet<SavedBinding>,
-    local_effects: BTreeSet<SavedBinding>,
-    calls: PositionBucketed<BTreeSet<SavedBinding>>,
-    constructor: Option<SavedConstructorFacts>,
-    synchronous_calls: Option<SavedSynchronousCalls<'a>>,
-    synchronous_prefix_effects: Option<(BTreeSet<SavedBinding>, BTreeSet<SavedBinding>)>,
-    at_init_unresolved_sources: BTreeSet<SavedBinding>,
-    at_init_unresolved_inline_fn: bool,
-    first_order_unresolved_sources: BTreeSet<SavedBinding>,
-    first_order_unresolved_inline_fn: bool,
-    declares_direct_function: bool,
-    global_writes: Cow<'a, BTreeSet<String>>,
-    global_reads: Cow<'a, BTreeSet<String>>,
-    havoc: Cow<'a, BTreeSet<DataflowOpacityCause>>,
-    trusted_summary_discharged: Cow<'a, BTreeSet<DataflowOpacityCause>>,
-    heap_contents: SavedHeapContentCells,
-    heap_one_shot_allocations: BTreeSet<SavedEffectCell>,
-    deferred_heap_allocations: BTreeSet<SavedEffectCell>,
-    heap_native_integrity_uses: Cow<'a, [crate::reports::schema::NativeIntegrityUse]>,
-    purity: proto::SavedPurity,
-    kind: StatementKind,
-}
-
-impl<'a> SavedStatementFacts<'a> {
-    fn snapshot(
-        fact: &'a StatementFacts,
-        ordinals: &ContextOrdinals,
-        purities: &mut PuritySnapshot<'a>,
-    ) -> Result<Self> {
-        Ok(Self {
-            ordinal: fact.ordinal,
-            export_linkage: fact.export_linkage,
-            stable_iterable_producers: Cow::Borrowed(&fact.stable_iterable_producers),
-            source_location: Cow::Borrowed(&fact.source_location),
-            callback_factory_barriers: Cow::Borrowed(&fact.callback_factory_barriers),
-            declared: snapshot_bindings(&fact.declared, ordinals)?,
-            local_bindings: snapshot_bindings(&fact.local_bindings, ordinals)?,
-            var_declared: snapshot_bindings(&fact.var_declared, ordinals)?,
-            var_initializers: snapshot_bindings(&fact.var_initializers, ordinals)?,
-            reads: snapshot_position_bucketed(&fact.reads, ordinals)?,
-            rebinds: snapshot_position_bucketed(&fact.rebinds, ordinals)?,
-            member_write_roots: snapshot_bindings(&fact.member_write_roots, ordinals)?,
-            local_effects: snapshot_bindings(&fact.local_effects, ordinals)?,
-            calls: snapshot_position_bucketed(&fact.calls, ordinals)?,
-            constructor: fact
-                .constructor
-                .as_ref()
-                .map(|constructor| SavedConstructorFacts::snapshot(constructor, ordinals))
-                .transpose()?,
-            synchronous_calls: fact
-                .synchronous_calls
-                .as_ref()
-                .map(|calls| SavedSynchronousCalls::snapshot(calls, ordinals, purities))
-                .transpose()?,
-            synchronous_prefix_effects: fact
-                .synchronous_prefix_effects
-                .as_ref()
-                .map(|(reads, rebinds)| -> Result<_> {
-                    Ok((
-                        snapshot_bindings(reads, ordinals)?,
-                        snapshot_bindings(rebinds, ordinals)?,
-                    ))
+fn snapshot_statement<'a>(
+    fact: &'a StatementFacts,
+    ordinals: &ContextOrdinals,
+    purities: &mut PuritySnapshot<'a>,
+) -> Result<proto::SavedStatementFacts> {
+    Ok(proto::SavedStatementFacts {
+        ordinal: Some(fact.ordinal.to_proto()?),
+        export_linkage: fact.export_linkage.to_proto()?,
+        stable_iterable_producers: fact.stable_iterable_producers.to_proto()?,
+        source_location: fact.source_location.to_proto()?,
+        callback_factory_barriers: fact.callback_factory_barriers.to_proto()?,
+        declared: snapshot_bindings(&fact.declared, ordinals)?.to_proto()?,
+        local_bindings: snapshot_bindings(&fact.local_bindings, ordinals)?.to_proto()?,
+        var_declared: snapshot_bindings(&fact.var_declared, ordinals)?.to_proto()?,
+        var_initializers: snapshot_bindings(&fact.var_initializers, ordinals)?.to_proto()?,
+        reads: Some(snapshot_position_bucketed(&fact.reads, ordinals)?.to_proto()?),
+        rebinds: Some(snapshot_position_bucketed(&fact.rebinds, ordinals)?.to_proto()?),
+        member_write_roots: snapshot_bindings(&fact.member_write_roots, ordinals)?.to_proto()?,
+        local_effects: snapshot_bindings(&fact.local_effects, ordinals)?.to_proto()?,
+        calls: Some(snapshot_position_bucketed(&fact.calls, ordinals)?.to_proto()?),
+        constructor: fact
+            .constructor
+            .as_ref()
+            .map(|constructor| snapshot_constructor(constructor, ordinals))
+            .transpose()?,
+        synchronous_calls: fact
+            .synchronous_calls
+            .as_ref()
+            .map(|calls| SavedSynchronousCalls::snapshot(calls, ordinals, purities)?.to_proto())
+            .transpose()?,
+        synchronous_prefix_effects: fact
+            .synchronous_prefix_effects
+            .as_ref()
+            .map(|(reads, rebinds)| -> Result<_> {
+                Ok(proto::SavedSynchronousPrefixEffects {
+                    reads: snapshot_bindings(reads, ordinals)?.to_proto()?,
+                    rebinds: snapshot_bindings(rebinds, ordinals)?.to_proto()?,
                 })
-                .transpose()?,
-            at_init_unresolved_sources: snapshot_bindings(
-                &fact.at_init_unresolved_sources,
-                ordinals,
-            )?,
-            at_init_unresolved_inline_fn: fact.at_init_unresolved_inline_fn,
-            first_order_unresolved_sources: snapshot_bindings(
-                &fact.first_order_unresolved_sources,
-                ordinals,
-            )?,
-            first_order_unresolved_inline_fn: fact.first_order_unresolved_inline_fn,
-            declares_direct_function: fact.declares_direct_function,
-            global_writes: Cow::Borrowed(&fact.global_writes),
-            global_reads: Cow::Borrowed(&fact.global_reads),
-            havoc: Cow::Borrowed(&fact.havoc),
-            trusted_summary_discharged: Cow::Borrowed(&fact.trusted_summary_discharged),
-            heap_contents: SavedHeapContentCells::snapshot(&fact.heap_contents, ordinals)?,
-            heap_one_shot_allocations: fact
-                .heap_one_shot_allocations
-                .iter()
-                .map(|cell| SavedEffectCell::snapshot(cell, ordinals))
-                .collect::<Result<_>>()?,
-            deferred_heap_allocations: fact
-                .deferred_heap_allocations
-                .iter()
-                .map(|cell| SavedEffectCell::snapshot(cell, ordinals))
-                .collect::<Result<_>>()?,
-            heap_native_integrity_uses: Cow::Borrowed(&fact.heap_native_integrity_uses),
-            purity: purities.snapshot_value(&fact.purity)?,
-            kind: fact.kind,
-        })
-    }
+            })
+            .transpose()?,
+        at_init_unresolved_sources: snapshot_bindings(&fact.at_init_unresolved_sources, ordinals)?
+            .to_proto()?,
+        at_init_unresolved_inline_fn: Some(fact.at_init_unresolved_inline_fn),
+        first_order_unresolved_sources: snapshot_bindings(
+            &fact.first_order_unresolved_sources,
+            ordinals,
+        )?
+        .to_proto()?,
+        first_order_unresolved_inline_fn: Some(fact.first_order_unresolved_inline_fn),
+        declares_direct_function: Some(fact.declares_direct_function),
+        global_writes: fact.global_writes.to_proto()?,
+        global_reads: fact.global_reads.to_proto()?,
+        havoc: fact.havoc.to_proto()?,
+        trusted_summary_discharged: fact.trusted_summary_discharged.to_proto()?,
+        heap_contents: Some(snapshot_heap_cells(&fact.heap_contents, ordinals)?),
+        heap_one_shot_allocations: snapshot_effect_cells(
+            &fact.heap_one_shot_allocations,
+            ordinals,
+        )?
+        .to_proto()?,
+        deferred_heap_allocations: snapshot_effect_cells(
+            &fact.deferred_heap_allocations,
+            ordinals,
+        )?
+        .to_proto()?,
+        heap_native_integrity_uses: fact.heap_native_integrity_uses.to_proto()?,
+        purity: Some(purities.snapshot_value(&fact.purity)?),
+        kind: Some(fact.kind.to_proto()?),
+    })
+}
 
-    fn restore(
-        self,
-        ordinals: &ContextOrdinals,
-        purities: &RestoredPurities,
-    ) -> Result<StatementFacts> {
-        Ok(StatementFacts {
-            ordinal: self.ordinal,
-            export_linkage: self.export_linkage,
-            stable_iterable_producers: self.stable_iterable_producers.into_owned(),
-            source_location: self.source_location.into_owned(),
-            callback_factory_barriers: self.callback_factory_barriers.into_owned(),
-            declared: restore_bindings(self.declared, ordinals)?,
-            local_bindings: restore_bindings(self.local_bindings, ordinals)?,
-            var_declared: restore_bindings(self.var_declared, ordinals)?,
-            var_initializers: restore_bindings(self.var_initializers, ordinals)?,
-            reads: restore_position_bucketed(self.reads, ordinals)?,
-            rebinds: restore_position_bucketed(self.rebinds, ordinals)?,
-            member_write_roots: restore_bindings(self.member_write_roots, ordinals)?,
-            local_effects: restore_bindings(self.local_effects, ordinals)?,
-            calls: restore_position_bucketed(self.calls, ordinals)?,
-            constructor: self
-                .constructor
-                .map(|constructor| constructor.restore(ordinals))
-                .transpose()?,
-            synchronous_calls: self
-                .synchronous_calls
-                .map(|calls| calls.restore(ordinals, purities))
-                .transpose()?,
-            synchronous_prefix_effects: self
-                .synchronous_prefix_effects
-                .map(|(reads, rebinds)| -> Result<_> {
-                    Ok((
-                        restore_bindings(reads, ordinals)?,
-                        restore_bindings(rebinds, ordinals)?,
-                    ))
-                })
-                .transpose()?,
-            at_init_unresolved_sources: restore_bindings(
-                self.at_init_unresolved_sources,
-                ordinals,
-            )?,
-            at_init_unresolved_inline_fn: self.at_init_unresolved_inline_fn,
-            first_order_unresolved_sources: restore_bindings(
-                self.first_order_unresolved_sources,
-                ordinals,
-            )?,
-            first_order_unresolved_inline_fn: self.first_order_unresolved_inline_fn,
-            declares_direct_function: self.declares_direct_function,
-            global_writes: self.global_writes.into_owned(),
-            global_reads: self.global_reads.into_owned(),
-            havoc: self.havoc.into_owned(),
-            trusted_summary_discharged: self.trusted_summary_discharged.into_owned(),
-            heap_contents: self.heap_contents.restore(ordinals)?,
-            heap_one_shot_allocations: self
-                .heap_one_shot_allocations
-                .into_iter()
-                .map(|cell| cell.restore(ordinals))
-                .collect::<Result<_>>()?,
-            deferred_heap_allocations: self
-                .deferred_heap_allocations
-                .into_iter()
-                .map(|cell| cell.restore(ordinals))
-                .collect::<Result<_>>()?,
-            heap_native_integrity_uses: self.heap_native_integrity_uses.into_owned(),
-            purity: purities.restore_value(self.purity)?,
-            kind: self.kind,
-        })
-    }
+fn restore_statement(
+    value: proto::SavedStatementFacts,
+    ordinals: &ContextOrdinals,
+    purities: &RestoredPurities,
+) -> Result<StatementFacts> {
+    Ok(StatementFacts {
+        ordinal: SourceUnitOrdinal::from_proto(required(
+            value.ordinal,
+            "SavedStatementFacts.ordinal",
+        )?)?,
+        export_linkage: Option::from_proto(value.export_linkage)?,
+        stable_iterable_producers: BTreeSet::from_proto(value.stable_iterable_producers)?,
+        source_location: Option::from_proto(value.source_location)?,
+        callback_factory_barriers: Vec::from_proto(value.callback_factory_barriers)?,
+        declared: restore_bindings(BTreeSet::from_proto(value.declared)?, ordinals)?,
+        local_bindings: restore_bindings(BTreeSet::from_proto(value.local_bindings)?, ordinals)?,
+        var_declared: restore_bindings(BTreeSet::from_proto(value.var_declared)?, ordinals)?,
+        var_initializers: restore_bindings(
+            BTreeSet::from_proto(value.var_initializers)?,
+            ordinals,
+        )?,
+        reads: restore_position_bucketed(
+            PositionBucketed::from_proto(required(value.reads, "SavedStatementFacts.reads")?)?,
+            ordinals,
+        )?,
+        rebinds: restore_position_bucketed(
+            PositionBucketed::from_proto(required(value.rebinds, "SavedStatementFacts.rebinds")?)?,
+            ordinals,
+        )?,
+        member_write_roots: restore_bindings(
+            BTreeSet::from_proto(value.member_write_roots)?,
+            ordinals,
+        )?,
+        local_effects: restore_bindings(BTreeSet::from_proto(value.local_effects)?, ordinals)?,
+        calls: restore_position_bucketed(
+            PositionBucketed::from_proto(required(value.calls, "SavedStatementFacts.calls")?)?,
+            ordinals,
+        )?,
+        constructor: value
+            .constructor
+            .map(|constructor| restore_constructor(constructor, ordinals))
+            .transpose()?,
+        synchronous_calls: value
+            .synchronous_calls
+            .map(|calls| SavedSynchronousCalls::from_proto(calls)?.restore(ordinals, purities))
+            .transpose()?,
+        synchronous_prefix_effects: value
+            .synchronous_prefix_effects
+            .map(|effects| -> Result<_> {
+                Ok((
+                    restore_bindings(BTreeSet::from_proto(effects.reads)?, ordinals)?,
+                    restore_bindings(BTreeSet::from_proto(effects.rebinds)?, ordinals)?,
+                ))
+            })
+            .transpose()?,
+        at_init_unresolved_sources: restore_bindings(
+            BTreeSet::from_proto(value.at_init_unresolved_sources)?,
+            ordinals,
+        )?,
+        at_init_unresolved_inline_fn: required(
+            value.at_init_unresolved_inline_fn,
+            "SavedStatementFacts.at_init_unresolved_inline_fn",
+        )?,
+        first_order_unresolved_sources: restore_bindings(
+            BTreeSet::from_proto(value.first_order_unresolved_sources)?,
+            ordinals,
+        )?,
+        first_order_unresolved_inline_fn: required(
+            value.first_order_unresolved_inline_fn,
+            "SavedStatementFacts.first_order_unresolved_inline_fn",
+        )?,
+        declares_direct_function: required(
+            value.declares_direct_function,
+            "SavedStatementFacts.declares_direct_function",
+        )?,
+        global_writes: BTreeSet::from_proto(value.global_writes)?,
+        global_reads: BTreeSet::from_proto(value.global_reads)?,
+        havoc: BTreeSet::from_proto(value.havoc)?,
+        trusted_summary_discharged: BTreeSet::from_proto(value.trusted_summary_discharged)?,
+        heap_contents: restore_heap_cells(
+            required(value.heap_contents, "SavedStatementFacts.heap_contents")?,
+            ordinals,
+        )?,
+        heap_one_shot_allocations: restore_effect_cells(
+            BTreeSet::from_proto(value.heap_one_shot_allocations)?,
+            ordinals,
+        )?,
+        deferred_heap_allocations: restore_effect_cells(
+            BTreeSet::from_proto(value.deferred_heap_allocations)?,
+            ordinals,
+        )?,
+        heap_native_integrity_uses: Vec::from_proto(value.heap_native_integrity_uses)?,
+        purity: purities.restore_value(required(value.purity, "SavedStatementFacts.purity")?)?,
+        kind: StatementKind::from_proto(required(value.kind, "SavedStatementFacts.kind")?)?,
+    })
 }
 
 /// Synchronous execution facts with every runtime binding converted explicitly.
@@ -491,8 +476,8 @@ struct SavedSynchronousCalls<'a> {
     binding_effect_coverage: SavedBindingEffectCoverage,
     settled_array_elements: BTreeMap<SavedBinding, super::SettledElements>,
     global_object_aliases: Option<BTreeSet<SavedBinding>>,
-    heap_contents: SavedHeapContentCells,
-    non_assumed_heap_accesses: SavedHeapContentAccesses,
+    heap_contents: proto::SavedHeapContentCells,
+    non_assumed_heap_accesses: proto::SavedHeapContentAccesses,
     precision_losses: Cow<'a, [ExecutionPrecisionLoss]>,
     native_integrity_checks: Cow<'a, [crate::reports::schema::NativeIntegrityCheck]>,
     native_prototype_property_checks:
@@ -558,8 +543,8 @@ impl<'a> SavedSynchronousCalls<'a> {
                 .as_ref()
                 .map(|aliases| snapshot_bindings(aliases, ordinals))
                 .transpose()?,
-            heap_contents: SavedHeapContentCells::snapshot(&calls.heap_contents, ordinals)?,
-            non_assumed_heap_accesses: SavedHeapContentAccesses::snapshot(
+            heap_contents: snapshot_heap_cells(&calls.heap_contents, ordinals)?,
+            non_assumed_heap_accesses: snapshot_heap_accesses(
                 &calls.non_assumed_heap_accesses,
                 ordinals,
             )?,
@@ -640,8 +625,11 @@ impl<'a> SavedSynchronousCalls<'a> {
                 .global_object_aliases
                 .map(|aliases| restore_bindings(aliases, ordinals))
                 .transpose()?,
-            heap_contents: self.heap_contents.restore(ordinals)?,
-            non_assumed_heap_accesses: self.non_assumed_heap_accesses.restore(ordinals)?,
+            heap_contents: restore_heap_cells(self.heap_contents, ordinals)?,
+            non_assumed_heap_accesses: restore_heap_accesses(
+                self.non_assumed_heap_accesses,
+                ordinals,
+            )?,
             precision_losses: self.precision_losses.into_owned(),
             native_integrity_checks: self.native_integrity_checks.into_owned(),
             native_prototype_property_checks: self.native_prototype_property_checks.into_owned(),
@@ -771,31 +759,6 @@ fn settled_array_elements_from_proto(
     Ok(values)
 }
 
-impl ProtoConvert<proto::SavedConstructorFacts> for SavedConstructorFacts {
-    fn to_proto(&self) -> Result<proto::SavedConstructorFacts> {
-        Ok(proto::SavedConstructorFacts {
-            reads: self.reads.to_proto()?,
-            rebinds: self.rebinds.to_proto()?,
-            calls: self.calls.to_proto()?,
-            unresolved_sources: self.unresolved_sources.to_proto()?,
-            unresolved_inline_fn: Some(self.unresolved_inline_fn),
-        })
-    }
-
-    fn from_proto(value: proto::SavedConstructorFacts) -> Result<Self> {
-        Ok(Self {
-            reads: BTreeSet::from_proto(value.reads)?,
-            rebinds: BTreeSet::from_proto(value.rebinds)?,
-            calls: BTreeSet::from_proto(value.calls)?,
-            unresolved_sources: BTreeSet::from_proto(value.unresolved_sources)?,
-            unresolved_inline_fn: required(
-                value.unresolved_inline_fn,
-                "SavedConstructorFacts.unresolved_inline_fn",
-            )?,
-        })
-    }
-}
-
 impl ProtoConvert<proto::SavedEffectCell> for SavedEffectCell {
     fn to_proto(&self) -> Result<proto::SavedEffectCell> {
         use proto::saved_effect_cell::{OwnProperty, Value};
@@ -830,47 +793,6 @@ impl ProtoConvert<proto::SavedEffectCell> for SavedEffectCell {
     }
 }
 
-impl ProtoConvert<proto::SavedHeapContentCells> for SavedHeapContentCells {
-    fn to_proto(&self) -> Result<proto::SavedHeapContentCells> {
-        Ok(proto::SavedHeapContentCells {
-            allocations: self.allocations.to_proto()?,
-            reads: self.reads.to_proto()?,
-            writes: self.writes.to_proto()?,
-            opaque: Some(self.opaque),
-            observes_external_heap: Some(self.observes_external_heap),
-        })
-    }
-
-    fn from_proto(value: proto::SavedHeapContentCells) -> Result<Self> {
-        Ok(Self {
-            allocations: BTreeSet::from_proto(value.allocations)?,
-            reads: BTreeSet::from_proto(value.reads)?,
-            writes: BTreeSet::from_proto(value.writes)?,
-            opaque: required(value.opaque, "SavedHeapContentCells.opaque")?,
-            observes_external_heap: required(
-                value.observes_external_heap,
-                "SavedHeapContentCells.observes_external_heap",
-            )?,
-        })
-    }
-}
-
-impl ProtoConvert<proto::SavedHeapContentAccesses> for SavedHeapContentAccesses {
-    fn to_proto(&self) -> Result<proto::SavedHeapContentAccesses> {
-        Ok(proto::SavedHeapContentAccesses {
-            reads: self.reads.to_proto()?,
-            writes: self.writes.to_proto()?,
-        })
-    }
-
-    fn from_proto(value: proto::SavedHeapContentAccesses) -> Result<Self> {
-        Ok(Self {
-            reads: BTreeSet::from_proto(value.reads)?,
-            writes: BTreeSet::from_proto(value.writes)?,
-        })
-    }
-}
-
 impl ProtoConvert<proto::SavedFallbackOnlyEffects> for SavedFallbackOnlyEffects {
     fn to_proto(&self) -> Result<proto::SavedFallbackOnlyEffects> {
         Ok(proto::SavedFallbackOnlyEffects {
@@ -885,130 +807,6 @@ impl ProtoConvert<proto::SavedFallbackOnlyEffects> for SavedFallbackOnlyEffects 
             reads: Vec::from_proto(value.reads)?,
             rebinds: Vec::from_proto(value.rebinds)?,
             uninitialized_reads: Vec::from_proto(value.uninitialized_reads)?,
-        })
-    }
-}
-
-impl<'a> ProtoConvert<proto::SavedChunkFactAnalysis> for SavedChunkFactAnalysis<'a> {
-    fn to_proto(&self) -> Result<proto::SavedChunkFactAnalysis> {
-        Ok(proto::SavedChunkFactAnalysis {
-            facts: self.facts.to_proto()?,
-            top_level_await: self.top_level_await.to_proto()?,
-            redundant_purity_hints: self.redundant_purity_hints.to_proto()?,
-            redundant_pure_member_hints: self.redundant_pure_member_hints.to_proto()?,
-            unconsulted_purity_hints: self.unconsulted_purity_hints.to_proto()?,
-        })
-    }
-
-    fn from_proto(value: proto::SavedChunkFactAnalysis) -> Result<Self> {
-        Ok(Self {
-            facts: Vec::from_proto(value.facts)?,
-            top_level_await: Option::from_proto(value.top_level_await)?,
-            redundant_purity_hints: Cow::from_proto(value.redundant_purity_hints)?,
-            redundant_pure_member_hints: Cow::from_proto(value.redundant_pure_member_hints)?,
-            unconsulted_purity_hints: Cow::from_proto(value.unconsulted_purity_hints)?,
-        })
-    }
-}
-
-impl<'a> ProtoConvert<proto::SavedStatementFacts> for SavedStatementFacts<'a> {
-    fn to_proto(&self) -> Result<proto::SavedStatementFacts> {
-        Ok(proto::SavedStatementFacts {
-            ordinal: Some(self.ordinal.to_proto()?),
-            export_linkage: self.export_linkage.to_proto()?,
-            stable_iterable_producers: self.stable_iterable_producers.to_proto()?,
-            source_location: self.source_location.to_proto()?,
-            callback_factory_barriers: self.callback_factory_barriers.to_proto()?,
-            declared: self.declared.to_proto()?,
-            local_bindings: self.local_bindings.to_proto()?,
-            var_declared: self.var_declared.to_proto()?,
-            var_initializers: self.var_initializers.to_proto()?,
-            reads: Some(self.reads.to_proto()?),
-            rebinds: Some(self.rebinds.to_proto()?),
-            member_write_roots: self.member_write_roots.to_proto()?,
-            local_effects: self.local_effects.to_proto()?,
-            calls: Some(self.calls.to_proto()?),
-            constructor: self.constructor.to_proto()?,
-            synchronous_calls: self.synchronous_calls.to_proto()?,
-            synchronous_prefix_effects: self.synchronous_prefix_effects.to_proto()?,
-            at_init_unresolved_sources: self.at_init_unresolved_sources.to_proto()?,
-            at_init_unresolved_inline_fn: Some(self.at_init_unresolved_inline_fn),
-            first_order_unresolved_sources: self.first_order_unresolved_sources.to_proto()?,
-            first_order_unresolved_inline_fn: Some(self.first_order_unresolved_inline_fn),
-            declares_direct_function: Some(self.declares_direct_function),
-            global_writes: self.global_writes.to_proto()?,
-            global_reads: self.global_reads.to_proto()?,
-            havoc: self.havoc.to_proto()?,
-            trusted_summary_discharged: self.trusted_summary_discharged.to_proto()?,
-            heap_contents: Some(self.heap_contents.to_proto()?),
-            heap_one_shot_allocations: self.heap_one_shot_allocations.to_proto()?,
-            deferred_heap_allocations: self.deferred_heap_allocations.to_proto()?,
-            heap_native_integrity_uses: self.heap_native_integrity_uses.to_proto()?,
-            purity: Some(self.purity.clone()),
-            kind: Some(self.kind.to_proto()?),
-        })
-    }
-
-    fn from_proto(value: proto::SavedStatementFacts) -> Result<Self> {
-        Ok(Self {
-            ordinal: SourceUnitOrdinal::from_proto(required(
-                value.ordinal,
-                "SavedStatementFacts.ordinal",
-            )?)?,
-            export_linkage: Option::from_proto(value.export_linkage)?,
-            stable_iterable_producers: Cow::from_proto(value.stable_iterable_producers)?,
-            source_location: Cow::from_proto(value.source_location)?,
-            callback_factory_barriers: Cow::from_proto(value.callback_factory_barriers)?,
-            declared: BTreeSet::from_proto(value.declared)?,
-            local_bindings: BTreeSet::from_proto(value.local_bindings)?,
-            var_declared: BTreeSet::from_proto(value.var_declared)?,
-            var_initializers: BTreeSet::from_proto(value.var_initializers)?,
-            reads: PositionBucketed::from_proto(required(
-                value.reads,
-                "SavedStatementFacts.reads",
-            )?)?,
-            rebinds: PositionBucketed::from_proto(required(
-                value.rebinds,
-                "SavedStatementFacts.rebinds",
-            )?)?,
-            member_write_roots: BTreeSet::from_proto(value.member_write_roots)?,
-            local_effects: BTreeSet::from_proto(value.local_effects)?,
-            calls: PositionBucketed::from_proto(required(
-                value.calls,
-                "SavedStatementFacts.calls",
-            )?)?,
-            constructor: Option::from_proto(value.constructor)?,
-            synchronous_calls: Option::from_proto(value.synchronous_calls)?,
-            synchronous_prefix_effects: Option::from_proto(value.synchronous_prefix_effects)?,
-            at_init_unresolved_sources: BTreeSet::from_proto(value.at_init_unresolved_sources)?,
-            at_init_unresolved_inline_fn: required(
-                value.at_init_unresolved_inline_fn,
-                "SavedStatementFacts.at_init_unresolved_inline_fn",
-            )?,
-            first_order_unresolved_sources: BTreeSet::from_proto(
-                value.first_order_unresolved_sources,
-            )?,
-            first_order_unresolved_inline_fn: required(
-                value.first_order_unresolved_inline_fn,
-                "SavedStatementFacts.first_order_unresolved_inline_fn",
-            )?,
-            declares_direct_function: required(
-                value.declares_direct_function,
-                "SavedStatementFacts.declares_direct_function",
-            )?,
-            global_writes: Cow::from_proto(value.global_writes)?,
-            global_reads: Cow::from_proto(value.global_reads)?,
-            havoc: Cow::from_proto(value.havoc)?,
-            trusted_summary_discharged: Cow::from_proto(value.trusted_summary_discharged)?,
-            heap_contents: SavedHeapContentCells::from_proto(required(
-                value.heap_contents,
-                "SavedStatementFacts.heap_contents",
-            )?)?,
-            heap_one_shot_allocations: BTreeSet::from_proto(value.heap_one_shot_allocations)?,
-            deferred_heap_allocations: BTreeSet::from_proto(value.deferred_heap_allocations)?,
-            heap_native_integrity_uses: Cow::from_proto(value.heap_native_integrity_uses)?,
-            purity: required(value.purity, "SavedStatementFacts.purity")?,
-            kind: StatementKind::from_proto(required(value.kind, "SavedStatementFacts.kind")?)?,
         })
     }
 }
@@ -1052,8 +850,8 @@ impl<'a> ProtoConvert<proto::SavedSynchronousCalls> for SavedSynchronousCalls<'a
                     })
                 })
                 .transpose()?,
-            heap_contents: Some(self.heap_contents.to_proto()?),
-            non_assumed_heap_accesses: Some(self.non_assumed_heap_accesses.to_proto()?),
+            heap_contents: Some(self.heap_contents.clone()),
+            non_assumed_heap_accesses: Some(self.non_assumed_heap_accesses.clone()),
             precision_losses: self.precision_losses.to_proto()?,
             native_integrity_checks: self.native_integrity_checks.to_proto()?,
             native_prototype_property_checks: self.native_prototype_property_checks.to_proto()?,
@@ -1112,14 +910,11 @@ impl<'a> ProtoConvert<proto::SavedSynchronousCalls> for SavedSynchronousCalls<'a
                 .global_object_aliases
                 .map(|value| BTreeSet::from_proto(value.bindings))
                 .transpose()?,
-            heap_contents: SavedHeapContentCells::from_proto(required(
-                value.heap_contents,
-                "SavedSynchronousCalls.heap_contents",
-            )?)?,
-            non_assumed_heap_accesses: SavedHeapContentAccesses::from_proto(required(
+            heap_contents: required(value.heap_contents, "SavedSynchronousCalls.heap_contents")?,
+            non_assumed_heap_accesses: required(
                 value.non_assumed_heap_accesses,
                 "SavedSynchronousCalls.non_assumed_heap_accesses",
-            )?)?,
+            )?,
             precision_losses: Cow::from_proto(value.precision_losses)?,
             native_integrity_checks: Cow::from_proto(value.native_integrity_checks)?,
             native_prototype_property_checks: Cow::from_proto(
@@ -1210,9 +1005,9 @@ mod tests {
         );
         let ordinals = ContextOrdinals::new([&module]);
         let mut purities = PuritySnapshot::default();
-        let saved = SavedChunkFactAnalysis::snapshot(&analysis, &ordinals, &mut purities).unwrap();
-        let wire = saved.to_proto().unwrap();
-        assert!(SavedChunkFactAnalysis::from_proto(wire.clone()).is_ok());
+        let wire = snapshot_chunk_facts(&analysis, &ordinals, &mut purities).unwrap();
+        let restored_purities = RestoredPurities::restore(purities.finish()).unwrap();
+        assert!(restore_chunk_facts(wire.clone(), &ordinals, &restored_purities).is_ok());
         for field in [
             "ordinal",
             "heap_contents",
@@ -1240,7 +1035,7 @@ mod tests {
                 _ => unreachable!(),
             }
             assert!(
-                SavedChunkFactAnalysis::from_proto(invalid).is_err(),
+                restore_chunk_facts(invalid, &ordinals, &restored_purities).is_err(),
                 "invalid {field} must not weaken effects"
             );
         }
@@ -1256,27 +1051,29 @@ mod tests {
         );
         let ordinals = ContextOrdinals::new([&module]);
         let mut purities = PuritySnapshot::default();
-        let mut wire = SavedChunkFactAnalysis::snapshot(&analysis, &ordinals, &mut purities)
-            .unwrap()
-            .to_proto()
-            .unwrap();
+        let mut wire = snapshot_chunk_facts(&analysis, &ordinals, &mut purities).unwrap();
+        let restored_purities = RestoredPurities::restore(purities.finish()).unwrap();
         wire.facts[0].synchronous_prefix_effects = None;
         let absent = analysis_codec::encode_protobuf(&wire).unwrap();
-        let restored = SavedChunkFactAnalysis::from_proto(wire.clone()).unwrap();
+        let restored = restore_chunk_facts(wire.clone(), &ordinals, &restored_purities).unwrap();
         assert!(restored.facts[0].synchronous_prefix_effects.is_none());
         wire.facts[0].synchronous_prefix_effects =
             Some(proto::SavedSynchronousPrefixEffects::default());
         let present = analysis_codec::encode_protobuf(&wire).unwrap();
         assert_ne!(absent, present);
-        let restored =
-            SavedChunkFactAnalysis::from_proto(analysis_codec::decode_protobuf(&present).unwrap())
-                .unwrap();
+        let restored = restore_chunk_facts(
+            analysis_codec::decode_protobuf(&present).unwrap(),
+            &ordinals,
+            &restored_purities,
+        )
+        .unwrap();
         let (reads, rebinds) = restored.facts[0]
             .synchronous_prefix_effects
             .as_ref()
             .unwrap();
         assert!(reads.is_empty() && rebinds.is_empty());
 
+        let mut purities = PuritySnapshot::default();
         let calls = SynchronousCalls::default();
         let mut wire = SavedSynchronousCalls::snapshot(&calls, &ordinals, &mut purities)
             .unwrap()
@@ -1445,7 +1242,9 @@ mod tests {
     #[test]
     fn empty_chunk_facts_and_zero_await_ordinal_have_distinct_meanings() {
         let empty = proto::SavedChunkFactAnalysis::default();
-        let restored = SavedChunkFactAnalysis::from_proto(empty.clone()).unwrap();
+        let ordinals = ContextOrdinals::new(std::iter::empty::<&swc_ecma_ast::Module>());
+        let purities = RestoredPurities::restore(proto::SavedPurityGraph::default()).unwrap();
+        let restored = restore_chunk_facts(empty.clone(), &ordinals, &purities).unwrap();
         assert!(restored.facts.is_empty());
         assert!(restored.top_level_await.is_none());
         let present = proto::SavedChunkFactAnalysis {
@@ -1457,7 +1256,7 @@ mod tests {
             analysis_codec::encode_protobuf(&present).unwrap()
         );
         assert_eq!(
-            SavedChunkFactAnalysis::from_proto(present)
+            restore_chunk_facts(present, &ordinals, &purities)
                 .unwrap()
                 .top_level_await,
             Some(SourceUnitOrdinal(0))

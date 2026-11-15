@@ -13,7 +13,7 @@
 //! Claude CLI).
 
 use analysis::facts::ChunkFactAnalysis;
-use analysis::facts::saved::SavedChunkFactAnalysis;
+use analysis::facts::saved::{restore_chunk_facts, snapshot_chunk_facts};
 use analysis::purity::saved::{PuritySnapshot, RestoredPurities};
 use analysis::saved_proto::ProtoConvert;
 use analysis_codec::ContextOrdinals;
@@ -67,8 +67,10 @@ pub fn write_artifact(
     let summary = program_summary_proto::snapshot(&body.program_summary, ordinals, &mut purities)?;
     let mut chunks = BTreeMap::new();
     for (name, chunk) in &body.chunks {
-        let facts = SavedChunkFactAnalysis::snapshot(chunk, ordinals, &mut purities)?;
-        chunks.insert(name.clone(), facts.to_proto()?);
+        chunks.insert(
+            name.clone(),
+            snapshot_chunk_facts(chunk, ordinals, &mut purities)?,
+        );
     }
     let graph = purities.finish();
     let wire = stream::AnalysisBody {
@@ -136,7 +138,7 @@ pub fn read_body(body: &[u8], ordinals: &ContextOrdinals) -> Result<AnalysisArti
         .collect::<Result<_>>()?;
     let mut chunks = BTreeMap::new();
     for (name, facts) in wire.chunks {
-        let facts = SavedChunkFactAnalysis::from_proto(facts)?.restore(ordinals, &purities)?;
+        let facts = restore_chunk_facts(facts, ordinals, &purities)?;
         chunks.insert(name, facts);
     }
     Ok(AnalysisArtifactBody {
