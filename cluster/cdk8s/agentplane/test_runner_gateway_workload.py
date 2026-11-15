@@ -245,7 +245,7 @@ def test_actions_delegation_is_explicit_for_each_receiving_backend(staging_manif
         assert grant["methods"] == [method for method in gateway_delegation["methods"] if method.startswith(prefix)]
         service_methods.update(grant["methods"])
     assert service_methods == set(gateway_delegation["methods"])
-    assert ACTIONS_URI not in gateway["operator_service_callers"]
+    assert ACTIONS_URI not in gateway["environment_service_operators"]
 
     history_delegation = history["delegation"]
     assert history_delegation["actor"] == actions_account
