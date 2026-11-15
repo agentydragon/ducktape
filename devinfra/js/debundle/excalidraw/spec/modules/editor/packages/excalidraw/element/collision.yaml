@@ -1,0 +1,142 @@
+# Original home: packages/excalidraw/element/collision.ts (Excalidraw v0.18.1)
+source_matches:
+  - match: |
+      var selected = (element) => {
+        if (element.type === "arrow") return !1;
+        let isDraggableFromInside = EXPR;
+        return element.type === "line" || element.type === "freedraw"
+          ? isDraggableFromInside && EXPR(element.points)
+          : isDraggableFromInside || EXPR(element);
+      };
+    bindings:
+      - local: selected
+        name: shouldTestInside
+
+  - match: |
+      var selected = ({
+        x: x,
+        y: y,
+        element: element,
+        shape: shape,
+        threshold: threshold = 10,
+        frameNameBound: frameNameBound = null,
+      }) => {
+        let hit = shouldTestInside(element) &&
+          EXPR(EXPR(x, y), shape) ||
+          EXPR(EXPR(x, y), shape, threshold);
+        return !hit && frameNameBound && (hit = EXPR(EXPR(x, y), {
+          type: "polygon",
+          data: EXPR(frameNameBound).data,
+        })), hit;
+      };
+    bindings:
+      - local: selected
+        name: hitElementItself
+
+  - match: |
+      var selected = (x, y, element, elementsMap, tolerance = 0) => {
+        let [x1, y1, x2, y2] = EXPR(element, elementsMap);
+        return x1 -= tolerance,
+          y1 -= tolerance,
+          x2 += tolerance,
+          y2 += tolerance,
+          EXPR(EXPR(x1, y1), EXPR(x, y), EXPR(x2, y2));
+      };
+    bindings:
+      - local: selected
+        name: hitElementBoundingBox
+
+  - match: |
+      var selected = (hitArgs, elementsMap) =>
+        !hitElementItself(hitArgs) &&
+        !hitElementBoundText(
+          hitArgs.x,
+          hitArgs.y,
+          EXPR(hitArgs.element, elementsMap),
+        ) &&
+        hitElementBoundingBox(
+          hitArgs.x,
+          hitArgs.y,
+          hitArgs.element,
+          elementsMap,
+        );
+    bindings:
+      - local: selected
+        name: hitElementBoundingBoxOnly
+
+  - match: |
+      var selected = (x, y, textShape) =>
+        !!textShape && EXPR(EXPR(x, y), textShape);
+    bindings:
+      - local: selected
+        name: hitElementBoundText
+
+  - match: |
+      var selected = (element, line, offset = 0) => {
+        switch (element.type) {
+          case "rectangle":
+          case "image":
+          case "text":
+          case "iframe":
+          case "embeddable":
+          case "frame":
+          case "magicframe":
+            return EXPR(element, line, offset);
+          case "diamond":
+            return EXPR(element, line, offset);
+          case "ellipse":
+            return EXPR(element, line, offset);
+          default:
+            throw new Error(`Unimplemented element type '${element.type}'`);
+        }
+      };
+    bindings:
+      - local: selected
+        name: intersectElementWithLineSegment
+
+  - match: |
+      var selected = (element, line, offset = 0) => {
+        let center = EXPR(
+            element.x + element.width / 2,
+            element.y + element.height / 2,
+          ),
+          rotatedA = EXPR(line[0], center, -element.angle),
+          rotatedB = EXPR(line[1], center, -element.angle),
+          [sides, corners] = deconstructRectanguloidElement(element, offset);
+        return EXPR;
+      };
+    bindings:
+      - local: selected
+        name: intersectRectanguloidWithLineSegment
+
+  - match: |
+      var selected = (element, line, offset = 0) => {
+        let center = EXPR(
+            element.x + element.width / 2,
+            element.y + element.height / 2,
+          ),
+          rotatedA = EXPR(line[0], center, -element.angle),
+          rotatedB = EXPR(line[1], center, -element.angle),
+          [sides, curves] = deconstructDiamondElement(element, offset);
+        return EXPR;
+      };
+    bindings:
+      - local: selected
+        name: intersectDiamondWithLineSegment
+
+  - match: |
+      var selected = (element, line, offset = 0) => {
+        let center = EXPR(
+            element.x + element.width / 2,
+            element.y + element.height / 2,
+          ),
+          rotatedA = EXPR(line[0], center, -element.angle),
+          rotatedB = EXPR(line[1], center, -element.angle);
+        return EXPR(
+          EXPR(center, element.width / 2 + offset, element.height / 2 + offset),
+          EXPR(rotatedA, rotatedB),
+        ).map((point) => EXPR(point, center, element.angle));
+      };
+    bindings:
+      - local: selected
+        name: intersectEllipseWithLineSegment

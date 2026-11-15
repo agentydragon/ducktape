@@ -263,6 +263,33 @@ async def test_resize_and_crop_geometry(playwright_driver: Playwright, origin: s
         }
 
 
+async def test_element_collision_geometry(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        geometry = await page.evaluate(
+            """async () => {
+                const collision = await import('./editor/packages/excalidraw/element/collision.js');
+                const rectangle = {
+                    id: 'collision-smoke', type: 'rectangle', x: 10, y: 20,
+                    width: 100, height: 50, angle: 0,
+                };
+                const elements = new Map([[rectangle.id, rectangle]]);
+                return {
+                    inside: collision.hitElementBoundingBox(60, 45, rectangle, elements),
+                    outside: collision.hitElementBoundingBox(120, 45, rectangle, elements),
+                    intersections: collision.intersectElementWithLineSegment(
+                        rectangle, [[-10, 45], [130, 45]],
+                    ),
+                };
+            }"""
+        )
+        assert geometry == {"inside": True, "outside": False, "intersections": [[110, 45], [10, 45]]}
+
+
 async def test_element_type_checks(playwright_driver: Playwright, origin: str) -> None:
     async with deterministic_browser_context(
         playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
