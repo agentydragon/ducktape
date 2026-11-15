@@ -60,10 +60,8 @@ Verified live on 2026-11-14 with `rugged`: tainted while offline, untainted 2 s 
 kubelet returned, every DaemonSet pod back within seconds. The DaemonSet `maxUnavailable`
 floors and Helm `disableWait` are gone.
 
-- **Cilium:** its agent and envoy tolerate every taint, so they still count an offline
-  laptop, which is why `cilium.tf` skips Helm's wait and rolls agents by hand. Narrow
-  their tolerations, then drop that workaround. Add a cdk8s fleet rule rejecting a
-  DaemonSet toleration that matches `node.kubernetes.io/out-of-service`.
+- **Cilium:** verify on the next laptop resume that its agent and envoy, which no longer
+  tolerate the taint, come back and the laptop's pods get networking.
 - **Alerts:** key node-level exclusions on the out-of-service taint instead of the static
   roaming taint, so an online laptop alerts like any node. Prefer one Alertmanager
   inhibition (a `RoamingNodeOffline` source alert with a `node` label) over forked rules.

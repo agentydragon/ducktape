@@ -24,12 +24,23 @@ hostFirewall:
   enabled: true
 
 # Apply config changes with a deliberate, sequential agent rollout; see
-# cluster/docs/network.md. Disconnected roaming nodes must not block the rollout.
+# cluster/docs/network.md.
 rollOutCiliumPods: false
 # Reloader's autoReloadAll also watches this DaemonSet. Keep one owner for
 # Cilium restarts: roll agents explicitly after a Helm configuration update.
 annotations:
   reloader.stakater.com/auto: "false"
+
+# Every NoSchedule taint (control plane, roaming laptops), but not every NoExecute
+# taint: the chart's default `- operator: Exists` also tolerates the out-of-service
+# taint on an offline laptop, so the agent kept counting it
+# (cluster/roaming_node_controller/README.md). The DaemonSet controller adds the
+# not-ready and unreachable NoExecute tolerations itself.
+tolerations:
+  - operator: Exists
+    effect: NoSchedule
+  - key: node.cilium.io/agent-not-ready
+    operator: Exists
 
 # Host-networked Cilium pods need cluster DNS for Kubernetes service names.
 dnsPolicy: ClusterFirstWithHostNet
@@ -86,6 +97,12 @@ envoy:
   # without it. cluster/debug/agentplane_oidc/local_gateway_tls_rca.md.
   useOriginalSourceAddress: false
   dnsPolicy: ClusterFirstWithHostNet
+  # Same as the agent's.
+  tolerations:
+    - operator: Exists
+      effect: NoSchedule
+    - key: node.cilium.io/agent-not-ready
+      operator: Exists
   securityContext:
     capabilities:
       keepCapNetBindService: true

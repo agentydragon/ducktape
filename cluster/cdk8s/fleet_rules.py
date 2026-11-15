@@ -28,6 +28,7 @@ _CLUSTERWIDE_KIND = "CiliumClusterwideNetworkPolicy"
 # projected sources), imagePullSecrets.
 _SECRET_REF_KEYS = {"secretKeyRef", "secretRef", "imagePullSecrets"}
 _CONFIG_MAP_REF_KEYS = {"configMapKeyRef", "configMapRef"}
+_OUT_OF_SERVICE_TAINT = "node.kubernetes.io/out-of-service"
 
 
 def _pod_specs(objects: list[dict[str, Any]]) -> Iterator[tuple[str, dict[str, Any]]]:
@@ -299,6 +300,20 @@ def vpa_auto_mode_policies_set_controlled_values(objects: list[dict[str, Any]]) 
     return errors
 
 
+def daemonsets_leave_offline_nodes(objects: list[dict[str, Any]]) -> list[str]:
+    """No DaemonSet tolerates `node.kubernetes.io/out-of-service`: one that does keeps
+    counting an offline roaming laptop and blocks its rollout
+    (`cluster/roaming_node_controller/README.md`)."""
+    return [
+        f"DaemonSet/{obj['metadata']['name']} toleration {toleration} matches the out-of-service taint "
+        "the roaming node controller sets on offline laptops; name the taint keys or effects it tolerates"
+        for obj in objects
+        if obj["kind"] == "DaemonSet"
+        for toleration in pod_spec(obj).get("tolerations", [])
+        if toleration.get("key") in (None, _OUT_OF_SERVICE_TAINT) and toleration.get("effect") in (None, "NoExecute")
+    ]
+
+
 @jsii.implements(IValidation)
 class FleetRules:
     def __init__(
@@ -319,6 +334,7 @@ class FleetRules:
             *cilium_rules_enforce_something(objects),
             *resolved_references(objects),
             *vpa_auto_mode_policies_set_controlled_values(objects),
+            *daemonsets_leave_offline_nodes(objects),
             *unused_waivers(objects, unhardened=self._unhardened_pods, unpinned=self._unpinned_https_egress),
         ]
 
