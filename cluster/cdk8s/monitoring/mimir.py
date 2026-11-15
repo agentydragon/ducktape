@@ -231,7 +231,12 @@ def chart(app: App) -> Chart:
 
 
 def mimir(
-    chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomization, seaweedfs_operator: Kustomization
+    chart: Chart,
+    directory: RenderedDirectory,
+    monitoring_crds: Kustomization,
+    seaweedfs_operator: Kustomization,
+    *,
+    health_checks: list[KustomizationSpecHealthChecks],
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -239,20 +244,7 @@ def mimir(
         directory,
         wait=None,
         suspend=False,
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1", kind="Bucket", name="mimir-blocks", namespace="monitoring"
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1", kind="Bucket", name="mimir-ruler", namespace="monitoring"
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1", kind="S3Credentials", name="mimir", namespace="monitoring"
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="mimir", namespace="monitoring"
-            ),
-        ],
+        health_checks=health_checks,
         timeout="10m",
         depends_on=flux_kustomization_depends_on_many(
             # the chart's metaMonitoring.serviceMonitor

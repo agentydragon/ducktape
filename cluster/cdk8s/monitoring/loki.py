@@ -295,24 +295,19 @@ def chart(app: App) -> Chart:
 
 
 def loki(
-    chart: Chart, directory: RenderedDirectory, seaweedfs_operator: Kustomization, monitoring_crds: Kustomization
+    chart: Chart,
+    directory: RenderedDirectory,
+    seaweedfs_operator: Kustomization,
+    monitoring_crds: Kustomization,
+    *,
+    health_checks: list[KustomizationSpecHealthChecks],
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         "loki",
         directory,
         wait=None,
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="loki", namespace="loki"
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1", kind="Bucket", name="loki", namespace="loki"
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1", kind="S3Credentials", name="loki", namespace="loki"
-            ),
-        ],
+        health_checks=health_checks,
         timeout="10m",
         depends_on=flux_kustomization_depends_on_many(
             seaweedfs_operator,

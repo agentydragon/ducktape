@@ -933,6 +933,8 @@ def generate_manifests(root: Path) -> None:
         ),
         external_secrets_operator_kustomization,
     )
+    github_secrets_sync_secrets_app = App()
+    github_secrets_sync_secrets_chart = github_secrets_sync_secrets.chart(github_secrets_sync_secrets_app)
     github_secrets_sync_secrets_artifact = artifact(
         "github-secrets-sync-secrets", github_secrets_sync_secrets.OUTPUT_DIR
     )
@@ -941,10 +943,11 @@ def generate_manifests(root: Path) -> None:
         write_directory(
             root,
             github_secrets_sync_secrets_artifact,
-            github_secrets_sync_secrets.chart,
+            app=github_secrets_sync_secrets_app,
             siblings=["ci-age-key.sops.yaml"],
         ),
         external_secrets_operator_kustomization,
+        health_checks=flux.health_checks(github_secrets_sync_secrets_chart, ["ExternalSecret"]),
     )
     ntfy_artifact = artifact("ntfy", ntfy.OUTPUT_DIR)
     ntfy.ntfy(
@@ -1162,26 +1165,35 @@ def generate_manifests(root: Path) -> None:
         cnpg_kustomization,
         seaweedfs_operator_kustomization,
     )
+    loki_app = App()
+    loki_chart = loki.chart(loki_app)
     monitoring_loki_artifact = artifact("monitoring-loki", loki.OUTPUT_DIR)
     loki_kustomization = loki.loki(
         flux_chart,
-        write_directory(root, monitoring_loki_artifact, loki.chart),
+        write_directory(root, monitoring_loki_artifact, app=loki_app),
         seaweedfs_operator_kustomization,
         monitoring_crds_kustomization,
+        health_checks=flux.health_checks(loki_chart, ["HelmRelease", "Bucket", "S3Credentials"]),
     )
+    mimir_app = App()
+    mimir_chart = mimir.chart(mimir_app)
     monitoring_mimir_artifact = artifact("monitoring-mimir", mimir.OUTPUT_DIR)
     monitoring_mimir_kustomization = mimir.mimir(
         flux_chart,
-        write_directory(root, monitoring_mimir_artifact, mimir.chart),
+        write_directory(root, monitoring_mimir_artifact, app=mimir_app),
         monitoring_crds_kustomization,
         seaweedfs_operator_kustomization,
+        health_checks=flux.health_checks(mimir_chart, ["Bucket", "S3Credentials", "HelmRelease"]),
     )
+    tempo_app = App()
+    tempo_chart = tempo.chart(tempo_app)
     monitoring_tempo_artifact = artifact("monitoring-tempo", tempo.OUTPUT_DIR)
     tempo.tempo(
         flux_chart,
-        write_directory(root, monitoring_tempo_artifact, tempo.chart),
+        write_directory(root, monitoring_tempo_artifact, app=tempo_app),
         monitoring_crds_kustomization,
         seaweedfs_operator_kustomization,
+        health_checks=flux.health_checks(tempo_chart, ["Bucket", "S3Credentials", "HelmRelease"]),
     )
     seaweedfs_drivefs_artifacts_bucket_artifact = artifact(
         "seaweedfs-drivefs-artifacts-bucket", seaweedfs_drivefs_artifacts_bucket.OUTPUT_DIR
