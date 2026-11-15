@@ -150,7 +150,7 @@ pub struct HostBehavior {
     pub reentry_free_operations: BTreeSet<ReentryFreeOperation>,
     /// Which properties the host defines on the global object, own or
     /// inherited through its host prototypes, before the program runs.
-    #[serde(default, skip_serializing_if = "PredefinedGlobals::is_unknown")]
+    #[serde(default, skip_serializing_if = "predefined_globals_is_unknown")]
     pub predefined_globals: PredefinedGlobals,
     /// Audit provenance (executable identity, revision, digest). YAML-only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -165,10 +165,10 @@ pub struct HostBehavior {
 pub struct ProgramPremises {
     #[serde(
         default,
-        skip_serializing_if = "ProcessPrototypeChainAccessors::is_unknown"
+        skip_serializing_if = "is_unknown_process_prototype_chain_accessors"
     )]
     pub process_prototype_chain_accessors: ProcessPrototypeChainAccessors,
-    #[serde(default, skip_serializing_if = "NonLiteralLoaderCalls::is_unknown")]
+    #[serde(default, skip_serializing_if = "is_unknown_non_literal_loader_calls")]
     pub non_literal_loader_calls: NonLiteralLoaderCalls,
     /// The program writes no slot of these intrinsic families, beyond the
     /// writes the native census sees on their exact objects (SPEC.md §
@@ -198,206 +198,87 @@ pub enum IntrinsicFamilies {
     Listed(BTreeSet<IntrinsicFamily>),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AllIntrinsicFamilies {
-    All,
-}
+pub use spec_wire_proto::debundle::spec::AllIntrinsicFamilies;
 
 /// A native census family, named by its global binding.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum IntrinsicFamily {
-    Error,
-    FinalizationRegistry,
-    Function,
-    Object,
-    Array,
-    Math,
-    RegExp,
-    Symbol,
-    Promise,
-    Map,
-    Set,
-    WeakMap,
-    WeakSet,
-}
+pub use spec_wire_proto::debundle::spec::IntrinsicFamily;
 
-impl IntrinsicFamily {
-    pub const ALL: [Self; 13] = [
-        Self::Error,
-        Self::FinalizationRegistry,
-        Self::Function,
-        Self::Object,
-        Self::Array,
-        Self::Math,
-        Self::RegExp,
-        Self::Symbol,
-        Self::Promise,
-        Self::Map,
-        Self::Set,
-        Self::WeakMap,
-        Self::WeakSet,
-    ];
-}
+pub const ALL_INTRINSIC_FAMILIES: [IntrinsicFamily; 13] = [
+    IntrinsicFamily::Error,
+    IntrinsicFamily::FinalizationRegistry,
+    IntrinsicFamily::Function,
+    IntrinsicFamily::Object,
+    IntrinsicFamily::Array,
+    IntrinsicFamily::Math,
+    IntrinsicFamily::RegExp,
+    IntrinsicFamily::Symbol,
+    IntrinsicFamily::Promise,
+    IntrinsicFamily::Map,
+    IntrinsicFamily::Set,
+    IntrinsicFamily::WeakMap,
+    IntrinsicFamily::WeakSet,
+];
 
 impl IntrinsicFamilies {
     pub fn families(&self) -> BTreeSet<IntrinsicFamily> {
         match self {
-            Self::All(_) => IntrinsicFamily::ALL.into_iter().collect(),
+            Self::All(_) => ALL_INTRINSIC_FAMILIES.into_iter().collect(),
             Self::Listed(families) => families.clone(),
         }
     }
 }
 
 /// Whether the program defines accessors on `process` or its prototype chain.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ProcessPrototypeChainAccessors {
-    /// No code in the program defines or redefines an accessor property on
-    /// `process` or any object in its prototype chain, or changes that chain.
-    None,
-    #[default]
-    Unknown,
-}
+pub use spec_wire_proto::debundle::spec::ProcessPrototypeChainAccessors;
 
-impl ProcessPrototypeChainAccessors {
-    fn is_unknown(&self) -> bool {
-        *self == Self::Unknown
-    }
+fn is_unknown_process_prototype_chain_accessors(value: &ProcessPrototypeChainAccessors) -> bool {
+    *value == ProcessPrototypeChainAccessors::Unknown
 }
 
 /// What a loader call with a non-literal argument can load.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum NonLiteralLoaderCalls {
-    /// Every such call fails or loads a native addon, and no native addon's
-    /// initializer calls application JavaScript or a module loader.
-    NativeAddonsOnly,
-    #[default]
-    Unknown,
-}
+pub use spec_wire_proto::debundle::spec::NonLiteralLoaderCalls;
 
-impl NonLiteralLoaderCalls {
-    fn is_unknown(&self) -> bool {
-        *self == Self::Unknown
-    }
+fn is_unknown_non_literal_loader_calls(value: &NonLiteralLoaderCalls) -> bool {
+    *value == NonLiteralLoaderCalls::Unknown
 }
 
 /// The global object's host-defined properties before the program runs.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PredefinedGlobals {
-    /// Any property, with any value.
-    #[default]
-    Unknown,
-    /// Only names in the standard global lists (SPEC.md § Predefined
-    /// globals), each with its standard definition.
-    Standard,
-    /// The standard names plus Bun's own globals (SPEC.md § Predefined
-    /// globals), each with its documented definition.
-    Bun,
-}
+pub use spec_wire_proto::debundle::spec::PredefinedGlobals;
 
-impl PredefinedGlobals {
-    pub fn is_unknown(&self) -> bool {
-        *self == Self::Unknown
-    }
+fn predefined_globals_is_unknown(value: &PredefinedGlobals) -> bool {
+    *value == PredefinedGlobals::Unknown
 }
 
 /// Whether any host API can synchronously obtain a module namespace while that
 /// module is evaluating. `none` is what native browser ESM provides.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SynchronousModuleLoader {
-    None,
-    #[default]
-    Present,
-}
+pub use spec_wire_proto::debundle::spec::SynchronousModuleLoader;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum LoaderResultForEvaluatingModule {
-    Throws,
-    ReturnsPartialNamespace,
-    Unknown,
-}
+pub use spec_wire_proto::debundle::spec::LoaderResultForEvaluatingModule;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SynchronousLoadRunsAppCallbacks {
-    Never,
-    Unknown,
-}
+pub use spec_wire_proto::debundle::spec::SynchronousLoadRunsAppCallbacks;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SynchronousLoadDrainsMicrotasks {
-    Never,
-    Unknown,
-}
+pub use spec_wire_proto::debundle::spec::SynchronousLoadDrainsMicrotasks;
 
 /// Exact zero-argument host operations recognized by the synchronous-effect
 /// interpreter (SPEC.md § Host behavior).
-#[derive(
-    Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize, strum::Display,
-)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum ReentryFreeOperation {
-    AsyncLocalStorageConstruct,
-    PromiseResolve,
-}
+pub use spec_wire_proto::debundle::spec::ReentryFreeOperation;
 
 /// Exact Node builtin module identities admissible in
 /// `reentry_free_builtin_modules`. Unknown bare packages are absent; Bun's
 /// package replacements are [`BunModule`]s.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum NodeBuiltinModule {
-    Assert,
-    AsyncHooks,
-    Buffer,
-    ChildProcess,
-    Constants,
-    Crypto,
-    Dns,
-    DnsPromises,
-    Events,
-    Fs,
-    FsPromises,
-    Http,
-    Http2,
-    Https,
-    Net,
-    Os,
-    Path,
-    PathPosix,
-    PathWin32,
-    PerfHooks,
-    Process,
-    Querystring,
-    Readline,
-    Stream,
-    StreamConsumers,
-    StreamPromises,
-    StringDecoder,
-    TimersPromises,
-    Tls,
-    Tty,
-    Url,
-    Util,
-    UtilTypes,
-    Vm,
-    WorkerThreads,
-    Zlib,
-    Module,
-}
+pub use spec_wire_proto::debundle::spec::NodeBuiltinModule;
 
-impl NodeBuiltinModule {
+pub trait NodeBuiltinModuleExt: Sized {
     /// Recognize only explicitly supported static-import spellings. This is not a
     /// bare-package or `node:` prefix fallback resolver.
-    pub fn from_static_specifier(specifier: &str) -> Option<Self> {
+    fn from_static_specifier(specifier: &str) -> Option<Self>;
+    /// Building or loading this builtin's namespace can run accessors the
+    /// program defines on `process` or its prototype chain.
+    fn reads_process_accessors(self) -> bool;
+}
+
+impl NodeBuiltinModuleExt for NodeBuiltinModule {
+    fn from_static_specifier(specifier: &str) -> Option<Self> {
         Some(match specifier {
             "assert" | "node:assert" => Self::Assert,
             "async_hooks" | "node:async_hooks" => Self::AsyncHooks,
@@ -439,22 +320,24 @@ impl NodeBuiltinModule {
             _ => return None,
         })
     }
+
+    fn reads_process_accessors(self) -> bool {
+        matches!(self, Self::Process | Self::WorkerThreads)
+    }
 }
 
 /// Exact host-provided modules outside Node's builtin namespace admissible in
 /// `reentry_free_bun_modules`: Bun's own `bun:` modules and the packages Bun
 /// replaces with built-in implementations.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BunModule {
-    BunFfi,
-    Undici,
-    Ws,
+pub use spec_wire_proto::debundle::spec::BunModule;
+
+pub trait BunModuleExt: Sized {
+    /// Recognize only the exact request spellings.
+    fn from_static_specifier(specifier: &str) -> Option<Self>;
 }
 
-impl BunModule {
-    /// Recognize only the exact request spellings.
-    pub fn from_static_specifier(specifier: &str) -> Option<Self> {
+impl BunModuleExt for BunModule {
+    fn from_static_specifier(specifier: &str) -> Option<Self> {
         Some(match specifier {
             "bun:ffi" => Self::BunFfi,
             "undici" => Self::Undici,
@@ -477,14 +360,6 @@ impl HostModule {
         NodeBuiltinModule::from_static_specifier(specifier)
             .map(Self::Node)
             .or_else(|| BunModule::from_static_specifier(specifier).map(Self::Bun))
-    }
-}
-
-impl NodeBuiltinModule {
-    /// Building this builtin's namespace, or loading it, can run accessors the
-    /// program defines on `process` or its prototype chain.
-    pub fn reads_process_accessors(self) -> bool {
-        matches!(self, Self::Process | Self::WorkerThreads)
     }
 }
 
@@ -676,6 +551,22 @@ pub struct RetainedCallbackSignature {
     pub callback_arguments: BTreeSet<usize>,
 }
 
+impl RetainedCallbackSignature {
+    pub fn validate(&self) -> std::result::Result<(), &'static str> {
+        if self.callback_arguments.is_empty() {
+            return Err("retained callback signature must list at least one callback argument");
+        }
+        if self
+            .callback_arguments
+            .iter()
+            .any(|position| *position >= self.argument_count)
+        {
+            return Err("retained callback signature position must be less than argument_count");
+        }
+        Ok(())
+    }
+}
+
 impl<'de> Deserialize<'de> for RetainedCallbackSignature {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]
@@ -685,24 +576,12 @@ impl<'de> Deserialize<'de> for RetainedCallbackSignature {
             callback_arguments: BTreeSet<usize>,
         }
         let signature = Signature::deserialize(deserializer)?;
-        if signature.callback_arguments.is_empty() {
-            return Err(serde::de::Error::custom(
-                "retained callback signature must list at least one callback argument",
-            ));
-        }
-        if signature
-            .callback_arguments
-            .iter()
-            .any(|position| *position >= signature.argument_count)
-        {
-            return Err(serde::de::Error::custom(
-                "retained callback signature position must be less than argument_count",
-            ));
-        }
-        Ok(Self {
+        let signature = Self {
             argument_count: signature.argument_count,
             callback_arguments: signature.callback_arguments,
-        })
+        };
+        signature.validate().map_err(serde::de::Error::custom)?;
+        Ok(signature)
     }
 }
 
@@ -995,12 +874,7 @@ pub enum SourceUnitSelector {
 }
 
 /// A previously resolved logical member in this provider chunk.
-#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct ResolvedMemberSelector {
-    pub module: String,
-    pub name: String,
-}
+pub use spec_wire_proto::debundle::spec::ResolvedMemberSelector;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -1124,24 +998,10 @@ pub struct NoAccessorInstallCallableContract {
 }
 
 /// Typed native callee models eligible for exact-site identity premises.
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum NativeCallIdentityKind {
-    ObjectFreeze,
-}
+pub use spec_wire_proto::debundle::spec::NativeCallIdentityKind;
 
 /// Native operations admitted by `native_operation_inputs`.
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum NativeOperationKind {
-    /// Direct zero-argument construction through the original global data binding.
-    TextEncoderEmpty,
-    MapEmpty,
-    WeakMapEmpty,
-    SetEmpty,
-    Symbol,
-    SetFromPrimitiveArray,
-}
+pub use spec_wire_proto::debundle::spec::NativeOperationKind;
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -1149,18 +1009,9 @@ pub struct CapturedValueContract {
     pub kind: CapturedValueKind,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum CapturedValueKind {
-    OrdinaryObject,
-}
+pub use spec_wire_proto::debundle::spec::CapturedValueKind;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BuiltinGlobalRoot {
-    GlobalThis,
-    Window,
-}
+pub use spec_wire_proto::debundle::spec::BuiltinGlobalRoot;
 
 /// One named input-chunk admission check, identified by the
 /// docs/design.md assumption it enforces. Used both as the
@@ -1289,14 +1140,7 @@ impl BunLoader {
 }
 
 /// Embedded-file loaders admissible in `reentry_free_embedded_loaders`.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum EmbeddedLoader {
-    /// The file's text, as a string.
-    Text,
-    /// A native addon: the host runs only its initializer.
-    Napi,
-}
+pub use spec_wire_proto::debundle::spec::EmbeddedLoader;
 
 /// Omitted fields take their value from the `Default` impl, so `{}` and an
 /// omitted `swap_vendor_chunks` agree by construction.
@@ -1626,52 +1470,13 @@ pub struct BundledPartialSwapPackage {
     pub namespace: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, Eq, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum PartialSwapKind {
-    /// Per-symbol member-access rewrite (zod-style). Emits one
-    /// `import * as <namespace> from "<package>"` per file that uses
-    /// the package and rewrites each `<local_binding>(...)` reference
-    /// to `<namespace>.<upstream_export>(...)`. Dots in `upstream_export`
-    /// separate nested properties; each segment is emitted as a safe
-    /// property access. In contrast, `kind: named` uses a literal export name.
-    #[default]
-    Member,
-    /// Whole-namespace import. The chunk's export is itself the
-    /// package's namespace object (e.g. `import { a as React } from
-    /// "../chunk"` where `a` is React's default-namespace export and
-    /// callers use `React.useState(...)` etc.). Rewrites the import
-    /// to `import * as <local_binding> from "<package>"`; leaves
-    /// every `<local_binding>.xxx` reference alone.
-    Namespace,
-    /// Default import. The chunk's export is the package's default
-    /// (e.g. `import { aQ as z } from "../chunk"` where `z` is
-    /// clsx's default function). Rewrites the import to
-    /// `import <local_binding> from "<package>"`; leaves every
-    /// `<local_binding>(...)` reference alone.
-    Default,
-    /// Named import. The chunk's export is a single named export of
-    /// the package (e.g. `import { o as mobxObserver } from
-    /// "../chunk"` where `o` is `mobx-react-lite`'s `observer`).
-    /// Rewrites the import to
-    /// `import { <upstream_export> as <local_binding> } from "<package>"`
-    /// (or `import { <name> } from "<package>"` when the local
-    /// binding name matches the upstream export); leaves every
-    /// `<local_binding>(...)` reference alone.
-    Named,
-}
+pub use spec_wire_proto::debundle::spec::PartialSwapKind;
 
 fn is_default_partial_swap_kind(kind: &PartialSwapKind) -> bool {
     matches!(kind, PartialSwapKind::Member)
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum WrapperShape {
-    NamedFromDefault,
-    NamedFromJsonDefault,
-    NamedFromModuleDefault,
-}
+pub use spec_wire_proto::debundle::spec::WrapperShape;
 
 // --- Logical modules -----------------------------------------------------
 
@@ -1962,13 +1767,7 @@ impl SourceMatchBinding {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct SourceMatchBindingDetail {
-    pub local: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-}
+pub use spec_wire_proto::debundle::spec::SourceMatchBindingDetail;
 
 impl AnonymousStatement {
     pub fn selector(
@@ -2073,16 +1872,7 @@ impl AnonymousStatementSelector {
     }
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, Eq, PartialEq, Ord, PartialOrd)]
-#[serde(rename_all = "snake_case")]
-pub enum SourceMatchIdentifierMode {
-    /// Internal exact identifier constraints for native lowering / solver tests.
-    /// Public `SourceMatch` deserialization rejects this spelling.
-    Exact,
-    /// The public `source_match` identifier policy.
-    #[default]
-    AlphaAll,
-}
+pub use spec_wire_proto::debundle::spec::SourceMatchIdentifierMode;
 
 /// Default value the [`UnassignedMode::CatchallFile`] target path
 /// falls back to when the spec author omits it. SSOT consumed by
@@ -2619,104 +2409,150 @@ pub enum MemberSelectorError {
     MultipleSelectors,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
-#[serde(rename_all = "snake_case")]
-pub enum BindingSourceKind {
-    /// The bound name comes from an `import` specifier in the source
-    /// chunk, not a top-level decl. The materializer rewrites the import
-    /// statement to a re-import in the destination module.
-    ImportSpecifier,
-    /// Top-level `var` / `let` / `const` declaration in the source chunk.
-    /// Carried for documentation; no special materializer path.
-    VariableDeclarator,
-    /// Top-level `function` declaration in the source chunk.
-    FunctionDeclaration,
-    /// Top-level `class` declaration in the source chunk.
-    ClassDeclaration,
-}
+pub use spec_wire_proto::debundle::spec::BindingSourceKind;
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, Eq, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum MemberPurity {
-    #[default]
-    Default,
-    /// Author asserts that calls to the bound function have no observable
-    /// side effects. Validator drops `S` edges for `<binding>(...)` call
-    /// sites. See <docs/purity_soundness.md> "Declared purity" + docs/design.md A9.
-    Pure,
-    /// Author asserts that `new <binding>(...)` has no observable side
-    /// effects beyond evaluating its constructor arguments. The analyzer
-    /// still requires every argument expression to classify pure; this
-    /// annotation does not affect ordinary `<binding>(...)` calls.
-    PureNew,
-}
+pub use spec_wire_proto::debundle::spec::MemberPurity;
 
 /// Trust contract scoped to evaluation of one selected variable initializer.
 /// Unlike [`MemberPurity`], this says nothing about later uses of its value.
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, Eq, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum InitializerPurity {
-    #[default]
-    Default,
-    Pure,
-}
+pub use spec_wire_proto::debundle::spec::InitializerPurity;
 
 /// Lexical effects allowed while evaluating one selected top-level variable
 /// initializer.
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum InitializerBindingEffects {
-    /// Evaluation reads and rebinds no top-level lexical bindings beyond the
-    /// initializer's syntactic eager-read and rebind footprint.
-    SourceOnly,
-}
+pub use spec_wire_proto::debundle::spec::InitializerBindingEffects;
 
 /// External effects of one selected simple top-level variable initializer.
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq, strum::Display)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum InitializerExternalEffects {
-    /// No mutable pre-existing heap, global-property or host/environment
-    /// state is accessed. Heap writes touch only this evaluation's fresh
-    /// allocations. Stable protocol metadata is an author lifetime promise;
-    /// lexical dependencies and abrupt completion remain separate.
-    Isolated,
-    /// Provider metadata writes use fresh result-owned identities, with no
-    /// interception, enumeration or publication except through the result.
-    /// Provider/configuration/environment observations are stable across all
-    /// admitted schedules; private capability memoization is observationally
-    /// idempotent. No application reentry or observable host/global writes.
-    /// Known heap cells and other effect domains remain independently checked.
-    PrivateMetadata,
-}
+pub use spec_wire_proto::debundle::spec::InitializerExternalEffects;
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, Eq, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum MemberEffect {
-    #[default]
-    Default,
-    /// Author asserts that recognized calls to the bound helper have a
-    /// TypeScript `__decorate`-style target-local mutation effect.
-    /// The analyzer shape-checks the call and models it as a local
-    /// effect on the target class/prototype instead of as a global
-    /// side-effect-order edge. See docs/design.md A10.
-    TypescriptDecorateHelper,
-    /// Stronger, application-wide author contract: every recognized member
-    /// decoration only records metadata on the target. The helper and every
-    /// supplied decorator neither invoke target behavior nor publish callbacks
-    /// or synchronously reenter other caller/host/export callbacks. See SPEC.md.
-    TypescriptMetadataDecorateHelper,
-    /// Like `typescript_metadata_decorate_helper`, additionally admits an
-    /// audited one-hop static member of an imported decorator provider.
-    TypescriptMetadataDecorateHelperWithMemberDecorators,
-    /// The same metadata-only contract for standalone three-argument property
-    /// applications. The helper determines its descriptor without a kind argument.
-    TypescriptMetadataDecorateHelperThreeArgs,
-}
+pub use spec_wire_proto::debundle::spec::MemberEffect;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generated_selector_leaves_keep_yaml_requiredness_and_json_shape() {
+        let resolved: ResolvedMemberSelector =
+            serde_yaml::from_str("module: ''\nname: ''\n").unwrap();
+        assert_eq!(resolved.module, "");
+        assert_eq!(resolved.name, "");
+        assert_eq!(
+            serde_json::to_value(&resolved).unwrap(),
+            serde_json::json!({"module": "", "name": ""})
+        );
+        assert!(serde_yaml::from_str::<ResolvedMemberSelector>("module: provider\n").is_err());
+        assert!(
+            serde_yaml::from_str::<ResolvedMemberSelector>(
+                "module: provider\nname: factory\nextra: rejected\n"
+            )
+            .is_err()
+        );
+
+        let detail: SourceMatchBindingDetail = serde_yaml::from_str("local: ''\n").unwrap();
+        assert_eq!(detail.local, "");
+        assert_eq!(detail.name, None);
+        assert_eq!(
+            serde_json::to_value(&detail).unwrap(),
+            serde_json::json!({"local": ""})
+        );
+        let named_empty: SourceMatchBindingDetail =
+            serde_yaml::from_str("local: alias\nname: ''\n").unwrap();
+        assert_eq!(named_empty.name.as_deref(), Some(""));
+        assert_eq!(
+            serde_json::to_value(&named_empty).unwrap(),
+            serde_json::json!({"local": "alias", "name": ""})
+        );
+        assert!(serde_yaml::from_str::<SourceMatchBindingDetail>("name: alias\n").is_err());
+        assert!(
+            serde_yaml::from_str::<SourceMatchBindingDetail>(
+                "local: alias\nname: alias\nextra: rejected\n"
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn generated_enums_keep_authored_spellings_and_defaults() {
+        fn check<T>(value: T, spelling: &str)
+        where
+            T: std::fmt::Debug + PartialEq + Serialize + serde::de::DeserializeOwned,
+        {
+            assert_eq!(serde_yaml::from_str::<T>(spelling).unwrap(), value);
+            assert_eq!(
+                serde_json::to_string(&value).unwrap(),
+                format!("\"{spelling}\"")
+            );
+        }
+
+        check(
+            WrapperShape::NamedFromJsonDefault,
+            "named_from_json_default",
+        );
+        check(BindingSourceKind::ImportSpecifier, "import_specifier");
+        check(MemberPurity::PureNew, "pure_new");
+        check(InitializerPurity::Pure, "pure");
+        check(InitializerBindingEffects::SourceOnly, "source_only");
+        check(
+            MemberEffect::TypescriptMetadataDecorateHelperThreeArgs,
+            "typescript_metadata_decorate_helper_three_args",
+        );
+        check(BuiltinGlobalRoot::GlobalThis, "global_this");
+        check(NodeBuiltinModule::FsPromises, "fs_promises");
+        check(BunModule::BunFfi, "bun_ffi");
+        check(AllIntrinsicFamilies::All, "all");
+        check(CapturedValueKind::OrdinaryObject, "ordinary_object");
+        check(EmbeddedLoader::Napi, "napi");
+        check(
+            LoaderResultForEvaluatingModule::ReturnsPartialNamespace,
+            "returns_partial_namespace",
+        );
+        check(NativeCallIdentityKind::ObjectFreeze, "object_freeze");
+        check(PartialSwapKind::Namespace, "namespace");
+        check(SourceMatchIdentifierMode::AlphaAll, "alpha_all");
+        check(SynchronousLoadDrainsMicrotasks::Never, "never");
+        check(SynchronousLoadRunsAppCallbacks::Unknown, "unknown");
+        check(SynchronousModuleLoader::Present, "present");
+        check(ProcessPrototypeChainAccessors::None, "none");
+        check(
+            NonLiteralLoaderCalls::NativeAddonsOnly,
+            "native_addons_only",
+        );
+        check(
+            IntrinsicFamily::FinalizationRegistry,
+            "finalization_registry",
+        );
+        check(PredefinedGlobals::Standard, "standard");
+        check(
+            ReentryFreeOperation::AsyncLocalStorageConstruct,
+            "async_local_storage_construct",
+        );
+        check(
+            InitializerExternalEffects::PrivateMetadata,
+            "private_metadata",
+        );
+
+        assert_eq!(MemberPurity::default(), MemberPurity::Default);
+        assert_eq!(InitializerPurity::default(), InitializerPurity::Default);
+        assert_eq!(MemberEffect::default(), MemberEffect::Default);
+        assert_eq!(PartialSwapKind::default(), PartialSwapKind::Member);
+        assert_eq!(
+            SourceMatchIdentifierMode::default(),
+            SourceMatchIdentifierMode::AlphaAll
+        );
+        assert_eq!(
+            SynchronousModuleLoader::default(),
+            SynchronousModuleLoader::Present
+        );
+        assert_eq!(
+            ProcessPrototypeChainAccessors::default(),
+            ProcessPrototypeChainAccessors::Unknown
+        );
+        assert_eq!(
+            NonLiteralLoaderCalls::default(),
+            NonLiteralLoaderCalls::Unknown
+        );
+        assert_eq!(PredefinedGlobals::default(), PredefinedGlobals::Unknown);
+    }
 
     #[test]
     fn source_match_unknown_field_is_rejected_naming_the_field() {

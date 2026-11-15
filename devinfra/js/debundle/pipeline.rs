@@ -1,3 +1,6 @@
+#[path = "apply_projection_codec.rs"]
+mod apply_projection_codec;
+
 use artifact::load_js_chunks;
 use serde::{Deserialize, Serialize};
 use source_identity::ChunkId;
@@ -26,7 +29,7 @@ use lowering::{
 use output_layout::GLOBAL_RESOLUTION_REPORT;
 use prepare_chunks::{SourcePreparation, prepare_js_chunks};
 use reconstruction::{EmittablePlan, ReconstructionPlan, RejectedPlan, VendorManifestOutput};
-use spec::{ChunkExportPurity, LogicalModule, TransformSpec};
+use spec::{ChunkExportPurity, LogicalModule, NodeBuiltinModuleExt, TransformSpec};
 use spec_modules::read_flat_transform_spec;
 use spec_tree::{
     CompileSpecTreeOptions, compile_spec_tree, compile_spec_tree_with_roots, graph_module_roots,
@@ -135,17 +138,16 @@ pub enum TransformSpecSource {
 /// Canonical input for apply runs that do not export replayable graphs.
 /// Retain authored paths for report locations and every report/validation note.
 /// Only module-level `note` is unused by the transform pipeline.
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug)]
 struct ApplyProjection {
-    format_version: u8,
+    format_version: u32,
     source: TransformSpecSource,
     spec: TransformSpec,
     module_roots_by_chunk: BTreeMap<String, Vec<PathBuf>>,
     rooted_paths: BTreeSet<ApplyPath>,
 }
 
-const APPLY_PROJECTION_FORMAT_VERSION: u8 = 2;
+const APPLY_PROJECTION_FORMAT_VERSION: u32 = 3;
 const APPLY_OUTPUT_ROOT: &str = "__debundle_apply_output_root__";
 
 /// Tree compilation creates these paths from `out_root`. Keep their suffixes
@@ -233,8 +235,7 @@ mod apply_projection_output_tests {
 
 /// Which spec paths were absolute beneath the producer root. Relative authored
 /// paths keep their exact spelling for native analysis compatibility.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum ApplyPath {
     InputRoot,
     JsList,
@@ -296,13 +297,14 @@ fn project_apply_from_spec(
     })?;
     fs::write(
         out,
-        serde_json::to_vec(&ApplyProjection {
+        ApplyProjection {
             format_version: APPLY_PROJECTION_FORMAT_VERSION,
             source,
             spec,
             module_roots_by_chunk,
             rooted_paths,
-        })?,
+        }
+        .encode(),
     )
     .with_context(|| format!("write apply projection {}", out.display()))
 }
@@ -421,12 +423,7 @@ pub fn run_transform_with_projection(
                 !options.graph_reports.enabled(),
                 "--apply-projection cannot export replayable graphs; use authored spec inputs"
             );
-            let mut projection: ApplyProjection = serde_json::from_slice(&fs::read(path)?)?;
-            anyhow::ensure!(
-                projection.format_version == APPLY_PROJECTION_FORMAT_VERSION,
-                "unsupported apply projection format version {}",
-                projection.format_version
-            );
+            let mut projection = ApplyProjection::decode(&fs::read(path)?)?;
             let root = std::path::absolute(projection_root)?;
             let mut source = cli.spec_source.clone();
             map_spec_source_paths(&mut source, &|path| {

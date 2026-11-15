@@ -17,6 +17,7 @@
 //! failures grow with it, so a target is closed only in the completed closure;
 //! no rule consumes an intermediate verdict.
 
+use spec::NodeBuiltinModuleExt;
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
