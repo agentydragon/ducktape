@@ -507,9 +507,9 @@ py_test(
     name = "test_scenario",
     srcs = ["test_scenario.py"],
     deps = [
+        ":app_sandbox",
         ":cluster",
         ":native_artifacts",
-        ":sandbox",
         ":scenario",
         "//:conftest",
         "//agentplane/app/testing:client",

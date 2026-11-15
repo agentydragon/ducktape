@@ -15,7 +15,7 @@ from opentelemetry import trace
 from agentplane.app.testing.client import Client
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import identity_pb2
-from agentplane.system_tests.driver import native_artifacts, sandbox, scenario
+from agentplane.system_tests.driver import app_sandbox, native_artifacts, scenario
 from agentplane.system_tests.driver.cluster import Cluster
 
 
@@ -67,8 +67,8 @@ def lifecycle(monkeypatch: pytest.MonkeyPatch) -> list[LifecycleEvent]:
     async def delete_identity(_cluster: Cluster, _identity: dict[str, str]) -> None:
         return None
 
-    monkeypatch.setattr(sandbox, "create_scenario_identity", create_identity)
-    monkeypatch.setattr(sandbox, "delete_scenario_identity", delete_identity)
+    monkeypatch.setattr(app_sandbox, "create_scenario_identity", create_identity)
+    monkeypatch.setattr(app_sandbox, "delete_scenario_identity", delete_identity)
 
     async def ready(
         client: Client, target: identity_pb2.EnvironmentTarget
@@ -84,8 +84,8 @@ def lifecycle(monkeypatch: pytest.MonkeyPatch) -> list[LifecycleEvent]:
         events.append(LifecycleEvent("delete", name))
 
     monkeypatch.setattr(Client, "connect", staticmethod(new_client))
-    monkeypatch.setattr(sandbox, "wait_until_running", ready)
-    monkeypatch.setattr(sandbox, "suspend_and_delete", delete)
+    monkeypatch.setattr(app_sandbox, "wait_until_running", ready)
+    monkeypatch.setattr(app_sandbox, "suspend_and_delete", delete)
     monkeypatch.setattr(native_artifacts, "capture", capture)
     return events
 
@@ -134,7 +134,7 @@ async def test_failure_still_releases_every_created_guest_and_closes_client(
     cluster: Cluster, lifecycle: list[LifecycleEvent], monkeypatch: pytest.MonkeyPatch, failure: str
 ) -> None:
     if failure == "readiness":
-        original_ready = sandbox.wait_until_running
+        original_ready = app_sandbox.wait_until_running
 
         async def ready(
             client: Client, target: identity_pb2.EnvironmentTarget
@@ -143,7 +143,7 @@ async def test_failure_still_releases_every_created_guest_and_closes_client(
                 raise RuntimeError("readiness")
             return await original_ready(client, target)
 
-        monkeypatch.setattr(sandbox, "wait_until_running", ready)
+        monkeypatch.setattr(app_sandbox, "wait_until_running", ready)
     elif failure == "diagnostics":
 
         async def capture(client: Client, *, sandbox_uid: str) -> None:
@@ -151,14 +151,14 @@ async def test_failure_still_releases_every_created_guest_and_closes_client(
 
         monkeypatch.setattr(native_artifacts, "capture", capture)
     elif failure == "deletion":
-        original_delete = sandbox.suspend_and_delete
+        original_delete = app_sandbox.suspend_and_delete
 
         async def delete(cluster: Cluster, client: Client, name: str, uid: str) -> None:
             await original_delete(cluster, client, name, uid)
             if name == "second":
                 raise RuntimeError("deletion")
 
-        monkeypatch.setattr(sandbox, "suspend_and_delete", delete)
+        monkeypatch.setattr(app_sandbox, "suspend_and_delete", delete)
 
     async def run() -> None:
         async with scenario.open_resources(cluster, "https://app.test", "test", trace.NoOpTracer()) as (_, create):
@@ -185,7 +185,7 @@ async def test_scenario_failure_remains_primary_when_cleanup_also_fails(
     if failure == "diagnostics":
         monkeypatch.setattr(native_artifacts, "capture", cleanup_failure)
     else:
-        monkeypatch.setattr(sandbox, "suspend_and_delete", cleanup_failure)
+        monkeypatch.setattr(app_sandbox, "suspend_and_delete", cleanup_failure)
     original = AssertionError("scenario failed")
 
     async def run() -> None:
@@ -205,14 +205,14 @@ async def test_cancellation_during_teardown_waits_for_deletion_before_closing_cl
 ) -> None:
     deleting = asyncio.Event()
     release = asyncio.Event()
-    original_delete = sandbox.suspend_and_delete
+    original_delete = app_sandbox.suspend_and_delete
 
     async def delete(cluster: Cluster, client: Client, name: str, uid: str) -> None:
         deleting.set()
         await release.wait()
         await original_delete(cluster, client, name, uid)
 
-    monkeypatch.setattr(sandbox, "suspend_and_delete", delete)
+    monkeypatch.setattr(app_sandbox, "suspend_and_delete", delete)
 
     async def run() -> None:
         async with scenario.open_resources(cluster, "https://app.test", "test", trace.NoOpTracer()) as (_, create):
