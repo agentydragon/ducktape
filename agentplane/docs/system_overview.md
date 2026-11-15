@@ -38,7 +38,7 @@ flowchart LR
         egressRules[Rules and EgressAdmin TLS gRPC :8081]
         llm[LLM inference HTTP and ModelConfig RPC over TLS :8080]
         electric[Electric]
-        sampler[Experimental central sampler]
+    sampler[Central sampler TLS gRPC :8083]
         samplerdb[(Sampler PostgreSQL)]
     end
     subgraph runtimes[Sandbox environments]
@@ -295,7 +295,7 @@ flowchart LR
     actions -->|Actions SVID mTLS: Session reads; typed envelope for delegation| history
     app -->|per-Sandbox Runner Proxy: live inventory + diagnostics| gateway
     dispatcher -->|Pod-bound workload token: wrapped Codex and Claude opens + commands| gateway
-    dispatcher -->|central opens + commands: bearer over verified server TLS| central
+    dispatcher -->|central opens + commands: Gateway Sessions SVID mTLS :8083| central
     sandboxctl -->|every-replica inventory and guarded desired-state writes| k8s
     sandboxctl -->|Quiesce| gateway
     sandboxctl -->|passive WatchState binds workload UID and observes facts: mTLS gRPC| runtime

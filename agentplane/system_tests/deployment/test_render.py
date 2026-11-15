@@ -765,8 +765,12 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
         deployment["spec"]["template"]["metadata"]["labels"][key] == value
         for key, value in service["spec"]["selector"].items()
     )
-    assert service["spec"]["ports"][0]["targetPort"] == container["ports"][0]["containerPort"]
-    assert container["startupProbe"]["grpc"]["port"] == container["ports"][0]["containerPort"]
+    service_ports = {port["name"]: port for port in service["spec"]["ports"]}
+    container_ports = {port["name"]: port["containerPort"] for port in container["ports"]}
+    assert set(service_ports) == {"grpc-tls"}
+    assert service_ports["grpc-tls"]["targetPort"] == container_ports["grpc-tls"] == central_sampler.PORT
+    assert container_ports["health"] == central_sampler.HEALTH_PORT
+    assert container["startupProbe"]["grpc"]["port"] == central_sampler.HEALTH_PORT
     database_env = next(
         entry for entry in container["env"] if entry["name"] == env_name(CentralSamplerSettings, "database_url")
     )
@@ -775,6 +779,8 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
         _resource(docs, "ConfigMap", f"{central_sampler.NAME}-settings")["data"]["settings.json"]
     )
     assert settings.executor_reconnect_timeout_seconds is None
+    assert settings.listen is None
+    assert settings.health_listen == f"0.0.0.0:{central_sampler.HEALTH_PORT}"
     assert settings.actions is not None
     assert (
         settings.actions.target == f"{fixture_chart.ACTIONS_SERVICE.fqdn}:{fixture_chart.ACTIONS_SERVICE.port.number}"
@@ -846,7 +852,7 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     assert llm_config["central_sampler_accounts"] == [f"{NAMESPACE}/{central_sampler.NAME}"]
     gateway_config = yaml.safe_load(_resource(docs, "ConfigMap", "runner-gateway-settings")["data"]["settings.yaml"])
     sampler_target = gateway_config["central_sampler"]
-    assert sampler_target["target"] == central_sampler.tls_target(NAMESPACE)
+    assert sampler_target["target"] == central_sampler.target(NAMESPACE)
     assert "token_file" not in sampler_target
     assert sampler_target["tls"]["server_uri"] == CENTRAL_SAMPLER_URI
     assert sampler_target["tls"]["client_uri"] == GATEWAY_SESSIONS_URI
