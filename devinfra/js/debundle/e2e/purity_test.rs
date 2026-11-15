@@ -1268,6 +1268,76 @@ fn asserted_fluent_export_chains_emit_no_s_cycle() {
     );
 }
 
+#[test]
+fn fluent_export_assertion_preserves_argument_effects() {
+    let purities = [ChunkExportPurityBuilder::new("static/vendorlib")
+        .with_fluent_exports(&["e4"])
+        .build()];
+    let options = |modules| {
+        FixtureOpts::new(
+            r#"import { e4 as k } from "./vendorlib.js";
+const A = k.object({ value: 1 }).describe((console.log("a"), "a"));
+const B = k.object({ value: 2 }).describe((console.log("b"), "b"));
+const C = k.object({ value: 3 }).describe((console.log("c"), "c"));
+console.log(A.d, B.d, C.d);
+export { A, B, C };
+"#,
+            modules,
+        )
+        .with_extra_chunks(&[("static/vendorlib", FLUENT_VENDORLIB)])
+        .with_chunk_export_purity(&purities)
+    };
+    let fixture = run_fixture(options(vec![logical_module(
+        "values",
+        &[Member::new("A"), Member::new("B"), Member::new("C")],
+    )]));
+    assert_preserved_entry_output(&fixture, "a\nb\nc\na b c\n");
+    expect_sequenced_cycle_rejection(
+        options(vec![
+            logical_module("mod_a", &[Member::new("A"), Member::new("C")]),
+            logical_module("mod_b", &[Member::new("B")]),
+        ]),
+        &["mod_a", "mod_b"],
+    );
+}
+
+#[test]
+fn fluent_export_assertion_does_not_certify_a_sibling_export() {
+    let vendor = format!(
+        "{FLUENT_VENDORLIB}\nexport const sibling = {{ object(shape) {{ console.log(shape.value); return zodish.object(shape); }} }};\n",
+    );
+    let chunks = [("static/vendorlib", vendor.as_str())];
+    let purities = [ChunkExportPurityBuilder::new("static/vendorlib")
+        .with_fluent_exports(&["e4"])
+        .build()];
+    let options = |modules| {
+        FixtureOpts::new(
+            r#"import { sibling } from "./vendorlib.js";
+const A = sibling.object({ value: "a" }).describe("a");
+const B = sibling.object({ value: "b" }).describe("b");
+const C = sibling.object({ value: "c" }).describe("c");
+console.log(A.d, B.d, C.d);
+export { A, B, C };
+"#,
+            modules,
+        )
+        .with_extra_chunks(&chunks)
+        .with_chunk_export_purity(&purities)
+    };
+    let fixture = run_fixture(options(vec![logical_module(
+        "values",
+        &[Member::new("A"), Member::new("B"), Member::new("C")],
+    )]));
+    assert_preserved_entry_output(&fixture, "a\nb\nc\na b c\n");
+    expect_sequenced_cycle_rejection(
+        options(vec![
+            logical_module("mod_a", &[Member::new("A"), Member::new("C")]),
+            logical_module("mod_b", &[Member::new("B")]),
+        ]),
+        &["mod_a", "mod_b"],
+    );
+}
+
 /// React annotation idiom: each component declaration is followed by
 /// a `displayName` data-property write. The writes are anonymous
 /// statements (no declared bindings) whose only effect is on the
