@@ -415,6 +415,7 @@ py_library(
     name = "sandbox_ownership",
     srcs = ["sandbox_ownership.py"],
     deps = [
+        ":cleanup",
         "//agentplane/proto:identity_pb2",
         "@pypi//protobuf",
     ],
@@ -522,6 +523,7 @@ py_library(
     name = "scenario",
     srcs = ["scenario.py"],
     deps = [
+        ":cleanup",
         ":cluster",
         ":native_artifacts",
         ":sandbox",
@@ -663,6 +665,7 @@ py_library(
     name = "policy_objects",
     srcs = ["policy_objects.py"],
     deps = [
+        ":cleanup",
         ":cluster",
         ":tracing",
         "//agentplane:crd_group",
@@ -712,5 +715,21 @@ py_library(
     deps = [
         "//agentplane/environments/v1:environment_service_pb2",
         "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "cleanup",
+    srcs = ["cleanup.py"],
+)
+
+py_test(
+    name = "test_cleanup",
+    srcs = ["test_cleanup.py"],
+    deps = [
+        ":cleanup",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest_bazel",
     ],
 )

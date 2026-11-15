@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -16,6 +15,7 @@ from agentplane.action_service.policies.resources import ACTION_RULE_TYPE, ACTIO
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
+from agentplane.system_tests.driver.cleanup import finish_cleanup
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.tracing import tracer
 
@@ -47,39 +47,23 @@ class PolicyObjects:
     ) -> bool:
         del traceback
         with tracer.start_as_current_span("system_test.mcp.policy_cleanup"):
-            closing = asyncio.create_task(self._delete_all())
-            cancellation: asyncio.CancelledError | None = None
-            while not closing.done():
-                try:
-                    await asyncio.shield(closing)
-                except asyncio.CancelledError as error:
-                    task = asyncio.current_task()
-                    if task is not None and task.cancelling():
-                        cancellation = cancellation or error
-                except BaseException:
-                    break
-
-            cleanup_error: BaseException | None = None
-            try:
-                closing.result()
-            except BaseException as error:
-                cleanup_error = error
+            result = await finish_cleanup(self._delete_all())
 
             if exc is not None:
-                if cleanup_error is not None:
+                if result.failure is not None:
                     exc.add_note(
                         "Policy resource cleanup also failed "
-                        f"({len(cleanup_error.exceptions) if isinstance(cleanup_error, BaseExceptionGroup) else 1} "
+                        f"({len(result.failure.exceptions) if isinstance(result.failure, BaseExceptionGroup) else 1} "
                         "resource(s)); cleanup details are suppressed to preserve the original failure."
                     )
                 return False
 
-            if cancellation is not None:
-                if cleanup_error is not None and cleanup_error is not cancellation:
-                    raise cancellation from cleanup_error
-                raise cancellation
-            if cleanup_error is not None:
-                raise cleanup_error
+            if result.cancellation is not None:
+                if result.failure is not None and result.failure is not result.cancellation:
+                    raise result.cancellation from result.failure
+                raise result.cancellation
+            if result.failure is not None:
+                raise result.failure
         return False
 
     async def _create(self, kind: str, plural: str, name: str, spec: dict[str, Any]) -> str:

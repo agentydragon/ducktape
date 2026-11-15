@@ -1,6 +1,5 @@
 """Client and Sandbox ownership for one concurrent scenario on a shared deployment."""
 
-import asyncio
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 
@@ -8,6 +7,7 @@ from opentelemetry import trace
 
 from agentplane.app.testing.client import Client
 from agentplane.system_tests.driver import native_artifacts
+from agentplane.system_tests.driver.cleanup import finish_cleanup
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.sandbox import Sandboxes, sandbox_scope
 
@@ -42,31 +42,21 @@ async def open_resources(
         finally:
             # A peer can fail while this scenario is already cleaning up. Finish teardown
             # before propagating TaskGroup cancellation; the stack must outlive every guest.
-            closing = asyncio.create_task(
+            result = await finish_cleanup(
                 resources.pop_all().__aexit__(
                     type(error) if error is not None else None,
                     error,
                     error.__traceback__ if error is not None else None,
                 )
             )
-            cancellation: asyncio.CancelledError | None = None
-            while not closing.done():
-                try:
-                    await asyncio.shield(closing)
-                except asyncio.CancelledError as caught:
-                    task = asyncio.current_task()
-                    if task is not None and task.cancelling():
-                        cancellation = cancellation or caught
-                except BaseException:
-                    break
-            try:
-                closing.result()
-            except BaseException as cleanup_error:
+            if result.failure is not None:
                 if error is not None:
-                    error.add_note(f"Scenario cleanup also failed ({type(cleanup_error).__name__}).")
-                elif cancellation is not None:
-                    raise cancellation from cleanup_error
+                    error.add_note(f"Scenario cleanup also failed ({type(result.failure).__name__}).")
+                elif result.cancellation is not None:
+                    if result.failure is result.cancellation:
+                        raise result.cancellation
+                    raise result.cancellation from result.failure
                 else:
-                    raise
-            if error is None and cancellation is not None:
-                raise cancellation
+                    raise result.failure
+            if error is None and result.cancellation is not None:
+                raise result.cancellation
