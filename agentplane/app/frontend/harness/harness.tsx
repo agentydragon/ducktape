@@ -191,6 +191,52 @@ function threadView(
   };
 }
 
+type ThreadFixture = {
+  id: string;
+  name?: string;
+  createdAgo: number;
+  archived?: boolean;
+  foldedThrough: bigint;
+  firstEventAgo?: number;
+  lastEventAgo?: number;
+  feedStatus?: FeedStatus;
+  sandbox: { name: string; harness?: Harness; historicalHarness?: Harness };
+  harnessState: HarnessState;
+  activeTurnId?: string;
+  setupState?: SetupState;
+  launchOutcome?: LaunchOutcome;
+};
+
+function threadFixture(fixture: ThreadFixture): ThreadView {
+  const { id, name, createdAgo, archived, foldedThrough, firstEventAgo, lastEventAgo, sandbox, harnessState } = fixture;
+  const at = (msAgo: number) => timestampFromDate(new Date(ago(msAgo)));
+  return threadView(
+    {
+      threadId: id,
+      createdAt: at(createdAgo),
+      ...(name === undefined ? {} : { name }),
+      archived: archived ?? false,
+    },
+    {
+      foldedThrough,
+      ...(firstEventAgo === undefined ? {} : { firstEventAt: at(firstEventAgo) }),
+      ...(lastEventAgo === undefined ? {} : { lastEventAt: at(lastEventAgo) }),
+      feedStatus: fixture.feedStatus ?? FeedStatus.ACTIVE,
+      sandbox: { namespace: "agentplane-visual", name: sandbox.name },
+      attached: {
+        sessionId: id,
+        ...(sandbox.harness ? { spec: visualNativeSpec(sandbox.harness, sandbox.name) } : {}),
+        ...(sandbox.historicalHarness ? { historicalHarness: sandbox.historicalHarness } : {}),
+        lastCursor: foldedThrough,
+        harnessState,
+        ...(fixture.activeTurnId ? { activeTurnId: fixture.activeTurnId } : {}),
+        ...(fixture.setupState ? { setupState: fixture.setupState } : {}),
+        ...(fixture.launchOutcome ? { launchOutcome: fixture.launchOutcome } : {}),
+      },
+    }
+  );
+}
+
 function visualSandbox(
   init: MessageInitShape<typeof EnvironmentDescriptorSchema>,
   ready = false
@@ -497,25 +543,23 @@ const BINDINGS = [
   })
 );
 
-/** Each identity is named after the state the identities screens show it in. */
-let identities: Identity[] = [
-  { name: "unreferenced-identity", description: "Unreferenced identity: no binding names it", git: false },
-  { name: "git-origin-identity", description: "Git-origin identity, applied by Flux", git: true },
-  { name: "identity-with-an-expiring-binding", description: "Identity with an expiring binding it owns", git: false },
-  { name: "referenced-identity", description: "Referenced identity: an operator binding names it", git: false },
-  {
-    name: "credential-referenced-identity",
-    description: "Credential-referenced identity: a workload credential acts as it",
-    git: false,
-  },
-].map(({ name, description, git }) =>
-  create(IdentitySchema, {
+function identityFixture(name: string, description: string, gitOrigin = false): Identity {
+  return create(IdentitySchema, {
     identity: { namespace: "agentplane-visual", name, uid: `identity-${name}` },
     generation: 1n,
-    labels: git ? { "kustomize.toolkit.fluxcd.io/name": "harness" } : {},
+    labels: gitOrigin ? { "kustomize.toolkit.fluxcd.io/name": "harness" } : {},
     spec: { description },
-  })
-);
+  });
+}
+
+/** Each identity is named after the state the identities screens show it in. */
+let identities: Identity[] = [
+  identityFixture("unreferenced-identity", "Unreferenced identity: no binding names it"),
+  identityFixture("git-origin-identity", "Git-origin identity, applied by Flux", true),
+  identityFixture("identity-with-an-expiring-binding", "Identity with an expiring binding it owns"),
+  identityFixture("referenced-identity", "Referenced identity: an operator binding names it"),
+  identityFixture("credential-referenced-identity", "Credential-referenced identity: a workload credential acts as it"),
+];
 
 let identityBindings: PolicyBinding[] = [
   { name: "personal-kube-reader", identity: "personal", source: "operator", sets: ["kube-reader"] },
@@ -882,69 +926,36 @@ function visualNativeSpec(harness: Harness, sandboxName: string) {
 
 /** The store's copy of the sessions: the idle one named, the stopped one not, so both renderings are on the page. */
 const THREADS: ThreadView[] = [
-  threadView(
-    {
-      threadId: IDLE_THREAD,
-      createdAt: timestampFromDate(new Date(ago(HOUR))),
-      name: "Idle thread",
-      archived: false,
-    },
-    {
-      foldedThrough: 14n,
-      firstEventAt: timestampFromDate(new Date(ago(HOUR))),
-      lastEventAt: timestampFromDate(new Date(ago(60_000))),
-      feedStatus: FeedStatus.ACTIVE,
-      sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
-      attached: {
-        sessionId: IDLE_THREAD,
-        spec: visualNativeSpec(Harness.CLAUDE, "ready-sandbox"),
-        lastCursor: 14n,
-        harnessState: HarnessState.RUNNING,
-      },
-    }
-  ),
-  threadView(
-    {
-      threadId: UNNAMED_STOPPED_THREAD,
-      createdAt: timestampFromDate(new Date(ago(2 * HOUR))),
-      archived: false,
-    },
-    {
-      foldedThrough: 31n,
-      firstEventAt: timestampFromDate(new Date(ago(2 * HOUR))),
-      lastEventAt: timestampFromDate(new Date(ago(90 * 60_000))),
-      feedStatus: FeedStatus.ACTIVE,
-      sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
-      attached: {
-        sessionId: UNNAMED_STOPPED_THREAD,
-        spec: visualNativeSpec(Harness.CLAUDE, "ready-sandbox"),
-        lastCursor: 31n,
-        harnessState: HarnessState.STOPPED,
-      },
-    }
-  ),
-  threadView(
-    {
-      threadId: RUNNING_THREAD,
-      createdAt: timestampFromDate(new Date(ago(30 * 60_000))),
-      name: "Running thread",
-      archived: false,
-    },
-    {
-      foldedThrough: 23n,
-      firstEventAt: timestampFromDate(new Date(ago(30 * 60_000))),
-      lastEventAt: timestampFromDate(new Date(ago(10_000))),
-      feedStatus: FeedStatus.ACTIVE,
-      sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
-      attached: {
-        sessionId: RUNNING_THREAD,
-        spec: visualNativeSpec(Harness.CLAUDE, "ready-sandbox"),
-        lastCursor: 23n,
-        harnessState: HarnessState.RUNNING,
-        activeTurnId: "t2",
-      },
-    }
-  ),
+  threadFixture({
+    id: IDLE_THREAD,
+    name: "Idle thread",
+    createdAgo: HOUR,
+    foldedThrough: 14n,
+    firstEventAgo: HOUR,
+    lastEventAgo: 60_000,
+    sandbox: { name: "ready-sandbox", harness: Harness.CLAUDE },
+    harnessState: HarnessState.RUNNING,
+  }),
+  threadFixture({
+    id: UNNAMED_STOPPED_THREAD,
+    createdAgo: 2 * HOUR,
+    foldedThrough: 31n,
+    firstEventAgo: 2 * HOUR,
+    lastEventAgo: 90 * 60_000,
+    sandbox: { name: "ready-sandbox", harness: Harness.CLAUDE },
+    harnessState: HarnessState.STOPPED,
+  }),
+  threadFixture({
+    id: RUNNING_THREAD,
+    name: "Running thread",
+    createdAgo: 30 * 60_000,
+    foldedThrough: 23n,
+    firstEventAgo: 30 * 60_000,
+    lastEventAgo: 10_000,
+    sandbox: { name: "ready-sandbox", harness: Harness.CLAUDE },
+    harnessState: HarnessState.RUNNING,
+    activeTurnId: "t2",
+  }),
 ];
 
 /**
@@ -954,152 +965,78 @@ const THREADS: ThreadView[] = [
  */
 const THREADS_WITH_SANDBOXES: ThreadView[] = [
   ...THREADS,
-  threadView(
-    {
-      threadId: THREE_UNPROCESSED_THREAD,
-      createdAt: timestampFromDate(new Date(ago(3 * HOUR))),
-      name: "Three unprocessed thread",
-      archived: false,
-    },
-    {
-      foldedThrough: 7n,
-      firstEventAt: timestampFromDate(new Date(ago(3 * HOUR))),
-      lastEventAt: timestampFromDate(new Date(ago(2 * 60_000))),
-      feedStatus: FeedStatus.ACTIVE,
-      sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
-      attached: {
-        sessionId: THREE_UNPROCESSED_THREAD,
-        spec: visualNativeSpec(Harness.CLAUDE, "ready-sandbox"),
-        lastCursor: 7n,
-        harnessState: HarnessState.RUNNING,
-      },
-    }
-  ),
-  threadView(
-    {
-      threadId: ONE_UNPROCESSED_THREAD,
-      createdAt: timestampFromDate(new Date(ago(3 * HOUR))),
-      name: "One unprocessed thread",
-      archived: false,
-    },
-    {
-      foldedThrough: 7n,
-      firstEventAt: timestampFromDate(new Date(ago(3 * HOUR))),
-      lastEventAt: timestampFromDate(new Date(ago(3 * 60_000))),
-      feedStatus: FeedStatus.ACTIVE,
-      sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
-      attached: {
-        sessionId: ONE_UNPROCESSED_THREAD,
-        spec: visualNativeSpec(Harness.CLAUDE, "ready-sandbox"),
-        lastCursor: 7n,
-        harnessState: HarnessState.RUNNING,
-      },
-    }
-  ),
-  threadView(
-    {
-      threadId: DELIVERY_FAILED_THREAD,
-      createdAt: timestampFromDate(new Date(ago(3 * HOUR))),
-      name: "Delivery-failed thread",
-      archived: false,
-    },
-    {
-      foldedThrough: 7n,
-      firstEventAt: timestampFromDate(new Date(ago(3 * HOUR))),
-      lastEventAt: timestampFromDate(new Date(ago(4 * 60_000))),
-      feedStatus: FeedStatus.ACTIVE,
-      sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
-      attached: {
-        sessionId: DELIVERY_FAILED_THREAD,
-        spec: visualNativeSpec(Harness.CLAUDE, "ready-sandbox"),
-        lastCursor: 7n,
-        harnessState: HarnessState.STOPPED,
-      },
-    }
-  ),
-  threadView(
-    {
-      threadId: "5f1c4a2e-0000-4000-8000-000000000003",
-      createdAt: timestampFromDate(new Date(ago(5 * 60_000))),
-      name: "Pending thread",
-      archived: false,
-    },
-    {
-      foldedThrough: 2n,
-      sandbox: { namespace: "agentplane-visual", name: "pending-sandbox" },
-      attached: {
-        sessionId: "5f1c4a2e-0000-4000-8000-000000000003",
-        spec: visualNativeSpec(Harness.CODEX, "pending-sandbox"),
-        lastCursor: 2n,
-        harnessState: HarnessState.STOPPED,
-      },
-    }
-  ),
-  threadView(
-    {
-      threadId: SUSPENDED_THREAD,
-      createdAt: timestampFromDate(new Date(ago(47 * HOUR))),
-      name: "Suspended thread",
-      archived: false,
-    },
-    {
-      foldedThrough: 9n,
-      firstEventAt: timestampFromDate(new Date(ago(47 * HOUR))),
-      lastEventAt: timestampFromDate(new Date(ago(46 * HOUR))),
-      feedStatus: FeedStatus.ACTIVE,
-      sandbox: { namespace: "agentplane-visual", name: "suspended-sandbox" },
-      attached: {
-        sessionId: SUSPENDED_THREAD,
-        spec: visualNativeSpec(Harness.CLAUDE, "suspended-sandbox"),
-        lastCursor: 9n,
-        harnessState: HarnessState.STOPPED,
-        setupState: SetupState.SUCCEEDED,
-        launchOutcome: LaunchOutcome.STARTED,
-      },
-    }
-  ),
-  threadView(
-    {
-      threadId: "5f1c4a2e-0000-4000-8000-000000000005",
-      createdAt: timestampFromDate(new Date(ago(72 * HOUR))),
-      name: "Read-only thread",
-      archived: false,
-    },
-    {
-      foldedThrough: 18n,
-      firstEventAt: timestampFromDate(new Date(ago(72 * HOUR))),
-      lastEventAt: timestampFromDate(new Date(ago(70 * HOUR))),
-      feedStatus: FeedStatus.ACTIVE,
-      sandbox: { namespace: "agentplane-visual", name: "deleted-sandbox" },
-      attached: {
-        sessionId: "5f1c4a2e-0000-4000-8000-000000000005",
-        historicalHarness: Harness.CLAUDE,
-        lastCursor: 18n,
-        harnessState: HarnessState.STOPPED,
-      },
-    }
-  ),
-  threadView(
-    {
-      threadId: "5f1c4a2e-0000-4000-8000-000000000006",
-      createdAt: timestampFromDate(new Date(ago(96 * HOUR))),
-      name: "Archived thread",
-      archived: true,
-    },
-    {
-      foldedThrough: 3n,
-      firstEventAt: timestampFromDate(new Date(ago(96 * HOUR))),
-      lastEventAt: timestampFromDate(new Date(ago(95 * HOUR))),
-      feedStatus: FeedStatus.ACTIVE,
-      sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
-      attached: {
-        sessionId: "5f1c4a2e-0000-4000-8000-000000000006",
-        spec: visualNativeSpec(Harness.CLAUDE, "ready-sandbox"),
-        lastCursor: 3n,
-        harnessState: HarnessState.STOPPED,
-      },
-    }
-  ),
+  threadFixture({
+    id: THREE_UNPROCESSED_THREAD,
+    name: "Three unprocessed thread",
+    createdAgo: 3 * HOUR,
+    foldedThrough: 7n,
+    firstEventAgo: 3 * HOUR,
+    lastEventAgo: 2 * 60_000,
+    sandbox: { name: "ready-sandbox", harness: Harness.CLAUDE },
+    harnessState: HarnessState.RUNNING,
+  }),
+  threadFixture({
+    id: ONE_UNPROCESSED_THREAD,
+    name: "One unprocessed thread",
+    createdAgo: 3 * HOUR,
+    foldedThrough: 7n,
+    firstEventAgo: 3 * HOUR,
+    lastEventAgo: 3 * 60_000,
+    sandbox: { name: "ready-sandbox", harness: Harness.CLAUDE },
+    harnessState: HarnessState.RUNNING,
+  }),
+  threadFixture({
+    id: DELIVERY_FAILED_THREAD,
+    name: "Delivery-failed thread",
+    createdAgo: 3 * HOUR,
+    foldedThrough: 7n,
+    firstEventAgo: 3 * HOUR,
+    lastEventAgo: 4 * 60_000,
+    sandbox: { name: "ready-sandbox", harness: Harness.CLAUDE },
+    harnessState: HarnessState.STOPPED,
+  }),
+  threadFixture({
+    id: "5f1c4a2e-0000-4000-8000-000000000003",
+    name: "Pending thread",
+    createdAgo: 5 * 60_000,
+    foldedThrough: 2n,
+    feedStatus: FeedStatus.UNSPECIFIED,
+    sandbox: { name: "pending-sandbox", harness: Harness.CODEX },
+    harnessState: HarnessState.STOPPED,
+  }),
+  threadFixture({
+    id: SUSPENDED_THREAD,
+    name: "Suspended thread",
+    createdAgo: 47 * HOUR,
+    foldedThrough: 9n,
+    firstEventAgo: 47 * HOUR,
+    lastEventAgo: 46 * HOUR,
+    sandbox: { name: "suspended-sandbox", harness: Harness.CLAUDE },
+    harnessState: HarnessState.STOPPED,
+    setupState: SetupState.SUCCEEDED,
+    launchOutcome: LaunchOutcome.STARTED,
+  }),
+  threadFixture({
+    id: "5f1c4a2e-0000-4000-8000-000000000005",
+    name: "Read-only thread",
+    createdAgo: 72 * HOUR,
+    foldedThrough: 18n,
+    firstEventAgo: 72 * HOUR,
+    lastEventAgo: 70 * HOUR,
+    sandbox: { name: "deleted-sandbox", historicalHarness: Harness.CLAUDE },
+    harnessState: HarnessState.STOPPED,
+  }),
+  threadFixture({
+    id: "5f1c4a2e-0000-4000-8000-000000000006",
+    name: "Archived thread",
+    createdAgo: 96 * HOUR,
+    archived: true,
+    foldedThrough: 3n,
+    firstEventAgo: 96 * HOUR,
+    lastEventAgo: 95 * HOUR,
+    sandbox: { name: "ready-sandbox", harness: Harness.CLAUDE },
+    harnessState: HarnessState.STOPPED,
+  }),
 ];
 
 for (const thread of THREADS_WITH_SANDBOXES) {
@@ -1634,6 +1571,10 @@ function viewState(
   });
 }
 
+function scopeToThread(threadId: string, rows: Record<string, unknown>[]): Record<string, unknown>[] {
+  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+}
+
 function fixtureEvent(observation: MessageInitShape<typeof EventSchema>["observation"]): Event {
   return create(EventSchema, { observation });
 }
@@ -1797,7 +1738,7 @@ function standardRows(
       complete: false,
     }),
   ];
-  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+  return scopeToThread(threadId, rows);
 }
 
 /** A tool run with a consecutive group of empty reasoning summaries between its calls. */
@@ -1819,7 +1760,7 @@ function consecutiveReasoningRows(threadId: string): Record<string, unknown>[] {
     }),
     item(60, "reasoning-group-answer", ItemKind.ASSISTANT_TEXT, "The log check is complete.", { threadId }),
   ];
-  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+  return scopeToThread(threadId, rows);
 }
 
 function failedRows(threadId: string, afterContent: boolean): Record<string, unknown>[] {
@@ -1847,7 +1788,7 @@ function failedRows(threadId: string, afterContent: boolean): Record<string, unk
       : []),
     lifecycle(afterContent ? 8 : 6, event, threadId),
   ];
-  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+  return scopeToThread(threadId, rows);
 }
 
 function interleavedRows(threadId: string): Record<string, unknown>[] {
@@ -1890,7 +1831,7 @@ function interleavedRows(threadId: string): Record<string, unknown>[] {
       threadId
     ),
   ];
-  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+  return scopeToThread(threadId, rows);
 }
 
 /** Close-packed command states so the semaphore and its real labels can be inspected on a phone. */
@@ -2003,7 +1944,7 @@ function statesRows(threadId: string, outcomes = false): Record<string, unknown>
       text: "Run the input that was not applied.",
     }),
   ];
-  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+  return scopeToThread(threadId, rows);
 }
 
 /** Mirror the screenshot's order: assistant text, a folded run, then an unfinished assistant-text
@@ -2077,7 +2018,7 @@ function streamingInterleavedRows(threadId: string): Record<string, unknown>[] {
     true
   );
   rows.unshift(viewState(cursor - 1, activeTurn));
-  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+  return scopeToThread(threadId, rows);
 }
 
 /** Three mundane observations that collapse into one comma-joined row, then a prominent one
@@ -2095,7 +2036,7 @@ function lifecycleGroupRows(threadId: string): Record<string, unknown>[] {
     lifecycle(40, fixtureEvent({ case: "harnessLost", value: {} }), threadId),
     lifecycle(50, fixtureEvent({ case: "harnessStarted", value: {} }), threadId),
   ];
-  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+  return scopeToThread(threadId, rows);
 }
 
 function shortThreadSwitchRows(threadId: string): Record<string, unknown>[] {
@@ -2236,7 +2177,7 @@ function codeFenceRows(threadId: string): Record<string, unknown>[] {
       { threadId }
     ),
   ];
-  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+  return scopeToThread(threadId, rows);
 }
 
 /** A reasoning step with no neighboring tool call, so `historyRows` never folds it into a run and
@@ -2280,7 +2221,7 @@ function standaloneReasoningRows(
     item(20, "r-solo", ItemKind.REASONING, reasoning, { threadId }),
     item(24, "m-1", ItemKind.ASSISTANT_TEXT, "Let's fix the root cause.", { threadId }),
   ];
-  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+  return scopeToThread(threadId, rows);
 }
 
 /** The command Codex records for a script it ran through a shell: the argv, joined, with the script
@@ -2349,7 +2290,7 @@ function shellCallRows(threadId: string): Record<string, unknown>[] {
     }),
     item(60, "m-1", ItemKind.ASSISTANT_TEXT, "The holdings query returned 24 rows.", { threadId }),
   ];
-  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+  return scopeToThread(threadId, rows);
 }
 
 /** Two reasoning steps with no neighbouring tool call, so each stands alone, both unfinished: one in
@@ -2370,7 +2311,7 @@ function unfinishedReasoningRows(threadId: string): Record<string, unknown>[] {
       turn: "turn-visual",
     }),
   ];
-  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+  return scopeToThread(threadId, rows);
 }
 
 /** What a recovery leaves on most of a finished turn: every item retained and finished, none badged. */
