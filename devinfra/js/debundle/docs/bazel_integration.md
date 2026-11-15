@@ -49,15 +49,17 @@ debundle_apply(
 
 ```
 
-| Rule                | Registered actions                                                       | Default output                                               |
-| ------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------ |
-| `debundle_analysis` | `DebundleProjectAnalysis`, `DebundleAnalyze`                             | Canonical `.analysis_projection` and saved `.analysis` files |
-| `debundle_apply`    | `DebundleProjectApply`, `DebundleApply`; optional `DebundleExportGraphs` | `<name>.out/` with emitted JavaScript and bounded reports    |
+| Rule                | Registered actions                                                                            | Default output                                               |
+| ------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `debundle_analysis` | `DebundleProjectAnalysis`, `DebundleAnalyze`                                                  | Canonical `.analysis_projection` and saved `.analysis` files |
+| `debundle_apply`    | `DebundleApply`; `DebundleProjectApply` for a different spec; optional `DebundleExportGraphs` | `<name>.out/` with emitted JavaScript and bounded reports    |
 
 `analysis` requires a direct `debundle_analysis` target with its typed provider;
 a filegroup or arbitrary artifact is not accepted. Building the analysis target
-never applies a spec or emits JavaScript. Adding apply targets registers their apply projection, but no source-analysis
-projection or Analyze action. The ordinary Bazel dependency graph makes every
+never applies a spec or emits JavaScript. Its one projection action writes both
+the analysis and apply projections from one parsed spec. Matching apply targets
+reuse the latter; adding them registers no source-analysis projection or Analyze
+action. The ordinary Bazel dependency graph makes every
 consumer depend on the same saved artifact; caching and action deduplication need
 no side cache or opt-in reuse flag.
 
@@ -70,12 +72,25 @@ projection before consuming saved facts. The same input file alone is not enough
 to justify sharing facts computed under different assumptions. Never force a
 shared target by weakening those checks.
 
-`DebundleProjectApply` compiles the typed spec without parsing JavaScript. Its
+The analysis target's `apply_projection` output group exposes its second
+projection. An apply target reuses it when the flat spec path, or the tree
+config, vendor marks, modules path, source root, and complete declared spec
+input set are identical. The apply target's output root is excluded: tree
+output paths are bound when the projection is consumed. Different source or
+package input labels do not prevent projection sharing; each apply action still
+declares its own source/package inputs and checks native analysis compatibility.
+A distinct spec keeps its own `DebundleProjectApply` action, even when its
+semantic analysis is compatible. `DebundleProjectApply` compiles the typed spec
+without parsing JavaScript. The canonical apply projection
 canonical output omits YAML comments, whitespace, and module-level `note` only.
 The projection action reads the flat spec or tree config, vendor marks, and
 declared module YAML files; source and package paths are serialized as paths,
 without opening their contents. Package-root arguments are used by analysis
-and apply, so they stay in those actions' input closures.
+and apply, so they stay in those actions' input closures. The combined producer
+also reads source/package inputs to calculate the analysis projection. Thus a
+source or package edit may rerun both projections even if the apply projection
+bytes are unchanged; `DebundleAnalyze` and each apply action retain their
+separate input keys and cache behavior.
 `DebundleApply` reads that projection, saved analysis, source/package inputs, and
 the optional ownership subset. Metadata-only changes that preserve the projection
 therefore reuse its cached output. Emitted `comment`, report notes, and
@@ -105,9 +120,9 @@ A tree spec uses `tree_config`, `tree_modules`, `tree_vendor_marks`, and
 `tree_modules` is a package-relative directory. A flat YAML uses `spec` instead.
 `tree_source_root` is the target holding the bundle: its files' root determines
 whether embedded source paths resolve against the execroot or `bazel-bin`,
-including bundles extracted from pinned upstream artifacts. The apply
-projection action depends on spec authoring files only; the real apply action
-retains the source and package inputs.
+including bundles extracted from pinned upstream artifacts. A separate
+`DebundleProjectApply` action, when needed for a distinct spec, depends on spec
+authoring files only; the real apply action retains source and package inputs.
 
 `analysis_threads` belongs only to `debundle_analysis`: zero uses the inherited
 Rayon setting, a positive value sets the tracked `RAYON_NUM_THREADS` environment

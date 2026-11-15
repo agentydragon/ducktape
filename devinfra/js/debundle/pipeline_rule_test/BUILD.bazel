@@ -275,11 +275,9 @@ pipeline_report_flags_test(
 
 shared_analysis_test(
     name = "shared_analysis_test",
+    distinct_variants = ["//devinfra/js/debundle/pipeline_rule_test/shared_analysis:b"],
     target_under_test = "//devinfra/js/debundle/pipeline_rule_test/shared_analysis:analysis",
-    variants = [
-        "//devinfra/js/debundle/pipeline_rule_test/shared_analysis:a",
-        "//devinfra/js/debundle/pipeline_rule_test/shared_analysis:b",
-    ],
+    variants = ["//devinfra/js/debundle/pipeline_rule_test/shared_analysis:a"],
 )
 
 shared_analysis_test(
