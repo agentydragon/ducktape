@@ -24,6 +24,23 @@ fn has_named_import(source: &str, expected: &str) -> bool {
     })
 }
 
+fn assert_import_source(source: &str, expected: &str) {
+    let imports: Vec<String> = parse_module(source)
+        .body
+        .iter()
+        .filter_map(|item| match item {
+            ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => {
+                Some(import.src.value.to_string_lossy().into_owned())
+            }
+            _ => None,
+        })
+        .collect();
+    assert!(
+        imports.iter().any(|source| source == expected),
+        "expected import from {expected:?}, got {imports:?}\n--- module ---\n{source}"
+    );
+}
+
 #[test]
 fn assignment_only_import_references_preserve_read_only_binding_failures() {
     for statement in [
@@ -961,9 +978,9 @@ fn moved_body_re_imports_specifier_re_exported_by_another_plan() {
     // variable and `ReferenceError: a is not defined` at runtime.
     //
     // The source chunk lives at `static/app/`; place vendor.js
-    // there too so the entry's `./vendor.js` resolves (and
-    // mod_b's emitted re-import resolves through the same
-    // chunk-relative path rewrite).
+    // there too so the entry's `./vendor.js` resolves. Both the
+    // empty re-export owner and moved body must re-import that same
+    // runtime-only sibling from their deeper output directories.
     let mut opts = FixtureOpts::new(
         r#"import { x as a } from "./vendor.js";
 function bridge() {
@@ -986,6 +1003,10 @@ export { bridge };
     );
     opts.extra_files = &[("static/app/vendor.js", "export const x = 42;\n")];
     let fixture = run_fixture(opts);
+
+    let mod_a = fs::read_to_string(fixture.out_root.join("static/app/modules/mod_a.js"))
+        .expect("read import-specifier re-export module");
+    assert_import_source(&mod_a, "../vendor.js");
 
     // mod_b's bridge body references `a`; mod_b must carry a
     // source-chunk re-import for `a` (the vendor binding) so the
@@ -1068,11 +1089,10 @@ fn drops_specifier_for_imported_binding_claimed_and_unused_in_residual() {
     // re-export references `composed`. The trim drops the dead
     // `dep` specifier from the residual's vendor import; the
     // directive is preserved as a side-effect-only
-    // `import "./vendor.js";` so vendor's evaluation is not
-    // skipped (mod_dep, an ImportSpecifier-only logical module
-    // with no `Owned` bindings, isn't imported by the residual
-    // at runtime, so vendor evaluation must come from the
-    // residual itself).
+    // `import "./vendor.js";`. The schedule also loads `mod_dep`,
+    // whose empty body re-exports the claimed import specifier, so
+    // that module must resolve the same runtime-only sibling from its
+    // deeper output directory.
     let mut opts = FixtureOpts::new(
         r#"import { dep } from "./vendor.js";
 const composed = dep + 1;
@@ -1093,6 +1113,10 @@ export { composed };
     );
     opts.extra_files = &[("static/app/vendor.js", "export const dep = 41;\n")];
     let fixture = run_fixture(opts);
+
+    let mod_dep = fs::read_to_string(fixture.out_root.join("static/app/modules/mod_dep.js"))
+        .expect("read import-specifier re-export module");
+    assert_import_source(&mod_dep, "../vendor.js");
 
     let entry = fs::read_to_string(fixture.out_root.join("static/app/entry.js"))
         .expect("read residual entry");
@@ -1133,6 +1157,10 @@ export { composed };
     );
     opts.extra_files = &[("static/app/vendor.js", "export const dep = 41;\n")];
     let fixture = run_fixture(opts);
+
+    let mod_dep = fs::read_to_string(fixture.out_root.join("static/app/modules/mod_dep.js"))
+        .expect("read import-specifier re-export module");
+    assert_import_source(&mod_dep, "../vendor.js");
 
     let entry = fs::read_to_string(fixture.out_root.join("static/app/entry.js"))
         .expect("read residual entry");
