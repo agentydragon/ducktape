@@ -767,7 +767,7 @@ spec:
       storagePath: /var/lib/alloy-journal
     controller:
       nodeSelector:
-        node-vendor: nixos
+        feature.node.kubernetes.io/system-os_release.ID: nixos
         observability.allegedly.works/journal-collector: alloy
       tolerations:
         - effect: NoSchedule
