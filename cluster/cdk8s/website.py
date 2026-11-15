@@ -2,8 +2,18 @@
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s import ApiObjectMetadata, App, Chart, Size
+from cdk8s_plus_34 import (
+    ContainerResources,
+    Cpu,
+    CpuResources,
+    Deployment,
+    ImagePullPolicy,
+    LabelSelector,
+    MemoryResources,
+    Pods as PodSelector,
+    Service,
+)
 from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRoute,
     HttpRouteSpec,
@@ -15,9 +25,12 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRulesFiltersRequestRedirectStatusCode,
 )
 
-from cluster.cdk8s import namespaces
+from cluster.cdk8s import namespaces, pod_policy, probes
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
+from cluster.cdk8s.forgejo_registry.pull_credentials import (
+    forgejo_images_creds_external_secret,
+    forgejo_images_creds_secret_ref,
+)
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref, https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -55,65 +68,37 @@ def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
     namespaces.namespace(chart, "namespace", name=_NAMESPACE, vpa=Vpa.AUTO)
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=_NAMESPACE)
-    probe_action = k8s.HttpGetAction(path="/health", port=k8s.IntOrString.from_number(_SERVICE.pod_port))
-    k8s.KubeDeployment(
+    deployment = Deployment(
         chart,
         "deployment",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_SERVICE.pods.selector),
-        spec=k8s.DeploymentSpec(
-            replicas=2,
-            selector=k8s.LabelSelector(match_labels=_SERVICE.pods.selector),
-            template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_SERVICE.pods.selector),
-                spec=k8s.PodSpec(
-                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
-                    automount_service_account_token=False,
-                    image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
-                    containers=[
-                        k8s.Container(
-                            name="server",
-                            image=_IMAGE,
-                            ports=[k8s.ContainerPort(container_port=_SERVICE.pod_port)],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("16Mi"),
-                                },
-                                limits={
-                                    "cpu": k8s.Quantity.from_string("100m"),
-                                    "memory": k8s.Quantity.from_string("64Mi"),
-                                },
-                            ),
-                            liveness_probe=k8s.Probe(http_get=probe_action, initial_delay_seconds=5, period_seconds=10),
-                            readiness_probe=k8s.Probe(http_get=probe_action, initial_delay_seconds=2, period_seconds=5),
-                            security_context=k8s.SecurityContext(
-                                allow_privilege_escalation=False,
-                                capabilities=k8s.Capabilities(drop=["ALL"]),
-                                read_only_root_filesystem=True,
-                                run_as_non_root=True,
-                            ),
-                        )
-                    ],
-                ),
-            ),
-        ),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE, labels=_SERVICE.pods.selector),
+        pod_metadata=ApiObjectMetadata(labels=_SERVICE.pods.selector),
+        replicas=2,
+        select=False,
+        enable_service_links=True,
+        docker_registry_auth=forgejo_images_creds_secret_ref(chart, "forgejo-images-creds-ref"),
     )
-    k8s.KubeService(
+    # Deployment selectors are immutable, so keep the existing labels.
+    deployment.select(LabelSelector.of(labels=_SERVICE.pods.selector))
+    deployment.add_container(
+        name="server",
+        image=_IMAGE,
+        image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
+        ports=[_SERVICE.container_port()],
+        resources=ContainerResources(
+            cpu=CpuResources(request=Cpu.millis(10), limit=Cpu.millis(100)),
+            memory=MemoryResources(request=Size.mebibytes(16), limit=Size.mebibytes(64)),
+        ),
+        readiness=probes.http_probe("/health", port=_SERVICE.pod_port, initial_delay_seconds=2, period_seconds=5),
+        liveness=probes.http_probe("/health", port=_SERVICE.pod_port, initial_delay_seconds=5, period_seconds=10),
+    )
+    pod_policy.harden(deployment)
+    Service(
         chart,
         "service",
-        metadata=k8s.ObjectMeta(name=_SERVICE.name, namespace=_NAMESPACE),
-        spec=k8s.ServiceSpec(
-            selector=_SERVICE.pods.selector,
-            ports=[
-                k8s.ServicePort(
-                    name=_SERVICE.port.name,
-                    port=_SERVICE.port.number,
-                    target_port=k8s.IntOrString.from_number(_SERVICE.pod_port),
-                    protocol="TCP",
-                )
-            ],
-            type="ClusterIP",
-        ),
+        metadata=ApiObjectMetadata(name=_SERVICE.name, namespace=_NAMESPACE),
+        selector=PodSelector.select(chart, "service-pods", labels=_SERVICE.pods.selector),
+        ports=[_SERVICE.service_port()],
     )
     https_route(
         chart,

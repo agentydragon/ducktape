@@ -94,16 +94,23 @@ metadata:
   name: ai-session-archive
   namespace: session-backup
 spec:
+  minReadySeconds: 0
+  progressDeadlineSeconds: 600
   replicas: 2
+  revisionHistoryLimit: 10
   selector:
     matchLabels:
       app.kubernetes.io/name: ai-session-archive
   strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
     type: RollingUpdate
   template:
     metadata:
       labels:
         app.kubernetes.io/name: ai-session-archive
+        cdk8s.io/metadata.addr: ai-session-archive-web-deployment-c8d1f610
     spec:
       automountServiceAccountToken: false
       containers:
@@ -145,9 +152,11 @@ spec:
           image: git.allegedly.works/ducktape-ci/ai-session-archive-web:unset
           imagePullPolicy: IfNotPresent
           livenessProbe:
+            failureThreshold: 3
             httpGet:
               path: /healthz
               port: 8080
+              scheme: HTTP
             initialDelaySeconds: 30
             periodSeconds: 20
           name: ai-session-archive
@@ -156,13 +165,15 @@ spec:
               name: http
               protocol: TCP
           readinessProbe:
+            failureThreshold: 3
             httpGet:
               path: /healthz
               port: 8080
+              scheme: HTTP
             periodSeconds: 10
           resources:
             limits:
-              memory: 1Gi
+              memory: 1024Mi
             requests:
               cpu: 50m
               memory: 256Mi
@@ -171,7 +182,12 @@ spec:
             capabilities:
               drop:
                 - ALL
+            privileged: false
             readOnlyRootFilesystem: false
+            runAsNonRoot: true
+      dnsPolicy: ClusterFirst
+      enableServiceLinks: true
+      hostNetwork: false
       imagePullSecrets:
         - name: forgejo-images-creds
       initContainers:
@@ -199,13 +215,18 @@ spec:
                 - ALL
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      restartPolicy: Always
       securityContext:
         fsGroup: 1000
+        fsGroupChangePolicy: Always
         runAsGroup: 1000
         runAsNonRoot: true
         runAsUser: 1000
         seccompProfile:
           type: RuntimeDefault
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 30
 ---
 apiVersion: v1
 kind: Service
@@ -215,6 +236,7 @@ metadata:
   name: ai-session-archive
   namespace: session-backup
 spec:
+  externalIPs: []
   ports:
     - name: http
       port: 8080
