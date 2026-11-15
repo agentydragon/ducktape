@@ -60,6 +60,10 @@ fn claimed_modules_export_their_entry_points() {
             &["MobileMenu"],
         ),
         (
+            "main/packages/excalidraw/components/Actions.js",
+            &["SelectedShapeActions", "ShapesSwitcher"],
+        ),
+        (
             "main/packages/excalidraw/components/ImageExportDialog.js",
             &["ImageExportDialog"],
         ),

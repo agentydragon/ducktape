@@ -1,0 +1,41 @@
+# Original home: packages/excalidraw/components/Actions.tsx
+source_matches:
+  - match: |
+      var selected = (appState, targetElements) => {
+        let type = targetElements[0]?.type || null;
+        STMT_LIST;
+        return EXPR;
+      };
+    bindings:
+      - local: selected
+        name: canChangeStrokeColor
+
+  - match: |
+      var selected = (appState, targetElements) =>
+        ANYTHING(appState.activeTool.type) || targetElements.some((element) => ANYTHING(element.type));
+    bindings:
+      - local: selected
+        name: canChangeBackgroundColor
+
+  - match: |
+      var selected = ({ appState, elementsMap, renderAction, app }) => {
+        let targetElements = EXPR(elementsMap, appState), isSingleElementBoundContainer = !1;
+        STMT_LIST;
+        return EXPR;
+      };
+    bindings:
+      - local: selected
+        name: SelectedShapeActions
+
+  - match: |
+      var selected = ({ activeTool, appState, app, UIOptions }) => {
+        let [isExtraToolsMenuOpen, setIsExtraToolsMenuOpen] = EXPR(!1),
+          frameToolSelected = activeTool.type === "frame",
+          laserToolSelected = activeTool.type === "laser",
+          embeddableToolSelected = activeTool.type === "embeddable",
+          ANYTHING = ANYTHING;
+        return EXPR;
+      };
+    bindings:
+      - local: selected
+        name: ShapesSwitcher
