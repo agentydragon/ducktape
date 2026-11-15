@@ -1388,7 +1388,8 @@ fn possible_getter_owner_batch_keeps_separate_effect_coverage_and_future_binding
             && edge.target == trigger)
             .then_some(cause)
     });
-    let future_observation = future_observation.expect("future TDZ ordering cause");
+    let future_observation = future_observation
+        .unwrap_or_else(|| panic!("future TDZ ordering cause missing; graph={graph:#?}"));
     assert!(
         possible_getter_owner(&future_observation["observation"], first_owner),
         "the first owner must retain the possible-getter read provenance: {future_observation:#}"
