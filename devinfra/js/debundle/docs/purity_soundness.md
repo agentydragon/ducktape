@@ -67,6 +67,14 @@ case in `purity/classifier_tests.rs`. The synchronous interpreter reads the
 same rows with its census premise (`requires`); a row outside the census
 (empty `requires`) is purity-only.
 
+The `Symbol.for` row treats agent-local registry insertion as unobservable.
+ECMAScript exposes no registry enumeration or removal:
+[`Symbol.keyFor`](https://tc39.es/ecma262/multipage/fundamental-objects.html#sec-symbol.keyfor)
+queries an already held symbol, and repeat `Symbol.for` calls for a key return
+that key's unique symbol. This model assumes ordinary ECMAScript behavior
+without host access to the internal registry. Callee identity, argument
+evaluation and `ToString` conversion still need their ordinary checks.
+
 If the table proves too restrictive in practice, that is the expected failure
 mode. Loosen it only by adding operations whose steps are silent, or by
 introducing stronger operand analysis that resolves a listed step for a wider
@@ -356,29 +364,26 @@ heap barrier. Unselected calls use the ordinary guards.
 author premise for one exact direct native initializer. The schema admits
 `operation: text_encoder_empty`, `operation: map_empty`, `operation: weak_map_empty`,
 `operation: set_empty`,
-`operation: symbol`, `operation: symbol_for`, `operation: promise_resolve`, and
+`operation: symbol`, `operation: promise_resolve`, and
 `operation: set_from_primitive_array`.
-For `symbol` and `symbol_for`, the canonical selector engine identifies one
-direct top-level simple binding initialized by an ordinary, nonoptional,
-uncomputed `Symbol(...)` or `Symbol.for(...)` call respectively, with zero or one syntactically primitive
-argument and no spread; the parser-input SHA-256 binds that selection to the
+For `symbol`, the canonical selector engine identifies one direct top-level
+simple binding initialized by an ordinary, nonoptional, uncomputed `Symbol(...)`
+call with zero or one syntactically primitive argument and no spread; the
+parser-input SHA-256 binds that selection to the
 audited bytes. The execution index validates the selected binding and call
 span before the synchronous interpreter can consume it.
 
 The author asserts that, from provider evaluation start through the selected
 call in every synchronous initialization schedule allowed by emission, the
 ordinary global environment resolves `Symbol` to the original native function
-through its ordinary data binding. For `symbol_for`, the author additionally
-asserts that its direct `for` data property is the original native method.
-The author must audit the host entry state: there is no hostile preseeded
-`Symbol` or `Symbol.for` alias or accessor, and no foreign
+through its ordinary data binding. The author must audit the host entry state:
+there is no hostile preseeded `Symbol` alias or accessor, and no foreign
 reentry before the selected call. This is not a snapshot of the binding at the
 call's original point: a later or deferred known replacement could move before
 the call in an emitted schedule. Therefore any positively identified in-source
 write to the global `Symbol` binding or global-object `Symbol` slot anywhere in
-the analyzed initialization region contradicts either input. A known write to
-the `Symbol` constructor's `for` slot also contradicts `symbol_for`, including
-a replacement later restored. Opaque receiver mutations are the uncertainty
+the analyzed initialization region contradicts the input, including a
+replacement later restored. Opaque receiver mutations are the uncertainty
 this premise may cover; they remain visible as their original census witnesses.
 The shared native write census retains receiver path and property key alongside
 its conservative native-family effects. The validators reject only source-known
@@ -392,7 +397,7 @@ the report records the author provenance at that site. A `promise_resolve`
 input is effective only together with the matching independent
 `host_behavior.reentry_free_operations` entry; the pair satisfies the exact Promise timing check
 without changing other native guards or Promise call sites. Other calls still
-require the ordinary shared integrity proof. For `symbol` and `symbol_for`,
+require the ordinary shared integrity proof. For `symbol`,
 primitive argument evaluation and conversion may throw; a Symbol-valued or
 object-valued argument is not admitted. Argument and callee evaluation, their
 effects and throws, and surrounding writes, callback invocation, publication,
@@ -584,21 +589,12 @@ and primitive slot kinds.
 
 An exact validated `symbol` site with zero arguments or one direct string
 literal has a separate pure-initializer consequence: the original native
-`Symbol` creates a fresh symbol without coercion callbacks or a throw. An exact
-validated `symbol_for` site still requires exactly one direct string literal.
-The original native `Symbol.for` converts that string without user code or a
-throw, then looks up or inserts a symbol in the agent-local registry. ECMAScript
-exposes no registry enumeration or removal:
-[`Symbol.keyFor`](https://tc39.es/ecma262/multipage/fundamental-objects.html#sec-symbol.keyfor)
-queries an already held symbol, and repeat `Symbol.for` calls
-for a key return that key's unique symbol. Registry insertion can therefore
-move with this initializer without changing observable JS behavior. The pure
+`Symbol` creates a fresh symbol without coercion callbacks or a throw. The pure
 verdict records the exact native-operation input reference; the array-content
 collector consumes the same checked site instead of adding an opaque frontier.
 This conclusion does not extend to a merely primitive-valued expression:
 evaluating it or converting its result may throw. It also assumes the ordinary
-ECMAScript intrinsic behavior under the author premise, not host access to
-the internal registry.
+ECMAScript intrinsic behavior under the author premise.
 
 ## Native `Proxy` construction
 

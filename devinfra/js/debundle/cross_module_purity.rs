@@ -1429,7 +1429,6 @@ pub fn resolve_imported_callable_summaries(
                 input.evidence.operation,
                 NativeInputKind::Operation(
                     spec::NativeOperationKind::Symbol
-                        | spec::NativeOperationKind::SymbolFor
                         | spec::NativeOperationKind::PromiseResolve
                         | spec::NativeOperationKind::TextEncoderEmpty
                         | spec::NativeOperationKind::MapEmpty
@@ -1448,9 +1447,7 @@ pub fn resolve_imported_callable_summaries(
                 "{} is contradicted by a positively identified global {} replacement or operation mutation in provider {module}, source unit {}",
                 input.evidence.spec_location,
                 match input.evidence.operation {
-                    NativeInputKind::Operation(
-                        spec::NativeOperationKind::Symbol | spec::NativeOperationKind::SymbolFor,
-                    ) => "Symbol",
+                    NativeInputKind::Operation(spec::NativeOperationKind::Symbol) => "Symbol",
                     NativeInputKind::Operation(spec::NativeOperationKind::TextEncoderEmpty) =>
                         "TextEncoder",
                     NativeInputKind::Operation(spec::NativeOperationKind::MapEmpty) => "Map",
@@ -1488,25 +1485,6 @@ pub fn resolve_imported_callable_summaries(
             .unwrap_or("native_call_identity_inputs");
         bail!(
             "{request} is contradicted by a positively identified required Object.freeze slot write in provider {module}, source unit {}",
-            owner.0
-        );
-    }
-    if let Some(input) = selected_native_operation_inputs
-        .values()
-        .flatten()
-        .find(|input| {
-            input.evidence.operation
-                == NativeInputKind::Operation(spec::NativeOperationKind::SymbolFor)
-        })
-        && let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
-            facts
-                .known_symbol_for_mutation_owner()
-                .map(|owner| (module, owner))
-        })
-    {
-        bail!(
-            "{} is contradicted by a positively identified Symbol.for replacement or accessor installation in provider {module}, source unit {}",
-            input.evidence.spec_location,
             owner.0
         );
     }

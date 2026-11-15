@@ -435,8 +435,6 @@ measured with the per-owner counters. Heavy owners are the 160 units in
 | v2: v1 with `Symbol.for(…)` replaced by string constants            | `property_write` at `Cr.jsx=c1`; `member_read` at every `f.jsx`                                                                                                     |                        160 |      279 s |
 | v3: all 734 `(0,f.jsx[s])(` calls go to one top-level function      | inside the function: `implicit_coercion`, `member_read` (`t.key`, `a.ref`), `membership_protocol` (`"key" in t`), `property_write` (`a[i]=t[i]`)                    |                        160 |      589 s |
 
-- `Symbol.for` is modeled only through a `native_operation_inputs`
-  `symbol_for` premise on a top-level binding, never inside a function body.
 - v2's `property_write` is `promote_property_writes`: once
   `reachability.unknown_call_seen` is set, which is sticky, every later write
   takes the possible-setter path, even to a fresh `{}`.

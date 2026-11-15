@@ -1319,28 +1319,6 @@ pub(super) fn native_call_identity_key(
     ))
 }
 
-/// The selected operation must name the exact original global and, for the
-/// registry operation, its direct data property. The global shadowing check
-/// remains with the caller's canonical value-flow facts.
-fn selected_symbol_binding(callee: &ValueExpr, operation: NativeInputKind) -> Option<&Id> {
-    match (operation, callee) {
-        (
-            NativeInputKind::Operation(spec::NativeOperationKind::Symbol),
-            ValueExpr::Binding(binding),
-        ) => Some(binding),
-        (
-            NativeInputKind::Operation(spec::NativeOperationKind::SymbolFor),
-            ValueExpr::Member(receiver, Some(property), MemberKey::Static, _),
-        ) if property == "for" => {
-            let ValueExpr::Binding(binding) = receiver.as_ref() else {
-                return None;
-            };
-            Some(binding)
-        }
-        _ => None,
-    }
-}
-
 fn native_operation_call_name(operation: NativeInputKind) -> &'static str {
     match operation {
         NativeInputKind::Operation(spec::NativeOperationKind::TextEncoderEmpty) => {
@@ -1358,9 +1336,6 @@ fn native_operation_call_name(operation: NativeInputKind) -> &'static str {
         NativeInputKind::Operation(spec::NativeOperationKind::Symbol) => {
             "direct Symbol(...) call (unsupported Symbol call shape)"
         }
-        NativeInputKind::Operation(spec::NativeOperationKind::SymbolFor) => {
-            "direct Symbol.for(...) call (unsupported Symbol call shape)"
-        }
         NativeInputKind::Operation(spec::NativeOperationKind::PromiseResolve) => {
             "direct Promise.resolve() call (unsupported Promise.resolve call shape)"
         }
@@ -1370,9 +1345,9 @@ fn native_operation_call_name(operation: NativeInputKind) -> &'static str {
 
 fn native_operation_mutation_name(operation: NativeInputKind) -> &'static str {
     match operation {
-        NativeInputKind::Operation(
-            spec::NativeOperationKind::Symbol | spec::NativeOperationKind::SymbolFor,
-        ) => "global Symbol replacement or accessor installation",
+        NativeInputKind::Operation(spec::NativeOperationKind::Symbol) => {
+            "global Symbol replacement or accessor installation"
+        }
         NativeInputKind::Operation(spec::NativeOperationKind::TextEncoderEmpty) => {
             "global TextEncoder replacement or accessor installation"
         }
@@ -7431,15 +7406,11 @@ impl ExecutionIndex {
             .iter()
             .map(|input| {
                 let (site, slots): (Span, Vec<IntrinsicSlot>) = match input.evidence.operation {
-                    // The builtin `Symbol` / `Symbol.for` rows at the call. A
-                    // zero-argument or literal-string `Symbol` call, or a
-                    // literal-string `Symbol.for` call, also makes the source
-                    // unit pure (`symbol_literal_proof`).
+                    // The builtin `Symbol` row at the call. A zero-argument
+                    // or literal-string call also makes the source unit pure
+                    // (`symbol_literal_proof`).
                     NativeInputKind::Operation(Operation::Symbol) => {
                         (input.call_span, vec![Global(Symbol)])
-                    }
-                    NativeInputKind::Operation(Operation::SymbolFor) => {
-                        (input.call_span, vec![Global(Symbol), Static(Symbol, "for")])
                     }
                     // The host Promise timing check, only with the matching
                     // `reentry_free_operations` entry.
@@ -8020,16 +7991,6 @@ impl ExecutionIndex {
                 ));
                 continue;
             }
-            if input.evidence.operation
-                == NativeInputKind::Operation(spec::NativeOperationKind::SymbolFor)
-                && let Some(owner) = self.known_symbol_for_mutation()
-            {
-                self.native_operation_input_errors.push(format!(
-                    "{request} is contradicted by a positively identified Symbol.for replacement or accessor installation (source unit {})",
-                    owner.0
-                ));
-                continue;
-            }
             let candidates: Vec<_> = self
                 .binding_declaration_writes
                 .iter()
@@ -8224,16 +8185,6 @@ impl ExecutionIndex {
                 ));
                 continue;
             }
-            if input.evidence.operation
-                == NativeInputKind::Operation(spec::NativeOperationKind::SymbolFor)
-                && let Some(owner) = self.known_symbol_for_mutation()
-            {
-                self.native_operation_input_errors.push(format!(
-                    "{request} is contradicted by a positively identified Symbol.for replacement or accessor installation (source unit {})",
-                    owner.0
-                ));
-                continue;
-            }
             let Some([declaration]) = self
                 .binding_declaration_writes
                 .get(&input.binding)
@@ -8394,13 +8345,9 @@ impl ExecutionIndex {
             return Some("must select an ordinary direct top-level call");
         }
         match operation {
-            NativeInputKind::Operation(
-                spec::NativeOperationKind::Symbol | spec::NativeOperationKind::SymbolFor,
-            ) => {
-                let Some(symbol) = selected_symbol_binding(callee, operation) else {
-                    return Some(
-                        "must select a direct uncomputed Symbol identifier call or Symbol.for dot call",
-                    );
+            NativeInputKind::Operation(spec::NativeOperationKind::Symbol) => {
+                let ValueExpr::Binding(symbol) = callee else {
+                    return Some("must select a direct uncomputed Symbol identifier call");
                 };
                 if symbol.0.as_ref() != "Symbol" {
                     return Some("operation does not match the selected direct Symbol initializer");
@@ -8465,9 +8412,9 @@ impl ExecutionIndex {
             };
         }
         match operation {
-            NativeInputKind::Operation(
-                spec::NativeOperationKind::Symbol | spec::NativeOperationKind::SymbolFor,
-            ) => self.known_global_symbol_mutation(),
+            NativeInputKind::Operation(spec::NativeOperationKind::Symbol) => {
+                self.known_global_symbol_mutation()
+            }
             NativeInputKind::Operation(spec::NativeOperationKind::PromiseResolve) => [
                 NativeWriteSlot {
                     receiver: NativeReceiverPath::GlobalObject,
@@ -8493,16 +8440,6 @@ impl ExecutionIndex {
             key: NativePropertyKey::String("Symbol".to_owned()),
         });
         match overlap {
-            NativeSlotOverlap::Known(owner) => Some(owner),
-            NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
-        }
-    }
-
-    fn known_symbol_for_mutation(&self) -> Option<SourceUnitOrdinal> {
-        match self.source_slot_overlap(&NativeWriteSlot {
-            receiver: NativeReceiverPath::Constructor(NativeIntrinsic::Symbol),
-            key: NativePropertyKey::String("for".to_owned()),
-        }) {
             NativeSlotOverlap::Known(owner) => Some(owner),
             NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
         }
@@ -13360,10 +13297,7 @@ impl Visit for ExecutionIndex {
                 .iter()
                 .all(|argument| argument.spread.is_none() && primitive_constant(&argument.expr))
             && matches!(&call.callee, Callee::Expr(callee)
-                if matches!(callee.unwrap_parens(), Expr::Ident(identifier) if identifier.sym == "Symbol")
-                    || matches!(callee.unwrap_parens(), Expr::Member(member)
-                        if matches!(member.obj.unwrap_parens(), Expr::Ident(identifier) if identifier.sym == "Symbol")
-                            && matches!(&member.prop, MemberProp::Ident(identifier) if identifier.sym == "for")))
+                if matches!(callee.unwrap_parens(), Expr::Ident(identifier) if identifier.sym == "Symbol"))
         {
             self.primitive_native_symbol_calls
                 .insert(CallSite::from(call.span));
@@ -14178,10 +14112,6 @@ impl PreparedCallableCapabilities {
         operation: NativeInputKind,
     ) -> Option<SourceUnitOrdinal> {
         self.index.known_global_native_operation_mutation(operation)
-    }
-
-    pub(crate) fn known_symbol_for_mutation_owner(&self) -> Option<SourceUnitOrdinal> {
-        self.index.known_symbol_for_mutation()
     }
 
     pub(crate) fn known_object_freeze_mutation_owner(&self) -> Option<SourceUnitOrdinal> {

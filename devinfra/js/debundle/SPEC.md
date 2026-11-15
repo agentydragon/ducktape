@@ -3028,7 +3028,6 @@ the facts came from a saved artifact.
 | `weak_map_empty`           | Top-level simple binding initialized by direct bare zero-argument `new WeakMap()`                                                          | Original global `WeakMap` data binding                                      |
 | `set_empty`                | Top-level simple binding initialized by direct bare zero-argument `new Set()`                                                              | Original global `Set` data binding                                          |
 | `symbol`                   | Top-level simple binding initialized by a direct `Symbol(...)` call with zero or one syntactically primitive argument                      | `%Symbol%`                                                                  |
-| `symbol_for`               | The same with `Symbol.for(...)`                                                                                                            | `%Symbol%`, `%Symbol.for%`                                                  |
 | `promise_resolve`          | Top-level simple binding initialized by a zero-argument `Promise.resolve()`                                                                | `%Promise%`, `%Promise.resolve%`                                            |
 | `set_from_primitive_array` | Top-level simple binding initialized by `new Set([primitive literals or earlier stable primitive bindings])` over a dense, nonspread array | `%Set%`, `%Set.prototype%`, `%Array.prototype%`, `%ArrayIteratorPrototype%` |
 | `callee: object_freeze`    | Top-level function whose sole statement returns `Object.freeze(arg)` with one nonspread argument                                           | `%Object%`, `%Object.freeze%` at that call                                  |
@@ -3069,9 +3068,8 @@ fields separately from source-derived import edges, producer declarations, and
 primitive slot kinds.
 
 A validated `symbol` site has an additional pure-initializer consequence only
-for direct `Symbol()` or `Symbol('literal')`; `symbol_for` requires exactly one
-direct string-literal argument. Other permitted primitive arguments retain
-their ordinary conversion and effect checks.
+for direct `Symbol()` or `Symbol('literal')`. Other permitted primitive
+arguments retain their ordinary conversion and effect checks.
 
 For `set_from_primitive_array`, an identifier element must resolve to the same
 canonical binding as one earlier direct top-level simple `var`, `let` or
