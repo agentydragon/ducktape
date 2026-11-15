@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"maps"
 	"net"
-	"slices"
-	"strings"
 
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/api/admin/egress_adminpb"
 	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/api/rules/egress_rulespb"
@@ -27,38 +25,16 @@ import (
 
 // adminGRPCEnabled is whether the admin listener serves the EgressAdmin API; the standard health service
 // is served either way.
-func (c *config) adminGRPCEnabled() bool { return c.AdminGRPCAudience != "" }
+func (c *config) adminGRPCEnabled() bool { return len(c.AdminGRPCServiceCallers) > 0 }
 
-// validateAdminGRPC refuses a gRPC API half configured: an audience with nobody admitted, or callers
-// who could not prove themselves, would silently serve nothing.
 func (c *config) validateAdminGRPC() error {
-	if c.adminGRPCEnabled() != (len(c.AdminGRPCCallers) != 0) {
-		return errors.New("admin_grpc_audience and admin_grpc_callers are set together or not at all")
-	}
 	if err := auth.ValidateServiceCallers(c.AdminGRPCServiceCallers); err != nil {
 		return fmt.Errorf("invalid admin_grpc_service_callers: %w", err)
 	}
-	if len(c.AdminGRPCServiceCallers) > 0 && !c.adminGRPCEnabled() {
-		return errors.New("admin_grpc_service_callers requires admin_grpc_audience and admin_grpc_callers")
+	if c.adminGRPCEnabled() && (c.Forward.TLS == nil || !c.Forward.Has(listener.SPIFFE)) {
+		return errors.New("admin_grpc_service_callers requires forward TLS and SPIFFE client trust")
 	}
-	if len(c.AdminGRPCServiceCallers) > 0 && !c.Forward.Has(listener.SPIFFE) {
-		return errors.New("admin_grpc_service_callers requires the forward SPIFFE client CA")
-	}
-	_, err := c.adminGRPCCallers()
-	return err
-}
-
-// adminGRPCCallers parses admin_grpc_callers, each entry a `namespace/name`.
-func (c *config) adminGRPCCallers() ([]auth.Account, error) {
-	callers := make([]auth.Account, len(c.AdminGRPCCallers))
-	for i, entry := range c.AdminGRPCCallers {
-		namespace, name, found := strings.Cut(entry, "/")
-		if !found || namespace == "" || name == "" || strings.Contains(name, "/") {
-			return nil, errors.New("admin_grpc_callers entries must be namespace/name")
-		}
-		callers[i] = auth.Account{Namespace: namespace, Name: name}
-	}
-	return callers, nil
+	return nil
 }
 
 // adminServer serves Rules, backend administration and probes on one RPC
@@ -70,18 +46,20 @@ type adminServer struct {
 
 func newAdminServer(
 	c config,
-	reviews auth.TokenReviews,
 	options admin.ServiceOptions,
 	authentication *identity.Authenticator,
 	index *policy.Index,
 ) (*adminServer, error) {
+	if err := c.validateAdminGRPC(); err != nil {
+		return nil, err
+	}
 	rulesMethods := auth.Methods{
 		egressrulespb.EgressRules_GetRules_FullMethodName: auth.AnySubject(authentication),
 	}
 	methods := auth.HealthMethods()
 	maps.Copy(methods, rulesMethods)
 	rpc := c.Forward
-	// ServerCredentials admits certificate-free TLS for probes and bearer RPCs.
+	// ServerCredentials admits certificate-free TLS for probes.
 	// Rules and Admin retain their separate per-method authentication policies.
 	var serverOptions []grpc.ServerOption
 	if rpc.TLS != nil {
@@ -99,31 +77,7 @@ func newAdminServer(
 	}
 	var service *admin.Service
 	if c.adminGRPCEnabled() {
-		callers, err := c.adminGRPCCallers()
-		if err != nil {
-			return nil, err
-		}
-		namespaces := make([]string, 0, len(callers))
-		for _, caller := range callers {
-			if !slices.Contains(namespaces, caller.Namespace) {
-				namespaces = append(namespaces, caller.Namespace)
-			}
-		}
-		resolver, err := auth.NewResolver(reviews, c.AdminGRPCAudience, namespaces)
-		if err != nil {
-			return nil, err
-		}
-		// Administrative tokens remain the only source for these methods.
-		// A Sandbox certificate cannot become an operator, even with a bearer.
-		if rpc.TLS != nil {
-			adminAuth := rpc
-			adminAuth.Auth = []listener.Authentication{&listener.KubernetesBearerAuth{Audiences: []string{c.AdminGRPCAudience}}}
-			resolver, err = resolver.WithListenerAuthentication(adminAuth, nil)
-			if err != nil {
-				return nil, err
-			}
-		}
-		adminMethods, err := admin.Methods(resolver, callers, c.AdminGRPCServiceCallers)
+		adminMethods, err := admin.Methods(c.AdminGRPCServiceCallers)
 		if err != nil {
 			return nil, err
 		}

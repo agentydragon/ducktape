@@ -34,7 +34,6 @@ go_library(
         "//agentplane/postgres/migrate",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@in_gopkg_yaml_v3//:yaml_v3",
-        "@io_k8s_client_go//kubernetes/typed/authentication/v1:authentication",
         "@io_k8s_client_go//rest",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
@@ -98,7 +97,7 @@ go_test(
     srcs = ["config_test.go"],
     embed = [":cmd"],
     deps = [
-        "//agentplane/identity/auth",
+        "//agentplane/identity/auth/listener",
         "//agentplane/testing/configtest",
     ],
 )

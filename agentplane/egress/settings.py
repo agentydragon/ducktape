@@ -66,22 +66,24 @@ class Settings(BaseModel):
         default="0.0.0.0:8081",
         description="Shared gRPC listener address serving rules, health and, when configured, EgressAdmin.",
     )
+    # CLEANUP(added 2026-11-15): Remove legacy bearer fields after generated manifests
+    # omit these keys and that configuration has rolled out.
     admin_grpc_audience: str | None = Field(
         default=None,
         min_length=1,
-        description="Audience of the bearer accepted by the authenticated admin gRPC API; unset disables that API.",
+        description="Ignored legacy bearer audience retained until manifest keys are removed and rolled out.",
     )
     admin_grpc_callers: list[str] | None = Field(
         default=None,
         min_length=1,
-        description="ServiceAccounts admitted by the admin gRPC API as namespace/name entries; unset disables it.",
+        description="Ignored legacy bearer accounts retained until manifest keys are removed and rolled out.",
     )
     admin_grpc_service_callers: frozenset[ServiceSPIFFEID] = Field(
         exclude_if=lambda value: not value,
         default_factory=frozenset,
         description=(
-            "Exact service SPIFFE IDs additionally admitted to EgressAdmin methods. Requires the admin bearer "
-            "settings and the forward listener's SPIFFE client CA."
+            "Exact service SPIFFE IDs admitted to EgressAdmin methods; empty disables that API. "
+            "Requires the forward listener's TLS and SPIFFE client CA."
         ),
     )
     ca_cert: Path = Field(description="PEM certificate of the interception CA the runner containers trust.")
@@ -112,12 +114,8 @@ class Settings(BaseModel):
 
     @model_validator(mode="after")
     def require_tls(self) -> Settings:
-        if self.admin_grpc_service_callers and (
-            not self.admin_grpc_audience
-            or not self.admin_grpc_callers
-            or not any(auth.mode == "spiffe" for auth in self.forward.auth)
-        ):
-            raise ValueError("admin_grpc_service_callers requires admin settings and forward SPIFFE client trust")
+        if self.admin_grpc_service_callers and not any(auth.mode == "spiffe" for auth in self.forward.auth):
+            raise ValueError("admin_grpc_service_callers requires forward SPIFFE client trust")
         if self.forward.tls is None:
             raise ValueError("forward listener requires TLS")
         return self

@@ -117,12 +117,12 @@ async def _decision_for(
         target = identity_pb2.EnvironmentTarget(namespace=cluster.namespace, name=sandbox, uid=uid)
         environment = await client.get_environment(target)
         assert environment.identity_name
-        async with egress_decisions.watch_client(cluster) as (stub, caller):
+        async with egress_decisions.watch_client(cluster) as stub:
             async for attempt in AsyncRetrying(
                 stop=stop_after_delay(DECISION_SECONDS), wait=wait_fixed(1), reraise=True
             ):
                 with attempt:
-                    decisions = await egress_decisions.snapshot_identity(stub, caller, environment.identity_name)
+                    decisions = await egress_decisions.snapshot_identity(stub, environment.identity_name)
                     for decision in reversed(decisions):
                         if decision.host == host and (after is None or decision.at.ToDatetime(tzinfo=UTC) > after):
                             return decision

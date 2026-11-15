@@ -188,20 +188,20 @@ sends no bearer; `GetHealth` does not. `Watch` is not served.
 The shared gRPC listener also serves Rules under the forward hop's shared authentication policy.
 
 The shared port serves native gRPC over TLS; Rules accepts the same SVID authentication as the forward hop, while probes and
-operator bearer methods use the same verified TLS listener with their own method policy. On shutdown it ends the open watches, then stops gracefully: the
+Admin service methods use the same verified TLS listener with their own method policy. On shutdown it ends the open watches, then stops gracefully: the
 other calls in flight finish within the drain deadline.
 
-Every `EgressAdmin` call admits the ServiceAccounts in `admin_grpc_callers`, each proving itself by
-a bearer of audience `admin_grpc_audience` that is reviewed for every call (an acceptance is reused
-for 30 s), before anything is read. `admin_grpc_service_callers` may additionally list exact service
-SPIFFE IDs for these methods. It requires the existing admin bearer settings and the forward
-listener's SPIFFE client CA; service certificates cannot be combined with bearer metadata. This
-service allowlist grants no access to the separate Rules API. Watches periodically revalidate bearer
-authorization and end on revocation or when the proxy drains; reconnecting callers are admitted
-afresh. See <../docs/grpc_services.md>.
+Every `EgressAdmin` call authenticates an exact service SPIFFE ID from
+`admin_grpc_service_callers` over mTLS before reading anything. The listener requires the forward
+listener's TLS and SPIFFE client CA. Bearers are rejected, including when combined with a service
+certificate. This allowlist grants no access to the separate Rules API. Watches periodically
+revalidate the admitted certificate and end on expiry or when the proxy drains; reconnecting
+callers are admitted afresh. See <../docs/grpc_services.md>.
 
-The health service is always mounted. `EgressAdmin` is mounted only when `admin_grpc_audience` and
-`admin_grpc_callers` (`namespace/name` entries) are both set. Health is always served; Rules admission follows the workload transport policy above.
+The health service is always mounted. `EgressAdmin` is mounted only when
+`admin_grpc_service_callers` is nonempty; Rules admission follows the workload transport policy above.
+`admin_grpc_audience` and `admin_grpc_callers` are ignored compatibility settings until the generated
+manifests omit them and that configuration has rolled out.
 
 ## ServiceAccount permissions
 
@@ -209,8 +209,8 @@ In the rules namespace (`--rules-namespace`): `get`, `list`, `watch` on `egressc
 `policybindings/status`. Each admitted Sandbox namespace grants only `get`, `list` and `watch` on Sandboxes. The proxy
 uses the Sandbox's own ServiceAccount name without reading ServiceAccount or Pod objects. In the credentials namespace
 (required `--credentials-namespace`): `get`, `list`, `watch` on
-`secrets`, and nothing else. Cluster-wide: `create` on `tokenreviews.authentication.k8s.io`. There
-is no leader election: every replica applies the same `EgressReady` under one field manager, and
+`secrets`, and nothing else. The proxy no longer calls TokenReview; removal of its legacy
+`tokenreviews.authentication.k8s.io` grant is gated on receiver rollout. There is no leader election: every replica applies the same `EgressReady` under one field manager, and
 writes only when the condition it decides differs from the one the binding carries.
 
 Substituted credentials live in a namespace of their own because RBAC cannot filter Secrets by

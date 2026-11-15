@@ -50,7 +50,7 @@ func TestGetHealthCarriesTheVerdictAndItsFacts(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			client, _ := serveGRPC(t, ServiceOptions{HistoryHealth: test.history, Index: test.index})
 
-			response, err := client.GetHealth(bearing(readerToken), &egressadminpb.GetHealthRequest{})
+			response, err := client.GetHealth(context.Background(), &egressadminpb.GetHealthRequest{})
 			if err != nil {
 				t.Fatal(err)
 			}

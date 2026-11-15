@@ -8,9 +8,8 @@ from agentplane.egress.api.rules import egress_rules_pb2
 from agentplane.grpc.calls import dial
 from agentplane.proto import identity_pb2
 from agentplane.system_tests.driver.cluster import Cluster
-from agentplane.system_tests.driver.dispatcher_transport import Caller, bound_caller
 from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
-from agentplane.system_tests.driver.tls import service_credentials
+from agentplane.system_tests.driver.tls import service_svid_credentials
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -19,9 +18,7 @@ from agentplane.system_tests.driver.tls import service_credentials
 
 
 @asynccontextmanager
-async def watch_client(cluster: Cluster) -> AsyncIterator[tuple[rpc.EgressAdminAsyncStub, Caller]]:
-    # The app is an explicitly configured EgressAdmin reader; bind its test credential to its Pod.
-    caller, _, _ = await bound_caller(cluster, "app", audience="agentplane-egress-admin")
+async def watch_client(cluster: Cluster) -> AsyncIterator[rpc.EgressAdminAsyncStub]:
     forward = PortForward(
         cluster.command("port-forward"),
         resource="service/egress-admin",
@@ -29,7 +26,7 @@ async def watch_client(cluster: Cluster) -> AsyncIterator[tuple[rpc.EgressAdminA
         local_port=None,
         remote_port=8081,
     )
-    credentials = await service_credentials(cluster)
+    credentials = await service_svid_credentials(cluster, "app-workload-tls")
     async with (
         async_port_forward(forward) as target,
         dial(
@@ -37,25 +34,19 @@ async def watch_client(cluster: Cluster) -> AsyncIterator[tuple[rpc.EgressAdminA
         ) as channel,
     ):
         stub: rpc.EgressAdminAsyncStub = rpc.EgressAdminStub(channel)
-        yield stub, caller
+        yield stub
 
 
-async def snapshot(
-    stub: rpc.EgressAdminAsyncStub, caller: Caller, subject: identity_pb2.ServiceAccount
-) -> list[pb.Decision]:
-    return await _snapshot(stub, caller, pb.DecisionFilter(subject=subject))
+async def snapshot(stub: rpc.EgressAdminAsyncStub, subject: identity_pb2.ServiceAccount) -> list[pb.Decision]:
+    return await _snapshot(stub, pb.DecisionFilter(subject=subject))
 
 
-async def snapshot_identity(stub: rpc.EgressAdminAsyncStub, caller: Caller, identity_name: str) -> list[pb.Decision]:
-    return await _snapshot(
-        stub, caller, pb.DecisionFilter(identity=egress_rules_pb2.IdentitySubject(name=identity_name))
-    )
+async def snapshot_identity(stub: rpc.EgressAdminAsyncStub, identity_name: str) -> list[pb.Decision]:
+    return await _snapshot(stub, pb.DecisionFilter(identity=egress_rules_pb2.IdentitySubject(name=identity_name)))
 
 
-async def _snapshot(
-    stub: rpc.EgressAdminAsyncStub, caller: Caller, decision_filter: pb.DecisionFilter
-) -> list[pb.Decision]:
-    stream = stub.WatchDecisions(pb.WatchDecisionsRequest(filter=decision_filter), metadata=caller.metadata)
+async def _snapshot(stub: rpc.EgressAdminAsyncStub, decision_filter: pb.DecisionFilter) -> list[pb.Decision]:
+    stream = stub.WatchDecisions(pb.WatchDecisionsRequest(filter=decision_filter))
     try:
         frame = await stream.read()
         if not isinstance(frame, pb.WatchDecisionsResponse) or frame.WhichOneof("frame") != "snapshot":

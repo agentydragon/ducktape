@@ -25,8 +25,7 @@ const (
 // environment variable and is deliberately excluded from the file decoder.
 //
 // The gRPC listener serves rules and health, and the admin API beside them when
-// admin_grpc_audience, the audience of the bearer its callers send, and admin_grpc_callers, the
-// ServiceAccounts it admits as `namespace/name`, are set.
+// admin_grpc_service_callers lists the exact service SVIDs admitted to its methods.
 //
 // local_api_server is where kubernetesServiceAccount credentials naming the `local` API server act,
 // and the token file holding the proxy's own bearer for it; unset, those credentials are unavailable.
@@ -37,8 +36,6 @@ type config struct {
 	Forward                         listener.Config   `mapstructure:"forward"`
 	TLSPassthroughTargets           []string          `mapstructure:"tls_passthrough_targets"`
 	AdminListenAddress              string            `mapstructure:"admin_listen_address"`
-	AdminGRPCAudience               string            `mapstructure:"admin_grpc_audience"`
-	AdminGRPCCallers                []string          `mapstructure:"admin_grpc_callers"`
 	AdminGRPCServiceCallers         []string          `mapstructure:"admin_grpc_service_callers"`
 	CACert                          string            `mapstructure:"ca_cert"`
 	CAKey                           string            `mapstructure:"ca_key"`
@@ -52,6 +49,11 @@ type config struct {
 	DecisionBatchSize               int               `mapstructure:"decision_batch_size"`
 	ExemptNetworks                  []netip.Prefix    `mapstructure:"exempt_networks"`
 	LocalAPIServer                  *apiServerConfig  `mapstructure:"local_api_server"`
+
+	// CLEANUP(added 2026-11-15): Remove legacy bearer fields after generated manifests
+	// omit admin_grpc_audience/admin_grpc_callers and that configuration has rolled out.
+	AdminGRPCAudience string   `mapstructure:"admin_grpc_audience"`
+	AdminGRPCCallers  []string `mapstructure:"admin_grpc_callers"`
 }
 
 // apiServerConfig is an API server the proxy impersonates ServiceAccounts on: the host and port
