@@ -30,7 +30,8 @@ def test_ducktape_pr_instructions_are_shared_once() -> None:
 
 
 def test_ducktape_preset_installs_hooks_without_direnv() -> None:
-    cfg = staging.ENV.app_config
+    assert staging.ENV.app is not None
+    cfg = staging.ENV.app.config
     script = cfg.thread_presets["public-coder-ducktape-codex"].setup_script
     assert "pre-commit install" in script
     assert "direnv allow" not in script
@@ -39,7 +40,8 @@ def test_ducktape_preset_installs_hooks_without_direnv() -> None:
 
 
 def test_gaffer_write_policies_are_finance_agent_only() -> None:
-    cfg = staging.ENV.app_config
+    assert staging.ENV.app is not None
+    cfg = staging.ENV.app.config
     finance_policies = cfg.sandbox_presets["finance-agent"].policy_sets
     assert GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET in finance_policies
     for name, preset in cfg.sandbox_presets.items():

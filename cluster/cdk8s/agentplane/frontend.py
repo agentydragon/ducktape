@@ -46,6 +46,9 @@ class Frontend(Construct):
     def __init__(self, scope: Construct, id: str, env: Environment) -> None:
         super().__init__(scope, id)
         self.env = env
+        if env.app is None:
+            raise ValueError("Frontend construction requires App configuration")
+        self.props = env.app
         self.service = service(env.namespace)
         workload = add_service_workload(
             self,
@@ -74,7 +77,7 @@ class Frontend(Construct):
             self,
             "httproute",
             metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace),
-            hostnames=[self.env.app.hostname],
+            hostnames=[self.props.hostname],
             backend=self.service,
             paths=["/", "/index.html", "/main.js", "/main.css", "/sw.js", "/favicon.svg"],
         )

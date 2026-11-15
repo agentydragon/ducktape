@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
 from pydantic import AnyHttpUrl
 
+from agentplane.action_service.orchestration_v1.binding import (
+    LaunchPreset,
+    PresetLaunch,
+    PresetSession,
+    PresetSessionSpec,
+)
 from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.presets import SandboxPreset, ThreadPreset
@@ -212,3 +219,29 @@ def settings(
     if frontend_config is not None:
         configured.frontend_config = frontend_config
     return configured
+
+
+def orchestration_presets(
+    *, sandbox_presets: Mapping[str, SandboxPreset], thread_presets: Mapping[str, ThreadPreset]
+) -> dict[str, LaunchPreset]:
+    presets = {}
+    for name, sandbox in sandbox_presets.items():
+        thread = thread_presets[sandbox.thread_preset]
+        spec = PresetSessionSpec(
+            harness=thread.harness,
+            model=thread.model,
+            cwd=thread.cwd,
+            reasoning_effort=thread.reasoning_effort or "",
+            instructions=thread.instructions,
+        )
+        presets[name] = LaunchPreset(
+            title=sandbox.title,
+            launch=PresetLaunch(
+                template=sandbox.template,
+                policy_sets=sandbox.policy_sets,
+                inbox_tags=sandbox.inbox_tags,
+                bootstrap=sandbox.bootstrap,
+            ),
+            create_session=PresetSession(spec=spec, setup_script=thread.setup_script),
+        )
+    return presets

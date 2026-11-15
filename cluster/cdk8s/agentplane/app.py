@@ -106,6 +106,9 @@ class App(Construct):
     ) -> None:
         super().__init__(scope, id)
         self.env = env
+        if env.app is None:
+            raise ValueError("App construction requires App configuration")
+        self.props = env.app
         self.electric = electric
         self.database_url = database_url
         self.placement = placement
@@ -115,7 +118,7 @@ class App(Construct):
         self.service = service(env.namespace)
         self.oidc = oidc_secret(env.namespace)
 
-        settings = env.app_config.model_copy()
+        settings = self.props.config.model_copy()
         settings.egress_admin_tls = workload_tls.service_client_tls(EGRESS_PROXY_URI, client_uri=APP_URI)
         settings.egress_admin_token_file = None
         settings.runner_gateway_tls = workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=APP_URI)
@@ -191,7 +194,7 @@ class App(Construct):
             "AGENTPLANE_DATABASE_URL": self.database_url,
             "AGENTPLANE_OIDC_CLIENT_ID": self.oidc.key("client-id").env_value(self, "oidc-client-id-ref"),
             "AGENTPLANE_OIDC_CLIENT_SECRET": self.oidc.key("client-secret").env_value(self, "oidc-client-secret-ref"),
-            "AGENTPLANE_OIDC_SESSION_SECRET": SecretRef(namespace=namespace, name=self.env.app.oidc_session_secret_name)
+            "AGENTPLANE_OIDC_SESSION_SECRET": SecretRef(namespace=namespace, name=self.props.oidc_session_secret_name)
             .key("session-secret")
             .env_value(self, "oidc-session-secret-ref"),
         }
@@ -199,8 +202,8 @@ class App(Construct):
     def _add_workload(self, config: SettingsFile) -> ServiceWorkload:
         env = self._container_env()
         oidc_secret_reload = self.oidc.name
-        if self.env.app.oidc_session_secret_name != self.oidc.name:
-            oidc_secret_reload += f",{self.env.app.oidc_session_secret_name}"
+        if self.props.oidc_session_secret_name != self.oidc.name:
+            oidc_secret_reload += f",{self.props.oidc_session_secret_name}"
         workload = add_service_workload(
             self,
             self.env,
@@ -263,17 +266,17 @@ class App(Construct):
             self,
             "httproute",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
-            hostnames=[self.env.app.hostname],
+            hostnames=[self.props.hostname],
             backend=self.service,
             # A session stream stays attached for as long as the tab is open.
             timeout="3600s",
         )
 
     def _oidc_egress_rules(self) -> list[CiliumNetworkPolicySpecEgress]:
-        server_name = urlsplit(self.env.app.oidc_issuer).hostname
-        assert server_name is not None, f"OIDC issuer has no hostname: {self.env.app.oidc_issuer!r}"
+        server_name = urlsplit(self.props.oidc_issuer).hostname
+        assert server_name is not None, f"OIDC issuer has no hostname: {self.props.oidc_issuer!r}"
         rules = [cilium.egress_via_gateway(server_name)]
-        if self.env.app.reach_incluster_authentik:
+        if self.props.reach_incluster_authentik:
             rules.append(EgressRule.to_endpoints(cilium.AUTHENTIK_SERVER_LABELS, 9000, server_names=[server_name]))
         return rules
 
