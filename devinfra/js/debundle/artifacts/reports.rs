@@ -10,11 +10,12 @@ use analysis_model::DepKind;
 use analysis_model::StableExportValue;
 use anyhow::{Context, Result};
 use js_ast::ParsedGlobalUses;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use swc_common::Span;
 
 use crate::FileRole;
 use crate::metrics::{DecompositionMetrics, OutputMetrics};
+pub use interop_proto::ducktape::debundle::interop::InteropUseKind;
 
 /// Emit compact JSON for pipeline side outputs, creating parent directories.
 ///
@@ -308,44 +309,6 @@ pub struct NamespaceRequest {
     pub specifier: String,
 }
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, strum::IntoStaticStr,
-)]
-#[cfg_attr(test, derive(strum::EnumIter))]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum InteropUseKind {
-    ImportMetaRequireLiteralCall,
-    ImportMetaRequireDynamicCall,
-    ImportMetaRequireReference,
-    GlobalThisRequire,
-    UnboundRequire,
-    /// A call of a direct `eval` whose code folds to exactly `require`:
-    /// `eval("require")("x")` with one string literal.
-    EvaluatedRequireLiteralCall,
-    /// The same with any other argument list.
-    EvaluatedRequireDynamicCall,
-    UnboundModule,
-    /// `module.exports`: the export object, which cannot load a module.
-    UnboundModuleExports,
-    UnboundExports,
-    ImportMetaDynamicProperty,
-    ImportMetaOtherProperty,
-    ImportMetaValue,
-    TsImportEquals,
-    TsExportAssignment,
-    /// `import(...)`; `specifier` is set for a string-literal argument.
-    DynamicImport,
-}
-
-impl InteropUseKind {
-    /// Stable snake_case identifier used in machine-facing output.
-    pub fn machine_code(self) -> &'static str {
-        let code: &'static str = self.into();
-        code
-    }
-}
-
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ChunkModuleKind {
     #[default]
@@ -492,9 +455,10 @@ mod tests {
     #[test]
     fn interop_use_machine_codes_match_serde() {
         for kind in InteropUseKind::iter() {
+            let machine_code: &'static str = kind.into();
             assert_eq!(
                 serde_json::to_string(&kind).unwrap(),
-                format!("\"{}\"", kind.machine_code())
+                format!("\"{}\"", machine_code)
             );
         }
     }

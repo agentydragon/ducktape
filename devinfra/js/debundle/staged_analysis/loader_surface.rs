@@ -10,7 +10,7 @@ use analysis::loader_closure::{
     LoaderRequest, LoaderRequestTarget, SitePlacement,
 };
 use analysis::saved_proto::{ProtoConvert, proto, required};
-use anyhow::{Result, bail, ensure};
+use anyhow::{Result, ensure};
 use artifact::reports::{
     ImportSpecifierKind, InteropUseKind, LoaderBinding, LoaderBindingUse, LoaderUseConsumer,
     SitePhase, StaticModuleRequestMode,
@@ -1097,76 +1097,6 @@ impl ProtoConvert<proto::ExportReentryLoaderDerivation> for ExportReentryLoaderD
     }
 }
 
-// InteropUseKind belongs to artifact, so this stage uses functions rather than
-// implementing analysis's trait for another crate's type.
-fn interop_use_kind_to_proto(kind: &InteropUseKind) -> i32 {
-    match kind {
-        InteropUseKind::ImportMetaRequireLiteralCall => {
-            proto::InteropUseKind::ImportMetaRequireLiteralCall as i32
-        }
-        InteropUseKind::ImportMetaRequireDynamicCall => {
-            proto::InteropUseKind::ImportMetaRequireDynamicCall as i32
-        }
-        InteropUseKind::ImportMetaRequireReference => {
-            proto::InteropUseKind::ImportMetaRequireReference as i32
-        }
-        InteropUseKind::GlobalThisRequire => proto::InteropUseKind::GlobalThisRequire as i32,
-        InteropUseKind::UnboundRequire => proto::InteropUseKind::UnboundRequire as i32,
-        InteropUseKind::EvaluatedRequireLiteralCall => {
-            proto::InteropUseKind::EvaluatedRequireLiteralCall as i32
-        }
-        InteropUseKind::EvaluatedRequireDynamicCall => {
-            proto::InteropUseKind::EvaluatedRequireDynamicCall as i32
-        }
-        InteropUseKind::UnboundModule => proto::InteropUseKind::UnboundModule as i32,
-        InteropUseKind::UnboundModuleExports => proto::InteropUseKind::UnboundModuleExports as i32,
-        InteropUseKind::UnboundExports => proto::InteropUseKind::UnboundExports as i32,
-        InteropUseKind::ImportMetaDynamicProperty => {
-            proto::InteropUseKind::ImportMetaDynamicProperty as i32
-        }
-        InteropUseKind::ImportMetaOtherProperty => {
-            proto::InteropUseKind::ImportMetaOtherProperty as i32
-        }
-        InteropUseKind::ImportMetaValue => proto::InteropUseKind::ImportMetaValue as i32,
-        InteropUseKind::TsImportEquals => proto::InteropUseKind::TsImportEquals as i32,
-        InteropUseKind::TsExportAssignment => proto::InteropUseKind::TsExportAssignment as i32,
-        InteropUseKind::DynamicImport => proto::InteropUseKind::DynamicImport as i32,
-    }
-}
-fn interop_use_kind_from_proto(kind: i32) -> Result<InteropUseKind> {
-    Ok(match proto::InteropUseKind::try_from(kind)? {
-        proto::InteropUseKind::ImportMetaRequireLiteralCall => {
-            InteropUseKind::ImportMetaRequireLiteralCall
-        }
-        proto::InteropUseKind::ImportMetaRequireDynamicCall => {
-            InteropUseKind::ImportMetaRequireDynamicCall
-        }
-        proto::InteropUseKind::ImportMetaRequireReference => {
-            InteropUseKind::ImportMetaRequireReference
-        }
-        proto::InteropUseKind::GlobalThisRequire => InteropUseKind::GlobalThisRequire,
-        proto::InteropUseKind::UnboundRequire => InteropUseKind::UnboundRequire,
-        proto::InteropUseKind::EvaluatedRequireLiteralCall => {
-            InteropUseKind::EvaluatedRequireLiteralCall
-        }
-        proto::InteropUseKind::EvaluatedRequireDynamicCall => {
-            InteropUseKind::EvaluatedRequireDynamicCall
-        }
-        proto::InteropUseKind::UnboundModule => InteropUseKind::UnboundModule,
-        proto::InteropUseKind::UnboundModuleExports => InteropUseKind::UnboundModuleExports,
-        proto::InteropUseKind::UnboundExports => InteropUseKind::UnboundExports,
-        proto::InteropUseKind::ImportMetaDynamicProperty => {
-            InteropUseKind::ImportMetaDynamicProperty
-        }
-        proto::InteropUseKind::ImportMetaOtherProperty => InteropUseKind::ImportMetaOtherProperty,
-        proto::InteropUseKind::ImportMetaValue => InteropUseKind::ImportMetaValue,
-        proto::InteropUseKind::TsImportEquals => InteropUseKind::TsImportEquals,
-        proto::InteropUseKind::TsExportAssignment => InteropUseKind::TsExportAssignment,
-        proto::InteropUseKind::DynamicImport => InteropUseKind::DynamicImport,
-        proto::InteropUseKind::Unspecified => bail!("unspecified saved-analysis interop use kind"),
-    })
-}
-
 impl ProtoConvert<proto::LoaderSite> for LoaderSite {
     fn to_proto(&self) -> Result<proto::LoaderSite> {
         use proto::loader_site::{
@@ -1181,7 +1111,7 @@ impl ProtoConvert<proto::LoaderSite> for LoaderSite {
                     specifier,
                     resolved_target,
                 } => Value::Interop(Interop {
-                    kind: Some(interop_use_kind_to_proto(kind)),
+                    kind: Some(*kind as i32),
                     item: Some(item.to_proto()?),
                     line: line.as_ref().map(ProtoConvert::to_proto).transpose()?,
                     specifier: specifier.clone(),
@@ -1236,10 +1166,7 @@ impl ProtoConvert<proto::LoaderSite> for LoaderSite {
         use proto::loader_site::Value;
         Ok(match required(value.value, "LoaderSite.value")? {
             Value::Interop(value) => Self::Interop {
-                kind: interop_use_kind_from_proto(required(
-                    value.kind,
-                    "LoaderSite.interop.kind",
-                )?)?,
+                kind: InteropUseKind::try_from(required(value.kind, "LoaderSite.interop.kind")?)?,
                 item: ProtoConvert::from_proto(required(value.item, "LoaderSite.interop.item")?)?,
                 line: value.line.map(usize::from_proto).transpose()?,
                 specifier: value.specifier,

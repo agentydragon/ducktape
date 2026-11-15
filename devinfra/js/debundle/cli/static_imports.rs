@@ -309,7 +309,7 @@ pub(super) fn run(args: StaticImportsArgs, output: &mut dyn Write) -> Result<()>
                     ));
                 }
                 for site in &census.sites {
-                    let kind = site.kind.machine_code();
+                    let kind: &'static str = site.kind.into();
                     out.push_str(&format!(
                         "  {} item {} line {:?}: {}{}{}\n",
                         site.chunk,

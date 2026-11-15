@@ -1128,7 +1128,7 @@ mod protobuf_tests {
         };
         let valid = site.to_proto().unwrap();
         assert_eq!(LoaderSite::from_proto(valid.clone()).unwrap(), site);
-        for kind in [None, Some(0), Some(i32::MAX)] {
+        for kind in [None, Some(i32::MAX)] {
             let mut malformed = valid.clone();
             let Some(proto::loader_site::Value::Interop(value)) = &mut malformed.value else {
                 unreachable!()

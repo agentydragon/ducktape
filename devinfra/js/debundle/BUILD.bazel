@@ -375,6 +375,7 @@ rust_library(
     deps = [
         ":analysis_model",
         ":graph_provenance",
+        ":interop_rust_proto",
         ":js_ast",
         ":output_layout",
         ":source_identity",
@@ -1902,11 +1903,39 @@ rust_test(
     ],
 )
 
+rust_prost_transform(
+    name = "interop_proto_options",
+    prost_opts = [
+        "type_attribute=ducktape.debundle.interop.InteropUseKind=#[derive(::serde::Serialize)]",
+        "type_attribute=ducktape.debundle.interop.InteropUseKind=#[derive(::serde::Deserialize)]",
+        "type_attribute=ducktape.debundle.interop.InteropUseKind=#[derive(::strum::IntoStaticStr)]",
+        "type_attribute=ducktape.debundle.interop.InteropUseKind=#[derive(::strum::EnumIter)]",
+        "type_attribute=ducktape.debundle.interop.InteropUseKind=#[serde(rename_all = \"snake_case\")]",
+        "type_attribute=ducktape.debundle.interop.InteropUseKind=#[strum(serialize_all = \"snake_case\")]",
+    ],
+    deps = [
+        "@crates//:serde",
+        "@crates//:strum",
+    ],
+)
+
+proto_library(
+    name = "interop_proto",
+    srcs = ["interop.proto"],
+    data = [":interop_proto_options"],
+)
+
+rust_prost_library(
+    name = "interop_rust_proto",
+    proto = ":interop_proto",
+)
+
 proto_library(
     name = "saved_analysis_proto",
     srcs = ["saved-analysis.proto"],
     data = [":saved_analysis_serde_enums"],
     deps = [
+        ":interop_proto",
         ":spec_wire_proto",
         "@protobuf//:empty_proto",
     ],

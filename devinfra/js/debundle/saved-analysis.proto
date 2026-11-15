@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package ducktape.debundle.saved_analysis;
 
+import "devinfra/js/debundle/interop.proto";
 import "devinfra/js/debundle/spec_wire.proto";
 import "google/protobuf/empty.proto";
 
@@ -706,25 +707,7 @@ message InitializerExternalEffectsUse {
   optional .debundle.spec.InitializerExternalEffects effects = 2;
 }
 
-enum InteropUseKind {
-  INTEROP_USE_KIND_UNSPECIFIED = 0;
-  INTEROP_USE_KIND_IMPORT_META_REQUIRE_LITERAL_CALL = 1;
-  INTEROP_USE_KIND_IMPORT_META_REQUIRE_DYNAMIC_CALL = 2;
-  INTEROP_USE_KIND_IMPORT_META_REQUIRE_REFERENCE = 3;
-  INTEROP_USE_KIND_GLOBAL_THIS_REQUIRE = 4;
-  INTEROP_USE_KIND_UNBOUND_REQUIRE = 5;
-  INTEROP_USE_KIND_EVALUATED_REQUIRE_LITERAL_CALL = 6;
-  INTEROP_USE_KIND_EVALUATED_REQUIRE_DYNAMIC_CALL = 7;
-  INTEROP_USE_KIND_UNBOUND_MODULE = 8;
-  INTEROP_USE_KIND_UNBOUND_MODULE_EXPORTS = 9;
-  INTEROP_USE_KIND_UNBOUND_EXPORTS = 10;
-  INTEROP_USE_KIND_IMPORT_META_DYNAMIC_PROPERTY = 11;
-  INTEROP_USE_KIND_IMPORT_META_OTHER_PROPERTY = 12;
-  INTEROP_USE_KIND_IMPORT_META_VALUE = 13;
-  INTEROP_USE_KIND_TS_IMPORT_EQUALS = 14;
-  INTEROP_USE_KIND_TS_EXPORT_ASSIGNMENT = 15;
-  INTEROP_USE_KIND_DYNAMIC_IMPORT = 16;
-}
+
 
 // Kind of a source allocation in the abstract value domain.
 enum Kind {
@@ -792,7 +775,7 @@ message LoaderRequestReportTarget {
 
 message LoaderSite {
   message Interop {
-    optional .ducktape.debundle.saved_analysis.InteropUseKind kind = 1;
+    optional .ducktape.debundle.interop.InteropUseKind kind = 1;
     optional uint64 item = 2;
     optional uint64 line = 3;
     optional string specifier = 4;
