@@ -1212,16 +1212,15 @@ fn asserted_pure_namespace_member_calls_emit_no_s_cycle() {
     // CJS-interop shape: the importer binds a namespace-like export of another
     // chunk as `ns` and reaches the factory as a MEMBER call, `ns.make(...)`.
     // Inference can't see `make` is pure (the namespace object is opaque), so
-    // the three calls split across modules would S-cycle. A definition-side
-    // `chunk_export_purity.pure_members` assertion on the defining chunk's
-    // export projects onto the importer's `ns` local and admits the calls.
+    // the three calls split across modules would S-cycle. A binding-level
+    // `pure_members` annotation on the importer's `ns` admits the calls.
     let fixture = run_fixture(
         FixtureOpts::new(
             r#"import { reactish as ns } from "./vendorlib.js";
 const A = ns.make(function () { return "a"; });
 const B = ns.make(function () { return "b"; });
 const C = ns.make(function () { return "c"; });
-console.log(A, B, C);
+console.log(A.impl(), B.impl(), C.impl());
 export { A, B, C };
 "#,
             vec![
@@ -1233,11 +1232,26 @@ export { A, B, C };
             "static/vendorlib",
             "const reactish = { make(f) { return { impl: f }; } };\nexport { reactish };\n",
         )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/vendorlib")
-            .with_pure_members("reactish", &["make"])
-            .build()]),
+        .with_chunk_renames(chunk_rename_with_pure_members(
+            "ns",
+            "ns",
+            Some("import_specifier"),
+            &["make"],
+        )),
     );
-    assert!(fixture.entry_path.exists());
+    assert_preserved_entry_output(&fixture, "a b c\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/mod_a.js",
+        &["A", "C"],
+        &["B"],
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/mod_b.js",
+        &["B"],
+        &["A", "C"],
+    );
 }
 
 /// Zod-style schema-declaration entry: every statement is a fluent

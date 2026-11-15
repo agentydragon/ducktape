@@ -2419,14 +2419,11 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   selectable. Selector resolution runs before the cross-module purity
   oracle for this reason.
 
-  `chunk_export_purity.<chunk>.pure_members` is the member-call form, for
-  CJS-interop namespace exports whose factories are reached as member
-  calls at the importer (`ns.forwardRef(...)`). Keyed `export name →
-member names`, it projects onto each importing chunk's local binding
-  for that export and feeds the same member-call trust arm as a spec
-  member's `declared_pure_members` — so React's `forwardRef`/`memo`
-  reached through a default/namespace import are blessed once on the
-  defining vendor chunk.
+  Binding-level `pure_members: [forwardRef, memo]` admits the listed static
+  calls through a selected binding such as an imported namespace. Each
+  importing chunk supplies its own binding annotation; the assertion does
+  not propagate through exports. Arguments retain their ordinary purity
+  checks, and callback timing requires its separate contract.
 
   `chunk_export_purity.<chunk>.fluent_exports` is the **deep** form, for
   builder/fluent APIs whose chain receivers are call _results_ rather

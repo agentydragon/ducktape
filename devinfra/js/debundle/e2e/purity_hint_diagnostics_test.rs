@@ -1,6 +1,6 @@
 use analysis::purity::{RedundantPurityHint, RedundantPurityProofBasis, RedundantPurityReason};
 use debundle_e2e_support::{
-    ChunkExportPurityBuilder, FixtureOpts, Member, MemberPurity, assert_entry_output,
+    FixtureOpts, Member, MemberPurity, assert_entry_output, chunk_rename_with_pure_members,
     logical_module, read_json, run_fixture,
 };
 use serde::Deserialize;
@@ -93,16 +93,15 @@ fn imported_builtin_name_does_not_make_member_hint_redundant() {
         "static/vendor",
         "export const namespace = { isArray(value) { return value === 'sample'; } };",
     )];
-    let contracts = [ChunkExportPurityBuilder::new("static/vendor")
-        .with_pure_members("namespace", &["isArray"])
-        .build()];
     let fixture = run_fixture(
         FixtureOpts::new(
             "import { namespace as Array } from './vendor.js';\nconst result = Array.isArray('sample');\nconsole.log(result);\nexport { result };",
             vec![logical_module("result", &[Member::new("result")])],
         )
         .with_extra_chunks(&chunks)
-        .with_chunk_export_purity(&contracts),
+        .with_chunk_renames(chunk_rename_with_pure_members(
+            "Array", "Array", Some("import_specifier"), &["isArray"],
+        )),
     );
     assert_entry_output(&fixture, "true\n");
     assert!(

@@ -77,7 +77,7 @@ fn analysis_projection_preserves_semantic_note_keys_and_ignores_author_notes() {
     const APP: &str = "import { note } from './note.js';\nconst value = Symbol('value');\nconsole.log(note.note(), value.description);\nexport { value };\n";
     const PROVIDER: &str = "export const note = { note() { return 1; } };\n";
     let purity = ChunkExportPurityBuilder::new("note")
-        .with_pure_members("note", &["note"])
+        .with_no_reentry_members("note", &["note"])
         .build();
     let native_input = NativeOperationInputContract {
         selector: SourceUnitSelector::SourceMatch(source_match_selector(
@@ -103,7 +103,7 @@ fn analysis_projection_preserves_semantic_note_keys_and_ignores_author_notes() {
 
     let projection = AnalysisSpec::decode(&fs::read(&staged.projection).unwrap()).unwrap();
     assert_eq!(
-        projection.chunk_export_purity["note"].pure_members["note"],
+        projection.chunk_export_purity["note"].no_reentry_members["note"],
         ["note".to_owned()].into_iter().collect(),
         "chunk, export, and property names equal to `note` are semantic keys",
     );

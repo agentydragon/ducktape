@@ -247,8 +247,7 @@ audit candidates, not a removal decision. Schema: <spec/spec.rs>.
 - **Selectors:** `member_of_module` and `passed_to_call`.
 - **Analysis contracts:** `value_inputs`, `argument_inputs`, and
   `imported_primitive_array_spread_inputs`.
-- **Purity assertions:** `chunk_export_purity`'s `pure_members`, plus local
-  binding annotations' `pure_members`.
+- **Purity assertions:** local binding annotations' `pure_members`.
 - **Callback contracts:** `retained_callback_factory_exports`,
   `descriptor_copy_factory_exports`, and `no_reentry_callback_exports`.
 - **Host contracts:** `host_behavior.reentry_free_operations`.

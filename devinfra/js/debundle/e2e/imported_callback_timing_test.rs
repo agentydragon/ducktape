@@ -3189,9 +3189,12 @@ fn pure_member_assertion_alone_does_not_defer_callback_reads() {
             modules(),
         )
         .with_extra_chunks(&[("static/peer", NAMESPACE_FACTORY)])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_pure_members("api", &["make"])
-            .build()]),
+        .with_chunk_renames(chunk_rename_with_pure_members(
+            "api",
+            "api",
+            Some("import_specifier"),
+            &["make"],
+        )),
         &["callbacks/wrapped", "values/later"],
         &[],
     );

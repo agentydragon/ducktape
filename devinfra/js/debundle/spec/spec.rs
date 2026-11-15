@@ -563,15 +563,6 @@ pub struct ChunkExportPurity {
     /// see into.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub pure_exports: BTreeSet<String>,
-    /// Member names on an exported namespace-like object whose *calls*
-    /// the author asserts have no observable side effects, keyed by the
-    /// export name. Covers CJS-interop namespace exports whose factories
-    /// are reached as member calls at the importer (`ns.forwardRef(...)`):
-    /// each importing chunk's local binding for the export receives the
-    /// member set, feeding the same member-call trust arm as a spec
-    /// member's `purity: pure` companion `declared_pure_members`.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub pure_members: BTreeMap<String, BTreeSet<String>>,
     /// Export names the author asserts are **deeply** pure fluent-API
     /// roots: member reads and calls on the export, *and on every value
     /// transitively derived from it* through static member reads and
@@ -579,7 +570,7 @@ pub struct ChunkExportPurity {
     /// classified normally). This is the only surface that reaches
     /// builder-style chains whose receivers are call results rather
     /// than bindings — `z.object({...}).optional().describe(...)` —
-    /// which `pure_exports`/`pure_members` (binding-keyed) cannot.
+    /// which `pure_exports` and binding-level `pure_members` cannot.
     ///
     /// The assertion covers the API's **entire** transitive fluent
     /// surface, including methods like a schema's `.parse(...)` that
@@ -614,7 +605,7 @@ pub struct ChunkExportPurity {
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub inline_callback_factory_exports: BTreeSet<String>,
     /// Audited callback factories reached through static members of an
-    /// exported namespace. Independent of `pure_members`; each member has
+    /// exported namespace. Independent of binding-level `pure_members`; each member has
     /// the same return-only callback contract as `callback_factory_exports`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub callback_factory_members: BTreeMap<String, BTreeSet<String>>,

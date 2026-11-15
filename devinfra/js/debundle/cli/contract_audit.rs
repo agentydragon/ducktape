@@ -59,7 +59,6 @@ fn parse_signature(value: &str) -> Result<RetainedCallbackSignature, String> {
 #[value(rename_all = "snake_case")]
 enum ContractKind {
     PureExports,
-    PureMembers,
     FluentExports,
     CallbackFactoryExports,
     InlineCallbackFactoryExports,
@@ -541,7 +540,6 @@ fn select_targets(
         inline_callback_factory_exports
     );
     add_exports!(NoReentryExports, no_reentry_exports);
-    add_members!(PureMembers, pure_members);
     add_members!(CallbackFactoryMembers, callback_factory_members);
     add_members!(NoReentryMembers, no_reentry_members);
     add_members!(NoReentryRecordMembers, no_reentry_record_members);
@@ -605,7 +603,6 @@ fn remove_one(
             .inline_callback_factory_exports
             .remove(&target.export),
         ContractKind::NoReentryExports => policy.no_reentry_exports.remove(&target.export),
-        ContractKind::PureMembers => remove_member(&mut policy.pure_members, target),
         ContractKind::CallbackFactoryMembers => {
             remove_member(&mut policy.callback_factory_members, target)
         }

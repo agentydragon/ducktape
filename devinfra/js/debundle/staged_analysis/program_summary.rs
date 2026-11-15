@@ -96,9 +96,6 @@ pub struct ProgramSummary {
     /// Per-chunk imported primitive read capabilities with source-cell
     /// provenance and a resolved provider closure excluding the importer.
     pub primitive_reads: BTreeMap<String, BTreeMap<String, ImportedPrimitiveRead>>,
-    /// Per-chunk pure-member sets for imported namespace-like bindings,
-    /// merged into `AnalysisAssumptions::declared_pure_members`.
-    pub members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
     /// Per-chunk fluent-trusted import binding names (deep-purity roots),
     /// merged into `AnalysisAssumptions::fluent_bindings`.
     pub fluent: BTreeMap<String, BTreeSet<String>>,
@@ -900,7 +897,6 @@ pub fn collect_program_summary(
         primitive_reads,
         bindings,
         stable_imports,
-        members: members!(pure_members, PureMembers),
         fluent: exports!(fluent_exports, FluentExports),
         constructors,
         imported_callables: callable_summaries.imported_callables,

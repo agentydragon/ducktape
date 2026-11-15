@@ -2597,6 +2597,15 @@ disable the row. Spreads and unsupported input shapes remain conservative.
 Callee and argument evaluation retain their effects and throws. These summaries
 neither classify calls as pure nor bypass their ordinary source-order constraints.
 
+## Binding-level member purity
+
+`pure_members: [make, wrap]` on a selected binding asserts purity for calls
+through those static member names when the arguments classify as pure.
+Sibling properties and callback timing retain their ordinary checks. The
+annotation applies only in its chunk; each importing chunk must annotate its
+own binding. It does not propagate through provider exports. Logical-module
+`annotations:` and `chunk_renames.annotations:` carry the same contract.
+
 ## Purity hint diagnostics
 
 The per-chunk `modules.json.redundant_purity_hints` report disables each tested
