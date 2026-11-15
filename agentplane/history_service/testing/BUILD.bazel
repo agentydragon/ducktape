@@ -146,6 +146,7 @@ py_library(
         "//util:net",
         "//util/testing:postgres",
         "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",

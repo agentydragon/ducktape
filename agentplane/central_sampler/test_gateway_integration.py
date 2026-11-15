@@ -30,9 +30,9 @@ from agentplane.env.runtime.execution.testing.codex_exec_server_container import
     inspect_codex_exec_server_container,
 )
 from agentplane.grpc.calls import dial
-from agentplane.history_service.testing.go_service import WRITER_AUDIENCE, go_history_service, migrate_history_database
+from agentplane.history_service.testing.go_service import go_history_service, migrate_history_database
 from agentplane.native.codex.testing.responses_sse import CustomToolCall, Message, response_stream
-from agentplane.net.peertls.config import MTLS
+from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, MTLS
 from agentplane.proto import event_pb2, session_pb2
 from agentplane.runner_gateway.testing.gateway_process import run_gateway
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
@@ -121,8 +121,6 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
 ) -> None:
     sampler = ServiceAccountRef(namespace="test-central", name="sampler")
     gateway_audience = "test-central-gateway"
-    history_token = tmp_path / "history-token"
-    history_token.write_text(await api_server.workload_token(sampler, [WRITER_AUDIENCE]))
     ensure_electric_role(postgres_admin_url)
     with (
         create_temporary_database(postgres_admin_url, "central_gateway_" + uuid4().hex) as gateway_database,
@@ -146,8 +144,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 api=api_server,
                 directory=tmp_path,
                 writer_namespaces=[sampler.namespace, sandbox.namespace],
-                sampler_accounts=[sampler],
-                sampler_identity_callers=True,
+                sampler_service_actor=CENTRAL_SAMPLER_URI,
                 policy_namespace=sandbox.namespace,
                 svid_ca=gateway.environment_runtime_ca,
             ) as history,
@@ -204,7 +201,6 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                     gateway_tls=gateway.service_tls("spiffe://agentplane/central-sampler"),
                     gateway_token_file=None,
                     history_target=history.ingress_target,
-                    history_token_file=history_token,
                     history_tls=history.history_tls,
                 )
                 request = create_request(tmp_path / "workspace")

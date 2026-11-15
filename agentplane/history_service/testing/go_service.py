@@ -2,7 +2,8 @@
 
 The service initializes its database before serving. A consumer reads it through the Python
 `HistoryServiceClient` and writes it as a runner does, by pushing a journal to the ingress. A real
-API server answers the service's TokenReviews for real Pod-bound tokens.
+API server resolves the writers' WorkloadCredential records, while fixture readers and writers use
+workload SVIDs.
 """
 
 from __future__ import annotations
@@ -14,10 +15,11 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Sequen
 from contextlib import ExitStack, aclosing, asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import grpc
 import yaml
+from kubernetes_asyncio import client as k8s_client
 from python.runfiles import Runfiles
 
 from agentplane.grpc.calls import ServiceError
@@ -26,12 +28,12 @@ from agentplane.history_service.api.ingress import session_ingress_pb2, session_
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.settings import IngressSettings, Settings
 from agentplane.identity.auth import listener as workload_listener
-from agentplane.net.peertls.config import ClientTLS
+from agentplane.net.peertls.config import APP_URI, CENTRAL_SAMPLER_URI, HISTORY_SERVICE_URI, ClientTLS
 from agentplane.proto import event_log_pb2, session_pb2
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.go_process import GoProcess, go_process
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
-from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, make_ca, write_ca
+from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, make_ca, workload_uri, write_ca
 from util.db_url import render_postgresql_url
 from util.net import listen_tcp
 from util.testing.postgres import PostgresDatabaseTemplate
@@ -48,9 +50,6 @@ _PROGRESS_BOUND_SECONDS = 30
 # announces one beyond any history a test writes.
 _UNCOVERED_CURSOR = 2**62
 
-READER_AUDIENCE = "test-app-history-service"
-READER = ServiceAccountRef(namespace="test-history-namespace", name="test-history-reader")
-WRITER_AUDIENCE = "test-runner-ingress"
 WRITER = ServiceAccountRef(namespace="test-sandbox-namespace", name="test-sandbox-runner")
 
 
@@ -103,19 +102,129 @@ class GoHistoryService:
     database_url: str
     read_target: str
     ingress_target: str
-    reader_token_file: Path
     # Entered for the life of the service; `reader.new_client()` is an independent one.
     reader: HistoryServiceClient
     api: KubernetesApiServer
     process: GoProcess
-    history_tls: ClientTLS | None = None
-    _writer_tokens: dict[ServiceAccountRef, str] = field(default_factory=dict, init=False)
+    history_tls: ClientTLS
+    svid_ca: CertificateAuthority
+    directory: Path
+    policy_namespace: str
+    _writer_credentials: dict[tuple[ServiceAccountRef, str | None, str | None], grpc.ChannelCredentials] = field(
+        default_factory=dict, init=False
+    )
 
-    async def writer_token(self, writer: ServiceAccountRef, *, pod_name: str | None = None) -> str:
-        """A token the ingress accepts as `writer`, issued once per writer: a push waits on nothing else of the API."""
-        if writer not in self._writer_tokens:
-            self._writer_tokens[writer] = await self.api.workload_token(writer, [WRITER_AUDIENCE], pod_name=pod_name)
-        return self._writer_tokens[writer]
+    async def writer_channel_credentials(
+        self,
+        writer: ServiceAccountRef,
+        *,
+        pod_name: str | None = None,
+        identity_name: str | None = None,
+        identity_uid: str | None = None,
+    ) -> grpc.ChannelCredentials:
+        """A live Identity workload SVID the ingress resolves through the test API server."""
+        key = (writer, identity_name, identity_uid)
+        if key in self._writer_credentials:
+            return self._writer_credentials[key]
+
+        writer_id = uuid4().hex
+        credential_id = uuid4().hex
+        workload_name = f"history-{writer_id}"
+        identity_name = identity_name or f"history-{writer_id}"
+        pod_name = pod_name or f"history-{writer_id[:12]}"
+        pod_uid = str(uuid4())
+        custom = k8s_client.CustomObjectsApi(self.api.api)
+        core = k8s_client.CoreV1Api(self.api.api)
+        for namespace in {writer.namespace, self.policy_namespace}:
+            try:
+                await core.create_namespace(k8s_client.V1Namespace(metadata=k8s_client.V1ObjectMeta(name=namespace)))
+            except k8s_client.ApiException as error:
+                if error.status != 409:
+                    raise
+
+        try:
+            sandbox = await custom.get_namespaced_custom_object(
+                "agentplane.allegedly.works", "v1alpha1", writer.namespace, "sandboxes", writer.name
+            )
+        except k8s_client.ApiException as error:
+            if error.status != 404:
+                raise
+            sandbox_uid = str(uuid4())
+        else:
+            sandbox_uid = sandbox["metadata"]["uid"]
+
+        api_version = "agentplane.allegedly.works/v1alpha1"
+        try:
+            identity = await custom.get_namespaced_custom_object(
+                "agentplane.allegedly.works", "v1alpha1", self.policy_namespace, "identities", identity_name
+            )
+        except k8s_client.ApiException as error:
+            if error.status != 404 or identity_uid is not None:
+                raise
+            identity = await custom.create_namespaced_custom_object(
+                "agentplane.allegedly.works",
+                "v1alpha1",
+                self.policy_namespace,
+                "identities",
+                {
+                    "apiVersion": api_version,
+                    "kind": "Identity",
+                    "metadata": {"name": identity_name},
+                    "spec": {"description": f"History test writer {writer.namespace}/{writer.name}"},
+                },
+            )
+        if identity_uid is not None and identity["metadata"]["uid"] != identity_uid:
+            raise ValueError(f"History writer Identity {identity_name!r} is not the attached incarnation")
+        uri = workload_uri(writer.namespace, workload_name, credential_id)
+        binding = {"podUID": pod_uid}
+        record = await custom.create_namespaced_custom_object(
+            "agentplane.allegedly.works",
+            "v1alpha1",
+            writer.namespace,
+            "workloadcredentials",
+            {
+                "apiVersion": api_version,
+                "kind": "WorkloadCredential",
+                "metadata": {
+                    "name": workload_name,
+                    "ownerReferences": [
+                        {
+                            "apiVersion": api_version,
+                            "kind": "Sandbox",
+                            "name": writer.name,
+                            "uid": sandbox_uid,
+                            "controller": True,
+                        }
+                    ],
+                },
+                "spec": {
+                    "subject": {"identity": {"name": identity_name, "uid": identity["metadata"]["uid"]}},
+                    "binding": binding,
+                    "pod": {"name": pod_name, "uid": pod_uid},
+                },
+            },
+        )
+        record["status"] = {
+            "observedGeneration": record["metadata"].get("generation", 1),
+            "credentialID": credential_id,
+            "uri": uri,
+            "secretName": f"history-{writer_id}",
+            "acceptedBinding": binding,
+        }
+        await custom.replace_namespaced_custom_object_status(
+            "agentplane.allegedly.works", "v1alpha1", writer.namespace, "workloadcredentials", workload_name, record
+        )
+
+        leaf_directory = self.directory / "history-writers" / writer_id
+        leaf_directory.mkdir(parents=True, exist_ok=True)
+        cert_file, key_file = issue_workload_leaf(self.svid_ca, uri, leaf_directory, dns_name="localhost")
+        credentials = grpc.ssl_channel_credentials(
+            root_certificates=self.svid_ca.cert_pem,
+            private_key=key_file.read_bytes(),
+            certificate_chain=cert_file.read_bytes(),
+        )
+        self._writer_credentials[key] = credentials
+        return credentials
 
     async def push(
         self,
@@ -135,15 +244,16 @@ class GoHistoryService:
         if attached is not None:
             announce.CopyFrom(attached)
         announce.session_id = str(session_id)
+        writer_credentials = await self.writer_channel_credentials(
+            writer,
+            identity_name=announce.execution_identity.name or None if announce.HasField("execution_identity") else None,
+            identity_uid=announce.execution_identity.uid or None if announce.HasField("execution_identity") else None,
+        )
         async with (
             asyncio.timeout(_PROGRESS_BOUND_SECONDS),
-            grpc.aio.secure_channel(self.ingress_target, self.reader.channel_credentials)
-            if self.reader.channel_credentials is not None
-            else grpc.aio.insecure_channel(self.ingress_target) as channel,
+            grpc.aio.secure_channel(self.ingress_target, writer_credentials) as channel,
         ):
-            call = session_ingress_pb2_grpc.SessionJournalIngressStub(channel).Push(
-                metadata=(("authorization", f"Bearer {await self.writer_token(writer)}"),)
-            )
+            call = session_ingress_pb2_grpc.SessionJournalIngressStub(channel).Push()
 
             async def acknowledged_cursor() -> int:
                 acknowledgement = await call.read()
@@ -217,47 +327,58 @@ async def go_history_service(
     directory: Path,
     writer_namespaces: Sequence[str] = (WRITER.namespace,),
     watch_lease_s: float = 300,
-    sampler_accounts: Sequence[ServiceAccountRef] = (),
-    sampler_identity_callers: bool = False,
+    sampler_service_actor: str | None = None,
     svid_ca: CertificateAuthority | None = None,
     policy_namespace: str = WRITER.namespace,
 ) -> AsyncIterator[GoHistoryService]:
-    """The Go History Service on `database_url`, which the Go migrator has built, authenticating through `api`."""
+    """The Go History Service on `database_url`, using service SVID reads and workload SVID writes."""
     with ExitStack() as listeners:
         reader_listener = listeners.enter_context(listen_tcp())
-        token_file = directory / "history-reader-token"
-        token_file.write_text(await api.workload_token(READER, [READER_AUDIENCE]))
+        svid_ca = svid_ca or make_ca("history test services")
         config = directory / "history-service.yaml"
         reader_fd = reader_listener.socket.fileno()
+        tls_directory = directory / "history-tls"
+        tls_directory.mkdir()
+        ca_file, _ = write_ca(svid_ca, tls_directory, "ca")
+        server_directory = tls_directory / "server"
+        server_directory.mkdir()
+        server_cert, server_key = issue_workload_leaf(
+            svid_ca, HISTORY_SERVICE_URI, server_directory, dns_name="localhost"
+        )
+        reader_directory = tls_directory / "reader"
+        reader_directory.mkdir()
+        reader_cert, reader_key = issue_workload_leaf(svid_ca, APP_URI, reader_directory, dns_name="localhost")
+        reader_channel_credentials = grpc.ssl_channel_credentials(
+            root_certificates=svid_ca.cert_pem,
+            private_key=reader_key.read_bytes(),
+            certificate_chain=reader_cert.read_bytes(),
+        )
+        sampler_directory = tls_directory / "central-sampler"
+        sampler_directory.mkdir()
+        sampler_cert, sampler_key = issue_workload_leaf(
+            svid_ca, CENTRAL_SAMPLER_URI, sampler_directory, dns_name="localhost"
+        )
+        history_tls = ClientTLS(
+            ca_file=ca_file,
+            server_uri=HISTORY_SERVICE_URI,
+            cert_file=sampler_cert,
+            key_file=sampler_key,
+            client_uri=CENTRAL_SAMPLER_URI,
+        )
         rpc = workload_listener.Listener(
             listen_address=f"fd:{reader_fd}",
-            auth=[workload_listener.KubernetesBearerAuth(audiences=frozenset({READER_AUDIENCE, WRITER_AUDIENCE}))],
+            tls=workload_listener.TLS(cert_file=server_cert, key_file=server_key),
+            auth=[workload_listener.SPIFFEAuth(ca_file=ca_file)],
         )
-        channel_credentials = None
-        history_tls = None
-        if svid_ca is not None:
-            tls_directory = directory / "history-tls"
-            tls_directory.mkdir()
-            ca_file, _ = write_ca(svid_ca, tls_directory, "ca")
-            cert_file, key_file = issue_workload_leaf(
-                svid_ca, "spiffe://agentplane/history-ingress", tls_directory, dns_name="localhost"
-            )
-            rpc.tls = workload_listener.TLS(cert_file=cert_file, key_file=key_file)
-            rpc.auth.append(workload_listener.SPIFFEAuth(ca_file=ca_file))
-            channel_credentials = grpc.ssl_channel_credentials(root_certificates=svid_ca.cert_pem)
-            history_tls = ClientTLS(ca_file=ca_file, server_uri="spiffe://agentplane/history-ingress")
         settings = Settings(
-            reader_accounts=frozenset((READER,)),
-            token_audience=READER_AUDIENCE,
+            reader_service_callers=frozenset({APP_URI, CENTRAL_SAMPLER_URI}),
             policy_namespace=policy_namespace,
             request_timeout_s=10,
             rpc=rpc,
             kubeconfig=api.kubeconfig,
             ingress=IngressSettings(
-                token_audience=WRITER_AUDIENCE,
                 writer_namespaces=frozenset(writer_namespaces),
-                sampler_accounts=frozenset(sampler_accounts),
-                sampler_identity_callers=sampler_identity_callers,
+                sampler_service_actor=sampler_service_actor,
                 # Tests compare the archive with the runner's journal entry by entry.
                 settle_deltas=False,
             ),
@@ -273,7 +394,7 @@ async def go_history_service(
             health_port=reader_listener.port,
             grace_s=_GRACE_SECONDS,
             pass_fds=(reader_fd,),
-            health_credentials=channel_credentials,
+            health_credentials=reader_channel_credentials,
         ) as process:
             listeners.close()
             read_target = f"localhost:{reader_listener.port}"
@@ -281,13 +402,15 @@ async def go_history_service(
                 database_url=database_url,
                 read_target=read_target,
                 ingress_target=read_target,
-                reader_token_file=token_file,
                 reader=HistoryServiceClient(
-                    read_target, token_file=token_file, request_timeout_s=20, channel_credentials=channel_credentials
+                    read_target, request_timeout_s=20, channel_credentials=reader_channel_credentials
                 ),
                 api=api,
                 process=process,
                 history_tls=history_tls,
+                svid_ca=svid_ca,
+                directory=directory,
+                policy_namespace=policy_namespace,
             )
             async with service.reader:
                 yield service
