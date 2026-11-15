@@ -917,6 +917,13 @@ def test_native_recovery_profile_uses_bound_caller_without_app(
     controller = yaml.safe_load(_resource(docs, "ConfigMap", "sandbox-controller-settings")["data"]["config.yaml"])
     for role in ("operators", "readers", "managers"):
         assert controller["environment_service"][role] == [caller]
+    receiver = controller["environment_service"]
+    assert receiver["rpc"]["listen_address"] == "0.0.0.0:8082"
+    assert receiver["rpc"]["auth"][1] == {"mode": "kubernetes_bearer", "audiences": [receiver["audience"]]}
+    review = _resource(docs, "ClusterRole", f"{NAMESPACE}-sandbox-controller-token-reviewer")
+    assert review["rules"] == [
+        {"apiGroups": ["authentication.k8s.io"], "resources": ["tokenreviews"], "verbs": ["create"]}
+    ]
     assert caller in gateway["dispatcher_callers"]
     assert caller in gateway["gateway_callers"]
     assert f"{NAMESPACE}/app" not in gateway["dispatcher_callers"]
