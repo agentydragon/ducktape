@@ -7,6 +7,7 @@ from collections.abc import Awaitable, Callable, Sequence
 
 # gazelle:include_dep @pypi//protobuf
 from agentplane.proto.identity_pb2 import EnvironmentTarget
+from agentplane.system_tests.driver.cleanup import finish_cleanup
 
 type SandboxRelease = Callable[[EnvironmentTarget], Awaitable[None]]
 
@@ -33,27 +34,10 @@ async def release_owned_sandboxes(owned: Sequence[EnvironmentTarget], release: S
         if failures:
             raise BaseExceptionGroup("Sandbox cleanup failed", failures)
 
-    closing = asyncio.create_task(release_all())
-    cancellation: asyncio.CancelledError | None = None
-    while not closing.done():
-        try:
-            await asyncio.shield(closing)
-        except asyncio.CancelledError as error:
-            task = asyncio.current_task()
-            if task is not None and task.cancelling():
-                cancellation = cancellation or error
-        except BaseException:
-            break
-
-    cleanup_error: BaseException | None = None
-    try:
-        closing.result()
-    except BaseException as error:
-        cleanup_error = error
-
-    if cancellation is not None:
-        if cleanup_error is not None and cleanup_error is not cancellation:
-            raise cancellation from cleanup_error
-        raise cancellation
-    if cleanup_error is not None:
-        raise cleanup_error
+    result = await finish_cleanup(release_all())
+    if result.cancellation is not None:
+        if result.failure is not None and result.failure is not result.cancellation:
+            raise result.cancellation from result.failure
+        raise result.cancellation
+    if result.failure is not None:
+        raise result.failure
