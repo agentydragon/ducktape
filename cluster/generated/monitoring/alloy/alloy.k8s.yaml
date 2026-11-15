@@ -362,6 +362,109 @@ data:
       }
       forward_to = [prometheus.remote_write.mimir.receiver]
     }
+    // The node label is the per-node migration gate (loki.POD_COLLECTOR_LABEL).
+    // Import requires a stopped Promtail snapshot and a first-start reset of ONLY this
+    // log component's unused state: see docs/promtail-alloy-cutover.md.
+    discovery.kubernetes "pod_logs" {
+      role = "pod"
+      selectors {
+        role  = "pod"
+        field = string.format("spec.nodeName=%s", sys.env("NODE_NAME"))
+      }
+      attach_metadata {
+        node = true
+      }
+    }
+
+    discovery.relabel "pod_logs" {
+      targets = discovery.kubernetes.pod_logs.targets
+      rule {
+        source_labels = ["__meta_kubernetes_node_label_observability_allegedly_works_pod_collector"]
+        regex         = "alloy"
+        action        = "keep"
+      }
+      // Match Promtail chart 6.x's app fallback and its useful, bounded labels.
+      rule {
+        source_labels = ["__meta_kubernetes_pod_controller_name"]
+        regex         = "([0-9a-z-.]+?)(-[0-9a-f]{8,10})?"
+        target_label  = "__tmp_controller_name"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name", "__meta_kubernetes_pod_label_app", "__tmp_controller_name", "__meta_kubernetes_pod_name"]
+        regex         = "^;*([^;]+)(;.*)?$"
+        target_label  = "app"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_instance", "__meta_kubernetes_pod_label_instance"]
+        regex         = "^;*([^;]+)(;.*)?$"
+        target_label  = "instance"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_component", "__meta_kubernetes_pod_label_component"]
+        regex         = "^;*([^;]+)(;.*)?$"
+        target_label  = "component"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_node_name"]
+        target_label  = "node_name"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_namespace"]
+        target_label  = "namespace"
+      }
+      rule {
+        source_labels = ["namespace", "app"]
+        separator     = "/"
+        target_label  = "job"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_name"]
+        target_label  = "pod"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_container_name"]
+        target_label  = "container"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_uid", "__meta_kubernetes_pod_container_name"]
+        separator     = "/"
+        replacement   = "/var/log/pods/*$1/*.log"
+        target_label  = "__path__"
+      }
+      // Static pods use config hash rather than the API UID in their on-disk path.
+      rule {
+        source_labels = ["__meta_kubernetes_pod_annotationpresent_kubernetes_io_config_hash", "__meta_kubernetes_pod_annotation_kubernetes_io_config_hash", "__meta_kubernetes_pod_container_name"]
+        separator     = "/"
+        regex         = "true/(.*)"
+        replacement   = "/var/log/pods/*$1/*.log"
+        target_label  = "__path__"
+      }
+    }
+
+    local.file_match "pods" {
+      path_targets = discovery.relabel.pod_logs.output
+    }
+
+    loki.source.file "pods" {
+      targets               = local.file_match.pods.targets
+      legacy_positions_file = "/var/lib/alloy-node/legacy-pod-positions.yaml"
+      forward_to            = [loki.process.pods.receiver]
+    }
+
+    loki.process "pods" {
+      stage.cri {}
+      // File paths contain Pod UIDs: retain the incident's cardinality protection.
+      stage.label_drop {
+        values = ["filename"]
+      }
+      forward_to = [loki.write.pod_logs.receiver]
+    }
+
+    loki.write "pod_logs" {
+      endpoint {
+        url = sys.env("LOKI_PUSH_URL")
+      }
+    }
 immutable: false
 ---
 apiVersion: v1
@@ -412,6 +515,54 @@ data:
         // Retry forever rather than drop after 10 tries: a home WAN outage cuts optiplex off from
         // Loki, and the in-memory queue holds hours of switch logs. A pod restart still loses it.
         max_backoff_retries = 0
+      }
+    }
+immutable: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alloy-journal-config
+  namespace: monitoring
+data:
+  journal.alloy: |
+    // Only the NixOS-only alloy-journal release mounts these paths. No kernel/unit
+    // filter: retain all system journal messages, including kernel GPU Xid events.
+    loki.relabel "journal" {
+      forward_to = []
+      rule {
+        source_labels = ["__journal__systemd_unit"]
+        target_label  = "unit"
+      }
+      rule {
+        source_labels = ["__journal__hostname"]
+        target_label  = "node"
+      }
+      rule {
+        source_labels = ["__journal_priority_keyword"]
+        target_label  = "level"
+      }
+      rule {
+        target_label = "job"
+        replacement  = "systemd-journal"
+      }
+    }
+
+    loki.source.journal "journal" {
+      path          = "/var/log/journal"
+      max_age       = "12h"
+      relabel_rules = loki.relabel.journal.rules
+      labels        = {job = "systemd-journal"}
+      legacy_position {
+        file = "/var/lib/alloy-journal/legacy-journal-positions.yaml"
+        name = "journal"
+      }
+      forward_to = [loki.write.journal.receiver]
+    }
+
+    loki.write "journal" {
+      endpoint {
+        url = sys.env("LOKI_PUSH_URL")
       }
     }
 immutable: false
@@ -493,6 +644,8 @@ spec:
       extraEnv:
         - name: MIMIR_PUSH_URL
           value: http://mimir-gateway.monitoring.svc.cluster.local/api/v1/push
+        - name: LOKI_PUSH_URL
+          value: http://loki-write.loki.svc.cluster.local:3100/loki/api/v1/push
         - name: NODE_NAME
           valueFrom:
             fieldRef:
@@ -501,12 +654,33 @@ spec:
         extra:
           - mountPath: /var/lib/alloy-node
             name: wal
+          - mountPath: /var/log/pods
+            name: pod-logs
+            readOnly: true
       resources:
+        limits:
+          memory: 2Gi
         requests:
-          cpu: 20m
-          memory: 256Mi
+          cpu: 70m
+          memory: 512Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+        readOnlyRootFilesystem: true
+        runAsUser: 0
       storagePath: /var/lib/alloy-node
     controller:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: observability.allegedly.works/pod-collector
+                    operator: NotIn
+                    values:
+                      - drained
       tolerations:
         - effect: NoSchedule
           key: node-role.kubernetes.io/control-plane
@@ -522,7 +696,100 @@ spec:
               path: /var/lib/alloy-node
               type: DirectoryOrCreate
             name: wal
+          - hostPath:
+              path: /var/log/pods
+              type: Directory
+            name: pod-logs
     nameOverride: alloy-node
+    serviceMonitor:
+      enabled: true
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: alloy-journal
+  namespace: monitoring
+spec:
+  chart:
+    spec:
+      chart: alloy
+      interval: 12h
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+        namespace: flux-system
+      version: 1.x
+  install:
+    disableWait: true
+  interval: 30m
+  upgrade:
+    disableWait: true
+  values:
+    alloy:
+      configMap:
+        create: false
+        key: journal.alloy
+        name: alloy-journal-config
+      extraEnv:
+        - name: LOKI_PUSH_URL
+          value: http://loki-write.loki.svc.cluster.local:3100/loki/api/v1/push
+      mounts:
+        extra:
+          - mountPath: /var/lib/alloy-journal
+            name: positions
+            readOnly: false
+          - mountPath: /var/log/journal
+            name: journal
+            readOnly: true
+          - mountPath: /etc/machine-id
+            name: machine-id
+            readOnly: true
+      resources:
+        limits:
+          cpu: 500m
+          memory: 512Mi
+        requests:
+          cpu: 50m
+          memory: 256Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+        readOnlyRootFilesystem: true
+        runAsUser: 0
+      storagePath: /var/lib/alloy-journal
+    controller:
+      nodeSelector:
+        node-vendor: nixos
+        observability.allegedly.works/journal-collector: alloy
+      tolerations:
+        - effect: NoSchedule
+          operator: Exists
+      type: daemonset
+      updateStrategy:
+        rollingUpdate:
+          maxUnavailable: 3
+        type: RollingUpdate
+      volumes:
+        extra:
+          - hostPath:
+              path: /var/lib/alloy-journal
+              type: DirectoryOrCreate
+            name: positions
+          - hostPath:
+              path: /var/log/journal
+              type: Directory
+            name: journal
+          - hostPath:
+              path: /etc/machine-id
+              type: File
+            name: machine-id
+    nameOverride: alloy-journal
+    rbac:
+      create: false
+    serviceAccount:
+      automountServiceAccountToken: false
     serviceMonitor:
       enabled: true
 ---

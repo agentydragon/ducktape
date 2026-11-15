@@ -1,0 +1,103 @@
+// The node label is the per-node migration gate (loki.POD_COLLECTOR_LABEL).
+// Import requires a stopped Promtail snapshot and a first-start reset of ONLY this
+// log component's unused state: see docs/promtail-alloy-cutover.md.
+discovery.kubernetes "pod_logs" {
+  role = "pod"
+  selectors {
+    role  = "pod"
+    field = string.format("spec.nodeName=%s", sys.env("NODE_NAME"))
+  }
+  attach_metadata {
+    node = true
+  }
+}
+
+discovery.relabel "pod_logs" {
+  targets = discovery.kubernetes.pod_logs.targets
+  rule {
+    source_labels = ["__meta_kubernetes_node_label_observability_allegedly_works_pod_collector"]
+    regex         = "alloy"
+    action        = "keep"
+  }
+  // Match Promtail chart 6.x's app fallback and its useful, bounded labels.
+  rule {
+    source_labels = ["__meta_kubernetes_pod_controller_name"]
+    regex         = "([0-9a-z-.]+?)(-[0-9a-f]{8,10})?"
+    target_label  = "__tmp_controller_name"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name", "__meta_kubernetes_pod_label_app", "__tmp_controller_name", "__meta_kubernetes_pod_name"]
+    regex         = "^;*([^;]+)(;.*)?$"
+    target_label  = "app"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_instance", "__meta_kubernetes_pod_label_instance"]
+    regex         = "^;*([^;]+)(;.*)?$"
+    target_label  = "instance"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_component", "__meta_kubernetes_pod_label_component"]
+    regex         = "^;*([^;]+)(;.*)?$"
+    target_label  = "component"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_node_name"]
+    target_label  = "node_name"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_namespace"]
+    target_label  = "namespace"
+  }
+  rule {
+    source_labels = ["namespace", "app"]
+    separator     = "/"
+    target_label  = "job"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_name"]
+    target_label  = "pod"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_container_name"]
+    target_label  = "container"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_uid", "__meta_kubernetes_pod_container_name"]
+    separator     = "/"
+    replacement   = "/var/log/pods/*$1/*.log"
+    target_label  = "__path__"
+  }
+  // Static pods use config hash rather than the API UID in their on-disk path.
+  rule {
+    source_labels = ["__meta_kubernetes_pod_annotationpresent_kubernetes_io_config_hash", "__meta_kubernetes_pod_annotation_kubernetes_io_config_hash", "__meta_kubernetes_pod_container_name"]
+    separator     = "/"
+    regex         = "true/(.*)"
+    replacement   = "/var/log/pods/*$1/*.log"
+    target_label  = "__path__"
+  }
+}
+
+local.file_match "pods" {
+  path_targets = discovery.relabel.pod_logs.output
+}
+
+loki.source.file "pods" {
+  targets               = local.file_match.pods.targets
+  legacy_positions_file = "/var/lib/alloy-node/legacy-pod-positions.yaml"
+  forward_to            = [loki.process.pods.receiver]
+}
+
+loki.process "pods" {
+  stage.cri {}
+  // File paths contain Pod UIDs: retain the incident's cardinality protection.
+  stage.label_drop {
+    values = ["filename"]
+  }
+  forward_to = [loki.write.pod_logs.receiver]
+}
+
+loki.write "pod_logs" {
+  endpoint {
+    url = sys.env("LOKI_PUSH_URL")
+  }
+}

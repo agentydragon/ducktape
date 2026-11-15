@@ -291,6 +291,16 @@ spec:
       retries: 3
   interval: 30m
   values:
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: observability.allegedly.works/pod-collector
+                  operator: NotIn
+                  values:
+                    - drained
+                    - alloy
     config:
       clients:
         - url: http://loki-write.loki.svc.cluster.local:3100/loki/api/v1/push
@@ -330,6 +340,16 @@ spec:
       retries: 3
   interval: 30m
   values:
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: observability.allegedly.works/journal-collector
+                  operator: NotIn
+                  values:
+                    - drained
+                    - alloy
     config:
       clients:
         - url: http://loki-write.loki.svc.cluster.local:3100/loki/api/v1/push
@@ -471,6 +491,9 @@ spec:
             k8s:io.kubernetes.pod.namespace: monitoring
         - matchLabels:
             app.kubernetes.io/name: alloy-syslog
+            k8s:io.kubernetes.pod.namespace: monitoring
+        - matchLabels:
+            app.kubernetes.io/name: alloy-journal
             k8s:io.kubernetes.pod.namespace: monitoring
       toPorts:
         - ports:

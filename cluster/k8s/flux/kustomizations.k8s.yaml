@@ -2927,6 +2927,10 @@ spec:
       namespace: monitoring
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
+      name: alloy-journal
+      namespace: monitoring
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
       name: alloy-syslog
       namespace: monitoring
   interval: 10m

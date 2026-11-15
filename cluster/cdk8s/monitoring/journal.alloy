@@ -1,0 +1,39 @@
+// Only the NixOS-only alloy-journal release mounts these paths. No kernel/unit
+// filter: retain all system journal messages, including kernel GPU Xid events.
+loki.relabel "journal" {
+  forward_to = []
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    target_label  = "unit"
+  }
+  rule {
+    source_labels = ["__journal__hostname"]
+    target_label  = "node"
+  }
+  rule {
+    source_labels = ["__journal_priority_keyword"]
+    target_label  = "level"
+  }
+  rule {
+    target_label = "job"
+    replacement  = "systemd-journal"
+  }
+}
+
+loki.source.journal "journal" {
+  path          = "/var/log/journal"
+  max_age       = "12h"
+  relabel_rules = loki.relabel.journal.rules
+  labels        = {job = "systemd-journal"}
+  legacy_position {
+    file = "/var/lib/alloy-journal/legacy-journal-positions.yaml"
+    name = "journal"
+  }
+  forward_to = [loki.write.journal.receiver]
+}
+
+loki.write "journal" {
+  endpoint {
+    url = sys.env("LOKI_PUSH_URL")
+  }
+}

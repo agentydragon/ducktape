@@ -175,3 +175,10 @@ oci_layout_py(
     image = "@blackbox_exporter_linux_amd64",
     visibility = ["//visibility:public"],
 )
+
+oci_layout_py(
+    name = "alloy_config",
+    testonly = True,
+    image = "@alloy_config_linux_amd64",
+    visibility = ["//visibility:public"],
+)

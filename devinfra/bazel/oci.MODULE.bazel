@@ -25,6 +25,16 @@ oci.pull(
 )
 use_repo(oci, "grafana_visual", "grafana_visual_linux_amd64", "prometheus_visual", "prometheus_visual_linux_amd64")
 
+# Validate the log-collector configuration with Alloy's real parser and components.
+oci.pull(
+    name = "alloy_config",
+    digest = "sha256:4039c971193053a84e53dd9ed3e7d4561c069256b024631cd3498a353ed7ece8",
+    image = "mirror.gcr.io/grafana/alloy",
+    platforms = ["linux/amd64"],
+    tag = "v1.21.1",
+)
+use_repo(oci, "alloy_config", "alloy_config_linux_amd64")
+
 # Most Docker Hub base images are pulled through mirror.gcr.io (Google's pull-through
 # cache of Docker Hub) instead of docker.io directly: Docker Hub's anonymous
 # per-IP pull-rate limit reliably 429s the shared CI runner during
