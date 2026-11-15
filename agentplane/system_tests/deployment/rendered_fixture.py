@@ -133,7 +133,7 @@ class RenderedFixture(BaseModel):
     firecracker_sandboxes: bool = False
     central_sampler: bool = False
     namespace: str
-    app_origin: str
+    app_origin: str | None
     browser_services: list[BrowserService]
     mcp_fixtures: McpFixtures | None
     # None: the app pins no key; in MCP fixtures Dex issues the operator's token (`operator_token_grant`).
@@ -184,6 +184,6 @@ def fill(
     return fixture.model_copy(
         update={
             "objects": _replace(fixture.objects, replacements),
-            "app_origin": _replace(fixture.app_origin, replacements),
+            "app_origin": _replace(fixture.app_origin, replacements) if fixture.app_origin is not None else None,
         }
     )

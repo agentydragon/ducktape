@@ -20,7 +20,20 @@ from typing import Any
 
 from agentplane_policyset_crds.works.allegedly.agentplane import PolicySetSpecRulesMethods
 from cdk8s import ApiObjectMetadata, App, Chart, Size, Testing
-from cdk8s_plus_34 import ConfigMap, Cpu, DeploymentStrategy, EnvValue, ImagePullPolicy, k8s
+from cdk8s_plus_34 import (
+    ConfigMap,
+    ContainerResources,
+    Cpu,
+    CpuResources,
+    Deployment,
+    DeploymentStrategy,
+    EnvValue,
+    ImagePullPolicy,
+    MemoryResources,
+    PodSecurityContextProps,
+    ServiceAccount,
+    k8s,
+)
 from cert_manager_clusterissuer_crds.io.cert_manager import ClusterIssuerSpecCa, ClusterIssuerSpecSelfSigned
 from cert_manager_crds.io.cert_manager import (
     CertificateSpecIssuerRef,
@@ -53,8 +66,12 @@ from agentplane.env.config import CodexReadiness
 from agentplane.env.runtime.harness import Harness
 from agentplane.net.peertls.config import APP_URI, LLM_INGRESS_URI, NOTIFICATIONS_URI, TLS
 from agentplane.notification_service.settings import NoticeDebounceSettings
+
+# gazelle:include_dep @pypi//protobuf
+from agentplane.proto import session_pb2
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests.deployment import dex, fixture_database, launch_preset, runtime_grant, send_grant, svid_box
+from agentplane.system_tests.deployment.local_models import LOCAL_MODEL_MODELS
 from agentplane.system_tests.deployment.rendered_fixture import LocalModel, Models, OperatorTokenIssuer, PublicLiteLLM
 from agentplane.system_tests.k3s.namespaces import CREDENTIALS_NAMESPACE, NAMESPACE
 from agentplane.system_tests.vm import block_storage, configuration as vm_configuration
@@ -109,7 +126,8 @@ from cluster.cdk8s.providers.cert_manager.bundle import Bundle
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
 from cluster.cdk8s.providers.cert_manager.cluster_issuer import ClusterIssuer
 from cluster.cdk8s.secret_ref import SecretRef
-from model_catalog.catalog import GPT6_LUNA_RESPONSES, HAIKU_API, OLLAMA_QWEN_IQ4XS_128K
+from cluster.cdk8s.service_ref import Pods
+from model_catalog.catalog import GPT6_LUNA_RESPONSES, HAIKU_API
 
 RUNNER_GATEWAY = "runner-gateway"
 SESSION_DISPATCHER = "session-dispatcher"
@@ -118,10 +136,13 @@ SESSION_DISPATCHER = "session-dispatcher"
 # The fixture's one Pod execution environment. Nothing outside the fixture names it -- no live Sandbox
 # or preset does -- so unlike staging's it is the fixture's own to rename.
 POD_TEMPLATE = "environment-tools"
-# The image it runs: //agentplane/system_tests/deployment:environment_tools_harnesses_image, which stack.py
-# imports into containerd under this reference. The runner binary itself still comes from the runner
-# disk image, as in staging.
+NATIVE_TEST_CLIENT = "system-test-native-client"
+_NATIVE_TEST_CLIENT_LABELS = {"app.kubernetes.io/name": NATIVE_TEST_CLIENT}
+# Runner environments use this image; the idle identity Pod reuses PostgreSQL instead.
 ENVIRONMENT_TOOLS_IMAGE = "git.allegedly.works/ducktape-ci/environment-tools"
+# The native identity Pod reuses the already imported fixture PostgreSQL image; OCI inspection of
+# its pinned linux/amd64 manifest confirms /bin -> usr/bin and executable usr/bin/sleep.
+NATIVE_TEST_CLIENT_IMAGE = fixture_database.IMAGE
 APP_SERVICE = app_component.service(NAMESPACE)
 APP_ORIGIN = APP_SERVICE.url
 ACTIONS_SERVICE = actions.service(NAMESPACE)
@@ -149,7 +170,9 @@ _VM_GUEST_ROOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root
 _VM_GUEST_ROOT_SERIAL = "guest-root"
 # What the app offers when LLM ingress forwards to the scenario's scripted model. Scenarios take each harness's
 # first model; a ChatGPT route puts Codex in code mode.
-_LOCAL_MODEL_MODELS = HarnessRoutes(claude=(OLLAMA_QWEN_IQ4XS_128K.native,), codex=(GPT6_LUNA_RESPONSES,))
+_LOCAL_MODEL_MODELS = HarnessRoutes(
+    claude=(LOCAL_MODEL_MODELS[session_pb2.HARNESS_CLAUDE],), codex=(LOCAL_MODEL_MODELS[session_pb2.HARNESS_CODEX],)
+)
 # What the app offers when LLM ingress forwards to the public LiteLLM: models the BuildBuddy live-test key's
 # lane admits (`cheap_experiments_models`), neither waiting on the shared GPU.
 _PUBLIC_LITELLM_MODELS = HarnessRoutes(claude=(HAIKU_API,), codex=(GPT6_LUNA_RESPONSES,))
@@ -175,16 +198,23 @@ class FixtureProfile(StrEnum):
     # These scenarios do not exercise external MCP Connections. The app retains unused
     # Connection routes and reports Connection Service unavailable in system status.
     NO_MCP_EDGE = "no-mcp-edge"
+    # Native acceptance candidates run real backend services and a bound test caller, without
+    # the integration App, its database, or its OIDC login.
+    APP_FREE = "app-free"
+
+    @property
+    def app_enabled(self) -> bool:
+        return self != FixtureProfile.APP_FREE
 
 
 @dataclass(frozen=True)
 class FixtureChart:
     chart: Chart
-    app: Construct
+    app: Construct | None
     actions: Construct
     mcp_edge: Construct | None
-    app_login: dex.StaticClient
-    mcp_linkage: dex.StaticClient
+    app_login: dex.StaticClient | None
+    mcp_linkage: dex.StaticClient | None
 
 
 def login_client(app_origin: str) -> dex.StaticClient:
@@ -200,6 +230,7 @@ def environment(
     vm_sandboxes: bool,
     models: Models,
     operator_token_key: str | None,
+    app_enabled: bool = True,
     app_origin: str = APP_ORIGIN,
     central_sampler: bool = False,
     firecracker_sandboxes: bool = False,
@@ -207,7 +238,8 @@ def environment(
     """Build the common fixture settings; MCP renderers add their servers and Dex resources separately.
     With `operator_token_key`, the app's OIDC issuer is `OPERATOR_TOKENS`'s, pinned to that key."""
     app_login = login_client(app_origin)
-    operator_oidc = dex.operator_oidc(issuer=DEX_ISSUER, app_client_id=app_login.id)
+    app_operator_oidc = dex.operator_oidc(issuer=DEX_ISSUER, app_client_id=app_login.id)
+    operator_oidc = app_operator_oidc if app_enabled else None
     routes = _PUBLIC_LITELLM_MODELS if isinstance(models, PublicLiteLLM) else _LOCAL_MODEL_MODELS
     central_sampler_props = None
     if central_sampler:
@@ -289,8 +321,12 @@ def environment(
                     public_base_url=app_origin,
                     static_ed25519_keys=frozenset({operator_token_key}),
                 )
-            ),
-            action_federation=dex.action_federation(operator_oidc),
+            )
+            if app_enabled
+            else None,
+            # Environment requires a complete App Settings model even when the App is omitted from
+            # the profile. APP_FREE never renders this unused App-only federation configuration.
+            action_federation=dex.action_federation(app_operator_oidc),
             frontend_config=FrontendConfig(
                 trace_search=TraceSearchSettings(
                     grafana_base_url=AnyHttpUrl("https://grafana.example.test/"),
@@ -341,11 +377,11 @@ def environment(
                     ),
                 )
             },
-            oauth_secret_items=("client-secret",),
+            oauth_secret_items=("client-secret",) if app_enabled else (),
             orchestration_v1=OrchestrationProps(),
         ),
         mcp_edge=McpEdgeProps(
-            replicas=_ONE_REPLICA, operator_oidc=operator_oidc, oauth_secret_name=None, hostname=None
+            replicas=_ONE_REPLICA, operator_oidc=app_operator_oidc, oauth_secret_name=None, hostname=None
         ),
         vm_sandboxes=vm_sandboxes,
         firecracker_sandboxes=firecracker_sandboxes,
@@ -353,7 +389,8 @@ def environment(
         vm_console_autologin=True,
         wake_caller_accounts=frozenset(
             {
-                ServiceAccountRef(namespace=NAMESPACE, name=app_component.NAME),
+                *([ServiceAccountRef(namespace=NAMESPACE, name=NATIVE_TEST_CLIENT)] if not app_enabled else []),
+                *([ServiceAccountRef(namespace=NAMESPACE, name=app_component.NAME)] if app_enabled else []),
                 ServiceAccountRef(namespace=NAMESPACE, name=notifications.NAME),
             }
         ),
@@ -404,13 +441,44 @@ def _add_runner_root(chart: Chart) -> None:
     )
 
 
+def _add_native_test_client(chart: Chart) -> None:
+    """Give native system-test clients one explicit Pod-bound ServiceAccount principal."""
+    account = ServiceAccount(
+        chart,
+        "native-test-client-account",
+        metadata=ApiObjectMetadata(name=NATIVE_TEST_CLIENT, namespace=NAMESPACE),
+        automount_token=False,
+    )
+    deployment = Deployment(
+        chart,
+        "native-test-client-deployment",
+        metadata=ApiObjectMetadata(name=NATIVE_TEST_CLIENT, namespace=NAMESPACE, labels=_NATIVE_TEST_CLIENT_LABELS),
+        pod_metadata=ApiObjectMetadata(labels=_NATIVE_TEST_CLIENT_LABELS),
+        replicas=1,
+        strategy=DeploymentStrategy.recreate(),
+        service_account=account,
+        automount_service_account_token=False,
+        security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000),
+    )
+    deployment.add_container(
+        name="native-test-client",
+        image=NATIVE_TEST_CLIENT_IMAGE,
+        image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
+        # A bare sleep as PID 1 ignores SIGTERM and consumes the full Pod grace period.
+        command=["/bin/sh", "-c", "trap 'exit 0' TERM; sleep infinity & wait"],
+        resources=ContainerResources(
+            cpu=CpuResources(request=Cpu.millis(10)), memory=MemoryResources(request=Size.mebibytes(16))
+        ),
+    )
+
+
 def objects(
     *,
     ca_cert: str,
     ca_key: str,
     system_roots: str,
     cluster_ca: str,
-    operator_token_key: str,
+    operator_token_key: str | None,
     models: Models,
     vm_sandboxes: bool,
     firecracker_sandboxes: bool = False,
@@ -425,6 +493,7 @@ def objects(
         firecracker_sandboxes=firecracker_sandboxes,
         models=models,
         operator_token_key=operator_token_key,
+        app_enabled=profile.app_enabled,
         central_sampler=central_sampler,
     )
     fixture = build_chart(
@@ -479,9 +548,10 @@ def build_chart(
     profile: FixtureProfile = FixtureProfile.FULL,
 ) -> FixtureChart:
     """Construct the shared stack and return its chart before synthesis for fixture-specific additions."""
+    app_enabled = profile.app_enabled
     app_origin = str(env.app.origin)
-    app_login = login_client(app_origin)
-    mcp_linkage = linkage_client(app_origin)
+    app_login = login_client(app_origin) if app_enabled else None
+    mcp_linkage = linkage_client(app_origin) if app_enabled else None
     sandbox_sidecar_resources = k8s.ResourceRequirements(
         requests={
             "cpu": k8s.Quantity.from_string(Cpu.millis(10).amount),
@@ -491,6 +561,8 @@ def build_chart(
     app = App()
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
     Namespace(chart, "namespace", env)
+    if not app_enabled:
+        _add_native_test_client(chart)
     _add_runner_root(chart)
     add_runner_certificates(chart, env)
     add_workload_ca(chart)
@@ -501,9 +573,11 @@ def build_chart(
         service_requester="system:admin",
         cert_manager=ServiceAccountRef(namespace="cert-manager", name="cert-manager"),
     )
-    fixture_database.add_database(chart, env)
+    fixture_database.add_database(chart, env, include_app=app_enabled)
     app_database_url = (
         SecretRef(namespace=NAMESPACE, name="postgres-app").key("async-uri").env_value(chart, "app-database-url")
+        if app_enabled
+        else None
     )
     actions_database_url = (
         SecretRef(namespace=NAMESPACE, name="postgres-actions").key("uri").env_value(chart, "actions-database-url")
@@ -545,7 +619,10 @@ def build_chart(
         env,
         database_url=egress_database_url,
         runners=environment_sandbox.pods(env.namespace),
-        admin_grpc_callers=[ServiceAccountRef(namespace=NAMESPACE, name=app_component.NAME)],
+        admin_grpc_callers=[
+            *([ServiceAccountRef(namespace=NAMESPACE, name=NATIVE_TEST_CLIENT)] if not app_enabled else []),
+            *([ServiceAccountRef(namespace=NAMESPACE, name=app_component.NAME)] if app_enabled else []),
+        ],
         litellm_host="litellm.allegedly.works" if isinstance(models, PublicLiteLLM) else None,
         litellm_cluster_internal=not isinstance(models, PublicLiteLLM),
         placement=None,
@@ -562,14 +639,23 @@ def build_chart(
         ],
     )
     sandbox_pod.add_tool_config(chart, env)
-    app_caller = {
-        ServiceAccountRef(namespace=NAMESPACE, name=app_component.NAME): app_component.service(NAMESPACE).pods
-    }
+    native_test_caller = ServiceAccountRef(namespace=NAMESPACE, name=NATIVE_TEST_CLIENT)
+    app_caller = (
+        {ServiceAccountRef(namespace=NAMESPACE, name=app_component.NAME): app_component.service(NAMESPACE).pods}
+        if app_enabled
+        else {}
+    )
+    native_caller = (
+        {native_test_caller: Pods(namespace=NAMESPACE, labels=tuple(_NATIVE_TEST_CLIENT_LABELS.items()))}
+        if not app_enabled
+        else {}
+    )
     notifications_caller = {
         ServiceAccountRef(namespace=NAMESPACE, name=notifications.NAME): notifications.service(NAMESPACE).pods
     }
     orchestration_caller = actions.orchestration_callers(env)
-    gateway_callers = app_caller | notifications_caller
+    platform_callers = app_caller | native_caller
+    gateway_callers = platform_callers | notifications_caller
     runner_gateway_workload.add_stable_services(chart, env)
     runner_gateway_workload.RunnerGateway(
         chart,
@@ -577,7 +663,9 @@ def build_chart(
         env,
         dispatcher_callers=gateway_callers | orchestration_caller,
         environment_launchers=orchestration_caller,
-        operator_callers=app_caller,
+        environment_readers=frozenset(platform_callers),
+        environment_managers=frozenset(platform_callers),
+        operator_callers=platform_callers,
         operator_service_callers=frozenset({APP_URI}),
         wake_service_callers=frozenset({APP_URI, NOTIFICATIONS_URI}),
         delegation_actor=(
@@ -618,7 +706,7 @@ def build_chart(
         "history-service",
         env,
         database_url=history_database_url,
-        callers=app_caller | notifications_caller | orchestration_caller,
+        callers=platform_callers | notifications_caller | orchestration_caller,
         delegation_actor=(
             ServiceAccountRef(namespace=NAMESPACE, name=actions.NAME)
             if env.actions.orchestration_v1 is not None
@@ -630,17 +718,20 @@ def build_chart(
         memory_request=Size.mebibytes(48),
         memory_limit=None,
     )
-    app_service = app_component.App(
-        chart,
-        "app",
-        env,
-        electric=None,
-        database_url=app_database_url,
-        placement=None,
-        registry_secret_name=None,
-        memory_request=Size.mebibytes(48),
-        memory_limit=None,
-    )
+    app_service = None
+    if app_enabled:
+        assert app_database_url is not None
+        app_service = app_component.App(
+            chart,
+            "app",
+            env,
+            electric=None,
+            database_url=app_database_url,
+            placement=None,
+            registry_secret_name=None,
+            memory_request=Size.mebibytes(48),
+            memory_limit=None,
+        )
     mcp_edge_service: Construct | None = None
     if profile == FixtureProfile.FULL:
         mcp_edge_service = mcp_edge.McpEdge(
@@ -736,7 +827,7 @@ def build_chart(
         history_audience=history_service.TOKEN_AUDIENCE,
         dispatcher=runner_gateway_workload.dispatcher_service(NAMESPACE),
         dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
-        callers=[app_component.service(NAMESPACE).pods],
+        callers=[app_component.service(NAMESPACE).pods] if app_enabled else [],
         placement=None,
         registry_secret_name=None,
         container_env=database_env,
@@ -746,21 +837,22 @@ def build_chart(
     command_sandbox.CommandSandbox(
         chart, "command-sandbox", env, image_pull_secret_name=None, trust_mounts=sandbox_pod.egress_proxy_mounts()
     )
-    # The app and the Actions MCP client read their normal Secret names.
-    add_secret(
-        chart,
-        app_component.oidc_secret(NAMESPACE).name,
-        {
-            "client-id": APP_CLIENT_ID,
-            "client-secret": APP_CLIENT_SECRET,
-            "session-secret": "test-k3s-app-session-secret",
-        },
-    )
-    add_secret(
-        chart,
-        actions.mcp_oauth_secret(NAMESPACE).name,
-        {"client-id": _MCP_LINKAGE.id, "client-secret": "test-k3s-actions-client-secret"},
-    )
+    if app_enabled:
+        # The app and the Actions MCP client read their normal Secret names.
+        add_secret(
+            chart,
+            app_component.oidc_secret(NAMESPACE).name,
+            {
+                "client-id": APP_CLIENT_ID,
+                "client-secret": APP_CLIENT_SECRET,
+                "session-secret": "test-k3s-app-session-secret",
+            },
+        )
+        add_secret(
+            chart,
+            actions.mcp_oauth_secret(NAMESPACE).name,
+            {"client-id": _MCP_LINKAGE.id, "client-secret": "test-k3s-actions-client-secret"},
+        )
     add_secret(chart, _EGRESS_CA, {"tls.crt": ca_cert, "tls.key": ca_key, "ca.crt": ca_cert}, kind="kubernetes.io/tls")
     Bundle(
         chart,
@@ -807,31 +899,32 @@ def build_chart(
         metadata=ApiObjectMetadata(name=sandbox_pod.TOOL_CONFIG_GRANT, namespace=NAMESPACE),
         rules=access.rules_for_grants([tool_config_grant]),
     )
-    # Keep this policy probe off service-owned SVID routes, whose receivers authorize their
-    # requests after opaque CONNECT. The app origin is an ordinary intercepted destination.
-    PolicySet(
-        chart,
-        f"policy-set-{runtime_grant.POLICY_SET}",
-        metadata=ApiObjectMetadata(
-            name=runtime_grant.POLICY_SET,
-            namespace=NAMESPACE,
-            annotations={runtime_grant.PORT_ANNOTATION: str(APP_SERVICE.port.number)},
-        ),
-        rules=[
-            Rule.egress(
-                hosts=[APP_SERVICE.fqdn],
-                cluster_internal=True,
-                methods=[PolicySetSpecRulesMethods.GET],
-                paths=["/test-runtime-grant"],
-            )
-        ],
-    )
-    PolicySet(
-        chart,
-        f"policy-set-{send_grant.POLICY_SET}",
-        metadata=ApiObjectMetadata(name=send_grant.POLICY_SET, namespace=NAMESPACE),
-        rules=[Rule.send_message(inbox_tags=[send_grant.INBOX_TAG])],
-    )
+    if app_enabled:
+        # Keep this policy probe off service-owned SVID routes, whose receivers authorize their
+        # requests after opaque CONNECT. The app origin is an ordinary intercepted destination.
+        PolicySet(
+            chart,
+            f"policy-set-{runtime_grant.POLICY_SET}",
+            metadata=ApiObjectMetadata(
+                name=runtime_grant.POLICY_SET,
+                namespace=NAMESPACE,
+                annotations={runtime_grant.PORT_ANNOTATION: str(APP_SERVICE.port.number)},
+            ),
+            rules=[
+                Rule.egress(
+                    hosts=[APP_SERVICE.fqdn],
+                    cluster_internal=True,
+                    methods=[PolicySetSpecRulesMethods.GET],
+                    paths=["/test-runtime-grant"],
+                )
+            ],
+        )
+        PolicySet(
+            chart,
+            f"policy-set-{send_grant.POLICY_SET}",
+            metadata=ApiObjectMetadata(name=send_grant.POLICY_SET, namespace=NAMESPACE),
+            rules=[Rule.send_message(inbox_tags=[send_grant.INBOX_TAG])],
+        )
     controller = policy_controller.PolicyController(
         chart,
         "policy-controller",
