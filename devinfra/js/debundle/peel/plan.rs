@@ -47,35 +47,35 @@ pub struct PlanWorkArgs {
     #[command(flatten)]
     pub common: CommonArgs,
 
-    /// Use complete fixed-owner assignment search; omitted/auto uses advisory factorization.
+    /// Use exact placement search (default); select auto for an advisory atomic-DAG inventory.
+    #[arg(long, value_enum, default_value = "complete")]
+    pub strategy: ProposalStrategy,
     #[arg(long, value_enum)]
-    pub strategy: Option<ProposalStrategy>,
-    #[arg(long, value_enum, requires = "strategy")]
     pub existing_assignments: Option<ExistingAssignments>,
-    #[arg(long, value_enum, requires = "strategy")]
+    #[arg(long, value_enum)]
     pub destinations: Option<super::search::Destinations>,
     /// Restrict targets to these exact module destinations (repeatable).
-    #[arg(long, requires = "strategy")]
+    #[arg(long)]
     pub into: Vec<String>,
     /// Require the witness to extract this residual unit, with necessary companions.
-    #[arg(long = "require", requires = "strategy")]
+    #[arg(long = "require")]
     pub required: Vec<String>,
     /// JSON array of units permitted to move. Must contain whole atoms.
-    #[arg(long, requires = "strategy")]
+    #[arg(long)]
     pub only_units: Option<PathBuf>,
-    #[arg(long, requires = "strategy")]
+    #[arg(long)]
     pub max_new_modules: Option<usize>,
     /// Explicit check budget. Exhaustion reports incomplete, never no peel.
-    #[arg(long, requires = "strategy")]
+    #[arg(long)]
     pub max_checks: Option<u64>,
-    #[arg(long, requires = "strategy")]
+    #[arg(long)]
     pub time_budget_ms: Option<u64>,
 
     /// Tree config for chunk-scoped module claims in a multi-chunk spec.
     #[arg(long = "tree-config", env = "DEBUNDLE_TREE_CONFIG")]
     pub tree_config: Option<PathBuf>,
 
-    /// Hard line ceiling per emitted proposal.
+    /// Hard line ceiling per proposal in advisory `auto` mode.
     #[arg(long = "size-cap-lines")]
     pub size_cap_lines: Option<usize>,
 
@@ -84,7 +84,7 @@ pub struct PlanWorkArgs {
     #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
     pub source_root: Option<PathBuf>,
 
-    /// Maximum number of proposals and diagnostics to emit. Zero means unlimited.
+    /// Maximum number of advisory `auto` proposals and diagnostics to emit. Zero means unlimited.
     #[arg(long, default_value_t = 0)]
     pub limit: usize,
 
@@ -1792,7 +1792,7 @@ fn resolve_source_unit_ids(
                 source_unit_ids
             } else {
                 bail!(
-                    "proposal id {proposal_id:?} not found in current module proposals; run `debundle modules propose` to list current proposal ids"
+                    "proposal id {proposal_id:?} not found in current module proposals; run `debundle modules propose --strategy auto` to list current proposal ids"
                 );
             }
         }
@@ -1824,7 +1824,7 @@ fn resolve_source_unit_ids(
                 source_unit_ids
             } else {
                 bail!(
-                    "diagnostic id {diagnostic_id:?} not found in current module proposal diagnostics; run `debundle modules propose` to list current diagnostic ids"
+                    "diagnostic id {diagnostic_id:?} not found in current module proposal diagnostics; run `debundle modules propose --strategy auto` to list current diagnostic ids"
                 );
             }
         }

@@ -1,7 +1,7 @@
-# `modules propose` performance
+# `modules propose --strategy auto` performance
 
-State and optimization plan for the proposer hot path and its
-realizability gate. This is an active roadmap — it lists open or
+State and optimization plan for the advisory atomic-DAG proposer hot path and
+its realizability gate. This is an active roadmap — it lists open or
 conditional next work, not completed implementation history. Resolved
 items are deleted.
 
@@ -54,7 +54,7 @@ proposer latency becomes important again:
    (<../docs/bazel_integration.md> § Profiling); use Callgrind for exact call
    counts on a reduced input and heaptrack for allocation.
 3. Do not act on sampled attribution alone: compare wall time of the same
-   `modules propose` run before and after the change across repeated runs.
+   `modules propose --strategy auto` run before and after the change across repeated runs.
 4. Stop if the measured wall delta is inside normal run-to-run noise.
 
 ## How to run
@@ -73,7 +73,7 @@ python3 devinfra/js/debundle/perf/gen_synth_corpus.py \
 "$BIN" run --spec /tmp/synth/spec.json
 
 devinfra/js/debundle/perf_wrapper.sh --output-dir /tmp/propose-profile -- \
-    "$BIN" modules propose \
+    "$BIN" modules propose --strategy auto \
     --graph /tmp/synth/out/reports/tree/static/app/dependency_graph.json.gz \
     --modules /tmp/synth/modules --format json
 ```

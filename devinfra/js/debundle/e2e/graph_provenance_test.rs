@@ -142,7 +142,11 @@ fn aliased_chunk_sources_use_the_verified_physical_input_for_queries() {
     for output in [
         fixture.command(&["coverage"], None, None),
         fixture.command(&["coverage"], Some(&fixture.source_root), None),
-        fixture.command(&["modules", "propose"], Some(&fixture.source_root), None),
+        fixture.command(
+            &["modules", "propose", "--strategy", "auto"],
+            Some(&fixture.source_root),
+            None,
+        ),
     ] {
         let report = query_json(&output);
         assert!(report["rows"].as_array().is_some() || report["proposals"].as_array().is_some());

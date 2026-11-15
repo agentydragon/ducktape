@@ -3110,10 +3110,11 @@ Five layers, bottom-up:
 4. **Module quotient** — the dependency graph projected under the spec's
    assignment. Cross-module edges are the realizability evidence
    `check_realizability` operates on.
-5. **Module proposals** — DAG-derived advisory recommendations
-   computed by the proposer (`debundle modules propose`) over
-   `atomic_graph`. **Not** emitted by `debundle run`; they are a
-   read-only planner projection.
+5. **Module placement reports** — the default `debundle modules propose`
+   strategy constructs exact graph placements from the captured graph and
+   reports a witness, scoped exhaustion, or incomplete analysis. Explicit
+   `--strategy auto` emits DAG-derived advisory recommendations over
+   `atomic_graph`. Neither report is emitted by `debundle run`.
 
 When debugging planner output, start with the atomic group. If an
 assignment would split a unit, the assignment is wrong regardless
@@ -3291,9 +3292,10 @@ use the dependency graph and source bodies for drill-down.
    - **Atomic-group conflicts** when the spec splits an indivisible unit.
    - **Atomic DAG facts** in `dependency_graph.json.gz` for planning the next peel.
 3. Spec author resolves: first fix any validation cycles or atomic-group
-   conflicts; then use `debundle modules propose`, `atoms`, `coverage`,
-   `describe`, and `inspect-source --id` to choose explicit source-unit sets for new
-   spec modules with good public names.
+   conflicts; then use the default exact `debundle modules propose` placement
+   search and the `atoms`, `coverage`, `describe`, and `inspect-source --id`
+   views to choose explicit source-unit sets for new spec modules with good
+   public names.
 4. Re-run validator. Iterate until validation is green and the
    residual contains only intentionally generated or low-value noise.
 
@@ -3306,16 +3308,19 @@ implicit transformation in the middle.
 The same dependency graph drives the next-spec workflow. A pipeline that
 only reports whether the current spec passed forces spec authors into
 speculative edit/build/test loops. `debundle run` therefore emits the
-atomic-group DAG in `dependency_graph.json.gz`, and the top-level read-only
-queries (`debundle modules propose`, `atoms`, `coverage`, `describe`,
-`inspect-source --id`, `scc`, `cluster`, `graph-summary`) compute advisory
-views from that stable graph.
+atomic-group DAG in `dependency_graph.json.gz`. Top-level read-only queries
+(`modules propose`, `atoms`, `coverage`, `describe`, `inspect-source --id`,
+`scc`, `cluster`, and `graph-summary`) produce graph-grounded reports from
+that stable graph. `modules propose` uses the exact constructive placement
+search by default; `--strategy auto` selects the advisory atomic-DAG inventory.
+The other queries report advisory views.
 
 <peel_proposer.md> is the current-state implementation note for how
-`modules propose` builds and greedily extends its quotient before
-rendering proposal rows.
+`modules propose --strategy auto` builds and greedily extends its quotient
+before rendering proposal rows. The default exact placement contract is in
+<module_search.md>.
 
-`debundle modules propose` labels each proposal source-unit set with a status:
+The explicit auto strategy labels each proposal source-unit set with a status:
 
 - **`peelable_now`** — this closed atomic-DAG source-unit set has no outgoing
   constraining edges into other residual classes; it can be promoted on
@@ -3493,10 +3498,10 @@ the chunk) was already a runtime `ReferenceError` in the upstream
 source and remains one in the debundled output — emit doesn't try
 to invent a binding it can't resolve.
 
-### Factorization proposals
+### Advisory factorization proposals
 
-`factorize` (`debundle modules propose`) proposes module assignments for code
-that currently lives in the residual surface. Its output has the same
+`factorize` (`debundle modules propose --strategy auto`) proposes module
+assignments for code that currently lives in the residual surface. Its output has the same
 correctness contract as a handwritten YAML edit. The algorithm — a seed
 quotient, then lazy-priority-queue greedy contraction with every merge gated
 by the realizability primitive — is described in <peel_proposer.md>.

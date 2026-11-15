@@ -13,7 +13,7 @@ to tier 2/3), and a sampled export surface.
 (`auto_partition/block_<k>`), both in the run spec's `logical_modules` (so
 the emitted dependency graph carries non-residual destinations and the proposer
 seeds pre-existing-module classes) and as a spec-modules YAML tree for
-`modules propose`. Claiming a contiguous *prefix* keeps the spec
+`modules propose --strategy auto`. Claiming a contiguous *prefix* keeps the spec
 realizable: claimed blocks only reference earlier (claimed) blocks, so all
 residual→claimed eager reads point at modules that evaluate first.
 `--claim-blocks 0` leaves the graph fully residual — every proposer merge
@@ -25,13 +25,13 @@ Output layout under `--out`:
     snapshot/static/app.js    the synthetic chunk
     extracted/js-files.txt    chunk list for `inputs.js_list_path`
     spec.json                 minimal `debundle run` spec (absolute paths)
-    modules/                  spec-modules tree for `modules propose`
+    modules/                  spec-modules tree for `modules propose --strategy auto`
 
 Measurement recipe (see `perf/proposer.md` "How to run"):
 
     gen_synth_corpus --out /tmp/synth --statements 10000 --seed 1 --claim-blocks 62
     debundle run --spec /tmp/synth/spec.json
-    perf_wrapper.sh --output-dir /tmp/propose-profile -- debundle modules propose \\
+    perf_wrapper.sh --output-dir /tmp/propose-profile -- debundle modules propose --strategy auto \\
         --graph /tmp/synth/out/reports/tree/static/app/dependency_graph.json.gz \\
         --modules /tmp/synth/modules --format json
 """

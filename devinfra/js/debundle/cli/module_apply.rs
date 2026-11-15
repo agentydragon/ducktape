@@ -338,13 +338,13 @@ fn run_proposal_apply(
             .find(|proposal| proposal.proposed_module_id == request.proposal_id)
             .with_context(|| {
                 format!(
-                    "proposal {:?} is absent from current graph; rerun `debundle modules propose`",
+                    "proposal {:?} is absent from current graph; rerun `debundle modules propose --strategy auto`",
                     request.proposal_id
                 )
             })?;
         if proposal.source_unit_ids != request.source_unit_ids {
             bail!(
-                "proposal {:?} source unit IDs changed; rerun `debundle modules propose`",
+                "proposal {:?} source unit IDs changed; rerun `debundle modules propose --strategy auto`",
                 request.proposal_id
             );
         }
@@ -353,7 +353,7 @@ fn run_proposal_apply(
             || !proposal.anonymous_statement_source_unit_ids.is_empty()
         {
             bail!(
-                "proposal {:?} is not a graph-ready binding-only claim; inspect `modules propose` diagnostics",
+                "proposal {:?} is not a graph-ready binding-only claim; inspect `modules propose --strategy auto` diagnostics",
                 request.proposal_id
             );
         }

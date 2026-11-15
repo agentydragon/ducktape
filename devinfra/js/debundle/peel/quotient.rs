@@ -132,7 +132,7 @@ impl ContractRejected {
 }
 
 /// Per-contraction rejection diagnostic emitted by `build_seed_quotient`;
-/// serialized as the `seed_rejections` key of `modules propose` output.
+/// serialized as the `seed_rejections` key of `modules propose --strategy auto` output.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SeedContractionRejected {
@@ -1972,7 +1972,7 @@ pub fn build_seed_quotient(
     // ---- Post-seed: run the realizability gate once on the
     //      assembled assignment. Catches asymmetric I-cycles and mutual
     //      constraining cycles that no individual contraction created
-    //      on its own, so `modules propose` and the materializer's
+    //      on its own, so `modules propose --strategy auto` and the materializer's
     //      `validate_assignment` agree on whether a spec is
     //      realizable. One O(|V|+|E|) call.
     let verdict = q.realizability_verdict();

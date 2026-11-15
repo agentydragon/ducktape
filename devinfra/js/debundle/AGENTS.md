@@ -25,9 +25,10 @@ the validator enforces) before working on the splitting pipeline.
   includes structural atoms and global ESM evaluation; local probes and proposal
   readiness labels cannot replace it. Recheck combined batches, and keep graph
   acceptance distinct from selector realization and emitted runtime evidence.
-- For residual placement, inspect the graph/source, then use
-  `modules propose --strategy complete`, review the full mapping, check and
-  preview/apply its saved plan, and run materialization plus relevant behavior
+- For residual placement, inspect the graph/source, then use the default exact
+  `modules propose` strategy (or spell `--strategy complete` for clarity).
+  Review the full mapping, check and preview/apply its saved plan, and run
+  materialization plus relevant behavior
   checks. Only `exhausted_no_peel` rules out a placement in the reported fixed-
   authored-owner and destination scope. Budgets, interruption, errors, and empty
   advisory output are inconclusive. The search propagates necessary graph

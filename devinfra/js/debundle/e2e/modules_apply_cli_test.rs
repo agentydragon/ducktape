@@ -18,7 +18,14 @@ fn capped_prerequisite_keeps_consumer_blocked_and_grouped_control_applies() {
             "members: [{selector: {binding: {name: anchor}}}]\n",
         )],
     );
-    let capped = fixture.json(&["modules", "propose", "--size-cap-lines", "1"]);
+    let capped = fixture.json(&[
+        "modules",
+        "propose",
+        "--strategy",
+        "auto",
+        "--size-cap-lines",
+        "1",
+    ]);
     let consumer = capped["proposals"]
         .as_array()
         .unwrap()
@@ -60,7 +67,7 @@ fn capped_prerequisite_keeps_consumer_blocked_and_grouped_control_applies() {
         &["not a graph-ready"],
     );
 
-    let uncapped = fixture.json(&["modules", "propose"]);
+    let uncapped = fixture.json(&["modules", "propose", "--strategy", "auto"]);
     let grouped = uncapped["proposals"]
         .as_array()
         .unwrap()
@@ -106,7 +113,7 @@ fn capped_prerequisite_keeps_consumer_blocked_and_grouped_control_applies() {
 #[test]
 fn applies_renamed_multi_declarator_with_cross_initializer_reference() {
     let fixture = GraphFixture::new("var a = 1000, b = 15, c = b + 5;\n", &[]);
-    let report = fixture.json(&["modules", "propose"]);
+    let report = fixture.json(&["modules", "propose", "--strategy", "auto"]);
     let names = [
         ("a", "fooDeadline"),
         ("b", "fooDelays"),
@@ -183,7 +190,7 @@ fn apply_ignores_modules_owned_by_other_chunks() {
     let config = run.root().join("spec_config.yaml");
     let proposed = process::debundle_output(
         Command::new(debundler_path())
-            .args(["modules", "propose", "--graph"])
+            .args(["modules", "propose", "--strategy", "auto", "--graph"])
             .arg(&graph)
             .arg("--modules")
             .arg(&modules)
@@ -259,7 +266,7 @@ fn apply_preserves_case_sensitive_chunk_root() {
     let config = run.root().join("spec_config.yaml");
     let proposed = process::debundle_output(
         Command::new(debundler_path())
-            .args(["modules", "propose", "--graph"])
+            .args(["modules", "propose", "--strategy", "auto", "--graph"])
             .arg(&graph)
             .arg("--modules")
             .arg(&modules)
@@ -341,7 +348,14 @@ fn provider_fixture() -> (GraphFixture, serde_json::Value) {
         "const provider = { value: 4 };\nconsole.log(provider.value);",
         &[],
     );
-    let report = fixture.json(&["modules", "propose", "--size-cap-lines", "1"]);
+    let report = fixture.json(&[
+        "modules",
+        "propose",
+        "--strategy",
+        "auto",
+        "--size-cap-lines",
+        "1",
+    ]);
     let proposal = report["proposals"]
         .as_array()
         .unwrap()
@@ -418,7 +432,14 @@ fn synthesizes_multideclarator_template_with_trailing_spaces() {
         "  "
     );
     let fixture = GraphFixture::new(&source, &[]);
-    let report = fixture.json(&["modules", "propose", "--size-cap-lines", "2"]);
+    let report = fixture.json(&[
+        "modules",
+        "propose",
+        "--strategy",
+        "auto",
+        "--size-cap-lines",
+        "2",
+    ]);
     let proposal = report["proposals"]
         .as_array()
         .unwrap()
@@ -505,7 +526,14 @@ fn rejects_reviewed_selector_that_claims_a_different_binding() {
         "const provider = { value: 4 };\nconst other = { value: 5 };\nconsole.log(provider.value);",
         &[],
     );
-    let report = fixture.json(&["modules", "propose", "--size-cap-lines", "1"]);
+    let report = fixture.json(&[
+        "modules",
+        "propose",
+        "--strategy",
+        "auto",
+        "--size-cap-lines",
+        "1",
+    ]);
     let proposal = report["proposals"]
         .as_array()
         .unwrap()
@@ -551,7 +579,14 @@ fn applies_reviewed_relational_selector() {
             "members: [{name: Anchor, selector: {binding: {name: anchor}}}]\n",
         )],
     );
-    let report = fixture.json(&["modules", "propose", "--size-cap-lines", "1"]);
+    let report = fixture.json(&[
+        "modules",
+        "propose",
+        "--strategy",
+        "auto",
+        "--size-cap-lines",
+        "1",
+    ]);
     let proposal = report["proposals"]
         .as_array()
         .unwrap()
@@ -648,7 +683,14 @@ fn applies_host_scoped_accessor_with_a_structural_selector() {
             "members: [{selector: {binding: {name: Cache}}}, {selector: {binding: {name: context}}}, {selector: {binding: {name: ProviderA}}}, {selector: {binding: {name: factoryA}}}, {selector: {binding: {name: ProviderB}}}, {selector: {binding: {name: factoryB}}}]\n",
         )],
     );
-    let report = fixture.json(&["modules", "propose", "--size-cap-lines", "1"]);
+    let report = fixture.json(&[
+        "modules",
+        "propose",
+        "--strategy",
+        "auto",
+        "--size-cap-lines",
+        "1",
+    ]);
     let proposal = report["proposals"]
         .as_array()
         .unwrap()
@@ -710,7 +752,14 @@ fn explains_when_repeated_accessors_have_no_unique_context() {
         "function a() { return 1; }\nfunction b() { return 1; }\nfunction c() { return 1; }\nfunction d() { return 1; }\nfunction e() { return 1; }\nfunction f() { return 1; }\nfunction g() { return 1; }\nconsole.log(d());\n",
         &[],
     );
-    let report = fixture.json(&["modules", "propose", "--size-cap-lines", "1"]);
+    let report = fixture.json(&[
+        "modules",
+        "propose",
+        "--strategy",
+        "auto",
+        "--size-cap-lines",
+        "1",
+    ]);
     let proposal = report["proposals"]
         .as_array()
         .unwrap()

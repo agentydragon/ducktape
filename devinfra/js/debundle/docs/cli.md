@@ -286,11 +286,11 @@ not write an error report to stdout. Clap usage and argument-parsing failures
 remain Clap diagnostics because dispatch has not begun.
 
 Read-only inspection commands prefer fast graph/spec lookups. `modules
-propose` is the command that runs the proposal proposer by default;
-`describe`, `coverage`, and `graph-summary` do not run it unless the
-selection itself is a proposal/diagnostic id or `--include-proposals` is
-passed (it is expensive on large graphs), and proposal-derived JSON fields
-are omitted when the proposer is skipped.
+propose` runs the exact placement search by default; add `--strategy auto` for
+the advisory atomic-DAG inventory. Other queries such as `describe`, `coverage`,
+and `graph-summary` omit proposal-derived fields unless the selection is a
+proposal/diagnostic id or `--include-proposals` is passed (the inventory is
+expensive on large graphs).
 
 Description proposal fields and residual dependency names are defined in
 <../SPEC.md#authoring-reports>; truncation metadata uses the same section names.
@@ -1247,7 +1247,7 @@ omitting `readable` preserves the current readable name):
 ]
 ```
 
-`--batch` also accepts `modules propose --format json` output, or a
+`--batch` also accepts `modules propose --strategy auto --format json` output, or a
 top-level array of proposal objects selected from `.proposals`, when every
 selected binding is already claimed in YAML and each row is a direct move:
 
@@ -1272,15 +1272,16 @@ array. The rest are rejected:
 
 ## Checking explicit destination batches (`modules check`)
 
-For a residual-peel decision, use
-[`modules propose --strategy complete`](module_search.md). It returns a
+For a residual-peel decision, use the default exact
+[`modules propose`](module_search.md) strategy. It returns a
 snapshot-bound `.plan`, a scoped `exhausted_no_peel` result, or an explicitly
 incomplete result. It constructs graph-constrained placements directly, including
 joint atoms and multiple destinations; it does not enumerate the Cartesian
 product of atom-to-destination choices. `--max-checks` and `--time-budget-ms`
 limit analyzed partition states and wall-clock time. Work counts summarize
-projections, contractions, branch attempts and final certification. Default/auto
-factorizer readiness remains advisory and cannot establish that no peel exists.
+projections, contractions, branch attempts and final certification. The
+explicit `--strategy auto` factorizer remains advisory and cannot establish
+that no peel exists.
 
 `modules check --batch changes.json` checks an explicit source-unit assignment
 against the accepted starting graph. Supply the same `--graph`, `--modules`,
@@ -1380,7 +1381,7 @@ names in that selector.
 ```
 
 Copy `proposal_id` from `proposed_module_id` and `source_unit_ids` from the same
-current `modules propose --format json` row. Choose the destination and a
+current `modules propose --strategy auto --format json` row. Choose the destination and a
 readable name for every residual binding in that row. For extension rows the
 destination must equal `extends_module_id`. Use the same `--size-cap-lines`
 value as `modules propose` if it was overridden. The command rejects stale
@@ -1935,7 +1936,8 @@ When a binding's role is unclear or a proposal is suspicious:
 
 For bounded owner discovery, choose the first page for the question: use
 `graph-summary --limit N` to inspect the largest residual atomic groups, or
-`modules propose --limit N` to inspect a bounded proposal page. Put the owners
+`modules propose --strategy auto --limit N` to inspect a bounded advisory
+proposal page. Put the owners
 you want to investigate in a JSON array, then use
 `describe --batch owners.json --direction incoming --limit N` (repeat
 `--reason KIND` when useful). Each report's `edge_census` counts raw incoming
@@ -2154,7 +2156,7 @@ both member and source-match bindings; module edits address the top-level
 
 - `design.md` — the realizability theorem the gate enforces; § "Layered
   mental model" + § "Factor assembly inside `debundle run`" for the
-  factorization algorithm `modules propose` draws from.
+  advisory factorization algorithm behind `modules propose --strategy auto`.
 - `wire_format.md` — JSON sidecar conventions readers of these commands
   consume.
 - `selectors.md` / `spec_editing.md` — selector authoring and spec-editing

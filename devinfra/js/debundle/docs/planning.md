@@ -41,13 +41,14 @@ Choose the operation from the task chooser:
   assignment without editing selectors or spec files; graph acceptance does not
   imply the applicator can yet realize every shape. Recheck combined batches.
 - For residual extraction, inspect the graph and source first, then use [exact
-  residual placement](module_search.md) with `modules propose --strategy
-complete`. Review the complete mapping and destinations, check the plan,
+  residual placement](module_search.md) with the default exact `modules
+propose` strategy. Review the complete mapping and destinations, check the plan,
   preview and apply that same plan, then regenerate and run behavior checks. A
   `found` result is graph acceptance only; selector resolution and runtime
   behavior are separate. `exhausted_no_peel` is scoped to its reported graph
   constraints and permitted moves. Budget exhaustion is incomplete. The
-  default/auto factorizer remains advisory and cannot establish impossibility.
+  explicit `--strategy auto` factorizer remains advisory and cannot establish
+  impossibility.
   Send the exact accepted plan and source evidence to intake; changing its
   destinations needs another complete check.
 - For existing claims, follow [decompose and refine](spec_editing.md#workflow-reorganizing-existing-modules).

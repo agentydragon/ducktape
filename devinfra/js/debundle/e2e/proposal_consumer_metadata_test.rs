@@ -36,7 +36,14 @@ fn proposals(fixture: &GraphFixture) -> Value {
 
 fn proposals_with_cap(fixture: &GraphFixture, size_cap_lines: usize) -> Value {
     let size_cap_lines = size_cap_lines.to_string();
-    fixture.json(&["modules", "propose", "--size-cap-lines", &size_cap_lines])
+    fixture.json(&[
+        "modules",
+        "propose",
+        "--strategy",
+        "auto",
+        "--size-cap-lines",
+        &size_cap_lines,
+    ])
 }
 
 fn assert_single_unit_proposal(proposal: &Value, source_unit_id: &str) {

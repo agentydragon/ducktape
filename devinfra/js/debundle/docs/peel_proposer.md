@@ -1,8 +1,9 @@
 # Peel Proposer
 
-Current-state notes for `debundle modules propose`. This document keeps
-the stable implementation shape; completed rollout history belongs in
-git, not in long-lived plans.
+Current-state notes for `debundle modules propose --strategy auto`. This
+advisory strategy keeps the stable implementation shape; the default exact
+placement strategy is described in [exact residual placement](module_search.md).
+Completed rollout history belongs in git, not in long-lived plans.
 
 ## Pipeline
 

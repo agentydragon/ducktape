@@ -18,6 +18,8 @@ fn residual_apply_request(
     let report = command(&[
         "modules",
         "propose",
+        "--strategy",
+        "auto",
         "--graph",
         path(&staged.graph),
         "--modules",
