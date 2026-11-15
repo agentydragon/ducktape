@@ -353,6 +353,9 @@ spec:
   configMapRef:
     key: cpap-gateway-disk.json
     name: cpap-gateway-disk-dashboard
+  datasources:
+    - datasourceName: mimir
+      inputName: DS_MIMIR
   folder: Cluster & Platform
   instanceSelector:
     matchLabels:
@@ -367,6 +370,9 @@ spec:
   configMapRef:
     key: flux-cluster.json
     name: flux-cluster-dashboard
+  datasources:
+    - datasourceName: mimir
+      inputName: DS_MIMIR
   folder: Cluster & Platform
   instanceSelector:
     matchLabels:
@@ -401,8 +407,8 @@ spec:
     key: rugged-power.json
     name: rugged-power-dashboard
   datasources:
-    - datasourceName: Mimir
-      inputName: DS_PROMETHEUS
+    - datasourceName: mimir
+      inputName: DS_MIMIR
   folder: Nodes & Hardware
   instanceSelector:
     matchLabels:

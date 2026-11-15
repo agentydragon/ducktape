@@ -1,21 +1,97 @@
 {
-  "__inputs": [
-    {
-      "name": "DS_PROMETHEUS",
-      "label": "Mimir",
-      "type": "datasource",
-      "pluginId": "prometheus",
-      "pluginName": "Prometheus"
-    }
-  ],
-  "annotations": { "list": [] },
+  "schemaVersion": 39,
+  "templating": {
+    "list": [
+      {
+        "type": "query",
+        "name": "instance",
+        "label": "Rugged instance",
+        "skipUrlSync": false,
+        "query": "label_values(node_uname_info{nodename=\"rugged\"}, instance)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_MIMIR}"
+        },
+        "multi": false,
+        "allowCustomValue": true,
+        "refresh": 1,
+        "sort": 1,
+        "includeAll": false,
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30,
+        "definition": "label_values(node_uname_info{nodename=\"rugged\"}, instance)"
+      }
+    ]
+  },
+  "annotations": {},
+  "uid": "rugged-power",
+  "title": "Rugged Power",
   "description": "Laptop battery and RAPL telemetry for Rugged. Adapted from Grafana dashboard 12542; RAPL panels deliberately select the canonical intel-rapl path to exclude duplicate MMIO counters.",
+  "tags": ["laptop", "power", "rapl", "rugged"],
+  "timezone": "",
   "editable": true,
   "graphTooltip": 1,
-  "links": [],
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {
+    "hidden": false,
+    "refresh_intervals": ["10s", "30s", "1m", "5m", "15m", "1h"]
+  },
+  "fiscalYearStartMonth": 0,
+  "refresh": "1m",
   "panels": [
     {
-      "datasource": "${DS_PROMETHEUS}",
+      "type": "bargauge",
+      "id": 1,
+      "targets": [
+        {
+          "expr": "node_power_supply_capacity{instance=~\"$instance\",power_supply=~\"BAT.*\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_MIMIR}"
+          },
+          "legendFormat": "{{power_supply}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Battery charge",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_MIMIR}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "repeatDirection": "h",
+      "options": {
+        "displayMode": "lcd",
+        "valueMode": "color",
+        "namePlacement": "auto",
+        "showUnfilled": true,
+        "sizing": "auto",
+        "minVizWidth": 8,
+        "minVizHeight": 16,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": []
+        },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "values": false,
+          "fields": ""
+        },
+        "maxVizHeight": 300,
+        "orientation": "horizontal"
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "percent",
@@ -24,179 +100,256 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "orange", "value": 20 },
-              { "color": "green", "value": 50 }
+              {
+                "value": null,
+                "color": "red"
+              },
+              {
+                "value": 20,
+                "color": "orange"
+              },
+              {
+                "value": 50,
+                "color": "green"
+              }
             ]
           }
         },
         "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
-      "id": 1,
-      "options": {
-        "displayMode": "lcd",
-        "orientation": "horizontal",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "showUnfilled": true
-      },
-      "targets": [
-        {
-          "expr": "node_power_supply_capacity{instance=~\"$instance\",power_supply=~\"BAT.*\"}",
-          "legendFormat": "{{power_supply}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Battery charge",
-      "type": "bargauge"
+      }
     },
     {
-      "datasource": "${DS_PROMETHEUS}",
-      "fieldConfig": { "defaults": { "custom": {} }, "overrides": [] },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "type": "table",
       "id": 2,
-      "options": { "showHeader": true },
       "targets": [
         {
           "expr": "node_power_supply_info{instance=~\"$instance\",type=~\"Battery|Mains|USB\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_MIMIR}"
+          },
           "format": "table",
           "instant": true,
+          "range": false,
           "refId": "A"
         }
       ],
       "title": "Battery and external-power state",
-      "transformations": [{ "id": "labelsToFields", "options": {} }],
-      "type": "table"
-    },
-    {
-      "datasource": "${DS_PROMETHEUS}",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_MIMIR}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "repeatDirection": "h",
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {}
+        }
+      ],
+      "options": {
+        "frameIndex": 0,
+        "showHeader": true,
+        "showTypeIcons": false,
+        "footer": {
+          "show": false,
+          "reducer": [],
+          "countRows": false
+        },
+        "cellHeight": "sm"
+      },
       "fieldConfig": {
         "defaults": {
-          "unit": "watt",
           "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never"
+            "align": "auto",
+            "inspect": false
           }
         },
         "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      }
+    },
+    {
+      "type": "timeseries",
       "id": 3,
-      "options": {
-        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "mean", "max"] },
-        "tooltip": { "mode": "multi", "sort": "desc" }
-      },
       "targets": [
         {
           "expr": "rate(node_rapl_package_joules_total{instance=~\"$instance\",path=~\".*/intel-rapl:[^/]+$\"}[$__rate_interval])",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_MIMIR}"
+          },
           "legendFormat": "package",
           "refId": "A"
         },
         {
           "expr": "rate(node_rapl_dram_joules_total{instance=~\"$instance\",path=~\".*/intel-rapl:[^/]+:[^/]+$\"}[$__rate_interval])",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_MIMIR}"
+          },
           "legendFormat": "DRAM",
           "refId": "B"
         },
         {
           "expr": "rate(node_rapl_psys_joules_total{instance=~\"$instance\",path=~\".*/intel-rapl:[^/]+$\"}[$__rate_interval])",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_MIMIR}"
+          },
           "legendFormat": "platform",
           "refId": "C"
         }
       ],
       "title": "RAPL power draw",
-      "type": "timeseries"
-    },
-    {
-      "datasource": "${DS_PROMETHEUS}",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_MIMIR}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": ["lastNotNull", "mean", "max"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "watt",
           "custom": {
             "drawStyle": "line",
-            "lineInterpolation": "linear",
             "lineWidth": 1,
+            "lineInterpolation": "linear",
             "fillOpacity": 10,
             "showPoints": "never"
           }
         },
         "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      }
+    },
+    {
+      "type": "timeseries",
       "id": 4,
-      "options": {
-        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] },
-        "tooltip": { "mode": "multi", "sort": "desc" }
-      },
       "targets": [
         {
           "expr": "node_power_supply_current_ampere{instance=~\"$instance\",power_supply=~\"BAT.*\"} * on (power_supply) node_power_supply_voltage_volt{instance=~\"$instance\",power_supply=~\"BAT.*\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_MIMIR}"
+          },
           "legendFormat": "{{power_supply}}",
           "refId": "A"
         }
       ],
       "title": "Battery electrical power (sign follows kernel current)",
-      "type": "timeseries"
-    },
-    {
-      "datasource": "${DS_PROMETHEUS}",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_MIMIR}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
       "fieldConfig": {
         "defaults": {
-          "unit": "celsius",
+          "unit": "watt",
           "custom": {
             "drawStyle": "line",
-            "lineInterpolation": "linear",
             "lineWidth": 1,
+            "lineInterpolation": "linear",
             "fillOpacity": 10,
             "showPoints": "never"
           }
         },
         "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      }
+    },
+    {
+      "type": "timeseries",
       "id": 5,
-      "options": {
-        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] },
-        "tooltip": { "mode": "multi", "sort": "desc" }
-      },
       "targets": [
         {
           "expr": "node_power_supply_temp_celsius{instance=~\"$instance\",power_supply=~\"BAT.*\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_MIMIR}"
+          },
           "legendFormat": "{{power_supply}}",
           "refId": "A"
         }
       ],
       "title": "Battery temperature",
-      "type": "timeseries"
-    }
-  ],
-  "refresh": "1m",
-  "schemaVersion": 39,
-  "tags": ["laptop", "power", "rapl", "rugged"],
-  "templating": {
-    "list": [
-      {
-        "current": {},
-        "datasource": "${DS_PROMETHEUS}",
-        "definition": "label_values(node_uname_info{nodename=\"rugged\"}, instance)",
-        "hide": 0,
-        "includeAll": false,
-        "label": "Rugged instance",
-        "multi": false,
-        "name": "instance",
-        "options": [],
-        "query": "label_values(node_uname_info{nodename=\"rugged\"}, instance)",
-        "refresh": 1,
-        "sort": 1,
-        "type": "query"
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_MIMIR}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": ["lastNotNull", "max"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "lineInterpolation": "linear",
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
       }
-    ]
-  },
-  "time": { "from": "now-6h", "to": "now" },
-  "timepicker": { "refresh_intervals": ["10s", "30s", "1m", "5m", "15m", "1h"] },
-  "timezone": "",
-  "title": "Rugged Power",
-  "uid": "rugged-power"
+    }
+  ]
 }

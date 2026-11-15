@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class FileDashboard:
-    # Maps each dashboard input to a datasource name.
+    # Literal Operator substitutions: use a name for string references, a UID for UID references.
     datasources: Mapping[str, str]
     folder: str | None = None
 
@@ -17,12 +17,12 @@ FILE_DASHBOARDS = {
     "zot-cache-image-pulls": FileDashboard(
         datasources={"DS_MIMIR": "Mimir", "DS_LOKI": "Loki"}, folder="Cluster & Platform"
     ),
-    "cpap-gateway-disk": FileDashboard(datasources={}, folder="Cluster & Platform"),
-    "flux-cluster": FileDashboard(datasources={}, folder="Cluster & Platform"),
+    "cpap-gateway-disk": FileDashboard(datasources={"DS_MIMIR": "mimir"}, folder="Cluster & Platform"),
+    "flux-cluster": FileDashboard(datasources={"DS_MIMIR": "mimir"}, folder="Cluster & Platform"),
     "interface-flap-frequency": FileDashboard(
         datasources={"DS_LOKI": "Loki", "DS_PROMETHEUS": "Mimir"}, folder="Network"
     ),
-    "rugged-power": FileDashboard(datasources={"DS_PROMETHEUS": "Mimir"}, folder="Nodes & Hardware"),
+    "rugged-power": FileDashboard(datasources={"DS_MIMIR": "mimir"}, folder="Nodes & Hardware"),
     "node-memory": FileDashboard(datasources={"DS_MIMIR": "Mimir"}, folder="Nodes & Hardware"),
     "cluster-storage-io": FileDashboard(datasources={"DS_MIMIR": "Mimir", "DS_LOKI": "Loki"}, folder="Storage"),
     "s3-operations": FileDashboard(datasources={"DS_MIMIR": "Mimir"}, folder="Storage"),
