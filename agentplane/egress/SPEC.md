@@ -317,14 +317,16 @@ GitOps gates and live rollout acceptance remain separate operational requirement
 
 ## Sidecar platform routes
 
-- The sidecar may also serve platform routes. A platform route is a loopback gRPC listener per
-  configured Agentplane service, which forwards each call to that service as `authorization:
-Bearer <token>`. The token is the Pod's projected token for that service's audience, re-read per
-  call. The workload's own `authorization` is dropped; other metadata, the deadline and the status
-  pass through.
-- The central proxy never sees these calls and no egress rule admits them. What may reach the
-  service is network policy, and each service authorizes the token itself. Without a token the
-  sidecar refuses `UNAVAILABLE` and calls nothing.
+- The sidecar's local platform listener routes exact gRPC service prefixes to configured upstreams.
+  Agentplane routes establish verified destination TLS through the central proxy's opaque CONNECT
+  tunnel and present the workload SVID. The proxy authorizes the tunnel; each destination independently
+  authenticates that certificate and authorizes its methods.
+- The relay drops caller `authorization`, `proxy-authorization` and
+  `x-agentplane-workload-token` metadata. SVID routes add no Authorization metadata; other application
+  metadata, deadlines and statuses pass through. There is no bearer fallback after a TLS failure.
+- Explicit plaintext routes remain available for destinations such as Alloy telemetry. The legacy
+  plaintext transport can optionally read a configured token file per call; a missing configured
+  token refuses `UNAVAILABLE`. Agentplane service routes use the certificate transport.
 - Unknown services fail with `UNIMPLEMENTED`. Each configured route keeps one independent upstream gRPC
   connection, so a failing route does not take down the listener or other routes. With no routes, the
   sidecar opens no platform listener. While an RPC is active, the sidecar sends an

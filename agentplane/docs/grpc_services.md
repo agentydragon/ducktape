@@ -53,16 +53,16 @@ follows it; code that differs converges on it.
 
 ## Authentication
 
-- Backend caller authentication is independent of transport. App → Policy Service and Dispatcher →
-  Central Sampler use service SVIDs over mutual TLS, verifying the destination workload-CA SVID, exact service URI
-  and `serverAuth` usage. Policy admits only service SVIDs; the sampler retains bearer admission
-  until its receiver cutover. Other
-  routes retain their configured caller and transport until their own cutover. A nil `ClientTLS` is an explicit
-  plaintext setting for legacy and test routes; an invalid configured TLS value fails without downgrading.
+- First-party backend calls present a service SVID over mutual TLS, verifying the receiver's
+  workload-CA chain, exact service URI and `serverAuth` usage. Role-specific service identities
+  authenticate the component; exact method grants authorize it. App OIDC and external MCP OAuth
+  retain their separate edge authority. Some receivers still decode legacy bearer settings while
+  their admission retires; that does not select bearer proof in their callers. Invalid configured
+  TLS fails without downgrading.
 - Sandbox workload listeners authenticate the Runtime SVID with the shared
   `peertls` server credentials. `identity/auth.SVIDResolver` resolves
-  the verified peer against the live Sandbox and its accepted runner credential, yielding the
-  Sandbox's own ServiceAccount. The sidecar or launcher relay holds the certificate and establishes
+  the verified peer through its live `WorkloadCredential`, yielding the bound Identity and
+  any accepted Pod provenance. The sidecar or launcher relay holds the certificate and establishes
   destination TLS through the central proxy's opaque CONNECT tunnel; the proxy asserts no caller.
 - A Go server admits callers in one interceptor, `auth.Methods.ServerOptions`
   (`agentplane/identity/auth`): `auth.Methods` maps every served method's full name to a
@@ -84,18 +84,16 @@ follows it; code that differs converges on it.
 Calls made on behalf of an Identity follow the approved
 [delegated authorization design](delegated_authorization.md): preserve the authenticated component
 actor and effective Identity separately, then apply the Identity's ordinary authorization.
-`AllowDelegationFrom` adds that mode only to an authenticated `Rule` explicitly installed for the
-method; the direct mode remains available. `Admitted` returns a typed direct or delegated admission.
-`EffectiveCaller` returns only a directly authenticated ServiceAccount for ordinary resource checks;
-handlers read an effective Identity from `DelegatedIdentityAdmission`. The legacy `Caller` accessor
-stays Pod-bound and is not populated for delegated requests. The `identity/auth/grpc` client uses its configured service SVID or reads its
-destination token for each call. SVID mode sends only the typed delegation metadata; it never
-sends an Authorization header or falls back to a bearer. These shared primitives do not
-opt a production method or client into delegation by themselves. The Runner Gateway's explicitly
-configured method list includes the `EnvironmentService` list/get methods; `ResumeEnvironment` remains
-separately configured, and Action Service adapter integration remains separate.
+`AllowServiceDelegationFrom` grants that mode to exact service actors on a `Rule` installed for
+the method; the direct mode remains separately authorized. `Admitted` returns a typed direct or delegated admission.
+Service delegation returns `DelegatedServiceIdentityAdmission`: its actor SVID, effective Identity
+and typed provenance remain distinct. Handlers apply the Identity's ordinary grants, never the
+actor's component grants. The `identity/auth/grpc` client sends the typed envelope over its
+configured service mTLS channel, with no Authorization header or bearer fallback. EnvironmentService
+serves its own explicitly configured delegation methods, including separately granted
+`ResumeEnvironment`; Dispatcher and History have their own method lists.
 
-The approved first-party service-to-service target authenticates the component by a client service
+First-party service-to-service transport authenticates the component by a client service
 SVID over mutual TLS and verifies the receiver's service SVID on every hop. It needs a distinct
 service principal and exact per-method service allowlist; a service SPIFFE URI is neither an
 `auth.Account` nor a workload `IdentityPrincipal` and supplies no ServiceAccount UID or Pod proof.
@@ -132,9 +130,7 @@ edge protocols.
 - Most APIs use one `<Service>Client` beside the servicer's owner to expose domain methods
   over its stub. The browser uses the app's operator-session BFF to call the generated Dispatcher
   HTTP facade. Agentplane backend callers use the generated native gRPC stub directly and set a deadline.
-  During the caller-identity migration, some routes still use a rotating bearer; transport is configured per route.
-  The approved target replaces bearer caller proof with a service client SVID over verified TLS. Mutations are not
-  automatically retried.
+  Backend caller proof is a service client SVID over verified TLS. Mutations are not automatically retried.
   A client that would call two services is two clients.
 - **Clients take channels; the composition root opens them.** A client's constructor takes a
   `grpc.aio.Channel`, never a target string, and builds its stub from it. Whoever constructs the
@@ -181,9 +177,8 @@ Everything that holds a connection is closed by a context manager, never by a ha
 
 - `grpc.aio.server()`, register servicers, then serve through the shared context manager;
   `stop(grace=5)` on shutdown. A second gRPC listener is used when a route needs its own transport or network
-  boundary. Central Sampler and MCP Edge retain plaintext listeners during their staged listener removal; Policy
-  Controller serves PolicyService only over TLS. Runner Gateway has a separate runner-facing listener behind its
-  network fence.
+  boundary. Agentplane service application listeners use TLS; a separate health-only listener
+  does not admit application methods.
 - A Go server normally serves gRPC with `grpc.Server.Serve`. LLM ingress uses `grpc.Server.ServeHTTP`
   on its shared TLS HTTP/2 listener alongside provider-native inference HTTP; both protocols retain
   service-owned authentication. Servers stop with [`graceful.Stop`](../grpc/graceful/stop.go): calls in flight finish until the shutdown deadline. HTTP
