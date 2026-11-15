@@ -237,47 +237,59 @@ to one exact source/spec pair and held to the interactive budget in
    Assumption-core localization remains rejected for its measured cost
    (<docs/selector_resolution.md> § Unsatisfiable programs).
 
-### Audit features unused by gaffer-private
+### Audit features unused by gaffer-private — dispositions
 
-Audit whether these supported opt-ins should still exist. They have no explicit
-configured use in `gaffer-private/main` at `ecb2fe1f1a6e` (2026-11-14), including
-the authored specs, Tana canonical, baselines and fixtures. This is a list of
-audit candidates, not a removal decision. Schema: <spec/spec.rs>.
+The originating downstream census covered authored specs, the Tana canonical,
+baselines and fixtures at `gaffer-private/main` on 2026-11-14 and reported no
+configured uses. The public configuration search found two configured callers:
+plain `partial_swap` in <excalidraw/spec/vendor_marks.yaml> and
+`no_reentry_callback_exports` in
+<skills/shared/examples/contract_examples/persistent_registry/spec_config.yaml>;
+the other ten have no configured public spec caller. E2E cases establish
+contract boundaries, not demand. Current-source review supports retaining all
+twelve; no further deletion or consolidation is recommended. Any future proposal
+must name the capability being retired or prove an equivalent replacement and
+check current caller migration.
 
-- **Selectors:** `member_of_module` and `passed_to_call`.
-- **Analysis contracts:** `value_inputs`, `argument_inputs`, and
-  `imported_primitive_array_spread_inputs`.
-- **Purity assertions:** local binding annotations' `pure_members`.
-- **Callback contracts:** `retained_callback_factory_exports`,
-  `descriptor_copy_factory_exports`, and `no_reentry_callback_exports`.
-- **Host contracts:** `host_behavior.reentry_free_operations`.
-- **Vendor variants:** plain `partial_swap`.
-- **Decorator effects:** `typescript_decorate_helper`.
-
-For each candidate, check consumers in both repositories, including public
-specs and generated configuration; compare existing e2e contracts with simpler
-alternatives; then decide whether to remove it, consolidate it, or retain it
-with a concrete justification. Absence from private specs alone is insufficient:
-
-- Plain `partial_swap` is used by
-  <excalidraw/spec/vendor_marks.yaml>; preserve that caller when considering
-  consolidation.
-- The `passed_to_call` replacement experiment
-  ([#16600](https://github.com/agentydragon/ducktape/pull/16600)) found that a
-  call-only source template loses the nonlocal declaration-kind filter: a
-  registered class and function make it ambiguous, while a class-only template
-  also matches an unregistered identical class. An undeclared receiver name in
-  a template alpha-renames, unlike the selector's explicit `object` reference.
-  Weigh the value of those distinctions against their maintenance cost rather
-  than expanding the matcher just to delete the selector. Audit
-  `member_of_module`'s import-source identity separately.
-- The stronger decorator metadata variants have different promises from the
-  unused weaker one.
-
-Close this item when every remaining candidate has an explicit disposition.
-For removals or consolidation, update schema, implementation, consumers,
-documentation and affected tests together; remove resolved entries from this
-list, recording the rationale for retaining or dropping distinct capabilities.
+- **Retain `member_of_module`:** pins the consumer through both import source
+  specifier and export name, which `reads_member` does not preserve.
+- **Retain `passed_to_call`:** pins a registration target by callee, optional
+  receiver, argument position and declaration kind. The closed
+  [#16600](https://github.com/agentydragon/ducktape/pull/16600) template
+  experiment showed why these constraints differ: call-only templates
+  mix class/function registrations, class-only templates match unregistered
+  identical classes, and a free template receiver alpha-renames instead of
+  binding the selector's explicit `object`. Do not retry blanket replacement.
+- **Retain `value_inputs`:** lets an author assert that an otherwise opaque
+  provider binding holds an ordinary non-Proxy object distinct from global and
+  native identities, with exact source and import provenance.
+- **Retain `argument_inputs`:** lets an author certify that a stable helper's
+  exact parameter index and arity do not allow its function or callees to
+  mutate, retain, return, publish or expose the argument graph through callbacks
+  or opaque calls during or after activation; it does not assert helper purity.
+- **Retain `imported_primitive_array_spread_inputs`:** carries finite primitive
+  contents across a direct imported-array spread while auditing array identity,
+  contents, iterator/prototype behavior and lifetime.
+- **Retain binding-level `pure_members`:** admits selected static calls through
+  a chosen binding, including a local or imported namespace, in that chunk; it
+  does not propagate an export-wide purity claim.
+- **Retain `retained_callback_factory_exports`:** covers existing named or
+  captured callbacks at audited argument positions; inline-only factory
+  contracts do not cover those values.
+- **Retain `descriptor_copy_factory_exports`:** models exact own-descriptor
+  copying, including deferred getter callbacks and assigned-key checks; generic
+  callback retention does not establish those descriptor effects.
+- **Retain `no_reentry_callback_exports`:** audits callback registration calls
+  that store callbacks without invoking them during the call; callbacks become
+  escaped afterward, unlike returned-graph factory contracts.
+- **Retain `host_behavior.reentry_free_operations`:** supplies host-specific
+  timing for exact Bun `Promise.resolve()` and `AsyncLocalStorage` construction
+  sites; it makes no purity or return-shape claim.
+- **Retain plain `partial_swap`:** the Excalidraw spec uses this package
+  replacement path; migration must preserve its import and export behavior.
+- **Retain `typescript_decorate_helper`:** asserts target-local mutation only;
+  the stronger metadata variants add separate callback-timing promises and are
+  not substitutes.
 
 ### Test infrastructure
 
