@@ -67,7 +67,7 @@ from agentplane.central_sampler.settings import (
 from agentplane.env.config import CodexReadiness
 from agentplane.env.runtime.harness import Harness
 from agentplane.identity.operator.settings import OperatorOidcSettings
-from agentplane.net.peertls.config import LLM_INGRESS_URI, TLS
+from agentplane.net.peertls.config import APP_URI, LLM_INGRESS_URI, POLICY_CONTROLLER_URI, TLS
 from agentplane.notification_service.settings import NoticeDebounceSettings
 
 # gazelle:include_dep @pypi//protobuf
@@ -291,6 +291,8 @@ def app_props(
                 f"{session_dispatcher.service(NAMESPACE).fqdn}:{session_dispatcher.service(NAMESPACE).port.number}"
             ),
             runner_gateway_control_target=runner_gateway.control_target(NAMESPACE),
+            policy_service_target=policy_controller.tls_target(NAMESPACE),
+            policy_service_tls=workload_tls.service_client_tls(POLICY_CONTROLLER_URI, client_uri=APP_URI),
             history_service_target=(
                 f"{history_service.service(NAMESPACE).fqdn}:{history_service.service(NAMESPACE).port.number}"
             ),
