@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/migrations"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/migrations"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 )
 

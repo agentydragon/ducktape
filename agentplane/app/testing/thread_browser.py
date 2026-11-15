@@ -42,12 +42,12 @@ from agentplane.history_service.testing.electric_service import (
 from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.history_service.testing.history import History
 from agentplane.proto import event_log_pb2, event_pb2, session_pb2
-from agentplane.runner_gateway.client import SandboxControlClient
-from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, accepted_session
-from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
-from agentplane.runner_gateway.testing.runner_server import runner_server
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
+from agentplane.session_dispatcher.client import SandboxControlClient
+from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient, accepted_session
+from agentplane.session_dispatcher.testing.gateway_process import GatewayProcess
+from agentplane.session_dispatcher.testing.runner_server import runner_server
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.frontend_visual.context import deterministic_browser_context, disable_animations_script
 from util.testing.frontend_visual.viewports import DESKTOP, Viewport

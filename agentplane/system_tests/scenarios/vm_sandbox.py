@@ -18,7 +18,7 @@ from agentplane.app.testing.client import Client
 from agentplane.native.codex import wire
 from agentplane.native.codex.testing import frames, responses_sse
 from agentplane.proto import session_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.agent import TURN_SECONDS, Agent, Turn, scripted_turn_with_admission_and_history
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.sandbox import VM_WORKING_DIRECTORY, Sandboxes

@@ -6,7 +6,7 @@ follow-up; fresh provisioning deferred.** The workflow capstone is tracked under
 The implemented surface is the [`session_delegation` Action group](../action_service/session_delegation/README.md)
 (`environments__{list,get,resume}` and seven `sessions__*` tools), the [Session CLI](../docs/agent_cli.md)
 and the maintained [Session delegation guide](../action_service/docs/agents/session_delegation.md),
-over [Dispatcher authorization](../runner_gateway/dispatcher/SPEC.md), [retained History
+over [Dispatcher authorization](../session_dispatcher/dispatcher/SPEC.md), [retained History
 access](../history_service/README.md) and the [delegated authorization contract](../docs/delegated_authorization.md),
 with scripted [acceptance](../action_service/session_delegation/README.md#acceptance).
 

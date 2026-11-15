@@ -13,7 +13,7 @@ py_library(
         "//agentplane/grpc:calls",
         "//agentplane/net/peertls:config",
         "//agentplane/proto:identity_pb2",
-        "//agentplane/runner_gateway:client",
+        "//agentplane/session_dispatcher:client",
         "//agentplane/testing:go_process",
         "//agentplane/testing:tls",
         "//devinfra/testing:undeclared_outputs",

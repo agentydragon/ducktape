@@ -5,7 +5,7 @@ tracks the dependencies. The metadata's carriage (`SESSION_INPUT_METADATA`) is t
 not a settled decision: typed provenance travels through Session Dispatcher to the Session owner
 and is echoed into History. For native Sessions that owner is the Runner; for central Sessions the
 central sampler should similarly pass metadata through to History (operator direction, 2026-11-04)
-without requiring an Environment. The Dispatcher owns durable command records ([queue contract](../runner_gateway/dispatcher/README.md)).
+without requiring an Environment. The Dispatcher owns durable command records ([queue contract](../session_dispatcher/dispatcher/README.md)).
 
 ## Goal and boundaries
 

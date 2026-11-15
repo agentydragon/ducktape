@@ -235,7 +235,7 @@ Implementation validation is scoped to the changed code:
   `//agentplane/policy/reader:reader_test`,
   `//agentplane/environments/internal/service:service_test`,
   `//agentplane/environments/internal/service:lifecycle_test`, and
-  `//agentplane/runner_gateway/dispatcher:store_integration_test`.
+  `//agentplane/session_dispatcher/dispatcher:store_integration_test`.
 - Build generated policy API targets with `bbr build`:
   `//agentplane/policy/api/v1alpha1:generated_crds` and
   `//agentplane/policy/api/v1alpha1:policy_types_proto`.

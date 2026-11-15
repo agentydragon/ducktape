@@ -11,7 +11,7 @@ from more_itertools import one
 
 from agentplane.app.testing.client import Client
 from agentplane.proto import session_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.agent import WORKING_DIRECTORY, Agent
 from agentplane.system_tests.driver.sandbox import Sandboxes
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream

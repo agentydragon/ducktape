@@ -8,7 +8,7 @@ from google.protobuf.json_format import MessageToDict
 from agentplane.app.testing.client import Client
 from agentplane.app.testing.history_reads import SessionEventReader
 from agentplane.proto import session_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.tracing import tracer
 
 BOUND_SECONDS = 300

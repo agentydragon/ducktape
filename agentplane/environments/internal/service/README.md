@@ -108,5 +108,5 @@ separately from the Action origin.
 
 The implementation is internal to Environments. Consumer tests use the wire interface through
 `environments/testing/servicefixture`; production consumers use gRPC. Explicit resume is internal at `environments/internal/resume`; automatic wake execution and its
-budget contract live at `runner_gateway/dispatcher/wake`. Both use the shared authorization and
+budget contract live at `session_dispatcher/dispatcher/wake`. Both use the shared authorization and
 guarded-write implementation at `environments/lifecycle`.

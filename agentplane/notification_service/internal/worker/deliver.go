@@ -8,8 +8,8 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/dispatchstate"
-	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/dispatchstate"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"google.golang.org/grpc"
 )
 

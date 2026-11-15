@@ -18,9 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
 from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.net.peertls.config import SESSION_DISPATCHER_URI, ClientTLS
-from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2, session_dispatcher_pb2_grpc
-from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
+from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2, session_dispatcher_pb2_grpc
+from agentplane.session_dispatcher.testing.gateway_process import GatewayProcess
 from agentplane.testing.tls import issue_workload_leaf, make_ca
 
 # gazelle:include_dep //agentplane/app:integration_fixtures

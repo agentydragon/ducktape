@@ -90,8 +90,8 @@ remain HTTP at their owning components. They are protocol endpoints, not alterna
   inventory and process/Session diagnostics. Manual resume is a Sandbox lifecycle request through
   Kubernetes; the Runner owns native-state recovery after startup. It owns harness startup and
   reconciliation after command admission. The app reads Session history from the History Service and
-  owns the app-specific Thread metadata. See the [Runner Gateway](../runner_gateway/README.md) and
-  [Session Dispatcher](../runner_gateway/dispatcher/README.md) contracts.
+  owns the app-specific Thread metadata. See the [Runner Gateway](../session_dispatcher/README.md) and
+  [Session Dispatcher](../session_dispatcher/dispatcher/README.md) contracts.
 - **Sandbox Controller:** reconciles requested Sandbox state into ServiceAccounts, Pods or VMs,
   state volumes and controller-owned grants. It owns `Sandbox.status`, including quiescing facts,
   and asks the Runner Gateway to seal Sessions before stopping or deleting a runner.

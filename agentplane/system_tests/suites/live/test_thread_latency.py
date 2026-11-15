@@ -53,7 +53,7 @@ from agentplane.history_service.testing.protojson import thread_entity_from_reco
 from agentplane.native.claude import wire as claude_wire  # Both harnesses name their frame module `wire`.
 from agentplane.native.codex import wire as codex_wire
 from agentplane.proto import event_pb2, session_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.agent import Agent
 from agentplane.system_tests.driver.sandbox import Sandboxes
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir

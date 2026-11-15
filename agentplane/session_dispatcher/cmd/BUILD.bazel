@@ -1,0 +1,20 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "main_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/session_dispatcher/cmd",
+    visibility = ["//agentplane/session_dispatcher:__subpackages__"],
+    deps = [
+        "//agentplane/session_dispatcher/internal/app",
+        "@com_github_go_logr_logr//:logr",
+        "@io_k8s_sigs_controller_runtime//pkg/log",
+    ],
+)
+
+go_binary(
+    name = "runner-gateway",
+    embed = [":main_lib"],
+    pure = "on",
+    visibility = ["//agentplane:__subpackages__"],
+)

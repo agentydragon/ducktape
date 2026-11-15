@@ -1,7 +1,7 @@
 # Sessions & environments
 
 > Working design and discussion record. Implemented contracts live in the
-> [Dispatcher SPEC](../runner_gateway/dispatcher/SPEC.md), the
+> [Dispatcher SPEC](../session_dispatcher/dispatcher/SPEC.md), the
 > [central sampler SPEC](../central_sampler/SPEC.md) and the [Runtime SPEC](../env/runtime/SPEC.md);
 > this document holds the selected direction and unresolved decisions. Discussion entries are
 > historical: later decisions and corrections supersede earlier suggestions. The shorter
@@ -20,7 +20,7 @@ History eventually.
 `SessionPlacement` (`environment_hosted` or `central_sampler_v1` with one fixed
 `executor_environment`), with `CreateSession`/`GetSession`/`ListSessions`, Session-ID-addressed
 commands, and Session rows retained with `required_environment=DELETED` after their required
-Environment is deleted ([Dispatcher SPEC](../runner_gateway/dispatcher/SPEC.md#session-binding)).
+Environment is deleted ([Dispatcher SPEC](../session_dispatcher/dispatcher/SPEC.md#session-binding)).
 Do not add a second competing writable directory. The baseline does not provide environment-free
 central Sessions, optional attachments, a central principal, native harness-store and native-ID
 mapping, inbox retention after Environment deletion, durable command-receipt reads after cleanup,
@@ -190,7 +190,7 @@ Every Session-targeted command requires a Dispatcher Session record; the record 
 Session to address but is not itself permission to send or wake. When deletion races accepted work,
 fail commands proven not to have left Dispatcher, report unresolved in-flight outcomes as unknown,
 and never redirect work to a replacement environment
-([Dispatcher SPEC](../runner_gateway/dispatcher/SPEC.md#possible-command-forwarding-and-deletion-outcomes)).
+([Dispatcher SPEC](../session_dispatcher/dispatcher/SPEC.md#possible-command-forwarding-and-deletion-outcomes)).
 Command-receipt outcome reads after cleanup remain unresolved.
 
 ```text
@@ -586,7 +586,7 @@ The app stores each Thread’s name and archive flag in its own database. Its ar
 ### Environment deletion
 
 Dispatcher retains the Session row with its exact placement
-([deletion fence](../runner_gateway/dispatcher/SPEC.md#deletion-admission-fence)); this does not
+([deletion fence](../session_dispatcher/dispatcher/SPEC.md#deletion-admission-fence)); this does not
 retain inboxes or make central V1 environment-independent. Kubernetes deletion and a Dispatcher
 transaction are separate; preserve evidence required by each owner's contract.
 
@@ -636,7 +636,7 @@ Track the decision and its scoped implementation gate in [the task DAG](task_dag
 
 **What exists now:** History already retains the associated Sandbox namespace, name and (when known) immutable UID, and its projected `Attached` snapshot includes `SessionSpec` (harness, cwd, model, reasoning effort and instructions). The projection can update model and effort, so it is not necessarily an immutable creation-time spec. This is not a complete Sandbox specification or a record of multiple attachment changes; exact provenance, retention and archive semantics still need design. History is asynchronously fed, so a live reservation does not by itself prove an archival snapshot is durable.
 
-Current sources: [History Service](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/history_service/README.md) · [History summary](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/history_service/history_service.proto) · [SessionSpec and Attached](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/proto/session.proto) · [lifecycle projection](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/history_service/projection/lifecycle.go) · [Gateway and Dispatcher](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/runner_gateway/README.md) · [central sampler](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/central_sampler/README.md) · [app Thread archive](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/app/README.md) · [Sandbox deletion and sealing](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/sandbox_controller/SPEC.md) · [required Gateway database URL](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/runner_gateway/config.go) · [prior optional-queue proposal in the task DAG](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/plans/task_dag.md#dispatcher_persistence_model_design--choose-the-queues-role-always-on-or-optional-in-one-service).
+Current sources: [History Service](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/history_service/README.md) · [History summary](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/history_service/history_service.proto) · [SessionSpec and Attached](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/proto/session.proto) · [lifecycle projection](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/history_service/projection/lifecycle.go) · [Gateway and Dispatcher](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/session_dispatcher/README.md) · [central sampler](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/central_sampler/README.md) · [app Thread archive](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/app/README.md) · [Sandbox deletion and sealing](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/sandbox_controller/SPEC.md) · [required Gateway database URL](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/session_dispatcher/internal/app/config.go) · [prior optional-queue proposal in the task DAG](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/plans/task_dag.md#dispatcher_persistence_model_design--choose-the-queues-role-always-on-or-optional-in-one-service).
 
 <a id="opening"></a>
 
@@ -645,14 +645,14 @@ Current sources: [History Service](https://github.com/agentydragon/ducktape/blob
 Give callers the same operation for creating a logical Session on either backend. Choose placement explicitly; let the selected owner prepare, reuse or start its harness as needed.
 
 `CreateSession`, `GetSession` and `ListSessions` are implemented for both placements; the
-[placement contract](../runner_gateway/dispatcher/SPEC.md#sessionspec-placement-cutover) defines
+[placement contract](../session_dispatcher/dispatcher/SPEC.md#sessionspec-placement-cutover) defines
 the Dispatcher commit, idempotent retry, minimal `Session` projection and owner-materialization
 states. Materialization is placement-owner progress, not harness readiness, a model turn or History
 projection.
 
 **Open: unconfirmed native openings.** An unconfirmed native owner admission holds dependent queued
 commands as `session_opening_unconfirmed`
-([outcome contract](../runner_gateway/dispatcher/SPEC.md#native-opening-outcomes-and-dependent-commands));
+([outcome contract](../session_dispatcher/dispatcher/SPEC.md#native-opening-outcomes-and-dependent-commands));
 nothing resolves that hold automatically. Whether an authorized caller or operator can resolve it
 from durable owner evidence remains open in
 [`SESSION_RUNTIME_MODEL_DESIGN`](task_dag.md#session_runtime_model_design--sessions-harness-placement-and-execution-attachments).
@@ -661,7 +661,7 @@ from durable owner evidence remains open in
 
 The Dispatcher commit establishes logical existence without waiting for the owner, wake, History or
 native creation; the native temporary/rejected/unknown materialization outcomes are in the
-[outcome contract](../runner_gateway/dispatcher/SPEC.md#native-opening-outcomes-and-dependent-commands).
+[outcome contract](../session_dispatcher/dispatcher/SPEC.md#native-opening-outcomes-and-dependent-commands).
 Unavailable owners and suspended environments are wait and retry conditions; wake an environment
 only under an authorized policy, which must support eligible unattended inbox notices. A rejected
 configuration is corrected by a new Session UUID; a future edit-and-retry operation is a separate
@@ -753,7 +753,7 @@ Durable queueing and automatic wake are independent choices. Even without automa
 
 **Migration if selected:** inventory callers and UI controls, update Actions and inbox/notice contracts, decide how existing queued work and wake-on-send settings are handled, and remove obsolete wake-only grants, fields and status only after their consumers and rolling versions have moved. Keep explicit-resume authorization, UID fencing, race handling and any independently needed rate limits. Audit defaults and policies rather than silently granting resume to senders.
 
-Current behavior: [Dispatcher queue and wake](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/runner_gateway/dispatcher/README.md) · [environment lifecycle manager](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/environments/lifecycle/README.md) · [inbox and notice behavior](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/notification_service/docs/api.md) · [app send and explicit resume](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/app/README.md).
+Current behavior: [Dispatcher queue and wake](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/session_dispatcher/dispatcher/README.md) · [environment lifecycle manager](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/environments/lifecycle/README.md) · [inbox and notice behavior](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/notification_service/docs/api.md) · [app send and explicit resume](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/app/README.md).
 
 <a id="api"></a>
 
@@ -874,7 +874,7 @@ one.
 
 Remaining Session-addressing follow-ups by surface. Implemented Session-ID addressing (Dispatcher
 reads, app and CLI command delivery, inbox diagnostics, subscriptions, `AGENTPLANE_SESSION_ID`) is
-documented in the [Dispatcher SPEC](../runner_gateway/dispatcher/SPEC.md),
+documented in the [Dispatcher SPEC](../session_dispatcher/dispatcher/SPEC.md),
 [Notification API](../notification_service/docs/api.md) and [agent CLI](../docs/agent_cli.md).
 A Session ID is the public address; an exact environment UID remains meaningful for native
 placement, queued-work and execution fencing, authorization, and historical provenance. Selecting
@@ -882,7 +882,7 @@ an environment when creating a native Session is placement, not a compound Sessi
 
 | Surface and current behavior                                                                                                                                                                                                                                                                                                                                                                                                                                    | Follow-up and owning task                                                                                                                                                                                                                                                                                 |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Dispatcher](../runner_gateway/dispatcher/api/session/session_dispatcher.proto) addresses Sessions by ID with typed `SessionPlacement`; cleanup retains the Session row and fences the deleted UID.                                                                                                                                                                                                                                                             | Remaining [command authority](task_dag.md#delivery_destination_contract--send-commands-to-a-session-id) and durable command-receipt reads after cleanup.                                                                                                                                                  |
+| [Dispatcher](../session_dispatcher/dispatcher/api/session/session_dispatcher.proto) addresses Sessions by ID with typed `SessionPlacement`; cleanup retains the Session row and fences the deleted UID.                                                                                                                                                                                                                                                         | Remaining [command authority](task_dag.md#delivery_destination_contract--send-commands-to-a-session-id) and durable command-receipt reads after cleanup.                                                                                                                                                  |
 | [App command delivery](../app/frontend/threads/command_delivery.ts) submits new commands by Session ID; the [Session CLI](../cli/sessions.go) likewise uses Session ID for send and interrupt. Previously retained browser commands keep their original Sandbox target.                                                                                                                                                                                         | Preserve the original fence of saved or accepted work and no-replay recovery; remaining broker and authority work is in [Session-ID command addressing](task_dag.md#delivery_destination_contract--send-commands-to-a-session-id).                                                                        |
 | [Session Actions](../action_service/session_delegation/contract/inputs.go), their [executor](../action_service/session_delegation/executor.go), and [orchestration](../action_service/orchestration_v1/sessions.go) carry a target environment for opening and Session commands.                                                                                                                                                                                | Review command schema and grant scope in [Session-ID command addressing](task_dag.md#delivery_destination_contract--send-commands-to-a-session-id); retain creation placement and delegated actor/effective-caller checks.                                                                                |
 | Notification message sends, delivery, inbox reads, acknowledgement and retirement address a Session ID with exact-Sandbox-UID send and delivery fences.                                                                                                                                                                                                                                                                                                         | [Central Sessions without Environments](task_dag.md#central_session_notifications--inboxes-for-sessions-without-environments) need separate identity and lifetime work; preserve exact UID fences, unread messages, idempotency and authorized unattended wake.                                           |
@@ -1008,4 +1008,4 @@ Pinned source snapshots used by the original investigation:
 - [Session/runtime design task](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/plans/task_dag.md#session_runtime_model_design--sessions-harness-placement-and-execution-attachments) and [native identity decision](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/plans/task_dag.md#harness_identity_design--decide-private-session-to-store-and-native-mapping) — current scope and remaining native mapping decisions.
 - [Central sampler specification](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/central_sampler/SPEC.md) — current fixed target, lazy executor acquisition, incarnation and recovery limits.
 - [Native Session protocol](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/env/runtime/docs/session_protocol.md) · [Environment Runtime](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/env/runtime/SPEC.md) · [Execution specification](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/env/runtime/execution/SPEC.md).
-- [Dispatcher contract](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/runner_gateway/dispatcher/README.md) · [multiagent authority and Session access direction](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/plans/multiagent_communication.md).
+- [Dispatcher contract](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/session_dispatcher/dispatcher/README.md) · [multiagent authority and Session access direction](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/plans/multiagent_communication.md).

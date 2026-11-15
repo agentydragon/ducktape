@@ -20,8 +20,11 @@ from agentplane.crd_group import GROUP, VERSION
 from agentplane.environments.v1 import environment_service_pb2 as environments_pb, environment_service_pb2_grpc
 from agentplane.grpc.calls import dial
 from agentplane.proto import environment_lifecycle_pb2 as lifecycle_pb, identity_pb2, session_pb2
-from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2 as pb, session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
+from agentplane.session_dispatcher.dispatcher.api.session import (
+    session_dispatcher_pb2 as pb,
+    session_dispatcher_pb2_grpc,
+)
 from agentplane.system_tests.driver.cleanup_diagnostics import capture_without_masking, cleanup_without_masking
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.dispatcher_operations import session_until

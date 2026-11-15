@@ -4,7 +4,7 @@ Status: **first native cutover implemented; outcome visibility, revocation, cent
 post-deletion inbox sends remain open.** Commands address a globally unique Session UUID, and the
 Dispatcher PostgreSQL Session directory is the placement authority. The implemented caller,
 binding, deletion-fence and possible-forwarding rules are the
-[Dispatcher SPEC](../runner_gateway/dispatcher/SPEC.md); delegated callers follow the
+[Dispatcher SPEC](../session_dispatcher/dispatcher/SPEC.md); delegated callers follow the
 [delegated authorization contract](../docs/delegated_authorization.md).
 [`HARNESS_IDENTITY_DESIGN`](task_dag.md#harness_identity_design--decide-private-session-to-store-and-native-mapping)
 tracks the private harness-store and native-ID mapping. Nothing here selects a principal or send
@@ -29,7 +29,7 @@ cached generation without that validation is not a fence; do not assume cross-se
 
 1. **Complete bounded outcome visibility.** Deletion terminal snapshots reach only connected
    `WatchDispatches` streams, and a watcher behind an earlier terminal-row invalidation can miss
-   its outcome when cleanup removes the row ([SPEC](../runner_gateway/dispatcher/SPEC.md#possible-command-forwarding-and-deletion-outcomes)).
+   its outcome when cleanup removes the row ([SPEC](../session_dispatcher/dispatcher/SPEC.md#possible-command-forwarding-and-deletion-outcomes)).
    Broadcasting all retained receipts can overflow bounded subscriptions. Durable post-deletion
    outcome visibility and retention remain open Dispatcher/History decisions. Neither notification
    delivery nor Runtime admission proves that an uncertain effect failed. Explicit Session deletion

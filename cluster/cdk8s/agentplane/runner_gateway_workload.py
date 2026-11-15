@@ -42,7 +42,7 @@ from agentplane.net.peertls.config import (
     ClientTLS,
     ServiceSPIFFEID,
 )
-from agentplane.runner_gateway.settings import CentralSamplerTarget, ServiceDelegation, ServiceDelegator, Settings
+from agentplane.session_dispatcher.settings import CentralSamplerTarget, ServiceDelegation, ServiceDelegator, Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import (

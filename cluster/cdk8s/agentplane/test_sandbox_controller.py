@@ -22,7 +22,7 @@ from agentplane.net.peertls.config import (
     SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
 )
-from agentplane.runner_gateway.settings import Settings as GatewaySettings
+from agentplane.session_dispatcher.settings import Settings as GatewaySettings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s.agentplane import (
     actions,

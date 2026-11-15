@@ -61,8 +61,8 @@ attachments, and app-only provisioning or prompt/bootstrap state, including in v
 
 Backend responsibilities needed by another service move to an independent owner, not a temporary
 app endpoint. EnvironmentService on the Sandbox Controller owns inventory reads, watches and management;
-the app calls its generated authenticated facade. The app retains Thread and policy composition. The [Session Dispatcher](../runner_gateway/dispatcher/README.md)
-owns logical Session records and durable command delivery; the [Runner Gateway](../runner_gateway/README.md) owns the
+the app calls its generated authenticated facade. The app retains Thread and policy composition. The [Session Dispatcher](../session_dispatcher/dispatcher/README.md)
+owns logical Session records and durable command delivery; the [Runner Gateway](../session_dispatcher/README.md) owns the
 runner control stream and authorized live Runner proxy; the
 [History Service](../history_service/README.md) owns the Session Event archive and its Thread fold.
 The app is a client of each service for its distinct operation. The browser's pure History reads
@@ -171,7 +171,7 @@ returns a `components` list using the generated component-state enum, optional e
 ProtoJSON `checkedAt` timestamp. It uses the same authenticated caller boundary and refreshes every
 15 seconds in the browser.
 It is an interface for the app's human frontend, not an API for in-cluster services. Backend callers
-use the [Session Dispatcher](../runner_gateway/dispatcher/README.md) directly with a complete
+use the [Session Dispatcher](../session_dispatcher/dispatcher/README.md) directly with a complete
 `SessionSpec` and do not depend on app orchestration. The app interface resolves the Sandbox's
 configured preset, applies the caller's overrides, validates the current Sandbox UID, expands the
 Session ID in `cwd`, and creates app-owned Thread metadata before submitting the resolved spec to
@@ -195,7 +195,7 @@ tests; it does not make this a backend service API. The app calls the Dispatcher
 
 The returned minimal `Session` contains its ID, placement, timestamps and nested `SessionStatus`; it
 does not expose the immutable spec or instructions. Its materialization state is placement-owner
-progress, not harness state ([Dispatcher contract](../runner_gateway/dispatcher/SPEC.md#session-resource)).
+progress, not harness state ([Dispatcher contract](../session_dispatcher/dispatcher/SPEC.md#session-resource)).
 The browser retains only its caller-minted Session ID after an uncertain response and
 reconciles with `GetSession`, without replaying creation or setup. The app's `CreateSession` response
 returns `session` directly with POST 201.

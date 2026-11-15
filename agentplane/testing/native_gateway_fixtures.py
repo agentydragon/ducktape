@@ -7,10 +7,10 @@ import pytest
 
 from agentplane.env.config import EnvironmentRuntimeControl
 from agentplane.net.peertls.config import MTLS, SANDBOX_CONTROLLER_URI
-from agentplane.runner_gateway.client import SandboxControlClient
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.runner_gateway.testing.gateway_process import GatewayProcess, run_gateway
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
+from agentplane.session_dispatcher.client import SandboxControlClient
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.session_dispatcher.testing.gateway_process import GatewayProcess, run_gateway
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.kubernetes_apiserver_fixtures import api_server, kubeconfig
 from agentplane.testing.sandbox_fixtures import sandbox

@@ -19,11 +19,11 @@ checks and durable queue until a replacement contract is reviewed.
 The earlier public `(Sandbox UID, Session ID)` destination in this note is superseded by the
 selected [Session UUID address](../plans/session_environment_model.md#address). Its code-path
 inventory remains useful; the implemented send and execution-fence rules are the
-[Dispatcher SPEC](../runner_gateway/dispatcher/SPEC.md).
+[Dispatcher SPEC](../session_dispatcher/dispatcher/SPEC.md).
 
 The current runner contracts remain in [Session layering](thread_layering.md), the
-[Dispatcher README](../runner_gateway/dispatcher/README.md), the
-[Runner Gateway README](../runner_gateway/README.md), and the
+[Dispatcher README](../session_dispatcher/dispatcher/README.md), the
+[Runner Gateway README](../session_dispatcher/README.md), and the
 [scripted harness capability index](../native/README.md#behavioral-coverage).
 
 ## Current delivery and inventory facts
@@ -34,9 +34,9 @@ uses a per-Sandbox delivery Lease plus database generations to fence delivery sc
 Sandbox readiness and incarnation changes, then calls the Runner service through the stable
 `runner-gateway` Service and its proxy. It has no History Service client: routing and queue recovery
 use the requested Sandbox, Kubernetes state, and runner control RPCs. See
-[`delivery.go`](../runner_gateway/dispatcher/delivery.go),
-[`runner_client.go`](../runner_gateway/dispatcher/runner_client.go), and
-[`store.go`](../runner_gateway/dispatcher/store.go).
+[`delivery.go`](../session_dispatcher/dispatcher/delivery.go),
+[`runner_client.go`](../session_dispatcher/dispatcher/runtime_client.go), and
+[`store.go`](../session_dispatcher/dispatcher/store.go).
 
 Each Gateway replica independently opens a zero-epoch `WatchState` to the current Runtime, dialing it
 directly at its Pod IP, and can serve calls after observing the Controller-bound Sandbox UID and
@@ -121,7 +121,7 @@ revalidated, including replacement between the Dispatcher check and proxy resolu
 [`proxy.go`](../environments/runtimeproxy/proxy.go),
 [`sandboxes.go`](../environments/runtimeproxy/sandboxes.go) with the UID fence in
 [`reader.go`](../sandboxes/sandboxreader/reader.go), and
-[`runner_client.go`](../runner_gateway/dispatcher/runner_client.go).
+[`runner_client.go`](../session_dispatcher/dispatcher/runtime_client.go).
 
 The current path has different authority at each step:
 
@@ -241,7 +241,7 @@ stable `runner-gateway` Service, and any replica with a fresh observation can ca
 Runtime directly at its Pod IP using the Sandbox UID, workload Pod UID and boot ID. The service has
 no History client or separate Gateway registry/database.
 Runner journal ingress and Quiesce seal acknowledgements belong to History; app and Notification
-also read History independently. See the [Runner Gateway README](../runner_gateway/README.md) for
+also read History independently. See the [Runner Gateway README](../session_dispatcher/README.md) for
 current runtime and deployment ownership, including migration ordering and Flux image automation.
 
 For persistence, compare the current durable queue with direct runner admission:

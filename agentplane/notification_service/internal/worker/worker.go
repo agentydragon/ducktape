@@ -15,7 +15,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sessionidentity"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
-	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/google/uuid"
 )
 

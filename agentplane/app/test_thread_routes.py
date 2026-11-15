@@ -11,9 +11,9 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.proto import session_pb2
-from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, accepted_session
 from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster
+from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient, accepted_session
 
 # These plugins provide the real App, Dispatcher, History, Sandbox, and Go Runtime fixtures.
 # gazelle:include_dep //agentplane/app:integration_fixtures

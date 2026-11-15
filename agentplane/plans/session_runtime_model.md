@@ -23,7 +23,7 @@ These are current constraints, not a required ontology for every future harness.
 
 The implemented `SessionSpec.placement` oneof separates `environment_hosted` (exact environment
 and native harness) from `central_sampler_v1` (one exact, fixed executor environment)
-([Dispatcher SPEC](../runner_gateway/dispatcher/SPEC.md#session-binding)). The broader
+([Dispatcher SPEC](../session_dispatcher/dispatcher/SPEC.md#session-binding)). The broader
 environment-independent central model below is a target, tracked by the
 [central Session task](task_dag.md#central-session-environment-independence).
 

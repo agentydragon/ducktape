@@ -12,10 +12,10 @@ the approval gateway for any MCP-capable LLM product, exposed externally through
 - [Action Service](action_service/README.md): ActionRequests, Decisions, auto-approval policies,
   upstream MCP execution and the gRPC/HTTP APIs used by the MCP edge.
 - [MCP edge](mcp_edge/README.md): external Connection/OAuth authority and `/mcp`; forwards authenticated Actions calls over gRPC.
-- [Runner Gateway](runner_gateway/README.md): one process providing runner state observation,
-  authorized live Runner proxy, [Session Dispatcher](runner_gateway/dispatcher/README.md) durable queue,
+- [Runner Gateway](session_dispatcher/README.md): one process providing runner state observation,
+  authorized live Runner proxy, [Session Dispatcher](session_dispatcher/dispatcher/README.md) durable queue,
   and automatic wake for admitted Session delivery.
-  New serving Pods run the queue migration before starting ([deployment](runner_gateway/README.md#deployment)).
+  New serving Pods run the queue migration before starting ([deployment](session_dispatcher/README.md#deployment)).
 - [History Service](history_service/README.md): retained Session history, read by the
   integration app and the Notification service.
 - [Environment Runtime](env/README.md) and [native drivers](native/README.md): manage the Sandbox

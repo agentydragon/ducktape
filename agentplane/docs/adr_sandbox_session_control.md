@@ -9,7 +9,7 @@ Former logical `OpenSession`/opening APIs have no compatibility path. The distin
 name below preserve this ADR's historical decisions and examples.
 
 **Gateway routing supersession:** the current contract is in [runner control](runner_control.md) and
-the [Runner Gateway README](../runner_gateway/README.md). The leader-elected Controller binds the
+the [Runner Gateway README](../session_dispatcher/README.md). The leader-elected Controller binds the
 Sandbox UID and accepted workload Pod UID through direct `WatchState(observe_only=true)` and keeps
 lifecycle facts in memory. Callers use the stable `runner-gateway` Service; each Gateway replica
 opens an independent zero-epoch watch, dials the Runtime at its Pod IP, and can call using Sandbox
@@ -53,7 +53,7 @@ not redesign storage, the History Service, or policy.
   deleting Sandbox only (`finalize`), alongside the older sealed names. `Ready` includes
   `WorkloadReady`, `EnvironmentRuntimeConnected` and `Bootstrapped`. `QuiesceResponse.stage` has
   one reader, the controller.
-- **Runner Gateway** (`runner_gateway/`): each replica independently observes and proxies the runner's private `Runner` service. The stable `runner-gateway` Service routes callers to any replica; there is no per-Sandbox control Service, Gateway connection Lease or EndpointSlice publication. Logical Session records and durable commands belong to the Dispatcher; the Gateway owns no Session registry or database.
+- **Runner Gateway** (`session_dispatcher/`): each replica independently observes and proxies the runner's private `Runner` service. The stable `runner-gateway` Service routes callers to any replica; there is no per-Sandbox control Service, Gateway connection Lease or EndpointSlice publication. Logical Session records and durable commands belong to the Dispatcher; the Gateway owns no Session registry or database.
 - **Integration app** (`app/`): submits Sandbox desired state and operator-owned grants through the
   Kubernetes API, reads Sandbox views, and attaches the output-only VM console. It acts as the
   requesting operator; the Sandbox Controller owns status and reconciled resources.
@@ -67,7 +67,7 @@ The current sender path is queued: the app and Notification Service submit per-o
 Session Dispatcher, which durably records them and delivers after Sandbox readiness. The app requests
 Sandbox lifecycle changes through Kubernetes; the runner restores retained native state as it starts.
 Live Runner reads use the UID/owner-fenced proxy through the stable `runner-gateway` Service. See the
-[service-boundary contract](service_boundaries.md) and [Runner Gateway README](../runner_gateway/README.md)
+[service-boundary contract](service_boundaries.md) and [Runner Gateway README](../session_dispatcher/README.md)
 for current callers and authorization gates.
 
 ## Where the lines could fall

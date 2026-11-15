@@ -8,7 +8,7 @@ import pytest_bazel
 # gazelle:include_dep @pypi//protobuf
 from agentplane.app.testing.client import Client
 from agentplane.proto import session_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.sandbox import Sandboxes
 from agentplane.system_tests.scenarios import egress, session_instructions
