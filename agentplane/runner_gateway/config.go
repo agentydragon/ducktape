@@ -28,7 +28,7 @@ const (
 
 // config is the Gateway's deployment contract: static settings come from the YAML file named by
 // AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE. The database URL and Pod name are explicit runtime inputs.
-// Callers and the controller account are written `namespace/name`.
+// Service caller grants contain exact SPIFFE IDs.
 //
 // The database URL is a Secret environment value. Kubernetes sets the Pod hostname to its name unless an
 // explicit hostname is configured.
@@ -58,31 +58,12 @@ type config struct {
 	RunnerTimeoutSeconds        int                      `mapstructure:"runner_request_timeout_seconds"`
 
 	CentralSampler *dispatcher.CentralTarget `mapstructure:"central_sampler"`
-
-	// CLEANUP(2026-11-15, stage 5): ignored receiver audiences, account grants and delegation
-	// remain decodable until manifests omit them and the certificate-only receiver rollout completes.
-	DispatcherAudience string            `mapstructure:"dispatcher_audience"`
-	GatewayAudience    string            `mapstructure:"gateway_audience"`
-	DispatcherCallers  []auth.Account    `mapstructure:"dispatcher_callers"`
-	GatewayCallers     []auth.Account    `mapstructure:"gateway_callers"`
-	WakeCallers        []auth.Account    `mapstructure:"wake_callers"`
-	ControllerAccount  *auth.Account     `mapstructure:"sandbox_controller_account"`
-	ExecutorCallers    []auth.Account    `mapstructure:"executor_callers"`
-	Delegation         *delegationConfig `mapstructure:"delegation"`
 }
 
 // serviceDelegationConfig is a separate certificate actor grant scoped to exact methods.
 type serviceDelegationConfig struct {
 	Actors  []auth.ServiceDelegator `mapstructure:"actors"`
 	Methods []string                `mapstructure:"methods"`
-}
-
-// delegationConfig retains the ignored legacy account-delegation shape during rollout.
-type delegationConfig struct {
-	Actor auth.Account `mapstructure:"actor"`
-	// IdentityCallers lets the actor assert Identities in policy_namespace.
-	IdentityCallers bool     `mapstructure:"identity_callers"`
-	Methods         []string `mapstructure:"methods"`
 }
 
 func defaultConfig() config {
@@ -203,8 +184,7 @@ func (c *config) validate() error {
 	if err := c.RPC.Validate(); err != nil {
 		return fmt.Errorf("rpc: %w", err)
 	}
-	// CLEANUP(2026-11-15, stage 5): legacy kubernetes_bearer modes remain decodable
-	// until manifests omit them and rollout completes. No receiver uses them.
+	// The shared listener decoder still accepts legacy modes; these receivers only use SPIFFE.
 	if !c.RPC.Has(listener.SPIFFE) {
 		return errors.New("rpc.auth must include spiffe")
 	}

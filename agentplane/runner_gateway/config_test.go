@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
@@ -19,11 +18,6 @@ const databaseURLEnv = settingPrefix + "DISPATCHER_DATABASE_URL=postgres://user:
 const requiredFile = `sandbox_namespace: agentplane
 policy_namespace: agentplane
 runner_token_file: /var/run/token
-dispatcher_audience: session-dispatcher
-gateway_audience: runner-gateway
-dispatcher_callers: [agentplane/app, agentplane/notifications]
-gateway_callers: [agentplane/runner-gateway]
-sandbox_controller_account: agentplane/sandbox-controller
 runner_control_target_template: 'runner-gateway.{namespace}.svc:8080'
 runner_security: {mode: mtls, tls: {cert_file: /tmp/test-cert, key_file: /tmp/test-key, ca_file: /tmp/test-ca}}
 gateway_tls: {ca_file: /tmp/workload-ca, server_uri: spiffe://agentplane/session-dispatcher}
@@ -32,7 +26,6 @@ rpc:
   tls: {cert_file: /tmp/workload-cert, key_file: /tmp/workload-key}
   auth:
     - {mode: spiffe, ca_file: /tmp/workload-ca}
-    - {mode: kubernetes_bearer, audiences: [session-dispatcher, runner-gateway]}
 `
 
 // required includes the explicit database Secret runtime input plus the static settings file.
@@ -57,35 +50,25 @@ func TestPolicyNamespaceIsRequired(t *testing.T) {
 	}
 }
 
-func TestCallerListsComeFromTheFileAndKeepAuthenticationAndWakeSeparate(t *testing.T) {
-	path := configtest.WriteSettings(t, requiredFile+"wake_callers: [agentplane/notifications]\ndelegation:\n  actor: agentplane/actions\n  identity_callers: true\n  methods:\n    - /agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput\n")
+func TestServiceCallerListsKeepAuthenticationAndWakeSeparate(t *testing.T) {
+	path := configtest.WriteSettings(t, requiredFile+`dispatcher_service_callers: [spiffe://agentplane/app, spiffe://agentplane/notifications]
+wake_service_callers: [spiffe://agentplane/notifications]
+runtime_proxy_readers: [spiffe://agentplane/app]
+dispatcher_service_delegation:
+  actors: [{spiffe_id: spiffe://agentplane/actions}]
+  methods: [/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput]
+`)
 	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(c.DispatcherCallers, []auth.Account{{Namespace: "agentplane", Name: "app"}, {Namespace: "agentplane", Name: "notifications"}}) ||
-		!slices.Equal(c.WakeCallers, []auth.Account{{Namespace: "agentplane", Name: "notifications"}}) ||
-		!slices.Equal(c.GatewayCallers, []auth.Account{{Namespace: "agentplane", Name: "runner-gateway"}}) ||
-		c.DispatcherAudience == c.GatewayAudience || c.ControllerAccount.Name != "sandbox-controller" || c.Delegation == nil ||
-		c.Delegation.Actor != (auth.Account{Namespace: "agentplane", Name: "actions"}) ||
-		!c.Delegation.IdentityCallers ||
-		!slices.Equal(c.Delegation.Methods, []string{
-			"/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput",
-		}) {
+	if !slices.Equal(c.DispatcherServiceCallers, []string{peertls.AppURI, peertls.NotificationsURI}) ||
+		!slices.Equal(c.WakeServiceCallers, []string{peertls.NotificationsURI}) ||
+		!slices.Equal(c.RuntimeProxyReaders, []string{peertls.AppURI}) ||
+		c.DispatcherServiceDelegation == nil ||
+		!slices.Equal(c.DispatcherServiceDelegation.Actors, []auth.ServiceDelegator{{SPIFFEID: peertls.ActionsURI}}) ||
+		!slices.Equal(c.DispatcherServiceDelegation.Methods, []string{"/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput"}) {
 		t.Fatalf("policy boundaries were merged: %+v", c)
-	}
-}
-
-func TestLegacyListenerBearerAudiencesRemainDecodable(t *testing.T) {
-	path := configtest.WriteSettings(t, requiredFile)
-	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !c.RPC.Has(listener.SPIFFE) || !c.RPC.Has(listener.KubernetesBearer) ||
-		!c.RPC.AllowsBearerAudience(c.DispatcherAudience) || !c.RPC.AllowsBearerAudience(c.GatewayAudience) ||
-		c.RPC.AllowsBearerAudience("unexpected") {
-		t.Fatalf("rpc auth = %+v", c.RPC.Auth)
 	}
 }
 
@@ -159,13 +142,13 @@ func TestDispatcherServiceDelegationIsScopedToServiceMethodsAndActionActors(t *t
 }
 
 func TestEmptyWakeCallerListIsAccepted(t *testing.T) {
-	path := configtest.WriteSettings(t, requiredFile+"wake_callers: []\n")
+	path := configtest.WriteSettings(t, requiredFile+"wake_service_callers: []\n")
 	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))
 	if err != nil {
 		t.Fatalf("empty wake caller list: %v", err)
 	}
-	if len(c.WakeCallers) != 0 {
-		t.Fatalf("empty wake caller list loaded as %v", c.WakeCallers)
+	if len(c.WakeServiceCallers) != 0 {
+		t.Fatalf("empty wake caller list loaded as %v", c.WakeServiceCallers)
 	}
 }
 
@@ -236,18 +219,18 @@ users:
 
 func TestSettingsFileValuesIgnoreGenericEnvironmentOverrides(t *testing.T) {
 	settings := strings.Replace(requiredFile, "listen_address: ':8080'", "listen_address: 127.0.0.1:9000", 1)
-	path := configtest.WriteSettings(t, settings)
+	path := configtest.WriteSettings(t, settings+"runtime_proxy_readers: [spiffe://agentplane/app]\n")
 	c, err := configtest.Load(t, settingPrefix, loadConfig, required(
 		t,
 		settingPrefix+"CONFIG_FILE="+path,
 		settingPrefix+"RPC__LISTEN_ADDRESS=127.0.0.1:9999",
-		settingPrefix+"DISPATCHER_CALLERS=agentplane/attacker",
+		settingPrefix+"RUNTIME_PROXY_READERS=spiffe://agentplane/actions",
 	))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.RPC.ListenAddress != "127.0.0.1:9000" ||
-		!slices.Equal(c.DispatcherCallers, []auth.Account{{Namespace: "agentplane", Name: "app"}, {Namespace: "agentplane", Name: "notifications"}}) {
+		!slices.Equal(c.RuntimeProxyReaders, []string{peertls.AppURI}) {
 		t.Fatalf("settings file values changed under environment overrides: %+v", c)
 	}
 }
@@ -433,22 +416,6 @@ func cloneCentralTarget(source *dispatcher.CentralTarget) *dispatcher.CentralTar
 	copy := *source
 	copy.TLS = cloneClientTLS(source.TLS)
 	return &copy
-}
-
-func TestLegacyReceiverSettingsMayBeOmitted(t *testing.T) {
-	contents := requiredFile
-	for _, line := range []string{
-		"dispatcher_audience: session-dispatcher\n", "gateway_audience: runner-gateway\n",
-		"dispatcher_callers: [agentplane/app, agentplane/notifications]\n",
-		"gateway_callers: [agentplane/runner-gateway]\n", "sandbox_controller_account: agentplane/sandbox-controller\n",
-		"    - {mode: kubernetes_bearer, audiences: [session-dispatcher, runner-gateway]}\n",
-	} {
-		contents = strings.Replace(contents, line, "", 1)
-	}
-	path := configtest.WriteSettings(t, contents)
-	if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path)); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestRuntimeProxyPeerAcceptsEachCutoverReceiver(t *testing.T) {

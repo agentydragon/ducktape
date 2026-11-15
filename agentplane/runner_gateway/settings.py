@@ -7,9 +7,9 @@ from __future__ import annotations
 
 from collections.abc import Set
 from pathlib import Path
-from typing import Annotated, ClassVar, Literal
+from typing import ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_serializer, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 
 from agentplane.identity.auth.listener import Listener
 from agentplane.net.peertls.config import (
@@ -21,8 +21,6 @@ from agentplane.net.peertls.config import (
     Security,
     ServiceSPIFFEID,
 )
-
-type ServiceAccountName = Annotated[str, StringConstraints(pattern=r"^[^/]+/[^/]+$")]
 
 
 class CentralSamplerTarget(BaseModel):
@@ -45,17 +43,6 @@ class CentralSamplerTarget(BaseModel):
         elif self.token_file is None:
             raise ValueError("a bearer token file or service SVID is required")
         return self
-
-
-class DelegationSettings(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    actor: ServiceAccountName = Field(description="Actions ServiceAccount trusted to delegate, as namespace/name.")
-    identity_callers: Literal[True] = Field(
-        description="Must be true: Actions may assert a live Identity in policy_namespace as the effective caller."
-    )
-    methods: tuple[str, ...] = Field(
-        min_length=1, description="Exact full RPC method names served by the Runner Gateway that admit delegation."
-    )
 
 
 class ServiceDelegator(BaseModel):
@@ -101,10 +88,6 @@ class Settings(BaseModel):
         min_length=1,
         description="Stable Runner Gateway Service target or template used for each Sandbox runner proxy.",
     )
-    # CLEANUP(2026-11-15, stage 5): remove ignored receiver audiences, account grants and
-    # bearer delegation after manifests omit them and the certificate-only rollout completes.
-    dispatcher_audience: str = Field(default="", description="Ignored legacy receiver audience.")
-    gateway_audience: str = Field(default="", description="Ignored legacy receiver audience.")
     runtime_proxy_readers: list[ServiceSPIFFEID] = Field(
         default_factory=list,
         exclude_if=lambda value: not value,
@@ -132,25 +115,10 @@ class Settings(BaseModel):
         exclude_if=lambda value: not value,
         description="Exact service SVIDs granted Dispatcher component authority.",
     )
-    dispatcher_callers: Set[ServiceAccountName] = Field(
-        default_factory=frozenset, description="Ignored legacy Dispatcher account grants."
-    )
-    delegation: DelegationSettings | None = Field(
-        default=None, description="Ignored legacy account delegation setting."
-    )
-    gateway_callers: Set[ServiceAccountName] = Field(
-        default_factory=frozenset, description="Ignored legacy Runtime diagnostic account grants."
-    )
-    wake_callers: Set[ServiceAccountName] | None = Field(
-        default=None, description="Ignored legacy wake account grants."
-    )
     wake_service_callers: Set[ServiceSPIFFEID] = Field(
         default_factory=frozenset,
         exclude_if=lambda value: not value,
         description="Exact Dispatcher service SVIDs allowed to request automatic Sandbox wake, subject to wakeOnSend.",
-    )
-    sandbox_controller_account: ServiceAccountName | None = Field(
-        default=None, description="Ignored legacy Controller account grant."
     )
     max_queued_per_session: int = Field(default=1000, ge=1, description="Queued commands per Session.")
     dispatcher_watch_lease_seconds: int = Field(default=300, ge=1, description="WatchDispatches stream lease.")
@@ -158,9 +126,6 @@ class Settings(BaseModel):
 
     central_sampler: CentralSamplerTarget | None = Field(
         default=None, description="Central sampler target; omission disables central session admission."
-    )
-    executor_callers: Set[ServiceAccountName] = Field(
-        default_factory=frozenset, description="Ignored legacy Executor account grants."
     )
 
     @model_validator(mode="after")
@@ -216,14 +181,6 @@ class Settings(BaseModel):
             raise ValueError("kubernetes_client_qps must be -1 or nonnegative")
         return value
 
-    @field_serializer("dispatcher_callers", "gateway_callers", "executor_callers")
-    def sorted_accounts(self, value: Set[str]) -> list[str]:
-        return sorted(value, key=lambda account: tuple(account.split("/", maxsplit=1)))
-
     @field_serializer("wake_service_callers", "dispatcher_service_callers")
     def sorted_service_callers(self, value: Set[str]) -> list[str]:
         return sorted(value)
-
-    @field_serializer("wake_callers")
-    def sorted_optional_accounts(self, value: Set[str] | None) -> list[str] | None:
-        return None if value is None else sorted(value, key=lambda account: tuple(account.split("/", maxsplit=1)))
