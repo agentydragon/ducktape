@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 
+# gazelle:include_dep @pypi//protobuf
 from agentplane.proto.identity_pb2 import EnvironmentTarget
 
 type SandboxRelease = Callable[[EnvironmentTarget], Awaitable[None]]

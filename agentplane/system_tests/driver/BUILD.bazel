@@ -384,7 +384,10 @@ py_library(
 py_library(
     name = "sandbox_ownership",
     srcs = ["sandbox_ownership.py"],
-    deps = ["//agentplane/proto:identity_pb2"],
+    deps = [
+        "//agentplane/proto:identity_pb2",
+        "@pypi//protobuf",
+    ],
 )
 
 py_library(
@@ -420,6 +423,7 @@ py_test(
         "//:conftest",
         "//agentplane/proto:identity_pb2",
         "//agentplane/system_tests:conftest",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -435,6 +439,7 @@ py_test(
         "//agentplane/proto:identity_pb2",
         "//agentplane/system_tests:conftest",
         "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

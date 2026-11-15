@@ -9,6 +9,7 @@ import pytest
 import pytest_bazel
 from kubernetes_asyncio.client.exceptions import ApiException
 
+# gazelle:include_dep @pypi//protobuf
 from agentplane.proto.identity_pb2 import EnvironmentTarget
 from agentplane.system_tests.driver import central_sampler
 from agentplane.system_tests.driver.cluster import Cluster
