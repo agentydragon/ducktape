@@ -617,7 +617,6 @@ message NativeCallIdentityInputContract {
 
 enum NativeCallIdentityKind {
   NATIVE_CALL_IDENTITY_KIND_OBJECT_FREEZE = 0;
-  NATIVE_CALL_IDENTITY_KIND_SET_EMPTY_PRIVATE_FIELD = 1;
 }
 
 message ArgumentInputContract {
