@@ -715,6 +715,7 @@ def add_backend_services(
         gateway=runner_gateway.service(NAMESPACE),
         gateway_audience=runner_gateway.TOKEN_AUDIENCE,
         gateway_control_target=control_target,
+        environment_service_kubernetes_bearer=platform_callers == NATIVE_CALLERS,
         authority=sandbox_controller.environment_service_authority(
             env,
             readers=platform_callers,

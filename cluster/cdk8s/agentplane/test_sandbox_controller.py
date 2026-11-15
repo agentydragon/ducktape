@@ -134,6 +134,7 @@ def test_environment_receiver_owns_authority_and_uses_controller_certificate(
     )
     receiver = controller.environment_service
     assert receiver is not None
+    assert [method.mode for method in receiver.rpc.auth] == ["spiffe"]
     namespace = staging.ENV.namespace
     assert set(receiver.readers) == {f"{namespace}/{app.NAME}"}
     assert set(receiver.managers) == {f"{namespace}/{app.NAME}"}
