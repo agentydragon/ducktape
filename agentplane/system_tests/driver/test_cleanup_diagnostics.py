@@ -56,5 +56,51 @@ def test_cleanup_failure_keeps_scenario_failure_and_remains_fatal_on_success() -
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("body_fails", [False, True])
+@pytest.mark.parametrize("cleanup_fails", [False, True])
+async def test_late_repeated_cancellation_preserves_body_error_and_cleanup_cause(
+    body_fails: bool, cleanup_fails: bool
+) -> None:
+    original = AssertionError("scenario failed")
+    failure = RuntimeError("cleanup failed")
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def cleanup() -> None:
+        started.set()
+        await release.wait()
+        if cleanup_fails:
+            raise failure
+
+    async def scenario() -> None:
+        if body_fails:
+            try:
+                raise original
+            finally:
+                await cleanup_without_masking(original, cleanup)
+        else:
+            await cleanup_without_masking(None, cleanup)
+
+    owner = asyncio.create_task(scenario())
+    await started.wait()
+    for _ in range(3):
+        owner.cancel()
+        delivered = asyncio.get_running_loop().create_future()
+        asyncio.get_running_loop().call_soon(delivered.set_result, None)
+        await delivered
+        assert not owner.done()
+    release.set()
+    if body_fails:
+        with pytest.raises(AssertionError) as caught_body:
+            await owner
+        assert caught_body.value is original
+        if cleanup_fails:
+            assert original.__notes__ == ["Sandbox cleanup also failed (RuntimeError)."]
+    else:
+        with pytest.raises(asyncio.CancelledError) as caught_cancel:
+            await owner
+        assert caught_cancel.value.__cause__ is (failure if cleanup_fails else None)
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
