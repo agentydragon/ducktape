@@ -186,15 +186,6 @@ class RunnerGateway(Construct):
         gateway_accounts = frozenset(map(_account, proxy_callers))
         wake_accounts = frozenset(map(_account, wake_callers))
         central_sampler_account = ServiceAccountRef(namespace=namespace, name=central_sampler.NAME)
-        central_sampler_target = (
-            CentralSamplerTarget(
-                target=central_sampler.tls_target(namespace),
-                token_file=Path("/var/run/secrets/agentplane-runner-gateway/central-sampler"),
-                tls=workload_tls.client_tls(CENTRAL_SAMPLER_URI),
-            )
-            if env.central_sampler is not None
-            else None
-        )
         workload = add_service_workload(
             self,
             env,
@@ -265,6 +256,20 @@ class RunnerGateway(Construct):
         assert sessions_tls.cert_file is not None
         assert sessions_tls.key_file is not None
         assert sessions_tls.ca_file is not None
+        central_sampler_target = (
+            CentralSamplerTarget(
+                target=central_sampler.tls_target(namespace),
+                tls=ClientTLS(
+                    ca_file=Path(sessions_tls.ca_file),
+                    server_uri=CENTRAL_SAMPLER_URI,
+                    cert_file=Path(sessions_tls.cert_file),
+                    key_file=Path(sessions_tls.key_file),
+                    client_uri=GATEWAY_SESSIONS_URI,
+                ),
+            )
+            if env.central_sampler is not None
+            else None
+        )
         assert serving_tls.cert_file is not None
         assert serving_tls.key_file is not None
         assert serving_tls.ca_file is not None

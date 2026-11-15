@@ -99,7 +99,7 @@ flowchart LR
     sdk_services -->|OTLP/gRPC| alloy
     app -->|browser trace relay: OTLP/HTTP| alloy
 
-    gw -->|central Session commands: bearer over verified server TLS| sampler
+    gw -->|central Session commands: Sessions SVID mTLS| sampler
     sampler -->|continuation, commands and ownership leases| samplerdb
     samplerdb -->|NOTIFY: central_sampler_work| sampler
     samplerdb -->|NOTIFY: central_sampler_outbox| sampler
@@ -366,7 +366,7 @@ flowchart LR
     llm[LLM ingress]
     responses[Responses API providers]
     anthropic[Anthropic Messages API]
-    dispatcher -->|Sampler gRPC: bearer; exact Sessions SVID also admitted| sampler
+    dispatcher -->|Sampler gRPC: Sessions service SVID mTLS| sampler
     sampler -->|continuation, commands and ownership leases| db
     db -->|NOTIFY: central_sampler_work| sampler
     db -->|NOTIFY: central_sampler_outbox| sampler
@@ -381,7 +381,7 @@ flowchart LR
 
 The sampler's TLS listener trusts the workload bundle and admits exactly
 `spiffe://agentplane/sessions`, the owner stored by the explicit Gateway-account Session rewrite.
-The Gateway still uses its bearer until the separate caller switch after this receiver rollout.
+The Gateway authenticates with its mounted Sessions role certificate and verifies the sampler server SVID.
 The sampler retains its bearer account allowlist and plaintext listener during the overlap.
 
 The staging picker gives direct Anthropic models only to the central sampler, keeping them out of the
@@ -419,8 +419,8 @@ harnesses keep their current local sampling, execution and persistence paths. Se
 
 The sampler can admit explicitly configured Sessions service SVIDs alongside current bearer callers.
 Service ownership is stored as the real SPIFFE ID, separately from ServiceAccount UID ownership.
-This receiver support does not transfer ownership of existing Sessions; that later caller cutover
-requires an explicit ownership plan and pinned receiver images.
+The explicit Gateway-account ownership rewrite preserves the retained Session IDs and History
+references before the caller switch. The Gateway uses the same Sessions SPIFFE ID as the new owner.
 
 ```mermaid
 flowchart LR
@@ -817,12 +817,12 @@ The Dispatcher delivery worker presents its separate `spiffe://agentplane/sessio
 when dialing the stable Runtime proxy Service, including when a different Gateway replica holds
 the runner connection. It verifies the receiver's `spiffe://agentplane/session-dispatcher` server
 certificate. The receiver grants only Runtime Session operations to that Sessions role.
-The Gateway→central sampler hop remains on its current bearer path until the explicit ownership
-rewrite and separately verified caller cutover; its retained Sessions do not change in this step.
+The Gateway→central sampler hop also presents the Sessions certificate, following the explicit
+account-to-SVID ownership rewrite. A rollback to bearer requires the reviewed reverse ownership Job.
 
 ```mermaid
 flowchart LR
     sessions[Dispatcher / Sessions role] -->|service SVID mTLS; Session methods| proxy[Runtime proxy]
-    sessions -->|existing bearer; ownership cutover pending| sampler[Central sampler]
+    sessions -->|Sessions SVID mTLS; rewritten ownership| sampler[Central sampler]
     proxy -->|existing Runtime mTLS| runtime[Environment Runtime]
 ```
