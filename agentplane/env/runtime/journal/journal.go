@@ -1121,6 +1121,22 @@ func (j *Journal) TurnEvents(ctx context.Context, turnID string) ([]*eventlogpb.
 	return j.turnEvents(ctx, turnID, false)
 }
 
+func (j *Journal) HasTurn(ctx context.Context, turnID string) (bool, error) {
+	if !j.ownsBatch(ctx) {
+		j.mu.Lock()
+		defer j.mu.Unlock()
+	}
+	if err := j.checkWritableLocked(); err != nil {
+		return false, err
+	}
+	var exists bool
+	err := j.conn.QueryRowContext(
+		ctx,
+		"SELECT EXISTS(SELECT 1 FROM turn_boundary WHERE turn_id = ?)", turnID,
+	).Scan(&exists)
+	return exists, err
+}
+
 func (j *Journal) ownsBatch(ctx context.Context) bool {
 	batch, ok := ctx.Value(batchContextKey{}).(*journalBatch)
 	if !ok || batch.journal != j {

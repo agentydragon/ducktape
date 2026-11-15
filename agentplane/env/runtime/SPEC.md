@@ -35,6 +35,10 @@ publication or corresponding native writes. Model/reasoning changes, terminal re
 effective configuration checkpoint commit together. Native adapters read committed configuration.
 Dispatched commands without a committed outcome remain uncertain and are not replayed.
 
+Codex turn-start replies and notifications share one durable turn boundary per native turn ID.
+A delayed notification for a recorded turn retains its native evidence without starting that
+turn again, including after another turn becomes active or the adapter is replaced.
+
 Startup reconstructs retained records and journals before exposing schedulable Session state.
 An unsuccessful Session reservation write revokes admission and fails Runtime while holding the
 admission lock: the write may have reached durable storage even when COSI's in-memory view is stale.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,6 +40,66 @@ import (
 type frameTestAdapter struct {
 	harness.Adapter
 	onFrame func(context.Context, json.RawMessage, uint64) error
+}
+
+func TestCodexDelayedTurnStartNotificationDoesNotFailJournal(t *testing.T) {
+	for _, completed := range []bool{false, true} {
+		t.Run(fmt.Sprintf("completed=%t", completed), func(t *testing.T) {
+			var gate sync.Mutex
+			s, _, m := frameTestSessionWithControllerGate(t, []string{"/bin/cat"}, true, &gate)
+			ctx := context.Background()
+			withSessionControllerGate(t, s, &gate, func() {
+				setLifecycleStatusReady(t, m, s)
+				threadID := "thread-1"
+				s.mu.Lock()
+				s.record.NativeSessionId = &threadID
+				s.mu.Unlock()
+				ptr := lifecycle.ResourceFor(s.id, LifecycleStatus{}).Metadata()
+				if _, err := safe.StateUpdateWithConflicts(ctx, s.deps.state, ptr, func(value *typed.Resource[LifecycleStatus, lifecycle.Extension[LifecycleStatus]]) error {
+					value.TypedSpec().Resuming = true
+					return nil
+				}, state.WithUpdateOwner(ControllerName)); err != nil {
+					t.Fatal(err)
+				}
+			})
+			if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "known-turn"}), nil); err != nil {
+				t.Fatal(err)
+			}
+			if completed {
+				if err := s.Emit(ctx, observation(&eventpb.TurnCompleted{TurnId: "known-turn", Status: eventpb.TurnStatus_TURN_STATUS_PROCESS_LOST}), nil); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "current-turn"}), nil); err != nil {
+				t.Fatal(err)
+			}
+			// A fresh adapter must consult durable boundaries, including a known turn
+			// whose delayed notification follows a newer turn/start reply.
+			adapter := codexadapter.New(s)
+			before := s.journal.LastCursor()
+			frame := []byte(`{"method":"turn/started","params":{"threadId":"thread-1","turn":{"id":"known-turn","status":"inProgress"}}}`)
+			if err := s.receive(ctx, frame, adapter); err != nil {
+				t.Fatal(err)
+			}
+			entries, err := s.journal.Since(ctx, before, 10)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 1 || entries[0].Event.GetNative().GetLine() != string(frame) {
+				t.Fatalf("duplicate start must retain only its native frame: %v", entries)
+			}
+			if s.Session().ActiveTurnID != "current-turn" || s.journal.RecoveryState().ActiveTurnID != "current-turn" {
+				t.Fatal("duplicate start replaced the current turn")
+			}
+			frame = []byte(`{"method":"turn/started","params":{"threadId":"thread-1","turn":{"id":"new-turn","status":"inProgress"}}}`)
+			if err := s.receive(ctx, frame, adapter); err != nil {
+				t.Fatal(err)
+			}
+			if s.Session().ActiveTurnID != "new-turn" {
+				t.Fatal("new turn notification did not start its turn")
+			}
+		})
+	}
 }
 
 func TestStaleNativeCodexCompletionRetainsFrameAndSuccessor(t *testing.T) {

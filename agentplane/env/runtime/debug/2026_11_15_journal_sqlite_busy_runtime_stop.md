@@ -228,8 +228,120 @@ aggregate blocker snapshots would identify the cleanup stage. Current post-resta
 recover those facts. Diagnostic instrumentation would need a separate change; none is introduced
 here. Increasing `busy_timeout` or blindly retrying cannot identify or repair the cause.
 
+## Second stop: duplicate Codex turn boundary
+
+The same Sandbox stopped again at `15:19:24 UTC` on November 15, still running runner-disk
+`ccb9cc4`. This time the journal latched `SQLITE_CONSTRAINT_PRIMARYKEY` (`1555`) while inserting
+`turn_boundary.turn_id`. Previous-container logs and retained Session evidence identify a delayed
+live notification trying to start a turn already recorded from its `turn/start` reply.
+
+The coordinator reported a History rollout at `15:06:54`, an ingress EOF/CONNECT `502` followed by
+recovery, and executor OOM at `15:08:13`. Read-only Pod inspection confirms the executor was
+`OOMKilled`, exit `137`, at `15:08:13`; Runtime's previous logs confirm the embedded Execution
+backend-loss fence. Neither event establishes loss of the separately supervised native Codex
+app-server. In particular, this Session's journal does **not** record a `PROCESS_LOST` completion
+at `15:08`: its recorded active turn ends on Runtime restart at `15:19:26`.
+
+For Session `551f2a33-886b-4fd8-bdf1-9857058435c7`, the journal contains:
+
+| UTC time       | Cursor  | Evidence                                                                                               |
+| -------------- | ------- | ------------------------------------------------------------------------------------------------------ |
+| `14:09:08.863` | `3100`  | Reply-derived start of turn `01a1df8a-5895-7be0-aa76-48fa83293690` (A).                                |
+| `14:55:11.439` | `13259` | `turn/start` reply names `01a1dfb2-fe20-7ba0-9af5-47958696c8e5` (B).                                   |
+| `14:55:12.853` | `13260` | Reply-derived `TurnStarted` for B replaces A as the active turn.                                       |
+| `15:02:10.675` | `14555` | Another `turn/start` reply names `01a1dfb9-4326-7b52-9de0-d5ab6995cdef` (C).                           |
+| `15:02:11.245` | `14556` | Reply-derived `TurnStarted` for C replaces B as the active turn.                                       |
+| `15:16:52.408` | `17334` | Live `turn/completed` notification for A; no neutral completion follows because A is no longer active. |
+| `15:16:53.197` | `17336` | Live `turn/started` notification for B, on the original native thread.                                 |
+| `15:16:54.224` | —       | First logged reconcile error reports the latched duplicate-boundary failure.                           |
+| `15:19:24.227` | —       | Cleanup exhausts its fence; Runtime exits with the constraint error and deadline error.                |
+| `15:19:26.008` | `17338` | Startup recovery records C as `PROCESS_LOST`.                                                          |
+| `15:19:44.095` | `17341` | First retained `thread/resume` request after the failure.                                              |
+
+SQL inspection used private byte copies, never a SQLite connection to the live journal. Both
+copies passed `PRAGMA quick_check`; every historical event in the first copy matched the second,
+which had additional later entries. The second copy's source size/mtime stayed unchanged during
+the copy, and no rollback sidecar was observed. These checks corroborate the retained prefix;
+ordinary byte copying is not a general consistent-backup procedure.
+
+At `ccb9cc4`, [`codexAdapter.OnFrame`](../internal/harnesses/codex/adapter.go) suppresses
+`turn/started` only when its ID equals the Session's **current** active turn. At cursor `17336`,
+that ID is C, so B passes the guard. `Session.Emit` commits the raw Native batch before appending
+the derived turn transition. The raw notification survives, then the boundary insert collides
+with B's existing row at cursor `13260`; the failed transaction never publishes a second start.
+Journal failure reaches the unchanged Runtime-wide fail-stop and the old cleanup stall described
+above. Repeated reconciles report the latched error rather than retrying the insert.
+
+This establishes duplicate projection of an already observed turn, without requiring a new native
+ID collision. The triggering notification precedes recovery's first `thread/resume`, and
+`codexAdapter.Recover` replays replies, not notifications. The journal also retains the newer
+reply-derived active turn before the executor OOM. Native ID reuse after an app-server restart
+and Runtime recovery replay are therefore unnecessary explanations for this failure. The reason
+Codex delivered B's notification so long after its reply is not established by these records.
+The relevant adapter and Session event code differs between `ccb9cc4` and the investigated devel
+base `e22b6d44` only in wording.
+
+The candidate correction makes both reply and notification handling consult the existing indexed
+turn boundary. It retains raw Native evidence, emits no second start for a known ID and leaves
+the current turn unchanged. It adds no durable fields, migration, event rewriting, retries or
+fail-stop exception. The lookup does not load historical turn payloads.
+
+`TestCodexDelayedTurnStartNotificationDoesNotFailJournal` in
+[Session tests](../session/native_test.go) uses the real SQLite journal and a fresh Codex adapter.
+It covers a known uncompleted turn followed by another active turn, and a known `PROCESS_LOST`
+turn followed by another active turn. Both retain the delayed frame, preserve the current turn
+and admit a genuinely new start. With only the test added to `e22b6d44`,
+`bbr test //agentplane/env/runtime/session:session_test --test_output=errors` fails both cases with
+the incident's exact `UNIQUE constraint failed: turn_boundary.turn_id (1555)` error
+([invocation](https://app.buildbuddy.io/invocation/e4545c43-6974-4150-9d13-077b7bc0fe5c)).
+The Session, Codex adapter and journal targets pass with the correction
+([invocation](https://app.buildbuddy.io/invocation/ebc97da4-6f89-4b27-bd66-9df01bd305f4)).
+This reproduces the duplicate-start failure, not the executor OOM or the notification's delay.
+The real-harness `//agentplane/env/e2e:{test_codex_shared_process,test_turns}` suites and
+`//agentplane/env/runtime/internal/coordinator:coordinator_test` also pass
+([invocation](https://app.buildbuddy.io/invocation/b26df193-5486-449e-946f-9d5e00a4d6c2)).
+They cover ordinary turns, shared app-server process loss/recovery and Runtime ownership/cleanup;
+they do not inject the incident's delayed notification.
+
+### Retained History projection
+
+`agentplane sessions read-turns` with count `100` returns a source `DataLoss` error, `retained
+History contains an incomplete turn projection`, at the boundary preceding cursor `13260`.
+The client projection rejects starting B before A has completed. That inconsistency predates
+the OOM and the duplicate notification. The journal still has open boundaries for A and B;
+only C receives a neutral `PROCESS_LOST` completion during restart. Preventing the duplicate
+insert does not repair those records or establish correct future overlapping-turn projection.
+
+### Executor memory observations
+
+The first requested `ps` snapshot, at `15:51 UTC`, contains no Bazel server or language server.
+The largest process is `/bin/codex exec-server` at `61544 KiB` RSS; the PID-1 execution companion
+uses `19708 KiB`. This is an executor snapshot after restart, not evidence of the OOM-time
+allocation owner. The subsequent cgroup sample has approximately `947 MiB` of file-backed memory
+and `208 MiB` of anonymous memory; process RSS alone cannot explain the whole cgroup charge.
+No historical process or cgroup allocation snapshot was recovered for `15:08:13`.
+
+After the remote tests and local pre-commit finished, the second snapshot at `16:02 UTC` still
+has only the exec-server (`38480 KiB` RSS), companion (`19624 KiB`) and the snapshot command.
+There are no leftover build or language-server processes. The cgroup holds approximately
+`1714 MiB`: `1627 MiB` file-backed, `18 MiB` anonymous and `66 MiB` kernel memory. Most file-backed
+memory is unmapped; `file_dirty` is `24 KiB`, `unevictable` is zero and the cgroup reports no OOM
+or limit-hit events in this executor incarnation. This sample's increase is dominated by file
+cache, not a growing resident process. It does not prove what exhausted memory before restart.
+All builds/tests used `bbr`; no local Bazel server was started.
+
 ## Proposals
 
 If Session-local storage failures should instead leave other Sessions running, that is a separate
 policy decision: it must cover shared app-server readers, History supervision and admission/fence
 ownership. This note proposes considering that isolation; it does not adopt or implement it.
+Both observed Session journal failures took the shared Runtime down; the second instance
+strengthens the availability case without changing the durability and ownership decision.
+
+The affected Session's History needs a separate data decision. Options are to preserve it as
+evidence with the explicit read failure, or authorize a scoped reconstruction from retained native
+events after defining the correct turn ordering. If the Session is disposable, deletion requires
+the operator's explicit scope and acceptance of the loss. No option is executed here. Independently,
+reply-before-notification ordering needs a follow-up contract/test for distinguishing accepted
+future work from the currently executing turn; suppressing duplicate starts alone cannot supply
+the missing completions.
