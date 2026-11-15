@@ -63,7 +63,7 @@ func TestEnvironmentServiceServiceRolesStayMethodScoped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, lifecycleManager, nil, ManagementOptions{
+	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, lifecycleManager, ManagementOptions{
 		ServiceReaders: sets.New(readerID), ServiceManagers: sets.New(managerID), ServiceLaunchers: sets.New(launcherID),
 	})
 	if err != nil {
@@ -212,7 +212,7 @@ func TestEnvironmentServiceActionDelegationKeepsIdentityScopeAndNoLifecycleAutho
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, lifecycleManager, nil, ManagementOptions{
+	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, lifecycleManager, ManagementOptions{
 		ServiceReaders: sets.New(actionsID),
 	})
 	if err != nil {

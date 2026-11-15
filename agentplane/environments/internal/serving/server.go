@@ -28,7 +28,6 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -59,28 +58,7 @@ func New(c Config, namespace string, apiConfig *rest.Config, scheme *runtime.Sch
 	if err != nil {
 		return nil, err
 	}
-	kube, err := kubernetes.NewForConfig(apiConfig)
-	if err != nil {
-		return nil, err
-	}
-	namespaces := sets.New(namespace)
-	for _, accounts := range [][]auth.Account{c.Readers, c.Managers, c.Launchers, c.Operators} {
-		for _, account := range accounts {
-			namespaces.Insert(account.Namespace)
-		}
-	}
-	if c.Delegation != nil {
-		namespaces.Insert(c.Delegation.Actor.Namespace)
-	}
-	resolved, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.Audience, sets.List(namespaces))
-	if err != nil {
-		return nil, err
-	}
 	svids, err := auth.NewKubernetesSVIDResolver(apiConfig, []string{namespace}, &resolver.Identities{PolicyNamespace: c.PolicyNamespace})
-	if err != nil {
-		return nil, err
-	}
-	resolved, err = resolved.WithListenerAuthentication(c.RPC, svids)
 	if err != nil {
 		return nil, err
 	}
@@ -98,21 +76,20 @@ func New(c Config, namespace string, apiConfig *rest.Config, scheme *runtime.Sch
 			}
 			return nil
 		},
-		WakeCallers: c.WakeCallers, WakeServiceCallers: c.WakeServiceCallers,
-		OperatorCallers: c.Operators, OperatorServiceCallers: c.ServiceOperators,
+		WakeServiceCallers:     c.WakeServiceCallers,
+		OperatorServiceCallers: c.ServiceOperators,
 	})
 	if err != nil {
 		return nil, err
 	}
-	service, err := environmentservice.New(namespace, objects, c.RuntimeCatalog, manager, sets.New(c.Readers...), environmentservice.ManagementOptions{
-		Managers: sets.New(c.Managers...), Launchers: sets.New(c.Launchers...),
+	service, err := environmentservice.New(namespace, objects, c.RuntimeCatalog, manager, environmentservice.ManagementOptions{
 		ServiceReaders: sets.New(c.ServiceReaders...), ServiceManagers: sets.New(c.ServiceManagers...),
 		ServiceLaunchers: sets.New(c.ServiceLaunchers...),
 	})
 	if err != nil {
 		return nil, err
 	}
-	methods, err := environmentservice.WithServiceCallers(environmentservice.Methods(resolved), c.ServiceReaders, c.ServiceManagers, c.ServiceLaunchers, c.ServiceOperators)
+	methods, err := environmentservice.WithServiceCallers(environmentservice.Methods(svids), c.ServiceReaders, c.ServiceManagers, c.ServiceLaunchers, c.ServiceOperators)
 	if err != nil {
 		return nil, err
 	}
@@ -122,12 +99,6 @@ func New(c Config, namespace string, apiConfig *rest.Config, scheme *runtime.Sch
 	}
 	if d := c.ServiceDelegation; d != nil {
 		methods, err = methods.WithServiceDelegation(d.Methods, d.Actors, identities)
-		if err != nil {
-			return nil, err
-		}
-	}
-	if d := c.Delegation; d != nil {
-		methods, err = methods.WithDelegation(d.Methods, []auth.Delegator{{Account: d.Actor, IdentityCallers: d.IdentityCallers}}, identities)
 		if err != nil {
 			return nil, err
 		}

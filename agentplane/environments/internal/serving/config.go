@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"slices"
 
-	environmentservice "github.com/agentydragon/ducktape/agentplane/environments/internal/service"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
@@ -15,23 +14,27 @@ import (
 
 // Config is opt-in until the accepting Controller image is pinned before deployment settings.
 type Config struct {
-	RPC                listener.Config          `mapstructure:"rpc"`
-	PolicyNamespace    string                   `mapstructure:"policy_namespace"`
+	RPC             listener.Config `mapstructure:"rpc"`
+	PolicyNamespace string          `mapstructure:"policy_namespace"`
+	// CLEANUP(added 2026-11-15): Remove legacy audience/account fields after manifest omission and rollout.
+	// These fields decode existing settings but grant no admission.
 	Audience           string                   `mapstructure:"audience"`
 	Readers            []auth.Account           `mapstructure:"readers"`
 	Managers           []auth.Account           `mapstructure:"managers"`
 	Launchers          []auth.Account           `mapstructure:"launchers"`
 	Operators          []auth.Account           `mapstructure:"operators"`
+	WakeCallers        []auth.Account           `mapstructure:"wake_callers"`
 	ServiceReaders     []string                 `mapstructure:"service_readers"`
 	ServiceManagers    []string                 `mapstructure:"service_managers"`
 	ServiceLaunchers   []string                 `mapstructure:"service_launchers"`
 	ServiceOperators   []string                 `mapstructure:"service_operators"`
-	WakeCallers        []auth.Account           `mapstructure:"wake_callers"`
 	WakeServiceCallers []string                 `mapstructure:"wake_service_callers"`
 	ServiceDelegation  *ServiceDelegationConfig `mapstructure:"service_delegation"`
-	Delegation         *DelegationConfig        `mapstructure:"delegation"`
-	RuntimeProxy       *RuntimeProxyConfig      `mapstructure:"runtime_proxy"`
-	RuntimeCatalog     runtimeconfig.Catalog    `mapstructure:"runtime_catalog"`
+	// CLEANUP(added 2026-11-15): Remove after manifests omit delegation and that rollout completes.
+	// Account delegation is decoded but grants no admission.
+	Delegation     *DelegationConfig     `mapstructure:"delegation"`
+	RuntimeProxy   *RuntimeProxyConfig   `mapstructure:"runtime_proxy"`
+	RuntimeCatalog runtimeconfig.Catalog `mapstructure:"runtime_catalog"`
 }
 
 type ServiceDelegationConfig struct {
@@ -46,8 +49,8 @@ type DelegationConfig struct {
 }
 
 func (c Config) Validate() error {
-	if c.PolicyNamespace == "" || c.Audience == "" {
-		return errors.New("policy_namespace and audience are required")
+	if c.PolicyNamespace == "" {
+		return errors.New("policy_namespace is required")
 	}
 	if c.RuntimeProxy != nil {
 		if err := c.RuntimeProxy.Validate(); err != nil {
@@ -59,19 +62,6 @@ func (c Config) Validate() error {
 	}
 	if !c.RPC.Has(listener.SPIFFE) {
 		return errors.New("EnvironmentService rpc.auth must include spiffe")
-	}
-	for _, method := range c.RPC.Auth {
-		if bearer, ok := method.(*listener.KubernetesBearerAuth); ok &&
-			(len(bearer.Audiences) != 1 || bearer.Audiences[0] != c.Audience) {
-			return errors.New("EnvironmentService bearer audience must equal audience")
-		}
-	}
-	for _, accounts := range [][]auth.Account{c.Readers, c.Managers, c.Launchers, c.Operators, c.WakeCallers} {
-		for _, account := range accounts {
-			if account.Namespace == "" || account.Name == "" {
-				return errors.New("EnvironmentService accounts require namespace and name")
-			}
-		}
 	}
 	for _, callers := range [][]string{c.ServiceReaders, c.ServiceManagers, c.ServiceLaunchers, c.ServiceOperators, c.WakeServiceCallers} {
 		if err := auth.ValidateServiceCallers(callers); err != nil {
@@ -103,16 +93,6 @@ func (c Config) Validate() error {
 			}
 		}
 	}
-	if d := c.Delegation; d != nil {
-		if d.Actor.Namespace == "" || d.Actor.Name == "" || !d.IdentityCallers || len(d.Methods) == 0 {
-			return errors.New("delegation requires actor, identity_callers and methods")
-		}
-		methods := environmentservice.Methods(nil)
-		for _, method := range d.Methods {
-			if _, ok := methods[method]; !ok {
-				return fmt.Errorf("delegation method %q must belong to EnvironmentService", method)
-			}
-		}
-	}
+
 	return nil
 }

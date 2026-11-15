@@ -12,17 +12,14 @@ Its discovery and resume method paths are:
 - `/agentplane.environments.v1.EnvironmentService/WatchEnvironment`
 - `/agentplane.environments.v1.EnvironmentService/ResumeEnvironment`
 
-Methods retain direct TokenReview-verified ServiceAccount credentials. List/get and both watches
-also admit workload credentials naming an Identity and explicitly configured Actions delegation.
-Explicit resume also admits an Identity with a matching environment grant; management requires its own direct Pod-bound
-manager or launcher grant. Delegated calls use the existing Dispatcher audience and are opted into
-by exact full RPC method name. Broad ServiceAccount readers are checked by namespace, name, and
-immutable UID. Identity callers can list/get/watch only Sandboxes whose current
-`spec.identity.name` names that Identity, with its exact current UID. A same-name replacement
-follows the Sandbox's deliberate name-based binding, while a credential for the old UID is refused.
-Ordinary ServiceAccount same-name self-discovery is retired: its list is empty and get/watch returns
-`NOT_FOUND`. A target handle is the Sandbox namespace, name, and UID; get returns `NOT_FOUND` for an
-absent or replaced target and for an unauthorized Identity.
+The receiver admits workload SVIDs naming the live Identity and exact service SVID role grants.
+It rejects Kubernetes bearers and performs no TokenReview. Actions delegation uses a service SVID
+and typed effective-Identity/provenance metadata on explicitly configured methods. Read, management,
+launcher and operator grants remain independent. Identity callers can list/get/watch only Sandboxes
+whose current `spec.identity.name` names that Identity, with its exact current UID. Recreating an
+Identity follows the Sandbox's deliberate name binding; credentials for the old UID are refused.
+A target handle is the Sandbox namespace, name and UID; absent, replaced and unauthorized targets
+remain `NOT_FOUND`.
 
 `GetEnvironment` returns the current descriptor immediately. `WatchEnvironment` accepts the same
 exact target and sends a current descriptor followed by changed snapshots. It observes Kubernetes
@@ -37,7 +34,7 @@ a lost Kubernetes source ends it with `UNAVAILABLE`. Clients retain their last o
 and reconnect to observe again. Waiting for readiness is a client operation over this stream;
 neither get nor watch requests resume. CLI and Action/MCP wait adapters are separate work.
 
-List requires a limit from 1..100. Ordinary ServiceAccount callers see an empty inventory. Identity
+List requires a limit from 1..100. Identity
 callers page through their visible Sandboxes with a lexical Sandbox-name cursor; it only skips
 entries and cannot widen access. Broad direct readers may page over the namespace using a Kubernetes
 continuation token.
@@ -62,7 +59,7 @@ are separate current facts. Explicit-resume eligibility includes a denial reason
 against the caller's live UID and its explicit Identity rule or configured direct operator grant;
 it does not depend on `wakeOnSend`. Automatic Identity wake has its own assessment
 and uses the shared lifecycle manager under the `wakeOnSend` and existing
-`resumePolicy.allowOwnServiceAccount` opt-in. Configured `wake_callers` and `wake_service_callers`
+`resumePolicy.allowOwnServiceAccount` opt-in. Configured `wake_service_callers`
 remain automatic-only broker grants; service wake budgets are keyed by the caller's exact SPIFFE ID.
 
 Call `EnvironmentService.ResumeEnvironment` explicitly, then observe the same target again.
@@ -92,20 +89,18 @@ workflow organization, not isolation.
 marker, followed by per-environment upserts and UID-fenced removals. List, get, and both watches
 use `EnvironmentDescriptor`, with configuration, observed state, caller-specific actions, and
 Kubernetes diagnostics grouped into separate submessages. Reconnection starts a new snapshot;
-intermediate changes may be coalesced. Direct ServiceAccounts named by the Gateway's
-`environment_readers` setting can read all Sandboxes; the grant does not authorize writes and is
-not inherited by delegated callers. Ordinary ServiceAccount callers no longer receive workload
-self-discovery. Identity callers see only Sandboxes bound to that Identity; their descriptors
+intermediate changes may be coalesced. Exact service SVIDs in `service_readers` can read all Sandboxes;
+the grant authorizes no writes and is not inherited by delegated callers. Identity callers see only Sandboxes bound to that Identity; their descriptors
 omit the execution ServiceAccount and automatic-wake eligibility. They expose resume eligibility,
 wake generation and a token only while an explicit rule authorizes resume. A delegated Action's component reader grant is never inherited by the
 effective Identity.
 An idle stream stays open while its credential remains valid and closes when revalidation fails.
 
 Direct service SVIDs have independent, exact-SPIFFE-ID grants through
-`environment_service_readers`, `environment_service_managers`,
-`environment_service_launchers`, and `environment_service_operators`. Service operators may
+`service_readers`, `service_managers`,
+`service_launchers`, and `service_operators`. Service operators may
 explicitly resume, including a requested stop; delegated callers never inherit those roles.
-`environment_service_delegation` admits a service actor only for configured read methods and
+`service_delegation` admits a service actor only for configured read methods and
 `ResumeEnvironment`, using the live effective Identity and its explicit resume grants. Delegation
 never supplies operator authority or waives the resume token. `wake_service_callers` grants automatic broker wake only,
 with budgets keyed by exact service SPIFFE ID. Create receipts retain the typed service actor

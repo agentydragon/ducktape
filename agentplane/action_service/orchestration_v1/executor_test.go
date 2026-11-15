@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
@@ -48,10 +50,10 @@ func TestALaunchCreatesItsSandboxAndGrantsTheCallerWhatItNames(t *testing.T) {
 		t.Errorf("launch answered %v, want the Sandbox %s", launched.Sandbox, sandbox.UID)
 	}
 	var intent struct {
-		Caller struct {
-			Namespace string `json:"namespace"`
-			Name      string `json:"name"`
-		} `json:"caller"`
+		Actor struct {
+			Kind            string `json:"kind"`
+			ServiceSPIFFEID string `json:"service_spiffe_id"`
+		} `json:"actor"`
 		Request struct {
 			LaunchOrigin struct {
 				Caller struct {
@@ -65,7 +67,7 @@ func TestALaunchCreatesItsSandboxAndGrantsTheCallerWhatItNames(t *testing.T) {
 	if err := json.Unmarshal([]byte(sandbox.Annotations[sandboxapi.CreateIntentAnnotation]), &intent); err != nil {
 		t.Fatal(err)
 	}
-	if intent.Caller.Namespace != f.namespace || intent.Caller.Name != "actions" ||
+	if intent.Actor.Kind != "service" || intent.Actor.ServiceSPIFFEID != peertls.ActionsURI ||
 		intent.Request.LaunchOrigin.Caller.Namespace != f.caller.Namespace ||
 		intent.Request.LaunchOrigin.Caller.Name != f.caller.Name || intent.Request.LaunchOrigin.ActionGroup != testGroup {
 		t.Errorf("launch attribution = %+v", intent)
@@ -187,7 +189,10 @@ func TestIdentityLauncherRetriesAndGrantsRemainBoundToItsIncarnation(t *testing.
 		t.Fatal(err)
 	}
 	var intent struct {
-		Caller  struct{ Namespace, Name string } `json:"caller"`
+		Actor struct {
+			Kind            string `json:"kind"`
+			ServiceSPIFFEID string `json:"service_spiffe_id"`
+		} `json:"actor"`
 		Request struct {
 			LaunchOrigin struct {
 				CallerIdentity store.Identity `json:"caller_identity"`
@@ -197,7 +202,7 @@ func TestIdentityLauncherRetriesAndGrantsRemainBoundToItsIncarnation(t *testing.
 	if err := json.Unmarshal([]byte(sandbox.Annotations[sandboxapi.CreateIntentAnnotation]), &intent); err != nil {
 		t.Fatal(err)
 	}
-	if intent.Caller.Namespace != f.namespace || intent.Caller.Name != "actions" || intent.Request.LaunchOrigin.CallerIdentity != caller.Identity {
+	if intent.Actor.Kind != "service" || intent.Actor.ServiceSPIFFEID != peertls.ActionsURI || intent.Request.LaunchOrigin.CallerIdentity != caller.Identity {
 		t.Fatalf("actor and effective launcher attribution = %+v", intent)
 	}
 	if err := kube.Delete(t.Context(), launcher); err != nil {

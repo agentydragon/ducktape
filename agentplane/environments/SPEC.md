@@ -32,6 +32,13 @@ Listener failure stops the process. Shutdown withdraws readiness, cancels policy
 RPCs for up to five seconds before force-closing them. Leadership loss shuts down the manager and
 its RPC listener; clients reconnect and reconcile uncertain mutation outcomes without automatic replay.
 
+EnvironmentService admits workload and exact-role service SVIDs only, without TokenReview.
+Legacy `audience`, account role lists, `wake_callers`, account `delegation` and bearer listener entries
+remain decoded but grant no authority. Roll the accepting image before omitting those manifest keys;
+remove their decoded fields only after that configuration rollout. TokenReview RBAC and projected-token
+cleanup remain a separate final stage across receivers. Rollback uses the preceding SVID-capable image
+and verifies inventory, management and delegated resume; retained state and create receipts are unchanged.
+
 Omitting `environment_service` retains the controller-only process and existing readiness behavior.
 Deployment configuration enables the listener only after the accepting image is pinned; caller
 configuration changes follow the running receiver. The Gateway does not register EnvironmentService;

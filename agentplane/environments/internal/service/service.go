@@ -43,9 +43,6 @@ type Service struct {
 	sandboxes              *sandboxreader.Reader
 	runtime                runtimeconfig.Catalog
 	lifecycle              *resume.Manager
-	readers                sets.Set[auth.Account]
-	managers               sets.Set[auth.Account]
-	launchers              sets.Set[auth.Account]
 	serviceReaders         sets.Set[string]
 	serviceManagers        sets.Set[string]
 	serviceLaunchers       sets.Set[string]
@@ -57,7 +54,6 @@ func New(
 	objects client.WithWatch,
 	runtime runtimeconfig.Catalog,
 	lifecycleManager *resume.Manager,
-	readers sets.Set[auth.Account],
 	management ManagementOptions,
 ) (*Service, error) {
 	if namespace == "" || objects == nil || lifecycleManager == nil {
@@ -69,8 +65,7 @@ func New(
 	}
 	return &Service{
 		namespace: namespace, objects: objects, sandboxes: sandboxes, runtime: runtime,
-		lifecycle: lifecycleManager, readers: readers, managers: management.Managers,
-		launchers:              management.Launchers,
+		lifecycle:              lifecycleManager,
 		serviceReaders:         management.ServiceReaders,
 		serviceManagers:        management.ServiceManagers,
 		serviceLaunchers:       management.ServiceLaunchers,
@@ -80,19 +75,22 @@ func New(
 
 // ManagementOptions grants mutation authority independently of inventory and resume grants.
 type ManagementOptions struct {
-	Managers         sets.Set[auth.Account]
-	Launchers        sets.Set[auth.Account]
 	ServiceReaders   sets.Set[string]
 	ServiceManagers  sets.Set[string]
 	ServiceLaunchers sets.Set[string]
 }
 
-// Methods admits direct TokenReview-verified ServiceAccounts in the configured Resolver namespaces.
-// Environment inventory methods expose workload-owned resources to their exact live Identity or a
-// direct, explicitly configured component reader; same-name ServiceAccount self-discovery is retired.
-func Methods(resolver *auth.Resolver) auth.Methods {
-	rule := auth.ReviewedServiceAccount(resolver)
-	identityRead := auth.ReviewedServiceAccountOrIdentity(resolver)
+// Methods admits workload SVID Identities to inventory and resume; direct service roles are
+// granted separately. Component-only rules have no workload resolver.
+func Methods(resolver *auth.SVIDResolver) auth.Methods {
+	rule, err := auth.Services(nil)
+	if err != nil {
+		panic(err) // An empty allowlist is always valid.
+	}
+	identityRead := rule
+	if resolver != nil {
+		identityRead = auth.AnySubject(resolver)
+	}
 	return auth.Methods{
 		environmentpb.EnvironmentService_ListEnvironmentTemplates_FullMethodName:     rule,
 		environmentpb.EnvironmentService_CreateEnvironment_FullMethodName:            rule,
@@ -163,33 +161,12 @@ func (s *Service) ResumeEnvironment(ctx context.Context, request *environmentpb.
 	return s.lifecycle.ResumeEnvironment(ctx, request)
 }
 
-func serviceAccountReference(identity *auth.ServiceAccountPrincipal) auth.Account {
-	if identity == nil {
-		return auth.Account{}
-	}
-	account := identity.GetAccount()
-	return auth.Account{Namespace: account.GetNamespace(), Name: account.GetName()}
-}
-
-func caller(ctx context.Context) (*auth.ServiceAccountPrincipal, error) {
-	identity, err := auth.EffectiveCaller(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if identity == nil || identity.GetAccount() == nil || identity.GetAccount().GetNamespace() == "" ||
-		identity.GetAccount().GetName() == "" || identity.GetUid() == "" {
-		return nil, status.Error(codes.Unauthenticated, "effective ServiceAccount identity is incomplete")
-	}
-	return identity, nil
-}
-
 // environmentCaller is the effective subject for the read-only environment inventory methods.
 // A delegated actor remains only the credential for authenticating the request; its own reader
 // role never becomes authority for the effective Identity.
 type environmentCaller struct {
-	serviceAccount *auth.ServiceAccountPrincipal
-	service        *auth.ServicePrincipal
-	identity       *auth.Identity
+	service  *auth.ServicePrincipal
+	identity *auth.Identity
 }
 
 func environmentSubject(ctx context.Context) (environmentCaller, error) {
@@ -198,13 +175,8 @@ func environmentSubject(ctx context.Context) (environmentCaller, error) {
 		return environmentCaller{}, err
 	}
 	switch admitted := admission.(type) {
-	case auth.DirectAdmission:
-		return environmentCaller{serviceAccount: admitted.Caller}, nil
 	case auth.IdentityAdmission:
 		identity := admitted.Caller.Identity
-		return environmentCaller{identity: &identity}, nil
-	case auth.DelegatedIdentityAdmission:
-		identity := admitted.EffectiveCaller
 		return environmentCaller{identity: &identity}, nil
 	case auth.ServiceAdmission:
 		return environmentCaller{service: &admitted.Caller}, nil
@@ -217,10 +189,6 @@ func environmentSubject(ctx context.Context) (environmentCaller, error) {
 }
 
 func (caller environmentCaller) valid() bool {
-	if caller.serviceAccount != nil {
-		account := caller.serviceAccount.GetAccount()
-		return account != nil && account.GetNamespace() != "" && account.GetName() != "" && caller.serviceAccount.GetUid() != ""
-	}
 	if caller.service != nil {
 		return caller.service.SPIFFEID != ""
 	}
@@ -248,21 +216,11 @@ func (s *Service) broadReader(ctx context.Context, caller environmentCaller) boo
 		return false
 	}
 	switch admitted := admission.(type) {
-	case auth.DirectAdmission:
-		if caller.serviceAccount == nil || !sameAccountPrincipal(admitted.Caller, caller.serviceAccount) {
-			return false
-		}
-		return s.readers.Has(serviceAccountReference(caller.serviceAccount))
 	case auth.ServiceAdmission:
 		return caller.service != nil && admitted.Caller == *caller.service && s.serviceReaders.Has(admitted.Caller.SPIFFEID)
 	default:
 		return false
 	}
-}
-
-func sameAccountPrincipal(left, right *auth.ServiceAccountPrincipal) bool {
-	return left != nil && right != nil && left.GetUid() == right.GetUid() &&
-		serviceAccountReference(left) == serviceAccountReference(right)
 }
 
 func (s *Service) ListEnvironments(ctx context.Context, request *environmentpb.ListEnvironmentsRequest) (*environmentpb.ListEnvironmentsResponse, error) {
@@ -588,12 +546,7 @@ func (s *Service) describe(
 			return nil, err
 		}
 		if !caller.isIdentity() && object.Status.OperatingMode == api.OperatingModeSuspended {
-			var wakeCaller lifecycle.WakeCaller
-			if caller.serviceAccount != nil {
-				wakeCaller = lifecycle.AccountWakeCaller{Account: caller.serviceAccount}
-			} else if caller.service != nil {
-				wakeCaller = lifecycle.ServiceWakeCaller{SPIFFEID: caller.service.SPIFFEID}
-			}
+			wakeCaller := lifecycle.ServiceWakeCaller{SPIFFEID: caller.service.SPIFFEID}
 			wake, err := s.lifecycle.AssessAutomaticWake(ctx, target, wakeCaller)
 			if err != nil {
 				return nil, status.Error(codes.Unavailable, "automatic wake eligibility is unavailable")

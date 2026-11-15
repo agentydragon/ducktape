@@ -41,40 +41,20 @@ type Access struct {
 	actor     Actor
 }
 
-// Actor identifies the direct principal whose idempotent creation receipt is recorded. Exactly
-// one ServiceAccount or service SPIFFE ID is present; neither is converted into the other.
-type Actor struct {
-	ServiceAccount  *identitypb.ServiceAccount
-	ServiceSPIFFEID string
-}
+// Actor is the service principal whose idempotent creation receipt is recorded.
+type Actor struct{ ServiceSPIFFEID string }
 
-// New creates access over one Sandbox namespace and caller identity.
-func New(
-	namespace string,
-	objects client.Client,
-	caller *identitypb.ServiceAccount,
-) (*Access, error) {
-	return NewWithActor(namespace, objects, Actor{ServiceAccount: caller})
-}
-
-// NewWithActor creates access for a directly admitted ServiceAccount or service principal.
-func NewWithActor(namespace string, objects client.Client, actor Actor) (*Access, error) {
-	validAccount := actor.ServiceAccount != nil && actor.ServiceAccount.Namespace != "" && actor.ServiceAccount.Name != ""
-	validService := actor.ServiceSPIFFEID != ""
-	if namespace == "" || objects == nil || validAccount == validService {
-		return nil, errors.New("Sandbox namespace, Kubernetes client, and exactly one complete direct actor are required")
+// New creates access for a directly admitted service principal.
+func New(namespace string, objects client.Client, actor Actor) (*Access, error) {
+	if namespace == "" || objects == nil || actor.ServiceSPIFFEID == "" {
+		return nil, errors.New("Sandbox namespace, Kubernetes client and service actor are required")
 	}
-	if validService {
-		if err := auth.ValidateServiceCallers([]string{actor.ServiceSPIFFEID}); err != nil {
-			return nil, err
-		}
+	if err := auth.ValidateServiceCallers([]string{actor.ServiceSPIFFEID}); err != nil {
+		return nil, err
 	}
 	reader, err := sandboxreader.New(namespace, objects)
 	if err != nil {
 		return nil, err
-	}
-	if actor.ServiceAccount != nil {
-		actor.ServiceAccount = &identitypb.ServiceAccount{Namespace: actor.ServiceAccount.Namespace, Name: actor.ServiceAccount.Name}
 	}
 	return &Access{
 		namespace: namespace, objects: objects, reader: reader,
@@ -465,12 +445,7 @@ func encodeCreateIntent(request *environmentpb.CreateEnvironmentRequest, actor A
 		return "", err
 	}
 	intent := createIntent{Request: requestJSON}
-	if actor.ServiceAccount != nil {
-		// Keep account receipts readable by old replicas throughout the receiver rollout.
-		intent.Caller = &intentCaller{Namespace: actor.ServiceAccount.GetNamespace(), Name: actor.ServiceAccount.GetName()}
-	} else {
-		intent.Actor = &intentActor{Kind: "service", ServiceSPIFFEID: actor.ServiceSPIFFEID}
-	}
+	intent.Actor = &intentActor{Kind: "service", ServiceSPIFFEID: actor.ServiceSPIFFEID}
 	encoded, err := json.Marshal(intent)
 	if err != nil {
 		return "", err
@@ -485,11 +460,7 @@ func sameIntent(recorded string, request *environmentpb.CreateEnvironmentRequest
 	if err := json.Unmarshal([]byte(recorded), &intent); err != nil {
 		return false
 	}
-	if actor.ServiceAccount != nil {
-		if intent.Actor != nil || intent.Caller == nil || intent.Caller.Namespace != actor.ServiceAccount.GetNamespace() || intent.Caller.Name != actor.ServiceAccount.GetName() {
-			return false
-		}
-	} else if intent.Caller != nil || intent.Actor == nil || intent.Actor.Kind != "service" || intent.Actor.ServiceSPIFFEID != actor.ServiceSPIFFEID {
+	if intent.Caller != nil || intent.Actor == nil || intent.Actor.Kind != "service" || intent.Actor.ServiceSPIFFEID != actor.ServiceSPIFFEID {
 		return false
 	}
 	var recordedRequest environmentpb.CreateEnvironmentRequest

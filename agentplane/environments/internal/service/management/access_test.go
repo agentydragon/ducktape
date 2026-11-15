@@ -60,9 +60,7 @@ func newAccess(t *testing.T, objects ...client.Object) (*Access, client.Client) 
 	t.Helper()
 	underlying := clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(append(objects, testAgent())...).Build()
 	objectsClient := &assigningClient{Client: underlying}
-	access, err := New(namespace, objectsClient, &identitypb.ServiceAccount{
-		Namespace: namespace, Name: "app",
-	})
+	access, err := New(namespace, objectsClient, Actor{ServiceSPIFFEID: "spiffe://agentplane/app"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +83,7 @@ func TestCreateNamesTheIdentityAndCallerIntentAndIsIdempotent(t *testing.T) {
 		testAgent(),
 	).Build()
 	objects := &assigningClient{Client: base}
-	caller := &identitypb.ServiceAccount{Namespace: namespace, Name: "app"}
+	caller := Actor{ServiceSPIFFEID: "spiffe://agentplane/app"}
 	access, err := New(namespace, objects, caller)
 	if err != nil {
 		t.Fatal(err)
@@ -119,7 +117,7 @@ func TestCreateNamesTheIdentityAndCallerIntentAndIsIdempotent(t *testing.T) {
 	if err != nil || retry.GetUid() != created.GetUid() {
 		t.Fatalf("same Create retry = %#v, %v", retry, err)
 	}
-	otherCaller, err := New(namespace, objects, &identitypb.ServiceAccount{Namespace: namespace, Name: "other"})
+	otherCaller, err := New(namespace, objects, Actor{ServiceSPIFFEID: "spiffe://agentplane/notifications"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,48 +126,29 @@ func TestCreateNamesTheIdentityAndCallerIntentAndIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestCreateIntentKeepsTypedServiceActorsAndLegacyAccountRetries(t *testing.T) {
+func TestCreateIntentKeepsServiceActorsAndRefusesLegacyAccountReceiptAdoption(t *testing.T) {
 	request := &environmentpb.CreateEnvironmentRequest{Name: "created-sandbox", Template: "pod", Identity: "agent"}
-	serviceActor := Actor{ServiceSPIFFEID: "spiffe://agentplane/actions"}
-	receipt, err := encodeCreateIntent(request, serviceActor)
+	actor := Actor{ServiceSPIFFEID: "spiffe://agentplane/actions"}
+	receipt, err := encodeCreateIntent(request, actor)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !sameIntent(receipt, request, serviceActor) {
-		t.Fatal("typed service actor could not retry its create")
+	if !sameIntent(receipt, request, actor) {
+		t.Fatal("service could not retry its create")
 	}
-	if sameIntent(receipt, request, Actor{ServiceSPIFFEID: "spiffe://agentplane/notifications"}) ||
-		sameIntent(receipt, request, Actor{ServiceAccount: &identitypb.ServiceAccount{Namespace: namespace, Name: "app"}}) {
-		t.Fatal("typed service receipt was adopted by a different principal")
+	if sameIntent(receipt, request, Actor{ServiceSPIFFEID: "spiffe://agentplane/notifications"}) {
+		t.Fatal("another service adopted receipt")
 	}
-
-	accountActor := Actor{ServiceAccount: &identitypb.ServiceAccount{Namespace: namespace, Name: "app"}}
 	requestJSON, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(request)
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacy, err := json.Marshal(createIntent{
-		Caller: &intentCaller{Namespace: namespace, Name: "app"}, Request: requestJSON,
-	})
+	legacy, err := json.Marshal(createIntent{Caller: &intentCaller{Namespace: namespace, Name: "app"}, Request: requestJSON})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !sameIntent(string(legacy), request, accountActor) {
-		t.Fatal("legacy ServiceAccount create receipt no longer supports retry")
-	}
-	if sameIntent(string(legacy), request, serviceActor) {
-		t.Fatal("legacy ServiceAccount receipt was adopted by a service actor")
-	}
-	accountReceipt, err := encodeCreateIntent(request, accountActor)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var decoded createIntent
-	if err := json.Unmarshal([]byte(accountReceipt), &decoded); err != nil {
-		t.Fatal(err)
-	}
-	if decoded.Actor != nil || decoded.Caller == nil || *decoded.Caller != (intentCaller{Namespace: namespace, Name: "app"}) {
-		t.Fatal("new account receipt is unreadable by old receivers")
+	if sameIntent(string(legacy), request, actor) {
+		t.Fatal("service adopted legacy account receipt")
 	}
 }
 
@@ -276,7 +255,7 @@ func TestPatchConflictRetriesAndRechecksUID(t *testing.T) {
 	resource := testSandbox("replaceable", "old-uid", sandboxapi.OperatingModeRunning)
 	underlying := clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(resource).Build()
 	conflicts := &conflictOnceClient{Client: underlying}
-	access, err := New(namespace, conflicts, &identitypb.ServiceAccount{Namespace: namespace, Name: "app"})
+	access, err := New(namespace, conflicts, Actor{ServiceSPIFFEID: "spiffe://agentplane/app"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,7 +268,7 @@ func TestPatchConflictRetriesAndRechecksUID(t *testing.T) {
 
 	underlying = clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(resource.DeepCopy()).Build()
 	replacing := &replaceBeforeRetryClient{Client: underlying}
-	access, err = New(namespace, replacing, &identitypb.ServiceAccount{Namespace: namespace, Name: "app"})
+	access, err = New(namespace, replacing, Actor{ServiceSPIFFEID: "spiffe://agentplane/app"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -308,7 +287,7 @@ func TestIdentityPatchRetriesWithCurrentResourceVersion(t *testing.T) {
 	identity.UID = "identity-uid"
 	base := clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(resource, identity).Build()
 	objects := &concurrentPolicyClient{Client: base}
-	access, err := New(namespace, objects, &identitypb.ServiceAccount{Namespace: namespace, Name: "app"})
+	access, err := New(namespace, objects, Actor{ServiceSPIFFEID: "spiffe://agentplane/app"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -405,7 +384,7 @@ func TestCreateRetryMatchesRecordedIntentSemantically(t *testing.T) {
 		testAgent(),
 	).Build()
 	objects := &assigningClient{Client: base}
-	access, err := New(namespace, objects, &identitypb.ServiceAccount{Namespace: namespace, Name: "app"})
+	access, err := New(namespace, objects, Actor{ServiceSPIFFEID: "spiffe://agentplane/app"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -460,7 +439,7 @@ func TestCreateAdoptsItsOwnUncertainCreate(t *testing.T) {
 		testAgent(),
 	).Build()
 	objects := &lostCreateClient{assigningClient: assigningClient{Client: base}}
-	access, err := New(namespace, objects, &identitypb.ServiceAccount{Namespace: namespace, Name: "app"})
+	access, err := New(namespace, objects, Actor{ServiceSPIFFEID: "spiffe://agentplane/app"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -542,7 +521,7 @@ func TestCreateReturnsPersistedIdentityAcrossUncertainWritesAndReplacement(t *te
 				}
 				return nil
 			}
-			access, err := New(namespace, objects, &identitypb.ServiceAccount{Namespace: namespace, Name: "app"})
+			access, err := New(namespace, objects, Actor{ServiceSPIFFEID: "spiffe://agentplane/app"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -578,7 +557,7 @@ func TestCreateDoesNotInferPersistenceFromAnUncertainWrite(t *testing.T) {
 		}
 		return context.DeadlineExceeded
 	}
-	access, err := New(namespace, objects, &identitypb.ServiceAccount{Namespace: namespace, Name: "app"})
+	access, err := New(namespace, objects, Actor{ServiceSPIFFEID: "spiffe://agentplane/app"})
 	if err != nil {
 		t.Fatal(err)
 	}

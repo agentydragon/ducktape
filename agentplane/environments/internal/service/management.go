@@ -17,8 +17,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
-// manager requires an explicit direct, Pod-bound workload grant or a separately configured direct
-// service role. Delegation and read access do not confer write authority.
+// manager requires an explicitly configured direct service role. Delegation and read access do not confer write authority.
 func (s *Service) manager(ctx context.Context) (*management.Access, error) {
 	return s.managementAccess(ctx, nil)
 }
@@ -42,36 +41,10 @@ func (s *Service) managementAccess(ctx context.Context, origin *environmentpb.En
 				return nil, err
 			}
 		}
-		return management.NewWithActor(s.namespace, s.objects, management.Actor{ServiceSPIFFEID: admitted.Caller.SPIFFEID})
-	case auth.DirectAdmission:
-		if admitted.Pod == nil || !admitted.Pod.IsPodBound() {
-			return nil, status.Error(codes.PermissionDenied, "environment management requires a direct Pod-bound caller")
-		}
-		identity, err := caller(ctx)
-		if err != nil {
-			return nil, err
-		}
-		account := serviceAccountReference(identity)
-		if origin == nil {
-			if !s.managers.Has(account) {
-				return nil, status.Error(codes.PermissionDenied, "caller cannot manage environments")
-			}
-		} else {
-			if !s.launchers.Has(account) {
-				return nil, status.Error(codes.PermissionDenied, "caller cannot launch environments on behalf of an Action caller")
-			}
-			if err := validateLaunchOrigin(origin); err != nil {
-				return nil, err
-			}
-		}
-		return management.New(s.namespace, s.objects, identitypbAccount(account))
+		return management.New(s.namespace, s.objects, management.Actor{ServiceSPIFFEID: admitted.Caller.SPIFFEID})
 	default:
 		return nil, status.Error(codes.PermissionDenied, "environment management requires a direct caller")
 	}
-}
-
-func identitypbAccount(account auth.Account) *identitypb.ServiceAccount {
-	return &identitypb.ServiceAccount{Namespace: account.Namespace, Name: account.Name}
 }
 
 func validateLaunchOrigin(origin *environmentpb.EnvironmentLaunchOrigin) error {
@@ -94,9 +67,7 @@ func (s *Service) templateAccess(ctx context.Context) (*management.Access, error
 		if !s.serviceLaunchers.Has(admitted.Caller.SPIFFEID) && !s.serviceManagers.Has(admitted.Caller.SPIFFEID) {
 			return nil, status.Error(codes.PermissionDenied, "service caller cannot list environment templates")
 		}
-		return management.NewWithActor(s.namespace, s.objects, management.Actor{ServiceSPIFFEID: admitted.Caller.SPIFFEID})
-	case auth.DirectAdmission:
-		return s.managementAccess(ctx, nil)
+		return management.New(s.namespace, s.objects, management.Actor{ServiceSPIFFEID: admitted.Caller.SPIFFEID})
 	default:
 		return nil, status.Error(codes.PermissionDenied, "caller cannot list environment templates")
 	}

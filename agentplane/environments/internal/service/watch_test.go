@@ -14,6 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
@@ -28,7 +29,6 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
-	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -60,11 +60,11 @@ type watchFixture struct {
 	ctx          context.Context
 	metadataRead <-chan struct{}
 	readerCtx    context.Context
-	reviews      *switchableReviews
+	identities   *switchableIdentities
 }
 
-type switchableReviews struct {
-	inner   auth.TokenReviews
+type switchableIdentities struct {
+	inner   auth.IdentityUIDReader
 	revoked atomic.Bool
 	calls   atomic.Int32
 }
@@ -101,7 +101,7 @@ func TestWatchEnvironmentDoesNotReadForUnrelatedPods(t *testing.T) {
 	rpc := serveDiscoveryWithDelegation(t, objects, runtimeconfig.Catalog{}, []string{
 		environmentpb.EnvironmentService_WatchEnvironment_FullMethodName,
 	})
-	ctx, cancel := context.WithCancel(delegatedBearing(t, actionsToken, auth.Identity{Name: delegatedIdentityName, UID: delegatedIdentityUID}))
+	ctx, cancel := context.WithCancel(delegatedServiceContext(t, peertls.ActionsURI, auth.Identity{Name: delegatedIdentityName, UID: delegatedIdentityUID}))
 	defer cancel()
 	stream, err := rpc.WatchEnvironment(ctx, &environmentpb.WatchEnvironmentRequest{
 		Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
@@ -129,12 +129,12 @@ func TestWatchEnvironmentDoesNotReadForUnrelatedPods(t *testing.T) {
 	}
 }
 
-func (r *switchableReviews) Create(ctx context.Context, review *authenticationv1.TokenReview, opts metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
+func (r *switchableIdentities) GetIdentityUID(ctx context.Context, name string) (string, bool, error) {
 	r.calls.Add(1)
 	if r.revoked.Load() {
-		return &authenticationv1.TokenReview{}, nil
+		return "", false, nil
 	}
-	return r.inner.Create(ctx, review, opts)
+	return r.inner.GetIdentityUID(ctx, name)
 }
 
 func newWatchFixture(t *testing.T) watchFixture {
@@ -188,49 +188,36 @@ func newWatchFixture(t *testing.T) watchFixture {
 			return err
 		},
 	})
-	readerAccount := auth.Account{Namespace: namespace, Name: "inventory-reader"}
-	if _, err := watchAPI.ServiceAccount(ctx, readerAccount); err != nil {
-		t.Fatal(err)
-	}
 	manager, err := resume.NewManager(lifecycle.Options{Namespace: namespace, Objects: observedObjects})
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := New(namespace, observedObjects, runtimeconfig.Catalog{}, manager, sets.New(readerAccount), ManagementOptions{})
+	service, err := New(namespace, observedObjects, runtimeconfig.Catalog{}, manager, ManagementOptions{ServiceReaders: sets.New(peertls.CentralSamplerURI)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	service.collectionAuthInterval = 50 * time.Millisecond
-	reviews := &switchableReviews{inner: watchAPI.TokenReviews()}
-	resolver, err := auth.NewResolver(reviews, dispatcherAudience, []string{namespace}, auth.WithVerdictTTL(0))
-	if err != nil {
-		t.Fatal(err)
-	}
-	actor := auth.Account{Namespace: namespace, Name: "actions"}
-	actorToken, err := watchAPI.WorkloadToken(ctx, actor, dispatcherAudience)
-	if err != nil {
-		t.Fatal(err)
-	}
 	identities, err := auth.KubernetesIdentityUIDs(observedObjects, namespace)
 	if err != nil {
 		t.Fatal(err)
 	}
-	methods, err := Methods(resolver).WithDelegation([]string{
+	revalidation := &switchableIdentities{inner: identities}
+	methods, err := WithServiceCallers(Methods(nil), []string{peertls.CentralSamplerURI}, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	methods, err = methods.WithServiceDelegation([]string{
 		environmentpb.EnvironmentService_GetEnvironment_FullMethodName,
 		environmentpb.EnvironmentService_WatchEnvironment_FullMethodName,
 		environmentpb.EnvironmentService_ListEnvironments_FullMethodName,
 		environmentpb.EnvironmentService_WatchEnvironments_FullMethodName,
-	}, []auth.Delegator{{Account: actor, IdentityCallers: true}}, identities)
+	}, []auth.ServiceDelegator{{SPIFFEID: peertls.ActionsURI}}, revalidation)
 	if err != nil {
 		t.Fatal(err)
 	}
-	connection := grpcmethods.Serve(t, methods, func(server *grpc.Server) {
+	connection := grpcmethods.ServeTLS(t, peertls.SandboxControllerURI, methods, func(server *grpc.Server) {
 		environmentpb.RegisterEnvironmentServiceServer(server, service)
-	})
-	readerToken, err := watchAPI.UnboundToken(ctx, readerAccount, dispatcherAudience)
-	if err != nil {
-		t.Fatal(err)
-	}
+	}, peertls.ActionsURI, peertls.CentralSamplerURI)
 	envelope, err := auth.MarshalDelegation(&delegationpb.Delegation{
 		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: &identitypb.Identity{Name: identity.Name, Uid: string(identity.UID)}},
 		Provenance:      &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: uuid.NewString(), ExecutionId: uuid.NewString()}},
@@ -239,14 +226,12 @@ func newWatchFixture(t *testing.T) watchFixture {
 		t.Fatal(err)
 	}
 	return watchFixture{
-		reviews:   reviews,
-		readerCtx: metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+readerToken),
-		objects:   objects, rpc: environmentpb.NewEnvironmentServiceClient(connection),
+		identities: revalidation,
+		readerCtx:  grpcmethods.Caller(ctx, peertls.CentralSamplerURI),
+		objects:    objects, rpc: environmentpb.NewEnvironmentServiceClient(connection),
 		target:       &identitypb.EnvironmentTarget{Namespace: namespace, Name: sandboxName, Uid: string(sandbox.UID)},
 		identityName: identity.Name, identityUID: string(identity.UID),
-		ctx: metadata.NewOutgoingContext(ctx, metadata.Pairs(
-			"authorization", "Agentplane-Delegated "+actorToken, auth.DelegationMetadataKey, string(envelope),
-		)),
+		ctx:          metadata.AppendToOutgoingContext(grpcmethods.Caller(ctx, peertls.ActionsURI), auth.DelegationMetadataKey, string(envelope)),
 		metadataRead: metadataRead,
 	}
 }
@@ -439,7 +424,7 @@ func TestWatchEnvironmentDelegationUsesTheEffectiveIdentity(t *testing.T) {
 		environmentpb.EnvironmentService_WatchEnvironment_FullMethodName,
 	})
 	effective := auth.Identity{Name: delegatedIdentityName, UID: delegatedIdentityUID}
-	ctx, cancel := context.WithTimeout(delegatedBearing(t, actionsToken, effective), 5*time.Second)
+	ctx, cancel := context.WithTimeout(delegatedServiceContext(t, peertls.ActionsURI, effective), 5*time.Second)
 	defer cancel()
 	stream, err := rpc.WatchEnvironment(ctx, &environmentpb.WatchEnvironmentRequest{
 		Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
@@ -452,15 +437,15 @@ func TestWatchEnvironmentDelegationUsesTheEffectiveIdentity(t *testing.T) {
 		t.Fatalf("delegated watch = %v, %v, want the effective Identity without an account projection", got, err)
 	}
 	for _, denied := range []struct {
-		name, token, uid string
+		name, actor, uid string
 		want             codes.Code
 	}{
-		{name: "untrusted actor", token: untrustedToken, uid: delegatedIdentityUID, want: codes.PermissionDenied},
-		{name: "recreated caller", token: actionsToken, uid: "replaced-uid", want: codes.PermissionDenied},
+		{name: "untrusted actor", actor: peertls.AppURI, uid: delegatedIdentityUID, want: codes.PermissionDenied},
+		{name: "recreated caller", actor: peertls.ActionsURI, uid: "replaced-uid", want: codes.PermissionDenied},
 	} {
 		t.Run(denied.name, func(t *testing.T) {
 			identity := auth.Identity{Name: effective.Name, UID: denied.uid}
-			ctx, cancel := context.WithTimeout(delegatedBearing(t, denied.token, identity), 5*time.Second)
+			ctx, cancel := context.WithTimeout(delegatedServiceContext(t, denied.actor, identity), 5*time.Second)
 			defer cancel()
 			refused, err := rpc.WatchEnvironment(ctx, &environmentpb.WatchEnvironmentRequest{
 				Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
@@ -492,7 +477,7 @@ func TestWatchEnvironmentClosesAllSourcesOnWatchLoss(t *testing.T) {
 			rpc := serveDiscoveryWithDelegation(t, objects, runtimeconfig.Catalog{}, []string{
 				environmentpb.EnvironmentService_WatchEnvironment_FullMethodName,
 			})
-			ctx, cancel := context.WithTimeout(delegatedBearing(t, actionsToken, auth.Identity{Name: delegatedIdentityName, UID: delegatedIdentityUID}), 5*time.Second)
+			ctx, cancel := context.WithTimeout(delegatedServiceContext(t, peertls.ActionsURI, auth.Identity{Name: delegatedIdentityName, UID: delegatedIdentityUID}), 5*time.Second)
 			defer cancel()
 			stream, err := rpc.WatchEnvironment(ctx, &environmentpb.WatchEnvironmentRequest{
 				Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
@@ -714,15 +699,15 @@ func TestCollectionWatchTracksExecutionAccountChangesForBroadReaders(t *testing.
 	}
 }
 
-func TestCollectionWatchRevalidatesIdleCredentialWithoutRenewal(t *testing.T) {
+func TestCollectionWatchRevalidatesIdleDelegatedIdentity(t *testing.T) {
 	f := newWatchFixture(t)
-	stream, err := f.rpc.WatchEnvironments(f.readerCtx, &emptypb.Empty{})
+	stream, err := f.rpc.WatchEnvironments(f.ctx, &emptypb.Empty{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	receiveCollection(t, stream)
-	first := f.reviews.calls.Load()
-	for f.reviews.calls.Load() < first+2 {
+	first := f.identities.calls.Load()
+	for f.identities.calls.Load() < first+2 {
 		select {
 		case <-time.After(10 * time.Millisecond):
 		case <-f.ctx.Done():
@@ -731,6 +716,7 @@ func TestCollectionWatchRevalidatesIdleCredentialWithoutRenewal(t *testing.T) {
 	}
 	other := sandboxObject("")
 	other.Namespace, other.Name = f.target.Namespace, "created"
+	other.Spec.Identity = &sandboxapi.IdentityRef{Name: f.identityName}
 	if err := f.objects.Create(f.ctx, other); err != nil {
 		t.Fatal(err)
 	}
@@ -738,10 +724,10 @@ func TestCollectionWatchRevalidatesIdleCredentialWithoutRenewal(t *testing.T) {
 	if err != nil || frame.GetUpsert().GetTarget().GetUid() != string(other.UID) {
 		t.Fatalf("stream did not remain open: %v, %v", frame, err)
 	}
-	f.reviews.revoked.Store(true)
+	f.identities.revoked.Store(true)
 	_, err = stream.Recv()
-	if status.Code(err) != codes.Unauthenticated {
-		t.Fatalf("revoked idle stream: %v, want Unauthenticated", err)
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("revoked idle stream: %v, want PermissionDenied", err)
 	}
 }
 

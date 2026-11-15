@@ -20,6 +20,13 @@ binding observer certificate. Callers keep the Gateway target until this receive
 Proxy admission uses service SVIDs directly; `runtime_proxy` has no bearer audience setting.
 See [the receiver contract](SPEC.md#optional-runtime-proxy-and-executor-receiver).
 
+EnvironmentService admits workload and exact-role service SVIDs only, without TokenReview.
+Legacy `audience`, account role lists, `wake_callers`, account `delegation` and bearer listener entries
+remain decoded but grant no authority. Roll the accepting image before omitting those manifest keys;
+remove their decoded fields only after that configuration rollout. TokenReview RBAC and projected-token
+cleanup remain a separate final stage across receivers. Rollback uses the preceding SVID-capable image
+and verifies inventory, management and delegated resume; retained state and create receipts are unchanged.
+
 Reconciles `Sandbox` into retained state and optional workspace PVCs and, while running as the
 `Identity` its spec names, one Pod or KubeVirt VM from its `SandboxTemplate`. Contract: [`SPEC.md`](SPEC.md). The CRDs are in
 [`agentplane/crds`](../crds/BUILD.bazel). The integration app submits Sandbox desired state and

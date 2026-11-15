@@ -29,30 +29,26 @@ diagnostics while suspended.
 
 ## Caller and object authorization
 
-- List, get, and both watches admit a direct TokenReview-verified ServiceAccount or workload
-  credential naming an Identity. The composition root may add Actions delegation to selected
-  methods through the Runner Gateway's existing Dispatcher audience and served namespace set.
-  Management mutations retain their direct ServiceAccount gates. `ResumeEnvironment` also admits
-  Identity callers and is separately
-  authorized through the lifecycle manager; read permission grants no Dispatcher write or Gateway
-  proxy access.
-- Handlers read typed workload authentication. A broad reader ServiceAccount requires its exact live
-  UID and explicit `environment_readers` grant. The Identity path requires the exact live Identity
-  name and UID and is limited to Sandboxes whose `spec.identity.name` names that Identity. It never
-  receives the delegated actor's component reader grants.
+- List, get, both watches and explicit resume admit workload SVIDs naming the exact live Identity.
+  Exact service SVID grants independently admit readers, managers, launchers and operators.
+  Kubernetes bearer credentials are rejected, including mixed SVID/bearer requests. The receiver
+  performs no TokenReview. Typed Actions service delegation is opted into by exact full method name;
+  its effective Identity never inherits the actor's direct roles.
+- Identity inventory is limited to Sandboxes whose `spec.identity.name` names that Identity.
+  Read permission grants no Dispatcher write or Gateway proxy access; explicit resume requires
+  its separate lifecycle grant.
 - Identity access follows the Sandbox's name-based `spec.identity` binding: the current live
   same-name Identity may act, while a credential naming an older UID is rejected at admission.
   This read path does not infer or migrate retained Sessions, Connections, or grants.
-- A directly authenticated ServiceAccount explicitly listed in `environment_readers` may read the entire configured
-  Sandbox namespace. This grant does not confer mutation or wake authority and never passes through
-  delegation, including delegation to an Identity.
+- Exact configured service readers may read the entire namespace, including creation and deletion
+  before or after an execution account exists. This grant never crosses Identity delegation.
 - Resume independently checks the exact target and explicit authority through the lifecycle manager.
   An Identity needs a matching `environment` rule with `resume`; it cannot override an operator stop.
-  Direct Pod-bound configured operators keep requested-stop resume. Read permission alone does not
+  Direct configured service operators keep requested-stop resume. Read permission alone does not
   authorize resume. Ordinary ServiceAccount self-resume remains retired. Missing grants are hidden
   as `NOT_FOUND` when the Identity cannot read the target, otherwise `PERMISSION_DENIED`. A matching
   grant can authorize a resume without granting inventory access.
-- Management methods require a direct Pod-bound ServiceAccount explicitly listed as a manager.
+- Management methods require an exact service SVID explicitly listed as a manager.
   The Action Service may be listed separately as a launcher, which permits only Create with a
   complete Action caller and group origin. Delegation, a read grant, and a launcher grant never
   confer general management. The service records both the authenticated broker and launch origin
@@ -72,8 +68,7 @@ diagnostics while suspended.
   after that read remain a cross-resource race because the Sandbox spec stores only a name.
 - Get and watch require the complete Sandbox namespace/name/UID handle. Missing, replaced, deleting, or foreign targets are hidden as `NOT_FOUND` for Identity callers.
   Broad readers may see a deleting target and targets whose execution account is not yet present.
-- Ordinary ServiceAccount callers no longer discover Sandboxes through same-name account ownership.
-  Their list is empty and get/watch hide targets as `NOT_FOUND`. Identity list filters the configured
+- Identity list filters the configured
   namespace to current Sandboxes bound to that Identity and uses the last visible Sandbox name as a
   lexical cursor; the cursor only skips entries and cannot widen visibility.
   Identity descriptors omit execution-account and automatic-wake authority facts. Resume eligibility,
@@ -148,7 +143,7 @@ the stream; a successful review leaves it open. A stalled send is bounded by fiv
   readers. Identity callers do not receive this component-owned fact.
 - Readiness and operating state come from the current Sandbox status; `observed_at` records when the
   descriptor was assembled.
-- Explicit-resume eligibility checks a direct ServiceAccount's live UID and configured operator
+- Explicit-resume eligibility checks a direct service's exact SVID and configured operator
   authority, or an Identity's live UID and current explicit grant. Identity descriptors expose
   `ALLOWED_IDENTITY_GRANT`, wake generation and token only while authorized. A policy-reader outage
   omits those optional facts without denying implied self-reads; explicit resume fails closed as
@@ -173,7 +168,7 @@ the stream; a successful review leaves it open. A stalled send is bounded by fiv
 ## Pagination and errors
 
 `ListEnvironments.limit` is required and ranges from 1 through 100. The request and response retain
-the approved paged contract. Ordinary ServiceAccount callers receive an empty inventory. Identity
+the approved paged contract. Identity
 callers page over visible Sandboxes with a lexical name cursor; it cannot grant access to another
 Sandbox. Broad readers can continue namespace pages; their grant permits seeing all names.
 
@@ -198,18 +193,18 @@ input. CLI and Action/MCP wait adapters over `WatchEnvironment` remain follow-up
 ## Resume and ownership
 
 `ResumeEnvironment` uses the shared [lifecycle contract](../../lifecycle/SPEC.md), including exact
-ServiceAccount UID checks for direct operators, policy opt-in, generation-bound preconditions,
-shared budget and unknown outcome handling. List/get/watch remain read-only; resume permission is
+exact service operator grants, Identity policy checks, generation-bound preconditions
+and unknown outcome handling. List/get/watch remain read-only; resume permission is
 evaluated independently.
 `REQUESTED` means the desired running state was accepted, not that the environment is ready. The
 Sandbox Controller remains responsible for startup and readiness.
 
 Direct service SVIDs have independent, exact-SPIFFE-ID grants through
-`environment_service_readers`, `environment_service_managers`,
-`environment_service_launchers`, and `environment_service_operators`. Managers may create directly;
+`service_readers`, `service_managers`,
+`service_launchers`, and `service_operators`. Managers may create directly;
 launchers may create only with an Action launch origin. Neither role implies the other. Service operators may
 explicitly resume, including a requested stop; delegated callers never inherit those roles.
-`environment_service_delegation` admits a service actor only for configured read methods and
+`service_delegation` admits a service actor only for configured read methods and
 `ResumeEnvironment`, using the live effective Identity and its explicit resume grants. Delegation
 never supplies operator authority or waives the resume token. `wake_service_callers` grants automatic broker wake only,
 with budgets keyed by exact service SPIFFE ID. Create receipts retain the typed service actor
