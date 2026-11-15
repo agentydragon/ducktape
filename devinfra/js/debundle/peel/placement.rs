@@ -71,7 +71,7 @@ struct Partition {
     blocks: Vec<Block>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 struct PartitionKey(Vec<(BTreeSet<Token>, Option<Owner>, BTreeSet<Owner>, bool)>);
 
 impl Partition {
@@ -456,7 +456,11 @@ fn initial_partition(problem: &AssignmentProblem<'_>, scope: &Scope) -> Partitio
     debug_assert!(fixed_units.is_empty());
 
     for (index, atom) in scope.atoms.iter().enumerate() {
-        let baseline_owner = owner_for_path(problem.baseline[atom.members[0]].as_ref());
+        let baseline_unit = *atom
+            .members
+            .first()
+            .expect("every movable atom contains at least one unit");
+        let baseline_owner = owner_for_path(problem.baseline[baseline_unit].as_ref());
         let mut allowed_owners: BTreeSet<_> = scope
             .allowed_existing_targets
             .iter()
@@ -572,6 +576,9 @@ impl Solver<'_, '_, '_> {
                 self.visit_branches(branches)?;
                 return Ok(());
             }
+            let Ok(schedule) = schedule else {
+                unreachable!("schedule error was handled above");
+            };
 
             let cap_branches = self.new_owner_cap_branches(&state)?;
             if let Some(branches) = cap_branches {
