@@ -2474,7 +2474,7 @@ beyond the transport track nodes the operator dispatched.
 
 ```mermaid
 flowchart LR
-    DISPATCHER_PERSISTENCE_MODEL_DESIGN[Topology selected; delivery ownership open]
+    DISPATCHER_PERSISTENCE_MODEL_DESIGN[Delivery ownership selected; build not released]
     SESSION_DATA_OWNERSHIP_DESIGN[Later decision: Session data and service boundaries]
     KUBERNETES_UID_CHECK_AUDIT[Unscheduled: audit Kubernetes name and UID checks]
     SESSION_IDENTITY_CONTRACT[Decision: Session identity and shared-Environment admission]
@@ -2555,10 +2555,33 @@ See the [Session/environment model](session_environment_model.md#where-should-li
 
 **Topology selected (operator, 2026-11-14 05:29 UTC, card "Adopt it"):** two binaries, Sessions
 and Environments; the Runner Gateway disappears ([section 17](#17-two-binaries-and-the-go-layout)).
-Still open for that topology, before changing existing guarantees: delivery ownership, fencing,
-replica failure, ordering and recovery in the Sessions binary, including what replaces the
-Dispatcher's per-Sandbox ownership Lease (`dispatcher/ownership.go`), the last Kubernetes Lease in
-delivery once section 12 lands.
+
+**Delivery ownership selected (operator, 2026-11-15 00:06 UTC, card "Record it"; "grabbing a lock
+per dequeue"):** a [`postgres/lease`](../postgres/lease/lease.go) per Session replaces the
+Dispatcher's per-Sandbox Kubernetes ownership Lease (`dispatcher/ownership.go`) and its database
+ownership generation. No replica owns a Sandbox or a queue. Any Sessions replica dequeues a Session
+whose head is runnable and takes that Session's lease, which carries a database-clock expiry and a
+holder fencing token. The lease covers the whole head step: waking the Sandbox, materializing the
+Session and delivering the head command. Every write in the step fences on it, as `ownerMatch` does
+today, and the lease ends when the head settles. Once a lease expires, any replica may take it and
+requeue that Session's in-flight work, as `RecoverSandbox` does today for a Sandbox.
+
+- **Keyed by Session, not command:** the Session is the ordering unit and has at most one head in
+  flight, so a command key buys no parallelism. The step starts while the head is still queued
+  (wake, Session materialization), before any command is claimed. A Session key also needs no
+  Sandbox, so it holds for Sessions without an environment.
+- **A timed lease, not a lock held in a transaction:** the claim must outlive the delivery RPC, and
+  the delivery attempt commits before that RPC (`MarkDeliveryAttempt`).
+- **Unchanged:** per-Session order still comes from the head rule (a command waits while an earlier
+  one is queued or delivering). The Runtime's command-ID dedupe still makes a late duplicate
+  harmless; no lease fences an RPC already in flight.
+
+**Build: not released.** It lands later as its own change after `SESSIONS_BINARY_DIRECTORY`, with a
+system test in which a replica dies mid-delivery and another takes over. Its rollout keeps old
+(Kubernetes Lease) and new replicas from both delivering to one Session. It then drops the
+`dispatcher-<sandbox UID>` Leases and Sessions' Lease RBAC; controller leader election is
+unaffected.
+
 The former [Dispatcher/Gateway merge proposal](https://github.com/agentydragon/ducktape/blob/7e22be0335/agentplane/plans/dispatcher_gateway_merge.md) is historical for its
 queue-off and holder-owned-delivery choices, not an implementation authorization. Independent
 Runtime restructuring does not wait for this decision.
@@ -3873,7 +3896,7 @@ accepted; `SAMPLER_JOURNAL_DIET` awaits the operator's view.
 ```mermaid
 flowchart LR
     SAMPLER_JOURNAL_DIET[Decision: what the sampler journals]
-    DISPATCHER_PERSISTENCE_MODEL_DESIGN[Topology selected; delivery ownership open, section 13] --> DISPATCHER_KEYED_DELIVERY[Blocked: keyed Dispatcher delivery]
+    DISPATCHER_PERSISTENCE_MODEL_DESIGN[Delivery ownership selected; build not released, section 13] --> DISPATCHER_KEYED_DELIVERY[Blocked: keyed Dispatcher delivery]
     DISPATCHER_PERSISTENCE_MODEL_DESIGN --> DISPATCHER_WATCH_VERSIONS[Blocked: versioned dispatch watch]
 ```
 
