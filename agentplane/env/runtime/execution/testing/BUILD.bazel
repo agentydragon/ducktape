@@ -12,6 +12,7 @@ py_library(
     visibility = [
         "//agentplane/central_sampler:__pkg__",
         "//agentplane/env/e2e:__pkg__",
+        "//agentplane/runner_gateway:__pkg__",
     ],
     deps = [
         "//agentplane/env/e2e/testing:launches",
