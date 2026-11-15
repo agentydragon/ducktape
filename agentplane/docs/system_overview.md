@@ -86,7 +86,7 @@ flowchart LR
     app -->|service SVID mTLS: operator watches and health| notif
     app -->|mTLS plus operator authority: Action and MCP Linkage RPCs| actions
     app -->|mTLS peer plus operator OIDC: ConnectionService and health| edge
-    app -->|PolicyService gRPC: bearer over verified server TLS| policy
+    app -->|PolicyService gRPC: App SVID mTLS| policy
     edge -->|authenticated ActionService gRPC| actions
     edge -->|public MCP client metadata: gRPC| actions
     notif -->|Action history: gRPC mTLS, Notifications SVID| actions
@@ -768,15 +768,14 @@ flowchart LR
 ## Staged Policy and Egress Admin certificate admission
 
 The Policy TLS listener verifies client SVIDs against the workload CA and grants the exact App SVID
-separate reader and writer authority. Existing bearer accounts remain admitted during the caller
-cutover; App→Policy still uses its bearer over verified server TLS until its separate caller switch.
+separate reader and writer authority. App→Policy presents the App SVID over verified mTLS.
+Existing bearer accounts remain admitted during the caller cutover.
 Egress Admin already admits the App SVID and the App uses it over mTLS. The forward proxy continues
 to authenticate workload Identities independently of its admin API.
 
 ```mermaid
 flowchart LR
-    app[App service] -->|current bearer over verified TLS| policy[Policy Service]
-    app -.->|App SVID reader and writer grants applied before caller switch| policy
+    app[App service] -->|App SVID mTLS: reader and writer grants| policy[Policy Service]
     app -->|mTLS: admin read methods| admin[Egress Admin]
     workload[Workload Identity SVID] -.->|existing workload authentication| proxy[Egress forward proxy]
 ```

@@ -4388,11 +4388,13 @@ data:
     policy_service_tls:
       ca_file: /run/agentplane/workload-trust/ca-certificates.crt
       server_uri: spiffe://agentplane/policy-controller
+      cert_file: /run/agentplane/workload-tls/tls.crt
+      key_file: /run/agentplane/workload-tls/tls.key
+      client_uri: spiffe://agentplane/app
     sandbox_namespace: agentplane-staging
     runner_gateway_target: runner-gateway.agentplane-staging.svc.cluster.local:8080
     session_dispatcher_target: session-dispatcher.agentplane-staging.svc.cluster.local:8080
     policy_service_target: policy-controller.agentplane-staging.svc.cluster.local:8083
-    policy_service_token_file: /var/run/secrets/agentplane-policy/token
     runner_gateway_control_target: runner-gateway.{namespace}.svc:8080
     history_service_target: history-service.agentplane-staging.svc.cluster.local:8080
     notifications_url: http://notifications.agentplane-staging.svc:8080/
