@@ -88,6 +88,52 @@ fn exhaustive_negative_and_explicit_budget_exhaustion_are_distinct() {
 }
 
 #[test]
+fn owner_caps_use_domains_before_scheduling_an_out_of_scope_partition() {
+    let modules: Vec<_> = (0..100)
+        .map(|index| (format!("unrelated_{index:03}.yaml"), "members: []\n"))
+        .collect();
+    let modules: Vec<_> = modules
+        .iter()
+        .map(|(name, text)| (name.as_str(), *text))
+        .collect();
+    let fixture = GraphFixture::new(
+        "const first = 'alpha';\nconst second = 'beta';\nconsole.log(first, second);\n",
+        &modules,
+    );
+    let only = save(
+        &fixture,
+        "only.json",
+        &json!([
+            fixture.source_unit_for_binding("first"),
+            fixture.source_unit_for_binding("second"),
+        ]),
+    );
+    let output = fixture.command(&[
+        "modules",
+        "propose",
+        "--destinations",
+        "new",
+        "--only-units",
+        &only,
+        "--max-new-modules",
+        "1",
+        "--max-checks",
+        "1",
+        "--format",
+        "json",
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    let report = parse_stdout_json(&output);
+    assert_eq!(report["status"], "incomplete", "{report}");
+    assert_eq!(report["work"]["branch_clauses"]["fresh_owner_cap"], 1);
+    // Two fresh atoms need either one mutual merge or one atom staying at
+    // entry. The hundred unrelated authored owners are outside their domains.
+    assert_eq!(report["work"]["contraction_attempts"], 3, "{report}");
+    assert_eq!(report["work"]["schedule_checkpoints"], 0, "{report}");
+    assert!(report["plan"].is_null());
+}
+
+#[test]
 fn entry_constraints_exhaust_a_large_required_scope_without_filtered_enumeration() {
     let mut source = String::from("const seed = 'alpha';\n");
     for index in 0..30 {
