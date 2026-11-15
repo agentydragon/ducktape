@@ -4,9 +4,9 @@ PR [#16489](https://github.com/agentydragon/ducktape/pull/16489) keeps the exist
 required acceptance gate. The objective is 30% faster complete PR feedback with
 at most 25% more compute; this refactor does not establish that improvement.
 
-## Integration with advancing devel
+## Recorded integration snapshot
 
-The final integration base is `bbba97eb686dfee8f25ce9c64209051734e17460`.
+The integration base recorded in this experiment was `bbba97eb686dfee8f25ce9c64209051734e17460`.
 Devel now contains `driver/cleanup.py` and the Scenario, Policy and Sandbox
 callers. Keep that implementation and its distinct cancellation/failure result;
 remove the experiment's duplicate `cleanup_task.py`. The remaining branch change
@@ -14,6 +14,10 @@ adopts the shared helper for private cleanup diagnostics and the reusable Pod's
 owner, and extends its repeated-cancellation and failure-precedence coverage.
 The two new suite recipes also use devel's explicit component props and common
 fixture finalizer. Earlier run records below retain their original inputs.
+
+The [current follow-up](2026_11_15_app_fixture_cut.md) records explicit fixture
+ownership, the later worker rebase and new screens. The frozen runs below keep
+their original source pins.
 
 ## Ownership boundary
 
