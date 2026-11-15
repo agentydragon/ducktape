@@ -42,12 +42,13 @@ def _resource(documents: list[Body], kind: str, name: str) -> Body:
 
 
 def _ca_files(value: object) -> Iterator[str]:
-    """Every `ca_file` anywhere in a parsed settings document: a listener's SPIFFE authentication,
+    """Every `ca_file` or `client_ca_file` anywhere in a parsed settings document: a listener's SPIFFE authentication,
     a client's `ClientTLS`, the Gateway's `runner_security`, a sidecar's proxy transport. Each names
     roots that verify an Agentplane SVID; settings for any other peer use other keys."""
     if isinstance(value, dict):
-        if "ca_file" in value:
-            yield value["ca_file"]
+        for field in ("ca_file", "client_ca_file"):
+            if field in value:
+                yield value[field]
         for child in value.values():
             yield from _ca_files(child)
     elif isinstance(value, list):
@@ -115,7 +116,7 @@ def test_every_deployment_verifies_agentplane_svids_against_the_workload_ca_alon
     trust = _deployment_trust(staging_manifests)
     # Client-SVID listeners (the egress proxy's forward listener, the services through `workload_tls`),
     # backend clients of service SVIDs (the app), and the Gateway dialing runners' server SVIDs.
-    assert {egress.NAME, "actions", "llm-ingress", "app", runner_gateway.NAME} <= trust.keys()
+    assert {egress.NAME, "actions", "llm-ingress", "app", "policy-controller", runner_gateway.NAME} <= trust.keys()
     assert {name: bundles for name, bundles in trust.items() if bundles != {cluster_ca.WORKLOAD_BUNDLE}} == {}
 
 

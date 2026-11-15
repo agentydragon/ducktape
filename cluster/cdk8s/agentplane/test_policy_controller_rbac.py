@@ -3,6 +3,7 @@ managed accounts' EgressCredentials and PolicySets only in its policy namespace,
 policy kind it reports on."""
 
 from collections.abc import Iterator
+from pathlib import PurePosixPath
 from typing import Any, cast
 
 import pytest
@@ -10,7 +11,7 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
-from agentplane.net.peertls.config import POLICY_CONTROLLER_URI
+from agentplane.net.peertls.config import APP_URI, POLICY_CONTROLLER_URI
 from cluster.cdk8s.agentplane import policy_controller
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
 
@@ -72,13 +73,26 @@ def test_policy_controller_has_a_workload_server_certificate(staging_manifests: 
 
 def test_policy_controller_serves_tls_on_a_separate_port(staging_manifests: list[dict[str, Any]]) -> None:
     settings = _settings(staging_manifests)
-    assert settings["grpc_tls"] == {
-        "listen": f":{policy_controller.tls_service(STAGING_NAMESPACE).pod_port}",
-        "cert_file": "/run/agentplane/workload-tls/tls.crt",
-        "key_file": "/run/agentplane/workload-tls/tls.key",
-    }
+    tls = settings["grpc_tls"]
+    assert tls["listen"] == f":{policy_controller.tls_service(STAGING_NAMESPACE).pod_port}"
+    assert settings["reader_services"] == settings["writer_services"] == [APP_URI]
+    assert "client_ca_file" in tls
+    # During the caller cutover, the former App bearer grant remains available.
+    assert settings["reader_accounts"] == settings["writer_accounts"] == [f"{STAGING_NAMESPACE}/app"]
     deployment = _role(staging_manifests, "Deployment", policy_controller.NAME, STAGING_NAMESPACE)
-    container = deployment["spec"]["template"]["spec"]["containers"][0]
+    pod = deployment["spec"]["template"]["spec"]
+    container = one(pod["containers"])
+    volumes = {v["name"]: v for v in pod["volumes"]}
+    mounts = {PurePosixPath(m["mountPath"]): volumes[m["name"]] for m in container["volumeMounts"]}
+    for field in ("cert_file", "key_file"):
+        path = PurePosixPath(tls[field])
+        secret_name = mounts[path.parent]["secret"]["secretName"]
+        certificate = one(
+            doc
+            for doc in staging_manifests
+            if doc["kind"] == "Certificate" and doc["spec"]["secretName"] == secret_name
+        )
+        assert certificate["spec"]["uris"] == [POLICY_CONTROLLER_URI]
     assert policy_controller.tls_service(STAGING_NAMESPACE).pod_port in {
         port["containerPort"] for port in container["ports"]
     }
