@@ -114,6 +114,11 @@ typed boot firmware before synthesis.
 The native recovery recipe adds backend services, the central sampler and a bound test caller.
 The History outage recipe also adds App and MCP edge. Neither adds Dex or OAuth fixture servers.
 
+Direct native fixture clients reuse the fixture's `app-workload-tls` certificate with the existing
+`APP_URI` service role, which the Controller, History and Gateway already authorize. These calls use mTLS
+without bearer metadata and do not start or call the App, request an App login, or change production
+listeners or settings.
+
 A suite using the MCP fixture stack takes the `//agentplane/system_tests/suites/mcp:mcp_manifests`
 rendering and also imports and runs Dex, `mcp-everything` and the OAuth MCP fixture, with
 test-only Dex clients, operator, MCP server and Action groups. The

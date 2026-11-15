@@ -1,5 +1,6 @@
 """Native Dispatcher transport works without an integration app or browser session."""
 
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import override
 
@@ -11,7 +12,7 @@ from agentplane.grpc.calls import ServiceError
 from agentplane.grpc.serving import serving
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2, session_dispatcher_pb2_grpc
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, admitted
 from agentplane.testing.tls import issue_leaf, make_ca
 
 # The generated Dispatcher stubs' own pyi chain imports google.protobuf.
@@ -66,6 +67,25 @@ class Dispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
                         environment=session_pb2.ExactEnvironment(name="original", uid="original-uid")
                     )
                 ),
+            )
+        )
+
+    @override
+    async def WatchDispatches(
+        self,
+        request: session_dispatcher_pb2.WatchDispatchesRequest,
+        context: grpc.aio.ServicerContext[
+            session_dispatcher_pb2.WatchDispatchesRequest, session_dispatcher_pb2.WatchDispatchesResponse
+        ],
+    ) -> AsyncIterator[session_dispatcher_pb2.WatchDispatchesResponse]:
+        self.bearers.append(dict(context.invocation_metadata() or ()).get("authorization"))
+        yield session_dispatcher_pb2.WatchDispatchesResponse(
+            dispatch=session_dispatcher_pb2.Dispatch(
+                command_id="command",
+                session_id="session",
+                sandbox="original",
+                sandbox_uid="original-uid",
+                state=session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED,
             )
         )
 
@@ -127,6 +147,24 @@ async def test_native_submission_does_not_automatically_retry_an_unknown_outcome
             await client.submit_input("session", "same-command", "original", "original-uid", "original input")
     assert caught.value.code == grpc.StatusCode.UNAVAILABLE
     assert len(backend.requests) == 1
+
+
+async def test_svid_client_omits_bearer_for_unary_and_watch_calls() -> None:
+    backend = Dispatcher()
+    server = grpc.aio.server()
+    session_dispatcher_pb2_grpc.add_SessionDispatcherServicer_to_server(backend, server)
+    async with (
+        serving(server, "127.0.0.1:0", grace_s=0) as port,
+        SessionDispatcherClient.connect(f"127.0.0.1:{port}", token_file=None, request_timeout_s=5) as client,
+    ):
+        await client.get_session("session")
+        dispatch = session_dispatcher_pb2.Dispatch(
+            command_id="command", session_id="session", sandbox="original", sandbox_uid="original-uid"
+        )
+        admitted_dispatch = await admitted(client, dispatch)
+
+    assert admitted_dispatch.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED
+    assert backend.bearers == [None, None]
 
 
 async def test_native_client_verifies_tls_through_a_port_forward(tmp_path: Path) -> None:

@@ -79,3 +79,18 @@ oci_image(
     visibility = ["//visibility:public"],
     workdir = "/",
 )
+
+py_test(
+    name = "test_client_svid",
+    srcs = ["test_client_svid.py"],
+    deps = [
+        ":client",
+        "//:conftest",
+        "//agentplane/history_service/api/history:history_service_pb2",
+        "//agentplane/history_service/api/history:history_service_pb2_grpc",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

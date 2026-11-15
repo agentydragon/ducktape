@@ -93,6 +93,7 @@ from agentplane.system_tests.deployment.rendered_fixture import (
     PublicLiteLLM,
     SandboxRuntime,
 )
+from agentplane.system_tests.driver.native_auth import NATIVE_CLIENT_NAME
 from agentplane.system_tests.k3s.namespaces import CREDENTIALS_NAMESPACE, NAMESPACE
 from agentplane.system_tests.vm import block_storage, configuration as vm_configuration
 from cluster.cdk8s import agent_access_profiles as access
@@ -172,7 +173,7 @@ class AppFixture:
 # The fixture's one Pod execution environment. Nothing outside the fixture names it -- no live Sandbox
 # or preset does -- so unlike staging's it is the fixture's own to rename.
 POD_TEMPLATE = "environment-tools"
-NATIVE_TEST_CLIENT = "system-test-native-client"
+NATIVE_TEST_CLIENT = NATIVE_CLIENT_NAME
 _NATIVE_TEST_CLIENT_LABELS = {"app.kubernetes.io/name": NATIVE_TEST_CLIENT}
 # Runner environments use this image; the idle identity Pod reuses PostgreSQL instead.
 ENVIRONMENT_TOOLS_IMAGE = "git.allegedly.works/ducktape-ci/environment-tools"

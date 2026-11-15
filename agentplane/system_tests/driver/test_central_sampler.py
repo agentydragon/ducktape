@@ -13,7 +13,7 @@ from kubernetes_asyncio.client.exceptions import ApiException
 
 # gazelle:include_dep @pypi//protobuf
 from agentplane.proto.identity_pb2 import EnvironmentTarget
-from agentplane.system_tests.driver import central_sampler
+from agentplane.system_tests.driver import central_sampler, sandbox_cleanup
 from agentplane.system_tests.driver.cluster import Cluster
 
 
@@ -68,7 +68,7 @@ async def test_acknowledged_native_sandbox_waits_for_release_after_cancellation(
         events.append("identity-deleted")
 
     delete_identity.side_effect = delete_identity_after_release
-    monkeypatch.setattr(central_sampler, "_delete_sandbox", release)
+    monkeypatch.setattr(sandbox_cleanup, "delete_sandbox", release)
     entered = asyncio.Event()
 
     async def use_sandbox() -> None:
@@ -112,7 +112,7 @@ async def test_native_cleanup_keeps_scenario_failure_and_records_cleanup_failure
 
     monkeypatch.setattr(central_sampler, "create_scenario_identity", AsyncMock(return_value=identity))
     monkeypatch.setattr(central_sampler, "delete_scenario_identity", delete_identity)
-    monkeypatch.setattr(central_sampler, "_delete_sandbox", fail_release)
+    monkeypatch.setattr(sandbox_cleanup, "delete_sandbox", fail_release)
 
     with pytest.raises(AssertionError, match="scenario failed") as raised:
         async with central_sampler._owned_native_sandbox(cluster, "owned-sandbox", "pod"):
@@ -123,7 +123,7 @@ async def test_native_cleanup_keeps_scenario_failure_and_records_cleanup_failure
     assert events == ["sandbox-release", "identity-delete"]
 
 
-async def test_native_delete_preconditions_the_acknowledged_uid(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_sandbox_delete_preconditions_the_acknowledged_uid(monkeypatch: pytest.MonkeyPatch) -> None:
     cluster = _cluster()
     kubectl = cast(AsyncMock, cluster.kubectl)
     kubectl.return_value = ""
@@ -149,7 +149,7 @@ async def test_native_delete_preconditions_the_acknowledged_uid(monkeypatch: pyt
     monkeypatch.setattr(central_sampler.k8s, "CustomObjectsApi", FakeCustomObjectsApi)
 
     with pytest.raises(ApiException) as raised:
-        await central_sampler._delete_sandbox(cluster, "owned-sandbox", "owned-uid")
+        await sandbox_cleanup.delete_sandbox(cluster, "owned-sandbox", "owned-uid")
 
     assert raised.value.status == 409
     assert len(delete_options) == 1
