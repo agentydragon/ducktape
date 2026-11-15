@@ -75,7 +75,7 @@ def pytest_runtest_makereport(
         item.stash[_CALL_REPORT] = report
     if call.when == "call" and CASE_RESULT in item.stash:
         # Pytest waits for already-running tasks sequentially. Report the task's real
-        # OTel span duration, rather than just the time spent waiting for its result.
+        # elapsed duration, rather than just the time spent waiting for its result.
         report.duration = item.stash[CASE_RESULT].seconds
     return report
 

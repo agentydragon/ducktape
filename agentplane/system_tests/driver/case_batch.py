@@ -9,7 +9,6 @@ from dataclasses import dataclass
 
 import pytest
 from opentelemetry.context import Context
-from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.trace import Status, StatusCode
 
 from agentplane.system_tests.driver.tracing import tracer
@@ -63,6 +62,8 @@ class CaseBatch:
             raise result.error
 
     async def _run_case(self, name: str, case: Case) -> None:
+        loop = asyncio.get_running_loop()
+        started = loop.time()
         error: BaseException | None = None
         with tracer.start_as_current_span(
             "system_test.case", context=Context(), attributes={"pytest.nodeid": case.nodeid}
@@ -92,10 +93,7 @@ class CaseBatch:
                     raise
                 error = caught
                 span.set_status(Status(StatusCode.ERROR, str(caught)))
-        assert isinstance(span, ReadableSpan)
-        assert span.start_time is not None
-        assert span.end_time is not None
-        self._results[name].set_result(Result(error=error, seconds=(span.end_time - span.start_time) / 1e9))
+        self._results[name].set_result(Result(error=error, seconds=loop.time() - started))
 
     async def _run(self, cases: Mapping[str, Case], *, limit: int) -> None:
         for name, case in cases.items():
