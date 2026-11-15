@@ -1454,7 +1454,7 @@ data:
       - agentplane-staging/central-sampler
     central_sampler_identity_callers: true
     token_audience: agentplane-egress
-    log_llm_requests: true
+    log_llm_requests: false
     models: []
     attribution:
       json_headers:
