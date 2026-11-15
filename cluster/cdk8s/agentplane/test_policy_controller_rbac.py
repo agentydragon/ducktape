@@ -78,8 +78,7 @@ def test_policy_controller_serves_policyservice_only_over_tls(staging_manifests:
     assert tls["listen"] == f":{policy_controller.tls_service(STAGING_NAMESPACE).pod_port}"
     assert settings["reader_services"] == settings["writer_services"] == [APP_URI]
     assert "client_ca_file" in tls
-    # The former App bearer grant remains available while bearer admission is rolled back separately.
-    assert settings["reader_accounts"] == settings["writer_accounts"] == [f"{STAGING_NAMESPACE}/app"]
+    assert {"grpc_audience", "reader_accounts", "writer_accounts"}.isdisjoint(settings)
     deployment = _role(staging_manifests, "Deployment", policy_controller.NAME, STAGING_NAMESPACE)
     pod = deployment["spec"]["template"]["spec"]
     container = one(pod["containers"])
