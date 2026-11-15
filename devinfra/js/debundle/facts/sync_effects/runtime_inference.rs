@@ -36,18 +36,12 @@ enum RuntimeKey {
     /// Final verdict published only after every owner finalization step.
     CompletedPurity(SourceUnitOrdinal),
     Effects(SourceUnitOrdinal),
-    Request(ProgramPoint),
-    Result(ProgramPoint),
-    OwnPropertyRequest(ProgramPoint),
-    OwnPropertyResult(ProgramPoint),
     InvocationMemo(ProgramPoint),
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum RuntimeRule {
     ExecuteOwner(SourceUnitOrdinal),
-    Transfer(ProgramPoint),
-    OwnProperty(ProgramPoint),
 }
 
 enum RuntimeFact {
@@ -55,10 +49,6 @@ enum RuntimeFact {
     PreparedPurity(Box<PreparedPurity>),
     CompletedPurity(Box<CompletedPurity>),
     Effects(Box<SynchronousCalls>),
-    Request(Box<RuntimeRequest>),
-    Result(Box<RuntimeResult>),
-    OwnPropertyRequest(Box<OwnPropertyQuery>),
-    OwnPropertyResult(Option<Box<OwnPropertyProof>>),
     InvocationMemo(Box<Outcome>),
 }
 
@@ -153,13 +143,6 @@ pub(super) enum RuntimeValue {
     },
     Callbacks(CallbackResult),
     Model(ModelResult),
-}
-
-struct RuntimeRequest {
-    state: Box<ExecutionState>,
-    /// The parent's run-level admission facts so far; see [`Observations`].
-    observations: Observations,
-    operation: RuntimeOperation,
 }
 
 #[must_use]
@@ -312,22 +295,15 @@ impl RuntimeQueries<'_, '_> {
     }
 
     pub(super) fn project_own_property(&self, query: OwnPropertyQuery) -> Option<OwnPropertyProof> {
-        let point = self.child_point(NativeProgramPointKind::OwnProperty);
-        let mut context = self.context.borrow_mut();
-        context.propose(
-            RuntimeKey::OwnPropertyRequest(point.clone()),
-            RuntimeFact::OwnPropertyRequest(Box::new(query)),
-        );
-        RuntimeRules::project_own_property(self.inputs, &point, &mut **context);
-        let Some(RuntimeFact::OwnPropertyResult(proof)) =
-            context.take_final(RuntimeKey::OwnPropertyResult(point))
-        else {
-            unreachable!("a settled property query produces a terminal optional proof");
-        };
+        // Own-property projections have no nested interpreter, but they still
+        // occupy a child ordinal so later native observations keep their path.
+        self.next_child_ordinal();
+        let proof = self.inputs.project_own_property(query);
         if let Some(proof) = &proof {
             self.dependencies.borrow_mut().extend(&proof.dependencies);
+            self.context.borrow_mut().assume(&proof.dependencies);
         }
-        proof.map(|proof| *proof)
+        proof
     }
 
     pub(super) fn request(
@@ -348,20 +324,20 @@ impl RuntimeQueries<'_, '_> {
         };
         let point = self.child_point(kind);
         let mut context = self.context.borrow_mut();
-        context.propose(
-            RuntimeKey::Request(point.clone()),
-            RuntimeFact::Request(Box::new(RuntimeRequest {
-                state,
-                observations,
-                operation,
-            })),
-        );
-        RuntimeRules::transfer(self.inputs, &point, &mut **context);
-        let Some(RuntimeFact::Result(result)) = context.take_final(RuntimeKey::Result(point))
-        else {
-            unreachable!("a transfer with settled inputs produces a terminal result");
-        };
-        *result
+        execute_transfer(
+            self.inputs,
+            point,
+            state,
+            observations,
+            operation,
+            &mut **context,
+        )
+    }
+
+    fn next_child_ordinal(&self) -> usize {
+        let ordinal = self.next_child.get();
+        self.next_child.set(ordinal + 1);
+        ordinal
     }
 }
 
@@ -380,14 +356,10 @@ impl IterativeRules for RuntimeRules<'_, '_> {
             RuntimeKey::Prefix(owner) if owner.0 < self.owner_count => {
                 vec![RuntimeRule::ExecuteOwner(*owner)]
             }
-            RuntimeKey::Request(point) => vec![RuntimeRule::Transfer(point.clone())],
-            RuntimeKey::OwnPropertyRequest(point) => vec![RuntimeRule::OwnProperty(point.clone())],
             RuntimeKey::Prefix(_)
             | RuntimeKey::PreparedPurity(_)
             | RuntimeKey::CompletedPurity(_)
             | RuntimeKey::Effects(_)
-            | RuntimeKey::Result(_)
-            | RuntimeKey::OwnPropertyResult(_)
             | RuntimeKey::InvocationMemo(_) => Vec::new(),
         }
     }
@@ -399,10 +371,6 @@ impl IterativeRules for RuntimeRules<'_, '_> {
     ) {
         match rule {
             RuntimeRule::ExecuteOwner(owner) => self.execute_owner(*owner, context),
-            RuntimeRule::Transfer(point) => Self::transfer(self.inputs, point, context),
-            RuntimeRule::OwnProperty(point) => {
-                Self::project_own_property(self.inputs, point, context)
-            }
         }
     }
 
@@ -428,22 +396,6 @@ impl IterativeRules for RuntimeRules<'_, '_> {
                 RuntimeFact::Effects(_),
                 RuntimeFact::Effects(_)
             ) | (
-                RuntimeKey::Request(_),
-                RuntimeFact::Request(_),
-                RuntimeFact::Request(_)
-            ) | (
-                RuntimeKey::Result(_),
-                RuntimeFact::Result(_),
-                RuntimeFact::Result(_)
-            ) | (
-                RuntimeKey::OwnPropertyRequest(_),
-                RuntimeFact::OwnPropertyRequest(_),
-                RuntimeFact::OwnPropertyRequest(_)
-            ) | (
-                RuntimeKey::OwnPropertyResult(_),
-                RuntimeFact::OwnPropertyResult(_),
-                RuntimeFact::OwnPropertyResult(_)
-            ) | (
                 RuntimeKey::InvocationMemo(_),
                 RuntimeFact::InvocationMemo(_),
                 RuntimeFact::InvocationMemo(_)
@@ -454,26 +406,6 @@ impl IterativeRules for RuntimeRules<'_, '_> {
 }
 
 impl RuntimeRules<'_, '_> {
-    fn project_own_property(
-        inputs: &ExecutionInputs<'_>,
-        point: &ProgramPoint,
-        context: &mut dyn FactContext<RuntimeKey, RuntimeFact>,
-    ) {
-        let Some(RuntimeFact::OwnPropertyRequest(query)) =
-            context.take_final(RuntimeKey::OwnPropertyRequest(point.clone()))
-        else {
-            return;
-        };
-        let proof = inputs.project_own_property(*query);
-        if let Some(proof) = &proof {
-            context.assume(&proof.dependencies);
-        }
-        context.propose(
-            RuntimeKey::OwnPropertyResult(point.clone()),
-            RuntimeFact::OwnPropertyResult(proof.map(Box::new)),
-        );
-    }
-
     fn execute_owner(
         &self,
         owner: SourceUnitOrdinal,
@@ -517,143 +449,126 @@ impl RuntimeRules<'_, '_> {
             RuntimeFact::Prefix(state),
         );
     }
+}
 
-    fn transfer(
-        inputs: &ExecutionInputs<'_>,
-        point: &ProgramPoint,
-        context: &mut dyn FactContext<RuntimeKey, RuntimeFact>,
+fn execute_transfer<'source, 'query>(
+    inputs: &'query ExecutionInputs<'source>,
+    point: ProgramPoint,
+    state: Box<ExecutionState>,
+    observations: Observations,
+    operation: RuntimeOperation,
+    context: &'query mut dyn FactContext<RuntimeKey, RuntimeFact>,
+) -> RuntimeResult {
+    let queries = RuntimeQueries {
+        inputs,
+        point,
+        next_child: Cell::new(0),
+        dependencies: RefCell::default(),
+        context: RefCell::new(context),
+    };
+    let mut executor = Executor::new(inputs, state, observations, queries);
+    if !matches!(
+        &operation,
+        RuntimeOperation::Evaluate { .. } | RuntimeOperation::EvaluateInitializer { .. }
     ) {
-        let Some(RuntimeFact::Request(request)) =
-            context.take_final(RuntimeKey::Request(point.clone()))
-        else {
-            return;
-        };
-        let RuntimeRequest {
-            state,
-            observations,
-            operation,
-        } = *request;
-        let queries = RuntimeQueries {
-            inputs,
-            point: point.clone(),
-            next_child: Cell::new(0),
-            dependencies: RefCell::default(),
-            context: RefCell::new(context),
-        };
-        let mut executor = Executor::new(inputs, state, observations, queries);
-        if !matches!(
-            &operation,
-            RuntimeOperation::Evaluate { .. } | RuntimeOperation::EvaluateInitializer { .. }
-        ) {
-            executor.mark_allocation_opaque();
-        }
-        let value = match operation {
-            RuntimeOperation::Heap(operation) => {
-                RuntimeValue::Heap(operation.execute(&mut executor))
+        executor.mark_allocation_opaque();
+    }
+    let value = match operation {
+        RuntimeOperation::Heap(operation) => RuntimeValue::Heap(operation.execute(&mut executor)),
+        RuntimeOperation::Evaluate {
+            expression,
+            environment,
+            captures,
+            source_covered,
+        } => {
+            if source_covered {
+                executor.cover_source_expression();
             }
-            RuntimeOperation::Evaluate {
-                expression,
-                environment,
-                captures,
-                source_covered,
-            } => {
-                if source_covered {
-                    executor.cover_source_expression();
-                }
-                RuntimeValue::Values(executor.evaluate_transfer(
-                    &expression,
+            RuntimeValue::Values(executor.evaluate_transfer(&expression, &environment, &captures))
+        }
+        RuntimeOperation::EvaluateInitializer {
+            source,
+            expression,
+            environment,
+            captures,
+        } => {
+            let (values, judgment, native_constructor_transfer, operation_coverage) = executor
+                .evaluate_initializer_transfer(&source, &expression, &environment, &captures);
+            let operation_source = source.operation_source(&expression).is_some();
+            let evaluated = if operation_source {
+                None
+            } else {
+                source.evaluated(&expression, &values, &judgment, native_constructor_transfer)
+            };
+            let covered_operation = operation_source
+                && !values.is_empty()
+                && !values.contains(&super::value_model::AbstractValue::Value(
+                    crate::facts::abstract_domain::value::Value::Unavailable,
+                ))
+                && operation_coverage
+                    .as_ref()
+                    .and_then(EffectCoverageFragment::normal_dependencies)
+                    .is_some();
+            let refusal = (evaluated.is_none() && !covered_operation)
+                .then_some(OwnerInitializationCoverageRefusalReason::InitializerResultUnproved);
+            RuntimeValue::Initializer {
+                values,
+                evaluated: evaluated.map(Box::new),
+                operation_coverage: operation_coverage
+                    .filter(|_| covered_operation)
+                    .map(Box::new),
+                refusal,
+            }
+        }
+        RuntimeOperation::Invoke {
+            callable,
+            arguments,
+            argument_selections,
+            captured,
+            fresh_checked_constructor,
+        } => RuntimeValue::Outcome(Box::new(executor.invoke_transfer(
+            callable,
+            arguments,
+            argument_selections,
+            captured,
+            fresh_checked_constructor,
+        ))),
+        RuntimeOperation::Call {
+            call,
+            environment,
+            captures,
+            mut outcome,
+            operands,
+        } => {
+            executor.promote_importer_cell_reads(&call, &mut outcome);
+            let transfer = match operands {
+                Some(operands) => executor.execute_supplied_call(
+                    &call,
                     &environment,
                     &captures,
-                ))
-            }
-            RuntimeOperation::EvaluateInitializer {
-                source,
-                expression,
-                environment,
-                captures,
-            } => {
-                let (values, judgment, native_constructor_transfer, operation_coverage) = executor
-                    .evaluate_initializer_transfer(&source, &expression, &environment, &captures);
-                let operation_source = source.operation_source(&expression).is_some();
-                let evaluated = if operation_source {
-                    None
-                } else {
-                    source.evaluated(&expression, &values, &judgment, native_constructor_transfer)
-                };
-                let covered_operation = operation_source
-                    && !values.is_empty()
-                    && !values.contains(&super::value_model::AbstractValue::Value(
-                        crate::facts::abstract_domain::value::Value::Unavailable,
-                    ))
-                    && operation_coverage
-                        .as_ref()
-                        .and_then(EffectCoverageFragment::normal_dependencies)
-                        .is_some();
-                let refusal = (evaluated.is_none() && !covered_operation)
-                    .then_some(OwnerInitializationCoverageRefusalReason::InitializerResultUnproved);
-                RuntimeValue::Initializer {
-                    values,
-                    evaluated: evaluated.map(Box::new),
-                    operation_coverage: operation_coverage
-                        .filter(|_| covered_operation)
-                        .map(Box::new),
-                    refusal,
+                    &mut outcome,
+                    *operands,
+                ),
+                None => {
+                    executor.execute_call_transfer(&call, &environment, &captures, &mut outcome)
                 }
-            }
-            RuntimeOperation::Invoke {
-                callable,
-                arguments,
-                argument_selections,
-                captured,
-                fresh_checked_constructor,
-            } => RuntimeValue::Outcome(Box::new(executor.invoke_transfer(
-                callable,
-                arguments,
-                argument_selections,
-                captured,
-                fresh_checked_constructor,
-            ))),
-            RuntimeOperation::Call {
-                call,
-                environment,
-                captures,
-                mut outcome,
-                operands,
-            } => {
-                executor.promote_importer_cell_reads(&call, &mut outcome);
-                let transfer = match operands {
-                    Some(operands) => executor.execute_supplied_call(
-                        &call,
-                        &environment,
-                        &captures,
-                        &mut outcome,
-                        *operands,
-                    ),
-                    None => {
-                        executor.execute_call_transfer(&call, &environment, &captures, &mut outcome)
-                    }
-                };
-                RuntimeValue::Call { outcome, transfer }
-            }
-            RuntimeOperation::Model(operation) => {
-                RuntimeValue::Model(runtime_models::dispatch(&mut executor, operation))
-            }
-            RuntimeOperation::Callbacks(operation) => {
-                RuntimeValue::Callbacks(runtime_callbacks::dispatch(&mut executor, operation))
-            }
-        };
-        let (state, observations, allocation_judgment, evaluation_effects) =
-            executor.into_transfer();
-        context.propose(
-            RuntimeKey::Result(point.clone()),
-            RuntimeFact::Result(Box::new(RuntimeResult {
-                state,
-                observations,
-                value,
-                allocation_judgment,
-                evaluation_effects,
-            })),
-        );
+            };
+            RuntimeValue::Call { outcome, transfer }
+        }
+        RuntimeOperation::Model(operation) => {
+            RuntimeValue::Model(runtime_models::dispatch(&mut executor, operation))
+        }
+        RuntimeOperation::Callbacks(operation) => {
+            RuntimeValue::Callbacks(runtime_callbacks::dispatch(&mut executor, operation))
+        }
+    };
+    let (state, observations, allocation_judgment, evaluation_effects) = executor.into_transfer();
+    RuntimeResult {
+        state,
+        observations,
+        value,
+        allocation_judgment,
+        evaluation_effects,
     }
 }
 
