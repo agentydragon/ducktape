@@ -60,7 +60,7 @@ func TestServiceActorsRetainSeparateProofAndIdentityScope(t *testing.T) {
 	if attribution, ok := row.Attribution.(*ServiceAttribution); !ok || attribution.ActorSPIFFEID != peertls.AppURI || row.Creator != nil {
 		t.Fatalf("service creator acquired account proof: %#v", row)
 	}
-	rule, err := auth.ReviewedServiceAccountOrIdentity(nil).AllowServiceCallers([]string{peertls.AppURI})
+	rule, err := auth.Services([]string{peertls.AppURI})
 	if err != nil {
 		t.Fatal(err)
 	}
