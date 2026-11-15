@@ -52,6 +52,10 @@ fn claimed_modules_export_their_entry_points() {
             &["restore", "restoreElements", "restoreLibraryItems"],
         ),
         (
+            "main/packages/excalidraw/components/SearchMenu.js",
+            &["SearchMenu", "getMatchPreview", "getMatchedLines"],
+        ),
+        (
             "editor/packages/excalidraw/element/textWrapping.js",
             &["containsCJK", "wrapText"],
         ),
