@@ -17,12 +17,13 @@ def test_dispatcher_sender_identity_and_service_routing(staging_manifests: list[
     pod = resource("Deployment", runner_gateway.NAME)["spec"]["template"]["spec"]
     container = one(pod["containers"])
     settings = yaml.safe_load(resource("ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"])
-    callers = set(settings["dispatcher_callers"])
-    wakers = set(settings.get("wake_callers", []))
+    callers = set(settings["dispatcher_service_callers"])
+    wakers = set(settings.get("wake_service_callers", []))
     senders = (app.NAME, notifications.NAME, actions.NAME)
-    assert callers == {f"{staging.ENV.namespace}/{sender}" for sender in senders}
+    assert callers == {
+        uri for sender in senders for uri in resource("Certificate", f"{sender}-workload")["spec"]["uris"]
+    }
     assert wakers <= callers
-    assert settings["dispatcher_audience"] == session_dispatcher.TOKEN_AUDIENCE
     service = resource("Service", session_dispatcher.NAME)["spec"]
     labels = resource("Deployment", runner_gateway.NAME)["spec"]["template"]["metadata"]["labels"]
     assert service["selector"].items() <= labels.items()

@@ -195,7 +195,7 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     assert target["tls"]["client_uri"] == GATEWAY_SESSIONS_URI
     for field in ("cert_file", "key_file", "ca_file"):
         assert target["tls"][field] == gateway["gateway_tls"][field]
-    assert gateway["executor_callers"] == [f"{namespace}/{central_sampler.NAME}"]
+    assert gateway["executor_service_callers"] == serving_certificate["spec"]["uris"]
 
     app_config = yaml.safe_load(_resource(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
     assert app_config["policy_service_target"] == policy_controller.tls_target(namespace)

@@ -151,7 +151,6 @@ def test_environment_receiver_owns_authority_and_uses_controller_certificate(
     assert set(receiver.service_managers) == {APP_URI}
     assert set(receiver.service_launchers) == {ACTIONS_URI}
     assert set(receiver.service_operators) == {APP_URI}
-    assert set(receiver.wake_callers) == set(gateway.wake_callers or ())
     assert set(receiver.wake_service_callers) == set(gateway.wake_service_callers)
     assert receiver.service_delegation is not None
     assert [actor.spiffe_id for actor in receiver.service_delegation.actors] == [ACTIONS_URI]
