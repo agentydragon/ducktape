@@ -745,17 +745,24 @@ message IntrinsicsNeverWritten {
   optional string note = 2;
 }
 
+// Kind of a source allocation in the abstract value domain.
 enum Kind {
   KIND_UNSPECIFIED = 0;
+  // A function, arrow, or method body.
   KIND_FUNCTION = 1;
   KIND_CLASS = 2;
+  // An object, array or regular-expression literal: value flow gives them
+  // one identity lane. Builtin rows allocate Object, Array and RegExp by
+  // their own kinds.
   KIND_OBJECT = 3;
+  // A native Set.
   KIND_SET = 4;
   KIND_ARRAY = 5;
   KIND_MAP = 6;
   KIND_WEAK_MAP = 7;
   KIND_WEAK_SET = 8;
   KIND_REG_EXP = 9;
+  // A FinalizationRegistry.
   KIND_REGISTRY = 10;
   KIND_PROXY = 11;
 }
@@ -1169,13 +1176,26 @@ enum OwnerInitializationCoverageRefusalReason {
   OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNSUPPORTED_INITIALIZER = 6;
   OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_OWNER_BINDING_MISMATCH = 7;
   OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_INITIALIZER_RESULT_UNPROVED = 8;
+  // A root receiver.property store is outside the admitted roots/operands:
+  // its receiver is not an initialized module record with a writable own data
+  // slot at its prefix, or the owner is excluded. A store whose value can run
+  // code keeps UnsupportedOwnerKind.
   OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNPROVED_FIELD_STORE = 9;
+  // A root binding store targets an imported binding, which throws.
   OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_IMPORTED_BINDING_STORE = 10;
+  // A root binding store targets a const binding, which throws.
   OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_CONST_BINDING_STORE = 11;
+  // A root binding store targets a lexical binding still in its TDZ, which throws.
   OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNINITIALIZED_BINDING_STORE = 12;
+  // A root binding store targets a binding read by a closure, so the closure's
+  // view is not a module-prefix value.
   OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_CAPTURED_BINDING_STORE = 13;
+  // A root binding store targets an exported binding observable by an importer.
   OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_EXPORTED_BINDING_STORE = 14;
+  // The kernel did not seal an admitted root statement; the flattened lane ran it.
   OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNPROVED_STATEMENT_OPERATION = 15;
+  // A callback captures a live activation cell, so its call lacks an effect
+  // receipt until call-effect coverage follows live captures.
   OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_CALLBACK_CAPTURES_LIVE_CELL = 16;
   OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNKNOWN_CALL = 17;
   OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_PRECISION_LOSS = 18;
