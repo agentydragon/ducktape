@@ -84,7 +84,7 @@ intents under the new required-metadata constraint.
 
 `//agentplane/central_sampler/cmd:service_image` packages the service and pinned code-mode host.
 The [k3s acceptance scenarios](../system_tests/README.md#central-sampler) run that image in its
-own Pod, migrate before serving, and use projected service-account tokens for
+own Pod, migrate before serving, and use service SVIDs over mTLS for
 Gateway and History. The service and its shared JavaScript host use the Pod container's aggregate
 CPU and memory limits.
 
@@ -172,18 +172,18 @@ container limits stop meeting the production resource contract.
 
 Staging selects the sampler service SVID for Gateway Executor and History export. History retains
 the typed Session delegation envelope naming the execution Identity; the certificate proves the
-sampler actor only. The LLM ingress connection still uses its configured bearer until the separate
-provider-delegation cutover. Projected tokens remain mounted for rollback, with no bearer fallback
-on a selected SVID connection.
+sampler actor only. LLM ingress uses the same service SVID and typed Identity/Session delegation.
+A selected SVID connection has no bearer fallback. Legacy outbound token settings remain in the
+client API until their separate retirement.
 
-- Gateway `central_sampler` configures one gRPC target and either a rotating caller token file or
-  `gateway_tls` with the Gateway server URI, trust bundle, and central sampler client SVID. Its
-  separate `executor_callers` allowlist authorizes access to the same `Executor` API the Runner
+- Gateway `central_sampler.tls` presents the Sessions role SVID and verifies the sampler server.
+  The sampler's `gateway_tls` presents its own SVID and verifies the Gateway server for Executor calls.
+  The Gateway's `executor_service_callers` allowlist authorizes access to the same `Executor` API the Runner
   serves inside the Sandbox. Default empty settings preserve native operation and do not enable the
   new transport.
 - The sampler exports to History with either its rotating caller token or `history_tls` configured
   with the History server URI, trust bundle, and central sampler client SVID. History explicitly
-  allows the sampler account or service in its ingress policy; it retains the distinct executor
+  grants the sampler service in its ingress policy; it retains the distinct executor
   Sandbox identity. With
   `ingress.sampler_identity_callers`, History also admits the sampler pushing a Session's journal
   as a delegating actor for the Identity the Session executes as ([SPEC.md](SPEC.md#identity-and-admission)).
