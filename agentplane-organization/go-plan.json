@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
-  "source_sha": "01e85fd9d267be8b955d4e3bf753f2051261043f",
-  "observed_at_utc": "2026-11-15T08:55:26Z",
+  "source_sha": "34507c2f0c3756193eab9834e743032ccfb7b99e",
+  "observed_at_utc": "2026-11-15T12:20:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1316,
+    "files": 1319,
     "directories": 237,
-    "production": 722,
-    "tests": 594
+    "production": 724,
+    "tests": 595
   },
   "legend": {
     "=": "Intentional retained owner with an explicit package rationale",
@@ -38,21 +38,22 @@
     "today": [
       {
         "name": "runner-gateway",
-        "text": "One TLS gRPC listener serves the Session Dispatcher (with automatic wake in `dispatcher/wake`) (PostgreSQL queue, per-Sandbox delivery Leases, routing to the central sampler or a Runtime), the Runtime proxy and the code-mode Executor. Only this Pod's own account may proxy Runtime Session creation and commands, proven at startup by TokenReview and Pod UID, or an exact service SVID in `runtime_proxy_session_callers` (#16364, unset on staging). EnvironmentService left in #16601 and #16613.",
+        "text": "One TLS gRPC listener serves the Session Dispatcher (with automatic wake in `dispatcher/wake`) (PostgreSQL queue, per-Sandbox delivery Leases, routing to the central sampler or a Runtime), the Runtime proxy and the code-mode Executor; the proxy's code lives at `environments/runtimeproxy` since #16656 and the Gateway imports it. Only this Pod's own account may proxy Runtime Session creation and commands, proven at startup by TokenReview and Pod UID, or an exact service SVID in `runtime_proxy_session_callers` (#16364, unset on staging). EnvironmentService left in #16601 and #16613.",
         "evidence_paths": [
           "agentplane/runner_gateway/main.go",
-          "agentplane/runner_gateway/internal/gateway/gateway.go"
+          "agentplane/environments/runtimeproxy/gateway.go"
         ]
       },
       {
         "name": "sandbox-controller",
-        "text": "Leader-elected controller-runtime manager with no database. Since #16324 it observes each Runtime's `WatchState` directly with its own certificate and keeps idle timers in memory; it still asks Runtimes to quiesce through the Gateway proxy. Since #16542 and #16556 every replica also serves EnvironmentService on 8082 for every caller (App #16565, CLI #16568, Actions #16573); reconcilers stay leader-only.",
+        "text": "Leader-elected controller-runtime manager with no database. Since #16324 it observes each Runtime's `WatchState` directly with its own certificate and keeps idle timers in memory; it still asks Runtimes to quiesce through the Gateway proxy. Since #16542 and #16556 every replica also serves EnvironmentService on 8082 for every caller (App #16565, CLI #16568, Actions #16573); reconcilers stay leader-only. Since #16656 and #16685 every replica can also serve the Runtime proxy and Executor with service-only admission, behind an optional setting that staging does not set yet (#16692, open).",
         "evidence_paths": [
           "agentplane/environments/cmd/main.go",
           "agentplane/environments/internal/runtimecontrol/observer.go",
           "agentplane/environments/internal/runtimecontrol/quiescer.go",
           "agentplane/environments/internal/controller/idle.go",
-          "agentplane/environments/internal/serving/server.go"
+          "agentplane/environments/internal/serving/server.go",
+          "agentplane/environments/internal/serving/runtime_proxy.go"
         ]
       }
     ],
@@ -67,10 +68,7 @@
           "Executor: the central sampler's code mode (Codex exec server)",
           "Keep-alive holds (below)"
         ],
-        "from_paths": [
-          "agentplane/environments",
-          "agentplane/runner_gateway/internal/gateway"
-        ],
+        "from_paths": ["agentplane/environments"],
         "callers": "The app, the app's `sessionclient`, the Notification Service, the central sampler and the Sessions binary.",
         "directory": "agentplane/environments/"
       },
@@ -79,7 +77,7 @@
         "text": "Today's Dispatcher with its PostgreSQL database.",
         "owns": [
           "Session admission and the durable per-Session command queue",
-          "Per-Sandbox delivery ownership",
+          "Delivery ownership: a PostgreSQL lease per Session taken at each dequeue (decided, not built)",
           "Routing each Session to the central sampler, or to a native harness through the Environments binary",
           "Automatic wake and its budget"
         ],
@@ -99,12 +97,13 @@
         "id": "runtime-calls",
         "title": "Runtime calls from the Sessions binary",
         "status": "PROPOSED",
-        "today": "The Dispatcher's `ProxyRunner` already calls the proxy over gRPC. The proxy admits `CreateSession`, `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort` and `InterruptTurn` only from the combined Gateway/Dispatcher account, proven at startup to belong to the serving Pod (`dispatcherAccount`). Since #16364 the proxy also admits exact service SVIDs listed in `runtime_proxy_session_callers` for those methods; the list is empty by default and unset on staging.",
+        "today": "The Dispatcher's `ProxyRunner` already calls the proxy over gRPC. The proxy admits `CreateSession`, `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort` and `InterruptTurn` only from the combined Gateway/Dispatcher account, proven at startup to belong to the serving Pod (`dispatcherAccount`). Since #16364 the proxy also admits exact service SVIDs listed in `runtime_proxy_session_callers` for those methods; the list is empty by default and unset on staging. The Environments receiver (#16656, service-only since #16685, not yet enabled) grants those methods only to the exact service SVIDs in its `session_callers` list.",
         "proposal": "The Environments proxy grants those methods to the Sessions binary's service SVID instead, per the service authentication decision, and callers address the Environments Service. Receivers before senders.",
         "evidence_paths": [
           "agentplane/runner_gateway/dispatcher/runner_client.go",
           "agentplane/runner_gateway/main.go",
-          "agentplane/runner_gateway/internal/gateway/gateway.go"
+          "agentplane/environments/runtimeproxy/gateway.go",
+          "agentplane/environments/internal/serving/runtime_proxy_config.go"
         ]
       },
       {
@@ -161,8 +160,8 @@
         "id": "serving",
         "title": "Every-replica serving in the Environments binary",
         "status": "DECIDED",
-        "today": "Every Controller replica serves EnvironmentService on 8082 from `environments/internal/serving` (#16542, #16556), as `plans/environment_service_serving.md` (#16437) specifies; the Gateway no longer does (#16601). The Runtime proxy and Executor are still served only by the Gateway.",
-        "proposal": "Carried from #16311. EnvironmentService's part landed as written; the proxy and Executor follow (runner-gateway-connections-proxy, agreed, not released). The gRPC server (EnvironmentService, proxy, Executor) gets its own non-leader-elected lifecycle, readiness, TLS identity, audience, TokenReview/SVID and delegation settings, Service and projected credentials. Readiness means the listener and its dependencies work and never waits for leadership. Shutdown stops accepting, drains streams and joins serving work without holding up reconciliation handoff. Watches and live reads keep today's freshness and stream re-authorization.",
+        "today": "Every Controller replica serves EnvironmentService on 8082 from `environments/internal/serving` (#16542, #16556), as #16437 specified (now in the Environments SPEC and README); the Gateway no longer does (#16601). Since #16656 the same listener can register the Runtime proxy and Executor behind an optional setting that staging does not set yet; until callers move, only the Gateway serves them.",
+        "proposal": "Carried from #16311. EnvironmentService's part landed as written; the proxy and Executor follow (runner-gateway-connections-proxy, released; accepting code in #16656 and #16685). The gRPC server (EnvironmentService, proxy, Executor) gets its own non-leader-elected lifecycle, readiness, TLS identity, audience, TokenReview/SVID and delegation settings, Service and projected credentials. Readiness means the listener and its dependencies work and never waits for leadership. Shutdown stops accepting, drains streams and joins serving work without holding up reconciliation handoff. Watches and live reads keep today's freshness and stream re-authorization.",
         "evidence_paths": [
           "agentplane/environments/cmd/main.go",
           "agentplane/environments/internal/serving/server.go"
@@ -172,7 +171,7 @@
         "id": "rollout",
         "title": "Rollout order",
         "status": "PROPOSED",
-        "today": "EnvironmentService finished this order: receivers first (#16542, #16556, #16566), then the App (#16565), CLI (#16568) and Actions (#16573), then Gateway retirement (#16593, #16601). The Runtime proxy and Executor are next.",
+        "today": "EnvironmentService finished this order: receivers first (#16542, #16556, #16566), then the App (#16565), CLI (#16568) and Actions (#16573), then Gateway retirement (#16593, #16601). The Runtime proxy follows it: accepting receiver code landed (#16656, #16685); enabling it (#16692) waits for the image pin, then callers move.",
         "proposal": "Carried from #16311. Receivers before senders; settings in code before manifests set them. Deploy the Environments serving path behind an unused Service and exercise auth, readiness and multi-replica behaviour with the app unavailable; then retarget callers (destination audiences, credentials, cdk8s, RBAC, the system overview diagram). Remove old wiring only after traffic has left and the last safe rollback image and config pair is recorded, and never combine an RBAC removal with a deployment that still needs the grant. Acceptance: identity change raced against admission in both orders, explicit and automatic wake from different replicas, non-leader serving and leader handoff, and a mixed-version rollout and rollback.",
         "evidence_paths": ["agentplane/runner_gateway/README.md"]
       }
@@ -211,7 +210,7 @@
       "id": "action_service",
       "path": "agentplane/action_service",
       "counts": {
-        "files": 155,
+        "files": 156,
         "directories": 23
       },
       "directories": [
@@ -352,7 +351,7 @@
         {
           "path": "agentplane/action_service/internal/rpc",
           "production": 12,
-          "tests": 16,
+          "tests": 17,
           "files": [
             "agentplane/action_service/internal/rpc/attribution.go",
             "agentplane/action_service/internal/rpc/attribution_test.go",
@@ -379,6 +378,7 @@
             "agentplane/action_service/internal/rpc/service_test.go",
             "agentplane/action_service/internal/rpc/submit.go",
             "agentplane/action_service/internal/rpc/submit_test.go",
+            "agentplane/action_service/internal/rpc/svid_fixture_test.go",
             "agentplane/action_service/internal/rpc/views.go",
             "agentplane/action_service/internal/rpc/watch.go",
             "agentplane/action_service/internal/rpc/watch_test.go"
@@ -797,7 +797,7 @@
           "pending_tracks": ["action-service-grpcgate"],
           "counts": {
             "non_test": 12,
-            "tests": 16
+            "tests": 17
           }
         },
         {
@@ -3436,9 +3436,9 @@
             "agentplane/env/runtime/internal/coordinator/transition_adoption.go",
             "agentplane/env/runtime/internal/coordinator/transition_adoption_test.go",
             "agentplane/env/runtime/internal/coordinator/transition_api.go",
+            "agentplane/env/runtime/internal/coordinator/transition_execution.go",
             "agentplane/env/runtime/internal/coordinator/transition_quiesce.go",
-            "agentplane/env/runtime/internal/coordinator/transition_quiesce_test.go",
-            "agentplane/env/runtime/internal/coordinator/transition_sequence.go"
+            "agentplane/env/runtime/internal/coordinator/transition_quiesce_test.go"
           ]
         },
         {
@@ -4259,8 +4259,8 @@
       "id": "environments",
       "path": "agentplane/environments",
       "counts": {
-        "files": 66,
-        "directories": 12
+        "files": 83,
+        "directories": 13
       },
       "directories": [
         {
@@ -4378,10 +4378,12 @@
         },
         {
           "path": "agentplane/environments/internal/serving",
-          "production": 2,
+          "production": 4,
           "tests": 1,
           "files": [
             "agentplane/environments/internal/serving/config.go",
+            "agentplane/environments/internal/serving/runtime_proxy.go",
+            "agentplane/environments/internal/serving/runtime_proxy_config.go",
             "agentplane/environments/internal/serving/server.go",
             "agentplane/environments/internal/serving/server_test.go"
           ]
@@ -4393,6 +4395,28 @@
           "files": [
             "agentplane/environments/lifecycle/policy.go",
             "agentplane/environments/lifecycle/types.go"
+          ]
+        },
+        {
+          "path": "agentplane/environments/runtimeproxy",
+          "production": 7,
+          "tests": 8,
+          "files": [
+            "agentplane/environments/runtimeproxy/connections.go",
+            "agentplane/environments/runtimeproxy/executor.go",
+            "agentplane/environments/runtimeproxy/fixture_test.go",
+            "agentplane/environments/runtimeproxy/gateway.go",
+            "agentplane/environments/runtimeproxy/gateway_testmain_test.go",
+            "agentplane/environments/runtimeproxy/methods_test.go",
+            "agentplane/environments/runtimeproxy/peer.go",
+            "agentplane/environments/runtimeproxy/peer_test.go",
+            "agentplane/environments/runtimeproxy/proxy.go",
+            "agentplane/environments/runtimeproxy/proxy_test.go",
+            "agentplane/environments/runtimeproxy/queue_runner_integration_test.go",
+            "agentplane/environments/runtimeproxy/queue_runner_integration_testmain_test.go",
+            "agentplane/environments/runtimeproxy/runner_observer.go",
+            "agentplane/environments/runtimeproxy/runner_observer_test.go",
+            "agentplane/environments/runtimeproxy/sandboxes.go"
           ]
         },
         {
@@ -4418,7 +4442,7 @@
         "settings-single-source",
         "protobuf-alignment"
       ],
-      "goal_note": "Sandbox reconciler for claims, credentials, runtime control, Firecracker VM lifecycle, workspace, and status: the Sandbox Controller, at `agentplane/environments/` since #16407 (deployed names unchanged), beside the EnvironmentService API at `v1/`. Serves EnvironmentService on every replica since #16613; receives the Runtime proxy and the Executor (agreed direction, stage 3).",
+      "goal_note": "Sandbox reconciler for claims, credentials, runtime control, Firecracker VM lifecycle, workspace, and status: the Sandbox Controller, at `agentplane/environments/` since #16407 (deployed names unchanged), beside the EnvironmentService API at `v1/`. Serves EnvironmentService on every replica since #16613; owns the Runtime proxy and the Executor at `environments/runtimeproxy` since #16656, served on every replica behind an optional setting that is not yet enabled (stage 3).",
       "decision": {
         "state": "REWORK",
         "role": "The Environments binary: Sandbox Pod/VM/resource reconciliation today",
@@ -4441,6 +4465,7 @@
           "agentplane/environments/internal/service/view",
           "agentplane/environments/internal/serving",
           "agentplane/environments/lifecycle",
+          "agentplane/environments/runtimeproxy",
           "agentplane/environments/testing/servicefixture",
           "agentplane/environments/testing/serving_fixture"
         ]
@@ -4600,7 +4625,7 @@
           "role": "Every-replica EnvironmentService gRPC listener on 8082: settings, auth, policy watches, readiness and graceful stop.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Added by #16542 and enabled on staging by #16556; serves `environments/internal/service` since #16613. The Runtime proxy and Executor join it in runner-gateway-connections-proxy.",
+          "reason": "Added by #16542 and enabled on staging by #16556; serves `environments/internal/service` since #16613. Since #16656 it can also register the Runtime proxy and Executor behind the optional `environment_service.runtime_proxy` setting (service-only admission, #16685); enabling it and moving callers is runner-gateway-connections-proxy.",
           "gate": "",
           "evidence_paths": [
             "agentplane/environments/internal/serving/config.go",
@@ -4609,7 +4634,7 @@
           "declared_packages": ["serving"],
           "pending_tracks": ["runner-gateway-connections-proxy"],
           "counts": {
-            "non_test": 2,
+            "non_test": 4,
             "tests": 1
           }
         },
@@ -4629,6 +4654,29 @@
           "counts": {
             "non_test": 2,
             "tests": 0
+          }
+        },
+        {
+          "path": "agentplane/environments/runtimeproxy",
+          "role": "The Runtime proxy and code-mode Executor: per-call Sandbox, Pod and boot-ID fencing, mutual-TLS forwarding to Runtimes, peer authentication and the Runtime observers.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Moved from `runner_gateway/internal/gateway` by #16656 (package `gateway` became `runtimeproxy`). This is its final home: Go's internal-import rule keeps it outside `internal/` while the retained Gateway still imports it, and Bazel visibility admits only `environments/` and `runner_gateway/`. Gateway retirement drops that import and grant; the files stay.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/environments/runtimeproxy/connections.go",
+            "agentplane/environments/runtimeproxy/executor.go",
+            "agentplane/environments/runtimeproxy/gateway.go",
+            "agentplane/environments/runtimeproxy/peer.go",
+            "agentplane/environments/runtimeproxy/proxy.go",
+            "agentplane/environments/runtimeproxy/runner_observer.go",
+            "agentplane/environments/runtimeproxy/sandboxes.go"
+          ],
+          "declared_packages": ["runtimeproxy"],
+          "pending_tracks": ["runner-gateway-connections-proxy"],
+          "counts": {
+            "non_test": 7,
+            "tests": 8
           }
         },
         {
@@ -7963,8 +8011,8 @@
       "id": "runner_gateway",
       "path": "agentplane/runner_gateway",
       "counts": {
-        "files": 57,
-        "directories": 9
+        "files": 42,
+        "directories": 8
       },
       "directories": [
         {
@@ -8047,28 +8095,6 @@
           ]
         },
         {
-          "path": "agentplane/runner_gateway/internal/gateway",
-          "production": 7,
-          "tests": 8,
-          "files": [
-            "agentplane/runner_gateway/internal/gateway/connections.go",
-            "agentplane/runner_gateway/internal/gateway/executor.go",
-            "agentplane/runner_gateway/internal/gateway/fixture_test.go",
-            "agentplane/runner_gateway/internal/gateway/gateway.go",
-            "agentplane/runner_gateway/internal/gateway/gateway_testmain_test.go",
-            "agentplane/runner_gateway/internal/gateway/methods_test.go",
-            "agentplane/runner_gateway/internal/gateway/peer.go",
-            "agentplane/runner_gateway/internal/gateway/peer_test.go",
-            "agentplane/runner_gateway/internal/gateway/proxy.go",
-            "agentplane/runner_gateway/internal/gateway/proxy_test.go",
-            "agentplane/runner_gateway/internal/gateway/queue_runner_integration_test.go",
-            "agentplane/runner_gateway/internal/gateway/queue_runner_integration_testmain_test.go",
-            "agentplane/runner_gateway/internal/gateway/runner_observer.go",
-            "agentplane/runner_gateway/internal/gateway/runner_observer_test.go",
-            "agentplane/runner_gateway/internal/gateway/sandboxes.go"
-          ]
-        },
-        {
           "path": "agentplane/runner_gateway/internal/sandboxinventory",
           "production": 1,
           "tests": 1,
@@ -8101,11 +8127,11 @@
         "settings-single-source",
         "protobuf-alignment"
       ],
-      "goal_note": "Sessions binary (today's Runner Gateway) deployment configuration, service startup and process assembly.; Durable Session dispatch API, Store, caller/ownership leases, delivery, watch, wake, and terminal settlement.; Runtime proxy, Executor, peer authentication and Sandbox/Pod validation; Runner observers. The agreed two-binary shape splits this component: EnvironmentService left for `environments/` (#16613); the Runtime proxy and the Executor follow (stage 3); the Dispatcher, its migrations and the command become the Sessions binary at `agentplane/session_dispatcher/` (stage 3).",
+      "goal_note": "Sessions binary (today's Runner Gateway) deployment configuration, service startup and process assembly.; Durable Session dispatch API, Store, caller/ownership leases, delivery, watch, wake, and terminal settlement. The agreed two-binary shape splits this component: EnvironmentService left for `environments/` (#16613); the Runtime proxy package moved to `environments/runtimeproxy` (#16656) and the Gateway serves it until callers move (stage 3); the Dispatcher, its migrations and the command become the Sessions binary at `agentplane/session_dispatcher/` (stage 3).",
       "decision": {
         "state": "REWORK",
-        "role": "Session dispatch authority, Environment API and gateway adapters",
-        "goal_summary": "Sessions binary (today's Runner Gateway) deployment configuration, service startup and process assembly.; Durable Session dispatch API, Store, caller/ownership leases, delivery, watch, wake, and terminal settlement.; Runtime proxy, Executor, peer authentication and Sandbox/Pod validation; Runner observers.",
+        "role": "Session dispatch authority; still serves the Runtime proxy from `environments/runtimeproxy`",
+        "goal_summary": "Sessions binary (today's Runner Gateway) deployment configuration, service startup and process assembly.; Durable Session dispatch API, Store, caller/ownership leases, delivery, watch, wake, and terminal settlement.",
         "reason": "Package decisions below name each current responsibility, proposed targets and its extraction/naming gate. Existing shared transactions and mutable lifecycle state are constraints to resolve, not blanket reasons to retain every file arrangement.",
         "evidence_paths": [
           "agentplane/runner_gateway/config.go",
@@ -8114,8 +8140,7 @@
           "agentplane/runner_gateway/dispatcher/api.go",
           "agentplane/runner_gateway/dispatcher/authorization_integration_test.go",
           "agentplane/runner_gateway/dispatcher/central_runner.go",
-          "agentplane/runner_gateway/dispatcher/central_runner_test.go",
-          "agentplane/runner_gateway/internal/gateway/connections.go"
+          "agentplane/runner_gateway/dispatcher/central_runner_test.go"
         ],
         "reviewed_package_paths": [
           "agentplane/runner_gateway",
@@ -8124,7 +8149,6 @@
           "agentplane/runner_gateway/dispatcher/internal/placement",
           "agentplane/runner_gateway/dispatcher/internal/terminalnotice",
           "agentplane/runner_gateway/dispatcher/wake",
-          "agentplane/runner_gateway/internal/gateway",
           "agentplane/runner_gateway/internal/sandboxinventory",
           "agentplane/runner_gateway/migrations"
         ]
@@ -8260,29 +8284,6 @@
           "counts": {
             "non_test": 2,
             "tests": 0
-          }
-        },
-        {
-          "path": "agentplane/runner_gateway/internal/gateway",
-          "role": "Runtime proxy, Executor, peer authentication and Sandbox/Pod validation; Runner observers.",
-          "decision": "move",
-          "target_paths": ["agentplane/environments/internal/runtimeproxy"],
-          "reason": "The agreed two-binary shape puts every Runtime caller path in the Environments binary. After the connection Lease goes the package is a stateless forwarder with no per-Sandbox state to split. It becomes `environments/internal/runtimeproxy` (package `runtimeproxy`).",
-          "gate": "Moves in runner-gateway-connections-proxy, onto the every-replica listener.",
-          "evidence_paths": [
-            "agentplane/runner_gateway/internal/gateway/connections.go",
-            "agentplane/runner_gateway/internal/gateway/executor.go",
-            "agentplane/runner_gateway/internal/gateway/fixture_test.go",
-            "agentplane/runner_gateway/internal/gateway/gateway.go"
-          ],
-          "declared_packages": ["gateway"],
-          "pending_tracks": [
-            "runner-gateway-command",
-            "runner-gateway-connections-proxy"
-          ],
-          "counts": {
-            "non_test": 7,
-            "tests": 8
           }
         },
         {
@@ -9049,7 +9050,7 @@
       "kind": "naming",
       "stage": 2,
       "priority": 3,
-      "summary": "The Runner became the Environment Runtime (#13435), and the DAG's `RUNNER_GATEWAY_RENAME` records the Runtime protocol and resource cutovers as complete, yet Go package, file and private identifier names still say runner. At the pin, 232 non-generated Go files mention runner beyond the Gateway's own name. That count mixes three kinds: (1) leftover Go names for the Environment Runtime, which this track renames, such as the Environment Runtime's and Sandbox Controller's private identifiers, which #16427 (merged 2026-11-14) renamed in `env` and `environments/` after #16407 made `runnercontrol` `runtimecontrol`; #16623 (merged 2026-11-15) then changed their comments and error strings, leaving kind (2) there, such as the Sandbox status's `RunnerCredential`; and the app's, which #16394 (merged 2026-11-14) renamed with its Session client (`app/internal/sessionclient`, `server/environment_runtime_api.go`); (2) wire, stored and security names (protobuf fields and RPCs, the Notification Service's stored `runner_entry`/`runner_cursor`, annotation and metadata keys, SPIFFE URIs), which stay until their own migration; (3) generic job runners such as History's `FoldRunner`, which are not leftovers.",
+      "summary": "The Runner became the Environment Runtime (#13435), and the DAG's `RUNNER_GATEWAY_RENAME` records the Runtime protocol and resource cutovers as complete, yet Go package, file and private identifier names still say runner. At the pin, 232 non-generated Go files mention runner beyond the Gateway's own name. That count mixes three kinds: (1) leftover Go names for the Environment Runtime, which this track renames, such as the Environment Runtime's and Sandbox Controller's private identifiers, which #16427 (merged 2026-11-14) renamed in `env` and `environments/` after #16407 made `runnercontrol` `runtimecontrol`; #16623 (merged 2026-11-15) then changed their comments and error strings, leaving kind (2) there, such as the Sandbox status's `RunnerCredential`; the central sampler's, whose wording #16642 (merged 2026-11-15) changed; and the app's, which #16394 (merged 2026-11-14) renamed with its Session client (`app/internal/sessionclient`, `server/environment_runtime_api.go`) and whose remaining Session client wording #16691 (open) changes; (2) wire, stored and security names (protobuf fields and RPCs, the Notification Service's stored `runner_entry`/`runner_cursor`, annotation and metadata keys, SPIFFE URIs), which stay until their own migration; (3) generic job runners such as History's `FoldRunner`, which are not leftovers.",
       "how": [
         "Classify every occurrence into the three kinds, per component.",
         "Rename kind (1) per component in coherent PRs outside the Runner Gateway and Notification Service; files and private identifiers follow.",
@@ -9085,14 +9086,14 @@
         "agentplane/session_dispatcher/internal/sandboxinventory",
         "agentplane/session_dispatcher/migrations"
       ],
-      "summary": "Operator, 2026-11-14 05:49 UTC, card \"Choose directory names for the Sessions and Environments binaries\": \"session_dispatcher + environments\". Once the Runtime proxy has left (EnvironmentService left in #16613), what remains of `runner_gateway/` is the Sessions binary: the Dispatcher, its migrations, the Sandbox inventory behind its catalog, the command and its Python test support. It moves to `agentplane/session_dispatcher/`, named for the `SessionDispatcher` service it serves.",
+      "summary": "Operator, 2026-11-14 05:49 UTC, card \"Choose directory names for the Sessions and Environments binaries\": \"session_dispatcher + environments\". Once the Runtime proxy's Gateway registration is retired (EnvironmentService left in #16613; the proxy package moved to `environments/runtimeproxy` in #16656), what remains of `runner_gateway/` is the Sessions binary: the Dispatcher, its migrations, the Sandbox inventory behind its catalog, the command and its Python test support. It moves to `agentplane/session_dispatcher/`, named for the `SessionDispatcher` service it serves.",
       "how": [
         "Move `dispatcher/` (with its `api/session` and `internal/notification` protos, `internal/placement` and `internal/terminalnotice`), `internal/sandboxinventory` and `migrations/` to the same relative paths under `session_dispatcher/`. `dispatcher/` and `migrations/` stay outside `internal/`: the Action Service's `session_delegation` integration tests import them.",
         "The root package moves through runner-gateway-app's split, as the second commit of the same PR, so `config.go`, `main.go` and `config_test.go` land once in `cmd/` and `internal/app/`.",
         "The two `.proto` files move with their directory, so their file paths, `go_package` and the generated Go, TypeScript and Python import paths change in the same PR. The proto package `agentplane.runner_gateway.dispatcher` and its service and message names are wire names; they stay for protobuf-alignment.",
         "Move the Python client, settings model, test support (`testing/`, `conftest.py`, tests), README.md, SPEC.md and BUILD files with it, and update Bazel labels, CI image targets, cdk8s, system tests and docs in the same PR. Keep deployed names: the `runner-gateway` image, Deployment and Service, its SPIFFE ID and the `AGENTPLANE_RUNNER_GATEWAY_*` settings keys."
       ],
-      "gate": "Decided 2026-11-14 05:49 UTC. Held so its files move once: it lands after the Runtime proxy has left `runner_gateway/`. A pure move: the generated manifests must not change.",
+      "gate": "Decided 2026-11-14 05:49 UTC; released by the operator 2026-11-15 11:35 UTC (DAG `SESSIONS_BINARY_DIRECTORY`) to start after the Runtime proxy move's exit, so its files move once: nothing in `runner_gateway/` may call a Runtime when it lands. A pure move: the generated manifests must not change.",
       "preserve": "Wire names (proto package, services, methods, messages); deployed names; YAML/env configuration precedence and validation; migration and startup exit behavior; existing trust and account checks.",
       "validation": [
         "//agentplane/runner_gateway/dispatcher:store_integration_test",
@@ -9286,7 +9287,7 @@
         "Keep cmd/main.go minimal. The same-Pod delivery-account proof (`dispatcherAccount`) leaves with the proxy; the Sessions binary presents its own workload identity to the Environments proxy.",
         "Land as the second commit of runner-gateway-command's PR, so the root package's files move once, from `runner_gateway/` straight to `session_dispatcher/cmd` and `session_dispatcher/internal/app`."
       ],
-      "gate": "Test config precedence and server wiring; preserve bounded shutdown. Waits, with runner-gateway-command, for the proxy to leave.",
+      "gate": "Test config precedence and server wiring; preserve bounded shutdown. Released with runner-gateway-command (2026-11-15 11:35 UTC) and waits with it for the Gateway's proxy registration to go.",
       "preserve": "Namespace scoping; listener readiness before serving; bounded shutdown of delivery workers",
       "validation": [
         "//agentplane/runner_gateway:config_test",
@@ -9986,7 +9987,7 @@
         "agentplane/env/runtime/internal/coordinator/runtime.go",
         "agentplane/env/runtime/internal/coordinator/operation_coordinator.go",
         "agentplane/env/runtime/internal/coordinator/execution_lifecycle.go",
-        "agentplane/env/runtime/internal/coordinator/transition_sequence.go",
+        "agentplane/env/runtime/internal/coordinator/transition_execution.go",
         "agentplane/env/runtime/internal/coordinator/session_lifecycle_controller.go",
         "agentplane/env/runtime/internal/coordinator/close_status.go",
         "agentplane/env/runtime/session/manager.go",
@@ -10626,30 +10627,38 @@
     {
       "id": "runner-gateway-connections-proxy",
       "title": "Move the Runtime proxy and Executor into the Environments binary",
-      "status": "AGREED DIRECTION",
+      "status": "READY",
       "components": ["runner_gateway", "environments"],
-      "source_paths": ["agentplane/runner_gateway/internal/gateway"],
-      "target_paths": ["agentplane/environments/internal/runtimeproxy"],
-      "summary": "Agreed with the two-binary shape (Operator, 2026-11-14 05:29 UTC, card \"Adopt the two-binary shape as the agreed reorg direction?\": \"Adopt it\".) `internal/gateway` holds the Runtime proxy (native Session creation, commands and read-only diagnostics), the Executor behind the central sampler's code mode, peer authentication, Sandbox and Pod validation, and the Runner observers, which since #16361 run on every replica with no Lease or epoch (#16365). Per call the proxy validates the Sandbox and its current Pod, dials the Runtime with mutual TLS and forwards once, never replaying an uncertain mutation.",
-      "how": [
-        "Re-inventory `internal/gateway` now that the connection Lease is gone (#16365): the proxy, the Executor, the observers, peer authentication and Sandbox/Pod validation remain.",
-        "Move it whole into the Environments binary as `environments/internal/runtimeproxy` (package `gateway` becomes `runtimeproxy`), served by the every-replica listener in `environments/internal/serving` (#16542).",
-        "Grant the proxy's mutating methods to the Sessions binary's service SVID (privileged-auth) in place of the same-Pod account proof (`dispatcherAccount`), receivers before senders (cut line: Runtime calls).",
-        "Retarget callers: the Dispatcher's `ProxyRunner`, the app's `sessionclient`, the Notification Service's `ProxyRunner` and the central sampler's Executor client. The controller's quiesce calls the Runtime directly, as its `WatchState` observer already does.",
-        "Update RBAC, certificate identities, cdk8s and settings (code before manifests) and the README system diagram; remove the old serving path after traffic has left (cut line: rollout)."
+      "source_paths": [
+        "agentplane/environments/runtimeproxy",
+        "agentplane/runner_gateway/main.go",
+        "agentplane/runner_gateway/config.go"
       ],
-      "gate": "Direction agreed. No Lease or epoch code is left to move (#16365, #16388); the every-replica listener it needs landed (#16542). Cross-service protocol change: system tests covering command delivery, quiesce, suspend and the central sampler's code mode must pass, and each PR states its rollback.",
+      "target_paths": [
+        "agentplane/environments/runtimeproxy",
+        "agentplane/environments/internal/serving"
+      ],
+      "summary": "Agreed with the two-binary shape (Operator, 2026-11-14 05:29 UTC, card \"Adopt the two-binary shape as the agreed reorg direction?\": \"Adopt it\") and released to Codex worker 539294ae on 2026-11-15 (DAG `RUNTIME_PROXY_TO_ENVIRONMENTS`). #16656 (merged 2026-11-15) moved `runner_gateway/internal/gateway` whole to `environments/runtimeproxy` (package `gateway` became `runtimeproxy`) and registers it on the every-replica listener in `environments/internal/serving` behind the optional `environment_service.runtime_proxy` setting, which production manifests omit. That path is the final home: Go's internal-import rule keeps the package outside `internal/` while the retained Gateway still imports it, and Bazel visibility admits only `environments/` and `runner_gateway/`; Gateway retirement drops that import and grant and the files stay. #16685 (merged 2026-11-15) made the Environments receiver service-only: exact service SVIDs per method role (readers, Session callers, Controller, Executor), no TokenReview, bearer, workload Identity or delegation, and its own outbound Runtime identity `spiffe://agentplane/runtime-proxy`. Until callers move, the Gateway keeps serving the same package with its own bearer rules.",
+      "how": [
+        "Enable the Environments receiver in manifests once the #16685 Controller image is pinned (#16692, open): settings, certificates and network policy, image before config.",
+        "Retarget callers to the Environments Service with their service SVIDs, receivers before senders: the Dispatcher's `ProxyRunner`, the app's `sessionclient`, the Notification Service's `ProxyRunner` and the central sampler's Executor client. The Controller's quiesce, which still goes through the Gateway, calls the Runtime directly, as its `WatchState` observer already does.",
+        "Retire the Gateway's proxy registration, its bearer rules, the `dispatcherAccount` proof and the temporary Bazel visibility grant after traffic has left and the last safe rollback image and config pair is recorded; update RBAC and the README system diagram (cut line: rollout). Exit: nothing in `runner_gateway/` calls a Runtime.",
+        "The Runtime proxy caller audit (`plans/runtime_proxy_callers.md`, in review) proposes moving App Runtime diagnostics behind EnvironmentService and Notifications' subscription check to Sessions; those migrations are not released and this track does not wait on them."
+      ],
+      "gate": "Released 2026-11-15; accepting code landed (#16656, #16685). Enabling waits for that image to be pinned; each caller cutover lands only after its grant is live on the receiver. Cross-service protocol change: system tests covering command delivery, quiesce, suspend and the central sampler's code mode must pass, and each PR states its rollback.",
       "preserve": "Per-method caller authorization; Sandbox UID, incarnation and boot-ID fencing; at-most-once forwarding of execution mutations; Executor stream semantics.",
       "validation": [
-        "//agentplane/runner_gateway/internal/gateway:gateway_test",
-        "//agentplane/runner_gateway/internal/gateway:queue_runner_integration_test"
+        "//agentplane/environments/runtimeproxy:gateway_test",
+        "//agentplane/environments/runtimeproxy:queue_runner_integration_test",
+        "//agentplane/environments/internal/serving:serving_test"
       ],
       "evidence_paths": [
-        "agentplane/runner_gateway/internal/gateway/gateway.go",
-        "agentplane/runner_gateway/internal/gateway/connections.go",
-        "agentplane/runner_gateway/internal/gateway/runner_observer.go",
-        "agentplane/runner_gateway/internal/gateway/proxy.go",
-        "agentplane/runner_gateway/internal/gateway/executor.go",
+        "agentplane/environments/runtimeproxy/gateway.go",
+        "agentplane/environments/runtimeproxy/proxy.go",
+        "agentplane/environments/runtimeproxy/executor.go",
+        "agentplane/environments/runtimeproxy/SPEC.md",
+        "agentplane/environments/internal/serving/runtime_proxy.go",
+        "agentplane/environments/internal/serving/runtime_proxy_config.go",
         "agentplane/runner_gateway/main.go",
         "agentplane/runner_gateway/dispatcher/runner_client.go",
         "agentplane/app/internal/sessionclient/environment_runtime.go",
@@ -10659,20 +10668,12 @@
       ],
       "dependencies": [],
       "priority": 9,
-      "review_size": "One PR moving the package and retargeting callers behind the new Service; one removing the old serving path after the pins.",
-      "candidate_owner_paths": [
-        "agentplane/environments/internal/runtimeproxy"
-      ],
+      "review_size": "One manifest PR enabling the receiver; one PR per caller cutover; one PR retiring the Gateway path.",
+      "candidate_owner_paths": ["agentplane/environments/runtimeproxy"],
       "path_moves": [],
-      "package_renames": [
-        {
-          "path": "agentplane/environments/internal/runtimeproxy",
-          "from": "gateway",
-          "to": "runtimeproxy"
-        }
-      ],
-      "kind": "agreed move across services",
-      "source_owner": "agentplane/runner_gateway/internal/gateway",
+      "package_renames": [],
+      "kind": "agreed move across services; files moved, traffic still on the Gateway",
+      "source_owner": "agentplane/environments/runtimeproxy",
       "file_splits": [],
       "deleted_paths": [],
       "stage": 3,
@@ -10813,7 +10814,7 @@
     {
       "id": "privileged-auth",
       "title": "Replace backend bearers with service SVIDs without moving the auth owners",
-      "status": "PLANNED",
+      "status": "READY",
       "components": ["net", "identity", "sandboxes", "env"],
       "kind": "decided migration across services; no filesystem move selected",
       "source_paths": [
@@ -10823,12 +10824,12 @@
       ],
       "source_owner": "agentplane/net/peertls + identity + per-target clients",
       "candidate_target": null,
-      "summary": "Operator, 2026-11-14, `PRIVILEGED_BACKEND_AUTH_DESIGN` option 2: \"One auth mode can fire off\". Every first-party service-to-service call authenticates its caller by a service SVID over mTLS with verified server TLS; the `kubernetes_bearer` listener mode, Agentplane's TokenReview code, projected token audiences and the `tokenreviews` RBAC go, and Kubernetes authentication stays only toward the Kubernetes API. A service acting for an Identity proves itself with its certificate plus the typed delegation envelope. The app's `agentplane-agent` TokenReview bearer goes separately (operator, 05:05–05:06 UTC): #16383 (merged 2026-11-14) removed the app's Kubernetes bearer admission and its token settings; #16387 (merged 2026-11-14) removed the account and its TokenReview RBAC. The decision record is in #16342. The migration removes code paths inside files and moves none: `net/peertls` and `identity/auth` stay the owners.",
+      "summary": "Operator, 2026-11-14, `PRIVILEGED_BACKEND_AUTH_DESIGN` option 2: \"One auth mode can fire off\". Every first-party service-to-service call authenticates its caller by a service SVID over mTLS with verified server TLS; the `kubernetes_bearer` listener mode, Agentplane's TokenReview code, projected token audiences and the `tokenreviews` RBAC go, and Kubernetes authentication stays only toward the Kubernetes API. A service acting for an Identity proves itself with its certificate plus the typed delegation envelope. The app's `agentplane-agent` TokenReview bearer goes separately (operator, 05:05–05:06 UTC): #16383 (merged 2026-11-14) removed the app's Kubernetes bearer admission and its token settings; #16387 (merged 2026-11-14) removed the account and its TokenReview RBAC. The decision record is in #16342. The migration removes code paths inside files and moves none: `net/peertls` and `identity/auth` stay the owners. Stage 4 (every first-party caller presents its service SVID) finished on staging (#16637, 2026-11-15). Stage 5, removing bearer admission, was released on 2026-11-15 and is in progress per receiver: the transitional plaintext RPC listeners are gone (#16661), and PolicyService, Egress Admin (#16678), Actions (#16680), LLM ingress and Notifications no longer admit Kubernetes bearers; EnvironmentService (#16681), the sampler receiver (#16688) and the Dispatcher and Gateway proxy (#16690) are open.",
       "how": [
         "Runs as its own staged migration, owned by the DAG node `PRIVILEGED_BACKEND_AUTH_DESIGN`: inventory, issue and mount service SVIDs, receivers admit exact service SPIFFE IDs beside bearers (#16350), callers present SVIDs after the receivers' images are pinned, then bearer admission, TokenReview and its RBAC go.",
         "This plan moves no file in `net/peertls`, `identity/auth` or the listener configuration while the migration runs. The two-binary split grants the Runtime proxy's methods to the Sessions binary's service SVID (target binaries cut line: Runtime calls)."
       ],
-      "gate": "Decided 2026-11-14. Each stage rolls on its own with its rollback stated; certificates exist before code relies on them, receivers before callers, RBAC removals last. No reorg move waits on it.",
+      "gate": "Decided 2026-11-14; stage 5 released 2026-11-15. Each stage rolls on its own with its rollback stated; certificates exist before code relies on them, receivers before callers, RBAC removals last. No reorg move waits on it.",
       "preserve": "Role and delegation boundaries; peer URI/EKU checks, rotation and expiry closure.",
       "validation": [],
       "evidence_paths": [
@@ -10974,7 +10975,7 @@
         "runner-gateway-app",
         "orchestration-v1-retirement"
       ],
-      "result": "The Sandbox Controller is at `environments/` (#16407); EnvironmentService followed (#16613; automatic wake stays with the Dispatcher, #16626), then the Runtime proxy and Executor. What remains of the Runner Gateway then moves to `session_dispatcher/` as the Sessions binary. Retire orchestration_v1 once its interface review and the environment-rule slices are answered."
+      "result": "The Sandbox Controller is at `environments/` (#16407); EnvironmentService followed (#16613; automatic wake stays with the Dispatcher, #16626), then the Runtime proxy and Executor (package moved in #16656; enabling and caller cutovers in progress). What remains of the Runner Gateway then moves to `session_dispatcher/` as the Sessions binary. Retire orchestration_v1 once its interface review and the environment-rule slices are answered."
     },
     {
       "stage": 4,
@@ -11025,17 +11026,17 @@
   "scope_coverage": {
     "top_level_areas": 36,
     "go_packages": 237,
-    "go_files": 1316,
+    "go_files": 1319,
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "01e85fd9d267be8b955d4e3bf753f2051261043f",
+    "review_source_sha": "34507c2f0c3756193eab9834e743032ccfb7b99e",
     "review_slices": [
       {
         "slice": "action_service",
         "components": ["action_service"],
         "packages": 23,
-        "go_files": 155
+        "go_files": 156
       },
       {
         "slice": "app",
@@ -11088,8 +11089,8 @@
       {
         "slice": "environments",
         "components": ["environments"],
-        "packages": 12,
-        "go_files": 66
+        "packages": 13,
+        "go_files": 83
       },
       {
         "slice": "firecracker",
@@ -11196,8 +11197,8 @@
       {
         "slice": "runner_gateway",
         "components": ["runner_gateway"],
-        "packages": 9,
-        "go_files": 57
+        "packages": 8,
+        "go_files": 42
       },
       {
         "slice": "sandboxes",
@@ -11255,15 +11256,15 @@
       "id": "next-2",
       "track": "runner-gateway-connections-proxy",
       "title": "Move the Runtime proxy and Executor into the Environments binary",
-      "readiness": "AGREED DIRECTION",
-      "first_step": "Move internal/gateway into the Environments binary behind its every-replica listener (`environments/internal/serving`)."
+      "readiness": "READY",
+      "first_step": "Enable the Environments receiver once the #16685 image is pinned (#16692, open), then retarget the Dispatcher, app, Notification Service and sampler Executor callers and retire the Gateway path."
     },
     {
       "id": "next-3",
       "track": "runner-gateway-command",
       "title": "Move the Sessions binary to `session_dispatcher/`",
       "readiness": "HELD",
-      "first_step": "After the Runtime proxy leaves, move the rest of `runner_gateway/` to `session_dispatcher/`, with the app split as the PR's second commit."
+      "first_step": "Released to start once the Gateway no longer serves the Runtime proxy: move the rest of `runner_gateway/` to `session_dispatcher/`, with the app split as the PR's second commit."
     }
   ],
   "maintenance": {
