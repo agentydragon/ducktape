@@ -4,10 +4,3 @@ resources:
   - att-gateway-exporter.k8s.yaml
 components:
   - ../../k8s/att-gateway-exporter-image-pins
-configMapGenerator:
-  - name: att-gateway-exporter-dashboard
-    namespace: monitoring
-    files:
-      - dashboard.json
-configurations:
-  - kustomizeconfig

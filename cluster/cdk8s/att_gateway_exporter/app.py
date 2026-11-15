@@ -1,6 +1,6 @@
 """The AT&T gateway exporter (`att_gateway/`): its Deployment on a node on
 the gateway's LAN, Service, ServiceMonitor and the "Home gateway" dashboard
-(`dashboard.json` beside this module). Also the CronJob running the image's syslog
+(`dashboard.py` beside this module). Also the CronJob running the image's syslog
 reconciler, which keeps the gateway sending its firewall log to alloy-syslog.
 
 The image tag is a placeholder; the hand-written `PINS_DIR` Component sets it via Flux's
@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
+from grafana_foundation_sdk.cog.encoder import JSONEncoder
 from grafana_grafanadashboard_crds.org.integreatly.grafana import (
     GrafanaDashboardSpecDatasources,
     GrafanaDashboardSpecInstanceSelector,
@@ -24,10 +25,9 @@ from pydantic_settings import BaseSettings
 
 from att_gateway.settings import Settings, SyslogLevel, SyslogSettings
 from cluster.cdk8s import pod_policy
-from cluster.cdk8s.att_gateway_exporter import access_code
+from cluster.cdk8s.att_gateway_exporter import access_code, dashboard
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry import pull_credentials
-from cluster.cdk8s.grafana_dashboards import DashboardFile
 from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.monitoring import alloy, grafana_instance
@@ -49,9 +49,6 @@ _SERVICE = ServiceRef(
 )
 # The tag is a placeholder: `PINS_DIR` sets the real one.
 _IMAGE = f"git.allegedly.works/ducktape-ci/{NAME}:unset"
-DASHBOARD = DashboardFile(
-    source="cluster/cdk8s/att_gateway_exporter/dashboard.json", config_map=f"{NAME}-dashboard", namespace=_NAMESPACE
-)
 
 
 _RESOURCES = k8s.ResourceRequirements(
@@ -207,8 +204,11 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name=NAME, namespace=_NAMESPACE),
         instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=grafana_instance.INSTANCE_LABELS),
         folder="Network",
-        datasources=[GrafanaDashboardSpecDatasources(input_name="DS_LOKI", datasource_name="Loki")],
-        config_map_ref=DASHBOARD.config_map_ref(),
+        datasources=[
+            GrafanaDashboardSpecDatasources(input_name="DS_LOKI", datasource_name=grafana_instance.LOKI_DATASOURCE_UID),
+            GrafanaDashboardSpecDatasources(input_name="DS_MIMIR", datasource_name="mimir"),
+        ],
+        json=JSONEncoder().encode(dashboard.build_dashboard()),
     )
     return chart
 

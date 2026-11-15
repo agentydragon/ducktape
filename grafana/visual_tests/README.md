@@ -1,8 +1,9 @@
 # Grafana dashboard PR visuals spike
 
-Each checked-in source dashboard JSON has a neighboring
-`grafana_dashboard_visual_test` Bazel target. Generated deployment copies are
-covered by their source. The macro in `//grafana/visual_tests:visual_test.bzl` supplies the Docker,
+Each authored dashboard has a neighboring `grafana_dashboard_visual_test` Bazel
+target. One shared `//cluster/cdk8s:dashboard_json_files` action exports the SDK
+models as transient compact JSON for those tests; deployments embed the same models
+directly in Kubernetes manifests. The macro in `//grafana/visual_tests:visual_test.bzl` supplies the Docker,
 runfiles and visual-publication wiring and uses a shared scenario by default.
 
 Declare a target beside the dashboard and supply its fixture data:
@@ -12,7 +13,7 @@ load("//grafana/visual_tests:visual_test.bzl", "grafana_dashboard_visual_test")
 
 grafana_dashboard_visual_test(
     name = "dashboard_visual_test",
-    dashboard = ":dashboard.json",
+    dashboard = "//cluster/cdk8s:home-gateway.json",
     fixture_data = ":dashboard_visual_fixture.json",
 )
 ```
@@ -84,7 +85,7 @@ scenario and fixture where query execution coverage is needed.
 
 The additional Piraeus query-backed target demonstrates that extension: it uses the dashboard
 queries against a fixed synthetic Prometheus TSDB and captures the full
-dashboard. Its target, scenario, and metrics fixture live beside the JSON.
+dashboard. Its target, scenario, and metrics fixture live beside the dashboard builder.
 Neither mode contacts production or reads cluster credentials.
 
 Run a target on the remote Docker-capable executor, for example:

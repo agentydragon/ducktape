@@ -6,16 +6,13 @@
   run its candidate verifier before the PR when possible and inspect the Chrome
   screenshots; run its live verifier after Flux applies when candidate rendering was
   unavailable or deployment wiring changed.
-- An authored JSON dashboard is `<name>.json` here plus its entry in `FILE_DASHBOARDS`
-  in [`../grafana_dashboard_inputs.py`](../grafana_dashboard_inputs.py).
+- Author dashboards with native Foundation SDK builders/models and shared helpers in
+  `foundation.py`. The owning generator embeds `JSONEncoder().encode(...)` directly
+  in the `GrafanaDashboard`; keep symbolic datasource references and explicit Operator
+  mappings to provisioned UIDs.
+- Add the builder to `//cluster/cdk8s:dashboard_json_bin` for candidate/browser-test
+  artifacts. The shared exporter writes unformatted JSON; no per-dashboard binary or
+  checked-in JSON copy is needed.
 - Don't hand over dashboards with unresolved macros, empty frames, datasource errors, or
   unexplained all-zero panels; record any explicit empty/all-zero allow-list exception and
   its reason in the PR.
-
-The Foundation SDK spike authors CPAP gateway disk, Flux cluster, and Rugged Power in
-Python. Edit their typed builders; `grafana_instance.py` serializes their models directly
-into `GrafanaDashboard.spec.json`. No deployment JSON file or ConfigMap is generated for
-them. `foundation_dashboard` supplies transient JSON artifacts only for the existing
-recorded-data visual tests. The shared Mimir reference uses `${DS_MIMIR}`; each dashboard
-resource maps it to the literal provisioned UID `mimir`. Other dashboards remain authored
-JSON. The SDK's classic API retains the existing Grafana Operator format.

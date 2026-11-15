@@ -16,13 +16,12 @@ py_library(
 py_library(
     name = "app",
     srcs = ["app.py"],
-    data = ["dashboard.json"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":access_code",
+        ":dashboard",
         "//att_gateway:settings",
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:grafana_dashboards",
         "//cluster/cdk8s:home_lan",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
@@ -38,6 +37,7 @@ py_library(
         "//util:settings_contract",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@pypi//grafana_foundation_sdk",
         "@pypi//pydantic_settings",
     ],
 )
@@ -45,6 +45,16 @@ py_library(
 grafana_dashboard_visual_test(
     name = "dashboard_visual_test",
     size = "medium",
-    dashboard = ":dashboard.json",
+    dashboard = "//cluster/cdk8s:home-gateway.json",
     fixture_data = ":dashboard_visual_fixture.json",
+)
+
+py_library(
+    name = "dashboard",
+    srcs = ["dashboard.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s/monitoring/dashboards:foundation",
+        "@pypi//grafana_foundation_sdk",
+    ],
 )

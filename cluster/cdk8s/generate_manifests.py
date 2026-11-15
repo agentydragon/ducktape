@@ -43,7 +43,6 @@ from cluster.cdk8s import (
     github_tf,
     goldilocks,
     google_mcp,
-    grafana_dashboards,
     ha_mcp,
     headlamp,
     hubble_ui,
@@ -1311,15 +1310,7 @@ def generate_manifests(root: Path) -> None:
     grafana_instance_artifact = artifact("grafana-instance", grafana_instance.OUTPUT_DIR)
     grafana_instance.grafana_instance(
         flux_chart,
-        write_directory(
-            root,
-            grafana_instance_artifact,
-            grafana_instance.chart,
-            config_map_generator=grafana_dashboards.config_map_generator(
-                root, grafana_instance.OUTPUT_DIR, grafana_instance.DASHBOARDS
-            ),
-            configurations=[grafana_dashboards.write_kustomize_config(root, grafana_instance.OUTPUT_DIR)],
-        ),
+        write_directory(root, grafana_instance_artifact, grafana_instance.chart),
         grafana_operator_kustomization,
         cnpg_kustomization,
         seaweedfs_operator_kustomization,
@@ -1482,16 +1473,7 @@ def generate_manifests(root: Path) -> None:
     cdviz_app_artifact = artifact("cdviz", cdviz_collector.OUTPUT_DIR)
     cdviz_collector.cdviz_app(
         flux_chart,
-        write_directory(
-            root,
-            cdviz_app_artifact,
-            cdviz_collector.chart,
-            cdviz_dashboards.chart,
-            config_map_generator=grafana_dashboards.config_map_generator(
-                root, cdviz_collector.OUTPUT_DIR, [cdviz_dashboards.DASHBOARD, cdviz_dashboards.FEEDBACK_DASHBOARD]
-            ),
-            configurations=[grafana_dashboards.write_kustomize_config(root, cdviz_collector.OUTPUT_DIR)],
-        ),
+        write_directory(root, cdviz_app_artifact, cdviz_collector.chart, cdviz_dashboards.chart),
         cdviz_database_kustomization,
         cdviz_webhook_kustomization,
         monitoring_crds_kustomization,
@@ -1514,15 +1496,7 @@ def generate_manifests(root: Path) -> None:
     clickhouse_grafana_artifact = artifact("clickhouse-grafana", aiquota_analytics.OUTPUT_DIR)
     aiquota_analytics.clickhouse_grafana(
         flux_chart,
-        write_directory(
-            root,
-            clickhouse_grafana_artifact,
-            aiquota_analytics.chart,
-            config_map_generator=grafana_dashboards.config_map_generator(
-                root, aiquota_analytics.OUTPUT_DIR, [aiquota_analytics.DASHBOARD]
-            ),
-            configurations=[grafana_dashboards.write_kustomize_config(root, aiquota_analytics.OUTPUT_DIR)],
-        ),
+        write_directory(root, clickhouse_grafana_artifact, aiquota_analytics.chart),
         grafana_operator_kustomization,
     )
     agent_box_artifact = artifact("agent-box", f"{PARKED_ROOT}/agent-box")
@@ -1769,10 +1743,6 @@ def generate_manifests(root: Path) -> None:
             github_exporter_artifact,
             github_exporter_app.chart,
             components=[posixpath.relpath(github_exporter_app.PINS_DIR, github_exporter_app.OUTPUT_DIR)],
-            config_map_generator=grafana_dashboards.config_map_generator(
-                root, github_exporter_app.OUTPUT_DIR, [github_exporter_app.DASHBOARD]
-            ),
-            configurations=[grafana_dashboards.write_kustomize_config(root, github_exporter_app.OUTPUT_DIR)],
         ),
         monitoring_namespace_kustomization,
         monitoring_crds_kustomization,
@@ -1795,10 +1765,6 @@ def generate_manifests(root: Path) -> None:
             att_gateway_exporter_artifact,
             att_gateway_exporter_app.chart,
             components=[posixpath.relpath(att_gateway_exporter_app.PINS_DIR, att_gateway_exporter_app.OUTPUT_DIR)],
-            config_map_generator=grafana_dashboards.config_map_generator(
-                root, att_gateway_exporter_app.OUTPUT_DIR, [att_gateway_exporter_app.DASHBOARD]
-            ),
-            configurations=[grafana_dashboards.write_kustomize_config(root, att_gateway_exporter_app.OUTPUT_DIR)],
         ),
         monitoring_namespace_kustomization,
         att_gateway_access_code_kustomization,

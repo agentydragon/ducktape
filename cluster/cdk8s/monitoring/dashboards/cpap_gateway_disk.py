@@ -3,7 +3,6 @@
 from grafana_foundation_sdk.builders import timeseries
 from grafana_foundation_sdk.builders.common import VizLegendOptions
 from grafana_foundation_sdk.builders.dashboard import Dashboard
-from grafana_foundation_sdk.cog.encoder import JSONEncoder
 from grafana_foundation_sdk.models import common, dashboard
 
 from cluster.cdk8s.monitoring.dashboards.foundation import line_panel, mimir_query
@@ -18,9 +17,7 @@ def _filesystem_panel(id: int, title: str, x: int) -> timeseries.Panel:
         .id(id)
         .title(title)
         .description(
-            "Guest root filesystem. Used bytes are size minus free; root-reserved blocks are included in free. "
-            "Capacity is the filesystem visible inside the VM, separate from KubeVirt and host storage. "
-            "Only the CPAP gateway guest filesystem collector is scraped by monitoring Alloy."
+            "Guest root filesystem. Used bytes are size minus free; root-reserved blocks are included in free. Capacity is the filesystem visible inside the VM, separate from KubeVirt and host storage. Only the CPAP gateway guest filesystem collector is scraped by monitoring Alloy."
         )
         .grid_pos(dashboard.GridPos(h=8, w=12, x=x, y=0))
         .line_interpolation(common.LineInterpolation.LINEAR)
@@ -35,9 +32,7 @@ def build_dashboard() -> dashboard.Dashboard:
         Dashboard("CPAP gateway disk")
         .uid("cpap-gateway-disk")
         .description(
-            "Guest root filesystem capacity and use for the stateless CPAP gateway VM. "
-            "The current guest has no separate /boot filesystem mount, so boot-partition usage is not exposed here. "
-            "This does not measure OptiPlex host storage or Kubernetes pod storage."
+            "Guest root filesystem capacity and use for the stateless CPAP gateway VM. The current guest has no separate /boot filesystem mount, so boot-partition usage is not exposed here. This does not measure OptiPlex host storage or Kubernetes pod storage."
         )
         .tooltip(dashboard.DashboardCursorSync.CROSSHAIR)
         .tags(["cpap", "kubevirt", "storage"])
@@ -61,14 +56,5 @@ def build_dashboard() -> dashboard.Dashboard:
         )
         .build()
     )
-    # The classic builder has no schema-version setter; retain the deployed format.
     result.schema_version = 39
     return result
-
-
-def main() -> None:
-    print(JSONEncoder(indent=2).encode(build_dashboard()))
-
-
-if __name__ == "__main__":
-    main()

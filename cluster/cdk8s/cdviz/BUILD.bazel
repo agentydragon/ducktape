@@ -87,13 +87,12 @@ py_library(
     name = "dashboards",
     srcs = ["dashboards.py"],
     data = [
-        "dashboard.json",
-        "feedback-dashboard.json",
         ":license",
     ],
     deps = [
         ":config",
-        "//cluster/cdk8s:grafana_dashboards",
+        ":dashboard",
+        ":feedback_dashboard",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/monitoring:grafana_instance",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
@@ -104,6 +103,7 @@ py_library(
         "//cluster/cdk8s/providers/grafana_operator:grafanadatasource",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@pypi//grafana_foundation_sdk",
     ],
 )
 
@@ -141,13 +141,13 @@ py_test(
         "001_ci_feedback.sql",
         "002_ci_feedback_optimization.sql",
         "collector.toml",
-        "dashboard.json",
-        "feedback-dashboard.json",
         "github_api_server.py",
         "github_policy.vrl",
         "grants.sql",
         ":github_webhook_vrl",
         ":github_workflow_runs_vrl",
+        "//cluster/cdk8s:ducktape-ci.json",
+        "//cluster/cdk8s:ducktape-ci-feedback.json",
         "@nodejs_linux_amd64//:bin/node",
     ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
@@ -191,4 +191,22 @@ py_library(
     testonly = True,
     srcs = ["feedback_fixture.py"],
     deps = ["@pypi//psycopg"],
+)
+
+py_library(
+    name = "dashboard",
+    srcs = ["dashboard.py"],
+    deps = [
+        "//cluster/cdk8s/monitoring/dashboards:foundation",
+        "@pypi//grafana_foundation_sdk",
+    ],
+)
+
+py_library(
+    name = "feedback_dashboard",
+    srcs = ["feedback_dashboard.py"],
+    deps = [
+        "//cluster/cdk8s/monitoring/dashboards:foundation",
+        "@pypi//grafana_foundation_sdk",
+    ],
 )

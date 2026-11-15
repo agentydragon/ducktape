@@ -3,7 +3,6 @@
 from grafana_foundation_sdk.builders import bargauge, table, timeseries
 from grafana_foundation_sdk.builders.common import ReduceDataOptions, VizLegendOptions
 from grafana_foundation_sdk.builders.dashboard import Dashboard, QueryVariable, ThresholdsConfig, TimePicker
-from grafana_foundation_sdk.cog.encoder import JSONEncoder
 from grafana_foundation_sdk.models import common, dashboard, prometheus
 
 from cluster.cdk8s.monitoring.dashboards.foundation import line_panel, mimir, mimir_query
@@ -28,8 +27,7 @@ def build_dashboard() -> dashboard.Dashboard:
         Dashboard("Rugged Power")
         .uid("rugged-power")
         .description(
-            "Laptop battery and RAPL telemetry for Rugged. Adapted from Grafana dashboard 12542; "
-            "RAPL panels deliberately select the canonical intel-rapl path to exclude duplicate MMIO counters."
+            "Laptop battery and RAPL telemetry for Rugged. Adapted from Grafana dashboard 12542; RAPL panels deliberately select the canonical intel-rapl path to exclude duplicate MMIO counters."
         )
         .tooltip(dashboard.DashboardCursorSync.CROSSHAIR)
         .tags(["laptop", "power", "rapl", "rugged"])
@@ -114,8 +112,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 4, "Battery electrical power (sign follows kernel current)", 0, 16, 12, ["lastNotNull"]
             ).with_target(
                 mimir_query(
-                    'node_power_supply_current_ampere{instance=~"$instance",power_supply=~"BAT.*"} * on (power_supply) '
-                    'node_power_supply_voltage_volt{instance=~"$instance",power_supply=~"BAT.*"}',
+                    'node_power_supply_current_ampere{instance=~"$instance",power_supply=~"BAT.*"} * on (power_supply) node_power_supply_voltage_volt{instance=~"$instance",power_supply=~"BAT.*"}',
                     "{{power_supply}}",
                 )
             )
@@ -133,11 +130,3 @@ def build_dashboard() -> dashboard.Dashboard:
     )
     result.schema_version = 39
     return result
-
-
-def main() -> None:
-    print(JSONEncoder(indent=2).encode(build_dashboard()))
-
-
-if __name__ == "__main__":
-    main()

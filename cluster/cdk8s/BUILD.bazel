@@ -302,17 +302,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "grafana_dashboards",
-    srcs = ["grafana_dashboards.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = [
-        ":flux",
-        ":generation",
-        "//cluster/cdk8s/providers/grafana_operator:grafanadashboard",
-    ],
-)
-
 py_test(
     name = "test_generation",
     srcs = ["test_generation.py"],
@@ -1613,7 +1602,6 @@ py_library(
         ":github_tf",
         ":goldilocks",
         ":google_mcp",
-        ":grafana_dashboards",
         ":ha_mcp",
         ":headlamp",
         ":hubble_ui",
@@ -2287,5 +2275,68 @@ py_test(
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_binary(
+    name = "dashboard_json_bin",
+    testonly = True,
+    main_module = "cluster.cdk8s.dashboard_json",
+    deps = [":dashboard_json"],
+)
+
+genrule(
+    name = "dashboard_json_files",
+    testonly = True,
+    outs = [
+        "buildbuddy-executor-pool.json",
+        "zot-cache-image-pulls.json",
+        "interface-flap-frequency.json",
+        "node-memory.json",
+        "cluster-storage-io.json",
+        "s3-operations.json",
+        "cluster-disk-usage.json",
+        "piraeus-storage.json",
+        "storage-service-details.json",
+        "io-pressure.json",
+        "home-network-overview.json",
+        "cpap-gateway-disk.json",
+        "flux-cluster.json",
+        "rugged-power.json",
+        "aiquota-history.json",
+        "home-gateway.json",
+        "github-api-quotas.json",
+        "ducktape-ci.json",
+        "ducktape-ci-feedback.json",
+    ],
+    cmd = "$(location :dashboard_json_bin) $(@D)",
+    tools = [":dashboard_json_bin"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+)
+
+py_library(
+    name = "dashboard_json",
+    srcs = ["dashboard_json.py"],
+    deps = [
+        "//cluster/cdk8s/att_gateway_exporter:dashboard",
+        "//cluster/cdk8s/cdviz:dashboard",
+        "//cluster/cdk8s/cdviz:feedback_dashboard",
+        "//cluster/cdk8s/github_exporter:dashboard",
+        "//cluster/cdk8s/monitoring/dashboards:aiquota_history",
+        "//cluster/cdk8s/monitoring/dashboards:buildbuddy_executor_pool",
+        "//cluster/cdk8s/monitoring/dashboards:cluster_disk_usage",
+        "//cluster/cdk8s/monitoring/dashboards:cluster_storage_io",
+        "//cluster/cdk8s/monitoring/dashboards:cpap_gateway_disk",
+        "//cluster/cdk8s/monitoring/dashboards:flux_cluster",
+        "//cluster/cdk8s/monitoring/dashboards:home_network_overview",
+        "//cluster/cdk8s/monitoring/dashboards:interface_flap_frequency",
+        "//cluster/cdk8s/monitoring/dashboards:io_pressure",
+        "//cluster/cdk8s/monitoring/dashboards:node_memory",
+        "//cluster/cdk8s/monitoring/dashboards:piraeus_storage",
+        "//cluster/cdk8s/monitoring/dashboards:rugged_power",
+        "//cluster/cdk8s/monitoring/dashboards:s3_operations",
+        "//cluster/cdk8s/monitoring/dashboards:storage_service_details",
+        "//cluster/cdk8s/monitoring/dashboards:zot_cache_image_pulls",
+        "@pypi//grafana_foundation_sdk",
     ],
 )

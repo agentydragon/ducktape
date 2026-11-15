@@ -1,7 +1,4 @@
-"""The Grafana instance (run by grafana-operator), its Postgres, route, datasources and
-dashboards. Authored JSON files use `grafana_dashboard_inputs.FILE_DASHBOARDS`;
-Foundation SDK dashboards are built below and embedded in `GrafanaDashboard.spec.json`.
-"""
+"""The Grafana instance, its Postgres, route, datasources and dashboards."""
 
 from __future__ import annotations
 
@@ -34,11 +31,24 @@ from grafana_grafanadatasource_crds.org.integreatly.grafana import (
 from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.grafana_dashboards import DashboardFile
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import mimir
-from cluster.cdk8s.monitoring.dashboards import cpap_gateway_disk, flux_cluster, rugged_power
-from cluster.cdk8s.monitoring.grafana_dashboard_inputs import FILE_DASHBOARDS
+from cluster.cdk8s.monitoring.dashboards import (
+    buildbuddy_executor_pool,
+    cluster_disk_usage,
+    cluster_storage_io,
+    cpap_gateway_disk,
+    flux_cluster,
+    home_network_overview,
+    interface_flap_frequency,
+    io_pressure,
+    node_memory,
+    piraeus_storage,
+    rugged_power,
+    s3_operations,
+    storage_service_details,
+    zot_cache_image_pulls,
+)
 from cluster.cdk8s.providers.grafana_operator.grafana import Grafana
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
 from cluster.cdk8s.providers.grafana_operator.grafana_datasource import GrafanaDatasource
@@ -73,15 +83,6 @@ _ADMIN = SecretRef(namespace=_NAMESPACE, name="grafana-admin-password")
 _OIDC = SecretRef(namespace=_NAMESPACE, name="grafana-oidc-config")
 # The label the Grafana CR carries and every dashboard and datasource selects.
 INSTANCE_LABELS = {"dashboards": _NAME}
-
-
-def _dashboard_file(name: str) -> DashboardFile:
-    return DashboardFile(
-        source=f"cluster/cdk8s/monitoring/dashboards/{name}.json", config_map=f"{name}-dashboard", namespace=_NAMESPACE
-    )
-
-
-DASHBOARDS = [_dashboard_file(name) for name in FILE_DASHBOARDS]
 
 
 def _database(chart: Chart) -> None:
@@ -300,7 +301,6 @@ def _dashboard(
     *,
     datasources: Mapping[str, str] | None = None,
     folder: str | None = None,
-    config_map: DashboardFile | None = None,
     json: str | None = None,
     grafana_com: GrafanaDashboardSpecGrafanaCom | None = None,
 ) -> None:
@@ -317,37 +317,109 @@ def _dashboard(
         ]
         if datasources
         else None,
-        config_map_ref=config_map.config_map_ref() if config_map else None,
         json=json,
         grafana_com=grafana_com,
     )
 
 
 def _dashboards(chart: Chart) -> None:
-    for name, dashboard in FILE_DASHBOARDS.items():
-        _dashboard(
-            chart, name, datasources=dashboard.datasources, folder=dashboard.folder, config_map=_dashboard_file(name)
-        )
+    _dashboard(
+        chart,
+        "buildbuddy-executor-pool",
+        datasources={"DS_MIMIR": "mimir"},
+        folder="CI",
+        json=JSONEncoder().encode(buildbuddy_executor_pool.build_dashboard()),
+    )
+    _dashboard(
+        chart,
+        "zot-cache-image-pulls",
+        datasources={"DS_LOKI": LOKI_DATASOURCE_UID, "DS_MIMIR": "mimir"},
+        folder="Cluster & Platform",
+        json=JSONEncoder().encode(zot_cache_image_pulls.build_dashboard()),
+    )
+    _dashboard(
+        chart,
+        "interface-flap-frequency",
+        datasources={"DS_LOKI": LOKI_DATASOURCE_UID, "DS_MIMIR": "mimir"},
+        folder="Network",
+        json=JSONEncoder().encode(interface_flap_frequency.build_dashboard()),
+    )
+    _dashboard(
+        chart,
+        "node-memory",
+        datasources={"DS_MIMIR": "mimir"},
+        folder="Nodes & Hardware",
+        json=JSONEncoder().encode(node_memory.build_dashboard()),
+    )
+    _dashboard(
+        chart,
+        "cluster-storage-io",
+        datasources={"DS_LOKI": LOKI_DATASOURCE_UID, "DS_MIMIR": "mimir"},
+        folder="Storage",
+        json=JSONEncoder().encode(cluster_storage_io.build_dashboard()),
+    )
+    _dashboard(
+        chart,
+        "s3-operations",
+        datasources={"DS_MIMIR": "mimir"},
+        folder="Storage",
+        json=JSONEncoder().encode(s3_operations.build_dashboard()),
+    )
+    _dashboard(
+        chart,
+        "cluster-disk-usage",
+        datasources={"DS_MIMIR": "mimir"},
+        folder="Storage",
+        json=JSONEncoder().encode(cluster_disk_usage.build_dashboard()),
+    )
+    _dashboard(
+        chart,
+        "piraeus-storage",
+        datasources={"DS_MIMIR": "mimir"},
+        folder="Storage",
+        json=JSONEncoder().encode(piraeus_storage.build_dashboard()),
+    )
+    _dashboard(
+        chart,
+        "storage-service-details",
+        datasources={"DS_MIMIR": "mimir"},
+        folder="Storage",
+        json=JSONEncoder().encode(storage_service_details.build_dashboard()),
+    )
+    _dashboard(
+        chart,
+        "io-pressure",
+        datasources={"DS_MIMIR": "mimir"},
+        folder="Storage",
+        json=JSONEncoder().encode(io_pressure.build_dashboard()),
+    )
+    _dashboard(
+        chart,
+        "home-network-overview",
+        datasources={"DS_LOKI": LOKI_DATASOURCE_UID, "DS_MIMIR": "mimir"},
+        folder="Network",
+        json=JSONEncoder().encode(home_network_overview.build_dashboard()),
+    )
     _dashboard(
         chart,
         "cpap-gateway-disk",
         datasources={"DS_MIMIR": "mimir"},
         folder="Cluster & Platform",
-        json=JSONEncoder(indent=2).encode(cpap_gateway_disk.build_dashboard()),
+        json=JSONEncoder().encode(cpap_gateway_disk.build_dashboard()),
     )
     _dashboard(
         chart,
         "flux-cluster",
         datasources={"DS_MIMIR": "mimir"},
         folder="Cluster & Platform",
-        json=JSONEncoder(indent=2).encode(flux_cluster.build_dashboard()),
+        json=JSONEncoder().encode(flux_cluster.build_dashboard()),
     )
     _dashboard(
         chart,
         "rugged-power",
         datasources={"DS_MIMIR": "mimir"},
         folder="Nodes & Hardware",
-        json=JSONEncoder(indent=2).encode(rugged_power.build_dashboard()),
+        json=JSONEncoder().encode(rugged_power.build_dashboard()),
     )
     _dashboard(
         chart,

@@ -1,6 +1,6 @@
 """GitHub API rate-limit exporters for the human and agent accounts: the upstream REST
 exporter and our GraphQL one, their Services, ServiceMonitors, token ExternalSecrets and
-the Grafana dashboard (`dashboard.json` beside this module).
+the Grafana dashboard (`dashboard.py` beside this module).
 
 The GraphQL exporter's image tag is a placeholder; the hand-written `PINS_DIR` Component,
 which the kustomization includes across the roots, sets it via Flux's image-automation marker.
@@ -15,7 +15,11 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
 )
-from grafana_grafanadashboard_crds.org.integreatly.grafana import GrafanaDashboardSpecInstanceSelector
+from grafana_foundation_sdk.cog.encoder import JSONEncoder
+from grafana_grafanadashboard_crds.org.integreatly.grafana import (
+    GrafanaDashboardSpecDatasources,
+    GrafanaDashboardSpecInstanceSelector,
+)
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecEndpointsRelabelings,
@@ -26,7 +30,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 from cluster.cdk8s import external_creds
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry import pull_credentials
-from cluster.cdk8s.grafana_dashboards import DashboardFile
+from cluster.cdk8s.github_exporter import dashboard
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
@@ -46,9 +50,6 @@ _GRAPHQL_HTTP = Port(name="http", number=9172)
 # The tag is a placeholder: `PINS_DIR` sets the real one.
 _GRAPHQL_IMAGE = "git.allegedly.works/ducktape-ci/github-graphql-rate-exporter:unset"
 _TOKEN_DIR = "/var/run/secrets/github"
-DASHBOARD = DashboardFile(
-    source="cluster/cdk8s/github_exporter/dashboard.json", config_map="github-exporter-dashboard", namespace=_NAMESPACE
-)
 
 
 def _token_secret(account: str) -> str:
@@ -290,7 +291,8 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name="github-exporter", namespace=_NAMESPACE),
         instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels={"dashboards": "grafana"}),
         folder="GitHub",
-        config_map_ref=DASHBOARD.config_map_ref(),
+        json=JSONEncoder().encode(dashboard.build_dashboard()),
+        datasources=[GrafanaDashboardSpecDatasources(input_name="DS_MIMIR", datasource_name="mimir")],
     )
     return chart
 
