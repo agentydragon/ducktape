@@ -11,7 +11,9 @@ intra-Sandbox hardening reminder retained here at Rai's request.
 ### Stakeholder priorities, 2026-10-30 PDT
 
 **Stale, 2026-11-14:** these priorities were set for a two-week sprint that ended about 2026-11-13.
-They stand until the operator restates them. Work the operator has released is
+They stand until the operator restates them, except where noted. Operator, 2026-11-15 11:38 UTC:
+"vm startup latency is currently relatively low pri for me, i won't want that done soon. i'm more
+interested in things to clean up / refactor / reorg." Work the operator has released is
 listed under [Released work in flight](#released-work-in-flight-2026-11-15); releasing work is not a priority statement.
 
 The product goal is reliable long-running agents in the operator's cluster and environments:
@@ -20,14 +22,15 @@ concrete autonomous workflow is a daily agent inspecting the previous 24 hours o
 opening useful fix PRs. Agentplane-level child Sessions are important; native harness children
 remain useful but do not provide independently addressable Agentplane Sessions.
 
-| Priority  | Outcome                                                                                                               | Work to select                                                                                                                                                                      |
-| --------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P0        | Sessions remain usable through sampler rolls, crashes and JS/exec faults; tooling bugs do not make them irrecoverable | Fix concrete reliability regressions as normal use exposes them; broad sampler-roll and JS/exec disruption exercises remain waived                                                  |
-| P1        | A useful daily CI agent that can create and coordinate Agentplane Sessions with its own privilege level               | `SCHEDULED_AGENT_WAKE_DESIGN` then `SCHEDULED_AGENT_WAKE`, followed by the `DAILY_CI_AGENT` milestone using the reviewed delegation tools; evaluate usability through normal use    |
-| Alongside | Fewer clicks to start useful work on an existing environment                                                          | `SESSION_LAUNCH_FRICTION`; make reused environments and separate working directories easy                                                                                           |
-| Next      | Measure a production fresh VM start and provide a usable Bazel client inside a VM                                     | `VM_STARTUP_LATENCY`, `LOCAL_BAZEL`; select an image or layering change only if production measurements show it addresses startup or needed resource headroom                       |
-| Later     | Launching workers with different privileges, broader delegation and archive-read policy                               | `MULTIAGENT_MODEL`, `AGENT_LAUNCH_POLICY_DESIGN`, `AGENT_SANDBOX_LAUNCH`, broader create grants and held history-read work                                                          |
-| Later     | Broader runtime/conversation redesign and maintenance without a current workflow need                                 | Full `SESSION_RUNTIME_MODEL_DESIGN` and `AGENT_AUTHORED_CONVERSATIONS_DESIGN` implementations, renames, broad protocol-parity research and speculative service/storage replacements |
+| Priority  | Outcome                                                                                                               | Work to select                                                                                                                                                                                           |
+| --------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0        | Sessions remain usable through sampler rolls, crashes and JS/exec faults; tooling bugs do not make them irrecoverable | Fix concrete reliability regressions as normal use exposes them; broad sampler-roll and JS/exec disruption exercises remain waived                                                                       |
+| P1        | A useful daily CI agent that can create and coordinate Agentplane Sessions with its own privilege level               | `SCHEDULED_AGENT_WAKE_DESIGN` then `SCHEDULED_AGENT_WAKE`, followed by the `DAILY_CI_AGENT` milestone using the reviewed delegation tools; evaluate usability through normal use                         |
+| Alongside | Fewer clicks to start useful work on an existing environment                                                          | `SESSION_LAUNCH_FRICTION`; make reused environments and separate working directories easy                                                                                                                |
+| Next      | Provide a usable Bazel client inside a VM                                                                             | `LOCAL_BAZEL`                                                                                                                                                                                            |
+| Later     | Measure a production fresh VM start                                                                                   | `VM_STARTUP_LATENCY` (operator, 2026-11-15 UTC: low priority, not wanted soon); select an image or layering change only if production measurements show it addresses startup or needed resource headroom |
+| Later     | Launching workers with different privileges, broader delegation and archive-read policy                               | `MULTIAGENT_MODEL`, `AGENT_LAUNCH_POLICY_DESIGN`, `AGENT_SANDBOX_LAUNCH`, broader create grants and held history-read work                                                                               |
+| Later     | Broader runtime/conversation redesign and maintenance without a current workflow need                                 | Full `SESSION_RUNTIME_MODEL_DESIGN` and `AGENT_AUTHORED_CONVERSATIONS_DESIGN` implementations, renames, broad protocol-parity research and speculative service/storage replacements                      |
 
 Independent ready work may proceed alongside the main track; priority is not a new dependency edge.
 Preserve existing in-flight ownership and explicit holds. Nodes not selected above, component-plan
@@ -181,21 +184,22 @@ its old ordering does not give it precedence over the selected tracks.
 
 The operator released these tracks; Codex workers build them. Each node owns its gates; the Go
 reorganization behind the Runtime proxy move is [section 17](#17-two-binaries-and-the-go-layout).
-States as of 11:30 UTC.
+States as of 11:45 UTC.
 
 | Track                                      | Operator release (UTC)            | Node                             | State                                                                                                                                                                                                                 |
 | ------------------------------------------ | --------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Retire bearer admission (auth stage 5)     | 2026-11-15                        | `PRIVILEGED_BACKEND_AUTH_DESIGN` | Token projections removed (#16650); direct SVID admission refuses mixed credentials (#16657); Notifications (#16667) and LLM ingress (#16668) receivers merged; Policy (#16651) in review; the other receivers follow |
-| One TLS listener per service               | 2026-11-14 01:41, "dispatch 1, 2" | `PRIVILEGED_BACKEND_AUTH_DESIGN` | Plaintext exposure removed from manifests (#16631, #16632); the transitional plaintext listeners' code removal is in review (#16661)                                                                                  |
+| One TLS listener per service               | 2026-11-14 01:41, "dispatch 1, 2" | `PRIVILEGED_BACKEND_AUTH_DESIGN` | Plaintext exposure removed from manifests (#16631, #16632); the transitional plaintext listeners' code was removed (#16661)                                                                                           |
 | Runtime proxy and Executor to Environments | 2026-11-15                        | `RUNTIME_PROXY_TO_ENVIRONMENTS`  | Accepting receiver code with optional settings merged (#16656); enabling it, retargeting callers and retiring the Gateway receiver follow                                                                             |
 | Runtime proxy caller audit                 | 2026-11-15                        | `RUNTIME_PROXY_CALLER_AUDIT`     | In review; the migrations it proposes are not released                                                                                                                                                                |
+| Sessions binary directory                  | 2026-11-15 11:35                  | `SESSIONS_BINARY_DIRECTORY`      | Starts after the Runtime proxy move's exit                                                                                                                                                                            |
 
 Finished and deleted since the 2026-11-14 ledger: the pre-cutover leftovers, any-replica Gateway
-routing and its cleanup (section 12), auth stages 1 to 4, the stage 2 Go layout fixes,
+routing and its cleanup (section 12), auth stages 1 to 4, the stage 2 Go layout fixes (the Go plan keeps the rest of `runner-era-names`),
 EnvironmentService on every Environments replica (contract in the
 [Environments specification](../environments/SPEC.md)), central code-mode tools as Actions
 (#16418, #16422, #16423) and the dead Dispatcher command states (#16438, then the proto values
-removed). Not released: the remaining stage 3 moves of section 17 after the Runtime proxy,
+removed). Not released:
 `CommandSettled`, retiring `orchestration_v1` and launcher auto-grants.
 `SAMPLER_STABLE_PROVIDER_PREFIX` waits for the operator to review its design (20:04 on 2026-11-14:
 "I would want to see the design"), in #16401.
@@ -291,7 +295,7 @@ flowchart LR
         SCHEDULED_AGENT_WAKE[Durable scheduled wake] --> DAILY_CI_AGENT
     end
     SESSION_LAUNCH_FRICTION[Alongside: simpler reused-environment launch]
-    VM_STARTUP_LATENCY[Next: measure production VM startup]
+    VM_STARTUP_LATENCY[Later: measure production VM startup]
     LOCAL_BAZEL[Next: Bazel client inside a VM]
 ```
 
@@ -1067,7 +1071,7 @@ app/Sandbox Service database changes requires its own migration safety review.
 flowchart LR
     CLAUDE_CODE_WEB_BRIDGE[Unscheduled: a frontend for Claude Code web sessions]
     SESSION_LAUNCH_FRICTION[Alongside: fewer clicks on reused environments]
-    VM_STARTUP_LATENCY[Next: measure production VM startup]
+    VM_STARTUP_LATENCY[Later: measure production VM startup]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render]
     EGRESS_RELAY_RENAME[TODO: rename egress sidecar to relay]
     EGRESS_CREDENTIAL_TRANSPORT_DESIGN[Decision: credential upstream schemes and ports]
@@ -1127,7 +1131,8 @@ directory, with intended defaults and override behavior visible. Include the nor
 
 ### `VM_STARTUP_LATENCY` — measure production time to a useful fresh VM Session
 
-**Next; operator, 2026-10-30 PDT.** First measure one ordinary staging `environment-vm` start using
+**Later; low priority, not wanted soon (operator, 2026-11-15 UTC); selected next on 2026-10-30
+PDT.** First measure one ordinary staging `environment-vm` start using
 the production NixOS guest on a KVM-schedulable node. The [prior-work audit](../debug/2026_11_01_vm_startup_latency.md)
 records the boot, image, and runner-disk improvements already shipped, and why the recent Debian/QEMU
 system-test timings do not measure this product path. The staging [fresh VM acceptance](../docs/vm_sandboxes.md#fresh-vm-trial-readiness)
@@ -3954,7 +3959,7 @@ evidence and line-level steps for every track below; its stages are ordered by c
 
 EnvironmentService serves from every Environments replica
 ([Environments specification](../environments/SPEC.md)), with explicit resume internal and automatic
-wake execution/budgeting beside Dispatcher. The remaining stage 3 moves are not released. Sessions re-checking the live
+wake execution/budgeting beside Dispatcher. The Runtime proxy move and the Sessions directory move after it are released. Sessions re-checking the live
 Identity landed in #16373.
 
 ```mermaid
@@ -3962,7 +3967,7 @@ flowchart LR
     PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: stage 5, section 15]
     RUNTIME_PROXY_CALLER_AUDIT[In review: Runtime-proxy caller dispositions]
     RUNTIME_PROXY_TO_ENVIRONMENTS[In flight: Runtime proxy and Executor into Environments]
-    SESSIONS_BINARY_DIRECTORY[Held: the rest moves to session_dispatcher/]
+    SESSIONS_BINARY_DIRECTORY[Released after the proxy cutover: the rest moves to session_dispatcher/]
     ENVIRONMENT_KEEP_ALIVE_HOLDS[Proposed design: keep-alive holds]
     GO_LOCAL_EXTRACTIONS[Unscheduled: stage 4 local extractions]
     RUNNER_GATEWAY_RENAME[Unscheduled: deployed names, section 15]
@@ -4004,7 +4009,9 @@ move, authorize new grants or require a Sandbox/single attachment on a Session.
 
 ### `SESSIONS_BINARY_DIRECTORY` — what remains becomes the Sessions binary
 
-**Held so its files move once.** After EnvironmentService and the Runtime proxy leave, move the rest
+**Released by operator, 2026-11-15 11:35 UTC ("do dispatch … session binary directory"), to start
+after `RUNTIME_PROXY_TO_ENVIRONMENTS`'s exit so its files move once.** After EnvironmentService and
+the Runtime proxy leave, move the rest
 of `runner_gateway/` (the Dispatcher, its migrations, the Sandbox inventory behind its catalog, the
 command and its test support) to `agentplane/session_dispatcher/`, and put configuration parsing and
 server composition in an internal app owner (`runner-gateway-app`). A pure move: the generated
