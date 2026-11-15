@@ -363,9 +363,7 @@ heap barrier. Unselected calls use the ordinary guards.
 `chunk_analysis_options.<chunk>.native_operation_inputs` is a source-selected
 author premise for one exact direct native initializer. The schema admits
 `operation: text_encoder_empty`, `operation: map_empty`, `operation: weak_map_empty`,
-`operation: set_empty`,
-`operation: symbol`, `operation: promise_resolve`, and
-`operation: set_from_primitive_array`.
+`operation: set_empty`, `operation: symbol`, and `operation: set_from_primitive_array`.
 For `symbol`, the canonical selector engine identifies one direct top-level
 simple binding initialized by an ordinary, nonoptional, uncomputed `Symbol(...)`
 call with zero or one syntactically primitive argument and no spread; the
@@ -393,10 +391,7 @@ source-known target still contradict it.
 
 This input sets only its asserted slots' integrity flags, and only at the
 selected call span; the existing exact native model consumes them there, and
-the report records the author provenance at that site. A `promise_resolve`
-input is effective only together with the matching independent
-`host_behavior.reentry_free_operations` entry; the pair satisfies the exact Promise timing check
-without changing other native guards or Promise call sites. Other calls still
+the report records the author provenance at that site. Other calls still
 require the ordinary shared integrity proof. For `symbol`,
 primitive argument evaluation and conversion may throw; a Symbol-valued or
 object-valued argument is not admitted. Argument and callee evaluation, their

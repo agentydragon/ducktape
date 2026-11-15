@@ -230,10 +230,10 @@ one author reference. The object keeps ordinary value and heap inference.
 Unsupported fields, `__proto__`, wrappers and ambiguous declarations reject
 the input. This form asserts the original Map data binding separately at every
 selected construction in each admitted initialization schedule.
-The exact `Promise.resolve()` initializer premise requires stable global
-`Promise` and constructor `resolve` slots in the shared source census. Its
-independent `host_behavior.reentry_free_operations` assertion supplies timing; neither assertion
-supplies purity or return shape.
+The `host_behavior.reentry_free_operations` assertion for `Promise.resolve()`
+supplies timing only and requires the shared source census to prove stable
+global `Promise` and constructor `resolve` slots. It supplies neither purity nor
+return shape.
 The per-chunk `modules.json` report projects these imported summaries for
 diagnosis, including the defining source path when available.
 
