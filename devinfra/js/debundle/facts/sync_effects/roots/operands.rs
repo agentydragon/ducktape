@@ -6,7 +6,7 @@ use super::super::execution_index::{
     Call, CallKind, ExecutionIndex, object_own_data_read_property,
 };
 use super::super::interpreter::{
-    CheckedLocalConstructorFactory, Executor, Outcome, ValidatedMetadataDecoration, unknown,
+    CheckedLocalConstructorFactory, Executor, ValidatedMetadataDecoration, unknown,
 };
 use super::super::local_operations::{LocalBody, RootStore};
 use super::super::native::array_iteration::{admitted_callback, supported_row};
@@ -44,9 +44,9 @@ pub(super) struct RootOperands<'source> {
     /// Roots this owner added while no opaque call consumed them; a fully
     /// covered execution withdraws them again at finalization.
     pub(super) provisional_roots: BTreeSet<SourceUnitOrdinal>,
-    /// The owner's one call is a substituted retaining factory whose result
-    /// is its private carrier: the callback is reached only through the
-    /// result binding, so the owner is no reachability root of its own.
+    /// The owner's one factory call retains its callback only in the private
+    /// result graph: the callback is reached through the result binding, so
+    /// the owner is no reachability root of its own.
     pub(super) private_factory_result: bool,
     pub(super) ordered_initializer: Option<&'source LocalBody>,
     /// An admitted root expression statement. The body phase runs it through
@@ -69,7 +69,7 @@ pub(super) fn prepare<'source>(
     executor: &mut Executor<'source, '_>,
     owner: SourceUnitOrdinal,
 ) -> RootOperands<'source> {
-    let inputs = executor.inputs;
+    let inputs = executor.source_inputs();
     let index = inputs.index;
     let fact = &inputs.facts[owner.0];
     let settled_array_elements = executor.settled_array_elements(fact);
@@ -105,16 +105,6 @@ pub(super) fn prepare<'source>(
     // be reused and should not consume this statement's bounded budget.
     executor.state.clear_invocation_memos(&executor.queries);
     executor.state.invocation_count = 0;
-    executor.state.fallback_outcome = Outcome::default();
-    executor.state.fallback_callback_sizes = None;
-    executor.state.fallback_local_owners.clear();
-    executor.state.fallback_local_deferred.clear();
-    executor
-        .state
-        .world_mut()
-        .publication
-        .returned_callback_owners
-        .clear();
     let (annotated_record_factory, mut record_factory_rejection) =
         match executor.annotated_record_factory(fact) {
             Some(Ok(factory)) => (Some(factory), None),
@@ -146,8 +136,7 @@ pub(super) fn prepare<'source>(
         let first_callback_publication_owner =
             if reason == RecordFactoryRejectionReason::FactoryEscaped {
                 executor
-                    .inputs
-                    .index
+                    .source_index()
                     .hoisted_bindings
                     .get(factory)
                     .and_then(|key| {
@@ -156,7 +145,7 @@ pub(super) fn prepare<'source>(
                             .world
                             .publication
                             .first_callback_publication_owners
-                            .get(key)
+                            .get(&executor.source_index().allocation(*key))
                     })
                     .copied()
             } else {
@@ -246,10 +235,10 @@ pub(super) fn prepare<'source>(
         &private_constructor_result_owners,
         closed_result.as_ref(),
     );
-    // The proof is the flattened lane's; the ordered lane relies on it only
-    // for the call it substitutes.
-    let private_factory_result = closed_result.is_some()
-        && matches!(calls.as_slice(), [call] if executor.retaining_factory_summary(call).is_some());
+    // Privacy is independent of whether a legacy summary or the prepared
+    // provider's actual body produces the result. Execution below must still
+    // complete before it can withdraw the result owner's speculative root.
+    let private_factory_result = closed_result.is_some();
     if let Some(proof) = closed_result {
         executor.record_callback_factory_use_fact(proof.proof_use);
     }
@@ -289,7 +278,7 @@ pub(super) fn prepare<'source>(
             .world_mut()
             .classes
             .superclasses
-            .insert(*key, values);
+            .insert(index.allocation(*key), values);
     }
     let checked_split_binding_copy = initializer_source
         .and_then(|source| source.composed_expression())
@@ -607,7 +596,7 @@ pub(super) fn prepare<'source>(
 
 /// Whether the root's one invocation is worth attempting as an
 /// `Array.prototype` iteration row (`native/array_iteration.rs`): a supported
-/// row over a module binding holding one dense literal array, with a local
+/// row over a module binding holding one dense literal array, with a prepared
 /// callback that has no live captures. A cheap filter with no side effects:
 /// the attempt runs through `body::execute`, which keeps the kernel
 /// execution only if it seals the owner and otherwise rewinds to the flat
@@ -636,7 +625,7 @@ fn root_array_iteration(executor: &Executor<'_, '_>, calls: &[Call]) -> bool {
     let ValueExpr::Binding(receiver) = receiver.as_ref() else {
         return false;
     };
-    let index = executor.inputs.index;
+    let index = executor.source_index();
     let Some(proof) = index.array_iterations.get(&CallSite::from(call.span)) else {
         return false;
     };
@@ -645,20 +634,33 @@ fn root_array_iteration(executor: &Executor<'_, '_>, calls: &[Call]) -> bool {
     }
     let prefix = &executor.state.world.module.prefix_values;
     let callback = match call.args.first() {
-        Some(ValueExpr::Alloc(Kind::Function, key)) => {
-            Values::from([AbstractValue::Value(Value::Alloc(Kind::Function, *key))])
-        }
-        Some(ValueExpr::Binding(binding)) if executor.initialized_local_binding(binding) => {
-            match prefix.get(binding) {
-                Some(values) => values.clone(),
-                None => return false,
-            }
+        Some(ValueExpr::Alloc(Kind::Function, key)) => Values::from([AbstractValue::Value(
+            Value::Alloc(Kind::Function, index.allocation(*key)),
+        )]),
+        Some(ValueExpr::Binding(binding)) => {
+            let values = if executor.initialized_local_binding(binding) {
+                prefix.get(binding).cloned()
+            } else {
+                executor
+                    .imported_binding_values(binding)
+                    .filter(|(_, initialized)| *initialized)
+                    .map(|(values, _)| values)
+            };
+            let Some(values) = values else { return false };
+            values
         }
         _ => return false,
     };
-    admitted_callback(index, &callback).is_ok()
-        && executor.initialized_local_binding(receiver)
-        && prefix.get(receiver).is_some_and(|values| {
+    let receivers = if executor.initialized_local_binding(receiver) {
+        prefix.get(receiver).cloned()
+    } else {
+        executor
+            .imported_binding_values(receiver)
+            .filter(|(_, initialized)| *initialized)
+            .map(|(values, _)| values)
+    };
+    admitted_callback(executor, &callback).is_ok()
+        && receivers.as_ref().is_some_and(|values| {
             matches!(values.iter().collect::<Vec<_>>().as_slice(),
                 [AbstractValue::Value(Value::Alloc(Kind::Object, array))]
                     if executor.state.world.arrays.dense.contains_key(array))
@@ -667,7 +669,7 @@ fn root_array_iteration(executor: &Executor<'_, '_>, calls: &[Call]) -> bool {
 
 /// Canonical source identity is independent of leaf/value admission. Retain
 /// the exact selected body span, not a lowered-value guess.
-fn ordered_effect_source<'source>(
+pub(super) fn ordered_effect_source<'source>(
     index: &'source ExecutionIndex,
     owner: SourceUnitOrdinal,
     assignments: &'source [(Id, ValueExpr)],
@@ -700,31 +702,43 @@ impl Executor<'_, '_> {
             ValueExpr::Alloc(Kind::Function, key) if !call.has_spread => (
                 Some(Values::from([AbstractValue::Value(Value::Alloc(
                     Kind::Function,
-                    *key,
+                    self.source_index().allocation(*key),
                 ))])),
                 false,
             ),
-            ValueExpr::Binding(binding) if self.initialized_local_binding(binding) => (
-                self.state.world.module.prefix_values.get(binding).cloned(),
-                false,
-            ),
+            ValueExpr::Binding(binding) => {
+                let values = if self.initialized_local_binding(binding) {
+                    self.state.world.module.prefix_values.get(binding).cloned()
+                } else {
+                    self.imported_binding_values(binding)
+                        .filter(|(_, initialized)| *initialized)
+                        .map(|(values, _)| values)
+                };
+                (values, false)
+            }
             ValueExpr::Member(receiver, Some(property), MemberKey::Static, _) => {
                 let ValueExpr::Binding(receiver) = receiver.as_ref() else {
                     return false;
                 };
-                if !self.initialized_local_binding(receiver) {
-                    return false;
-                }
-                let targets = self
-                    .state
-                    .world
-                    .module
-                    .prefix_values
-                    .get(receiver)
-                    .and_then(|values| {
-                        self.present_own_data_read(values, property)
+                let receivers = if self.initialized_local_binding(receiver) {
+                    self.state.world.module.prefix_values.get(receiver).cloned()
+                } else {
+                    self.imported_binding_values(receiver)
+                        .filter(|(_, initialized)| *initialized)
+                        .map(|(values, _)| values)
+                };
+                let targets = receivers.and_then(|values| {
+                    if let Some(AbstractValue::ModuleNamespace(scope)) = values.first()
+                        && values.len() == 1
+                    {
+                        self.namespace_member(*scope, property)
+                            .filter(|read| read.initialized)
                             .map(|read| read.values)
-                    });
+                    } else {
+                        self.present_own_data_read(&values, property)
+                            .map(|read| read.values)
+                    }
+                });
                 (targets, true)
             }
             _ => return false,
@@ -736,7 +750,9 @@ impl Executor<'_, '_> {
             return false;
         };
         !callable.generator
-            && !self.inputs.index.async_callables.contains(&key)
+            && self
+                .callable_inputs(key)
+                .is_some_and(|source| !source.index.async_callables.contains(&key))
             && (!member || self.method_receiver_is_unused(&targets))
     }
 
@@ -748,15 +764,15 @@ impl Executor<'_, '_> {
         binding: &Id,
     ) -> Option<OwnerInitializationCoverageRefusalReason> {
         use OwnerInitializationCoverageRefusalReason::*;
-        let index = self.inputs.index;
+        let index = self.source_index();
         Some(if index.imported_bindings.contains(binding) {
             ImportedBindingStore
-        } else if !self.inputs.top_bindings.contains(binding) {
+        } else if !self.source_inputs().top_bindings.contains(binding) {
             // An undeclared global stays a global publication.
             UnsupportedOwnerKind
         } else if index.top_const_bindings.contains(binding) {
             ConstBindingStore
-        } else if !self.inputs.var_bindings.contains(binding)
+        } else if !self.source_inputs().var_bindings.contains(binding)
             && !self
                 .state
                 .world

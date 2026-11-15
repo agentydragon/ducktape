@@ -1,82 +1,71 @@
-//! Pure-function recognition + spec-level purity declarations
-//! for the realizability gate's `S` (side-effect ordering)
-//! sub-graph.
+//! Purity inference and author declarations control the graph's side-effect
+//! ordering constraints. They remain independent of at-init reads and the
+//! final emitted-schedule check: a pure result is not a proof of normal
+//! completion, initialization, or safe relocation.
 //!
-//! Most tests run in CI. Two remain `#[ignore]`d as desiderata
-//! for future work — each ignore-reason names the specific
-//! analysis still missing (interprocedural argument freshness for
-//! `Object.freeze`, an `Expr::New` whitelist entry for `RegExp`).
-//! Their bodies become regression fixtures the moment those
-//! analyses land.
-//!
-//! # Background
-//!
-//! `classify_expr_purity` (in `purity/`) decides
-//! per-expression whether a top-level statement contributes a
-//! `SideEffect` row to the dep graph. It's currently very
-//! conservative: any `Call`, `New`, `MemberExpression`,
-//! `OptChain`, or `SuperProp` is `Purity::Unknown` (treated as
-//! impure). This is sound but over-rejects realistic specs in
-//! which most top-level calls are HOF wrappers, schema
-//! builders, collection constructors, or static-method
-//! aliases that have no observable side effects.
-//!
-//! Two complementary mechanisms close the gap:
-//!
-//! 1. **Inferred purity.** The walker recursively inspects
-//!    function bodies in the chunk and marks calls/news pure
-//!    when the callee is statically provably free of
-//!    observable side effects. Built-ins (`Object.freeze`,
-//!    `Set`/`Map` constructors with literal args, `Object`
-//!    static methods, etc.) are pure by catalogue;
-//!    user-defined functions are pure by recursive analysis
-//!    (no `globalThis`/`window`/`self` mutation, no
-//!    `console.*`, no `delete`, no calls to known-impure
-//!    functions, no member-expression read of unknown-shape
-//!    objects, etc.).
-//!
-//! 2. **Declared purity.** The spec author annotates a
-//!    logical-module member with `purity: "pure"` to assert
-//!    that calls to the bound function have no observable
-//!    side effects. The validator does not second-guess the
-//!    annotation: it is an author trust contract. Used when
-//!    the function body is too dynamic, too large, or
-//!    imported from outside the chunk for static analysis to
-//!    handle. `purity: "pure_new"` is the same kind of trust
-//!    contract for `new BoundClass(...)`, while still evaluating
-//!    constructor arguments normally.
-//!
-//! # Out of scope
-//!
-//! Both mechanisms only suppress `S` (side-effect ordering)
-//! edges. They do **not** affect `R` (at-init read) edges:
-//! a top-level statement that reads a binding owned by
-//! another logical module still contributes an `R` edge
-//! regardless of how the surrounding call is classified.
-//! Realizability gating against TDZ-causing cycles is
-//! orthogonal to purity inference.
-//!
-//! # Spec annotation shape
-//!
-//! ```yaml
-//! {
-//!   "name": "defineComponent",
-//!   "selector": { "binding": { "name": "B" } },
-//!   "purity": "pure"   // ← new optional field
-//! }
-//! ```
-//!
-//! `"pure"` and `"pure_new"` are defined here. Future extensions could
-//! include `"commutative"` (the function has side effects but
-//! they're observably commutative across calls — useful for
-//! registry-add patterns where last-write-wins or set-union
-//! semantics make ordering irrelevant).
-//!
-//! The annotation lives at the member level, not on the
-//! selector, because it's metadata about the binding, not
-//! about how to find it.
+//! Supported splits execute original and emitted code. Cases where the graph
+//! accepts but ordered execution is incomplete retain the graph proof, require
+//! a typed schedule refusal, execute its diagnostic tree, and check an accepted
+//! colocated control. The two pre-existing ignored tests describe additional
+//! freshness and RegExp precision; they are not current acceptance evidence.
 
 use debundle_e2e_support::*;
+
+fn assert_purity_completion_limit(opts: FixtureOpts<'_>, output: &str) -> RejectedFixture {
+    let rejected = assert_conservative_schedule_refusal(
+        opts.clone(),
+        "evaluation_schedule_unknown_reordered",
+        output,
+    );
+    assert_purity_completion_control(opts, output, rejected, true)
+}
+
+fn assert_purity_completion_control(
+    opts: FixtureOpts<'_>,
+    output: &str,
+    rejected: RejectedFixture,
+    check_source_under_node: bool,
+) -> RejectedFixture {
+    assert_eq!(
+        rejected.candidate_relocation_assessment()["legacy_gate_accepts"],
+        true,
+        "the independent purity/graph proof must survive the completion limit"
+    );
+    let mut colocated = opts;
+    assert!(
+        colocated
+            .logical_modules
+            .iter()
+            .all(|(_, module)| module.annotations.is_empty())
+    );
+    // Leave all source units together, including unclaimed predecessors.
+    // Provider annotations and all program/host premises stay unchanged.
+    colocated.logical_modules.clear();
+    let fixture = run_fixture(colocated);
+    if check_source_under_node {
+        assert_preserved_entry_output(&fixture, output);
+    } else {
+        assert_entry_output(&fixture, output);
+    }
+    rejected
+}
+
+fn assert_pure_graph_with_completion_limit(
+    source: &str,
+    modules: Vec<LogicalModuleEntry>,
+    module: &str,
+    contains: &[&str],
+    excludes: &[&str],
+    output: &str,
+) {
+    let rejected = assert_purity_completion_limit(FixtureOpts::new(source, modules), output);
+    assert_module_source(
+        &rejected.app_root(),
+        &format!("{}/modules/{module}.js", rejected.chunk_id),
+        contains,
+        excludes,
+    );
+}
 
 // ---------------------------------------------------------------------------
 // Inferred purity — `classify_expr_purity` recognizes shapes statically.
@@ -266,8 +255,9 @@ fn inferred_pure_recursive_function_classified_pure() {
     // coercing operator on a possibly-object operand and
     // classifies NotPure by design — this test pins recursion
     // termination, not arithmetic.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"function prev(n) { return n === 4 ? 3 : n === 3 ? 2 : n === 2 ? 1 : 0; }
+    let _fixture = assert_purity_completion_limit(
+        FixtureOpts::new(
+            r#"function prev(n) { return n === 4 ? 3 : n === 3 ? 2 : n === 2 ? 1 : 0; }
 function even(n) { return n === 0 ? true : odd(prev(n)); }
 function odd(n) { return n === 0 ? false : even(prev(n)); }
 const fourEven = even(4);
@@ -275,12 +265,13 @@ const fiveOdd = odd(5);
 console.log(fourEven, fiveOdd);
 export { even, odd, fourEven, fiveOdd };
 "#,
-        vec![
-            logical_module("mod_a", &[Member::new("even"), Member::new("fourEven")]),
-            logical_module("mod_b", &[Member::new("odd"), Member::new("fiveOdd")]),
-        ],
-    ));
-    assert_entry_output(&fixture, "true true\n");
+            vec![
+                logical_module("mod_a", &[Member::new("even"), Member::new("fourEven")]),
+                logical_module("mod_b", &[Member::new("odd"), Member::new("fiveOdd")]),
+            ],
+        ),
+        "true true\n",
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -676,26 +667,42 @@ export { A, B, C, PureBox };
 
 #[test]
 fn builtin_container_initializers_break_the_side_effect_cycle() {
-    for (initializer, read, output) in [
-        ("new Map()", "b.size", "1\n"),
-        ("new Set()", "b.size", "1\n"),
-        ("new WeakMap()", "(b ? \"y\" : \"n\")", "y1\n"),
-        ("new Array()", "b.length", "1\n"),
-        (r#"new Set(["x", "y", "z"])"#, "b.size", "4\n"),
-        (r#"new Map([["x", 1], ["y", 2]])"#, r#"b.get("x")"#, "2\n"),
+    for (initializer, read, output, ordered_completion) in [
+        ("new Map()", "b.size", "1\n", true),
+        ("new Set()", "b.size", "1\n", true),
+        ("new WeakMap()", "(b ? \"y\" : \"n\")", "y1\n", true),
+        ("new Array()", "b.length", "1\n", false),
+        (r#"new Set(["x", "y", "z"])"#, "b.size", "4\n", true),
+        (
+            r#"new Map([["x", 1], ["y", 2]])"#,
+            r#"b.get("x")"#,
+            "2\n",
+            false,
+        ),
     ] {
         let declaration = format!("const b = {initializer};");
         let source = format!(
             "const a = (() => 1)();\n{declaration}\nconst c = {read} + a;\nconsole.log(c);\nexport {{ a, b, c }};"
         );
-        assert_pure_cycle_break(
-            &source,
-            vec![logical_module("b_module", &[Member::new("b")])],
-            "b_module",
-            &[declaration.split_inclusive('(').next().unwrap()],
-            &["const a"],
-            output,
-        );
+        if ordered_completion {
+            assert_pure_cycle_break(
+                &source,
+                vec![logical_module("b_module", &[Member::new("b")])],
+                "b_module",
+                &[declaration.split_inclusive('(').next().unwrap()],
+                &["const a"],
+                output,
+            );
+        } else {
+            assert_pure_graph_with_completion_limit(
+                &source,
+                vec![logical_module("b_module", &[Member::new("b")])],
+                "b_module",
+                &[declaration.split_inclusive('(').next().unwrap()],
+                &["const a"],
+                output,
+            );
+        }
     }
 }
 
@@ -705,7 +712,7 @@ fn class_static_new_map_field() {
     // only static-side-effect candidate. Without the rule the
     // class is flagged side-effecting and pulled into the
     // S-chain.
-    assert_pure_cycle_break(
+    assert_pure_graph_with_completion_limit(
         r#"const a = (() => 1)();
 class C {
   static x = new Map();
@@ -755,25 +762,28 @@ fn optional_chain_on_whitelisted_receiver_classified_pure() {
     //   which is whitelisted), so Y has has_side_effect=false.
     //   No Y → X s-edge. Only edge: residual → y_module
     //   (Z's at-init read of Y). DAG. Validator accepts.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const X = (() => "x")();
+    let fixture = assert_purity_completion_limit(
+        FixtureOpts::new(
+            r#"const X = (() => "x")();
 const Y = Number?.MAX_SAFE_INTEGER;
 const Z = Y + 1;
 console.log(Z);
 export { X, Y, Z };
 "#,
-        vec![logical_module("y_module", &[Member::new("Y")])],
-    ));
+            vec![logical_module("y_module", &[Member::new("Y")])],
+        ),
+        "9007199254740992\n",
+    );
 
     // y_module owns Y but does NOT own X — X stays in residual.
     assert_module_source(
-        &fixture.out_root,
+        &fixture.app_root(),
         "static/app/modules/y_module.js",
         &["const Y = Number?.MAX_SAFE_INTEGER", "export {", "Y"],
         &["const X", "(()=>\"x\")"],
     );
     assert_module_source(
-        &fixture.out_root,
+        &fixture.app_root(),
         "static/app/modules/residual/unhandled.js",
         &["const X", "const Z"],
         &["const Y"],
@@ -781,7 +791,6 @@ export { X, Y, Z };
 
     // Behaviour preserved: console.log(Z) prints
     // String(Number.MAX_SAFE_INTEGER + 1).
-    assert_entry_output(&fixture, "9007199254740992\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -790,7 +799,7 @@ export { X, Y, Z };
 
 #[test]
 fn immutable_symbol_key_does_not_make_class_definition_an_effect() {
-    assert_pure_cycle_break(
+    assert_pure_graph_with_completion_limit(
         r#"const before = (() => 1)();
 const brand = Symbol('brand');
 class Hidden { [brand]() { return 7; } }
@@ -1017,7 +1026,7 @@ console.log(a.value, b.value, c.value);
 export {{ a, b, c }};
 "#
         );
-        let fixture = run_fixture(
+        let _fixture = assert_purity_completion_limit(
             FixtureOpts::new(
                 &source,
                 vec![
@@ -1033,8 +1042,8 @@ export {{ a, b, c }};
                     &[Member::new("Box").with_purity(MemberPurity::PureNew)],
                 )],
             )]),
+            "1 2 3\n",
         );
-        assert_entry_output(&fixture, "1 2 3\n");
     }
 }
 
@@ -1075,21 +1084,36 @@ export { a, b, c };
             .with_extra_chunk_logical_modules(&provider_modules()),
         &["foo", "bar"],
     );
-    let fixture = run_fixture(
-        FixtureOpts::new(ENTRY, modules())
-            .with_extra_chunks(&[("static/provider", PROVIDER)])
-            .with_source_paths(&[
-                ("static/app", "$bunfs/root/app.js"),
-                ("static/provider", "$bunfs/root/provider.js"),
-            ])
-            .with_extra_chunk_logical_modules(&provider_modules()),
+    let peers = [("static/provider", PROVIDER)];
+    let paths = [
+        ("static/app", "$bunfs/root/app.js"),
+        ("static/provider", "$bunfs/root/provider.js"),
+    ];
+    let providers = provider_modules();
+    let opts = FixtureOpts::new(ENTRY, modules())
+        .with_extra_chunks(&peers)
+        .with_source_paths(&paths)
+        .with_extra_chunk_logical_modules(&providers);
+    // The original Bun virtual absolute import is not a host Node path.
+    // Check the emitted import normalization and runtime result directly.
+    let rejected = run_emit_on_rejection_fixture_with_graphs(opts.clone());
+    let report: serde_json::Value =
+        read_json(&rejected.report_root.join("evaluation_schedule.json"));
+    assert_eq!(report["kind"], "evaluation_schedule_refused");
+    assert!(
+        report["rejection"]["reason"]
+            .as_str()
+            .unwrap()
+            .starts_with("evaluation_schedule_unknown_reordered")
     );
-    assert_entry_output(&fixture, "1 2 3\n");
+    assert!(rejected.gate_rejected_marker().exists());
+    assert_node_output(&rejected.entry_path(), "1 2 3\n", "");
+    assert_purity_completion_control(opts, "1 2 3\n", rejected, false);
 }
 
 #[test]
 fn source_selected_constructor_purity_reaches_importer() {
-    let fixture = run_fixture(
+    let _fixture = assert_purity_completion_limit(
         FixtureOpts::new(
             r#"import { A as Factory } from "./provider.js";
 const a = new Factory(1);
@@ -1118,8 +1142,8 @@ export { a, b, c };
                 .with_purity(MemberPurity::PureNew)],
             )],
         )]),
-    );
-    assert_entry_output(&fixture, "1 2 3\n");
+"1 2 3\n"
+);
 }
 
 #[test]
@@ -1211,9 +1235,9 @@ export { a, b, c };
 fn asserted_pure_namespace_member_calls_emit_no_s_cycle() {
     // CJS-interop shape: the importer binds a namespace-like export of another
     // chunk as `ns` and reaches the factory as a MEMBER call, `ns.make(...)`.
-    // Inference can't see `make` is pure (the namespace object is opaque), so
-    // the three calls split across modules would S-cycle. A binding-level
-    // `pure_members` annotation on the importer's `ns` admits the calls.
+    // The definition-side member assertion projects onto the importer while
+    // the shared kernel executes the actual method. Its home object does not
+    // disqualify the fresh parameter's initialization and read receipts.
     let fixture = run_fixture(
         FixtureOpts::new(
             r#"import { reactish as ns } from "./vendorlib.js";
@@ -1252,6 +1276,7 @@ export { A, B, C };
         &["B"],
         &["A", "C"],
     );
+    assert_preserved_entry_output(&fixture, "a b c\n");
 }
 
 /// Zod-style schema-declaration entry: every statement is a fluent
@@ -1292,13 +1317,37 @@ fn fluent_chain_schema_decls_without_assertion_emit_s_cycle() {
 }
 
 #[test]
-fn asserted_fluent_export_chains_emit_no_s_cycle() {
-    // A definition-side `fluent_exports` assertion on the defining
-    // chunk projects onto the importer's `k` local; the chain arm then
-    // admits every link (including the `Base`-derived `.extend`
-    // chain), the schema decls classify pure, and the interleaved
-    // split realizes.
+fn asserted_fluent_export_chains_keep_receiver_operations_conservative() {
+    // The assertion supplies classification, but does not replace prepared
+    // provider execution. Call-result receivers, implicit `this` and this
+    // object's spread still lack ordered transfers. Preserve that uncertainty
+    // while the colocated program remains runnable.
     let fixture = run_fixture(
+        FixtureOpts::new(
+            FLUENT_CHAIN_ENTRY,
+            vec![logical_module(
+                "schemas",
+                &[
+                    Member::new("Base"),
+                    Member::new("A"),
+                    Member::new("B"),
+                    Member::new("C"),
+                ],
+            )],
+        )
+        .with_extra_chunks(&[("static/vendorlib", FLUENT_VENDORLIB)])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/vendorlib")
+            .with_fluent_exports(&["e4"])
+            .build()]),
+    );
+    assert_preserved_entry_output(&fixture, "1 a 1 2 b 1 c\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/schemas.js",
+        &["A", "B", "C"],
+        &[],
+    );
+    expect_sequenced_cycle_rejection(
         FixtureOpts::new(
             FLUENT_CHAIN_ENTRY,
             vec![
@@ -1310,19 +1359,7 @@ fn asserted_fluent_export_chains_emit_no_s_cycle() {
         .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/vendorlib")
             .with_fluent_exports(&["e4"])
             .build()]),
-    );
-    assert_preserved_entry_output(&fixture, "1 a 1 2 b 1 c\n");
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/mod_a.js",
-        &["A", "C"],
-        &["B"],
-    );
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/mod_b.js",
-        &["B"],
-        &["A", "C"],
+        &["mod_a", "mod_b"],
     );
 }
 
@@ -1442,13 +1479,13 @@ fn annotation_property_writes_with_policy_co_locate_and_realize() {
     // Same spec, flag on: the writes classify Pure with a LocalEffect
     // on their component binding; the claims agree with the forced
     // co-location, only `console.log` remains impure, no S-cycle.
-    let fixture = run_fixture(
+    let fixture = assert_purity_completion_limit(
         FixtureOpts::new(ANNOTATION_WRITE_ENTRY, annotation_write_modules())
             .with_local_property_effects(),
+        "[[\"A\",1],[\"B\",2],[\"C\",3]]\n",
     );
-    assert_preserved_entry_output(&fixture, "[[\"A\",1],[\"B\",2],[\"C\",3]]\n");
     assert_module_source(
-        &fixture.out_root,
+        &fixture.app_root(),
         "static/app/modules/mod_a.js",
         &[
             "function A()",
@@ -1459,7 +1496,7 @@ fn annotation_property_writes_with_policy_co_locate_and_realize() {
         &["function B()", "B.displayName ="],
     );
     assert_module_source(
-        &fixture.out_root,
+        &fixture.app_root(),
         "static/app/modules/mod_b.js",
         &["function B()", "B.displayName = \"B\";"],
         &[
@@ -1497,7 +1534,7 @@ fn annotation_property_write_cannot_be_split_from_its_declarer() {
 
 #[test]
 fn string_raw_template_initializer_admits_cycle_break() {
-    assert_pure_cycle_break(
+    assert_pure_graph_with_completion_limit(
         r#"const a = (() => 1)();
 const b = String.raw`value:${1}`;
 const c = b.length + a;

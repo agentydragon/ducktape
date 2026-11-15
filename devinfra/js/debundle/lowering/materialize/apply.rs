@@ -85,12 +85,14 @@ pub(super) fn materialized_chunk_artifact(
         validation,
         report,
         // `unmatched_spec_claims`, `vendor_reference_rewrites` and
-        // `gate_rejection` are rolled up by `materialize_logical_modules`
+        // `gate_rejection` and `evaluation_commutations` are rolled up by
+        // `materialize_logical_modules`
         // before this point; downstream artifact construction doesn't carry
         // them.
         unmatched_spec_claims: _,
         vendor_reference_rewrites: _,
         gate_rejection: _,
+        evaluation_commutations: _,
     } = chunk;
     let manifest_files = file_records
         .iter()
@@ -193,6 +195,7 @@ mod tests {
             vendor_reference_rewrites: BTreeMap::new(),
             unmatched_spec_claims: Vec::new(),
             gate_rejection: None,
+            evaluation_commutations: Default::default(),
         }
     }
 

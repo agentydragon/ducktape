@@ -318,7 +318,7 @@ var set = new Set();\n\
 const later = map.size + set.size;\n\
 console.log(earlierMap, earlierSet, later);\n";
     let inputs = empty_native_collection_inputs(SOURCE, "var");
-    let fixture = run_fixture_with_args(
+    let rejected = assert_conservative_schedule_refusal(
         FixtureOpts::new(
             SOURCE,
             vec![logical_module(
@@ -328,11 +328,13 @@ console.log(earlierMap, earlierSet, later);\n";
         )
         .with_unassigned_mode(unassigned_mode_inline())
         .with_native_operation_inputs("static/app", inputs),
-        &["--effect-conflicts-jsonl"],
+        "evaluation_schedule_unknown_reordered",
+        "1 2 0\n",
     );
-    assert_preserved_entry_output(&fixture, "1 2 0\n");
+    let assessment = rejected.candidate_relocation_assessment();
+    assert_eq!(assessment["legacy_gate_accepts"], true, "{assessment:#}");
 
-    let entry = std::fs::read_to_string(&fixture.entry_path).expect("generated entry source");
+    let entry = std::fs::read_to_string(rejected.entry_path()).expect("diagnostic entry source");
     let import = entry.find("import ").expect("collection module import");
     let earlier = entry
         .find("const earlierMap")
@@ -348,13 +350,13 @@ console.log(earlierMap, earlierSet, later);\n";
         );
     }
     assert_module_source(
-        &fixture.out_root,
+        &rejected.app_root(),
         "static/app/modules/collections.js",
         &["var map = new Map();", "var set = new Set();"],
         &[],
     );
 
-    let report = fixture.effect_translation_validation();
+    let report = rejected.effect_translation_validation();
     assert_eq!(
         report["coverage"]["covered_owner_dependencies"]["native_operation_inputs"],
         serde_json::json!([
@@ -373,6 +375,25 @@ console.log(earlierMap, earlierSet, later);\n";
         report["coverage"]["owner_coverage_refusals"]["unsupported_initializer"], 3,
         "the sequence and later property reads retain their own refusal: {report:#}"
     );
+
+    let control = run_fixture_with_graphs(
+        FixtureOpts::new(
+            SOURCE,
+            vec![logical_module(
+                "collections",
+                &[
+                    Member::new("earlierMap"),
+                    Member::new("map"),
+                    Member::new("earlierSet"),
+                    Member::new("set"),
+                    Member::new("later"),
+                ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_native_operation_inputs("static/app", empty_native_collection_inputs(SOURCE, "var")),
+    );
+    assert_preserved_entry_output(&control, "1 2 0\n");
 }
 
 #[test]

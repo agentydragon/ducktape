@@ -99,8 +99,20 @@ impl PrefixValues {
         self.values.values()
     }
 
+    pub(in crate::facts::sync_effects) fn map_values(&mut self, mut map: impl FnMut(&mut Values)) {
+        self.values = self
+            .values
+            .iter()
+            .map(|(id, values)| {
+                let mut values = values.clone();
+                map(&mut values);
+                (*id, values)
+            })
+            .collect();
+    }
+
     pub(in crate::facts::sync_effects) fn ptr_eq(&self, other: &Self) -> bool {
-        self.values.ptr_eq(&other.values)
+        Arc::ptr_eq(&self.bindings, &other.bindings) && self.values.ptr_eq(&other.values)
     }
 
     /// Joins alternatives forked from one run: each binding present on any
@@ -132,5 +144,32 @@ impl std::ops::Index<&Id> for PrefixValues {
 
     fn index(&self, id: &Id) -> &Values {
         self.get(id).expect("binding has prefix values")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use swc_common::SyntaxContext;
+
+    #[test]
+    fn pointer_witness_preserves_binding_catalogue_identity() {
+        let first = PrefixValues::new(Arc::new(TopBindings::new([(
+            "first".into(),
+            SyntaxContext::empty(),
+        )])));
+        let second = PrefixValues::new(Arc::new(TopBindings::new([(
+            "second".into(),
+            SyntaxContext::empty(),
+        )])));
+        assert!(first.ptr_eq(&first.clone()));
+        // Both ordinal maps are empty. Their equal integer-keyed storage must
+        // not authorize reuse under another module's binding catalogue.
+        assert!(!first.ptr_eq(&second));
+        let same_names_new_source = PrefixValues::new(Arc::new(TopBindings::new([(
+            "first".into(),
+            SyntaxContext::empty(),
+        )])));
+        assert!(!first.ptr_eq(&same_names_new_source));
     }
 }

@@ -460,29 +460,35 @@ fn a_store_through_a_proven_alias_commutes() {
     assert_effect_verdict_accepts(&fixture, "alias.value = 1;");
 }
 
-/// An admitted store whose kernel attempt does not seal (a generator's
-/// creation has no closure receipt) rewinds to the flattened lane and is
-/// labelled `unproved_statement_operation`.
+/// Creating and storing a generator does not execute its deferred body.
 #[test]
-fn an_unsealed_store_attempt_is_labelled_and_rewound() {
+fn a_generator_store_has_a_creation_receipt_without_running_the_body() {
     let fixture = run_fixture(FixtureOpts::new(
-        "const record = { value: 0 };\nconst independent = 7;\nrecord.value = function* () {};\nconsole.log(independent, typeof record.value);\n",
+        "const record = { value: 0 };\nconst independent = 7;\nrecord.value = function* () { throw new Error(\"deferred\"); };\nconsole.log(independent, typeof record.value);\n",
         vec![logical_module_with_anon(
             "record",
             &[Member::new("record")],
-            &["record.value = function* () {};"],
+            &["record.value = function* () { throw new Error(\"deferred\"); };"],
         )],
     ));
     assert_preserved_entry_output(&fixture, "7 function\n");
-    assert_effect_verdict_pending(&fixture, "incomplete", "generator store");
-    assert_owner_coverage_refusal(&fixture, "unproved_statement_operation", "generator store");
+    assert_effect_verdict_accepts(&fixture, "generator creation and store");
+    let report = fixture.effect_translation_validation();
+    assert_eq!(
+        report["coverage"]["root_attempts"]["sealed"], 1,
+        "{report:#}"
+    );
+    assert_eq!(
+        report["coverage"]["root_attempts"]["rewound"],
+        serde_json::json!({}),
+        "{report:#}"
+    );
 }
 
-/// The effect-coverage report counts each chunk's root attempts: a store
-/// that seals, and one whose generator creation leaves the ledger open, so
-/// the executor rewinds it to the flat lane.
+/// The effect-coverage report counts both ordinary and deferred callable
+/// creation stores as sealed operations.
 #[test]
-fn the_coverage_report_counts_sealed_and_rewound_root_attempts() {
+fn the_coverage_report_counts_sealed_generator_and_data_stores() {
     let fixture = run_fixture(FixtureOpts::new(
         "const record = { value: 0 };\nconst other = { value: 0 };\nrecord.value = 1;\nother.value = function* () {};\nconsole.log(record.value, typeof other.value);\n",
         vec![],
@@ -490,10 +496,6 @@ fn the_coverage_report_counts_sealed_and_rewound_root_attempts() {
     assert_preserved_entry_output(&fixture, "1 function\n");
     let report = fixture.effect_translation_validation();
     let attempts = &report["coverage"]["root_attempts"];
-    assert_eq!(attempts["sealed"], 1, "{report:#}");
-    assert_eq!(
-        attempts["rewound"],
-        serde_json::json!({ "open_effect_ledger": 1 }),
-        "{report:#}"
-    );
+    assert_eq!(attempts["sealed"], 2, "{report:#}");
+    assert_eq!(attempts["rewound"], serde_json::json!({}), "{report:#}");
 }

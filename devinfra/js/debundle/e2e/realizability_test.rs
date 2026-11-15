@@ -31,7 +31,10 @@ export {{ a }};
         );
         let fixture = run_fixture(FixtureOpts::new(
             &source,
-            vec![logical_module("mod_x", &[Member::new("a")])],
+            vec![
+                logical_module_with_anon("startup", &[], &["console.log('before');"]),
+                logical_module("mod_x", &[Member::new("a")]),
+            ],
         ));
         assert_preserved_entry_output(&fixture, "before\nafter a sync async\n");
     }

@@ -18,8 +18,9 @@ fn policy(operations: &[ReentryFreeOperation]) -> HostBehavior {
     }
 }
 
-/// `gate` and `later` in two modules: the split is realizable only when the
-/// `Promise.resolve` call is known not to run `saved`.
+/// The legacy reentry proof needs the Promise.resolve premise, but it does
+/// not prove that moving `later` before the host publication preserves its
+/// captured-cell phase. The final schedule guard retains that limitation.
 fn split(operations: &[ReentryFreeOperation]) -> FixtureOpts<'static> {
     FixtureOpts::new(
         SOURCE,
@@ -76,7 +77,7 @@ fn unconsumed_entry_is_inferable_and_consumed_entry_is_not() {
         ReentryFreeOperation::AsyncLocalStorageConstruct,
         ReentryFreeOperation::PromiseResolve,
     ];
-    let (findings, report) = lint(split(&both), &[]);
+    let (findings, report) = lint(one_module(&both), &[]);
     assert_eq!(
         operation_verdicts(&findings),
         vec![
@@ -92,23 +93,44 @@ fn unconsumed_entry_is_inferable_and_consumed_entry_is_not() {
     );
     // The `inferable` claim: without the unconsumed entry the run emits the
     // same tree, under Node parity.
-    let with_both = run_fixture(split(&both));
-    let without = run_fixture(split(&[ReentryFreeOperation::PromiseResolve]));
+    let with_both = run_fixture(one_module(&both));
+    let without = run_fixture(one_module(&[ReentryFreeOperation::PromiseResolve]));
     assert_same_tree(&without.out_root, &with_both.out_root);
+    assert_preserved_entry_output(&with_both, "true 42\n");
+    assert_preserved_entry_output(&without, "true 42\n");
 }
 
-/// A needed entry: withholding it makes the split unrealizable, so the probe
-/// reports nothing for it.
+/// An entry required by the legacy gate cannot authorize a schedule change.
+/// Its rejected baseline makes the independent-removal probe inconclusive.
 #[test]
-fn probe_drops_a_needed_entry() {
-    // Positive anchor: the split needs the entry.
+fn a_needed_legacy_entry_does_not_override_an_unproved_schedule() {
     expect_atomic_conflict_rejection(split(&[]), &["host/value", "host/later"], &[]);
+    expect_rejection_containing_all(
+        split(&[ReentryFreeOperation::PromiseResolve]),
+        &["evaluation_schedule_unknown_reordered"],
+    );
     let (findings, report) = lint(
         split(&[ReentryFreeOperation::PromiseResolve]),
         &["--probe-analysis"],
     );
-    assert_eq!(operation_verdicts(&findings), vec![], "{report:#}");
-    assert_eq!(report["probes"][0]["outcome"], "changed", "{report:#}");
+    let verdicts = operation_verdicts(&findings);
+    assert!(
+        matches!(
+            verdicts.as_slice(),
+            [(
+                ReentryFreeOperation::PromiseResolve,
+                InferenceVerdict::Inconclusive {
+                    reason: InconclusiveReason::BaselineNotAccepted { error }
+                }
+            )] if error.contains("evaluation_schedule_unknown_reordered")
+        ),
+        "{report:#}"
+    );
+    assert_eq!(
+        report["probes"].as_array().map_or(0, Vec::len),
+        0,
+        "{report:#}"
+    );
 }
 
 /// A consumed entry no split needs stays `inconclusive` without the probe;

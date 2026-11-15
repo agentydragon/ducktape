@@ -40,8 +40,8 @@ pub use output_imports::{
 };
 pub use passthrough::rewrite_peeled_module_imports;
 pub use plan::{
-    BundledReplacementExportIdentity, VendorImportAction, VendorPlanOptions, VendorResolutionPlan,
-    build_vendor_resolution_plan,
+    BundledReplacementExportIdentity, VendorEvaluationTarget, VendorImportAction,
+    VendorPlanOptions, VendorResolutionPlan, build_vendor_resolution_plan,
 };
 use plan::{ChunkBundledPartialSwapPlan, upstream_property_path};
 use spec::PartialSwapKind;

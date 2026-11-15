@@ -60,7 +60,7 @@ export { CardsView, TreeView };
                 )],
             )],
         )
-        .with_extra_files(&[("static/app/accessors.js", ACCESSORS_CHUNK)]),
+        .with_extra_chunks(&[("static/accessors", ACCESSORS_CHUNK)]),
     );
 
     // The empty subclass resolved to the minified binding `CardsView` (the
@@ -80,7 +80,7 @@ export { CardsView, TreeView };
         &["source bindings: CardsView", "class CardsViewAccessor"],
         &["source bindings: TreeView"],
     );
-    assert_entry_output(&fixture, "cards tree\n");
+    assert_preserved_entry_output(&fixture, "cards tree\n");
 }
 
 /// A delegator with no internal anchor: a helper whose only identity is that it
@@ -105,10 +105,7 @@ export { nextId };
                 )],
             )],
         )
-        .with_extra_files(&[(
-            "static/app/gen.js",
-            "export function next() { return 7; }\n",
-        )]),
+        .with_extra_chunks(&[("static/gen", "export function next() { return 7; }\n")]),
     );
 
     assert_module_exports(
@@ -123,7 +120,7 @@ export { nextId };
         &["source bindings: nextId", "function generateId"],
         &[],
     );
-    assert_entry_output(&fixture, "7\n");
+    assert_preserved_entry_output(&fixture, "7\n");
 }
 
 /// Fail-closed: a `member_of_module` whose (module, member) pair is consumed by
@@ -143,10 +140,7 @@ export { a, b };
                 &[Member::member_of_module("genId", "./gen.js", "next", None)],
             )],
         )
-        .with_extra_files(&[(
-            "static/app/gen.js",
-            "export function next() { return 1; }\n",
-        )]),
+        .with_extra_chunks(&[("static/gen", "export function next() { return 1; }\n")]),
         &["member_of_module", "next"],
     );
 }
@@ -167,7 +161,7 @@ export { a };
                 &[Member::member_of_module("genId", "./gen.js", "absentMember", None)],
             )],
         )
-        .with_extra_files(&[("static/app/gen.js", "export function present() { return 1; }\nexport function absentMember() { return 2; }\n")]),
+        .with_extra_chunks(&[("static/gen", "export function present() { return 1; }\nexport function absentMember() { return 2; }\n")]),
         &["member_of_module", "absentMember"],
     );
 }

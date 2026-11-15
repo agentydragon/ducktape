@@ -27,10 +27,8 @@ use analysis::cross_module_purity::{
 use analysis::facts::abstract_domain::value::Value;
 use analysis::purity::Purity;
 use anyhow::{Context, Result, bail, ensure};
-use artifact::reports::{
-    ExportAliasRecord, ImportRecord, ImportSpecifierKind, StaticModuleRequest,
-    StaticModuleRequestMode,
-};
+use artifact::program_linker::{ProgramChunkLinkFacts, build_program_link_index};
+use artifact::reports::{ExportAliasRecord, StaticModuleRequest, StaticModuleRequestMode};
 use artifact::{ArtifactIndexes, ChunkBundle};
 use graph_provenance::{CurrentRoots, GraphProvenance, InputRoot};
 use js_ast::ParsedJsModule;
@@ -74,20 +72,25 @@ fn exported_decl_names(decl: &Decl) -> Vec<String> {
 /// selected ones.
 pub struct ReparsedEntry {
     pub parsed: ParsedJsModule,
-    imports: Vec<ImportRecord>,
     export_aliases: Vec<ExportAliasRecord>,
     stable_export_values: BTreeMap<String, StableExportValue>,
     function_import_reads: BTreeMap<String, BTreeSet<String>>,
+    lazy_import_reads: BTreeSet<String>,
     static_requests: Vec<StaticModuleRequest>,
+    link_facts: ProgramChunkLinkFacts,
 }
 
 /// Program-wide analysis summaries, keyed by source chunk name.
 pub struct ProgramSummary {
+    pub executables: Option<Arc<analysis::program_execution::ProgramExecutables>>,
     /// Per-chunk imported-binding verdicts (`AnalysisInputs::imported_purities`).
     pub bindings: BTreeMap<String, BTreeMap<String, Arc<Purity>>>,
     /// Per-chunk imports of never-rebound provider cells
     /// (`AnalysisInputs::stable_imports`).
     pub stable_imports: BTreeMap<String, BTreeSet<String>>,
+    /// Source-derived primitive kinds on normal completion, independent of
+    /// provider initialization and read capabilities. Used only for coercions.
+    pub primitive_result_kinds: BTreeMap<String, BTreeMap<String, PrimKinds>>,
     /// Per-chunk imported values admitted to ordinary candidate execution.
     /// Each value has a matching `primitive_reads` proof for the same local
     /// binding and primitive kinds; raw exported primitive facts remain in
@@ -103,6 +106,7 @@ pub struct ProgramSummary {
     pub constructors: BTreeMap<String, BTreeSet<String>>,
     /// Per-chunk bare imported callable summaries with their defining evidence.
     pub imported_callables: BTreeMap<String, BTreeMap<String, CallableSummary>>,
+    pub foreign_observer_cell_reads: BTreeMap<String, BTreeSet<String>>,
     /// Source-derived native mutation census shared by every analyzed chunk.
     pub native_integrity: Option<NativeIntegrity>,
     /// The whole-program bundle-owned globals (SPEC.md § Bundle-owned globals).
@@ -353,15 +357,17 @@ pub fn reparse_unretained_entries(
         match js_ast::parse_js_module(chunk_name, source) {
             Ok(parsed) => {
                 let analysis = analyze_program_shallow(&parsed);
+                let link_facts = ProgramChunkLinkFacts::from(&analysis.runtime_facts);
                 reparsed.insert(
                     chunk_artifact.chunk_id,
                     ReparsedEntry {
                         parsed,
-                        imports: analysis.imports,
                         export_aliases: analysis.export_aliases,
                         stable_export_values: analysis.runtime_facts.stable_export_values,
                         function_import_reads: analysis.runtime_facts.function_import_reads,
+                        lazy_import_reads: analysis.runtime_facts.lazy_import_reads,
                         static_requests: analysis.runtime_facts.static_requests,
+                        link_facts,
                     },
                 );
             }
@@ -396,11 +402,18 @@ pub fn collect_program_summary(
     // available (retained AST or re-parsed entry).
     let mut modules = BTreeMap::new();
     let mut function_import_reads = BTreeMap::new();
+    let mut lazy_import_reads = BTreeMap::new();
     let mut local_export_values =
         BTreeMap::<(String, String), (PrimKinds, BTreeSet<String>)>::new();
     let mut export_value_sources = BTreeMap::<(String, String), ExportValueSource>::new();
     let mut static_requests =
         BTreeMap::<String, (ChunkId, String, Vec<StaticModuleRequest>)>::new();
+    let link_fact_overrides: BTreeMap<_, _> = reparsed
+        .iter()
+        .map(|(chunk, entry)| (*chunk, entry.link_facts.clone()))
+        .collect();
+    let program_links =
+        build_program_link_index(artifact, indexes, chunk_filter, &link_fact_overrides);
     for chunk_artifact in &artifact.chunks {
         if !chunk_allowed(chunk_artifact.chunk_id, chunk_filter) {
             continue;
@@ -411,18 +424,10 @@ pub fn collect_program_summary(
             .js
             .get_file(entry_file)
             .and_then(|file| file.ast());
-        let (parsed, import_records, export_alias_records) =
+        let (parsed, export_alias_records) =
             match (retained_ast, reparsed.get(&chunk_artifact.chunk_id)) {
-                (Some(ast), _) => (
-                    ast,
-                    chunk_artifact.analysis.imports.as_slice(),
-                    chunk_artifact.analysis.export_aliases.as_slice(),
-                ),
-                (None, Some(entry)) => (
-                    &entry.parsed,
-                    entry.imports.as_slice(),
-                    entry.export_aliases.as_slice(),
-                ),
+                (Some(ast), _) => (ast, chunk_artifact.analysis.export_aliases.as_slice()),
+                (None, Some(entry)) => (&entry.parsed, entry.export_aliases.as_slice()),
                 (None, None) => continue,
             };
         let stable_export_values = match reparsed.get(&chunk_artifact.chunk_id) {
@@ -434,6 +439,13 @@ pub fn collect_program_summary(
             match reparsed.get(&chunk_artifact.chunk_id) {
                 Some(entry) => &entry.function_import_reads,
                 None => &chunk_artifact.analysis.runtime_facts.function_import_reads,
+            },
+        );
+        lazy_import_reads.insert(
+            chunk_name.to_string(),
+            match reparsed.get(&chunk_artifact.chunk_id) {
+                Some(entry) => &entry.lazy_import_reads,
+                None => &chunk_artifact.analysis.runtime_facts.lazy_import_reads,
             },
         );
         let module_static_requests = match reparsed.get(&chunk_artifact.chunk_id) {
@@ -487,44 +499,33 @@ pub fn collect_program_summary(
             );
         }
         let mut imports = BTreeMap::new();
-        for import in import_records {
-            // Same artifact-output resolution the specifier rewriter uses;
-            // imports of paths outside the artifact (vendor packages) don't
-            // resolve and are skipped — conservative.
-            let Some(target) = indexes.resolve_runtime_import_reference(
-                &import.source,
-                chunk_artifact.chunk_id,
-                entry_file,
-                &artifact.chunk_table,
-            ) else {
+        for edge in program_links.import_links(chunk_artifact.chunk_id) {
+            let source_identity::ProgramLinkResolution::Resolved(resolved) =
+                program_links.resolve_import(chunk_artifact.chunk_id, &edge.local.local)
+            else {
                 continue;
             };
-            if !chunk_allowed(target.target_chunk_id, chunk_filter)
-                || !resolved_target_is_entry(artifact, &target)
-            {
+            // Namespace imports are member-call sites (`ns.foo()`), outside
+            // the bare-Ident callee arm the verdicts feed. The linker keeps
+            // those available for the soundness consumer through
+            // `resolve_namespace_member`.
+            if matches!(
+                &resolved.origin,
+                source_identity::ProgramExportOrigin::Namespace { .. }
+            ) {
                 continue;
             }
-            let target_chunk_name = artifact.chunk_table.name(target.target_chunk_id);
-            for specifier in &import.specifiers {
-                let export = match specifier.kind {
-                    ImportSpecifierKind::Named => specifier
-                        .imported
-                        .clone()
-                        .unwrap_or_else(|| specifier.local.clone()),
-                    ImportSpecifierKind::Default => "default".to_string(),
-                    // Namespace imports are member-call sites (`ns.foo()`),
-                    // outside the bare-Ident callee arm the verdicts feed.
-                    ImportSpecifierKind::Namespace => continue,
-                };
-                imports.insert(
-                    specifier.local.clone(),
-                    ResolvedImport {
-                        module: target_chunk_name.to_string(),
-                        export,
-                        source_specifier: import.source.clone(),
-                    },
-                );
-            }
+            let Some(defining_export) = resolved.defining_export else {
+                continue;
+            };
+            imports.insert(
+                edge.local.local.clone(),
+                ResolvedImport {
+                    module: artifact.chunk_table.name(defining_export.chunk).to_string(),
+                    export: defining_export.name,
+                    source_specifier: edge.source_specifier.clone(),
+                },
+            );
         }
         // `export_aliases` only carries `export { x as y }` specifiers and
         // `export default`. Exported declarations (`export function foo`,
@@ -651,6 +652,20 @@ pub fn collect_program_summary(
                 })
                 .collect();
             (importer.clone(), reads)
+        })
+        .collect();
+    let primitive_result_kinds = modules
+        .iter()
+        .map(|(name, module)| {
+            let kinds = module
+                .imported_values(&export_values)
+                .into_iter()
+                .filter_map(|(local, value)| match value {
+                    Value::Prim(kinds) if !kinds.is_empty() => Some((local, kinds)),
+                    _ => None,
+                })
+                .collect();
+            (name.clone(), kinds)
         })
         .collect();
     // Raw stable export kinds are useful while resolving copy and re-export
@@ -804,6 +819,63 @@ pub fn collect_program_summary(
             }
         }
     }
+    let mut request_edges = BTreeMap::<String, BTreeSet<String>>::new();
+    for (name, (chunk, entry, requests)) in &static_requests {
+        for request in requests {
+            if let Some(target) = indexes.resolve_runtime_import_reference(
+                &request.specifier,
+                *chunk,
+                entry,
+                &artifact.chunk_table,
+            ) {
+                request_edges.entry(name.clone()).or_default().insert(
+                    artifact
+                        .chunk_table
+                        .name(target.target_chunk_id)
+                        .to_string(),
+                );
+            }
+        }
+    }
+    let mut foreign_observer_cell_reads = BTreeMap::<String, BTreeSet<String>>::new();
+    for (owner, module) in &modules {
+        let mut reached = BTreeSet::new();
+        let mut pending: Vec<_> = request_edges
+            .get(owner)
+            .into_iter()
+            .flatten()
+            .cloned()
+            .collect();
+        while let Some(reader) = pending.pop() {
+            if !reached.insert(reader.clone()) {
+                continue;
+            }
+            pending.extend(request_edges.get(&reader).into_iter().flatten().cloned());
+            if &reader == owner {
+                continue;
+            }
+            let Some(provider) = modules.get(&reader) else {
+                continue;
+            };
+            for read in lazy_import_reads
+                .get(&reader)
+                .into_iter()
+                .flat_map(|reads| reads.iter())
+            {
+                let Some(target) = provider.imports.get(read) else {
+                    continue;
+                };
+                if &target.module == owner
+                    && let Some(local) = module.exports.get(&target.export)
+                {
+                    foreign_observer_cell_reads
+                        .entry(owner.clone())
+                        .or_default()
+                        .insert(local.clone());
+                }
+            }
+        }
+    }
     let asserted_pure = scoped(chunk_export_purity, &modules, |p| &p.pure_exports);
     let bindings = resolve_imported_purities(
         &modules,
@@ -877,6 +949,11 @@ pub fn collect_program_summary(
         };
     }
     Ok(ProgramSummary {
+        executables: Some(Arc::new(
+            callable_summaries
+                .executables
+                .with_source_links(artifact.chunk_table.clone(), program_links),
+        )),
         no_reentry_callback_exports: members!(
             no_reentry_callback_exports,
             NoReentryCallbackExports
@@ -894,12 +971,14 @@ pub fn collect_program_summary(
             RetainedCallbackFactoryMembers
         ),
         values,
+        primitive_result_kinds,
         primitive_reads,
         bindings,
         stable_imports,
         fluent: exports!(fluent_exports, FluentExports),
         constructors,
         imported_callables: callable_summaries.imported_callables,
+        foreign_observer_cell_reads,
         native_integrity: callable_summaries.native_integrity,
         bundle_globals: callable_summaries.bundle_globals,
         value_inputs: callable_summaries.value_inputs,

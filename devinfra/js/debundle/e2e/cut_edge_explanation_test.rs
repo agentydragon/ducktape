@@ -329,7 +329,8 @@ fn cut_names_the_opaque_barrier_and_its_unknown_call() {
 /// heap barrier over the live frontier, which includes the `marks`
 /// allocation (`back → marks`). Each module pair's retained sequenced
 /// edge therefore targets a pure array allocation. Its endpoint context
-/// carries the allocation's heap evidence independently of purity.
+/// carries the allocation's heap evidence independently of purity; the
+/// conflict names the source-qualified program cell.
 #[test]
 fn heap_content_cut_edges_explain_pure_allocation_targets() {
     let rejected = run_rejection_fixture_with_graphs(FixtureOpts::new(
@@ -376,7 +377,7 @@ export { items, marks, count, back };
         conflicts(cause).iter().any(|conflict| {
             (conflict["kind"] == "use_after_allocation"
                 || conflict["kind"] == "frontier_after_cell")
-                && conflict["cell"]["kind"] == "array_contents"
+                && conflict["cell"]["kind"] == "program_array_contents"
         }),
         "{allocation_use}"
     );

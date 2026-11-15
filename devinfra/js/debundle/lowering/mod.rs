@@ -31,6 +31,7 @@ mod body_facts;
 mod candidate_emission;
 mod chunk_renames;
 mod commuting_statements;
+mod evaluation_schedule;
 mod exports;
 mod imports;
 mod io;
@@ -507,7 +508,7 @@ pub fn materialize_logical_modules(
         })
         .into_iter()
         .collect::<Result<Vec<_>>>()?;
-    let claimed = GLOBALS
+    let mut claimed = GLOBALS
         .with(|globals| {
             prepared
                 .into_par_iter()
@@ -518,7 +519,7 @@ pub fn materialize_logical_modules(
         .collect::<Result<Vec<_>>>()?;
     let completed =
         |base: &AnalysisSpec| frontend_elaboration::complete_analysis_spec(base, &projection);
-    let (program_summary, mut loaded_chunks) = match (&options.analysis, loaded) {
+    let (mut program_summary, mut loaded_chunks) = match (&options.analysis, loaded) {
         (AnalysisMode::Load { base, .. }, Some((header, body))) => {
             let completed = completed(base)?;
             if completed.encode()? != header.projection {
@@ -548,6 +549,45 @@ pub fn materialize_logical_modules(
             None,
         ),
     };
+    // Saved local facts cannot reconstruct a run-wide live-cell world. Rebuild
+    // the canonical executable registry for final schedule validation too.
+    if program_summary.executables.is_none() {
+        program_summary.executables = program_summary::collect_program_summary(
+            &artifact,
+            &artifact_indexes,
+            &projection,
+            program_summary::ProgramSummaryOptions {
+                graph_provenance: options.graph_provenance.as_ref(),
+                vendor_plan: Some(vendor_plan),
+                replacement_packages: &vendor_plan.replacement_packages(),
+            },
+            Some(&program_summary_chunk_closure),
+            &reparsed,
+            diagnostics,
+        )?
+        .executables;
+    }
+    let prepared_sources = {
+        let source_facts = claimed
+            .iter_mut()
+            .filter_map(|chunk| {
+                let id = artifact.chunk_table.get(chunk.chunk_id())?;
+                let entry = &artifact.find_chunk(id)?.analysis.entry_file;
+                chunk
+                    .take_entry_source_facts(entry)
+                    .map(|facts| (id, facts))
+            })
+            .collect();
+        staged_analysis::prepare_program_chunks(
+            &artifact,
+            &program_summary_chunk_closure,
+            &reparsed,
+            &projection,
+            &mut program_summary,
+            &export_reentry_policies,
+            source_facts,
+        )?
+    };
     let claimed = claimed
         .into_iter()
         .map(|chunk| {
@@ -576,11 +616,16 @@ pub fn materialize_logical_modules(
                 .into_par_iter()
                 .map(|(chunk, facts)| {
                     GLOBALS.set(globals, || {
+                        let prepared = artifact
+                            .chunk_table
+                            .get(chunk.chunk_id())
+                            .and_then(|id| prepared_sources.get(&id));
                         finish_logical_chunk(
                             chunk,
                             &projection,
                             &program_summary,
                             facts,
+                            prepared,
                             &program_graph,
                             GraphConstructionContext {
                                 chunk_inputs: &graph_inputs,
@@ -594,6 +639,8 @@ pub fn materialize_logical_modules(
         })
         .into_iter()
         .collect::<Result<Vec<_>>>()?;
+
+    drop(prepared_sources);
 
     if options.assessment_only {
         let assessments = chunk_results
@@ -642,6 +689,33 @@ pub fn materialize_logical_modules(
             *vendor_reference_rewrites.entry(key.clone()).or_insert(0) += count;
         }
     }
+    let evaluation_plan = if gate_rejections.is_empty() {
+        Some(evaluation_schedule::EvaluationPlan::new(
+            &artifact,
+            Arc::clone(
+                program_summary
+                    .executables
+                    .as_ref()
+                    .context("evaluation_schedule_unsupported: executable registry unavailable")?,
+            ),
+            &selected_chunk_ids,
+            chunk_results
+                .iter()
+                .map(|chunk| (chunk.chunk_id, chunk.target_file.clone()))
+                .collect(),
+            vendor_plan,
+            chunk_results.iter().fold(
+                Default::default(),
+                |mut pairs: analysis::program_execution::schedule::EvaluationCommutations,
+                 chunk| {
+                    pairs.extend(&chunk.evaluation_commutations);
+                    pairs
+                },
+            ),
+        )?)
+    } else {
+        None
+    };
     let EmissionChunkOutputs {
         files,
         decomposition_by_chunk,
@@ -652,6 +726,7 @@ pub fn materialize_logical_modules(
         applied.clone(),
         options.chunk_ids.iter().cloned().collect(),
         vendor_reference_rewrites,
+        evaluation_plan,
     );
 
     let module_count: usize = reports.iter().map(|r| r.final_module_contents.len()).sum();

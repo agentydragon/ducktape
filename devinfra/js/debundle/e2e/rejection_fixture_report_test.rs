@@ -38,10 +38,13 @@ console.log(identity7(x()));
     .with_chunk_id("static/importer");
     opts.unassigned_mode = unassigned_mode_inline();
     opts.extra_files = &[("static/importer/opaque.js", OPAQUE_RUNTIME_SOURCE)];
-    opts.extra_chunks = &[(
-        "static/provider",
-        "function p() { return 7; }\nexport { p as h };\n",
-    )];
+    opts.extra_chunks = &[
+        ("static/opaque", OPAQUE_RUNTIME_SOURCE),
+        (
+            "static/provider",
+            "function p() { return 7; }\nexport { p as h };\n",
+        ),
+    ];
     let provider_modules = [(
         "static/provider",
         vec![logical_module(

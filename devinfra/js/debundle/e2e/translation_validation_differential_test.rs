@@ -99,20 +99,24 @@ fn forward_at_init_read_kept_in_source_order_is_reported() {
 /// before `vendor`; the pruned import stays bare and the order holds.
 #[test]
 fn pruned_import_keeps_its_load_order() {
+    // Preserve the application initialization order independently of loader
+    // ordering: the host log must not cross the exported `b` initializer.
+    // The `z` read makes its module a dependency of `b_module`; removing the
+    // original bare vendor request would therefore print `z` before `vendor`.
     let fixture = run_fixture(
         FixtureOpts::new(
-            "import { f as cx } from \"./vendor.js\";\nconst z = (console.log(\"z\"), 1);\nconst b = cx();\nconsole.log(z + b);\nexport { z, b };\n",
+            "import { f as cx } from \"./vendor.js\";\nconst z = (console.log(\"z\"), 1);\nconst b = (z, cx());\nconsole.log(z + b);\nexport { z, b };\n",
             vec![
                 logical_module("b_module", &[Member::new("b")]),
                 logical_module("z_module", &[Member::new("z")]),
             ],
         )
-        .with_extra_files(&[(
-            "static/app/vendor.js",
+        .with_extra_chunks(&[(
+            "static/vendor",
             "console.log(\"vendor\");\nexport function f() { return 1; }\n",
         )]),
     );
-    assert_entry_output(&fixture, "vendor\nz\n2\n");
+    assert_preserved_entry_output(&fixture, "vendor\nz\n2\n");
 }
 
 #[test]

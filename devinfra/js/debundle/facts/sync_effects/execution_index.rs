@@ -5967,8 +5967,16 @@ fn stored_global_alias(
     }
 }
 
+/// A source-validated initializer plan used only to establish schedule
+/// completion. Its collection grants no independent effect or allocation proof.
+pub(super) struct EvaluationInitializer {
+    pub(super) body: LocalBody,
+    pub(super) required_initialized_binding: Option<Id>,
+}
+
 #[derive(Default)]
-pub(super) struct ExecutionIndex {
+pub(crate) struct ExecutionIndex {
+    runtime_source: crate::program_execution::RuntimeSourceScope,
     pub(super) member_owners: BTreeMap<CallSite, SourceUnitOrdinal>,
     pub(super) retained_record_factories: BTreeSet<String>,
     owner: SourceUnitOrdinal,
@@ -5987,16 +5995,17 @@ pub(super) struct ExecutionIndex {
     literal_depth: u32,
     factory_member_value_depth: u32,
     factory_callback_depth: u32,
-    pub(super) callables: BTreeMap<u32, Callable>,
+    pub(super) callables: crate::program_execution::SourceMap<Callable>,
     /// Functions whose call cannot inspect or retain any argument.
-    inert_argument_functions: BTreeSet<u32>,
-    pub(super) callable_spans: BTreeMap<u32, Span>,
-    immediate_anonymous_callers: BTreeMap<u32, Option<u32>>,
-    inline_callback_entries: BTreeMap<u32, callback_arguments::InlineCallbackEntry>,
+    inert_argument_functions: crate::program_execution::SourceSet,
+    pub(super) callable_spans: crate::program_execution::SourceMap<Span>,
+    immediate_anonymous_callers: crate::program_execution::SourceMap<Option<u32>>,
+    inline_callback_entries:
+        crate::program_execution::SourceMap<callback_arguments::InlineCallbackEntry>,
     native_guarded_regions: Vec<callback_arguments::GuardedRegion>,
-    pub(super) local_constructors: BTreeMap<u32, LocalConstructor>,
+    pub(super) local_constructors: crate::program_execution::SourceMap<LocalConstructor>,
     /// Source-covered constructor operations for exported provider summaries.
-    pub(super) class_provider_bodies: BTreeMap<u32, (LocalBody, Vec<Id>)>,
+    pub(super) class_provider_bodies: crate::program_execution::SourceMap<(LocalBody, Vec<Id>)>,
     pub(super) local_class_construction_shapes: LocalClassConstructionShapes,
     pub(super) local_class_construction_proof: LocalClassConstructionProof,
     pub(super) semantic_facts: Option<Arc<SemanticFacts>>,
@@ -6005,31 +6014,31 @@ pub(super) struct ExecutionIndex {
     pub(super) integrity: IntegrityFlags,
     /// Native own-data lookups from the canonical operation index, with the
     /// slots required at each read's source position.
-    pub(super) native_own_data_reads: BTreeMap<u32, [IntrinsicSlot; 2]>,
-    pub(super) class_values: BTreeMap<u32, ClassValueFacts>,
-    pub(super) class_owners: BTreeMap<u32, SourceUnitOrdinal>,
-    pub(super) class_bindings: BTreeMap<u32, Id>,
-    pub(super) class_spans: BTreeMap<u32, Span>,
+    pub(super) native_own_data_reads: crate::program_execution::SourceMap<[IntrinsicSlot; 2]>,
+    pub(super) class_values: crate::program_execution::SourceMap<ClassValueFacts>,
+    pub(super) class_owners: crate::program_execution::SourceMap<SourceUnitOrdinal>,
+    pub(super) class_bindings: crate::program_execution::SourceMap<Id>,
+    pub(super) class_spans: crate::program_execution::SourceMap<Span>,
     /// The `extends` expression of each class that has one.
-    pub(super) class_heritage_spans: BTreeMap<u32, Span>,
+    pub(super) class_heritage_spans: crate::program_execution::SourceMap<Span>,
     /// Object literals with a getter or setter that reads `this`: a member
     /// read or write that may run it hands it the receiver.
-    pub(super) this_reading_accessor_objects: BTreeSet<u32>,
+    pub(super) this_reading_accessor_objects: crate::program_execution::SourceSet,
     /// The non-null `__proto__` expression of each object literal with one.
-    pub(super) literal_prototypes: BTreeMap<u32, ValueExpr>,
+    pub(super) literal_prototypes: crate::program_execution::SourceMap<ValueExpr>,
     /// Constructors, methods and accessors of every class: they run as class
     /// members, not as values the class body creates.
-    pub(super) class_member_callables: BTreeSet<u32>,
+    pub(super) class_member_callables: crate::program_execution::SourceSet,
     /// The constructors among `class_member_callables`.
-    pub(super) class_constructors: BTreeSet<u32>,
+    pub(super) class_constructors: crate::program_execution::SourceSet,
     /// Per class, the spans that run at construction or class creation and
     /// can store values on the instance or the class: the constructor,
     /// field initializers and static blocks.
-    pub(super) class_store_regions: BTreeMap<u32, Vec<Span>>,
+    pub(super) class_store_regions: crate::program_execution::SourceMap<Vec<Span>>,
     /// The getters and setters (static or not) each class declares.
-    class_accessors: BTreeMap<u32, Vec<u32>>,
+    class_accessors: crate::program_execution::SourceMap<Vec<u32>>,
     /// Classes declaring a getter or setter that reads `this`.
-    pub(super) this_reading_accessor_classes: BTreeSet<u32>,
+    pub(super) this_reading_accessor_classes: crate::program_execution::SourceSet,
     /// Receivers of member targets in destructuring assignments, per
     /// top-level owner; a callable's own are on `Callable`.
     pub(super) top_destructuring_member_receivers: Vec<Vec<ValueExpr>>,
@@ -6041,24 +6050,27 @@ pub(super) struct ExecutionIndex {
     pub(super) captured_bindings: BTreeSet<Id>,
     pub(super) other_class_uses: BTreeSet<Id>,
     safe_class_target: Option<Id>,
-    pub(super) plain_data_objects: BTreeSet<u32>,
+    pub(super) plain_data_objects: crate::program_execution::SourceSet,
     /// The top-level owner whose source contains each object literal.
-    pub(super) object_literal_owners: BTreeMap<u32, SourceUnitOrdinal>,
-    pub(super) own_descriptor_shapes: BTreeMap<u32, OwnPropertyShape>,
+    pub(super) object_literal_owners: crate::program_execution::SourceMap<SourceUnitOrdinal>,
+    pub(super) own_descriptor_shapes: crate::program_execution::SourceMap<OwnPropertyShape>,
     descriptor_copy_factories: BTreeMap<Id, crate::analysis_inputs::DescriptorCopyFactorySummary>,
     pub(super) descriptor_copy_calls: BTreeMap<CallSite, DescriptorCopyCallCandidate>,
-    pub(super) null_proto_data_objects: BTreeSet<u32>,
-    pub(super) exact_object_spread_copies: BTreeSet<u32>,
-    pub(super) map_entry_arrays: BTreeSet<u32>,
-    pub(super) dense_array_literals: BTreeMap<u32, usize>,
-    pub(super) array_elements: BTreeMap<u32, Vec<Option<ArrayElement>>>,
-    literal_property_kinds: BTreeMap<u32, Vec<super::value_model::LiteralPropertyKind>>,
-    callable_creations: BTreeMap<u32, DeferredCallableCreation>,
-    pub(super) method_record_members:
-        BTreeMap<u32, Vec<crate::facts::abstract_domain::foreign_call::RecordMember>>,
+    pub(super) null_proto_data_objects: crate::program_execution::SourceSet,
+    pub(super) exact_object_spread_copies: crate::program_execution::SourceSet,
+    pub(super) map_entry_arrays: crate::program_execution::SourceSet,
+    pub(super) dense_array_literals: crate::program_execution::SourceMap<usize>,
+    pub(super) array_elements: crate::program_execution::SourceMap<Vec<Option<ArrayElement>>>,
+    literal_property_kinds:
+        crate::program_execution::SourceMap<Vec<super::value_model::LiteralPropertyKind>>,
+    callable_creations: crate::program_execution::SourceMap<DeferredCallableCreation>,
+    pub(super) method_record_members: crate::program_execution::SourceMap<
+        Vec<crate::facts::abstract_domain::foreign_call::RecordMember>,
+    >,
     pub(super) array_iterations: BTreeMap<CallSite, ArrayIteration>,
-    pub(super) async_callables: BTreeSet<u32>,
-    pub(super) callable_member_reads: BTreeMap<u32, Vec<(ValueExpr, Option<String>)>>,
+    pub(super) async_callables: crate::program_execution::SourceSet,
+    pub(super) callable_member_reads:
+        crate::program_execution::SourceMap<Vec<(ValueExpr, Option<String>)>>,
     direct_call_members: BTreeSet<CallSite>,
     /// Direct calls of annotated record factories, with the syntax check of
     /// their argument. Semantic admission is checked by the interpreter.
@@ -6081,17 +6093,17 @@ pub(super) struct ExecutionIndex {
     pub(super) intrinsic_writes: Vec<IntrinsicWriteTarget>,
     prototype_calls: Vec<Call>,
     prototype_field_writes: Vec<(SourceUnitOrdinal, Option<u32>, Span, PropertyKeyExpr)>,
-    pub(super) prototype_callable_reads: BTreeMap<u32, BTreeSet<Id>>,
+    pub(super) prototype_callable_reads: crate::program_execution::SourceMap<BTreeSet<Id>>,
     /// Per callable, the bindings it or a callable nested in it writes
     /// (assignment and destructuring targets, loop heads, updates). A closure
     /// must capture a cell for each so a nested writer reaches the owner.
-    pub(super) nested_callable_writes: BTreeMap<u32, BTreeSet<Id>>,
+    pub(super) nested_callable_writes: crate::program_execution::SourceMap<BTreeSet<Id>>,
     prototype_capture_stack: Vec<u32>,
     property_key_assignments: BTreeMap<Id, Vec<PropertyKeyExpr>>,
     pub(super) property_key_declarations: BTreeSet<Id>,
     native_write_census: NativeWriteCensus,
     pub(super) binding_declaration_writes: BTreeMap<Id, Vec<BindingDeclarationWrite>>,
-    namespace_wrapper_candidates: BTreeMap<u32, NamespaceWrapperCandidate>,
+    namespace_wrapper_candidates: crate::program_execution::SourceMap<NamespaceWrapperCandidate>,
     /// Reference bounds suffice to reject any use outside a candidate body.
     /// Binding declarations are handled by `visit_binding_ident` separately.
     binding_use_bounds: BTreeMap<Id, (u32, u32)>,
@@ -6131,7 +6143,7 @@ pub(super) struct ExecutionIndex {
     for_head_declaration: bool,
     destructuring_member_writes: Vec<DestructuringMemberWrite>,
     pub(super) setter_owners: BTreeMap<Option<String>, BTreeSet<SourceUnitOrdinal>>,
-    hoisted_nested_functions: BTreeSet<u32>,
+    hoisted_nested_functions: crate::program_execution::SourceSet,
     pub(super) owner_callable_prefix_effects: Vec<Option<CallablePrefixEffects>>,
     pub(super) uncovered_callable_effect_owners: BTreeSet<SourceUnitOrdinal>,
     pub(super) top_calls: Vec<Vec<Call>>,
@@ -6155,9 +6167,15 @@ pub(super) struct ExecutionIndex {
     top_dynamic_property_receivers: Vec<Vec<ValueExpr>>,
     pub(super) top_assignments: Vec<Vec<(Id, ValueExpr)>>,
     pub(super) ordered_initializers: BTreeMap<SourceUnitOrdinal, LocalBody>,
+    /// Original initializer expressions, including split and exported owners,
+    /// recovered through their canonical source identity for completion only.
+    pub(super) evaluation_initializers: BTreeMap<SourceUnitOrdinal, EvaluationInitializer>,
     /// Top-level `receiver.property = value` and `binding = value` statements
     /// lowered from their exact source expression. Lowering selects nothing: `roots/operands`
     /// admits one.
+    pub(super) evaluation_statements: BTreeMap<SourceUnitOrdinal, LocalBody>,
+    pub(crate) evaluation_origins: BTreeMap<(u32, u32), BTreeSet<SourceUnitOrdinal>>,
+    pub(crate) evaluation_noop_owners: BTreeSet<SourceUnitOrdinal>,
     pub(super) ordered_statements: BTreeMap<SourceUnitOrdinal, LocalBody>,
     /// Canonical owner/binding/initializer identity, independent of the
     /// legacy initializer leaf and allocation admission.
@@ -6191,7 +6209,7 @@ pub(super) struct ExecutionIndex {
     /// Exact sole-return calls in top-level function declarations, collected
     /// by the canonical structural visitor alongside callable/call facts.
     direct_return_calls: BTreeMap<Id, Span>,
-    pub(super) exported_hoisted_functions: BTreeSet<u32>,
+    pub(super) exported_hoisted_functions: crate::program_execution::SourceSet,
     pub(super) global_object_names: BTreeSet<&'static str>,
     /// Global names for the native census; the bundle-owned properties are
     /// filled in once the census resolves them.
@@ -6203,6 +6221,9 @@ pub(super) struct ExecutionIndex {
     pub(super) exported_names: BTreeMap<String, Id>,
     /// Source units holding `export default`.
     pub(super) default_export_owners: BTreeSet<SourceUnitOrdinal>,
+    /// Actual anonymous default cell definition. Hoisting applies only to a
+    /// function declaration; classes and expression snapshots remain in TDZ.
+    pub(super) default_export_value: Option<(SourceUnitOrdinal, ValueExpr, bool)>,
     pub(super) dynamic_scope_owners: BTreeSet<SourceUnitOrdinal>,
     pub(super) opaque_top: BTreeSet<SourceUnitOrdinal>,
     no_sync_callback_members: BTreeMap<String, BTreeSet<String>>,
@@ -6213,6 +6234,7 @@ pub(super) struct ExecutionIndex {
     pub(super) direct_inline_callback_calls: BTreeMap<CallSite, Id>,
     pub(super) foreign_call_imports: BTreeMap<Id, crate::analysis_inputs::ForeignCallSummary>,
     pub(super) importer_cell_reads: BTreeMap<Id, BTreeSet<Id>>,
+    pub(super) foreign_observer_cell_reads: BTreeSet<Id>,
     /// The derived summary of an import whose callback-factory evidence is
     /// all source-inferred. The evidence keeps the call's timing and result
     /// consumers; the summary is the receipt for the provider body's effects.
@@ -6251,6 +6273,96 @@ pub(super) struct ExecutionIndex {
     pub(super) returned_record_summaries:
         BTreeMap<Id, crate::analysis_inputs::ReturnedRecordSummary>,
     pub(super) namespace_wrapper_summaries: BTreeMap<Id, NamespaceWrapperSummary>,
+}
+
+impl ExecutionIndex {
+    fn bind_runtime_source(&mut self) {
+        self.callables.bind_source(self.runtime_source);
+        self.callable_spans.bind_source(self.runtime_source);
+        self.immediate_anonymous_callers
+            .bind_source(self.runtime_source);
+        self.inline_callback_entries
+            .bind_source(self.runtime_source);
+        self.local_constructors.bind_source(self.runtime_source);
+        self.class_provider_bodies.bind_source(self.runtime_source);
+        self.native_own_data_reads.bind_source(self.runtime_source);
+        self.class_values.bind_source(self.runtime_source);
+        self.class_owners.bind_source(self.runtime_source);
+        self.class_bindings.bind_source(self.runtime_source);
+        self.class_spans.bind_source(self.runtime_source);
+        self.class_heritage_spans.bind_source(self.runtime_source);
+        self.literal_prototypes.bind_source(self.runtime_source);
+        self.class_store_regions.bind_source(self.runtime_source);
+        self.class_accessors.bind_source(self.runtime_source);
+        self.object_literal_owners.bind_source(self.runtime_source);
+        self.own_descriptor_shapes.bind_source(self.runtime_source);
+        self.dense_array_literals.bind_source(self.runtime_source);
+        self.array_elements.bind_source(self.runtime_source);
+        self.literal_property_kinds.bind_source(self.runtime_source);
+        self.callable_creations.bind_source(self.runtime_source);
+        self.method_record_members.bind_source(self.runtime_source);
+        self.callable_member_reads.bind_source(self.runtime_source);
+        self.prototype_callable_reads
+            .bind_source(self.runtime_source);
+        self.nested_callable_writes.bind_source(self.runtime_source);
+        self.namespace_wrapper_candidates
+            .bind_source(self.runtime_source);
+        self.inert_argument_functions
+            .bind_source(self.runtime_source);
+        self.this_reading_accessor_objects
+            .bind_source(self.runtime_source);
+        self.class_member_callables.bind_source(self.runtime_source);
+        self.class_constructors.bind_source(self.runtime_source);
+        self.this_reading_accessor_classes
+            .bind_source(self.runtime_source);
+        self.plain_data_objects.bind_source(self.runtime_source);
+        self.null_proto_data_objects
+            .bind_source(self.runtime_source);
+        self.exact_object_spread_copies
+            .bind_source(self.runtime_source);
+        self.map_entry_arrays.bind_source(self.runtime_source);
+        self.async_callables.bind_source(self.runtime_source);
+        self.hoisted_nested_functions
+            .bind_source(self.runtime_source);
+        self.exported_hoisted_functions
+            .bind_source(self.runtime_source);
+    }
+
+    pub(crate) fn source_scope(&self) -> crate::program_execution::RuntimeSourceScope {
+        self.runtime_source
+    }
+
+    pub(crate) fn allocation(&self, local: u32) -> crate::program_execution::RuntimeAllocationId {
+        self.runtime_source.allocation(local)
+    }
+
+    pub(crate) fn local_origin(
+        &self,
+        allocation: crate::program_execution::RuntimeAllocationId,
+    ) -> Option<u32> {
+        self.runtime_source.local_origin(allocation)
+    }
+
+    pub(crate) fn callable_for_local(&self, local: &str) -> Option<u32> {
+        let binding = self
+            .hoisted_bindings
+            .keys()
+            .chain(
+                self.top_assignments
+                    .iter()
+                    .flatten()
+                    .map(|(binding, _)| binding),
+            )
+            .find(|binding| binding.0.as_ref() == local);
+        if let Some(binding) = binding
+            && let Some(callable) = direct_callable_binding(self, binding, &mut BTreeSet::new())
+        {
+            return Some(callable);
+        }
+        self.class_bindings
+            .iter()
+            .find_map(|(origin, binding)| (binding.0.as_ref() == local).then_some(*origin))
+    }
 }
 
 /// Whether `domain` may be the string `name`.
@@ -6447,7 +6559,10 @@ impl ExecutionIndex {
             .all(|write| write.private_var_scope == Some(scope) && write.simple_identifier)
     }
 
-    pub(super) fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape> {
+    pub(super) fn ordinary_record_shape(
+        &self,
+        allocation: impl crate::program_execution::SourceCoordinate,
+    ) -> Option<&OwnPropertyShape> {
         if self.array_elements.contains_key(&allocation) {
             return None;
         }
@@ -7207,7 +7322,7 @@ impl ExecutionIndex {
             .collect()
     }
 
-    pub(crate) fn prepare_semantic_facts(
+    pub(super) fn prepare_semantic_facts(
         &self,
         flow: &ChunkValueFlow,
         shadowed: &BTreeSet<&'static str>,
@@ -8396,10 +8511,33 @@ impl ExecutionIndex {
         let node_global = hints.assumptions.predefined_globals != spec::PredefinedGlobals::Unknown
             && unshadowed_global_names(body, &["global"]).contains("global");
         let mut index = Self {
+            runtime_source: hints
+                .executables
+                .as_ref()
+                .and_then(|program| program.module(hints.current_chunk_id.as_deref()?))
+                .map(|module| module.index.source_scope())
+                .unwrap_or_else(crate::program_execution::RuntimeSourceScope::fresh),
             source_chunk_id: hints.current_chunk_id.clone(),
             global_guards_requested,
             local_class_construction_shapes: construction_proof.clone(),
             top_calls: vec![Vec::new(); body.len()],
+            evaluation_origins: body.iter().enumerate().fold(
+                BTreeMap::new(),
+                |mut origins, (ordinal, item)| {
+                    for span in crate::program_execution::schedule::evaluation_item_origins(
+                        item.as_module_item(),
+                    )
+                    .into_iter()
+                    .flatten()
+                    {
+                        origins
+                            .entry(span)
+                            .or_default()
+                            .insert(SourceUnitOrdinal(ordinal));
+                    }
+                    origins
+                },
+            ),
             original_statement_spans: body
                 .iter()
                 .map(|item| match item {
@@ -8413,6 +8551,7 @@ impl ExecutionIndex {
             top_destructuring_member_receivers: vec![Vec::new(); body.len()],
             top_assignments: vec![Vec::new(); body.len()],
             ordered_initializers: BTreeMap::new(),
+            evaluation_initializers: BTreeMap::new(),
             initialization_source_identities: BTreeMap::new(),
             initialization_coverage_refusals: vec![None; body.len()],
             top_definite_initializers: vec![BTreeSet::new(); body.len()],
@@ -8460,6 +8599,7 @@ impl ExecutionIndex {
                 .unwrap_or_default(),
             ..Self::default()
         };
+        index.bind_runtime_source();
         let mut fresh_steps = Vec::with_capacity(body.len());
         let mut max_source_position = 0u32;
         for item in body {
@@ -8535,6 +8675,20 @@ impl ExecutionIndex {
         }
         for (ordinal, item) in body.iter().enumerate() {
             let owner = SourceUnitOrdinal(ordinal);
+            if crate::program_execution::schedule::evaluation_item_origins(item.as_module_item())
+                .is_empty()
+                || var_decl_of_item(item.as_module_item()).is_some_and(|declaration| {
+                    declaration.kind == VarDeclKind::Var
+                        && declaration.decls.iter().all(|declarator| {
+                            matches!(declarator.name, Pat::Ident(_)) && declarator.init.is_none()
+                        })
+                })
+            {
+                // A bare var declaration does not execute a store. Its cell
+                // was initialized during module instantiation, independently
+                // of this row's position in the evaluation schedule.
+                index.evaluation_noop_owners.insert(owner);
+            }
             if let TopLevelItemView::Borrowed(ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration)))) =
                 item
                 && !declaration.declare
@@ -8559,7 +8713,32 @@ impl ExecutionIndex {
             {
                 index.ordered_statements.insert(owner, body);
             }
+            if let ModuleItem::Stmt(statement) = item.as_module_item()
+                && let Some(body) = LocalBody::from_root_statement(statement)
+            {
+                index.evaluation_statements.insert(owner, body);
+            }
             let source_identity = InitializationSourceIdentity::collect(item, owner);
+            if let Ok((_, expression)) = &source_identity
+                && let Some(body) = LocalBody::from_initializer(expression)
+                && body
+                    .construct_callees()
+                    .iter()
+                    .all(|callee| index.class_ids.contains(callee))
+            {
+                debug_assert_eq!(body.root_span(), Some(expression.span()));
+                let required_initialized_binding = match expression.unwrap_parens() {
+                    Expr::Ident(binding) => Some(binding.to_id()),
+                    _ => None,
+                };
+                index.evaluation_initializers.insert(
+                    owner,
+                    EvaluationInitializer {
+                        body,
+                        required_initialized_binding,
+                    },
+                );
+            }
             if let Ok((identity, _)) = &source_identity {
                 index
                     .initialization_source_identities
@@ -8891,7 +9070,7 @@ impl ExecutionIndex {
             .collect::<Vec<_>>();
         let namespace_assignments = owned_namespace_assignments.iter().collect::<Vec<_>>();
         let namespace_value_facts = NamespaceValueFacts::from_assignments(
-            index.class_values.clone(),
+            BTreeMap::clone(&index.class_values),
             fresh_steps
                 .iter()
                 .filter_map(|step| match step {
@@ -8905,6 +9084,12 @@ impl ExecutionIndex {
         // one receiver domain. The first pass is source-only and is used to
         // reject recognized contradictions before any author input is seeded.
         let declared = index.declared_bindings();
+        index.foreign_observer_cell_reads = index
+            .exported_bindings
+            .iter()
+            .filter(|id| hints.foreign_observer_cell_reads.contains(id.0.as_ref()))
+            .cloned()
+            .collect();
         for (callee, summary) in &hints.imported_callables {
             if summary.may_read_importer_cells.is_empty() {
                 continue;
@@ -9945,12 +10130,16 @@ impl ExecutionIndex {
             .filter(|(_, accessors)| accessors.iter().any(|accessor| index.reads_this(*accessor)))
             .map(|(class, _)| *class)
             .collect();
+        index.bind_runtime_source();
         index
     }
 
     /// Whether `callable`, or an arrow or other callable nested in it, reads
     /// `this`. An unindexed or opaque callable may.
-    pub(super) fn reads_this(&self, callable: u32) -> bool {
+    pub(super) fn reads_this(
+        &self,
+        callable: impl crate::program_execution::SourceCoordinate,
+    ) -> bool {
         let Some(span) = self.callable_spans.get(&callable) else {
             return true;
         };
@@ -10336,12 +10525,27 @@ impl ExecutionIndex {
                     self.hoisted_function_owners.insert(self.owner);
                     self.exported_hoisted_functions
                         .insert(function.function.span.lo.0);
+                    if function.ident.is_none() {
+                        self.default_export_value = Some((
+                            self.owner,
+                            ValueExpr::Alloc(Kind::Function, function.function.span.lo.0),
+                            true,
+                        ));
+                    }
+                } else if let DefaultDecl::Class(class) = &export.decl
+                    && class.ident.is_none()
+                {
+                    let value = ValueExpr::Alloc(Kind::Class, class.class.span.lo.0);
+                    self.default_export_value = Some((self.owner, value.clone(), false));
+                    self.top_exported_values[self.owner.0].push(value);
                 }
             }
             ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(export)) => {
                 self.exported_declaration_owners.insert(self.owner);
                 self.default_export_owners.insert(self.owner);
                 self.top_exported_values[self.owner.0].push(ValueExpr::from_expr(&export.expr));
+                self.default_export_value =
+                    Some((self.owner, ValueExpr::from_expr(&export.expr), false));
             }
             ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export)) if export.src.is_none() => {
                 for specifier in &export.specifiers {
@@ -13590,6 +13794,7 @@ pub(crate) struct InferredCallableCapabilities {
     pub intact_collections: BTreeSet<NativeIntrinsic>,
     pub stable_providers: BTreeSet<String>,
     pub namespace_wrappers: BTreeMap<String, InferredNamespaceWrapper>,
+    pub executable: Arc<ExecutionIndex>,
 }
 
 pub(crate) struct InferredForeignCall {
@@ -14062,12 +14267,9 @@ pub(crate) fn infer_callable_capabilities<'f>(
         flow: mut prepared_flow,
     } = prepared;
     index.apply_native_integrity(integrity);
-    let mut result = InferredCallableCapabilities {
-        foreign_calls: BTreeMap::new(),
-        intact_collections: BTreeSet::new(),
-        stable_providers: BTreeSet::new(),
-        namespace_wrappers: BTreeMap::new(),
-    };
+    let mut foreign_calls = BTreeMap::new();
+    let mut stable_providers = BTreeSet::new();
+    let mut namespace_wrappers = BTreeMap::new();
     let has_candidate = index.hoisted_bindings.iter().any(|(id, key)| {
         required_stable_providers.contains(id.0.as_ref())
             || (exported_locals.contains(id.0.as_ref())
@@ -14090,7 +14292,7 @@ pub(crate) fn infer_callable_capabilities<'f>(
             },
             None,
         ));
-        result.stable_providers = index
+        stable_providers = index
             .hoisted_bindings
             .iter()
             .filter(|(binding, _)| required_stable_providers.contains(binding.0.as_ref()))
@@ -14106,11 +14308,11 @@ pub(crate) fn infer_callable_capabilities<'f>(
             })
             .map(|(binding, _)| binding.0.to_string())
             .collect();
-        result.namespace_wrappers = infer_namespace_wrappers(&index, &exported_locals);
+        namespace_wrappers = infer_namespace_wrappers(&index, &exported_locals);
         prepared_flow = Some(flow);
     }
     if derive_foreign_calls {
-        result.foreign_calls = infer_foreign_calls(
+        foreign_calls = infer_foreign_calls(
             &index,
             body,
             &exported_locals,
@@ -14127,7 +14329,7 @@ pub(crate) fn infer_callable_capabilities<'f>(
             |call| call.availability.available_to_importer() || call.callback_factory,
         );
     }
-    result.intact_collections = [
+    let intact_collections = [
         NativeIntrinsic::Map,
         NativeIntrinsic::Set,
         NativeIntrinsic::WeakMap,
@@ -14143,7 +14345,13 @@ pub(crate) fn infer_callable_capabilities<'f>(
         )
     })
     .collect();
-    result
+    InferredCallableCapabilities {
+        foreign_calls,
+        intact_collections,
+        stable_providers,
+        namespace_wrappers,
+        executable: Arc::new(index),
+    }
 }
 
 /// Exported top-level function and class declarations, and single-declarator
@@ -14600,5 +14808,543 @@ console.log("after", copied.size);"#,
                 "{source}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod runtime_identity_tests {
+    use super::super::interpreter::Outcome;
+    use super::super::kernel::closure::{CapturePolicy, lexical_captures};
+    use super::super::value_model::{
+        AbstractValue, CaptureInterner, Context, HeapAddress, LexicalCaptures, Values,
+    };
+    use super::super::world::{World, WorldScope};
+    use super::*;
+    use crate::facts::EffectCell;
+    use crate::program_execution::{ExecutableModule, ProgramExecutables};
+    use raw_js_test_support::parse;
+    use std::sync::Arc;
+
+    fn prepared(source: &str, hints: &AnalysisInputs) -> ExecutionIndex {
+        let module = parse(source);
+        let views = crate::facts::top_level_item_views(&module.body);
+        ExecutionIndex::collect(
+            &views,
+            hints,
+            None,
+            &BTreeSet::new(),
+            &LocalClassConstructionShapes::default(),
+        )
+    }
+
+    // This seam independently checks source ownership across parsed arenas,
+    // including the exact offset collision that raw byte-position keys hide.
+    #[test]
+    fn allocation_instances_share_source_facts_without_sharing_runtime_identity() {
+        let index = prepared(
+            "function make() { return {value: 1}; }",
+            &AnalysisInputs::default(),
+        );
+        let site = *index.own_descriptor_shapes.keys().next().unwrap();
+        let definition = index.allocation(site);
+        let a = definition.instantiated(crate::program_execution::RuntimeActivationId::fresh());
+        let b = definition.instantiated(crate::program_execution::RuntimeActivationId::fresh());
+        assert_ne!(a, b);
+        assert_ne!(definition, a);
+        assert_eq!(a.source_site(), definition);
+        assert_eq!(index.local_origin(a), Some(site));
+        assert!(index.ordinary_record_shape(a).is_some());
+        let other = prepared(
+            "function make() { return {value: 1}; }",
+            &AnalysisInputs::default(),
+        );
+        assert!(other.local_origin(a).is_none());
+        let mut objects = BTreeMap::new();
+        objects.insert(a, "first");
+        objects.insert(b, "second");
+        assert_eq!(objects.len(), 2);
+    }
+
+    #[test]
+    fn independently_parsed_sources_do_not_alias_heap_or_captures() {
+        let a = prepared(
+            "async function make() { let held = {value: 1}; return () => held; }",
+            &AnalysisInputs::default(),
+        );
+        let b = prepared(
+            "async function make() { let held = {value: 2}; return () => held; }",
+            &AnalysisInputs::default(),
+        );
+        let local_function = *a.callables.keys().next().unwrap();
+        assert_eq!(b.callables.keys().next(), Some(&local_function));
+        let af = a.allocation(local_function);
+        let bf = b.allocation(local_function);
+        assert_ne!(af, bf);
+        assert_eq!(a.local_origin(af), Some(local_function));
+        assert_eq!(a.local_origin(bf), None);
+        assert!(a.callables.get(&af).is_some());
+        assert!(a.callables.get(&bf).is_none());
+        assert!(a.async_callables.contains(&af));
+        assert!(!a.async_callables.contains(&bf));
+
+        let local_object = *a.own_descriptor_shapes.keys().next().unwrap();
+        assert!(b.own_descriptor_shapes.contains_key(&local_object));
+        let ao = a.allocation(local_object);
+        let bo = b.allocation(local_object);
+        let mut world = World::new(WorldScope::Application);
+        for (object, value) in [
+            (ao, AbstractValue::UNDEFINED),
+            (bo, AbstractValue::PRIMITIVE),
+        ] {
+            world.literal_heap().record(
+                object,
+                BTreeMap::from([(Some("value".into()), Values::from([value]))]),
+            );
+        }
+        assert_eq!(
+            world.surface.data_values(ao, "value"),
+            Some(&Values::from([AbstractValue::UNDEFINED]))
+        );
+        assert_eq!(
+            world.surface.data_values(bo, "value"),
+            Some(&Values::from([AbstractValue::PRIMITIVE]))
+        );
+
+        let nested = *a.callables.keys().last().unwrap();
+        let held = a
+            .callables
+            .get(&nested)
+            .unwrap()
+            .reads
+            .iter()
+            .find(|id| id.0 == "held")
+            .unwrap();
+        let mut interner = CaptureInterner::<LexicalCaptures>::default();
+        let closures: Values = [(a.source_scope(), &a, ao), (b.source_scope(), &b, bo)]
+            .into_iter()
+            .map(|(scope, index, object)| {
+                let env = Context::from(vec![(
+                    held.clone(),
+                    Values::from([AbstractValue::Value(Value::Alloc(Kind::Object, object))]),
+                )]);
+                let captures = lexical_captures(
+                    index,
+                    &Default::default(),
+                    &env,
+                    nested,
+                    CapturePolicy::Exact,
+                );
+                AbstractValue::Closure(
+                    HeapAddress {
+                        scope: WorldScope::Application,
+                        callable: scope.allocation(nested),
+                    },
+                    interner.intern(captures),
+                )
+            })
+            .collect();
+        assert_eq!(closures.len(), 2);
+        assert_eq!(
+            a.allocation(local_object),
+            ao,
+            "repeated source sites retain the conservative pooled identity"
+        );
+
+        let mut outcome = Outcome::default();
+        for object in [ao, bo] {
+            outcome.record_runtime_heap_read(
+                a.source_scope(),
+                EffectCell::OwnProperty {
+                    origin: object,
+                    property: "value".into(),
+                },
+                true,
+            );
+        }
+        assert_eq!(outcome.runtime_heap_contents.reads.len(), 2);
+        assert_eq!(outcome.observed_runtime_heap_accesses.reads.len(), 2);
+        assert_eq!(outcome.effects.heap_contents.reads.len(), 1);
+        assert!(outcome.effects.heap_contents.opaque);
+        let frontier = crate::program_execution::RuntimeHeapContentCells {
+            opaque: true,
+            observes_external_heap: true,
+            ..Default::default()
+        };
+        outcome.record_runtime_heap_contents(a.source_scope(), a.source_scope(), &frontier, true);
+        outcome.record_runtime_heap_contents(a.source_scope(), b.source_scope(), &frontier, true);
+        outcome.discard_source_heap_effects(a.source_scope(), a.source_scope());
+        assert_eq!(outcome.runtime_heap_contents.reads.len(), 1);
+        assert!(outcome.runtime_heap_contents.opaque);
+        assert!(outcome.effects.heap_contents.opaque);
+        assert!(
+            !outcome
+                .runtime_heap_frontiers
+                .contains_key(&a.source_scope())
+        );
+        assert!(
+            outcome
+                .runtime_heap_frontiers
+                .contains_key(&b.source_scope())
+        );
+        outcome.discard_source_heap_effects(b.source_scope(), b.source_scope());
+        assert!(!outcome.runtime_heap_contents.opaque);
+        assert!(!outcome.effects.heap_contents.opaque);
+        let binding = a.hoisted_bindings.keys().next().unwrap().clone();
+        let foreign_binding = b
+            .source_scope()
+            .qualify_effect(EffectCell::Binding(binding));
+        assert!(a.source_scope().project_effect(&foreign_binding).is_none());
+    }
+
+    #[test]
+    fn qualified_binding_effects_survive_projection_absorption_and_alternatives() {
+        use crate::execution_evidence::AssumedEffectReason;
+        let source = "let held = 0; function inspect() { return held; }";
+        let a = prepared(source, &AnalysisInputs::default());
+        let b = prepared(source, &AnalysisInputs::default());
+        let callable = a.callables.values().next().unwrap();
+        let binding = callable.reads.iter().find(|id| id.0 == "held").unwrap();
+        let owner = callable.owner;
+        let aa = a.source_scope();
+        let bb = b.source_scope();
+        let ab = aa.binding(binding.clone());
+        let bbind = bb.binding(binding.clone());
+        assert_ne!(ab, bbind);
+        assert_ne!(aa.unit(owner), bb.unit(owner));
+        assert!(aa.local_binding(&bbind).is_none());
+        assert!(aa.local_unit(bb.unit(owner)).is_none());
+
+        let mut assumed = Outcome::default();
+        for (scope, reason) in [
+            (aa, AssumedEffectReason::PrivateConstructorRestore),
+            (bb, AssumedEffectReason::EscapedCallbackClosure),
+        ] {
+            assumed.record_runtime_binding_read(
+                aa,
+                scope.binding(binding.clone()),
+                scope.unit(owner),
+                true,
+                Some(&reason),
+            );
+            assumed.record_runtime_binding_rebind(
+                aa,
+                scope.binding(binding.clone()),
+                scope.unit(owner),
+                Some(&reason),
+            );
+            assumed.executed_owners.insert(scope.unit(owner));
+        }
+        assert_eq!(
+            assumed.effects.reads,
+            BTreeSet::from([(binding.clone(), owner)])
+        );
+        assert_eq!(assumed.runtime_binding_effects.reads.len(), 2);
+        assert_eq!(assumed.runtime_binding_effects.fallback_only.reads.len(), 2);
+        assert_eq!(
+            assumed.local_executed_owners(aa).collect::<Vec<_>>(),
+            [owner]
+        );
+        let mut observed = Outcome::default();
+        observed.record_runtime_binding_read(aa, ab.clone(), aa.unit(owner), true, None);
+        observed.record_runtime_binding_rebind(aa, ab.clone(), aa.unit(owner), None);
+        let mut joined = Outcome::join(vec![assumed.clone(), observed.clone()]);
+        assert!(
+            !joined
+                .runtime_binding_effects
+                .fallback_only
+                .reads
+                .contains_key(&ab)
+        );
+        assert!(
+            joined
+                .runtime_binding_effects
+                .fallback_only
+                .reads
+                .contains_key(&bbind)
+        );
+        assert!(
+            !joined
+                .runtime_binding_effects
+                .fallback_only
+                .rebinds
+                .contains_key(&ab)
+        );
+        assert!(
+            !joined
+                .runtime_binding_effects
+                .fallback_only
+                .uninitialized_reads
+                .contains_key(&ab)
+        );
+        assert_eq!(joined.runtime_binding_effects.uninitialized_reads.len(), 2);
+        joined.project_runtime_binding_effects(bb);
+        assert_eq!(
+            joined.effects.reads,
+            BTreeSet::from([(binding.clone(), owner)])
+        );
+        assert!(joined.effects.fallback_only.reads.contains_key(binding));
+        joined.project_runtime_binding_effects(aa);
+        assert!(joined.effects.fallback_only.reads.is_empty());
+        assert_eq!(joined.runtime_binding_effects.reads.len(), 2);
+        assert_eq!(joined.executed_owners.len(), 2);
+
+        // A foreign observer of a local cell is retained, but its local
+        // ordinal is never substituted for an observer in this source.
+        let mut crossed = Outcome::default();
+        crossed.record_runtime_binding_read(aa, ab.clone(), bb.unit(owner), true, None);
+        crossed.record_runtime_binding_rebind(aa, ab.clone(), bb.unit(owner), None);
+        crossed.project_runtime_binding_effects(aa);
+        assert!(crossed.effects.reads.is_empty());
+        assert!(crossed.effects.rebinds.is_empty());
+        assert!(crossed.effects.uninitialized_reads.is_empty());
+        assert_eq!(
+            crossed.runtime_binding_effects.reads[&ab],
+            BTreeSet::from([bb.unit(owner)])
+        );
+
+        // Re-tagging a nested path preserves the first assumed path; an
+        // observation at another source cannot erase that provenance.
+        let mut outer = Outcome::default();
+        outer.absorb_call_outcome(
+            &mut observed,
+            Some(&AssumedEffectReason::PrivateConstructorRestore),
+        );
+        outer.absorb_call_outcome(&mut assumed, None);
+        assert_eq!(outer.runtime_binding_effects.fallback_only.reads.len(), 2);
+        assert!(matches!(
+            outer.runtime_binding_effects.fallback_only.reads[&ab],
+            AssumedEffectReason::PrivateConstructorRestore
+        ));
+        outer.absorb_call_outcome(&mut joined, None);
+        assert!(
+            !outer
+                .runtime_binding_effects
+                .fallback_only
+                .reads
+                .contains_key(&ab)
+        );
+        assert!(
+            outer
+                .runtime_binding_effects
+                .fallback_only
+                .reads
+                .contains_key(&bbind)
+        );
+    }
+
+    #[test]
+    fn canonical_program_effects_preserve_scoped_cells_and_saved_binding_contexts() {
+        use crate::execution_evidence::AssumedEffectReason;
+        use crate::program_execution::ProgramExecutionEffects;
+        let source = "let held = {}; function inspect() { return held; }";
+        let module_a = parse(source);
+        let module_b = parse(source);
+        let collect = |module: &swc_ecma_ast::Module| {
+            let views = crate::facts::top_level_item_views(&module.body);
+            ExecutionIndex::collect(
+                &views,
+                &AnalysisInputs::default(),
+                None,
+                &BTreeSet::new(),
+                &LocalClassConstructionShapes::default(),
+            )
+        };
+        let a = collect(&module_a);
+        let b = collect(&module_b);
+        let callable = a.callables.values().next().unwrap();
+        let binding = callable
+            .reads
+            .iter()
+            .find(|binding| binding.0 == "held")
+            .unwrap();
+        let origin = *a.own_descriptor_shapes.keys().next().unwrap();
+        assert!(b.own_descriptor_shapes.contains_key(&origin));
+        let mut outcome = Outcome::default();
+        for index in [&a, &b] {
+            let scope = index.source_scope();
+            let reason = AssumedEffectReason::PrivateConstructorRestore;
+            outcome.record_runtime_binding_read(
+                a.source_scope(),
+                scope.binding(binding.clone()),
+                scope.unit(callable.owner),
+                true,
+                Some(&reason),
+            );
+            outcome.record_runtime_binding_rebind(
+                a.source_scope(),
+                scope.binding(binding.clone()),
+                scope.unit(callable.owner),
+                Some(&reason),
+            );
+            outcome.record_runtime_heap_read(
+                a.source_scope(),
+                EffectCell::OwnProperty {
+                    origin: index.allocation(origin),
+                    property: "held".into(),
+                },
+                true,
+            );
+            outcome.executed_owners.insert(scope.unit(callable.owner));
+            outcome.record_runtime_heap_contents(
+                a.source_scope(),
+                scope,
+                &crate::program_execution::RuntimeHeapContentCells {
+                    opaque: true,
+                    observes_external_heap: true,
+                    ..Default::default()
+                },
+                true,
+            );
+        }
+        let normalize = |known_b| {
+            ProgramExecutionEffects::normalize(
+                &outcome.runtime_binding_effects,
+                &outcome.runtime_heap_contents,
+                &outcome.runtime_heap_frontiers,
+                &outcome.observed_runtime_heap_accesses,
+                &outcome.executed_owners,
+                |scope| {
+                    if scope == a.source_scope() {
+                        Some("a.js".into())
+                    } else if known_b && scope == b.source_scope() {
+                        Some("b.js".into())
+                    } else {
+                        None
+                    }
+                },
+                |_| None,
+            )
+        };
+        let program = normalize(true);
+        assert!(program.available);
+        assert_eq!(program.reads.len(), 2);
+        assert_eq!(program.heap_contents.reads.len(), 2);
+        assert_eq!(program.observed_heap_accesses.reads.len(), 2);
+        assert_eq!(program.heap_frontiers.len(), 2);
+        assert_eq!(program.executed_owners.len(), 2);
+        assert_eq!(
+            program
+                .reads
+                .keys()
+                .map(|binding| binding.module.as_str())
+                .collect::<Vec<_>>(),
+            ["a.js", "b.js"]
+        );
+        let unavailable = normalize(false);
+        assert!(!unavailable.available);
+        assert!(!unavailable.binding_lane_available());
+        assert!(!unavailable.heap_lane_available());
+        assert!(unavailable.heap_contents.opaque);
+        assert!(unavailable.heap_contents.observes_external_heap);
+        assert_eq!(unavailable.reads.len(), 1);
+        assert_eq!(unavailable.heap_contents.reads.len(), 1);
+
+        let missing_binding_module = ProgramExecutionEffects::normalize(
+            &outcome.runtime_binding_effects,
+            &Default::default(),
+            &BTreeMap::new(),
+            &Default::default(),
+            &BTreeSet::new(),
+            |scope| (scope == a.source_scope()).then_some("a.js".into()),
+            |_| None,
+        );
+        assert!(!missing_binding_module.available);
+        assert!(!missing_binding_module.binding_lane_available());
+        assert!(missing_binding_module.heap_lane_available());
+        assert!(!missing_binding_module.heap_contents.opaque);
+        assert!(!missing_binding_module.heap_contents.observes_external_heap);
+
+        let missing_heap_module = ProgramExecutionEffects::normalize(
+            &Default::default(),
+            &outcome.runtime_heap_contents,
+            &BTreeMap::new(),
+            &Default::default(),
+            &BTreeSet::new(),
+            |scope| (scope == a.source_scope()).then_some("a.js".into()),
+            |_| None,
+        );
+        assert!(!missing_heap_module.available);
+        assert!(missing_heap_module.binding_lane_available());
+        assert!(!missing_heap_module.heap_lane_available());
+        assert!(missing_heap_module.heap_contents.opaque);
+        assert!(missing_heap_module.heap_contents.observes_external_heap);
+
+        let ordinals = analysis_codec::ContextOrdinals::new([&module_a, &module_b]);
+        let saved = program
+            .try_map_bindings(|binding| ordinals.snapshot_binding(binding))
+            .unwrap();
+        let bytes = analysis_codec::encode(&saved).unwrap();
+        let decoded: ProgramExecutionEffects<analysis_codec::SavedBinding> =
+            analysis_codec::decode(&bytes).unwrap();
+        let restored = decoded
+            .try_map_bindings(|binding| ordinals.restore_binding(binding.clone()))
+            .unwrap();
+        assert!(restored.available);
+        assert_eq!(restored.reads, program.reads);
+        assert_eq!(restored.rebinds, program.rebinds);
+        assert_eq!(restored.uninitialized_reads, program.uninitialized_reads);
+        assert_eq!(restored.heap_contents, program.heap_contents);
+        assert_eq!(
+            restored.observed_heap_accesses,
+            program.observed_heap_accesses
+        );
+        assert_eq!(restored.executed_owners, program.executed_owners);
+        let resaved = restored
+            .try_map_bindings(|binding| ordinals.snapshot_binding(binding))
+            .unwrap();
+        assert_eq!(
+            analysis_codec::encode(&resaved).unwrap(),
+            bytes,
+            "all fallback reasons and frontier flags round-trip unchanged"
+        );
+    }
+
+    #[test]
+    fn registry_reuses_canonical_scope_but_standalone_queries_are_fresh() {
+        let source = "export function make() { return {}; }";
+        let canonical = Arc::new(prepared(source, &AnalysisInputs::default()));
+        let registry = Arc::new(ProgramExecutables::from_modules(BTreeMap::from([(
+            "provider.js".into(),
+            ExecutableModule {
+                index: canonical.clone(),
+                exports: BTreeMap::from([("make".into(), "make".into())]),
+            },
+        )])));
+        let hints = AnalysisInputs {
+            current_chunk_id: Some("provider.js".into()),
+            executables: Some(registry.clone()),
+            ..Default::default()
+        };
+        assert_eq!(
+            prepared(source, &hints).source_scope(),
+            canonical.source_scope()
+        );
+        let standalone = prepared(
+            source,
+            &AnalysisInputs {
+                current_chunk_id: Some("provider.js".into()),
+                ..Default::default()
+            },
+        );
+        assert_ne!(standalone.source_scope(), canonical.source_scope());
+        assert!(
+            registry
+                .module_for_scope(standalone.source_scope())
+                .is_none()
+        );
+        assert!(
+            registry
+                .module_for_scope(canonical.source_scope())
+                .is_some()
+        );
+        assert_eq!(
+            registry.module_name_for_scope(canonical.source_scope()),
+            Some("provider.js")
+        );
+        assert!(
+            registry
+                .module_name_for_scope(standalone.source_scope())
+                .is_none()
+        );
     }
 }

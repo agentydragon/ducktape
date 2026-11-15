@@ -127,7 +127,7 @@ export { renderCard, importedValue };
             &[r#"console.log(renderCard(" ok "));"#],
         )],
     );
-    opts.extra_files = &[("static/app/vendor.js", "export const value = 1;\n")];
+    opts.extra_chunks = &[("static/vendor", "export const value = 1;\n")];
     let fixture = write_validate_fixture_spec(opts);
 
     let json = run_spec_validate(&fixture.spec_path, &["--format", "json"]);

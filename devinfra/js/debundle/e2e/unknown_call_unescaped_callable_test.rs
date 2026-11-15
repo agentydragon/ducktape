@@ -26,10 +26,31 @@ fn expect_local_factory_late_read_conflict(source: &str) {
     );
 }
 
+fn assert_schedule_refusal_preserves_source_and_candidate(
+    opts: FixtureOpts<'_>,
+    expected_output: &str,
+    deferred_reader: &str,
+) -> RejectedFixture {
+    let rejected = run_rejection_fixture_with_graphs_and_args(opts, &["--emit-on-rejection"], 3);
+    assert!(
+        rejected
+            .stderr
+            .contains("evaluation_schedule_unknown_reordered"),
+        "expected a conservative evaluation-schedule refusal for deferred reader {deferred_reader}:\n{}",
+        rejected.stderr
+    );
+    assert_node_output(
+        &rejected.source_root.join("static/app.js"),
+        expected_output,
+        "",
+    );
+    assert_node_output(&rejected.entry_path(), expected_output, "");
+    rejected
+}
+
 #[test]
-fn unpublished_constructor_result_with_enum_array_stays_deferred() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"var Flags = ((values) => ((values[(values.FIRST = 1)] = "FIRST"), (values[(values.SECOND = 2)] = "SECOND"), values))(Flags || {});
+fn unpublished_constructor_result_with_enum_array_split_stays_unproved() {
+    let source = r#"var Flags = ((values) => ((values[(values.FIRST = 1)] = "FIRST"), (values[(values.SECOND = 2)] = "SECOND"), values))(Flags || {});
 class Holder {
   constructor(record, policy, callback) {
     this.record = record;
@@ -50,7 +71,9 @@ const dynamic = ((object) => {
 const later = 42;
 console.log(later);
 console.log(command.run(), command.weight, command.record.constraints.length);
-"#,
+"#;
+    let split = FixtureOpts::new(
+        source,
         vec![
             logical_module(
                 "values/dynamic",
@@ -66,27 +89,44 @@ console.log(command.run(), command.weight, command.record.constraints.length);
             ),
             logical_module("values/later", &[Member::new("later")]),
         ],
-    ));
-
+    );
+    let rejected =
+        assert_schedule_refusal_preserves_source_and_candidate(split, "42\n84 0 2\n", "command");
     assert_module_exports(
-        &fixture.out_root,
+        &rejected.app_root(),
         "static/app/modules/values/dynamic.js",
         &["command"],
         &["later"],
     );
     assert_module_exports(
-        &fixture.out_root,
+        &rejected.app_root(),
         "static/app/modules/values/later.js",
         &["later"],
         &["dynamic"],
     );
     assert_module_source(
-        &fixture.out_root,
+        &rejected.app_root(),
         "static/app/modules/values/dynamic.js",
         &["class Holder", "class Policy", "function create"],
         &[],
     );
-    assert_preserved_entry_output(&fixture, "42\n84 0 2\n");
+    let colocated = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "values/all",
+            &[
+                Member::new("Flags"),
+                Member::new("Holder"),
+                Member::new("Policy"),
+                Member::new("create"),
+                Member::new("prefix"),
+                Member::new("command"),
+                Member::new("dynamic"),
+                Member::new("later"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&colocated, "42\n84 0 2\n");
 }
 
 #[test]
@@ -246,9 +286,8 @@ console.log(later);
 }
 
 #[test]
-fn unpublished_local_constructor_result_stays_deferred() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"class Holder {
+fn unpublished_local_constructor_result_split_stays_unproved() {
+    let source = r#"class Holder {
   constructor(record, policy) {
     this.record = record;
     this.policy = policy;
@@ -267,7 +306,9 @@ const dynamic = ((object) => {
 const later = 42;
 console.log(later);
 console.log(command.run(), command.weight);
-"#,
+"#;
+    let split = FixtureOpts::new(
+        source,
         vec![
             logical_module(
                 "values/dynamic",
@@ -282,27 +323,44 @@ console.log(command.run(), command.weight);
             ),
             logical_module("values/later", &[Member::new("later")]),
         ],
-    ));
+    );
+    let rejected =
+        assert_schedule_refusal_preserves_source_and_candidate(split, "42\n42 0\n", "command");
 
     assert_module_exports(
-        &fixture.out_root,
+        &rejected.app_root(),
         "static/app/modules/values/dynamic.js",
         &["command"],
         &["later"],
     );
     assert_module_exports(
-        &fixture.out_root,
+        &rejected.app_root(),
         "static/app/modules/values/later.js",
         &["later"],
         &["dynamic"],
     );
     assert_module_source(
-        &fixture.out_root,
+        &rejected.app_root(),
         "static/app/modules/values/dynamic.js",
         &["class Holder", "class Policy", "function create"],
         &[],
     );
-    assert_preserved_entry_output(&fixture, "42\n42 0\n");
+    let colocated = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "values/all",
+            &[
+                Member::new("Holder"),
+                Member::new("Policy"),
+                Member::new("create"),
+                Member::new("prefix"),
+                Member::new("command"),
+                Member::new("dynamic"),
+                Member::new("later"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&colocated, "42\n42 0\n");
 }
 
 #[test]
@@ -447,9 +505,8 @@ later = 42;
 }
 
 #[test]
-fn unpublished_local_factory_result_stays_deferred() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"function retain(read, write) {
+fn unpublished_local_factory_result_split_stays_unproved() {
+    let source = r#"function retain(read, write) {
   async function guarded() { return read(); }
   return { read, write, guarded, preview: async () => read() };
 }
@@ -463,7 +520,9 @@ const dynamic = ((object) => {
 const later = dynamic;
 console.log(later);
 console.log(holder.read());
-"#,
+"#;
+    let split = FixtureOpts::new(
+        source,
         vec![
             logical_module(
                 "values/dynamic",
@@ -478,33 +537,47 @@ console.log(holder.read());
                 ],
             ),
         ],
-    ));
+    );
+    let rejected =
+        assert_schedule_refusal_preserves_source_and_candidate(split, "1\n1\n", "holder");
 
     assert_module_exports(
-        &fixture.out_root,
+        &rejected.app_root(),
         "static/app/modules/values/dynamic.js",
         &["dynamic"],
         &["later"],
     );
     assert_module_exports(
-        &fixture.out_root,
+        &rejected.app_root(),
         "static/app/modules/values/later.js",
         &["later", "holder"],
         &["dynamic"],
     );
     assert_module_source(
-        &fixture.out_root,
+        &rejected.app_root(),
         "static/app/modules/values/later.js",
         &["function retain", "async function guarded"],
         &[],
     );
-    assert_preserved_entry_output(&fixture, "1\n1\n");
+    let colocated = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "values/all",
+            &[
+                Member::new("retain"),
+                Member::new("prefix"),
+                Member::new("holder"),
+                Member::new("dynamic"),
+                Member::new("later"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&colocated, "1\n1\n");
 }
 
 #[test]
-fn fresh_local_record_field_assignment_retains_callback_until_use() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"function wrap(callback) {
+fn fresh_local_record_field_assignment_split_stays_unproved() {
+    let source = r#"function wrap(callback) {
   const result = { run: null };
   result.run = callback;
   return result;
@@ -517,7 +590,9 @@ const dynamic = ((object) => {
 })({});
 const later = dynamic;
 console.log(later, holder.run());
-"#,
+"#;
+    let split = FixtureOpts::new(
+        source,
         vec![
             logical_module(
                 "values/dynamic",
@@ -532,14 +607,27 @@ console.log(later, holder.run());
                 ],
             ),
         ],
+    );
+    assert_schedule_refusal_preserves_source_and_candidate(split, "1 1\n", "holder");
+    let colocated = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "values/all",
+            &[
+                Member::new("wrap"),
+                Member::new("prefix"),
+                Member::new("holder"),
+                Member::new("dynamic"),
+                Member::new("later"),
+            ],
+        )],
     ));
-    assert_preserved_entry_output(&fixture, "1 1\n");
+    assert_preserved_entry_output(&colocated, "1 1\n");
 }
 
 #[test]
-fn distinct_own_field_writes_use_the_same_record_proof() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"function wrap(callback, tag) {
+fn distinct_own_field_writes_split_stays_unproved() {
+    let source = r#"function wrap(callback, tag) {
   const result = { run: null, tag: 0 };
   result.run = callback;
   result.tag = tag;
@@ -553,7 +641,9 @@ const dynamic = ((object) => {
 })({});
 const later = dynamic;
 console.log(later, holder.run(), holder.tag);
-"#,
+"#;
+    let split = FixtureOpts::new(
+        source,
         vec![
             logical_module(
                 "values/dynamic",
@@ -568,8 +658,22 @@ console.log(later, holder.run(), holder.tag);
                 ],
             ),
         ],
+    );
+    assert_schedule_refusal_preserves_source_and_candidate(split, "1 1 2\n", "holder");
+    let colocated = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "values/all",
+            &[
+                Member::new("wrap"),
+                Member::new("prefix"),
+                Member::new("holder"),
+                Member::new("dynamic"),
+                Member::new("later"),
+            ],
+        )],
     ));
-    assert_preserved_entry_output(&fixture, "1 1 2\n");
+    assert_preserved_entry_output(&colocated, "1 1 2\n");
 }
 
 #[test]
@@ -675,10 +779,8 @@ const later = dynamic;
 }
 
 #[test]
-fn unpublished_imported_callback_factory_result_stays_deferred() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            r#"import { observe } from './peer.js';
+fn unpublished_imported_callback_factory_split_stays_unproved() {
+    let source = r#"import { observe } from './peer.js';
 const prefix = new globalThis.Date();
 const wrapped = observe(() => later);
 const dynamic = ((object) => {
@@ -688,40 +790,59 @@ const dynamic = ((object) => {
 const later = dynamic;
 console.log(later);
 console.log(wrapped());
-"#,
-            vec![
-                logical_module(
-                    "values/dynamic",
-                    &[Member::new("dynamic"), Member::new("prefix")],
-                ),
-                logical_module(
-                    "values/later",
-                    &[Member::new("later"), Member::new("wrapped")],
-                ),
-            ],
-        )
-        .with_extra_chunks(&[(
-            "static/peer",
-            "export function observe(callback) { return (...args) => callback(...args); }\n",
-        )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factories(&["observe"])
-            .build()]),
-    );
+"#;
+    let provider = "export function observe(callback) { return (...args) => callback(...args); }\n";
+    let policy = ChunkExportPurityBuilder::new("static/peer")
+        .with_callback_factories(&["observe"])
+        .build();
+    let peers = [("static/peer", provider)];
+    let split = FixtureOpts::new(
+        source,
+        vec![
+            logical_module(
+                "values/dynamic",
+                &[Member::new("dynamic"), Member::new("prefix")],
+            ),
+            logical_module(
+                "values/later",
+                &[Member::new("later"), Member::new("wrapped")],
+            ),
+        ],
+    )
+    .with_extra_chunks(&peers)
+    .with_chunk_export_purity(std::slice::from_ref(&policy));
+    let rejected =
+        assert_schedule_refusal_preserves_source_and_candidate(split, "1\n1\n", "wrapped");
 
     assert_module_exports(
-        &fixture.out_root,
+        &rejected.app_root(),
         "static/app/modules/values/dynamic.js",
         &["dynamic"],
         &["later"],
     );
     assert_module_exports(
-        &fixture.out_root,
+        &rejected.app_root(),
         "static/app/modules/values/later.js",
         &["later", "wrapped"],
         &["dynamic"],
     );
-    assert_preserved_entry_output(&fixture, "1\n1\n");
+    let colocated = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "values/all",
+                &[
+                    Member::new("prefix"),
+                    Member::new("wrapped"),
+                    Member::new("dynamic"),
+                    Member::new("later"),
+                ],
+            )],
+        )
+        .with_extra_chunks(&peers)
+        .with_chunk_export_purity(&[policy]),
+    );
+    assert_preserved_entry_output(&colocated, "1\n1\n");
 }
 
 #[test]
@@ -893,10 +1014,13 @@ function readLater() { return later; }
 
 #[test]
 fn implicit_arguments_object_keeps_passed_local_callables_reachable() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            r#"function exposeArgument(callback) { consume(arguments); }
-exposeArgument(readLater);
+    for helper in [
+        "function exposeArgument(callback) { consume(arguments); }",
+        "function exposeArgument() { return arguments[0](); }",
+    ] {
+        let source = [
+            helper,
+            r#"exposeArgument(readLater);
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return 1;
@@ -904,14 +1028,20 @@ const dynamic = ((object) => {
 const later = dynamic;
 function readLater() { return later; }
 "#,
-            vec![
-                logical_module("values/dynamic", &[Member::new("dynamic")]),
-                logical_module("values/later", &[Member::new("later")]),
-            ],
-        ),
-        &["values/dynamic", "values/later"],
-        &[],
-    );
+        ]
+        .join("\n");
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module("values/dynamic", &[Member::new("dynamic")]),
+                    logical_module("values/later", &[Member::new("later")]),
+                ],
+            ),
+            &["values/dynamic", "values/later"],
+            &[],
+        );
+    }
 }
 
 #[test]
@@ -1090,7 +1220,7 @@ console.log(dynamic);
 }
 
 #[test]
-fn fresh_class_field_write_after_opaque_call_cannot_invoke_setter() {
+fn fresh_class_field_write_after_opaque_call_split_stays_unproved() {
     let source = r#"import { prepare } from './peer.js';
 class Reader { read() { return later; } }
 const reader = new Reader();
@@ -1103,7 +1233,7 @@ console.log(cache.value, reader.read(), later);
 export { Reader, reader, Cache, cache, marker, later };
 "#;
     let peers = [("static/peer", "export function prepare() { return {}; }")];
-    let mut fixture = FixtureOpts::new(
+    let mut split = FixtureOpts::new(
         source,
         vec![
             logical_module_with_anon(
@@ -1122,20 +1252,40 @@ export { Reader, reader, Cache, cache, marker, later };
     )
     .with_extra_chunks(&peers)
     .with_unassigned_mode(unassigned_mode_inline());
-    fixture.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    let fixture = run_fixture(fixture);
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
+    let rejected =
+        assert_schedule_refusal_preserves_source_and_candidate(split, "1 42 42\n", "reader");
     assert_module_exports(
-        &fixture.out_root,
+        &rejected.app_root(),
         "static/app/modules/values/cache.js",
         &["cache", "reader"],
         &["later"],
     );
     assert_module_exports(
-        &fixture.out_root,
+        &rejected.app_root(),
         "static/app/modules/values/later.js",
         &["later"],
         &["cache"],
     );
+    let mut colocated = FixtureOpts::new(
+        source,
+        vec![logical_module_with_anon(
+            "values/all",
+            &[
+                Member::new("Cache"),
+                Member::new("cache"),
+                Member::new("marker"),
+                Member::new("Reader"),
+                Member::new("reader"),
+                Member::new("later"),
+            ],
+            &["cache.value = 1;"],
+        )],
+    )
+    .with_extra_chunks(&peers)
+    .with_unassigned_mode(unassigned_mode_inline());
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
+    let fixture = run_fixture(colocated);
     assert_preserved_entry_output(&fixture, "1 42 42\n");
 }
 

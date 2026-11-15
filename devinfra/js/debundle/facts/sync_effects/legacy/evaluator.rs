@@ -11,7 +11,7 @@
 use super::super::allocation_transfer::AllocationContext;
 use super::super::execution_index::CallKind;
 use super::super::interpreter::{Executor, from_flow, unknown};
-use super::super::runtime_heap::{NativeIterableReceipt, NativeIterableUse};
+use super::super::runtime_heap::{NativeIterableReceipt, NativeIterableUse, NativeResultIdentity};
 use super::super::value_model::{
     AbstractValue, Context, HeapAddress, InstanceOrigin, RetainedResultKind, ValueExpr, Values,
 };
@@ -29,7 +29,14 @@ pub(in crate::facts::sync_effects) struct ApplicationAllocationContext<'a, 'sour
 }
 
 impl AllocationContext for ApplicationAllocationContext<'_, '_, '_> {
-    fn array_created(&mut self, allocation: u32, tainted: bool) {
+    fn source_scope(&self) -> crate::program_execution::RuntimeSourceScope {
+        self.executor.source_index().source_scope()
+    }
+    fn array_created(
+        &mut self,
+        allocation: crate::program_execution::RuntimeAllocationId,
+        tainted: bool,
+    ) {
         if tainted {
             self.executor
                 .state
@@ -81,12 +88,11 @@ impl AllocationContext for ApplicationAllocationContext<'_, '_, '_> {
         position: usize,
     ) -> super::super::value_model::LiteralPropertyKind {
         self.executor
-            .inputs
-            .index
+            .source_index()
             .literal_property_kind(allocation, position)
     }
     fn literal_layout(&self, allocation: u32) -> super::super::allocation_transfer::LiteralLayout {
-        self.executor.inputs.index.allocation_layout(allocation)
+        self.executor.source_index().allocation_layout(allocation)
     }
 
     fn heap(&mut self) -> super::super::allocation_transfer::LiteralHeap<'_> {
@@ -118,18 +124,29 @@ impl Executor<'_, '_> {
             ValueExpr::Alloc(Kind::Function, key) => Values::from([AbstractValue::Closure(
                 HeapAddress {
                     scope: self.state.world.scope,
-                    callable: *key,
+                    callable: self.source_index().allocation(*key),
                 },
                 self.closure_captures(*key, captures),
             )]),
             ValueExpr::Alloc(kind, site) => {
                 if *kind == Kind::Class {
-                    self.escape_class_captures(*site, env, captures);
+                    self.escape_class_captures(
+                        self.source_index().allocation(*site),
+                        env,
+                        captures,
+                    );
                 }
-                Values::from([AbstractValue::Value(Value::Alloc(*kind, *site))])
+                Values::from([AbstractValue::Value(Value::Alloc(
+                    *kind,
+                    self.source_index().allocation(*site),
+                ))])
             }
             ValueExpr::ObjectLiteral(key, properties) => {
-                if self.inputs.index.exact_object_spread_copies.contains(key)
+                let allocation = self.source_index().allocation(*key);
+                if self
+                    .source_index()
+                    .exact_object_spread_copies
+                    .contains(&allocation)
                     && let [(None, source)] = properties.as_ref()
                 {
                     let source = self.evaluate(source, env, captures);
@@ -139,13 +156,13 @@ impl Executor<'_, '_> {
                             .world
                             .surface
                             .ordinary_spread_copies
-                            .contains(key);
+                            .contains(&allocation);
                         let current = self
                             .state
                             .world_mut()
                             .surface
                             .prefix_object_properties
-                            .entry(*key)
+                            .entry(allocation)
                             .or_default();
                         let mut changed = false;
                         if previously_evaluated {
@@ -172,13 +189,17 @@ impl Executor<'_, '_> {
                             .world_mut()
                             .surface
                             .ordinary_spread_copies
-                            .insert(*key);
+                            .insert(allocation);
                         return Values::from([AbstractValue::Value(Value::Alloc(
                             Kind::Object,
-                            *key,
+                            allocation,
                         ))]);
                     }
-                    self.state.world_mut().surface.tainted_objects.insert(*key);
+                    self.state
+                        .world_mut()
+                        .surface
+                        .tainted_objects
+                        .insert(allocation);
                     if self.state.array_iteration_depth > 0 {
                         self.state.array_iteration_unsupported = true;
                     }
@@ -188,7 +209,7 @@ impl Executor<'_, '_> {
                     .enumerate()
                     .map(|(position, (name, value))| {
                         super::super::value_model::PropertyDefinition::new(
-                            self.inputs.index.literal_property_kind(*key, position),
+                            self.source_index().literal_property_kind(*key, position),
                             name.clone(),
                             value,
                         )
@@ -231,8 +252,7 @@ impl Executor<'_, '_> {
                 if let ValueExpr::Binding(id) = object.as_ref()
                     && is_static_identifier.is_static()
                     && property.as_ref().is_some_and(|property| {
-                        self.inputs
-                            .index
+                        self.source_index()
                             .callback_factory_members
                             .get(id)
                             .is_some_and(|members| members.contains(property))
@@ -240,9 +260,9 @@ impl Executor<'_, '_> {
                 {
                     return Values::from([AbstractValue::CallbackFactory]);
                 }
-                if matches!(object.as_ref(), ValueExpr::Binding(id) if id.0.as_ref() == "Object" && !self.inputs.flow.is_declared(id))
+                if matches!(object.as_ref(), ValueExpr::Binding(id) if id.0.as_ref() == "Object" && !self.source_inputs().flow.is_declared(id))
                     && property.as_deref() == Some("assign")
-                    && !self.inputs.shadowed.contains("Object")
+                    && !self.source_inputs().shadowed.contains("Object")
                 {
                     return Values::from([AbstractValue::ObjectAssign]);
                 }
@@ -250,6 +270,19 @@ impl Executor<'_, '_> {
                 let mut values = Values::new();
                 for object in objects {
                     match object {
+                        AbstractValue::ModuleNamespace(scope) => {
+                            if let Some(member) = property
+                                .as_deref()
+                                .and_then(|name| self.namespace_member(scope, name))
+                            {
+                                values.extend(member.values);
+                            } else {
+                                self.namespace_references(scope, |value, _| {
+                                    values.insert(value.clone());
+                                });
+                                values.insert(AbstractValue::Value(Value::Top));
+                            }
+                        }
                         AbstractValue::OwnDescriptorMap(site) => {
                             self.invalidate_own_descriptor_map(site);
                             let callbacks = self.descriptor_map_callbacks(site);
@@ -264,7 +297,7 @@ impl Executor<'_, '_> {
                         }
                         AbstractValue::GlobalObject => {
                             if let (Some(property), Some(owner)) =
-                                (property, self.inputs.index.member_owners.get(site))
+                                (property, self.source_index().member_owners.get(site))
                             {
                                 self.evaluation_effects.record(
                                     *owner,
@@ -377,10 +410,19 @@ impl Executor<'_, '_> {
                                     );
                                 }
                             } else if let Some(property) = property {
-                                if let Some(found) =
-                                    self.inputs.flow.values_of_property(object_id, property)
+                                if let Some(found) = self
+                                    .source_index()
+                                    .local_origin(object_id)
+                                    .and_then(|local| {
+                                        self.source_inputs()
+                                            .flow
+                                            .values_of_property(local, property)
+                                    })
                                 {
-                                    values.extend(from_flow(found.clone()));
+                                    values.extend(from_flow(
+                                        self.source_index().source_scope(),
+                                        found.clone(),
+                                    ));
                                 } else {
                                     values.insert(AbstractValue::Value(Value::Top));
                                 }
@@ -432,7 +474,9 @@ impl Executor<'_, '_> {
                     return result;
                 }
                 if self.source_record_factory(callee, expressions) {
-                    if let Some(&(owner, call_span)) = self.inputs.call_site_owners.get(span) {
+                    if let Some(&(owner, call_span)) =
+                        self.source_inputs().call_site_owners.get(span)
+                    {
                         self.record_returned_record_use(
                             callee,
                             crate::reports::schema::ReturnedRecordUseKind::ReturnCapability,
@@ -464,9 +508,14 @@ impl Executor<'_, '_> {
                 if let Some(proof) = self.descriptor_copy_projection(callee, &args, *span) {
                     return self.install_descriptor_copy_result(proof, &args, *span);
                 }
-                if let Some(resolution) =
-                    self.resolve_native_call(CallKind::Call, callee, *span, expressions, &args)
-                {
+                if let Some(resolution) = self.resolve_native_call(
+                    NativeResultIdentity::SourceProjection,
+                    CallKind::Call,
+                    callee,
+                    *span,
+                    expressions,
+                    &args,
+                ) {
                     return self.execute_native_resolution(
                         resolution,
                         &args,
@@ -526,7 +575,7 @@ impl Executor<'_, '_> {
                         AbstractValue::CallbackFactory if inline_callback || deferred_callback => {
                             if let ValueExpr::Binding(imported_local) = callee.as_ref()
                                 && let Some(&(owner, call_span)) =
-                                    self.inputs.call_site_owners.get(span)
+                                    self.source_inputs().call_site_owners.get(span)
                             {
                                 self.record_callback_factory_use(
                                     imported_local,

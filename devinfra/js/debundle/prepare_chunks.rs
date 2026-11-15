@@ -119,9 +119,14 @@ pub fn prepare_js_chunks(
                     .position(|f| f.path == CANONICAL_CHUNK_ENTRY_FILE)
             {
                 let file = prepared.files.remove(pos);
+                // Final schedule validation follows the finalized file graph, which
+                // can include passthrough providers outside the selected modules.
+                // Retain the original preparation AST instead of reparsing later.
                 // Read-only analysis retention must not change source-marker
                 // matching or pass-through output bytes/header behavior.
-                let file = if analysis_provider_chunk_ids.contains(&chunk_name) {
+                let file = if !materialized_chunk_ids.is_empty()
+                    || analysis_provider_chunk_ids.contains(&chunk_name)
+                {
                     file.into_source_with_ast()
                 } else {
                     file.into_rendered_source()
@@ -308,8 +313,9 @@ mod tests {
                         assert!(!reconstructed.render_source().unwrap().contains("reader"));
                     }
                 }
-                // Both source-to-emission paths restore pass-through source
-                // storage before eager mutation passes can enroll the provider.
+                // Both source-to-emission paths retain the read-only provider
+                // AST for final schedule analysis. Its original source remains
+                // authoritative until an actual mutation invalidates it.
                 let emissions = [
                     artifact::EmissionFiles::new(artifact.clone()).unwrap(),
                     artifact::EmissionFiles::from_prepared(prepared.program),
@@ -318,7 +324,11 @@ mod tests {
                     for chunk in &emission.files().chunks {
                         let name = emission.files().chunk_table.name(chunk.chunk_id);
                         let file = chunk.js.get_file(CANONICAL_CHUNK_ENTRY_FILE).unwrap();
-                        assert!(file.ast().is_none(), "{name}");
+                        assert_eq!(
+                            file.ast().is_some(),
+                            retain_provider && name == "provider",
+                            "{name}"
+                        );
                         if name == "provider" {
                             assert_eq!(file.render_source().unwrap(), source);
                         }

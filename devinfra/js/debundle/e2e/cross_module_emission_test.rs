@@ -323,6 +323,106 @@ export { mutable, write };
 }
 
 #[test]
+fn splitting_a_mutable_closure_from_its_binding_is_rejected() {
+    let rejected = run_emit_on_rejection_fixture(
+        FixtureOpts::new(
+            "let count = 0;\n\
+             function makeIncrementer() { return () => ++count; }\n\
+             const increment = makeIncrementer();\n\
+             console.log(increment());\n\
+             export { makeIncrementer };\n",
+            vec![logical_module(
+                "provider",
+                &[Member::new("makeIncrementer")],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+
+    let assessment = rejected.candidate_relocation_assessment();
+    assert_eq!(assessment["legacy_gate_accepts"], false, "{assessment:#}");
+    assert_eq!(
+        assessment["placement"]["status"], "blocked",
+        "{assessment:#}"
+    );
+    assert!(
+        !assessment["placement"]["cross_destination_rebinds"]
+            .as_array()
+            .expect("typed cross-destination rebind obligations")
+            .is_empty(),
+        "the closure writer must stay with its mutable binding: {assessment:#}"
+    );
+    let conflicts = rejected.atomic_group_conflicts();
+    assert_eq!(conflicts.len(), 1, "{conflicts:#?}");
+    assert!(
+        conflicts[0]["causes"]
+            .as_array()
+            .expect("atomic group causes")
+            .iter()
+            .any(|cause| cause == "deferred_rebind"),
+        "the gate must retain the rebind cause: {conflicts:#?}"
+    );
+    assert_module_source(
+        &rejected.app_root(),
+        "static/app/modules/provider.js",
+        &["import { count }", "return ()=>++count;"],
+        &["let count = 0;"],
+    );
+    assert_node_output(&rejected.source_root.join("static/app.js"), "1\n", "");
+    assert_node_error(&rejected.entry_path(), "Assignment to constant variable");
+}
+
+#[test]
+fn accepted_provider_keeps_a_mutable_let_binding_with_its_closures() {
+    let provider = "let count = 0;\nexport function reader() { return () => count; }\nexport function advance() { return ++count; }\n";
+    let consumer = "import { reader, advance } from './peer.js';\nconst read = reader();\nconst before = read();\nconst advanced = advance();\nconst after = read();\nconsole.log(before, advanced, after);\n";
+    let provider_modules = [(
+        "static/peer",
+        vec![logical_module(
+            "provider",
+            &[
+                Member::new("count"),
+                Member::new("reader"),
+                Member::new("advance"),
+            ],
+        )],
+    )];
+    let fixture = run_fixture(
+        FixtureOpts::new(consumer, vec![])
+            .with_extra_chunks(&[("static/peer", provider)])
+            .with_extra_chunk_logical_modules(&provider_modules),
+    );
+
+    assert_preserved_entry_output(&fixture, "0 1 1\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/peer/modules/provider.js",
+        &["let count = 0;", "function reader()", "function advance()"],
+        &["const count"],
+    );
+}
+
+#[test]
+fn returned_callback_update_stays_with_its_mutable_provider_binding() {
+    let provider = "let count = 0;\nexport function makeIncrementer() { return () => ++count; }\n";
+    let consumer = "import { makeIncrementer } from './peer.js';\nconst increment = makeIncrementer();\nconsole.log(increment());\n";
+    let provider_modules = [(
+        "static/peer",
+        vec![logical_module(
+            "provider",
+            &[Member::new("count"), Member::new("makeIncrementer")],
+        )],
+    )];
+    let fixture = run_fixture(
+        FixtureOpts::new(consumer, vec![])
+            .with_extra_chunks(&[("static/peer", provider)])
+            .with_extra_chunk_logical_modules(&provider_modules),
+    );
+
+    assert_preserved_entry_output(&fixture, "1\n");
+}
+
+#[test]
 fn object_pattern_and_static_property_keys_do_not_import_residual_binding() {
     let mut opts = FixtureOpts::new(
         r#"const id = "residual";
@@ -908,10 +1008,7 @@ export { a };
             )],
         )],
     );
-    opts.extra_files = &[(
-        "static/vendor.js",
-        "export const x = 42;\nexport default x;\n",
-    )];
+    opts.extra_chunks = &[("static/vendor", "export const x = 42;\nexport default x;\n")];
     let fixture = run_fixture(opts);
 
     assert_module_source(
@@ -920,6 +1017,7 @@ export { a };
         &["import {", "Readable", "vendor", "export {", "Readable"],
         &[],
     );
+    assert_preserved_entry_output(&fixture, "42\n");
 }
 
 #[test]
@@ -954,7 +1052,7 @@ export { a };
             ),
         ],
     );
-    opts.extra_files = &[("static/vendor.js", "export const j = () => 42;\n")];
+    opts.extra_chunks = &[("static/vendor", "export const j = () => 42;\n")];
     let outcomes = run_rejection_fixture(opts).selector_outcomes();
     let claim = find_outcome(&outcomes, "duplicate_claim", "jsxRuntime");
     assert_eq!(claim["placement"]["logical_module"], "mod_jsx_runtime");
@@ -977,10 +1075,8 @@ fn moved_body_re_imports_specifier_re_exported_by_another_plan() {
     // so without the source-chunk re-import mod_b has a free
     // variable and `ReferenceError: a is not defined` at runtime.
     //
-    // The source chunk lives at `static/app/`; place vendor.js
-    // there too so the entry's `./vendor.js` resolves. Both the
-    // empty re-export owner and moved body must re-import that same
-    // runtime-only sibling from their deeper output directories.
+    // Include the vendor in the input manifest so both original loading and
+    // the moved body's canonical re-import refer to the same provider.
     let mut opts = FixtureOpts::new(
         r#"import { x as a } from "./vendor.js";
 function bridge() {
@@ -1001,12 +1097,12 @@ export { bridge };
             logical_module("mod_b", &[Member::new("bridge")]),
         ],
     );
-    opts.extra_files = &[("static/app/vendor.js", "export const x = 42;\n")];
+    opts.extra_chunks = &[("static/vendor", "export const x = 42;\n")];
     let fixture = run_fixture(opts);
 
     let mod_a = fs::read_to_string(fixture.out_root.join("static/app/modules/mod_a.js"))
         .expect("read import-specifier re-export module");
-    assert_import_source(&mod_a, "../vendor.js");
+    assert_import_source(&mod_a, "../../vendor/entry.js");
 
     // mod_b's bridge body references `a`; mod_b must carry a
     // source-chunk re-import for `a` (the vendor binding) so the
@@ -1020,7 +1116,7 @@ export { bridge };
     // Behaviour preservation: `bridge()` returns the imported
     // vendor value. Without the filter narrowing this would
     // `ReferenceError` at module-load time.
-    assert_entry_output(&fixture, "42\n");
+    assert_preserved_entry_output(&fixture, "42\n");
 }
 
 #[test]
@@ -1054,8 +1150,8 @@ export { St as B, Ite };
         ChunkRenameEntry::new("entryHelper", "St"),
     ]))
     .with_unassigned_mode(unassigned_mode_inline())
-    .with_extra_files(&[(
-        "static/app/vendor.js",
+    .with_extra_chunks(&[(
+        "static/vendor",
         r#"export function o(value) {
   return "wrapped:" + value;
 }
@@ -1111,12 +1207,12 @@ export { composed };
             ),
         ],
     );
-    opts.extra_files = &[("static/app/vendor.js", "export const dep = 41;\n")];
+    opts.extra_chunks = &[("static/vendor", "export const dep = 41;\n")];
     let fixture = run_fixture(opts);
 
     let mod_dep = fs::read_to_string(fixture.out_root.join("static/app/modules/mod_dep.js"))
         .expect("read import-specifier re-export module");
-    assert_import_source(&mod_dep, "../vendor.js");
+    assert_import_source(&mod_dep, "../../vendor/entry.js");
 
     let entry = fs::read_to_string(fixture.out_root.join("static/app/entry.js"))
         .expect("read residual entry");
@@ -1125,14 +1221,14 @@ export { composed };
         "residual must drop the dead `dep` named specifier; got:\n{entry}",
     );
     assert!(
-        entry.contains("./vendor.js"),
-        "residual must keep `./vendor.js` as a side-effect-only import to preserve evaluation; got:\n{entry}",
+        entry.contains("../vendor/entry.js"),
+        "residual must keep the provider's canonical side-effect import to preserve evaluation; got:\n{entry}",
     );
 
     // Behaviour preservation: vendor.js is still evaluated via
     // the side-effect-only import, so `composed = dep + 1 = 42`
     // and the re-export keeps the original public surface.
-    assert_entry_output(&fixture, "42\n");
+    assert_preserved_entry_output(&fixture, "42\n");
 }
 
 #[test]
@@ -1155,12 +1251,12 @@ export { composed };
             ),
         ],
     );
-    opts.extra_files = &[("static/app/vendor.js", "export const dep = 41;\n")];
+    opts.extra_chunks = &[("static/vendor", "export const dep = 41;\n")];
     let fixture = run_fixture(opts);
 
     let mod_dep = fs::read_to_string(fixture.out_root.join("static/app/modules/mod_dep.js"))
         .expect("read import-specifier re-export module");
-    assert_import_source(&mod_dep, "../vendor.js");
+    assert_import_source(&mod_dep, "../../vendor/entry.js");
 
     let entry = fs::read_to_string(fixture.out_root.join("static/app/entry.js"))
         .expect("read residual entry");
@@ -1168,7 +1264,7 @@ export { composed };
         has_named_import(&entry, "dep"),
         "residual must keep the live `dep` named specifier; got:\n{entry}",
     );
-    assert_entry_output(&fixture, "41\n");
+    assert_preserved_entry_output(&fixture, "41\n");
 }
 
 // Phantom side-effect imports and cross-module binding imports share one
@@ -1214,5 +1310,5 @@ export { p1_v, p2_v, m_v };
          binding import of mod_p1 (linker position 0) — shared-order \
          interleaving, not phantom-first:\n{m_src}",
     );
-    assert_entry_output(&fixture, "xxy\n");
+    assert_preserved_entry_output(&fixture, "xxy\n");
 }

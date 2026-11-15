@@ -2,6 +2,20 @@
 
 use debundle_e2e_support::*;
 
+const PURITY_RUNTIME: &str = "globalThis.opaque = value => value;\nexport {};\n";
+const PURITY_RUNTIME_CHUNKS: &[(&str, &str)] = &[("static/runtime", PURITY_RUNTIME)];
+const PURITY_RUNTIME_FILES: &[(&str, &str)] = &[("static/app/runtime.js", PURITY_RUNTIME)];
+const RETAINED_RUNTIME: &str = "globalThis.retained = callback => ({ invoke: callback });\n\
+     globalThis.value = () => 42;\n\
+     export {};\n";
+const RETAINED_FACTORY: &str =
+    "export function factory(callback) { return globalThis.retained(callback); }\n";
+const IMPORT_OWNER_CHUNKS: &[(&str, &str)] = &[
+    ("static/peer", RETAINED_FACTORY),
+    ("static/runtime", RETAINED_RUNTIME),
+];
+const RETAINED_RUNTIME_FILES: &[(&str, &str)] = &[("static/app/runtime.js", RETAINED_RUNTIME)];
+
 fn subset(modules: &str) -> tempfile::NamedTempFile {
     let file = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(file.path(), format!(r#"{{"modules":{modules}}}"#)).unwrap();
@@ -10,8 +24,35 @@ fn subset(modules: &str) -> tempfile::NamedTempFile {
 
 #[test]
 fn omitted_owner_keeps_its_callable_purity_contract() {
-    const RUNTIME: &str = "globalThis.opaque = value => value;\nexport {};\n";
-    let options = |purity| {
+    let modules = |purity, colocated| {
+        let wrapper = Member::renamed("readableWrapper", "wrapper").with_purity(purity);
+        if colocated {
+            vec![
+                logical_module("functions/omitted", &[wrapper]),
+                logical_module(
+                    "values/all",
+                    &[
+                        Member::renamed("readableA", "A"),
+                        Member::renamed("readableB", "B"),
+                        Member::renamed("readableC", "C"),
+                    ],
+                ),
+            ]
+        } else {
+            vec![
+                logical_module("functions/omitted", &[wrapper]),
+                logical_module(
+                    "values/outer",
+                    &[
+                        Member::renamed("readableA", "A"),
+                        Member::renamed("readableC", "C"),
+                    ],
+                ),
+                logical_module("values/middle", &[Member::renamed("readableB", "B")]),
+            ]
+        }
+    };
+    let options = |purity, colocated| {
         FixtureOpts::new(
             r#"import './runtime.js';
 function wrapper(value) { return globalThis.opaque(value); }
@@ -21,36 +62,51 @@ const C = wrapper("c");
 console.log(A, B, C);
 export { wrapper, A, B, C };
 "#,
-            vec![
-                logical_module(
-                    "functions/omitted",
-                    &[Member::renamed("readableWrapper", "wrapper").with_purity(purity)],
-                ),
-                logical_module(
-                    "values/outer",
-                    &[
-                        Member::renamed("readableA", "A"),
-                        Member::renamed("readableC", "C"),
-                    ],
-                ),
-                logical_module("values/middle", &[Member::renamed("readableB", "B")]),
-            ],
+            modules(purity, colocated),
         )
-        .with_extra_files(&[
-            ("static/runtime.js", RUNTIME),
-            ("static/app/runtime.js", RUNTIME),
-        ])
+        .with_extra_chunks(PURITY_RUNTIME_CHUNKS)
+        .with_extra_files(PURITY_RUNTIME_FILES)
     };
-    let selection = subset(
+
+    let split_selection = subset(
         r#"[{"chunk":"static/app","module":"values/outer"},{"chunk":"static/app","module":"values/middle"}]"#,
     );
-    let args = ["--ownership-subset", selection.path().to_str().unwrap()];
-    let fixture = run_fixture_with_args(options(MemberPurity::Pure), &args);
+    let split_args = [
+        "--ownership-subset",
+        split_selection.path().to_str().unwrap(),
+    ];
+    let rejected = run_rejection_fixture_with_args(
+        options(MemberPurity::Pure, false),
+        &["--ownership-subset", split_args[1], "--emit-on-rejection"],
+        3,
+    );
+    for token in [
+        "unrealizable",
+        "opaque heap barrier",
+        "values/outer",
+        "values/middle",
+    ] {
+        assert!(
+            rejected.stderr.contains(token),
+            "missing {token:?}: {}",
+            rejected.stderr
+        );
+    }
+    assert_node_output(&rejected.source_root.join("static/app.js"), "a b c\n", "");
+    assert_node_output(&rejected.entry_path(), "a b c\n", "");
+    assert!(rejected.gate_rejected_marker().is_file());
+
+    let colocated_selection = subset(r#"[{"chunk":"static/app","module":"values/all"}]"#);
+    let colocated_args = [
+        "--ownership-subset",
+        colocated_selection.path().to_str().unwrap(),
+    ];
+    let fixture = run_fixture_with_args(options(MemberPurity::Pure, true), &colocated_args);
     assert_preserved_entry_output(&fixture, "a b c\n");
     assert_generated_module_after_entry_script(
         &fixture,
-        "const outer = await import('./static/app/modules/values/outer.js');\nconst middle = await import('./static/app/modules/values/middle.js');\nconsole.log(JSON.stringify([Object.keys(outer).sort(), Object.keys(middle).sort()]));\n",
-        "[[\"readableA\",\"readableC\"],[\"readableB\"]]\n",
+        "const values = await import('./static/app/modules/values/all.js');\nconsole.log(JSON.stringify(Object.keys(values).sort()));\n",
+        "[\"readableA\",\"readableB\",\"readableC\"]\n",
     );
     assert_module_source(
         &fixture.out_root,
@@ -64,7 +120,8 @@ export { wrapper, A, B, C };
             .join("static/app/modules/functions/omitted.js")
             .exists()
     );
-    let rejected = run_rejection_fixture_with_args(options(MemberPurity::Default), &args, 1);
+    let rejected =
+        run_rejection_fixture_with_args(options(MemberPurity::Default, false), &split_args, 1);
     assert!(
         rejected.stderr.contains("unrealizable"),
         "{}",
@@ -74,7 +131,6 @@ export { wrapper, A, B, C };
 
 #[test]
 fn omitted_import_owner_keeps_retained_callback_timing() {
-    const RUNTIME: &str = "globalThis.retained = callback => ({ invoke: callback });\nglobalThis.value = () => 42;\nexport {};\n";
     let contracts = [ChunkExportPurityBuilder::new("static/peer")
         .with_retained_callback_factory("factory", 1, &[0])
         .build()];
@@ -107,14 +163,8 @@ export { wrapped, later };
                 logical_module("values/later", &[Member::new("later")]),
             ],
         )
-        .with_extra_chunks(&[(
-            "static/peer",
-            "export function factory(callback) { return globalThis.retained(callback); }\n",
-        )])
-        .with_extra_files(&[
-            ("static/runtime.js", RUNTIME),
-            ("static/app/runtime.js", RUNTIME),
-        ]);
+        .with_extra_chunks(IMPORT_OWNER_CHUNKS)
+        .with_extra_files(RETAINED_RUNTIME_FILES);
         if assert_retention {
             options.with_chunk_export_purity(&contracts)
         } else {
@@ -139,10 +189,22 @@ export { wrapped, later };
         &["const readableWrapped", "const callback"],
         &["readableFactory", "const later"],
     );
-    let rejected = run_rejection_fixture_with_args(options(false), &args, 1);
+    // The provider body is now a source chunk, so the subset consumer can
+    // infer its retained callback behavior even without the explicit export
+    // contract. Keep that as a positive control rather than expecting the
+    // old opaque-provider refusal.
+    let inferred = run_fixture_with_args(options(false), &args);
+    assert_preserved_entry_output(&inferred, "42\n");
     assert!(
-        rejected.stderr.contains("unrealizable"),
-        "{}",
-        rejected.stderr
+        !inferred
+            .out_root
+            .join("static/app/modules/imports/omitted.js")
+            .exists()
+    );
+    assert_module_source(
+        &inferred.out_root,
+        "static/app/modules/callbacks/wrapped.js",
+        &["const readableWrapped", "const callback"],
+        &["readableFactory", "const later"],
     );
 }

@@ -62,7 +62,9 @@ pub(in crate::facts::sync_effects) fn lexical_captures(
         .get(&callable)
         .unwrap_or(&body.reads);
     let mut captured = LexicalCaptures {
-        home_object: index.callable_home_object(callable),
+        home_object: index
+            .callable_home_object(callable)
+            .map(|object| index.allocation(object)),
         ..Default::default()
     };
     // A nested closure's write needs the cell as much as a read does.
@@ -136,18 +138,26 @@ pub(super) fn create(
         // callable census to capture from.
         return Err(RemainderDisposition::NeedsSummary);
     }
-    let captures = lexical_captures(
+    let mut captures = lexical_captures(
         index,
         &context.world().active_cells,
         &frame.environment,
         callable,
         context.capture_policy(),
     );
+    if let Some(home) = creation.home_object() {
+        captures.home_object = Some(
+            *frame
+                .allocation_instances
+                .get(&home)
+                .ok_or(RemainderDisposition::NeedsSummary)?,
+        );
+    }
     let ClosureAdmission { effects, judgment } =
         context.admit_closure(frame, creation, &captures)?;
     let address = HeapAddress {
         scope: context.world().scope,
-        callable,
+        callable: context.instantiate_allocation(callable),
     };
     let values = Values::from([AbstractValue::Closure(
         address,

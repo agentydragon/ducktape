@@ -7,6 +7,26 @@ export const value = "ready";
 export function read() { return value; }
 "#;
 
+const PRELUDE_SOURCE: &str = "globalThis.window = globalThis; export {};\n";
+const PRELUDE_CHUNKS: [(&str, &str); 1] = [("static/prelude", PRELUDE_SOURCE)];
+
+fn expect_schedule_refusal(opts: FixtureOpts<'_>, source_output: &str) {
+    let rejected = run_rejection_fixture_with_graphs_and_args(opts, &["--emit-on-rejection"], 3);
+    assert!(
+        rejected
+            .stderr
+            .contains("evaluation_schedule_unknown_reordered"),
+        "expected a conservative evaluation-schedule refusal:\n{}",
+        rejected.stderr
+    );
+    assert!(rejected.gate_rejected_marker().is_file());
+    assert_node_output(
+        &rejected.source_root.join("static/app.js"),
+        source_output,
+        "",
+    );
+}
+
 fn provider_opts<'a>(source: &'a str) -> FixtureOpts<'a> {
     let mut opts = FixtureOpts::new(
         source,
@@ -69,19 +89,17 @@ console.log(later);
     let mut opts = FixtureOpts::new(
         source,
         vec![
+            logical_module("startup", &[Member::new("startup")]),
             logical_module_with_anon(
-                "debug/exposure",
-                &[],
+                "state/later",
+                &[Member::new("later")],
                 &["globalThis.inspectState = () => later;"],
             ),
-            logical_module("startup", &[Member::new("startup")]),
-            logical_module("state/later", &[Member::new("later")]),
         ],
     );
     opts.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     opts.deferred_global_publications = &[("globalThis", "inspectState")];
-    let fixture = run_fixture(opts);
-    assert_preserved_entry_output(&fixture, "42\n");
+    expect_schedule_refusal(opts, "42\n");
 }
 
 #[test]
@@ -91,6 +109,18 @@ const startup = new globalThis.Date();
 const later = 42;
 console.log(later);
 "#;
+    let colocated = FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "startup/all",
+            &[
+                Member::new("unusedReader"),
+                Member::new("startup"),
+                Member::new("later"),
+            ],
+        )],
+    );
+    assert_preserved_entry_output(&run_fixture(colocated), "42\n");
     let mut opts = FixtureOpts::new(
         source,
         vec![
@@ -100,8 +130,7 @@ console.log(later);
         ],
     );
     opts.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    let fixture = run_fixture(opts);
-    assert_preserved_entry_output(&fixture, "42\n");
+    expect_schedule_refusal(opts, "42\n");
 }
 
 #[test]
@@ -113,14 +142,8 @@ const later = 42;
 console.log(later);
 "#;
     let files = [
-        (
-            "static/app/prelude.js",
-            "globalThis.window = globalThis; export {};\n",
-        ),
-        (
-            "static/prelude.js",
-            "globalThis.window = globalThis; export {};\n",
-        ),
+        ("static/app/prelude.js", PRELUDE_SOURCE),
+        ("static/prelude.js", PRELUDE_SOURCE),
     ];
     let modules = || {
         vec![
@@ -133,20 +156,48 @@ console.log(later);
             logical_module("state/later", &[Member::new("later")]),
         ]
     };
-    let mut unasserted = FixtureOpts::new(source, modules()).with_extra_files(&files);
+    let mut unasserted = FixtureOpts::new(source, modules())
+        .with_extra_chunks(&PRELUDE_CHUNKS)
+        .with_extra_files(&files);
     unasserted.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     expect_atomic_conflict_rejection(unasserted, &["startup", "state/later"], &[]);
 
-    let mut asserted = FixtureOpts::new(source, modules()).with_extra_files(&files);
-    asserted.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    asserted.deferred_global_publications = &[("window", "inspectState")];
-    let fixture = run_fixture(asserted);
+    let mut colocated = FixtureOpts::new(
+        source,
+        vec![logical_module_with_anon(
+            "state/all",
+            &[Member::new("startup"), Member::new("later")],
+            &["typeof window < 'u' && (window.inspectState = () => later);"],
+        )],
+    )
+    .with_extra_chunks(&PRELUDE_CHUNKS)
+    .with_extra_files(&files);
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
+    colocated.deferred_global_publications = &[("window", "inspectState")];
+    let fixture = run_fixture(colocated);
     assert_preserved_entry_output(&fixture, "42\n");
     assert_generated_module_after_entry_script(
         &fixture,
         "console.log(globalThis.inspectState());\n",
         "42\n",
     );
+
+    let mut asserted = FixtureOpts::new(
+        source,
+        vec![
+            logical_module("startup", &[Member::new("startup")]),
+            logical_module_with_anon(
+                "state/later",
+                &[Member::new("later")],
+                &["typeof window < 'u' && (window.inspectState = () => later);"],
+            ),
+        ],
+    )
+    .with_extra_chunks(&PRELUDE_CHUNKS)
+    .with_extra_files(&files);
+    asserted.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
+    asserted.deferred_global_publications = &[("window", "inspectState")];
+    expect_schedule_refusal(asserted, "42\n");
 }
 
 #[test]
@@ -184,19 +235,21 @@ console.log(later);
         ],
     );
     no_publication.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    assert_preserved_entry_output(&run_fixture(no_publication), "42\n");
+    let no_publication = run_fixture_with_graphs(no_publication);
+    assert_preserved_entry_output(&no_publication, "42\n");
+    assert_all_emitted_js_checks(&no_publication);
 
     let mut split = FixtureOpts::new(
         source,
         vec![
-            logical_module_with_anon("debug/exposure", &[], &[probe, write]),
+            logical_module_with_anon("debug/exposure", &[], &[probe]),
             logical_module("startup", &[Member::new("startup")]),
-            logical_module("state/later", &[Member::new("later")]),
+            logical_module_with_anon("state/later", &[Member::new("later")], &[write]),
         ],
     );
     split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     split.deferred_global_publications = &[("globalThis", "inspectState")];
-    assert_preserved_entry_output(&run_fixture(split), "42\n");
+    expect_schedule_refusal(split, "42\n");
 }
 
 #[test]
@@ -225,18 +278,18 @@ console.log(later);
     let mut split = FixtureOpts::new(
         source,
         vec![
+            logical_module_with_anon("debug/exposure", &[Member::new("available")], &[]),
+            logical_module("startup", &[Member::new("startup")]),
             logical_module_with_anon(
-                "debug/exposure",
-                &[Member::new("available")],
+                "state/later",
+                &[Member::new("later")],
                 &["globalThis.inspectState = () => later;"],
             ),
-            logical_module("startup", &[Member::new("startup")]),
-            logical_module("state/later", &[Member::new("later")]),
         ],
     );
     split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     split.deferred_global_publications = &[("globalThis", "inspectState")];
-    assert_preserved_entry_output(&run_fixture(split), "42\n");
+    expect_schedule_refusal(split, "42\n");
 }
 
 #[test]
@@ -263,14 +316,14 @@ fn confined_local_global_alias_is_not_a_publication() {
         let mut split = FixtureOpts::new(
             &source,
             vec![
-                logical_module_with_anon("debug/exposure", &[], &[setup, write]),
+                logical_module_with_anon("debug/exposure", &[], &[setup]),
                 logical_module("startup", &[Member::new("startup")]),
-                logical_module("state/later", &[Member::new("later")]),
+                logical_module_with_anon("state/later", &[Member::new("later")], &[write]),
             ],
         );
         split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
         split.deferred_global_publications = &[("globalThis", "inspectState")];
-        assert_preserved_entry_output(&run_fixture(split), "42\n");
+        expect_schedule_refusal(split, "42\n");
     }
 }
 
@@ -303,7 +356,7 @@ fn private_frozen_namespace_does_not_publish_its_callback() {
         ],
     );
     split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    assert_preserved_entry_output(&run_fixture(split), "42 42\n");
+    expect_schedule_refusal(split, "42 42\n");
 }
 
 #[test]
@@ -715,14 +768,8 @@ fn block_shadowed_window_in_protocol_cannot_hide_proxy_reentry() {
         "import './prelude.js';\nlet later = 0;\n{block}\n{write}\nconst startup = new globalThis.Date();\nlater = 42;\nconsole.log(globalThis.observed, later);\n"
     );
     let files = [
-        (
-            "static/prelude.js",
-            "globalThis.window = globalThis; export {};\n",
-        ),
-        (
-            "static/app/prelude.js",
-            "globalThis.window = globalThis; export {};\n",
-        ),
+        ("static/prelude.js", PRELUDE_SOURCE),
+        ("static/app/prelude.js", PRELUDE_SOURCE),
     ];
     let mut colocated = FixtureOpts::new(
         &source,
@@ -732,6 +779,7 @@ fn block_shadowed_window_in_protocol_cannot_hide_proxy_reentry() {
             &[block, write, "later = 42;"],
         )],
     )
+    .with_extra_chunks(&PRELUDE_CHUNKS)
     .with_extra_files(&files);
     colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
@@ -744,6 +792,7 @@ fn block_shadowed_window_in_protocol_cannot_hide_proxy_reentry() {
             logical_module_with_anon("state/later", &[Member::new("later")], &["later = 42;"]),
         ],
     )
+    .with_extra_chunks(&PRELUDE_CHUNKS)
     .with_extra_files(&files);
     split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     split.deferred_global_publications = &[("window", "inspectState")];

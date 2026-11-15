@@ -110,7 +110,7 @@ fn selected_builtin_leaves_are_reported_with_source_uses() {
 
 #[test]
 fn declared_bun_modules_and_node_builtins_are_static_leaves() {
-    let fixture = run_fixture(
+    let fixture = run_rejection_fixture_with_graphs(
         FixtureOpts::new(
             "import 'ws';\nimport 'undici';\nimport 'node:querystring';\nimport 'assert';\nexport const value = 1;\n",
             vec![],
@@ -120,6 +120,13 @@ fn declared_bun_modules_and_node_builtins_are_static_leaves() {
             reentry_free_bun_modules: [BunModule::Ws, BunModule::Undici].into_iter().collect(),
             ..builtin_policy(&[NodeBuiltinModule::Querystring, NodeBuiltinModule::Assert])
         }),
+    );
+    // Reentry-free package loading does not certify resolving a bare package
+    // from a different directory after moving the import into the residual.
+    assert!(
+        fixture
+            .stderr
+            .contains("evaluation_schedule_owner_mismatch")
     );
     let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
     assert_eq!(report["policy"], "no_static_importer_reentry");
@@ -147,13 +154,18 @@ fn declared_bun_modules_and_node_builtins_are_static_leaves() {
 
 #[test]
 fn unselected_bare_and_replacement_packages_remain_unresolved() {
-    let fixture = run_fixture(
+    let fixture = run_rejection_fixture_with_graphs(
         FixtureOpts::new(
             "import 'node:path';\nimport 'crypto';\nimport 'unknown_package';\nimport 'ws';\nexport const value = 1;\n",
             vec![],
         )
         .with_chunk_id(CHUNK_ID)
         .with_host_behavior(builtin_policy(&[NodeBuiltinModule::Path])),
+    );
+    assert!(
+        fixture
+            .stderr
+            .contains("evaluation_schedule_owner_mismatch")
     );
     let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
     assert_eq!(report["policy"], "conservative");
@@ -173,7 +185,7 @@ fn unselected_bare_and_replacement_packages_remain_unresolved() {
 
 #[test]
 fn attributed_builtin_request_remains_unsupported() {
-    let fixture = run_fixture(
+    let fixture = run_rejection_fixture_with_graphs(
         FixtureOpts::new(
             "import 'path' with { type: 'javascript' };\nexport const value = 1;\n",
             vec![],
@@ -181,6 +193,7 @@ fn attributed_builtin_request_remains_unsupported() {
         .with_chunk_id(CHUNK_ID)
         .with_host_behavior(builtin_policy(&[NodeBuiltinModule::Path])),
     );
+    assert!(fixture.stderr.contains("evaluation_schedule_unsupported"));
     let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
     assert_eq!(report["policy"], "conservative");
     assert!(has_reason(
@@ -320,7 +333,7 @@ fn reports_independent_global_and_static_closure_blockers() {
         "import './provider.js';\nawait Promise.resolve();\nexport const other = 1;\n",
     )];
     let extra_files = [("static/missing.js", "export {};\n")];
-    let fixture = run_fixture_with_args(
+    let fixture = run_rejection_fixture_with_graphs_and_args(
         FixtureOpts::new(
             r#"const load = globalThis["require"];
 import "./vendor.js" with { type: "javascript" };
@@ -337,7 +350,9 @@ export const value = 1;
             "--package-root",
             &format!("fixture-provider={}", bundle_root.path().display()),
         ],
+        1,
     );
+    assert!(fixture.stderr.contains("evaluation_schedule_missing"));
     let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
 
     assert_eq!(report["policy"], "conservative");

@@ -17,42 +17,34 @@ const FUNCTION: &str =
     "function makeRecord(name, header) {\n  return Object.freeze({ name, header });\n}";
 const SOURCE: &str = "function makeRecord(name, header) {\n  return Object.freeze({ name, header });\n}\nconst startupTarget = globalThis.plugin || {};\nstartupTarget.freeze = 1;\nconst peek = () => later;\nglobalThis.peek = peek;\nconst early = makeRecord('first', 'ready');\nconst later = 'later';\nconsole.log(early.name, later);\nexport { early, later };\n";
 
-fn modules(with_write: bool) -> Vec<LogicalModuleEntry> {
-    let mut anonymous = vec!["globalThis.peek = peek;"];
-    if with_write {
-        anonymous.push("startupTarget.freeze = 1;");
-    }
+fn modules() -> Vec<LogicalModuleEntry> {
     vec![
         logical_module_with_anon(
             "records/early",
-            &[
-                Member::new("startupTarget"),
-                Member::new("peek"),
-                Member::new("early"),
-            ],
-            &anonymous,
+            &[Member::new("startupTarget"), Member::new("early")],
+            &["startupTarget.freeze = 1;"],
         ),
-        logical_module("values/later", &[Member::new("later")]),
+        logical_module_with_anon(
+            "values/later",
+            &[Member::new("peek"), Member::new("later")],
+            &["globalThis.peek = peek;"],
+        ),
     ]
 }
 
-#[test]
-fn exact_freeze_site_restores_complete_synchronous_call_under_opaque_write() {
-    let control = SOURCE.replace("startupTarget.freeze = 1;\n", "");
-    assert_preserved_entry_output(
-        &run_fixture_with_graphs(FixtureOpts::new(&control, modules(false))),
-        "first later\n",
-    );
-    let unproved = run_rejection_fixture_with_graphs(FixtureOpts::new(SOURCE, modules(true)));
-    assert!(!unproved.atomic_group_conflicts().is_empty());
-    let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(SOURCE, modules(true)).with_native_call_identity_inputs(
-            "static/app",
-            vec![input(SOURCE, "makeRecord", FUNCTION)],
-        ),
-    );
-    assert_preserved_entry_output(&fixture, "first later\n");
+fn assert_freeze_input_use(fixture: &impl FixtureGraphExt) {
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    assert!(graph["nodes"].as_array().unwrap().iter().any(|node| {
+        node["synchronous_execution"]["native_operation_input_uses"]
+            .as_array()
+            .is_some_and(|uses| {
+                uses.iter()
+                    .any(|used| used["evidence"]["operation"] == "object_freeze")
+            })
+    }));
+}
+
+fn assert_selected_freeze_proofs(fixture: &impl FixtureGraphExt) {
     let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
     assert!(
         program_graph["native_integrity_witnesses"]
@@ -63,14 +55,49 @@ fn exact_freeze_site_restores_complete_synchronous_call_under_opaque_write() {
                     .is_some_and(|slots| slots.iter().any(|slot| slot["key"]["string"] == "freeze"))
             }))
     );
-    assert!(graph["nodes"].as_array().unwrap().iter().any(|node| {
-        node["synchronous_execution"]["native_operation_input_uses"]
-            .as_array()
-            .is_some_and(|uses| {
-                uses.iter()
-                    .any(|used| used["evidence"]["operation"] == "object_freeze")
-            })
-    }));
+    assert_freeze_input_use(fixture);
+}
+
+#[test]
+fn exact_freeze_site_restores_complete_synchronous_call_under_opaque_write() {
+    let control = SOURCE.replace("startupTarget.freeze = 1;\n", "");
+    let colocated = run_fixture_with_graphs(
+        FixtureOpts::new(
+            &control,
+            vec![logical_module_with_anon(
+                "records/all",
+                &[
+                    Member::new("startupTarget"),
+                    Member::new("peek"),
+                    Member::new("early"),
+                    Member::new("later"),
+                ],
+                &["globalThis.peek = peek;"],
+            )],
+        )
+        .with_native_call_identity_inputs(
+            "static/app",
+            vec![input(&control, "makeRecord", FUNCTION)],
+        ),
+    );
+    assert_preserved_entry_output(&colocated, "first later\n");
+    assert_freeze_input_use(&colocated);
+    let unproved = run_rejection_fixture_with_graphs(FixtureOpts::new(SOURCE, modules()));
+    assert!(!unproved.atomic_group_conflicts().is_empty());
+    let candidate = FixtureOpts::new(SOURCE, modules()).with_native_call_identity_inputs(
+        "static/app",
+        vec![input(SOURCE, "makeRecord", FUNCTION)],
+    );
+    let rejected = assert_conservative_schedule_refusal(
+        candidate,
+        "evaluation_schedule_unknown_reordered",
+        "first later\n",
+    );
+    assert_eq!(
+        rejected.candidate_relocation_assessment()["legacy_gate_accepts"],
+        true
+    );
+    assert_selected_freeze_proofs(&rejected);
 }
 
 /// The callable heap summary of a function nobody calls during
@@ -122,7 +149,7 @@ fn certified_fresh_record_freeze_does_not_observe_an_unrelated_live_array() {
     let source = format!(
         "{function}\nconst startupTarget = globalThis.plugin || {{}};\nstartupTarget.freeze = 1;\nconst values = [];\nconst frozen = makeRecord('ready');\nconst later = values.length;\nconsole.log(frozen.name, later);\nexport {{ frozen, later }};\n"
     );
-    let fixture = run_fixture_with_graphs(
+    let rejected = assert_conservative_schedule_refusal(
         FixtureOpts::new(
             &source,
             vec![
@@ -134,24 +161,35 @@ fn certified_fresh_record_freeze_does_not_observe_an_unrelated_live_array() {
             "static/app",
             vec![input(&source, "makeRecord", function)],
         ),
+        "evaluation_schedule_unknown_reordered",
+        "ready 0\n",
+    );
+    assert_eq!(
+        rejected.candidate_relocation_assessment()["legacy_gate_accepts"],
+        true
+    );
+    assert_selected_freeze_proofs(&rejected);
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(
+            &source,
+            vec![logical_module_with_anon(
+                "records/all",
+                &[
+                    Member::new("startupTarget"),
+                    Member::new("values"),
+                    Member::new("frozen"),
+                    Member::new("later"),
+                ],
+                &["startupTarget.freeze = 1;"],
+            )],
+        )
+        .with_native_call_identity_inputs(
+            "static/app",
+            vec![input(&source, "makeRecord", function)],
+        ),
     );
     assert_preserved_entry_output(&fixture, "ready 0\n");
-    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    assert!(graph["nodes"].as_array().unwrap().iter().any(|node| {
-        node["declared_bindings"]
-            .as_array()
-            .is_some_and(|bindings| {
-                bindings
-                    .iter()
-                    .any(|binding| binding["binding"] == "frozen")
-            })
-            && node["synchronous_execution"]["native_operation_input_uses"]
-                .as_array()
-                .is_some_and(|uses| {
-                    uses.iter()
-                        .any(|used| used["evidence"]["operation"] == "object_freeze")
-                })
-    }));
+    assert_selected_freeze_proofs(&fixture);
 }
 
 #[test]
@@ -326,7 +364,7 @@ fn exact_freeze_site_rejects_known_required_slot_writes() {
             &format!("{write}\nconst startupTarget ="),
         );
         expect_rejection_containing_all(
-            FixtureOpts::new(&source, modules(true)).with_native_call_identity_inputs(
+            FixtureOpts::new(&source, modules()).with_native_call_identity_inputs(
                 "static/app",
                 vec![input(&source, "makeRecord", FUNCTION)],
             ),
@@ -344,26 +382,53 @@ fn known_sibling_object_write_does_not_contradict_exact_freeze_slot() {
     let modules = vec![
         logical_module_with_anon(
             "records/early",
-            &[
-                Member::new("startupTarget"),
-                Member::new("peek"),
-                Member::new("early"),
-            ],
-            &[
-                "Object.unrelated = 1;",
-                "startupTarget.freeze = 1;",
-                "globalThis.peek = peek;",
-            ],
+            &[Member::new("startupTarget"), Member::new("early")],
+            &["Object.unrelated = 1;", "startupTarget.freeze = 1;"],
         ),
-        logical_module("values/later", &[Member::new("later")]),
+        logical_module_with_anon(
+            "values/later",
+            &[Member::new("peek"), Member::new("later")],
+            &["globalThis.peek = peek;"],
+        ),
     ];
-    let fixture = run_fixture(
+    let rejected = assert_conservative_schedule_refusal(
         FixtureOpts::new(&source, modules).with_native_call_identity_inputs(
+            "static/app",
+            vec![input(&source, "makeRecord", FUNCTION)],
+        ),
+        "evaluation_schedule_unknown_reordered",
+        "first later\n",
+    );
+    assert_eq!(
+        rejected.candidate_relocation_assessment()["legacy_gate_accepts"],
+        true
+    );
+    assert_selected_freeze_proofs(&rejected);
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(
+            &source,
+            vec![logical_module_with_anon(
+                "records/all",
+                &[
+                    Member::new("startupTarget"),
+                    Member::new("peek"),
+                    Member::new("early"),
+                    Member::new("later"),
+                ],
+                &[
+                    "Object.unrelated = 1;",
+                    "startupTarget.freeze = 1;",
+                    "globalThis.peek = peek;",
+                ],
+            )],
+        )
+        .with_native_call_identity_inputs(
             "static/app",
             vec![input(&source, "makeRecord", FUNCTION)],
         ),
     );
     assert_preserved_entry_output(&fixture, "first later\n");
+    assert_selected_freeze_proofs(&fixture);
 }
 
 #[test]
@@ -376,7 +441,7 @@ fn selected_site_rejects_shadowing_and_ambiguous_body() {
     ] {
         let source = SOURCE.replace(FUNCTION, function);
         expect_rejection_containing_all(
-            FixtureOpts::new(&source, modules(true)).with_native_call_identity_inputs(
+            FixtureOpts::new(&source, modules()).with_native_call_identity_inputs(
                 "static/app",
                 vec![input(&source, "makeRecord", function)],
             ),
@@ -390,7 +455,7 @@ fn known_cross_chunk_replacement_contradicts_selected_site() {
     const MUTATION: &str = "const original = Object.freeze;\nObject.freeze = function(value) { return value; };\nObject.freeze = original;\nexport {};\n";
     let source = format!("import './mutation.js';\n{SOURCE}");
     expect_rejection_containing_all(
-        FixtureOpts::new(&source, modules(true))
+        FixtureOpts::new(&source, modules())
             .with_extra_chunks(&[("static/mutation", MUTATION)])
             .with_native_call_identity_inputs(
                 "static/app",
@@ -445,7 +510,7 @@ fn an_unselected_freeze_call_keeps_the_opaque_barrier() {
         )
         .replace("const early = makeRecord(", "const early = other(");
     let rejected = run_rejection_fixture_with_graphs(
-        FixtureOpts::new(&source, modules(true)).with_native_call_identity_inputs(
+        FixtureOpts::new(&source, modules()).with_native_call_identity_inputs(
             "static/app",
             vec![input(&source, "makeRecord", FUNCTION)],
         ),
@@ -458,7 +523,7 @@ fn exact_call_input_rejects_stale_digest_and_ambiguous_selector() {
     let mut stale = input(SOURCE, "makeRecord", FUNCTION);
     stale.audited_source_sha256 = "0".repeat(64);
     expect_rejection_containing_all(
-        FixtureOpts::new(SOURCE, modules(true))
+        FixtureOpts::new(SOURCE, modules())
             .with_native_call_identity_inputs("static/app", vec![stale]),
         &["stale audited_source_sha256"],
     );
@@ -468,8 +533,8 @@ fn exact_call_input_rejects_stale_digest_and_ambiguous_selector() {
         "const startupTarget =",
         &format!("{other}\nconst startupTarget ="),
     );
-    let rejected = run_rejection_fixture(
-        FixtureOpts::new(&source, modules(true)).with_native_call_identity_inputs(
+    let rejected = run_rejection_fixture_with_graphs(
+        FixtureOpts::new(&source, modules()).with_native_call_identity_inputs(
             "static/app",
             vec![input(&source, "makeRecord", FUNCTION)],
         ),

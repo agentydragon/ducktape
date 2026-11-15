@@ -7,15 +7,103 @@ use debundle_e2e_support::*;
 const WRAPPER: &str = "export const wrap = (callback, cache) => () => (cache || callback((cache = { value: {} }).value, cache), cache.value);\n";
 const PROVIDER: &str = "import { readLater } from './app.js';\nexport function factory() { const state = new Map(); return { get size() { return state.size; }, label() { return readLater().name; } }; }\n";
 const NAMESPACE: &str = "import { wrap } from './wrapper.js';\nexport const load = wrap(function(output, container) { (function(root, fill) { typeof output === 'object' && typeof container < 'u' ? fill(output) : (root = globalThis, root.shared = root.shared || {}, root.shared.Map = {}, fill(root.shared.Map)); })(output, function(value) { value.ready = true; }); });\nload();\n";
+const APP_SOURCE: &str = "import { factory } from './peer.js';\nimport './namespace.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nconsole.log(queue.size, readLater().name);\nexport { queue, Later };\n";
 
 fn opts<'a>(chunks: &'a [(&'a str, &'a str)]) -> FixtureOpts<'a> {
     FixtureOpts::new(
-        "import { factory } from './peer.js';\nimport './namespace.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nconsole.log(queue.size, readLater().name);\nexport { queue, Later };\n",
+        APP_SOURCE,
         vec![
             logical_module("queue", &[Member::new("queue"), Member::new("readLater")]),
             logical_module("later", &[Member::new("Later")]),
         ],
-    ).with_extra_chunks(chunks)
+    )
+    .with_extra_chunks(chunks)
+}
+
+fn assert_split_refused_with_map_guard(chunks: &[(&str, &str)], reason: &str) {
+    let rejected = assert_conservative_schedule_refusal(opts(chunks), reason, "0 Later\n");
+    let assessment = rejected.candidate_relocation_assessment();
+    let program_graph = serde_json::to_value(rejected.program_graph()).unwrap();
+    assert!(
+        program_graph["native_integrity_witnesses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|witness| {
+                witness["target_slots"]
+                    .as_array()
+                    .is_some_and(|slots| slots.iter().any(|slot| slot["key"]["string"] == "Map"))
+                    && witness["affected_roots"]
+                        .as_array()
+                        .is_some_and(|roots| !roots.is_empty())
+                    && witness["unreachable_branch"].is_null()
+            }),
+        "unsupported wrapper callbacks must retain the affected, reachable Map write witness: {program_graph:#?}"
+    );
+    assert_eq!(assessment["decision"]["havoc"], true, "{assessment:#}");
+    assert_eq!(
+        assessment["decision"]["uncovered_havoc"], true,
+        "{assessment:#}"
+    );
+    let control =
+        run_fixture_with_graphs(FixtureOpts::new(APP_SOURCE, vec![]).with_extra_chunks(chunks));
+    assert_preserved_entry_output(&control, "0 Later\n");
+}
+
+fn assert_refused_with_matching_node_error(
+    chunks: &[(&str, &str)],
+    reason: &str,
+    node_error: &str,
+) {
+    let rejected = run_emit_on_rejection_fixture_with_graphs(opts(chunks));
+    let schedule: serde_json::Value =
+        read_json(&rejected.report_root.join("evaluation_schedule.json"));
+    assert_eq!(
+        schedule["kind"], "evaluation_schedule_refused",
+        "{schedule:#}"
+    );
+    assert!(
+        schedule["rejection"]["reason"]
+            .as_str()
+            .is_some_and(|actual| actual.starts_with(reason)),
+        "{schedule:#}"
+    );
+    assert!(rejected.gate_rejected_marker().exists());
+    assert_node_error(
+        &rejected
+            .source_root
+            .join(format!("{}.js", rejected.chunk_id)),
+        node_error,
+    );
+    assert_node_error(&rejected.entry_path(), node_error);
+
+    let program_graph = serde_json::to_value(rejected.program_graph()).unwrap();
+    assert!(
+        program_graph["native_integrity_witnesses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|witness| {
+                witness["target_slots"]
+                    .as_array()
+                    .is_some_and(|slots| slots.iter().any(|slot| slot["key"]["string"] == "Map"))
+                    && witness["affected_roots"]
+                        .as_array()
+                        .is_some_and(|roots| !roots.is_empty())
+                    && witness["unreachable_branch"].is_null()
+            }),
+        "the rejected source retains its reachable Map write: {program_graph:#?}"
+    );
+
+    let safe_chunks = [
+        ("static/peer", PROVIDER),
+        ("static/wrapper", WRAPPER),
+        ("static/namespace", NAMESPACE),
+    ];
+    let control = run_fixture_with_graphs(
+        FixtureOpts::new(APP_SOURCE, vec![]).with_extra_chunks(&safe_chunks),
+    );
+    assert_preserved_entry_output(&control, "0 Later\n");
 }
 
 #[test]
@@ -25,7 +113,25 @@ fn source_wrapper_arguments_discharge_only_the_unreachable_native_write() {
         ("static/wrapper", WRAPPER),
         ("static/namespace", NAMESPACE),
     ];
-    let fixture = run_fixture_with_graphs(opts(&chunks));
+    let rejected = assert_conservative_schedule_refusal(
+        opts(&chunks),
+        "evaluation_schedule_availability_unknown",
+        "0 Later\n",
+    );
+    let assessment = rejected.candidate_relocation_assessment();
+    assert_eq!(assessment["legacy_gate_accepts"], true, "{assessment:#}");
+    let rejected_program = serde_json::to_value(rejected.program_graph()).unwrap();
+    assert!(
+        rejected_program["native_integrity_witnesses"]
+            .as_array()
+            .is_some_and(|witnesses| witnesses.iter().any(|witness| {
+                witness["unreachable_branch"].is_object()
+                    && witness["affected_roots"] == serde_json::json!([])
+            })),
+        "the source wrapper proof remains present on a refused split: {rejected_program}"
+    );
+    let fixture =
+        run_fixture_with_graphs(FixtureOpts::new(APP_SOURCE, vec![]).with_extra_chunks(&chunks));
     assert_preserved_entry_output(&fixture, "0 Later\n");
     let program_graph = fixture.program_graph();
     let witness = program_graph
@@ -92,7 +198,15 @@ fn unsupported_or_escaping_callback_entries_keep_the_native_guard() {
             ("static/wrapper", WRAPPER),
             ("static/namespace", namespace),
         ];
-        expect_atomic_conflict_rejection(opts(&chunks), &["queue", "later"], &[]);
+        if namespace.contains("from 'example:wrapper'") {
+            assert_refused_with_matching_node_error(
+                &chunks,
+                "evaluation_schedule_unsupported",
+                "ERR_UNSUPPORTED_ESM_URL_SCHEME",
+            );
+        } else {
+            assert_split_refused_with_map_guard(&chunks, "evaluation_schedule_unknown_reordered");
+        }
     }
 }
 
@@ -111,7 +225,15 @@ fn callback_return_or_unknown_argument_wrapper_does_not_supply_entry_coverage() 
             ("static/wrapper", wrapper),
             ("static/namespace", NAMESPACE),
         ];
-        expect_atomic_conflict_rejection(opts(&chunks), &["queue", "later"], &[]);
+        if wrapper.contains("globalThis.consume(callback)") {
+            assert_refused_with_matching_node_error(
+                &chunks,
+                "evaluation_schedule_unknown_reordered",
+                "globalThis.consume is not a function",
+            );
+        } else {
+            assert_split_refused_with_map_guard(&chunks, "evaluation_schedule_unknown_reordered");
+        }
     }
 }
 

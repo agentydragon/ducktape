@@ -87,6 +87,17 @@ fn provider_modules() -> Vec<LogicalModuleEntry> {
     )]
 }
 
+fn provider_modules_with_guard(guard: &str) -> Vec<LogicalModuleEntry> {
+    vec![logical_module_with_anon(
+        "arrays/provider",
+        &[
+            Member::renamed("left", "first"),
+            Member::renamed("right", "second"),
+        ],
+        &[guard],
+    )]
+}
+
 fn run_configured(
     consumer: &str,
     provider: &str,
@@ -108,30 +119,6 @@ fn admitted_builtin_modules(modules: &[NodeBuiltinModule]) -> HostBehavior {
         reentry_free_builtin_modules: modules.iter().copied().collect(),
         ..HostBehavior::default()
     }
-}
-
-fn run_builtin_closure_fixture(
-    consumer: &str,
-    provider: &str,
-    helper: &str,
-    contract: ImportedPrimitiveArraySpreadInputContract,
-    host_behavior: HostBehavior,
-) -> Fixture {
-    let chunks = [("static/provider", provider), ("static/helper", helper)];
-    let provider_logical_modules = [
-        ("static/provider", provider_modules()),
-        (
-            "static/helper",
-            vec![logical_module("values/helper", &[Member::new("marker")])],
-        ),
-    ];
-    run_fixture(
-        FixtureOpts::new(consumer, nonempty_consumer_modules())
-            .with_extra_chunks(&chunks)
-            .with_extra_chunk_logical_modules(&provider_logical_modules)
-            .with_imported_primitive_array_spread_inputs("static/app", vec![contract])
-            .with_host_behavior(host_behavior),
-    )
 }
 
 fn run_rejected_builtin_closure_fixture(
@@ -191,6 +178,36 @@ fn run_rejected_without_provider_ownership(
     )
 }
 
+fn assert_empty_spread_schedule_refusal(rejected: &RejectedFixture) {
+    assert!(
+        rejected
+            .stderr
+            .contains("evaluation_schedule_unknown_reordered"),
+        "{}",
+        rejected.stderr
+    );
+    assert_node_output(
+        &rejected.source_root.join("static/app.js"),
+        "0 false 0 1 0 true\n",
+        "",
+    );
+    assert_node_output(&rejected.entry_path(), "0 false 0 1 0 true\n", "");
+    assert!(
+        rejected.entry_path().is_file(),
+        "rejected candidate entry is emitted"
+    );
+    for path in [
+        "static/app/modules/arrays/merged.js",
+        "static/app/modules/callbacks/skipped.js",
+        "static/app/modules/values/later.js",
+    ] {
+        assert!(
+            !rejected.out_root.join(path).exists(),
+            "a rejected schedule must not publish a partial module layout: {path}"
+        );
+    }
+}
+
 fn empty_consumer() -> String {
     format!(
         "{CONSUMER_IMPORTS}{CONSUMER_SPREAD}\
@@ -215,46 +232,82 @@ fn nonempty_consumer() -> String {
 }
 
 #[test]
-fn empty_imported_spread_breaks_the_callback_read_cycle_and_preserves_unrelated_callback() {
+fn empty_imported_spread_keeps_runtime_and_reports_schedule_refusal() {
     let consumer = empty_consumer();
-    let base = run_rejected(&consumer, EMPTY_PROVIDER, None);
-    assert!(
-        base.cycles().iter().any(|cycle| {
-            cycle["modules"]
-                .as_array()
-                .is_some_and(|modules| modules.iter().any(|module| module == "values/later"))
-        }),
-        "the unproved imported spread should retain the callback/later cycle: {:#?}",
-        base.cycles()
+    let chunks = [("static/provider", EMPTY_PROVIDER)];
+    let provider_logical_modules = [("static/provider", provider_modules())];
+    let uncontracted = run_rejection_fixture_with_graphs_and_args(
+        FixtureOpts::new(&consumer, empty_consumer_modules())
+            .with_extra_chunks(&chunks)
+            .with_extra_chunk_logical_modules(&provider_logical_modules),
+        &["--emit-on-rejection"],
+        3,
     );
-
-    let fixture = run_configured(
-        &consumer,
-        EMPTY_PROVIDER,
-        empty_consumer_modules(),
-        input(
-            &consumer,
-            EMPTY_PROVIDER,
-            None,
-            None,
-            "var values = [];",
-            "const values = [];",
-        ),
-    );
-    assert_preserved_entry_output(&fixture, "0 false 0 1 0 true\n");
-    assert_module_exports(
-        &fixture.out_root,
-        "static/provider/modules/arrays/provider.js",
-        &["left", "right"],
-        &[],
-    );
-    let graph = fixture.dependency_graph();
+    assert_empty_spread_schedule_refusal(&uncontracted);
+    let graph = uncontracted.dependency_graph();
     let merged = source_unit_for_binding(&graph, "merged");
     let merged_node = graph.nodes.iter().find(|node| node.id == merged).unwrap();
     let execution = merged_node
         .synchronous_execution
         .as_ref()
-        .expect("spread execution evidence");
+        .expect("source spread execution evidence");
+    assert!(execution.complete, "{execution:#?}");
+    let execution_value = serde_json::to_value(execution).expect("serialize spread execution");
+    assert_eq!(
+        execution_value["binding_effect_authority"]["authority"], "operation_receipt",
+        "the actual spread initializer keeps its operation receipt: {execution_value:#}"
+    );
+    assert_eq!(
+        execution_value["binding_effect_authority"]["receipt"]["source_module"], "static/app",
+        "the receipt belongs to the actual spread initializer: {execution_value:#}"
+    );
+    let observations = execution_value["native_prefix_observations"]
+        .as_array()
+        .expect("native prefix observations");
+    assert!(
+        observations.len() == 2
+            && observations
+                .iter()
+                .all(|observation| observation["guard"] == "array_intrinsics"),
+        "the empty spread is certified by the two array-integrity observations, without an authored lifetime contract: {execution_value:#}"
+    );
+
+    let skipped = source_unit_for_binding(&graph, "skipped");
+    let later = source_unit_for_binding(&graph, "later");
+    assert!(
+        !graph.edges.iter().any(|edge| {
+            edge.source == skipped && edge.target == later && edge.constrains_init_order
+        }),
+        "the empty array keeps its callback deferred: {:#?}",
+        graph.edges
+    );
+
+    let contract = input(
+        &consumer,
+        EMPTY_PROVIDER,
+        None,
+        None,
+        "var values = [];",
+        "const values = [];",
+    );
+    let contract_opts = FixtureOpts::new(&consumer, empty_consumer_modules())
+        .with_extra_chunks(&chunks)
+        .with_extra_chunk_logical_modules(&provider_logical_modules)
+        .with_imported_primitive_array_spread_inputs("static/app", vec![contract]);
+    let rejected =
+        run_rejection_fixture_with_graphs_and_args(contract_opts, &["--emit-on-rejection"], 3);
+    assert_empty_spread_schedule_refusal(&rejected);
+    let contracted_graph = rejected.dependency_graph();
+    let merged = source_unit_for_binding(&contracted_graph, "merged");
+    let merged_node = contracted_graph
+        .nodes
+        .iter()
+        .find(|node| node.id == merged)
+        .unwrap();
+    let execution = merged_node
+        .synchronous_execution
+        .as_ref()
+        .expect("contracted spread execution evidence");
     assert_eq!(
         execution.imported_primitive_array_spread_input_uses.len(),
         2
@@ -606,10 +659,11 @@ fn circular_provider_initialization_is_rejected() {
 fn admitted_direct_and_transitive_node_builtin_dependencies_preserve_runtime() {
     let consumer = nonempty_consumer();
     let provider = format!(
-        "import 'path';\nimport {{ marker }} from './helper.js';\n\
+        "import 'node:path';\nimport {{ marker }} from './helper.js';\n\
          if (marker !== 1) throw new Error('helper did not initialize');\n\
          {NONEMPTY_PROVIDER}"
     );
+    let provider_guard = "if (marker !== 1) throw new Error('helper did not initialize');";
     let helper = "import 'node:util';\nexport const marker = 1;\n";
     let contract = input(
         &consumer,
@@ -620,12 +674,29 @@ fn admitted_direct_and_transitive_node_builtin_dependencies_preserve_runtime() {
         "const values = ['b'];",
     );
 
-    let fixture = run_builtin_closure_fixture(
-        &consumer,
-        &provider,
-        helper,
-        contract,
-        admitted_builtin_modules(&[NodeBuiltinModule::Path, NodeBuiltinModule::Util]),
+    let chunks = [
+        ("static/provider", provider.as_str()),
+        ("static/helper", helper),
+    ];
+    let provider_logical_modules = [
+        (
+            "static/provider",
+            provider_modules_with_guard(provider_guard),
+        ),
+        (
+            "static/helper",
+            vec![logical_module("values/helper", &[Member::new("marker")])],
+        ),
+    ];
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(&consumer, nonempty_consumer_modules())
+            .with_extra_chunks(&chunks)
+            .with_extra_chunk_logical_modules(&provider_logical_modules)
+            .with_imported_primitive_array_spread_inputs("static/app", vec![contract])
+            .with_host_behavior(admitted_builtin_modules(&[
+                NodeBuiltinModule::Path,
+                NodeBuiltinModule::Util,
+            ])),
     );
     assert_preserved_entry_output(&fixture, "a b true 2 2\n");
 }

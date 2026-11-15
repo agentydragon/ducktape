@@ -2,8 +2,28 @@
 
 use debundle_e2e_support::*;
 
+fn assert_schedule_refusal_preserves_source_and_candidate(
+    opts: FixtureOpts<'_>,
+    expected_output: &str,
+) {
+    let rejected = run_rejection_fixture_with_graphs_and_args(opts, &["--emit-on-rejection"], 3);
+    assert!(
+        rejected
+            .stderr
+            .contains("evaluation_schedule_unknown_reordered"),
+        "expected a conservative evaluation-schedule refusal:\n{}",
+        rejected.stderr
+    );
+    assert_node_output(
+        &rejected.source_root.join("static/app.js"),
+        expected_output,
+        "",
+    );
+    assert_node_output(&rejected.entry_path(), expected_output, "");
+}
+
 #[test]
-fn fresh_record_freeze_keeps_later_reads_deferred() {
+fn published_freeze_callback_split_keeps_initialization_phase_unproved() {
     let source = r#"function makeRecord(name, header) {
   return Object.freeze({ name, header });
 }
@@ -14,14 +34,46 @@ const later = 'later';
 console.log(early.name, globalThis.peek());
 export { early, later };
 "#;
+    assert_schedule_refusal_preserves_source_and_candidate(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("records/early", &[Member::new("early")]),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        ),
+        "first later\n",
+    );
     let fixture = run_fixture(FixtureOpts::new(
         source,
-        vec![
-            logical_module("records/early", &[Member::new("early")]),
-            logical_module("values/later", &[Member::new("later")]),
-        ],
+        vec![logical_module_with_anon(
+            "records/all",
+            &[
+                Member::new("makeRecord"),
+                Member::new("peek"),
+                Member::new("early"),
+                Member::new("later"),
+            ],
+            &[
+                "globalThis.peek = peek;",
+                "console.log(early.name, globalThis.peek());",
+            ],
+        )],
     ));
     assert_preserved_entry_output(&fixture, "first later\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/records/all.js",
+        &[
+            "makeRecord",
+            "peek",
+            "early",
+            "later",
+            "globalThis.peek = peek",
+            "console.log(early.name",
+        ],
+        &[],
+    );
 }
 
 #[test]

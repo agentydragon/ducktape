@@ -126,6 +126,9 @@ pub enum OrderedCallAdmissionRefusal {
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ExecutionPrecisionLoss {
+    /// Canonical defining module of the lexical operation. None is standalone analysis.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_module: Option<String>,
     pub reason: ExecutionPrecisionLossReason,
     pub reach: HavocReach,
     /// Lexical source unit containing the operation or truncated callable.

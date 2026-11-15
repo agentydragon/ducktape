@@ -137,6 +137,7 @@ struct SavedHeapContentCells {
     reads: BTreeSet<SavedEffectCell>,
     writes: BTreeSet<SavedEffectCell>,
     opaque: bool,
+    observes_external_heap: bool,
 }
 
 impl SavedHeapContentCells {
@@ -146,6 +147,7 @@ impl SavedHeapContentCells {
             reads: snapshot_effect_cells(&cells.reads, ordinals)?,
             writes: snapshot_effect_cells(&cells.writes, ordinals)?,
             opaque: cells.opaque,
+            observes_external_heap: cells.observes_external_heap,
         })
     }
 
@@ -155,6 +157,7 @@ impl SavedHeapContentCells {
             reads: restore_effect_cells(self.reads, ordinals)?,
             writes: restore_effect_cells(self.writes, ordinals)?,
             opaque: self.opaque,
+            observes_external_heap: self.observes_external_heap,
         })
     }
 }
@@ -477,6 +480,7 @@ impl<'a> SavedStatementFacts<'a> {
 /// Synchronous execution facts with every runtime binding converted explicitly.
 #[derive(Serialize, Deserialize)]
 struct SavedSynchronousCalls<'a> {
+    program_effects: crate::program_execution::ProgramExecutionEffects<SavedBinding>,
     initializer_binding_effects:
         Cow<'a, Option<Box<crate::reports::schema::InitializerBindingEffectsUse>>>,
     initializer_external_effects:
@@ -532,6 +536,9 @@ impl<'a> SavedSynchronousCalls<'a> {
         purities: &mut PuritySnapshot<'a>,
     ) -> Result<Self> {
         Ok(Self {
+            program_effects: calls
+                .program_effects
+                .try_map_bindings(|binding| ordinals.snapshot_binding(binding))?,
             initializer_binding_effects: Cow::Borrowed(&calls.initializer_binding_effects),
             initializer_external_effects: Cow::Borrowed(&calls.initializer_external_effects),
             completed_initialization: Cow::Borrowed(&calls.completed_initialization),
@@ -624,6 +631,16 @@ impl<'a> SavedSynchronousCalls<'a> {
         purities: &RestoredPurities,
     ) -> Result<SynchronousCalls> {
         Ok(SynchronousCalls {
+            completion: Default::default(),
+            program_effects: self
+                .program_effects
+                .try_map_bindings(|binding| ordinals.restore_binding(binding.clone()))?,
+            runtime_effects_available: false,
+            runtime_binding_effects: Default::default(),
+            runtime_heap_contents: Default::default(),
+            runtime_heap_frontiers: Default::default(),
+            observed_runtime_heap_accesses: Default::default(),
+            runtime_executed_owners: Default::default(),
             initializer_binding_effects: self.initializer_binding_effects.into_owned(),
             initializer_external_effects: self.initializer_external_effects.into_owned(),
             completed_initialization: self.completed_initialization.into_owned(),
@@ -725,11 +742,42 @@ mod tests {
         let mut encoded = serde_json::to_value(saved).expect("saved facts serialize");
         serde_json::from_value::<SavedSynchronousCalls<'_>>(encoded.clone())
             .expect("complete saved facts deserialize");
+        let mut missing_program_effects = encoded.clone();
+        missing_program_effects
+            .as_object_mut()
+            .unwrap()
+            .remove("program_effects");
+        assert!(
+            serde_json::from_value::<SavedSynchronousCalls<'_>>(missing_program_effects).is_err(),
+            "old snapshots must not manufacture an empty program ledger"
+        );
         encoded
             .as_object_mut()
             .expect("saved synchronous facts are a struct")
             .remove("binding_effect_coverage");
         assert!(serde_json::from_value::<SavedSynchronousCalls<'_>>(encoded).is_err());
+    }
+
+    #[test]
+    fn source_snapshot_cannot_claim_live_runtime_effect_availability() {
+        let calls = SynchronousCalls {
+            runtime_effects_available: true,
+            ..SynchronousCalls::default()
+        };
+        let ordinals = ContextOrdinals::new(std::iter::empty::<&swc_ecma_ast::Module>());
+        let mut snapshot = PuritySnapshot::default();
+        let saved = SavedSynchronousCalls::snapshot(&calls, &ordinals, &mut snapshot)
+            .expect("execution facts snapshot");
+        let encoded = serde_json::to_value(&saved).expect("saved facts serialize");
+        assert!(encoded.get("runtime_effects_available").is_none());
+        assert!(encoded.get("runtime_binding_effects").is_none());
+        let purities = RestoredPurities::decode(&snapshot.encode()).expect("valid graph");
+        let restored = saved
+            .restore(&ordinals, &purities)
+            .expect("valid source facts");
+        assert!(!restored.runtime_effects_available);
+        assert!(restored.runtime_binding_effects.reads.is_empty());
+        assert!(restored.runtime_heap_contents.reads.is_empty());
     }
 
     // A disagreement denotes a classifier invariant failure, so a normal
@@ -757,6 +805,7 @@ mod tests {
                 },
             }),
             precision_losses: vec![crate::execution_evidence::ExecutionPrecisionLoss {
+                source_module: Some("static/provider".into()),
                 reason:
                     crate::execution_evidence::ExecutionPrecisionLossReason::RecursiveInvocation,
                 reach: crate::execution_evidence::HavocReach::Bounded,

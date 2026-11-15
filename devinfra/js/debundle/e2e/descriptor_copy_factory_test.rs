@@ -24,25 +24,26 @@ fn copied_getter_and_method_remain_deferred_until_returned_wrapper_use() {
     let source = "import { wrap } from './peer.js';\nconst wrapped = wrap({ name: 'report', create() { return later(); }, get schema() { return later(); } });\nvar later = () => 42;\nconsole.log(wrapped.schema, wrapped.create());\n";
     let chunks = [("static/peer", PROVIDER)];
     let contracts = [contract()];
-    let fixture = run_fixture_with_graphs(
+    let rejected = assert_conservative_schedule_refusal(
         FixtureOpts::new(source, modules())
             .with_extra_chunks(&chunks)
             .with_chunk_export_purity(&contracts),
+        "evaluation_schedule_unknown_reordered",
+        "42 42\n",
     );
     assert_module_exports(
-        &fixture.out_root,
+        &rejected.app_root(),
         "static/app/modules/wrapped.js",
         &["wrapped"],
         &[],
     );
     assert_module_exports(
-        &fixture.out_root,
+        &rejected.app_root(),
         "static/app/modules/later.js",
         &["later"],
         &[],
     );
-    assert_preserved_entry_output(&fixture, "42 42\n");
-    let graph = fixture.dependency_graph();
+    let graph = rejected.dependency_graph();
     let wrapped = graph
         .nodes
         .iter()
@@ -62,6 +63,18 @@ fn copied_getter_and_method_remain_deferred_until_returned_wrapper_use() {
                 && author.spec_location == "chunk_export_purity.static/peer.descriptor_copy_factory_exports.wrap"
         })
     }));
+    let colocated = run_fixture_with_graphs(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "all",
+                &[Member::new("wrapped"), Member::new("later")],
+            )],
+        )
+        .with_extra_chunks(&chunks)
+        .with_chunk_export_purity(&contracts),
+    );
+    assert_preserved_entry_output(&colocated, "42 42\n");
 }
 
 #[test]
@@ -148,7 +161,7 @@ fn argument_effects_run_before_registration_and_getter_runs_at_read() {
     );
     let chunks = [("static/peer", provider.as_str())];
     let contracts = [contract()];
-    let fixture = run_fixture(
+    assert_conservative_schedule_refusal(
         FixtureOpts::new(
             source,
             vec![
@@ -162,9 +175,27 @@ fn argument_effects_run_before_registration_and_getter_runs_at_read() {
         )
         .with_extra_chunks(&chunks)
         .with_chunk_export_purity(&contracts),
+        "evaluation_schedule_unknown_reordered",
+        "argument; registered 42 argument; registered; getter 1\n",
+    );
+    let colocated = run_fixture_with_graphs(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "all",
+                &[
+                    Member::new("events"),
+                    Member::new("wrapped"),
+                    Member::new("later"),
+                ],
+                &["events.push('registered');"],
+            )],
+        )
+        .with_extra_chunks(&chunks)
+        .with_chunk_export_purity(&contracts),
     );
     assert_preserved_entry_output(
-        &fixture,
+        &colocated,
         "argument; registered 42 argument; registered; getter 1\n",
     );
 }

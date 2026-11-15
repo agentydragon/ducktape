@@ -9,17 +9,26 @@ const SOURCE: &str = "import { makeSlot as localMakeSlot } from './peer.js';\n\
     let later = 0;\n\
     const callback = () => later;\n\
     globalThis.saved = callback;\n\
-    const slot = localMakeSlot();\n\
     later = 42;\n\
+    const slot = (callback, localMakeSlot());\n\
     console.log(slot.kind, globalThis.saved());\n";
 const PEER: &[(&str, &str)] = &[(
     "static/peer",
-    // `makeSlot` reads a provider binding, so only the authored contract
-    // (no derived foreign call summary) can certify its call timing.
     "// neutral-provider-marker\nconst kind = 'slot';\nexport function makeSlot() { return { kind }; }\nexport function spare() { return 1; }\n",
 )];
 
 fn split_modules() -> Vec<LogicalModuleEntry> {
+    vec![
+        logical_module("callbacks/slot", &[Member::new("slot")]),
+        logical_module_with_anon(
+            "values/later",
+            &[Member::new("later"), Member::new("callback")],
+            &["globalThis.saved = callback;", "later = 42;"],
+        ),
+    ]
+}
+
+fn unsafe_split_modules() -> Vec<LogicalModuleEntry> {
     vec![
         logical_module_with_anon(
             "callbacks/slot",
@@ -91,7 +100,7 @@ fn baseline_failure_stops_before_any_removal_verdict() {
         .with_pure_exports(&["spare"])
         .build()];
     let fixture = write_validate_fixture_spec(
-        FixtureOpts::new(SOURCE, split_modules())
+        FixtureOpts::new(SOURCE, unsafe_split_modules())
             .with_extra_chunks(PEER)
             .with_chunk_export_purity(&policy),
     );
@@ -142,12 +151,15 @@ fn one_removal_rechecks_full_acceptance_and_keeps_other_hints() {
     assert_eq!(before, fs::read(&fixture.spec_path).unwrap());
     assert_no_pipeline_artifacts(&fixture.spec_path, &report_dir);
 
+    // Prepared source proves both the provider's returned value and that it
+    // does not synchronously reenter; keep checkpoint coverage without
+    // treating either now-redundant annotation as necessary.
     let checkpoint = fixture
         .spec_path
         .parent()
         .unwrap()
-        .join("needed-audit.json");
-    let needed_output = audit(
+        .join("source-proved-audit.json");
+    let source_proved_output = audit(
         &fixture.spec_path,
         &[
             "--kind",
@@ -156,8 +168,8 @@ fn one_removal_rechecks_full_acceptance_and_keeps_other_hints() {
             checkpoint.to_str().unwrap(),
         ],
     );
-    let needed = parsed(&needed_output);
-    let resumed = audit(
+    let source_proved = parsed(&source_proved_output);
+    let resumed_source_proved = audit(
         &fixture.spec_path,
         &[
             "--kind",
@@ -166,20 +178,30 @@ fn one_removal_rechecks_full_acceptance_and_keeps_other_hints() {
             checkpoint.to_str().unwrap(),
         ],
     );
-    assert_eq!(needed, parsed(&resumed));
-    assert!(String::from_utf8_lossy(&resumed.stderr).contains("audit-progress probe reused"));
-    assert_eq!(needed["results"][0]["target"]["export"], "makeSlot");
-    assert_eq!(needed["results"][0]["verdict"], "failed_full_acceptance");
-    let needed_progress = progress_lines(&needed_output);
-    assert_eq!(needed_progress.len(), 4, "{needed_progress:#?}");
-    assert!(needed_progress[0].starts_with("audit-progress baseline start "));
-    assert!(needed_progress[1].starts_with("audit-progress baseline complete "));
-    assert!(needed_progress[2].starts_with("audit-progress probe start "));
-    assert!(needed_progress[2].contains("ordinal=1/1 completed=0"));
-    assert!(needed_progress[2].contains("kind: NoReentryExports"));
-    assert!(needed_progress[3].starts_with("audit-progress probe complete "));
-    assert!(needed_progress[3].contains("ordinal=1/1 completed=1"));
-    assert!(needed_progress[3].contains("verdict=failed_full_acceptance"));
+    assert_eq!(source_proved, parsed(&resumed_source_proved));
+    assert!(
+        String::from_utf8_lossy(&resumed_source_proved.stderr)
+            .contains("audit-progress probe reused")
+    );
+    assert_eq!(source_proved["results"][0]["target"]["export"], "makeSlot");
+    assert_eq!(
+        source_proved["results"][0]["verdict"],
+        "removable_under_remaining_assumptions"
+    );
+    let source_proved_progress = progress_lines(&source_proved_output);
+    assert_eq!(
+        source_proved_progress.len(),
+        4,
+        "{source_proved_progress:#?}"
+    );
+    assert!(source_proved_progress[0].starts_with("audit-progress baseline start "));
+    assert!(source_proved_progress[1].starts_with("audit-progress baseline complete "));
+    assert!(source_proved_progress[2].starts_with("audit-progress probe start "));
+    assert!(source_proved_progress[2].contains("ordinal=1/1 completed=0"));
+    assert!(source_proved_progress[2].contains("kind: NoReentryExports"));
+    assert!(source_proved_progress[3].starts_with("audit-progress probe complete "));
+    assert!(source_proved_progress[3].contains("ordinal=1/1 completed=1"));
+    assert!(source_proved_progress[3].contains("verdict=removable_under_remaining_assumptions"));
     assert_no_pipeline_artifacts(&fixture.spec_path, &report_dir);
 
     // The accepted removal also emits the same behavior under the Node oracle.
@@ -192,6 +214,12 @@ fn one_removal_rechecks_full_acceptance_and_keeps_other_hints() {
             .with_extra_chunks(PEER)
             .with_chunk_export_purity(&after_first_removal),
     );
+    assert_preserved_entry_output(&emitted, "slot 42\n");
+}
+
+#[test]
+fn simple_provider_emits_without_chunk_export_assertions() {
+    let emitted = run_fixture(FixtureOpts::new(SOURCE, split_modules()).with_extra_chunks(PEER));
     assert_preserved_entry_output(&emitted, "slot 42\n");
 }
 
@@ -305,7 +333,7 @@ fn source_marker_policy_is_reported_as_label() {
 
 #[test]
 fn targeted_member_removal_does_not_remove_neighbor() {
-    let source = "import { api } from './peer.js';\nlet later = 0;\nconst callback = () => later;\nglobalThis.saved = callback;\nconst slot = api.makeSlot(void 0);\nlater = 42;\nconsole.log(slot.kind, globalThis.saved());\n";
+    let source = "import { api } from './peer.js';\nlet later = 0;\nconst callback = () => later;\nglobalThis.saved = callback;\nlater = 42;\nconst slot = (callback, api.makeSlot(void 0));\nconsole.log(slot.kind, globalThis.saved());\n";
     let peer = [(
         "static/peer",
         "export const api = { makeSlot() { return { kind: 'slot' }; } };\nexport const otherApi = { spare() { return 1; } };\n",
@@ -337,7 +365,9 @@ fn targeted_member_removal_does_not_remove_neighbor() {
         report["results"][0]["verdict"],
         "removable_under_remaining_assumptions"
     );
-    let needed = parsed(&audit(
+    // The actual member body is available to prepared-source inference, so
+    // this authored no-reentry row is now redundant as well.
+    let source_proved = parsed(&audit(
         &fixture.spec_path,
         &[
             "--kind",
@@ -348,11 +378,14 @@ fn targeted_member_removal_does_not_remove_neighbor() {
             "makeSlot",
         ],
     ));
-    assert_eq!(needed["results"][0]["verdict"], "failed_full_acceptance");
+    assert_eq!(
+        source_proved["results"][0]["verdict"],
+        "removable_under_remaining_assumptions"
+    );
 }
 
 #[test]
-fn typed_signature_selection_removes_only_one_call_shape() {
+fn typed_signature_selection_reports_source_proved_targets() {
     let source = "import { factory as make } from './peer.js';\nconst callback = () => later;\nconst wrapped = make(callback);\nconst later = 42;\nconsole.log(wrapped.invoke());\n";
     let peer = [(
         "static/peer",
@@ -396,7 +429,7 @@ fn typed_signature_selection_removes_only_one_call_shape() {
         selected["results"][0]["verdict"],
         "removable_under_remaining_assumptions"
     );
-    let needed = parsed(&audit(
+    let source_proved = parsed(&audit(
         &fixture.spec_path,
         &[
             "--kind",
@@ -407,8 +440,28 @@ fn typed_signature_selection_removes_only_one_call_shape() {
             r#"{"argument_count":1,"callback_arguments":[0]}"#,
         ],
     ));
-    assert_eq!(needed["results"].as_array().unwrap().len(), 1);
-    assert_eq!(needed["results"][0]["verdict"], "failed_full_acceptance");
+    assert_eq!(source_proved["results"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        source_proved["results"][0]["verdict"],
+        "removable_under_remaining_assumptions"
+    );
+
+    // The provider body itself preserves the callback, so this valid split
+    // needs no authored callback-factory contract.
+    let emitted_without_assertions = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "callbacks/wrapped",
+                    &[Member::new("callback"), Member::new("wrapped")],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&peer),
+    );
+    assert_preserved_entry_output(&emitted_without_assertions, "42\n");
 }
 
 fn checkpoint_fixture() -> ValidateFixture {
@@ -583,8 +636,10 @@ fn audit_checkpoint_rejects_changed_identity_selection_and_baseline_without_writ
     assert_eq!(fs::read(&checkpoint).unwrap(), original);
     let mut baseline: serde_yaml::Value =
         serde_yaml::from_slice(&fs::read(&fixture.spec_path).unwrap()).unwrap();
-    baseline["chunk_export_purity"]["static/peer"]["no_reentry_exports"] =
-        serde_yaml::from_str("[]").unwrap();
+    let unsafe_modules = unsafe_split_modules()
+        .into_iter()
+        .collect::<std::collections::BTreeMap<_, _>>();
+    baseline["logical_modules"]["static/app"] = serde_yaml::to_value(unsafe_modules).unwrap();
     write_text_file(
         &fixture.spec_path,
         &serde_yaml::to_string(&baseline).unwrap(),
@@ -751,13 +806,12 @@ fn prepared_probes_match_independent_fresh_pipeline_runs() {
     let report = parsed(&audit(&fixture.spec_path, &[]));
     let rows = report["results"].as_array().unwrap();
     assert_eq!(rows.len(), 4);
+    // Every target in this fixture is proved by prepared source. Keep the
+    // exact fresh-pipeline comparison, but don't manufacture an obsolete
+    // failed-probe expectation for those contracts.
     assert!(
         rows.iter()
-            .any(|row| row["verdict"] == "failed_full_acceptance")
-    );
-    assert!(
-        rows.iter()
-            .any(|row| row["verdict"] == "removable_under_remaining_assumptions")
+            .all(|row| row["verdict"] == "removable_under_remaining_assumptions")
     );
 
     for row in rows {

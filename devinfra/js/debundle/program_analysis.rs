@@ -13,9 +13,10 @@ use swc_ecma_visit::{Visit, VisitWith};
 use artifact::FileRole;
 use artifact::reports::{
     ChunkAnalysisReport, ChunkCounts, ChunkFileRecord, ChunkModuleKind, ChunkRuntimeFacts,
-    ExportAliasRecord, ImportRecord, ImportSpecifierKind, ImportSpecifierRecord, InteropUse,
-    InteropUseKind, KeptTopLevelDeclarationRecord, LoaderBinding, LoaderBindingUse,
-    LoaderBindingUses, NamespaceRequest, SitePhase, StaticModuleRequest, StaticModuleRequestMode,
+    ExportAliasRecord, ExportLinkKind, ExportLinkRecord, ImportLinkRecord, ImportRecord,
+    ImportSpecifierKind, ImportSpecifierRecord, InteropUse, InteropUseKind,
+    KeptTopLevelDeclarationRecord, LoaderBinding, LoaderBindingUse, LoaderBindingUses,
+    NamespaceRequest, SitePhase, StaticModuleRequest, StaticModuleRequestMode,
     TopLevelDeclarationKind,
 };
 use binding_targets::{
@@ -503,6 +504,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         binding_declarations,
         binding_writes,
         function_reads,
+        lazy_reads,
         mut unresolved_uses,
         dynamic_scope,
         ..
@@ -643,7 +645,9 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
     let mut primitive_bindings = BTreeMap::new();
     let mut primitive_imported_bindings = BTreeMap::new();
     let mut primitive_exports = BTreeMap::<String, Vec<Option<PrimitiveExportSource>>>::new();
-    for item in &parsed.module.body {
+    let mut import_links = Vec::new();
+    let mut export_links = Vec::new();
+    for (body_index, item) in parsed.module.body.iter().enumerate() {
         collect_primitive_export_candidates(item, &mut primitive_bindings, &mut primitive_exports);
         if let ModuleItem::ModuleDecl(ModuleDecl::Import(decl)) = item {
             if import_decl_has_runtime_request(decl) {
@@ -674,6 +678,45 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
                     }
                 }
             }
+            let ordinary = !decl.type_only
+                && matches!(&decl.phase, ImportPhase::Evaluation)
+                && decl.with.is_none();
+            if !decl.type_only {
+                for specifier in &decl.specifiers {
+                    let (kind, imported, local) = match specifier {
+                        ImportSpecifier::Default(default) => (
+                            ImportSpecifierKind::Default,
+                            None,
+                            default.local.sym.to_string(),
+                        ),
+                        ImportSpecifier::Namespace(namespace) => (
+                            ImportSpecifierKind::Namespace,
+                            None,
+                            namespace.local.sym.to_string(),
+                        ),
+                        ImportSpecifier::Named(named) if !named.is_type_only => (
+                            ImportSpecifierKind::Named,
+                            Some(
+                                named
+                                    .imported
+                                    .as_ref()
+                                    .map(module_export_name)
+                                    .unwrap_or_else(|| named.local.sym.to_string()),
+                            ),
+                            named.local.sym.to_string(),
+                        ),
+                        ImportSpecifier::Named(_) => continue,
+                    };
+                    import_links.push(ImportLinkRecord {
+                        line: line_index.line_for_span(decl.span),
+                        source: str_value(&decl.src),
+                        local,
+                        kind,
+                        imported,
+                        ordinary,
+                    });
+                }
+            }
             let import_record = describe_import(&line_index, decl);
             import_local_names.extend(
                 import_record
@@ -702,6 +745,14 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         if let ModuleItem::ModuleDecl(ModuleDecl::ExportAll(export_all)) = item
             && !export_all.type_only
         {
+            export_links.push(ExportLinkRecord {
+                line: line_index.line_for_span(export_all.span),
+                body_index,
+                kind: ExportLinkKind::StarReExport {
+                    source: str_value(&export_all.src),
+                    ordinary: export_all.with.is_none(),
+                },
+            });
             runtime_facts.static_requests.push(StaticModuleRequest {
                 specifier: str_value(&export_all.src),
                 mode: if export_all.with.is_none() {
@@ -716,17 +767,73 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
             && !named.specifiers.is_empty()
         {
             for specifier in &named.specifiers {
-                if let ExportSpecifier::Named(named_specifier) = specifier {
-                    export_aliases.push(ExportAliasRecord {
-                        exported: module_export_name(
+                match specifier {
+                    ExportSpecifier::Named(named_specifier)
+                        if !named.type_only && !named_specifier.is_type_only =>
+                    {
+                        let exported = module_export_name(
                             named_specifier
                                 .exported
                                 .as_ref()
                                 .unwrap_or(&named_specifier.orig),
-                        ),
-                        line: line_index.line_for_span(named.span),
-                        local: Some(module_export_name(&named_specifier.orig)),
-                    });
+                        );
+                        let original = module_export_name(&named_specifier.orig);
+                        export_aliases.push(ExportAliasRecord {
+                            exported: exported.clone(),
+                            line: line_index.line_for_span(named.span),
+                            local: Some(original.clone()),
+                        });
+                        if let Some(source) = &named.src {
+                            export_links.push(ExportLinkRecord {
+                                line: line_index.line_for_span(named.span),
+                                body_index,
+                                kind: ExportLinkKind::ReExport {
+                                    exported,
+                                    source: str_value(source),
+                                    imported: original,
+                                    ordinary: named.with.is_none(),
+                                },
+                            });
+                        } else if let ModuleExportName::Ident(local) = &named_specifier.orig {
+                            export_links.push(ExportLinkRecord {
+                                line: line_index.line_for_span(named.span),
+                                body_index,
+                                kind: ExportLinkKind::Local {
+                                    exported,
+                                    local: local.sym.to_string(),
+                                },
+                            });
+                        }
+                    }
+                    ExportSpecifier::Namespace(namespace) if !named.type_only => {
+                        if let Some(source) = &named.src {
+                            let exported = module_export_name(&namespace.name);
+                            export_links.push(ExportLinkRecord {
+                                line: line_index.line_for_span(named.span),
+                                body_index,
+                                kind: ExportLinkKind::NamespaceReExport {
+                                    exported,
+                                    source: str_value(source),
+                                    ordinary: named.with.is_none(),
+                                },
+                            });
+                        }
+                    }
+                    ExportSpecifier::Default(default) if !named.type_only => {
+                        if let Some(source) = &named.src {
+                            export_links.push(ExportLinkRecord {
+                                line: line_index.line_for_span(named.span),
+                                body_index,
+                                kind: ExportLinkKind::ReExport {
+                                    exported: default.exported.sym.to_string(),
+                                    source: str_value(source),
+                                    imported: "default".to_string(),
+                                    ordinary: named.with.is_none(),
+                                },
+                            });
+                        }
+                    }
+                    _ => {}
                 }
             }
             continue;
@@ -738,6 +845,22 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
                 line: line_index.line_for_span(default_decl.span),
                 local: export_default_decl_name(default_decl),
             });
+            if let Some(local) = export_default_decl_name(default_decl) {
+                export_links.push(ExportLinkRecord {
+                    line: line_index.line_for_span(default_decl.span),
+                    body_index,
+                    kind: ExportLinkKind::Local {
+                        exported: "default".to_string(),
+                        local,
+                    },
+                });
+            } else if !matches!(&default_decl.decl, DefaultDecl::TsInterfaceDecl(_)) {
+                export_links.push(ExportLinkRecord {
+                    line: line_index.line_for_span(default_decl.span),
+                    body_index,
+                    kind: ExportLinkKind::DefaultValue,
+                });
+            }
             continue;
         }
 
@@ -747,7 +870,27 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
                 line: line_index.line_for_span(default_expr.span),
                 local: None,
             });
+            export_links.push(ExportLinkRecord {
+                line: line_index.line_for_span(default_expr.span),
+                body_index,
+                kind: ExportLinkKind::DefaultValue,
+            });
             continue;
+        }
+
+        if let ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) = item
+            && module_decl_is_runtime_esm(&ModuleDecl::ExportDecl(export_decl.clone()))
+        {
+            for local in declaration_name_strings(&export_decl.decl) {
+                export_links.push(ExportLinkRecord {
+                    line: line_index.line_for_span(export_decl.span),
+                    body_index,
+                    kind: ExportLinkKind::Local {
+                        exported: local.clone(),
+                        local,
+                    },
+                });
+            }
         }
 
         if let Some((kind, names)) = classify_top_level_decl(item) {
@@ -773,6 +916,13 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
                     .collect(),
             )
         })
+        .collect();
+    runtime_facts.import_links = import_links;
+    runtime_facts.export_links = export_links;
+    runtime_facts.lazy_import_reads = lazy_reads
+        .into_iter()
+        .filter(|read| import_local_names.contains(read.0.as_ref()))
+        .map(|read| read.0.to_string())
         .collect();
 
     if runtime_facts.module_kind == ChunkModuleKind::Esm
@@ -970,6 +1120,8 @@ struct ModuleScanVisitor {
     binding_writes: BTreeSet<Id>,
     top_function: Option<Id>,
     function_reads: BTreeMap<Id, BTreeSet<Id>>,
+    lazy_depth: usize,
+    lazy_reads: BTreeSet<Id>,
     unresolved_uses: BTreeMap<Id, Vec<Span>>,
     dynamic_scope: bool,
 }
@@ -981,6 +1133,42 @@ impl TargetAccessRecorder for ModuleScanVisitor {
 }
 
 impl Visit for ModuleScanVisitor {
+    fn visit_function(&mut self, node: &Function) {
+        self.lazy_depth += 1;
+        node.visit_children_with(self);
+        self.lazy_depth -= 1;
+    }
+
+    fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
+        self.lazy_depth += 1;
+        node.visit_children_with(self);
+        self.lazy_depth -= 1;
+    }
+
+    fn visit_constructor(&mut self, node: &Constructor) {
+        self.lazy_depth += 1;
+        node.visit_children_with(self);
+        self.lazy_depth -= 1;
+    }
+
+    fn visit_class_prop(&mut self, node: &ClassProp) {
+        self.lazy_depth += usize::from(!node.is_static);
+        node.visit_children_with(self);
+        self.lazy_depth -= usize::from(!node.is_static);
+    }
+
+    fn visit_private_prop(&mut self, node: &PrivateProp) {
+        self.lazy_depth += usize::from(!node.is_static);
+        node.visit_children_with(self);
+        self.lazy_depth -= usize::from(!node.is_static);
+    }
+
+    fn visit_auto_accessor(&mut self, node: &AutoAccessor) {
+        self.lazy_depth += usize::from(!node.is_static);
+        node.visit_children_with(self);
+        self.lazy_depth -= usize::from(!node.is_static);
+    }
+
     fn visit_var_declarator(&mut self, node: &VarDeclarator) {
         for id in binding_names(&node.name) {
             *self.binding_declarations.entry(id).or_default() += 1;
@@ -1043,6 +1231,9 @@ impl Visit for ModuleScanVisitor {
     fn visit_continue_stmt(&mut self, _node: &ContinueStmt) {}
 
     fn visit_ident(&mut self, node: &Ident) {
+        if self.lazy_depth > 0 {
+            self.lazy_reads.insert(node.to_id());
+        }
         if let Some(function) = &self.top_function {
             self.function_reads
                 .entry(function.clone())

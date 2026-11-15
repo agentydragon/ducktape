@@ -40,11 +40,33 @@ fn opts<'a>(source: &'a str, members: &[&'static str], families: Option<&str>) -
     }
 }
 
+fn phase_preserving_opts<'a>(
+    source: &'a str,
+    members: &[&'static str],
+    families: &str,
+) -> FixtureOpts<'a> {
+    let mut opts = opts(source, members, Some(families));
+    let mut native: Vec<Member> = members.iter().map(|member| Member::new(member)).collect();
+    native.push(Member::new("collection"));
+    // The native operation can commute; host publication must keep its
+    // original position relative to the captured cell's initialization.
+    opts.logical_modules = vec![
+        logical_module("values/native", &native),
+        logical_module_with_anon(
+            "values/later",
+            &[Member::new("later")],
+            &["globalThis.saved = () => later;"],
+        ),
+    ];
+    opts
+}
+
 #[test]
 fn named_families_stay_intact_and_overrides_are_listed() {
     let source = source("");
     for families in ["all", "[map]"] {
-        let fixture = run_fixture_with_graphs(opts(&source, &["install"], Some(families)));
+        let fixture =
+            run_fixture_with_graphs(phase_preserving_opts(&source, &["install"], families));
         assert_preserved_entry_output(&fixture, "0 42\n");
         assert_all_emitted_js_checks(&fixture);
         let graph = fixture.dependency_graph();
@@ -82,11 +104,26 @@ fn mapped_from_entries_proof_records_the_premise() {
     let source = source(
         "const entries = [{ name: \"read\", value: 1 }];\nconst registry = Object.fromEntries(entries.map(entry => [entry.name, entry]));\n",
     );
-    let fixture = run_fixture_with_graphs(opts(
-        &source,
-        &["install", "entries", "registry"],
-        Some("all"),
-    ));
+    let mut options = phase_preserving_opts(&source, &["install", "entries", "registry"], "all");
+    // The mapped constructor retains its own completion limitation. Keep
+    // that operation in its original publication/cell phase while the
+    // independently covered empty Map moves across it.
+    options.logical_modules = vec![
+        logical_module(
+            "values/native",
+            &[Member::new("install"), Member::new("collection")],
+        ),
+        logical_module_with_anon(
+            "values/later",
+            &[
+                Member::new("entries"),
+                Member::new("registry"),
+                Member::new("later"),
+            ],
+            &["globalThis.saved = () => later;"],
+        ),
+    ];
+    let fixture = run_fixture_with_graphs(options);
     assert_preserved_entry_output(&fixture, "0 42\n");
     let graph = fixture.dependency_graph();
     let node_id = source_unit_for_binding(&graph, "registry");

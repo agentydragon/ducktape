@@ -308,7 +308,7 @@ impl<'a> ProviderContext<'a> {
         let mut frame = LocalFrame::new(std::mem::take(&mut context.bindings));
         frame.this_values = Some(Values::from([AbstractValue::Value(Value::Alloc(
             Kind::Object,
-            class,
+            index.allocation(class),
         ))]));
         let result = context.drive(body, frame)?;
         context.sealed(scope, Vec::new(), result)
@@ -401,29 +401,65 @@ impl<'a> ProviderContext<'a> {
         else {
             return None;
         };
-        let result = allocation_transfer::keyed_collection_new(row, site, dependencies.clone())?;
+        let mut result = allocation_transfer::keyed_collection_new(
+            row,
+            site,
+            self.index.source_scope(),
+            dependencies.clone(),
+        )?;
+        let id = crate::program_execution::RuntimeActivationId::fresh();
+        self.world.allocation_events.insert(id, None);
+        result.allocation.values = result
+            .allocation
+            .values
+            .into_iter()
+            .map(|value| match value {
+                AbstractValue::Value(value) => {
+                    AbstractValue::Value(value.map_allocation(|site| site.instantiated(id)))
+                }
+                other => other,
+            })
+            .collect();
         self.native_constructions.insert(family);
         Some(result.allocation)
     }
 }
 
 impl OwnDataContext for ProviderContext<'_> {
-    fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape> {
+    fn ordinary_record_shape(
+        &self,
+        allocation: crate::program_execution::RuntimeAllocationId,
+    ) -> Option<&OwnPropertyShape> {
         self.index.ordinary_record_shape(allocation)
     }
-    fn object_properties_are_settled(&self, _allocation: u32) -> bool {
+    fn object_properties_are_settled(
+        &self,
+        _allocation: crate::program_execution::RuntimeAllocationId,
+    ) -> bool {
         // This isolated query refuses external mutation and publication.
         true
     }
-    fn property_values(&self, allocation: u32, property: &str) -> Option<&Values> {
+    fn property_values(
+        &self,
+        allocation: crate::program_execution::RuntimeAllocationId,
+        property: &str,
+    ) -> Option<&Values> {
         self.world.surface.data_values(allocation, property)
     }
-    fn property_is_accessor(&self, allocation: u32, property: &str) -> bool {
+    fn property_is_accessor(
+        &self,
+        allocation: crate::program_execution::RuntimeAllocationId,
+        property: &str,
+    ) -> bool {
         self.world
             .surface
             .has_accessor_property(allocation, property)
     }
-    fn property_is_writable(&self, _allocation: u32, _property: &str) -> bool {
+    fn property_is_writable(
+        &self,
+        _allocation: crate::program_execution::RuntimeAllocationId,
+        _property: &str,
+    ) -> bool {
         false
     }
 }
@@ -431,6 +467,14 @@ impl OwnDataContext for ProviderContext<'_> {
 impl HeapContext for ProviderContext<'_> {
     fn index(&self) -> &ExecutionIndex {
         self.index
+    }
+    fn instantiate_allocation(
+        &mut self,
+        local: u32,
+    ) -> crate::program_execution::RuntimeAllocationId {
+        self.index
+            .allocation(local)
+            .instantiated(crate::program_execution::RuntimeActivationId::fresh())
     }
     fn world(&self) -> &World {
         &self.world

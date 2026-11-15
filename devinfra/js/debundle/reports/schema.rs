@@ -708,6 +708,7 @@ pub enum BindingEffectAuthorityReport {
     AuthorSourceOnly,
     /// Ordered root execution started, but did not seal typed lexical proof.
     OrderedRootInitializerUncovered {
+        source_module: Option<String>,
         owner: SourceUnitOrdinal,
         binding: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -721,6 +722,7 @@ pub enum BindingEffectAuthorityReport {
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct LexicalBindingEffectReceipt {
+    pub source_module: Option<String>,
     pub owner: SourceUnitOrdinal,
     pub binding: String,
     pub initializer_span: Option<swc_common::Span>,
@@ -736,15 +738,18 @@ pub struct LexicalBindingEffectReceipt {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LexicalBindingEffectBody {
     RootInitializer {
+        source_module: Option<String>,
         owner: SourceUnitOrdinal,
         initializer_span: swc_common::Span,
     },
     Callable {
+        source_module: Option<String>,
         key: u32,
         owner: SourceUnitOrdinal,
     },
     /// A local class's base-constructor body run by a checked construction.
     Constructor {
+        source_module: Option<String>,
         class: u32,
         owner: SourceUnitOrdinal,
     },
@@ -870,6 +875,12 @@ pub struct FirstClassMembersPublication {
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BoundedInvocationFallbackCallSite {
+    /// The span belongs to this source, even when its scheduling owner is in
+    /// another module. Older reports did not retain this qualification.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_module: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top_level_owner_source_module: Option<String>,
     pub top_level_owner: Option<SourceUnitOrdinal>,
     pub span_start: u32,
     pub span_end: u32,
@@ -936,6 +947,7 @@ pub enum BoundedInvocationFallbackPathEdge {
     DeferredCallbackRetainedValue,
     AuditedResultRetainedValue,
     DescriptorMapRetainedValue,
+    ModuleNamespaceExport { name: String },
     EscapedCallbackPoolExpansion,
     ClassMembersCapability,
 }

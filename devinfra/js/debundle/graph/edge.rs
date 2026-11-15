@@ -165,6 +165,24 @@ pub enum SequencedCause {
         source: EffectProvenance,
         target: EffectProvenance,
     },
+    /// At-init effects on a binding owned by another source module. Its
+    /// canonical module coordinate prevents equal local names in different
+    /// chunks from sharing a timeline.
+    ProgramBindingTimeline {
+        module: String,
+        binding: Atom,
+        order: BindingTimelineOrder,
+        source: EffectProvenance,
+        target: EffectProvenance,
+    },
+    /// At-init binding effects were observed, but at least one runtime source
+    /// identity or owner could not be mapped to a canonical program cell. The
+    /// edge retains source order around that execution frontier without
+    /// pretending the missing cell is local or heap-opaque.
+    ProgramBindingIdentityUnavailable {
+        module: String,
+        unavailable_at: SourceUnitOrdinal,
+    },
     /// A synchronous callee invoked by `to` observed `binding` before
     /// `from`, the statement declaring it, ran; the pair keeps source
     /// order so the TDZ / initial-`undefined` observation is preserved.
@@ -283,6 +301,8 @@ pub enum HeapBarrierCause {
     /// The body of a callable synchronous execution invoked is itself
     /// heap-opaque.
     CalleeHeapEffects,
+    /// A runtime heap effect could not be mapped to a canonical module cell.
+    ProgramEffectIdentityUnavailable,
 }
 
 impl HeapBarrierCause {
@@ -293,6 +313,7 @@ impl HeapBarrierCause {
             Self::NonSummarizableImpure => "impure and not summarizable",
             Self::IncompleteSynchronousExecution => "incomplete synchronous execution",
             Self::CalleeHeapEffects => "heap-opaque callee body",
+            Self::ProgramEffectIdentityUnavailable => "program effect identity unavailable",
         }
     }
 }
@@ -340,6 +361,8 @@ pub enum CellConflict {
 pub enum EffectCellReport {
     #[strum(to_string = "binding `{binding}`")]
     Binding { binding: Atom },
+    #[strum(to_string = "binding `{binding}` from module `{module}`")]
+    ProgramBinding { module: String, binding: String },
     #[strum(to_string = "global property `{key}`")]
     GlobalProp { key: String },
     #[strum(to_string = "array contents #{origin}")]
@@ -350,6 +373,56 @@ pub enum EffectCellReport {
     ObjectShape { origin: u32 },
     #[strum(to_string = "own property `{property}` of allocation #{origin}")]
     OwnProperty { origin: u32, property: String },
+    #[strum(to_string = "array contents #{origin} from module `{module}`")]
+    ProgramArrayContents {
+        module: String,
+        origin: u32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        event: Option<Box<AllocationEventReport>>,
+    },
+    #[strum(to_string = "Set contents #{origin} from module `{module}`")]
+    ProgramSetContents {
+        module: String,
+        origin: u32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        event: Option<Box<AllocationEventReport>>,
+    },
+    #[strum(to_string = "object shape #{origin} from module `{module}`")]
+    ProgramObjectShape {
+        module: String,
+        origin: u32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        event: Option<Box<AllocationEventReport>>,
+    },
+    #[strum(to_string = "own property `{property}` of allocation #{origin} from module `{module}`")]
+    ProgramOwnProperty {
+        module: String,
+        origin: u32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        event: Option<Box<AllocationEventReport>>,
+        property: String,
+    },
+}
+
+/// Portable identity of one actual allocation event. A source-only census
+/// address has no event; repeated executions carry distinct paths/occurrences.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct AllocationEventReport {
+    pub module: String,
+    pub owner: SourceUnitOrdinal,
+    pub path: Vec<(crate::reports::schema::NativeProgramPointKind, usize)>,
+    pub occurrence: usize,
+}
+
+impl From<&crate::program_execution::effects::ProgramAllocationEvent> for AllocationEventReport {
+    fn from(event: &crate::program_execution::effects::ProgramAllocationEvent) -> Self {
+        Self {
+            module: event.owner.module.clone(),
+            owner: event.owner.ordinal,
+            path: event.path.clone(),
+            occurrence: event.occurrence,
+        }
+    }
 }
 
 /// The two access footprints and the address law that joined them.
@@ -370,6 +443,28 @@ impl From<&CellOverlap> for CellOverlapReport {
     }
 }
 
+impl
+    From<
+        &CellOverlap<
+            crate::program_execution::effects::ProgramAllocationId,
+            crate::program_execution::effects::ProgramBindingId,
+        >,
+    > for CellOverlapReport
+{
+    fn from(
+        overlap: &CellOverlap<
+            crate::program_execution::effects::ProgramAllocationId,
+            crate::program_execution::effects::ProgramBindingId,
+        >,
+    ) -> Self {
+        Self {
+            left: EffectCellReport::from(overlap.left()),
+            right: EffectCellReport::from(overlap.right()),
+            law: overlap.law(),
+        }
+    }
+}
+
 impl From<&EffectCell> for EffectCellReport {
     fn from(cell: &EffectCell) -> Self {
         match cell {
@@ -382,6 +477,80 @@ impl From<&EffectCell> for EffectCellReport {
             EffectCell::ObjectShape(origin) => Self::ObjectShape { origin: *origin },
             EffectCell::OwnProperty { origin, property } => Self::OwnProperty {
                 origin: *origin,
+                property: property.clone(),
+            },
+        }
+    }
+}
+
+impl
+    From<
+        &EffectCell<
+            crate::program_execution::effects::ProgramAllocationId,
+            crate::program_execution::effects::ProgramBindingId,
+        >,
+    > for EffectCellReport
+{
+    fn from(
+        cell: &EffectCell<
+            crate::program_execution::effects::ProgramAllocationId,
+            crate::program_execution::effects::ProgramBindingId,
+        >,
+    ) -> Self {
+        use crate::program_execution::effects::ProgramAllocationId;
+        match cell {
+            EffectCell::Binding(binding) => Self::ProgramBinding {
+                module: binding.module.clone(),
+                binding: binding.binding.0.to_string(),
+            },
+            EffectCell::GlobalProp(key) => Self::GlobalProp { key: key.clone() },
+            EffectCell::ArrayContents(ProgramAllocationId {
+                module,
+                origin,
+                event,
+            }) => Self::ProgramArrayContents {
+                module: module.clone(),
+                origin: *origin,
+                event: event
+                    .as_ref()
+                    .map(|event| Box::new(AllocationEventReport::from(event))),
+            },
+            EffectCell::SetContents(ProgramAllocationId {
+                module,
+                origin,
+                event,
+            }) => Self::ProgramSetContents {
+                module: module.clone(),
+                origin: *origin,
+                event: event
+                    .as_ref()
+                    .map(|event| Box::new(AllocationEventReport::from(event))),
+            },
+            EffectCell::ObjectShape(ProgramAllocationId {
+                module,
+                origin,
+                event,
+            }) => Self::ProgramObjectShape {
+                module: module.clone(),
+                origin: *origin,
+                event: event
+                    .as_ref()
+                    .map(|event| Box::new(AllocationEventReport::from(event))),
+            },
+            EffectCell::OwnProperty {
+                origin:
+                    ProgramAllocationId {
+                        module,
+                        origin,
+                        event,
+                    },
+                property,
+            } => Self::ProgramOwnProperty {
+                module: module.clone(),
+                origin: *origin,
+                event: event
+                    .as_ref()
+                    .map(|event| Box::new(AllocationEventReport::from(event))),
                 property: property.clone(),
             },
         }
@@ -506,6 +675,28 @@ impl fmt::Display for SequencedCause {
                 )?;
                 write_assumed(f, source, target)
             }
+            Self::ProgramBindingTimeline {
+                module,
+                binding,
+                order,
+                source,
+                target,
+            } => {
+                write!(
+                    f,
+                    "at-init timeline of `{binding}` from module `{module}`: source {}",
+                    order.explanation()
+                )?;
+                write_assumed(f, source, target)
+            }
+            Self::ProgramBindingIdentityUnavailable {
+                module,
+                unavailable_at,
+            } => write!(
+                f,
+                "at-init binding identity unavailable in module `{module}` at source unit #{}",
+                unavailable_at.0
+            ),
             Self::UninitializedObservation {
                 binding,
                 observation,

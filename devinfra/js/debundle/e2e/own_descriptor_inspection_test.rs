@@ -19,7 +19,7 @@ fn ordinary_own_descriptor_inspection_defers_getter_and_method_bodies() {
 
 #[test]
 fn descriptor_flags_receivers_and_deferred_counters_are_preserved() {
-    let source = "let getterCalls = 0;\nlet methodCalls = 0;\nconst descriptors = Object.getOwnPropertyDescriptors({ get value() { getterCalls++; return this.label + later; }, method() { methodCalls++; return this.label + later; } });\nconsole.log(getterCalls, methodCalls);\nconst later = 42;\nconsole.log(descriptors.value.get.call({ label: 'getter:' }), descriptors.method.value.call({ label: 'method:' }), getterCalls, methodCalls, descriptors.value.enumerable, descriptors.value.configurable, descriptors.method.writable);\n";
+    let source = "let getterCalls = 0;\nlet methodCalls = 0;\nconst descriptors = Object.getOwnPropertyDescriptors({ get value() { getterCalls++; return this.label + later; }, method() { methodCalls++; return this.label + later; } });\nconst later = 42;\nconsole.log(getterCalls, methodCalls);\nconsole.log(descriptors.value.get.call({ label: 'getter:' }), descriptors.method.value.call({ label: 'method:' }), getterCalls, methodCalls, descriptors.value.enumerable, descriptors.value.configurable, descriptors.method.writable);\n";
     let fixture = run_fixture(FixtureOpts::new(
         source,
         vec![
@@ -500,15 +500,31 @@ fn descriptor_capture_accepts_an_assignment_of_a_fresh_ordinary_source() {
     let source = "let record;\nconst descriptors = Object.getOwnPropertyDescriptors(record = { get value() { return later; } });\nconst later = 42;\nconsole.log(descriptors.value.get());\n";
     // `record` is assigned by the `descriptors` initializer, so the two are
     // claimed together.
+    let modules = vec![
+        logical_module(
+            "descriptors",
+            &[Member::new("record"), Member::new("descriptors")],
+        ),
+        logical_module("later", &[Member::new("later")]),
+    ];
+    // This bare declaration and nested assignment remain outside ordered
+    // completion. Keep the original split/refusal and an accepted control
+    // that exercises the same descriptor capture and deferred getter.
+    assert_conservative_schedule_refusal(
+        FixtureOpts::new(source, modules.clone()),
+        "evaluation_schedule_unknown_reordered",
+        "42\n",
+    );
     let fixture = run_fixture(FixtureOpts::new(
         source,
-        vec![
-            logical_module(
-                "descriptors",
-                &[Member::new("record"), Member::new("descriptors")],
-            ),
-            logical_module("later", &[Member::new("later")]),
-        ],
+        vec![logical_module(
+            "descriptors",
+            &[
+                Member::new("record"),
+                Member::new("descriptors"),
+                Member::new("later"),
+            ],
+        )],
     ));
     assert_preserved_entry_output(&fixture, "42\n");
 }

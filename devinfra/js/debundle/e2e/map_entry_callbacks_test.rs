@@ -22,13 +22,28 @@ fn assert_collection_requires_later(source: &'static str, collection: &[Member])
 
 #[test]
 fn inline_map_entry_callback_does_not_run_at_construction() {
-    let fixture = run_fixture(split_collection_later(
-        r#"const registry = new Map([["read", () => later]]);
+    let source = r#"const registry = new Map([["read", () => later]]);
 const later = 42;
 console.log(registry.get("read")());
 export { registry, later };
-"#,
-        &[Member::new("registry")],
+"#;
+    // The graph retains deferred callbacks; the final guard still needs
+    // completion of the iterable-consuming native constructor.
+    let rejected = assert_conservative_schedule_refusal(
+        split_collection_later(source, &[Member::new("registry")]),
+        "evaluation_schedule_unknown_reordered",
+        "42\n",
+    );
+    assert_eq!(
+        rejected.candidate_relocation_assessment()["legacy_gate_accepts"],
+        true
+    );
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "values",
+            &[Member::new("registry"), Member::new("later")],
+        )],
     ));
     assert_preserved_entry_output(&fixture, "42\n");
     assert_all_emitted_js_checks(&fixture);

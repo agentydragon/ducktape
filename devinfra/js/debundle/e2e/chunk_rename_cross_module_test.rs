@@ -43,14 +43,11 @@ export { a, b, c };
         Some("import_specifier"),
         MemberPurity::Pure,
     ))
-    .with_extra_files(&[(
-        "static/app/vendor.js",
-        "export function f() { return 1; }\n",
-    )]);
+    .with_extra_chunks(&[("static/vendor", "export function f() { return 1; }\n")]);
     let fixture = run_fixture(opts);
 
     // Behaviour preserved: c == a + b == 1 + 1 == 2.
-    assert_entry_output(&fixture, "2\n");
+    assert_preserved_entry_output(&fixture, "2\n");
 
     // The peeled module imports the renamed alias and uses it at
     // its callsite. Without rename propagation, the body keeps the
@@ -71,7 +68,7 @@ export { a, b, c };
         &fixture.out_root,
         "static/app/entry.js",
         &[
-            "import \"./vendor.js\"",
+            "import \"../vendor/entry.js\"",
             "import { b } from \"./modules/b_module.js\"",
             "export { a, b, c }",
         ],

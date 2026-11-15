@@ -54,10 +54,6 @@ enum Aggregate {
     Record {
         transfer: RecordTransfer,
         allocation: u32,
-        /// A site already in the heap may denote an older allocation; a child
-        /// can also reenter this site. Only a first, uninterrupted record is
-        /// fresh.
-        new_record: bool,
     },
     Array(Box<ArrayTransfer>),
 }
@@ -255,7 +251,9 @@ impl LocalContinuation {
                 }
             }
         }
-        LocalSuspension::Complete(LocalExecutionAttempt::Completed(finish(&self.frame)))
+        LocalSuspension::Complete(LocalExecutionAttempt::Completed(Box::new(finish(
+            &self.frame,
+        ))))
     }
 
     fn take_value(&mut self) -> SelectedValue {
@@ -420,7 +418,7 @@ impl LocalContinuation {
                 }
                 cells::declared_binding_stored(context, body, &binding, &self.frame);
                 self.frame.initialized_bindings.insert(binding.clone());
-                let effects = cells::declarative_binding_operation(context, body, &binding);
+                let effects = cells::declarative_binding_initialization(context, body, &binding);
                 self.frame.ledger.effects.compose(&effects);
             }
             Step::Discard => {
@@ -466,19 +464,11 @@ impl LocalContinuation {
                 self.frame.inputs.extend(selected.values.iter().cloned());
                 let Some(Aggregate::Record {
                     transfer,
-                    allocation,
-                    new_record,
+                    allocation: _,
                 }) = self.aggregates.get_mut(&aggregate)
                 else {
                     return Err(RemainderDisposition::NeedsSummary);
                 };
-                // A child can reenter this allocation site. Its resulting
-                // heap entry then also represents an older record.
-                *new_record &= context
-                    .world()
-                    .surface
-                    .own_properties(*allocation)
-                    .is_none();
                 // The child's judgment was composed into the ledger as it ran.
                 transfer.child(
                     index,
@@ -492,7 +482,6 @@ impl LocalContinuation {
                 let Some(Aggregate::Record {
                     transfer,
                     allocation,
-                    new_record,
                 }) = self.aggregates.remove(&aggregate)
                 else {
                     return Err(RemainderDisposition::NeedsSummary);
@@ -513,13 +502,7 @@ impl LocalContinuation {
                     refusal: None,
                 });
                 self.frame.ledger.allocation.compose(&result.judgment);
-                mark_fresh_record(
-                    context,
-                    &mut self.frame,
-                    allocation,
-                    new_record,
-                    &result.values,
-                );
+                mark_fresh_record(context, &mut self.frame, allocation, &result.values);
                 self.value = Some(completing_selected(
                     SelectedValue::raw(result.values),
                     &mut self.frame,
@@ -979,7 +962,6 @@ impl LocalContinuation {
                 ) {
                     return Err(RemainderDisposition::NeedsSummary);
                 }
-                let new_record = context.world().surface.own_properties(allocation).is_none();
                 let transfer = RecordTransfer::begin(
                     &mut LocalValueContext {
                         context,
@@ -994,7 +976,6 @@ impl LocalContinuation {
                 let aggregate = self.begin_aggregate(Aggregate::Record {
                     transfer,
                     allocation,
-                    new_record,
                 })?;
                 self.steps.push(Step::FinishRecord(aggregate));
                 self.steps.push(Step::RecordNext {
@@ -1262,10 +1243,25 @@ struct LocalValueContext<'a, C> {
 }
 
 impl<C: KernelContext> AllocationContext for LocalValueContext<'_, C> {
+    fn source_scope(&self) -> crate::program_execution::RuntimeSourceScope {
+        self.context.index().source_scope()
+    }
+    fn instantiate_allocation(
+        &mut self,
+        local: u32,
+    ) -> crate::program_execution::RuntimeAllocationId {
+        let identity = self.context.instantiate_allocation(local);
+        self.frame.allocation_instances.insert(local, identity);
+        identity
+    }
     fn source_covered(&self) -> bool {
         true
     }
-    fn array_created(&mut self, allocation: u32, tainted: bool) {
+    fn array_created(
+        &mut self,
+        allocation: crate::program_execution::RuntimeAllocationId,
+        tainted: bool,
+    ) {
         if tainted {
             // A hole has no own property, so later index reads see the
             // prototype; an unproved spread has unknown slots. Either way the
@@ -1376,15 +1372,6 @@ pub(in crate::facts::sync_effects) fn value_of(
     frame: &mut LocalFrame,
     expression: &ValueExpr,
 ) -> Result<AllocationValue, RemainderDisposition> {
-    // A site already in the heap may denote an older allocation. The current
-    // domain cannot distinguish that generation from this invocation's record.
-    let new_record = match expression {
-        ValueExpr::ObjectLiteral(object, _) => {
-            context.world().surface.own_properties(*object).is_none()
-                && !frame.borrowed_records.contains(object)
-        }
-        _ => false,
-    };
     let mut bridge = LocalValueContext {
         context,
         frame,
@@ -1396,7 +1383,7 @@ pub(in crate::facts::sync_effects) fn value_of(
         return Err(refusal.unwrap_or(RemainderDisposition::NeedsSummary));
     };
     if let ValueExpr::ObjectLiteral(object, _) = expression {
-        mark_fresh_record(context, frame, *object, new_record, &result.values);
+        mark_fresh_record(context, frame, *object, &result.values);
     }
     Ok(result)
 }
@@ -1404,11 +1391,15 @@ pub(in crate::facts::sync_effects) fn value_of(
 fn mark_fresh_record(
     context: &impl KernelContext,
     frame: &mut LocalFrame,
-    allocation: u32,
-    new_record: bool,
+    allocation_site: u32,
     values: &Values,
 ) {
-    if new_record
+    let Some(AbstractValue::Value(Value::Alloc(Kind::Object, identity))) = values.first() else {
+        return;
+    };
+    let allocation = *identity;
+    if context.index().local_origin(allocation) == Some(allocation_site)
+        && allocation.activation().is_some()
         && !frame.borrowed_records.contains(&allocation)
         && context.ordinary_record_shape(allocation).is_some()
         && values.contains(&AbstractValue::Value(Value::Alloc(
@@ -1529,6 +1520,9 @@ fn read_field(
     property: &str,
     span: Span,
 ) -> Result<LocalValueResult, RemainderDisposition> {
+    if let Some(result) = context.module_namespace_member(receivers, property) {
+        return Ok(result);
+    }
     let prefix_tracked = context.prefix_tracked_receiver(receiver, receivers);
     let slot = if prefix_tracked {
         own_data_transfer::resolve_slot(
@@ -1894,7 +1888,7 @@ fn bind_parameter(
     }
     cells::declared_binding_stored(context, body, binding, frame);
     frame.initialized_bindings.insert(binding.clone());
-    let effects = cells::declarative_binding_operation(context, body, binding);
+    let effects = cells::declarative_binding_initialization(context, body, binding);
     frame.ledger.effects.compose(&effects);
 }
 
@@ -1916,7 +1910,7 @@ fn prepare_body_bindings(
                             !matches!(value,
                                 AbstractValue::Closure(HeapAddress { callable: key, .. }, _)
                                 | AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                                    if key == function)
+                                    if context.index().local_origin(*key) == Some(*function))
                         })
                 }) {
                     frame.environment.remove(binding);
@@ -1953,7 +1947,7 @@ fn prepare_body_bindings(
         // Let/const cells have actually been created in TDZ above. Hoisted
         // values and compatibility parameters retain their separate boundary.
         let effects = if matches!(kind, LocalBinding::Let | LocalBinding::Const) {
-            cells::declarative_binding_operation(context, body, binding)
+            cells::declarative_binding_initialization(context, body, binding)
         } else {
             EffectCoverageFragment::default()
         };

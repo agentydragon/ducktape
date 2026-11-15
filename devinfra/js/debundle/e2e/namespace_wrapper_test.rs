@@ -48,16 +48,9 @@ const first = wrap(source, true);
 const second = wrap(source, true);
 const getterCallsAfterWrap = getterCalls;
 const later = "ready";
-
-console.log(
-  getterCallsAfterWrap,
-  first === second,
-  first.default === source,
+console.log(getterCallsAfterWrap, first === second, first.default === source,
   Object.getPrototypeOf(first) === Object.getPrototypeOf(source),
-  Object.getOwnPropertyNames(first).sort().join(","),
-  first.delayed,
-  getterCalls,
-);
+  Object.getOwnPropertyNames(first).sort().join(","), first.delayed, getterCalls);
 "#;
     let files = [("static/peer.js", WRAPPER), ("static/app/peer.js", WRAPPER)];
     let fixture = run_fixture_with_graphs(
@@ -74,7 +67,11 @@ console.log(
                         Member::new("getterCallsAfterWrap"),
                     ],
                 ),
-                logical_module("values/later", &[Member::new("later")]),
+                logical_module_with_anon(
+                    "values/later",
+                    &[Member::new("later")],
+                    &["console.log(getterCallsAfterWrap, first === second, first.default === source, Object.getPrototypeOf(first) === Object.getPrototypeOf(source), Object.getOwnPropertyNames(first).sort().join(\",\"), first.delayed, getterCalls);"],
+                ),
             ],
         )
         .with_extra_chunks(&[("static/peer", WRAPPER)])
@@ -269,17 +266,40 @@ const first = wrap(source, true);
 const later = "ready";
 console.log(early, first.delayed);
 "#;
-    let fixture = run_fixture(
+    let peer_chunks = [("static/peer", peer.as_str())];
+    let split = FixtureOpts::new(
+        source,
+        vec![
+            logical_module("wrapped", &[Member::new("source"), Member::new("first")]),
+            logical_module("later", &[Member::new("later")]),
+        ],
+    )
+    .with_extra_chunks(&peer_chunks);
+    let rejected = assert_conservative_schedule_refusal(
+        split,
+        "evaluation_schedule_unknown_reordered",
+        "ReferenceError ready\n",
+    );
+    assert!(rejected.dependency_graph().nodes.iter().any(|node| {
+        node.declared_bindings
+            .iter()
+            .any(|binding| binding.binding == "first")
+    }));
+    let colocated = run_fixture(
         FixtureOpts::new(
             source,
-            vec![
-                logical_module("wrapped", &[Member::new("source"), Member::new("first")]),
-                logical_module("later", &[Member::new("later")]),
-            ],
+            vec![logical_module(
+                "all",
+                &[
+                    Member::new("source"),
+                    Member::new("first"),
+                    Member::new("later"),
+                ],
+            )],
         )
-        .with_extra_chunks(&[("static/peer", &peer)]),
+        .with_extra_chunks(&peer_chunks),
     );
-    assert_preserved_entry_output(&fixture, "ReferenceError ready\n");
+    assert_preserved_entry_output(&colocated, "ReferenceError ready\n");
 }
 
 #[test]
@@ -304,16 +324,40 @@ console.log(globalThis.early, first.delayed);
         ("static/app/peer.js", peer.as_str()),
         ("static/app/reenter.js", reenter),
     ];
-    let fixture = run_fixture(
+    let chunks = [("static/peer", peer.as_str()), ("static/reenter", reenter)];
+    let split = FixtureOpts::new(
+        source,
+        vec![
+            logical_module("wrapped", &[Member::new("source"), Member::new("first")]),
+            logical_module("later", &[Member::new("later")]),
+        ],
+    )
+    .with_extra_chunks(&chunks)
+    .with_extra_files(&files);
+    let rejected = assert_conservative_schedule_refusal(
+        split,
+        "evaluation_schedule_unknown_reordered",
+        "ReferenceError ready\n",
+    );
+    assert!(rejected.dependency_graph().nodes.iter().any(|node| {
+        node.declared_bindings
+            .iter()
+            .any(|binding| binding.binding == "first")
+    }));
+    let colocated = run_fixture(
         FixtureOpts::new(
             source,
-            vec![
-                logical_module("wrapped", &[Member::new("source"), Member::new("first")]),
-                logical_module("later", &[Member::new("later")]),
-            ],
+            vec![logical_module(
+                "all",
+                &[
+                    Member::new("source"),
+                    Member::new("first"),
+                    Member::new("later"),
+                ],
+            )],
         )
-        .with_extra_chunks(&[("static/peer", &peer), ("static/reenter", reenter)])
+        .with_extra_chunks(&chunks)
         .with_extra_files(&files),
     );
-    assert_preserved_entry_output(&fixture, "ReferenceError ready\n");
+    assert_preserved_entry_output(&colocated, "ReferenceError ready\n");
 }

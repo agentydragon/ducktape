@@ -27,11 +27,30 @@ console.log(c, globalThis.events.join(","));
 export { a, b, c, Registry };
 "#;
 
-fn registry_modules() -> Vec<LogicalModuleEntry> {
-    vec![logical_module(
+fn registry_modules(events_initializer: &str) -> Vec<LogicalModuleEntry> {
+    vec![logical_module_with_anon(
         "registry",
         &[Member::new("Registry"), Member::new("b")],
+        &[events_initializer],
     )]
+}
+
+fn expect_schedule_refusal(opts: FixtureOpts<'_>, expected_output: &str) -> RejectedFixture {
+    let rejected = run_rejection_fixture_with_graphs_and_args(opts, &["--emit-on-rejection"], 3);
+    assert!(
+        rejected
+            .stderr
+            .contains("evaluation_schedule_unknown_reordered"),
+        "expected a conservative evaluation-schedule refusal:\n{}",
+        rejected.stderr
+    );
+    assert_node_output(
+        &rejected.source_root.join("static/app.js"),
+        expected_output,
+        "",
+    );
+    assert_node_output(&rejected.entry_path(), expected_output, "");
+    rejected
 }
 
 #[test]
@@ -112,7 +131,7 @@ export function enter() {
 fn inferred_implicit_class_construction_breaks_a_live_array_sequenced_cycle() {
     let fixture = assert_pure_cycle_break(
         REGISTRY_SOURCE,
-        registry_modules(),
+        registry_modules("globalThis.events = [];"),
         "registry",
         &["class Registry", "const b = new Registry"],
         &["const a"],
@@ -132,7 +151,7 @@ fn inferred_implicit_class_construction_breaks_an_array_free_sequenced_cycle() {
         .replace("globalThis.events.join(\",\")", "globalThis.events");
     let fixture = assert_pure_cycle_break(
         &source,
-        registry_modules(),
+        registry_modules("globalThis.events = '';"),
         "registry",
         &["class Registry", "const b = new Registry"],
         &["const a"],
@@ -171,7 +190,7 @@ export {{ a, b, c, Registry }};
         );
         let fixture = assert_pure_cycle_break(
             &source,
-            registry_modules(),
+            registry_modules("globalThis.events = [];"),
             "registry",
             &["class Registry", "const b = new Registry"],
             &["const a"],
@@ -183,8 +202,7 @@ export {{ a, b, c, Registry }};
 
 #[test]
 fn void_zero_field_does_not_fabricate_callback_reentry() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const saved = () => later;
+    let source = r#"const saved = () => later;
 globalThis.saved = saved;
 class Checker {
   result = void 0;
@@ -200,26 +218,53 @@ const command = create({ execute: () => later });
 const later = 7;
 console.log(command.execute());
 export { saved, Checker, Command, create, command, later };
-"#,
+"#;
+    let publication = [
+        "globalThis.saved = saved;",
+        "globalThis.savedChecker = Checker;",
+    ];
+    let command_members = [
+        Member::new("saved"),
+        Member::new("Checker"),
+        Member::new("Command"),
+        Member::new("create"),
+        Member::new("command"),
+    ];
+    let unsafe_split = FixtureOpts::new(
+        source,
         vec![
-            logical_module_with_anon(
-                "command",
-                &[
-                    Member::new("saved"),
-                    Member::new("Checker"),
-                    Member::new("Command"),
-                    Member::new("create"),
-                    Member::new("command"),
-                ],
-                &[
-                    "globalThis.saved = saved;",
-                    "globalThis.savedChecker = Checker;",
-                ],
-            ),
+            logical_module_with_anon("command", &command_members, &publication),
             logical_module("value", &[Member::new("later")]),
         ],
+    );
+    expect_schedule_refusal(unsafe_split, "7\n");
+
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+        source,
+        vec![logical_module_with_anon(
+            "command",
+            &[
+                Member::new("saved"),
+                Member::new("Checker"),
+                Member::new("Command"),
+                Member::new("create"),
+                Member::new("command"),
+                Member::new("later"),
+            ],
+            &publication,
+        )],
     ));
     assert_preserved_entry_output(&fixture, "7\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/command.js",
+        &[
+            "globalThis.saved = saved",
+            "globalThis.savedChecker = Checker",
+            "const later",
+        ],
+        &[],
+    );
 }
 
 fn expect_callback_reentry_for_class(checker: &str, prelude: &str) {
@@ -569,10 +614,9 @@ console.log(before);
 
 const CAPTURE_PROVIDER: &str = "var captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { get touched() { globalThis.runtimeSettings.events.push('getter'); return true; } });\nexport const ready = true;\n";
 const OPAQUE_SETUP: &str = "globalThis.runtimeSettings = { events: [], get state() { this.events.push('capture'); return { value: 'ready', child: new Map() }; } };\n";
-const CAPTURE_CHUNKS: &[(&str, &str)] = &[("static/peer", CAPTURE_PROVIDER)];
-const OPAQUE_FILES: &[(&str, &str)] = &[
-    ("static/opaque.js", OPAQUE_SETUP),
-    ("static/app/opaque.js", OPAQUE_SETUP),
+const COMPOSITION_CHUNKS: &[(&str, &str)] = &[
+    ("static/peer", CAPTURE_PROVIDER),
+    ("static/opaque", OPAQUE_SETUP),
 ];
 const SET_MUTATION: &str = "Set.prototype.add = function (value) { globalThis.runtimeSettings.events.push('mutated'); return this; };";
 const REBOUND_REGISTRY: &str = "Registry = class Registry { #values = new Set(); readLater = () => later; get size() { return this.#values.size; } };";
@@ -623,8 +667,7 @@ fn composition_options<'a>(source: &'a str, anonymous: &'a [&'a str]) -> Fixture
             anonymous,
         )],
     )
-    .with_extra_chunks(CAPTURE_CHUNKS)
-    .with_extra_files(OPAQUE_FILES)
+    .with_extra_chunks(COMPOSITION_CHUNKS)
     .with_value_inputs("static/peer", vec![captured_input()])
 }
 
@@ -769,8 +812,7 @@ fn composed_proofs_reject_native_set_mutation_and_unsafe_field_initializers() {
     );
     let mutated_fixture = run_fixture_with_graphs(
         FixtureOpts::new(&mutated, vec![])
-            .with_extra_chunks(CAPTURE_CHUNKS)
-            .with_extra_files(OPAQUE_FILES)
+            .with_extra_chunks(COMPOSITION_CHUNKS)
             .with_value_inputs("static/peer", vec![captured_input()]),
     );
     assert_preserved_entry_output(
@@ -799,8 +841,7 @@ fn composed_proofs_reject_native_set_mutation_and_unsafe_field_initializers() {
     );
     let unsafe_fixture = run_fixture_with_graphs(
         FixtureOpts::new(&unsafe_field, vec![])
-            .with_extra_chunks(CAPTURE_CHUNKS)
-            .with_extra_files(OPAQUE_FILES)
+            .with_extra_chunks(COMPOSITION_CHUNKS)
             .with_value_inputs("static/peer", vec![captured_input()]),
     );
     assert_preserved_entry_output(&unsafe_fixture, "true 3 40 0 capture,getter,field\n");
@@ -819,8 +860,7 @@ fn composed_proof_rejects_rebound_class_bindings() {
     );
     let fixture = run_fixture_with_graphs(
         FixtureOpts::new(&source, vec![])
-            .with_extra_chunks(CAPTURE_CHUNKS)
-            .with_extra_files(OPAQUE_FILES)
+            .with_extra_chunks(COMPOSITION_CHUNKS)
             .with_value_inputs("static/peer", vec![captured_input()]),
     );
     assert_preserved_entry_output(&fixture, COMPOSITION_OUTPUT);

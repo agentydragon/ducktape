@@ -4,6 +4,7 @@
 //! accessor its property access runs. That callable's TDZ observation keeps
 //! the opaque call before the observed declaration.
 
+use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, path, staged};
 use debundle_e2e_support::*;
 
 const PEER: [(&str, &str); 1] = [(
@@ -22,6 +23,10 @@ const OBSERVE: &str = "try { seen = later; } catch (error) { seen = error.name; 
 const POOL: usize = 70;
 
 fn source(setup: &str, member: &str) -> String {
+    source_after_call(setup, member, "")
+}
+
+fn source_after_call(setup: &str, member: &str, after_call: &str) -> String {
     let setup = setup.replace("OBSERVE", OBSERVE);
     let mut source = format!(
         "import {{ host }} from './peer.js';\nlet seen = 'unset';\nconst holder = {{}};\n{setup}\nfunction reader() {{ {member} }}\n"
@@ -32,7 +37,7 @@ fn source(setup: &str, member: &str) -> String {
         pool.push(format!("filler{index}"));
     }
     source.push_str(&format!(
-        "host({});\nconst later = 'value';\nconsole.log(seen);\n",
+        "host({});\n{after_call}\nconst later = 'value';\nconsole.log(seen);\n",
         pool.join(", ")
     ));
     source
@@ -180,5 +185,108 @@ fn stored_getter_run_by_member() {
     assert_observation_stays_before_declaration(
         "holder.target = { get value() { OBSERVE; return 1; } };",
         "return holder.target.value;",
+    );
+}
+
+#[test]
+fn captured_holder_fallback_constraints_survive_saved_analysis() {
+    let (source, expected) = captured_reader_pool();
+    for (binding, accepted) in [("value0", true), ("later", false)] {
+        let (staged, _fixture) = staged(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module("value", &[Member::new(binding)])],
+            )
+            .with_extra_chunks(&CAPTURE_PEER)
+            .with_unassigned_mode(unassigned_mode_inline()),
+        );
+        let direct = staged.run(&["--emit-on-rejection"]);
+        let saved = staged.run(&["--emit-on-rejection", "--analysis", path(&staged.artifact)]);
+        for invocation in [&direct, &saved] {
+            assert_eq!(
+                invocation.result.status.code(),
+                Some(if accepted { 0 } else { 3 }),
+                "{binding}: {}",
+                invocation.result.stderr,
+            );
+            if accepted {
+                assert_node_output(
+                    &invocation.output_root().join("app/static/app/entry.js"),
+                    &expected,
+                    "",
+                );
+            }
+        }
+        assert_same_invocation_trees(&direct, &saved);
+    }
+}
+
+#[test]
+fn repeated_foreign_fallback_sees_changed_retained_callback_edges() {
+    let peer = [(
+        "static/peer",
+        "export function host(...callbacks) { for (const callback of callbacks) { const result = callback(); if (typeof result === 'function') { if (result.prototype) new result(); else result(); } } }\n",
+    )];
+    let cases = [
+        (
+            "holder.callback = () => 0;",
+            "holder.callback = () => { OBSERVE };",
+            "holder.callback();",
+        ),
+        // The root adjacency stays identical: only a descendant inside a
+        // strongly connected retained graph changes between the two queries.
+        (
+            "holder.child = { callback: () => 0 }; holder.child.parent = holder;",
+            "holder.child.callback = () => { OBSERVE };",
+            "holder.child.callback();",
+        ),
+        (
+            "function make() { let callback = () => 0; return { read: () => callback(), install: () => { callback = () => { OBSERVE }; } }; } const pair = make(); holder.callback = pair.read;",
+            "pair.install();",
+            "holder.callback();",
+        ),
+        (
+            "function Base() { holder.callback = () => { OBSERVE }; } class Derived extends Base {} holder.callback = () => 0;",
+            "host(() => Derived);",
+            "holder.callback();",
+        ),
+        (
+            "globalThis.saved = () => 0;",
+            "globalThis.saved = () => { OBSERVE };",
+            "return globalThis.saved;",
+        ),
+    ];
+    for (setup, update, member) in cases {
+        let mut after_call = update.replace("OBSERVE", OBSERVE);
+        after_call.push_str("\nhost(reader");
+        for index in 0..POOL {
+            after_call.push_str(&format!(", filler{index}"));
+        }
+        after_call.push_str(");");
+        let source = source_after_call(setup, member, &after_call);
+        let colocated = run_fixture(
+            FixtureOpts::new(&source, Vec::new())
+                .with_extra_chunks(&peer)
+                .with_unassigned_mode(unassigned_mode_inline()),
+        );
+        assert_preserved_entry_output(&colocated, "ReferenceError\n");
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module("values/later", &[Member::new("later")])],
+            )
+            .with_extra_chunks(&peer)
+            .with_unassigned_mode(unassigned_mode_inline()),
+            &["values/later"],
+            &[],
+        );
+    }
+}
+
+#[test]
+fn cyclic_retained_native_object_preserves_the_observed_callback() {
+    assert_observation_stays_before_declaration(
+        "holder.record = /pattern/; holder.record.self = holder.record; holder.record.callback = () => { OBSERVE };",
+        "holder.record.callback();",
     );
 }

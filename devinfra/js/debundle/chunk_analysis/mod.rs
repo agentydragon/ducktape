@@ -30,7 +30,7 @@ use swc_ecma_ast::Module;
 use analysis::AnalysisInputs;
 use analysis::analysis_inputs::ResolvedCommutingStatements;
 use analysis::atomic_groups::{
-    DependencyGraphAndAtomicGroups, compute_dependency_graph_and_atomic_groups_with,
+    DependencyGraphAndAtomicGroups, compute_dependency_graph_and_atomic_groups_for_module,
 };
 use analysis::diagnostics::{ChunkDiagnostic, Diagnostics};
 use analysis::execution_evidence::SourceLocator;
@@ -139,8 +139,13 @@ pub fn build_chunk_graph(
     options: GraphOptions,
     commuting_statements: &[ResolvedCommutingStatements],
 ) -> Result<DependencyGraphAndAtomicGroups> {
-    compute_dependency_graph_and_atomic_groups_with(&facts.facts, options, commuting_statements)
-        .with_context(|| format!("building dependency graph for chunk {chunk_id}"))
+    compute_dependency_graph_and_atomic_groups_for_module(
+        chunk_id,
+        &facts.facts,
+        options,
+        commuting_statements,
+    )
+    .with_context(|| format!("building dependency graph for chunk {chunk_id}"))
 }
 
 #[cfg(test)]

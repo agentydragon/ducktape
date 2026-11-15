@@ -50,7 +50,7 @@ fn missing_local_direct_claim_is_rejected_without_writes() {
 #[test]
 fn missing_import_direct_claim_is_rejected_without_writes() {
     let fixture = GraphFixture::new(
-        "import { dep } from \"external-package\";\nconsole.log(dep);\n",
+        "import { basename as dep } from \"node:path\";\nconsole.log(dep);\n",
         &[
             (
                 "alpha.yaml",
@@ -75,7 +75,7 @@ fn missing_import_direct_claim_is_rejected_without_writes() {
 #[test]
 fn import_specifier_claims_are_accepted_only_for_named_imports() {
     let named = GraphFixture::new(
-        "import { dep } from \"external-package\";\nconsole.log(dep);\n",
+        "import { basename as dep } from \"node:path\";\nconsole.log(dep);\n",
         &[
             (
                 "alpha.yaml",
@@ -88,8 +88,8 @@ fn import_specifier_claims_are_accepted_only_for_named_imports() {
     assert_eq!(report["gate"], "claims_checked", "{report}");
 
     for source in [
-        "import dep from \"external-package\";\nconsole.log(dep);\n",
-        "import * as dep from \"external-package\";\nconsole.log(dep);\n",
+        "import dep from \"node:path\";\nconsole.log(dep);\n",
+        "import * as dep from \"node:path\";\nconsole.log(dep);\n",
     ] {
         let stale_graph = GraphFixture::new(source, &[("alpha.yaml", "members: []\n"), EMPTY]);
         fs::write(
@@ -118,7 +118,7 @@ fn import_specifier_claims_are_accepted_only_for_named_imports() {
 #[test]
 fn mixed_untyped_local_and_typed_import_claims_use_direct_source_gate() {
     let fixture = GraphFixture::new(
-        "const live = 1;\nimport { dep } from \"external-package\";\nconsole.log(live, dep);\n",
+        "const live = 1;\nimport { basename as dep } from \"node:path\";\nconsole.log(live, dep);\n",
         &[
             (
                 "alpha.yaml",

@@ -21,6 +21,33 @@ fn assert_commuting_relocation(fixture: &Fixture, case: &str) {
     );
 }
 
+/// An initialized local copy already has a source/allocation proof that it
+/// invokes no code. A completion-only execution must retain that proof when
+/// an independently unmodelled construction crosses its private result cell.
+#[test]
+fn initialized_private_binding_copy_can_cross_an_unmodelled_construction() {
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(
+            "let counter = 0;\nfunction Empty() {}\nconst observed = counter;\nvar result = new Empty();\nconsole.log(observed, counter);\n",
+            vec![
+                logical_module("reader", &[Member::new("observed")]),
+                logical_module(
+                    "run",
+                    &[Member::new("counter"), Member::new("Empty"), Member::new("result")],
+                ),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "0 0\n");
+    assert!(
+        fixture.effect_translation_validation()["swapped_pairs"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+}
+
 /// A boolean module constant decides no test, so each body forks; the joined
 /// receipt still closes the root's binding effects. `null` decides `??`.
 #[test]
@@ -199,6 +226,34 @@ fn with_reader_split<T>(
         ],
     )
     .with_unassigned_mode(unassigned_mode_inline()))
+}
+
+/// These bounded models retain a refusal even though this concrete program is
+/// safe. Check the actual rejected layout and an accepted colocated control.
+fn assert_conservative_reader_split(
+    definitions: &str,
+    extra: &[&'static str],
+    reason: &str,
+    witnesses: &[&str],
+) {
+    let rejected = with_reader_split(definitions, extra, run_emit_on_rejection_fixture);
+    let report: serde_json::Value =
+        read_json(&rejected.report_root.join("evaluation_schedule.json"));
+    assert_eq!(report["kind"], "evaluation_schedule_refused");
+    assert_eq!(report["rejection"]["source_entry"], "static/app");
+    let refusal = report["rejection"]["reason"].as_str().unwrap();
+    assert!(refusal.starts_with(reason), "{definitions}: {report:#}");
+    for witness in witnesses {
+        assert!(refusal.contains(witness), "missing {witness}: {report:#}");
+    }
+    assert!(rejected.gate_rejected_marker().exists());
+    assert_node_output(&rejected.source_root.join("static/app.js"), "0 0\n", "");
+    assert_node_output(&rejected.entry_path(), "0 0\n", "");
+    let colocated = with_reader_split(definitions, extra, |mut opts| {
+        opts.logical_modules.clear();
+        run_fixture(opts)
+    });
+    assert_preserved_entry_output(&colocated, "0 0\n");
 }
 
 /// When `flag()` can hold a value the analysis omits, `second` runs and
@@ -1134,25 +1189,29 @@ fn direct_eval_at_any_depth_is_refused_at_admission() {
     }
 }
 
-/// Positive anchor: in an ES module, an indirect `eval`, `Function` and
-/// `new Function` run in global scope, where no module binding is
-/// visible (`typeof second` is `"undefined"`): an ordinary opaque call
-/// that keeps the split.
+/// These dynamic bodies cannot read this module's `second`. The indirect eval
+/// form retains an opaque completion boundary; Function construction controls
+/// still admit the split without manufacturing an ordered body receipt.
 #[test]
-fn indirect_eval_and_function_in_a_module_keep_the_split() {
-    for call in [
-        "(0, eval)('typeof second')",
-        "Function('return typeof second')()",
-        "new Function('return typeof second')()",
+fn indirect_eval_is_conservative_while_function_constructors_keep_the_split() {
+    for (call, conservative) in [
+        ("(0, eval)('typeof second')", true),
+        ("Function('return typeof second')()", false),
+        ("new Function('return typeof second')()", false),
     ] {
-        let fixture = with_reader_split(
-            &format!(
-                "function flag() {{ {call}; return noop; }}\nexport {{ first }};\n{CALL_FLAG}"
-            ),
-            &[],
-            run_fixture,
-        );
-        assert_preserved_entry_output(&fixture, "0 0\n");
+        let definitions =
+            format!("function flag() {{ {call}; return noop; }}\nexport {{ first }};\n{CALL_FLAG}");
+        if conservative {
+            assert_conservative_reader_split(
+                &definitions,
+                &[],
+                "evaluation_schedule_unknown_reordered",
+                &[],
+            );
+        } else {
+            let fixture = with_reader_split(&definitions, &[], run_fixture);
+            assert_preserved_entry_output(&fixture, "0 0\n");
+        }
     }
 }
 
@@ -1591,23 +1650,39 @@ fn receiver_iterator_installs(callee: &str) -> [(String, &'static [&'static str]
     ]
 }
 
-/// A refused construction whose class body stores only a literal keeps the
-/// split, although another module binding holds an uncalled effect.
+/// Unsupported derived construction keeps the reachable writer conservative,
+/// even though this concrete class stores only a literal. Moving it before the
+/// copy changes the model's counter observation from initialized to unknown.
 #[test]
-fn a_refused_construction_storing_literals_keeps_the_split() {
-    for flag in [
-        "function flag() { new K(); return noop; }\nfunction run() { flag(); return 0; }",
-        "function flag() { if (first()) {} new K(); return noop; }\nfunction run() { if (first()) {} flag(); return 0; }",
-        "function flag() { new K(); return noop; }\nfunction run() { return flag()(); }",
+fn a_refused_construction_storing_literals_retains_its_availability_limit() {
+    for (flag, conservative) in [
+        (
+            "function flag() { new K(); return noop; }\nfunction run() { flag(); return 0; }",
+            true,
+        ),
+        (
+            "function flag() { if (first()) {} new K(); return noop; }\nfunction run() { if (first()) {} flag(); return 0; }",
+            false,
+        ),
+        (
+            "function flag() { new K(); return noop; }\nfunction run() { return flag()(); }",
+            false,
+        ),
     ] {
-        let fixture = with_reader_split(
-            &format!(
-                "const holder = {{ h: second }};\nclass Base {{}}\nclass K extends Base {{ constructor() {{ super(); this.n = 1; }} }}\n{flag}"
-            ),
-            &["holder", "Base", "K"],
-            run_fixture,
+        let definitions = format!(
+            "const holder = {{ h: second }};\nclass Base {{}}\nclass K extends Base {{ constructor() {{ super(); this.n = 1; }} }}\n{flag}"
         );
-        assert_preserved_entry_output(&fixture, "0 0\n");
+        if conservative {
+            assert_conservative_reader_split(
+                &definitions,
+                &["holder", "Base", "K"],
+                "evaluation_schedule_availability_changed",
+                &["counter", "InitializedValue", "Unknown"],
+            );
+        } else {
+            let fixture = with_reader_split(&definitions, &["holder", "Base", "K"], run_fixture);
+            assert_preserved_entry_output(&fixture, "0 0\n");
+        }
     }
 }
 
@@ -1814,17 +1889,21 @@ fn iterating_an_instance_runs_its_class_iterator_method() {
     }
 }
 
-/// A read or write through a `__proto__` literal whose chain has no
-/// accessor reading `this` keeps the split, although another binding holds
-/// an uncalled effect.
+/// The bounded prototype model cannot exclude a retained writer for these
+/// reads and writes. Its unknown counter observation cannot be discarded just
+/// because the concrete prototype chain has no effectful accessor.
 #[test]
-fn a_prototype_literal_without_a_this_reading_accessor_keeps_the_split() {
+fn a_prototype_literal_without_a_this_reading_accessor_retains_its_availability_limit() {
     for definitions in [
         "const handlers = { onClick: second };\nconst base = { kind: 'b' };\nconst o = { __proto__: base, n: 1 };\nfunction flag() { o.kind; o.n = 2; return noop; }\nfunction run() { flag(); return 0; }",
         "const handlers = { onClick: second };\nconst base = { get kind() { return 'b'; } };\nconst o = { __proto__: base, n: 1 };\nfunction flag() { o.kind; return noop; }\nfunction run() { flag(); return 0; }",
     ] {
-        let fixture = with_reader_split(definitions, &["handlers", "base", "o"], run_fixture);
-        assert_preserved_entry_output(&fixture, "0 0\n");
+        assert_conservative_reader_split(
+            definitions,
+            &["handlers", "base", "o"],
+            "evaluation_schedule_availability_changed",
+            &["counter", "InitializedValue", "Unknown"],
+        );
     }
 }
 

@@ -7,13 +7,14 @@
 //! the operation completed normally.
 
 use super::super::property_inference::{OwnPropertyProjection, OwnPropertyProof};
-use super::super::value_model::{AbstractValue, CallSite, Values};
+use super::super::value_model::{AbstractValue, RuntimeCallSite, Values};
 use super::super::world::descriptor_heap::{
     DescriptorApplication, DescriptorHeap, DynamicKeyDefinition,
 };
 use crate::facts::abstract_domain::builtins::{ArgSel, Row};
 use crate::facts::abstract_domain::heap::Mutation;
 use crate::facts::abstract_domain::value::{Kind, Value};
+use crate::program_execution::RuntimeAllocationId;
 use analysis_model::PrimKinds;
 use std::collections::BTreeSet;
 
@@ -23,27 +24,27 @@ pub(in crate::facts::sync_effects) enum NativeOperationCommit {
     /// `SetIntegrityLevel(frozen)`: the literal writability witness of every
     /// object operand is gone. Values are unchanged.
     Integrity {
-        targets: BTreeSet<u32>,
+        targets: BTreeSet<RuntimeAllocationId>,
     },
     CaptureDescriptors {
-        site: CallSite,
+        site: RuntimeCallSite,
         projection: Box<super::super::property_inference::OwnPropertyDescriptorProjection>,
     },
     CreateNamesArray {
-        allocation: u32,
+        allocation: RuntimeAllocationId,
         names: Vec<String>,
     },
     DefineProperties(DescriptorApplication),
     DefineDynamicKey(DynamicKeyDefinition),
     /// `map`'s fresh result: one slot per callback result, in index order.
     CreateDenseArray {
-        allocation: u32,
+        allocation: RuntimeAllocationId,
         slots: Vec<Values>,
     },
     /// `filter`'s fresh result: some of the receiver's elements, in an
     /// unknown number and positions.
     CreateContentsArray {
-        allocation: u32,
+        allocation: RuntimeAllocationId,
         contents: Values,
     },
 }
@@ -57,7 +58,7 @@ pub(in crate::facts::sync_effects) enum IterationResultArray {
 /// Materialize an iteration row's fresh result at `allocation`, the
 /// result-array identity the execution index assigned to the call site.
 pub(in crate::facts::sync_effects) fn plan_iteration_result(
-    allocation: u32,
+    allocation: RuntimeAllocationId,
     result: IterationResultArray,
     revision: u64,
 ) -> CheckedNativePlan {
@@ -106,7 +107,7 @@ pub(in crate::facts::sync_effects) trait NativeOperationContext {
 /// targets; a row that needs one without having it was not admitted.
 pub(in crate::facts::sync_effects) fn plan(
     row: &Row,
-    site: CallSite,
+    site: RuntimeCallSite,
     arguments: &[Values],
     projection: Option<&OwnPropertyProof>,
     application: Option<DescriptorApplication>,
@@ -155,7 +156,7 @@ pub(in crate::facts::sync_effects) fn plan(
                 let OwnPropertyProjection::Names(names) = &projection?.projection else {
                     return None;
                 };
-                let allocation = site.allocation_id();
+                let allocation = site.allocation();
                 commits.push(NativeOperationCommit::CreateNamesArray {
                     allocation,
                     names: names.names.clone(),

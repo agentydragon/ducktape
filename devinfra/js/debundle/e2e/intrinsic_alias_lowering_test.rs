@@ -156,7 +156,7 @@ fn intrinsic_alias_referenced_by_generic_helper_name_resolves_per_module() {
     let fixture = run_fixture(FixtureOpts::new(
         &source,
         vec![
-            logical_module(
+            logical_module_with_anon(
                 "alpha",
                 &[
                     Member::source_alpha(
@@ -171,9 +171,16 @@ fn intrinsic_alias_referenced_by_generic_helper_name_resolves_per_module() {
                     // a chunk-global anchor map would collapse it to ambiguous.
                     Member::makes_decorate_call("applyDecorators", "Alpha", None, None),
                     Member::intrinsic_alias("alphaDefineProp", "defineProperty", "applyDecorators"),
+                    Member::intrinsic_alias(
+                        "alphaGetOwnPropDesc",
+                        "getOwnPropertyDescriptor",
+                        "applyDecorators",
+                    ),
+                    Member::new("taga"),
                 ],
+                &["da([taga], Alpha.prototype, 'alphaLabel', 1);"],
             ),
-            logical_module(
+            logical_module_with_anon(
                 "beta",
                 &[
                     Member::source_alpha(
@@ -186,7 +193,14 @@ fn intrinsic_alias_referenced_by_generic_helper_name_resolves_per_module() {
                     ),
                     Member::makes_decorate_call("applyDecorators", "Beta", None, None),
                     Member::intrinsic_alias("betaDefineProp", "defineProperty", "applyDecorators"),
+                    Member::intrinsic_alias(
+                        "betaGetOwnPropDesc",
+                        "getOwnPropertyDescriptor",
+                        "applyDecorators",
+                    ),
+                    Member::new("tagb"),
                 ],
+                &["db([tagb], Beta.prototype, 'betaLabel', 1);"],
             ),
         ],
     ));
@@ -206,7 +220,7 @@ fn intrinsic_alias_referenced_by_generic_helper_name_resolves_per_module() {
         &["var betaDefineProp = ", "betaDefineProp"],
         &["alphaDefineProp"],
     );
-    assert_entry_output(&fixture, "aA bB\n");
+    assert_preserved_entry_output(&fixture, "aA bB\n");
 }
 
 /// **Source-match anchor on a split declarator feeds the joint solver.** Mirrors

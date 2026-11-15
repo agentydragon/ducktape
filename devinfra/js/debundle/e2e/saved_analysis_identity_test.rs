@@ -74,7 +74,7 @@ fn projection_rejects_unresolved_and_duplicate_selectors_before_writing() {
 
 #[test]
 fn analysis_projection_preserves_semantic_note_keys_and_ignores_author_notes() {
-    const APP: &str = "import { note } from './note.js';\nconst value = Symbol('value');\nconsole.log(note.note(), value.description);\nexport { value };\n";
+    const APP: &str = "import { note } from '../note.js';\nconst value = Symbol('value');\nconsole.log(note.note(), value.description);\nexport { value };\n";
     const PROVIDER: &str = "export const note = { note() { return 1; } };\n";
     let purity = ChunkExportPurityBuilder::new("note")
         .with_no_reentry_members("note", &["note"])

@@ -39,14 +39,18 @@ fn source_policy_projects_without_relocating_context_sensitive_provider() {
 }
 
 #[test]
-fn absent_policy_keeps_opaque_factory_timing() {
-    expect_atomic_conflict_rejection(
+fn source_body_proves_factory_defers_the_callback_without_policy() {
+    let fixture = run_fixture(
         FixtureOpts::new(
             "import { factory } from './peer.js';\nconst wrapped = factory(() => later);\nconst later = 42;\nconsole.log(wrapped());\n",
-            vec![logical_module("callbacks/wrapped", &[Member::new("wrapped")]), logical_module("values/later", &[Member::new("later")])],
-        ).with_extra_chunks(&[("static/peer", PROVIDER)]),
-        &["callbacks/wrapped", "values/later"], &[],
+            vec![
+                logical_module("callbacks/wrapped", &[Member::new("wrapped")]),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", PROVIDER)]),
     );
+    assert_preserved_entry_output(&fixture, "42\n");
 }
 
 #[test]

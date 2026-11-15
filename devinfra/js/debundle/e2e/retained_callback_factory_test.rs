@@ -1,5 +1,6 @@
 //! Separately audited factories retain existing and multiple callbacks.
 
+use analysis::reports::schema::{BindingEffectAuthorityReport, LexicalBindingEffectBody};
 use analysis_model::DepKind;
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
@@ -43,6 +44,116 @@ fn gate_diagnose_json(
         String::from_utf8_lossy(&output.stderr),
     );
     parse_stdout_json(&output)
+}
+
+fn assert_complete_source_execution(fixture: &Fixture, binding: &str) {
+    let graph = fixture.dependency_graph();
+    let node = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == source_unit_for_binding(&graph, binding))
+        .unwrap();
+    let execution = node.synchronous_execution.as_ref().unwrap();
+    assert!(execution.complete, "{execution:#?}");
+    match &execution.binding_effect_authority {
+        Some(BindingEffectAuthorityReport::LegacyExecution { complete: true }) => {}
+        Some(BindingEffectAuthorityReport::OperationReceipt { receipt }) => {
+            assert_eq!(receipt.binding, binding);
+            assert_eq!(receipt.owner, node.statement_ordinal);
+            assert!(receipt.initializer_span.is_some());
+            assert!(receipt.calls.iter().any(|call| matches!(&call.target,
+                LexicalBindingEffectBody::Callable { source_module: Some(module), .. } if module == "static/peer")), "{receipt:#?}");
+        }
+        _ => panic!("missing complete execution authority: {execution:#?}"),
+    }
+}
+
+// Conservative promotions carry the scheduling owner, not a lexical callback identity.
+// Keep the analyzer's exact barrier witness independently of diagnose's bounded join.
+fn raw_factory_barrier(fixture: &RejectedFixture, binding: &str) -> serde_json::Value {
+    let graph = fixture.dependency_graph();
+    let unit = source_unit_for_binding(&graph, binding);
+    let node = graph.nodes.iter().find(|node| node.id == unit).unwrap();
+    assert_eq!(node.callback_factory_barriers.len(), 1);
+    let barrier = serde_json::to_value(&node.callback_factory_barriers[0]).unwrap();
+    assert_eq!(barrier["contract"]["namespace_binding"], "api");
+    assert_eq!(barrier["contract"]["member"], "make");
+    assert_eq!(barrier["contract"]["argument_count"], 1);
+    assert_eq!(
+        barrier["contract"]["callback_arguments"],
+        serde_json::json!([0])
+    );
+    let roots = barrier["contract"]["callback_source_units"]
+        .as_array()
+        .unwrap();
+    assert_eq!(roots.len(), 1);
+    assert_eq!(
+        roots[0]["source_unit"],
+        source_unit_for_binding(&graph, "callback")
+    );
+    barrier
+}
+
+fn assert_unlinked_diagnostic(report: &serde_json::Value) {
+    assert_eq!(
+        report["query_status"],
+        "inconclusive_for_supported_guard_family"
+    );
+    let traces = report["traces"].as_array().unwrap();
+    assert!(!traces.is_empty());
+    for trace in traces {
+        assert!(trace["matched_contract"].is_null(), "{trace}");
+        let guard = match trace["coverage"].as_str().unwrap() {
+            "inconclusive_callback_argument_source_mismatch" => "callback_argument_source_mismatch",
+            // callback0's ordinary eager invocation has no factory barrier.
+            "inconclusive_no_supported_callback_factory_barrier" => {
+                "no_supported_callback_factory_barrier"
+            }
+            _ => panic!("unexpected diagnostic coverage: {trace}"),
+        };
+        assert_eq!(trace["first_rejected_guard"]["code"], guard);
+        assert_eq!(trace["constraining_dependency"]["role"], "promoted_at_init");
+    }
+}
+
+fn inspect_barrier_witness(fixture: &RejectedFixture, witness: &serde_json::Value, source: &str) {
+    let graph = fixture
+        .report_root
+        .join(&fixture.chunk_id)
+        .join("dependency_graph.json.gz");
+    let output = run_debundle(&[
+        "inspect-source",
+        "--id",
+        witness["source_unit"].as_str().unwrap(),
+        "--graph",
+        graph.to_str().unwrap(),
+        "--modules",
+        fixture.modules_root.to_str().unwrap(),
+        "--source-root",
+        fixture.source_root.to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report = parse_stdout_json(&output);
+    assert!(
+        report["files"][0]["statements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|statement| {
+                statement["source_unit_ids"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&witness["source_unit"])
+                    && statement["source"].as_str().unwrap().contains(source)
+            }),
+        "{report}"
+    );
 }
 
 #[test]
@@ -222,7 +333,7 @@ fn invalid_signature_positions_report_spec_errors() {
 }
 
 #[test]
-fn unsupported_argument_and_callee_shapes_keep_conservative_timing() {
+fn source_body_proves_retention_for_shapes_outside_the_contract_recognizer() {
     for (declarations, call, names, statements) in [
         (
             "const callback = () => later;\n",
@@ -278,22 +389,49 @@ fn unsupported_argument_and_callee_shapes_keep_conservative_timing() {
         );
         let mut members: Vec<_> = names.into_iter().map(Member::new).collect();
         members.push(Member::new("wrapped"));
-        expect_atomic_conflict_rejection(
-            FixtureOpts::new(
+        for annotated in [false, true] {
+            let peer = [("static/peer", PROVIDER)];
+            let contracts = [ChunkExportPurityBuilder::new("static/peer")
+                .with_retained_callback_factory("factory", 2, &[0, 1])
+                .with_retained_callback_factory("factory", 3, &[0, 1])
+                .build()];
+            let mut opts = FixtureOpts::new(
                 &source,
                 vec![
                     logical_module_with_anon("callbacks/wrapped", &members, &statements),
                     logical_module("values/later", &[Member::new("later")]),
                 ],
             )
-            .with_extra_chunks(&[("static/peer", PROVIDER)])
-            .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-                .with_retained_callback_factory("factory", 2, &[0, 1])
-                .with_retained_callback_factory("factory", 3, &[0, 1])
-                .build()]),
-            &["callbacks/wrapped", "values/later"],
-            &[],
-        );
+            .with_extra_chunks(&peer);
+            if annotated {
+                opts = opts.with_chunk_export_purity(&contracts);
+            }
+            if call.starts_with("make(...") || call.starts_with("new ") {
+                expect_atomic_conflict_rejection(opts, &["callbacks/wrapped", "values/later"], &[]);
+                let mut colocated = FixtureOpts::new(&source, vec![])
+                    .with_extra_chunks(&peer)
+                    .with_unassigned_mode(unassigned_mode_inline());
+                if annotated {
+                    colocated = colocated.with_chunk_export_purity(&contracts);
+                }
+                let fixture = run_fixture_with_graphs(colocated);
+                assert_preserved_entry_output(&fixture, "42\n");
+                continue;
+            }
+            let fixture = run_fixture_with_graphs(opts);
+            if call == "make(Callback, () => later)" {
+                assert_preserved_entry_error(&fixture, "Class constructor Callback");
+            } else {
+                assert_preserved_entry_output(&fixture, "42\n");
+            }
+            if !annotated {
+                assert!(fixture.dependency_graph().nodes.iter().all(|node| {
+                    node.synchronous_execution
+                        .as_ref()
+                        .is_none_or(|execution| execution.callback_factory_uses.is_empty())
+                }));
+            }
+        }
     }
 }
 
@@ -779,7 +917,7 @@ fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
     assert!(bounded["total_count"].as_u64().unwrap() > 5);
     assert_eq!(bounded["truncated"], true);
     assert_eq!(bounded["expansion"], "bounded");
-    assert_eq!(bounded["query_status"], "local_supported_witness_found");
+    assert_unlinked_diagnostic(&bounded);
     assert_eq!(
         bounded["coverage_scope"],
         "callback_factory_namespace_writes_and_call_arguments"
@@ -787,155 +925,60 @@ fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
     let limited = gate_diagnose_json(&rejected, "later", &["--limit", "1"]);
     assert_eq!(limited["total_count"], bounded["total_count"]);
     assert_eq!(limited["returned_count"], 1);
-    assert_eq!(limited["query_status"], "local_supported_witness_found");
+    assert_unlinked_diagnostic(&limited);
     assert_eq!(
         limited["traces"][0]["coverage"], "inconclusive_callback_argument_source_mismatch",
-        "the first bounded row is inconclusive even though query status includes supported traces beyond the limit"
+        "pagination must not manufacture a supported callback-source link"
     );
 
     let exhaustive = gate_diagnose_json(&rejected, "later", &["--all"]);
     assert_eq!(exhaustive["returned_count"], exhaustive["total_count"]);
     assert_eq!(exhaustive["truncated"], false);
     assert_eq!(exhaustive["expansion"], "all");
-    let first = exhaustive["traces"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|trace| trace["coverage"] == "supported_namespace_member_write")
-        .expect("a supported trace must back the query's supported status");
-    assert_eq!(first["ownership_target"]["binding"], "later");
-    assert_eq!(first["ownership_target"]["module"], "values/later");
-    assert_eq!(first["constraining_dependency"]["edge_kind"], "eager_use");
-    assert_eq!(first["constraining_dependency"]["binding"], "later");
-    assert!(
-        first["constraining_dependency"]["callee_source_unit"]
-            .as_str()
-            .unwrap()
-            .starts_with("unit:")
-    );
-    assert_eq!(first["constraining_dependency"]["role"], "promoted_at_init");
-    assert_eq!(
-        first["constraining_dependency"]["constrains_init_order"],
-        true
-    );
-    assert_eq!(first["coverage"], "supported_namespace_member_write");
-    assert_eq!(first["matched_contract"]["namespace_binding"], "api");
-    assert_eq!(first["matched_contract"]["member"], "make");
-    assert_eq!(first["matched_contract"]["argument_count"], 1);
-    assert_eq!(
-        first["matched_contract"]["callback_source_units"]
-            .as_array()
-            .unwrap()
-            .len(),
-        1
-    );
-    assert_eq!(
-        first["matched_contract"]["callback_arguments"],
-        serde_json::json!([0])
-    );
-    let guard = &first["first_rejected_guard"];
-    assert_eq!(guard["code"], "namespace_member_write");
-    let witness = &guard["witness"];
-    assert_eq!(witness["receiver_binding"], "alias");
-    assert_eq!(witness["property"], "make");
-    assert_eq!(
-        witness["witness_selection"],
-        "first_source_unit_order_deterministic_within_unit"
-    );
-    assert_eq!(witness["source_location"]["source_path"], "static/app.js");
-    assert!(witness["source_location"]["start_line"].as_u64().unwrap() > 0);
-    assert!(
-        witness["source_location"]["end_line"].as_u64().unwrap()
-            >= witness["source_location"]["start_line"].as_u64().unwrap()
-    );
-    let inspection = witness["inspection_command"].as_str().unwrap();
-    let binary = debundler_path();
-    let executable = binary
-        .canonicalize()
-        .expect("resolve debundle runfile executable");
-    let argv = shlex::split(inspection).expect("inspection command is a POSIX shell command");
-    assert_eq!(
-        argv[0],
-        executable.to_str().unwrap(),
-        "inspection must invoke the same debundle executable: {inspection}"
-    );
-    for flag in ["inspect-source", "--graph", "--modules", "--source-root"] {
-        assert!(
-            argv.iter().any(|arg| arg == flag),
-            "missing {flag}: {inspection}"
+    assert_unlinked_diagnostic(&exhaustive);
+    for trace in exhaustive["traces"].as_array().unwrap() {
+        assert_eq!(trace["ownership_target"]["binding"], "later");
+        assert_eq!(trace["ownership_target"]["module"], "values/later");
+        assert_eq!(trace["constraining_dependency"]["edge_kind"], "eager_use");
+        assert_eq!(trace["constraining_dependency"]["binding"], "later");
+        assert_eq!(
+            trace["constraining_dependency"]["constrains_init_order"],
+            true
         );
     }
-    assert!(
-        inspection.contains(
-            rejected
-                .report_root
-                .join(&rejected.chunk_id)
-                .join("dependency_graph.json.gz")
-                .canonicalize()
-                .unwrap()
-                .to_str()
-                .unwrap()
-        )
+    // All six actual factory calls retain the same earliest static-write witness.
+    let graph = rejected.dependency_graph();
+    let callback = source_unit_for_binding(&graph, "callback1");
+    let wrapped = source_unit_for_binding(&graph, "wrapped1");
+    let node = graph.nodes.iter().find(|node| node.id == wrapped).unwrap();
+    assert_eq!(node.callback_factory_barriers.len(), 1);
+    let barrier = serde_json::to_value(&node.callback_factory_barriers[0]).unwrap();
+    assert_eq!(
+        barrier["contract"]["callback_source_units"][0]["source_unit"],
+        callback
     );
-    assert!(
-        inspection.contains(
-            rejected
-                .modules_root
-                .canonicalize()
-                .unwrap()
-                .to_str()
-                .unwrap()
-        )
+    assert_eq!(
+        barrier["contract"]["callback_arguments"],
+        serde_json::json!([0])
     );
-    assert!(
-        inspection.contains(
-            rejected
-                .source_root
-                .canonicalize()
-                .unwrap()
-                .to_str()
-                .unwrap()
-        )
-    );
-
-    // Execute the exact generated command with the runfile binary directory on PATH.
-    let binary_dir = binary.parent().expect("debundle runfile has a parent");
-    let path = format!(
-        "{}:{}",
-        binary_dir.display(),
-        std::env::var("PATH").unwrap_or_default()
-    );
-    let inspected = process::output(
-        std::process::Command::new("/bin/sh")
-            .arg("-c")
-            .arg(inspection)
-            .env("PATH", path),
-    )
-    .unwrap_or_else(|err| panic!("{err}"));
-    assert!(
-        inspected.status.success(),
-        "generated inspection command failed\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&inspected.stdout),
-        String::from_utf8_lossy(&inspected.stderr),
-    );
-    let inspected = parse_stdout_json(&inspected);
-    assert!(
-        inspected["files"][0]["statements"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|statement| {
-                statement["source_unit_ids"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .any(|id| id == &witness["source_unit"])
-                    && statement["source"]
-                        .as_str()
-                        .unwrap()
-                        .contains("alias.make = replacement")
-            })
-    );
+    assert_eq!(barrier["contract"]["namespace_binding"], "api");
+    assert_eq!(barrier["contract"]["member"], "make");
+    assert_eq!(barrier["contract"]["argument_count"], 1);
+    assert_eq!(barrier["rejection"]["code"], "namespace_member_write");
+    let witness = &barrier["rejection"]["witness"];
+    assert_eq!(witness["receiver_binding"], "alias");
+    assert_eq!(witness["property"], "make");
+    assert_eq!(witness["source_location"]["source_path"], "static/app.js");
+    assert!(witness["source_location"]["start_line"].as_u64().unwrap() > 0);
+    for n in 2..=6 {
+        let wrapped = source_unit_for_binding(&graph, &format!("wrapped{n}"));
+        let node = graph.nodes.iter().find(|node| node.id == wrapped).unwrap();
+        assert_eq!(
+            serde_json::to_value(&node.callback_factory_barriers[0]).unwrap()["rejection"]["witness"],
+            *witness
+        );
+    }
+    inspect_barrier_witness(&rejected, witness, "alias.make = replacement");
 }
 
 #[test]
@@ -1030,56 +1073,16 @@ fn dynamic_namespace_write_reports_analyzer_witness_without_changing_gate() {
 
     let report = gate_diagnose_json(&rejected, "later", &[]);
     assert!(report["total_count"].as_u64().unwrap() > 0);
-    assert_eq!(report["query_status"], "local_supported_witness_found");
+    assert_unlinked_diagnostic(&report);
+    let barrier = raw_factory_barrier(&rejected, "wrapped");
     assert_eq!(
-        report["coverage_scope"],
-        "callback_factory_namespace_writes_and_call_arguments"
-    );
-    assert_eq!(
-        report["traces"][0]["coverage"],
-        "supported_namespace_dynamic_property_write"
-    );
-    assert_eq!(report["traces"][0]["matched_contract"]["member"], "make");
-    assert_eq!(
-        report["traces"][0]["first_rejected_guard"]["code"],
+        barrier["rejection"]["code"],
         "namespace_dynamic_property_write"
     );
-    let trace = &report["traces"][0];
-    assert_eq!(trace["constraining_dependency"]["binding"], "later");
-    assert_eq!(trace["constraining_dependency"]["role"], "promoted_at_init");
-    assert_eq!(
-        trace["matched_contract"]["callback_arguments"],
-        serde_json::json!([0])
-    );
-    assert_eq!(
-        trace["first_rejected_guard"]["witness"]["receiver_binding"],
-        "api"
-    );
-    assert!(trace["first_rejected_guard"]["witness"]["property"].is_null());
-    let inspection = trace["first_rejected_guard"]["witness"]["inspection_command"]
-        .as_str()
-        .unwrap();
-    let inspected = process::output(
-        std::process::Command::new("/bin/sh")
-            .arg("-c")
-            .arg(inspection),
-    )
-    .unwrap_or_else(|err| panic!("{err}"));
-    assert!(inspected.status.success());
-    assert!(
-        parse_stdout_json(&inspected)["files"][0]["statements"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|statement| statement["source_unit_ids"]
-                .as_array()
-                .unwrap()
-                .contains(&trace["first_rejected_guard"]["witness"]["source_unit"])
-                && statement["source"]
-                    .as_str()
-                    .unwrap()
-                    .contains("api[method] = replacement"))
-    );
+    let witness = &barrier["rejection"]["witness"];
+    assert_eq!(witness["receiver_binding"], "api");
+    assert!(witness["property"].is_null());
+    inspect_barrier_witness(&rejected, witness, "api[method] = replacement");
 }
 
 #[test]
@@ -1118,18 +1121,9 @@ fn computed_write_through_aggregate_receiver_remains_inconclusive() {
             .build()]),
     );
     let report = gate_diagnose_json(&rejected, "later", &[]);
-    assert_eq!(
-        report["query_status"],
-        "inconclusive_for_supported_guard_family"
-    );
-    assert_eq!(
-        report["traces"][0]["coverage"],
-        "inconclusive_unsupported_guard"
-    );
-    assert_eq!(
-        report["traces"][0]["first_rejected_guard"]["code"],
-        "unsupported_guard"
-    );
+    assert_unlinked_diagnostic(&report);
+    let barrier = raw_factory_barrier(&rejected, "wrapped");
+    assert_eq!(barrier["rejection"]["code"], "unsupported_guard");
 }
 
 #[test]
@@ -1161,65 +1155,25 @@ fn direct_namespace_call_argument_has_exact_callback_barrier_witness() {
             .build()]),
     );
     let report = gate_diagnose_json(&rejected, "later", &[]);
-    assert_eq!(
-        report["query_status"], "local_supported_witness_found",
-        "{report}"
-    );
-    let trace = &report["traces"][0];
-    assert_eq!(
-        trace["coverage"], "supported_namespace_call_argument",
-        "{report}"
-    );
-    assert_eq!(trace["matched_contract"]["member"], "make");
-    assert_eq!(
-        trace["first_rejected_guard"]["code"],
-        "namespace_call_argument"
-    );
-    assert_eq!(
-        trace["first_rejected_guard"]["witness"]["argument_index"],
-        0
-    );
-    assert_eq!(
-        trace["first_rejected_guard"]["witness"]["namespace_binding"],
-        "api"
-    );
-    assert_eq!(
-        trace["first_rejected_guard"]["witness"]["opaque_call"],
-        true
-    );
-    let witness = &trace["first_rejected_guard"]["witness"];
+    assert_unlinked_diagnostic(&report);
+    let barrier = raw_factory_barrier(&rejected, "wrapped");
+    assert_eq!(barrier["rejection"]["code"], "namespace_call_argument");
+    let witness = &barrier["rejection"]["witness"];
+    assert_eq!(witness["argument_index"], 0);
+    assert_eq!(witness["namespace_binding"], "api");
+    assert_eq!(witness["opaque_call"], true);
     assert!(
         witness["call_span_start"].as_u64().unwrap() < witness["call_span_end"].as_u64().unwrap()
     );
-    let command = witness["inspection_command"].as_str().unwrap();
-    let inspected = process::output(std::process::Command::new("/bin/sh").arg("-c").arg(command))
-        .unwrap_or_else(|err| panic!("{err}"));
-    assert!(
-        inspected.status.success(),
-        "{}",
-        String::from_utf8_lossy(&inspected.stderr)
-    );
-    assert!(
-        parse_stdout_json(&inspected)["files"][0]["statements"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|statement| {
-                statement["source_unit_ids"]
-                    .as_array()
-                    .unwrap()
-                    .contains(&witness["source_unit"])
-                    && statement["source"].as_str().unwrap().contains("sink(api)")
-            })
-    );
+    inspect_barrier_witness(&rejected, witness, "sink(api)");
 }
 
-fn rejected_namespace_argument_variant(
+fn assert_namespace_argument_source_control(
     call_source: &str,
     factory_call: &str,
     extra_members: &[&'static str],
     anonymous_statements: &[&str],
-) -> RejectedFixture {
+) {
     let source = format!(
         "import {{ api, other }} from './peer.js';\n\
          let later = 0;\n\
@@ -1227,7 +1181,7 @@ fn rejected_namespace_argument_variant(
          function sink(value) {{ return 0; }}\n\
          {call_source}\n\
          const wrapped = {factory_call};\n\
-         later = 42;\n"
+         later = 42;\nconsole.log(wrapped.invoke());\n"
     );
     let mut members = vec![
         Member::new("sink"),
@@ -1235,57 +1189,147 @@ fn rejected_namespace_argument_variant(
         Member::new("wrapped"),
     ];
     members.extend(extra_members.iter().copied().map(Member::new));
-    run_rejection_fixture_with_graphs(
-        FixtureOpts::new(
+    let peer = [(
+        "static/peer",
+        "export const api = { make(callback) { return { invoke: callback }; } };\nexport const other = {};\n",
+    )];
+    let source_contracts = [ChunkExportPurityBuilder::new("static/peer")
+        .with_namespace_independent_members("api", &["make"])
+        .build()];
+    let contracts = [ChunkExportPurityBuilder::new("static/peer")
+        .with_retained_callback_factory_member("api", "make", 1, &[0])
+        .with_namespace_independent_members("api", &["make"])
+        .build()];
+    for annotated in [false, true] {
+        let mut opts = FixtureOpts::new(
             &source,
             vec![
                 logical_module_with_anon("callbacks/wrapped", &members, anonymous_statements),
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
         )
-        .with_extra_chunks(&[(
-            "static/peer",
-            "export const api = { make(callback) { return { invoke: callback }; } };\nexport const other = {};\n",
-        )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_retained_callback_factory_member("api", "make", 1, &[0])
-            .with_namespace_independent_members("api", &["make"])
-            .build()]),
-    )
-}
-
-#[test]
-fn known_namespace_call_argument_is_not_labeled_opaque_by_unrelated_loss() {
-    for (call_source, anonymous) in [
-        ("sink(api);", "sink(api);"),
-        (
-            "(sink(api), unknown(other));",
-            "(sink(api), unknown(other));",
-        ),
-    ] {
-        let rejected = rejected_namespace_argument_variant(
-            call_source,
-            "api.make(callback)",
-            &[],
-            &[anonymous],
-        );
-        let report = gate_diagnose_json(&rejected, "later", &[]);
-        assert_eq!(
-            report["query_status"], "local_supported_witness_found",
-            "{report}"
-        );
-        let witness = &report["traces"][0]["first_rejected_guard"]["witness"];
-        assert_eq!(
-            report["traces"][0]["coverage"], "supported_namespace_call_argument",
-            "{report}"
-        );
-        assert_eq!(witness["opaque_call"], false, "{report}");
-        assert_eq!(witness["argument_index"], 0);
+        .with_extra_chunks(&peer);
+        // The namespace capability audit is common to both controls; only callback
+        // retention is author asserted in the annotated case.
+        opts = opts.with_chunk_export_purity(if annotated {
+            &contracts
+        } else {
+            &source_contracts
+        });
+        if call_source.contains("unknown(other)") {
+            let rejected = run_emit_on_rejection_fixture_with_graphs(opts);
+            let schedule: serde_json::Value =
+                read_json(&rejected.report_root.join("evaluation_schedule.json"));
+            assert_eq!(schedule["kind"], "evaluation_schedule_refused");
+            assert!(
+                schedule["rejection"]["reason"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with("evaluation_schedule_unknown_reordered:")
+            );
+            assert!(rejected.gate_rejected_marker().exists());
+            assert_node_error(
+                &rejected.source_root.join("static/app.js"),
+                "unknown is not defined",
+            );
+            assert_node_error(&rejected.entry_path(), "unknown is not defined");
+            if annotated {
+                let barrier = raw_factory_barrier(&rejected, "wrapped");
+                assert_eq!(barrier["rejection"]["code"], "namespace_call_argument");
+                assert_eq!(
+                    barrier["rejection"]["witness"]["opaque_call"], false,
+                    "an unrelated unknown call must not label sink(api) opaque: {barrier}"
+                );
+                assert_eq!(barrier["rejection"]["witness"]["argument_index"], 0);
+                inspect_barrier_witness(&rejected, &barrier["rejection"]["witness"], "sink(api)");
+            }
+            let colocated = run_fixture_with_graphs(
+                FixtureOpts::new(&source, vec![])
+                    .with_extra_chunks(&peer)
+                    .with_chunk_export_purity(if annotated {
+                        &contracts
+                    } else {
+                        &source_contracts
+                    })
+                    .with_unassigned_mode(unassigned_mode_inline()),
+            );
+            assert_preserved_entry_error(&colocated, "unknown is not defined");
+            continue;
+        }
+        if matches!(call_source, "sink?.(api);" | "sink(...[api]);") {
+            // Optional calls and spread arguments remain outside source execution's
+            // ordinary-call completion proof, even though this concrete sink is inert.
+            let rejected = run_emit_on_rejection_fixture_with_graphs(opts);
+            let schedule_path = rejected.report_root.join("evaluation_schedule.json");
+            if schedule_path.exists() {
+                let schedule: serde_json::Value = read_json(&schedule_path);
+                assert_eq!(schedule["kind"], "evaluation_schedule_refused");
+                assert!(
+                    schedule["rejection"]["reason"]
+                        .as_str()
+                        .unwrap()
+                        .starts_with("evaluation_schedule_unknown_reordered:")
+                );
+            } else {
+                // A matched retention contract can promote the unresolved call's
+                // callback reads before schedule validation and close the SCC.
+                let conflicts = rejected.atomic_group_conflicts();
+                assert!(
+                    conflicts.iter().any(|conflict| {
+                        let claims = conflict["claims"].as_array().unwrap();
+                        ["callbacks/wrapped", "values/later"]
+                            .iter()
+                            .all(|module| claims.iter().any(|claim| claim["module"] == *module))
+                    }),
+                    "{conflicts:#?}"
+                );
+            }
+            assert!(rejected.gate_rejected_marker().exists());
+            assert_node_output(&rejected.source_root.join("static/app.js"), "42\n", "");
+            assert_node_output(&rejected.entry_path(), "42\n", "");
+            let colocated = run_fixture_with_graphs(
+                FixtureOpts::new(&source, vec![])
+                    .with_extra_chunks(&peer)
+                    .with_chunk_export_purity(if annotated {
+                        &contracts
+                    } else {
+                        &source_contracts
+                    })
+                    .with_unassigned_mode(unassigned_mode_inline()),
+            );
+            assert_preserved_entry_output(&colocated, "42\n");
+            continue;
+        }
+        let fixture = run_fixture_with_graphs(opts);
+        assert_preserved_entry_output(&fixture, "42\n");
+        if !annotated {
+            assert!(fixture.dependency_graph().nodes.iter().all(|node| {
+                node.synchronous_execution
+                    .as_ref()
+                    .is_none_or(|execution| execution.callback_factory_uses.is_empty())
+            }));
+        }
     }
 }
 
 #[test]
-fn alias_aggregate_signature_and_ambiguous_calls_stay_inconclusive() {
+fn known_namespace_call_argument_is_proved_safe_from_source() {
+    assert_namespace_argument_source_control(
+        "sink(api);",
+        "api.make(callback)",
+        &[],
+        &["sink(api);"],
+    );
+    assert_namespace_argument_source_control(
+        "(sink(api), unknown(other));",
+        "api.make(callback)",
+        &[],
+        &["(sink(api), unknown(other));"],
+    );
+}
+
+#[test]
+fn namespace_argument_shapes_keep_source_proofs_and_explicit_availability_limits() {
     for (call_source, factory_call, extra_members, anonymous) in [
         (
             "const alias = api; sink(alias);",
@@ -1324,34 +1368,21 @@ fn alias_aggregate_signature_and_ambiguous_calls_stay_inconclusive() {
             vec!["sink(api);"],
         ),
     ] {
-        let rejected = rejected_namespace_argument_variant(
+        assert_namespace_argument_source_control(
             call_source,
             factory_call,
             &extra_members,
             &anonymous,
         );
-        let report = gate_diagnose_json(&rejected, "later", &[]);
-        assert_ne!(
-            report["query_status"], "local_supported_witness_found",
-            "{report}"
-        );
-        assert!(
-            report["traces"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .all(|trace| trace["coverage"] != "supported_namespace_call_argument"),
-            "{report}"
-        );
     }
 }
 
 #[test]
-fn old_and_new_contracts_are_independent_and_unmatched_shapes_fall_back() {
-    for (call, accepted) in [
-        ("factory(() => later)", true),
-        ("factory(callback, () => later)", true),
-        ("factory(callback)", false),
+fn source_body_proves_retention_independently_of_contract_shape() {
+    for call in [
+        "factory(() => later)",
+        "factory(callback, () => later)",
+        "factory(callback)",
     ] {
         let source = format!(
             "import {{ factory }} from './peer.js';\nconst callback = () => later;\nconst wrapped = {call};\nconst later = 42;\nconsole.log(wrapped.invoke());\n"
@@ -1367,13 +1398,22 @@ fn old_and_new_contracts_are_independent_and_unmatched_shapes_fall_back() {
             .with_callback_factories(&["factory"])
             .with_retained_callback_factory("factory", 2, &[0, 1])
             .build()];
-        let opts = FixtureOpts::new(&source, modules)
-            .with_extra_chunks(&[("static/peer", PROVIDER)])
-            .with_chunk_export_purity(&contracts);
-        if accepted {
-            assert_preserved_entry_output(&run_fixture(opts), "42\n");
-        } else {
-            expect_atomic_conflict_rejection(opts, &["callbacks/wrapped", "values/later"], &[]);
+        for annotated in [false, true] {
+            let peer = [("static/peer", PROVIDER)];
+            let mut opts = FixtureOpts::new(&source, modules.clone()).with_extra_chunks(&peer);
+            if annotated {
+                opts = opts.with_chunk_export_purity(&contracts);
+            }
+            let fixture = run_fixture_with_graphs(opts);
+            assert_preserved_entry_output(&fixture, "42\n");
+            assert_complete_source_execution(&fixture, "wrapped");
+            if !annotated {
+                assert!(fixture.dependency_graph().nodes.iter().all(|node| {
+                    node.synchronous_execution
+                        .as_ref()
+                        .is_none_or(|execution| execution.callback_factory_uses.is_empty())
+                }));
+            }
         }
     }
 }
@@ -1533,12 +1573,39 @@ fn admitted_call_argument_retains_its_own_synchronous_effects() {
 
 #[test]
 fn previously_published_callback_keeps_conservative_timing() {
-    expect_atomic_conflict_rejection(FixtureOpts::new(
-        "import { factory } from './peer.js';\nconst callback = () => later;\nglobalThis.saved = callback;\nconst wrapped = factory(callback);\nconst later = 42;\nconsole.log(wrapped.invoke());\n",
-        vec![logical_module_with_anon("callbacks/wrapped", &[Member::new("callback"), Member::new("wrapped")], &["globalThis.saved = callback;"]),
-             logical_module("values/later", &[Member::new("later")])],
-    ).with_extra_chunks(&[("static/peer", PROVIDER)]).with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-        .with_retained_callback_factory("factory", 1, &[0]).build()]), &["callbacks/wrapped", "values/later"], &[]);
+    let source = "import { factory } from './peer.js';\nconst callback = () => later;\nglobalThis.saved = callback;\nconst wrapped = factory(callback);\nconst later = 42;\nconsole.log(wrapped.invoke());\n";
+    let peer = [("static/peer", PROVIDER)];
+    let contracts = [ChunkExportPurityBuilder::new("static/peer")
+        .with_retained_callback_factory("factory", 1, &[0])
+        .build()];
+    assert_conservative_schedule_refusal(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "callbacks/wrapped",
+                    &[Member::new("callback"), Member::new("wrapped")],
+                    &["globalThis.saved = callback;"],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&peer)
+        .with_chunk_export_purity(&contracts),
+        "evaluation_schedule_unknown_reordered",
+        "42\n",
+    );
+    let colocated = run_fixture_with_graphs(
+        FixtureOpts::new(source, vec![])
+            .with_extra_chunks(&peer)
+            .with_chunk_export_purity(&contracts),
+    );
+    assert_preserved_entry_output(&colocated, "42\n");
+    assert_generated_module_after_entry_script(
+        &colocated,
+        "console.log(globalThis.saved());",
+        "42\n",
+    );
 }
 
 #[test]

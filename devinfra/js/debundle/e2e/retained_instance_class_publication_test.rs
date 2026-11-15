@@ -398,6 +398,17 @@ fn bounded_pool_fallback_reports_the_original_retained_input_path() {
 
     let callsite = &report["bounded_fallback_callsite"];
     assert!(callsite.is_object(), "{report:#}");
+    assert_eq!(callsite["source_module"], "static/app", "{callsite:#}");
+    assert_eq!(
+        callsite["top_level_owner_source_module"], "static/app",
+        "{callsite:#}"
+    );
+    assert!(
+        callsite["source_location"]["source_path"]
+            .as_str()
+            .is_some_and(|path| path.ends_with("app.js")),
+        "{callsite:#}"
+    );
     assert!(callsite["top_level_owner"].is_number(), "{callsite:#}");
     let start = u32::try_from(
         callsite["span_start"]
@@ -585,13 +596,32 @@ fn array_slot_mutation_during_iteration_invalidates_the_source_receipt() {
 }
 
 #[test]
-fn unknown_array_slot_prevents_instance_only_iteration() {
+fn known_provider_array_slot_keeps_exact_iteration() {
     let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             UNKNOWN_SOURCE,
             modules(&["Box", "create", "first", "retained", "selected", "again"]),
         )
         .with_extra_chunks(&[("static/opaque", UNKNOWN_CHUNK)]),
+    );
+    assert_preserved_entry_output(&fixture, "7 19 8\n");
+    let graph = fixture.dependency_graph();
+    let selected = node_declaring(&graph, "selected")
+        .synchronous_execution
+        .as_ref()
+        .expect("map execution report");
+    assert!(selected.complete, "{selected:#?}");
+    assert_factory_complete(&graph, "again");
+}
+
+#[test]
+fn unknown_array_slot_prevents_instance_only_iteration() {
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(
+            UNKNOWN_SOURCE,
+            modules(&["Box", "create", "first", "retained", "selected", "again"]),
+        )
+        .with_extra_chunks(&[("static/opaque", "export function make() { return Reflect.apply(() => ({ callback: () => 19 }), null, []); }\n")]),
     );
     assert_preserved_entry_output(&fixture, "7 19 8\n");
     let graph = fixture.dependency_graph();

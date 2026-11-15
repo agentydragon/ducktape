@@ -217,6 +217,18 @@ pub struct CallbackFactoryWriteWitness {
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct SynchronousCalls {
+    pub(crate) completion: crate::program_execution::schedule::OwnerCompletion,
+    pub(crate) program_effects: crate::program_execution::ProgramExecutionEffects,
+    /// True only for live execution output, never a restored source snapshot.
+    pub(crate) runtime_effects_available: bool,
+    /// Process-local execution ledgers. The program-effect consumer resolves
+    /// them to portable source identities before saving analysis artifacts.
+    pub(crate) runtime_binding_effects: super::sync_effects::interpreter::RuntimeBindingEffects,
+    pub(crate) runtime_heap_contents: crate::program_execution::RuntimeHeapContentCells,
+    pub(crate) runtime_heap_frontiers:
+        BTreeMap<crate::program_execution::RuntimeSourceScope, (bool, bool)>,
+    pub(crate) observed_runtime_heap_accesses: crate::program_execution::RuntimeHeapContentAccesses,
+    pub(crate) runtime_executed_owners: BTreeSet<crate::program_execution::RuntimeSourceUnitId>,
     pub initializer_binding_effects:
         Option<Box<crate::reports::schema::InitializerBindingEffectsUse>>,
     pub initializer_external_effects: Option<crate::reports::schema::InitializerExternalEffectsUse>,
@@ -297,11 +309,22 @@ pub(crate) struct SynchronousCalls {
 /// both observed and assumed is observed. While the interpreter builds an
 /// invocation's outcome the maps are relative to that invocation; the
 /// enclosing statement re-tags them when an assumed path merges them.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub(crate) struct FallbackOnlyEffects {
-    pub reads: BTreeMap<Id, AssumedEffectReason>,
-    pub rebinds: BTreeMap<Id, AssumedEffectReason>,
-    pub uninitialized_reads: BTreeMap<Id, AssumedEffectReason>,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(bound(deserialize = "B: Ord + Deserialize<'de>"))]
+pub(crate) struct FallbackOnlyEffects<B = Id> {
+    pub reads: BTreeMap<B, AssumedEffectReason>,
+    pub rebinds: BTreeMap<B, AssumedEffectReason>,
+    pub uninitialized_reads: BTreeMap<B, AssumedEffectReason>,
+}
+
+impl<B> Default for FallbackOnlyEffects<B> {
+    fn default() -> Self {
+        Self {
+            reads: BTreeMap::new(),
+            rebinds: BTreeMap::new(),
+            uninitialized_reads: BTreeMap::new(),
+        }
+    }
 }
 
 impl SynchronousCalls {
@@ -493,23 +516,39 @@ impl StatementFacts {
 /// non-summarizable.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum EffectCell {
-    Binding(Id),
+pub enum EffectCell<A = u32, B = Id> {
+    Binding(B),
     GlobalProp(String),
     /// Heap contents of one array allocation, keyed by its canonical object
     /// origin from chunk value flow.
-    ArrayContents(u32),
+    ArrayContents(A),
     /// Mutable contents of one proved fresh native Set construction.
-    SetContents(u32),
+    SetContents(A),
     /// Own keys and descriptor attributes, shared by every generation of
     /// this source allocation. Distinct from stored data values.
-    ObjectShape(u32),
+    ObjectShape(A),
     /// One static own property, conservatively shared by every runtime
     /// generation of the source allocation. This supplies no strong update.
     OwnProperty {
-        origin: u32,
+        origin: A,
         property: String,
     },
+}
+
+impl<A, B> EffectCell<A, B> {
+    pub(crate) fn map_allocation<C>(self, mut map: impl FnMut(A) -> C) -> EffectCell<C, B> {
+        match self {
+            Self::Binding(binding) => EffectCell::Binding(binding),
+            Self::GlobalProp(property) => EffectCell::GlobalProp(property),
+            Self::ArrayContents(id) => EffectCell::ArrayContents(map(id)),
+            Self::SetContents(id) => EffectCell::SetContents(map(id)),
+            Self::ObjectShape(id) => EffectCell::ObjectShape(map(id)),
+            Self::OwnProperty { origin, property } => EffectCell::OwnProperty {
+                origin: map(origin),
+                property,
+            },
+        }
+    }
 }
 
 /// The (writes, reads) cell view of one statement, derived by
@@ -517,9 +556,9 @@ pub enum EffectCell {
 /// [`StatementFacts::havoc`] (`cell_writes_summarizable`,
 /// `dataflow_summarizable`).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct StatementEffectSummary {
-    pub writes: BTreeSet<EffectCell>,
-    pub reads: BTreeSet<EffectCell>,
+pub struct StatementEffectSummary<A = u32, B = Id> {
+    pub writes: BTreeSet<EffectCell<A, B>>,
+    pub reads: BTreeSet<EffectCell<A, B>>,
 }
 
 /// The elements a plain-array binding holds where a statement starts, as
@@ -540,40 +579,66 @@ pub(crate) enum SettledElements {
 /// Heap-content cells one body touches: allocations it performs, cells it
 /// reads and writes, and whether an operation may touch contents the cells do
 /// not name (a heap-frontier barrier in the graph builder).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct HeapContentCells {
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(bound(deserialize = "A: Ord + Deserialize<'de>, B: Ord + Deserialize<'de>"))]
+pub(crate) struct HeapContentCells<A = u32, B = Id> {
     /// Fresh allocations seed later observations without overwriting a prior
     /// content timeline: source-span identities can denote many runtime arrays.
-    pub allocations: BTreeSet<EffectCell>,
-    pub reads: BTreeSet<EffectCell>,
-    pub writes: BTreeSet<EffectCell>,
+    pub allocations: BTreeSet<EffectCell<A, B>>,
+    pub reads: BTreeSet<EffectCell<A, B>>,
+    pub writes: BTreeSet<EffectCell<A, B>>,
     pub opaque: bool,
+    /// The qualified interpreter can observe storage outside the projected
+    /// source scope. This barrier survives projection and completion receipts.
+    pub observes_external_heap: bool,
 }
 
-impl HeapContentCells {
+impl<A, B> Default for HeapContentCells<A, B> {
+    fn default() -> Self {
+        Self {
+            allocations: BTreeSet::new(),
+            reads: BTreeSet::new(),
+            writes: BTreeSet::new(),
+            opaque: false,
+            observes_external_heap: false,
+        }
+    }
+}
+impl<A, B> Default for HeapContentAccesses<A, B> {
+    fn default() -> Self {
+        Self {
+            reads: BTreeSet::new(),
+            writes: BTreeSet::new(),
+        }
+    }
+}
+
+impl<A: Ord + Clone, B: Ord + Clone> HeapContentCells<A, B> {
     pub(crate) fn extend(&mut self, other: &Self) {
         self.allocations.extend(other.allocations.iter().cloned());
         self.reads.extend(other.reads.iter().cloned());
         self.writes.extend(other.writes.iter().cloned());
         self.opaque |= other.opaque;
+        self.observes_external_heap |= other.observes_external_heap;
     }
 }
 
 /// Source-known heap may-accesses whose invocation path was not assumed.
 /// Allocations are excluded: a fresh birth is not a content write.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct HeapContentAccesses {
-    pub reads: BTreeSet<EffectCell>,
-    pub writes: BTreeSet<EffectCell>,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(bound(deserialize = "A: Ord + Deserialize<'de>, B: Ord + Deserialize<'de>"))]
+pub(crate) struct HeapContentAccesses<A = u32, B = Id> {
+    pub reads: BTreeSet<EffectCell<A, B>>,
+    pub writes: BTreeSet<EffectCell<A, B>>,
 }
 
-impl HeapContentAccesses {
+impl<A: Ord + Clone, B: Ord + Clone> HeapContentAccesses<A, B> {
     pub(crate) fn extend(&mut self, other: &Self) {
         self.reads.extend(other.reads.iter().cloned());
         self.writes.extend(other.writes.iter().cloned());
     }
 
-    pub(crate) fn extend_cells(&mut self, cells: &HeapContentCells) {
+    pub(crate) fn extend_cells(&mut self, cells: &HeapContentCells<A, B>) {
         self.reads.extend(cells.reads.iter().cloned());
         self.writes.extend(cells.writes.iter().cloned());
     }
@@ -720,6 +785,21 @@ impl ChunkFactAnalysis {
                     binding.0
                 )
             })?;
+            // A source-qualified provider cell is known heap state, even
+            // though the old single-chunk projection must mark it external.
+            // Use that projection only when the canonical lane is unavailable.
+            let canonical_heap = calls.program_effects.heap_lane_available();
+            let observes_external_heap = if canonical_heap {
+                calls.program_effects.heap_contents.observes_external_heap
+            } else {
+                calls.heap_contents.observes_external_heap
+            };
+            anyhow::ensure!(
+                !fact.heap_contents.observes_external_heap && !observes_external_heap,
+                "initializer_external_effects: {effects} for `{}` cannot cover an observed external heap read at source unit {}",
+                binding.0,
+                fact.ordinal.0
+            );
             anyhow::ensure!(
                 fact.global_reads.is_empty() && fact.global_writes.is_empty(),
                 "initializer_external_effects: {effects} for `{}` contradicts direct global-property accesses at source unit {}: reads {:?}, writes {:?}",
@@ -751,7 +831,19 @@ impl ChunkFactAnalysis {
                 .cloned()
                 .collect();
             anyhow::ensure!(
-                effects != spec::InitializerExternalEffects::Isolated || external.is_empty(),
+                effects != spec::InitializerExternalEffects::Isolated
+                    || (external.is_empty()
+                        && (!canonical_heap
+                            || (calls
+                                .program_effects
+                                .observed_heap_accesses
+                                .reads
+                                .is_empty()
+                                && calls
+                                    .program_effects
+                                    .observed_heap_accesses
+                                    .writes
+                                    .is_empty()))),
                 "initializer_external_effects: {effects} for `{}` cannot establish fresh ownership of observed heap accesses at source unit {}: {external:?}",
                 binding.0,
                 fact.ordinal.0
@@ -972,7 +1064,7 @@ impl StatementFacts {
     /// Complete lexical effects and initialization domains for this exact
     /// owner. Neither timing completion nor the source-only initializer proof
     /// by itself supplies the operation authority needed to refine havoc.
-    fn has_complete_operation_effects(&self) -> bool {
+    pub(crate) fn has_complete_operation_effects(&self) -> bool {
         self.synchronous_calls.as_ref().is_some_and(|calls| {
             calls.binding_effect_authority()
                 == super::sync_effects::BindingEffectAuthority::OperationReceipt

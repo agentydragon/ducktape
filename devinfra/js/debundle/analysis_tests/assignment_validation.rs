@@ -266,46 +266,70 @@ fn dependency_graph_report_emits_atomic_graph() {
     assert!(json.contains(r#""atomic_graph""#));
 }
 
-/// `cli/gate.rs` reads the callee source unit off the serialized `dependency_graph.json.gz` edge to
-/// drop a promoted edge when callee and caller land in different modules.
+/// Serialized promotion roles preserve scheduling identity independently of the
+/// lexical body dependency. Caller-owned fallback edges must survive projection;
+/// precisely resolved first-order promotions can retain their lexical callee too.
 #[test]
-fn dependency_graph_report_names_the_callee_source_unit_on_a_promoted_at_init_edge() {
-    let assignment_analysis = assignment_analysis_with_unassigned_module(
-        "const seed = 7; const dep = 42; const result = callee(seed); function callee(x) { return dep + x; }",
-        &["seed", "result", "callee", "dep"],
-        &[],
-    );
-
-    let report = dependency_graph_report(&assignment_analysis);
-    let source_unit_of = |binding: &str| {
-        report
-            .nodes
+fn dependency_graph_report_distinguishes_scheduling_owner_from_lexical_callee() {
+    for (source, bindings, promotion_owners) in [
+        (
+            "const seed = 7; const dep = 42; const result = callee(seed); function callee(x) { return dep + x; }",
+            &["seed", "result", "callee", "dep"][..],
+            &["result"][..],
+        ),
+        (
+            "const dep = 42; function callee() { unknown(); return dep; } const result = callee();",
+            &["result", "callee", "dep"][..],
+            &["result", "callee"][..],
+        ),
+    ] {
+        let assignment_analysis = assignment_analysis_with_unassigned_module(source, bindings, &[]);
+        let report = dependency_graph_report(&assignment_analysis);
+        let source_unit_of = |binding: &str| {
+            report
+                .nodes
+                .iter()
+                .find(|node| node.declared_bindings.iter().any(|b| b.binding == binding))
+                .unwrap_or_else(|| {
+                    panic!("no source unit declares `{binding}`: {:#?}", report.nodes)
+                })
+                .id
+                .clone()
+        };
+        assert_ne!(source_unit_of("result"), source_unit_of("callee"));
+        let owners = report
+            .edges
             .iter()
-            .find(|node| node.declared_bindings.iter().any(|b| b.binding == binding))
-            .unwrap_or_else(|| panic!("no source unit declares `{binding}`: {:#?}", report.nodes))
-            .id
-            .clone()
-    };
-    let promoted = report
-        .edges
-        .iter()
-        .find(|edge| {
-            edge.source == source_unit_of("result")
-                && edge.target == source_unit_of("dep")
-                && edge.edge_kind == DepKind::EagerUse
-        })
-        .unwrap_or_else(|| {
-            panic!(
-                "no promoted edge from `result` to `dep`: {:#?}",
-                report.edges
-            )
-        });
-    assert_eq!(
-        promoted.role,
-        Some(EdgeRoleReport::PromotedAtInit {
-            callee_source_unit: source_unit_of("callee")
-        }),
-    );
+            .filter(|edge| {
+                edge.source == source_unit_of("result")
+                    && edge.target == source_unit_of("dep")
+                    && edge.edge_kind == DepKind::EagerUse
+            })
+            .map(|edge| {
+                let Some(EdgeRoleReport::PromotedAtInit { callee_source_unit }) = &edge.role else {
+                    panic!("expected a promoted read: {edge:#?}");
+                };
+                callee_source_unit.clone()
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            owners,
+            promotion_owners
+                .iter()
+                .map(|binding| source_unit_of(binding))
+                .collect(),
+            "{source}"
+        );
+        assert!(
+            report.edges.iter().any(|edge| {
+                edge.source == source_unit_of("callee")
+                    && edge.target == source_unit_of("dep")
+                    && edge.edge_kind == DepKind::LazyUse
+                    && edge.role.is_none()
+            }),
+            "lexical body dependency must remain separate: {source}"
+        );
+    }
 }
 
 #[test]

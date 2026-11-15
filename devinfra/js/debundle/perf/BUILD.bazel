@@ -1,5 +1,17 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
+py_library(
+    name = "gen_callback_registration_corpus",
+    srcs = ["gen_callback_registration_corpus.py"],
+)
+
+py_binary(
+    name = "gen_callback_registration_corpus_bin",
+    main_module = "devinfra.js.debundle.perf.gen_callback_registration_corpus",
+    visibility = ["//devinfra/js/debundle:__subpackages__"],
+    deps = [":gen_callback_registration_corpus"],
+)
+
 exports_files(
     ["contract_audit.md"],
     visibility = ["//devinfra/js/debundle:__subpackages__"],

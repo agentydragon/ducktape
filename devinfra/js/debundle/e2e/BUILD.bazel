@@ -3,6 +3,33 @@ load(":defs.bzl", "debundle_e2e_test")
 
 package(default_testonly = True)
 
+genrule(
+    name = "attached_callback_source",
+    outs = ["attached_callbacks.js"],
+    cmd = "$(execpath //devinfra/js/debundle/perf:gen_callback_registration_corpus_bin) --source-out $@ --callbacks 1024 --invocations 1",
+    tools = ["//devinfra/js/debundle/perf:gen_callback_registration_corpus_bin"],
+)
+
+genrule(
+    name = "lexical_callback_source",
+    outs = ["lexical_callbacks.js"],
+    cmd = "$(execpath //devinfra/js/debundle/perf:gen_callback_registration_corpus_bin) --source-out $@ --callbacks 1024 --invocations 1 --omit-attached-method",
+    tools = ["//devinfra/js/debundle/perf:gen_callback_registration_corpus_bin"],
+)
+
+debundle_e2e_test(
+    name = "callback_registration_scale_test",
+    data = [
+        ":attached_callback_source",
+        ":lexical_callback_source",
+    ],
+    env = {
+        "DEBUNDLE_ATTACHED_CALLBACK_SOURCE": "$(rlocationpath :attached_callback_source)",
+        "DEBUNDLE_LEXICAL_CALLBACK_SOURCE": "$(rlocationpath :lexical_callback_source)",
+    },
+    deps = ["@rules_rust//tools/runfiles"],
+)
+
 debundle_e2e_test(
     name = "modules_complete_proptest",
     timeout = "long",
@@ -106,6 +133,12 @@ debundle_e2e_test(
     ],
 )
 
+debundle_e2e_test(
+    name = "evaluation_schedule_test",
+    saved_analysis_tools = True,
+    deps = ["@crates//:serde_json"],
+)
+
 # End-to-end tests treating the debundler as a black-box binary.
 
 debundle_e2e_test(
@@ -113,6 +146,7 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "@crates//:serde_json",
     ],
 )
 
@@ -513,6 +547,7 @@ rust_library(
         "support/failure_workspace.rs",
         "support/fixture_spec.rs",
         "support/mod.rs",
+        "support/placement.rs",
         "support/process.rs",
         "support/runtime.rs",
         "support/saved_analysis.rs",
@@ -608,6 +643,7 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "imported_primitive_test",
+    saved_analysis_tools = True,
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
@@ -817,7 +853,10 @@ debundle_e2e_test(name = "unknown_call_intermediate_availability_test")
 
 debundle_e2e_test(name = "unknown_call_callback_storage_test")
 
-debundle_e2e_test(name = "set_iterable_reentry_test")
+debundle_e2e_test(
+    name = "set_iterable_reentry_test",
+    deps = [":graph_support"],
+)
 
 debundle_e2e_test(
     name = "stable_array_spread_test",
@@ -832,6 +871,7 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:spec",
+        "@crates//:serde_json",
     ],
 )
 
@@ -970,13 +1010,19 @@ debundle_e2e_test(name = "naturalization_test")
 
 debundle_e2e_test(name = "naturalize_cross_scope_params_test")
 
-debundle_e2e_test(name = "object_plain_data_calls_test")
+debundle_e2e_test(
+    name = "object_plain_data_calls_test",
+    deps = [":graph_support"],
+)
 
 debundle_e2e_test(name = "metadata_decorator_timing_test")
 
 debundle_e2e_test(name = "three_argument_metadata_test")
 
-debundle_e2e_test(name = "proxy_constructor_purity_test")
+debundle_e2e_test(
+    name = "proxy_constructor_purity_test",
+    deps = ["@crates//:serde_json"],
+)
 
 debundle_e2e_test(name = "url_rebase_test")
 
@@ -1084,11 +1130,26 @@ debundle_e2e_test(name = "hoisted_var_declaration_test")
 
 debundle_e2e_test(name = "export_default_purity_test")
 
+debundle_e2e_test(
+    name = "namespace_live_carrier_test",
+    deps = ["@crates//:serde_json"],
+)
+
 debundle_e2e_test(name = "auto_grown_export_alias_collision_test")
 
 debundle_e2e_test(name = "reserved_word_mint_test")
 
 debundle_e2e_test(name = "runtime_tdz_on_imported_class_test")
+
+debundle_e2e_test(
+    name = "cross_chunk_operation_parity_test",
+    deps = [":graph_support"],
+)
+
+debundle_e2e_test(
+    name = "imported_array_iteration_parity_test",
+    deps = [":graph_support"],
+)
 
 debundle_e2e_test(
     name = "accepted_spec_runs_under_node_test",
@@ -1160,6 +1221,11 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "import_source_target_test",
+    size = "small",
+)
+
+debundle_e2e_test(
+    name = "program_linker_cli_test",
     size = "small",
 )
 
@@ -1645,7 +1711,10 @@ debundle_e2e_test(
     deps = [":graph_support"],
 )
 
-debundle_e2e_test(name = "bounded_callback_fallback_heap_test")
+debundle_e2e_test(
+    name = "bounded_callback_fallback_heap_test",
+    saved_analysis_tools = True,
+)
 
 debundle_e2e_test(
     name = "bounded_async_callback_fallback_test",
@@ -1674,7 +1743,10 @@ debundle_e2e_test(
     ],
 )
 
-debundle_e2e_test(name = "export_availability_test")
+debundle_e2e_test(
+    name = "export_availability_test",
+    deps = [":graph_support"],
+)
 
 debundle_e2e_test(
     name = "runtime_resource_closure_test",

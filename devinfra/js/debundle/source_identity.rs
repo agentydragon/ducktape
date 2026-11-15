@@ -44,6 +44,14 @@ impl ChunkTable {
     }
 }
 
+#[path = "source_identity/program_linker.rs"]
+pub mod program_linker;
+pub use program_linker::{
+    ProgramBindingId, ProgramChunkLinks, ProgramEvaluationKind, ProgramExportId, ProgramExportLink,
+    ProgramExportOrigin, ProgramImportKind, ProgramImportLink, ProgramLinkIndex,
+    ProgramLinkResolution, ProgramModuleRequest, ResolvedProgramExport, ResolvedProgramImport,
+};
+
 /// Position of an original item in a parsed chunk's `Module.body`.
 /// Several movable source units may originate from the same statement.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]

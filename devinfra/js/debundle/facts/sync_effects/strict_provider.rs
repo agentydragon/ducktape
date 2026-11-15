@@ -48,7 +48,11 @@ fn retain_provider_values(
                 if !visited_closures.insert((address.callable, captured.cache_identity())) {
                     continue;
                 }
-                if context.unsupported_closures.contains(&address.callable) {
+                if context
+                    .index
+                    .local_origin(address.callable)
+                    .is_none_or(|local| context.unsupported_closures.contains(&local))
+                {
                     return None;
                 }
                 pending.extend(context.argument_values.iter().cloned());
@@ -213,7 +217,10 @@ pub(super) fn derive_class(
         return None;
     }
     let mut retained_arguments = BTreeSet::new();
-    let mut pending_values = vec![AbstractValue::Value(Value::Alloc(Kind::Object, class))];
+    let mut pending_values = vec![AbstractValue::Value(Value::Alloc(
+        Kind::Object,
+        index.allocation(class),
+    ))];
     let mut visited_objects = BTreeSet::new();
     let mut visited_closures = BTreeSet::new();
     while let Some(value) = pending_values.pop() {

@@ -39,20 +39,18 @@ console.log(later.length, later[0]());
     let fixture = run_fixture_with_graphs(FixtureOpts::new(
         source,
         vec![
-            logical_module(
+            logical_module_with_anon(
                 "factory",
                 &[
                     Member::new("Box"),
                     Member::new("make").with_retained_record_factory(),
                 ],
+                &[],
             ),
+            logical_module_with_anon("early", &[], &["console.log('early');"]),
             logical_module("commands", &[Member::new("first")]),
             logical_module("readers", &[Member::new("readers")]),
-            logical_module_with_anon(
-                "early_late",
-                &[Member::new("later")],
-                &["console.log('early');"],
-            ),
+            logical_module("early_late", &[Member::new("later")]),
         ],
     ));
     assert_preserved_entry_output(&fixture, "early\n1 1\n");
@@ -468,7 +466,9 @@ const NESTED_WRAPPER: &str = "function wrapper(label, execute) { return make({ n
 
 #[test]
 fn nested_record_factory_wrapper_preserves_a_split_cycle() {
-    let source = nested_wrapper_source("", NESTED_FACTORY, NESTED_WRAPPER);
+    let wrapper =
+        "function wrapper(label, execute) { return make({ name: `Create ${label}`, execute }); }";
+    let source = nested_wrapper_source("", NESTED_FACTORY, wrapper);
     let split = run_fixture_with_graphs(
         FixtureOpts::new(
             &source,
@@ -801,7 +801,7 @@ const after = first.size;
 console.log(after, second.size, first.run(), second.run(), shared.join(','));
 export { first, second, shared, after };
 "#;
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             source,
             vec![
@@ -931,7 +931,7 @@ fn exported_record_factory_modules(callback_statements: &[&str]) -> Vec<LogicalM
 }
 
 fn run_exported_record_factory(source: &str, modules: Vec<LogicalModuleEntry>) -> Fixture {
-    run_fixture(
+    run_fixture_with_graphs(
         FixtureOpts::new(ACYCLIC_COMMAND_IMPORTER, vec![])
             .with_chunk_id("static/consumer")
             .with_extra_chunks(&[("static/provider", source)])
@@ -1007,6 +1007,40 @@ fn fixture_opts<'a>(
     FixtureOpts::new(source, modules)
 }
 
+/// Keep a factory definition in its own output module while the call, captured
+/// cell, and any caller-side inputs that precede it share one source-ordered
+/// value module. A retained callback must not make the later cell initialize
+/// before the call that creates it.
+fn factory_command_later_opts<'a>(
+    source: &'a str,
+    callback_members: &[&'static str],
+    later_members: &[&'static str],
+) -> FixtureOpts<'a> {
+    let factory_members = vec![
+        Member::new("Flags"),
+        Member::new("mutate"),
+        Member::new("Holder"),
+        Member::new("create").with_retained_record_factory(),
+        Member::new("prefix"),
+    ];
+    let mut command_members = vec![Member::new("command"), Member::new("later")];
+    let mut label_members = Vec::new();
+    for name in callback_members {
+        if *name == "label" {
+            label_members.push(Member::new(name));
+        } else {
+            command_members.push(Member::new(name));
+        }
+    }
+    command_members.extend(later_members.iter().map(|name| Member::new(name)));
+    let mut modules = vec![logical_module("callbacks/wrapped", &factory_members)];
+    if !label_members.is_empty() {
+        modules.push(logical_module("values/label", &label_members));
+    }
+    modules.push(logical_module("values/later", &command_members));
+    FixtureOpts::new(source, modules)
+}
+
 fn factory_effect_order_source(command: &str, holder: &str) -> String {
     format!(
         "function mutate(target, key, value) {{ target[key] = value; }}\n{holder}function create(record) {{ return new Holder(record); }}\nconst label = \"Example\";\nconst command = {command};\nconst commandAgain = {command};\nconst barrier = console.log(\"barrier\");\nconst later = 42;\nconsole.log(command.label, command.record.execute(), commandAgain.label, commandAgain.record.execute());\n"
@@ -1037,6 +1071,32 @@ fn factory_effect_order_opts<'a>(source: &'a str, annotated: bool) -> FixtureOpt
                 &[Member::new("label"), Member::new("barrier")],
             ),
             logical_module("values/later", &[Member::new("later")]),
+        ],
+    )
+}
+
+fn factory_effect_order_phase_opts(source: &str) -> FixtureOpts<'_> {
+    FixtureOpts::new(
+        source,
+        vec![
+            logical_module(
+                "callbacks/wrapped",
+                &[
+                    Member::new("mutate"),
+                    Member::new("Holder"),
+                    Member::new("create").with_retained_record_factory(),
+                ],
+            ),
+            logical_module("values/label", &[Member::new("label")]),
+            logical_module(
+                "values/later",
+                &[
+                    Member::new("command"),
+                    Member::new("commandAgain"),
+                    Member::new("barrier"),
+                    Member::new("later"),
+                ],
+            ),
         ],
     )
 }
@@ -1120,7 +1180,24 @@ fn annotation_admits_a_direct_fresh_record_to_the_checked_constructor_factory() 
         "",
         "console.log(command.run(), command.weight);",
     );
-    let fixture = run_fixture_with_graphs(fixture_opts(&source, true, &[], &[], &[]));
+
+    // Preserve the smallest original annotation-backed split as a typed
+    // schedule refusal. Its graph proof remains valid, but putting the factory
+    // call in the callback module separates it from the later cell it captures.
+    let rejected = assert_conservative_schedule_refusal(
+        fixture_opts(&source, true, &[], &[], &[]),
+        "evaluation_schedule_unknown_reordered",
+        "169 0\n",
+    );
+    assert_eq!(
+        rejected.candidate_relocation_assessment()["legacy_gate_accepts"],
+        true,
+        "the independent retained-factory proof must survive the schedule limit"
+    );
+
+    // Same source and retained-factory annotation, with the call and captured
+    // cell kept in source order in one value module, remains an accepted split.
+    let fixture = run_fixture_with_graphs(factory_command_later_opts(&source, &[], &[]));
 
     assert_preserved_entry_output(&fixture, "169 0\n");
     let graph = fixture.dependency_graph();
@@ -1141,14 +1218,20 @@ fn annotation_admits_a_direct_fresh_record_to_the_checked_constructor_factory() 
     assert!(uses[0].source_location.is_some());
     assert_module_exports(
         &fixture.out_root,
-        "static/app/modules/callbacks/wrapped.js",
-        &["command"],
-        &["later"],
+        "static/app/modules/values/later.js",
+        &["command", "later"],
+        &[],
     );
     assert_module_source(
         &fixture.out_root,
         "static/app/modules/callbacks/wrapped.js",
-        &["class Holder", "function create", "const command"],
+        &["class Holder", "function create"],
+        &["const command"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/values/later.js",
+        &["const command", "const later"],
         &[],
     );
 }
@@ -1302,7 +1385,7 @@ fn escaped_class_members_report_the_first_global_member_write() {
 
 #[test]
 fn terminal_forwarding_keeps_nested_factory_results_private() {
-    let before_command = "const make = label => create({ label: () => label, values: [Flags.FIRST], execute: async () => {} });\nconst first = make(\"a\");\nconst second = make(\"b\");\n";
+    let before_command = "const make = label => create({ label: () => label, values: [Flags.FIRST], execute: async () => { globalThis.asyncStarted = true; } });\nconst first = make(\"a\");\nconst second = make(\"b\");\n";
     let fixture = forwarding_fixture(FACTORY, before_command, &[]);
     let graph = fixture.dependency_graph();
     for binding in ["first", "second", "command"] {
@@ -1340,15 +1423,32 @@ fn forwarding_fixture(
     before_command: &str,
     additional_statements: &[&str],
 ) -> Fixture {
+    forwarding_fixture_with_call(
+        factory,
+        before_command,
+        &format!("create({FRESH_RECORD})"),
+        additional_statements,
+        "169 0 undefined\n",
+    )
+}
+
+fn forwarding_fixture_with_call(
+    factory: &str,
+    before_command: &str,
+    call: &str,
+    additional_statements: &[&str],
+    expected_output: &str,
+) -> Fixture {
     let source = fixture_source(
         "",
         factory,
         before_command,
-        &format!("create({FRESH_RECORD})"),
+        call,
         "",
-        "console.log(command.run(), command.weight);",
+        "console.log(command.run(), command.weight, typeof globalThis.asyncStarted);",
     );
-    let mut statements = vec!["console.log(command.run(), command.weight);"];
+    let mut statements =
+        vec!["console.log(command.run(), command.weight, typeof globalThis.asyncStarted);"];
     statements.extend_from_slice(additional_statements);
     let fixture = run_fixture_with_graphs(FixtureOpts::new(
         &source,
@@ -1369,13 +1469,39 @@ fn forwarding_fixture(
             &statements,
         )],
     ));
-    assert_preserved_entry_output(&fixture, "169 0\n");
+    assert_preserved_entry_output(&fixture, expected_output);
     fixture
 }
 
 #[test]
+fn terminal_forwarding_preserves_mutable_activation_capture() {
+    let before_command = r#"const make = initial => {
+  let label = initial;
+  const result = create({
+    execute: () => label,
+    nested: { callback: () => later, enabled: true },
+    items: [{ callback: () => later }],
+    values: [1, "ready", null, false],
+    mode: Flags.FIRST,
+  });
+  label = "after";
+  return result;
+};
+const first = make("one");
+const second = make("two");
+"#;
+    forwarding_fixture_with_call(
+        FACTORY,
+        before_command,
+        "make(\"before\")",
+        &[],
+        "after4242421 0 undefined\n",
+    );
+}
+
+#[test]
 fn nonterminal_forwarding_retains_publication_from_the_caller_suffix() {
-    let before_command = "const make = label => { const result = create({ label: () => label, values: [Flags.FIRST], execute: async () => {} }); return result; };\nconst first = make(\"a\");\nconst second = make(\"b\");\n";
+    let before_command = "const make = label => { const result = create({ label: () => label, values: [Flags.FIRST], execute: async () => { globalThis.asyncStarted = true; } }); return result; };\nconst first = make(\"a\");\nconst second = make(\"b\");\n";
     let private = forwarding_fixture(FACTORY, before_command, &[]);
     let graph = private.dependency_graph();
     let command = node_declaring(&graph, "command");
@@ -1388,13 +1514,13 @@ fn nonterminal_forwarding_retains_publication_from_the_caller_suffix() {
         1,
         "{execution:#?}"
     );
-    let publishing_suffix = "const make = label => { const result = create({ label: () => label, values: [Flags.FIRST], execute: async () => {} }); globalThis.retained = create; return result; };\nconst first = make(\"a\");\nconst second = make(\"b\");\n";
+    let publishing_suffix = "const make = label => { const result = create({ label: () => label, values: [Flags.FIRST], execute: async () => { globalThis.asyncStarted = true; } }); globalThis.retained = create; return result; };\nconst first = make(\"a\");\nconst second = make(\"b\");\n";
     assert_forwarding_factory_refused(&forwarding_fixture(FACTORY, publishing_suffix, &[]), None);
 }
 
 #[test]
 fn terminal_forwarding_preserves_real_factory_escapes() {
-    let before_command = "const make = label => create({ label: () => label, values: [Flags.FIRST], execute: async () => {} });\nconst first = make(\"a\");\nconst second = make(\"b\");\n";
+    let before_command = "const make = label => create({ label: () => label, values: [Flags.FIRST], execute: async () => { globalThis.asyncStarted = true; } });\nconst first = make(\"a\");\nconst second = make(\"b\");\n";
     let publishing_factory = "function create(record) { globalThis.retained = create; return new Holder(record, () => later); }\n";
     assert_forwarding_factory_refused(
         &forwarding_fixture(publishing_factory, before_command, &[]),
@@ -1460,10 +1586,25 @@ fn assert_forwarding_factory_refused(
 
 #[test]
 fn exported_factory_result_stays_deferred_until_acyclic_importer_use() {
-    let fixture = run_exported_record_factory_with_graphs(
-        EXPORTED_RECORD_PROVIDER,
-        exported_record_factory_modules(&[]),
-    );
+    let phase_modules = vec![
+        logical_module(
+            "callbacks/wrapped",
+            &[
+                Member::new("Holder"),
+                Member::new("create").with_retained_record_factory(),
+            ],
+        ),
+        logical_module(
+            "values/later",
+            &[
+                Member::new("prefix"),
+                Member::new("dynamic"),
+                Member::new("command"),
+                Member::new("later"),
+            ],
+        ),
+    ];
+    let fixture = run_exported_record_factory_with_graphs(EXPORTED_RECORD_PROVIDER, phase_modules);
     assert_preserved_entry_output(&fixture, "42\n");
 
     let graph: analysis::DependencyGraphReport = read_gzip_json(
@@ -1576,20 +1717,20 @@ fn initialized_primitive_const_property_keeps_the_constructor_result_deferred() 
         "",
         "console.log(command.record.name, command.run(), command.weight);",
     );
-    let fixture = run_fixture(fixture_opts(&source, true, &["label"], &[], &[]));
+    let fixture = run_fixture_with_graphs(factory_command_later_opts(&source, &["label"], &[]));
 
     assert_preserved_entry_output(&fixture, "Example 169 0\n");
     assert_module_exports(
         &fixture.out_root,
-        "static/app/modules/callbacks/wrapped.js",
+        "static/app/modules/values/later.js",
         &["command"],
-        &["label", "later"],
+        &[],
     );
     assert_module_source(
         &fixture.out_root,
-        "static/app/modules/callbacks/wrapped.js",
-        &["import { label", "function create", "const command"],
-        &["const label"],
+        "static/app/modules/values/later.js",
+        &["import { label", "const command", "const later"],
+        &["const label", "function create"],
     );
     assert_module_exports(
         &fixture.out_root,
@@ -1677,7 +1818,7 @@ fn checked_factory_call_purity_is_site_specific_and_keeps_eager_reads() {
 }
 "#;
     let source = factory_effect_order_source("create({ execute: () => later })", holder);
-    let fixture = run_fixture_with_graphs(factory_effect_order_opts(&source, true));
+    let fixture = run_fixture_with_graphs(factory_effect_order_phase_opts(&source));
     assert_preserved_entry_output(&fixture, "barrier\nExample 42 Example 42\n");
 
     let graph = fixture.dependency_graph();
@@ -1741,7 +1882,7 @@ fn checked_factory_call_purity_is_site_specific_and_keeps_eager_reads() {
     // read and deferred callback graph.
     let literal =
         factory_effect_order_source("{ label, record: { execute: () => later } }", holder);
-    let literal_fixture = run_fixture_with_graphs(factory_effect_order_opts(&literal, true));
+    let literal_fixture = run_fixture_with_graphs(factory_effect_order_phase_opts(&literal));
     assert_preserved_entry_output(&literal_fixture, "barrier\nExample 42 Example 42\n");
 }
 
@@ -1978,7 +2119,7 @@ fn provider_effects_keep_source_order_without_factory_effect_suppression() {
         Member::new("command"),
         Member::new("later"),
     ];
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         &source,
         vec![logical_module_with_anon(
             "all",
@@ -2013,7 +2154,8 @@ fn constructor_effects_are_not_removed_by_the_factory_call_certificate() {
 }
 
 fn assert_admitted(source: &str, callback_members: &[&'static str], expected_output: &str) {
-    let fixture = run_fixture_with_graphs(fixture_opts(source, true, callback_members, &[], &[]));
+    let fixture =
+        run_fixture_with_graphs(factory_command_later_opts(source, callback_members, &[]));
     assert_preserved_entry_output(&fixture, expected_output);
     let graph = fixture.dependency_graph();
     let reports: Vec<_> = graph
@@ -2051,9 +2193,9 @@ fn assert_admitted(source: &str, callback_members: &[&'static str], expected_out
     assert_eq!(execution.local_record_factory_uses.len(), 1);
     assert_module_exports(
         &fixture.out_root,
-        "static/app/modules/callbacks/wrapped.js",
-        &["command"],
-        &["later"],
+        "static/app/modules/values/later.js",
+        &["command", "later"],
+        &[],
     );
 }
 

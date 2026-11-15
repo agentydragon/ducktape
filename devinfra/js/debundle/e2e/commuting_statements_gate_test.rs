@@ -76,7 +76,14 @@ fn expect_contradicted<'a>(build: impl Fn() -> FixtureOpts<'a>, tokens: &[&str])
     let validate = run_spec_validate(&fixture.spec_path, &["--format", "json"]);
     let report: serde_json::Value = serde_json::from_str(&validate.stdout)
         .unwrap_or_else(|error| panic!("{error}: spec validate stdout={}", validate.stdout));
-    assert_eq!(report["validation"]["success"], false, "{report:#}");
+    let source_path = fixture.workspace().path().join("snapshot/static/app.js");
+    assert_eq!(
+        report["validation"]["success"],
+        false,
+        "fixture spec {} source {}: {report:#}",
+        fixture.spec_path.display(),
+        source_path.display(),
+    );
     let [diagnostic] = report["commuting_statements_diagnostics"]
         .as_array()
         .expect("commuting_statements_diagnostics")
@@ -259,7 +266,7 @@ fn heap_frontier_split(
 }
 
 /// Commuting an observer past a no-op must not move it past the later writer
-/// whose ordering was represented through the no-op's heap frontier.
+/// that changes the observed heap cell.
 #[test]
 fn commuting_a_heap_frontier_preserves_third_statement_order() {
     const SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nfunction noop() {}\nconst anchor = 0;\nconst gamma = read();\nconst beta = noop?.();\nconst alpha = write();\nconsole.log(gamma, beta, alpha, store.length);\n";
@@ -280,11 +287,8 @@ fn commuting_a_heap_frontier_preserves_third_statement_order() {
         graph.edges.iter().any(|edge| {
             edge.source == alpha
                 && edge.target == gamma
+                && edge.edge_kind == DepKind::Sequenced
                 && edge.constrains_init_order
-                && matches!(
-                    edge.sequenced_cause,
-                    Some(SequencedCause::PreservedOrder { .. })
-                )
         }),
         "{graph:#?}"
     );
@@ -825,9 +829,9 @@ fn pair_without_a_sequenced_edge_is_an_unused_warning() {
     );
 }
 
-/// `callback` plus 64 inert callbacks: a host call receiving the array
-/// exceeds the interpreter's callback pool, which then assumes every pooled
-/// callback may run (`callback_pool_limit`).
+/// A host call receives the callback and inert callbacks. Since its invocation
+/// behavior is opaque, the analysis conservatively assumes the callbacks may
+/// run (`opaque_callback_invocation`).
 fn padded_pool(callback: &str) -> String {
     let padding = vec!["() => 3"; 64].join(", ");
     format!("serialize([{callback}, {padding}])")
@@ -901,11 +905,10 @@ fn matches_expected_reason(actual: &serde_json::Value, expected: &serde_json::Va
         )
 }
 
-/// Both endpoints are incomplete: each hands a pool past the bound to
-/// `JSON.stringify`, so the `state` write and read exist only because the
-/// fallback assumes every pooled callback may run. That is opacity, not a
-/// derived conflict, so the pair is accepted (and holds: `JSON.stringify`
-/// never calls a function element).
+/// Both endpoints are incomplete: each passes callbacks to `JSON.stringify`,
+/// so the `state` write and read exist only through the opaque-call fallback.
+/// That is opacity, not a derived conflict, so the pair is accepted (and holds:
+/// `JSON.stringify` never calls a function element).
 #[test]
 fn timeline_between_two_fallback_effects_is_inertable() {
     let source = state_source(&padded_pool("bump"), &padded_pool("peek"));
@@ -927,9 +930,7 @@ fn timeline_between_two_fallback_effects_is_inertable() {
         for side in ["source", "target"] {
             assert_eq!(cause[side]["kind"], "fallback", "{cause:#}");
             let reason = &cause[side]["reason"];
-            assert_eq!(reason["path"], "fallback_summary", "{cause:#}");
-            assert_eq!(reason["loss"]["code"], "callback_pool_limit", "{cause:#}");
-            assert_eq!(reason["loss"]["limit"], 64, "{cause:#}");
+            assert_eq!(reason["path"], "opaque_callback_invocation", "{cause:#}");
         }
     }
 }
@@ -1329,9 +1330,8 @@ fn escaped_record_member_read_beside_observed_effects_rejects_the_pair() {
     assert_observed_pair_rejected(&source, &["box", "boxed"]);
 }
 
-/// `arguments` defeats input modeling, so a call to `touch`/`look` promotes
-/// their whole lazy bodies; the `later` closures that touch `state` never
-/// run.
+/// Unsupported destructured callable inputs leave the call summary
+/// conservative; the nested `later` closures that touch `state` never run.
 #[test]
 fn whole_body_promotion_for_unsupported_inputs_is_inertable() {
     let prelude = "function touch({}) { const later = () => { state = 2; }; return typeof later.length; }\nfunction look({}) { const later = () => state; return typeof later.length; }";
@@ -1339,7 +1339,13 @@ fn whole_body_promotion_for_unsupported_inputs_is_inertable() {
     assert_assumed_pair_accepted(
         &source,
         &["touch", "look"],
-        serde_json::json!({"path": "whole_body_promotion", "operation": "callable_inputs"}),
+        serde_json::json!({
+            "path": "fallback_summary",
+            "loss": {
+                "code": "unsupported_operation",
+                "operation": "callable_inputs"
+            }
+        }),
         "string string 0\n",
     );
 }
@@ -1349,4 +1355,38 @@ fn unsupported_inputs_beside_observed_effects_rejects_the_pair() {
     let prelude = "function touch() { state = 2; return arguments.length; }\nfunction look() { return state + arguments.length; }";
     let source = probe_source(prelude, &["touch", "look"], "touch()", "look()");
     assert_observed_pair_rejected(&source, &["touch", "look"]);
+}
+
+#[test]
+fn unsupported_arguments_keep_a_colocated_program_executable() {
+    let source = "let state = 0;\nfunction touch() { state = 2; return arguments.length; }\nfunction look() { return state + arguments.length; }\nconst first = touch();\nconst second = look();\nconsole.log(first, second, state);\nexport { state, touch, look, first, second };\n";
+    let members: Vec<_> = ["state", "touch", "look", "first", "second"]
+        .into_iter()
+        .map(Member::new)
+        .collect();
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![logical_module("all", &members)])
+            .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "0 2 2\n");
+}
+
+/// Reaching an unsupported arguments read does not execute the nested
+/// closures created before it. Their state effects stay hypothetical.
+#[test]
+fn arguments_read_after_uninvoked_closures_is_inertable() {
+    let prelude = "function touch() { const later = () => { state = 2; }; return arguments.length; }\nfunction look() { const later = () => state; return arguments.length; }";
+    let source = probe_source(prelude, &["touch", "look"], "touch()", "look()");
+    assert_assumed_pair_accepted(
+        &source,
+        &["touch", "look"],
+        serde_json::json!({
+            "path": "fallback_summary",
+            "loss": {
+                "code": "unsupported_operation",
+                "operation": "callable_inputs"
+            }
+        }),
+        "number number 0\n",
+    );
 }

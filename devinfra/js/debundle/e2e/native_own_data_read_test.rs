@@ -36,8 +36,9 @@ fn decorator_trio(suffix: &str, class: &str, role: &str) -> String {
          var d{suffix} = (decorators, target, key) => {{\n  const desc = g{suffix}(target, key);\n\
            for (const decorator of decorators) decorator(target, key, desc);\n\
            p{suffix}(target, key, desc);\n}};\n\
+         const tag{suffix} = (target, key, desc) => {{ void target; void key; void desc; }};\n\
          class {class} {{ m() {{ return '{role}'; }} }}\n\
-         d{suffix}([], {class}.prototype, 'm', 1);\n"
+         d{suffix}([tag{suffix}], {class}.prototype, 'm', 1);\n"
     )
 }
 
@@ -45,22 +46,27 @@ fn intrinsic_alias_opts(source: &str) -> FixtureOpts<'_> {
     FixtureOpts::new(
         source,
         vec![
-            logical_module(
+            logical_module_with_anon(
                 "alpha",
                 &[
                     Member::source_alpha("Alpha", "class Alpha { m() { return 'alpha role'; } }"),
                     Member::makes_decorate_call("decorate", "Alpha", None, None),
                     Member::intrinsic_alias("alphaDefine", "defineProperty", "decorate"),
                     Member::intrinsic_alias("alphaGetter", "getOwnPropertyDescriptor", "decorate"),
+                    Member::new("taga"),
                 ],
+                &["da([taga], Alpha.prototype, 'm', 1);"],
             ),
-            logical_module(
+            logical_module_with_anon(
                 "beta",
                 &[
                     Member::source_alpha("Beta", "class Beta { m() { return 'beta role'; } }"),
                     Member::makes_decorate_call("decorate", "Beta", None, None),
                     Member::intrinsic_alias("betaDefine", "defineProperty", "decorate"),
+                    Member::intrinsic_alias("betaGetter", "getOwnPropertyDescriptor", "decorate"),
+                    Member::new("tagb"),
                 ],
+                &["db([tagb], Beta.prototype, 'm', 1);"],
             ),
         ],
     )
@@ -125,7 +131,7 @@ fn intrinsic_alias_relations_resolve_without_native_operation_inputs() {
          }};\
          console.log(JSON.stringify([observe(Alpha), observe(Beta)]));\n",
         decorator_trio("a", "Alpha", "alpha role"),
-        decorator_trio("b", "Beta", "beta role")
+        decorator_trio("b", "Beta", "beta role"),
     );
     let (staged, _fixture) = staged(intrinsic_alias_opts(&source));
     let direct = staged.run(&[]);
@@ -147,13 +153,13 @@ fn intrinsic_alias_relations_resolve_without_native_operation_inputs() {
     assert_module_exports(
         &app_root,
         "static/app/modules/alpha.js",
-        &["Alpha", "decorate"],
+        &["Alpha"],
         &["Beta"],
     );
     assert_module_exports(
         &app_root,
         "static/app/modules/beta.js",
-        &["Beta", "decorate"],
+        &["Beta"],
         &["Alpha"],
     );
     assert_module_source(
@@ -172,14 +178,28 @@ fn intrinsic_alias_relations_resolve_without_native_operation_inputs() {
         &app_root,
         "static/app/modules/beta.js",
         &[
-            "import { gb } from \"./residual/unhandled.js\";",
             "var betaDefine = Object.defineProperty",
-            "gb(target, key)",
+            "var betaGetter = Object.getOwnPropertyDescriptor",
+            "betaGetter(target, key)",
             "betaDefine(target, key, desc)",
             "class Beta",
         ],
         &["class Alpha", "alphaDefine", "alphaGetter"],
     );
+
+    let graph_fixture = run_fixture_with_graphs(intrinsic_alias_opts(&source));
+    let graph = serde_json::to_value(graph_fixture.dependency_graph()).unwrap();
+    for binding in ["ga", "gb"] {
+        let inference_uses = node(&graph, binding)["synchronous_execution"]["inference_uses"]
+            .as_array()
+            .expect("native own-data read inference uses");
+        assert!(
+            inference_uses
+                .iter()
+                .any(|use_site| use_site["conclusion"] == "native_own_data_read"),
+            "{binding} should retain its own-data read inference: {inference_uses:#?}"
+        );
+    }
 }
 
 #[test]
@@ -288,13 +308,10 @@ fn native_own_data_read_composes_exact_root_effect_coverage() {
     let fixture = run_fixture_with_graphs(FixtureOpts::new(
         SOURCE,
         vec![
-            logical_module(
-                "alias_module",
-                &[Member::new("alias"), Member::new("after")],
-            ),
+            logical_module("alias_module", &[Member::new("alias")]),
             logical_module_with_anon(
                 "observe",
-                &[Member::new("marker")],
+                &[Member::new("marker"), Member::new("after")],
                 &["console.log(marker, typeof after);"],
             ),
         ],
@@ -453,8 +470,15 @@ fn intact_object_read_has_an_independent_source_certificate() {
     let fixture = run_fixture_with_graphs(FixtureOpts::new(
         SOURCE,
         vec![
-            logical_module("alias", &[Member::new("sentinel"), Member::new("alias")]),
-            logical_module("consumer", &[Member::new("before"), Member::new("after")]),
+            logical_module(
+                "alias",
+                &[
+                    Member::new("sentinel"),
+                    Member::new("before"),
+                    Member::new("alias"),
+                ],
+            ),
+            logical_module("consumer", &[Member::new("after")]),
         ],
     ));
     assert_preserved_entry_output(&fixture, "function\n");

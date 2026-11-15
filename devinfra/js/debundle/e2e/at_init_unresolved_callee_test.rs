@@ -187,30 +187,33 @@ export { lookup };
     ));
     assert_preserved_entry_output(&colocated, "tool 42\n");
 
-    let split = run_fixture(FixtureOpts::new(
-        source,
-        vec![
-            logical_module_with_anon(
-                "registry",
-                &[
-                    Member::new("nodeIds"),
-                    Member::new("descriptors"),
-                    Member::new("lookup"),
-                ],
-                &["descriptors.forEach((data) => { lookup[data.id] = data.name; });"],
-            ),
-            logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
-        ],
-    ));
-    assert_preserved_entry_output(&split, "tool 42\n");
+    let split = assert_conservative_schedule_refusal(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "registry",
+                    &[
+                        Member::new("nodeIds"),
+                        Member::new("descriptors"),
+                        Member::new("lookup"),
+                    ],
+                    &["descriptors.forEach((data) => { lookup[data.id] = data.name; });"],
+                ),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        ),
+        "evaluation_schedule_unknown_reordered",
+        "tool 42\n",
+    );
     assert_module_exports(
-        &split.out_root,
+        &split.app_root(),
         "static/app/modules/registry.js",
         &["descriptors", "lookup"],
         &["later", "nodeIds"],
     );
     assert_module_exports(
-        &split.out_root,
+        &split.app_root(),
         "static/app/modules/values/later.js",
         &["later"],
         &["nodeIds", "descriptors", "lookup"],
@@ -244,26 +247,29 @@ export { ids };
     ));
     assert_preserved_entry_output(&colocated, "tool-id 42\n");
 
-    let split = run_fixture(FixtureOpts::new(
-        source,
-        vec![
-            logical_module_with_anon(
-                "registry",
-                &[Member::new("descriptors"), Member::new("ids")],
-                &["globalThis.savedExecutor = descriptors[0].executor;"],
-            ),
-            logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
-        ],
-    ));
-    assert_preserved_entry_output(&split, "tool-id 42\n");
+    let split = assert_conservative_schedule_refusal(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "registry",
+                    &[Member::new("descriptors"), Member::new("ids")],
+                    &["globalThis.savedExecutor = descriptors[0].executor;"],
+                ),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        ),
+        "evaluation_schedule_unknown_reordered",
+        "tool-id 42\n",
+    );
     assert_module_exports(
-        &split.out_root,
+        &split.app_root(),
         "static/app/modules/registry.js",
         &["descriptors", "ids"],
         &["later"],
     );
     assert_module_exports(
-        &split.out_root,
+        &split.app_root(),
         "static/app/modules/values/later.js",
         &["later"],
         &["descriptors", "ids"],

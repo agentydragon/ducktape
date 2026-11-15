@@ -115,3 +115,31 @@ cells are unobservable. Transitive calls, re-export chains, namespace calls and
 non-declaration callable bindings are also outside this partial projection.
 Close those lanes with behavioral CLI refusals and unchanged frozen canonical
 acceptance; do not certify arbitrary opaque execution from this bounded repair.
+
+## Source-derived foreign observers
+
+The canonical shallow walk now retains named/default imports referenced from
+lazy source bodies, including arrows installed on globals, constructors, and
+instance fields. Program analysis projects foreign reader references to their
+owning export cells when the reader is in that owner's static request reach.
+Opaque calls promote these cell reads under `opaque_callback_invocation`
+fallback provenance. Callable availability, positive effect receipts, unknown
+effects, and author premises remain independent.
+
+The global observer above fails the expected-refusal CLI regression against
+`b2c62b4b50` in invocation `1f3174a4-2279-4b9c-b598-a79af88be9de`: the original
+prints `undefined`, the accepted emitted candidate prints `function`.
+Candidate invocation `c02e477c-bdfb-4391-bcf1-acc93b94141e` passes all eight
+publication tests and builds the unchanged frozen
+`//devinfra/js/debundle/excalidraw:canonical_summary` together. This source
+constraint does not promote every export cell under conservative policy.
+
+Remaining whole-program obligations include re-export and namespace identities,
+namespace aliases, and eager foreign reads. For example, an observer can copy
+`callback` into a source-private `snapshot` during its own evaluation, then
+publish a closure reading `snapshot`. The read occurs before the owner's
+source prefix, so observing only the eventual closure does not establish its
+timing. Shared module-prefix execution must retain that foreign read against
+the owner cell's initialization, including when no opaque call runs before the
+initializer. The narrower lazy-source obligations remain constraints alongside
+that execution; they do not certify arbitrary unknown execution as complete.

@@ -2,7 +2,7 @@
 //! a provider export whose body only allocates is no unknown callee at the
 //! importer; anything that can run other code stays conservative.
 
-use analysis::analysis_provenance::InferenceRule;
+use debundle_e2e_graph_support::effect_validation::binding_execution_report;
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
@@ -23,52 +23,66 @@ fn reject(source: &str, provider: &str) {
     );
 }
 
+fn assert_provider_execution_evidence(fixture: &Fixture, binding: &str, provider: &str) {
+    let execution = binding_execution_report(fixture, binding);
+    assert_eq!(execution["complete"], true, "{binding}: {execution:#}");
+    let authority = &execution["binding_effect_authority"];
+    match authority["authority"].as_str().expect("binding authority") {
+        "operation_receipt" => {
+            let calls = authority["receipt"]["calls"]
+                .as_array()
+                .expect("operation receipt calls");
+            assert!(
+                calls.iter().any(|call| {
+                    call["target"]["kind"] == "callable"
+                        && call["target"]["source_module"] == provider
+                }),
+                "{binding}: the receipt must name the selected provider body: {execution:#}"
+            );
+        }
+        // Keep the actual conservative fallback visible in these accepted
+        // source/emitted parity cases; neither authority claims a provider
+        // body receipt that the graph does not contain.
+        "legacy_execution" | "ordered_root_initializer_uncovered" => {}
+        authority => panic!("{binding}: unexpected execution authority {authority}: {execution:#}"),
+    }
+}
+
 #[test]
-fn derived_constructor_retains_its_callback_until_instance_use() {
-    let fixture = run_fixture_with_graphs(
+fn derived_constructor_top_level_invocation_keeps_its_split_blocked() {
+    let source = "import { Box } from './peer.js';\nconst wrapped = new Box(() => later, 'label');\nconst later = 42;\nconsole.log(wrapped.invoke());\n";
+    let provider = [("static/peer", BOX)];
+    let colocated = run_fixture_with_graphs(
         FixtureOpts::new(
-            "import { Box } from './peer.js';\nconst wrapped = new Box(() => later, 'label');\nconst later = 42;\nconsole.log(wrapped.invoke());\n",
-            modules(),
+            source,
+            vec![logical_module(
+                "callbacks/wrapped",
+                &[Member::new("wrapped"), Member::new("later")],
+            )],
         )
-        .with_extra_chunks(&[("static/peer", BOX)]),
+        .with_extra_chunks(&provider),
     );
-    assert_preserved_entry_output(&fixture, "42\n");
-    let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
-    let summary = &report["imported_callables"]["Box"]["foreign_call"];
-    assert_eq!(summary["invocation"], "construct");
-    assert_eq!(summary["retained_arguments"], serde_json::json!([0]));
-    assert_eq!(
-        summary["native_constructions"],
-        serde_json::json!(["weak_map"])
+    assert_preserved_entry_output(&colocated, "42\n");
+    assert_module_source(
+        &colocated.out_root,
+        "static/app/modules/callbacks/wrapped.js",
+        &["wrapped", "later"],
+        &[],
     );
-    let graph = fixture.dependency_graph();
-    let wrapped = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "wrapped")
-        })
-        .expect("wrapped owner");
-    let execution = wrapped
-        .synchronous_execution
-        .as_ref()
-        .expect("synchronous execution");
-    assert!(execution.complete);
-    assert!(
-        execution
-            .inference_uses
-            .iter()
-            .any(|usage| usage.conclusion == InferenceRule::ForeignCallSummary)
+
+    // At top level, invoke() may run the retained callback during module
+    // initialization. Keep the split as a typed atomic-group refusal until
+    // the graph can place that read safely.
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(source, modules()).with_extra_chunks(&provider),
+        &["callbacks/wrapped", "values/later"],
+        &["eager_use"],
     );
-    let purity = serde_json::to_value(&wrapped.purity).unwrap();
-    assert_eq!(purity["kind"], "not_pure");
 }
 
 #[test]
 fn class_fields_keep_typed_empty_keyed_collection_constructions() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "import { Collections } from './peer.js';\nconst collections = new Collections();\nconsole.log(collections instanceof Collections);\n",
             vec![],
@@ -101,32 +115,19 @@ fn callable_factories_use_shared_empty_keyed_collection_transfers() {
         )]),
     );
     assert_preserved_entry_output(&fixture, "true 0 true 0 0\n");
-
-    let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
-    for name in ["makeCache", "makeRecord"] {
-        let summary = &report["imported_callables"][name]["foreign_call"];
-        assert_eq!(
-            summary["returns"],
-            serde_json::json!([{"kind": "fresh_allocation"}])
-        );
-        assert_eq!(summary["retained_arguments"], serde_json::json!([]));
-        assert_eq!(summary["native_constructions"], serde_json::json!(["map"]));
-    }
-    assert!(fixture.dependency_graph().nodes.iter().any(|node| {
-        node.synchronous_execution
-            .as_ref()
-            .is_some_and(|execution| {
-                execution
-                    .inference_uses
-                    .iter()
-                    .any(|usage| usage.conclusion == InferenceRule::ForeignCallSummary)
-            })
-    }));
+    assert_module_exports(
+        &fixture.out_root,
+        "static/peer/entry.js",
+        &["makeCache", "makeRecord"],
+        &[],
+    );
+    assert_provider_execution_evidence(&fixture, "cache", "static/peer");
+    assert_provider_execution_evidence(&fixture, "record", "static/peer");
 }
 
 #[test]
 fn regexp_literal_factories_return_fresh_allocations_without_protocol_shape() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "import { direct, localBound, nested } from './peer.js';\n\
              const first = direct();\nconst second = direct();\n\
@@ -159,7 +160,7 @@ fn regexp_literal_factories_return_fresh_allocations_without_protocol_shape() {
 
 #[test]
 fn regexp_literal_summary_keeps_global_binding_and_prototype_behavior_live() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "import { literal, construct } from './peer.js';\n\
              globalThis.constructorCalls = 0;\n\
@@ -198,7 +199,7 @@ fn regexp_literal_summary_keeps_global_binding_and_prototype_behavior_live() {
 
 #[test]
 fn regexp_literal_does_not_bypass_unmigrated_method_record_metadata() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "import { mixed } from './peer.js';\n\
              const result = mixed();\n\
@@ -243,7 +244,7 @@ fn callable_native_constructor_refusals_keep_node_behavior() {
         ),
     ] {
         let source = format!("import {{ makeCache }} from './peer.js';\n{entry}");
-        let fixture = run_fixture(
+        let fixture = run_fixture_with_graphs(
             FixtureOpts::new(&source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
         );
         assert_preserved_entry_output(&fixture, expected);
@@ -258,7 +259,7 @@ fn callable_native_constructor_refusals_keep_node_behavior() {
 
 #[test]
 fn class_constructor_does_not_treat_a_getter_as_a_data_field() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "import { GetterReader } from './peer.js';\nglobalThis.getterCalls = 0;\nconst reader = new GetterReader();\nconsole.log(globalThis.getterCalls, reader.invoke());\n",
             vec![],
@@ -278,7 +279,7 @@ fn class_constructor_does_not_treat_a_getter_as_a_data_field() {
 
 #[test]
 fn a_constructor_returning_this_keeps_the_legacy_admission_boundary() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "import { SelfReturning } from './peer.js';\nconst value = new SelfReturning();\nconsole.log(value instanceof SelfReturning);\n",
             vec![],
@@ -306,7 +307,7 @@ fn a_public_field_write_keeps_the_constructor_unknown() {
 
 #[test]
 fn builder_entry_defers_the_callbacks_in_its_input() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "import { object } from './peer.js';\nconst wrapped = object({ read: () => later }, 'note');\nconst later = 42;\nconsole.log(wrapped.shape.read());\n",
             modules(),
@@ -332,7 +333,7 @@ fn central_direct_return_migration_preserves_literal_input_retention() {
             "import {{ make }} from './peer.js';\nconst wrapped = make(() => later, () => later);\nconst later = 42;\nconsole.log({projection});\n"
         );
         let provider = format!("export function make(value, unused) {{ return {returned}; }}\n");
-        let fixture = run_fixture(
+        let fixture = run_fixture_with_graphs(
             FixtureOpts::new(&source, modules()).with_extra_chunks(&[("static/peer", &provider)]),
         );
         assert_preserved_entry_output(&fixture, "42\n");
@@ -356,7 +357,7 @@ fn shared_local_transfer_preserves_local_bound_returned_closure_and_formal_reten
                      const wrapped = () => local.callback();\n\
                      return wrapped;\n\
                    }\n";
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(source, modules()).with_extra_chunks(&[("static/peer", provider)]),
     );
     assert_preserved_entry_output(&fixture, "42\n");
@@ -395,7 +396,7 @@ fn returned_closure_can_resolve_provider_module_bindings_without_callback_eviden
                     export function makeZero(callback, unused) {\n\
                       return () => moduleCheck(callback()) ? 'ok' : 'no';\n\
                     }\n";
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
     );
     assert_preserved_entry_output(&fixture, "42 ok\n");
@@ -432,7 +433,7 @@ fn returned_closure_can_read_a_destructured_catch_binding() {
                        catch ({ observed }) { return observed === value; }\n\
                      };\n\
                    }\n";
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
     );
     assert_preserved_entry_output(&fixture, "true false\n");
@@ -468,7 +469,7 @@ fn returned_closure_destructuring_locals_stay_deferred() {
                        return value;\n\
                      };\n\
                    }\n";
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
     );
     assert_preserved_entry_output(&fixture, "0 42 1\n");
@@ -499,7 +500,7 @@ fn returned_closure_nested_patterns_keep_formals_and_callback_policy() {
                      };\n\
                      return wrapped;\n\
                    }\n";
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
     );
     assert_preserved_entry_output(&fixture, "42 7 1\n");
@@ -533,7 +534,7 @@ fn destructuring_in_factory_or_class_closure_keeps_existing_refusals() {
                      }\n\
                      invoke(input) { return this.#callback(input); }\n\
                    }\n";
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
     );
     assert_preserved_entry_output(&fixture, "42 7\n");
@@ -545,36 +546,36 @@ fn destructuring_in_factory_or_class_closure_keeps_existing_refusals() {
 
 #[test]
 fn strict_expression_returns_preserve_runtime_values_and_retained_arguments() {
-    for (returned, use_result, expected, retained) in [
+    for (returned, use_result, expected, bindings) in [
         (
             "{ type: input, compare: compare === void 0 ? null : compare }",
-            "console.log(make(() => 42).compare === null); const value = make(() => 42, () => 7); console.log(value.type(), value.compare());",
+            "const first = make(() => 42); console.log(first.compare === null); const value = make(() => 42, () => 7); console.log(value.type(), value.compare());",
             "true\n42 7\n",
-            vec![0, 1],
+            vec!["first", "value"],
         ),
         (
             "{ chosen: input ? null : compare }",
-            "console.log(make(false, () => 42).chosen()); console.log(make(true, () => 7).chosen);",
+            "const chosen = make(false, () => 42).chosen(); console.log(chosen); const absent = make(true, () => 7).chosen; console.log(absent);",
             "42\nnull\n",
-            vec![1],
+            vec!["chosen", "absent"],
         ),
         (
             "{ value: input === compare }",
-            "const value = { get hidden() { throw Error('getter'); }, [Symbol.toPrimitive]() { throw Error('coercion'); } }; console.log(make(value, value).value, make(value, {}).value);",
+            "const input = { get hidden() { throw Error('getter'); }, [Symbol.toPrimitive]() { throw Error('coercion'); } }; const same = make(input, input).value; const different = make(input, {}).value; console.log(same, different);",
             "true false\n",
-            vec![],
+            vec!["same", "different"],
         ),
         (
             "input !== compare",
-            "const value = { [Symbol.toPrimitive]() { throw Error('coercion'); } }; console.log(make(value, value), make(value, {}));",
+            "const input = { [Symbol.toPrimitive]() { throw Error('coercion'); } }; const same = make(input, input); const different = make(input, {}); console.log(same, different);",
             "false true\n",
-            vec![],
+            vec!["same", "different"],
         ),
         (
             "void input",
-            "let calls = 0; console.log(make(() => ++calls) === undefined, calls);",
+            "let calls = 0; const ignored = make(() => ++calls); console.log(ignored === undefined, calls);",
             "true 0\n",
-            vec![],
+            vec!["ignored"],
         ),
     ] {
         let source = format!("import {{ make }} from './peer.js';\n{use_result}\n");
@@ -583,21 +584,9 @@ fn strict_expression_returns_preserve_runtime_values_and_retained_arguments() {
             FixtureOpts::new(&source, vec![]).with_extra_chunks(&[("static/peer", &provider)]),
         );
         assert_preserved_entry_output(&fixture, expected);
-        let report: serde_json::Value =
-            read_json(&fixture.report_root.join("static/app/modules.json"));
-        let summary = &report["imported_callables"]["make"]["foreign_call"];
-        assert!(!summary.is_null(), "strict return: {returned}");
-        assert_eq!(summary["retained_arguments"], serde_json::json!(retained));
-        assert!(
-            fixture.dependency_graph().nodes.iter().any(|node| node
-                .synchronous_execution
-                .as_ref()
-                .is_some_and(|execution| execution
-                    .inference_uses
-                    .iter()
-                    .any(|usage| usage.conclusion == InferenceRule::ForeignCallSummary))),
-            "summary must be consumed: {returned}"
-        );
+        for binding in bindings {
+            assert_provider_execution_evidence(&fixture, binding, "static/peer");
+        }
     }
 }
 
@@ -655,7 +644,7 @@ fn strict_expression_children_keep_observable_effects_and_throws() {
             "import {{ make }} from './peer.js';\nglobalThis.calls = 0;\n{setup}\ntry {{ console.log(make(input), globalThis.calls); }} catch (error) {{ console.log(error.name, globalThis.calls); }}\n"
         );
         let provider = format!("export function make(input) {{ return {returned}; }}\n");
-        let fixture = run_fixture(
+        let fixture = run_fixture_with_graphs(
             FixtureOpts::new(&source, vec![]).with_extra_chunks(&[("static/peer", &provider)]),
         );
         assert_preserved_entry_output(&fixture, expected);
@@ -712,7 +701,7 @@ fn erased_or_uncovered_provider_operations_do_not_get_a_strict_summary() {
             0,
         ),
     ] {
-        let fixture = run_fixture(
+        let fixture = run_fixture_with_graphs(
             FixtureOpts::new("import { make } from './peer.js';\nglobalThis.flag = 0;\ntry { make(1); } catch {}\nconsole.log(globalThis.flag);\n", vec![])
                 .with_extra_chunks(&[("static/peer", provider)]),
         );
@@ -820,6 +809,14 @@ fn equal_retained_inputs_do_not_prove_result_identity_or_shape() {
         .with_extra_chunks(&[("static/peer", "export function wrap(value) { return { value }; }\n")]),
     );
     assert_preserved_entry_output(&fixture, "false true\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/residual/unhandled.js",
+        &["first", "second", "selected"],
+        &[],
+    );
+    assert_provider_execution_evidence(&fixture, "first", "static/peer");
+    assert_provider_execution_evidence(&fixture, "second", "static/peer");
     let graph = fixture.dependency_graph();
     let selected = graph
         .nodes
@@ -831,12 +828,34 @@ fn equal_retained_inputs_do_not_prove_result_identity_or_shape() {
         })
         .expect("selected owner");
     assert!(
-        !selected
+        selected
             .synchronous_execution
             .as_ref()
             .expect("execution")
             .complete,
-        "an opaque returned carrier must not prove an ordinary own-data read"
+        "the checked source bodies establish the returned own-data shape"
+    );
+    let selected_execution = binding_execution_report(&fixture, "selected");
+    assert_eq!(
+        selected_execution["binding_effect_authority"]["authority"], "legacy_execution",
+        "the own-data read retains the current conservative execution authority: {selected_execution:#}"
+    );
+    let first = source_unit_for_binding(&graph, "first");
+    let second = source_unit_for_binding(&graph, "second");
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.source == selected.id
+                && edge.target == first
+                && edge.binding.as_deref() == Some("first")
+        }),
+        "the own-data read retains its actual first result: {graph:#?}"
+    );
+    assert!(
+        !graph
+            .edges
+            .iter()
+            .any(|edge| edge.source == selected.id && edge.target == second),
+        "equal input arguments do not alias the two fresh wrapper results: {graph:#?}"
     );
 }
 
@@ -853,7 +872,7 @@ console.log(wrapped.value);
     let assertion = ChunkExportPurityBuilder::new("static/peer")
         .with_retained_callback_factory("outer", 1, &[0])
         .build();
-    let colocated = run_fixture(
+    let colocated = run_fixture_with_graphs(
         FixtureOpts::new(source, vec![])
             .with_extra_chunks(&[("static/peer", provider)])
             .with_chunk_export_purity(std::slice::from_ref(&assertion))
@@ -885,18 +904,71 @@ console.log(wrapped.value);
 }
 
 #[test]
-fn a_method_on_the_summarized_result_stays_unknown() {
-    // The value model has no foreign object identity, so `.describe` is an
-    // unknown member call that may run the retained callback.
-    reject(
-        "import { object } from './peer.js';\nconst wrapped = object({ read: () => later }).describe('note');\nconst later = 42;\nconsole.log(wrapped.shape.read());\n",
-        "export function object(shape) { return { shape, describe(text) { return this; } }; }\n",
+fn a_method_on_the_summarized_result_keeps_its_callback_read_deferred() {
+    let source = "import { object } from './peer.js';\nconst wrapped = object({ read: () => later }).describe('note');\nconst later = 42;\nconsole.log(wrapped.shape.read());\n";
+    let provider =
+        "export function object(shape) { return { shape, describe(text) { return this; } }; }\n";
+    let colocated = run_fixture_with_graphs(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "callbacks/wrapped",
+                &[Member::new("wrapped"), Member::new("later")],
+            )],
+        )
+        .with_extra_chunks(&[("static/peer", provider)]),
+    );
+    assert_preserved_entry_output(&colocated, "42\n");
+    assert_module_source(
+        &colocated.out_root,
+        "static/app/modules/callbacks/wrapped.js",
+        &["const wrapped", "const later"],
+        &[],
+    );
+    assert_provider_execution_evidence(&colocated, "wrapped", "static/peer");
+    let graph = colocated.dependency_graph();
+    let wrapped = source_unit_for_binding(&graph, "wrapped");
+    let later = source_unit_for_binding(&graph, "later");
+    assert!(
+        !graph.edges.iter().any(|edge| {
+            edge.source == wrapped && edge.target == later && edge.constrains_init_order
+        }),
+        "the returned callback remains deferred until the later read: {graph:#?}"
+    );
+
+    // The exact split puts the summarized method call in a different module
+    // from the later cell. Keep the final schedule guard's conservative
+    // refusal and exercise the emitted candidate so this stays a source-phase
+    // limitation rather than an unverified expected failure.
+    let rejected = run_rejection_fixture_with_graphs_and_args(
+        FixtureOpts::new(source, modules()).with_extra_chunks(&[("static/peer", provider)]),
+        &["--emit-on-rejection"],
+        3,
+    );
+    assert!(
+        rejected
+            .stderr
+            .contains("evaluation_schedule_unknown_reordered"),
+        "{}",
+        rejected.stderr
+    );
+    assert_node_output(&rejected.source_root.join("static/app.js"), "42\n", "");
+    assert_node_output(&rejected.entry_path(), "42\n", "");
+    let schedule: serde_json::Value =
+        read_json(&rejected.report_root.join("evaluation_schedule.json"));
+    assert_eq!(schedule["kind"], "evaluation_schedule_refused");
+    assert!(
+        schedule["rejection"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("evaluation_schedule_unknown_reordered"),
+        "{schedule:#}"
     );
 }
 
 #[test]
 fn identity_returns_its_argument_and_drops_the_other() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "import { keep } from './peer.js';\nconst wrapped = keep({ read: () => later }, () => later);\nconst later = 42;\nconsole.log(wrapped.read());\n",
             modules(),
@@ -918,16 +990,66 @@ fn a_provider_that_may_invoke_its_callback_stays_unknown() {
 }
 
 #[test]
-fn a_provider_reading_exported_state_stays_unknown() {
-    // An importer can replace `registry.lazy` before the call.
-    reject(
-        "import { lazy } from './peer.js';\nconst wrapped = lazy(() => later);\nconst later = 42;\nconsole.log(wrapped());\n",
-        "export const registry = { lazy(e) { return () => e(); } };\nexport function lazy(e) { return registry.lazy(e); }\n",
+fn a_provider_reading_exported_state_preserves_runtime_and_guards_writes() {
+    // With no importer write, evaluating the selected provider body preserves
+    // both runtimes; the importer has no corresponding property write.
+    let original = run_fixture_with_graphs(
+        FixtureOpts::new(
+            "import { lazy } from './peer.js';\nconst wrapped = lazy(() => later);\nconst later = 42;\nconsole.log(wrapped());\n",
+            modules(),
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export const registry = { lazy(e) { return () => e(); } };\nexport function lazy(e) { return registry.lazy(e); }\n",
+        )]),
+    );
+    assert_preserved_entry_output(&original, "42\n");
+    assert_provider_execution_evidence(&original, "wrapped", "static/peer");
+    assert_module_exports(
+        &original.out_root,
+        "static/app/modules/callbacks/wrapped.js",
+        &["wrapped"],
+        &["later"],
+    );
+
+    // An importer replaces the exported property before calling the provider
+    // wrapper. A split candidate that moves the call before this write changes
+    // the output, so the authoritative gate must refuse it.
+    let outcome = run_fixture_to_gate_outcome(
+        FixtureOpts::new(
+            "import { lazy, registry } from './peer.js';\nregistry.lazy = () => () => 'replacement';\nconst wrapped = lazy(() => later);\nconst later = 42;\nconsole.log(wrapped());\n",
+            modules(),
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export const registry = { lazy(e) { return () => e(); } };\nexport function lazy(e) { return registry.lazy(e); }\n",
+        )]),
+    );
+    assert!(
+        !outcome.accepted,
+        "an import-visible provider write must block relocation; source={:?}, emitted={:?}, assessment={:#}",
+        outcome.source.stdout, outcome.emitted.stdout, outcome.assessment
+    );
+    assert_eq!(outcome.source.stdout, "replacement\n");
+    assert_ne!(outcome.emitted.stdout, outcome.source.stdout);
+    assert_eq!(outcome.emitted.stdout, "42\n");
+    assert_module_exports(
+        &outcome.out_root,
+        "static/app/modules/callbacks/wrapped.js",
+        &["wrapped"],
+        &["later"],
+    );
+    assert_module_exports(
+        &outcome.out_root,
+        "static/app/modules/values/later.js",
+        &["later"],
+        &["wrapped"],
     );
 }
 
 #[test]
-fn a_vendor_marked_provider_keeps_its_summary() {
+fn vendor_marked_provider_top_level_invocation_keeps_its_split_blocked() {
+    let source = "import { Box } from './peer.js';\nconst wrapped = new Box(() => later);\nconst later = 42;\nconsole.log(wrapped.invoke());\n";
     let bundle_root = CaseWorkspace::default();
     let bundle_path = bundle_root.path().join("replacement.mjs");
     write_text_file(
@@ -939,16 +1061,42 @@ fn a_vendor_marked_provider_keeps_its_summary() {
         &format!("{BOX}\nexport const replacement = {{ Box }};\n"),
     );
     let vendor_marks = [("static/peer.js", bundled_vendor_mark(bundle_path, &["Box"]))];
-    let fixture = run_fixture_with_args(
+    let package_root = format!("fixture-provider={}", bundle_root.path().display());
+    let package_args = ["--package-root", package_root.as_str()];
+    let provider = [("static/peer", BOX)];
+    let colocated = run_fixture_with_graphs_and_args(
         FixtureOpts::new(
-            "import { Box } from './peer.js';\nconst wrapped = new Box(() => later);\nconst later = 42;\nconsole.log(wrapped.invoke());\n",
-            modules(),
+            source,
+            vec![logical_module(
+                "callbacks/wrapped",
+                &[Member::new("wrapped"), Member::new("later")],
+            )],
         )
-        .with_extra_chunks(&[("static/peer", BOX)])
+        .with_extra_chunks(&provider)
         .with_vendor_marks(&vendor_marks),
-        &["--package-root", &format!("fixture-provider={}", bundle_root.path().display())],
+        &package_args,
     );
-    assert_preserved_entry_output(&fixture, "42\n");
+    assert_preserved_entry_output(&colocated, "42\n");
+    assert_module_source(
+        &colocated.out_root,
+        "static/app/modules/callbacks/wrapped.js",
+        &["wrapped", "later"],
+        &[],
+    );
+
+    let rejected = run_rejection_fixture_with_graphs_and_args(
+        FixtureOpts::new(source, modules())
+            .with_extra_chunks(&provider)
+            .with_vendor_marks(&vendor_marks),
+        &package_args,
+        1,
+    );
+    assert!(!rejected.atomic_group_conflicts().is_empty());
+    assert!(
+        serde_json::to_string(&rejected.atomic_group_conflicts())
+            .unwrap()
+            .contains("eager_use")
+    );
 }
 
 #[test]
@@ -957,7 +1105,7 @@ fn initializer_call_and_record_summary_requires_an_isolated_provider() {
         let provider = format!(
             "{prefix}export const make = function () {{ const state = new Map(); return {{ get size() {{ return state.size; }} }}; }};\n"
         );
-        let fixture = run_fixture(
+        let fixture = run_fixture_with_graphs(
             FixtureOpts::new(
                 "import { make } from './peer.js';\nconst queue = make();\nconsole.log(queue.size);\n",
                 vec![],
@@ -1030,7 +1178,7 @@ fn deferred_descriptor_creation_migration_controls() {
         ),
     ] {
         let source = format!("import {{ make }} from './peer.js';\n{entry}\n");
-        let fixture = run_fixture(
+        let fixture = run_fixture_with_graphs(
             FixtureOpts::new(&source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
         );
         assert_preserved_entry_output(&fixture, expected);
@@ -1075,7 +1223,7 @@ fn executable_prefix_retains_unreachable_pattern_and_loop_bindings() {
         let provider = format!(
             "export function make() {{ return {{ read() {{ return value; }} }}; {declaration} }}"
         );
-        let fixture = run_fixture(
+        let fixture = run_fixture_with_graphs(
             FixtureOpts::new(
                 "import { make } from './peer.js'; console.log(make().read() === undefined);",
                 vec![],
@@ -1095,7 +1243,7 @@ fn executable_prefix_retains_unreachable_pattern_and_loop_bindings() {
         ("let [value] = [42];", "ReferenceError\n"),
     ] {
         let provider = format!("export function make() {{ return value; {declaration} }}");
-        let fixture = run_fixture(
+        let fixture = run_fixture_with_graphs(
             FixtureOpts::new("import { make } from './peer.js'; try { make(); } catch (error) { console.log(error.name); }", vec![])
                 .with_extra_chunks(&[("static/peer", &provider)]),
         );
@@ -1108,7 +1256,7 @@ fn executable_prefix_retains_unreachable_pattern_and_loop_bindings() {
 
 #[test]
 fn repeated_sparse_factory_keeps_holes_and_old_alias_contents() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "function make(value) { return [, value]; } const early = make(1); early[0] = 7; const late = make(2); const values = new Set(late); console.log(early[0], Object.hasOwn(late, 0), values.has(undefined), [...late].join(','));",
         vec![],
     ));
@@ -1129,7 +1277,7 @@ fn dead_native_shadow_cannot_borrow_global_constructor_identity() {
         let provider = format!(
             "export function make() {{ const cache = new Map(); return {{ read() {{ return cache.size; }} }}; {declaration} }}"
         );
-        let fixture = run_fixture(
+        let fixture = run_fixture_with_graphs(
             FixtureOpts::new("import { make } from './peer.js'; try { make(); } catch (error) { console.log(error.name); }", vec![])
                 .with_extra_chunks(&[("static/peer", &provider)]),
         );
@@ -1147,7 +1295,7 @@ fn hoisted_function_values_do_not_reuse_parameter_or_undefined_values() {
         "export function make() { var local; return local; function local() {} }",
         "export const make = function self() { return self; };",
     ] {
-        let fixture = run_fixture(
+        let fixture = run_fixture_with_graphs(
             FixtureOpts::new(
                 "import { make } from './peer.js'; console.log(typeof make(42));",
                 vec![],
@@ -1162,7 +1310,7 @@ fn hoisted_function_values_do_not_reuse_parameter_or_undefined_values() {
             "an unsupported activation value is not an argument or undefined: {provider}"
         );
     }
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "import { make } from './peer.js'; console.log(make(42));",
             vec![],
@@ -1179,7 +1327,7 @@ fn hoisted_function_values_do_not_reuse_parameter_or_undefined_values() {
         serde_json::json!([{"kind": "argument", "index": 0}]),
         "an explicit initializer can replace the hoisted binding value"
     );
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "import { make } from './peer.js'; const earlier = make(41); const later = make(42); console.log(earlier(), later());",
             vec![],

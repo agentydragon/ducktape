@@ -367,12 +367,14 @@ fn annotated_decorate_helper_keeps_temporary_array_frontier_in_landability() {
     // post-class decorator application. The legacy target-local helper effect
     // does not prove that its temporary array argument cannot be retained, so
     // the later opaque operation must remain ordered after the decorator call.
+    // Initialize the decorator before startup so the baseline does not move
+    // that retained closure across an opaque host call.
     let chunk_source = r#"const anchor = "anchor";
-console.log("boot");
+const Z = () => {};
 function Ro(decorators, target, key, flags) {
   for (let i = decorators.length - 1; i >= 0; i--) decorators[i](target, key);
 }
-const Z = () => {};
+console.log("boot");
 class SearchPopoverState {
   constructor() { this.visible = false; }
 }
@@ -422,9 +424,9 @@ export { anchor, SearchPopoverState };
     assert!(
         report.proposals.iter().any(|proposal| {
             proposal.binding_ids == vec!["SearchPopoverState".to_string()]
-                && proposal.source_unit_ids == vec!["unit:1", "unit:4", "unit:5", "unit:6"]
+                && proposal.source_unit_ids == vec!["unit:3", "unit:4", "unit:5", "unit:6"]
                 && proposal.anonymous_statement_source_unit_ids
-                    == vec!["unit:1", "unit:5", "unit:6"]
+                    == vec!["unit:3", "unit:5", "unit:6"]
                 && proposal.landable_today
                 && proposal.extends_module_id.as_deref() == Some("infra/decorators/observable")
                 && proposal.landability_notes.is_empty()

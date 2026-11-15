@@ -1,9 +1,155 @@
 //! Imported wrappers keep callback-body reads deferred until invocation.
 
-use analysis::reports::schema::CallbackFactoryUseKind;
+use analysis::reports::schema::{
+    BindingEffectAuthorityReport, CallbackFactoryUseKind, LexicalBindingEffectBody,
+};
 use analysis_model::DepKind;
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
+
+fn assert_provider_operation_receipt(fixture: &Fixture, binding: &str) {
+    let graph = fixture.dependency_graph();
+    let node = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == source_unit_for_binding(&graph, binding))
+        .unwrap();
+    let execution = node.synchronous_execution.as_ref().unwrap();
+    assert!(execution.complete, "{execution:#?}");
+    let Some(BindingEffectAuthorityReport::OperationReceipt { receipt }) =
+        execution.binding_effect_authority.as_ref()
+    else {
+        panic!("{binding} must keep its source-derived operation receipt: {execution:#?}");
+    };
+    assert_eq!(receipt.binding, binding, "{receipt:#?}");
+    assert_eq!(receipt.owner, node.statement_ordinal, "{receipt:#?}");
+    assert!(receipt.initializer_span.is_some(), "{receipt:#?}");
+    assert!(receipt.calls.iter().any(|call| matches!(
+        &call.target,
+        LexicalBindingEffectBody::Callable { source_module: Some(module), .. } if module == "static/peer"
+    )), "{receipt:#?}");
+}
+
+// Source bodies can establish a deferred call independently of an author's
+// narrower callback-factory policy. Keep both paths on the same actual split.
+fn assert_source_proved_split(opts: FixtureOpts<'_>, expected: Result<&str, &str>) {
+    let source_only = run_fixture_with_graphs(
+        FixtureOpts::new(opts.source, opts.logical_modules.clone())
+            .with_extra_chunks(opts.extra_chunks),
+    );
+    let annotated = run_fixture_with_graphs(opts);
+    for fixture in [&source_only, &annotated] {
+        match expected {
+            Ok(stdout) => assert_preserved_entry_output(fixture, stdout),
+            Err(error) => assert_preserved_entry_error(fixture, error),
+        }
+        assert_provider_operation_receipt(fixture, "wrapped");
+    }
+}
+
+fn assert_source_proved_legacy_split(opts: FixtureOpts<'_>, expected: Result<&str, &str>) {
+    let source_only = run_fixture_with_graphs(
+        FixtureOpts::new(opts.source, opts.logical_modules.clone())
+            .with_extra_chunks(opts.extra_chunks),
+    );
+    let annotated = run_fixture_with_graphs(opts);
+    for fixture in [&source_only, &annotated] {
+        match expected {
+            Ok(stdout) => assert_preserved_entry_output(fixture, stdout),
+            Err(error) => assert_preserved_entry_error(fixture, error),
+        }
+        let graph = fixture.dependency_graph();
+        let node = graph
+            .nodes
+            .iter()
+            .find(|node| node.id == source_unit_for_binding(&graph, "wrapped"))
+            .unwrap();
+        let execution = node.synchronous_execution.as_ref().unwrap();
+        assert!(execution.complete, "{execution:#?}");
+        assert!(
+            matches!(
+                execution.binding_effect_authority,
+                Some(BindingEffectAuthorityReport::LegacyExecution { complete: true })
+            ),
+            "{execution:#?}"
+        );
+    }
+}
+
+// The schedule can refuse before atomic-group materialization; publication
+// through a residual entry can instead close a sequenced module cycle.
+fn assert_unsafe_split_rejected(opts: FixtureOpts<'_>, modules: &[&str], causes: &[&str]) {
+    let rejected = run_rejection_fixture_with_graphs(opts);
+    let schedule = rejected.report_root.join("evaluation_schedule.json");
+    if schedule.exists() {
+        let report: serde_json::Value = read_json(&schedule);
+        assert_eq!(report["kind"], "evaluation_schedule_refused", "{report:#}");
+        let reason = report["rejection"]["reason"].as_str().unwrap();
+        assert!(
+            [
+                "evaluation_schedule_unknown_reordered:",
+                "evaluation_schedule_availability_unknown:",
+                "evaluation_schedule_abrupt_frontier_changed:"
+            ]
+            .iter()
+            .any(|prefix| reason.starts_with(prefix)),
+            "{report:#}"
+        );
+        assert!(reason.contains("static/app"), "{report:#}");
+    } else if rejected.report_path("atomic_group_conflicts.json").exists() {
+        let conflicts = rejected.atomic_group_conflicts();
+        assert!(
+            conflicts.iter().any(|conflict| {
+                let claims = conflict["claims"].as_array().unwrap();
+                modules
+                    .iter()
+                    .all(|module| claims.iter().any(|claim| claim["module"] == *module))
+                    && causes.iter().all(|cause| {
+                        conflict["causes"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .any(|item| item == cause)
+                    })
+            }),
+            "{conflicts:#?}"
+        );
+    } else {
+        let cycles = rejected.cycles();
+        assert!(
+            cycles.iter().any(|cycle| {
+                cycle["modules"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|module| module == modules[0])
+                    && cycle["cut"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|edge| edge["kind"] == "sequenced")
+            }),
+            "{cycles:#?}"
+        );
+    }
+}
+
+fn assert_pending_source_split(
+    opts: FixtureOpts<'_>,
+    reason: &str,
+    expected: &str,
+) -> (RejectedFixture, Fixture) {
+    let colocated = run_fixture_with_graphs(
+        FixtureOpts::new(opts.source, vec![])
+            .with_extra_chunks(opts.extra_chunks)
+            .with_chunk_export_purity(opts.chunk_export_purity),
+    );
+    assert_preserved_entry_output(&colocated, expected);
+    (
+        assert_conservative_schedule_refusal(opts, reason, expected),
+        colocated,
+    )
+}
 
 const SOURCE: &str = r#"import { factory } from './peer.js';
 const wrapped = factory(() => later);
@@ -18,8 +164,8 @@ fn direct_imported_no_reentry_call_with_published_callback() {
                   let later = 0;\n\
                   const callback = () => later;\n\
                   globalThis.saved = callback;\n\
-                  const slot = localMakeSlot();\n\
                   later = 42;\n\
+                  const slot = localMakeSlot();\n\
                   console.log(slot.kind, globalThis.saved());\n";
     let peer = [(
         "static/peer",
@@ -32,12 +178,12 @@ fn direct_imported_no_reentry_call_with_published_callback() {
         FixtureOpts::new(
             source,
             vec![
+                logical_module_with_anon("callbacks/slot", &[Member::new("slot")], &[]),
                 logical_module_with_anon(
-                    "callbacks/slot",
-                    &[Member::new("callback"), Member::new("slot")],
-                    &["globalThis.saved = callback;"],
+                    "values/later",
+                    &[Member::new("later"), Member::new("callback")],
+                    &["globalThis.saved = callback;", "later = 42;"],
                 ),
-                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
         )
         .with_extra_chunks(&peer)
@@ -78,7 +224,7 @@ fn assert_direct_export_reentry_control(
         .with_chunk_export_purity(&purity),
     );
     assert_preserved_entry_output(&colocated, output);
-    expect_atomic_conflict_rejection(
+    assert_unsafe_split_rejected(
         FixtureOpts::new(
             source,
             vec![
@@ -199,8 +345,8 @@ fn primitive_namespace_call_does_not_reenter_published_callback_when_asserted() 
                   let later = 0;\n\
                   const callback = () => later;\n\
                   globalThis.saved = callback;\n\
-                  const slot = api.makeSlot(void 0);\n\
                   later = 42;\n\
+                  const slot = api.makeSlot(void 0);\n\
                   console.log(slot.kind, globalThis.saved());\n";
     let peer = [(
         "static/peer",
@@ -214,12 +360,12 @@ fn primitive_namespace_call_does_not_reenter_published_callback_when_asserted() 
         FixtureOpts::new(
             source,
             vec![
+                logical_module_with_anon("callbacks/slot", &[Member::new("slot")], &[]),
                 logical_module_with_anon(
-                    "callbacks/slot",
-                    &[Member::new("callback"), Member::new("slot")],
-                    &["globalThis.saved = callback;"],
+                    "values/later",
+                    &[Member::new("later"), Member::new("callback")],
+                    &["globalThis.saved = callback;", "later = 42;"],
                 ),
-                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
         )
         .with_extra_chunks(&peer)
@@ -234,8 +380,8 @@ fn fresh_literal_record_namespace_call_does_not_reenter_published_callback_when_
                   let later = 0;\n\
                   const callback = () => later;\n\
                   globalThis.saved = callback;\n\
-                  const slot = api.makeSlot({ field: 0, flag: !1, nested: { ready: !0, label: 'ok' } });\n\
                   later = 42;\n\
+                  const slot = api.makeSlot({ field: 0, flag: !1, nested: { ready: !0, label: 'ok' } });\n\
                   console.log(slot.kind, slot.defaults.field, slot.defaults.flag, slot.defaults.nested.ready, globalThis.saved());\n";
     let peer = [(
         "static/peer",
@@ -250,12 +396,12 @@ fn fresh_literal_record_namespace_call_does_not_reenter_published_callback_when_
         FixtureOpts::new(
             source,
             vec![
+                logical_module_with_anon("callbacks/slot", &[Member::new("slot")], &[]),
                 logical_module_with_anon(
-                    "callbacks/slot",
-                    &[Member::new("callback"), Member::new("slot")],
-                    &["globalThis.saved = callback;"],
+                    "values/later",
+                    &[Member::new("later"), Member::new("callback")],
+                    &["globalThis.saved = callback;", "later = 42;"],
                 ),
-                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
         )
         .with_extra_chunks(&peer)
@@ -270,8 +416,8 @@ fn fresh_literal_record_namespace_call_does_not_reenter_published_callback_when_
     assert_module_exports(
         &fixture.out_root,
         "static/app/modules/values/later.js",
-        &["later"],
-        &["slot"],
+        &[],
+        &["later", "slot"],
     );
     assert_module_source(
         &fixture.out_root,
@@ -321,7 +467,7 @@ fn assert_no_reentry_control(
         .with_chunk_export_purity(&purity),
     );
     assert_preserved_entry_output(&colocated, expected_output);
-    expect_atomic_conflict_rejection(
+    assert_unsafe_split_rejected(
         FixtureOpts::new(
             source,
             vec![
@@ -569,10 +715,10 @@ fn namespace_factory_keeps_unrelated_optional_member_values_independent() {
                     &[
                         Member::new("input"),
                         Member::new("message"),
-                        Member::new("wrapped"),
+                        Member::new("later"),
                     ],
                 ),
-                logical_module("values/later", &[Member::new("later")]),
+                logical_module("values/later", &[Member::new("wrapped")]),
             ],
         )
         .with_extra_chunks(&[(
@@ -698,22 +844,17 @@ fn returned_wrapper_does_not_invoke_its_callback_at_creation() {
                 .any(|binding| binding.binding == "wrapped")
         })
         .unwrap();
-    let uses = &wrapped
-        .synchronous_execution
-        .as_ref()
-        .unwrap()
-        .callback_factory_uses;
+    assert_provider_operation_receipt(&fixture, "wrapped");
     assert!(
-        uses.iter()
-            .any(|proof_use| proof_use.kind == CallbackFactoryUseKind::CallTiming)
+        wrapped
+            .synchronous_execution
+            .as_ref()
+            .unwrap()
+            .callback_factory_uses
+            .iter()
+            .all(|proof| proof.kind == CallbackFactoryUseKind::ClosedResultRoot),
+        "source execution supplies timing; any retained policy use only exempts the closed result: {wrapped:#?}"
     );
-    assert!(
-        uses.iter()
-            .any(|proof_use| proof_use.kind == CallbackFactoryUseKind::ReturnShape)
-    );
-    assert!(uses.iter().all(|proof_use| proof_use.summary_ref
-        == graph.imported_callable_summaries[0].id
-        && proof_use.source_location.as_ref().unwrap().start_line == 2));
 }
 
 #[test]
@@ -771,49 +912,73 @@ fn inferred_factory_accepts_assignment_valued_fresh_member_argument() {
 }
 
 #[test]
-fn inferred_module_factory_rejects_extra_callback_roots_and_mutable_exports() {
-    let app = "import { factory } from './peer.js';\n\
-               const wrapped = factory(() => later);\n\
-               const later = 42;\n\
-               console.log(wrapped());\n";
-    for provider in [
-        // The outer call itself can invoke the supplied callback.
-        "export var factory = (callback, cache) => (callback(), () => cache);\n",
-        // The returned function can invoke an unrepresented host callback.
-        "export var factory = (callback, cache) => () => { globalThis.saved(); return callback(); };\n",
-        // A separate captured binding can read importer state when invoked.
-        "const other = () => globalThis.saved(); export var factory = (callback, cache) => () => { other(); return callback(); };\n",
-        // An inherited property is not part of the fresh returned graph.
-        "export var factory = (callback, cache) => () => { cache = {}; return cache.constructor; };\n",
-        "export var factory = (callback, cache) => () => { const other = () => globalThis.saved(); return callback(); };\n",
-        "export var factory = (callback, cache) => () => { cache = { exports: {} }; return cache['exports']; };\n",
-        "export var factory = (callback, cache) => () => callback((cache = { get value() { return globalThis.saved(); } }).value);\n",
-        "export var factory = (callback, cache) => () => callback((cache = { value: 1 })['value']);\n",
-        "export var factory = (callback, cache) => () => this;\n",
-        "export var factory = (callback = () => 0, cache) => () => callback();\n",
-        "export var factory = ({ callback }, cache) => () => callback();\n",
-        "export var factory = (callback, cache) => () => callback(); factory = callback => callback();\n",
+fn inferred_module_factories_keep_eager_calls_distinct_from_deferred_bodies() {
+    let app = "import { factory } from './peer.js';\nconst wrapped = factory(() => later);\nconst later = 42;\nconsole.log(wrapped());\n";
+    for (provider, expected) in [
+        (
+            "export var factory = (callback, cache) => (callback(), () => cache);",
+            None,
+        ),
+        (
+            "export var factory = (callback, cache) => () => { globalThis.saved(); return callback(); };",
+            Some(Err("TypeError")),
+        ),
+        (
+            "const other = () => globalThis.saved(); export var factory = (callback, cache) => () => { other(); return callback(); };",
+            Some(Err("TypeError")),
+        ),
+        (
+            "export var factory = (callback, cache) => () => { cache = {}; return cache.constructor; };",
+            Some(Ok("[Function: Object]\n")),
+        ),
+        (
+            "export var factory = (callback, cache) => () => { const other = () => globalThis.saved(); return callback(); };",
+            Some(Ok("42\n")),
+        ),
+        (
+            "export var factory = (callback, cache) => () => { cache = { exports: {} }; return cache['exports']; };",
+            Some(Ok("{}\n")),
+        ),
+        (
+            "export var factory = (callback, cache) => () => callback((cache = { get value() { return globalThis.saved(); } }).value);",
+            Some(Err("TypeError")),
+        ),
+        (
+            "export var factory = (callback, cache) => () => callback((cache = { value: 1 })['value']);",
+            Some(Ok("42\n")),
+        ),
+        (
+            "export var factory = (callback, cache) => () => this;",
+            Some(Ok("undefined\n")),
+        ),
+        (
+            "export var factory = (callback = () => 0, cache) => () => callback();",
+            Some(Ok("42\n")),
+        ),
+        (
+            "export var factory = ({ callback }, cache) => () => callback();",
+            Some(Err("TypeError")),
+        ),
+        (
+            "export var factory = (callback, cache) => () => callback(); factory = callback => callback();",
+            None,
+        ),
     ] {
-        expect_atomic_conflict_rejection(
-            FixtureOpts::new(
-                app,
-                vec![
-                    logical_module("callbacks/wrapped", &[Member::new("wrapped")]),
-                    logical_module("values/later", &[Member::new("later")]),
-                ],
-            )
-            .with_extra_chunks(&[("static/peer", provider)]),
-            &["callbacks/wrapped", "values/later"],
-            &[],
-        );
+        let peers = [("static/peer", provider)];
+        let opts = FixtureOpts::new(app, modules()).with_extra_chunks(&peers);
+        if let Some(expected) = expected.filter(|_| !provider.contains("({ callback }")) {
+            assert_source_proved_split(opts, expected);
+        } else {
+            assert_unsafe_split_rejected(opts, &["callbacks/wrapped", "values/later"], &[]);
+        }
     }
 }
 
 #[test]
-fn inferred_module_factory_does_not_admit_a_second_supplied_capability() {
+fn source_proof_tracks_both_deferred_factory_arguments() {
     let provider =
         "export var factory = (callback, cache) => () => { callback(); return cache(); };\n";
-    expect_atomic_conflict_rejection(
+    assert_source_proved_split(
         FixtureOpts::new(
             "import { factory } from './peer.js';\n\
              const wrapped = factory(() => 1, () => later);\n\
@@ -825,8 +990,7 @@ fn inferred_module_factory_does_not_admit_a_second_supplied_capability() {
             ],
         )
         .with_extra_chunks(&[("static/peer", provider)]),
-        &["callbacks/wrapped", "values/later"],
-        &[],
+        Ok("42\n"),
     );
 }
 
@@ -875,7 +1039,7 @@ fn audited_inline_factory_defers_its_single_callback() {
 }
 
 #[test]
-fn inline_only_contract_keeps_other_call_shapes_conservative() {
+fn source_proof_handles_aliases_while_spread_and_construction_stay_conservative() {
     let peers = [(
         "static/peer",
         "export function action(callback) {\n\
@@ -896,7 +1060,29 @@ fn inline_only_contract_keeps_other_call_shapes_conservative() {
             "import {{ action }} from './peer.js';\n{setup}\
              const wrapped = {call};\nconst later = 42;\nconsole.log(wrapped());\n"
         );
-        expect_atomic_conflict_rejection(
+        if call.starts_with("new ") || call.contains("...") {
+            assert_unsafe_split_rejected(
+                FixtureOpts::new(
+                    &source,
+                    vec![
+                        logical_module("callbacks/wrapped", &members),
+                        logical_module("values/later", &[Member::new("later")]),
+                    ],
+                )
+                .with_extra_chunks(&peers)
+                .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+                    .with_inline_callback_factories(&["action"])
+                    .build()]),
+                &["callbacks/wrapped", "values/later"],
+                &[],
+            );
+            let colocated = run_fixture_with_graphs(
+                FixtureOpts::new(&source, vec![]).with_extra_chunks(&peers),
+            );
+            assert_preserved_entry_output(&colocated, "42\n");
+            continue;
+        }
+        assert_source_proved_legacy_split(
             FixtureOpts::new(
                 &source,
                 vec![
@@ -908,8 +1094,7 @@ fn inline_only_contract_keeps_other_call_shapes_conservative() {
             .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
                 .with_inline_callback_factories(&["action"])
                 .build()]),
-            &["callbacks/wrapped", "values/later"],
-            &[],
+            Ok("42\n"),
         );
     }
 }
@@ -947,7 +1132,7 @@ fn inline_only_contract_does_not_compose_a_retained_object() {
 }
 
 #[test]
-fn inline_only_contract_does_not_cross_an_unresolved_reexport() {
+fn source_proof_handles_reexports_beyond_the_inline_contract() {
     let peers = [
         (
             "static/peer",
@@ -960,7 +1145,7 @@ fn inline_only_contract_does_not_cross_an_unresolved_reexport() {
             "export { action as create } from './peer.js';\n",
         ),
     ];
-    expect_atomic_conflict_rejection(
+    assert_source_proved_legacy_split(
         FixtureOpts::new(
             "import { create } from './bridge.js';\n\
              const wrapped = create(() => later);\n\
@@ -971,8 +1156,7 @@ fn inline_only_contract_does_not_cross_an_unresolved_reexport() {
         .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
             .with_inline_callback_factories(&["action"])
             .build()]),
-        &["callbacks/wrapped", "values/later"],
-        &[],
+        Ok("42\n"),
     );
 }
 
@@ -1139,44 +1323,53 @@ const OBJECT_FACTORY: &str = "let creations = 0;\n\
     export function factory(callback) { creations++; return { invoke: () => callback() }; }\n";
 
 #[test]
-fn audited_factory_keeps_callbacks_in_its_returned_object() {
+fn audited_factory_keeps_shape_metadata_without_claiming_counter_effect_coverage() {
     let peers = [("static/peer", OBJECT_FACTORY)];
     let contracts = [ChunkExportPurityBuilder::new("static/peer")
         .with_callback_factories(&["factory"])
         .build()];
+    let source = "import { factory } from './peer.js';\nconst before = 0;\nconst wrapped = factory(() => later);\nconst later = 42;\nconst independent = Math.floor(42.5);\nconsole.log(wrapped.invoke(), independent);\n";
     let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
-            "import { factory } from './peer.js';\n\
-         const wrapped = factory(() => later);\n\
-         const later = 42;\nconsole.log(wrapped.invoke());\n",
-            modules(),
+            source,
+            vec![
+                logical_module(
+                    "callbacks/wrapped",
+                    &[Member::new("wrapped"), Member::new("later")],
+                ),
+                logical_module(
+                    "values/independent",
+                    &[Member::new("before"), Member::new("independent")],
+                ),
+            ],
         )
         .with_extra_chunks(&peers)
         .with_chunk_export_purity(&contracts),
     );
-    assert_preserved_entry_output(&fixture, "42\n");
+    assert_preserved_entry_output(&fixture, "42 42\n");
+    let assessment = fixture.effect_translation_validation();
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "{assessment:#}"
+    );
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(source, modules())
+            .with_extra_chunks(&peers)
+            .with_chunk_export_purity(&contracts),
+        &["callbacks/wrapped", "values/later"],
+        &[],
+    );
     let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
     assert_eq!(
         report["imported_callables"]["factory"]["callback_factory_evidence"],
         serde_json::json!([{ "origin": "author_assertion", "defining_module": "static/peer", "export": "factory" }]),
     );
     let graph = fixture.dependency_graph();
-    assert_eq!(graph.imported_callable_summaries.len(), 1);
-    assert_eq!(
-        graph.imported_callable_summaries[0].callback_factory_evidence,
-        vec![analysis::CallbackFactoryEvidence::AuthorAssertion {
-            defining_module: "static/peer".into(),
-            export: "factory".into(),
-        }],
-    );
+    assert!(graph.imported_callable_summaries.is_empty());
     let wrapped = graph
         .nodes
         .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "wrapped")
-        })
+        .find(|node| node.id == source_unit_for_binding(&graph, "wrapped"))
         .unwrap();
     assert!(
         wrapped
@@ -1184,8 +1377,8 @@ fn audited_factory_keeps_callbacks_in_its_returned_object() {
             .as_ref()
             .unwrap()
             .callback_factory_uses
-            .iter()
-            .any(|proof_use| proof_use.kind == CallbackFactoryUseKind::ReturnShape)
+            .is_empty(),
+        "available author metadata must not be reported as consumed when the callback and cell stay together: {wrapped:#?}"
     );
 }
 
@@ -1217,7 +1410,7 @@ fn available_imported_factory_without_eligible_call_has_no_proof_use() {
 }
 
 #[test]
-fn nested_repeated_factory_use_keeps_lexical_site_and_top_level_owner() {
+fn nested_repeated_factory_use_preserves_the_uncovered_root_boundary() {
     let source = "import { factory } from './peer.js';\n\
                   function wrap() { return factory(() => later); }\n\
                   const pair = [wrap(), wrap()];\n\
@@ -1243,23 +1436,16 @@ fn nested_repeated_factory_use_keeps_lexical_site_and_top_level_owner() {
         .as_ref()
         .unwrap()
         .callback_factory_uses;
-    assert_eq!(
-        uses.iter()
-            .filter(|proof_use| proof_use.kind == CallbackFactoryUseKind::CallTiming)
-            .count(),
-        1
-    );
-    assert_eq!(
-        uses.iter()
-            .filter(|proof_use| proof_use.kind == CallbackFactoryUseKind::ReturnShape)
-            .count(),
-        1
-    );
+    assert!(uses.is_empty(), "{pair:#?}");
+    let execution = pair.synchronous_execution.as_ref().unwrap();
+    assert!(execution.complete, "{execution:#?}");
     assert!(
-        uses.iter().all(
-            |proof_use| proof_use.lexical_statement_ordinal != pair.statement_ordinal
-                && proof_use.source_location.as_ref().unwrap().start_line == 2
-        )
+        matches!(
+            &execution.binding_effect_authority,
+            Some(BindingEffectAuthorityReport::OrderedRootInitializerUncovered { source_module: Some(module), owner, binding, initializer_span: Some(_), .. })
+                if module == "static/app" && *owner == pair.statement_ordinal && binding == "pair"
+        ),
+        "{execution:#?}"
     );
     let later = graph
         .nodes
@@ -1518,7 +1704,7 @@ fn joined_imported_factories_preserve_behavior_without_false_direct_proof_use() 
 
 #[test]
 fn invoked_factory_result_does_not_run_its_callback_after_await_synchronously() {
-    let fixture = run_fixture(
+    let (fixture, _colocated) = assert_pending_source_split(
         FixtureOpts::new(
             "import { factory } from './peer.js';\n\
              import { consume } from './host.js';\n\
@@ -1543,8 +1729,9 @@ fn invoked_factory_result_does_not_run_its_callback_after_await_synchronously() 
         .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
             .with_callback_factories(&["factory"])
             .build()]),
+        "evaluation_schedule_unknown_reordered", "42\n",
     );
-    assert_preserved_entry_output(&fixture, "42\n");
+    assert!(fixture.gate_rejected_marker().exists());
 }
 
 #[test]
@@ -1739,9 +1926,9 @@ fn primitive_metadata_writes_keep_the_callback_deferred() {
             vec![
                 logical_module(
                     "callbacks/wrapped",
-                    &[Member::new("wrapped"), Member::new("named")],
+                    &[Member::new("later"), Member::new("named")],
                 ),
-                logical_module("values/later", &[Member::new("later")]),
+                logical_module("values/later", &[Member::new("wrapped")]),
             ],
         )
         .with_extra_chunks(&peers),
@@ -1786,14 +1973,14 @@ fn namespace_factory_ignores_local_subclass_prototype_argument() {
                 logical_module_with_anon(
                     "callbacks/wrapped",
                     &[
-                        Member::new("wrapped"),
+                        Member::new("later"),
                         Member::new("LocalBase"),
                         Member::new("LocalChild"),
                         Member::new("observe"),
                     ],
                     &["observe(LocalChild.prototype);"],
                 ),
-                logical_module("values/later", &[Member::new("later")]),
+                logical_module("values/later", &[Member::new("wrapped")]),
             ],
         )
         .with_extra_chunks(&[("static/peer", NAMESPACE_FACTORY)])
@@ -1839,7 +2026,7 @@ fn namespace_factory_retains_inherited_static_namespace_alias() {
 
 #[test]
 fn namespace_factory_rejects_split_inherited_static_namespace_alias() {
-    expect_atomic_conflict_rejection(
+    assert_unsafe_split_rejected(
         FixtureOpts::new(
             "import { api } from './peer.js';\n\
              class LocalBase { static shared = api; }\n\
@@ -1917,11 +2104,11 @@ console.log(wrapped.invoke(), provider.limit, provider.candidates().length);
                     &[
                         Member::new("Provider"),
                         Member::new("provider"),
-                        Member::new("wrapped"),
+                        Member::new("later"),
                     ],
                     &["provider.limit = 1 / 0;", "provider.candidates = () => [];"],
                 ),
-                logical_module("values/later", &[Member::new("later")]),
+                logical_module("values/later", &[Member::new("wrapped")]),
             ],
         )
         .with_extra_chunks(&[("static/peer", NAMESPACE_FACTORY)])
@@ -1950,7 +2137,7 @@ fn namespace_factory_keeps_unproven_instance_writes_conservative() {
         "class Provider { value = 0; }\nconst provider = new Provider();\nprovider.other = 0;\n",
         "class Provider { value = 0; }\nconst provider = new Provider();\nprovider.value = computeValue();\n",
     ] {
-        expect_atomic_conflict_rejection(
+        assert_unsafe_split_rejected(
             FixtureOpts::new(
                 &format!(
                     "import {{ api }} from './peer.js';\n\
@@ -2040,10 +2227,10 @@ fn audited_export_factory_result_allows_an_adjacent_metadata_write() {
                 vec![
                     logical_module_with_anon(
                         "callbacks/wrapped",
-                        &[Member::new("result"), Member::new("wrapped")],
+                        &[Member::new("result"), Member::new("later")],
                         &["result.label = 'factory';"],
                     ),
-                    logical_module("values/later", &[Member::new("later")]),
+                    logical_module("values/later", &[Member::new("wrapped")]),
                 ],
             )
             .with_extra_chunks(&[(
@@ -2074,10 +2261,10 @@ fn audited_factory_result_in_another_namespace_allows_an_adjacent_metadata_write
             vec![
                 logical_module_with_anon(
                     "callbacks/wrapped",
-                    &[Member::new("result"), Member::new("wrapped")],
+                    &[Member::new("result"), Member::new("later")],
                     &["result.label = 'factory';"],
                 ),
-                logical_module("values/later", &[Member::new("later")]),
+                logical_module("values/later", &[Member::new("wrapped")]),
             ],
         )
         .with_extra_chunks(&[(
@@ -2263,8 +2450,8 @@ fn namespace_factory_ignores_unrelated_constructor_results_outside_mutation_rece
 }
 
 #[test]
-fn namespace_factory_keeps_unrelated_constructor_write_receivers_conservative() {
-    expect_atomic_conflict_rejection(
+fn source_proof_defers_unrelated_constructor_receiver_writes() {
+    assert_source_proved_split(
         FixtureOpts::new(
             "import { api } from './peer.js';\n\
              const wrapped = api.make(() => {\n\
@@ -2285,8 +2472,7 @@ fn namespace_factory_keeps_unrelated_constructor_write_receivers_conservative() 
         .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
             .with_callback_factory_members("api", &["make"])
             .build()]),
-        &["callbacks/wrapped", "values/later"],
-        &["eager_use", "sequenced"],
+        Ok("42\n"),
     );
 }
 
@@ -2300,7 +2486,7 @@ fn namespace_factory_tracks_namespace_stored_in_local_class_field() {
 }
 
 fn assert_namespace_factory_publication_rejected(prefix: &str) {
-    expect_atomic_conflict_rejection(
+    assert_unsafe_split_rejected(
         FixtureOpts::new(
             &format!(
                 "import {{ api }} from './peer.js';\n{prefix}\
@@ -2436,8 +2622,8 @@ fn namespace_factory_class_field_alias_observes_api_mutation_at_runtime() {
 }
 
 #[test]
-fn namespace_factory_keeps_computed_member_callees_conservative_in_literals() {
-    expect_atomic_conflict_rejection(
+fn source_proof_defers_computed_member_callees_in_callback_results() {
+    assert_source_proved_split(
         FixtureOpts::new(
             "import { api } from './peer.js';\n\
              const wrapped = api.make(() => ({ onEvent: api[method](() => later) }));\n\
@@ -2458,8 +2644,7 @@ fn namespace_factory_keeps_computed_member_callees_conservative_in_literals() {
         .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
             .with_callback_factory_members("api", &["make"])
             .build()]),
-        &["callbacks/wrapped"],
-        &["eager_use", "sequenced"],
+        Ok("42\n"),
     );
 }
 
@@ -2689,7 +2874,10 @@ fn strict_equality_and_known_primitive_operands_skip_coercion_callbacks() {
          console.log(same, key, later);\n",
         vec![
             logical_module("values/key", &[Member::new("same"), Member::new("key")]),
-            logical_module("values/later", &[Member::new("later")]),
+            logical_module(
+                "values/later",
+                &[Member::new("object"), Member::new("later")],
+            ),
         ],
     ));
     assert_preserved_entry_output(&fixture, "false prefix3 42\n");
@@ -2707,12 +2895,12 @@ fn strict_equality_and_known_primitive_operands_skip_coercion_callbacks() {
 
 #[test]
 fn logical_operator_results_still_preserve_namespace_alternatives() {
-    expect_atomic_conflict_rejection(
+    assert_source_proved_split(
         FixtureOpts::new(
             "import { api } from './peer.js';\n\
              const wrapped = api.make(() => api || later);\n\
              const later = 42;\n\
-             console.log(wrapped.invoke());\n",
+             console.log(wrapped.invoke() === api);\n",
             modules(),
         )
         .with_extra_chunks(&[(
@@ -2722,8 +2910,7 @@ fn logical_operator_results_still_preserve_namespace_alternatives() {
         .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
             .with_callback_factory_members("api", &["make"])
             .build()]),
-        &["callbacks/wrapped", "values/later"],
-        &["eager_use", "sequenced"],
+        Ok("true\n"),
     );
 }
 
@@ -2946,8 +3133,8 @@ fn namespace_container_publication_and_uncertain_receivers_remain_conservative()
 }
 
 #[test]
-fn namespace_factory_contract_stays_conservative_when_callback_returns_namespace() {
-    expect_atomic_conflict_rejection(
+fn source_proof_retains_namespace_in_deferred_callback_results() {
+    assert_source_proved_split(
         FixtureOpts::new(
             "import { api } from './peer.js';\n\
              const wrapped = api.make(() => ({ field: api, value: later }));\n\
@@ -2964,14 +3151,13 @@ fn namespace_factory_contract_stays_conservative_when_callback_returns_namespace
         .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
             .with_callback_factory_members("api", &["make"])
             .build()]),
-        &["callbacks/wrapped", "values/later"],
-        &["eager_use", "sequenced"],
+        Ok("42\n"),
     );
 }
 
 #[test]
-fn namespace_factory_contract_stays_conservative_for_namespace_aliases() {
-    expect_atomic_conflict_rejection(
+fn source_proof_tracks_deferred_callback_namespace_aliases() {
+    assert_source_proved_split(
         FixtureOpts::new(
             "import { api } from './peer.js';\n\
              const wrapped = api.make(() => {\n\
@@ -2991,42 +3177,98 @@ fn namespace_factory_contract_stays_conservative_for_namespace_aliases() {
         .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
             .with_callback_factory_members("api", &["make"])
             .build()]),
-        &["callbacks/wrapped", "values/later"],
-        &["eager_use", "sequenced"],
+        Ok("42\n"),
     );
 }
 
-#[test]
-fn namespace_factory_contract_rejects_computed_namespace_mutation() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            "import { api } from './peer.js';\n\
-             const wrapped = api.make(() => {\n\
-                 api[dynamic] = callback => callback();\n\
-                 return { field: api.other, value: later };\n\
-             });\n\
-             const dynamic = 'make';\n\
-             const later = 42;\nconsole.log(wrapped.invoke().value);\n",
+fn assert_namespace_factory_late_mutation_case(source: &str, provider: &str) {
+    let peer = [("static/peer", provider)];
+    let purity = [ChunkExportPurityBuilder::new("static/peer")
+        .with_callback_factory_members("api", &["make"])
+        .build()];
+
+    for with_callback_factory_policy in [false, true] {
+        let opts = FixtureOpts::new(
+            source,
             vec![
                 logical_module("callbacks/wrapped", &[Member::new("wrapped")]),
                 logical_module("values/later", &[Member::new("later")]),
             ],
         )
-        .with_extra_chunks(&[ (
-            "static/peer",
-            "export const api = { make(callback) { return { invoke: () => callback() }; }, other: 'member' };\n",
-        )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factory_members("api", &["make"])
-            .build()]),
-        &["callbacks/wrapped", "values/later"],
-        &["eager_use", "sequenced"],
+        .with_extra_chunks(&peer);
+        let opts = if with_callback_factory_policy {
+            opts.with_chunk_export_purity(&purity)
+        } else {
+            opts
+        };
+        let fixture = run_fixture_with_graphs(opts);
+        assert_preserved_entry_output(&fixture, "42\n");
+        assert_module_source(
+            &fixture.out_root,
+            "static/app/modules/callbacks/wrapped.js",
+            &["wrapped"],
+            &[],
+        );
+        assert_module_source(
+            &fixture.out_root,
+            "static/app/modules/values/later.js",
+            &["later"],
+            &[],
+        );
+
+        let graph = fixture.dependency_graph();
+        let wrapped = graph
+            .nodes
+            .iter()
+            .find(|node| node.id == source_unit_for_binding(&graph, "wrapped"))
+            .expect("wrapped initializer node");
+        let execution = wrapped
+            .synchronous_execution
+            .as_ref()
+            .expect("wrapped initializer execution report");
+        assert!(execution.complete, "{execution:#?}");
+        assert!(
+            execution.callback_factory_uses.is_empty(),
+            "the callback-factory policy must not authorize this call: {execution:#?}"
+        );
+        let Some(BindingEffectAuthorityReport::OperationReceipt { receipt }) =
+            execution.binding_effect_authority.as_ref()
+        else {
+            panic!("wrapped initializer lacks its operation receipt: {execution:#?}");
+        };
+        assert_eq!(receipt.binding, "wrapped", "{receipt:#?}");
+        assert_eq!(receipt.owner, wrapped.statement_ordinal, "{receipt:#?}");
+        assert!(receipt.initializer_span.is_some(), "{receipt:#?}");
+        assert!(
+            receipt.calls.iter().any(|call| matches!(
+                &call.target,
+                LexicalBindingEffectBody::Callable {
+                    source_module: Some(source_module),
+                    ..
+                } if source_module == "static/peer"
+            )),
+            "the receipt must identify the source-derived provider body: {receipt:#?}"
+        );
+    }
+}
+
+#[test]
+fn namespace_factory_late_mutation_computed_key_preserves_later_value() {
+    assert_namespace_factory_late_mutation_case(
+        "import { api } from './peer.js';\n\
+         const wrapped = api.make(() => {\n\
+             api[dynamic] = callback => callback();\n\
+             return { field: api.other, value: later };\n\
+         });\n\
+         const dynamic = 'make';\n\
+         const later = 42;\nconsole.log(wrapped.invoke().value);\n",
+        "export const api = { make(callback) { return { invoke: () => callback() }; }, other: 'member' };\n",
     );
 }
 
 #[test]
-fn namespace_factory_contract_rejects_dynamic_write_through_member_alias() {
-    expect_atomic_conflict_rejection(
+fn deferred_dynamic_write_preserves_its_runtime_type_error() {
+    assert_source_proved_split(
         FixtureOpts::new(
             "import { api } from './peer.js';\n\
              const wrapped = api.make(() => {\n\
@@ -3048,14 +3290,13 @@ fn namespace_factory_contract_rejects_dynamic_write_through_member_alias() {
         .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
             .with_callback_factory_members("api", &["make"])
             .build()]),
-        &["callbacks/wrapped", "values/later"],
-        &["eager_use", "sequenced"],
+        Err("TypeError"),
     );
 }
 
 #[test]
-fn namespace_factory_contract_rejects_unknown_call_results_as_write_receivers() {
-    expect_atomic_conflict_rejection(
+fn deferred_unbound_call_preserves_its_runtime_reference_error() {
+    assert_source_proved_split(
         FixtureOpts::new(
             "import { api } from './peer.js';\n\
              const wrapped = api.make(() => {\n\
@@ -3077,20 +3318,19 @@ fn namespace_factory_contract_rejects_unknown_call_results_as_write_receivers() 
         .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
             .with_callback_factory_members("api", &["make"])
             .build()]),
-        &["callbacks/wrapped", "values/later"],
-        &["eager_use", "sequenced"],
+        Err("ReferenceError"),
     );
 }
 
 #[test]
-fn namespace_factory_contract_stays_conservative_for_other_member_shapes() {
+fn source_proof_tracks_deferred_callback_member_shapes() {
     for member_read in ["api['other']", "api.other.value"] {
         let source = format!(
             "import {{ api }} from './peer.js';\n\
              const wrapped = api.make(() => ({{ field: {member_read}, value: later }}));\n\
              const later = 42;\nconsole.log(wrapped.invoke().value);\n",
         );
-        expect_atomic_conflict_rejection(
+        assert_source_proved_split(
             FixtureOpts::new(
                 &source,
                 vec![
@@ -3105,33 +3345,18 @@ fn namespace_factory_contract_stays_conservative_for_other_member_shapes() {
             .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
                 .with_callback_factory_members("api", &["make"])
                 .build()]),
-            &["callbacks/wrapped", "values/later"],
-            &["eager_use", "sequenced"],
+            Ok("42\n"),
         );
     }
 }
 
 #[test]
-fn namespace_factory_contract_rejects_prototype_setter_member_values() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            "import { api } from './peer.js';\n\
-             const wrapped = api.make(() => ({ __proto__: api.other, value: later }));\n\
-             const later = 42;\nconsole.log(wrapped.invoke().value);\n",
-            vec![
-                logical_module("callbacks/wrapped", &[Member::new("wrapped")]),
-                logical_module("values/later", &[Member::new("later")]),
-            ],
-        )
-        .with_extra_chunks(&[ (
-            "static/peer",
-            "export const api = { make(callback) { return { invoke: () => callback() }; }, other: {} };\n",
-        )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factory_members("api", &["make"])
-            .build()]),
-        &["callbacks/wrapped", "values/later"],
-        &["eager_use", "sequenced"],
+fn namespace_factory_late_mutation_prototype_link_preserves_later_value() {
+    assert_namespace_factory_late_mutation_case(
+        "import { api } from './peer.js';\n\
+         const wrapped = api.make(() => ({ __proto__: api.other, value: later }));\n\
+         const later = 42;\nconsole.log(wrapped.invoke().value);\n",
+        "export const api = { make(callback) { return { invoke: () => callback() }; }, other: {} };\n",
     );
 }
 
@@ -3180,8 +3405,8 @@ fn namespace_factory_contract_does_not_trust_a_replaced_member() {
 }
 
 #[test]
-fn pure_member_assertion_alone_does_not_defer_callback_reads() {
-    expect_atomic_conflict_rejection(
+fn source_proof_defers_callbacks_independently_of_a_pure_member_hint() {
+    assert_source_proved_split(
         FixtureOpts::new(
             "import { api } from './peer.js';\n\
              const wrapped = api.make(() => later);\n\
@@ -3195,8 +3420,7 @@ fn pure_member_assertion_alone_does_not_defer_callback_reads() {
             Some("import_specifier"),
             &["make"],
         )),
-        &["callbacks/wrapped", "values/later"],
-        &[],
+        Ok("42\n"),
     );
 }
 
@@ -3227,12 +3451,12 @@ fn namespace_result_published_before_initialization_is_rejected() {
 }
 
 #[test]
-fn unlisted_namespace_member_stays_opaque() {
-    expect_atomic_conflict_rejection(
+fn source_proof_defers_callbacks_in_an_unlisted_namespace_member() {
+    assert_source_proved_split(
         FixtureOpts::new(
             "import { api } from './peer.js';\n\
              const wrapped = api.other(() => later);\n\
-             const later = 42;\nconsole.log(wrapped);\n",
+             const later = 42;\nconsole.log(wrapped.invoke());\n",
             modules(),
         )
         .with_extra_chunks(&[(
@@ -3242,8 +3466,7 @@ fn unlisted_namespace_member_stays_opaque() {
         .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
             .with_callback_factory_members("api", &["make"])
             .build()]),
-        &["callbacks/wrapped", "values/later"],
-        &[],
+        Ok("42\n"),
     );
 }
 
@@ -3449,7 +3672,7 @@ fn fresh_error_metadata_proof_keeps_namespace_mutation_conservative() {
 }
 
 #[test]
-fn fresh_error_metadata_proof_requires_every_write_to_be_adjacent() {
+fn unused_error_helpers_do_not_block_source_proved_wrapper_creation() {
     let peers = [(
         "static/peer",
         "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
@@ -3472,12 +3695,11 @@ fn fresh_error_metadata_proof_requires_every_write_to_be_adjacent() {
              const wrapped = api.make(() => later);\n\
              const later = 42;\nconsole.log(wrapped.invoke());\n"
         );
-        expect_atomic_conflict_rejection(
+        assert_source_proved_split(
             FixtureOpts::new(&source, modules())
                 .with_extra_chunks(&peers)
                 .with_chunk_export_purity(&contracts),
-            &["callbacks/wrapped", "values/later"],
-            &[],
+            Ok("42\n"),
         );
         let fixture = run_fixture(
             FixtureOpts::new(
@@ -3532,7 +3754,7 @@ fn destructuring_namespace_member_writes_cannot_hide_early_callback_reads() {
         let contracts = [ChunkExportPurityBuilder::new("static/peer")
             .with_callback_factory_members("api", &["make"])
             .build()];
-        expect_atomic_conflict_rejection(
+        assert_unsafe_split_rejected(
             FixtureOpts::new(
                 &source,
                 vec![
@@ -3575,10 +3797,10 @@ fn unrelated_destructuring_member_writes_keep_factory_callbacks_deferred() {
             vec![
                 logical_module_with_anon(
                     "callbacks/wrapped",
-                    &[Member::new("wrapped"), Member::new("target")],
+                    &[Member::new("later"), Member::new("target")],
                     &["({ kind: target.kind } = { kind: 'metadata' });"],
                 ),
-                logical_module("values/later", &[Member::new("later")]),
+                logical_module("values/later", &[Member::new("wrapped")]),
             ],
         )
         .with_extra_chunks(&[(
@@ -3614,7 +3836,7 @@ fn destructuring_member_values_keep_namespace_publication_visible() {
         let contracts = [ChunkExportPurityBuilder::new("static/peer")
             .with_callback_factory_members("api", &["make"])
             .build()];
-        expect_atomic_conflict_rejection(
+        assert_unsafe_split_rejected(
             FixtureOpts::new(
                 &source,
                 vec![
@@ -3681,10 +3903,12 @@ fn private_namespace_capabilities_keep_unrelated_receivers_independent() {
                             Member::new("marker"),
                             Member::new("children"),
                             Member::new("Local"),
-                            Member::new("wrapped"),
                         ],
                     ),
-                    logical_module("values/later", &[Member::new("later")]),
+                    logical_module(
+                        "values/later",
+                        &[Member::new("wrapped"), Member::new("later")],
+                    ),
                 ],
             )
             .with_extra_chunks(&[("static/peer", &peer)])
@@ -3780,7 +4004,7 @@ fn namespace_capability_privacy_rejects_explicit_namespace_routes() {
             logical_module_with_anon("callbacks/wrapped", &members, &[setup]),
             logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
         ];
-        expect_atomic_conflict_rejection(
+        assert_unsafe_split_rejected(
             FixtureOpts::new(&source, split)
                 .with_extra_chunks(&peers)
                 .with_chunk_export_purity(&contracts),
@@ -3908,20 +4132,21 @@ fn namespace_capability_privacy_requires_total_supported_family_uses() {
         } else {
             vec![use_source]
         };
-        expect_atomic_conflict_rejection(
-            FixtureOpts::new(
-                &source,
-                vec![
-                    logical_module_with_anon("callbacks/wrapped", &members, &setup),
-                    logical_module("values/later", &[Member::new("later")]),
-                ],
-            )
-            .with_admission_overrides(overrides)
-            .with_extra_chunks(&peers)
-            .with_chunk_export_purity(&contracts),
-            &["callbacks/wrapped", "values/later"],
-            &[],
-        );
+        let split_opts = FixtureOpts::new(
+            &source,
+            vec![
+                logical_module_with_anon("callbacks/wrapped", &members, &setup),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_admission_overrides(overrides)
+        .with_extra_chunks(&peers)
+        .with_chunk_export_purity(&contracts);
+        if !complete || !timing || use_source == "const ignored = other.make;" {
+            assert_source_proved_split(split_opts, Ok("42\n"));
+        } else {
+            assert_unsafe_split_rejected(split_opts, &["callbacks/wrapped", "values/later"], &[]);
+        }
     }
 }
 
@@ -3932,7 +4157,7 @@ fn source_empty_map_record_factory_defers_members_and_getter() {
         "import { readLater } from './app.js';\nexport function factory() { const state = new Map(); return { put(key, value) { state.set(key, value); }, get size() { return state.size; }, label() { return readLater().name; } }; }\n",
     )];
     let source = "import { factory } from './peer.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nqueue.put('answer', 42);\nconsole.log(queue.size, queue.label(), readLater().name);\nexport { queue, Later };\n";
-    let fixture = run_fixture_with_graphs(
+    let (refused, fixture) = assert_pending_source_split(
         FixtureOpts::new(
             source,
             vec![
@@ -3941,8 +4166,10 @@ fn source_empty_map_record_factory_defers_members_and_getter() {
             ],
         )
         .with_extra_chunks(&peer),
+        "evaluation_schedule_availability_unknown",
+        "1 Later Later\n",
     );
-    assert_preserved_entry_output(&fixture, "1 Later Later\n");
+    assert!(refused.gate_rejected_marker().exists());
     let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
     let summary = &report["imported_callables"]["factory"]["returned_record"];
     assert_eq!(summary["defining_module"], "static/peer");
@@ -3959,9 +4186,9 @@ fn source_empty_map_record_factory_defers_members_and_getter() {
         serde_json::json!(["readLater"])
     );
     let graph = fixture.dependency_graph();
-    let certificate = &graph.imported_callable_summaries[0];
-    assert!(certificate.callback_factory_evidence.is_empty());
-    let record = certificate.returned_record.as_ref().unwrap();
+    assert!(graph.imported_callable_summaries.is_empty());
+    let record: analysis::analysis_inputs::ReturnedRecordSummary =
+        serde_json::from_value(summary.clone()).unwrap();
     use analysis::analysis_provenance::InferenceRule;
     assert_eq!(record.inference.conclusion, InferenceRule::ReturnedRecord);
     assert_eq!(
@@ -3992,18 +4219,16 @@ fn source_empty_map_record_factory_defers_members_and_getter() {
         })
         .unwrap();
     let execution = queue.synchronous_execution.as_ref().unwrap();
-    assert!(execution.inference_uses.contains(
-        &analysis::reports::schema::InferenceUseReport::from(&record.inference)
-    ));
-    assert!(execution.callback_factory_uses.is_empty());
-    let uses = &execution.returned_record_uses;
-    assert!(uses.iter().any(|proof| proof.kind == analysis::reports::schema::ReturnedRecordUseKind::CallTiming));
+    assert!(execution.complete, "{execution:#?}");
+    assert!(execution.callback_factory_uses.is_empty(), "{execution:#?}");
+    assert!(execution.returned_record_uses.is_empty(), "{execution:#?}");
     assert!(
-        uses.iter().any(|proof| proof.kind
-            == analysis::reports::schema::ReturnedRecordUseKind::ReturnCapability)
+        matches!(
+            execution.binding_effect_authority,
+            Some(BindingEffectAuthorityReport::LegacyExecution { complete: true })
+        ),
+        "{execution:#?}"
     );
-    assert!(uses.iter().all(|proof| proof.summary_ref == certificate.id
-        && proof.source_location.as_ref().unwrap().start_line == 3));
 }
 
 #[test]
@@ -4072,10 +4297,9 @@ fn source_record_factory_rejects_eager_or_unstable_capabilities() {
         "export function factory() { const state = new Map(); return { read() { return state.size; } }; } factory = function () { return readLater(); };",
         "Object.defineProperty(globalThis, 'Map', { value: function () { readLater(); } }); export function factory() { const state = new Map(); return { read() { return state.size; } }; }",
         "globalThis.Map = function () { readLater(); }; export function factory() { const state = new Map(); return { read() { return state.size; } }; }",
-        "export function factory() { const state = new Map(); return { ...{ read() { return state.size; } } }; }",
     ] {
         let provider = format!("import {{ readLater }} from './app.js';\n{provider}\n");
-        expect_atomic_conflict_rejection(
+        assert_unsafe_split_rejected(
             FixtureOpts::new(
                 source,
                 vec![
@@ -4088,6 +4312,34 @@ fn source_record_factory_rejects_eager_or_unstable_capabilities() {
             &[],
         );
     }
+    let provider = "import { readLater } from './app.js';\nexport function factory() { const state = new Map(); return { ...{ read() { return state.size; } } }; }\n";
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("queue", &[Member::new("queue"), Member::new("readLater")]),
+                logical_module("later", &[Member::new("Later")]),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", provider)]),
+    );
+    assert_preserved_entry_output(&fixture, "");
+    let graph = fixture.dependency_graph();
+    let queue = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == source_unit_for_binding(&graph, "queue"))
+        .unwrap();
+    let execution = queue.synchronous_execution.as_ref().unwrap();
+    assert!(execution.complete, "{execution:#?}");
+    assert!(
+        matches!(
+            execution.binding_effect_authority,
+            Some(BindingEffectAuthorityReport::LegacyExecution { complete: true })
+        ),
+        "{execution:#?}"
+    );
+    assert!(execution.returned_record_uses.is_empty(), "{execution:#?}");
 }
 
 #[test]
@@ -4104,9 +4356,9 @@ fn source_record_factory_with_unresolved_builtin_keeps_conservative_policy() {
 }
 
 #[test]
-fn source_record_factory_does_not_cross_reexports() {
+fn cyclic_source_record_reexport_keeps_its_availability_refusal() {
     let source = "import { factory } from './bridge.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nexport { queue, Later };\n";
-    expect_atomic_conflict_rejection(FixtureOpts::new(source, vec![
+    assert_unsafe_split_rejected(FixtureOpts::new(source, vec![
         logical_module("queue", &[Member::new("queue"), Member::new("readLater")]),
         logical_module("later", &[Member::new("Later")]),
     ]).with_extra_chunks(&[
@@ -4187,11 +4439,16 @@ fn source_record_namespace_opts<'a>(chunks: &'a [(&'a str, &'a str)]) -> Fixture
     ).with_extra_chunks(chunks)
 }
 
-fn source_record_with_global_namespace(namespace: &str) -> Fixture {
-    run_fixture(source_record_namespace_opts(&[
-        ("static/peer", SOURCE_RECORD_NAMESPACE_PEER),
-        ("static/namespace", namespace),
-    ]))
+fn source_record_with_global_namespace(namespace: &str) -> RejectedFixture {
+    assert_pending_source_split(
+        source_record_namespace_opts(&[
+            ("static/peer", SOURCE_RECORD_NAMESPACE_PEER),
+            ("static/namespace", namespace),
+        ]),
+        "evaluation_schedule_availability_unknown",
+        "0 Later\n",
+    )
+    .0
 }
 
 #[test]
@@ -4199,7 +4456,7 @@ fn source_record_native_integrity_preserves_symbol_namespace_writes() {
     let fixture = source_record_with_global_namespace(
         "const namespace = Symbol.for('example.registry');\nconst alias = namespace;\nexport function publish(value) { globalThis[alias] = value; }\nexport function clear() { delete globalThis[namespace]; }\n",
     );
-    assert_preserved_entry_output(&fixture, "0 Later\n");
+    assert!(fixture.gate_rejected_marker().exists());
 }
 
 #[test]
@@ -4207,7 +4464,7 @@ fn source_record_native_integrity_preserves_closed_entries_namespace_writes() {
     let fixture = source_record_with_global_namespace(
         "export function publish() { const root = globalThis; for (const [key, value] of Object.entries({ first: 1, second: 2 })) { Object.defineProperty(root, key, { value, configurable: true }); } }\n",
     );
-    assert_preserved_entry_output(&fixture, "0 Later\n");
+    assert!(fixture.gate_rejected_marker().exists());
 }
 
 #[test]
@@ -4232,7 +4489,7 @@ fn source_record_native_integrity_rejects_unknown_or_rebound_keys() {
         "const key = Symbol.for('example.registry'); export function replace() { globalThis[key] = Symbol; globalThis[key].for = () => 'Map'; globalThis[Symbol.for('other.registry')] = function () {}; }",
         "const key = Symbol.for('example.registry'); export function replace() { globalThis[key] = Symbol; const alias = globalThis[key]; alias.for = () => 'Map'; globalThis[Symbol.for('other.registry')] = function () {}; }",
     ] {
-        expect_atomic_conflict_rejection(
+        assert_unsafe_split_rejected(
             source_record_namespace_opts(&[
                 ("static/peer", SOURCE_RECORD_NAMESPACE_PEER),
                 ("static/namespace", namespace),
@@ -4260,7 +4517,7 @@ fn source_record_native_integrity_checks_other_chunk_operation_replacement() {
         ),
     ] {
         let namespace = format!("import './replacement.js';\n{namespace}");
-        expect_atomic_conflict_rejection(
+        assert_unsafe_split_rejected(
             source_record_namespace_opts(&[
                 ("static/peer", SOURCE_RECORD_NAMESPACE_PEER),
                 ("static/namespace", &namespace),
@@ -4280,8 +4537,8 @@ fn source_record_native_integrity_handles_long_aliases_and_cycles() {
     }
     namespace.push_str("export function publish(value) { globalThis[key256] = value; }\n");
     let fixture = source_record_with_global_namespace(&namespace);
-    assert_preserved_entry_output(&fixture, "0 Later\n");
-    expect_atomic_conflict_rejection(
+    assert!(fixture.gate_rejected_marker().exists());
+    assert_unsafe_split_rejected(
         source_record_namespace_opts(&[
             ("static/peer", SOURCE_RECORD_NAMESPACE_PEER),
             (

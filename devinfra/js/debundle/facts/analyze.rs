@@ -1,4 +1,5 @@
 use super::*;
+use crate::purity::Effects;
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 
@@ -402,6 +403,259 @@ enum SynchronousCallAnalysis {
     Omit,
 }
 
+/// The owned runtime payload used by local and cross-module execution.
+/// Keeping this free of parser borrows lets program registries retain it after
+/// the source view used for fact settlement has gone away.
+pub(crate) struct PreparedExecutionModule {
+    pub(crate) shadowed: BTreeSet<&'static str>,
+    pub(crate) value_flow: super::ChunkValueFlow,
+    pub(crate) graph: ChunkCodeGraph,
+    pub(crate) prepared_sync_index: super::sync_effects::interpreter::PreparedSynchronousCallIndex,
+    pub(crate) facts: Vec<StatementFacts>,
+    pub(crate) heap_contents: super::heap_contents::ChunkHeapContents,
+    pub(crate) statement_effects: Vec<Effects>,
+}
+
+// Program execution registries share immutable prepared modules across
+// parallel chunk analyses. Keep this contract checked at compile time so a
+// future preparation-only cache cannot silently make the retained payload
+// thread-local again.
+const _: fn() = || {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<PreparedExecutionModule>();
+};
+
+impl PreparedExecutionModule {
+    pub(crate) fn execution_index_arc(
+        &self,
+    ) -> &std::sync::Arc<super::sync_effects::execution_index::ExecutionIndex> {
+        self.prepared_sync_index.execution_index_arc()
+    }
+
+    pub(crate) fn execution_inputs<'prepared>(
+        &'prepared self,
+        hints: &'prepared AnalysisInputs,
+        export_reentry_policy: &ExportReentryPolicy,
+    ) -> (
+        super::sync_effects::interpreter::ExecutionInputs<'prepared>,
+        super::sync_effects::interpreter::ExecutionState,
+    ) {
+        super::sync_effects::interpreter::prepare_execution_inputs(
+            &self.value_flow,
+            super::sync_effects::interpreter::ExecutionSourceProofs {
+                index: self.prepared_sync_index.execution_index(),
+                graph: &self.graph,
+                set_iterable: self.prepared_sync_index.set_iterable_proof(),
+                callable_heap_contents: &self.heap_contents.callables,
+            },
+            self.statement_effects.clone(),
+            &self.shadowed,
+            hints,
+            export_reentry_policy,
+            &self.facts,
+        )
+    }
+}
+
+/// A chunk whose source-dependent indexes and facts have been prepared once.
+///
+/// The item views borrow the original module; the runtime payload is fully
+/// owned and can be shared with a program registry as one immutable value.
+pub struct PreparedChunkAnalysis<'source> {
+    body: Vec<TopLevelItemView<'source>>,
+    pub(crate) runtime: std::sync::Arc<PreparedExecutionModule>,
+    top_level_await: Option<SourceUnitOrdinal>,
+    redundant_purity_hints: Vec<RedundantPurityHint>,
+    redundant_pure_member_hints: Vec<RedundantPureMemberHint>,
+    synchronous_calls: SynchronousCallAnalysis,
+}
+
+impl PreparedChunkAnalysis<'_> {
+    /// Create the one execution view shared by root and prepared provider
+    /// sources. The returned values borrow this preparation and its exact
+    /// assumptions; this type does not retain a self-borrowing view.
+    pub(crate) fn execution_inputs<'prepared>(
+        &'prepared self,
+        hints: &'prepared AnalysisInputs,
+        export_reentry_policy: &ExportReentryPolicy,
+    ) -> (
+        super::sync_effects::interpreter::ExecutionInputs<'prepared>,
+        super::sync_effects::interpreter::ExecutionState,
+    ) {
+        self.runtime.execution_inputs(hints, export_reentry_policy)
+    }
+
+    /// Finish execution and settle the prepared facts while the retained AST
+    /// views and all source indexes remain together.
+    pub fn finish(
+        &self,
+        hints: &AnalysisInputs,
+        export_reentry_policy: &ExportReentryPolicy,
+        locator: Option<SourceLocator<'_>>,
+    ) -> ChunkFactAnalysis {
+        let mut facts = self.runtime.facts.clone();
+        let purities: Vec<CompletedPurity> = match self.synchronous_calls {
+            SynchronousCallAnalysis::Include => {
+                let (inputs, state) = self.execution_inputs(hints, export_reentry_policy);
+                let execution =
+                    super::sync_effects::interpreter::run_prepared_synchronous_execution(
+                        inputs,
+                        state,
+                        facts.len(),
+                    );
+                for (fact, effects) in facts.iter_mut().zip(execution.prefix_effects) {
+                    fact.synchronous_prefix_effects = effects;
+                }
+                execution
+                    .owners
+                    .into_iter()
+                    .zip(facts.iter_mut())
+                    .map(|((calls, purity), fact)| {
+                        fact.synchronous_calls = Some(calls);
+                        purity
+                    })
+                    .collect()
+            }
+            SynchronousCallAnalysis::Omit => self
+                .runtime
+                .statement_effects
+                .iter()
+                .cloned()
+                .map(CompletedPurity::unrefined)
+                .collect(),
+        };
+        for fact in &mut facts {
+            if let Some(span) = fact
+                .synchronous_calls
+                .as_ref()
+                .and_then(|calls| calls.local_record_factory_heap_call)
+                && let Some(arguments) = self
+                    .runtime
+                    .heap_contents
+                    .checked_factory_arguments
+                    .get(&span.lo.0)
+            {
+                fact.heap_contents = arguments.clone();
+            }
+        }
+        let global_object_names = unshadowed_global_object_aliases(&self.body);
+        for ((fact, purity), item_view) in facts.iter_mut().zip(purities).zip(&self.body) {
+            settle_statement_purity(
+                fact,
+                purity,
+                item_view.as_module_item(),
+                &self.runtime.shadowed,
+                hints,
+                &self.runtime.graph,
+                &global_object_names,
+            );
+        }
+        for fact in &mut facts {
+            // Resolve any reason spans on `fact.purity` to SourceLocations using
+            // the same per-chunk line index; the classifier has no line resolver.
+            if let Some(locator) = locator
+                && let Purity::NotPure { reasons } = &mut fact.purity
+            {
+                for reason in reasons.iter_mut() {
+                    reason.source_location = locator.span(reason.span);
+                }
+            }
+        }
+        for (fact, (inferences, inputs)) in facts
+            .iter_mut()
+            .zip(self.runtime.heap_contents.native_read_uses.clone())
+        {
+            if let Some(calls) = &mut fact.synchronous_calls {
+                for use_ in inferences {
+                    if !calls.inference_uses.contains(&use_) {
+                        calls.inference_uses.push(use_);
+                    }
+                }
+                for use_ in inputs {
+                    if !calls.native_operation_input_uses.contains(&use_) {
+                        calls.native_operation_input_uses.push(use_);
+                    }
+                }
+            }
+        }
+        if let Some(locator) = locator {
+            let source_locations: Vec<_> = facts
+                .iter()
+                .map(|fact| fact.source_location.clone())
+                .collect();
+            for fact in &mut facts {
+                if let Some(calls) = &mut fact.synchronous_calls {
+                    for loss in &mut calls.precision_losses {
+                        loss.source_location =
+                            if loss.source_module.as_deref() != hints.current_chunk_id.as_deref() {
+                                loss.source_module.as_deref().and_then(|module| {
+                                    hints
+                                        .executables
+                                        .as_ref()?
+                                        .source_unit_location(module, loss.statement_ordinal)
+                                })
+                            } else if loss.span.is_dummy() {
+                                source_locations
+                                    .get(loss.statement_ordinal.0)
+                                    .cloned()
+                                    .flatten()
+                            } else {
+                                locator.span(loss.span)
+                            };
+                    }
+                    for proof_use in &mut calls.callback_factory_uses {
+                        proof_use.source_location = locator.span(proof_use.span);
+                    }
+                    for proof_use in &mut calls.returned_record_uses {
+                        proof_use.source_location = locator.span(proof_use.span);
+                    }
+                    for proof_use in &mut calls.local_record_factory_uses {
+                        proof_use.source_location = locator.span(proof_use.span);
+                    }
+                    for rejection in &mut calls.local_record_factory_rejections {
+                        rejection.source_location = locator.span(rejection.span);
+                    }
+                    for proof_use in &mut calls.author_host_contract_uses {
+                        proof_use.source_location = locator.span(proof_use.span);
+                    }
+                    for proof_use in &mut calls.native_operation_input_uses {
+                        proof_use.source_location = locator.span(proof_use.span);
+                    }
+                }
+            }
+        }
+        let read_names: BTreeSet<&str> = facts
+            .iter()
+            .flat_map(|fact| fact.reads.eager.iter().chain(&fact.reads.lazy))
+            .map(|id| id.0.as_ref())
+            .collect();
+        let unconsulted_purity_hints = hints
+            .assumptions
+            .declared_pure
+            .iter()
+            .filter(|name| !read_names.contains(name.as_str()))
+            .cloned()
+            .collect();
+        ChunkFactAnalysis {
+            facts,
+            top_level_await: self.top_level_await,
+            redundant_purity_hints: self.redundant_purity_hints.clone(),
+            redundant_pure_member_hints: self.redundant_pure_member_hints.clone(),
+            unconsulted_purity_hints,
+        }
+    }
+}
+
+/// Prepare all source-dependent indexes once while retaining the original
+/// item views for the shared program executor.
+pub fn prepare_chunk_analysis<'source>(
+    structural: StructuralChunkAnalysis<'source>,
+    hints: &AnalysisInputs,
+    locator: Option<SourceLocator<'_>>,
+) -> PreparedChunkAnalysis<'source> {
+    prepare_chunk_analysis_with_sync(structural, hints, locator, SynchronousCallAnalysis::Include)
+}
+
 fn analyze_chunk_with_policy_and_sync(
     structural: StructuralChunkAnalysis<'_>,
     hints: &AnalysisInputs,
@@ -409,6 +663,19 @@ fn analyze_chunk_with_policy_and_sync(
     locator: Option<SourceLocator<'_>>,
     synchronous_calls: SynchronousCallAnalysis,
 ) -> ChunkFactAnalysis {
+    prepare_chunk_analysis_with_sync(structural, hints, locator, synchronous_calls).finish(
+        hints,
+        export_reentry_policy,
+        locator,
+    )
+}
+
+fn prepare_chunk_analysis_with_sync<'source>(
+    structural: StructuralChunkAnalysis<'source>,
+    hints: &AnalysisInputs,
+    locator: Option<SourceLocator<'_>>,
+    synchronous_calls: SynchronousCallAnalysis,
+) -> PreparedChunkAnalysis<'source> {
     let StructuralChunkAnalysis {
         body,
         stable_array_spread_shapes,
@@ -577,6 +844,13 @@ fn analyze_chunk_with_policy_and_sync(
         },
         &mut facts,
     );
+    if matches!(synchronous_calls, SynchronousCallAnalysis::Include) {
+        super::sync_effects::interpreter::record_retained_callback_barriers(
+            &value_flow,
+            &prepared_sync_index,
+            &mut facts,
+        );
+    }
     let purity_context = StatementPurityContext {
         body: &body,
         shadowed: &shadowed,
@@ -589,131 +863,29 @@ fn analyze_chunk_with_policy_and_sync(
         shared_vars: &shared_vars,
         native_own_data_reads: &native_own_data_reads,
     };
-    // Current-owner proof preparation consumes the unchanged classifier.
-    // Completed purity is published after evaluation and exact certificate
-    // discharge. Vendor pruning finalizes the same classifier without execution.
-    let purities = match synchronous_calls {
-        SynchronousCallAnalysis::Include => {
-            super::sync_effects::interpreter::annotate_synchronous_calls(
-                &value_flow,
-                super::sync_effects::interpreter::SynchronousCallProofs {
-                    set_iterable: &set_iterable_proof,
-                    graph: &graph,
-                    purity: &purity_context,
-                    callable_heap_contents: &heap_contents.callables,
-                    index: prepared_sync_index,
-                },
-                &shadowed,
-                hints,
-                export_reentry_policy,
-                &mut facts,
-            )
-        }
-        SynchronousCallAnalysis::Omit => facts
-            .iter()
-            .map(|fact| CompletedPurity::unrefined(purity_context.statement_effects(fact)))
-            .collect(),
-    };
-    for fact in &mut facts {
-        if let Some(span) = fact
-            .synchronous_calls
-            .as_ref()
-            .and_then(|calls| calls.local_record_factory_heap_call)
-            && let Some(arguments) = heap_contents.checked_factory_arguments.get(&span.lo.0)
-        {
-            fact.heap_contents = arguments.clone();
-        }
-    }
-    let global_object_names = unshadowed_global_object_aliases(&body);
-    for ((fact, purity), item_view) in facts.iter_mut().zip(purities).zip(&body) {
-        settle_statement_purity(
-            fact,
-            purity,
-            item_view.as_module_item(),
-            &shadowed,
-            hints,
-            &graph,
-            &global_object_names,
-        );
-    }
-    for fact in &mut facts {
-        // Resolve any reason spans on `fact.purity` to SourceLocations using
-        // the same per-chunk line index; the classifier has no line resolver.
-        if let Some(locator) = locator
-            && let Purity::NotPure { reasons } = &mut fact.purity
-        {
-            for reason in reasons.iter_mut() {
-                reason.source_location = locator.span(reason.span);
-            }
-        }
-    }
-    for (fact, (inferences, inputs)) in facts.iter_mut().zip(heap_contents.native_read_uses) {
-        if let Some(calls) = &mut fact.synchronous_calls {
-            for use_ in inferences {
-                if !calls.inference_uses.contains(&use_) {
-                    calls.inference_uses.push(use_);
-                }
-            }
-            for use_ in inputs {
-                if !calls.native_operation_input_uses.contains(&use_) {
-                    calls.native_operation_input_uses.push(use_);
-                }
-            }
-        }
-    }
-    if let Some(locator) = locator {
-        let source_locations: Vec<_> = facts
-            .iter()
-            .map(|fact| fact.source_location.clone())
-            .collect();
-        for fact in &mut facts {
-            if let Some(calls) = &mut fact.synchronous_calls {
-                for loss in &mut calls.precision_losses {
-                    loss.source_location = if loss.span.is_dummy() {
-                        source_locations[loss.statement_ordinal.0].clone()
-                    } else {
-                        locator.span(loss.span)
-                    };
-                }
-                for proof_use in &mut calls.callback_factory_uses {
-                    proof_use.source_location = locator.span(proof_use.span);
-                }
-                for proof_use in &mut calls.returned_record_uses {
-                    proof_use.source_location = locator.span(proof_use.span);
-                }
-                for proof_use in &mut calls.local_record_factory_uses {
-                    proof_use.source_location = locator.span(proof_use.span);
-                }
-                for rejection in &mut calls.local_record_factory_rejections {
-                    rejection.source_location = locator.span(rejection.span);
-                }
-                for proof_use in &mut calls.author_host_contract_uses {
-                    proof_use.source_location = locator.span(proof_use.span);
-                }
-                for proof_use in &mut calls.native_operation_input_uses {
-                    proof_use.source_location = locator.span(proof_use.span);
-                }
-            }
-        }
-    }
-    let read_names: BTreeSet<&str> = facts
+    let statement_effects = facts
         .iter()
-        .flat_map(|fact| fact.reads.eager.iter().chain(&fact.reads.lazy))
-        .map(|id| id.0.as_ref())
+        .map(|fact| purity_context.statement_effects(fact))
         .collect();
-    let unconsulted_purity_hints = hints
-        .assumptions
-        .declared_pure
-        .iter()
-        .filter(|name| !read_names.contains(name.as_str()))
-        .cloned()
-        .collect();
-    ChunkFactAnalysis {
+    // This source-only payload is immutable and shared within the analysis
+    // thread; its SWC-derived members are intentionally not `Send + Sync`.
+    #[allow(clippy::arc_with_non_send_sync)]
+    let runtime = std::sync::Arc::new(PreparedExecutionModule {
+        shadowed,
+        value_flow,
+        graph,
+        prepared_sync_index,
         facts,
+        heap_contents,
+        statement_effects,
+    });
+    PreparedChunkAnalysis {
+        body,
+        runtime,
         top_level_await,
         redundant_purity_hints,
         redundant_pure_member_hints,
-        unconsulted_purity_hints,
+        synchronous_calls,
     }
 }
 

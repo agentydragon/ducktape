@@ -161,6 +161,31 @@ pub fn compute_dependency_graph_and_atomic_groups_with(
 ) -> Result<DependencyGraphAndAtomicGroups, DependencyGraphBuildError> {
     let (dependency_graph, unused_commuting_statements) =
         build_dependency_graph_with(facts, options, commuting_statements)?;
+    finish_atomic_groups(dependency_graph, unused_commuting_statements)
+}
+
+/// Source-aware graph builder for production analysis, where the canonical
+/// module identity is known and portable execution effects can be consumed.
+pub fn compute_dependency_graph_and_atomic_groups_for_module(
+    module: &str,
+    facts: &[StatementFacts],
+    options: GraphOptions,
+    commuting_statements: &[ResolvedCommutingStatements],
+) -> Result<DependencyGraphAndAtomicGroups, DependencyGraphBuildError> {
+    let (dependency_graph, unused_commuting_statements) =
+        super::graph::build_dependency_graph_for_module(
+            module,
+            facts,
+            options,
+            commuting_statements,
+        )?;
+    finish_atomic_groups(dependency_graph, unused_commuting_statements)
+}
+
+fn finish_atomic_groups(
+    dependency_graph: DependencyGraph,
+    unused_commuting_statements: Vec<CommutingStatementsUnused>,
+) -> Result<DependencyGraphAndAtomicGroups, DependencyGraphBuildError> {
     let atomic_groups = compute_atomic_groups(&dependency_graph);
     Ok(DependencyGraphAndAtomicGroups {
         dependency_graph,

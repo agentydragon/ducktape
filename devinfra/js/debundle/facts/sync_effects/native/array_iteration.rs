@@ -13,8 +13,7 @@ use super::super::adapters::application::LocalExecutionContext;
 use super::super::allocation_transfer::AllocationValue;
 use super::super::array_transfer::{ArrayIterationSelection, iteration_snapshot};
 use super::super::effect_coverage::{EffectCoverageFragment, LocalBodyIdentity, LocalCallReceipt};
-use super::super::execution_index::ExecutionIndex;
-use super::super::interpreter::MAX_SYNCHRONOUS_INVOCATIONS;
+use super::super::interpreter::{Executor, MAX_SYNCHRONOUS_INVOCATIONS};
 use super::super::kernel::frame::{
     LocalFrame, LocalValueResult, RemainderDisposition, SelectedValue,
 };
@@ -32,17 +31,18 @@ use analysis_model::PrimKinds;
 use std::collections::BTreeSet;
 use swc_common::Span;
 
-/// The callback a row may invoke: one local callable with no live captures.
+/// The callback a row may invoke: one prepared callable with no live captures.
 pub(in crate::facts::sync_effects) struct AdmittedCallback {
-    key: u32,
+    key: crate::program_execution::RuntimeAllocationId,
+    local_key: u32,
     owner: source_identity::SourceUnitOrdinal,
     captured: Option<CapturedContext>,
 }
 
-/// The callback a row may invoke: one local, synchronous, non-generator
+/// The callback a row may invoke: one synchronous, non-generator
 /// callable with simple parameters and no live captures.
 pub(in crate::facts::sync_effects) fn admitted_callback(
-    index: &ExecutionIndex,
+    executor: &Executor<'_, '_>,
     values: &Values,
 ) -> Result<AdmittedCallback, OrderedCallAdmissionRefusal> {
     let (key, captured) = match values.iter().collect::<Vec<_>>().as_slice() {
@@ -57,6 +57,10 @@ pub(in crate::facts::sync_effects) fn admitted_callback(
         }
         _ => return Err(OrderedCallAdmissionRefusal::ArrayIterationCallbackUnsupported),
     };
+    let index = executor
+        .callable_inputs(key)
+        .map(|source| source.index)
+        .ok_or(OrderedCallAdmissionRefusal::ArrayIterationCallbackUnsupported)?;
     let callable = index
         .callables
         .get(&key)
@@ -71,6 +75,9 @@ pub(in crate::facts::sync_effects) fn admitted_callback(
         return Err(OrderedCallAdmissionRefusal::ArrayIterationCallbackUnsupported);
     }
     Ok(AdmittedCallback {
+        local_key: index
+            .local_origin(key)
+            .ok_or(OrderedCallAdmissionRefusal::ArrayIterationCallbackUnsupported)?,
         key,
         owner: callable.owner,
         captured,
@@ -117,8 +124,7 @@ impl LocalExecutionContext<'_, '_, '_> {
         let row = selection.row;
         let proof = self
             .executor
-            .inputs
-            .index
+            .source_index()
             .array_iterations
             .get(&CallSite::from(span))
             .filter(|proof| proof.row.member == row.member);
@@ -131,8 +137,10 @@ impl LocalExecutionContext<'_, '_, '_> {
                 span,
             );
         };
-        let result_allocation = proof.result;
-        let callback = match admitted_callback(self.executor.inputs.index, &arguments[0].values) {
+        let result_site = proof.result;
+        let result_allocation =
+            result_site.map(|local| self.executor.instantiate_allocation(local));
+        let callback = match admitted_callback(self.executor, &arguments[0].values) {
             Ok(callback) => callback,
             Err(refusal) => return self.refuse_iteration(frame, reached, refusal, span),
         };
@@ -179,13 +187,17 @@ impl LocalExecutionContext<'_, '_, '_> {
             property: index.to_string(),
         }));
         for cell in reads {
-            self.outcome.effects.record_heap_read(cell, non_assumed);
+            self.outcome.record_runtime_heap_read(
+                self.executor.inputs.root.index.source_scope(),
+                cell,
+                non_assumed,
+            );
         }
         let mut effects = EffectCoverageFragment::no_effects();
         effects.depend_on(&dependencies);
         // Element records the callback may read at the current prefix:
         // settled, with a source record shape, checked before any callback.
-        let element_records: BTreeSet<u32> = slots
+        let element_records: BTreeSet<crate::program_execution::RuntimeAllocationId> = slots
             .iter()
             .flatten()
             .filter_map(|value| match value {
@@ -225,24 +237,30 @@ impl LocalExecutionContext<'_, '_, '_> {
                     .invoke(callback.key, operands, callback.captured.clone(), false);
             self.executor.state.iteration_element_records = outer_records;
             let returned = nested.returns.clone();
-            let complete = nested.complete
+            let mut complete = nested.complete
                 && !nested.unknown_call
                 && nested.effects.precision_losses.is_empty()
-                && nested.effects.uninitialized_reads.is_empty();
+                && !nested.runtime_binding_effects.has_uninitialized_reads();
             let mut coverage = nested.effect_coverage.clone();
             coverage.depend_on(&prerequisites);
-            coverage.selected_local_call(LocalCallReceipt {
-                caller: caller.clone(),
-                call_span: span,
-                target: LocalBodyIdentity::Callable {
-                    key: callback.key,
-                    owner: callback.owner,
-                },
-                dependencies: prerequisites,
-            });
+            if let Some(source_module) = self.executor.receipt_source_module(callback.key.source) {
+                coverage.selected_local_call(LocalCallReceipt {
+                    caller: caller.clone(),
+                    call_span: span,
+                    target: LocalBodyIdentity::Callable {
+                        source_module,
+                        key: callback.local_key,
+                        owner: callback.owner,
+                    },
+                    dependencies: prerequisites,
+                });
+            } else {
+                coverage = Default::default();
+                complete = false;
+            }
             self.executor.apply_rebind_effects(&nested.effects.rebinds);
             self.outcome
-                .absorb_call_effects(&mut nested.effects, self.executor.state.assumption.as_ref());
+                .absorb_call_outcome(&mut nested, self.executor.state.assumption.as_ref());
             self.outcome.executed_owners.extend(nested.executed_owners);
             self.outcome.unknown_call |= nested.unknown_call;
             self.outcome
@@ -316,7 +334,11 @@ impl LocalExecutionContext<'_, '_, '_> {
                     EffectCell::ObjectShape(allocation),
                     EffectCell::ArrayContents(allocation),
                 ] {
-                    self.outcome.effects.record_heap_write(cell, non_assumed);
+                    self.outcome.record_runtime_heap_write(
+                        self.executor.inputs.root.index.source_scope(),
+                        cell,
+                        non_assumed,
+                    );
                 }
                 values
             }

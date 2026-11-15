@@ -333,7 +333,6 @@ fn ordered_callback_return_retains_the_selected_call_and_read_receipts() {
     );
     let result_id = source_unit_for_binding(&graph, "result");
     let early_id = source_unit_for_binding(&graph, "early");
-    let holder_id = source_unit_for_binding(&graph, "holder");
     let later_id = source_unit_for_binding(&graph, "later");
     assert!(
         graph.edges.iter().any(|edge| {
@@ -344,11 +343,11 @@ fn ordered_callback_return_retains_the_selected_call_and_read_receipts() {
                 && edge.role.as_ref().is_some_and(|role| {
                     serde_json::to_value(role).is_ok_and(|role| {
                         role["kind"] == "promoted_at_init"
-                            && role["callee_source_unit"].as_str() == Some(holder_id)
+                            && role["callee_source_unit"].as_str() == Some(result_id)
                     })
                 })
         }),
-        "the actual selected body read remains ordered: {graph:#?}"
+        "the checked body read is attributed to the scheduling root; its call receipt retains the selected definition: {graph:#?}"
     );
     assert!(
         !graph.edges.iter().any(|edge| {
@@ -796,6 +795,48 @@ fn local_call_effect_receipts_refuse_unmodeled_operations_and_prologues() {
             "readSeed()",
             "operation_receipt",
             1,
+        ),
+        (
+            "41",
+            "function readSeed(value) { const retained = () => value; return value; }",
+            "readSeed(seed)",
+            "operation_receipt",
+            1,
+        ),
+        (
+            "41",
+            "function readSeed() { const local = seed; const retained = () => local; return local; }",
+            "readSeed()",
+            "operation_receipt",
+            1,
+        ),
+        (
+            "41",
+            "function readSeed() { const retained = () => local; const local = seed; return local; }",
+            "readSeed()",
+            "operation_receipt",
+            1,
+        ),
+        (
+            "41",
+            "function readSeed() { const local = seed; const retained = async () => { throw local; }; return local; }",
+            "readSeed()",
+            "operation_receipt",
+            1,
+        ),
+        (
+            "41",
+            "function readSeed() { const local = seed; const retained = function* () { yield local; }; return local; }",
+            "readSeed()",
+            "operation_receipt",
+            1,
+        ),
+        (
+            "41",
+            "function readSeed() { let local = 0; const retained = () => local; local = seed; return local; }",
+            "readSeed()",
+            "ordered_root_initializer_uncovered",
+            2,
         ),
         (
             "({value: 41})",

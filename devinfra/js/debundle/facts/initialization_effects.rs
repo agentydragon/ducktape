@@ -115,9 +115,9 @@ pub enum OwnerInitializationCoverageRefusalReason {
     /// An admitted root statement's kernel attempt did not seal it, so the
     /// flattened lane ran it instead.
     UnprovedStatementOperation,
-    /// The owner's execution created a callback that captures a live
-    /// activation cell; a call that receives it has no effect receipt until
-    /// call-effect coverage follows live captures.
+    /// Historical execution withheld a callback-creation receipt because it
+    /// retained a live activation cell. Current creation preserves that cell
+    /// identity and proves creation independently of its later invocation.
     CallbackCapturesLiveCell,
     UnknownCall,
     PrecisionLoss,

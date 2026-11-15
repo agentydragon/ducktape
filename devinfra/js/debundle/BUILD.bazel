@@ -85,10 +85,19 @@ rust_test(
 
 rust_library(
     name = "source_identity",
-    srcs = ["source_identity.rs"],
+    srcs = [
+        "source_identity.rs",
+        "source_identity/program_linker.rs",
+    ],
     crate_root = "source_identity.rs",
     edition = "2024",
     deps = ["@crates//:serde"],
+)
+
+rust_test(
+    name = "source_identity_test",
+    crate = ":source_identity",
+    edition = "2024",
 )
 
 rust_library(
@@ -365,6 +374,7 @@ rust_library(
         "artifacts/indexed_files.rs",
         "artifacts/metrics.rs",
         "artifacts/paths.rs",
+        "artifacts/program_linker.rs",
         "artifacts/reports.rs",
         "artifacts/runtime_resources.rs",
         "artifacts/source_program.rs",
@@ -725,6 +735,10 @@ rust_library(
         "facts/sync_effects/execution_index/callback_arguments.rs",
         "facts/sync_effects/execution_index/prototype_properties.rs",
         "facts/sync_effects/interpreter.rs",
+        "facts/sync_effects/interpreter/availability_trace.rs",
+        "facts/sync_effects/interpreter/callback_reads.rs",
+        "facts/sync_effects/interpreter/foreign_callback_memos.rs",
+        "facts/sync_effects/interpreter/invocation_replay.rs",
         "facts/sync_effects/kernel.rs",
         "facts/sync_effects/kernel/branch.rs",
         "facts/sync_effects/kernel/cells.rs",
@@ -744,6 +758,7 @@ rust_library(
         "facts/sync_effects/native/operation.rs",
         "facts/sync_effects/noninvoking_initialization.rs",
         "facts/sync_effects/own_data_transfer.rs",
+        "facts/sync_effects/program_activation.rs",
         "facts/sync_effects/property_inference.rs",
         "facts/sync_effects/roots.rs",
         "facts/sync_effects/roots/assignment.rs",
@@ -763,6 +778,7 @@ rust_library(
         "facts/sync_effects/world/join.rs",
         "facts/sync_effects/world/object_surface.rs",
         "facts/sync_effects/world/prefix_values.rs",
+        "facts/sync_effects/world/program_modules.rs",
         "facts/value_flow.rs",
         "facts/value_flow_tests.rs",
         "facts/value_set_tests.rs",
@@ -782,6 +798,9 @@ rust_library(
         "loader_closure.rs",
         "module_assignment.rs",
         "placement_projection.rs",
+        "program_execution.rs",
+        "program_execution/effects.rs",
+        "program_execution/schedule.rs",
         "purity/classifier.rs",
         "purity/classifier_tests.rs",
         "purity/code_graph.rs",
@@ -1267,6 +1286,7 @@ rust_library(
         "lowering/candidate_emission.rs",
         "lowering/chunk_renames.rs",
         "lowering/commuting_statements.rs",
+        "lowering/evaluation_schedule.rs",
         "lowering/exports.rs",
         "lowering/imports/cross_chunk_imports.rs",
         "lowering/imports/import_emit.rs",

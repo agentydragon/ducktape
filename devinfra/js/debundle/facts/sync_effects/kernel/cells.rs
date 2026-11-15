@@ -142,9 +142,27 @@ pub(super) fn declared_binding_stored(
     }
 }
 
-/// Effects of declarative-cell creation, initialization, or a checked store
-/// to an initialized local. A binding with a live or policy-owned cell can be
-/// observed by a closure, so it has no receipt here.
+/// Creation and initialization of this activation's fresh declarative cells.
+/// Retaining a cell in a closure does not turn InitializeBinding into a read
+/// or a store to an enclosing activation. The initializer expression and any
+/// callbacks it executes keep their separate effects.
+pub(super) fn declarative_binding_initialization(
+    context: &impl KernelContext,
+    body: &LocalBody,
+    binding: &Id,
+) -> EffectCoverageFragment {
+    if matches!(
+        body.bindings.get(binding),
+        Some(LocalBinding::Parameter | LocalBinding::Let | LocalBinding::Const)
+    ) {
+        context.cell_effect()
+    } else {
+        EffectCoverageFragment::default()
+    }
+}
+
+/// Effects of a checked store to an initialized local. A binding with a live
+/// or policy-owned cell can be observed by a closure, so it has no receipt here.
 pub(super) fn declarative_binding_operation(
     context: &impl KernelContext,
     body: &LocalBody,
@@ -183,7 +201,14 @@ pub(super) fn store_captured(
         }
     }
     Err(
-        match context.unproved(frame, Unproved::CaptureStore { values, span }) {
+        match context.unproved(
+            frame,
+            Unproved::CaptureStore {
+                binding,
+                values,
+                span,
+            },
+        ) {
             Disposition::Summarized => RemainderDisposition::AlreadySummarized,
             Disposition::Resolved(_) | Disposition::Refused => RemainderDisposition::NeedsSummary,
         },

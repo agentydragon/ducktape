@@ -115,6 +115,8 @@ pub(super) struct MaterializeLogicalChunkInputs<'a> {
 }
 
 pub(super) struct MaterializedLogicalChunk {
+    pub(super) evaluation_commutations:
+        analysis::program_execution::schedule::EvaluationCommutations,
     pub(super) chunk_id: ChunkId,
     pub(super) target_file: String,
     pub(super) source_path: String,
@@ -176,7 +178,7 @@ pub(super) struct PreparedLogicalChunk<'a> {
 /// hint-sensitive analysis that follows claim application.
 pub(super) struct ClaimedLogicalChunk<'a> {
     prepared: PreparedLogicalChunk<'a>,
-    structural_analysis: StructuralChunkSourceFacts<'a>,
+    structural_analysis: Option<StructuralChunkSourceFacts<'a>>,
     /// Selector-resolved author overlay, applied after raw facts are computed or loaded.
     source_only_initializer_bindings: BTreeSet<String>,
     external_initializer_contracts: BTreeMap<String, spec::InitializerExternalEffects>,
@@ -342,7 +344,7 @@ pub(super) fn claim_prepared_chunk<'a>(
         .expect("prepared frontend structure is present");
     Ok(ClaimedLogicalChunk {
         prepared,
-        structural_analysis,
+        structural_analysis: Some(structural_analysis),
         source_only_initializer_bindings,
         external_initializer_contracts,
     })
@@ -363,12 +365,24 @@ pub(super) struct GraphConstructionContext<'a> {
     pub(super) resolved_member_sites: &'a BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
 }
 
+impl<'source> ClaimedLogicalChunk<'source> {
+    pub(super) fn take_entry_source_facts(
+        &mut self,
+        entry: &str,
+    ) -> Option<StructuralChunkSourceFacts<'source>> {
+        (self.prepared.target_file == entry)
+            .then(|| self.structural_analysis.take())
+            .flatten()
+    }
+}
+
 /// Analyze, plan and lower a chunk whose selector claims are already resolved.
 pub(super) fn finish_logical_chunk(
     claimed: ClaimedLogicalChunk<'_>,
     projection: &AnalysisProjection<'_>,
     program_summary: &super::program_summary::ProgramSummary,
     loaded_facts: Option<ChunkFactAnalysis>,
+    prepared_facts: Option<&staged_analysis::PreparedSourceChunk<'_>>,
     program_graph: &ProgramGraphOutput<'_>,
     graph_context: GraphConstructionContext<'_>,
 ) -> Result<FinishedLogicalChunk> {
@@ -461,7 +475,13 @@ pub(super) fn finish_logical_chunk(
         },
         match loaded_facts {
             Some(facts) => ChunkFacts::Loaded(facts),
-            None => ChunkFacts::Compute(structural_analysis),
+            None => match prepared_facts.filter(|prepared| prepared.entry_file == target_file) {
+                Some(prepared) => ChunkFacts::Prepared(&prepared.analysis),
+                None => ChunkFacts::Compute(
+                    structural_analysis
+                        .expect("unprepared entry retains its structural source facts"),
+                ),
+            },
         },
         projection,
         program_summary,
@@ -850,6 +870,8 @@ pub(super) fn finish_logical_chunk(
             runtime_ast,
             declarations: &declarations,
             declaration_by_name: &declaration_by_name,
+            source_public_export_identities_by_statement:
+                &source_public_export_identities_by_statement,
             chunk_top_level_mark,
         },
         plan: LowerChunkPlan {
@@ -931,6 +953,11 @@ pub(super) fn finish_logical_chunk(
     };
     Ok(FinishedLogicalChunk::Lowered(Box::new(
         MaterializedLogicalChunk {
+            evaluation_commutations:
+                analysis::program_execution::schedule::EvaluationCommutations::from_graph(
+                    chunk_id,
+                    assignment_analysis.inputs().dependency_graph(),
+                ),
             chunk_id: chunk_id_interned,
             unmatched_spec_claims,
             target_file,

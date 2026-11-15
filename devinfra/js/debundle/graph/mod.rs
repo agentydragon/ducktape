@@ -28,6 +28,7 @@ mod quotient;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use build::build_dependency_graph_for_module;
 pub use build::{
     CommutingStatementsDiagnostic, CommutingStatementsUnused, DependencyGraphBuildError,
     DuplicateTopLevelDeclaration, GraphOptions, KnownConflict, PremiseVerdict,

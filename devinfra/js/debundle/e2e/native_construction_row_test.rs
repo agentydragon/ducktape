@@ -14,6 +14,44 @@ fn opts<'a>(source: &'a str, anonymous: &[&str]) -> FixtureOpts<'a> {
     )
 }
 
+fn split_error_opts<'a>(source: &'a str, mutations: &[&str]) -> FixtureOpts<'a> {
+    FixtureOpts::new(
+        source,
+        vec![
+            logical_module_with_anon(
+                "values/later",
+                &[Member::new("later")],
+                &["globalThis.saved = () => later;"],
+            ),
+            logical_module_with_anon("values/failure", &[Member::new("failure")], mutations),
+        ],
+    )
+}
+
+fn colocated_opts<'a>(source: &'a str, members: &[Member], anonymous: &[&str]) -> FixtureOpts<'a> {
+    FixtureOpts::new(
+        source,
+        vec![logical_module_with_anon("values/all", members, anonymous)],
+    )
+}
+
+fn expect_schedule_refusal(opts: FixtureOpts<'_>, source_output: &str) {
+    let rejected = run_rejection_fixture_with_graphs_and_args(opts, &["--emit-on-rejection"], 3);
+    assert!(
+        rejected
+            .stderr
+            .contains("evaluation_schedule_unknown_reordered"),
+        "expected a conservative evaluation-schedule refusal:\n{}",
+        rejected.stderr
+    );
+    assert!(rejected.gate_rejected_marker().is_file());
+    assert_node_output(
+        &rejected.source_root.join("static/app.js"),
+        source_output,
+        "",
+    );
+}
+
 fn source(mutations: &[&str], declaration: &str) -> String {
     format!(
         "globalThis.saved = () => later;\n{}\n{declaration}\nconst later = 42;\nconsole.log(failure.message, later);\n",
@@ -37,9 +75,41 @@ fn error_with_a_primitive_message_cannot_reenter() {
         ),
     ] {
         let source = source(mutations, declaration);
-        let fixture = run_fixture(opts(&source, &anonymous(mutations)));
+        let fixture = run_fixture_with_graphs(colocated_opts(
+            &source,
+            &[Member::new("failure"), Member::new("later")],
+            &anonymous(mutations),
+        ));
         assert_preserved_entry_output(&fixture, "boom 42\n");
         assert_all_emitted_js_checks(&fixture);
+
+        let split_opts = split_error_opts(&source, mutations);
+        if mutations.is_empty() && declaration.starts_with("const failure = Error(") {
+            // Keep the assignment and its captured cell in the same module. The
+            // primitive-message Error call can move after that publication without
+            // changing their source-relative setter phase.
+            let split = run_fixture_with_graphs(split_opts);
+            assert_preserved_entry_output(&split, "boom 42\n");
+            assert_all_emitted_js_checks(&split);
+            assert_module_source(
+                &split.out_root,
+                "static/app/modules/values/later.js",
+                &["globalThis.saved = ()=>later;", "const later = 42;"],
+                &["const failure = Error("],
+            );
+            assert_module_source(
+                &split.out_root,
+                "static/app/modules/values/failure.js",
+                &["const failure = Error("],
+                &["globalThis.saved = () => later;", "const later = 42;"],
+            );
+        } else {
+            // The `new Error` form (and a prepareStackTrace mutation) does not
+            // retain this schedule proof. Preserve the host-visible setter phase
+            // with a typed schedule refusal; the colocated controls above retain
+            // the supported native-row semantics.
+            expect_schedule_refusal(split_opts, "boom 42\n");
+        }
     }
 }
 
@@ -77,17 +147,32 @@ fn assign_source(restore: &str) -> String {
     )
 }
 
-fn assign_opts(source: &str) -> FixtureOpts<'_> {
+fn assign_split_opts(source: &str) -> FixtureOpts<'_> {
     FixtureOpts::new(
         source,
         vec![
-            logical_module_with_anon(
+            logical_module(
                 "values/failure",
                 &[Member::new("restore"), Member::new("failure")],
+            ),
+            logical_module_with_anon(
+                "values/later",
+                &[Member::new("later")],
                 &["globalThis.saved = () => later;"],
             ),
-            logical_module("values/later", &[Member::new("later")]),
         ],
+    )
+}
+
+fn assign_colocated_opts(source: &str) -> FixtureOpts<'_> {
+    colocated_opts(
+        source,
+        &[
+            Member::new("restore"),
+            Member::new("failure"),
+            Member::new("later"),
+        ],
+        &["globalThis.saved = () => later;"],
     )
 }
 
@@ -108,8 +193,9 @@ fn object_assign_from_a_static_literal_writes_only_its_keys() {
     let source = assign_source(
         "Object.assign(Error, { prepareStackTrace: () => globalThis.saved(), stackTraceLimit: saved });",
     );
-    let fixture = run_fixture_with_graphs(assign_opts(&source));
+    let fixture = run_fixture_with_graphs(assign_colocated_opts(&source));
     assert_preserved_entry_output(&fixture, "boom 42\n");
+    assert_all_emitted_js_checks(&fixture);
     assert_eq!(
         restore_slot_keys(&fixture),
         [
@@ -117,6 +203,7 @@ fn object_assign_from_a_static_literal_writes_only_its_keys() {
             serde_json::json!({ "string": "stackTraceLimit" }),
         ]
     );
+    expect_schedule_refusal(assign_split_opts(&source), "boom 42\n");
 }
 
 #[test]
@@ -128,11 +215,14 @@ fn object_assign_from_another_source_may_write_any_key() {
         "Object.assign(Error, { [saved]: 5 });",
     ] {
         let source = assign_source(restore);
-        let fixture = run_fixture_with_graphs(assign_opts(&source));
+        let fixture = run_fixture_with_graphs(assign_colocated_opts(&source));
         let keys = restore_slot_keys(&fixture);
         assert!(
             keys.contains(&serde_json::json!("unknown")),
             "{restore}: {keys:?}"
         );
+        assert_preserved_entry_output(&fixture, "boom 42\n");
+        assert_all_emitted_js_checks(&fixture);
+        expect_schedule_refusal(assign_split_opts(&source), "boom 42\n");
     }
 }

@@ -15,7 +15,49 @@
 //! bare classifier verdicts; these end-to-end tests pin the
 //! cycle-breaking behaviour the rule enables in real specs.
 
+use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring};
 use debundle_e2e_support::*;
+
+fn assert_plain_data_call_schedule_limit(source: &str, call: &str, expected_stdout: &str) {
+    let opts = || {
+        FixtureOpts::new(
+            source,
+            vec![logical_module("b_module", &[Member::new("b")])],
+        )
+    };
+    let rejected = assert_conservative_schedule_refusal(
+        opts(),
+        "evaluation_schedule_unknown_reordered",
+        expected_stdout,
+    );
+    let assessment = rejected.candidate_relocation_assessment();
+    assert_eq!(assessment["legacy_gate_accepts"], true, "{assessment:#}");
+    assert_module_source(
+        &rejected.app_root(),
+        "static/app/modules/b_module.js",
+        &[call],
+        &["const a"],
+    );
+    let graph = rejected.dependency_graph();
+    assert!(
+        node_declaring(&graph, "b").purity.is_pure(),
+        "the plain-data native call remains pure in the split candidate"
+    );
+
+    let control = run_fixture_with_graphs(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "all",
+            &[Member::new("a"), Member::new("b"), Member::new("c")],
+        )],
+    ));
+    assert_preserved_entry_output(&control, expected_stdout);
+    assert!(
+        node_declaring(&control.dependency_graph(), "b")
+            .purity
+            .is_pure()
+    );
+}
 
 /// Cycle-forcing layout for the positive case:
 ///   1. `const a = (() => 1)();` — SE; stays in residual
@@ -49,17 +91,14 @@ export { a, b, c };
 
 #[test]
 fn object_entries_on_plain_object_literal_admits() {
-    assert_pure_cycle_break(
+    assert_plain_data_call_schedule_limit(
         r#"const a = (() => 1)();
 const b = Object.entries({ x: 1, y: 2 });
 const c = b.length + a;
 console.log(c);
 export { a, b, c };
 "#,
-        vec![logical_module("b_module", &[Member::new("b")])],
-        "b_module",
-        &["const b = Object.entries("],
-        &["const a"],
+        "const b = Object.entries(",
         "3\n",
     );
 }
@@ -68,34 +107,28 @@ export { a, b, c };
 fn object_keys_on_plain_array_literal_admits() {
     // Array literal is also an ordinary plain-data shape — its own
     // properties are integer-indexed data slots, no accessors.
-    assert_pure_cycle_break(
+    assert_plain_data_call_schedule_limit(
         r#"const a = (() => 1)();
 const b = Object.keys([10, 20, 30]);
 const c = b.length + a;
 console.log(c);
 export { a, b, c };
 "#,
-        vec![logical_module("b_module", &[Member::new("b")])],
-        "b_module",
-        &["const b = Object.keys("],
-        &["const a"],
+        "const b = Object.keys(",
         "4\n",
     );
 }
 
 #[test]
 fn object_from_entries_on_array_of_pair_literals_admits() {
-    assert_pure_cycle_break(
+    assert_plain_data_call_schedule_limit(
         r#"const a = (() => 1)();
 const b = Object.fromEntries([["x", 1], ["y", 2]]);
 const c = b.x + a;
 console.log(c);
 export { a, b, c };
 "#,
-        vec![logical_module("b_module", &[Member::new("b")])],
-        "b_module",
-        &["const b = Object.fromEntries("],
-        &["const a"],
+        "const b = Object.fromEntries(",
         "2\n",
     );
 }

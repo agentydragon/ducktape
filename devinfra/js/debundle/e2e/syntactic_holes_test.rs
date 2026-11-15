@@ -1367,11 +1367,13 @@ fn source_match_declarator_holes_extract_multiple_bindings_and_skip_holes_for_ad
 console.log(runtimePrefix, runtimeRead("left"), runtimeFormat("ok"), runtimeSuffix);
 export { runtimePrefix, runtimeFormat, runtimeLabels, runtimeRead, runtimeSuffix };
 "#,
-        vec![logical_module_with_binding_groups(
-            "display",
-            &[],
-            &[BindingGroup::source_alpha_adopt_all(
-                r#"const DECLARATORS_BEFORE = null,
+        vec![
+            logical_module("prefix", &[Member::new("runtimePrefix")]),
+            logical_module_with_binding_groups(
+                "display",
+                &[],
+                &[BindingGroup::source_alpha_adopt_all(
+                    r#"const DECLARATORS_BEFORE = null,
   formatDisplayLabel = EXPR_FORMAT,
   displayLabels = new Map([
     ["left", "Left"],
@@ -1379,11 +1381,12 @@ export { runtimePrefix, runtimeFormat, runtimeLabels, runtimeRead, runtimeSuffix
   ]),
   readDisplayLabel = EXPR_READ,
   DECLARATORS_AFTER = null;"#,
-            )],
-        )],
+                )],
+            ),
+        ],
     ));
 
-    assert_entry_output(&fixture, "prefix Left OK suffix\n");
+    assert_preserved_entry_output(&fixture, "prefix Left OK suffix\n");
     assert_module_exports(
         &fixture.out_root,
         "static/app/modules/display.js",

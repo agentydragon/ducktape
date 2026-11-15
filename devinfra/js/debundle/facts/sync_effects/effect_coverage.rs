@@ -40,10 +40,21 @@ impl DomainCoverage {
     }
 }
 
+// A missing source qualification is different from an explicitly unnamed
+// standalone analysis. deserialize_with makes field presence mandatory even
+// for Option, whose derived serde missing-field behavior otherwise is None.
+fn required_source_module<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    Option::<String>::deserialize(deserializer)
+}
+
 /// Exact identity for the one root initializer whose ordered execution may
 /// seal lexical binding-effect coverage.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct RootInitializerIdentity {
+    #[serde(deserialize_with = "required_source_module")]
+    pub(super) source_module: Option<String>,
     pub(super) owner: SourceUnitOrdinal,
     pub(super) binding: Id,
     pub(super) initializer_span: Option<Span>,
@@ -53,16 +64,22 @@ pub(crate) struct RootInitializerIdentity {
 #[serde(rename_all = "snake_case")]
 pub(super) enum LocalBodyIdentity {
     RootInitializer {
+        #[serde(deserialize_with = "required_source_module")]
+        source_module: Option<String>,
         owner: SourceUnitOrdinal,
         initializer_span: Span,
     },
     Callable {
+        #[serde(deserialize_with = "required_source_module")]
+        source_module: Option<String>,
         key: u32,
         owner: SourceUnitOrdinal,
     },
     /// The lowered base-constructor body (instance fields, then constructor
     /// statements) of the class defined at `class`.
     Constructor {
+        #[serde(deserialize_with = "required_source_module")]
+        source_module: Option<String>,
         class: u32,
         owner: SourceUnitOrdinal,
     },
@@ -191,6 +208,7 @@ impl BindingEffectCoverage {
                     unreachable!("typed authority comes from this root attempt");
                 };
                 BindingEffectAuthorityReport::OrderedRootInitializerUncovered {
+                    source_module: identity.source_module.clone(),
                     owner: identity.owner,
                     binding: identity.binding.0.to_string(),
                     initializer_span: identity.initializer_span,
@@ -232,6 +250,8 @@ impl SavedBindingEffectCoverage {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct SavedRootInitializerIdentity {
+    #[serde(deserialize_with = "required_source_module")]
+    source_module: Option<String>,
     owner: SourceUnitOrdinal,
     binding: SavedBinding,
     initializer_span: Option<Span>,
@@ -240,6 +260,7 @@ pub(crate) struct SavedRootInitializerIdentity {
 impl SavedRootInitializerIdentity {
     fn snapshot(identity: &RootInitializerIdentity, ordinals: &ContextOrdinals) -> Result<Self> {
         Ok(Self {
+            source_module: identity.source_module.clone(),
             owner: identity.owner,
             binding: ordinals.snapshot_binding(&identity.binding)?,
             initializer_span: identity.initializer_span,
@@ -248,6 +269,7 @@ impl SavedRootInitializerIdentity {
 
     fn restore(self, ordinals: &ContextOrdinals) -> Result<RootInitializerIdentity> {
         Ok(RootInitializerIdentity {
+            source_module: self.source_module,
             owner: self.owner,
             binding: ordinals.restore_binding(self.binding)?,
             initializer_span: self.initializer_span,
@@ -288,6 +310,7 @@ impl LexicalBindingEffectReceipt {
         use crate::reports::schema::{LexicalBindingEffectCall, LexicalBindingEffectReceipt};
 
         LexicalBindingEffectReceipt {
+            source_module: self.identity.source_module.clone(),
             owner: self.identity.owner,
             binding: self.identity.binding.0.to_string(),
             initializer_span: self.identity.initializer_span,
@@ -313,17 +336,29 @@ impl LocalBodyIdentity {
 
         match self {
             Self::RootInitializer {
+                source_module,
                 owner,
                 initializer_span,
             } => LexicalBindingEffectBody::RootInitializer {
+                source_module: source_module.clone(),
                 owner: *owner,
                 initializer_span: *initializer_span,
             },
-            Self::Callable { key, owner } => LexicalBindingEffectBody::Callable {
+            Self::Callable {
+                source_module,
+                key,
+                owner,
+            } => LexicalBindingEffectBody::Callable {
+                source_module: source_module.clone(),
                 key: *key,
                 owner: *owner,
             },
-            Self::Constructor { class, owner } => LexicalBindingEffectBody::Constructor {
+            Self::Constructor {
+                source_module,
+                class,
+                owner,
+            } => LexicalBindingEffectBody::Constructor {
+                source_module: source_module.clone(),
                 class: *class,
                 owner: *owner,
             },
@@ -616,6 +651,7 @@ impl EffectCoverageFragment {
         let (read_dependencies, rebind_dependencies) = self.lexical_effect_dependencies()?;
         let initializer_span = identity.initializer_span?;
         let root_body = LocalBodyIdentity::RootInitializer {
+            source_module: identity.source_module.clone(),
             owner: identity.owner,
             initializer_span,
         };
@@ -738,6 +774,10 @@ impl EffectCoverageFragment {
         }
     }
 
+    pub(super) fn completion(&self) -> crate::program_execution::schedule::OwnerCompletion {
+        self.completion.module_completion()
+    }
+
     pub(super) fn abrupt(&mut self) {
         self.completion = Completion::Abrupt(());
     }
@@ -772,15 +812,18 @@ impl EffectCoverageFragment {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum LocalBodyKey {
     RootInitializer {
+        source_module: Option<String>,
         owner: usize,
         lo: u32,
         hi: u32,
     },
     Callable {
+        source_module: Option<String>,
         key: u32,
         owner: usize,
     },
     Constructor {
+        source_module: Option<String>,
         class: u32,
         owner: usize,
     },
@@ -807,18 +850,30 @@ struct LocalCallKey {
 fn local_body_key(body: &LocalBodyIdentity) -> LocalBodyKey {
     match body {
         LocalBodyIdentity::RootInitializer {
+            source_module,
             owner,
             initializer_span,
         } => LocalBodyKey::RootInitializer {
+            source_module: source_module.clone(),
             owner: owner.0,
             lo: initializer_span.lo.0,
             hi: initializer_span.hi.0,
         },
-        LocalBodyIdentity::Callable { key, owner } => LocalBodyKey::Callable {
+        LocalBodyIdentity::Callable {
+            source_module,
+            key,
+            owner,
+        } => LocalBodyKey::Callable {
+            source_module: source_module.clone(),
             key: *key,
             owner: owner.0,
         },
-        LocalBodyIdentity::Constructor { class, owner } => LocalBodyKey::Constructor {
+        LocalBodyIdentity::Constructor {
+            source_module,
+            class,
+            owner,
+        } => LocalBodyKey::Constructor {
+            source_module: source_module.clone(),
             class: *class,
             owner: owner.0,
         },
@@ -856,6 +911,7 @@ mod tests {
 
     fn test_callable(key: u32, owner: usize) -> LocalBodyIdentity {
         LocalBodyIdentity::Callable {
+            source_module: None,
             key,
             owner: SourceUnitOrdinal(owner),
         }
@@ -998,6 +1054,57 @@ mod tests {
     }
 
     #[test]
+    fn receipt_keys_and_saved_roots_require_source_qualification() {
+        let body = |module: &str| LocalBodyIdentity::Callable {
+            source_module: Some(module.into()),
+            key: 10,
+            owner: SourceUnitOrdinal(0),
+        };
+        assert_ne!(local_body_key(&body("a.js")), local_body_key(&body("b.js")));
+        let mut missing_source = serde_json::to_value(body("a.js")).unwrap();
+        missing_source["callable"]
+            .as_object_mut()
+            .unwrap()
+            .remove("source_module");
+        assert!(serde_json::from_value::<LocalBodyIdentity>(missing_source).is_err());
+
+        let identity = RootInitializerIdentity {
+            source_module: Some("a.js".into()),
+            owner: SourceUnitOrdinal(0),
+            binding: ("value".into(), swc_common::SyntaxContext::empty()),
+            initializer_span: Some(Span::new(BytePos(1), BytePos(20))),
+        };
+        let ordinals = ContextOrdinals::new(std::iter::empty::<&swc_ecma_ast::Module>());
+        let saved = SavedRootInitializerIdentity::snapshot(&identity, &ordinals).unwrap();
+        let mut encoded = serde_json::to_value(saved.clone()).unwrap();
+        encoded.as_object_mut().unwrap().remove("source_module");
+        assert!(serde_json::from_value::<SavedRootInitializerIdentity>(encoded).is_err());
+        assert_eq!(saved.restore(&ordinals).unwrap(), identity);
+        let mut foreign = identity.clone();
+        foreign.source_module = Some("b.js".into());
+        assert_ne!(foreign, identity);
+
+        let mut coverage = EffectCoverageFragment::no_effects();
+        coverage.selected_local_call(test_call(
+            LocalBodyIdentity::RootInitializer {
+                source_module: foreign.source_module.clone(),
+                owner: foreign.owner,
+                initializer_span: foreign.initializer_span.unwrap(),
+            },
+            2,
+            5,
+            body("b.js"),
+            ProofDependencies::default(),
+        ));
+        assert!(
+            coverage
+                .seal_lexical_binding_effects(identity, &std::collections::BTreeSet::from([(2, 5)]))
+                .is_none(),
+            "a foreign root at identical coordinates cannot seal this root"
+        );
+    }
+
+    #[test]
     fn default_and_abrupt_fragments_cannot_seal_normal_initialization() {
         assert!(
             EffectCoverageFragment::default()
@@ -1014,6 +1121,7 @@ mod tests {
     #[test]
     fn repeated_diamond_composition_unions_call_dependencies_and_unknown_absorbs() {
         let root = LocalBodyIdentity::RootInitializer {
+            source_module: None,
             owner: SourceUnitOrdinal(0),
             initializer_span: Span::new(BytePos(1), BytePos(100)),
         };

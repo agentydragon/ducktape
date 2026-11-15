@@ -49,6 +49,41 @@ impl LexicalCells {
         id
     }
 
+    pub(in crate::facts::sync_effects) fn live_ids(
+        &self,
+    ) -> impl Iterator<Item = LexicalCellId> + '_ {
+        self.occupied.iter().copied()
+    }
+    pub(in crate::facts::sync_effects) fn map_identities(
+        &mut self,
+        reserved: usize,
+        ids: &std::collections::BTreeMap<LexicalCellId, LexicalCellId>,
+        mut values: impl FnMut(&mut Values),
+    ) {
+        let count = ids
+            .values()
+            .map(|id| id.0 + 1)
+            .max()
+            .unwrap_or(0)
+            .max(reserved)
+            .max(self.slots.len());
+        let mut slots = vec![None; count];
+        for (ordinal, cell) in std::mem::take(&mut self.slots).into_iter().enumerate() {
+            if let Some(mut cell) = cell {
+                values(&mut cell.values);
+                let old = LexicalCellId(ordinal);
+                slots[ids.get(&old).copied().unwrap_or(old).0] = Some(cell);
+            }
+        }
+        self.slots = slots;
+        self.occupied = self
+            .occupied
+            .iter()
+            .map(|id| ids.get(id).copied().unwrap_or(*id))
+            .collect();
+        self.next_collection_at = self.next_collection_at.max(count);
+    }
+
     /// Ids handed out so far, retired ones included.
     pub(in crate::facts::sync_effects) fn identities(&self) -> usize {
         self.slots.len()
@@ -225,6 +260,9 @@ impl<'a> CellTrace<'a> {
                     | AbstractValue::ForeignDeferredRecord
                     | AbstractValue::ObjectAssign
                     | AbstractValue::ArrayIntrinsic
+                    // Module cells (active and banked) are traced as roots;
+                    // the namespace contains no activation-local cell itself.
+                    | AbstractValue::ModuleNamespace(_)
                     | AbstractValue::GlobalObject => {}
                 }
             }
@@ -242,8 +280,16 @@ mod tests {
 
     const UNAVAILABLE: AbstractValue = AbstractValue::Value(Value::Unavailable);
 
+    fn address(local: u32) -> crate::program_execution::RuntimeAllocationId {
+        static SOURCE: std::sync::OnceLock<crate::program_execution::RuntimeSourceScope> =
+            std::sync::OnceLock::new();
+        SOURCE
+            .get_or_init(crate::program_execution::RuntimeSourceScope::fresh)
+            .allocation(local)
+    }
+
     fn object(allocation: u32) -> AbstractValue {
-        AbstractValue::Value(Value::Alloc(Kind::Object, allocation))
+        AbstractValue::Value(Value::Alloc(Kind::Object, address(allocation)))
     }
 
     fn cells_with(kind: LocalBinding, initialization: CellInitialization) -> LexicalCells {

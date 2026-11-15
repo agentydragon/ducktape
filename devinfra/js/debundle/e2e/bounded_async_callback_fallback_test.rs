@@ -25,7 +25,7 @@ fn source(async_keyword: &str, callback_body: &str) -> String {
     source
 }
 
-fn has_eager_read(fixture: &Fixture) -> bool {
+fn has_eager_read(fixture: &impl FixtureGraphExt) -> bool {
     let graph = fixture.dependency_graph();
     let call = source_unit_for_binding(&graph, "registration");
     let late = source_unit_for_binding(&graph, "late");
@@ -41,18 +41,23 @@ fn has_eager_read(fixture: &Fixture) -> bool {
 #[test]
 fn post_await_read_does_not_become_an_at_init_dependency() {
     let source = source("async", "await 0; return late;");
-    let fixture = run_fixture_with_graphs(
+    let rejected = assert_conservative_schedule_refusal(
         FixtureOpts::new(
             &source,
             vec![logical_module("value", &[Member::new("late")])],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
+        "evaluation_schedule_unknown_reordered",
+        "ready\n",
     );
-    assert_preserved_entry_output(&fixture, "ready\n");
     assert!(
-        !has_eager_read(&fixture),
+        !has_eager_read(&rejected),
         "post-await read was promoted by graph fallback"
     );
+    let colocated = run_fixture(
+        FixtureOpts::new(&source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&colocated, "ready\n");
 }
 
 #[test]

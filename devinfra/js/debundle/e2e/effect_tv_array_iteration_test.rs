@@ -370,6 +370,25 @@ fn an_empty_receiver_keeps_its_receipt() {
     assert_commuting_relocation(&fixture, "empty receiver");
 }
 
+#[test]
+fn repeated_inner_array_allocations_keep_independent_iteration_receipts() {
+    let source = "function wrap(x) { const inner = [x]; return inner.map((y) => y * 2); }\nconst outer = [1, 2];\nconst independent = 7;\nvar result = outer.map(wrap);\nconsole.log(independent, String(result));\n";
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "run",
+            &[
+                Member::new("wrap"),
+                Member::new("outer"),
+                Member::new("result"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "7 2,4\n");
+    assert_commuting_relocation(&fixture, "fresh inner arrays");
+    assert_iteration_receipt(&fixture, "map", "fresh inner arrays");
+}
+
 /// Roots the kernel attempts but cannot seal rewind to the flat lane: the
 /// legacy gate still accepts the split with Node parity, and the effect
 /// verdict stays pending. A refused attempt must leave nothing behind.
@@ -379,15 +398,8 @@ fn unsealed_iteration_roots_rewind_to_the_flat_lane() {
     let many = many.join(", ");
     for (declarations, initializer, members, expected) in [
         (
-            // The inner `[x]` site is pooled: its writability witness is gone
-            // on the second invocation, so the inner row refuses.
-            "function wrap(x) { const inner = [x]; return inner.map((y) => y * 2); }\nconst outer = [1, 2];".to_owned(),
-            "outer.map(wrap)",
-            &["wrap", "outer", "result"][..],
-            "7 2,4\n".to_owned(),
-        ),
-        (
-            "class Thing { constructor(name) { this.name = name; } }\nconst names = ['a', 'b'];".to_owned(),
+            "class Thing { constructor(name) { this.name = name; } }\nconst names = ['a', 'b'];"
+                .to_owned(),
             "names.map((name) => new Thing(name))",
             &["Thing", "names", "result"][..],
             "7 [object Object],[object Object]\n".to_owned(),
@@ -402,7 +414,13 @@ fn unsealed_iteration_roots_rewind_to_the_flat_lane() {
             format!("const items = [{many}];"),
             "items.map((x) => x)",
             &["items", "result"][..],
-            format!("7 {}\n", (0..300).map(|index| index.to_string()).collect::<Vec<_>>().join(",")),
+            format!(
+                "7 {}\n",
+                (0..300)
+                    .map(|index| index.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
         ),
     ] {
         let source = format!(

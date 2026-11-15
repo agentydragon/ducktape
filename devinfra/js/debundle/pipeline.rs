@@ -999,6 +999,49 @@ fn run_prepared_transform(
     assessment_only: bool,
     diagnostics: &analysis::diagnostics::Diagnostics,
 ) -> Result<PreparedTransformResult> {
+    let report_dir = (!suppress_reports)
+        .then(|| {
+            options
+                .artifacts
+                .reports_root()
+                .or(options.report_dir_override.clone())
+                .or(spec.materialize_logical_modules.report_out_dir.clone())
+        })
+        .flatten();
+    let result = run_prepared_transform_inner(
+        spec,
+        prepared,
+        options,
+        suppress_reports,
+        analysis,
+        assessment_only,
+        diagnostics,
+    );
+    if let Err(error) = &result
+        && let Some(refusal) =
+            error.downcast_ref::<analysis::program_execution::schedule::EvaluationScheduleRefusal>()
+        && let Some(report_dir) = report_dir
+    {
+        artifact::reports::write_json(
+            report_dir.join("evaluation_schedule.json"),
+            &serde_json::json!({
+                "kind": "evaluation_schedule_refused",
+                "rejection": refusal,
+            }),
+        )?;
+    }
+    result
+}
+
+fn run_prepared_transform_inner(
+    spec: &TransformSpec,
+    prepared: PreparedTransform,
+    options: TransformRunOptions,
+    suppress_reports: bool,
+    analysis: AnalysisMode,
+    assessment_only: bool,
+    diagnostics: &analysis::diagnostics::Diagnostics,
+) -> Result<PreparedTransformResult> {
     let PreparedTransform {
         source,
         vendor_plan,
@@ -1159,6 +1202,33 @@ fn run_prepared_transform(
     // The draft runs naturalization, vendor emission rewrites, and both
     // prune passes in their fixed order; its finalized files are immutable.
     let candidate = candidate_draft.finalize()?;
+    if let Some(refusal) = candidate.evaluation_refusal() {
+        if options.output != RunOutput::EmitOnRejection {
+            return Err(refusal.clone().into());
+        }
+        let evidence_report = report_out_dir
+            .as_ref()
+            .filter(|_| !suppress_reports)
+            .map(|root| root.join("evaluation_schedule.json"));
+        if let Some(path) = &evidence_report {
+            artifact::reports::write_json(
+                path,
+                &serde_json::json!({
+                    "kind": "evaluation_schedule_refused", "rejection": refusal,
+                }),
+            )?;
+        }
+        gate_rejections.push(gate::ChunkGateRejection {
+            chunk_id: refusal
+                .source_entry
+                .clone()
+                .unwrap_or_else(|| "program".to_owned()),
+            verdict: gate::GateVerdict::EvaluationSchedule,
+            evidence_report,
+            dependency_graph_report: None,
+            diagnostic: refusal.to_string(),
+        });
+    }
     (vendor_report.partial, vendor_report.bundled_partial) =
         build_partial_swap_resolutions(&vendor_plan, candidate.references_by_symbol())?;
 

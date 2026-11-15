@@ -104,9 +104,11 @@ fn per_atomic_group_peels_entry_with_leading_import() {
     assert_entry_output(&fixture, "1\n");
 }
 
-const SUBSET_SOURCE: &str = r#"globalThis.events = ["before"];
-export const originalName = "selected";
+// Keep linkage values before the host publication under every residual policy;
+// ownership-subset coverage does not require moving them across that effect.
+const SUBSET_SOURCE: &str = r#"export const originalName = "selected";
 export const omitted = "omitted";
+globalThis.events = ["before"];
 export let carried;
 carried = (globalThis.events.push("residual"), "carried");
 globalThis.events.push("after");

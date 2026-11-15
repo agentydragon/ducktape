@@ -24,12 +24,17 @@ impl Executor<'_, '_> {
         &self,
         call: &Call,
     ) -> Option<&ForeignCallSummary> {
+        if self.inputs.program_sources.is_some() {
+            // A prepared provider participates in the ordinary transfer and
+            // owns its real returned heap. The derived carrier approximation
+            // must not replace that body or erase its module cell reads.
+            return None;
+        }
         let ValueExpr::Binding(binding) = &call.callee else {
             return None;
         };
         let summary = self
-            .inputs
-            .index
+            .source_index()
             .callback_factory_call_summaries
             .get(binding)?;
         (call.kind == CallKind::Call
@@ -65,7 +70,7 @@ impl Executor<'_, '_> {
                         Kind::Function,
                         actual,
                     )) | AbstractValue::Closure(HeapAddress { callable: actual, .. }, _)
-                        if actual == source
+                        if self.source_index().local_origin(*actual) == Some(*source)
                 )
             })
         {
@@ -125,7 +130,7 @@ impl Executor<'_, '_> {
             (ValueExpr::Alloc(Kind::Function, source), EvaluatedCallee::Direct(selected)) => {
                 selected.values.len() == 1
                     && matches!(selected.values.first(),
-                        Some(AbstractValue::Closure(HeapAddress { callable: actual, .. }, _)) if actual == source)
+                        Some(AbstractValue::Closure(HeapAddress { callable: actual, .. }, _)) if self.source_index().local_origin(*actual) == Some(*source))
             }
             (
                 ValueExpr::Member(receiver, Some(_), MemberKey::Static, _),

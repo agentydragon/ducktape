@@ -127,38 +127,40 @@ console.log("same");"#],
 
 #[test]
 fn context_only_reference_constrains_identical_final_calls() {
+    // A modeled local call keeps this a selector test while the final host
+    // observation stays after all declarations in both evaluation schedules.
     let fixture = run_fixture(FixtureOpts::new(
-        r#"function first() {}
+        r#"function identity(value) { return value; }
+function first() {}
 function second() {}
 const before = first;
-console.log("same");
+identity("same");
 const middle = 1;
 const after = second;
-console.log("same");
+identity("same");
+console.log(typeof before, typeof after, middle);
 export { first, second, before, middle, after };
 "#,
         vec![logical_module_with_anon_alpha(
             "selected",
             &[Member::renamed("Store", "first"), Member::new("middle")],
             &[r#"const anchor = Store;
-console.log("same");"#],
+identity("same");"#],
         )],
     ));
 
     let selected = fs::read_to_string(fixture.out_root.join("static/app/modules/selected.js"))
         .expect("read selected module");
-    let call = selected
-        .find(r#"console.log("same")"#)
-        .expect("selected call");
+    let call = selected.find(r#"identity("same")"#).expect("selected call");
     let middle = selected.find("const middle = 1").expect("selected middle");
     assert!(call < middle, "selected the call after middle: {selected}");
     assert_module_source(
         &fixture.out_root,
         "static/app/modules/selected.js",
-        &["function Store", "const middle", r#"console.log("same")"#],
+        &["function Store", "const middle", r#"identity("same")"#],
         &["const before", "const after", "function second"],
     );
-    assert_preserved_entry_output(&fixture, "same\nsame\n");
+    assert_preserved_entry_output(&fixture, "function function 1\n");
 }
 
 #[test]
@@ -717,11 +719,14 @@ const Existing = "existing";
 console.log(Existing);
 export { a, b, X, Existing };
 "#,
-        vec![logical_module_with_anon(
-            "x_module",
-            &[Member::new("X")],
-            &[r#"console.log("between");"#],
-        )],
+        vec![
+            logical_module("preamble", &[Member::new("a"), Member::new("b")]),
+            logical_module_with_anon(
+                "x_module",
+                &[Member::new("X")],
+                &[r#"console.log("between");"#],
+            ),
+        ],
     ));
 
     // x_module owns X and the anon `console.log("between");`.
@@ -734,16 +739,23 @@ export { a, b, X, Existing };
         &["var a", "var b", " a = ", " b = "],
     );
 
-    // Residual still emits a, b, Existing, console.log(Existing).
+    // Explicitly keep the comma-list prefix before the selected host call;
+    // the residual's later Existing declaration must not pull it past that call.
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/preamble.js",
+        &["a", "b"],
+        &["X"],
+    );
     assert_module_source(
         &fixture.out_root,
         "static/app/modules/residual/unhandled.js",
-        &["a", "b", "Existing"],
+        &["Existing"],
         &[r#"console.log("between")"#, "var X"],
     );
 
     // End-to-end: prints "between" then "existing".
-    assert_entry_output(&fixture, "between\nexisting\n");
+    assert_preserved_entry_output(&fixture, "between\nexisting\n");
 }
 
 #[test]
@@ -797,8 +809,8 @@ export { RuntimeSubject, Existing };
 fn alpha_anonymous_statement_selector_keeps_member_properties_significant() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const selectedValue = "selected";
-const existingValue = "existing";
 console.log(globalThis.primaryService?.enabled ? selectedValue : "off");
+const existingValue = "existing";
 console.log(globalThis.secondaryService?.enabled ? existingValue : "off");
 export { selectedValue, existingValue };
 "#,
@@ -830,7 +842,7 @@ export { selectedValue, existingValue };
         &["secondaryService", "existingValue"],
         &["primaryService", "selectedValue"],
     );
-    assert_entry_output(&fixture, "off\noff\n");
+    assert_preserved_entry_output(&fixture, "off\noff\n");
 }
 
 #[test]
@@ -1156,11 +1168,11 @@ export { firstA, firstB, firstC, secondA, secondB, secondC };
 #[test]
 fn source_matches_binding_projection_uses_following_statement_context() {
     let fixture = run_fixture(FixtureOpts::new(
-        r#"const traceContexts = ["load"];
+        r#"const duplicateRegistry = {};
+const traceContexts = ["load"];
 const selectedRegistry = {};
 for (const context of traceContexts)
   selectedRegistry[context] = () => context;
-const duplicateRegistry = {};
 console.log(selectedRegistry !== duplicateRegistry, Object.keys(duplicateRegistry).length);
 export { traceContexts, selectedRegistry, duplicateRegistry };
 "#,
@@ -1188,7 +1200,7 @@ for (const context of traceContexts)
         &["duplicateRegistry"],
         &["const selectedRegistry"],
     );
-    assert_entry_output(&fixture, "true 0\n");
+    assert_preserved_entry_output(&fixture, "true 0\n");
 }
 
 #[test]

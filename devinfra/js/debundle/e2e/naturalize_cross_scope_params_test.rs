@@ -54,7 +54,7 @@ export { a, b, C, d, s, g };
 
 #[test]
 fn naturalizes_params_per_scope_despite_shared_minified_spellings() {
-    let mut opts = FixtureOpts::new(
+    let opts = FixtureOpts::new(
         CHUNK_SOURCE,
         vec![logical_module(
             "helpers/shapes",
@@ -67,12 +67,12 @@ fn naturalizes_params_per_scope_despite_shared_minified_spellings() {
                 Member::renamed("unwrapPayload", "g"),
             ],
         )],
-    );
-    opts.extra_files = &[("static/app/provider.js", PROVIDER_SOURCE)];
+    )
+    .with_extra_chunks(&[("static/provider", PROVIDER_SOURCE)]);
     let fixture = run_fixture(opts);
 
     // The emitted tree must still run with unchanged behavior.
-    assert_entry_output(&fixture, "2 2 3 reg 8 2\n");
+    assert_preserved_entry_output(&fixture, "2 2 3 reg 8 2\n");
 
     let module_path = "static/app/modules/helpers/shapes.js";
 
@@ -106,7 +106,7 @@ fn naturalizes_params_per_scope_despite_shared_minified_spellings() {
     assert_module_source(
         &fixture.out_root,
         module_path,
-        &["t as options", "options", "provider.js"],
+        &["t as options", "options", "provider/entry.js"],
         &["options: t"],
     );
 

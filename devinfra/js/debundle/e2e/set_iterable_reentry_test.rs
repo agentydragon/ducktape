@@ -1,5 +1,6 @@
 //! Standard Set consumes proven fresh arrays without invoking chunk callbacks.
 
+use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring};
 use debundle_e2e_support::*;
 
 const ALIAS_SOURCE: &str = r#"const values = ["a", "b"];
@@ -150,9 +151,24 @@ fn split_opts(source: &'static str, collection: LogicalModuleEntry) -> FixtureOp
 }
 
 fn assert_split_runs(source: &'static str, collection: LogicalModuleEntry, expected: &str) {
-    let fixture = run_fixture(split_opts(source, collection));
-    assert_preserved_entry_output(&fixture, expected);
-    assert_all_emitted_js_checks(&fixture);
+    let rejected = assert_conservative_schedule_refusal(
+        split_opts(source, collection),
+        "evaluation_schedule_unknown_reordered",
+        expected,
+    );
+    let assessment = rejected.candidate_relocation_assessment();
+    assert_eq!(assessment["legacy_gate_accepts"], true, "{assessment:#}");
+    assert!(
+        node_declaring(&rejected.dependency_graph(), "unique")
+            .purity
+            .is_pure(),
+        "the primitive-array Set initializer keeps its inferred native summary"
+    );
+
+    let control =
+        run_fixture_with_graphs(FixtureOpts::new(source, vec![]).with_chunk_id("static/provider"));
+    assert_preserved_entry_output(&control, expected);
+    assert_all_emitted_js_checks(&control);
 }
 
 fn assert_real_callback_keeps_split_rejected(

@@ -20,15 +20,15 @@ fn split() -> FixtureOpts<'static> {
     )
 }
 
-fn assert_odd_even_map_modules(fixture: &Fixture) {
+fn assert_odd_even_map_modules(out_root: &std::path::Path) {
     assert_module_exports(
-        &fixture.out_root,
+        out_root,
         "static/app/modules/odd.js",
         &["a", "c"],
         &["b", "d"],
     );
     assert_module_exports(
-        &fixture.out_root,
+        out_root,
         "static/app/modules/even.js",
         &["b", "d"],
         &["a", "c"],
@@ -37,11 +37,33 @@ fn assert_odd_even_map_modules(fixture: &Fixture) {
 
 #[test]
 fn fresh_literal_map_constructors_split_and_preserve_runtime() {
-    let fixture = run_fixture_with_graphs(split());
+    // Native graph effects know these Maps are private, but nonempty Map
+    // construction still lacks an ordered completion transfer.
+    let rejected = assert_conservative_schedule_refusal(
+        split(),
+        "evaluation_schedule_unknown_reordered",
+        "1 2 3 4\n",
+    );
+    assert_eq!(
+        rejected.candidate_relocation_assessment()["legacy_gate_accepts"],
+        true
+    );
+    assert_odd_even_map_modules(&rejected.app_root());
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+        SOURCE,
+        vec![logical_module(
+            "maps",
+            &[
+                Member::new("a"),
+                Member::new("b"),
+                Member::new("c"),
+                Member::new("d"),
+            ],
+        )],
+    ));
     assert_preserved_entry_output(&fixture, "1 2 3 4\n");
     assert_eq!(fixture.translation_validation()["accepts"], true);
     assert_all_emitted_js_checks(&fixture);
-    assert_odd_even_map_modules(&fixture);
     let graph = fixture.dependency_graph();
     let first = node_declaring(&graph, "a");
     let frontier = first
@@ -63,17 +85,37 @@ const a = new Map([["a", 1]]),
 console.log(a.get("a"), b.get("b"), c.get("c"), d.get("d"));
 export { a, b, c, d };
 "#;
+    let rejected = assert_conservative_schedule_refusal(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("odd", &[Member::new("a"), Member::new("c")]),
+                logical_module("even", &[Member::new("b"), Member::new("d")]),
+            ],
+        ),
+        "evaluation_schedule_unknown_reordered",
+        "1 2 3 4\n",
+    );
+    assert_eq!(
+        rejected.candidate_relocation_assessment()["legacy_gate_accepts"],
+        true
+    );
+    assert_odd_even_map_modules(&rejected.app_root());
     let fixture = run_fixture_with_graphs(FixtureOpts::new(
         source,
-        vec![
-            logical_module("odd", &[Member::new("a"), Member::new("c")]),
-            logical_module("even", &[Member::new("b"), Member::new("d")]),
-        ],
+        vec![logical_module(
+            "maps",
+            &[
+                Member::new("a"),
+                Member::new("b"),
+                Member::new("c"),
+                Member::new("d"),
+            ],
+        )],
     ));
     assert_preserved_entry_output(&fixture, "1 2 3 4\n");
     assert_eq!(fixture.translation_validation()["accepts"], true);
     assert_all_emitted_js_checks(&fixture);
-    assert_odd_even_map_modules(&fixture);
     let graph = fixture.dependency_graph();
     assert!(
         !node_declaring(&graph, "c")

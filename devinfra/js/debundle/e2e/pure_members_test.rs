@@ -20,11 +20,31 @@ use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 use spec::ChunkRenames;
 
-const VENDOR_FILE: &[(&str, &str)] = &[(
-    "static/app/vendor.js",
-    "export function makePure(arg) { return arg; }\n\
-     export function forwardRef(render) { return { render }; }\n",
-)];
+const VENDOR_SOURCE: &str = "export function makePure(arg) { return arg; }\n\
+     export function forwardRef(render) { return { render }; }\n";
+const VENDOR_CHUNKS: &[(&str, &str)] = &[("static/vendor", VENDOR_SOURCE)];
+const VENDOR_RUNTIME_FILES: &[(&str, &str)] = &[("static/app/vendor.js", VENDOR_SOURCE)];
+
+fn assert_schedule_refusal_preserves_source_and_candidate(
+    opts: FixtureOpts<'_>,
+    expected_output: &str,
+) {
+    let rejected = run_rejection_fixture_with_graphs_and_args(opts, &["--emit-on-rejection"], 3);
+    assert!(
+        rejected
+            .stderr
+            .contains("evaluation_schedule_unknown_reordered"),
+        "{}",
+        rejected.stderr
+    );
+    assert!(rejected.gate_rejected_marker().is_file());
+    assert_node_output(
+        &rejected.source_root.join("static/app.js"),
+        expected_output,
+        "",
+    );
+    assert_node_output(&rejected.entry_path(), expected_output, "");
+}
 
 /// Cycle-forcing fixture body parameterized by the per-case knobs.
 ///
@@ -72,37 +92,32 @@ export {{ a, b, c }};
             vec![logical_module("b_module", &[Member::new("b")])],
         )
         .with_chunk_renames(self.pure_members.clone())
-        .with_extra_files(VENDOR_FILE)
+        .with_extra_chunks(VENDOR_CHUNKS)
+        .with_extra_files(VENDOR_RUNTIME_FILES)
     }
 }
 
-/// Vendor-namespace fixture: a star-import binding `ns` whose
-/// `ns.makePure(...)` call site would force a side-effect-order
-/// edge under default classification (`ns.makePure` is a member call
-/// on an unknown receiver). With `pure_members: [makePure]` on the
-/// `ns` member, the analyzer admits the call as pure, drops the
-/// `S` edge, and the cycle-forcing fixture accepts.
-///
-/// Without the rule: `ns.makePure(...)` is Unknown → `b` is SE →
-/// `b → a` s-edge → after peeling `b` to b_module, that crosses
-/// `b_module → residual`. Combined with `residual → b_module`
-/// (`c` reads `b` at init), the spec is unrealizable.
-///
-/// With the rule: `ns.makePure(...)` is Pure → `b` is not SE →
-/// no `b → a` s-edge. Only `residual → b_module` remains. DAG.
+/// The strict schedule guard currently refuses to move this annotated
+/// namespace call across the fixture's independent IIFE. Keep that exact
+/// split refusal, then verify the annotation and runtime under a placement
+/// that retains their original source phase.
 #[test]
-fn pure_members_admits_namespace_member_call() {
+fn pure_members_namespace_call_stays_in_its_source_phase() {
     let case = PureMembersCase::new("{ value: 1 }", "b.value", &["makePure"]);
+    assert_schedule_refusal_preserves_source_and_candidate(case.opts(), "2\n");
 
-    // Peel succeeded: b is in b_module without dragging a.
-    // The fact that the build didn't error on a cycle proves
-    // that `ns.makePure(...)` was classified Pure.
-    assert_pure_cycle_break_with_opts(
-        case.opts(),
+    let mut colocated = case.opts();
+    colocated.logical_modules = vec![logical_module(
         "b_module",
-        &["const b = "],
-        &["const a", "(()=>1)"],
-        "2\n",
+        &[Member::new("a"), Member::new("b")],
+    )];
+    let fixture = run_fixture_with_graphs(colocated);
+    assert_preserved_entry_output(&fixture, "2\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/b_module.js",
+        &["const a", "const b = "],
+        &["const c"],
     );
 }
 
@@ -145,21 +160,36 @@ fn pure_members_member_call_does_not_promote_callback_body_reads() {
         .get_mut("ReactLike")
         .unwrap()
         .no_sync_callback_members = vec!["forwardRef".to_string()];
-    let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(
-            r#"import * as ns from "./vendor.js";
+    let source = r#"import * as ns from "./vendor.js";
 const component = ns.forwardRef(() => later);
 const later = "ready";
 console.log(typeof component, later);
 export { component, later };
-"#,
+"#;
+    assert_schedule_refusal_preserves_source_and_candidate(
+        FixtureOpts::new(
+            source,
             vec![logical_module(
                 "component_module",
                 &[Member::new("component")],
             )],
         )
+        .with_chunk_renames(pure_members.clone())
+        .with_extra_chunks(VENDOR_CHUNKS)
+        .with_extra_files(VENDOR_RUNTIME_FILES),
+        "object ready\n",
+    );
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "component_module",
+                &[Member::new("component"), Member::new("later")],
+            )],
+        )
         .with_chunk_renames(pure_members)
-        .with_extra_files(VENDOR_FILE),
+        .with_extra_chunks(VENDOR_CHUNKS)
+        .with_extra_files(VENDOR_RUNTIME_FILES),
     );
 
     let graph = fixture.dependency_graph();
@@ -182,5 +212,11 @@ export { component, later };
          body's lazy read of `later` into an at-init eager edge; got \
          {promoted:#?}\n\nFull dependency graph: {graph:#?}",
     );
-    assert_entry_output(&fixture, "object ready\n");
+    assert_preserved_entry_output(&fixture, "object ready\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/component_module.js",
+        &["const component", "const later"],
+        &[],
+    );
 }

@@ -27,7 +27,7 @@ export { c, z };
         &[],
         &["c"],
     );
-    assert_entry_output(&fixture, "3\n");
+    assert_preserved_entry_output(&fixture, "3\n");
 }
 
 #[test]

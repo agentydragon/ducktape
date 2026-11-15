@@ -1001,6 +1001,7 @@ pub fn resolve_stable_imports(
 /// from author assertions. Missing exports and unsupported bodies stay opaque.
 #[derive(Default)]
 pub struct ResolvedCallableSummaries {
+    pub executables: crate::program_execution::ProgramExecutables,
     pub imported_callables: BTreeMap<SourceModuleKey, BTreeMap<String, CallableSummary>>,
     pub native_integrity: Option<NativeIntegrity>,
     pub value_inputs: BTreeMap<SourceModuleKey, Vec<ResolvedBindingValueInput>>,
@@ -1888,12 +1889,27 @@ pub fn resolve_imported_callable_summaries(
             );
         }
     }
+    let executables = crate::program_execution::ProgramExecutables::from_modules(
+        inferred
+            .into_iter()
+            .map(|(module, capabilities)| {
+                (
+                    module.clone(),
+                    crate::program_execution::ExecutableModule {
+                        index: capabilities.executable,
+                        exports: modules[module].exports.clone(),
+                    },
+                )
+            })
+            .collect(),
+    );
     let imported_callables = solve_callable_import_projections(modules, export_summaries);
     let structural_flows = structural_flows
         .into_iter()
         .filter_map(|(module, flow)| Some((module.clone(), flow.into_inner()?)))
         .collect();
     Ok(ResolvedCallableSummaries {
+        executables,
         bundle_globals,
         imported_callables,
         native_integrity: Some(native_integrity),
