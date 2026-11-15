@@ -155,7 +155,6 @@ async def empty_gateway_access(
         dispatcher_callers=(APP,),
         gateway_callers=(APP, workload),
         workload=workload,
-        environment_readers=(APP,),
         dispatcher_audience=DISPATCHER_AUDIENCE,
         gateway_audience=GATEWAY_AUDIENCE,
         runner_proxy_token_file=token_file,
