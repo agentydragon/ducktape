@@ -96,6 +96,7 @@ def environment_service_authority(
     extra_delegated_methods: tuple[str, ...] = (),
 ) -> EnvironmentServiceAuthority:
     """Compose only the EnvironmentService slice of the Gateway's existing grants."""
+    launcher_accounts = frozenset(map(_account, launchers))
     delegated_methods = (
         tuple(
             method
@@ -108,11 +109,15 @@ def environment_service_authority(
     return EnvironmentServiceAuthority(
         readers=frozenset({_account(ServiceAccountRef(namespace=env.namespace, name=app_component.NAME))}),
         managers=frozenset({_account(ServiceAccountRef(namespace=env.namespace, name=app_component.NAME))}),
-        launchers=frozenset(map(_account, launchers)),
+        launchers=launcher_accounts,
         operators=frozenset(map(_account, operator_callers)),
         service_readers=frozenset({APP_URI}),
         service_managers=frozenset({APP_URI}),
-        service_launchers=frozenset(),
+        service_launchers=(
+            frozenset({ACTIONS_URI})
+            if _account(ServiceAccountRef(namespace=env.namespace, name=actions.NAME)) in launcher_accounts
+            else frozenset()
+        ),
         service_operators=operator_service_callers,
         wake_callers=frozenset(map(_account, wake_callers)),
         wake_service_callers=wake_service_callers,

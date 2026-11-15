@@ -6722,7 +6722,8 @@ data:
         - spiffe://agentplane/app
       service_managers:
         - spiffe://agentplane/app
-      service_launchers: []
+      service_launchers:
+        - spiffe://agentplane/actions
       service_operators:
         - spiffe://agentplane/app
       wake_callers:

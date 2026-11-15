@@ -390,6 +390,8 @@ data:
       - spiffe://agentplane/app
     environment_service_managers:
       - spiffe://agentplane/app
+    environment_service_launchers:
+      - spiffe://agentplane/actions
     environment_service_operators:
       - spiffe://agentplane/app
     environment_service_delegation:
