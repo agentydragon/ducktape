@@ -215,7 +215,7 @@ struct BindingsAssignArgs {
     pub triples: Vec<String>,
     /// Read additional moves from a JSON file (or `-` for stdin).
     /// Accepts explicit `{sym, module, readable?}` move arrays, plus
-    /// reviewed binding-only `modules propose` rows.
+    /// reviewed binding-only rows from `modules propose --strategy auto`.
     ///
     /// Moves are deduplicated on resolved member identity (duplicates
     /// collapse with a stderr warning); contradictory destinations or

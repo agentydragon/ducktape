@@ -16,8 +16,8 @@ dependency-closure handling, source-grounding scope, ordering, and the
 for source inspection. A graph-ready proposal still needs the worker's selector
 proof and edit gate.
 
-The auto factorizer is an advisory inventory only; neither empty output nor its
-readiness labels establish impossibility. For an exact residual decision, use
+The explicit `--strategy auto` factorizer is advisory inventory only; neither
+empty output nor its readiness labels establish impossibility. For an exact residual decision, use
 [complete placement](references/docs/module_search.md) in planning. Keep its
 snapshot-bound plan as one packet; its joint changes are not independently
 accepted proposals. Preserve destinations and attach semantic/source review

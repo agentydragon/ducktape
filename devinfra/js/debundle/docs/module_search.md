@@ -1,13 +1,15 @@
 # Exact residual placement
 
-`debundle modules propose --strategy complete` searches for a positive-gain
-placement of movable residual source units while keeping authored source-unit
-ownership fixed. It can leave atoms in their baseline residual owner, join them
-to an existing authored owner, or place them in generated residual owners.
-Generated residual owners stay distinct from the true entry module. The search
-uses structural atoms, the shared incremental graph index, and the global
-canonical realizability gate; its result is a graph placement witness or a
-scoped no-placement decision.
+`debundle modules propose` searches by default for a positive-gain placement of
+movable residual source units while keeping authored source-unit ownership
+fixed. It can leave atoms in their baseline generated residual owner, join an
+existing authored owner, or place them in a fresh authored/extracted owner.
+Fresh extracted owners are not generated residual-layout owners, and generated
+residual owners stay distinct from the true entry module. The search uses
+structural atoms and graph-derived constraints, then certifies a constructed
+placement with the global canonical realizability gate. Its result is a graph
+placement witness or a scoped no-placement decision. Select `--strategy auto`
+only for the advisory atomic-DAG inventory.
 
 The constructive coverage and scheduler proofs live in
 [module placement](module_placement.md). This guide covers the CLI and author
@@ -25,7 +27,7 @@ debundle graph-summary --format text
 debundle atoms --residual-only --format json > residual-atoms.json
 
 # Construct a complete-scope placement and retain its snapshot-bound plan.
-debundle modules propose --strategy complete --format json > placement.json
+debundle modules propose --format json > placement.json
 jq '.plan' placement.json > plan.json
 
 # Review ownership and any fresh destinations, then check and preview the plan.
@@ -67,7 +69,7 @@ The controls and defaults are:
 | `--into MODULE`                      | Restrict destinations to exact module paths; repeatable. Existing owners are checked in place.                  |
 | `--require UNIT`                     | Require every returned placement to extract this residual unit; necessary companions may also move. Repeatable. |
 | `--only-units FILE`                  | Restrict movable units to a JSON array. Each included structural atom must be complete.                         |
-| `--max-new-modules N`                | Bound the number of fresh residual owners in the final placement.                                               |
+| `--max-new-modules N`                | Bound the number of fresh authored/extracted owners in the final placement.                                     |
 | `--max-checks N`                     | Explicit budget on analyzed partition states.                                                                   |
 | `--time-budget-ms N`                 | Explicit wall-clock budget. Exhausting either budget is incomplete.                                             |
 
@@ -102,15 +104,19 @@ domain constraints, then branches only where a necessary contraction clause has
 multiple compatible alternatives. Chains and fanouts of forced constraints
 contract directly; the search does not enumerate the Cartesian product of every
 atom's stay/target choices. It supports joint moves and placements across several
-destinations without requiring accepted single-atom intermediate states.
+destinations without requiring accepted single-atom intermediate states. At
+each analyzed partition, the proposer rebuilds quotient projections from the
+prepared edge set to derive graph constraints. It runs the full canonical gate
+once after constructing a complete placement; it does not maintain the batch
+incremental index through every contraction.
 
 An exact schedule is part of the placement check. The current preferred import
 order is retained when it satisfies every constraining edge. Otherwise the
 scheduler constructs an order from the actual import graph, committing valid
 DFS subtrees and exploring alternative white successors where necessary. A
 schedule obstruction contributes a necessary forward-closure contraction
-clause. Once a complete placement is constructed, one full shared canonical gate
-certifies it; prediction during search uses the shared graph index.
+clause. Once a complete placement is constructed, one full canonical gate
+certifies it.
 
 Constraint contraction reduces the number of blocks at each step, but the
 necessary disjunctions can branch across partitions, with Bell-number worst
@@ -121,9 +127,10 @@ other work counts expose what happened within those states. Exhausting the
 budget is `incomplete`; only full branch exhaustion establishes
 `exhausted_no_peel` in the reported scope.
 
-The default or `auto` proposal strategy remains a heuristic inventory for source
-review while its migration to exact placement is pending. Its readiness labels,
-diagnostics and empty output cannot establish that no peel exists.
+The explicit `--strategy auto` branch remains a heuristic inventory for source
+review. Its readiness labels, diagnostics and empty output cannot establish that
+no peel exists. `--limit` and `--size-cap-lines` are advisory inventory controls;
+the exact strategy rejects them.
 
 The placement proof is a graph argument relative to the captured assumptions
 and conservative checker. It is not evidence of selector stability or runtime

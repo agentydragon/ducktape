@@ -95,7 +95,8 @@ partition states; the report's work counts show projections, contractions,
 branch attempts and final certifications. Budget exhaustion is `incomplete`,
 not a no-peel proof. Review ownership and synthesized selectors,
 and retain separate adapter behavioral evidence. The complete search produces
-a graph placement witness, while the default/auto factorizer remains advisory.
+a graph placement witness. Only an explicit `--strategy auto` selects the
+advisory factorizer.
 These shared Python recipes import sibling helpers. Include their `examples`
 directory on `PYTHONPATH` when using an isolated interpreter that omits the
 script directory from its import path; the archive test supplies that scaffold.

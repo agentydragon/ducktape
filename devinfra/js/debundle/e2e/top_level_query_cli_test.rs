@@ -396,7 +396,14 @@ fn atoms_summary_and_proposals_describe_the_real_graph() {
     assert_eq!(summary["atomic_group_count"], 2);
     assert!(summary.get("proposal_count").is_none());
     assert!(summary.get("diagnostic_count").is_none());
-    let proposals = fixture.json(&["modules", "propose", "--size-cap-lines", "10000"]);
+    let proposals = fixture.json(&[
+        "modules",
+        "propose",
+        "--strategy",
+        "auto",
+        "--size-cap-lines",
+        "10000",
+    ]);
     assert!(!proposals["proposals"].as_array().unwrap().is_empty());
 }
 
@@ -522,7 +529,14 @@ fn anonymous_only_module_path_dispatches_before_proposal_prefix() {
 #[test]
 fn duplicate_anonymous_statements_are_advisory_not_landable_proposals() {
     let fixture = GraphFixture::new("console.log(\"task\");\nconsole.log(\"task\");\n", &[]);
-    let report = fixture.json(&["modules", "propose", "--size-cap-lines", "10000"]);
+    let report = fixture.json(&[
+        "modules",
+        "propose",
+        "--strategy",
+        "auto",
+        "--size-cap-lines",
+        "10000",
+    ]);
     let proposals = report["proposals"].as_array().unwrap();
     // Real sequencing edges may group both statements into one proposal.
     // Whichever assignment the heuristic chooses, neither ambiguous source_unit is
@@ -987,7 +1001,14 @@ fn inspect_source_context_is_clamped_to_the_source_file() {
 fn modules_propose_limit_keeps_a_prefix_and_reports_the_total() {
     let fixture = module_home_fixture();
     // A one-line cap keeps the three residual owners in separate proposals.
-    let args = ["modules", "propose", "--size-cap-lines", "1"];
+    let args = [
+        "modules",
+        "propose",
+        "--strategy",
+        "auto",
+        "--size-cap-lines",
+        "1",
+    ];
     let all = fixture.json(&args);
     assert_eq!(all["proposals"].as_array().unwrap().len(), 3);
     assert!(all.get("limits").is_none());
@@ -1001,5 +1022,65 @@ fn modules_propose_limit_keeps_a_prefix_and_reports_the_total() {
     assert_eq!(
         limited["limits"]["sections"]["proposals"],
         json!({"total": 3, "emitted": 1, "truncated": true})
+    );
+}
+
+#[test]
+fn modules_propose_defaults_to_exact_and_auto_stays_explicitly_advisory() {
+    let fixture = GraphFixture::new(
+        "const anchor = 1;\nconst dep = 2;\nconst consumer = dep + 1;\nconsole.log(anchor, consumer);\n",
+        &[(
+            "home.yaml",
+            "members: [{selector: {binding: {name: anchor}}}]\n",
+        )],
+    );
+
+    let exact = fixture.json(&["modules", "propose"]);
+    assert_eq!(exact["status"], "found", "{exact}");
+    assert!(exact["plan"].is_object(), "{exact}");
+    assert!(exact.get("proposals").is_none(), "{exact}");
+
+    let consumer = fixture.source_unit_for_binding("consumer");
+    let dep = fixture.source_unit_for_binding("dep");
+    let only_units = fixture.root().join("only-units.json");
+    fs::write(
+        &only_units,
+        serde_json::to_vec(&json!([consumer.clone(), dep])).unwrap(),
+    )
+    .unwrap();
+    let only_units = only_units.to_str().unwrap();
+    let scoped = fixture.json(&[
+        "modules",
+        "propose",
+        "--existing-assignments",
+        "fixed",
+        "--destinations",
+        "both",
+        "--only-units",
+        only_units,
+        "--require",
+        &consumer,
+    ]);
+    assert_eq!(scoped["status"], "found", "{scoped}");
+    assert_eq!(scoped["residual_units_extracted"], 2);
+
+    let advisory = fixture.json(&["modules", "propose", "--strategy", "auto"]);
+    assert!(advisory["proposals"].is_array(), "{advisory}");
+    assert!(advisory.get("status").is_none(), "{advisory}");
+
+    let rejected = fixture.command(&[
+        "modules",
+        "propose",
+        "--strategy",
+        "auto",
+        "--only-units",
+        only_units,
+    ]);
+    assert!(!rejected.status.success());
+    assert!(
+        String::from_utf8_lossy(&rejected.stderr)
+            .contains("assignment search options are only valid with --strategy complete"),
+        "{}",
+        String::from_utf8_lossy(&rejected.stderr)
     );
 }

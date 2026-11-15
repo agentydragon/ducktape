@@ -722,7 +722,7 @@ pub fn parse_move_triple(s: &str) -> Result<Move> {
 ///
 /// Accepted shapes:
 ///   * a top-level array of `{sym, module, readable?}` objects
-///   * `modules propose --format json` output, when every selected
+///   * `modules propose --strategy auto --format json` output, when every selected
 ///     proposal is a binding-only fresh/extension proposal
 ///   * a top-level array of those proposal objects, e.g. from a `jq`
 ///     `.proposals[]` filter
@@ -739,7 +739,7 @@ pub fn parse_batch_json(text: &str) -> Result<Vec<Move>> {
     }
     bail!(
         "--batch JSON must be a top-level array of {{sym, module, readable?}} objects, \
-         `modules propose --format json` output, or an array of proposal objects"
+         `modules propose --strategy auto --format json` output, or an array of proposal objects"
     );
 }
 
@@ -1627,7 +1627,7 @@ mod tests {
         .unwrap_err();
     }
 
-    // `modules propose --format json` is documented `--batch` input (docs/cli.md). The row
+    // `modules propose --strategy auto --format json` is documented `--batch` input (docs/cli.md). The row
     // fields are read through `serde(default)`, so a renamed `ModuleProposal` field would parse
     // as absent instead of failing: these pair the real proposer with `parse_batch_json`.
     fn propose_as_batch(

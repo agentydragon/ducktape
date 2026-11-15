@@ -1130,7 +1130,7 @@ The invocation record retains the batch-file path, not its contents.
 
 ## Explicit destination checks
 
-`modules propose --strategy complete` decides whether a positive-gain residual
+`modules propose` decides by default whether a positive-gain residual
 placement exists with authored source-unit ownership fixed, over the whole
 reported permitted move scope. It returns one snapshot-bound plan accepted by
 the full canonical graph gate, `exhausted_no_peel` after every compatible
@@ -1146,8 +1146,8 @@ separate checks. See [exact residual placement](docs/module_search.md) for the
 CLI workflow and [module placement](docs/module_placement.md) for its
 constructive coverage proof.
 
-Default/auto factorizer output remains advisory pending migration to exact
-placement. Readiness labels and empty output do not establish that no peel
+`modules propose --strategy auto` remains an explicit advisory factorization
+inventory. Readiness labels and empty output do not establish that no peel
 exists.
 
 `modules check` overlays a JSON batch of source-unit destination changes on the

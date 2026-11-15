@@ -23,7 +23,7 @@ Recheck the union of independently accepted batches before recommending it.
 
 For "can anything still be peeled?", inspect the current graph and source, then
 use [exact residual placement](references/docs/module_search.md) with
-`modules propose --strategy complete`. Review the complete ownership map and
+`modules propose` (exact by default). Review the complete ownership map and
 destinations, check and preview/apply the same snapshot-bound plan, then
 regenerate and run behavior checks. `found` establishes graph acceptance only;
 selector realization and runtime behavior are separate. `exhausted_no_peel` is

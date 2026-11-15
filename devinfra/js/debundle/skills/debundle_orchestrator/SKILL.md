@@ -28,12 +28,12 @@ committing to a long semantic repair.
 
 For an accepted partial spec, inspect the graph and source, then use
 [exact residual placement](references/docs/module_search.md) with
-`modules propose --strategy complete`. Review the full mapping, check and
+`modules propose` (exact by default). Review the full mapping, check and
 preview/apply its snapshot-bound plan, then regenerate and run relevant behavior
 checks. `exhausted_no_peel` is scoped to the reported owner policy and move
 domain; budgets, interruptions, errors and empty advisory inventories do not
-establish impossibility. The auto factorizer remains advisory pending migration
-to exact placement. A graph witness still needs selector realization, normal
+establish impossibility. Explicit `modules propose --strategy auto` remains an
+advisory factorizer for source inventory. A graph witness still needs selector realization, normal
 materialization and runtime evidence.
 
 For structural inventory, ask planning for

@@ -110,9 +110,8 @@ reported permitted scope; `incomplete` and errors do not establish that no
 placement exists. The linked guide describes the exact graph contract, context
 identity and complexity limits.
 
-The default/auto factorizer remains an advisory inventory for source review
-while migration to exact placement is pending. It cannot establish that no
-peel exists:
+The explicit `--strategy auto` factorizer remains an advisory inventory for
+source review. It cannot establish that no peel exists:
 
 For an app-level multi-chunk spec, pass `--tree-config spec_config.yaml`
 to both `modules propose` and `modules apply` so proposals and the edit gate

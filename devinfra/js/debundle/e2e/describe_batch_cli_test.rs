@@ -441,7 +441,7 @@ fn census_is_single_batch_equivalent_and_counts_internal_edge_incidence() {
 #[test]
 fn proposal_results_do_not_enable_proposals_for_later_plain_queries() {
     let fixture = fixture();
-    let proposals = fixture.json(&["modules", "propose"]);
+    let proposals = fixture.json(&["modules", "propose", "--strategy", "auto"]);
     let proposal = proposals["proposals"][0]["proposed_module_id"]
         .as_str()
         .unwrap();

@@ -163,24 +163,20 @@ enum ModulesNsCommand {
     /// commutation for the exact post-delete candidate. It requires the full
     /// tree transform context and does not change the legacy gate.
     Delete(Box<DeleteArgs>),
-    /// Discover residual assignments. Complete mode returns checked exact plans;
-    /// default/auto mode emits advisory atomic-DAG proposals.
+    /// Find a realizable residual placement. Exact constructive search is the
+    /// default; `--strategy auto` emits an advisory atomic-DAG inventory.
     ///
-    /// Read-only: surfaces *suggested* binding → module assignments +
-    /// diagnostics; reviewed fresh residual proposals are claimed with
-    /// `modules apply` (see docs/cli.md). With `--source-root`, JSON rows
-    /// carry `landable_today`, `unaddressable_anonymous_source_unit_ids`, and
-    /// `landability_notes` from full-JS-AST selector uniqueness.
-    /// Rows also carry bounded `observed_consumers` evidence: incoming value
-    /// reads, writes, and scheduling/promoted edges to added source units, with
-    /// source units, current modules, raw edges, and total/omitted counts.
-    /// Consumers already in the resulting proposal class are excluded. This
-    /// evidence does not infer semantic ownership.
-    /// `landable_today` is `false` both for proposals with unaddressable
-    /// anonymous statements and for `blocked_residual_dependency`
-    /// proposals (outgoing constraining edges into other residual classes)
-    /// — the latter need their closure grown or manual co-location
-    /// before they can land.
+    /// Read-only. The default exact strategy returns a snapshot-bound plan or
+    /// a scoped search outcome; check and preview the plan before applying it.
+    /// Explicit `--strategy auto` returns advisory proposal rows and diagnostics
+    /// for source review. With `--source-root`, auto rows carry `landable_today`,
+    /// `unaddressable_anonymous_source_unit_ids`, and `landability_notes` from
+    /// full-JS-AST selector uniqueness. They also carry bounded
+    /// `observed_consumers` evidence for incoming value reads, writes, and
+    /// scheduling/promoted edges to added source units. This evidence does not
+    /// infer semantic ownership. `landable_today` is false for unaddressable
+    /// anonymous statements and `blocked_residual_dependency` rows; the latter
+    /// need closure growth or manual co-location before they can land.
     Propose(PlanWorkArgs),
     /// Check an explicit source-unit destination batch against the complete
     /// accepted assignment. Omitted units retain their owners; writes no spec.
@@ -960,7 +956,7 @@ pub(super) fn run(
             run_delete(output, stderr, *d, source_context, analysis_engine_sha256)
         }
         ModulesNsCommand::Propose(p) => {
-            if p.strategy == Some(peel::plan::ProposalStrategy::Complete) {
+            if p.strategy == peel::plan::ProposalStrategy::Complete {
                 return run_complete_proposals(&p, output);
             }
             ensure!(
@@ -972,7 +968,7 @@ pub(super) fn run(
                     && p.max_new_modules.is_none()
                     && p.max_checks.is_none()
                     && p.time_budget_ms.is_none(),
-                "assignment search options require --strategy complete"
+                "assignment search options are only valid with --strategy complete"
             );
             let report = run_plan_work_report(&p, source_context)?;
             emit_report(
