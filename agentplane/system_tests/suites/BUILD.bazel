@@ -467,3 +467,63 @@ render_fixture(
     name = "real_model_manifests",
     renderer = ":real_model_deployment_bin",
 )
+
+py_library(
+    name = "firecracker_deployment",
+    srcs = ["firecracker_deployment.py"],
+    deps = [
+        "//agentplane/system_tests/deployment:fixture_chart",
+        "//agentplane/system_tests/deployment:fixture_database",
+        "//agentplane/system_tests/deployment:render_fixture",
+        "//agentplane/system_tests/deployment:rendered_fixture",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "vm_deployment",
+    srcs = ["vm_deployment.py"],
+    deps = [
+        "//agentplane/system_tests/deployment:fixture_chart",
+        "//agentplane/system_tests/deployment:fixture_database",
+        "//agentplane/system_tests/deployment:render_fixture",
+        "//agentplane/system_tests/deployment:rendered_fixture",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "pod_deployment",
+    srcs = ["pod_deployment.py"],
+    deps = [
+        "//agentplane/system_tests/deployment:fixture_chart",
+        "//agentplane/system_tests/deployment:fixture_database",
+        "//agentplane/system_tests/deployment:render_fixture",
+        "//agentplane/system_tests/deployment:rendered_fixture",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "probe_deployment",
+    srcs = ["probe_deployment.py"],
+    deps = [
+        "//agentplane/system_tests/deployment:fixture_chart",
+        "//agentplane/system_tests/deployment:fixture_database",
+        "//agentplane/system_tests/deployment:render_fixture",
+        "//agentplane/system_tests/deployment:rendered_fixture",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "real_model_deployment",
+    srcs = ["real_model_deployment.py"],
+    deps = [
+        "//agentplane/system_tests/deployment:fixture_chart",
+        "//agentplane/system_tests/deployment:fixture_database",
+        "//agentplane/system_tests/deployment:render_fixture",
+        "//agentplane/system_tests/deployment:rendered_fixture",
+        "@pypi//cdk8s",
+    ],
+)
