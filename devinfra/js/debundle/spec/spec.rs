@@ -355,13 +355,15 @@ pub enum ReentryFreeOperation {
 pub use spec_wire_proto::debundle::spec::NodeBuiltinModule;
 
 pub trait NodeBuiltinModuleExt: Sized {
+    /// Recognize only explicitly supported static-import spellings. This is not a
+    /// bare-package or `node:` prefix fallback resolver.
     fn from_static_specifier(specifier: &str) -> Option<Self>;
+    /// Building or loading this builtin's namespace can run accessors the
+    /// program defines on `process` or its prototype chain.
     fn reads_process_accessors(self) -> bool;
 }
 
 impl NodeBuiltinModuleExt for NodeBuiltinModule {
-    /// Recognize only explicitly supported static-import spellings. This is not a
-    /// bare-package or `node:` prefix fallback resolver.
     fn from_static_specifier(specifier: &str) -> Option<Self> {
         Some(match specifier {
             "assert" | "node:assert" => Self::Assert,
@@ -405,8 +407,6 @@ impl NodeBuiltinModuleExt for NodeBuiltinModule {
         })
     }
 
-    /// Building this builtin's namespace, or loading it, can run accessors the
-    /// program defines on `process` or its prototype chain.
     fn reads_process_accessors(self) -> bool {
         matches!(self, Self::Process | Self::WorkerThreads)
     }
@@ -418,11 +418,11 @@ impl NodeBuiltinModuleExt for NodeBuiltinModule {
 pub use spec_wire_proto::debundle::spec::BunModule;
 
 pub trait BunModuleExt: Sized {
+    /// Recognize only the exact request spellings.
     fn from_static_specifier(specifier: &str) -> Option<Self>;
 }
 
 impl BunModuleExt for BunModule {
-    /// Recognize only the exact request spellings.
     fn from_static_specifier(specifier: &str) -> Option<Self> {
         Some(match specifier {
             "bun:ffi" => Self::BunFfi,
