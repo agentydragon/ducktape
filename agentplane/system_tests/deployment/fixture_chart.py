@@ -836,7 +836,7 @@ def add_mcp_edge(chart: Chart, env: Environment) -> Construct:
     )
 
 
-def add_sandbox_templates(chart: Chart, env: Environment) -> None:
+def add_runner_templates(chart: Chart, env: Environment) -> environment_sandbox.EnvironmentSandbox:
     sandbox_sidecar_resources = k8s.ResourceRequirements(
         requests={
             "cpu": k8s.Quantity.from_string(Cpu.millis(10).amount),
@@ -844,7 +844,7 @@ def add_sandbox_templates(chart: Chart, env: Environment) -> None:
         }
     )
     sandbox_pod.add_tool_config(chart, env)
-    environment_sandbox.EnvironmentSandbox(
+    return environment_sandbox.EnvironmentSandbox(
         chart,
         "environment-sandbox",
         env,
@@ -885,7 +885,10 @@ def add_sandbox_templates(chart: Chart, env: Environment) -> None:
             else None
         ),
     )
-    command_sandbox.CommandSandbox(
+
+
+def add_command_templates(chart: Chart, env: Environment) -> command_sandbox.CommandSandbox:
+    return command_sandbox.CommandSandbox(
         chart,
         "command-sandbox",
         env,
@@ -938,26 +941,25 @@ def add_model_credentials(chart: Chart, env: Environment, *, models: Models) -> 
         add_secret(chart, _LITELLM_KEY_SECRET, {"api-key": key}, namespace=env.egress.credentials_namespace)
 
 
-def add_svid_box_template(objects: list[dict[str, Any]]) -> None:
-    """`svid_box.TEMPLATE`: the rendered command box, its sidecar and credential wiring untouched, on
-    the runner's workload image and with the runner disk mounted where a runner has it."""
-    box = deepcopy(
-        one(doc for doc in objects if doc["kind"] == "PodTemplate" and doc["metadata"]["name"] == command_sandbox.NAME)
+def add_svid_box_template(boxes: command_sandbox.CommandSandbox, env: Environment) -> k8s.KubePodTemplate:
+    """Add the command box on the runner's workload image and read-only environment disk."""
+    environment = k8s.Volume(
+        name="environment",
+        image=k8s.ImageVolumeSource(reference=environment_vm.RUNNER_DISK_IMAGE, pull_policy="IfNotPresent"),
     )
-    box["metadata"]["name"] = svid_box.TEMPLATE
-    spec = box["template"]["spec"]
-    workload = one(c for c in spec["containers"] if c["name"] == command_sandbox.CONTAINER)
-    # The tag the runner's own reference carries, under which stack.py imports it.
-    workload["image"] = f"{ENVIRONMENT_TOOLS_IMAGE}:unset"
-    workload["imagePullPolicy"] = "IfNotPresent"
-    # Where a runner mounts its disk (cluster/cdk8s/agentplane/environment_sandbox.py, `_ENVIRONMENT_DIR`).
-    workload["volumeMounts"].append(
-        {"name": "environment", "mountPath": "/run/agentplane/environment", "readOnly": True}
+    return boxes.add_template(
+        "svid-box",
+        metadata=ApiObjectMetadata(name=svid_box.TEMPLATE, namespace=env.namespace),
+        workload=command_sandbox.workload(
+            ENVIRONMENT_TOOLS_IMAGE,
+            command_sandbox.COMMAND_RESOURCES,
+            env,
+            k8s.VolumeMount(name=environment.name, mount_path="/run/agentplane/environment", read_only=True),
+            trust_mounts=sandbox_pod.egress_proxy_mounts(),
+            image_pull_policy="IfNotPresent",
+        ),
+        volumes=[environment],
     )
-    spec["volumes"].append(
-        {"name": "environment", "image": {"reference": environment_vm.RUNNER_DISK_IMAGE, "pullPolicy": "IfNotPresent"}}
-    )
-    objects.append(box)
 
 
 def configure_test_vm_guests(objects: list[dict[str, Any]]) -> None:

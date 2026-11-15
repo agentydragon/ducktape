@@ -107,6 +107,8 @@ functions directly, then use the shared finalizer to synthesize the chart, apply
 fixture edits, and derive runtime metadata from the environment and constructed services. The
 rendering rule only runs that recipe; it does not select services, images, plugins or executor
 policy.
+Recipes also add the SVID command-box template through the command component's typed API,
+sharing its sidecar and credential wiring. Finalization does not clone rendered command templates.
 The native recovery recipe adds backend services, the central sampler and a bound test caller.
 The History outage recipe also adds App and MCP edge. Neither adds Dex or OAuth fixture servers.
 

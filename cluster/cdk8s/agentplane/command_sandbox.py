@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-from cdk8s import ApiObject, ApiObjectMetadata, JsonPatch
+from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecIngress
 from constructs import Construct
@@ -42,7 +42,7 @@ _SIDECAR_TRUST_DIR = Path("/run/agentplane/workload-trust")
 # The box's own SVID, which the Action Service mounts into the sidecar alone; keep in sync with
 # `svidMountPath` in agentplane/action_service/sandbox/inventory.go.
 _SVID_DIR = Path("/run/agentplane/workload-svid")
-_COMMAND_RESOURCES = k8s.ResourceRequirements(
+COMMAND_RESOURCES = k8s.ResourceRequirements(
     requests={"cpu": k8s.Quantity.from_string("100m"), "memory": k8s.Quantity.from_string("256Mi")},
     limits={"cpu": k8s.Quantity.from_string("1"), "memory": k8s.Quantity.from_string("2Gi")},
 )
@@ -85,6 +85,7 @@ class CommandSandbox(Construct):
         trust_mounts: Sequence[k8s.VolumeMount] | None = None,
     ) -> None:
         super().__init__(scope, id)
+        self.env = env
         self.runner_zone = runner_zone
         self.image_pull_secret_name = image_pull_secret_name
         self.sidecar_resources = sidecar_resources
@@ -109,19 +110,15 @@ class CommandSandbox(Construct):
                 auth=sidecar_config.SpiffeProxyAuth(cert_file=_SVID_DIR / "tls.crt", key_file=_SVID_DIR / "tls.key"),
             ),
         )
-        _pod_template(
-            self,
+        self.add_template(
             "podtemplate",
-            env,
-            name=NAME,
-            workload=_workload(_IMAGE, _COMMAND_RESOURCES, env, trust_mounts=mounts),
+            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
+            workload=workload(_IMAGE, COMMAND_RESOURCES, env, trust_mounts=mounts),
         )
-        _pod_template(
-            self,
+        self.add_template(
             "build-podtemplate",
-            env,
-            name=BUILD_NAME,
-            workload=_workload(
+            metadata=ApiObjectMetadata(name=BUILD_NAME, namespace=env.namespace),
+            workload=workload(
                 _BUILD_IMAGE,
                 _BUILD_RESOURCES,
                 env,
@@ -130,7 +127,40 @@ class CommandSandbox(Construct):
             ),
             volumes=[_BUILD_HOME],
         )
-        self.env = env
+
+    def add_template(
+        self, id: str, *, metadata: ApiObjectMetadata, workload: k8s.Container, volumes: Sequence[k8s.Volume] = ()
+    ) -> k8s.KubePodTemplate:
+        """Add a command workload with this component's shared sidecar and credential wiring."""
+        return k8s.KubePodTemplate(
+            self,
+            id,
+            metadata=metadata,
+            template=k8s.PodTemplateSpec(
+                metadata=k8s.ObjectMeta(labels=_LABELS),
+                # The Action Service runs each box as its caller, with no account of its own.
+                spec=sandbox_pod.pod_spec(
+                    self.env,
+                    workload=workload,
+                    workload_volumes=[
+                        *volumes,
+                        k8s.Volume(
+                            name=_SIDECAR_TRUST_VOLUME,
+                            config_map=k8s.ConfigMapVolumeSource(name=cluster_ca.WORKLOAD_BUNDLE),
+                        ),
+                    ],
+                    sidecar_settings=self.sidecar_settings,
+                    sidecar_resources=self.sidecar_resources,
+                    sidecar_mounts=[
+                        k8s.VolumeMount(name=_SIDECAR_TRUST_VOLUME, mount_path=str(_SIDECAR_TRUST_DIR), read_only=True)
+                    ],
+                    image_pull_secret_name=self.image_pull_secret_name,
+                    node_selector=(
+                        {node_scheduling.ZONE_LABEL: self.runner_zone} if self.runner_zone is not None else None
+                    ),
+                ),
+            ),
+        )
 
     def add_platform_resources(self) -> None:
         """Limit command boxes to DNS and the fleet egress proxy."""
@@ -146,56 +176,18 @@ class CommandSandbox(Construct):
         )
 
 
-def _pod_template(
-    scope: CommandSandbox,
-    id: str,
-    env: Environment,
-    *,
-    name: str,
-    workload: k8s.Container,
-    volumes: Sequence[k8s.Volume] = (),
-) -> None:
-    rendered = sandbox_pod.render_pod_template(
-        _LABELS,
-        # No account of its own: the sandbox Actions run every box as its caller
-        # (agentplane/action_service/sandbox/inventory.go).
-        sandbox_pod.pod_spec(
-            env,
-            workload=workload,
-            workload_volumes=[
-                *volumes,
-                k8s.Volume(
-                    name=_SIDECAR_TRUST_VOLUME, config_map=k8s.ConfigMapVolumeSource(name=cluster_ca.WORKLOAD_BUNDLE)
-                ),
-            ],
-            sidecar_settings=scope.sidecar_settings,
-            sidecar_resources=scope.sidecar_resources,
-            # Directory mount lets the TLS root source observe trust-manager rotation.
-            sidecar_mounts=[
-                k8s.VolumeMount(name=_SIDECAR_TRUST_VOLUME, mount_path=str(_SIDECAR_TRUST_DIR), read_only=True)
-            ],
-            image_pull_secret_name=scope.image_pull_secret_name,
-            # Keep command boxes in the environment's runner zone alongside LiteLLM.
-            node_selector=({node_scheduling.ZONE_LABEL: scope.runner_zone} if scope.runner_zone is not None else None),
-        ),
-    )
-    # A PodTemplate rather than a Pod spec in the Action Service's ConfigMap: the image pins
-    # (image-pins/kustomization.yaml) rewrite containers in any object, never inside a string.
-    ApiObject(
-        scope, id, api_version="v1", kind="PodTemplate", metadata=ApiObjectMetadata(name=name, namespace=env.namespace)
-    ).add_json_patch(JsonPatch.add("/template", rendered))
-
-
-def _workload(
+def workload(
     image: str,
     resources: k8s.ResourceRequirements,
     env: Environment,
     *mounts: k8s.VolumeMount,
     trust_mounts: Sequence[k8s.VolumeMount] = (),
+    image_pull_policy: str | None = None,
 ) -> k8s.Container:
     return k8s.Container(
         name=CONTAINER,
         image=f"{image}:{_PLACEHOLDER_TAG}",
+        image_pull_policy=image_pull_policy,
         # The image has no entrypoint of its own: the box idles until something is exec'd into it.
         # PID 1 ignores a signal it installs no handler for, so a bare `sleep` would hold every
         # dispose, and the quota the box holds, for the whole termination grace period.
