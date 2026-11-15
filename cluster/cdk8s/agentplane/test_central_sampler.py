@@ -196,11 +196,12 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
         _resource(staging_manifests, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"]
     )
     target = gateway["central_sampler"]
-    assert target == {
-        "target": central_sampler.tls_target(namespace),
-        "token_file": "/var/run/secrets/agentplane-runner-gateway/central-sampler",
-        "tls": {"ca_file": workload_tls.TRUST_BUNDLE_FILE, "server_uri": CENTRAL_SAMPLER_URI},
-    }
+    assert target["target"] == central_sampler.tls_target(namespace)
+    assert "token_file" not in target
+    assert target["tls"]["server_uri"] == CENTRAL_SAMPLER_URI
+    assert target["tls"]["client_uri"] == GATEWAY_SESSIONS_URI
+    for field in ("cert_file", "key_file", "ca_file"):
+        assert target["tls"][field] == gateway["gateway_tls"][field]
     assert gateway["executor_callers"] == [f"{namespace}/{central_sampler.NAME}"]
 
     app_config = yaml.safe_load(_resource(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
