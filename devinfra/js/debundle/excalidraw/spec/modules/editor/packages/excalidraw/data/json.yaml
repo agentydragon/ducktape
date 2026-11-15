@@ -1,0 +1,86 @@
+source_matches:
+  - match: |
+      var ANYTHING = ANYTHING,
+        filterOutDeletedFiles = (elements, files) => {
+          let nextFiles = {};
+          for (let element of elements)
+            !element.isDeleted && "fileId" in element && element.fileId &&
+              files[element.fileId] && (nextFiles[element.fileId] = files[element.fileId]);
+          return nextFiles;
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - filterOutDeletedFiles
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        serializeAsJSON = (elements, appState, files, type) => {
+          let data = {
+            type: EXPR,
+            version: EXPR,
+            source: EXPR,
+            elements: type === "local" ? EXPR : EXPR,
+            appState: type === "local" ? EXPR : EXPR,
+            files: type === "local" ? EXPR : EXPR,
+          };
+          return JSON.stringify(data, null, 2);
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - serializeAsJSON
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        saveAsJSON = AST_CONTAINS_STRING("Excalidraw file"),
+        ANYTHING = ANYTHING;
+    bindings:
+      - saveAsJSON
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        loadFromJSON = AST_CONTAINS_STRING("Excalidraw files"),
+        ANYTHING = ANYTHING;
+    bindings:
+      - loadFromJSON
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        isValidExcalidrawData = (data) =>
+          data?.type === EXPORT_DATA_TYPES.excalidraw &&
+          (!data.elements || Array.isArray(data.elements) &&
+            (!data.appState || typeof data.appState == "object")),
+        ANYTHING = ANYTHING;
+    bindings:
+      - isValidExcalidrawData
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        isValidLibrary = (json) =>
+          typeof json == "object" && json &&
+          json.type === EXPORT_DATA_TYPES.excalidrawLibrary &&
+          (json.version === 1 || json.version === 2),
+        ANYTHING = ANYTHING;
+    bindings:
+      - isValidLibrary
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        serializeLibraryAsJSON = (libraryItems) => {
+          let data = {
+            type: EXPR,
+            version: EXPR,
+            source: EXPR,
+            libraryItems: libraryItems,
+          };
+          return JSON.stringify(data, null, 2);
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - serializeLibraryAsJSON
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        saveLibraryAsJSON = AST_CONTAINS_STRING("Excalidraw library file"),
+        ANYTHING = ANYTHING;
+    bindings:
+      - saveLibraryAsJSON

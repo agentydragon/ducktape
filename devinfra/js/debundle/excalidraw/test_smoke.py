@@ -387,6 +387,43 @@ async def test_data_decoding(playwright_driver: Playwright, origin: str) -> None
         }
 
 
+async def test_scene_and_library_json(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const json = await import('./editor/packages/excalidraw/data/json.js');
+                const elements = [
+                    {id: 'visible', type: 'image', fileId: 'keep', isDeleted: false},
+                    {id: 'deleted', type: 'image', fileId: 'drop', isDeleted: true},
+                ];
+                const files = {keep: {id: 'keep'}, drop: {id: 'drop'}, unused: {id: 'unused'}};
+                const local = JSON.parse(json.serializeAsJSON(elements, {}, files, 'local'));
+                const database = JSON.parse(json.serializeAsJSON(elements, {}, files, 'database'));
+                const library = JSON.parse(json.serializeLibraryAsJSON([{id: 'item', elements: []}]));
+                return {
+                    local: [local.type, local.elements.map(element => element.id), Object.keys(local.files)],
+                    database: [database.type, database.elements.map(element => element.id), 'files' in database],
+                    sceneValidation: [json.isValidExcalidrawData(local),
+                        json.isValidExcalidrawData({type: 'excalidraw', elements: {}}),
+                        json.isValidExcalidrawData({type: 'other'})],
+                    library: [library.type, library.libraryItems[0].id,
+                        !!json.isValidLibrary(library), !!json.isValidLibrary({...library, version: 3})],
+                };
+            }"""
+        )
+        assert result == {
+            "local": ["excalidraw", ["visible"], ["keep"]],
+            "database": ["excalidraw", ["visible"], False],
+            "sceneValidation": [True, False, False],
+            "library": ["excalidrawlib", "item", True, False],
+        }
+
+
 async def test_library_class(playwright_driver: Playwright, origin: str) -> None:
     async with deterministic_browser_context(
         playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
