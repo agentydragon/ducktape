@@ -12,7 +12,9 @@ from more_itertools import one
 
 from agentplane.egress.platform_routes import PLATFORM_ROUTES_PORT
 from agentplane.net.peertls.config import HISTORY_SERVICE_URI
+from agentplane.session_instructions.platform_instructions import SessionRuntime
 from cluster.cdk8s.agentplane import environment_firecracker, environment_sandbox, history_service, staging
+from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
 from cluster.cdk8s.pod_policy import harden, pod_spec
 
 
@@ -79,12 +81,35 @@ def test_firecracker_mounts_stay_on_the_correct_side(scratch_app: App) -> None:
 
 def test_firecracker_native_grpc_urls_use_the_guest_relay_gateway(scratch_app: App) -> None:
     chart = Chart(scratch_app, "firecracker-grpc-routes")
-    environment_sandbox.EnvironmentSandbox(
+    env = replace(staging.ENV, firecracker_sandboxes=True)
+    pod_state = {
+        "name": "state",
+        "claim": {
+            "storageClassName": "piraeus-hdd-local",
+            "accessModes": ["ReadWriteOnce"],
+            "resources": {"requests": {"storage": "10Gi"}},
+        },
+        "layout": {"type": "DirectoryTree"},
+    }
+    firecracker_state = {
+        **pod_state,
+        "claim": {**pod_state["claim"], "volumeMode": "Filesystem", "resources": {"requests": {"storage": "100Gi"}}},
+        "layout": {"type": "RawDiskImage", "filesystem": "ext4"},
+    }
+    firecracker_workspace = environment_sandbox.workspace_volume_spec(firecracker_state, layout_type="RawDiskImage")
+    firecracker_workspace["claim"]["resources"] = pod_state["claim"]["resources"]
+    environment_firecracker.EnvironmentFirecrackerTemplate(
         chart,
-        "environment-sandbox",
-        replace(staging.ENV, firecracker_sandboxes=True),
-        name="runner",
-        image="registry.test/runner@sha256:123",
+        "firecracker-template",
+        env,
+        labels={"app.kubernetes.io/name": "agentplane-environment-runtime"},
+        state_volume=firecracker_state,
+        workspace_volume=firecracker_workspace,
+        runner_image="registry.test/runner@sha256:123",
+        platform_instructions=platform_instructions(
+            env, session_runtime=SessionRuntime.NATIVE_HARNESS, egress_host=environment_firecracker.GATEWAY
+        ),
+        harness_env=agent_cli_environment(service_urls(env, egress_host=environment_firecracker.GATEWAY)),
     )
     docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
     config_map = one(

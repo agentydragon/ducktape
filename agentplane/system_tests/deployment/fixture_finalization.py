@@ -39,8 +39,6 @@ def finalize_fixture(
     runtime = _runtime(env)
     backend = _backend(models)
     objects = list(Cdk8sTesting.synth(chart))
-    if env.vm_sandboxes:
-        fixture_chart.configure_test_vm_guests(objects)
     fixture_chart.configure_port_forward_tls(objects)
     # The retained test node is bare k3s, which has no Cilium controller.
     objects = [document for document in objects if document["kind"] != "CiliumNetworkPolicy"]

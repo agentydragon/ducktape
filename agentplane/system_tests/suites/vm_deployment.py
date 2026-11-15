@@ -50,7 +50,8 @@ def render() -> RenderedFixture:
         notification_callers=[fixture_chart.APP_SERVICE.pods],
     )
     app = fixture_chart.add_app(chart, env)
-    fixture_chart.add_runner_templates(chart, env)
+    runner_template = fixture_chart.add_runner_templates(chart, env)
+    fixture_chart.add_vm_templates(chart, env, runner_template)
     boxes = fixture_chart.add_command_templates(chart, env)
     fixture_chart.add_svid_box_template(boxes, env)
     fixture_chart.add_model_credentials(chart, env, models=models)

@@ -4,6 +4,7 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 # gazelle:resolve py agentplane.environments.v1.environment_service_pb2 //agentplane/environments/v1:environment_service_pb2
 # gazelle:resolve py cert_manager_crds //cluster/cdk8s/providers/cert_manager:certificate
 # gazelle:resolve py cert_manager_clusterissuer_crds //cluster/cdk8s/providers/cert_manager:clusterissuer
+# gazelle:resolve py kubevirt_virtualmachine_crds //cluster/cdk8s/providers/kubevirt:virtualmachine
 # gazelle:resolve py trust_manager_crds //cluster/cdk8s/providers/cert_manager:bundle
 
 load("@rules_oci//oci:defs.bzl", "oci_image")
@@ -256,6 +257,7 @@ py_library(
         "//agentplane/notification_service:settings",
         "//agentplane/proto:session_pb2",
         "//agentplane/sandboxes/runtimeconfig:model_catalog",
+        "//agentplane/session_instructions:platform_instructions",
         "//agentplane/system_tests/k3s:namespaces",
         "//agentplane/system_tests/vm:block_storage",
         "//agentplane/system_tests/vm:configuration",
@@ -270,16 +272,20 @@ py_library(
         "//cluster/cdk8s/agentplane:egress",
         "//cluster/cdk8s/agentplane:egress_credentials",
         "//cluster/cdk8s/agentplane:environment",
+        "//cluster/cdk8s/agentplane:environment_firecracker",
+        "//cluster/cdk8s/agentplane:environment_guest",
         "//cluster/cdk8s/agentplane:environment_sandbox",
         "//cluster/cdk8s/agentplane:environment_service",
         "//cluster/cdk8s/agentplane:environment_vm",
         "//cluster/cdk8s/agentplane:history_service",
         "//cluster/cdk8s/agentplane:kubernetes_accounts",
+        "//cluster/cdk8s/agentplane:launcher_relay",
         "//cluster/cdk8s/agentplane:llm_ingress",
         "//cluster/cdk8s/agentplane:mcp_edge",
         "//cluster/cdk8s/agentplane:model_selections",
         "//cluster/cdk8s/agentplane:namespaces",
         "//cluster/cdk8s/agentplane:notifications",
+        "//cluster/cdk8s/agentplane:platform_instructions",
         "//cluster/cdk8s/agentplane:policy_controller",
         "//cluster/cdk8s/agentplane:policy_controller_rbac",
         "//cluster/cdk8s/agentplane:runner_gateway",
@@ -297,11 +303,11 @@ py_library(
         "//cluster/cdk8s/providers/cert_manager:certificate",
         "//cluster/cdk8s/providers/cert_manager:cluster_issuer",
         "//cluster/cdk8s/providers/cert_manager:clusterissuer",
+        "//cluster/cdk8s/providers/kubevirt:virtualmachine",
         "//model_catalog:catalog",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
-        "@pypi//more_itertools",
         "@pypi//protobuf",
         "@pypi//pydantic",
     ],

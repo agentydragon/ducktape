@@ -13,7 +13,6 @@ launcher.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any
 
 from cdk8s import ApiObject, ApiObjectMetadata, JsonPatch
@@ -24,6 +23,7 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachineSpec,
     VirtualMachineSpecTemplateSpecDomainCpu,
     VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts,
+    VirtualMachineSpecTemplateSpecDomainFirmware,
     VirtualMachineSpecTemplateSpecDomainResources,
     VirtualMachineSpecTemplateSpecDomainResourcesRequests,
     VirtualMachineSpecTemplateSpecVolumes,
@@ -32,16 +32,12 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
 )
 
 from agentplane.crd_group import GROUP
-from agentplane.env.config import CodexReadiness
-from cluster.cdk8s.agentplane import launcher_relay
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.agentplane.environment_guest import guest_config_data
 from cluster.cdk8s.kubevirt.virtual_machine import container_disk_template
 
 NAME = "environment-vm"
-_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-environment-vm:unset"  # image-pins/ sets the tag
+ROOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-environment-vm:unset"  # image-pins/ sets the tag
 RUNNER_DISK_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset"  # image-pins/ sets the tag
-_CONFIG_MAP_NAME = "environment-vm-config"
 _ENVIRONMENT_RUNTIME_ENV_FILE = "environment-runtime.env"
 _WORKSPACE = "workspace"
 # A listed port keeps masquerade from forwarding every other port, including kubelet's probe of
@@ -58,7 +54,7 @@ def _memory_quantity(memory_bytes: int) -> str:
 
 
 class EnvironmentVmTemplate(Construct):
-    """Build the VM SandboxTemplate and the guest configuration it carries."""
+    """Build one VM SandboxTemplate from an explicitly composed guest ConfigMap."""
 
     def __init__(
         self,
@@ -66,34 +62,23 @@ class EnvironmentVmTemplate(Construct):
         id: str,
         env: Environment,
         *,
+        template_name: str,
+        root_image: str,
+        config_map: ConfigMap,
         labels: dict[str, str],
         state_volume: dict[str, Any],
         workspace_volume: dict[str, Any],
-        platform_instructions: str,
-        harness_env: Mapping[str, str],
-        session_reconcile_concurrency: int | None = None,
-        codex_readiness: CodexReadiness | None = None,
+        firmware: VirtualMachineSpecTemplateSpecDomainFirmware | None = None,
+        root_disk_serial: str | None = None,
     ) -> None:
         super().__init__(scope, id)
         namespace = env.namespace
         resources = env.vm_resources
         if resources is None:
             raise ValueError("VM Sandboxes require vm_resources")
-        config_map_data = guest_config_data(
-            env,
-            gateway=launcher_relay.GUEST_GATEWAY,
-            block_devices=("/dev/disk/by-id/virtio-workspace",),
-            platform_instructions=platform_instructions,
-            harness_env=harness_env,
-            session_reconcile_concurrency=session_reconcile_concurrency,
-            codex_readiness=codex_readiness,
-        )
-        ConfigMap(
-            self, "config", metadata=ApiObjectMetadata(name=_CONFIG_MAP_NAME, namespace=namespace), data=config_map_data
-        )
         template = container_disk_template(
             labels=labels,
-            image=_IMAGE,
+            image=root_image,
             cpu=VirtualMachineSpecTemplateSpecDomainCpu(cores=resources.guest_vcpu_count),
             resources=VirtualMachineSpecTemplateSpecDomainResources(
                 requests={
@@ -108,7 +93,7 @@ class EnvironmentVmTemplate(Construct):
             ],
             disks={
                 "agentplane-config": VirtualMachineSpecTemplateSpecVolumes(
-                    name="config", config_map=VirtualMachineSpecTemplateSpecVolumesConfigMap(name=_CONFIG_MAP_NAME)
+                    name="config", config_map=VirtualMachineSpecTemplateSpecVolumesConfigMap(name=config_map.name)
                 ),
                 # Holds `ca-certificates.crt` and `ca-certificates.p12`, the names vm.nix mounts.
                 "agentplane-trust": VirtualMachineSpecTemplateSpecVolumes(
@@ -126,17 +111,19 @@ class EnvironmentVmTemplate(Construct):
                 ),
             },
             controller_attached_disks=[_WORKSPACE],
+            firmware=firmware,
+            root_disk_serial=root_disk_serial,
             autoattach_graphics_device=False,
         )
-        vm = VirtualMachine.manifest(metadata=ApiObjectMetadata(name=NAME), spec=VirtualMachineSpec(template=template))[
-            "spec"
-        ]
+        vm = VirtualMachine.manifest(
+            metadata=ApiObjectMetadata(name=template_name), spec=VirtualMachineSpec(template=template)
+        )["spec"]
         ApiObject(
             self,
             "sandboxtemplate",
             api_version=f"{GROUP}/v1alpha1",
             kind="SandboxTemplate",
-            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
+            metadata=ApiObjectMetadata(name=template_name, namespace=namespace),
         ).add_json_patch(
             JsonPatch.add("/spec", {"vm": vm, "stateVolume": state_volume, "workspaceVolume": workspace_volume})
         )
