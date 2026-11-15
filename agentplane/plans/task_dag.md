@@ -3729,19 +3729,6 @@ service SVID, verified on staging (#16620, #16624). Stage 5 was released for imp
 the per-receiver sequence and progress. App OIDC, MCP OAuth and Kubernetes API credentials keep
 their own contracts.
 
-#### Authentication: dead or stale today
-
-Live callers checked on devel, 2026-11-10 (`grep` of `auth.<Rule>(` outside tests).
-
-- **Stale doc sentences.** `docs/workload_authentication.md` § TokenReview and projected credentials
-  says Sandbox Runtime templates "continue to project" the Kubernetes token (none since #15258; only
-  command boxes do) and § Service authorization says authentication yields "only the verified Sandbox
-  ServiceAccount" (an Identity subject resolves since the expand phase). `identity/auth/README.md`
-  says a record naming an Identity "is refused until `Principal` has an Identity form" and "there is no
-  identity reference" (`IdentityPrincipal`, `AnySubject` and the Identity delegation exist, and the
-  same README describes them further down), and that the proxy's hop "still accepts" the
-  `agentplane-egress` audience (the `forward` listener is `spiffe` alone). Fix in one docs PR.
-
 #### `REFACTOR_COHERENCE_AUDIT` — the refactor reads as one design
 
 **Candidate; later work under the stakeholder priorities (2026-10-30 PDT); no longer held on the

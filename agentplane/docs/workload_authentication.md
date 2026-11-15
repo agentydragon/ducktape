@@ -3,10 +3,10 @@
 Sandbox-to-service traffic uses the Runtime SVID issued for the current Sandbox incarnation through
 its [`WorkloadCredential`](#workloadcredentials).
 Command/build boxes and standing workloads present `WorkloadCredential` SVIDs too. Backend services
-currently call each other with Kubernetes bearer authentication, usually over verified server TLS.
-The approved target is mutual TLS with distinct service SVID identities for first-party
-service-to-service calls. This caller identity is separate from a workload `WorkloadCredential` and
-never resolves to an agent `Identity`.
+call each other with service SVIDs over mutual TLS, verifying the receiver's service URI and
+workload trust chain on every hop. A service URI is separate from a workload `WorkloadCredential`
+and never resolves to an agent `Identity`. Callers read certificate and trust-bundle files;
+authenticating a service peer requires no Kubernetes API call.
 
 ## Sandbox SVID route
 
@@ -155,9 +155,6 @@ including one inherited through a tunnel:
    their own, and LLM ingress, History, Notification and the Runner Gateway receive theirs from
    `policy_namespace`, which staging sets for each. A legacy record without an Identity is retained
    but refused; it is not resolved through a ServiceAccount of the same name.
-6. A caller that also forwards a Pod-bound token (`projectedWorkloadToken`) must present one whose
-   TokenReview Pod UID equals `spec.pod`. A standing record has no `spec.pod`, so no forwarded token
-   binds to it.
 
 An API server error fails closed. Headers, metadata and request bodies never select the subject.
 Services see every workload SVID as an `IdentityPrincipal` naming the Identity and its UID, with
@@ -244,10 +241,10 @@ other Certificate against the issuer is refused. Certificates against other issu
 The central egress proxy's `forward` listener requires mTLS and authenticates SVIDs alone; a
 bearer does not authenticate the hop.
 
-`projectedWorkloadToken` is a separate destination credential. A sidecar offers its explicit
-destination-audience token, and the proxy substitutes it only after TokenReview binds it to the same
-caller Pod and a matching credential rule. Sandbox Runtime templates continue to project this
-Kubernetes destination-audience token; they do not project first-party-service audiences.
+Sandbox Runtime templates project no first-party-service tokens and expose no token-forwarding
+credential source. The sidecar and proxy discard the retired `X-Agentplane-Workload-Token` header.
+Kubernetes API credentials remain destination credentials under explicit egress and Kubernetes grants;
+they do not authenticate calls to Agentplane receivers.
 
 The proxy's `forward` and services' `rpc` settings use the shared
 [authentication allowlist](../identity/auth/README.md); `forward` names `spiffe` alone. Each
@@ -258,23 +255,22 @@ and an application credential presented together. Admission stays method-specifi
 authentication modes on the listener does not grant access to backend-only methods, operator RPCs,
 or delegated calls.
 
-Backend clients currently verify the service's SPIFFE URI and server-auth usage against the
-cluster's trust-manager roots, then present their existing TokenReview or delegation credentials.
-They do not yet receive a general-purpose service SVID. The approved migration adds client-auth
-service certificates and exact service-principal admission while bearer admission remains
-temporarily available; callers switch only after the receiver image with that admission is pinned.
-A service URI is not a `WorkloadCredential`, a ServiceAccount, or an Identity. For delegated calls
-the service actor, effective Identity, and provenance remain separate.
-Gateway backend and cross-replica methods keep their separate audiences and authorization;
-History bearer writers remain limited to the sampler accounts. LLM inference and native ModelConfig
-share one TLS HTTP/2 listener, retaining the sampler's bearer path and the service-held LiteLLM key.
+Backend clients verify the receiver's SPIFFE URI and server-auth usage against the workload CA
+and present their role's service SVID. Exact method grants admit component callers; the Sessions,
+Environments and Runtime-proxy roles have distinct identities even while they share a binary.
+A service URI is not a `WorkloadCredential`, a ServiceAccount, or an Identity. Delegated calls
+prove the actor with its certificate and carry the effective Identity and provenance in the typed
+envelope. The actor's grant never becomes the effective Identity's authority.
+LLM inference and native ModelConfig share one TLS HTTP/2 listener; the sampler uses its service
+SVID and typed Identity delegation, while the ingress holds the separate LiteLLM credential.
 Notification's signed external webhook endpoint remains a separate HTTP protocol.
 
 ## Service authorization and attribution
 
 Workload SVID authentication yields the record's Identity and, when proven, Pod provenance.
-Separately authorized TokenReview methods continue to yield ServiceAccount principals for
-platform callers. Each destination service retains its own authorization checks, policy, and resource ownership.
+Service SVID authentication yields a service principal with no Identity or Pod proof. Legacy
+TokenReview admission remains only on receivers awaiting retirement; first-party callers no longer
+select it. Each destination retains its own authorization checks, policy, and resource ownership.
 Neither a Sandbox certificate nor a successful authentication grants Action, Thread, operator, or
 cross-service permissions by itself. The egress proxy's allow decision and the destination's
 authorization answer separate questions.

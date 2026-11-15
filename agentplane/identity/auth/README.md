@@ -9,9 +9,9 @@ both or neither are refused, and selection never falls back based on list order.
 may still admit unauthenticated public health methods. Listener authentication does not grant method
 authorization. The egress proxy and first-party service RPC listeners consume this contract.
 
-[`auth`](auth.go) provides the TokenReview resolver used by Agentplane services. Each
-service constructs a `Resolver` with its accepted audience and allowed namespaces. Its namespace
-allowlist is checked for every request.
+[`auth`](auth.go) retains a legacy TokenReview resolver for receivers awaiting bearer retirement.
+Its accepted audience and namespace allowlist are explicit. First-party service callers use service
+SVIDs; these helpers do not describe their current caller authentication.
 
 `ResolveAuthorization` accepts exactly one RFC 6750 Bearer value. `ResolveToken` verifies the
 reviewed ServiceAccount identity and returns a Pod-bound `Principal` containing the account, the
@@ -28,29 +28,30 @@ legacy record without an Identity is retained but refused; it is never reinterpr
 same-named ServiceAccount. ServiceAccount principals come only from TokenReview. Deleting the
 record or replacing its credential ID revokes the certificate. `Resolver.WithListenerAuthentication`
 selects this path only when the listener allows SPIFFE. Listener credential selection does not grant
-method authorization, and delegated calls still require their explicit per-method grant. A TLS peer
-cannot be combined with a bearer or delegation envelope. Stream revalidation repeats the live lookup
+method authorization, and delegated calls still require their explicit per-method grant. A workload
+SVID cannot be combined with a bearer or used as a delegation actor; service actors have a separate
+certificate rule. Stream revalidation repeats the live lookup
 and leaf validity checks.
 
 History runner ingress, Notification, Dispatcher, Action Service, LLM ingress and the Rules API
 terminate their workload TLS themselves. The proxy tunnels their encrypted traffic without
-asserting a caller. The central sampler authenticates to services as its own component ServiceAccount;
+asserting a caller. The central sampler authenticates to services with its own service SVID;
 when it delegates Session work, the envelope names the Identity recorded for that Session.
 
 Each service uses one TLS RPC listener for Sandbox and backend callers. Backend clients verify the
-service's SPIFFE URI using `peertls.ClientTLS`, then authenticate with their
-existing bearer or delegation credentials. They receive no SVID. The shared `grpc/healthprobe`
+service's SPIFFE URI using `peertls.ClientTLS` and present their role's service SVID.
+Certificate and trust-bundle files reload on replacement; failed TLS never selects a bearer. The shared `grpc/healthprobe`
 binary checks the same listener through verified TLS without application credentials.
 
 Action command/build boxes and Haku's and `haku-ci`'s standing workloads present their own
 `WorkloadCredential`'s SVID; the egress proxy's `forward` listener authenticates SVIDs alone. Sandbox
-Runtime templates continue projecting Kubernetes destination-audience tokens where credential rules
-require them; they do not project first-party-service audiences.
+Runtime templates do not project first-party-service tokens or forward a caller-supplied Pod token
+for credential substitution. Kubernetes API credentials follow the separately granted egress flow.
 
 `ResolveServiceAccountToken` returns a `ServiceAccountPrincipal` for destinations whose authority
 belongs to the account alone. It requires a ServiceAccount UID and accepts either no Pod binding
-claims or one complete Pod name and UID pair. Partial or repeated claims are rejected. The Action
-Service uses this path. Other callers use Pod-bound `Principal` values.
+claims or one complete Pod name and UID pair. Partial or repeated claims are rejected. This is a
+legacy account admission API, separate from service-SVID authentication.
 
 [`methods.go`](methods.go) admits a gRPC server's calls in one interceptor: `Methods` maps
 each full method name to the `Rule` admitting its callers and refuses any method it does not list
@@ -97,11 +98,11 @@ legacy `Caller` context, which continues to mean the direct principal. For Token
 principal is Pod-bound; other `AnySubject` sources supply only the fields they prove. An Identity is
 never converted to a ServiceAccount for resource checks and cannot prove a Pod binding.
 
-[`grpc`](grpc/client.go) provides `DialDelegated` and `WithDelegation`. The dialer reads the
-destination-audience token file for each call, emits the distinct `Agentplane-Delegated` scheme and
-binary envelope, rejects duplicate authorization/envelope metadata, and disables retries. It does
-not install the ordinary Bearer interceptor. Existing direct clients continue using their current
-Bearer helper.
+[`grpc`](grpc/client.go) provides `DialDelegated` and `WithDelegation`. First-party callers configure
+their service certificate and an empty token path. The dialer sends only the binary typed envelope,
+rejects duplicate authorization/envelope metadata, and disables retries. A failed or absent
+certificate never selects legacy bearer proof. The separately retained token mode is not selected
+by first-party service deployments.
 
 **Backend service admission.** `AllowServiceCallers` adds an exact service allowlist to an
 existing authenticated rule; `Services` constructs a service-only rule with no workload or bearer
@@ -111,11 +112,9 @@ and typed provenance. A service-only rule with no direct callers can admit only 
 service delegators; it cannot gain legacy bearer delegation. Service principals never become `Account`, `Principal`, `IdentityPrincipal` or workload
 `WorkloadCredential` values. Receiver-specific bearer paths remain until their own removal.
 
-[`audience.py`](audience.py) defines `WORKLOAD_TOKEN_AUDIENCE`, the `agentplane-egress` audience
-used by backend callers of LLM ingress and Action Service: the sampler, Notification, and the MCP
-edge's minted Connection tokens. The egress proxy's hop still accepts it, though no workload sends
-it there. Sandbox Runtime templates do not project it. Each backend
-verifier receives its audience explicitly; the Go resolver has no default audience.
+[`audience.py`](audience.py) retains the legacy `agentplane-egress` audience while its receiver
+settings retire. First-party callers no longer mint or present it, and the proxy's `forward`
+listener admits SVIDs alone. Kubernetes destination-audience tokens are a separate credential flow.
 
 Operator and browser-session authentication use separate mechanisms and do not produce a workload
 principal. The approved [delegated authorization design](../../docs/delegated_authorization.md) records
