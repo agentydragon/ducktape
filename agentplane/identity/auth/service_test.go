@@ -20,6 +20,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 )
 
@@ -181,4 +182,88 @@ func (h serviceAdmissionHealth) Check(ctx context.Context, _ *healthpb.HealthChe
 	}
 	h.admissions <- admission
 	return &healthpb.HealthCheckResponse{Status: healthpb.HealthCheckResponse_SERVING}, nil
+}
+
+func TestServicesRequiresAnExactServiceCertificate(t *testing.T) {
+	ca := transporttesting.NewCA(t)
+	contextFor := func(uri string) context.Context {
+		files := ca.Issue(t, uri)
+		pair, err := tls.LoadX509KeyPair(files.CertFile, files.KeyFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		leaf, err := x509.ParseCertificate(pair.Certificate[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		return peer.NewContext(t.Context(), &peer.Peer{AuthInfo: credentials.TLSInfo{State: tls.ConnectionState{PeerCertificates: []*x509.Certificate{leaf}}}})
+	}
+	rule, err := auth.Services([]string{peertls.AppURI})
+	if err != nil {
+		t.Fatal(err)
+	}
+	empty, err := auth.Services(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := contextFor(peertls.AppURI)
+	for _, tc := range []struct {
+		name string
+		rule auth.Rule
+		ctx  context.Context
+		code codes.Code
+	}{
+		{"exact service", rule, service, codes.OK},
+		{"empty allowlist", empty, service, codes.PermissionDenied},
+		{"zero rule", auth.Rule{}, service, codes.PermissionDenied},
+		{"other service", rule, contextFor(peertls.NotificationsURI), codes.PermissionDenied},
+		{"workload SVID", rule, contextFor("spiffe://agentplane/fake-ns/fake-workload/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), codes.Unauthenticated},
+		{"missing certificate", rule, t.Context(), codes.Unauthenticated},
+		{"bearer only", rule, metadata.NewIncomingContext(t.Context(), metadata.Pairs("authorization", "Bearer test-token")), codes.Unauthenticated},
+		{"bearer plus certificate", rule, metadata.NewIncomingContext(service, metadata.Pairs("authorization", "Bearer test-token")), codes.Unauthenticated},
+		{"ungranted delegation", rule, metadata.NewIncomingContext(service, metadata.Pairs(auth.DelegationMetadataKey, "test-envelope")), codes.PermissionDenied},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, err := tc.rule.AdmitContext(tc.ctx, time.Second)
+			if status.Code(err) != tc.code {
+				t.Fatalf("admission: %v, want %s", err, tc.code)
+			}
+			if err != nil {
+				return
+			}
+			admission, err := auth.Admitted(ctx)
+			if err != nil || admission != (auth.ServiceAdmission{Caller: auth.ServicePrincipal{SPIFFEID: peertls.AppURI}}) {
+				t.Fatalf("admission = %#v, %v", admission, err)
+			}
+			if _, err := auth.Caller(ctx); err == nil {
+				t.Fatal("service acquired Pod-bound account proof")
+			}
+			if _, err := auth.EffectiveCaller(ctx); err == nil {
+				t.Fatal("service acquired effective account authority")
+			}
+			if _, err := auth.AdmittedReviewedCaller(ctx); err == nil {
+				t.Fatal("service acquired reviewed account proof")
+			}
+		})
+	}
+	for _, callers := range [][]string{{peertls.AppURI, peertls.AppURI}, {"spiffe://agentplane/app/"}, {"spiffe://other/app"}} {
+		if _, err := auth.Services(callers); err == nil {
+			t.Fatalf("accepted service allowlist %v", callers)
+		}
+	}
+
+	methods := auth.Methods{healthpb.Health_Watch_FullMethodName: rule}
+	admitted, err := methods.AdmitContext(service, healthpb.Health_Watch_FullMethodName, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := auth.RevalidateStream(admitted); err != nil {
+		t.Fatal(err)
+	}
+	// Expire the already verified connection's leaf without waiting on wall-clock timing.
+	remote, _ := peer.FromContext(service)
+	remote.AuthInfo.(credentials.TLSInfo).State.PeerCertificates[0].NotAfter = time.Now().Add(-time.Minute)
+	if err := auth.RevalidateStream(admitted); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("expired stream admission: %v", err)
+	}
 }

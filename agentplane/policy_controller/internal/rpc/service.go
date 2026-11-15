@@ -12,7 +12,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -30,8 +29,6 @@ type Service struct {
 	workloadNamespaces []string
 	objects            client.WithWatch
 	sandboxes          *sandboxreader.Reader
-	readers            sets.Set[auth.Account]
-	writers            []auth.Account
 	readerServiceIDs   []string
 	readerServices     map[string]struct{}
 	writerServices     []string
@@ -41,7 +38,6 @@ func New(
 	namespace string,
 	workloadNamespaces []string,
 	objects client.WithWatch,
-	readers, writers []auth.Account,
 	readerServices, writerServices []string,
 ) (*Service, error) {
 	if namespace == "" || objects == nil {
@@ -63,7 +59,7 @@ func New(
 	}
 	return &Service{
 		namespace: namespace, workloadNamespaces: slices.Sorted(slices.Values(workloadNamespaces)), objects: objects,
-		sandboxes: sandboxes, readers: sets.New(readers...), writers: slices.Clone(writers),
+		sandboxes:        sandboxes,
 		readerServiceIDs: slices.Clone(readerServices), readerServices: readerServiceSet, writerServices: slices.Clone(writerServices),
 	}, nil
 }
@@ -84,45 +80,36 @@ var (
 	}
 )
 
-func (s *Service) Methods(readResolver, writeResolver *auth.Resolver) (auth.Methods, error) {
-	rule := auth.ReviewedServiceAccount(readResolver)
-	methods := auth.Methods{
-		policypb.PolicyService_GrantSandboxPolicyBinding_FullMethodName:  auth.Accounts(writeResolver, s.writers),
-		policypb.PolicyService_RevokeSandboxPolicyBinding_FullMethodName: auth.Accounts(writeResolver, s.writers),
-		policypb.PolicyService_WatchPolicyBindings_FullMethodName:        rule,
-		policypb.PolicyService_WatchPolicySets_FullMethodName:            rule,
-		policypb.PolicyService_ListPolicySetNames_FullMethodName:         rule,
-		policypb.PolicyService_WatchIdentities_FullMethodName:            rule,
-		policypb.PolicyService_DeleteIdentity_FullMethodName:             auth.Accounts(writeResolver, s.writers),
-		policypb.PolicyService_CreateIdentity_FullMethodName:             auth.Accounts(writeResolver, s.writers),
-		policypb.PolicyService_GrantIdentityPolicyBinding_FullMethodName: auth.Accounts(writeResolver, s.writers),
-	}
-	methods, err := methods.WithServiceCallers(readerServiceMethods, s.readerServiceIDs)
+func (s *Service) Methods() (auth.Methods, error) {
+	reader, err := auth.Services(s.readerServiceIDs)
 	if err != nil {
 		return nil, err
 	}
-	return methods.WithServiceCallers(writerServiceMethods, s.writerServices)
+	writer, err := auth.Services(s.writerServices)
+	if err != nil {
+		return nil, err
+	}
+	methods := auth.Methods{}
+	for _, method := range readerServiceMethods {
+		methods[method] = reader
+	}
+	for _, method := range writerServiceMethods {
+		methods[method] = writer
+	}
+	return methods, nil
 }
 
-func (s *Service) caller(ctx context.Context) (auth.Account, bool, error) {
+func (s *Service) requireReader(ctx context.Context) error {
 	admitted, err := auth.Admitted(ctx)
 	if err != nil {
-		return auth.Account{}, false, err
+		return err
 	}
-	if service, ok := admitted.(auth.ServiceAdmission); ok {
-		if _, allowed := s.readerServices[service.Caller.SPIFFEID]; !allowed {
-			return auth.Account{}, false, status.Error(codes.PermissionDenied, "service cannot read policy resources")
-		}
-		return auth.Account{}, true, nil
+	service, ok := admitted.(auth.ServiceAdmission)
+	if !ok {
+		return status.Error(codes.Unauthenticated, "service caller required")
 	}
-	identity, err := auth.EffectiveCaller(ctx)
-	if err != nil {
-		return auth.Account{}, false, err
+	if _, allowed := s.readerServices[service.Caller.SPIFFEID]; !allowed {
+		return status.Error(codes.PermissionDenied, "service cannot read policy resources")
 	}
-	if identity == nil || identity.GetAccount().GetNamespace() == "" || identity.GetAccount().GetName() == "" || identity.GetUid() == "" {
-		return auth.Account{}, false, status.Error(codes.Unauthenticated, "incomplete caller")
-	}
-	caller := auth.Account{Namespace: identity.GetAccount().GetNamespace(), Name: identity.GetAccount().GetName()}
-	broad := s.readers.Has(caller)
-	return caller, broad, nil
+	return nil
 }

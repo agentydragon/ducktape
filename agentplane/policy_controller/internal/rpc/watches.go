@@ -12,7 +12,6 @@ import (
 	resourcepb "github.com/agentydragon/ducktape/agentplane/policy/api/resourcev1"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
-	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	kubernetespb "github.com/agentydragon/ducktape/agentplane/proto/kubernetes"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -28,11 +27,10 @@ import (
 
 func (s *Service) WatchPolicyBindings(request *policypb.WatchPolicyBindingsRequest, stream grpc.ServerStreamingServer[policypb.WatchPolicyBindingsResponse]) error {
 	ctx := stream.Context()
-	caller, broad, err := s.caller(ctx)
-	if err != nil {
+	if err := s.requireReader(ctx); err != nil {
 		return err
 	}
-	selected, err := selectBindings(request, caller, broad)
+	selected, err := selectBindings(request)
 	if err != nil {
 		return err
 	}
@@ -60,7 +58,7 @@ func (s *Service) WatchPolicyBindings(request *policypb.WatchPolicyBindingsReque
 		}
 		return out, nil
 	}
-	return follow(ctx, []watch.Interface{bindingWatch}, read,
+	return follow(ctx, bindingWatch, read,
 		func(items []*policypb.PolicyBinding) error {
 			return send(ctx, stream, &policypb.WatchPolicyBindingsResponse{Frame: &policypb.WatchPolicyBindingsResponse_Snapshot{Snapshot: &policypb.PolicyBindingChunk{Bindings: items}}})
 		},
@@ -76,19 +74,12 @@ func (s *Service) WatchPolicyBindings(request *policypb.WatchPolicyBindingsReque
 		func(item *policypb.PolicyBinding) *policypb.PolicyResourceIdentity { return item.GetIdentity() })
 }
 
-// selectBindings answers which binding subjects a watch request selects, refusing a subject the
-// caller may not read.
-
-// selectBindings answers which binding subjects a watch request selects, refusing a subject the
-// caller may not read.
-func selectBindings(request *policypb.WatchPolicyBindingsRequest, caller auth.Account, broad bool) (func(policyapi.Subject) bool, error) {
+// selectBindings requires an explicit subject: a service caller has no account identity.
+func selectBindings(request *policypb.WatchPolicyBindingsRequest) (func(policyapi.Subject) bool, error) {
 	switch selector := request.GetSelector().(type) {
 	case *policypb.WatchPolicyBindingsRequest_Identity:
 		if selector.Identity == "" {
 			return nil, status.Error(codes.InvalidArgument, "identity name is required")
-		}
-		if !broad {
-			return nil, status.Error(codes.PermissionDenied, "caller cannot read this subject")
 		}
 		return func(bound policyapi.Subject) bool {
 			return bound.Identity != nil && bound.Identity.Name == selector.Identity
@@ -97,20 +88,11 @@ func selectBindings(request *policypb.WatchPolicyBindingsRequest, caller auth.Ac
 		if !selector.EveryIdentity {
 			return nil, status.Error(codes.InvalidArgument, "every_identity must be true when set")
 		}
-		if !broad {
-			return nil, status.Error(codes.PermissionDenied, "caller cannot read this subject")
-		}
 		return func(bound policyapi.Subject) bool { return bound.Identity != nil }, nil
 	case *policypb.WatchPolicyBindingsRequest_Subject, nil:
 		subject := request.GetSubject()
-		if subject == nil {
-			subject = &identitypb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}
-		}
 		if subject.GetNamespace() == "" || subject.GetName() == "" {
 			return nil, status.Error(codes.InvalidArgument, "subject namespace and name are required")
-		}
-		if !broad && (caller.Namespace != subject.GetNamespace() || caller.Name != subject.GetName()) {
-			return nil, status.Error(codes.PermissionDenied, "caller cannot read this subject")
 		}
 		return func(bound policyapi.Subject) bool {
 			return bound.Identity == nil && bound.Namespace == subject.GetNamespace() && bound.Name == subject.GetName()
@@ -122,12 +104,8 @@ func selectBindings(request *policypb.WatchPolicyBindingsRequest, caller auth.Ac
 
 func (s *Service) WatchIdentities(_ *policypb.WatchIdentitiesRequest, stream grpc.ServerStreamingServer[policypb.WatchIdentitiesResponse]) error {
 	ctx := stream.Context()
-	_, broad, err := s.caller(ctx)
-	if err != nil {
+	if err := s.requireReader(ctx); err != nil {
 		return err
-	}
-	if !broad {
-		return status.Error(codes.PermissionDenied, "caller cannot read identities")
 	}
 	identities, err := s.watch(ctx, &policyapi.IdentityList{})
 	if err != nil {
@@ -149,7 +127,7 @@ func (s *Service) WatchIdentities(_ *policypb.WatchIdentitiesRequest, stream grp
 		}
 		return out, nil
 	}
-	return follow(ctx, []watch.Interface{identities}, read,
+	return follow(ctx, identities, read,
 		func(items []*policypb.Identity) error {
 			return send(ctx, stream, &policypb.WatchIdentitiesResponse{Frame: &policypb.WatchIdentitiesResponse_Snapshot{Snapshot: &policypb.IdentityChunk{Identities: items}}})
 		},
@@ -167,35 +145,15 @@ func (s *Service) WatchIdentities(_ *policypb.WatchIdentitiesRequest, stream grp
 
 func (s *Service) WatchPolicySets(_ *policypb.WatchPolicySetsRequest, stream grpc.ServerStreamingServer[policypb.WatchPolicySetsResponse]) error {
 	ctx := stream.Context()
-	caller, broad, err := s.caller(ctx)
-	if err != nil {
+	if err := s.requireReader(ctx); err != nil {
 		return err
 	}
-	bindings, err := s.watch(ctx, &policyapi.PolicyBindingList{})
-	if err != nil {
-		return err
-	}
-	defer bindings.Stop()
 	sets, err := s.watch(ctx, &policyapi.PolicySetList{})
 	if err != nil {
 		return err
 	}
 	defer sets.Stop()
 	read := func() (map[string]*policypb.PolicySet, error) {
-		allowed := map[string]struct{}{}
-		if !broad {
-			var list policyapi.PolicyBindingList
-			if err := s.objects.List(ctx, &list, client.InNamespace(s.namespace)); err != nil {
-				return nil, unavailable(ctx, err)
-			}
-			for _, binding := range list.Items {
-				if binding.Spec.Subject.Namespace == caller.Namespace && binding.Spec.Subject.Name == caller.Name {
-					for _, name := range binding.Spec.PolicySets {
-						allowed[name] = struct{}{}
-					}
-				}
-			}
-		}
 		var list policyapi.PolicySetList
 		if err := s.objects.List(ctx, &list, client.InNamespace(s.namespace)); err != nil {
 			return nil, unavailable(ctx, err)
@@ -203,9 +161,6 @@ func (s *Service) WatchPolicySets(_ *policypb.WatchPolicySetsRequest, stream grp
 		out := make(map[string]*policypb.PolicySet)
 		for i := range list.Items {
 			set := &list.Items[i]
-			if _, ok := allowed[set.Name]; !broad && !ok {
-				continue
-			}
 			converted, err := policySetMessage(set)
 			if err != nil {
 				return nil, status.Error(codes.Internal, "invalid policy set")
@@ -214,7 +169,7 @@ func (s *Service) WatchPolicySets(_ *policypb.WatchPolicySetsRequest, stream grp
 		}
 		return out, nil
 	}
-	return follow(ctx, []watch.Interface{bindings, sets}, read,
+	return follow(ctx, sets, read,
 		func(items []*policypb.PolicySet) error {
 			return send(ctx, stream, &policypb.WatchPolicySetsResponse{Frame: &policypb.WatchPolicySetsResponse_Snapshot{Snapshot: &policypb.PolicySetChunk{PolicySets: items}}})
 		},
@@ -231,26 +186,9 @@ func (s *Service) WatchPolicySets(_ *policypb.WatchPolicySetsRequest, stream grp
 }
 
 // ListPolicySetNames returns one sorted snapshot of the PolicySets visible to the caller.
-
-// ListPolicySetNames returns one sorted snapshot of the PolicySets visible to the caller.
 func (s *Service) ListPolicySetNames(ctx context.Context, _ *policypb.ListPolicySetNamesRequest) (*policypb.ListPolicySetNamesResponse, error) {
-	caller, broad, err := s.caller(ctx)
-	if err != nil {
+	if err := s.requireReader(ctx); err != nil {
 		return nil, err
-	}
-	allowed := map[string]struct{}{}
-	if !broad {
-		var bindings policyapi.PolicyBindingList
-		if err := s.objects.List(ctx, &bindings, client.InNamespace(s.namespace)); err != nil {
-			return nil, unavailable(ctx, err)
-		}
-		for _, binding := range bindings.Items {
-			if binding.Spec.Subject.Namespace == caller.Namespace && binding.Spec.Subject.Name == caller.Name {
-				for _, name := range binding.Spec.PolicySets {
-					allowed[name] = struct{}{}
-				}
-			}
-		}
 	}
 	var sets policyapi.PolicySetList
 	if err := s.objects.List(ctx, &sets, client.InNamespace(s.namespace)); err != nil {
@@ -258,13 +196,7 @@ func (s *Service) ListPolicySetNames(ctx context.Context, _ *policypb.ListPolicy
 	}
 	names := make([]string, 0, len(sets.Items))
 	for _, set := range sets.Items {
-		if broad {
-			names = append(names, set.Name)
-			continue
-		}
-		if _, ok := allowed[set.Name]; ok {
-			names = append(names, set.Name)
-		}
+		names = append(names, set.Name)
 	}
 	slices.Sort(names)
 	return &policypb.ListPolicySetNamesResponse{Names: names}, nil
@@ -351,7 +283,7 @@ func send[T any](ctx context.Context, stream grpc.ServerStreamingServer[T], fram
 	return nil
 }
 
-func follow[T proto.Message](ctx context.Context, watches []watch.Interface, read func() (map[string]T, error), snapshot func([]T) error, complete func() error, upsert func(T) error, remove func(*policypb.PolicyResourceIdentity) error, ident func(T) *policypb.PolicyResourceIdentity) error {
+func follow[T proto.Message](ctx context.Context, changes watch.Interface, read func() (map[string]T, error), snapshot func([]T) error, complete func() error, upsert func(T) error, remove func(*policypb.PolicyResourceIdentity) error, ident func(T) *policypb.PolicyResourceIdentity) error {
 	current, err := read()
 	if err != nil {
 		return err
@@ -375,10 +307,6 @@ func follow[T proto.Message](ctx context.Context, watches []watch.Interface, rea
 	if err := complete(); err != nil {
 		return err
 	}
-	var other <-chan watch.Event
-	if len(watches) > 1 {
-		other = watches[1].ResultChan()
-	}
 	ticker := time.NewTicker(recheckInterval)
 	defer ticker.Stop()
 	for {
@@ -392,8 +320,7 @@ func follow[T proto.Message](ctx context.Context, watches []watch.Interface, rea
 				return err
 			}
 			continue
-		case event, ok = <-watches[0].ResultChan():
-		case event, ok = <-other:
+		case event, ok = <-changes.ResultChan():
 		}
 		if !ok {
 			return unavailable(ctx, errors.New("watch closed"))

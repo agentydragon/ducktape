@@ -64,7 +64,7 @@ from agentplane.history_service.fold.models import (
 from agentplane.history_service.testing.electric_service import ElectricService
 from agentplane.history_service.testing.history import History
 from agentplane.history_service.testing.protojson import thread_entity_from_record, thread_entity_state_json
-from agentplane.net.peertls.config import POLICY_CONTROLLER_URI, ClientTLS
+from agentplane.net.peertls.config import APP_URI, POLICY_CONTROLLER_URI, ClientTLS
 from agentplane.policy.v1 import policy_service_pb2, policy_service_pb2_grpc
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner_gateway.client import SandboxControlClient
@@ -308,10 +308,13 @@ async def test_environment_identity_change_obeys_real_gateway_and_kubernetes_adm
     policy_ca_file.write_bytes(policy_ca.cert_pem)
     policy_certificate, policy_key = issue_workload_leaf(policy_ca, POLICY_CONTROLLER_URI, tmp_path)
     policy_server_credentials = grpc.ssl_server_credentials(
-        [(policy_key.read_bytes(), policy_certificate.read_bytes())]
+        [(policy_key.read_bytes(), policy_certificate.read_bytes())],
+        root_certificates=policy_ca.cert_pem,
+        require_client_auth=True,
     )
-    policy_token = tmp_path / "identity-watch-token"
-    policy_token.write_text("test-policy-service-token")
+    app_certificate_dir = tmp_path / "policy-app-svid"
+    app_certificate_dir.mkdir()
+    app_certificate, app_key = issue_workload_leaf(policy_ca, APP_URI, app_certificate_dir)
     async with (
         serving_tls(policy, "127.0.0.1:0", policy_server_credentials) as policy_port,
         app_process(
@@ -324,10 +327,13 @@ async def test_environment_identity_change_obeys_real_gateway_and_kubernetes_adm
             electric_url=electric.url,
             config={
                 "policy_service_target": f"127.0.0.1:{policy_port}",
-                "policy_service_token_file": str(policy_token),
-                "policy_service_tls": ClientTLS(ca_file=policy_ca_file, server_uri=POLICY_CONTROLLER_URI).model_dump(
-                    mode="json"
-                ),
+                "policy_service_tls": ClientTLS(
+                    ca_file=policy_ca_file,
+                    server_uri=POLICY_CONTROLLER_URI,
+                    cert_file=app_certificate,
+                    key_file=app_key,
+                    client_uri=APP_URI,
+                ).model_dump(mode="json"),
             },
         ) as app,
         http2_proxy(app.url, certificate) as ingress,

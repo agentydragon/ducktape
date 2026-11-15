@@ -43,6 +43,9 @@ grpc_tls:
   listen: ":8083"
   cert_file: /run/agentplane/workload-tls/tls.crt
   key_file: /run/agentplane/workload-tls/tls.key
+  client_ca_file: /run/agentplane/workload-trust/ca.pem
+reader_services: [spiffe://agentplane/app]
+writer_services: [spiffe://agentplane/app]
 ```
 
 ```bash
@@ -83,9 +86,9 @@ Lease in the policy namespace.
 
 The same binary serves `PolicyService` over verified TLS on `:8083`. The App verifies the
 Policy Controller server SVID. Its read watches run on every replica independently of reconciliation
-leader election. Operator grant, revoke and Identity delete calls admit `writer_accounts` separately
-from the workload read/watch resolver. `reader_services` admits exact service SPIFFE IDs to the
-policy read methods; `writer_services` admits exact service SPIFFE IDs only to the write methods.
-Both service allowlists require `grpc_tls.client_ca_file`, and a service identity must be explicitly
-listed for each role it needs. The `agentplane-policy` bearer audience and TokenReview admission remain
-available to configured callers. See the [service contract](SPEC.md#policy-resource-watches).
+leader election. `reader_services` admits exact service SPIFFE IDs to read methods;
+`writer_services` admits exact service SPIFFE IDs to write methods. Both require
+`grpc_tls.client_ca_file`, and a service must be explicitly listed for each role it needs.
+PolicyService refuses bearer credentials, workload SVIDs and delegation envelopes.
+`grpc_audience`, `reader_accounts` and `writer_accounts` remain decoded but ignored until
+manifest omission rolls out. See the [service contract](SPEC.md#policy-resource-watches).

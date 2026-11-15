@@ -24,13 +24,14 @@ type config struct {
 	MetricsBindAddress     string                     `yaml:"metrics_bind_address"`
 	HealthProbeBindAddress string                     `yaml:"health_probe_bind_address"`
 	GRPCTLS                *peertls.ServerTLSListener `yaml:"grpc_tls"`
-	GRPCAudience           string                     `yaml:"grpc_audience"`
-	ReaderAccounts         []string                   `yaml:"reader_accounts"`
-	WriterAccounts         []string                   `yaml:"writer_accounts"`
-	ReaderServices         []string                   `yaml:"reader_services"`
-	WriterServices         []string                   `yaml:"writer_services"`
-	WorkloadIssuer         string                     `yaml:"workload_issuer"`
-	WorkloadNamespaces     []string                   `yaml:"workload_namespaces"`
+	// CLEANUP(added 2026-11-15): remove these ignored bearer keys after manifests omit them and that rollout completes.
+	GRPCAudience       string   `yaml:"grpc_audience"`
+	ReaderAccounts     []string `yaml:"reader_accounts"`
+	WriterAccounts     []string `yaml:"writer_accounts"`
+	ReaderServices     []string `yaml:"reader_services"`
+	WriterServices     []string `yaml:"writer_services"`
+	WorkloadIssuer     string   `yaml:"workload_issuer"`
+	WorkloadNamespaces []string `yaml:"workload_namespaces"`
 }
 
 func defaultConfig() config {
@@ -93,12 +94,6 @@ func (c config) validate() error {
 	for _, namespace := range c.WorkloadNamespaces {
 		if len(validation.IsDNS1123Label(namespace)) > 0 {
 			return errors.New("workload_namespaces holds an invalid namespace name")
-		}
-	}
-	for _, name := range append(append([]string(nil), c.ReaderAccounts...), c.WriterAccounts...) {
-		var account auth.Account
-		if err := account.UnmarshalText([]byte(name)); err != nil {
-			return fmt.Errorf("invalid PolicyService account allowlist")
 		}
 	}
 	for _, callers := range [][]string{c.ReaderServices, c.WriterServices} {

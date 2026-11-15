@@ -56,6 +56,12 @@ Service uses this path. Other callers use Pod-bound `Principal` values.
 each full method name to the `Rule` admitting its callers and refuses any method it does not list
 ([gRPC services](../../docs/grpc_services.md#authentication)).
 
+`Services` admits only verified client SVIDs in its exact service allowlist and returns a
+`ServiceAdmission`; an empty list admits nobody. It refuses bearer credentials, workload SVIDs
+and ungranted delegation. PolicyService uses this rule for its separate reader and writer grants.
+A service admission supplies no Identity, ServiceAccount UID or Pod proof. Stream revalidation
+rechecks the certificate validity and exact grant.
+
 `Accounts` admits only the listed ServiceAccounts. `SVIDOrAccounts` admits current Sandbox SVIDs
 and applies the account allowlist only to bearer callers, preserving History's sampler writer policy;
 an SVID naming an Identity is admitted as `AnySubject` admits it.
@@ -97,16 +103,12 @@ binary envelope, rejects duplicate authorization/envelope metadata, and disables
 not install the ordinary Bearer interceptor. Existing direct clients continue using their current
 Bearer helper.
 
-**Backend service caller transition.** The API described above is the current implementation:
-service-to-service callers still use TokenReview-verified ServiceAccount principals, and delegated
-actors are admitted through their ServiceAccount plus Pod proof. The approved target replaces that
-component actor proof with a distinct principal authenticated by its service SPIFFE ID over mutual
-TLS. A service principal must not be coerced into `Account`, `Principal`, `IdentityPrincipal`, or a
-workload `WorkloadCredential`, and it proves no Kubernetes UID or Pod. Delegated admission must keep
-the service actor, effective Identity, and typed provenance separate. Adding client certificates
-alone does not change any method allowlist or delegate an Identity; receiver admission remains
-explicit and method-scoped. Until that API is implemented and receivers have rolled, the Bearer and
-delegated TokenReview descriptions in this README describe live behavior.
+**Backend service admission.** `AllowServiceCallers` adds an exact service allowlist to an
+existing authenticated rule; `Services` constructs a service-only rule with no workload or bearer
+resolver. `AllowServiceDelegationFrom` separately grants service actors permission to assert live
+Identities on Identity-admitting rules, retaining the service actor, effective Identity and typed
+provenance. Service principals never become `Account`, `Principal`, `IdentityPrincipal` or workload
+`WorkloadCredential` values. Receiver-specific bearer paths remain until their own removal.
 
 [`audience.py`](audience.py) defines `WORKLOAD_TOKEN_AUDIENCE`, the `agentplane-egress` audience
 used by backend callers of LLM ingress and Action Service: the sampler, Notification, and the MCP

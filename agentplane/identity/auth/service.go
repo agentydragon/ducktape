@@ -61,6 +61,12 @@ func ValidateServiceCallers(callers []string) error {
 	return nil
 }
 
+// Services admits only verified client SVIDs in the exact service allowlist.
+// An empty list admits nobody; bearer and workload credentials are refused.
+func Services(callers []string) (Rule, error) {
+	return (Rule{kind: ruleServices}).AllowServiceCallers(callers)
+}
+
 // AllowServiceCallers adds exact service identities without widening the Rule's
 // existing workload or bearer path. A certificate never grants account/Pod proof.
 func (r Rule) AllowServiceCallers(callers []string) (Rule, error) {
