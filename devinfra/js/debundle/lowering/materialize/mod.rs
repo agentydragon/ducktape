@@ -43,7 +43,8 @@ use analysis::reports::source_unit_key;
 use analysis::reports::spec_lint::{ChunkSpecLint, LintFinding, LoaderKeyUses, PurityHintOwner};
 use analysis::{
     BindingCatalogue, BindingId, BindingKind, CommutingStatementsDiagnostic, EntryDestination,
-    ModuleId, ModuleRole, PlacementProjectionInput, PlannedModule, SourceUnitLayout, top_level_id,
+    ImportedSourceTarget, ModuleId, ModuleRole, PlacementProjectionInput, PlannedModule,
+    SourceUnitLayout, top_level_id,
 };
 use analysis_projection::{AnalysisProjection, ChunkGraphInputs};
 use anyhow::{Context, Result, bail, ensure};
@@ -240,7 +241,7 @@ pub(super) fn prepare_logical_chunk<'a>(
     let mut builder = ChunkPlanBuilder::new(!keep_going, list_template_identifiers);
     let mut imported_binding_resolver =
         ArtifactSourceImportResolutionCache::new(artifact, artifact_indexes);
-    let mut imported_from_by_src = BTreeMap::<String, String>::new();
+    let mut imported_source_by_src = BTreeMap::<String, ImportedSourceTarget>::new();
     let explicit_request_ctx = ExplicitRequestContext {
         body: &runtime_ast.module.body,
         declaration_by_name: &ast_analysis.declaration_by_name,
@@ -256,7 +257,7 @@ pub(super) fn prepare_logical_chunk<'a>(
             request,
             &explicit_request_ctx,
             &mut imported_binding_resolver,
-            &mut imported_from_by_src,
+            &mut imported_source_by_src,
         )?;
     }
     builder.drop_explicit_request_scratch();

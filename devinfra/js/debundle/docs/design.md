@@ -473,21 +473,26 @@ A binding's _kind_ records which of the two introducing positions
 made it, plus the metadata downstream stages need:
 
 ```rust
+pub enum ImportedSourceTarget {
+    OutputPath(String),
+    ExternalSpecifier(String),
+}
+
 pub enum BindingKind {
     /// Declared by a top-level `var/let/const/function/class` in
     /// this chunk. The spec assigns each owned binding to a
     /// planned output (the entry destination when unclaimed).
     Owned { module: ModuleId },
-    /// Introduced by an `import { imported_name as <name> } from "<chunk>"`
-    /// at the chunk's top. The value lives in `imported_from`;
+    /// Introduced by an `import { imported_name as <name> } from "<source>"`
+    /// at the chunk's top. The value comes from `imported_source`;
     /// our chunk merely aliases it. A logical module can choose
     /// to *re-export* this alias under its module path (with its
     /// own choice of public name), but it cannot *own* the value
     /// — the chunk on the other side does.
     Imported {
         imported_name: Atom,
-        /// Output-tree-rooted path of the file the value comes from.
-        imported_from: String,
+        /// Resolved output path or unchanged external module specifier.
+        imported_source: ImportedSourceTarget,
         /// The single logical module that claims this imported
         /// binding via a `kind: import_specifier` member, and the
         /// public name it gives the export. The spec's
@@ -4425,8 +4430,9 @@ Everything downstream needs is here:
 - "What imports does M need" =
   - For each dependency edge from a source unit with `dest == M`:
     - If `b` is `Owned { module: other }`: `import b from <other>`.
-    - If `b` is `Imported { imported_from, imported_name, .. }`:
-      `import { imported_name as b } from <imported_from>`.
+    - If `b` is `Imported { imported_source, imported_name, .. }`:
+      import `imported_name as b` from the rebased output path or unchanged
+      external specifier recorded in `imported_source`.
 - "What can be peeled without backtracking" = candidate assignments
   whose dependency graph quotient validates, whose cross-destination reads
   are importable, and whose rebinding writes stay inside one

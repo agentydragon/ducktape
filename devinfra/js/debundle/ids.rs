@@ -49,6 +49,17 @@ impl EntryDestination {
     }
 }
 
+/// Source of a named import claimed for re-export from a logical module.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum ImportedSourceTarget {
+    /// A path in the emitted output tree, resolved from an indexed chunk or a
+    /// source-relative request that has no indexed artifact target.
+    OutputPath(String),
+    /// An external module request whose identity must remain unchanged.
+    /// Loader and evaluation checks decide whether relocating it is sound.
+    ExternalSpecifier(String),
+}
+
 /// How a top-level binding in the chunk relates to the split. See
 /// docs/design.md "Two binding kinds".
 #[derive(Debug, Clone)]
@@ -60,22 +71,17 @@ pub enum BindingKind {
     /// for a dependency-graph node.
     Owned { module: ModuleId },
     /// Introduced by an `import { imported_name as <local> } from
-    /// "<source>"` in the chunk's top-level body. The value lives in
-    /// another chunk; exactly one planned output re-exports it under
-    /// its chosen public name (the spec's duplicate-claim check
-    /// rejects two modules claiming the same import).
+    /// "<source>"` in the chunk's top-level body. Exactly one planned
+    /// output re-exports it under its chosen public name (the spec's
+    /// duplicate-claim check rejects two modules claiming the same import).
     Imported {
         /// The original imported name from the source chunk (e.g. "j"
         /// for `import { j as a } from "..."`). An `Atom` rather than
         /// `Id`: export names are pure labels, no hygiene context
         /// applies.
         imported_name: Atom,
-        /// Output-tree-rooted absolute path of the import source
-        /// (e.g. `"static/vendor.js"`). Already resolved against the
-        /// chunk's directory + the artifact's source-chunk index;
-        /// emit-time path resolution is just `relative(dest_dir,
-        /// imported_from)`.
-        imported_from: String,
+        /// Resolved output path or unchanged external module specifier.
+        imported_source: ImportedSourceTarget,
         /// Logical module that claimed this imported binding via a
         /// `kind: import_specifier` member.
         re_exporter: ModuleId,
