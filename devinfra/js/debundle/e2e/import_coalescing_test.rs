@@ -273,12 +273,12 @@ export { a, b };
     let mod_re = fs::read_to_string(fixture.out_root.join("static/app/modules/mod_re.js"))
         .expect("read mod_re.js");
 
-    let (named, _namespace, _side_effect) = count_imports_from(&mod_re, "../../vendor.js");
+    let (named, _namespace, _side_effect) = count_imports_from(&mod_re, "../vendor.js");
     assert_eq!(
         named, 1,
         "expected one consolidated reexport ImportDecl for both bindings; got {named} in:\n{mod_re}",
     );
-    let bindings = collect_import_bindings(&mod_re, "../../vendor.js");
+    let bindings = collect_import_bindings(&mod_re, "../vendor.js");
     assert_eq!(
         bindings,
         vec![
@@ -287,4 +287,5 @@ export { a, b };
         ],
         "consolidated reexport statement must carry both bindings; mod_re was:\n{mod_re}",
     );
+    assert_entry_output(&fixture, "1 2\n");
 }
