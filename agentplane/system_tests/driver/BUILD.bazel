@@ -2,6 +2,7 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 # gazelle:resolve py agentplane.central_sampler.api.sampler_pb2_grpc //agentplane/central_sampler/api:sampler_pb2_grpc
 # gazelle:resolve py agentplane.environments.v1.environment_service_pb2 //agentplane/environments/v1:environment_service_pb2
+# gazelle:resolve py agentplane.environments.v1.environment_service_pb2_grpc //agentplane/environments/v1:environment_service_pb2_grpc
 # gazelle:exclude test_session.py
 
 package(
@@ -320,10 +321,10 @@ py_library(
         ":cleanup_diagnostics",
         ":cluster",
         ":identity",
+        ":sandbox_cleanup",
         ":sandbox_ownership",
         ":tls",
         ":tracing",
-        "//agentplane:crd_group",
         "//agentplane:sandbox_resource",
         "//agentplane/central_sampler/api:sampler_pb2_grpc",
         "//agentplane/grpc:calls",
@@ -436,6 +437,7 @@ py_test(
     deps = [
         ":central_sampler",
         ":cluster",
+        ":sandbox_cleanup",
         "//:conftest",
         "//agentplane/proto:identity_pb2",
         "//agentplane/system_tests:conftest",
@@ -748,6 +750,137 @@ py_test(
         "//agentplane/system_tests:conftest",
         "@pypi//httpx",
         "@pypi//opentelemetry_api",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "environment_transport",
+    srcs = ["environment_transport.py"],
+    deps = [
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/environments/v1:environment_service_pb2_grpc",
+        "//agentplane/grpc:calls",
+        "//agentplane/proto:identity_pb2",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "native_auth",
+    srcs = ["native_auth.py"],
+)
+
+py_library(
+    name = "native_fixtures",
+    srcs = ["native_fixtures.py"],
+    deps = [
+        ":cluster",
+        ":native_platform",
+        ":native_sandbox",
+        ":sandbox",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "native_platform",
+    srcs = ["native_platform.py"],
+    deps = [
+        ":cluster",
+        ":environment_transport",
+        ":native_auth",
+        ":port_forward",
+        ":tls",
+        "//agentplane/grpc:calls",
+        "//agentplane/history_service:client",
+        "//agentplane/proto:identity_pb2",
+        "//agentplane/runner_gateway:client",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "native_sandbox",
+    srcs = ["native_sandbox.py"],
+    deps = [
+        ":cleanup_diagnostics",
+        ":cluster",
+        ":environment_transport",
+        ":identity",
+        ":native_platform",
+        ":sandbox",
+        ":sandbox_cleanup",
+        ":sandbox_ownership",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/proto:identity_pb2",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "sandbox_cleanup",
+    srcs = ["sandbox_cleanup.py"],
+    deps = [
+        ":cluster",
+        ":tracing",
+        "//agentplane:crd_group",
+        "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_environment_transport",
+    srcs = ["test_environment_transport.py"],
+    deps = [
+        ":environment_transport",
+        "//:conftest",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/proto:identity_pb2",
+        "//agentplane/system_tests:conftest",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_native_sandbox",
+    srcs = ["test_native_sandbox.py"],
+    deps = [
+        ":cluster",
+        ":environment_transport",
+        ":identity",
+        ":native_platform",
+        ":native_sandbox",
+        "//:conftest",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/proto:identity_pb2",
+        "//agentplane/system_tests:conftest",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_native_platform_clients",
+    srcs = ["test_native_platform_clients.py"],
+    deps = [
+        "//:conftest",
+        "//agentplane/env/runtime/control:environment_runtime_pb2",
+        "//agentplane/env/runtime/control:environment_runtime_pb2_grpc",
+        "//agentplane/proto:identity_pb2",
+        "//agentplane/runner_gateway:api",
+        "//agentplane/runner_gateway:client",
+        "//agentplane/system_tests:conftest",
+        "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
