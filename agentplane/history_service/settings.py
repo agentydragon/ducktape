@@ -38,17 +38,23 @@ class ServiceDelegationSettings(BaseModel):
 class IngressSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     # CLEANUP(added 2026-11-15): Remove after manifests omit ingress.token_audience and that rollout completes.
-    token_audience: str = Field(default="", description="Ignored legacy bearer audience.")
+    token_audience: str = Field(
+        default="", exclude_if=lambda value: not value, description="Ignored legacy bearer audience."
+    )
     writer_namespaces: frozenset[str] = Field(
         min_length=1,
         description="Namespaces in which live workload Identity credential records are resolved for journal writers.",
     )
     # CLEANUP(added 2026-11-15): Remove these ignored legacy sampler settings after manifests omit them and that rollout completes.
     sampler_accounts: frozenset[ServiceAccountRef] = Field(
-        default_factory=frozenset, description="Ignored legacy ServiceAccount sampler allowlist."
+        default_factory=frozenset,
+        exclude_if=lambda value: not value,
+        description="Ignored legacy ServiceAccount sampler allowlist.",
     )
     sampler_identity_callers: bool = Field(
-        default=False, description="Ignored legacy sampler Identity delegation setting."
+        default=False,
+        exclude_if=lambda value: not value,
+        description="Ignored legacy sampler Identity delegation setting.",
     )
     sampler_service_actor: ServiceSPIFFEID | None = Field(
         default=None,
@@ -83,21 +89,27 @@ class Settings(BaseModel):
 
     # CLEANUP(added 2026-11-15): Remove these ignored legacy reader and account-delegation settings after manifests omit them and that rollout completes.
     reader_accounts: frozenset[ServiceAccountRef] = Field(
-        default_factory=frozenset, description="Ignored legacy ServiceAccount reader allowlist."
+        default_factory=frozenset,
+        exclude_if=lambda value: not value,
+        description="Ignored legacy ServiceAccount reader allowlist.",
     )
     reader_service_callers: frozenset[ServiceSPIFFEID] = Field(
         default=frozenset(),
         exclude_if=lambda value: not value,
         description="Exact component SVIDs granted backend-wide History read access.",
     )
-    delegation: DelegationSettings | None = Field(default=None, description="Ignored legacy ServiceAccount delegation.")
+    delegation: DelegationSettings | None = Field(
+        default=None, exclude_if=lambda value: value is None, description="Ignored legacy ServiceAccount delegation."
+    )
     service_delegation: ServiceDelegationSettings | None = Field(
         default=None,
         exclude_if=lambda value: not value,
         description="Independent exact service actors allowed to read History as a live effective Identity.",
     )
     # CLEANUP(added 2026-11-15): Remove after manifests omit token_audience and that rollout completes.
-    token_audience: str = Field(default="", description="Ignored legacy bearer audience.")
+    token_audience: str = Field(
+        default="", exclude_if=lambda value: not value, description="Ignored legacy bearer audience."
+    )
     request_timeout_s: float = Field(default=15, gt=0, le=60)
     migration_timeout_s: float = Field(default=600, ge=0.001, le=86400)
     rpc: Listener

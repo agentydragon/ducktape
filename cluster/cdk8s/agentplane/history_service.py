@@ -1,6 +1,6 @@
 """The History Service takes the Session journals runners push and serves retained history from the
-`sandbox_service` database. Its read API and JournalIngress share the TLS RPC listener; bearer
-audiences and Sandbox SVID authentication remain authorized per method.
+`sandbox_service` database. Its read API and JournalIngress share the TLS RPC listener;
+workload Identity and exact service SVID grants are authorized per method.
 """
 
 from collections.abc import Mapping
@@ -20,14 +20,7 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
-from agentplane.history_service.settings import (
-    RUNNER_INGRESS_AUDIENCE,
-    DelegationSettings,
-    IngressSettings,
-    ServiceDelegationSettings,
-    ServiceDelegator,
-    Settings,
-)
+from agentplane.history_service.settings import IngressSettings, ServiceDelegationSettings, ServiceDelegator, Settings
 from agentplane.identity.auth import listener
 from agentplane.net.peertls.config import (
     ACTIONS_URI,
@@ -99,7 +92,7 @@ class HistoryService(Construct):
         self.env = env
         self.callers = callers
         endpoint = service(env.namespace)
-        # TokenReview authenticates backend readers and the central sampler.
+        # CLEANUP(added 2026-11-15): Remove after the receiver retirement and settings omission roll out.
         token_reviewer_cluster_rbac(
             self,
             "token-reviewer",
@@ -135,27 +128,12 @@ class HistoryService(Construct):
             )
         )
         ingress_settings = IngressSettings(
-            token_audience=RUNNER_INGRESS_AUDIENCE,
             # Sandboxes run in the environment's own namespace.
             writer_namespaces=frozenset((env.namespace,)),
-            sampler_accounts=frozenset(
-                (ServiceAccountRef(namespace=env.namespace, name=central_sampler.NAME),)
-                if env.central_sampler is not None
-                else ()
-            ),
-            sampler_identity_callers=env.central_sampler is not None,
             sampler_service_actor=CENTRAL_SAMPLER_URI,
             settle_deltas=env.settle_deltas,
             compact_deltas=env.compact_deltas,
         )
-        delegation = None
-        if delegation_actor is not None:
-            delegation = DelegationSettings(
-                actor=f"{delegation_actor.namespace}/{delegation_actor.name}",
-                # Session delegation names an Identity in policy_namespace as the effective caller.
-                identity_callers=True,
-                methods=_HISTORY_READ_METHODS,
-            )
         service_delegation = (
             ServiceDelegationSettings(actors=(ServiceDelegator(spiffe_id=ACTIONS_URI),), methods=_HISTORY_READ_METHODS)
             if delegation_actor is not None
@@ -208,20 +186,14 @@ class HistoryService(Construct):
         assert serving_tls.key_file is not None
         assert serving_tls.ca_file is not None
         settings = Settings(
-            reader_accounts=frozenset(callers),
             reader_service_callers=frozenset((ACTIONS_URI, APP_URI, NOTIFICATIONS_URI)),
             service_delegation=service_delegation,
-            token_audience=TOKEN_AUDIENCE,
             policy_namespace=env.namespace,
             ingress=ingress_settings,
-            delegation=delegation,
             rpc=listener.Listener(
                 listen_address=f"0.0.0.0:{endpoint.pod_port}",
                 tls=listener.TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
-                auth=[
-                    listener.KubernetesBearerAuth(audiences=frozenset({TOKEN_AUDIENCE, RUNNER_INGRESS_AUDIENCE})),
-                    listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file)),
-                ],
+                auth=[listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file))],
             ),
         )
         config = SettingsFile(

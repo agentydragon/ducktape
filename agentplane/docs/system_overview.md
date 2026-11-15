@@ -33,7 +33,7 @@ flowchart LR
         gw[Runner Gateway TLS RPC :8080: Dispatcher, proxy and observation]
         sandboxctl[Sandbox Controller + EnvironmentService :8082]
         policy[Policy Controller]
-        hs[History TLS RPC :8080: readers and JournalIngress]
+        hs[History SVID-only TLS RPC :8080: readers and JournalIngress]
         notif[Notification TLS RPC :8080; signed webhook HTTP :8081]
         actions[Action TLS RPC :8080]
         edge["MCP edge<br/>mTLS gRPC 8443 + HTTP 8081"]
