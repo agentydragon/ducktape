@@ -45,8 +45,9 @@ pub use fixture_spec::{
 };
 pub use runtime::{
     assert_all_emitted_js_checks, assert_compiled_bun_entry_output, assert_entry_output,
-    assert_generated_module_after_entry_script, assert_module_exports, assert_node_error,
-    assert_node_output, assert_preserved_entry_error, assert_preserved_entry_output,
+    assert_generated_module_after_entry_script, assert_module_exports,
+    assert_module_exports_after_entry, assert_node_error, assert_node_output,
+    assert_preserved_entry_error, assert_preserved_entry_output,
     assert_preserved_entry_output_with_bun, list_module_exports, node_module_evaluation_order,
 };
 

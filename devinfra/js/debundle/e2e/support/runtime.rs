@@ -164,10 +164,24 @@ pub fn assert_all_emitted_js_checks(fixture: &Fixture) {
 }
 
 pub fn list_module_exports(out_root: &Path, module_path: &str) -> Vec<String> {
+    probe_module_exports(out_root, module_path, None)
+}
+
+fn probe_module_exports(
+    out_root: &Path,
+    module_path: &str,
+    entry_path: Option<&Path>,
+) -> Vec<String> {
     let counter = MODULE_EXPORT_PROBE_COUNTER.fetch_add(1, Ordering::Relaxed);
     let probe_path = out_root.join(format!("__probe_module_exports_{counter}.mjs"));
+    let initialization = entry_path.map_or_else(String::new, |entry| {
+        format!(
+            "const savedLog = console.log;\nconsole.log = () => {{}};\nawait import({});\nconsole.log = savedLog;\n",
+            serde_json::to_string(&format!("file://{}", entry.display())).unwrap(),
+        )
+    });
     let probe = format!(
-        "const mod = await import({});\nprocess.stdout.write(JSON.stringify(Object.keys(mod)));\n",
+        "{initialization}const mod = await import({});\nprocess.stdout.write(JSON.stringify(Object.keys(mod)));\n",
         serde_json::to_string(&format!("./{module_path}")).unwrap(),
     );
     fs::write(&probe_path, probe).unwrap();
@@ -188,9 +202,39 @@ pub fn assert_module_exports(
     includes: &[&str],
     excludes: &[&str],
 ) {
-    let exported: BTreeSet<String> = list_module_exports(out_root, module_path)
-        .into_iter()
-        .collect();
+    assert_module_export_names(
+        list_module_exports(out_root, module_path),
+        module_path,
+        includes,
+        excludes,
+    );
+}
+
+/// Probe the real namespace after the application's validated ESM entry ran.
+/// A valid entry-rooted cycle can have a different order when a module is
+/// imported as a new root, so those are separate runtime contracts.
+pub fn assert_module_exports_after_entry(
+    out_root: &Path,
+    entry_path: &Path,
+    module_path: &str,
+    includes: &[&str],
+    excludes: &[&str],
+) {
+    assert_module_export_names(
+        probe_module_exports(out_root, module_path, Some(entry_path)),
+        module_path,
+        includes,
+        excludes,
+    );
+}
+
+fn assert_module_export_names(
+    names: Vec<String>,
+    module_path: &str,
+    includes: &[&str],
+    excludes: &[&str],
+) {
+    let exported: BTreeSet<String> = names.into_iter().collect();
     let summary = if exported.is_empty() {
         "<none>".to_string()
     } else {

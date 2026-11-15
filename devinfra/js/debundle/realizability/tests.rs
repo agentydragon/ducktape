@@ -256,15 +256,27 @@ fn simultaneous_batch_activates_promoted_edge_from_final_mapping() {
         .find(|edge| {
             edge.from == SourceUnitId(2)
                 && edge.to == SourceUnitId(0)
+                && edge.reason.kind() == DepKind::EagerUse
                 && matches!(edge.reason.role(), EdgeRole::PromotedAtInit { .. })
         })
-        .expect("parsed fixture should include the promoted readSeed -> seed edge");
-    assert!(matches!(
+        .expect("parsed fixture should include the promoted sub1 -> seed edge");
+    // The aggregate initializer's conservative promotion belongs to its
+    // scheduling caller (sub1), independently of readSeed's lexical body.
+    assert_eq!(
         promoted.reason.role(),
         EdgeRole::PromotedAtInit {
-            callee_source_unit: SourceUnitId(1)
+            callee_source_unit: SourceUnitId(2)
         }
-    ));
+    );
+    assert!(
+        dependency_graph.iter_edges().any(|edge| {
+            edge.from == SourceUnitId(1)
+                && edge.to == SourceUnitId(0)
+                && edge.reason.kind() == DepKind::LazyUse
+                && edge.reason.role() == EdgeRole::Direct
+        }),
+        "readSeed must retain its separate lexical seed dependency"
+    );
 
     let assignment = ModuleAssignment::new(
         &dependency_graph,
@@ -282,6 +294,14 @@ fn simultaneous_batch_activates_promoted_edge_from_final_mapping() {
         .overlay_for_batch(&dependency_graph, index.assignment(), &batch);
     let canonical = index.quotient.canonical_with_overlay(&overlay);
     assert!(canonical.edges.contains_key(&(ModuleId(2), ModuleId(0))));
+    let mut final_assignment = index.assignment().clone();
+    for (&source_unit, &destination) in batch.destinations() {
+        final_assignment.set(source_unit, destination);
+    }
+    assert_eq!(
+        canonical,
+        chunk_constraining_module_edges(&dependency_graph, &final_assignment)
+    );
 
     assert_batch_agrees_across_paths(&index, &dependency_graph, &batch);
     let verdict = index.verdict_after_batch(&dependency_graph, &batch);

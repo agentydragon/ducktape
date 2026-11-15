@@ -1005,8 +1005,11 @@ fn a_provider_reading_exported_state_preserves_runtime_and_guards_writes() {
     );
     assert_preserved_entry_output(&original, "42\n");
     assert_provider_execution_evidence(&original, "wrapped", "static/peer");
-    assert_module_exports(
+    // The checked ESM schedule starts at the application entry. Probe the
+    // namespace after that initialization, preserving the provider cycle.
+    assert_module_exports_after_entry(
         &original.out_root,
+        &original.entry_path,
         "static/app/modules/callbacks/wrapped.js",
         &["wrapped"],
         &["later"],
@@ -1033,14 +1036,16 @@ fn a_provider_reading_exported_state_preserves_runtime_and_guards_writes() {
     assert_eq!(outcome.source.stdout, "replacement\n");
     assert_ne!(outcome.emitted.stdout, outcome.source.stdout);
     assert_eq!(outcome.emitted.stdout, "42\n");
-    assert_module_exports(
+    assert_module_exports_after_entry(
         &outcome.out_root,
+        &outcome.out_root.join("static/app/entry.js"),
         "static/app/modules/callbacks/wrapped.js",
         &["wrapped"],
         &["later"],
     );
-    assert_module_exports(
+    assert_module_exports_after_entry(
         &outcome.out_root,
+        &outcome.out_root.join("static/app/entry.js"),
         "static/app/modules/values/later.js",
         &["later"],
         &["wrapped"],
