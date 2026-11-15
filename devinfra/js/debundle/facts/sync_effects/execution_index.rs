@@ -6440,6 +6440,7 @@ pub(super) struct ExecutionIndex {
     /// callback. Lowered values cannot establish this source prerequisite.
     pub(super) direct_inline_callback_calls: BTreeMap<CallSite, Id>,
     pub(super) foreign_call_imports: BTreeMap<Id, crate::analysis_inputs::ForeignCallSummary>,
+    pub(super) importer_cell_reads: BTreeMap<Id, BTreeSet<Id>>,
     /// The derived summary of an import whose callback-factory evidence is
     /// all source-inferred. The evidence keeps the call's timing and result
     /// consumers; the summary is the receipt for the provider body's effects.
@@ -6652,6 +6653,7 @@ impl Default for ExecutionIndex {
             opaque_top: BTreeSet::new(),
             no_sync_callback_members: BTreeMap::new(),
             foreign_call_imports: BTreeMap::new(),
+            importer_cell_reads: BTreeMap::new(),
             callback_factory_call_summaries: BTreeMap::new(),
             callback_factory_imports: BTreeSet::new(),
             callback_factory_summaries: BTreeMap::new(),
@@ -10126,6 +10128,25 @@ impl ExecutionIndex {
         // one receiver domain. The first pass is source-only and is used to
         // reject recognized contradictions before any author input is seeded.
         let declared = index.declared_bindings();
+        for (callee, summary) in &hints.imported_callables {
+            if summary.may_read_importer_cells.is_empty() {
+                continue;
+            }
+            let Some(binding) = index
+                .imported_bindings
+                .iter()
+                .find(|id| id.0.as_ref() == callee.as_str())
+            else {
+                continue;
+            };
+            let cells = index
+                .exported_bindings
+                .iter()
+                .filter(|id| summary.may_read_importer_cells.contains(id.0.as_ref()))
+                .cloned()
+                .collect();
+            index.importer_cell_reads.insert(binding.clone(), cells);
+        }
         if !index.census_globals.predefined.is_unknown() {
             index.census_globals.bundle =
                 index.bundle_globals(&hints.assumptions.bundle_globals, &declared);

@@ -216,7 +216,11 @@ debundle_e2e_test(
     ],
 )
 
-debundle_e2e_test(name = "publication_order_test")
+debundle_e2e_test(
+    name = "publication_order_test",
+    saved_analysis_tools = True,
+    deps = ["//devinfra/js/debundle:spec"],
+)
 
 debundle_e2e_test(
     name = "provider_summary_effect_test",
