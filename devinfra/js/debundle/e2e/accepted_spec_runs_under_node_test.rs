@@ -57,7 +57,7 @@
 //! first and the emitted entry runs cleanly.
 
 use analysis_model::DepKind;
-use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
+use debundle_e2e_graph_support::{FixtureGraphExt, program_graph_path, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 fn hoisted_factory_opts() -> FixtureOpts<'static> {
@@ -125,61 +125,108 @@ fn hoisted_factory_import_is_reported_as_nonconstraining() {
 }
 
 #[test]
-fn tree_run_without_graph_export_keeps_output_and_gate_verdict() {
-    let fixture = TreeFixture {
-        chunks: &[(
-            "main",
+fn flat_fixture_without_graph_export_keeps_output_and_gate_verdict() {
+    let accepted = || {
+        FixtureOpts::new(
             "const value = 7; console.log(value); export { value };\n",
-        )],
-        module_roots: &[],
-        modules: &[],
+            vec![logical_module("value", &[Member::new("value")])],
+        )
     };
-    let ordinary = run_tree_fixture(&fixture, &[]);
-    let with_graphs = run_tree_graph_fixture(&fixture, &[]);
+    let ordinary = run_fixture(accepted());
+    let with_graphs = run_fixture_with_graphs(accepted());
+    assert_same_tree(&ordinary.out_root, &with_graphs.out_root);
+    assert_entry_output(&ordinary, "7\n");
+    assert_entry_output(&with_graphs, "7\n");
 
-    assert_eq!(
-        ordinary.result.status.code(),
-        Some(0),
-        "{}",
-        ordinary.result.stderr
-    );
-    assert_eq!(
-        with_graphs.result.status.code(),
-        Some(0),
-        "{}",
-        with_graphs.result.stderr
-    );
-    let app_files = |run: &TreeRun| {
-        let root = run.out_root.join("app");
-        saved_analysis::module_snapshot(&root)
-            .into_iter()
-            .map(|(path, bytes)| (path.strip_prefix(&root).unwrap().to_path_buf(), bytes))
-            .collect::<std::collections::BTreeMap<_, _>>()
-    };
-    assert_eq!(app_files(&ordinary), app_files(&with_graphs));
-    assert_node_output(&ordinary.out_root.join("app/main/entry.js"), "7\n", "");
-    assert_node_output(&with_graphs.out_root.join("app/main/entry.js"), "7\n", "");
-
-    let ordinary_assessment: serde_json::Value = read_json(
-        &ordinary
-            .report_root
-            .join("main/candidate_relocation_assessment.json"),
-    );
-    let graph_assessment: serde_json::Value = read_json(
-        &with_graphs
-            .report_root
-            .join("main/candidate_relocation_assessment.json"),
-    );
-    assert_eq!(
-        ordinary_assessment["status"],
-        "accepted_within_checked_scope"
-    );
+    let ordinary_assessment = ordinary
+        .report_root
+        .join(&ordinary.chunk_id)
+        .join("candidate_relocation_assessment.json");
+    let graph_assessment = with_graphs
+        .report_root
+        .join(&with_graphs.chunk_id)
+        .join("candidate_relocation_assessment.json");
+    let ordinary_assessment: serde_json::Value = read_json(&ordinary_assessment);
+    let graph_assessment: serde_json::Value = read_json(&graph_assessment);
     assert_eq!(ordinary_assessment["legacy_gate_accepts"], true);
-    assert_eq!(ordinary_assessment["status"], graph_assessment["status"],);
+    assert_eq!(ordinary_assessment["status"], graph_assessment["status"]);
     assert_eq!(
         ordinary_assessment["legacy_gate_accepts"],
         graph_assessment["legacy_gate_accepts"],
     );
+
+    let ordinary_graph = ordinary
+        .report_root
+        .join(&ordinary.chunk_id)
+        .join("dependency_graph.json.gz");
+    let graph_graph = with_graphs
+        .report_root
+        .join(&with_graphs.chunk_id)
+        .join("dependency_graph.json.gz");
+    assert!(
+        !ordinary_graph.exists(),
+        "ordinary fixture exported a dependency graph"
+    );
+    assert!(
+        !read_tree(&ordinary.report_root).keys().any(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name == "program_graph.json.gz")
+        }),
+        "ordinary fixture exported a program graph"
+    );
+    assert!(
+        graph_graph.exists(),
+        "explicit graph fixture omitted its graph"
+    );
+    assert!(program_graph_path(&graph_graph).exists());
+
+    let refused = || {
+        FixtureOpts::new(
+            "import { next, peek } from './state.js';\n\
+             const first = next();\n\
+             const second = peek();\n\
+             console.log(first, second);\n",
+            vec![logical_module("second", &[Member::new("second")])],
+        )
+        .with_extra_chunks(&[(
+            "static/state",
+            "let count = 0;\n\
+             export function next() { return ++count; }\n\
+             export function peek() { return count; }\n",
+        )])
+        .with_unassigned_mode(unassigned_mode_inline())
+    };
+    let ordinary_refusal = run_emit_on_rejection_fixture(refused());
+    let graph_refusal = run_emit_on_rejection_fixture_with_graphs(refused());
+    assert_eq!(ordinary_refusal.cycles(), graph_refusal.cycles());
+    let ordinary_refusal_assessment = ordinary_refusal.candidate_relocation_assessment();
+    let graph_refusal_assessment = graph_refusal.candidate_relocation_assessment();
+    assert_eq!(ordinary_refusal_assessment["legacy_gate_accepts"], false);
+    assert_eq!(
+        ordinary_refusal_assessment["status"],
+        graph_refusal_assessment["status"],
+    );
+    assert_eq!(
+        ordinary_refusal_assessment["legacy_gate_accepts"],
+        graph_refusal_assessment["legacy_gate_accepts"],
+    );
+    let ordinary_refusal_graph = ordinary_refusal.report_path("dependency_graph.json.gz");
+    let graph_refusal_graph = graph_refusal.report_path("dependency_graph.json.gz");
+    assert!(
+        !ordinary_refusal_graph.exists(),
+        "ordinary refused fixture exported a dependency graph"
+    );
+    assert!(
+        !read_tree(&ordinary_refusal.report_root).keys().any(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name == "program_graph.json.gz")
+        }),
+        "ordinary refused fixture exported a program graph"
+    );
+    assert!(graph_refusal_graph.exists());
+    assert!(program_graph_path(&graph_refusal_graph).exists());
 }
 
 #[test]
