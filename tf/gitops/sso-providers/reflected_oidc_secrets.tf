@@ -39,23 +39,23 @@ locals {
     # Authentik policy changes. These keys are consumed by the AI session archive deployment.
     ai_session_archive = {
       AI_SESSION_ARCHIVE_OIDC_ISSUER          = "https://auth.allegedly.works/application/o/ai-session-archive/"
-      AI_SESSION_ARCHIVE_OIDC_CLIENT_ID       = authentik_provider_oauth2.ai_session_archive.client_id
-      AI_SESSION_ARCHIVE_OIDC_CLIENT_SECRET   = authentik_provider_oauth2.ai_session_archive.client_secret
+      AI_SESSION_ARCHIVE_OIDC_CLIENT_ID       = authentik_provider_oauth2.providers["ai_session_archive"].client_id
+      AI_SESSION_ARCHIVE_OIDC_CLIENT_SECRET   = authentik_provider_oauth2.providers["ai_session_archive"].client_secret
       AI_SESSION_ARCHIVE_OIDC_SESSION_SECRET  = random_password.ai_session_archive_session_secret.result
       AI_SESSION_ARCHIVE_OIDC_ALLOWED_SUBJECT = tostring(authentik_user.agentydragon.id)
     }
     # The session sync Deployment reads these keys as the web app's `WebSettings` env vars.
     claude_session_sync = {
       SESSION_SYNC_OIDC_ISSUER          = "https://auth.allegedly.works/application/o/claude-session-sync/"
-      SESSION_SYNC_OIDC_CLIENT_ID       = authentik_provider_oauth2.claude_session_sync.client_id
-      SESSION_SYNC_OIDC_CLIENT_SECRET   = authentik_provider_oauth2.claude_session_sync.client_secret
+      SESSION_SYNC_OIDC_CLIENT_ID       = authentik_provider_oauth2.providers["claude_session_sync"].client_id
+      SESSION_SYNC_OIDC_CLIENT_SECRET   = authentik_provider_oauth2.providers["claude_session_sync"].client_secret
       SESSION_SYNC_OIDC_SESSION_SECRET  = random_password.claude_session_sync_session_secret.result
       SESSION_SYNC_OIDC_ALLOWED_SUBJECT = tostring(authentik_user.agentydragon.id)
     }
     cli_proxy_api_admin = {
       MANAGEMENT_OIDC_ISSUER           = "https://auth.allegedly.works/application/o/cli-proxy-api-admin/"
-      MANAGEMENT_OIDC_CLIENT_ID        = authentik_provider_oauth2.cli_proxy_api_admin.client_id
-      MANAGEMENT_OIDC_CLIENT_SECRET    = authentik_provider_oauth2.cli_proxy_api_admin.client_secret
+      MANAGEMENT_OIDC_CLIENT_ID        = authentik_provider_oauth2.providers["cli_proxy_api_admin"].client_id
+      MANAGEMENT_OIDC_CLIENT_SECRET    = authentik_provider_oauth2.providers["cli_proxy_api_admin"].client_secret
       MANAGEMENT_OIDC_REDIRECT_URL     = "https://cli-proxy-api-admin.allegedly.works/v8/management/auth/oidc/callback"
       MANAGEMENT_OIDC_ALLOWED_SUBJECTS = tostring(authentik_user.agentydragon.id)
     }

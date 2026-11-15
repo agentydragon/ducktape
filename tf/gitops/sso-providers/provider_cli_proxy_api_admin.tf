@@ -8,42 +8,10 @@
 # Scoped to the account owner only: this UI mints OAuth credentials against personal
 # ChatGPT/Claude accounts, so nobody else who might pass Authentik login should reach it.
 
-resource "authentik_provider_oauth2" "cli_proxy_api_admin" {
-  name                  = "cli-proxy-api-admin-oidc"
-  client_id             = "cli-proxy-api-admin"
-  client_type           = "confidential"
-  authorization_flow    = data.authentik_flow.implicit_consent.id
-  invalidation_flow     = data.authentik_flow.invalidation.id
-  signing_key           = data.authentik_certificate_key_pair.self_signed.id
-  access_token_validity = "hours=1"
-
-  issuer_mode                = "per_provider"
-  include_claims_in_id_token = true
-  # The backend allowlist below uses this same immutable numeric user ID.
-  sub_mode = "user_id"
-  property_mappings = [
-    data.authentik_property_mapping_provider_scope.openid.id,
-  ]
-  allowed_redirect_uris = [
-    # Keep the running v7 pod's callback valid until the v8 image has rolled out.
-    # Remove this entry after that rollout; the v8 backend does not serve this path.
-    {
-      matching_mode     = "strict"
-      url               = "https://cli-proxy-api-admin.allegedly.works/v0/management/callback"
-      redirect_uri_type = "authorization"
-    },
-    {
-      matching_mode     = "strict"
-      url               = "https://cli-proxy-api-admin.allegedly.works/v8/management/auth/oidc/callback"
-      redirect_uri_type = "authorization"
-    },
-  ]
-}
-
 resource "authentik_application" "cli_proxy_api_admin" {
   name              = "CLIProxyAPI Admin"
   slug              = "cli-proxy-api-admin"
-  protocol_provider = authentik_provider_oauth2.cli_proxy_api_admin.id
+  protocol_provider = authentik_provider_oauth2.providers["cli_proxy_api_admin"].id
   meta_description  = "CLIProxyAPI management UI: mint/refresh the Codex and Claude OAuth sessions"
   meta_launch_url   = "https://cli-proxy-api-admin.allegedly.works/management.html"
   open_in_new_tab   = true

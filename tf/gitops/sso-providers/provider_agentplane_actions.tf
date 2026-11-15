@@ -16,7 +16,7 @@ resource "authentik_provider_oauth2" "agentplane_actions" {
   # Match the login provider so the same Authentik user has the same `sub` after exchange.
   sub_mode = "hashed_user_id"
 
-  jwt_federation_providers = [authentik_provider_oauth2.agentplane_staging.id]
+  jwt_federation_providers = [authentik_provider_oauth2.providers["agentplane_staging"].id]
   jwt_federation_sources   = []
   property_mappings        = [data.authentik_property_mapping_provider_scope.openid.id]
   # No interactive redirects. The generated client secret is never distributed.
