@@ -52,13 +52,13 @@ pub fn output(command: &mut Command) -> Result<Output, SpawnError> {
 /// from Node and Bun use [`output`] and remain independent of this check.
 pub fn debundle_output(command: &mut Command) -> Result<Output, SpawnError> {
     let output = output(command)?;
-    assert_no_purity_completion_disagreement(&output);
+    assert_debundle_invariants(&output);
     Ok(output)
 }
 
 /// Reject a Debundle diagnostic that indicates classifier-pure execution did
 /// not complete synchronously, regardless of which Debundle binary emitted it.
-pub fn assert_no_purity_completion_disagreement(output: &Output) {
+pub fn assert_debundle_invariants(output: &Output) {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         !stderr.contains(PURITY_COMPLETION_DISAGREEMENT),
