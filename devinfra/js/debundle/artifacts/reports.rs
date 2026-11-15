@@ -207,6 +207,9 @@ pub struct ChunkRuntimeFacts {
     /// bodies may read, including deferred descendant bodies. This is not an
     /// execution or completeness judgment.
     pub function_import_reads: BTreeMap<String, BTreeSet<String>>,
+    /// Import bindings referenced in lazy bodies, including installed closures
+    /// and namespace roots. This inventory carries no callable capability.
+    pub lazy_import_reads: BTreeSet<String>,
     pub module_kind: ChunkModuleKind,
     pub has_top_level_await: bool,
     pub has_cjs_interop: bool,

@@ -85,6 +85,8 @@ export function inspect() {
 }
 "#;
 
+const GLOBAL_CYCLIC_OBSERVER: &str = "import { callback } from './app.js';\nglobalThis.inspect = () => console.log(typeof callback);\n";
+
 fn exported_callback_fixture<'a>(
     source: &'a str,
     chunks: &'a [(&'a str, &'a str)],
@@ -131,6 +133,78 @@ fn cyclic_importer_can_observe_an_already_initialized_export() {
         &chunks,
     ));
     assert_preserved_entry_output(&fixture, "function\n");
+}
+
+#[test]
+fn globally_installed_cyclic_observer_cannot_see_an_initialized_future_export() {
+    let source = "import './observer.js';\nglobalThis.inspect();\nexport var callback = () => 1;\n";
+    let chunks = [("static/observer", GLOBAL_CYCLIC_OBSERVER)];
+    let outcome = run_fixture_to_gate_outcome(exported_callback_fixture(source, &chunks));
+    assert_node_result(&outcome.source, "undefined\n", "original cyclic source");
+    assert_node_result(&outcome.emitted, "function\n", "rejected emitted candidate");
+    assert!(
+        !outcome.accepted,
+        "the global observer must preserve the exported cell's initialization order"
+    );
+}
+
+#[test]
+fn transitive_cyclic_observer_cannot_see_an_initialized_future_export() {
+    let source =
+        "import { inspect } from './observer.js';\ninspect();\nexport var callback = () => 1;\n";
+    let chunks = [
+        (
+            "static/observer",
+            "import { read } from './reader.js';\nexport const inspect = () => read();\n",
+        ),
+        (
+            "static/reader",
+            "import { callback } from './app.js';\nexport function read() { console.log(typeof callback); }\n",
+        ),
+    ];
+    let outcome = run_fixture_to_gate_outcome(exported_callback_fixture(source, &chunks));
+    assert_node_result(&outcome.source, "undefined\n", "original transitive source");
+    assert_node_result(&outcome.emitted, "function\n", "rejected emitted candidate");
+    assert!(
+        !outcome.accepted,
+        "transitive observation must preserve cell initialization order"
+    );
+}
+
+#[test]
+fn global_cyclic_observer_can_read_an_already_initialized_export() {
+    let chunks = [("static/observer", GLOBAL_CYCLIC_OBSERVER)];
+    let fixture = run_fixture(exported_callback_fixture(
+        "import './observer.js';\nexport var callback = () => 1;\nglobalThis.inspect();\n",
+        &chunks,
+    ));
+    assert_preserved_entry_output(&fixture, "function\n");
+}
+
+#[test]
+fn global_observer_cell_constraints_survive_saved_analysis() {
+    let chunks = [("static/observer", GLOBAL_CYCLIC_OBSERVER)];
+    let (staged, _fixture) = staged(exported_callback_fixture(
+        "import './observer.js';\nglobalThis.inspect();\nexport var callback = () => 1;\n",
+        &chunks,
+    ));
+    let invocation = staged.run(&["--emit-on-rejection", "--analysis", path(&staged.artifact)]);
+    assert_eq!(
+        invocation.result.status.code(),
+        Some(3),
+        "{}",
+        invocation.result.stderr
+    );
+}
+
+#[test]
+fn an_unloaded_foreign_reader_does_not_block_export_initialization() {
+    let chunks = [("static/observer", CYCLIC_OBSERVER)];
+    let fixture = run_fixture(exported_callback_fixture(
+        "console.log('ready');\nexport var callback = () => 1;\n",
+        &chunks,
+    ));
+    assert_preserved_entry_output(&fixture, "ready\n");
 }
 
 #[test]

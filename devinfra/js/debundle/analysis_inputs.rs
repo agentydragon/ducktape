@@ -1146,6 +1146,10 @@ pub struct AnalysisInputs {
     /// established each one. These may depend on defining-chunk author
     /// contracts; they are never local author assumptions.
     pub imported_callables: BTreeMap<String, CallableSummary>,
+    /// Local export cells read by lazy source in another statically reachable
+    /// chunk. Opaque execution may run these observers even when the current
+    /// cell value is not callable or has not been initialized yet.
+    pub foreign_observer_cell_reads: BTreeSet<String>,
     /// Source-proved imported primitive values admitted to ordinary candidate
     /// execution, keyed by local binding name. The program-summary adapter
     /// supplies one only alongside a matching `imported_primitive_reads`

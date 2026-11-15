@@ -251,6 +251,11 @@ pub fn compute_logical_chunk_facts(
         if let Some(callables) = program_summary.imported_callables.get(chunk_id) {
             inputs.merge_imported_callables(callables.clone());
         }
+        inputs.foreign_observer_cell_reads = program_summary
+            .foreign_observer_cell_reads
+            .get(chunk_id)
+            .cloned()
+            .unwrap_or_default();
         if let Some(factories) = program_summary.retained_callback_factories.get(chunk_id) {
             inputs
                 .assumptions

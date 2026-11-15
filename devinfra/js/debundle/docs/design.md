@@ -89,6 +89,18 @@ read expressions. This prevents moving an observer across a later initializer.
 Unresolved-call analysis joins all declaration sites when following possible
 function values. Value-specific purity inference must account for all sites.
 
+### Foreign observers of exported cells
+
+Callable availability and cell observation are separate obligations. A cyclic
+importer can read an exported `var` before its initializer stores a function;
+there is no callable value in that cell for callback discovery to visit yet.
+The canonical shallow walk retains imported binding references in lazy bodies,
+including closures installed on globals. Program analysis projects these reads
+back to the owning export cells along the source module links and static request
+reach. Opaque execution retains the resulting may-read constraints under
+fallback provenance, including uninitialized observations. These constraints
+grant no purity, normal-read receipt, or callable completeness capability.
+
 ## Soundness over completeness
 
 The debundler's contract: **any spec the validator accepts must emit a

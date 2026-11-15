@@ -9145,6 +9145,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let prior_outcome = std::mem::take(outcome);
         // Opaque code may or may not invoke the pool: what it reaches is assumed.
         let result = self.assuming(AssumedEffectReason::OpaqueCallbackInvocation, |this| {
+            let mut prior_outcome = prior_outcome;
+            if let Some(owner) = this.state.current_top_owner {
+                let reads = this.top_restricted(&this.inputs.index.foreign_observer_cell_reads);
+                this.promote_top_effects(&reads, &[], owner, &mut prior_outcome);
+            }
             this.request_callback_operation(CallbackOperation::InvokePossible {
                 arguments: args.to_vec(),
                 no_sync_arguments,
