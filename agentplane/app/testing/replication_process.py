@@ -8,7 +8,7 @@ import socket
 import ssl
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager, nullcontext
+from contextlib import AsyncExitStack, asynccontextmanager, nullcontext
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -34,9 +34,10 @@ from agentplane.app.oidc import OIDCSecretInputs, OIDCSettings
 from agentplane.app.testing.browser_certificate import BrowserCertificate, browser_certificate
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.testing.notifications import FakeNotifications
+from agentplane.environments.testing.process import run_environment_service
 from agentplane.grpc.serving import serving
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.net.peertls.config import ClientTLS
+from agentplane.net.peertls.config import APP_URI, ClientTLS
 from agentplane.notification_service.api.notifications import notifications_pb2_grpc
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.db_url import render_postgresql_url
@@ -595,6 +596,7 @@ async def app_process(
             client_id="test-agentplane", client_secret="test-secret", session_secret="test-session-secret"
         )
         async with (
+            AsyncExitStack() as backends,
             oidc_provider(Path(directory) / "tls", client_id=oidc_secrets.client_id, options=oidc_provider_options) as (
                 issuer,
                 ca,
@@ -612,6 +614,13 @@ async def app_process(
                 "notifications_token_file": str(token),
             }
             if gateway is not None:
+                environments = await backends.enter_async_context(
+                    run_environment_service(sandboxes.kubeconfig, sandboxes.namespace, caller_uri=APP_URI)
+                )
+                settings["environment_service"] = {
+                    "target": environments.target,
+                    "tls": environments.tls.model_dump(mode="json"),
+                }
                 settings.update(
                     {
                         "runner_gateway_target": gateway.target,

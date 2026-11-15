@@ -168,9 +168,6 @@ async def run_gateway(
     pod_name: str | None = None,
     sandbox_controller_account: ServiceAccountRef | None = None,
     executor_callers: Sequence[ServiceAccountRef] = (),
-    environment_readers: Sequence[ServiceAccountRef] = (),
-    environment_managers: Sequence[ServiceAccountRef] = (),
-    operator_callers: Sequence[ServiceAccountRef] = (),
     dispatcher_audience: str,
     gateway_audience: str,
     runner_proxy_token_file: Path,
@@ -245,9 +242,6 @@ async def run_gateway(
                     else None
                 ),
                 executor_callers={f"{account.namespace}/{account.name}" for account in executor_callers},
-                environment_readers={f"{account.namespace}/{account.name}" for account in environment_readers},
-                environment_managers={f"{account.namespace}/{account.name}" for account in environment_managers},
-                operator_callers={f"{account.namespace}/{account.name}" for account in operator_callers},
                 wake_callers=set(),
             )
             settings = effective_settings.model_dump(mode="json", exclude_none=True)

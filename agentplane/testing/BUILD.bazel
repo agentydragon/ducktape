@@ -8,6 +8,7 @@ _TEST_VISIBILITY = [
     "//agentplane/crds:__pkg__",
     "//agentplane/egress:__pkg__",
     "//agentplane/egress/testing:__pkg__",
+    "//agentplane/environments/testing:__pkg__",
     "//agentplane/env/e2e:__subpackages__",
     "//agentplane/grpc:__pkg__",
     "//agentplane/history_service/testing:__pkg__",
