@@ -1,23 +1,23 @@
 {
   "schema_version": 3,
   "artifact_kind": "source-grounded organization proposal and file ledger",
-  "source_sha": "34507c2f0c3756193eab9834e743032ccfb7b99e",
-  "observed_at_utc": "2026-11-15T12:10:00Z",
+  "source_sha": "25fc0b2f24ecea10822a36362f67399a1bc8a4ee",
+  "observed_at_utc": "2026-11-15T13:10:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "freshness": {
-    "checked_origin_devel": "34507c2f0c3756193eab9834e743032ccfb7b99e",
-    "checked_at_utc": "2026-11-15T12:10:00+00:00",
-    "previous_pin": "01e85fd9d267be8b955d4e3bf753f2051261043f",
-    "go_or_proto_delta": "Since 01e85fd9d2, #16656 moved `runner_gateway/internal/gateway` whole to `environments/runtimeproxy` (package `gateway` became `runtimeproxy`) and added `environments/internal/serving/runtime_proxy{,_config}.go`; #16685 made that receiver service-only; `env/runtime/internal/coordinator/transition_sequence.go` became `transition_execution.go` (Runtime adoption and Quiesce run as sequential operations); the Action Service's bearer retirement added `action_service/internal/rpc/svid_fixture_test.go`; the other stage 5 bearer retirements, the plaintext-listener removal (#16661) and a `policy_service.proto` comment change edited code only.",
+    "checked_origin_devel": "25fc0b2f24ecea10822a36362f67399a1bc8a4ee",
+    "checked_at_utc": "2026-11-15T13:10:00+00:00",
+    "previous_pin": "34507c2f0c3756193eab9834e743032ccfb7b99e",
+    "go_or_proto_delta": "Since 34507c2f0c, only `testing/grpcmethods/tls.go` was added; stage 5 bearer retirements (#16681, #16690), the Runtime proxy receiver's enablement (#16692) and caller server-identity acceptance (#16696), and Environment Runtime wording (#16691, #16698, #16702, #16705) edited code only. No proto change.",
     "landed": [],
-    "interpretation": "No track landed whole at this pin. The Runtime proxy's package move landed inside its still-open track, so its 15 files are recorded at their final paths under `environments/runtimeproxy` with that track pending; `runner_gateway/internal/gateway` left the ledger. Landed work items are removed, not listed as done."
+    "interpretation": "No track landed whole at this pin. The operator released three stage 4 extractions (app browser routes, app browser session store, CLI command families), now READY. Landed work items are removed, not listed as done."
   },
   "inventory": {
-    "source_sha": "34507c2f0c3756193eab9834e743032ccfb7b99e",
+    "source_sha": "25fc0b2f24ecea10822a36362f67399a1bc8a4ee",
     "counts": {
-      "files": 1319,
+      "files": 1320,
       "directories": 237,
-      "production": 724,
+      "production": 725,
       "tests": 595
     },
     "all_tracked_go_files_included": true,
