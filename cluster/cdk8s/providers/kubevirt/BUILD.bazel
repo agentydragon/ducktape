@@ -36,7 +36,10 @@ cdk8s_import(
     crd_wrap_kind = "VirtualMachine",
     module_name = "kubevirt_virtualmachine_crds",
     module_path = "io/kubevirt",
-    visibility = ["//cluster/cdk8s:__subpackages__"],
+    visibility = [
+        "//agentplane/system_tests/deployment:__pkg__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
 )
 
 cdk8s_import(

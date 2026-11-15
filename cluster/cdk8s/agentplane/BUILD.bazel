@@ -1609,6 +1609,7 @@ py_library(
     name = "launcher_relay",
     srcs = ["launcher_relay.py"],
     visibility = [
+        "//agentplane/system_tests/deployment:__pkg__",
         "//agentplane/system_tests/vm:__pkg__",
         "//cluster/cdk8s:__pkg__",
     ],

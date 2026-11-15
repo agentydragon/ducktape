@@ -109,6 +109,8 @@ rendering rule only runs that recipe; it does not select services, images, plugi
 policy.
 Recipes also add the SVID command-box template through the command component's typed API,
 sharing its sidecar and credential wiring. Finalization does not clone rendered command templates.
+The VM recipe explicitly adds ordinary, OOM and supervision templates, their guest ConfigMaps, and
+typed boot firmware before synthesis.
 The native recovery recipe adds backend services, the central sampler and a bound test caller.
 The History outage recipe also adds App and MCP edge. Neither adds Dex or OAuth fixture servers.
 
@@ -326,7 +328,7 @@ victim counter proves the single kill: either the aggregate or leaf limit can tr
 This exercises the test guest's kernel, shared production systemd units, and production Runner/Codex
 binaries; it does not boot the production NixOS image or force exec-server death/restart.
 
-Only this OOM sandbox selects the cloned `environment-vm-codex-oom` template to enable the guest
+Only this OOM sandbox selects the `environment-vm-codex-oom` template to enable the guest
 cgroup observer. Its guest RAM and all resource budgets match `environment-vm`, including the
 256 MiB native executor leaf. The command grows above that limit so the kernel exercises the OOM
 path while the Codex session remains active; see [the measured budget probe](../debug/vm_oom_budget.md).
