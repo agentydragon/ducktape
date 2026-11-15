@@ -231,9 +231,7 @@ def _network_policy(chart: Chart) -> None:
             # host on the local node and remote-node after a cross-node service hop.
             IngressRule.from_entities(Entity.HOST, Entity.REMOTE_NODE, ports=(3100,)),
             # Grafana → Loki (log queries)
-            IngressRule.from_endpoints(
-                {"app": "grafana", namespace_label: "monitoring"}, ports=(3100,)
-            ),
+            IngressRule.from_endpoints({"app": "grafana", namespace_label: "monitoring"}, ports=(3100,)),
             # Props backend → Loki (GET /api/runs/{id}/logs reads agent container logs)
             IngressRule.from_endpoints(
                 {
@@ -266,9 +264,7 @@ def _network_policy(chart: Chart) -> None:
                 {"app.kubernetes.io/name": "loki-read-proxy", namespace_label: "loki-read-proxy"}, ports=(3100,)
             ),
             # Loki ↔ Loki (SimpleScalable read/write/backend, gateway, and canary)
-            IngressRule.from_endpoints(
-                loki_pods, ports=(80, 8080, 3100, 9095, 7946)
-            ),
+            IngressRule.from_endpoints(loki_pods, ports=(80, 8080, 3100, 9095, 7946)),
         ],
         egress=[
             # Loki → kube-apiserver (sc-rules sidecar watches secrets)
