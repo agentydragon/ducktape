@@ -132,7 +132,10 @@ mod tests {
 
     #[test]
     fn objects_decide_the_test_and_unknown_values_do_not() {
-        let object = AbstractValue::Value(Value::Alloc(Kind::Object, 1));
+        let object = AbstractValue::Value(Value::Alloc(
+            Kind::Object,
+            crate::program_execution::RuntimeSourceScope::fresh().allocation(1),
+        ));
         let (truthy, falsy) = split_truthiness(&Values::from([object.clone()]));
         assert_eq!(truthy, Values::from([object.clone()]));
         assert!(falsy.is_empty());

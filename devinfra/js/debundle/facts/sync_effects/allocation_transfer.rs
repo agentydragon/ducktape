@@ -17,6 +17,7 @@ use crate::facts::abstract_domain::builtins::{
 use crate::facts::abstract_domain::integrity::IntrinsicSlot;
 use crate::facts::abstract_domain::primitive;
 use crate::facts::abstract_domain::value::{Kind, Value};
+use crate::program_execution::RuntimeAllocationId;
 use analysis_model::PrimKinds;
 use imbl::OrdMap;
 use std::collections::{BTreeMap, BTreeSet};
@@ -81,7 +82,7 @@ pub(super) trait AllocationContext {
     fn literal_property_kind(&self, allocation: u32, position: usize) -> LiteralPropertyKind;
     /// `tainted`: a hole or an unproved or non-primitive spread leaves the
     /// literal without a settled own layout.
-    fn array_created(&mut self, _allocation: u32, _tainted: bool) {}
+    fn array_created(&mut self, _allocation: RuntimeAllocationId, _tainted: bool) {}
     /// The native Array iterator protocol over an already evaluated spread
     /// operand, as a receipt the adapter proves. `None` is an unproved
     /// spread; the shared transfer taints the literal and the context decides
@@ -89,6 +90,7 @@ pub(super) trait AllocationContext {
     fn array_spread(&mut self, _span: Span, _operand: &Values) -> Option<NativeIterableReceipt> {
         None
     }
+    fn source_scope(&self) -> crate::program_execution::RuntimeSourceScope;
     fn heap(&mut self) -> LiteralHeap<'_>;
     /// The adapter proves original constructor identity for this canonical New
     /// expression. The operation's row and result semantics are shared.
@@ -166,6 +168,7 @@ pub(super) struct KeyedCollectionOperationResult {
 pub(super) fn keyed_collection_new(
     row: &'static Row,
     site: CallSite,
+    source: crate::program_execution::RuntimeSourceScope,
     dependencies: ProofDependencies,
 ) -> Option<KeyedCollectionOperationResult> {
     let (family, kind) = match row.op {
@@ -196,7 +199,7 @@ pub(super) fn keyed_collection_new(
         allocation: AllocationValue {
             values: Values::from([AbstractValue::Value(Value::Alloc(
                 kind,
-                site.allocation_id(),
+                source.allocation(site.allocation_id()),
             ))]),
             judgment: AllocationJudgment::CoveredAllocationOnly(Box::new(dependencies)),
         },
@@ -207,11 +210,11 @@ pub(super) fn keyed_collection_new(
 /// The real shared allocation store; neither consumer supplies app/native facts.
 pub(super) struct LiteralHeap<'a> {
     pub(super) surface: &'a mut ObjectSurfaceStore,
-    pub(super) arrays: &'a mut OrdMap<u32, DenseArray>,
+    pub(super) arrays: &'a mut OrdMap<RuntimeAllocationId, DenseArray>,
     /// Arrays whose contents are known only to be primitive, with the
     /// iterator-protocol premises that established them. Never a slot,
     /// cardinality or order claim.
-    pub(super) primitive_arrays: &'a mut OrdMap<u32, ProofDependencies>,
+    pub(super) primitive_arrays: &'a mut OrdMap<RuntimeAllocationId, ProofDependencies>,
     pub(super) revision: &'a mut u64,
     /// Only application execution follows a literal's writability; provider
     /// queries never prove a normally completing write.
@@ -232,7 +235,7 @@ impl LiteralHeap<'_> {
     /// Reentry, a prior value, or any later execution permanently loses the
     /// per-site proof because the heap does not distinguish allocation
     /// generations.
-    pub(super) fn begin_literal(&mut self, allocation: u32) {
+    pub(super) fn begin_literal(&mut self, allocation: RuntimeAllocationId) {
         if !self.track_writable_prefix {
             return;
         }
@@ -253,7 +256,7 @@ impl LiteralHeap<'_> {
         }
     }
 
-    pub(super) fn complete_array(&mut self, allocation: u32, length: usize) {
+    pub(super) fn complete_array(&mut self, allocation: RuntimeAllocationId, length: usize) {
         if !self.track_writable_prefix {
             return;
         }
@@ -271,7 +274,7 @@ impl LiteralHeap<'_> {
     /// Unknown state is never restored by a later execution of this site.
     pub(super) fn complete_record(
         &mut self,
-        allocation: u32,
+        allocation: RuntimeAllocationId,
         writable_properties: BTreeSet<String>,
     ) {
         if !self.track_writable_prefix {
@@ -284,7 +287,7 @@ impl LiteralHeap<'_> {
         }
     }
 
-    pub(super) fn invalidate_writable(&mut self, allocation: u32) {
+    pub(super) fn invalidate_writable(&mut self, allocation: RuntimeAllocationId) {
         if !self.track_writable_prefix {
             return;
         }
@@ -302,7 +305,11 @@ impl LiteralHeap<'_> {
         }
     }
 
-    pub(super) fn record(&mut self, allocation: u32, properties: BTreeMap<Option<String>, Values>) {
+    pub(super) fn record(
+        &mut self,
+        allocation: RuntimeAllocationId,
+        properties: BTreeMap<Option<String>, Values>,
+    ) {
         let current = self
             .surface
             .prefix_object_properties
@@ -324,7 +331,7 @@ impl LiteralHeap<'_> {
     /// earlier values and version the same heap used by ordinary execution.
     pub(super) fn write_property(
         &mut self,
-        allocation: u32,
+        allocation: RuntimeAllocationId,
         property: Option<String>,
         values: &Values,
     ) {
@@ -342,7 +349,7 @@ impl LiteralHeap<'_> {
         }
     }
 
-    pub(super) fn invalidate_dense_array(&mut self, allocation: u32) {
+    pub(super) fn invalidate_dense_array(&mut self, allocation: RuntimeAllocationId) {
         if self.arrays.remove(&allocation).is_some() {
             *self.revision = self.revision.wrapping_add(1);
         }
@@ -351,19 +358,23 @@ impl LiteralHeap<'_> {
     /// One source origin may represent several allocations. Drop exact
     /// slots but retain the reachability properties; qualitative contents
     /// make ordinary property projection refuse this origin.
-    pub(super) fn primitive_array(&mut self, allocation: u32, dependencies: ProofDependencies) {
+    pub(super) fn primitive_array(
+        &mut self,
+        allocation: RuntimeAllocationId,
+        dependencies: ProofDependencies,
+    ) {
         self.arrays.remove(&allocation);
         self.primitive_arrays.insert(allocation, dependencies);
         *self.revision = self.revision.wrapping_add(1);
     }
 
-    pub(super) fn invalidate_primitive_array(&mut self, allocation: u32) {
+    pub(super) fn invalidate_primitive_array(&mut self, allocation: RuntimeAllocationId) {
         if self.primitive_arrays.remove(&allocation).is_some() {
             *self.revision = self.revision.wrapping_add(1);
         }
     }
 
-    pub(super) fn dense_array(&mut self, allocation: u32, slots: Vec<Values>) {
+    pub(super) fn dense_array(&mut self, allocation: RuntimeAllocationId, slots: Vec<Values>) {
         let before = self
             .surface
             .prefix_object_properties
@@ -433,7 +444,7 @@ pub(super) fn transfer(
             // stay outside this transfer.
             Values::from([AbstractValue::Value(Value::Alloc(
                 Kind::RegExp,
-                *allocation,
+                context.source_scope().allocation(*allocation),
             ))])
         }
         ValueExpr::New(callee, arguments, site) if context.source_covered() => {
@@ -628,7 +639,7 @@ fn primitive_operation<'a>(
 /// the heap entry exists only once every child completed normally.
 #[derive(Clone)]
 pub(super) struct RecordTransfer {
-    allocation: u32,
+    allocation: RuntimeAllocationId,
     names: Vec<Option<String>>,
     writable_properties: BTreeSet<String>,
     evaluated: BTreeMap<Option<String>, Values>,
@@ -672,6 +683,7 @@ impl RecordTransfer {
                 return None;
             }
         }
+        let allocation = context.source_scope().allocation(allocation);
         context.heap().begin_literal(allocation);
         Some(Self {
             allocation,
@@ -758,7 +770,7 @@ pub(super) fn record<'a, C: AllocationContext, E: 'a>(
 /// unproved or non-primitive spread taints the literal.
 #[derive(Clone)]
 pub(super) struct ArrayTransfer {
-    allocation: u32,
+    allocation: RuntimeAllocationId,
     has_spread: bool,
     properties: BTreeMap<Option<String>, Values>,
     dense: Vec<Values>,
@@ -788,6 +800,7 @@ impl ArrayTransfer {
         // `ArrayCreate` and `CreateDataProperty` on the fresh array run no
         // user code; each element and spread supplies its own evidence.
         context.noninvoking_operation();
+        let allocation = context.source_scope().allocation(allocation);
         if !has_spread {
             context.heap().begin_literal(allocation);
         }
@@ -1007,7 +1020,7 @@ mod tests {
         let mut arrays = OrdMap::new();
         let mut primitive_arrays = OrdMap::new();
         let mut revision = 0;
-        let allocation = 7;
+        let allocation = crate::program_execution::RuntimeSourceScope::fresh().allocation(7);
         let stored = BTreeMap::from([(
             Some("value".to_owned()),
             Values::from([AbstractValue::PRIMITIVE]),

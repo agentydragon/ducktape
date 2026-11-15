@@ -14,6 +14,9 @@ use std::sync::{Arc, Weak};
 use swc_common::{BytePos, Span};
 use swc_ecma_ast::*;
 
+pub(super) type RuntimeValue = Value<RuntimeAllocationId>;
+pub(super) use crate::program_execution::{RuntimeAllocationId, RuntimeSourceScope};
+
 pub(super) fn static_prop(property: &MemberProp) -> Option<String> {
     static_string_prop(property).or_else(|| match property {
         MemberProp::Computed(computed) => match computed.expr.unwrap_parens() {
@@ -265,6 +268,24 @@ pub(super) struct CallSite {
     end: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) struct RuntimeCallSite {
+    pub(super) source: RuntimeSourceScope,
+    site: CallSite,
+}
+
+impl CallSite {
+    pub(super) fn in_source(self, source: RuntimeSourceScope) -> RuntimeCallSite {
+        RuntimeCallSite { source, site: self }
+    }
+}
+
+impl RuntimeCallSite {
+    pub(super) fn allocation(self) -> RuntimeAllocationId {
+        self.source.allocation(self.site.allocation_id())
+    }
+}
+
 impl From<Span> for CallSite {
     fn from(span: Span) -> Self {
         Self {
@@ -399,7 +420,7 @@ pub(super) struct LexicalCaptures {
     pub(super) snapshots: Context,
     pub(super) cells: OrdMap<Id, LexicalCellId>,
     /// Source containment only, never a trusted receiver or instance identity.
-    pub(super) home_object: Option<u32>,
+    pub(super) home_object: Option<RuntimeAllocationId>,
 }
 
 impl Hash for LexicalCaptures {
@@ -487,7 +508,7 @@ pub(super) struct SymbolicInputId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) struct HeapAddress {
     pub(super) scope: WorldScope,
-    pub(super) callable: u32,
+    pub(super) callable: RuntimeAllocationId,
 }
 
 /// Provenance of a local class capability; neither variant proves allocation identity.
@@ -501,7 +522,7 @@ pub(super) enum InstanceOrigin {
 /// callable and heap summaries the lattice does not express yet.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) enum AbstractValue {
-    Value(Value),
+    Value(RuntimeValue),
     /// Unknown kind/capabilities; only forwarding, storing and returning this
     /// query-local input is covered. It proves no shape or native identity.
     SymbolicInput(SymbolicInputId),
@@ -510,12 +531,12 @@ pub(super) enum AbstractValue {
     Closure(HeapAddress, CapturedContext),
     /// A class's static or prototype surface can expose its deferred methods.
     /// Merely creating the class does not execute those methods.
-    ClassMembers(u32),
+    ClassMembers(RuntimeAllocationId),
     /// A constructed local class instance, or an opaque value read from one,
     /// retains its class methods and constructor argument capabilities. Only
     /// Constructed proves the value itself has the class's instance kind.
     /// Neither origin identifies a unique runtime allocation.
-    Instance(u32, Captured<Values>, InstanceOrigin),
+    Instance(RuntimeAllocationId, Captured<Values>, InstanceOrigin),
     CallbackFactory,
     InlineCallbackFactory,
     /// An opaque returned capability retaining live input values. Its capture
@@ -531,7 +552,7 @@ pub(super) enum AbstractValue {
     /// object at a native call site. The executor may apply the certificate
     /// through the paired defineProperties call; all other uses keep the
     /// carrier opaque.
-    OwnDescriptorMap(CallSite),
+    OwnDescriptorMap(RuntimeCallSite),
     /// A foreign source factory's deferred object graph. Provider captures are
     /// retained in its imported summary; using this token activates the full
     /// conservative importer binding/callback pool, never foreign SWC IDs.
@@ -573,7 +594,10 @@ pub(super) struct DenseArray {
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum DenseArrayIterationTransfer {
     Refused,
-    Yielded { source: u32, slots: Vec<Values> },
+    Yielded {
+        source: RuntimeAllocationId,
+        slots: Vec<Values>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -2022,6 +2046,7 @@ mod tests {
     use std::sync::Arc;
 
     fn universe() -> Vec<AbstractValue> {
+        let source = crate::program_execution::RuntimeSourceScope::fresh();
         let mut contexts = CaptureInterner::<LexicalCaptures>::default();
         let context = contexts.intern(LexicalCaptures::default());
         assert_eq!(context, contexts.intern(LexicalCaptures::default()));
@@ -2039,13 +2064,13 @@ mod tests {
             AbstractValue::Closure(
                 HeapAddress {
                     scope: WorldScope::Application,
-                    callable: 1,
+                    callable: source.allocation(1),
                 },
                 context,
             ),
             AbstractValue::DeferredCallbacks(first.clone()),
             AbstractValue::DeferredCallbacks(second),
-            AbstractValue::Instance(1, first, InstanceOrigin::Constructed),
+            AbstractValue::Instance(source.allocation(1), first, InstanceOrigin::Constructed),
         ]
     }
 

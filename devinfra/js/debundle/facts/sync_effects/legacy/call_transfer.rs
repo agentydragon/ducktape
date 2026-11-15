@@ -197,8 +197,15 @@ impl Executor<'_, '_> {
                     .record_inference_use(premise.inference_use);
                 // Data and primitive do not imply a constant property value.
                 // Keep its external heap observation on the ordinary timeline.
-                outcome.effects.heap_contents.opaque = true;
-                outcome.effects.heap_contents.observes_external_heap = true;
+                outcome.record_runtime_heap_contents(
+                    self.inputs.index.source_scope(),
+                    &crate::program_execution::RuntimeHeapContentCells {
+                        opaque: true,
+                        observes_external_heap: true,
+                        ..Default::default()
+                    },
+                    self.state.assumption.is_none(),
+                );
                 return CallTransfer::EffectsOnly;
             }
             if self.native_member_lookup_is_data(&call.callee, Some(call.span.lo.0)) {
@@ -208,9 +215,11 @@ impl Executor<'_, '_> {
                 return CallTransfer::EffectsOnly;
             }
             if let Some(read) = self.root_own_data_read(&call.callee) {
-                outcome
-                    .effects
-                    .record_heap_read(read.cell, self.state.assumption.is_none());
+                outcome.record_runtime_heap_read(
+                    self.inputs.index.source_scope(),
+                    read.cell,
+                    self.state.assumption.is_none(),
+                );
                 return CallTransfer::EffectsOnly;
             }
             if object_own_data_read_property(&call.callee, |id| self.inputs.flow.is_declared(id))
@@ -369,7 +378,8 @@ impl Executor<'_, '_> {
             if let Some(receipt) =
                 self.native_iterable(NativeIterableUse::ArraySpread(call.span), &values)
             {
-                outcome.effects.record_heap_contents(
+                outcome.record_runtime_heap_contents(
+                    self.inputs.index.source_scope(),
                     &receipt.external_heap_contents(),
                     self.state.assumption.is_none(),
                 );

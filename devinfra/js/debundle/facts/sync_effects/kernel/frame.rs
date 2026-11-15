@@ -1,5 +1,7 @@
 //! One activation of the kernel and the values that cross its boundary.
 
+use crate::program_execution::RuntimeAllocationId;
+
 use super::super::allocation_transfer::{AllocationJudgment, AllocationValue};
 use super::super::array_transfer::ArrayMethodSelection;
 use super::super::completion::{AbruptAlternative, Completion, TransferLedger};
@@ -27,15 +29,15 @@ pub(in crate::facts::sync_effects) struct LocalFrame {
     /// Entry arguments/captures and external values read while executing.
     /// Retained for a truncated remainder even after local aliases change.
     pub(in crate::facts::sync_effects) inputs: Values,
-    pub(in crate::facts::sync_effects) borrowed_records: BTreeSet<u32>,
-    pub(in crate::facts::sync_effects) fresh_records: BTreeSet<u32>,
+    pub(in crate::facts::sync_effects) borrowed_records: BTreeSet<RuntimeAllocationId>,
+    pub(in crate::facts::sync_effects) fresh_records: BTreeSet<RuntimeAllocationId>,
     /// Set only by a checked constructor provider query or the kernel's
     /// construct rule. Other local calls do not acquire a receiver just
     /// because their syntax mentions `this`.
     pub(in crate::facts::sync_effects) this_values: Option<Values>,
     /// The class whose base constructor this activation runs, when the
     /// receiver is the fresh instance of the kernel's construct rule.
-    pub(in crate::facts::sync_effects) constructed_class: Option<u32>,
+    pub(in crate::facts::sync_effects) constructed_class: Option<RuntimeAllocationId>,
 }
 
 impl LocalFrame {
@@ -275,6 +277,6 @@ pub(in crate::facts::sync_effects) enum RemainderDisposition {
 }
 
 pub(in crate::facts::sync_effects) enum LocalExecutionAttempt {
-    Completed(LocalTransferResult),
+    Completed(Box<LocalTransferResult>),
     Refused(RemainderDisposition),
 }

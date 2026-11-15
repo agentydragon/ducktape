@@ -108,8 +108,8 @@ pub use statement_facts::{
     ReturnedRecordUseFact,
 };
 pub(crate) use statement_facts::{
-    ConstructorFacts, ExportLinkage, HeapContentCells, LocalRecordFactoryPurityCertificate,
-    SettledElements,
+    ConstructorFacts, ExportLinkage, HeapContentAccesses, HeapContentCells,
+    LocalRecordFactoryPurityCertificate, SettledElements,
 };
 pub(crate) use value_flow::{CandidateObjectIndex, ChunkValueFlow, own_data_keys};
 

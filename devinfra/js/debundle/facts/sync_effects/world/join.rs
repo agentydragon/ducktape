@@ -2,6 +2,8 @@
 //! otherwise a conservative pointwise join that never certifies a property,
 //! descriptor, completion or publication fact and never panics.
 
+use crate::program_execution::RuntimeAllocationId;
+
 use super::cells::{CellInitialization, LexicalCell, LexicalCells};
 use super::descriptor_heap::OwnDescriptorMapState;
 use super::object_surface::{AppliedAccessor, ObjectSurfaceStore};
@@ -477,7 +479,9 @@ fn join_dense_arrays(
     }
 }
 
-fn join_writable_prefix(surfaces: &[&ObjectSurfaceStore]) -> OrdMap<u32, WritablePrefixState> {
+fn join_writable_prefix(
+    surfaces: &[&ObjectSurfaceStore],
+) -> OrdMap<RuntimeAllocationId, WritablePrefixState> {
     let keys = surfaces
         .iter()
         .flat_map(|surface| surface.writable_prefix.keys().copied())
@@ -502,7 +506,7 @@ fn join_writable_prefix(surfaces: &[&ObjectSurfaceStore]) -> OrdMap<u32, Writabl
 
 fn join_applied_accessors(
     surfaces: &[&ObjectSurfaceStore],
-) -> OrdMap<u32, BTreeMap<String, AppliedAccessor>> {
+) -> OrdMap<RuntimeAllocationId, BTreeMap<String, AppliedAccessor>> {
     let objects = surfaces
         .iter()
         .flat_map(|surface| surface.applied_accessors.keys().copied())
@@ -646,8 +650,8 @@ fn join_value_maps<K: Ord + Clone>(maps: &[&OrdMap<K, Values>]) -> OrdMap<K, Val
 }
 
 fn join_nested_property_maps<K: Ord + Clone>(
-    maps: &[&OrdMap<u32, BTreeMap<K, Values>>],
-) -> OrdMap<u32, BTreeMap<K, Values>> {
+    maps: &[&OrdMap<RuntimeAllocationId, BTreeMap<K, Values>>],
+) -> OrdMap<RuntimeAllocationId, BTreeMap<K, Values>> {
     let objects = maps
         .iter()
         .flat_map(|map| map.keys().copied())
@@ -755,8 +759,16 @@ mod tests {
         (Atom::from(name), SyntaxContext::empty())
     }
 
+    fn address(local: u32) -> crate::program_execution::RuntimeAllocationId {
+        static SOURCE: std::sync::OnceLock<crate::program_execution::RuntimeSourceScope> =
+            std::sync::OnceLock::new();
+        SOURCE
+            .get_or_init(crate::program_execution::RuntimeSourceScope::fresh)
+            .allocation(local)
+    }
+
     fn object(allocation: u32) -> AbstractValue {
-        AbstractValue::Value(Value::Alloc(Kind::Object, allocation))
+        AbstractValue::Value(Value::Alloc(Kind::Object, address(allocation)))
     }
 
     fn world_with_prefix(name: &str, value: AbstractValue) -> World {
@@ -792,24 +804,24 @@ mod tests {
         let mut right = world_with_prefix("a", object(2));
         right.module.initialized_bindings.insert(binding("b"));
         left.arrays.dense.insert(
-            7,
+            address(7),
             DenseArray {
                 slots: vec![Values::from([object(1)])],
             },
         );
         right.arrays.dense.insert(
-            7,
+            address(7),
             DenseArray {
                 slots: vec![Values::from([object(2)])],
             },
         );
         left.arrays.dense.insert(
-            8,
+            address(8),
             DenseArray {
                 slots: vec![Values::from([object(1)])],
             },
         );
-        right.surface.tainted_objects.insert(9);
+        right.surface.tainted_objects.insert(address(9));
 
         let joined = World::join(&[&left, &right]);
 
@@ -827,14 +839,14 @@ mod tests {
                 .contains(&binding("b"))
         );
         assert_eq!(
-            joined.world.arrays.dense[&7].slots,
+            joined.world.arrays.dense[&address(7)].slots,
             vec![Values::from([object(1), object(2)])]
         );
         // An array present on one path only loses its exact layout.
-        assert!(!joined.world.arrays.dense.contains_key(&8));
-        assert!(joined.world.arrays.unknown_contents.contains(&8));
-        assert!(joined.world.surface.unsettled_objects.contains(&8));
-        assert!(joined.world.surface.tainted_objects.contains(&9));
+        assert!(!joined.world.arrays.dense.contains_key(&address(8)));
+        assert!(joined.world.arrays.unknown_contents.contains(&address(8)));
+        assert!(joined.world.surface.unsettled_objects.contains(&address(8)));
+        assert!(joined.world.surface.tainted_objects.contains(&address(9)));
         assert!(!joined.world.reachability.incomplete);
         assert!(joined.world.revision.prefix > left.revision.prefix);
     }

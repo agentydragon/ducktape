@@ -428,6 +428,22 @@ seeds a separate pending frontier for each tracked array origin, so later
 opaque barriers remain connected even through unsupported protocols. Allocation
 alone does not depend on preceding opaque operations or reset existing content
 writers/readers: one source origin can represent multiple runtime arrays.
+Runtime allocation, callable, class and descriptor-map addresses include the
+owning prepared source scope. Equal byte offsets from independently parsed
+modules never denote the same runtime address. Source syntax and persisted
+facts retain their local coordinates; a runtime lookup in an execution index
+checks ownership before consulting those facts. A source scope grants neither
+initialization nor callable admission. Repeated evaluations at one allocation
+site retain the conservative pooled multiplicity and cannot restore a lost
+writability witness.
+
+Runtime heap-effect ledgers retain source-qualified cells across calls and
+alternative joins. Their projection to a chunk's persisted effect cells accepts
+only cells owned by that source, with shared global properties kept explicit.
+A foreign cell remains in the runtime ledger and contributes an opaque external
+heap frontier when no local projection exists. Process-local scope identities
+are never serialized as portable source coordinates.
+
 Before any recognized eager literal-origin array exists, opaque operations do
 not start an array-content chain. Lazy literal-allocation origins are
 conservatively live from the start because hoisted or escaped functions may

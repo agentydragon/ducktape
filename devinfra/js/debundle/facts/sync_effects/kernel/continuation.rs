@@ -255,7 +255,9 @@ impl LocalContinuation {
                 }
             }
         }
-        LocalSuspension::Complete(LocalExecutionAttempt::Completed(finish(&self.frame)))
+        LocalSuspension::Complete(LocalExecutionAttempt::Completed(Box::new(finish(
+            &self.frame,
+        ))))
     }
 
     fn take_value(&mut self) -> SelectedValue {
@@ -477,7 +479,7 @@ impl LocalContinuation {
                 *new_record &= context
                     .world()
                     .surface
-                    .own_properties(*allocation)
+                    .own_properties(context.index().allocation(*allocation))
                     .is_none();
                 // The child's judgment was composed into the ledger as it ran.
                 transfer.child(
@@ -979,7 +981,11 @@ impl LocalContinuation {
                 ) {
                     return Err(RemainderDisposition::NeedsSummary);
                 }
-                let new_record = context.world().surface.own_properties(allocation).is_none();
+                let new_record = context
+                    .world()
+                    .surface
+                    .own_properties(context.index().allocation(allocation))
+                    .is_none();
                 let transfer = RecordTransfer::begin(
                     &mut LocalValueContext {
                         context,
@@ -1262,10 +1268,17 @@ struct LocalValueContext<'a, C> {
 }
 
 impl<C: KernelContext> AllocationContext for LocalValueContext<'_, C> {
+    fn source_scope(&self) -> crate::program_execution::RuntimeSourceScope {
+        self.context.index().source_scope()
+    }
     fn source_covered(&self) -> bool {
         true
     }
-    fn array_created(&mut self, allocation: u32, tainted: bool) {
+    fn array_created(
+        &mut self,
+        allocation: crate::program_execution::RuntimeAllocationId,
+        tainted: bool,
+    ) {
         if tainted {
             // A hole has no own property, so later index reads see the
             // prototype; an unproved spread has unknown slots. Either way the
@@ -1380,8 +1393,14 @@ pub(in crate::facts::sync_effects) fn value_of(
     // domain cannot distinguish that generation from this invocation's record.
     let new_record = match expression {
         ValueExpr::ObjectLiteral(object, _) => {
-            context.world().surface.own_properties(*object).is_none()
-                && !frame.borrowed_records.contains(object)
+            context
+                .world()
+                .surface
+                .own_properties(context.index().allocation(*object))
+                .is_none()
+                && !frame
+                    .borrowed_records
+                    .contains(&context.index().allocation(*object))
         }
         _ => false,
     };
@@ -1408,6 +1427,7 @@ fn mark_fresh_record(
     new_record: bool,
     values: &Values,
 ) {
+    let allocation = context.index().allocation(allocation);
     if new_record
         && !frame.borrowed_records.contains(&allocation)
         && context.ordinary_record_shape(allocation).is_some()
@@ -1916,7 +1936,7 @@ fn prepare_body_bindings(
                             !matches!(value,
                                 AbstractValue::Closure(HeapAddress { callable: key, .. }, _)
                                 | AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                                    if key == function)
+                                    if context.index().local_origin(*key) == Some(*function))
                         })
                 }) {
                     frame.environment.remove(binding);

@@ -65,7 +65,7 @@ impl Executor<'_, '_> {
                         Kind::Function,
                         actual,
                     )) | AbstractValue::Closure(HeapAddress { callable: actual, .. }, _)
-                        if actual == source
+                        if self.inputs.index.local_origin(*actual) == Some(*source)
                 )
             })
         {
@@ -125,7 +125,7 @@ impl Executor<'_, '_> {
             (ValueExpr::Alloc(Kind::Function, source), EvaluatedCallee::Direct(selected)) => {
                 selected.values.len() == 1
                     && matches!(selected.values.first(),
-                        Some(AbstractValue::Closure(HeapAddress { callable: actual, .. }, _)) if actual == source)
+                        Some(AbstractValue::Closure(HeapAddress { callable: actual, .. }, _)) if self.inputs.index.local_origin(*actual) == Some(*source))
             }
             (
                 ValueExpr::Member(receiver, Some(_), MemberKey::Static, _),

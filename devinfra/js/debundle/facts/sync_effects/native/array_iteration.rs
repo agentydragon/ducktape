@@ -34,7 +34,8 @@ use swc_common::Span;
 
 /// The callback a row may invoke: one local callable with no live captures.
 pub(in crate::facts::sync_effects) struct AdmittedCallback {
-    key: u32,
+    key: crate::program_execution::RuntimeAllocationId,
+    local_key: u32,
     owner: source_identity::SourceUnitOrdinal,
     captured: Option<CapturedContext>,
 }
@@ -71,6 +72,9 @@ pub(in crate::facts::sync_effects) fn admitted_callback(
         return Err(OrderedCallAdmissionRefusal::ArrayIterationCallbackUnsupported);
     }
     Ok(AdmittedCallback {
+        local_key: index
+            .local_origin(key)
+            .ok_or(OrderedCallAdmissionRefusal::ArrayIterationCallbackUnsupported)?,
         key,
         owner: callable.owner,
         captured,
@@ -131,7 +135,9 @@ impl LocalExecutionContext<'_, '_, '_> {
                 span,
             );
         };
-        let result_allocation = proof.result;
+        let result_allocation = proof
+            .result
+            .map(|local| self.executor.inputs.index.allocation(local));
         let callback = match admitted_callback(self.executor.inputs.index, &arguments[0].values) {
             Ok(callback) => callback,
             Err(refusal) => return self.refuse_iteration(frame, reached, refusal, span),
@@ -179,13 +185,17 @@ impl LocalExecutionContext<'_, '_, '_> {
             property: index.to_string(),
         }));
         for cell in reads {
-            self.outcome.effects.record_heap_read(cell, non_assumed);
+            self.outcome.record_runtime_heap_read(
+                self.executor.inputs.index.source_scope(),
+                cell,
+                non_assumed,
+            );
         }
         let mut effects = EffectCoverageFragment::no_effects();
         effects.depend_on(&dependencies);
         // Element records the callback may read at the current prefix:
         // settled, with a source record shape, checked before any callback.
-        let element_records: BTreeSet<u32> = slots
+        let element_records: BTreeSet<crate::program_execution::RuntimeAllocationId> = slots
             .iter()
             .flatten()
             .filter_map(|value| match value {
@@ -235,14 +245,14 @@ impl LocalExecutionContext<'_, '_, '_> {
                 caller: caller.clone(),
                 call_span: span,
                 target: LocalBodyIdentity::Callable {
-                    key: callback.key,
+                    key: callback.local_key,
                     owner: callback.owner,
                 },
                 dependencies: prerequisites,
             });
             self.executor.apply_rebind_effects(&nested.effects.rebinds);
             self.outcome
-                .absorb_call_effects(&mut nested.effects, self.executor.state.assumption.as_ref());
+                .absorb_call_outcome(&mut nested, self.executor.state.assumption.as_ref());
             self.outcome.executed_owners.extend(nested.executed_owners);
             self.outcome.unknown_call |= nested.unknown_call;
             self.outcome
@@ -316,7 +326,11 @@ impl LocalExecutionContext<'_, '_, '_> {
                     EffectCell::ObjectShape(allocation),
                     EffectCell::ArrayContents(allocation),
                 ] {
-                    self.outcome.effects.record_heap_write(cell, non_assumed);
+                    self.outcome.record_runtime_heap_write(
+                        self.executor.inputs.index.source_scope(),
+                        cell,
+                        non_assumed,
+                    );
                 }
                 values
             }

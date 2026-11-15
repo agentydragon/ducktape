@@ -31,6 +31,8 @@ impl Outcome {
         for leaf in leaves {
             let Outcome {
                 mut effects,
+                runtime_heap_contents,
+                observed_runtime_heap_accesses,
                 body_invoked,
                 // Joined above, over every leaf at once.
                 effect_coverage: _,
@@ -43,6 +45,10 @@ impl Outcome {
             } = leaf;
             // Binding and heap may-effects, with their assumed-path
             // provenance: an effect one leaf observed is observed.
+            joined.runtime_heap_contents.extend(&runtime_heap_contents);
+            joined
+                .observed_runtime_heap_accesses
+                .extend(&observed_runtime_heap_accesses);
             joined.absorb_call_effects(&mut effects, None);
             join_reports(&mut joined, effects);
             joined.body_invoked &= body_invoked;

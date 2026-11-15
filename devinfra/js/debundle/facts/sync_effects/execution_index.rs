@@ -6195,6 +6195,7 @@ fn stored_global_alias(
 }
 
 pub(crate) struct ExecutionIndex {
+    runtime_source: crate::program_execution::RuntimeSourceScope,
     pub(super) member_owners: BTreeMap<CallSite, SourceUnitOrdinal>,
     pub(super) retained_record_factories: BTreeSet<String>,
     owner: SourceUnitOrdinal,
@@ -6213,16 +6214,17 @@ pub(crate) struct ExecutionIndex {
     literal_depth: u32,
     factory_member_value_depth: u32,
     factory_callback_depth: u32,
-    pub(super) callables: BTreeMap<u32, Callable>,
+    pub(super) callables: crate::program_execution::SourceMap<Callable>,
     /// Functions whose call cannot inspect or retain any argument.
-    inert_argument_functions: BTreeSet<u32>,
-    pub(super) callable_spans: BTreeMap<u32, Span>,
-    immediate_anonymous_callers: BTreeMap<u32, Option<u32>>,
-    inline_callback_entries: BTreeMap<u32, callback_arguments::InlineCallbackEntry>,
+    inert_argument_functions: crate::program_execution::SourceSet,
+    pub(super) callable_spans: crate::program_execution::SourceMap<Span>,
+    immediate_anonymous_callers: crate::program_execution::SourceMap<Option<u32>>,
+    inline_callback_entries:
+        crate::program_execution::SourceMap<callback_arguments::InlineCallbackEntry>,
     native_guarded_regions: Vec<callback_arguments::GuardedRegion>,
-    pub(super) local_constructors: BTreeMap<u32, LocalConstructor>,
+    pub(super) local_constructors: crate::program_execution::SourceMap<LocalConstructor>,
     /// Source-covered constructor operations for exported provider summaries.
-    pub(super) class_provider_bodies: BTreeMap<u32, (LocalBody, Vec<Id>)>,
+    pub(super) class_provider_bodies: crate::program_execution::SourceMap<(LocalBody, Vec<Id>)>,
     pub(super) local_class_construction_shapes: LocalClassConstructionShapes,
     pub(super) local_class_construction_proof: LocalClassConstructionProof,
     pub(super) semantic_facts: Option<Arc<SemanticFacts>>,
@@ -6231,35 +6233,35 @@ pub(crate) struct ExecutionIndex {
     pub(super) integrity: IntegrityFlags,
     /// Native own-data lookups from the canonical operation index, with the
     /// slots required at each read's source position.
-    pub(super) native_own_data_reads: BTreeMap<u32, [IntrinsicSlot; 2]>,
-    pub(super) class_values: BTreeMap<u32, ClassValueFacts>,
-    pub(super) class_owners: BTreeMap<u32, SourceUnitOrdinal>,
-    pub(super) class_bindings: BTreeMap<u32, Id>,
-    pub(super) class_spans: BTreeMap<u32, Span>,
+    pub(super) native_own_data_reads: crate::program_execution::SourceMap<[IntrinsicSlot; 2]>,
+    pub(super) class_values: crate::program_execution::SourceMap<ClassValueFacts>,
+    pub(super) class_owners: crate::program_execution::SourceMap<SourceUnitOrdinal>,
+    pub(super) class_bindings: crate::program_execution::SourceMap<Id>,
+    pub(super) class_spans: crate::program_execution::SourceMap<Span>,
     /// The `extends` expression of each class that has one.
-    pub(super) class_heritage_spans: BTreeMap<u32, Span>,
+    pub(super) class_heritage_spans: crate::program_execution::SourceMap<Span>,
     /// Object literals with a getter or setter that reads `this`: a member
     /// read or write that may run it hands it the receiver.
-    pub(super) this_reading_accessor_objects: BTreeSet<u32>,
+    pub(super) this_reading_accessor_objects: crate::program_execution::SourceSet,
     /// The non-null `__proto__` expression of each object literal with one.
-    pub(super) literal_prototypes: BTreeMap<u32, ValueExpr>,
+    pub(super) literal_prototypes: crate::program_execution::SourceMap<ValueExpr>,
     /// Constructors, methods and accessors of every class: they run as class
     /// members, not as values the class body creates.
-    pub(super) class_member_callables: BTreeSet<u32>,
+    pub(super) class_member_callables: crate::program_execution::SourceSet,
     /// The constructors among `class_member_callables`.
-    pub(super) class_constructors: BTreeSet<u32>,
+    pub(super) class_constructors: crate::program_execution::SourceSet,
     /// Per class, the spans that run at construction or class creation and
     /// can store values on the instance or the class: the constructor,
     /// field initializers and static blocks.
-    pub(super) class_store_regions: BTreeMap<u32, Vec<Span>>,
+    pub(super) class_store_regions: crate::program_execution::SourceMap<Vec<Span>>,
     /// The getters and setters (static or not) each class declares.
-    class_accessors: BTreeMap<u32, Vec<u32>>,
+    class_accessors: crate::program_execution::SourceMap<Vec<u32>>,
     /// Classes declaring a getter or setter that reads `this`.
-    pub(super) this_reading_accessor_classes: BTreeSet<u32>,
+    pub(super) this_reading_accessor_classes: crate::program_execution::SourceSet,
     /// Receivers of member targets in destructuring assignments, per
     /// top-level owner; a callable's own are on `Callable`.
     pub(super) top_destructuring_member_receivers: Vec<Vec<ValueExpr>>,
-    pub(super) private_empty_set_sites: BTreeMap<u32, (Span, Id)>,
+    pub(super) private_empty_set_sites: crate::program_execution::SourceMap<(Span, Id)>,
     class_ids: BTreeSet<Id>,
     /// Top-level `const` declarations, exported or not: a store throws.
     pub(super) top_const_bindings: BTreeSet<Id>,
@@ -6268,24 +6270,27 @@ pub(crate) struct ExecutionIndex {
     pub(super) captured_bindings: BTreeSet<Id>,
     pub(super) other_class_uses: BTreeSet<Id>,
     safe_class_target: Option<Id>,
-    pub(super) plain_data_objects: BTreeSet<u32>,
+    pub(super) plain_data_objects: crate::program_execution::SourceSet,
     /// The top-level owner whose source contains each object literal.
-    pub(super) object_literal_owners: BTreeMap<u32, SourceUnitOrdinal>,
-    pub(super) own_descriptor_shapes: BTreeMap<u32, OwnPropertyShape>,
+    pub(super) object_literal_owners: crate::program_execution::SourceMap<SourceUnitOrdinal>,
+    pub(super) own_descriptor_shapes: crate::program_execution::SourceMap<OwnPropertyShape>,
     descriptor_copy_factories: BTreeMap<Id, crate::analysis_inputs::DescriptorCopyFactorySummary>,
     pub(super) descriptor_copy_calls: BTreeMap<CallSite, DescriptorCopyCallCandidate>,
-    pub(super) null_proto_data_objects: BTreeSet<u32>,
-    pub(super) exact_object_spread_copies: BTreeSet<u32>,
-    pub(super) map_entry_arrays: BTreeSet<u32>,
-    pub(super) dense_array_literals: BTreeMap<u32, usize>,
-    pub(super) array_elements: BTreeMap<u32, Vec<Option<ArrayElement>>>,
-    literal_property_kinds: BTreeMap<u32, Vec<super::value_model::LiteralPropertyKind>>,
-    callable_creations: BTreeMap<u32, DeferredCallableCreation>,
-    pub(super) method_record_members:
-        BTreeMap<u32, Vec<crate::facts::abstract_domain::foreign_call::RecordMember>>,
+    pub(super) null_proto_data_objects: crate::program_execution::SourceSet,
+    pub(super) exact_object_spread_copies: crate::program_execution::SourceSet,
+    pub(super) map_entry_arrays: crate::program_execution::SourceSet,
+    pub(super) dense_array_literals: crate::program_execution::SourceMap<usize>,
+    pub(super) array_elements: crate::program_execution::SourceMap<Vec<Option<ArrayElement>>>,
+    literal_property_kinds:
+        crate::program_execution::SourceMap<Vec<super::value_model::LiteralPropertyKind>>,
+    callable_creations: crate::program_execution::SourceMap<DeferredCallableCreation>,
+    pub(super) method_record_members: crate::program_execution::SourceMap<
+        Vec<crate::facts::abstract_domain::foreign_call::RecordMember>,
+    >,
     pub(super) array_iterations: BTreeMap<CallSite, ArrayIteration>,
-    pub(super) async_callables: BTreeSet<u32>,
-    pub(super) callable_member_reads: BTreeMap<u32, Vec<(ValueExpr, Option<String>)>>,
+    pub(super) async_callables: crate::program_execution::SourceSet,
+    pub(super) callable_member_reads:
+        crate::program_execution::SourceMap<Vec<(ValueExpr, Option<String>)>>,
     direct_call_members: BTreeSet<CallSite>,
     /// Direct calls of annotated record factories, with the syntax check of
     /// their argument. Semantic admission is checked by the interpreter.
@@ -6308,17 +6313,17 @@ pub(crate) struct ExecutionIndex {
     pub(super) intrinsic_writes: Vec<IntrinsicWriteTarget>,
     prototype_calls: Vec<Call>,
     prototype_field_writes: Vec<(SourceUnitOrdinal, Option<u32>, Span, PropertyKeyExpr)>,
-    pub(super) prototype_callable_reads: BTreeMap<u32, BTreeSet<Id>>,
+    pub(super) prototype_callable_reads: crate::program_execution::SourceMap<BTreeSet<Id>>,
     /// Per callable, the bindings it or a callable nested in it writes
     /// (assignment and destructuring targets, loop heads, updates). A closure
     /// must capture a cell for each so a nested writer reaches the owner.
-    pub(super) nested_callable_writes: BTreeMap<u32, BTreeSet<Id>>,
+    pub(super) nested_callable_writes: crate::program_execution::SourceMap<BTreeSet<Id>>,
     prototype_capture_stack: Vec<u32>,
     property_key_assignments: BTreeMap<Id, Vec<PropertyKeyExpr>>,
     pub(super) property_key_declarations: BTreeSet<Id>,
     native_write_census: NativeWriteCensus,
     pub(super) binding_declaration_writes: BTreeMap<Id, Vec<BindingDeclarationWrite>>,
-    namespace_wrapper_candidates: BTreeMap<u32, NamespaceWrapperCandidate>,
+    namespace_wrapper_candidates: crate::program_execution::SourceMap<NamespaceWrapperCandidate>,
     /// Reference bounds suffice to reject any use outside a candidate body.
     /// Binding declarations are handled by `visit_binding_ident` separately.
     binding_use_bounds: BTreeMap<Id, (u32, u32)>,
@@ -6359,7 +6364,7 @@ pub(crate) struct ExecutionIndex {
     for_head_declaration: bool,
     destructuring_member_writes: Vec<DestructuringMemberWrite>,
     pub(super) setter_owners: BTreeMap<Option<String>, BTreeSet<SourceUnitOrdinal>>,
-    hoisted_nested_functions: BTreeSet<u32>,
+    hoisted_nested_functions: crate::program_execution::SourceSet,
     pub(super) owner_callable_prefix_effects: Vec<Option<CallablePrefixEffects>>,
     pub(super) uncovered_callable_effect_owners: BTreeSet<SourceUnitOrdinal>,
     pub(super) top_calls: Vec<Vec<Call>>,
@@ -6419,7 +6424,7 @@ pub(crate) struct ExecutionIndex {
     /// Exact sole-return calls in top-level function declarations, collected
     /// by the canonical structural visitor alongside callable/call facts.
     direct_return_calls: BTreeMap<Id, Span>,
-    pub(super) exported_hoisted_functions: BTreeSet<u32>,
+    pub(super) exported_hoisted_functions: crate::program_execution::SourceSet,
     pub(super) global_object_names: BTreeSet<&'static str>,
     /// Global names for the native census; the bundle-owned properties are
     /// filled in once the census resolves them.
@@ -6482,6 +6487,75 @@ pub(crate) struct ExecutionIndex {
 }
 
 impl ExecutionIndex {
+    fn bind_runtime_source(&mut self) {
+        self.callables.bind_source(self.runtime_source);
+        self.callable_spans.bind_source(self.runtime_source);
+        self.immediate_anonymous_callers
+            .bind_source(self.runtime_source);
+        self.inline_callback_entries
+            .bind_source(self.runtime_source);
+        self.local_constructors.bind_source(self.runtime_source);
+        self.class_provider_bodies.bind_source(self.runtime_source);
+        self.native_own_data_reads.bind_source(self.runtime_source);
+        self.class_values.bind_source(self.runtime_source);
+        self.class_owners.bind_source(self.runtime_source);
+        self.class_bindings.bind_source(self.runtime_source);
+        self.class_spans.bind_source(self.runtime_source);
+        self.class_heritage_spans.bind_source(self.runtime_source);
+        self.literal_prototypes.bind_source(self.runtime_source);
+        self.class_store_regions.bind_source(self.runtime_source);
+        self.class_accessors.bind_source(self.runtime_source);
+        self.private_empty_set_sites
+            .bind_source(self.runtime_source);
+        self.object_literal_owners.bind_source(self.runtime_source);
+        self.own_descriptor_shapes.bind_source(self.runtime_source);
+        self.dense_array_literals.bind_source(self.runtime_source);
+        self.array_elements.bind_source(self.runtime_source);
+        self.literal_property_kinds.bind_source(self.runtime_source);
+        self.callable_creations.bind_source(self.runtime_source);
+        self.method_record_members.bind_source(self.runtime_source);
+        self.callable_member_reads.bind_source(self.runtime_source);
+        self.prototype_callable_reads
+            .bind_source(self.runtime_source);
+        self.nested_callable_writes.bind_source(self.runtime_source);
+        self.namespace_wrapper_candidates
+            .bind_source(self.runtime_source);
+        self.inert_argument_functions
+            .bind_source(self.runtime_source);
+        self.this_reading_accessor_objects
+            .bind_source(self.runtime_source);
+        self.class_member_callables.bind_source(self.runtime_source);
+        self.class_constructors.bind_source(self.runtime_source);
+        self.this_reading_accessor_classes
+            .bind_source(self.runtime_source);
+        self.plain_data_objects.bind_source(self.runtime_source);
+        self.null_proto_data_objects
+            .bind_source(self.runtime_source);
+        self.exact_object_spread_copies
+            .bind_source(self.runtime_source);
+        self.map_entry_arrays.bind_source(self.runtime_source);
+        self.async_callables.bind_source(self.runtime_source);
+        self.hoisted_nested_functions
+            .bind_source(self.runtime_source);
+        self.exported_hoisted_functions
+            .bind_source(self.runtime_source);
+    }
+
+    pub(crate) fn source_scope(&self) -> crate::program_execution::RuntimeSourceScope {
+        self.runtime_source
+    }
+
+    pub(crate) fn allocation(&self, local: u32) -> crate::program_execution::RuntimeAllocationId {
+        self.runtime_source.allocation(local)
+    }
+
+    pub(crate) fn local_origin(
+        &self,
+        allocation: crate::program_execution::RuntimeAllocationId,
+    ) -> Option<u32> {
+        self.runtime_source.local_origin(allocation)
+    }
+
     pub(crate) fn callable_for_local(&self, local: &str) -> Option<u32> {
         let binding = self
             .hoisted_bindings
@@ -6507,6 +6581,7 @@ impl ExecutionIndex {
 impl Default for ExecutionIndex {
     fn default() -> Self {
         Self {
+            runtime_source: crate::program_execution::RuntimeSourceScope::fresh(),
             member_owners: BTreeMap::new(),
             retained_record_factories: BTreeSet::new(),
             owner: SourceUnitOrdinal(0),
@@ -6520,54 +6595,54 @@ impl Default for ExecutionIndex {
             literal_depth: 0,
             factory_member_value_depth: 0,
             factory_callback_depth: 0,
-            callables: BTreeMap::new(),
-            inert_argument_functions: BTreeSet::new(),
-            callable_spans: BTreeMap::new(),
-            immediate_anonymous_callers: BTreeMap::new(),
-            inline_callback_entries: BTreeMap::new(),
+            callables: Default::default(),
+            inert_argument_functions: Default::default(),
+            callable_spans: Default::default(),
+            immediate_anonymous_callers: Default::default(),
+            inline_callback_entries: Default::default(),
             native_guarded_regions: Vec::new(),
-            local_constructors: BTreeMap::new(),
-            class_provider_bodies: BTreeMap::new(),
+            local_constructors: Default::default(),
+            class_provider_bodies: Default::default(),
             local_class_construction_shapes: LocalClassConstructionShapes::default(),
             local_class_construction_proof: LocalClassConstructionProof::default(),
             semantic_facts: None,
             integrity: IntegrityFlags::default(),
-            native_own_data_reads: BTreeMap::new(),
-            class_values: BTreeMap::new(),
-            class_owners: BTreeMap::new(),
-            class_bindings: BTreeMap::new(),
-            class_spans: BTreeMap::new(),
-            class_heritage_spans: BTreeMap::new(),
-            class_member_callables: BTreeSet::new(),
-            class_constructors: BTreeSet::new(),
-            class_store_regions: BTreeMap::new(),
-            class_accessors: BTreeMap::new(),
-            this_reading_accessor_classes: BTreeSet::new(),
+            native_own_data_reads: Default::default(),
+            class_values: Default::default(),
+            class_owners: Default::default(),
+            class_bindings: Default::default(),
+            class_spans: Default::default(),
+            class_heritage_spans: Default::default(),
+            class_member_callables: Default::default(),
+            class_constructors: Default::default(),
+            class_store_regions: Default::default(),
+            class_accessors: Default::default(),
+            this_reading_accessor_classes: Default::default(),
             top_destructuring_member_receivers: Vec::new(),
-            this_reading_accessor_objects: BTreeSet::new(),
-            literal_prototypes: BTreeMap::new(),
-            private_empty_set_sites: BTreeMap::new(),
+            this_reading_accessor_objects: Default::default(),
+            literal_prototypes: Default::default(),
+            private_empty_set_sites: Default::default(),
             class_ids: BTreeSet::new(),
             top_const_bindings: BTreeSet::new(),
             captured_bindings: BTreeSet::new(),
             other_class_uses: BTreeSet::new(),
             safe_class_target: None,
-            plain_data_objects: BTreeSet::new(),
-            object_literal_owners: BTreeMap::new(),
-            own_descriptor_shapes: BTreeMap::new(),
+            plain_data_objects: Default::default(),
+            object_literal_owners: Default::default(),
+            own_descriptor_shapes: Default::default(),
             descriptor_copy_factories: BTreeMap::new(),
             descriptor_copy_calls: BTreeMap::new(),
-            null_proto_data_objects: BTreeSet::new(),
-            exact_object_spread_copies: BTreeSet::new(),
-            map_entry_arrays: BTreeSet::new(),
-            dense_array_literals: BTreeMap::new(),
-            array_elements: BTreeMap::new(),
-            literal_property_kinds: BTreeMap::new(),
-            callable_creations: BTreeMap::new(),
-            method_record_members: BTreeMap::new(),
+            null_proto_data_objects: Default::default(),
+            exact_object_spread_copies: Default::default(),
+            map_entry_arrays: Default::default(),
+            dense_array_literals: Default::default(),
+            array_elements: Default::default(),
+            literal_property_kinds: Default::default(),
+            callable_creations: Default::default(),
+            method_record_members: Default::default(),
             array_iterations: BTreeMap::new(),
-            async_callables: BTreeSet::new(),
-            callable_member_reads: BTreeMap::new(),
+            async_callables: Default::default(),
+            callable_member_reads: Default::default(),
             direct_call_members: BTreeSet::new(),
             record_factory_calls: BTreeMap::new(),
             member_write_sites: BTreeSet::new(),
@@ -6588,14 +6663,14 @@ impl Default for ExecutionIndex {
             intrinsic_writes: Vec::new(),
             prototype_calls: Vec::new(),
             prototype_field_writes: Vec::new(),
-            prototype_callable_reads: BTreeMap::new(),
-            nested_callable_writes: BTreeMap::new(),
+            prototype_callable_reads: Default::default(),
+            nested_callable_writes: Default::default(),
             prototype_capture_stack: Vec::new(),
             property_key_assignments: BTreeMap::new(),
             property_key_declarations: BTreeSet::new(),
             native_write_census: NativeWriteCensus::default(),
             binding_declaration_writes: BTreeMap::new(),
-            namespace_wrapper_candidates: BTreeMap::new(),
+            namespace_wrapper_candidates: Default::default(),
             binding_use_bounds: BTreeMap::new(),
             ident_references: Vec::new(),
             top_const_declarations: BTreeSet::new(),
@@ -6623,7 +6698,7 @@ impl Default for ExecutionIndex {
             for_head_declaration: false,
             destructuring_member_writes: Vec::new(),
             setter_owners: BTreeMap::new(),
-            hoisted_nested_functions: BTreeSet::new(),
+            hoisted_nested_functions: Default::default(),
             owner_callable_prefix_effects: Vec::new(),
             uncovered_callable_effect_owners: BTreeSet::new(),
             top_calls: Vec::new(),
@@ -6664,7 +6739,7 @@ impl Default for ExecutionIndex {
             hoisted_bindings: BTreeMap::new(),
             direct_top_level_functions: BTreeSet::new(),
             direct_return_calls: BTreeMap::new(),
-            exported_hoisted_functions: BTreeSet::new(),
+            exported_hoisted_functions: Default::default(),
             global_object_names: BTreeSet::new(),
             census_globals: GlobalNames::default(),
             hoisted_function_owners: BTreeSet::new(),
@@ -6902,7 +6977,10 @@ impl ExecutionIndex {
             .all(|write| write.private_var_scope == Some(scope) && write.simple_identifier)
     }
 
-    pub(super) fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape> {
+    pub(super) fn ordinary_record_shape(
+        &self,
+        allocation: impl crate::program_execution::SourceCoordinate,
+    ) -> Option<&OwnPropertyShape> {
         if self.array_elements.contains_key(&allocation) {
             return None;
         }
@@ -9642,6 +9720,12 @@ impl ExecutionIndex {
         let node_global = !hints.assumptions.predefined_globals.is_unknown()
             && unshadowed_global_names(body, &["global"]).contains("global");
         let mut index = Self {
+            runtime_source: hints
+                .executables
+                .as_ref()
+                .and_then(|program| program.module(hints.current_chunk_id.as_deref()?))
+                .map(|module| module.index.source_scope())
+                .unwrap_or_else(crate::program_execution::RuntimeSourceScope::fresh),
             source_chunk_id: hints.current_chunk_id.clone(),
             global_guards_requested,
             local_class_construction_shapes: construction_proof.clone(),
@@ -9706,6 +9790,7 @@ impl ExecutionIndex {
                 .unwrap_or_default(),
             ..Self::default()
         };
+        index.bind_runtime_source();
         let mut fresh_steps = Vec::with_capacity(body.len());
         let mut max_source_position = 0u32;
         for item in body {
@@ -10137,7 +10222,7 @@ impl ExecutionIndex {
             .collect::<Vec<_>>();
         let namespace_assignments = owned_namespace_assignments.iter().collect::<Vec<_>>();
         let namespace_value_facts = NamespaceValueFacts::from_assignments(
-            index.class_values.clone(),
+            BTreeMap::clone(&index.class_values),
             fresh_steps
                 .iter()
                 .filter_map(|step| match step {
@@ -11192,12 +11277,16 @@ impl ExecutionIndex {
             .filter(|(_, accessors)| accessors.iter().any(|accessor| index.reads_this(*accessor)))
             .map(|(class, _)| *class)
             .collect();
+        index.bind_runtime_source();
         index
     }
 
     /// Whether `callable`, or an arrow or other callable nested in it, reads
     /// `this`. An unindexed or opaque callable may.
-    pub(super) fn reads_this(&self, callable: u32) -> bool {
+    pub(super) fn reads_this(
+        &self,
+        callable: impl crate::program_execution::SourceCoordinate,
+    ) -> bool {
         let Some(span) = self.callable_spans.get(&callable) else {
             return true;
         };
@@ -15975,5 +16064,182 @@ console.log("after", copied.size);"#,
                 "{source}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod runtime_identity_tests {
+    use super::super::interpreter::Outcome;
+    use super::super::kernel::closure::{CapturePolicy, lexical_captures};
+    use super::super::value_model::{
+        AbstractValue, CaptureInterner, Context, HeapAddress, LexicalCaptures, Values,
+    };
+    use super::super::world::{World, WorldScope};
+    use super::*;
+    use crate::facts::EffectCell;
+    use crate::program_execution::{ExecutableModule, ProgramExecutables};
+    use raw_js_test_support::parse;
+    use std::sync::Arc;
+
+    fn prepared(source: &str, hints: &AnalysisInputs) -> ExecutionIndex {
+        let module = parse(source);
+        let views = crate::facts::top_level_item_views(&module.body);
+        ExecutionIndex::collect(
+            &views,
+            hints,
+            None,
+            &BTreeSet::new(),
+            &LocalClassConstructionShapes::default(),
+            &StableArraySpreadShapes::default(),
+        )
+    }
+
+    // This seam independently checks source ownership across parsed arenas,
+    // including the exact offset collision that raw byte-position keys hide.
+    #[test]
+    fn independently_parsed_sources_do_not_alias_heap_or_captures() {
+        let a = prepared(
+            "async function make() { let held = {value: 1}; return () => held; }",
+            &AnalysisInputs::default(),
+        );
+        let b = prepared(
+            "async function make() { let held = {value: 2}; return () => held; }",
+            &AnalysisInputs::default(),
+        );
+        let local_function = *a.callables.keys().next().unwrap();
+        assert_eq!(b.callables.keys().next(), Some(&local_function));
+        let af = a.allocation(local_function);
+        let bf = b.allocation(local_function);
+        assert_ne!(af, bf);
+        assert_eq!(a.local_origin(af), Some(local_function));
+        assert_eq!(a.local_origin(bf), None);
+        assert!(a.callables.get(&af).is_some());
+        assert!(a.callables.get(&bf).is_none());
+        assert!(a.async_callables.contains(&af));
+        assert!(!a.async_callables.contains(&bf));
+
+        let local_object = *a.own_descriptor_shapes.keys().next().unwrap();
+        assert!(b.own_descriptor_shapes.contains_key(&local_object));
+        let ao = a.allocation(local_object);
+        let bo = b.allocation(local_object);
+        let mut world = World::new(WorldScope::Application);
+        for (object, value) in [
+            (ao, AbstractValue::UNDEFINED),
+            (bo, AbstractValue::PRIMITIVE),
+        ] {
+            world.literal_heap().record(
+                object,
+                BTreeMap::from([(Some("value".into()), Values::from([value]))]),
+            );
+        }
+        assert_eq!(
+            world.surface.data_values(ao, "value"),
+            Some(&Values::from([AbstractValue::UNDEFINED]))
+        );
+        assert_eq!(
+            world.surface.data_values(bo, "value"),
+            Some(&Values::from([AbstractValue::PRIMITIVE]))
+        );
+
+        let nested = *a.callables.keys().last().unwrap();
+        let held = a
+            .callables
+            .get(&nested)
+            .unwrap()
+            .reads
+            .iter()
+            .find(|id| id.0 == "held")
+            .unwrap();
+        let mut interner = CaptureInterner::<LexicalCaptures>::default();
+        let closures: Values = [(a.source_scope(), &a, ao), (b.source_scope(), &b, bo)]
+            .into_iter()
+            .map(|(scope, index, object)| {
+                let env = Context::from(vec![(
+                    held.clone(),
+                    Values::from([AbstractValue::Value(Value::Alloc(Kind::Object, object))]),
+                )]);
+                let captures = lexical_captures(
+                    index,
+                    &Default::default(),
+                    &env,
+                    nested,
+                    CapturePolicy::Exact,
+                );
+                AbstractValue::Closure(
+                    HeapAddress {
+                        scope: WorldScope::Application,
+                        callable: scope.allocation(nested),
+                    },
+                    interner.intern(captures),
+                )
+            })
+            .collect();
+        assert_eq!(closures.len(), 2);
+        assert_eq!(
+            a.allocation(local_object),
+            ao,
+            "repeated source sites retain the conservative pooled identity"
+        );
+
+        let mut outcome = Outcome::default();
+        for object in [ao, bo] {
+            outcome.record_runtime_heap_read(
+                a.source_scope(),
+                EffectCell::OwnProperty {
+                    origin: object,
+                    property: "value".into(),
+                },
+                true,
+            );
+        }
+        assert_eq!(outcome.runtime_heap_contents.reads.len(), 2);
+        assert_eq!(outcome.observed_runtime_heap_accesses.reads.len(), 2);
+        assert_eq!(outcome.effects.heap_contents.reads.len(), 1);
+        assert!(outcome.effects.heap_contents.opaque);
+        let binding = a.hoisted_bindings.keys().next().unwrap().clone();
+        let foreign_binding = b
+            .source_scope()
+            .qualify_effect(EffectCell::Binding(binding));
+        assert!(a.source_scope().project_effect(&foreign_binding).is_none());
+    }
+
+    #[test]
+    fn registry_reuses_canonical_scope_but_standalone_queries_are_fresh() {
+        let source = "export function make() { return {}; }";
+        let canonical = Arc::new(prepared(source, &AnalysisInputs::default()));
+        let registry = Arc::new(ProgramExecutables::from_modules(BTreeMap::from([(
+            "provider.js".into(),
+            ExecutableModule {
+                index: canonical.clone(),
+                exports: BTreeMap::from([("make".into(), "make".into())]),
+            },
+        )])));
+        let hints = AnalysisInputs {
+            current_chunk_id: Some("provider.js".into()),
+            executables: Some(registry.clone()),
+            ..Default::default()
+        };
+        assert_eq!(
+            prepared(source, &hints).source_scope(),
+            canonical.source_scope()
+        );
+        let standalone = prepared(
+            source,
+            &AnalysisInputs {
+                current_chunk_id: Some("provider.js".into()),
+                ..Default::default()
+            },
+        );
+        assert_ne!(standalone.source_scope(), canonical.source_scope());
+        assert!(
+            registry
+                .module_for_scope(standalone.source_scope())
+                .is_none()
+        );
+        assert!(
+            registry
+                .module_for_scope(canonical.source_scope())
+                .is_some()
+        );
     }
 }

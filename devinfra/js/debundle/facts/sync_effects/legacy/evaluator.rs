@@ -29,7 +29,14 @@ pub(in crate::facts::sync_effects) struct ApplicationAllocationContext<'a, 'sour
 }
 
 impl AllocationContext for ApplicationAllocationContext<'_, '_, '_> {
-    fn array_created(&mut self, allocation: u32, tainted: bool) {
+    fn source_scope(&self) -> crate::program_execution::RuntimeSourceScope {
+        self.executor.inputs.index.source_scope()
+    }
+    fn array_created(
+        &mut self,
+        allocation: crate::program_execution::RuntimeAllocationId,
+        tainted: bool,
+    ) {
         if tainted {
             self.executor
                 .state
@@ -118,18 +125,25 @@ impl Executor<'_, '_> {
             ValueExpr::Alloc(Kind::Function, key) => Values::from([AbstractValue::Closure(
                 HeapAddress {
                     scope: self.state.world.scope,
-                    callable: *key,
+                    callable: self.inputs.index.allocation(*key),
                 },
                 self.closure_captures(*key, captures),
             )]),
             ValueExpr::Alloc(kind, site) => {
                 if *kind == Kind::Class {
-                    self.escape_class_captures(*site, env, captures);
+                    self.escape_class_captures(self.inputs.index.allocation(*site), env, captures);
                 }
-                Values::from([AbstractValue::Value(Value::Alloc(*kind, *site))])
+                Values::from([AbstractValue::Value(Value::Alloc(
+                    *kind,
+                    self.inputs.index.allocation(*site),
+                ))])
             }
             ValueExpr::ObjectLiteral(key, properties) => {
-                if self.inputs.index.exact_object_spread_copies.contains(key)
+                if self
+                    .inputs
+                    .index
+                    .exact_object_spread_copies
+                    .contains(&self.inputs.index.allocation(*key))
                     && let [(None, source)] = properties.as_ref()
                 {
                     let source = self.evaluate(source, env, captures);
@@ -139,13 +153,13 @@ impl Executor<'_, '_> {
                             .world
                             .surface
                             .ordinary_spread_copies
-                            .contains(key);
+                            .contains(&self.inputs.index.allocation(*key));
                         let current = self
                             .state
                             .world_mut()
                             .surface
                             .prefix_object_properties
-                            .entry(*key)
+                            .entry(self.inputs.index.allocation(*key))
                             .or_default();
                         let mut changed = false;
                         if previously_evaluated {
@@ -172,13 +186,17 @@ impl Executor<'_, '_> {
                             .world_mut()
                             .surface
                             .ordinary_spread_copies
-                            .insert(*key);
+                            .insert(self.inputs.index.allocation(*key));
                         return Values::from([AbstractValue::Value(Value::Alloc(
                             Kind::Object,
-                            *key,
+                            self.inputs.index.allocation(*key),
                         ))]);
                     }
-                    self.state.world_mut().surface.tainted_objects.insert(*key);
+                    self.state
+                        .world_mut()
+                        .surface
+                        .tainted_objects
+                        .insert(self.inputs.index.allocation(*key));
                     if self.state.array_iteration_depth > 0 {
                         self.state.array_iteration_unsupported = true;
                     }
@@ -391,9 +409,14 @@ impl Executor<'_, '_> {
                                 }
                             } else if let Some(property) = property {
                                 if let Some(found) =
-                                    self.inputs.flow.values_of_property(object_id, property)
+                                    self.inputs.index.local_origin(object_id).and_then(|local| {
+                                        self.inputs.flow.values_of_property(local, property)
+                                    })
                                 {
-                                    values.extend(from_flow(found.clone()));
+                                    values.extend(from_flow(
+                                        self.inputs.index.source_scope(),
+                                        found.clone(),
+                                    ));
                                 } else {
                                     values.insert(AbstractValue::Value(Value::Top));
                                 }

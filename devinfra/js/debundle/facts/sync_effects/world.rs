@@ -4,6 +4,8 @@
 //! Observations (effects, completion, proof dependencies) are not here; they
 //! are returned by the kernel in its ledger and composed by the adopter.
 
+use crate::program_execution::RuntimeAllocationId;
+
 pub(super) mod cells;
 pub(super) mod descriptor_heap;
 pub(super) mod join;
@@ -12,7 +14,7 @@ pub(super) mod prefix_values;
 
 use super::allocation_transfer::LiteralHeap;
 use super::kernel::frame::CallableSelection;
-use super::value_model::{CallSite, Captured, Context, DenseArray, LexicalCellId, Values};
+use super::value_model::{Captured, Context, DenseArray, LexicalCellId, RuntimeCallSite, Values};
 use crate::analysis_inputs::ProofDependencies;
 use crate::reports::schema::FirstClassMembersPublication;
 use cells::{CellTrace, LexicalCells};
@@ -49,7 +51,7 @@ pub(super) struct World {
     pub(super) module: ModuleBindings,
     pub(super) surface: ObjectSurfaceStore,
     /// Captured own-descriptor maps by the call site that captured them.
-    pub(super) descriptors: OrdMap<CallSite, OwnDescriptorMapState>,
+    pub(super) descriptors: OrdMap<RuntimeCallSite, OwnDescriptorMapState>,
     pub(super) arrays: DenseArrays,
     pub(super) native: NativeRetained,
     pub(super) classes: ClassState,
@@ -77,20 +79,20 @@ pub(super) struct ModuleBindings {
 /// Array contents by allocation site.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(super) struct DenseArrays {
-    pub(super) dense: OrdMap<u32, DenseArray>,
-    pub(super) primitive: OrdMap<u32, ProofDependencies>,
+    pub(super) dense: OrdMap<RuntimeAllocationId, DenseArray>,
+    pub(super) primitive: OrdMap<RuntimeAllocationId, ProofDependencies>,
     /// A proven silent primitive push changed contents, not descriptors or prototypes.
-    pub(super) unknown_contents: BTreeSet<u32>,
+    pub(super) unknown_contents: BTreeSet<RuntimeAllocationId>,
     /// `reduce` results by call site allocation id.
-    pub(super) accumulated_values: OrdMap<u32, Values>,
+    pub(super) accumulated_values: OrdMap<RuntimeAllocationId, Values>,
     pub(super) intrinsic_mutated: bool,
 }
 
 /// Native values the prefix retains or has tainted.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(super) struct NativeRetained {
-    pub(super) tainted_sets: BTreeSet<u32>,
-    pub(super) tainted_functions: BTreeSet<u32>,
+    pub(super) tainted_sets: BTreeSet<RuntimeAllocationId>,
+    pub(super) tainted_functions: BTreeSet<RuntimeAllocationId>,
     /// A revoked identity is a semantic root: equal descriptions must retain
     /// that identity even after other references disappear.
     pub(super) revoked_audited_results: BTreeMap<usize, Captured<Values>>,
@@ -100,12 +102,13 @@ pub(super) struct NativeRetained {
 /// Class definitions the prefix constructed, published or tainted.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(super) struct ClassState {
-    pub(super) superclasses: OrdMap<u32, Values>,
-    pub(super) tainted: BTreeSet<u32>,
-    pub(super) escaped_capabilities: BTreeSet<u32>,
+    pub(super) superclasses: OrdMap<RuntimeAllocationId, Values>,
+    pub(super) tainted: BTreeSet<RuntimeAllocationId>,
+    pub(super) escaped_capabilities: BTreeSet<RuntimeAllocationId>,
     /// First actual insertion of each class's members into the escaped pool.
-    pub(super) first_members_publications: BTreeMap<u32, FirstClassMembersPublication>,
-    pub(super) checked_constructor_inputs: BTreeSet<u32>,
+    pub(super) first_members_publications:
+        BTreeMap<RuntimeAllocationId, FirstClassMembersPublication>,
+    pub(super) checked_constructor_inputs: BTreeSet<RuntimeAllocationId>,
     /// Owners executed while building a certified unpublished instance graph.
     /// Their synchronous effects still run; execution alone does not expose
     /// the wrapper or the classes' deferred callable members to the host.
@@ -123,7 +126,7 @@ pub(super) struct Publication {
     pub(super) exported_runtime_values: Values,
     /// First top-level owner observed inserting each function callback into
     /// `global_escaped_callbacks` through `publish_values`.
-    pub(super) first_callback_publication_owners: BTreeMap<u32, SourceUnitOrdinal>,
+    pub(super) first_callback_publication_owners: BTreeMap<RuntimeAllocationId, SourceUnitOrdinal>,
     /// Returned callable source closures are static within one top-level
     /// initialization prefix. Incomplete reachability requires a fresh raw
     /// closure even when the precise prefix was already summarized.
@@ -131,7 +134,7 @@ pub(super) struct Publication {
     pub(super) accepted_deferred_global_writes: BTreeSet<SourceUnitOrdinal>,
     /// Fresh object literals a parameter-mutation initializer filled with
     /// primitive data properties (`fresh_data_writes`).
-    pub(super) parameter_initialized_objects: BTreeSet<u32>,
+    pub(super) parameter_initialized_objects: BTreeSet<RuntimeAllocationId>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -199,7 +202,7 @@ impl World {
 
     /// Skipped local code can change descriptors or prototypes even when no
     /// escape to foreign code was observed. Neither set permits prefix reads.
-    pub(super) fn object_properties_are_settled(&self, object: u32) -> bool {
+    pub(super) fn object_properties_are_settled(&self, object: RuntimeAllocationId) -> bool {
         self.surface.object_accessors_are_settled(object)
             && !self.arrays.unknown_contents.contains(&object)
             && !self.arrays.primitive.contains_key(&object)

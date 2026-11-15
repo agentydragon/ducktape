@@ -1,5 +1,7 @@
 //! Heap and native-operation transfers over one settled execution snapshot.
 
+use crate::program_execution::RuntimeAllocationId;
+
 use super::effect_coverage::EffectCoverageFragment;
 use super::execution_index::{CallKind, MemberValueWrite};
 use super::interpreter::{Executor, NativeCallResolution};
@@ -11,7 +13,7 @@ use swc_common::Span;
 pub(super) enum NativeIterableInput {
     Borrowed,
     /// Canonical immediate argument-array syntax, not origin uniqueness.
-    ImmediateArrayLiteral(u32),
+    ImmediateArrayLiteral(RuntimeAllocationId),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -35,17 +37,19 @@ pub(super) enum NativeIterableYields {
 pub(super) struct NativeIterableReceipt {
     /// `None` for the scoped imported-array transfer, which intentionally
     /// carries yields but no provider heap identity.
-    pub(super) source: Option<u32>,
+    pub(super) source: Option<RuntimeAllocationId>,
     pub(super) yields: NativeIterableYields,
     /// Body reads are retained even for a private input whose read cannot
     /// observe a caller's earlier heap. The external projection is below.
-    pub(super) heap_contents: crate::facts::HeapContentCells,
+    pub(super) heap_contents: crate::program_execution::RuntimeHeapContentCells,
     pub(super) input: NativeIterableInput,
     pub(super) coverage: EffectCoverageFragment,
 }
 
 impl NativeIterableReceipt {
-    pub(super) fn external_heap_contents(&self) -> crate::facts::HeapContentCells {
+    pub(super) fn external_heap_contents(
+        &self,
+    ) -> crate::program_execution::RuntimeHeapContentCells {
         let mut external = self.heap_contents.clone();
         if let NativeIterableInput::ImmediateArrayLiteral(origin) = self.input
             && self.source == Some(origin)
@@ -71,7 +75,7 @@ pub(super) enum HeapOperation {
         writes: Vec<MemberValueWrite>,
         environment: Context,
         captures: Context,
-        certified_data_receivers: BTreeSet<u32>,
+        certified_data_receivers: BTreeSet<RuntimeAllocationId>,
         deferred_global_write: bool,
     },
     ResolveNative {

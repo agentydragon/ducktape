@@ -37,6 +37,7 @@ use crate::facts::OwnerInitializationCoverageRefusalReason;
 use crate::facts::abstract_domain::builtins;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::evaluation_effects::{EvaluationEffects, GlobalAccessKind};
+use crate::program_execution::RuntimeAllocationId;
 use crate::reports::schema::NativeIntegrityGuard;
 use source_identity::SourceUnitOrdinal;
 use std::collections::BTreeSet;
@@ -46,16 +47,16 @@ use swc_ecma_ast::*;
 
 #[derive(Clone, Copy)]
 pub(in crate::facts::sync_effects) enum LocalExecutionScope {
-    Callable(u32),
+    Callable(RuntimeAllocationId),
     /// A root owner's variable initializer or expression statement.
     Root,
     /// The lowered base-constructor body of this class, run by the kernel's
     /// construct rule. It has no call operation of its own.
-    Constructor(u32),
+    Constructor(RuntimeAllocationId),
 }
 
 impl LocalExecutionScope {
-    pub(in crate::facts::sync_effects) fn caller(self) -> Option<u32> {
+    pub(in crate::facts::sync_effects) fn caller(self) -> Option<RuntimeAllocationId> {
         match self {
             Self::Callable(key) => Some(key),
             Self::Root | Self::Constructor(_) => None,
@@ -72,23 +73,23 @@ pub(in crate::facts::sync_effects) struct LocalExecutionContext<'a, 'source, 'ru
 }
 
 impl OwnDataContext for LocalExecutionContext<'_, '_, '_> {
-    fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape> {
+    fn ordinary_record_shape(&self, allocation: RuntimeAllocationId) -> Option<&OwnPropertyShape> {
         self.executor.ordinary_record_shape(allocation)
     }
 
-    fn object_properties_are_settled(&self, allocation: u32) -> bool {
+    fn object_properties_are_settled(&self, allocation: RuntimeAllocationId) -> bool {
         self.executor.object_properties_are_settled(allocation)
     }
 
-    fn property_values(&self, allocation: u32, property: &str) -> Option<&Values> {
+    fn property_values(&self, allocation: RuntimeAllocationId, property: &str) -> Option<&Values> {
         self.executor.property_values(allocation, property)
     }
 
-    fn property_is_accessor(&self, allocation: u32, property: &str) -> bool {
+    fn property_is_accessor(&self, allocation: RuntimeAllocationId, property: &str) -> bool {
         self.executor.property_is_accessor(allocation, property)
     }
 
-    fn property_is_writable(&self, allocation: u32, property: &str) -> bool {
+    fn property_is_writable(&self, allocation: RuntimeAllocationId, property: &str) -> bool {
         self.executor.property_is_writable(allocation, property)
     }
 }
@@ -96,7 +97,16 @@ impl OwnDataContext for LocalExecutionContext<'_, '_, '_> {
 impl<'source> LocalExecutionContext<'_, 'source, '_> {
     pub(in crate::facts::sync_effects) fn calls(&self) -> &'source [Call] {
         match self.scope {
-            LocalExecutionScope::Callable(key) => &self.executor.inputs.index.callables[&key].calls,
+            LocalExecutionScope::Callable(key) => {
+                &self
+                    .executor
+                    .inputs
+                    .index
+                    .callables
+                    .get(&key)
+                    .expect("kernel callable activation checks its source index")
+                    .calls
+            }
             LocalExecutionScope::Root => &self.executor.inputs.index.top_calls[self.owner.0],
             LocalExecutionScope::Constructor(_) => &[],
         }
@@ -124,7 +134,11 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
                 call.kind,
                 CallKind::LocalMemberRead | CallKind::AccessorCalleeLookup
             ) || call.owner != self.owner
-                || call.caller != self.scope.caller()
+                || call.caller
+                    != self
+                        .scope
+                        .caller()
+                        .and_then(|key| self.executor.inputs.index.local_origin(key))
                 || call.span.hi < truncation.lo
             {
                 continue;
@@ -151,7 +165,14 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
 
         let writes: &[MemberValueWrite] = match self.scope {
             LocalExecutionScope::Callable(key) => {
-                &self.executor.inputs.index.callables[&key].member_value_writes
+                &self
+                    .executor
+                    .inputs
+                    .index
+                    .callables
+                    .get(&key)
+                    .expect("kernel callable activation checks its source index")
+                    .member_value_writes
             }
             LocalExecutionScope::Root => {
                 &self.executor.inputs.index.top_member_value_writes[self.owner.0]
@@ -239,7 +260,12 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
                             .get(key)
                             .is_some_and(|callable| callable.owner == self.owner)
                 })
-                .map(|(key, _)| AbstractValue::Value(Value::Alloc(Kind::Function, *key))),
+                .map(|(key, _)| {
+                    AbstractValue::Value(Value::Alloc(
+                        Kind::Function,
+                        self.executor.inputs.index.allocation(*key),
+                    ))
+                }),
         );
         for binding in index.references_within(span.hi.0, body.hi.0) {
             if let Some(values) = self.binding_values(binding, frame) {
@@ -524,7 +550,9 @@ impl BindingContext for LocalExecutionContext<'_, '_, '_> {
                         && self
                             .executor
                             .local_call_target(&values)
-                            .is_some_and(|(target, _)| target == *key))
+                            .is_some_and(|(target, _)| {
+                                self.executor.inputs.index.local_origin(target) == Some(*key)
+                            }))
                     .then(|| {
                         CallableSelection::observed(
                             &values,
@@ -643,14 +671,18 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
             };
             if let Some(mut result) = array_transfer::push(self.executor, selection, &args) {
                 for cell in result.reads {
-                    self.outcome
-                        .effects
-                        .record_heap_read(cell, self.executor.state.assumption.is_none());
+                    self.outcome.record_runtime_heap_read(
+                        self.executor.inputs.index.source_scope(),
+                        cell,
+                        self.executor.state.assumption.is_none(),
+                    );
                 }
                 for cell in result.writes {
-                    self.outcome
-                        .effects
-                        .record_heap_write(cell, self.executor.state.assumption.is_none());
+                    self.outcome.record_runtime_heap_write(
+                        self.executor.inputs.index.source_scope(),
+                        cell,
+                        self.executor.state.assumption.is_none(),
+                    );
                 }
                 result.effects.selected_local_call(LocalCallReceipt {
                     caller,
@@ -782,10 +814,8 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
         {
             self.outcome.lose_call_target(self.owner, span);
         }
-        self.outcome.absorb_call_effects(
-            &mut outcome.effects,
-            self.executor.state.assumption.as_ref(),
-        );
+        self.outcome
+            .absorb_call_outcome(&mut outcome, self.executor.state.assumption.as_ref());
         self.outcome.executed_owners.extend(outcome.executed_owners);
         self.outcome.unknown_call |= outcome.unknown_call;
         self.outcome
@@ -1008,7 +1038,7 @@ impl HeapContext for LocalExecutionContext<'_, '_, '_> {
     /// the class and built-in prototypes, so [[Set]] defines a data property.
     fn constructor_assignment_absence(
         &mut self,
-        class: u32,
+        class: RuntimeAllocationId,
         property: &str,
     ) -> Option<Box<ProofDependencies>> {
         let LocalExecutionScope::Constructor(scope) = self.scope else {
@@ -1051,9 +1081,11 @@ impl NativeContext for LocalExecutionContext<'_, '_, '_> {
                 property: selection.property().into(),
             },
         ] {
-            self.outcome
-                .effects
-                .record_heap_read(cell, self.executor.state.assumption.is_none());
+            self.outcome.record_runtime_heap_read(
+                self.executor.inputs.index.source_scope(),
+                cell,
+                self.executor.state.assumption.is_none(),
+            );
         }
         Some((selection, effects))
     }
@@ -1199,9 +1231,11 @@ impl ControlContext for LocalExecutionContext<'_, '_, '_> {
                 if matches!(self.scope, LocalExecutionScope::Root)
                     && let Some(read) = self.executor.present_own_data_read(receivers, property)
                 {
-                    self.outcome
-                        .effects
-                        .record_heap_read(read.cell, self.executor.state.assumption.is_none());
+                    self.outcome.record_runtime_heap_read(
+                        self.executor.inputs.index.source_scope(),
+                        read.cell,
+                        self.executor.state.assumption.is_none(),
+                    );
                     return Disposition::Resolved(
                         super::super::allocation_transfer::AllocationValue::opaque(read.values),
                     );
@@ -1227,7 +1261,14 @@ impl ControlContext for LocalExecutionContext<'_, '_, '_> {
                     {
                         lookup.clone()
                     }
-                    _ => Call::member_read(self.owner, self.scope.caller(), callee, span),
+                    _ => Call::member_read(
+                        self.owner,
+                        self.scope
+                            .caller()
+                            .and_then(|key| self.executor.inputs.index.local_origin(key)),
+                        callee,
+                        span,
+                    ),
                 };
                 // Retain established native, array and borrowed-record read proofs.
                 // The receiver is only a declarative cell, so the value projection

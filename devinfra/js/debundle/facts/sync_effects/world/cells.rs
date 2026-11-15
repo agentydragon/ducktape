@@ -242,8 +242,16 @@ mod tests {
 
     const UNAVAILABLE: AbstractValue = AbstractValue::Value(Value::Unavailable);
 
+    fn address(local: u32) -> crate::program_execution::RuntimeAllocationId {
+        static SOURCE: std::sync::OnceLock<crate::program_execution::RuntimeSourceScope> =
+            std::sync::OnceLock::new();
+        SOURCE
+            .get_or_init(crate::program_execution::RuntimeSourceScope::fresh)
+            .allocation(local)
+    }
+
     fn object(allocation: u32) -> AbstractValue {
-        AbstractValue::Value(Value::Alloc(Kind::Object, allocation))
+        AbstractValue::Value(Value::Alloc(Kind::Object, address(allocation)))
     }
 
     fn cells_with(kind: LocalBinding, initialization: CellInitialization) -> LexicalCells {

@@ -116,7 +116,7 @@ pub(in crate::facts::sync_effects) trait HeapContext:
     /// instance's prototype chain. `None` leaves the store unproved.
     fn constructor_assignment_absence(
         &mut self,
-        _class: u32,
+        _class: crate::program_execution::RuntimeAllocationId,
         _property: &str,
     ) -> Option<Box<ProofDependencies>> {
         None

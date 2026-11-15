@@ -318,7 +318,7 @@ fn settle(
                 .reason
                 .clone(),
         };
-        outcome.absorb_call_effects(&mut fallback.effects, Some(&reason));
+        outcome.absorb_call_outcome(&mut fallback, Some(&reason));
         outcome.executed_owners.extend(fallback.executed_owners);
         outcome.unknown_call = true;
         outcome.inherit_completeness(false, fallback.effects.precision_losses);
@@ -372,7 +372,7 @@ fn settle(
         for owner in executor.state.world.reachability.owners.clone() {
             executor.promote_lazy_owner(owner, fact.ordinal, &mut restored);
         }
-        outcome.absorb_call_effects(&mut restored.effects, Some(&reason));
+        outcome.absorb_call_outcome(&mut restored, Some(&reason));
         executor.apply_rebind_effects(&outcome.effects.rebinds);
     }
     // These are available roots for the remainder of this owner's value

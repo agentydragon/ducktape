@@ -123,13 +123,41 @@ pub(super) fn finalize(
     state.fallback_local_owners.clear();
     state.fallback_local_deferred.clear();
     for key in std::mem::take(&mut state.statement_invoked_callables) {
-        if let Some(cells) = inputs.callable_heap_contents.get(&key) {
-            outcome.effects.heap_contents.extend(cells);
+        if let Some(cells) = inputs
+            .index
+            .local_origin(key)
+            .and_then(|local| inputs.callable_heap_contents.get(&local))
+        {
+            outcome.record_runtime_heap_contents(
+                inputs.index.source_scope(),
+                &key.source.qualify_heap(cells),
+                false,
+            );
         }
     }
     if outcome.effects.local_record_factory_heap_call.is_some() {
+        // This source-owned proof cannot erase effects from another module.
+        let source = inputs.index.source_scope();
+        let keep = |cell: &crate::program_execution::RuntimeEffectCell| {
+            matches!(cell, crate::facts::EffectCell::GlobalProp(_))
+                || source.project_effect(cell).is_none()
+        };
+        outcome.runtime_heap_contents.allocations.retain(keep);
+        outcome.runtime_heap_contents.reads.retain(keep);
+        outcome.runtime_heap_contents.writes.retain(keep);
+        outcome.observed_runtime_heap_accesses.reads.retain(keep);
+        outcome.observed_runtime_heap_accesses.writes.retain(keep);
         outcome.effects.heap_contents = crate::facts::HeapContentCells::default();
         outcome.effects.non_assumed_heap_accesses = Default::default();
+        let retained = outcome.runtime_heap_contents.clone();
+        outcome.record_runtime_heap_contents(source, &retained, false);
+        let observed = outcome.observed_runtime_heap_accesses.clone();
+        for cell in observed.reads {
+            outcome.record_runtime_heap_read(source, cell, true);
+        }
+        for cell in observed.writes {
+            outcome.record_runtime_heap_write(source, cell, true);
+        }
     }
     let proven_reads = if outcome.complete
         && !outcome.unknown_call

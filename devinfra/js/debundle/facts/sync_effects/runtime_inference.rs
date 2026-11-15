@@ -120,7 +120,7 @@ pub(super) enum RuntimeOperation {
         captures: Context,
     },
     Invoke {
-        callable: u32,
+        callable: crate::program_execution::RuntimeAllocationId,
         arguments: Vec<Values>,
         argument_selections: Vec<Option<CallableSelection>>,
         captured: Option<CapturedContext>,
@@ -578,7 +578,13 @@ impl RuntimeRules<'_, '_> {
                 let evaluated = if operation_source {
                     None
                 } else {
-                    source.evaluated(&expression, &values, &judgment, native_constructor_transfer)
+                    source.evaluated(
+                        executor.inputs.index.source_scope(),
+                        &expression,
+                        &values,
+                        &judgment,
+                        native_constructor_transfer,
+                    )
                 };
                 let covered_operation = operation_source
                     && !values.is_empty()

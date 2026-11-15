@@ -156,7 +156,7 @@ pub(super) fn prepare<'source>(
                             .world
                             .publication
                             .first_callback_publication_owners
-                            .get(key)
+                            .get(&executor.inputs.index.allocation(*key))
                     })
                     .copied()
             } else {
@@ -289,7 +289,7 @@ pub(super) fn prepare<'source>(
             .world_mut()
             .classes
             .superclasses
-            .insert(*key, values);
+            .insert(index.allocation(*key), values);
     }
     let checked_split_binding_copy = initializer_source
         .and_then(|source| source.composed_expression())
@@ -645,9 +645,9 @@ fn root_array_iteration(executor: &Executor<'_, '_>, calls: &[Call]) -> bool {
     }
     let prefix = &executor.state.world.module.prefix_values;
     let callback = match call.args.first() {
-        Some(ValueExpr::Alloc(Kind::Function, key)) => {
-            Values::from([AbstractValue::Value(Value::Alloc(Kind::Function, *key))])
-        }
+        Some(ValueExpr::Alloc(Kind::Function, key)) => Values::from([AbstractValue::Value(
+            Value::Alloc(Kind::Function, index.allocation(*key)),
+        )]),
         Some(ValueExpr::Binding(binding)) if executor.initialized_local_binding(binding) => {
             match prefix.get(binding) {
                 Some(values) => values.clone(),
@@ -700,7 +700,7 @@ impl Executor<'_, '_> {
             ValueExpr::Alloc(Kind::Function, key) if !call.has_spread => (
                 Some(Values::from([AbstractValue::Value(Value::Alloc(
                     Kind::Function,
-                    *key,
+                    self.inputs.index.allocation(*key),
                 ))])),
                 false,
             ),

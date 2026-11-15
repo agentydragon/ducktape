@@ -4,7 +4,6 @@ use super::allocation_transfer::AllocationJudgment;
 use super::effect_coverage::EffectCoverageFragment;
 use super::value_model::{AbstractValue, Values};
 use crate::facts::abstract_domain::value::Value;
-use crate::facts::statement_facts::HeapContentAccesses;
 
 /// A completion summary. `OpaqueMayNormal` preserves a possible normal
 /// payload while recording unresolved behavior separately from throws.
@@ -219,7 +218,7 @@ pub(super) struct TransferLedger<N, A> {
     /// Heap cells this transfer read or wrote. Whether the path was assumed,
     /// and whether an isolated scope keeps them private, is the adopter's
     /// decision.
-    pub(super) heap_accesses: HeapContentAccesses,
+    pub(super) heap_accesses: crate::program_execution::RuntimeHeapContentAccesses,
 }
 
 impl<N, A> TransferLedger<N, A> {
@@ -232,7 +231,7 @@ impl<N, A> TransferLedger<N, A> {
             completion,
             effects,
             allocation,
-            heap_accesses: HeapContentAccesses::default(),
+            heap_accesses: Default::default(),
         }
     }
 }

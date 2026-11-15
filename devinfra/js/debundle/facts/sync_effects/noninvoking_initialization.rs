@@ -677,6 +677,7 @@ impl OriginalInitializer {
     /// Generic lowering or an empty effect ledger is no proof.
     pub(super) fn evaluated(
         &self,
+        source: crate::program_execution::RuntimeSourceScope,
         expression: &ValueExpr,
         values: &Values,
         judgment: &AllocationJudgment,
@@ -705,18 +706,28 @@ impl OriginalInitializer {
                 .is_some_and(|(candidate, transfer)| {
                     values.len() == 1
                         && transfer.matches(candidate)
-                        && candidate.matches_set_primitive_array_allocation(*allocation)
+                        && source.local_origin(*allocation).is_some_and(|local| {
+                            candidate.matches_set_primitive_array_allocation(local)
+                        })
                 }),
             (
                 Leaf::RegExp(allocation),
                 ValueExpr::Alloc(Kind::RegExp, lowered),
                 AbstractValue::Value(Value::Alloc(Kind::RegExp, evaluated)),
-            ) => values.len() == 1 && allocation == lowered && allocation == evaluated,
+            ) => {
+                values.len() == 1
+                    && allocation == lowered
+                    && Some(*allocation) == source.local_origin(*evaluated)
+            }
             (
                 Leaf::Class(expected),
                 ValueExpr::Alloc(Kind::Class, lowered),
                 AbstractValue::Value(Value::Alloc(Kind::Class, evaluated)),
-            ) => values.len() == 1 && expected == lowered && expected == evaluated,
+            ) => {
+                values.len() == 1
+                    && expected == lowered
+                    && Some(*expected) == source.local_origin(*evaluated)
+            }
             (
                 Leaf::Function(expected),
                 ValueExpr::Alloc(Kind::Function, lowered),
@@ -727,7 +738,11 @@ impl OriginalInitializer {
                     },
                     _,
                 ),
-            ) => values.len() == 1 && expected == lowered && expected == evaluated,
+            ) => {
+                values.len() == 1
+                    && expected == lowered
+                    && Some(*expected) == source.local_origin(*evaluated)
+            }
             _ => false,
         };
         if !matches {
