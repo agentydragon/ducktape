@@ -573,6 +573,7 @@ py_library(
     name = "case_batch",
     srcs = ["case_batch.py"],
     deps = [
+        ":cleanup",
         ":tracing",
         "@pypi//opentelemetry_api",
         "@pypi//pytest",

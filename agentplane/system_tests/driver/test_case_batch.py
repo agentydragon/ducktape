@@ -1,6 +1,7 @@
 """The batch owns selected case work through reporting, failure and cancellation."""
 
 import asyncio
+from contextlib import nullcontext
 from functools import partial
 
 import pytest
@@ -20,12 +21,12 @@ async def test_exclusive_case_finishes_before_two_slots_open() -> None:
     peak = 0
     finished: set[str] = set()
 
-    async def exclusive() -> None:
+    async def exclusive(_worker: None) -> None:
         exclusive_started.set()
         await exclusive_release.wait()
         finished.add("storage")
 
-    async def peer(name: str) -> None:
+    async def peer(name: str, _worker: None) -> None:
         nonlocal active, peak
         assert "storage" in finished
         active += 1
@@ -39,7 +40,7 @@ async def test_exclusive_case_finishes_before_two_slots_open() -> None:
     cases = {"storage": Case("storage", exclusive, exclusive=True)} | {
         name: Case(name, partial(peer, name)) for name in ["a", "b", "c"]
     }
-    async with asyncio.timeout(2), CaseBatch.running(cases, limit=2) as batch:
+    async with asyncio.timeout(2), CaseBatch.running(cases, limit=2, worker_scope=nullcontext) as batch:
         await exclusive_started.wait()
         assert active == 0
         exclusive_release.set()
@@ -56,16 +57,16 @@ async def test_case_failure_does_not_cancel_its_peer() -> None:
     peer_started = asyncio.Event()
     peer_finished = asyncio.Event()
 
-    async def bad() -> None:
+    async def bad(_worker: None) -> None:
         await peer_started.wait()
         raise AssertionError("case-owned failure")
 
-    async def peer() -> None:
+    async def peer(_worker: None) -> None:
         peer_started.set()
         await peer_finished.wait()
 
     cases = {"bad": Case("bad", bad), "peer": Case("peer", peer)}
-    async with asyncio.timeout(2), CaseBatch.running(cases, limit=2) as batch:
+    async with asyncio.timeout(2), CaseBatch.running(cases, limit=2, worker_scope=nullcontext) as batch:
         result = await batch.result("bad")
         assert isinstance(result.error, AssertionError)
         peer_finished.set()
@@ -84,12 +85,12 @@ async def test_nested_outcome_group_is_delivered_before_peer_finishes(outcome_ty
     peer_finished = asyncio.Event()
     cleanup_drained = asyncio.Event()
 
-    async def bad() -> None:
+    async def bad(_worker: None) -> None:
         await fail_now.wait()
         nested = BaseExceptionGroup("inner", [outcome_type("pytest control outcome"), ValueError("ordinary failure")])
         raise BaseExceptionGroup("outer", [nested])
 
-    async def peer() -> None:
+    async def peer(_worker: None) -> None:
         try:
             peer_started.set()
             await release_peer.wait()
@@ -98,7 +99,7 @@ async def test_nested_outcome_group_is_delivered_before_peer_finishes(outcome_ty
             cleanup_drained.set()
 
     cases = {"bad": Case("bad", bad), "peer": Case("peer", peer)}
-    async with asyncio.timeout(2), CaseBatch.running(cases, limit=2) as batch:
+    async with asyncio.timeout(2), CaseBatch.running(cases, limit=2, worker_scope=nullcontext) as batch:
         await peer_started.wait()
         fail_now.set()
         result = await batch.result("bad")
@@ -123,14 +124,14 @@ async def test_mixed_base_exception_group_wakes_waiter_and_propagates_original()
     waiter_started = asyncio.Event()
     cleanup_drained = asyncio.Event()
 
-    async def bad() -> None:
+    async def bad(_worker: None) -> None:
         await fail_now.wait()
         nested = BaseExceptionGroup(
             "inner", [pytest.fail.Exception("pytest control outcome"), ValueError("ordinary failure")]
         )
         raise BaseExceptionGroup("outer", [nested, Fatal("fatal leaf")])
 
-    async def peer() -> None:
+    async def peer(_worker: None) -> None:
         peer_started.set()
         try:
             await asyncio.Event().wait()
@@ -145,7 +146,7 @@ async def test_mixed_base_exception_group_wakes_waiter_and_propagates_original()
     result_holder: list[Result] = []
 
     async def run_batch() -> None:
-        async with asyncio.timeout(2), CaseBatch.running(cases, limit=2) as batch:
+        async with asyncio.timeout(2), CaseBatch.running(cases, limit=2, worker_scope=nullcontext) as batch:
             await peer_started.wait()
             waiter = asyncio.create_task(wait_for_result(batch))
             await waiter_started.wait()
@@ -173,7 +174,7 @@ async def test_caller_cancellation_propagates_and_drains_case_cleanup() -> None:
     result_waiting = asyncio.Event()
     batch_holder: list[CaseBatch] = []
 
-    async def active() -> None:
+    async def active(_worker: None) -> None:
         try:
             started.set()
             await asyncio.Event().wait()
@@ -185,7 +186,7 @@ async def test_caller_cancellation_propagates_and_drains_case_cleanup() -> None:
         return await batch.result("active")
 
     async def use_batch() -> None:
-        async with CaseBatch.running({"active": Case("active", active)}, limit=1) as batch:
+        async with CaseBatch.running({"active": Case("active", active)}, limit=1, worker_scope=nullcontext) as batch:
             batch_holder.append(batch)
             await started.wait()
             pending_result = asyncio.create_task(wait_for_result(batch))
@@ -205,14 +206,14 @@ async def test_caller_cancellation_propagates_and_drains_case_cleanup() -> None:
 async def test_cancelled_case_reports_a_result_without_cancelling_its_peer() -> None:
     peer_finished = asyncio.Event()
 
-    async def cancelled() -> None:
+    async def cancelled(_worker: None) -> None:
         raise asyncio.CancelledError
 
-    async def peer() -> None:
+    async def peer(_worker: None) -> None:
         peer_finished.set()
 
     cases = {"cancelled": Case("cancelled", cancelled), "peer": Case("peer", peer)}
-    async with asyncio.timeout(2), CaseBatch.running(cases, limit=2) as batch:
+    async with asyncio.timeout(2), CaseBatch.running(cases, limit=2, worker_scope=nullcontext) as batch:
         assert isinstance((await batch.result("cancelled")).error, asyncio.CancelledError)
         assert (await batch.result("peer")).error is None
     assert peer_finished.is_set()
@@ -221,14 +222,14 @@ async def test_cancelled_case_reports_a_result_without_cancelling_its_peer() -> 
 async def test_exclusive_failure_does_not_run_other_cases() -> None:
     peers: list[str] = []
 
-    async def bad() -> None:
+    async def bad(_worker: None) -> None:
         raise AssertionError("storage failed")
 
-    async def peer() -> None:
+    async def peer(_worker: None) -> None:
         peers.append("peer")
 
     cases = {"storage": Case("storage", bad, exclusive=True), "peer": Case("peer", peer)}
-    async with asyncio.timeout(2), CaseBatch.running(cases, limit=2) as batch:
+    async with asyncio.timeout(2), CaseBatch.running(cases, limit=2, worker_scope=nullcontext) as batch:
         assert isinstance((await batch.result("storage")).error, AssertionError)
         assert isinstance((await batch.result("peer")).error, RuntimeError)
     assert not peers
@@ -239,19 +240,19 @@ async def test_early_exit_cancels_and_drains_active_cleanup() -> None:
     cleaned = asyncio.Event()
     queued_started = asyncio.Event()
 
-    async def active() -> None:
+    async def active(_worker: None) -> None:
         try:
             started.set()
             await asyncio.Event().wait()
         finally:
             cleaned.set()
 
-    async def queued() -> None:
+    async def queued(_worker: None) -> None:
         queued_started.set()
 
     cases = {"active": Case("active", active), "queued": Case("queued", queued)}
     async with asyncio.timeout(2):
-        async with CaseBatch.running(cases, limit=1) as batch:
+        async with CaseBatch.running(cases, limit=1, worker_scope=nullcontext) as batch:
             await started.wait()
         assert cleaned.is_set()
         assert not queued_started.is_set()
@@ -265,13 +266,16 @@ async def test_case_reporting_without_recording_spans(monkeypatch: pytest.Monkey
     release = asyncio.Event()
     failure = ValueError("case failure") if fails else None
 
-    async def run() -> None:
+    async def run(_worker: None) -> None:
         started.set()
         await release.wait()
         if failure is not None:
             raise failure
 
-    async with asyncio.timeout(2), CaseBatch.running({"case": Case("case", run)}, limit=1) as batch:
+    async with (
+        asyncio.timeout(2),
+        CaseBatch.running({"case": Case("case", run)}, limit=1, worker_scope=nullcontext) as batch,
+    ):
         await started.wait()
         release.set()
         result = await batch.result("case")

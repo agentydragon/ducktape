@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass
 from functools import partial
 from typing import cast
@@ -224,13 +224,16 @@ async def action_cases(
         tmp_path_factory=tmp_path_factory,
         credentials=credentials,
     )
-    cases = {item.nodeid: Case.for_item(item, partial(case.run, resources)) for item, case in selected.items()}
+    cases = {item.nodeid: Case.for_item(item, case.run) for item, case in selected.items()}
 
     previous_logging = logging.root.manager.disable
     if needs_operator:
         logging.disable(logging.CRITICAL)
     try:
-        async with scripted.serving(listener=scripted_listener.socket), CaseBatch.running(cases, limit=2) as running:
+        async with (
+            scripted.serving(listener=scripted_listener.socket),
+            CaseBatch.running(cases, limit=2, worker_scope=lambda: nullcontext(resources)) as running,
+        ):
             yield running
     finally:
         if needs_operator:

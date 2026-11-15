@@ -59,10 +59,11 @@ cleanup. The storage case carries an explicit exclusivity marker and runs before
 so no runner pair is retained while it allocates guests. A case's timeout bounds its own coroutine,
 even while pytest is awaiting a different case.
 
-The Pod pool owns every protocol-runner pair through fixture teardown; the batch runner alone limits
-concurrent cases to two. A fresh-guest case deletes every idle pair before opening its scripted,
-client, and Sandbox scopes. An active borrowed pair may finish alongside that case. Current Pod cases
-need at most four live test guests, within the retained node's capacity of five.
+The Pod batch has two sequential workers, each owning one lazily created Sandbox. Claude and Codex
+open separate Sessions on that same Sandbox. Protocol cases reuse their worker's Sandbox; a
+fresh-guest case deletes its worker's cache before creating its own guests. Current nonexclusive
+cases, including auxiliary impostor guests, need at most two Sandboxes per worker. Storage runs
+alone before the workers start. Failed guest cleanup aborts the batch before further allocations.
 
 For current test names and arguments, inspect the suite modules, such as
 [`test_pod.py`](suites/test_pod.py), [`test_dispatcher.py`](suites/test_dispatcher.py), and
@@ -89,12 +90,11 @@ for VM image layout and lifecycle.
   [`operator_login.py`](driver/operator_login.py)).
 - `Agent.run` returns only after a completed turn. Non-completed statuses and a failed command or
   harness launch stop the case before assertions about tool effects; it does not replay admitted input.
-- Pod cases may reuse a pair of protocol runners, but each case creates fresh Sessions, HTTP streams
-  and model-request queues. Queue checks run when a case ends; a body or identity-check failure, or
-  cancellation during that work, destroys the pair. If cancellation arrives while a clean borrow is
-  returning, the pool completes safe registration before surfacing cancellation. Workspace storage
-  runs alone before any pair is retained ([`test_pod.py`](suites/test_pod.py),
-  [`pod_runners.py`](suites/pod_runners.py), [`pod_cases.py`](suites/pod_cases.py)).
+- Pod protocol cases create fresh Sessions, HTTP streams and model-request queues while reusing
+  their worker's Sandbox. Queue checks finish before another case uses it; a failed or cancelled
+  case discards it. Worker teardown deletes any cached Sandbox before the shared deployment stops
+  ([`test_pod.py`](suites/test_pod.py), [`pod_worker.py`](suites/pod_worker.py),
+  [`pod_cases.py`](suites/pod_cases.py)).
 - Test markers must agree with the selected stack backend; deployment setup rejects scripted-model
   cases on the real-model stack and vice versa ([`pytest_plugin.py`](deployment/pytest_plugin.py)).
 
