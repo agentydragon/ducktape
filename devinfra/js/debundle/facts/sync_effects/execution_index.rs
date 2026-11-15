@@ -7417,9 +7417,8 @@ impl ExecutionIndex {
         .with_never_written(self.never_written.clone())
     }
 
-    /// Each validated input asserts the slots its operation reads, at the
-    /// exact site its consumer queries: the call for a callee identity, the
-    /// constructor for a Set and the member read for an own-data read.
+    /// Each validated input asserts the slots its operation reads at the
+    /// exact call or construction site its consumer queries.
     fn intrinsic_axioms(&self) -> BTreeMap<u32, IntrinsicIntact> {
         use IntrinsicSlot::{ArrayIteratorPrototype, Global, Prototype, Static};
         use NativeIntrinsic::{Array, Object, Promise, Set, Symbol, WeakMap};
@@ -7432,7 +7431,7 @@ impl ExecutionIndex {
         ];
         self.resolved_native_operation_inputs
             .iter()
-            .filter_map(|input| {
+            .map(|input| {
                 let (site, slots): (Span, Vec<IntrinsicSlot>) = match input.evidence.operation {
                     // The builtin `Symbol` / `Symbol.for` rows at the call. A
                     // zero-argument or literal-string `Symbol` call, or a
@@ -7483,13 +7482,13 @@ impl ExecutionIndex {
                         (input.call_span, vec![Global(Set)])
                     }
                 };
-                Some((
+                (
                     site.lo.0,
                     IntrinsicIntact {
                         slots: slots.into_iter().collect(),
                         reference: input.evidence.reference.clone(),
                     },
-                ))
+                )
             })
             .collect()
     }
