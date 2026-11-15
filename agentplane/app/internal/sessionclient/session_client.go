@@ -113,7 +113,7 @@ func (c *SessionClient) CreateSession(
 // ListSessions proxies the live Environment Runtime's durable Session inventory through the requested Sandbox incarnation.
 func (c *SessionClient) ListSessions(ctx context.Context, sandboxName, sandboxUID string) ([]*sessionpb.SessionSummary, error) {
 	if c.environmentRuntime == nil {
-		return nil, errors.New("Runner proxy is not configured")
+		return nil, errors.New("Environment Runtime proxy is not configured")
 	}
 	sandbox, err := c.currentSandbox(ctx, sandboxName, sandboxUID)
 	if err != nil {
@@ -130,7 +130,7 @@ func (c *SessionClient) ListSessions(ctx context.Context, sandboxName, sandboxUI
 // incarnation. The snapshot is informational and does not wake the Sandbox.
 func (c *SessionClient) EnvironmentRuntimeStatus(ctx context.Context, sandboxName, sandboxUID string) (*sessionpb.EnvironmentRuntimeStatus, error) {
 	if c.environmentRuntime == nil {
-		return nil, errors.New("Runner proxy is not configured")
+		return nil, errors.New("Environment Runtime proxy is not configured")
 	}
 	sandbox, err := c.currentSandbox(ctx, sandboxName, sandboxUID)
 	if err != nil {

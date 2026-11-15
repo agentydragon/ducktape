@@ -14,12 +14,12 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type runnerStatusFake struct {
+type runtimeStatusFake struct {
 	status *sessionpb.EnvironmentRuntimeStatus
 	err    error
 }
 
-func (f runnerStatusFake) EnvironmentRuntimeStatus(context.Context, string, string) (*sessionpb.EnvironmentRuntimeStatus, error) {
+func (f runtimeStatusFake) EnvironmentRuntimeStatus(context.Context, string, string) (*sessionpb.EnvironmentRuntimeStatus, error) {
 	return f.status, f.err
 }
 
@@ -28,7 +28,7 @@ func TestEnvironmentRuntimeStatusServesLifecycleProgressAndExactCursors(t *testi
 	fixture := testauth.New(t)
 	authentication := fixture.Auth
 	server := newHTTPServer(authentication)
-	handler := sessionhttp.NewHandler(sessionhttp.Dependencies{RuntimeStatus: runnerStatusFake{status: &sessionpb.EnvironmentRuntimeStatus{
+	handler := sessionhttp.NewHandler(sessionhttp.Dependencies{RuntimeStatus: runtimeStatusFake{status: &sessionpb.EnvironmentRuntimeStatus{
 		EnvironmentRuntimeBootId: "fixture-boot",
 		Lifecycle: &sessionpb.EnvironmentRuntimeLifecycleStatus{
 			DesiredMode:       sessionpb.EnvironmentRuntimeLifecycleMode_ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_QUIESCING,
@@ -95,7 +95,7 @@ func TestEnvironmentRuntimeStatusRoutePreservesSandboxErrorsAndCallerAuthenticat
 	fixture := testauth.New(t)
 	authentication := fixture.Auth
 	server := newHTTPServer(authentication)
-	handler := sessionhttp.NewHandler(sessionhttp.Dependencies{RuntimeStatus: runnerStatusFake{err: status.Error(codes.NotFound, "fixture")}})
+	handler := sessionhttp.NewHandler(sessionhttp.Dependencies{RuntimeStatus: runtimeStatusFake{err: status.Error(codes.NotFound, "fixture")}})
 	if err := registerEnvironmentRuntimeRoutes(server, &appService{sessions: handler}); err != nil {
 		t.Fatal(err)
 	}
