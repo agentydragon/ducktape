@@ -31,6 +31,7 @@ from starlette.types import Receive, Scope, Send
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.oidc import OIDCSecretInputs, OIDCSettings
+from agentplane.app.settings import EnvironmentServicePeer
 from agentplane.app.testing.browser_certificate import BrowserCertificate, browser_certificate
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.testing.notifications import FakeNotifications
@@ -617,10 +618,9 @@ async def app_process(
                 environments = await backends.enter_async_context(
                     run_environment_service(sandboxes.kubeconfig, sandboxes.namespace, caller_uri=APP_URI)
                 )
-                settings["environment_service"] = {
-                    "target": environments.target,
-                    "tls": environments.tls.model_dump(mode="json"),
-                }
+                settings["environment_service"] = EnvironmentServicePeer(
+                    target=environments.target, request_timeout_s=20, tls=environments.tls
+                ).model_dump(mode="json")
                 settings.update(
                     {
                         "runner_gateway_target": gateway.target,
