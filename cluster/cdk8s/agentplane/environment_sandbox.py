@@ -69,6 +69,7 @@ _POD_LABEL_NAME = "agentplane-environment-runtime"
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _STORAGE_CLASS = "piraeus-hdd-local"
 _LABELS = {"app.kubernetes.io/name": _POD_LABEL_NAME}
+ENVIRONMENT_RUNTIME_LABELS = {**_LABELS, **telemetry.EMITTER_ENVIRONMENT_RUNTIME_CLASS_LABELS}
 _SANDBOX_CONTROLLER_CILIUM_LABELS = {"app.kubernetes.io/name": "sandbox-controller"}
 ENVIRONMENT_RUNTIME_SERVICE_PORT = 9090
 _ENVIRONMENT_RUNTIME_TLS_PATH = "/run/agentplane/environment-runtime-tls"
@@ -391,7 +392,7 @@ class EnvironmentSandboxTemplate(Construct):
     def _add_sandbox_template(self) -> dict[str, Any]:
         sidecar_settings = self._add_sidecar_settings(name=f"{self.name}-egress-sidecar")
         pod = sandbox_pod.render_pod_template(
-            {**_LABELS, **telemetry.EMITTER_ENVIRONMENT_RUNTIME_CLASS_LABELS},
+            ENVIRONMENT_RUNTIME_LABELS,
             sandbox_pod.pod_spec(
                 self.env,
                 workload=self._environment_runtime_container(),
