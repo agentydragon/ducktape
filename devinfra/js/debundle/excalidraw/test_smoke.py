@@ -156,6 +156,29 @@ async def test_app_loads_and_draws(playwright_driver: Playwright, origin: str) -
         assert failed_requests == []
 
 
+async def test_layer_ui_memo_ignores_scroll_but_tracks_selection(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const { areEqual } = await import('./main/packages/excalidraw/components/LayerUI.js');
+                const base = {children: null, appState: {
+                    scrollX: 0, scrollY: 0, selectedElementIds: {}, selectedGroupIds: {},
+                }};
+                const scroll = {...base, appState: {...base.appState, scrollX: 40}};
+                const selected = {...base, appState: {...base.appState,
+                    selectedElementIds: {'element-1': true}}};
+                const children = {...base, children: 'changed'};
+                return [areEqual(base, scroll), areEqual(base, selected), areEqual(base, children)];
+            }"""
+        )
+        assert result == [True, False, False]
+
+
 async def test_resize_and_crop_geometry(playwright_driver: Playwright, origin: str) -> None:
     async with deterministic_browser_context(
         playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None

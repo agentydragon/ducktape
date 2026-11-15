@@ -56,6 +56,10 @@ fn claimed_modules_export_their_entry_points() {
             &["containsCJK", "wrapText"],
         ),
         (
+            "main/packages/excalidraw/components/LayerUI.js",
+            &["LayerUI", "areEqual"],
+        ),
+        (
             "editor/packages/excalidraw/renderer/renderElement.js",
             &[
                 "getRenderOpacity",
@@ -308,6 +312,7 @@ fn clsx_consumers_import_the_package() {
         "main/__auto/residual_groups/0000.js",
         "editor/entry.js",
         "main/packages/excalidraw/components/IconPicker.js",
+        "main/packages/excalidraw/components/LayerUI.js",
     ] {
         assert_module_source(
             &app,
@@ -338,6 +343,6 @@ fn vendor_swap_report_lists_every_mark() {
     assert_eq!(keys("partial"), ["vendor/clsx_lib.js"]);
     assert_eq!(
         report["partial"]["vendor/clsx_lib.js"]["symbols"]["a"]["references_rewritten"],
-        9
+        10
     );
 }

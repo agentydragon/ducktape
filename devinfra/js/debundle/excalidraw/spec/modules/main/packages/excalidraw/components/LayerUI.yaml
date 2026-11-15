@@ -1,0 +1,37 @@
+# Original home: packages/excalidraw/components/LayerUI.tsx
+source_matches:
+  - match: |
+      var ANYTHING = ANYTHING,
+        LayerUI = ({ actionManager, appState, files, setAppState, elements, canvas,
+          onLockToggle, onHandToolToggle, onPenModeToggle, showExitZenModeBtn,
+          renderTopRightUI, renderCustomStats, UIOptions, onExportImage,
+          renderWelcomeScreen, children, app, isCollaborating, generateLinkForSelection }) => {
+          STMT_LIST;
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - LayerUI
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        stripIrrelevantAppStateProps = (appState) => {
+          let { suggestedBindings, startBoundElement, cursorButton, scrollX, scrollY, ...rest } = appState;
+          return rest;
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - stripIrrelevantAppStateProps
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        areEqual = (previous, next) => {
+          if (previous.children !== next.children) return !1;
+          STMT_LIST;
+          return ANYTHING(ANYTHING, ANYTHING, {
+            selectedElementIds: ANYTHING,
+            selectedGroupIds: ANYTHING
+          }) && ANYTHING;
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - areEqual
