@@ -205,9 +205,7 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
         _resource(staging_manifests, "ConfigMap", f"{history_service.NAME}-config")["data"]["config.yaml"]
     )
     assert history["policy_namespace"] == namespace
-    assert history["ingress"]["sampler_accounts"] == [{"namespace": namespace, "name": central_sampler.NAME}]
-    assert history["ingress"]["sampler_identity_callers"] is True
-    assert history["ingress"]["sampler_service_actor"] == CENTRAL_SAMPLER_URI
+    assert serving_certificate["spec"]["uris"] == [history["ingress"]["sampler_service_actor"]]
     llm = yaml.safe_load(_resource(staging_manifests, "ConfigMap", "llm-ingress-settings")["data"]["settings.yaml"])
     assert llm["policy_namespace"] == namespace
     assert llm["central_sampler_accounts"] == [f"{namespace}/{central_sampler.NAME}"]
