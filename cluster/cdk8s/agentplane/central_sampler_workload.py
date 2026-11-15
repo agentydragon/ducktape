@@ -20,7 +20,6 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.central_sampler.settings import Settings
-from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.net.peertls.config import (
     CENTRAL_SAMPLER_URI,
     GATEWAY_SESSIONS_URI,
@@ -186,15 +185,6 @@ class CentralSampler(Construct):
                 items={secret_key.key: PathMapping(path=credential_file.name)},
             )
             workload.container.mount(str(credential_file.parent), credential_volume, read_only=True)
-        workload.project_tokens(
-            "caller-tokens",
-            "/var/run/secrets/central-sampler",
-            {
-                "llm": WORKLOAD_TOKEN_AUDIENCE,
-                "gateway": runner_gateway.TOKEN_AUDIENCE,
-                "history": history_service.RUNNER_INGRESS_AUDIENCE,
-            },
-        )
 
     def add_platform_resources(self) -> None:
         """Add the API admission and egress rules used by the sampler runtime."""

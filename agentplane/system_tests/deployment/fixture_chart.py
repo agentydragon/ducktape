@@ -736,9 +736,7 @@ def add_backend_services(
         env,
         database_url=actions_database_url,
         history=history_service.service(NAMESPACE),
-        history_audience=history_service.TOKEN_AUDIENCE,
         dispatcher=runner_gateway_workload.dispatcher_service(NAMESPACE),
-        dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
         environment_service_endpoint=(
             environment_service.service(NAMESPACE) if environment_service_delegation_actor is not None else None
         ),
@@ -755,12 +753,9 @@ def add_backend_services(
         database_url=notifications_database_url,
         actions=actions.service(NAMESPACE),
         gateway=runner_gateway.service(NAMESPACE),
-        gateway_audience=runner_gateway.TOKEN_AUDIENCE,
         gateway_control_target=control_target,
         history=history_service.service(NAMESPACE),
-        history_audience=history_service.TOKEN_AUDIENCE,
         dispatcher=runner_gateway_workload.dispatcher_service(NAMESPACE),
-        dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
         callers=list(notification_callers),
         placement=None,
         registry_secret_name=None,

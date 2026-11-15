@@ -322,9 +322,7 @@ def environment_chart(
         env,
         database_url=actions_database_url,
         history=history_service.service(env.namespace),
-        history_audience=history_service.TOKEN_AUDIENCE,
         dispatcher=session_dispatcher.service(env.namespace),
-        dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
         environment_service_endpoint=(
             environment_service.service(env.namespace)
             if sandbox_controller.action_delegation_actor(env) is not None
@@ -341,12 +339,9 @@ def environment_chart(
         database_url=notifications_database_url,
         actions=actions.service(env.namespace),
         gateway=runner_gateway.service(env.namespace),
-        gateway_audience=runner_gateway.TOKEN_AUDIENCE,
         gateway_control_target=runner_gateway.control_target(env.namespace),
         history=history_service.service(env.namespace),
-        history_audience=history_service.TOKEN_AUDIENCE,
         dispatcher=session_dispatcher.service(env.namespace),
-        dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
         callers=[app_component.service(env.namespace).pods],
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,

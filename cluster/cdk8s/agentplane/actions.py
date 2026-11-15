@@ -73,7 +73,6 @@ ORCHESTRATION_GROUP = "orchestration_v1"
 ENVIRONMENTS_GROUP = "environments"
 SESSIONS_GROUP = "sessions"
 SANDBOX_GROUP = "sandbox"
-_PEER_TOKEN_DIR = "/var/run/secrets/actions"
 # The orchestration_v1 executor and its admission policy both name launcher grants `<sandbox>.launcher`.
 _LAUNCHER_SUFFIX = ".launcher"
 # Must equal the suffix orchestration_v1 launchIdentity names its Identity grant with.
@@ -296,9 +295,7 @@ class Actions(Construct):
         *,
         database_url: EnvValue,
         history: ServiceRef,
-        history_audience: str,
         dispatcher: ServiceRef,
-        dispatcher_audience: str,
         environment_service_endpoint: ServiceRef | None = None,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
@@ -313,9 +310,7 @@ class Actions(Construct):
         self.env = env
         self.database_url = database_url
         self.history = history
-        self.history_audience = history_audience
         self.dispatcher = dispatcher
-        self.dispatcher_audience = dispatcher_audience
         self.environment_service_endpoint = environment_service_endpoint
         self.container_env = container_env or {}
         self.placement = placement
@@ -429,14 +424,6 @@ class Actions(Construct):
             path="/etc/agentplane-actions/settings.yaml",
         )
         settings.mount_into(workload.container, env=Settings.config_file_env)
-        # Projection may create the volume arrays when no OAuth Secret is mounted. It must follow
-        # every ordinary mount so those arrays cannot replace the serving TLS or settings volumes.
-        if props.orchestration_v1 is not None or props.session_delegation is not None:
-            workload.project_tokens(
-                "peer-tokens",
-                _PEER_TOKEN_DIR,
-                {"dispatcher": self.dispatcher_audience, "history": self.history_audience},
-            )
         self._add_rbac(workload.account)
         if props.orchestration_v1 is not None:
             add_launcher_admission(self, env.namespace)

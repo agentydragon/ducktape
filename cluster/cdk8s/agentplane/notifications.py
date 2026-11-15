@@ -20,7 +20,6 @@ from pydantic import AnyHttpUrl
 
 from agentplane.crd_group import GROUP
 from agentplane.identity.auth import listener
-from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
@@ -86,12 +85,9 @@ class Notifications(Construct):
         database_url: EnvValue,
         actions: ServiceRef,
         gateway: ServiceRef,
-        gateway_audience: str,
         gateway_control_target: str,
         history: ServiceRef,
-        history_audience: str,
         dispatcher: ServiceRef,
-        dispatcher_audience: str,
         callers: list[Pods],
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
@@ -244,16 +240,6 @@ class Notifications(Construct):
             ]:
                 workload.container.env.add_variable(name, secret.key(key).env_value(self, f"github-{key}"))
         settings_file.mount_into(workload.container, env=Settings.config_file_env)
-        workload.project_tokens(
-            "service-tokens",
-            "/var/run/secrets/notifications",
-            {
-                "actions": WORKLOAD_TOKEN_AUDIENCE,
-                "gateway": gateway_audience,
-                "history": history_audience,
-                "dispatcher": dispatcher_audience,
-            },
-        )
 
     def add_platform_resources(self) -> None:
         """Add fleet Cilium network admission."""

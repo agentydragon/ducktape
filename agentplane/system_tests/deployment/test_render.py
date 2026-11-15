@@ -288,13 +288,6 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     assert egress_config["admin_grpc_audience"] == "agentplane-egress-admin"
     assert egress_config["admin_grpc_callers"] == [f"{NAMESPACE}/app"]
     assert egress_config["admin_grpc_service_callers"] == ["spiffe://agentplane/app"]
-    app_pod = _resource(docs, "Deployment", "app")["spec"]["template"]["spec"]
-    token = next(volume for volume in app_pod["volumes"] if volume["name"] == "egress-admin-token")
-    assert token["projected"]["sources"][0]["serviceAccountToken"]["audience"] == "agentplane-egress-admin"
-    assert any(
-        mount["name"] == "egress-admin-token" and mount["mountPath"] == "/var/run/secrets/agentplane-egress-admin"
-        for mount in app_pod["containers"][0]["volumeMounts"]
-    )
     proxy_env = {entry["name"]: entry for entry in proxy["env"]}
     assert proxy_env["PGSSLMODE"]["value"] == "disable"
     for workload in ("history-service", "notifications"):
@@ -310,9 +303,6 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         entry for entry in container["env"] if entry["name"] == "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL"
     )
     assert database_env["valueFrom"]["secretKeyRef"]["name"] == "postgres-session-dispatcher"
-    token = next(volume for volume in pod["volumes"] if volume["name"] == "runner-gateway-token")["projected"][
-        "sources"
-    ][0]["serviceAccountToken"]
     gateway_env = {entry["name"]: entry for entry in container["env"]}
     assert "AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE" in gateway_env
     gateway_config = yaml.safe_load(
@@ -332,7 +322,6 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         "key_file": str(sessions_tls_path / "tls.key"),
         "client_uri": GATEWAY_SESSIONS_URI,
     }
-    assert gateway_config["gateway_audience"] == token["audience"]
     assert "operator_callers" not in gateway_config
     assert not any(key.startswith("environment_") for key in gateway_config)
     assert gateway_config["rpc"]["listen_address"] == "0.0.0.0:8080"
@@ -557,14 +546,6 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     assert edge_oauth.base_url == _MCP.mcp_edge_origin
     assert str(edge_oauth.upstream_client_secret_file) == "/etc/agentplane-mcp/client-secret"
     assert edge_secret["client-secret"]
-    token_mount = next(
-        mount for mount in edge_container["volumeMounts"] if mount["mountPath"] == "/var/run/secrets/agentplane-mcp"
-    )
-    token_volume = next(volume for volume in edge_pod["volumes"] if volume["name"] == token_mount["name"])
-    token = token_volume["projected"]["sources"][0]["serviceAccountToken"]
-    assert token["audience"] == WORKLOAD_TOKEN_AUDIENCE
-    assert token["path"] == "actions"
-    assert token_mount["mountPath"] == "/var/run/secrets/agentplane-mcp"
     operator_config = yaml.safe_load(operator["config.yaml"])
     clients = {client["id"]: client for client in operator_config["staticClients"]}
     assert clients[edge_oauth.upstream_client_id]["redirectURIs"] == [f"{_MCP.mcp_edge_origin}/auth/callback"]
@@ -809,10 +790,6 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     assert model.connection == "llm-ingress"
     assert model.provider_model == fixture_chart.GPT6_LUNA_RESPONSES.id
     assert model.api == "responses"
-    assert any(
-        mount["name"] == "caller-tokens" and mount["mountPath"] == "/var/run/secrets/central-sampler"
-        for mount in container["volumeMounts"]
-    )
     token_reviewer = _resource(docs, "ClusterRole", f"{NAMESPACE}-central-sampler-token-reviewer")
     assert token_reviewer["rules"] == [
         {"apiGroups": ["authentication.k8s.io"], "resources": ["tokenreviews"], "verbs": ["create"]}
@@ -821,16 +798,6 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     assert database_uri.username == "central_sampler"
     assert database_uri.path == "/central_sampler"
     assert database_uri.hostname == f"{fixture_database.SERVICE}.{NAMESPACE}.svc"
-
-    projected = next(volume["projected"]["sources"] for volume in pod["volumes"] if volume["name"] == "caller-tokens")
-    token_audiences = {
-        source["serviceAccountToken"]["path"]: source["serviceAccountToken"]["audience"] for source in projected
-    }
-    assert token_audiences == {
-        "llm": WORKLOAD_TOKEN_AUDIENCE,
-        "gateway": runner_gateway.TOKEN_AUDIENCE,
-        "history": history_service.RUNNER_INGRESS_AUDIENCE,
-    }
 
     llm_pod = _resource(docs, "Deployment", "llm-ingress")["spec"]["template"]["spec"]
     llm_container = llm_pod["containers"][0]
@@ -859,15 +826,6 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     for field in ("cert_file", "key_file", "ca_file"):
         assert sampler_target["tls"][field] == gateway_config["gateway_tls"][field]
     assert f"{NAMESPACE}/{central_sampler.NAME}" in gateway_config["executor_callers"]
-    gateway_pod = _resource(docs, "Deployment", "runner-gateway")["spec"]["template"]["spec"]
-    gateway_tokens = next(
-        volume["projected"]["sources"] for volume in gateway_pod["volumes"] if volume["name"] == "runner-gateway-token"
-    )
-    assert any(
-        source["serviceAccountToken"]["audience"] == central_sampler.TOKEN_AUDIENCE
-        and source["serviceAccountToken"]["path"] == "central-sampler"
-        for source in gateway_tokens
-    )
     history_config = yaml.safe_load(_resource(docs, "ConfigMap", "history-service-config")["data"]["config.yaml"])
     assert history_config["migration_timeout_s"] == 600
     assert history_config["fold_concurrency"] == 4

@@ -82,7 +82,6 @@ from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset"
-_RUNNER_TOKEN_FILE = "/var/run/secrets/agentplane-runner-gateway/token"
 _RUNNER_TLS_CERT = f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/tls.crt"
 _RUNNER_TLS_KEY = f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/tls.key"
 _RUNNER_TLS_CA = f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/ca.crt"
@@ -181,7 +180,7 @@ class RunnerGateway(Construct):
             else frozenset()
         )
         # A delivery worker may run on a different replica from the holder. It calls
-        # the stable Runner Gateway Service with this projected Gateway-audience token.
+        # the stable Runner Gateway Service with its Sessions SVID.
         proxy_callers = {**gateway_callers, own_account: proxy.pods}
         self.proxy_callers = proxy_callers
         dispatcher_accounts = frozenset(map(_account, dispatcher_callers))
@@ -385,10 +384,6 @@ class RunnerGateway(Construct):
                 k8s.VolumeMount(name="runner-tls", mount_path=runner_gateway.GATEWAY_TLS_MOUNT_PATH, read_only=True),
             )
         )
-        gateway_tokens = {"token": runner_gateway.TOKEN_AUDIENCE}
-        if env.central_sampler is not None:
-            gateway_tokens["central-sampler"] = central_sampler.TOKEN_AUDIENCE
-        workload.project_tokens("runner-gateway-token", "/var/run/secrets/agentplane-runner-gateway", gateway_tokens)
         self._add_rbac(workload.account, namespace)
 
     def add_platform_resources(self) -> None:

@@ -193,18 +193,6 @@ def test_tls_hop_and_rules_add_only_bound_sandbox_readers_and_tls_ports(
     assert PROXY_PORT in ingress_ports
 
 
-def test_app_projects_egress_admin_audience(catalog_manifests: list[dict[str, Any]]) -> None:
-    pod = _by_name(catalog_manifests, "Deployment", "app")["spec"]["template"]["spec"]
-    container = one(pod["containers"])
-    volume = one(volume for volume in pod["volumes"] if volume["name"] == "egress-admin-token")
-    (token,) = volume["projected"]["sources"]
-    assert token["serviceAccountToken"]["audience"] == ADMIN_GRPC_AUDIENCE
-    assert token["serviceAccountToken"]["path"] == "token"
-    assert {mount["name"]: mount["mountPath"] for mount in container["volumeMounts"]}[
-        "egress-admin-token"
-    ] == "/var/run/secrets/agentplane-egress-admin"
-
-
 def test_sandbox_presets_explicitly_grant_the_baseline_policy_sets(catalog_manifests: list[dict[str, Any]]) -> None:
     presets = _sandbox_preset_policy_sets(catalog_manifests)
     expected = {*DEFAULT_POLICIES[1:], shared_diagnostics(staging.ENV.namespace).credential_name}

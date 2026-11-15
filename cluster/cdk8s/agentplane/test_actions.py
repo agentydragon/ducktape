@@ -110,7 +110,7 @@ def test_action_service_exposes_only_grpc(staging_manifests: list[dict[str, Any]
     )
 
 
-def test_peer_tokens_preserve_settings_and_tls_without_optional_secret_mounts(scratch_app: App) -> None:
+def test_settings_and_tls_are_mounted_without_optional_secrets(scratch_app: App) -> None:
     props = replace(
         staging.ENV.actions,
         oauth_secret_items=(),
@@ -129,9 +129,7 @@ def test_peer_tokens_preserve_settings_and_tls_without_optional_secret_mounts(sc
         env,
         database_url=EnvValue.from_value("postgres://unused"),
         history=history_service.service(env.namespace),
-        history_audience=history_service.TOKEN_AUDIENCE,
         dispatcher=session_dispatcher.service(env.namespace),
-        dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
         placement=None,
         registry_secret_name=None,
     )
@@ -143,7 +141,6 @@ def test_peer_tokens_preserve_settings_and_tls_without_optional_secret_mounts(sc
     config_path = one(entry for entry in container["env"] if entry["name"] == "AGENTPLANE_ACTIONS_CONFIG_FILE")["value"]
     assert mounts[config_path.rsplit("/", 1)[0]]["configMap"]["name"] == "actions-settings"
     assert any(volume.get("secret", {}).get("secretName") == "actions-workload-tls" for volume in mounts.values())
-    assert any("projected" in volume for volume in mounts.values())
 
 
 def test_action_replica_alert_uses_environment_namespace(scratch_app: App) -> None:
@@ -155,9 +152,7 @@ def test_action_replica_alert_uses_environment_namespace(scratch_app: App) -> No
         env,
         database_url=EnvValue.from_value("postgres://unused"),
         history=history_service.service(env.namespace),
-        history_audience=history_service.TOKEN_AUDIENCE,
         dispatcher=session_dispatcher.service(env.namespace),
-        dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
     ).add_platform_resources()
 
     rule = one(doc for doc in Cdk8sTesting.synth(chart) if doc["kind"] == "PrometheusRule")
@@ -333,9 +328,7 @@ def test_session_delegation_offers_all_reviewed_direct_tools(scratch_app: App) -
         env,
         database_url=EnvValue.from_value("postgres://unused"),
         history=history_service.service(env.namespace),
-        history_audience=history_service.TOKEN_AUDIENCE,
         dispatcher=session_dispatcher.service(env.namespace),
-        dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
     )
     documents = Cdk8sTesting.synth(chart)
     config = one(
@@ -388,14 +381,6 @@ def test_session_delegation_offers_all_reviewed_direct_tools(scratch_app: App) -
             if peer_name.startswith("session_delegation_")
             else actions._PEER_TIMEOUT_SECONDS
         )
-    tokens = {
-        source["serviceAccountToken"]["path"]: source["serviceAccountToken"]
-        for volume in deployment["spec"]["template"]["spec"]["volumes"]
-        if volume["name"] == "peer-tokens"
-        for source in volume["projected"]["sources"]
-    }
-    assert tokens["dispatcher"]["audience"] == session_dispatcher.TOKEN_AUDIENCE
-    assert tokens["history"]["audience"] == history_service.TOKEN_AUDIENCE
 
 
 def test_central_sampler_session_trust_is_an_explicit_opt_in(scratch_app: App) -> None:
@@ -407,9 +392,7 @@ def test_central_sampler_session_trust_is_an_explicit_opt_in(scratch_app: App) -
         env,
         database_url=EnvValue.from_value("postgres://unused"),
         history=history_service.service(env.namespace),
-        history_audience=history_service.TOKEN_AUDIENCE,
         dispatcher=session_dispatcher.service(env.namespace),
-        dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
     )
     action_component.add_platform_resources()
     documents = Cdk8sTesting.synth(chart)

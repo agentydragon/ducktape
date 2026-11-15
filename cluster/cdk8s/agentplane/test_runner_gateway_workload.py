@@ -294,7 +294,7 @@ def test_session_delegation_is_a_dispatcher_caller_without_wake_authority(scratc
     assert f"{env.namespace}/{actions.NAME}" not in settings["wake_callers"]
 
 
-def test_the_settings_file_the_gateway_reads_is_mounted_beside_its_token(scratch_app: App) -> None:
+def test_gateway_settings_and_role_certificates_are_mounted(scratch_app: App) -> None:
     docs = _gateway_objects(scratch_app)
     pod = _resource(docs, "Deployment", runner_gateway.NAME)["spec"]["template"]["spec"]
     container = one(c for c in pod["containers"] if c["name"] == "runner-gateway")
@@ -319,7 +319,6 @@ def test_the_settings_file_the_gateway_reads_is_mounted_beside_its_token(scratch
         )
     assert volumes[mounted[str(path.parent)]]["configMap"]["name"] == settings_map["metadata"]["name"]
     assert path.name in settings_map["data"]
-    assert "projected" in volumes[mounted["/var/run/secrets/agentplane-runner-gateway"]]
 
 
 def test_runner_mtls_is_direct_and_outside_platform_routes(staging_manifests: list[dict[str, Any]]) -> None:
