@@ -1,18 +1,16 @@
-"""Vector on every Talos node, receiving Talos service logs on host loopback and forwarding them
-to Loki. NixOS nodes ship their journal through the separate alloy-journal HelmRelease.
+"""Alloy receives Talos host logs on loopback and forwards their JSON to Loki.
 
-Scoped to Talos nodes by the `node-vendor=talos` label the Talos machine config sets
-(`cluster/terraform/main/logging.tf`). `vector.toml` is a `configMapGenerator` literal: its hash
-suffix rewrites the DaemonSet's volume reference and rolls the pods whenever it changes.
+Keep the former Vector resource/Flux identities for an in-place DaemonSet rollout: a
+second DaemonSet would contend for the same host port. The ConfigMap hash rolls the pods.
 """
 
 from __future__ import annotations
 
-import tomli_w
-from cdk8s import App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s import App, Chart, Size
+from cdk8s_plus_34 import Cpu, k8s
+from python.runfiles import Runfiles
 
-from cluster.cdk8s import namespaces
+from cluster.cdk8s import namespaces, pod_policy
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import loki
@@ -27,37 +25,16 @@ _LABELS = {"app": NAME}
 # receiver off the node's Nebula, LAN and public addresses.
 _LISTEN_HOST = "127.0.0.1"
 _LISTEN_PORT = 13333
-_CONFIG_DIR = "/etc/vector"
-_CONFIG_FILE = "vector.toml"
-_CONFIG = {
-    "sources": {
-        "talos": {
-            "type": "socket",
-            "mode": "tcp",
-            "address": f"{_LISTEN_HOST}:{_LISTEN_PORT}",
-            # One JSON object per line: the default newline framing plus JSON decoding turns each
-            # line into a structured event.
-            "decoding": {"codec": "json"},
-        }
+_CONFIG_DIR = "/etc/alloy"
+_CONFIG_FILE = "talos.alloy"
+IMAGE = "docker.io/grafana/alloy:v1.21.1@sha256:4039c971193053a84e53dd9ed3e7d4561c069256b024631cd3498a353ed7ece8"
+CONFIG_MAP = ConfigMapArgs(
+    name="vector-talos-config",
+    namespace=NAMESPACE,
+    data={
+        _CONFIG_FILE: (Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/monitoring/talos.alloy").read_text()
     },
-    "sinks": {
-        "loki": {
-            "type": "loki",
-            "inputs": ["talos"],
-            "endpoint": loki.WRITE_URL,
-            # Loki 3.x accepts out-of-order writes; be explicit rather than dropping late lines.
-            "out_of_order_action": "accept",
-            # Each pod only ever receives its own node's logs, so the downward-API NODE_NAME is
-            # authoritative. Vector interpolates `${NODE_NAME}` itself at load; the Flux
-            # Kustomization has no postBuild substitution that would expand it first.
-            "labels": {"job": "talos-node", "node": "${NODE_NAME}"},
-            # The full structured Talos event (talos-service, talos-level, msg, ...) is the log
-            # line, so LogQL `| json` filters on any field without exploding label cardinality.
-            "encoding": {"codec": "json"},
-        }
-    },
-}
-CONFIG_MAP = ConfigMapArgs(name="vector-talos-config", namespace=NAMESPACE, data={_CONFIG_FILE: tomli_w.dumps(_CONFIG)})
+)
 
 
 def chart(app: App) -> Chart:
@@ -71,13 +48,13 @@ def chart(app: App) -> Chart:
         labels={
             # The receiver joins the host network so it can bind only host loopback;
             # baseline forbids hostNetwork. This is an operator-only namespace: Flux is its
-            # sole writer, while the Vector container itself remains unprivileged.
+            # sole writer, while the Alloy container itself remains unprivileged.
             "pod-security.kubernetes.io/enforce": "privileged",
             "pod-security.kubernetes.io/audit": "privileged",
             "pod-security.kubernetes.io/warn": "privileged",
         },
     )
-    k8s.KubeDaemonSet(
+    daemonset = k8s.KubeDaemonSet(
         chart,
         "daemonset",
         metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=_LABELS),
@@ -88,7 +65,7 @@ def chart(app: App) -> Chart:
                 spec=k8s.PodSpec(
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     automount_service_account_token=False,
-                    # hostNetwork lets Vector bind the actual host loopback address. A Cilium
+                    # hostNetwork lets Alloy bind the actual host loopback address. A Cilium
                     # hostPort would also expose the listener on the node's public addresses.
                     host_network=True,
                     dns_policy="ClusterFirstWithHostNet",
@@ -98,12 +75,16 @@ def chart(app: App) -> Chart:
                     tolerations=[k8s.Toleration(operator="Exists", effect="NoSchedule")],
                     containers=[
                         k8s.Container(
-                            name="vector",
-                            image=(
-                                "docker.io/timberio/vector:0.58.0-distroless-libc"
-                                "@sha256:6c93dfe2554cc7e38316d618961cd657d5271c7a7aa727e0007502b28cb82c2e"
-                            ),
-                            args=["--config", f"{_CONFIG_DIR}/{_CONFIG_FILE}"],
+                            name="alloy",
+                            image=IMAGE,
+                            args=[
+                                "run",
+                                f"{_CONFIG_DIR}/{_CONFIG_FILE}",
+                                "--stability.level=experimental",
+                                "--storage.path=/tmp/alloy",
+                                "--server.http.listen-addr=127.0.0.1:12347",
+                                "--disable-reporting",
+                            ],
                             env=[
                                 k8s.EnvVar(
                                     name="NODE_NAME",
@@ -111,14 +92,10 @@ def chart(app: App) -> Chart:
                                         field_ref=k8s.ObjectFieldSelector(field_path="spec.nodeName")
                                     ),
                                 ),
-                                k8s.EnvVar(name="VECTOR_LOG", value="warn"),
-                                # ${NODE_NAME} in vector.toml's sink labels is config-file env var
-                                # interpolation, which Vector disables by default. Safe here:
-                                # vector.toml is static generated content, NODE_NAME is a
-                                # non-secret downward-API value, and it's only ever used as a label
-                                # string (never a path/command).
-                                k8s.EnvVar(name="VECTOR_DANGEROUSLY_ALLOW_ENV_VAR_INTERPOLATION", value="true"),
+                                k8s.EnvVar(name="TALOS_LISTEN_ADDRESS", value=f"{_LISTEN_HOST}:{_LISTEN_PORT}"),
+                                k8s.EnvVar(name="LOKI_PUSH_URL", value=loki.PUSH_URL),
                             ],
+                            security_context=k8s.SecurityContext(run_as_non_root=True, run_as_user=473),
                             readiness_probe=k8s.Probe(
                                 tcp_socket=k8s.TcpSocketAction(
                                     host=_LISTEN_HOST, port=k8s.IntOrString.from_number(_LISTEN_PORT)
@@ -129,12 +106,12 @@ def chart(app: App) -> Chart:
                             volume_mounts=[k8s.VolumeMount(name="config", mount_path=_CONFIG_DIR, read_only=True)],
                             resources=k8s.ResourceRequirements(
                                 requests={
-                                    "cpu": k8s.Quantity.from_string("50m"),
-                                    "memory": k8s.Quantity.from_string("128Mi"),
+                                    "cpu": k8s.Quantity.from_string(Cpu.millis(50).amount),
+                                    "memory": k8s.Quantity.from_string(Size.mebibytes(128).as_string()),
                                 },
                                 limits={
-                                    "cpu": k8s.Quantity.from_string("500m"),
-                                    "memory": k8s.Quantity.from_string("256Mi"),
+                                    "cpu": k8s.Quantity.from_string(Cpu.millis(500).amount),
+                                    "memory": k8s.Quantity.from_string(Size.mebibytes(256).as_string()),
                                 },
                             ),
                         )
@@ -144,4 +121,5 @@ def chart(app: App) -> Chart:
             ),
         ),
     )
+    pod_policy.harden(daemonset)
     return chart

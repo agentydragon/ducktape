@@ -2,9 +2,11 @@
 
 `alloy-node` collects pod stdout/stderr on every node, alongside kubelet metrics.
 `alloy-journal` collects all system journal records on NixOS nodes selected by NFD's
-`feature.node.kubernetes.io/system-os_release.ID=nixos` label. Talos host logs still
-arrive through Vector. Central Alloy handles Kubernetes events and OTLP; the syslog
-release handles the home switch and gateway.
+`feature.node.kubernetes.io/system-os_release.ID=nixos` label. A separate Alloy DaemonSet receives Talos host logs over loopback TCP; it
+keeps the former `vector-talos-logs` resource identities for an in-place rollout.
+Central Alloy handles Kubernetes events and OTLP; the syslog release handles the
+home switch and gateway. See the [Talos receiver investigation](../../../debug/alloy_talos_receiver.md)
+for protocol checks, rollout verification and rollback.
 
 The Promtail releases and temporary collector-label gates have been retired.
 New nodes need no collector opt-in. Offline nodes start Alloy when they return;

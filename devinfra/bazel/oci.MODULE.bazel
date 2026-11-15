@@ -35,6 +35,16 @@ oci.pull(
 )
 use_repo(oci, "alloy_config", "alloy_config_linux_amd64")
 
+# Exercise the Talos TCP receiver against Loki's real push/query API.
+oci.pull(
+    name = "loki_test",
+    digest = "sha256:6a705de65df88aa0d90a44779606b0042722c86637335a73858f65f9fe9f9557",
+    image = "mirror.gcr.io/grafana/loki",
+    platforms = ["linux/amd64"],
+    tag = "3.6.0",
+)
+use_repo(oci, "loki_test", "loki_test_linux_amd64")
+
 # Most Docker Hub base images are pulled through mirror.gcr.io (Google's pull-through
 # cache of Docker Hub) instead of docker.io directly: Docker Hub's anonymous
 # per-IP pull-rate limit reliably 429s the shared CI runner during

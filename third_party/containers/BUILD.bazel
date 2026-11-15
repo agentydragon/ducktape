@@ -182,3 +182,10 @@ oci_layout_py(
     image = "@alloy_config_linux_amd64",
     visibility = ["//visibility:public"],
 )
+
+oci_layout_py(
+    name = "loki_test",
+    testonly = True,
+    image = "@loki_test_linux_amd64",
+    visibility = ["//cluster/cdk8s/monitoring:__pkg__"],
+)
