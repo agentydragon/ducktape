@@ -31,7 +31,12 @@ bearer delegation and `kubernetes_bearer` listener entries remain decodable but 
 manifests omit them and the receiver rollout completes (stage 5 cleanup, 2026-11-15). Dispatcher
 workers use the Sessions service SVID in `gateway_tls` to call the proxy across replicas. Neither
 caller credentials nor effective Identity metadata replace that service proof. The Sandbox
-Controller owns `Sandbox.status`; delivery leases and Runtime incarnation fencing are unchanged.
+Controller owns `Sandbox.status`; delivery leases and Runtime incarnation fencing are unchanged. Dispatcher
+Runtime calls pin either the Gateway's `spiffe://agentplane/session-dispatcher` server identity or
+Environments' `spiffe://agentplane/sandbox-controller` identity in `gateway_tls` during cutover.
+Each connection verifies only its configured identity. Retargeting waits for the enabled
+Environments receiver and accepting caller images to roll; separate Dispatcher API clients retain
+the Session Dispatcher server pin.
 
 Cluster and k3s Gateways and Runners use certificates from cert-manager and roots distributed by
 trust-manager. Required `runner_security.mode: mtls` uses a `tls` block naming the Gateway's client

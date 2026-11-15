@@ -97,6 +97,14 @@ def test_service_svids_clear_only_omitted_legacy_token_defaults() -> None:
     assert migrated.notifications_token_file is None
 
 
+@pytest.mark.parametrize("server_uri", [SESSION_DISPATCHER_URI, SANDBOX_CONTROLLER_URI])
+def test_runtime_proxy_peer_accepts_each_cutover_receiver(server_uri: str) -> None:
+    configured = _settings(runner_gateway_tls=_svid(server_uri))
+    assert configured.runner_gateway_token_file is None
+    assert configured.runner_gateway_tls is not None
+    assert configured.runner_gateway_tls.server_uri == server_uri
+
+
 def test_environment_service_peer_is_optional_and_uses_its_own_controller_svid() -> None:
     legacy = _settings()
     assert legacy.environment_service is None
@@ -135,6 +143,8 @@ def test_environment_service_peer_is_optional_and_uses_its_own_controller_svid()
             "client_uri must be",
         ),
         ({"session_dispatcher_tls": None, "session_dispatcher_token_file": None}, "a token file is required"),
+        ({"runner_gateway_tls": _svid(HISTORY_SERVICE_URI)}, "runner_gateway_tls.server_uri must identify"),
+        ({"session_dispatcher_tls": _svid(SANDBOX_CONTROLLER_URI)}, "session_dispatcher_tls.server_uri must identify"),
         ({"connection_service_tls": _svid(SESSION_DISPATCHER_URI)}, "connection_service_tls.server_uri must identify"),
         ({"environment_service": {"target": "controller:8082", "request_timeout_s": 10}}, "Field required"),
         (

@@ -11,6 +11,7 @@ from agentplane.net.peertls.config import (
     ACTIONS_URI,
     HISTORY_SERVICE_URI,
     NOTIFICATIONS_URI,
+    SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
     ClientTLS,
     ServiceSPIFFEID,
@@ -21,14 +22,16 @@ TOKEN_AUDIENCE = "agentplane-notifications"
 PositiveSeconds = Annotated[float, Field(gt=0, allow_inf_nan=False)]
 
 
-def validate_outbound_caller(tls: ClientTLS | None, token_file: Path | None, expected_server_uri: str) -> None:
+def validate_outbound_caller(
+    tls: ClientTLS | None, token_file: Path | None, expected_server_uris: tuple[str, ...]
+) -> None:
     if tls is None:
         if token_file is None:
             raise ValueError("token_file is required when caller SVID TLS is not configured")
         return
     tls.validate_caller(token_file, NOTIFICATIONS_URI)
-    if tls.server_uri != expected_server_uri:
-        raise ValueError(f"tls.server_uri must be {expected_server_uri!r}")
+    if tls.server_uri not in expected_server_uris:
+        raise ValueError(f"tls.server_uri must be one of {expected_server_uris!r}")
 
 
 class ActionsSettings(BaseModel):
@@ -43,7 +46,7 @@ class ActionsSettings(BaseModel):
 
     @model_validator(mode="after")
     def caller_authentication(self) -> Self:
-        validate_outbound_caller(self.tls, self.token_file, ACTIONS_URI)
+        validate_outbound_caller(self.tls, self.token_file, (ACTIONS_URI,))
         return self
 
 
@@ -89,7 +92,7 @@ class RunnerGatewaySettings(BaseModel):
 
     @model_validator(mode="after")
     def caller_authentication(self) -> Self:
-        validate_outbound_caller(self.tls, self.token_file, SESSION_DISPATCHER_URI)
+        validate_outbound_caller(self.tls, self.token_file, (SESSION_DISPATCHER_URI, SANDBOX_CONTROLLER_URI))
         return self
 
 
@@ -107,7 +110,7 @@ class HistoryServiceSettings(BaseModel):
 
     @model_validator(mode="after")
     def caller_authentication(self) -> Self:
-        validate_outbound_caller(self.tls, self.token_file, HISTORY_SERVICE_URI)
+        validate_outbound_caller(self.tls, self.token_file, (HISTORY_SERVICE_URI,))
         return self
 
 
@@ -123,7 +126,7 @@ class SessionDispatcherSettings(BaseModel):
 
     @model_validator(mode="after")
     def caller_authentication(self) -> Self:
-        validate_outbound_caller(self.tls, self.token_file, SESSION_DISPATCHER_URI)
+        validate_outbound_caller(self.tls, self.token_file, (SESSION_DISPATCHER_URI,))
         return self
 
 

@@ -249,21 +249,26 @@ class Settings(BaseModel):
         ):
             self.notifications_token_file = None
 
-        for name, tls, token_file, server_uri in (
+        for name, tls, token_file, server_uris in (
             (
                 "session_dispatcher",
                 self.session_dispatcher_tls,
                 self.session_dispatcher_token_file,
-                SESSION_DISPATCHER_URI,
+                (SESSION_DISPATCHER_URI,),
             ),
-            ("runner_gateway", self.runner_gateway_tls, self.runner_gateway_token_file, SESSION_DISPATCHER_URI),
-            ("history_service", self.history_service_tls, self.history_service_token_file, HISTORY_SERVICE_URI),
-            ("policy_service", self.policy_service_tls, self.policy_service_token_file, POLICY_CONTROLLER_URI),
-            ("egress_admin", self.egress_admin_tls, self.egress_admin_token_file, EGRESS_PROXY_URI),
-            ("notifications", self.notifications_tls, self.notifications_token_file, NOTIFICATIONS_URI),
+            (
+                "runner_gateway",
+                self.runner_gateway_tls,
+                self.runner_gateway_token_file,
+                (SESSION_DISPATCHER_URI, SANDBOX_CONTROLLER_URI),
+            ),
+            ("history_service", self.history_service_tls, self.history_service_token_file, (HISTORY_SERVICE_URI,)),
+            ("policy_service", self.policy_service_tls, self.policy_service_token_file, (POLICY_CONTROLLER_URI,)),
+            ("egress_admin", self.egress_admin_tls, self.egress_admin_token_file, (EGRESS_PROXY_URI,)),
+            ("notifications", self.notifications_tls, self.notifications_token_file, (NOTIFICATIONS_URI,)),
         ):
-            if tls is not None and tls.server_uri != server_uri:
-                raise ValueError(f"{name}_tls.server_uri must identify {server_uri}")
+            if tls is not None and tls.server_uri not in server_uris:
+                raise ValueError(f"{name}_tls.server_uri must identify one of {server_uris}")
             try:
                 if tls is not None:
                     tls.validate_caller(token_file, APP_URI)

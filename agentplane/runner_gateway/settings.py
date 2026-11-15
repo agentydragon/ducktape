@@ -15,6 +15,8 @@ from agentplane.identity.auth.listener import Listener
 from agentplane.net.peertls.config import (
     CENTRAL_SAMPLER_URI,
     GATEWAY_SESSIONS_URI,
+    SANDBOX_CONTROLLER_URI,
+    SESSION_DISPATCHER_URI,
     ClientTLS,
     Security,
     ServiceSPIFFEID,
@@ -202,8 +204,8 @@ class Settings(BaseModel):
         # Legacy bearer modes remain decodable during rollout; receivers only authenticate SVIDs.
         if not any(method.mode == "spiffe" for method in self.rpc.auth):
             raise ValueError("rpc.auth must include spiffe")
-        if self.gateway_tls.server_uri != "spiffe://agentplane/session-dispatcher":
-            raise ValueError("gateway_tls.server_uri must identify the Session Dispatcher service")
+        if self.gateway_tls.server_uri not in {SESSION_DISPATCHER_URI, SANDBOX_CONTROLLER_URI}:
+            raise ValueError("gateway_tls.server_uri must identify the Gateway or Environments Runtime proxy")
         self.gateway_tls.validate_caller(self.runner_token_file, GATEWAY_SESSIONS_URI)
         return self
 

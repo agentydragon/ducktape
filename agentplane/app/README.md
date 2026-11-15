@@ -10,6 +10,12 @@ selected rows and content to the browser through authenticated Electric endpoint
 Actions, operator decisions and Connection consent. The staging instance lives in
 `cluster/k8s/agentplane-staging/`.
 
+The Runtime proxy's `runner_gateway_tls.server_uri` may pin Gateway's
+`spiffe://agentplane/session-dispatcher` identity or Environments'
+`spiffe://agentplane/sandbox-controller` identity during cutover. It verifies only the configured
+receiver. The separate `session_dispatcher_tls` pin remains `spiffe://agentplane/session-dispatcher`.
+Caller targets change only after the receiver and accepting App image roll.
+
 The published API image runs Go. Python remains only for the settings schema consumed by cdk8s,
 test fixtures, and HTTP test clients; app integration tests start the real Go executable.
 The Go app runs its embedded Goose migrations before opening the HTTP listener or starting

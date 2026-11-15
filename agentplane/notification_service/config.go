@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -228,21 +229,21 @@ func (c *config) validate() error {
 		return err
 	}
 	for _, caller := range []struct {
-		name              string
-		tls               *peertls.ClientTLS
-		tokenFile         string
-		expectedServerURI string
+		name               string
+		tls                *peertls.ClientTLS
+		tokenFile          string
+		expectedServerURIs []string
 	}{
-		{name: "actions", tls: c.Actions.TLS, tokenFile: c.Actions.TokenFile, expectedServerURI: peertls.ActionsURI},
-		{name: "runner_gateway", tls: c.RunnerGateway.TLS, tokenFile: c.RunnerGateway.TokenFile, expectedServerURI: peertls.SessionDispatcherURI},
-		{name: "history_service", tls: c.HistoryService.TLS, tokenFile: c.HistoryService.TokenFile, expectedServerURI: peertls.HistoryIngressURI},
-		{name: "session_dispatcher", tls: c.SessionDispatcher.TLS, tokenFile: c.SessionDispatcher.TokenFile, expectedServerURI: peertls.SessionDispatcherURI},
+		{name: "actions", tls: c.Actions.TLS, tokenFile: c.Actions.TokenFile, expectedServerURIs: []string{peertls.ActionsURI}},
+		{name: "runner_gateway", tls: c.RunnerGateway.TLS, tokenFile: c.RunnerGateway.TokenFile, expectedServerURIs: []string{peertls.SessionDispatcherURI, peertls.SandboxControllerURI}},
+		{name: "history_service", tls: c.HistoryService.TLS, tokenFile: c.HistoryService.TokenFile, expectedServerURIs: []string{peertls.HistoryIngressURI}},
+		{name: "session_dispatcher", tls: c.SessionDispatcher.TLS, tokenFile: c.SessionDispatcher.TokenFile, expectedServerURIs: []string{peertls.SessionDispatcherURI}},
 	} {
 		if err := caller.tls.ValidateCaller(caller.tokenFile, peertls.NotificationsURI); err != nil {
 			return fmt.Errorf("%s caller authentication: %w", caller.name, err)
 		}
-		if caller.tls != nil && caller.tls.ServerURI != caller.expectedServerURI {
-			return fmt.Errorf("%s tls.server_uri must be %q", caller.name, caller.expectedServerURI)
+		if caller.tls != nil && !slices.Contains(caller.expectedServerURIs, caller.tls.ServerURI) {
+			return fmt.Errorf("%s tls.server_uri must be one of %q", caller.name, caller.expectedServerURIs)
 		}
 	}
 	if c.HTTPPort < 1 || c.HTTPPort > 65535 {

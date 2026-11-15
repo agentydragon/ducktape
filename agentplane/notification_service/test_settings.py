@@ -7,11 +7,18 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from agentplane.net.peertls.config import ACTIONS_URI, HISTORY_SERVICE_URI, NOTIFICATIONS_URI, SESSION_DISPATCHER_URI
+from agentplane.net.peertls.config import (
+    ACTIONS_URI,
+    HISTORY_SERVICE_URI,
+    NOTIFICATIONS_URI,
+    SANDBOX_CONTROLLER_URI,
+    SESSION_DISPATCHER_URI,
+)
 from agentplane.notification_service.settings import (
     GitHubSettings,
     NoticeDebounceSettings,
     QuotaSettings,
+    RunnerGatewaySettings,
     SessionDispatcherSettings,
     Settings,
 )
@@ -79,6 +86,29 @@ def test_outbound_service_svid_authentication_needs_no_token_file() -> None:
     assert settings.runner_gateway.token_file is None
     assert settings.history_service.token_file is None
     assert settings.session_dispatcher.token_file is None
+
+
+@pytest.mark.parametrize("server_uri", [SESSION_DISPATCHER_URI, SANDBOX_CONTROLLER_URI])
+def test_runtime_proxy_peer_accepts_each_cutover_receiver(server_uri: str) -> None:
+    tls = {
+        "ca_file": "/test/ca.pem",
+        "server_uri": server_uri,
+        "cert_file": "/test/tls.crt",
+        "key_file": "/test/tls.key",
+        "client_uri": NOTIFICATIONS_URI,
+    }
+    configured = RunnerGatewaySettings.model_validate({"control_target": "proxy.test:8082", "tls": tls})
+    assert configured.token_file is None
+    assert configured.tls is not None
+    assert configured.tls.server_uri == server_uri
+    with pytest.raises(ValidationError):
+        SessionDispatcherSettings.model_validate(
+            {"target": "dispatcher.test:8080", "tls": {**tls, "server_uri": SANDBOX_CONTROLLER_URI}}
+        )
+    with pytest.raises(ValidationError):
+        RunnerGatewaySettings.model_validate(
+            {"control_target": "proxy.test:8082", "tls": {**tls, "server_uri": ACTIONS_URI}}
+        )
 
 
 def test_outbound_service_svid_authentication_rejects_mixed_or_wrong_callers() -> None:

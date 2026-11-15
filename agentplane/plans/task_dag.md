@@ -3988,7 +3988,8 @@ the move adds no hop. The proxy grants `CreateSession`, `SubmitInput`, `ChangeMo
 combined Gateway account; receivers before senders. Sequence: accepting receiver code with optional
 settings; replace its unused bearer resolver with shared `auth.Services` and remove
 `runtime_proxy.audience` before any configuration enables it; enable after that image is pinned;
-retarget and roll callers; retire the Gateway receiver
+accept and pin the Environments server identity in caller images before changing their proxy target
+and exact TLS server pin; retarget and roll callers; retire the Gateway receiver
 and obsolete grants only after cutover. Keep deployed names and wire names unchanged. The operator
 also released the Runtime diagnostics API and App cutover after this transport migration; Session
 activity and Sandbox-independent Notifications remain their separately tracked contracts.

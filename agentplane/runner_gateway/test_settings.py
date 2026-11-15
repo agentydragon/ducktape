@@ -85,11 +85,30 @@ def test_shared_listener_svid_requires_tls() -> None:
         Settings.model_validate(source)
 
 
-def test_control_service_tls_pins_session_dispatcher_identity() -> None:
+def test_control_service_tls_rejects_unrelated_identity() -> None:
     source = _settings({"mode": "insecure"}).model_dump(mode="json")
     source["gateway_tls"]["server_uri"] = "spiffe://agentplane/runner-gateway"
-    with pytest.raises(ValidationError, match=r"gateway_tls\.server_uri must identify the Session Dispatcher service"):
+    with pytest.raises(
+        ValidationError, match=r"gateway_tls\.server_uri must identify the Gateway or Environments Runtime proxy"
+    ):
         Settings.model_validate(source)
+
+
+@pytest.mark.parametrize(
+    "server_uri", ["spiffe://agentplane/session-dispatcher", "spiffe://agentplane/sandbox-controller"]
+)
+def test_runtime_proxy_peer_accepts_each_cutover_receiver(server_uri: str) -> None:
+    source = _settings({"mode": "insecure"}).model_dump(mode="json")
+    source["runner_token_file"] = None
+    source["gateway_tls"].update(
+        server_uri=server_uri,
+        cert_file="/test/sessions-cert",
+        key_file="/test/sessions-key",
+        client_uri="spiffe://agentplane/sessions",
+    )
+    configured = Settings.model_validate(source)
+    assert configured.gateway_tls.server_uri == server_uri
+    assert configured.runner_token_file is None
 
 
 def test_gateway_sessions_svid_is_an_optional_tokenless_caller_mode() -> None:

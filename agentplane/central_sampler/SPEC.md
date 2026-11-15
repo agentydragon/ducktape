@@ -12,7 +12,11 @@ actor remains the journal producer identity and is retained separately by Histor
 Gateway connections accept either their existing projected ServiceAccount token or a central
 sampler service SVID; SVID mode verifies the exact receiver service URI and presents
 `spiffe://agentplane/central-sampler` as its caller. The deployed token mode changes only when
-separately configured. The
+separately configured. During the Runtime proxy cutover, `gateway_tls.server_uri` may pin
+`spiffe://agentplane/session-dispatcher` (Gateway) or `spiffe://agentplane/sandbox-controller`
+(Environments). Each connection verifies only its configured identity; it never falls back between
+receivers. Caller manifests remain on Gateway until the Environments receiver and accepting caller
+images have rolled. The
 Dispatcher uses its one configured central sampler target; callers select the V1 placement, not a
 service endpoint. Model and effort must be server-configured. Every RPC uses the explicit bearer-account policy or the exact service SVID allowlist. Service
 ownership is stored separately from account UIDs; existing account-owned Sessions never become

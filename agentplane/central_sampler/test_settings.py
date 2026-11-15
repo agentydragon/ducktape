@@ -108,9 +108,16 @@ def test_provider_phase_budgets_are_optional_and_independent() -> None:
     assert configured.provider_idle_timeout_seconds == 600
 
 
-def test_gateway_tls_must_name_runner_gateway_rpc_listener() -> None:
-    # The serving Gateway listener uses the Session Dispatcher service identity; GatewayURI is
-    # reserved for the Gateway's client identity on runner-control mTLS.
+@pytest.mark.parametrize("server", ["session-dispatcher", "sandbox-controller"])
+def test_runtime_proxy_peer_accepts_each_cutover_receiver(server: str) -> None:
+    configured = Settings.model_validate(
+        {**settings_data(), "gateway_tls": service_tls(server), "gateway_token_file": None}
+    )
+    assert configured.gateway_tls is not None
+    assert configured.gateway_tls.server_uri == f"spiffe://agentplane/{server}"
+
+
+def test_gateway_tls_must_name_runtime_proxy_listener() -> None:
     with pytest.raises(ValidationError, match=r"gateway_tls\.server_uri"):
         Settings.model_validate(
             {
