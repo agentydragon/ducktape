@@ -3616,9 +3616,6 @@ spec:
             - mountPath: /var/run/secrets/central-sampler-anthropic
               name: secret-agentplane-staging-anthropic-api-key
               readOnly: true
-            - mountPath: /var/run/secrets/central-sampler
-              name: caller-tokens
-              readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -3660,21 +3657,6 @@ spec:
               - key: api-key
                 path: api-key
             secretName: agentplane-staging-anthropic-api-key
-        - name: caller-tokens
-          projected:
-            sources:
-              - serviceAccountToken:
-                  audience: agentplane-egress
-                  expirationSeconds: 3600
-                  path: llm
-              - serviceAccountToken:
-                  audience: agentplane-runner-gateway
-                  expirationSeconds: 3600
-                  path: gateway
-              - serviceAccountToken:
-                  audience: agentplane-runner-ingress
-                  expirationSeconds: 3600
-                  path: history
 ---
 apiVersion: v1
 kind: Service
@@ -4574,24 +4556,6 @@ spec:
             - mountPath: /var/run/public-web-pki
               name: configmap-public-web-pki
               readOnly: true
-            - mountPath: /var/run/secrets/agentplane-runner-gateway
-              name: runner-gateway-token
-              readOnly: true
-            - mountPath: /var/run/secrets/agentplane-history-service
-              name: history-service-token
-              readOnly: true
-            - mountPath: /var/run/secrets/agentplane-egress-admin
-              name: egress-admin-token
-              readOnly: true
-            - mountPath: /var/run/secrets/agentplane-session-dispatcher
-              name: session-dispatcher-token
-              readOnly: true
-            - mountPath: /var/run/secrets/agentplane-notifications
-              name: notifications-token
-              readOnly: true
-            - mountPath: /var/run/secrets/agentplane-policy
-              name: policy-token
-              readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -4624,48 +4588,6 @@ spec:
         - configMap:
             name: public-web-pki
           name: configmap-public-web-pki
-        - name: runner-gateway-token
-          projected:
-            sources:
-              - serviceAccountToken:
-                  audience: agentplane-runner-gateway
-                  expirationSeconds: 3600
-                  path: token
-        - name: history-service-token
-          projected:
-            sources:
-              - serviceAccountToken:
-                  audience: agentplane-history-service
-                  expirationSeconds: 3600
-                  path: token
-        - name: egress-admin-token
-          projected:
-            sources:
-              - serviceAccountToken:
-                  audience: agentplane-egress-admin
-                  expirationSeconds: 3600
-                  path: token
-        - name: session-dispatcher-token
-          projected:
-            sources:
-              - serviceAccountToken:
-                  audience: session-dispatcher
-                  expirationSeconds: 3600
-                  path: token
-        - name: notifications-token
-          projected:
-            sources:
-              - serviceAccountToken:
-                  audience: agentplane-notifications
-                  expirationSeconds: 3600
-                  path: token
-        - name: policy-token
-          projected:
-            sources:
-              - serviceAccountToken:
-                  audience: agentplane-policy
-                  expirationSeconds: 3600
-                  path: token
 ---
 apiVersion: v1
 kind: Service
@@ -6641,9 +6563,6 @@ spec:
             - mountPath: /run/agentplane/workload-trust
               name: workload-trust
               readOnly: true
-            - mountPath: /var/run/secrets/agentplane-runner-gateway
-              name: runner-gateway-token
-              readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -6673,13 +6592,6 @@ spec:
         - configMap:
             name: agentplane-workload-ca-bundle
           name: workload-trust
-        - name: runner-gateway-token
-          projected:
-            sources:
-              - serviceAccountToken:
-                  audience: agentplane-runner-gateway
-                  expirationSeconds: 3600
-                  path: token
 ---
 apiVersion: v1
 kind: Service
@@ -7380,9 +7292,6 @@ spec:
             - mountPath: /etc/agentplane-actions
               name: configmap-actions-settings
               readOnly: true
-            - mountPath: /var/run/secrets/actions
-              name: peer-tokens
-              readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -7446,17 +7355,6 @@ spec:
         - configMap:
             name: actions-settings
           name: configmap-actions-settings
-        - name: peer-tokens
-          projected:
-            sources:
-              - serviceAccountToken:
-                  audience: session-dispatcher
-                  expirationSeconds: 3600
-                  path: dispatcher
-              - serviceAccountToken:
-                  audience: agentplane-history-service
-                  expirationSeconds: 3600
-                  path: history
 ---
 apiVersion: v1
 kind: Service
@@ -8775,9 +8673,6 @@ spec:
             - mountPath: /etc/agentplane-mcp-edge
               name: configmap-mcp-edge-settings
               readOnly: true
-            - mountPath: /var/run/secrets/agentplane-mcp
-              name: actions-token
-              readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -8816,13 +8711,6 @@ spec:
         - configMap:
             name: mcp-edge-settings
           name: configmap-mcp-edge-settings
-        - name: actions-token
-          projected:
-            sources:
-              - serviceAccountToken:
-                  audience: agentplane-egress
-                  expirationSeconds: 3600
-                  path: actions
 ---
 apiVersion: v1
 kind: Service
@@ -9292,9 +9180,6 @@ spec:
             - mountPath: /etc/agentplane-notifications
               name: configmap-notifications-settings
               readOnly: true
-            - mountPath: /var/run/secrets/notifications
-              name: service-tokens
-              readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -9324,25 +9209,6 @@ spec:
         - configMap:
             name: notifications-settings
           name: configmap-notifications-settings
-        - name: service-tokens
-          projected:
-            sources:
-              - serviceAccountToken:
-                  audience: agentplane-egress
-                  expirationSeconds: 3600
-                  path: actions
-              - serviceAccountToken:
-                  audience: agentplane-runner-gateway
-                  expirationSeconds: 3600
-                  path: gateway
-              - serviceAccountToken:
-                  audience: agentplane-history-service
-                  expirationSeconds: 3600
-                  path: history
-              - serviceAccountToken:
-                  audience: session-dispatcher
-                  expirationSeconds: 3600
-                  path: dispatcher
 ---
 apiVersion: v1
 kind: Service
