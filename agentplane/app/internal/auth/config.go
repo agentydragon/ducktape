@@ -195,6 +195,11 @@ type Config struct {
 	SessionChanges        ChangeSource
 }
 
+// ChangeSource observes committed browser-session deletions for the app's auth boundary.
+type ChangeSource interface {
+	Subscribe(channels ...string) (<-chan struct{}, func(), error)
+}
+
 type openID struct {
 	provider *oidc.Provider
 	verifier *oidc.IDTokenVerifier

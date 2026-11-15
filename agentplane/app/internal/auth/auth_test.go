@@ -209,16 +209,6 @@ func TestOperatorCallerRequiresSameOriginForUnsafeMethods(t *testing.T) {
 	}
 }
 
-func TestLoginAttemptMergePreservesConcurrentKeys(t *testing.T) {
-	before := map[string]loginAttempt{"a": {Nonce: "old-a"}, "b": {Nonce: "old-b"}}
-	concurrent := map[string]loginAttempt{"a": {Nonce: "new-a"}, "b": {Nonce: "old-b"}, "other": {Nonce: "other"}}
-	after := map[string]loginAttempt{"a": {Nonce: "old-a"}, "b": {Nonce: "new-b"}}
-	merged := mergeLoginAttempts(concurrent, before, after)
-	if merged["a"].Nonce != "new-a" || merged["b"].Nonce != "new-b" || merged["other"].Nonce != "other" {
-		t.Fatalf("merge result = %#v", merged)
-	}
-}
-
 func TestAudienceMustBeTheSingleConfiguredClient(t *testing.T) {
 	for _, tc := range []struct {
 		raw  string

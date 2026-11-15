@@ -23,6 +23,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/web_push/web_push_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/auth/session"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/electricproxy"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/federation"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/historyclient"
@@ -84,7 +85,7 @@ func Run(ctx context.Context, config settings.Config) error {
 		return fmt.Errorf("app PostgreSQL unavailable: %w", err)
 	}
 
-	wakeupHub, err := wakeups.Listen(ctx, databaseURL, threads.UpdatesChannel, auth.SessionUpdatesChannel)
+	wakeupHub, err := wakeups.Listen(ctx, databaseURL, threads.UpdatesChannel, session.SessionUpdatesChannel)
 	if err != nil {
 		return fmt.Errorf("start PostgreSQL update listener: %w", err)
 	}

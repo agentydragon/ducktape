@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/app/internal/auth/session"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
 )
@@ -24,7 +25,7 @@ type Auth struct {
 	oidc    *openID
 	oidcMu  sync.Mutex
 	pinned  *oidc.IDTokenVerifier
-	store   *sessionStore
+	store   *session.Store
 	signer  *cookieSigner
 	changes ChangeSource
 }
@@ -52,10 +53,10 @@ func New(cfg Config) (*Auth, error) {
 			ClientID: settings.ClientID, SupportedSigningAlgs: []string{oidc.EdDSA},
 		})
 	}
-	a.store = &sessionStore{
-		db: cfg.Database, idle: time.Duration(settings.SessionIdleSeconds) * time.Second,
-		step: time.Duration(settings.SessionActivityStepSeconds) * time.Second, now: time.Now,
-	}
+	a.store = session.NewStore(
+		cfg.Database, time.Duration(settings.SessionIdleSeconds)*time.Second,
+		time.Duration(settings.SessionActivityStepSeconds)*time.Second,
+	)
 	a.signer = newCookieSigner(settings.SessionSecret, settings.SessionMaxSeconds)
 	return a, nil
 }
@@ -193,7 +194,7 @@ func (a *Auth) UntilEnded(ctx context.Context, rowID string) error {
 	if a.store == nil {
 		return errors.New("OIDC sessions are not configured")
 	}
-	return a.store.untilEnded(ctx, rowID, a.changes)
+	return a.store.UntilTerminated(ctx, session.ID(rowID), a.changes)
 }
 
 type CallerKind string
@@ -290,47 +291,45 @@ func (w *sessionResponseWriter) Flush() {
 	}
 }
 
-func (a *Auth) loadSession(r *http.Request) (*RequestSession, *http.Cookie, *browserRow, map[string]loginAttempt, error) {
+func (a *Auth) loadSession(r *http.Request) (*RequestSession, *http.Cookie, *session.Record, map[string]loginAttempt, error) {
 	initial := map[string]loginAttempt{}
 	var cookie *http.Cookie
-	var row *browserRow
-	var rowKey string
+	var row *session.Record
 	if parsed, err := r.Cookie(a.cfg.OIDC.CookieName()); err == nil {
 		cookie = parsed
 		if handle, err := a.signer.unsign(parsed.Value); err == nil {
-			rowKey = rowID(handle)
-			row, err = a.store.read(r.Context(), rowKey)
+			row, err = a.store.Read(r.Context(), session.IDForHandle(handle))
 			if err != nil {
 				return nil, cookie, nil, nil, err
 			}
 		}
 	}
 	if row != nil {
-		initial = maps.Clone(row.pendingLogins)
+		initial = operatorAttempts(row.PendingLogins)
 	}
 	session := &RequestSession{pendingLogins: maps.Clone(initial)}
 	if row != nil {
-		session.Login = row.login
-		session.Row = &SessionRow{store: a.store, id: rowKey}
+		session.Login = operatorSession(row.Login)
+		session.Row = &SessionRow{store: a.store, id: row.ID}
 	}
 	return session, cookie, row, initial, nil
 }
 
-func (a *Auth) commitSession(r *http.Request, w http.ResponseWriter, session *RequestSession, cookie *http.Cookie, row *browserRow, initial map[string]loginAttempt) error {
-	if session.logout {
+func (a *Auth) commitSession(r *http.Request, w http.ResponseWriter, requestSession *RequestSession, cookie *http.Cookie, row *session.Record, initial map[string]loginAttempt) error {
+	if requestSession.logout {
 		if row != nil {
-			if err := a.store.end(r.Context(), row.id); err != nil {
+			if err := a.store.Terminate(r.Context(), row.ID); err != nil {
 				return err
 			}
 		}
 		a.forgetCookie(w)
-	} else if session.replace != nil {
+	} else if requestSession.replace != nil {
 		absolute := time.Now().UTC().Add(time.Duration(a.cfg.OIDC.SessionMaxSeconds) * time.Second)
-		pending := ""
+		var pending session.ID
 		if row != nil {
-			pending = row.id
+			pending = row.ID
 		}
-		handle, inserted, err := a.store.logIn(r.Context(), pending, session.pendingLogins, *session.replace, absolute)
+		handle, inserted, err := a.store.CompleteLogin(r.Context(), pending, persistedAttempts(requestSession.pendingLogins), *persistedLogin(requestSession.replace), absolute)
 		if err != nil {
 			return err
 		}
@@ -341,7 +340,7 @@ func (a *Auth) commitSession(r *http.Request, w http.ResponseWriter, session *Re
 		if err := a.rememberCookie(w, handle, absolute); err != nil {
 			return err
 		}
-	} else if !maps.Equal(initial, session.pendingLogins) {
+	} else if !maps.Equal(initial, requestSession.pendingLogins) {
 		if row == nil {
 			pendingTTL := pendingLoginTTL
 			maxAge := time.Duration(a.cfg.OIDC.SessionMaxSeconds) * time.Second
@@ -349,7 +348,7 @@ func (a *Auth) commitSession(r *http.Request, w http.ResponseWriter, session *Re
 				pendingTTL = maxAge
 			}
 			absolute := time.Now().UTC().Add(pendingTTL)
-			handle, err := a.store.create(r.Context(), session.pendingLogins, absolute)
+			handle, err := a.store.Create(r.Context(), persistedAttempts(requestSession.pendingLogins), absolute)
 			if err != nil {
 				return err
 			}
@@ -357,7 +356,7 @@ func (a *Auth) commitSession(r *http.Request, w http.ResponseWriter, session *Re
 				return err
 			}
 		} else {
-			saved, err := a.store.save(r.Context(), row.id, initial, session.pendingLogins)
+			saved, err := a.store.SavePending(r.Context(), row.ID, persistedAttempts(initial), persistedAttempts(requestSession.pendingLogins))
 			if err != nil {
 				return err
 			}

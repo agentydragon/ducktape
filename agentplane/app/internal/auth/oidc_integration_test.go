@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/app/internal/auth/session"
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 )
@@ -309,7 +310,7 @@ func writeOIDCTestJSON(w http.ResponseWriter, status int, value any) {
 
 func newOIDCIntegration(t *testing.T, replicas int, policy oidcSessionPolicy) *oidcIntegration {
 	t.Helper()
-	baseStore, dsn := integrationDB(t)
+	_, baseDB, dsn := integrationDB(t)
 	provider := newSignedOIDCProvider(t)
 	var handlers []http.Handler
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -324,10 +325,10 @@ func newOIDCIntegration(t *testing.T, replicas int, policy oidcSessionPolicy) *o
 	if policy.maxSeconds == 0 {
 		policy = oidcSessionPolicy{maxSeconds: 7 * 24 * 60 * 60, idleSeconds: 24 * 60 * 60, stepSeconds: 5 * 60}
 	}
-	dbs := []*sql.DB{baseStore.db}
+	dbs := []*sql.DB{baseDB}
 	auths := make([]*Auth, 0, replicas)
 	for index := 0; index < replicas; index++ {
-		db := baseStore.db
+		db := baseDB
 		if index > 0 {
 			var err error
 			db, err = sql.Open("postgres", dsn)
@@ -454,7 +455,7 @@ func cookieRowID(t *testing.T, a *Auth, cookie *http.Cookie) string {
 	if err != nil {
 		t.Fatalf("verify session cookie: %v", err)
 	}
-	return rowID(handle)
+	return string(session.IDForHandle(handle))
 }
 
 func setBrowserCookie(t *testing.T, client *http.Client, appURL string, cookie *http.Cookie) {
