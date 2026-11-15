@@ -9,10 +9,10 @@ import pytest
 
 from agentplane.grpc.calls import dial
 from agentplane.history_service.testing.go_service import WRITER
-from agentplane.runner_gateway.client import SandboxControlClient
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.runner_gateway.testing.gateway_process import GatewayProcess, run_gateway
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
+from agentplane.session_dispatcher.client import SandboxControlClient
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.session_dispatcher.testing.gateway_process import GatewayProcess, run_gateway
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from util.testing.postgres import DatabaseNames, create_temporary_database

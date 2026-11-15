@@ -11,7 +11,7 @@ import {
   DeliveryState,
   DispatchSchema,
   type Dispatch,
-} from "../../../runner_gateway/dispatcher/api/session/session_dispatcher_pb";
+} from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 
 const COMMAND = create(CommandSchema, {
   commandId: "input-1",

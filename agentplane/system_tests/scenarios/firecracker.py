@@ -19,7 +19,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 from agentplane.app.testing.client import Client
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import session_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.agent import (
     Agent,
     environment_runtime_startup_retries,

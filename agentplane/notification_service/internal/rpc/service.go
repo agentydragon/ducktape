@@ -19,8 +19,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/worker"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
-	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 )

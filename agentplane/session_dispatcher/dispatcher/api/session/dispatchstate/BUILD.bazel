@@ -1,0 +1,17 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+go_library(
+    name = "dispatchstate",
+    srcs = ["state.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/dispatchstate",
+    deps = ["//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_go_proto"],
+)
+
+go_test(
+    name = "dispatchstate_test",
+    srcs = ["state_test.go"],
+    embed = [":dispatchstate"],
+    deps = ["//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_go_proto"],
+)

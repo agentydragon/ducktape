@@ -20,7 +20,7 @@ from agentplane.env.runtime.harness import Harness
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.native.codex.testing import responses_sse
 from agentplane.proto import event_log_pb2, event_pb2, identity_pb2, session_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.agent import (
     TURN_SECONDS,
     WORKING_DIRECTORY,

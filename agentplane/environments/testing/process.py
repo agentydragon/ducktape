@@ -24,7 +24,7 @@ from agentplane.net.peertls.config import (
     ClientTLS,
 )
 from agentplane.proto.identity_pb2 import SandboxDestination
-from agentplane.runner_gateway.client import SandboxControlClient
+from agentplane.session_dispatcher.client import SandboxControlClient
 from agentplane.testing.go_process import GoProcess, go_process
 from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, make_ca, write_ca
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir

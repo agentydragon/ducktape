@@ -4,7 +4,10 @@ from collections.abc import Callable
 
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2 as pb, session_dispatcher_pb2_grpc
+from agentplane.session_dispatcher.dispatcher.api.session import (
+    session_dispatcher_pb2 as pb,
+    session_dispatcher_pb2_grpc,
+)
 from agentplane.system_tests.driver.dispatcher_transport import Caller
 
 BOUND_SECONDS = 300

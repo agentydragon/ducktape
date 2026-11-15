@@ -6,7 +6,7 @@ import {
   DeliveryState,
   DispatchSchema,
   type Dispatch,
-} from "../../../runner_gateway/dispatcher/api/session/session_dispatcher_pb";
+} from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { dispatchFromJson, normalizeDeliveryState, savedInterruptResultFromJson, type CommandTarget } from "./client";
 
 /** A typed operation retained for lost-response recovery; Command protobuf belongs to the journal. */

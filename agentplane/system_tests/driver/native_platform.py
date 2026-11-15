@@ -12,8 +12,8 @@ import grpc
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto import identity_pb2
-from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.session_dispatcher.client import SandboxControlClient, SandboxRunner
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.environment_transport import (
     ENVIRONMENT_PORT,

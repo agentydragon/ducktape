@@ -16,8 +16,8 @@ from kubernetes_asyncio import client as k8s
 from agentplane.app.testing.client import Client
 from agentplane.app.testing.history_reads import SessionEventReader
 from agentplane.crd_group import GROUP, VERSION
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.executor import Executor
 from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS, scenario_identity

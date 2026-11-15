@@ -23,9 +23,9 @@ from agentplane.env.e2e.testing.process_fixtures import RunnerProcess
 from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.proto import event_log_pb2, session_pb2
-from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, accepted_session, admitted
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
+from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient, accepted_session, admitted
 from agentplane.testing.scripted_model import ScriptedModel, Text
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 

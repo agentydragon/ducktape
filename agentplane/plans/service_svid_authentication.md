@@ -84,7 +84,7 @@ these certificates or that Runtime currently admits them.
 The current source has no Runner Gateway → History Service caller; no such edge is added to this
 inventory. The exact staging token audiences, mounts, account sets and method tables come from
 [`app.py`](../../cluster/cdk8s/agentplane/app.py),
-[`runner_gateway_workload.py`](../../cluster/cdk8s/agentplane/runner_gateway_workload.py),
+[`runner_gateway_workload.py`](../../cluster/cdk8s/agentplane/session_dispatcher_workload.py),
 [`chart.py`](../../cluster/cdk8s/agentplane/chart.py),
 [`actions.py`](../../cluster/cdk8s/agentplane/actions.py),
 [`notifications.py`](../../cluster/cdk8s/agentplane/notifications.py),

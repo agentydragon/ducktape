@@ -19,9 +19,9 @@ from agentplane.central_sampler.api import sampler_pb2_grpc
 from agentplane.grpc.calls import ServiceError, dial
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto.identity_pb2 import EnvironmentTarget, SandboxDestination, ServiceAccount
-from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
-from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
+from agentplane.session_dispatcher.client import SandboxControlClient, SandboxRunner
+from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2_grpc
 from agentplane.system_tests.driver import sandbox_cleanup
 from agentplane.system_tests.driver.cleanup_diagnostics import cleanup_without_masking
 from agentplane.system_tests.driver.cluster import Cluster

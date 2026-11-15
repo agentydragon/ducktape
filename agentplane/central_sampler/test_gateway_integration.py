@@ -34,8 +34,8 @@ from agentplane.history_service.testing.go_service import go_history_service, mi
 from agentplane.native.codex.testing.responses_sse import CustomToolCall, Message, response_stream
 from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, MTLS, SANDBOX_CONTROLLER_URI
 from agentplane.proto import event_pb2, session_pb2
-from agentplane.runner_gateway.testing.gateway_process import run_gateway
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
+from agentplane.session_dispatcher.testing.gateway_process import run_gateway
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.electric_role import ensure_electric_role
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer

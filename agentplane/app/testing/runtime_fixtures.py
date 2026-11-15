@@ -15,9 +15,9 @@ from agentplane.env.e2e.testing.history_tunnel import history_tunnel
 from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.history_service.testing.go_service import GoHistoryService, go_history_service
 from agentplane.net.peertls.config import MTLS
-from agentplane.runner_gateway.client import SandboxControlClient
-from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
+from agentplane.session_dispatcher.client import SandboxControlClient
+from agentplane.session_dispatcher.testing.gateway_process import GatewayProcess
 
 
 @pytest.fixture

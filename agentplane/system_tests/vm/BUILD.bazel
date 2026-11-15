@@ -37,7 +37,7 @@ py_library(
         ":configuration",
         "//agentplane/app/testing:client",
         "//agentplane/proto:session_pb2",
-        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/session_dispatcher/dispatcher:testing_client",
         "//agentplane/system_tests/driver:agent",
         "//agentplane/system_tests/driver:session_setup",
         "@pypi//protobuf",

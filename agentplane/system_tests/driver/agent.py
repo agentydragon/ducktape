@@ -26,8 +26,8 @@ from agentplane.app.testing.history_reads import SessionEventReader
 from agentplane.app.testing.models import ThreadView
 from agentplane.history_service.api.history import history_service_pb2
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, session_pb2
-from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.driver.turn import TURN_SECONDS, Turn, TurnCollector
 from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text

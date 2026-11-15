@@ -260,7 +260,7 @@ the current headless app-server already avoids an interactive terminal UI.
 
 These are proposed responsibility changes, not permission for multiple services to write each
 other's tables or a decision to delete services. The [current authorities](../docs/thread_layering.md#authorities-and-representations),
-[Gateway](../runner_gateway/README.md) and [History](../history_service/README.md) still provide those
+[Gateway](../session_dispatcher/README.md) and [History](../history_service/README.md) still provide those
 contracts. Central sampling alone does not replace them. Any extraction must preserve retained
 Sessions, identities, history and native state under the staging data-preservation procedure.
 

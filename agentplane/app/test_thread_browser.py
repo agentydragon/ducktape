@@ -67,11 +67,11 @@ from agentplane.history_service.testing.protojson import thread_entity_from_reco
 from agentplane.net.peertls.config import APP_URI, POLICY_CONTROLLER_URI, ClientTLS
 from agentplane.policy.v1 import policy_service_pb2, policy_service_pb2_grpc
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2
-from agentplane.runner_gateway.client import SandboxControlClient
-from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2
-from agentplane.runner_gateway.testing.gateway_process import GatewayProcess, run_gateway
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
 from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
+from agentplane.session_dispatcher.client import SandboxControlClient
+from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2
+from agentplane.session_dispatcher.testing.gateway_process import GatewayProcess, run_gateway
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.tls import issue_workload_leaf, make_ca
 from devinfra.testing.output_writer import BoundTestOutputs

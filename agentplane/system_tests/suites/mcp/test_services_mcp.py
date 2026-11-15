@@ -7,7 +7,7 @@ import pytest
 import pytest_bazel
 
 from agentplane.app.testing.client import Client
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.deployment.stack import Stack
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.harness_pair import run_harness_pair_in_own_sandboxes

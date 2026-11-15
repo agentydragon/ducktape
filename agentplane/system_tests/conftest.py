@@ -13,7 +13,7 @@ import pytest
 from opentelemetry import trace
 
 from agentplane.proto import session_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver import scripted_upstream
 from agentplane.system_tests.driver.case_batch import CASE_RESULT
 from agentplane.system_tests.driver.cluster import Cluster

@@ -5,7 +5,7 @@
 Explicit `ResumeEnvironment` handling lives in
 [`environments/internal/resume`](../internal/resume/manager.go). Its manager accepts no budget and
 cannot issue automatic wake requests. Dispatcher constructs
-[`dispatcher/wake.Manager`](../../runner_gateway/dispatcher/wake/manager.go), whose constructor
+[`dispatcher/wake.Manager`](../../session_dispatcher/dispatcher/wake/manager.go), whose constructor
 requires the shared PostgreSQL wake budget and accepts only automatic-wake grants.
 
 Both owners use `lifecycle.Policy` for uncached authorization, read-only projections and the same

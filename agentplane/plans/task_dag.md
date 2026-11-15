@@ -191,7 +191,7 @@ States as of 14:55 UTC.
 | Retire bearer admission (auth stage 5)     | 2026-11-15             | `PRIVILEGED_BACKEND_AUTH_DESIGN` | Receiver code merged for every receiver, History last (#16728, 14:35 UTC); retired keys omitted and fields deleted for Policy (#16718), Gateway (#16722) and the sampler (#16729); the other receivers' key and field removal, the shared TokenReview code and its RBAC follow |
 | Runtime proxy and Executor to Environments | 2026-11-15             | `RUNTIME_PROXY_TO_ENVIRONMENTS`  | Cutover and credential/permission cleanup (#16768, #16775) rolled and verified; retired settings decoder deletion completes the track                                                                                                                                          |
 | Runtime proxy caller audit                 | 2026-11-15             | `RUNTIME_PROXY_CALLER_AUDIT`     | Proposal merged (#16643); its dispositions await operator review, and the migrations it proposes are not released                                                                                                                                                              |
-| Sessions binary directory                  | 2026-11-15 11:35       | `SESSIONS_BINARY_DIRECTORY`      | Starts after the Runtime proxy move's exit                                                                                                                                                                                                                                     |
+| Sessions binary directory                  | 2026-11-15 11:35       | `SESSIONS_BINARY_DIRECTORY`      | In flight after verified proxy cleanup; source moves to session_dispatcher/ with assembly in internal/app                                                                                                                                                                      |
 
 Finished and deleted since the 2026-11-14 ledger: the pre-cutover leftovers, any-replica Gateway
 routing and its cleanup (section 12), auth stages 1 to 4, one TLS listener per service (#16631, #16632, #16661), the stage 2 Go layout fixes and runner-era Go names, the coherence sweep, the app and CLI local extractions (#16717, #16720, #16725),
@@ -323,7 +323,7 @@ flowchart LR
     NOTIFICATION_NOTICE_METADATA --> NOTIFICATION_PRESENTATION
 ```
 
-Details: [command admission](../runner_gateway/dispatcher/README.md#contract); later
+Details: [command admission](../session_dispatcher/dispatcher/README.md#contract); later
 [notification presentation and input metadata](notification_presentation.md).
 
 Future ownership and wake-policy questions are recorded in the
@@ -1214,7 +1214,7 @@ work; no identity service or broker is selected.
 **Decision, unscheduled; operator requested future design work, 2026-10-28 PDT.**
 The newer [Session/environment model and discussion](session_environment_model.md) records selected
 direction and remaining decisions; current opening and recovery behavior is in the
-[Dispatcher SPEC](../runner_gateway/dispatcher/SPEC.md), [Runtime SPEC](../env/runtime/SPEC.md) and
+[Dispatcher SPEC](../session_dispatcher/dispatcher/SPEC.md), [Runtime SPEC](../env/runtime/SPEC.md) and
 [central sampler SPEC](../central_sampler/SPEC.md). The earlier descriptions below are context where superseded by that direction.
 The [current component boundaries](session_runtime_model.md#role-boundaries-and-routing) inform this
 broader object/API decision without making it a prerequisite for selected execution or delegation work.
@@ -1224,13 +1224,13 @@ Represent Sandbox-local native harnesses/state and central Sessions whose option
 execution in one shared domain vocabulary. A native harness's required local environment is a
 capability constraint of that harness, not a universal Session attachment requirement. Keep
 Session identity, durable harness stores, running hosts, placement and execution attachments distinct.
-The landed [SessionSpec placement contract](../runner_gateway/dispatcher/SPEC.md#sessionspec-placement-cutover)
+The landed [SessionSpec placement contract](../session_dispatcher/dispatcher/SPEC.md#sessionspec-placement-cutover)
 makes the owner variant explicit: `environment_hosted` carries the exact native environment and
 harness, and `central_sampler_v1` carries one exact required executor environment. #14314 retains
 the Dispatcher Session row when that required Environment is deleted, but central V1 still has no
 optional attachments, environment-free admission or alternate executor. The principal and
 harness-store contracts remain unresolved.
-The [Dispatcher outcome contract](../runner_gateway/dispatcher/SPEC.md#native-opening-outcomes-and-dependent-commands)
+The [Dispatcher outcome contract](../session_dispatcher/dispatcher/SPEC.md#native-opening-outcomes-and-dependent-commands)
 also leaves unconfirmed native owner admission explicit: `UNKNOWN` outcomes hold dependent queued
 commands without forwarding or waking, and those commands remain cancellable. Automatic resolution
 is not provided; decide whether an authorized caller or operator can resolve the hold from durable
@@ -1672,7 +1672,7 @@ cost. **Question for review:** is the payoff lighter tests (O1 and O2), or envir
 Kubernetes as a product capability (O3), which changes the
 [principles](../docs/principles.md)' Kubernetes baseline? Implementation waits on the answer;
 `PRIVILEGED_BACKEND_AUTH_DESIGN` remains independently decidable. The selected Gateway replica
-contract is the [replica ownership decision](../runner_gateway/README.md#replica-ownership-decision); it does not decide the broader Kubernetes direction.
+contract is the [replica ownership decision](../session_dispatcher/README.md#replica-ownership-decision); it does not decide the broader Kubernetes direction.
 
 ### `BUILD_BOX_BAZEL` — build Sandboxes can run Bazel
 
@@ -2390,7 +2390,7 @@ after the History representation decision, over journal records?
 ## 12. The Runner Gateway serves the runner's own service
 
 Finished 2026-11-15: any-replica Gateway routing landed (#16365, #16388, #16390) and its contract is
-the [replica ownership decision](../runner_gateway/README.md#replica-ownership-decision); Runtime
+the [replica ownership decision](../session_dispatcher/README.md#replica-ownership-decision); Runtime
 calls now reach Environments ([section 17](#17-two-binaries-and-the-go-layout)). The number stays so
 later sections keep their anchors.
 
@@ -3043,7 +3043,7 @@ boundary, persisted exact UID, rechecks before wake and forwarding, and no repla
 effect. The operator selected a Dispatcher Session record as a prerequisite for every
 Session-targeted command, including privileged calls and interrupts. Dispatcher now enforces
 that prerequisite for queued commands and interrupts; the Gateway limits direct Runtime Session mutations
-to the combined Gateway/Dispatcher workload. See the [Dispatcher contract](../runner_gateway/dispatcher/SPEC.md#method-scope)
+to the combined Gateway/Dispatcher workload. See the [Dispatcher contract](../session_dispatcher/dispatcher/SPEC.md#method-scope)
 and [Gateway proxy contract](../environments/runtimeproxy/SPEC.md). On deletion, fail commands known not to
 have left Dispatcher, report unknown when in-flight admission or effects cannot be established, and never
 redirect accepted work. `SESSION_DELETION_FENCE` tracks the remaining bounded outcome-evidence
@@ -3780,9 +3780,9 @@ Dispatch reviewed migrations separately, rather than coupling them to package-di
 - **`CENTRAL_SESSION_CREATION_CONTRACT` ([#15436](https://github.com/agentydragon/ducktape/pull/15436),
   recommendation A):** `central_sampler_v1` is retired in the cutover that adds the `central_sampler`
   placement: `CentralSamplerV1Placement` in `proto/session.proto`,
-  `runner_gateway/dispatcher/internal/placement/placement.go`'s `CentralSampler`,
+  `session_dispatcher/dispatcher/internal/placement/placement.go`'s `CentralSampler`,
   the `central_sampler_v1` cases in `app/testing/client.py` and
-  `runner_gateway/dispatcher/testing_client.py`, `central_sampler/testing.py` and
+  `session_dispatcher/dispatcher/testing_client.py`, `central_sampler/testing.py` and
   `system_tests/scenarios/central_sampler.py`; each V1 row becomes a `central_sampler` Session with
   one `executor` attachment. The plan file `central_session_contract.md` burns down with its three decisions.
 - **`SESSION_IDENTITY_AUTHZ`:** `notification_service/internal/rpc/messages.go` still authorizes
@@ -3887,7 +3887,7 @@ flowchart LR
     PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: stage 5, section 15]
     RUNTIME_PROXY_CALLER_AUDIT[Review: Runtime-proxy caller dispositions]
     RUNTIME_PROXY_TO_ENVIRONMENTS[Done: Runtime proxy and Executor into Environments]
-    SESSIONS_BINARY_DIRECTORY[Released after the proxy cutover: the rest moves to session_dispatcher/]
+    SESSIONS_BINARY_DIRECTORY[In flight: Sessions source moves to session_dispatcher/]
     ENVIRONMENT_KEEP_ALIVE_HOLDS[Proposed design: keep-alive holds]
     GO_LOCAL_EXTRACTIONS[Unscheduled: stage 4 local extractions]
     RUNNER_GATEWAY_RENAME[Unscheduled: deployed names, section 15]
@@ -3911,7 +3911,7 @@ home. Deployed names and wire names stay unchanged. The operator
 also released the Runtime diagnostics API and App cutover after this transport migration; Session
 activity and Sandbox-independent Notifications remain their separately tracked contracts.
 **Exit:** Runtime calls reach Environments
-through its Service, and nothing in `runner_gateway/` calls a Runtime.
+through its Service, and nothing in `session_dispatcher/` calls a Runtime.
 
 ### `RUNTIME_PROXY_CALLER_AUDIT` — route callers through their owning APIs
 
@@ -3931,13 +3931,17 @@ move, authorize new grants or require a Sandbox/single attachment on a Session.
 
 ### `SESSIONS_BINARY_DIRECTORY` — what remains becomes the Sessions binary
 
-**Released by operator, 2026-11-15 11:35 UTC ("do dispatch … session binary directory"), to start
-after `RUNTIME_PROXY_TO_ENVIRONMENTS`'s exit so its files move once.** After EnvironmentService and
-the Runtime proxy leave, move the rest
-of `runner_gateway/` (the Dispatcher, its migrations, the Sandbox inventory behind its catalog, the
-command and its test support) to `agentplane/session_dispatcher/`, and put configuration parsing and
-server composition in an internal app owner (`runner-gateway-app`). A pure move: the generated
-manifests must not change.
+**In flight; released by operator, 2026-11-15 11:35 UTC.** The Runtime proxy cleanup's
+config/permission rollout was verified on staging at 23:33 UTC, satisfying its exit. Move the
+Dispatcher, migrations, Sandbox inventory, Python client/test support and command directly to
+`agentplane/session_dispatcher/`, with config and server composition in `internal/app/` and a
+minimal `cmd/` entry. Runtime-era private Go names and source filenames change with the move;
+proto wire names, deployed names, migration history and settings keys do not. Update generated
+imports, Bazel/image publication labels, runfile paths and docs together. Generated manifests must
+be byte-identical. No Session shape, storage ownership, auth, wake or delivery contract change.
+
+**Exit:** moved command and tests pass; manifest byte comparison passes; image publication follows
+`//agentplane/session_dispatcher:image` under the unchanged `agentplane-runner-gateway` image name.
 
 ### `ENVIRONMENT_KEEP_ALIVE_HOLDS` — keep a Sandbox awake until a time
 

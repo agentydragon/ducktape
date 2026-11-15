@@ -24,7 +24,7 @@ from agentplane.mcp_edge.api.connection import connection_service_pb2
 from agentplane.net.peertls.config import MCP_EDGE_URI
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.proto import identity_pb2, session_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.deployment import mcp_servers
 from agentplane.system_tests.driver.action_cli import submission
 from agentplane.system_tests.driver.action_requests import (

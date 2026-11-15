@@ -32,7 +32,7 @@ from agentplane.app.testing.client import Client
 from agentplane.egress.api.admin.egress_admin_pb2 import Decision
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import session_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.deployment import runtime_grant
 from agentplane.system_tests.driver.agent import Agent
 from agentplane.system_tests.driver.cluster import Cluster

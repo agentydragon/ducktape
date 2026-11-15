@@ -27,7 +27,7 @@ from pydantic import BaseModel
 from agentplane.app.testing.client import Client
 from agentplane.notification_service.api.notifications import notifications_pb2
 from agentplane.proto import session_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.deployment import send_grant
 from agentplane.system_tests.driver.agent import Agent
 from agentplane.system_tests.driver.cluster import Cluster

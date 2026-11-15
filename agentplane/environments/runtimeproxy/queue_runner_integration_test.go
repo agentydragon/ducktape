@@ -16,7 +16,7 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"

@@ -12,8 +12,8 @@ from google.protobuf.message import Message
 
 from agentplane.env.runtime.control import environment_runtime_pb2_grpc
 from agentplane.proto import identity_pb2, session_pb2
-from agentplane.runner_gateway import client as gateway_client
-from agentplane.runner_gateway.api import (
+from agentplane.session_dispatcher import client as gateway_client
+from agentplane.session_dispatcher.api import (
     INCARNATION_UID_HEADER,
     SANDBOX_HEADER,
     SANDBOX_NAMESPACE_HEADER,
@@ -21,7 +21,7 @@ from agentplane.runner_gateway.api import (
     SANDBOX_OWNER_NAMESPACE_HEADER,
     SANDBOX_UID_HEADER,
 )
-from agentplane.runner_gateway.client import SandboxControlClient
+from agentplane.session_dispatcher.client import SandboxControlClient
 
 
 async def test_runner_proxy_omits_bearer_and_keeps_sandbox_identity(monkeypatch: pytest.MonkeyPatch) -> None:

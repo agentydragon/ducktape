@@ -1,0 +1,224 @@
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load(
+    "//agentplane/env/e2e/testing:exec_properties.bzl",
+    "NATIVE_RUNNER_DOCKER_ENV",
+    "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES",
+)
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+# This target intentionally loads neutral pytest plugins instead of the App-backed package conftest.
+# gazelle:exclude test_gateway_continuity.py
+
+pkg_tar(
+    name = "binary_layer",
+    srcs = ["//agentplane/session_dispatcher/cmd:runner-gateway"],
+    package_dir = "/usr/local/bin",
+)
+
+oci_image(
+    name = "image",
+    base = "@distroless_static_debian13_linux_amd64",
+    entrypoint = ["/usr/local/bin/runner-gateway"],
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [
+        ":binary_layer",
+        "//agentplane/grpc/healthprobe:binary_layer",
+    ],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+    workdir = "/",
+)
+
+py_library(
+    name = "api",
+    srcs = ["api.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
+)
+
+py_library(
+    name = "client",
+    srcs = ["client.py"],
+    deps = [
+        ":api",
+        "//agentplane/env/runtime/control:environment_runtime_pb2_grpc",
+        "//agentplane/grpc:calls",
+        "//agentplane/proto:identity_pb2",
+        "//agentplane/proto:session_pb2",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":client",
+        "//agentplane/app/testing:gateway_fixtures",
+        "//agentplane/app/testing:runtime_fixtures",
+        "//agentplane/env/e2e/testing:process",
+        "//agentplane/history_service/testing:fixtures",
+        "//agentplane/testing:kubernetes_apiserver_fixtures",
+        "//util/testing:postgres_fixtures",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_client",
+    size = "medium",
+    srcs = ["test_client.py"],
+    data = [
+        "@agentplane_codex_cli_linux_x64//:files",  # keep: runner config selects the pinned native harness
+        "@claude_code_cli_linux_x64//:claude",  # keep: runner config selects the pinned native harness
+    ],
+    env = NATIVE_RUNNER_DOCKER_ENV,
+    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
+    requires_docker = True,
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":client",
+        ":conftest",
+        "//:conftest",
+        "//agentplane/env/e2e/testing:process",
+        "//agentplane/grpc:calls",
+        "//agentplane/proto:identity_pb2",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_grpc_native",
+    size = "large",
+    srcs = ["test_grpc_native.py"],
+    data = [
+        "@agentplane_codex_cli_linux_x64//:files",  # keep: both pinned native harnesses
+        "@claude_code_cli_linux_x64//:claude",  # keep: both pinned native harnesses
+    ],
+    env = NATIVE_RUNNER_DOCKER_ENV,
+    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
+    requires_docker = True,
+    target_compatible_with = [
+        # keep: pinned native harness platforms
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":client",
+        ":conftest",
+        "//:conftest",
+        "//agentplane/env/e2e/testing:config",
+        "//agentplane/env/e2e/testing:events",
+        "//agentplane/env/e2e/testing:launches",
+        "//agentplane/env/e2e/testing:process",
+        "//agentplane/env/runtime/control:environment_runtime_pb2",
+        "//agentplane/env/runtime/control:environment_runtime_pb2_grpc",
+        "//agentplane/env/runtime/execution:executor_pb2",
+        "//agentplane/env/runtime/execution:executor_pb2_grpc",
+        "//agentplane/grpc:calls",
+        "//agentplane/history_service/testing:go_service",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:identity_pb2",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "//agentplane/session_dispatcher/dispatcher:testing_client",
+        "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb2",
+        "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb2_grpc",
+        "//agentplane/session_dispatcher/testing:gateway_process",
+        "//agentplane/testing:scripted_model",
+        "@pypi//grpcio",
+        "@pypi//more_itertools",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+    ],
+)
+
+# keep: excluded so the Backend continuity test can omit the App-backed package conftest.
+py_test(
+    name = "test_gateway_continuity",
+    size = "large",
+    srcs = ["test_gateway_continuity.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],
+    env = NATIVE_RUNNER_DOCKER_ENV,
+    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
+    requires_docker = True,
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":client",
+        "//:conftest",  # keep: root pytest config without the package conftest
+        "//agentplane:subjects",
+        "//agentplane/env:config",
+        "//agentplane/env/e2e/testing:config",
+        "//agentplane/env/e2e/testing:fixtures",
+        "//agentplane/env/e2e/testing:gateway",
+        "//agentplane/env/e2e/testing:history_tunnel",
+        "//agentplane/env/e2e/testing:process",
+        "//agentplane/env/runtime/execution:executor_pb2",
+        "//agentplane/env/runtime/execution:executor_pb2_grpc",
+        "//agentplane/env/runtime/execution/testing:codex_exec_server_container",
+        "//agentplane/environments/testing:process",
+        "//agentplane/grpc:calls",
+        "//agentplane/history_service/testing:fixtures",
+        "//agentplane/history_service/testing:go_service",
+        "//agentplane/net/peertls:config",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb2",
+        "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb2_grpc",
+        "//agentplane/session_dispatcher/testing:gateway_process",
+        "//agentplane/testing:kubernetes_apiserver",
+        "//agentplane/testing:native_gateway_fixtures",
+        "//agentplane/testing:tls",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "settings",
+    srcs = ["settings.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
+    deps = [
+        "//agentplane/identity/auth:listener",
+        "//agentplane/net/peertls:config",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_settings",
+    srcs = ["test_settings.py"],
+    deps = [
+        ":conftest",
+        ":settings",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

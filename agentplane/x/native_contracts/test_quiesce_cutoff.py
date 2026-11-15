@@ -25,11 +25,11 @@ from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.grpc.calls import RefusedError, ServiceError
 from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.proto import event_log_pb2, event_pb2, session_pb2
-from agentplane.runner_gateway.client import SandboxControlClient
-from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, accepted_session, admitted
-from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
+from agentplane.session_dispatcher.client import SandboxControlClient
+from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient, accepted_session, admitted
+from agentplane.session_dispatcher.testing.gateway_process import GatewayProcess
 from agentplane.testing.scripted_model import ScriptedModel, Text
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 

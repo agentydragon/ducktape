@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from agentplane.app.testing.client import Client
 from agentplane.environments.v1 import environment_service_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver import scenario
 from agentplane.system_tests.driver.cleanup import close_resources, resource_scope
 from agentplane.system_tests.driver.cluster import Cluster

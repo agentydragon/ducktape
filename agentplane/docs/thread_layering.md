@@ -258,8 +258,8 @@ commands to Dispatcher and reads queued/delivering/admitted results. Dispatcher 
 suspended Sandbox, waits for `Ready`, and delivers through the Runner Gateway proxy. A queued
 `Dispatch`, a runner `CommandAdmitted`, a History observation and a native effect remain separate
 facts. The app has no second command queue; the Gateway has no independent command queue.
-See the [Runner Gateway](../runner_gateway/README.md) and
-[Session Dispatcher](../runner_gateway/dispatcher/README.md) for current service ownership and callers.
+See the [Runner Gateway](../session_dispatcher/README.md) and
+[Session Dispatcher](../session_dispatcher/dispatcher/README.md) for current service ownership and callers.
 
 ### Message sketches used below
 

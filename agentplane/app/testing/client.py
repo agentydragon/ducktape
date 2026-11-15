@@ -28,9 +28,9 @@ from agentplane.environments.v1 import environment_service_pb2
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.api.history import history_service_pb2
 from agentplane.proto import identity_pb2, session_pb2
-from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
+from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 

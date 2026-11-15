@@ -44,7 +44,7 @@ py_library(
         "//agentplane/app:__pkg__",
         "//agentplane/env/e2e:__pkg__",
         "//agentplane/history_service/fold:__pkg__",
-        "//agentplane/runner_gateway:__pkg__",
+        "//agentplane/session_dispatcher:__pkg__",
         "//agentplane/testing:__pkg__",
         "//agentplane/x/runner_layering:__pkg__",
     ],

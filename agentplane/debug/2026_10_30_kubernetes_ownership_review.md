@@ -49,7 +49,7 @@ Fix: include the observed UID and choose optimistic version checking where requi
 
 ### F — Dispatcher ownership validation is weaker than Gateway's
 
-`agentplane/runner_gateway/dispatcher/ownership.go:45` checks only owner kind and UID, while Gateway's `gateway/records.go:247` checks API version, kind, name and UID. Dispatcher acquisition also does not reject deletionTimestamp before attempting ownership. Kubernetes UID uniqueness reduces accidental aliasing but does not make malformed owner references a valid ownership contract.
+`agentplane/session_dispatcher/dispatcher/ownership.go:45` checks only owner kind and UID, while Gateway's `gateway/records.go:247` checks API version, kind, name and UID. Dispatcher acquisition also does not reject deletionTimestamp before attempting ownership. Kubernetes UID uniqueness reduces accidental aliasing but does not make malformed owner references a valid ownership contract.
 
 Fix: use explicit complete owner validation and reject terminating coordination objects; retain DB-generation fencing. Test wrong API/name, deleting Lease, and recreated Lease UID.
 

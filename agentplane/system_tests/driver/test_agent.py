@@ -11,8 +11,8 @@ import pytest_bazel
 from agentplane.app.testing.client import Client
 from agentplane.history_service.api.history import history_service_pb2
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, session_pb2
-from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver import agent as agent_module
 from agentplane.system_tests.driver.agent import RUNNER_ANSWERS_SECONDS, Agent, scripted_turn_with_admission_and_history
 from agentplane.testing.scripted_model import ScriptedModel

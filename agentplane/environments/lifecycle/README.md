@@ -2,7 +2,7 @@
 
 Explicit resume belongs to [`environments/internal/resume`](../internal/resume/manager.go).
 Automatic wake execution and its budget contract belong to
-[`runner_gateway/dispatcher/wake`](../../runner_gateway/dispatcher/wake/manager.go). Only the latter
+[`session_dispatcher/dispatcher/wake`](../../session_dispatcher/dispatcher/wake/manager.go). Only the latter
 requires a shared budget and exposes `RequestWake`; explicit resume accepts no budget.
 
 Both use `lifecycle.Policy` for read-only eligibility and the shared guarded-write loop, preserving

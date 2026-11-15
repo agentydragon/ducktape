@@ -25,9 +25,9 @@ from agentplane.egress.api.admin import egress_admin_pb2, egress_admin_pb2_grpc
 from agentplane.grpc.serving import serving
 from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.history_service.testing.history import History
-from agentplane.runner_gateway.testing.gateway_process import GatewayProcess, run_gateway
 from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
 from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
+from agentplane.session_dispatcher.testing.gateway_process import GatewayProcess, run_gateway
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 
 # gazelle:include_dep //agentplane/app:integration_fixtures

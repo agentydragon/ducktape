@@ -1,0 +1,57 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+go_library(
+    name = "migrations",
+    srcs = ["migrations.go"],
+    embedsrcs = glob(["dispatcher/*.sql"]),
+    importpath = "github.com/agentydragon/ducktape/agentplane/session_dispatcher/migrations",
+    visibility = [
+        # Cross-service queue-to-Runtime acceptance moved with the proxy.
+        "//agentplane/environments/runtimeproxy:__pkg__",
+        # The Session-delegation executor's test runs it against a real Dispatcher.
+        "//agentplane/action_service/session_delegation:__pkg__",
+        "//agentplane/session_dispatcher:__subpackages__",
+    ],
+    deps = ["//agentplane/postgres/migrate"],
+)
+
+go_test(
+    name = "upgrade_integration_test",
+    srcs = [
+        "integration_testmain_test.go",
+        "upgrade_integration_test.go",
+    ],
+    embed = [":migrations"],
+    tags = ["requires_docker"],
+    deps = [
+        "//agentplane/testing/postgres",
+        "@com_github_lib_pq//:pq",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = ["//util/testing:postgres_fixtures"],
+)
+
+py_test(
+    name = "test_migrations",
+    size = "medium",
+    srcs = ["test_migrations.py"],
+    data = ["//agentplane/session_dispatcher/cmd:runner-gateway"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/session_dispatcher:conftest",
+        "//util:db_url",
+        "//util/testing:postgres",
+        "@pypi//psycopg",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+        "@rules_python//python/runfiles",
+    ],
+)

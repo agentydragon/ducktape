@@ -18,8 +18,8 @@ from agentplane.env.e2e.testing.model_config import model_config
 from agentplane.env.e2e.testing.process_fixtures import RunnerProcess, pid1_container
 from agentplane.history_service.testing.fixtures import service_database_template, service_history_db_url
 from agentplane.history_service.testing.go_service import GoHistoryService, go_history_service
-from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
+from agentplane.session_dispatcher.testing.gateway_process import GatewayProcess
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.native_gateway_fixtures import (
     api_server,

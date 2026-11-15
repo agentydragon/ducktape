@@ -33,7 +33,7 @@ require (
 // Direct dependencies for agentplane/environments
 require kubevirt.io/api v1.8.2
 
-// Direct dependencies for agentplane/runner_gateway
+// Direct dependencies for agentplane/session_dispatcher
 require github.com/go-logr/logr v1.4.4
 
 // Direct dependencies for agentplane/env runtime lifecycle orchestration

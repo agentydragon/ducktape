@@ -12,8 +12,8 @@ from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.session_events import SessionEventPages
 from agentplane.proto import session_pb2
-from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, accepted_session
+from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient, accepted_session
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.driver.turn import TURN_SECONDS, Turn, TurnCollector
 from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text

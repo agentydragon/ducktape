@@ -412,7 +412,7 @@ Held until one is chosen:
   Gateway (`dispatch`, `session`, `wake_attempt`, `sandbox_ownership`). Session records are
   addressed by Session ID, retain their exact required Sandbox placement, and survive that
   Sandbox's deletion marked `required_environment=DELETED`; dispatch rows do not
-  ([Dispatcher SPEC](../runner_gateway/dispatcher/SPEC.md#deletion-admission-fence)). Independent
+  ([Dispatcher SPEC](../session_dispatcher/dispatcher/SPEC.md#deletion-admission-fence)). Independent
   Session-lifetime work is in the [Session/environment plan](session_environment_model.md).
 - **Inbox entries, peer messages, notices, subscriptions.** The Notification database; entries
   survive their inbox's retirement when the Sandbox is gone. The service split stays unscheduled;

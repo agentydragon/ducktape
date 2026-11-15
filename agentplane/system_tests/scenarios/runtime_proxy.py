@@ -9,7 +9,7 @@ from agentplane.env.runtime.control import environment_runtime_pb2_grpc
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.grpc.calls import dial
 from agentplane.proto import session_pb2
-from agentplane.runner_gateway.api import (
+from agentplane.session_dispatcher.api import (
     INCARNATION_UID_HEADER,
     SANDBOX_HEADER,
     SANDBOX_NAMESPACE_HEADER,

@@ -22,9 +22,9 @@ staging traffic or a count of live clients.
 
 The [Runtime protocol](../env/runtime/control/environment_runtime.proto) and
 [Executor protocol](../env/runtime/execution/executor.proto) are distinct services on the Gateway's
-shared listener. [The method gate](../runner_gateway/internal/gateway/gateway.go#L118) admits no
+shared listener. [The method gate](../session_dispatcher/internal/gateway/gateway.go#L118) admits no
 public `WatchState` method and rejects delegation on proxy and Executor calls. Its four service
-roles are independent. The [deployed composition](../../cluster/cdk8s/agentplane/runner_gateway_workload.py#L330)
+roles are independent. The [deployed composition](../../cluster/cdk8s/agentplane/session_dispatcher_workload.py#L330)
 sets:
 
 | Role                               | Exact client SVID                                              | Method grant                                                                                                                                              |
@@ -116,11 +116,11 @@ new Environments hop or Notification Runtime grant is needed for the recommended
 
 ### Sessions/Dispatcher: privileged native delivery
 
-[`ProxyRunner`](../runner_gateway/dispatcher/runner_client.go) calls `CreateSession` and the four
+[`ProxyRunner`](../session_dispatcher/dispatcher/runtime_client.go) calls `CreateSession` and the four
 command RPCs under the Sessions SVID after durable Dispatcher admission. Creation forwards the
 recorded execution Identity; commands carry the retained command ID. The client replaces outgoing
 metadata, so an original caller's credentials cannot leak into this component-only transport.
-[Central placement routing](../runner_gateway/dispatcher/central_runner.go) calls the sampler's
+[Central placement routing](../session_dispatcher/dispatcher/central_delivery.go) calls the sampler's
 own API instead; reuse of Runtime protobuf messages there is not a direct Runtime connection.
 
 **Disposition:** retain these five methods as the narrow Sessions-to-Environments backend contract.
@@ -168,13 +168,13 @@ Only two production owners construct direct Runtime control connections:
   `WatchState(observe_only=true)` to the accepted workload. It binds the incarnation and feeds the
   leader's in-memory facts for readiness, bootstrap, idle and quiesce decisions. Retain this private
   infrastructure channel; EnvironmentService RPC readiness never waits for leadership or a Runtime.
-- [Each Gateway replica's observer](../runner_gateway/internal/gateway/runner_observer.go) sends
+- [Each Gateway replica's observer](../session_dispatcher/internal/gateway/runner_observer.go) sends
   `WatchState` and holds the direct connection used by proxy/Executor forwarding. Move this owner
   into Environments with the proxy. Do not reintroduce Runtime-dials-Gateway, connection ownership
   Leases or epochs. Watch loss closes that replica's local route, not another replica's authority
   or proof that already admitted work stopped.
 
-[The Python proxy client](../runner_gateway/client.py) is used by fixtures/system tests, including
+[The Python proxy client](../session_dispatcher/client.py) is used by fixtures/system tests, including
 [the central-sampler driver](../system_tests/driver/central_sampler.py); it is not another deployed
 service. System deletion/admission-reply-loss scenarios and Go acceptance fixtures also construct
 Runtime peers, as do the [direct Runtime e2e driver](../env/e2e/testing/driver.py)

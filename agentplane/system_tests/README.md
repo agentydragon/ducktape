@@ -184,7 +184,7 @@ and Notification submissions share a wake generation ([`dispatcher.py`](scenario
 Shared Session polling lives in [`dispatcher_operations.py`](driver/dispatcher_operations.py), and
 runner mount inspection, archives and cleanup evidence capture live in
 [`sandbox_diagnostics.py`](driver/sandbox_diagnostics.py).
-The [Dispatcher guide](../runner_gateway/dispatcher/README.md) owns the command delivery contract.
+The [Dispatcher guide](../session_dispatcher/dispatcher/README.md) owns the command delivery contract.
 
 ## Phase tracing
 

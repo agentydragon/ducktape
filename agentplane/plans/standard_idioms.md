@@ -22,7 +22,7 @@ Blocked on the [per-Session delivery lease build](task_dag.md#dispatcher_persist
 selected 2026-11-15 and not released.
 Dispatcher already runs delivery through a rate-limited queue keyed by Session ID. Its reconciliation
 still turns Sandbox and database changes into unkeyed signals and, on each signal and every 10 s,
-lists the Sandbox inventory and pending work (`runner_gateway/dispatcher/delivery.go`), detecting
+lists the Sandbox inventory and pending work (`session_dispatcher/dispatcher/delivery.go`), detecting
 deletions by diffing UIDs. Replace those full scans with appropriately keyed notifications and
 reconciliation under the reviewed ownership and recovery contract; retain safe recovery after missed
 notifications and Sandbox deletion.

@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from agentplane.app.testing.client import Client
 from agentplane.proto import session_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.agent import Agent
 from agentplane.system_tests.driver.session_setup import run_setup
 from agentplane.system_tests.vm.configuration import CPU_QUOTA_PERIOD_MICROS, RESOURCES

@@ -16,9 +16,9 @@ from agentplane.env.e2e.testing.process_fixtures import RunnerProcess
 from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.proto import event_log_pb2, event_pb2, session_pb2
-from agentplane.runner_gateway.client import SandboxControlClient
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, admitted
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
+from agentplane.session_dispatcher.client import SandboxControlClient
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient, admitted
 from agentplane.system_tests.driver.session import Session
 from agentplane.testing.scripted_model import ScriptedModel, Text
 
