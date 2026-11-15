@@ -6,8 +6,8 @@ import asyncio
 import os
 import subprocess
 import tempfile
-from collections.abc import AsyncIterator, Sequence
-from contextlib import ExitStack, asynccontextmanager, suppress
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from contextlib import AsyncExitStack, ExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
@@ -23,7 +23,7 @@ from agentplane.proto.identity_pb2 import SandboxDestination
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.settings import Settings
 from agentplane.subjects import ServiceAccountRef
-from agentplane.testing.go_process import go_process
+from agentplane.testing.go_process import GoProcess, go_process
 from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, make_ca, write_ca
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.db_url import render_postgresql_url
@@ -69,6 +69,8 @@ class GatewayProcess:
     environment_runtime_ca_file: Path
     dispatcher_audience: str
     gateway_audience: str
+    _restart: Callable[[Callable[[], Awaitable[None]] | None], Awaitable[GoProcess]]
+    _close_listener: Callable[[], None]
 
     @property
     def client_tls(self) -> runtime_transport.ClientTLS:
@@ -135,6 +137,7 @@ class GatewayProcess:
             await asyncio.sleep(min(0.05, remaining))
 
     async def stop(self) -> None:
+        self._close_listener()
         if self.process.returncode is None:
             with suppress(ProcessLookupError):
                 self.process.terminate()
@@ -146,6 +149,12 @@ class GatewayProcess:
                 self.process.kill()
             await self.process.wait()
 
+    async def restart(self, *, while_stopped: Callable[[], Awaitable[None]] | None = None) -> None:
+        """Replace the process while retaining its listener, database and deployment settings."""
+        started = await self._restart(while_stopped)
+        self.process = started.process
+        self.log_path = started.stderr
+
 
 @asynccontextmanager
 async def run_gateway(
@@ -156,6 +165,7 @@ async def run_gateway(
     dispatcher_callers: Sequence[ServiceAccountRef],
     gateway_callers: Sequence[ServiceAccountRef],
     workload: ServiceAccountRef,
+    pod_name: str | None = None,
     executor_callers: Sequence[ServiceAccountRef] = (),
     environment_readers: Sequence[ServiceAccountRef] = (),
     environment_managers: Sequence[ServiceAccountRef] = (),
@@ -163,6 +173,7 @@ async def run_gateway(
     dispatcher_audience: str,
     gateway_audience: str,
     runner_proxy_token_file: Path,
+    environment_runtime_ca: CertificateAuthority | None = None,
 ) -> AsyncIterator[GatewayProcess]:
     """Migrate the supplied database, then run the full Gateway on deployment-shaped settings.
 
@@ -182,7 +193,8 @@ async def run_gateway(
         rpc_listener = listeners.enter_context(listen_tcp())
         with tempfile.TemporaryDirectory() as settings_dir:
             settings_directory = Path(settings_dir)
-            environment_runtime_ca = make_ca("Environment Runtime transport test CA")
+            if environment_runtime_ca is None:
+                environment_runtime_ca = make_ca("Environment Runtime transport test CA")
             environment_runtime_ca_file, _ = write_ca(
                 environment_runtime_ca, settings_directory, "environment-runtime-ca"
             )
@@ -239,25 +251,43 @@ async def run_gateway(
                 **os.environ,
                 Settings.config_file_env: str(settings_path),
                 Settings.dispatcher_database_url_env: _wire_database_url(database_url),
-                Settings.pod_name_env: workload.name,
+                Settings.pod_name_env: pod_name or workload.name,
             }
             credentials = grpc.ssl_channel_credentials(root_certificates=environment_runtime_ca_file.read_bytes())
-            async with go_process(
-                binary,
-                env=environment,
-                stderr=log_path,
-                health_port=rpc_listener.port,
-                grace_s=10,
-                pass_fds=(rpc_listener.socket.fileno(),),
-                health_credentials=credentials,
-            ) as started:
-                rpc_listener.socket.close()
-                yield GatewayProcess(
+
+            def process_context(generation: int):
+                generation_log = log_path.with_name(f"{log_path.stem}-{generation}{log_path.suffix}")
+                return go_process(
+                    binary,
+                    env=environment,
+                    stderr=generation_log,
+                    health_port=rpc_listener.port,
+                    grace_s=10,
+                    pass_fds=(rpc_listener.socket.fileno(),),
+                    health_credentials=credentials,
+                )
+
+            generation = 0
+            async with AsyncExitStack() as process_stack:
+                started = await process_stack.enter_async_context(process_context(generation))
+
+                async def restart_process(while_stopped: Callable[[], Awaitable[None]] | None) -> GoProcess:
+                    nonlocal generation
+                    await process_stack.aclose()
+                    if while_stopped is not None:
+                        await while_stopped()
+                    generation += 1
+                    return await process_stack.enter_async_context(process_context(generation))
+
+                gateway = GatewayProcess(
                     process=started.process,
                     target=f"localhost:{rpc_listener.port}",
-                    log_path=log_path,
+                    log_path=started.stderr,
                     environment_runtime_ca=environment_runtime_ca,
                     environment_runtime_ca_file=environment_runtime_ca_file,
                     dispatcher_audience=dispatcher_audience,
                     gateway_audience=gateway_audience,
+                    _restart=restart_process,
+                    _close_listener=rpc_listener.socket.close,
                 )
+                yield gateway

@@ -10,6 +10,9 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
+# This target intentionally loads neutral pytest plugins instead of the App-backed package conftest.
+# gazelle:exclude test_gateway_continuity.py
+
 pkg_tar(
     name = "binary_layer",
     srcs = [":runner-gateway"],
@@ -137,6 +140,49 @@ py_test(
         "//agentplane/testing:scripted_model",
         "@pypi//grpcio",
         "@pypi//more_itertools",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+    ],
+)
+
+# keep: excluded so the Backend continuity test can omit the App-backed package conftest.
+py_test(
+    name = "test_gateway_continuity",
+    size = "large",
+    srcs = ["test_gateway_continuity.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],
+    env = NATIVE_RUNNER_DOCKER_ENV,
+    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
+    requires_docker = True,
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":client",
+        "//:conftest",  # keep: root pytest config without the package conftest
+        "//agentplane:subjects",
+        "//agentplane/env:config",
+        "//agentplane/env/e2e/testing:config",
+        "//agentplane/env/e2e/testing:fixtures",
+        "//agentplane/env/e2e/testing:gateway",
+        "//agentplane/env/e2e/testing:history_tunnel",
+        "//agentplane/env/e2e/testing:process",
+        "//agentplane/env/runtime/execution:executor_pb2",
+        "//agentplane/env/runtime/execution:executor_pb2_grpc",
+        "//agentplane/env/runtime/execution/testing:codex_exec_server_container",
+        "//agentplane/history_service/testing:fixtures",
+        "//agentplane/history_service/testing:go_service",
+        "//agentplane/net/peertls:config",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/testing:gateway_process",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "//agentplane/testing:kubernetes_apiserver",
+        "//agentplane/testing:native_gateway_fixtures",
+        "//agentplane/testing:tls",
+        "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
