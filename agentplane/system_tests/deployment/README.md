@@ -122,7 +122,8 @@ bcrypt salt so its hash is repeatable. The rendered JSON is a Bazel build output
 Dex serves on its in-cluster Service name, which the test process resolves through `/etc/hosts`.
 It serves TLS because the app and edge use a plain-http OAuth origin only on loopback: a CA made per
 stack signs its certificate, and the app, Actions and edge trust that CA. In MCP fixtures the app and
-edge use separate loopback HTTP origins, which `stack.py` port-forwards to their Services. The app
+edge use separate loopback HTTP origins, which `mcp_access.py` forwards to their Services after
+they are available. That module also owns the trust bundle and Dex operator login. The app
 login callback and MCP linkage callback use the app origin; the edge's upstream OAuth callback uses
 the edge origin. Each satisfies endpoint validation without allowing insecure non-loopback URLs.
 
