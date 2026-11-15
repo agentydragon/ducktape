@@ -4,10 +4,11 @@
 <https://agentydragon.github.io/ducktape/>. It holds independent, latest-only
 report snapshots. The CI reports are:
 
-- **Agentplane test architecture:** [fast-CI plan, implementation progress and recovery measurements](agentplane-test-architecture/index.html),
-  [15 November fixture ownership and runner experiments](agentplane-test-architecture/index.html#pytest-fixtures),
-  [evidence](agentplane-test-architecture/evidence.json),
-  [source manifest](agentplane-test-architecture/manifest.json). The fixture iteration shares native trust resources and cleanup mechanics; the corrected sequential screen was slower, and AnyIO migration is deferred. [Reviewed fixture measurements](agentplane-test-architecture/pytest-fixtures.json) retain overlay provenance and follow-ups. Historical iteration 16 records 59 passing JUnit cases across seven recovered actions, including overlapping control/candidate coverage and exact Pod21/Services7 logical unions, plus a healthy 20-case repeat. Its seven-target concurrency screen is 23.8% lower once but misses its original compute-time cap. Required-feedback savings and selector promotion remain unqualified. The [five-port dispatch snapshot](agentplane-test-architecture/index.html#port-dispatch) and [curated evidence](agentplane-test-architecture/five-port-dispatch.json) retain the earlier PR and case-matched suite observations; these additions do not refresh historical fleet windows or denominators.
+- **Agentplane test architecture:** [current branch plan](agentplane-test-architecture/index.html),
+  [fixture ownership](agentplane-test-architecture/index.html#pytest-fixtures),
+  [current evidence](agentplane-test-architecture/evidence.json),
+  [source manifest](agentplane-test-architecture/manifest.json). Compares rebased PR #16489 with its pinned devel base: remaining suite partitions, native trust-resource reuse and cleanup integration, current checks and the next substantial latency experiments. Earlier states are linked as immutable records; a 30% complete-feedback improvement is not yet established.
+
 - **Latency:** [standalone HTML](latency/index.html), [evidence](latency/evidence.json),
   [source and observation window](latency/manifest.json). Original backend windows and denominators are retained; iteration 14 adds the shared-guest screen, targeted retry repair and VM-tail phases without a whole-CI saving claim.
 - **Reliability (5–12 November failure history, VM OOM and merged-PR gates):** [standalone HTML](reliability/index.html),
