@@ -115,6 +115,7 @@ async def test_external_connection_cannot_control_an_identity_sandbox(
     if pytestconfig.option.showlocals:
         pytest.fail("Disable pytest local-variable dumps before external OAuth", pytrace=False)
     assert deployment.mcp_fixtures is not None
+    assert deployment.token is not None
 
     cluster = deployment.cluster
     name = "systest-delegation-identity"

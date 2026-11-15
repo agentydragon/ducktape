@@ -112,11 +112,15 @@ async def a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
         assert probe.refs_ok, f"the public repository was not reachable:\n{turn.transcript}"
         assert probe.unlisted_refused, f"{UNLISTED_HOST} was reachable:\n{turn.transcript}"
 
-        refused = await decision_for(cluster, view, UNLISTED_HOST, reader_service_account="app")
+        refused = await decision_for(
+            cluster, await client.get_environment(view.target), UNLISTED_HOST, reader_service_account="app"
+        )
         assert refused.outcome == Decision.OUTCOME_DENY, f"{refused!r}"
         assert refused.reason == Decision.REASON_NO_RULE, f"{refused!r}"
 
-        kubernetes = await decision_for(cluster, view, KUBERNETES_HOST, reader_service_account="app")
+        kubernetes = await decision_for(
+            cluster, await client.get_environment(view.target), KUBERNETES_HOST, reader_service_account="app"
+        )
         assert kubernetes.outcome == Decision.OUTCOME_ALLOW, f"{kubernetes!r}"
         assert kubernetes.policy == policy_set, f"{kubernetes!r}"
         assert kubernetes.substituted, f"kubectl reached the API server without credential substitution: {kubernetes!r}"
@@ -171,7 +175,10 @@ async def the_model_call_itself_goes_through_the_proxy(
     assert "NOTIFICATIONS_GRPC_OK" in notifications_turn.tool_outputs[-1], notifications_turn.transcript
 
     served = await decision_for(
-        cluster, view, f"llm-ingress.{cluster.namespace}.svc.cluster.local", reader_service_account="app"
+        cluster,
+        await client.get_environment(view.target),
+        f"llm-ingress.{cluster.namespace}.svc.cluster.local",
+        reader_service_account="app",
     )
     assert served.outcome == Decision.OUTCOME_ALLOW, f"{served!r}\n{turn.transcript}"
     assert served.method == "CONNECT", f"the model call did not traverse the proxy as CONNECT: {served!r}"
@@ -207,7 +214,7 @@ async def a_policy_granted_after_the_sandbox_is_running_takes_effect(
     command = f"curl -sS -o /dev/null -w '%{{http_code}}\\n' http://{host}:{port}{path}"
 
     await agent.run_shell(model, command)
-    refused = await decision_for(cluster, view, host, reader_service_account="app")
+    refused = await decision_for(cluster, await client.get_environment(view.target), host, reader_service_account="app")
     assert refused.outcome == Decision.OUTCOME_DENY, f"an unbound sandbox was admitted: {refused!r}"
 
     # Exercise a live Kubernetes policy update; app grant authorization has its own
@@ -221,7 +228,9 @@ async def a_policy_granted_after_the_sandbox_is_running_takes_effect(
             with attempt:
                 after = datetime.now(UTC)
                 turn = await agent.run_shell(model, command)
-                admitted = await decision_for(cluster, view, host, reader_service_account="app", after=after)
+                admitted = await decision_for(
+                    cluster, await client.get_environment(view.target), host, reader_service_account="app", after=after
+                )
                 assert admitted.outcome == Decision.OUTCOME_ALLOW, f"{admitted!r}\n{turn.transcript}"
                 assert admitted.policy == runtime_grant.POLICY_SET, f"{admitted!r}"
 
