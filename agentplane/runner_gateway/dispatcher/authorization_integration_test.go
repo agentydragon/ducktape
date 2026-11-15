@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
-	"fmt"
 	"net"
 	"reflect"
 	"sync"
@@ -32,7 +31,6 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
-	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -42,35 +40,6 @@ const (
 	authoritySandboxUID = "00000000-0000-4000-8000-000000009013"
 	pendingSandboxUID   = "00000000-0000-4000-8000-000000009014"
 )
-
-type reviewedToken struct {
-	account auth.Account
-	uid     string
-	pod     bool
-}
-
-type tokenReviewStub map[string]reviewedToken
-
-func (r tokenReviewStub) Create(_ context.Context, request *authenticationv1.TokenReview, _ metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
-	identity, found := r[request.Spec.Token]
-	if !found {
-		return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{}}, nil
-	}
-	extra := map[string]authenticationv1.ExtraValue{}
-	if identity.pod {
-		extra["authentication.kubernetes.io/pod-name"] = authenticationv1.ExtraValue{"dispatcher-backend"}
-		extra["authentication.kubernetes.io/pod-uid"] = authenticationv1.ExtraValue{"dispatcher-backend-uid"}
-	}
-	return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
-		Authenticated: true,
-		Audiences:     request.Spec.Audiences,
-		User: authenticationv1.UserInfo{
-			Username: fmt.Sprintf("system:serviceaccount:%s:%s", identity.account.Namespace, identity.account.Name),
-			UID:      identity.uid,
-			Extra:    extra,
-		},
-	}}, nil
-}
 
 type authorityInventory struct {
 	mu              sync.Mutex
