@@ -26,20 +26,13 @@ from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import Promet
 from pydantic import BaseModel
 from python.runfiles import Runfiles
 from volsync_replicationsource_crds.backube.volsync import (
-    ReplicationSourceSpecRestic,
-    ReplicationSourceSpecResticCacheCapacity,
-    ReplicationSourceSpecResticCopyMethod,
     ReplicationSourceSpecResticMoverAffinity,
     ReplicationSourceSpecResticMoverAffinityNodeAffinity,
     ReplicationSourceSpecResticMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution,
     ReplicationSourceSpecResticMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms,
     ReplicationSourceSpecResticMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
-    ReplicationSourceSpecResticMoverResources,
-    ReplicationSourceSpecResticMoverResourcesLimits,
-    ReplicationSourceSpecResticMoverResourcesRequests,
     ReplicationSourceSpecResticMoverSecurityContext,
     ReplicationSourceSpecResticMoverSecurityContextSeccompProfile,
-    ReplicationSourceSpecResticRetain,
     ReplicationSourceSpecTrigger,
 )
 
@@ -55,6 +48,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
+from cluster.cdk8s.restic_backup import direct_restic_mover, restic_egress
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import HostNetworkServiceRef, Pods, Port
 
@@ -527,25 +521,10 @@ def _backup(scope: Construct) -> None:
         metadata=ApiObjectMetadata(name=_BACKUP, namespace=_NAMESPACE),
         source_pvc=CONFIG_CLAIM,
         trigger=ReplicationSourceSpecTrigger(schedule="17 */6 * * *"),
-        mover=ReplicationSourceSpecRestic(
+        mover=direct_restic_mover(
             repository="home-assistant-config-restic-tenant",
-            copy_method=ReplicationSourceSpecResticCopyMethod.DIRECT,
-            prune_interval_days=7,
-            retain=ReplicationSourceSpecResticRetain(daily=7, weekly=4, monthly=6),
             cache_storage_class_name=_STORAGE_CLASS,
-            cache_access_modes=["ReadWriteOnce"],
-            cache_capacity=ReplicationSourceSpecResticCacheCapacity.from_string("1Gi"),
             mover_pod_labels=_BACKUP_LABELS,
-            mover_resources=ReplicationSourceSpecResticMoverResources(
-                requests={
-                    "cpu": ReplicationSourceSpecResticMoverResourcesRequests.from_string("250m"),
-                    "memory": ReplicationSourceSpecResticMoverResourcesRequests.from_string("512Mi"),
-                },
-                limits={
-                    "cpu": ReplicationSourceSpecResticMoverResourcesLimits.from_string("1"),
-                    "memory": ReplicationSourceSpecResticMoverResourcesLimits.from_string("1Gi"),
-                },
-            ),
             mover_security_context=ReplicationSourceSpecResticMoverSecurityContext(
                 run_as_user=0,
                 run_as_group=0,
@@ -572,44 +551,7 @@ def _backup(scope: Construct) -> None:
         scope,
         "backup-egress",
         metadata=k8s.ObjectMeta(name="config-restic-egress", namespace=_NAMESPACE),
-        spec=k8s.NetworkPolicySpec(
-            pod_selector=k8s.LabelSelector(match_labels=_BACKUP_LABELS),
-            policy_types=["Egress"],
-            egress=[
-                k8s.NetworkPolicyEgressRule(
-                    to=[
-                        k8s.NetworkPolicyPeer(
-                            namespace_selector=k8s.LabelSelector(
-                                match_labels={"kubernetes.io/metadata.name": "kube-system"}
-                            ),
-                            pod_selector=k8s.LabelSelector(match_labels={"k8s-app": "kube-dns"}),
-                        )
-                    ],
-                    ports=[
-                        k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(53), protocol="UDP"),
-                        k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(53), protocol="TCP"),
-                    ],
-                ),
-                k8s.NetworkPolicyEgressRule(
-                    to=[
-                        k8s.NetworkPolicyPeer(
-                            namespace_selector=k8s.LabelSelector(
-                                match_labels={"kubernetes.io/metadata.name": "seaweedfs"}
-                            ),
-                            pod_selector=k8s.LabelSelector(
-                                match_labels={
-                                    "app.kubernetes.io/component": "s3",
-                                    "app.kubernetes.io/instance": "seaweedfs",
-                                    "app.kubernetes.io/managed-by": "seaweedfs-operator",
-                                    "app.kubernetes.io/name": "seaweedfs",
-                                }
-                            ),
-                        )
-                    ],
-                    ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(8333), protocol="TCP")],
-                ),
-            ],
-        ),
+        spec=restic_egress(_BACKUP_LABELS),
     )
 
 

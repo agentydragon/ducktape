@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, Size
-from cdk8s_plus_34 import Cpu, k8s
+from collections.abc import Mapping
+
+from cdk8s import ApiObjectMetadata
+from cdk8s_plus_34 import k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
@@ -28,6 +30,78 @@ from volsync_replicationsource_crds.backube.volsync import (
 from cluster.cdk8s.external_secrets.kubernetes_store import secret_store
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
+
+
+def restic_egress(labels: Mapping[str, str]) -> k8s.NetworkPolicySpec:
+    return k8s.NetworkPolicySpec(
+        pod_selector=k8s.LabelSelector(match_labels=labels),
+        policy_types=["Egress"],
+        egress=[
+            k8s.NetworkPolicyEgressRule(
+                to=[
+                    k8s.NetworkPolicyPeer(
+                        namespace_selector=k8s.LabelSelector(
+                            match_labels={"kubernetes.io/metadata.name": "kube-system"}
+                        ),
+                        pod_selector=k8s.LabelSelector(match_labels={"k8s-app": "kube-dns"}),
+                    )
+                ],
+                ports=[
+                    k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(53), protocol="UDP"),
+                    k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(53), protocol="TCP"),
+                ],
+            ),
+            k8s.NetworkPolicyEgressRule(
+                to=[
+                    k8s.NetworkPolicyPeer(
+                        namespace_selector=k8s.LabelSelector(match_labels={"kubernetes.io/metadata.name": "seaweedfs"}),
+                        pod_selector=k8s.LabelSelector(
+                            match_labels={
+                                "app.kubernetes.io/component": "s3",
+                                "app.kubernetes.io/instance": "seaweedfs",
+                                "app.kubernetes.io/managed-by": "seaweedfs-operator",
+                                "app.kubernetes.io/name": "seaweedfs",
+                            }
+                        ),
+                    )
+                ],
+                ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(8333), protocol="TCP")],
+            ),
+        ],
+    )
+
+
+def direct_restic_mover(
+    *,
+    repository: str,
+    cache_storage_class_name: str,
+    mover_pod_labels: Mapping[str, str],
+    mover_security_context: ReplicationSourceSpecResticMoverSecurityContext,
+    mover_affinity: ReplicationSourceSpecResticMoverAffinity | None = None,
+) -> ReplicationSourceSpecRestic:
+    """Direct copies with weekly pruning and 7 daily, 4 weekly, 6 monthly snapshots."""
+    return ReplicationSourceSpecRestic(
+        repository=repository,
+        copy_method=ReplicationSourceSpecResticCopyMethod.DIRECT,
+        prune_interval_days=7,
+        retain=ReplicationSourceSpecResticRetain(daily=7, weekly=4, monthly=6),
+        cache_storage_class_name=cache_storage_class_name,
+        cache_access_modes=["ReadWriteOnce"],
+        cache_capacity=ReplicationSourceSpecResticCacheCapacity.from_string("1Gi"),
+        mover_pod_labels=mover_pod_labels,
+        mover_resources=ReplicationSourceSpecResticMoverResources(
+            requests={
+                "cpu": ReplicationSourceSpecResticMoverResourcesRequests.from_string("250m"),
+                "memory": ReplicationSourceSpecResticMoverResourcesRequests.from_string("512Mi"),
+            },
+            limits={
+                "cpu": ReplicationSourceSpecResticMoverResourcesLimits.from_string("1"),
+                "memory": ReplicationSourceSpecResticMoverResourcesLimits.from_string("1Gi"),
+            },
+        ),
+        mover_security_context=mover_security_context,
+        mover_affinity=mover_affinity,
+    )
 
 
 class ResticBackup(Construct):
@@ -69,44 +143,7 @@ class ResticBackup(Construct):
             self,
             "volsync-egress",
             metadata=k8s.ObjectMeta(name="volsync-egress", namespace=namespace),
-            spec=k8s.NetworkPolicySpec(
-                pod_selector=k8s.LabelSelector(match_labels=mover_labels),
-                policy_types=["Egress"],
-                egress=[
-                    k8s.NetworkPolicyEgressRule(
-                        to=[
-                            k8s.NetworkPolicyPeer(
-                                namespace_selector=k8s.LabelSelector(
-                                    match_labels={"kubernetes.io/metadata.name": "kube-system"}
-                                ),
-                                pod_selector=k8s.LabelSelector(match_labels={"k8s-app": "kube-dns"}),
-                            )
-                        ],
-                        ports=[
-                            k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(53), protocol="UDP"),
-                            k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(53), protocol="TCP"),
-                        ],
-                    ),
-                    k8s.NetworkPolicyEgressRule(
-                        to=[
-                            k8s.NetworkPolicyPeer(
-                                namespace_selector=k8s.LabelSelector(
-                                    match_labels={"kubernetes.io/metadata.name": "seaweedfs"}
-                                ),
-                                pod_selector=k8s.LabelSelector(
-                                    match_labels={
-                                        "app.kubernetes.io/component": "s3",
-                                        "app.kubernetes.io/instance": "seaweedfs",
-                                        "app.kubernetes.io/managed-by": "seaweedfs-operator",
-                                        "app.kubernetes.io/name": "seaweedfs",
-                                    }
-                                ),
-                            )
-                        ],
-                        ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(8333), protocol="TCP")],
-                    ),
-                ],
-            ),
+            spec=restic_egress(mover_labels),
         )
         reader = k8s.ObjectMeta(name="volsync-repository-reader", namespace=namespace)
         self.service_account = k8s.KubeServiceAccount(self, "repository-reader-sa", metadata=reader)
@@ -169,29 +206,10 @@ class ResticBackup(Construct):
             source_pvc=source_pvc,
             trigger=ReplicationSourceSpecTrigger(schedule=schedule),
             paused=paused,
-            mover=ReplicationSourceSpecRestic(
+            mover=direct_restic_mover(
                 repository=repository,
-                copy_method=ReplicationSourceSpecResticCopyMethod.DIRECT,
-                prune_interval_days=7,
-                retain=ReplicationSourceSpecResticRetain(daily=7, weekly=4, monthly=6),
                 cache_storage_class_name=cache_storage_class_name,
-                cache_access_modes=["ReadWriteOnce"],
-                cache_capacity=ReplicationSourceSpecResticCacheCapacity.from_string(Size.gibibytes(1).as_string()),
                 mover_pod_labels=mover_labels,
-                mover_resources=ReplicationSourceSpecResticMoverResources(
-                    requests={
-                        "cpu": ReplicationSourceSpecResticMoverResourcesRequests.from_string(Cpu.millis(250).amount),
-                        "memory": ReplicationSourceSpecResticMoverResourcesRequests.from_string(
-                            Size.mebibytes(512).as_string()
-                        ),
-                    },
-                    limits={
-                        "cpu": ReplicationSourceSpecResticMoverResourcesLimits.from_string(Cpu.units(1).amount),
-                        "memory": ReplicationSourceSpecResticMoverResourcesLimits.from_string(
-                            Size.gibibytes(1).as_string()
-                        ),
-                    },
-                ),
                 mover_security_context=ReplicationSourceSpecResticMoverSecurityContext(
                     run_as_non_root=True,
                     run_as_user=1000,
