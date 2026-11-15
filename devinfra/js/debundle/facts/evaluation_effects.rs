@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use anyhow::{Result, bail, ensure};
+use anyhow::{Result, ensure};
 
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
@@ -15,12 +15,7 @@ use crate::analysis_inputs::ProofDependencies;
 use crate::execution_evidence::AssumedEffectReason;
 use crate::saved_proto::{ProtoConvert, proto, required};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum GlobalAccessKind {
-    Read,
-    Write,
-}
+pub use crate::saved_proto::proto::GlobalAccessKind;
 
 /// A physical source operation, independent of graph IDs and runtime replay.
 /// The containing chunk supplies the source-file scope.
@@ -177,7 +172,7 @@ impl ProtoConvert<proto::GlobalAccessSite> for GlobalAccessSite {
             lexical_owner: Some(self.lexical_owner.to_proto()?),
             start: Some(self.start),
             end: Some(self.end),
-            access: Some(self.access.to_proto()?),
+            access: Some(self.access as i32),
             property: Some(self.property.clone()),
         })
     }
@@ -189,25 +184,8 @@ impl ProtoConvert<proto::GlobalAccessSite> for GlobalAccessSite {
             )?)?,
             start: required(value.start, "GlobalAccessSite.start")?,
             end: required(value.end, "GlobalAccessSite.end")?,
-            access: ProtoConvert::from_proto(required(value.access, "GlobalAccessSite.access")?)?,
+            access: GlobalAccessKind::try_from(required(value.access, "GlobalAccessSite.access")?)?,
             property: required(value.property, "GlobalAccessSite.property")?,
-        })
-    }
-}
-impl ProtoConvert<i32> for GlobalAccessKind {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(match self {
-            Self::Read => proto::GlobalAccessKind::Read as i32,
-            Self::Write => proto::GlobalAccessKind::Write as i32,
-        })
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        Ok(match proto::GlobalAccessKind::try_from(value)? {
-            proto::GlobalAccessKind::Read => Self::Read,
-            proto::GlobalAccessKind::Write => Self::Write,
-            proto::GlobalAccessKind::Unspecified => {
-                bail!("unspecified saved-analysis global access kind")
-            }
         })
     }
 }
@@ -277,9 +255,9 @@ mod protobuf_tests {
             "property",
         );
         let wire = effects.to_proto().unwrap();
-        for kind in [0, i32::MAX] {
+        for kind in [None, Some(i32::MAX)] {
             let mut malformed = wire.clone();
-            malformed.global_accesses[0].site.as_mut().unwrap().access = Some(kind);
+            malformed.global_accesses[0].site.as_mut().unwrap().access = kind;
             assert!(EvaluationEffects::from_proto(malformed).is_err());
         }
         let mut malformed = wire.clone();

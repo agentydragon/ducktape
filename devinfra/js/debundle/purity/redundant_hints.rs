@@ -14,17 +14,15 @@ pub struct RedundantPurityHint {
     pub proof_basis: RedundantPurityProofBasis,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::Display)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum RedundantPurityProofBasis {
-    WithoutPurityHints,
-    WithOtherPurityHints,
+pub use crate::saved_proto::proto::RedundantPurityProofBasis;
+
+pub trait RedundantHintExplanation {
+    fn explanation(self) -> &'static str;
 }
 
-impl RedundantPurityProofBasis {
+impl RedundantHintExplanation for RedundantPurityProofBasis {
     /// Human explanation of the independent-purity proof used by the hint warning.
-    pub fn explanation(self) -> &'static str {
+    fn explanation(self) -> &'static str {
         match self {
             Self::WithoutPurityHints => {
                 "This proof uses no `purity: pure` hints. Remove the hint and validate the spec."
@@ -36,24 +34,11 @@ impl RedundantPurityProofBasis {
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::Display)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum RedundantPurityReason {
-    /// Chunk-local function/arrow whose body classifies `Pure` by
-    /// recursive analysis (with the hint on this binding removed
-    /// from `declared_pure`; hints on other bindings still apply).
-    InferredPureFunction,
-    /// Chunk-local binding that admits as `PlainData`. The
-    /// `purity: pure` callsite-override is a no-op because the
-    /// binding isn't called as `binding(...)` in any pure-relevant
-    /// way that the override would gate.
-    InferredPlainDataBinding,
-}
+pub use crate::saved_proto::proto::RedundantPurityReason;
 
-impl RedundantPurityReason {
+impl RedundantHintExplanation for RedundantPurityReason {
     /// Human explanation of why the binding is inferred without its hint.
-    pub fn explanation(self) -> &'static str {
+    fn explanation(self) -> &'static str {
         match self {
             Self::InferredPureFunction => {
                 "pure (the function body classifies Pure by recursive analysis)"
@@ -77,20 +62,11 @@ pub struct RedundantPureMemberHint {
     pub reason: RedundantPureMemberReason,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::Display)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum RedundantPureMemberReason {
-    /// `<binding>.<prop>` names an intrinsic whose builtin row admits
-    /// any operands (e.g. `Array.isArray`) — the call classifies pure on
-    /// its own with no `pure_members` annotation. The hint is a no-op.
-    /// The wire name predates the builtin table.
-    WhitelistedStaticCall,
-}
+pub use crate::saved_proto::proto::RedundantPureMemberReason;
 
-impl RedundantPureMemberReason {
+impl RedundantHintExplanation for RedundantPureMemberReason {
     /// Human explanation of why the member hint is redundant.
-    pub fn explanation(self) -> &'static str {
+    fn explanation(self) -> &'static str {
         match self {
             Self::WhitelistedStaticCall => "pure via its builtin summary row",
         }
@@ -188,19 +164,19 @@ impl ProtoConvert<proto::RedundantPurityHint> for RedundantPurityHint {
     fn to_proto(&self) -> anyhow::Result<proto::RedundantPurityHint> {
         Ok(proto::RedundantPurityHint {
             binding_name: Some(self.binding_name.clone()),
-            reason: Some(self.reason.to_proto()?),
-            proof_basis: Some(self.proof_basis.to_proto()?),
+            reason: Some(self.reason as i32),
+            proof_basis: Some(self.proof_basis as i32),
         })
     }
 
     fn from_proto(value: proto::RedundantPurityHint) -> anyhow::Result<Self> {
         Ok(Self {
             binding_name: required(value.binding_name, "RedundantPurityHint.binding_name")?,
-            reason: RedundantPurityReason::from_proto(required(
+            reason: RedundantPurityReason::try_from(required(
                 value.reason,
                 "RedundantPurityHint.reason",
             )?)?,
-            proof_basis: RedundantPurityProofBasis::from_proto(required(
+            proof_basis: RedundantPurityProofBasis::try_from(required(
                 value.proof_basis,
                 "RedundantPurityHint.proof_basis",
             )?)?,
@@ -213,7 +189,7 @@ impl ProtoConvert<proto::RedundantPureMemberHint> for RedundantPureMemberHint {
         Ok(proto::RedundantPureMemberHint {
             binding_name: Some(self.binding_name.clone()),
             property: Some(self.property.clone()),
-            reason: Some(self.reason.to_proto()?),
+            reason: Some(self.reason as i32),
         })
     }
 
@@ -221,69 +197,10 @@ impl ProtoConvert<proto::RedundantPureMemberHint> for RedundantPureMemberHint {
         Ok(Self {
             binding_name: required(value.binding_name, "RedundantPureMemberHint.binding_name")?,
             property: required(value.property, "RedundantPureMemberHint.property")?,
-            reason: RedundantPureMemberReason::from_proto(required(
+            reason: RedundantPureMemberReason::try_from(required(
                 value.reason,
                 "RedundantPureMemberHint.reason",
             )?)?,
-        })
-    }
-}
-
-impl ProtoConvert<i32> for RedundantPurityReason {
-    fn to_proto(&self) -> anyhow::Result<i32> {
-        Ok(match self {
-            Self::InferredPureFunction => proto::RedundantPurityReason::InferredPureFunction,
-            Self::InferredPlainDataBinding => {
-                proto::RedundantPurityReason::InferredPlainDataBinding
-            }
-        } as i32)
-    }
-
-    fn from_proto(value: i32) -> anyhow::Result<Self> {
-        Ok(match proto::RedundantPurityReason::try_from(value)? {
-            proto::RedundantPurityReason::InferredPureFunction => Self::InferredPureFunction,
-            proto::RedundantPurityReason::InferredPlainDataBinding => {
-                Self::InferredPlainDataBinding
-            }
-            proto::RedundantPurityReason::Unspecified => {
-                anyhow::bail!("unspecified redundant purity reason")
-            }
-        })
-    }
-}
-
-impl ProtoConvert<i32> for RedundantPurityProofBasis {
-    fn to_proto(&self) -> anyhow::Result<i32> {
-        Ok(match self {
-            Self::WithoutPurityHints => proto::RedundantPurityProofBasis::WithoutPurityHints,
-            Self::WithOtherPurityHints => proto::RedundantPurityProofBasis::WithOtherPurityHints,
-        } as i32)
-    }
-
-    fn from_proto(value: i32) -> anyhow::Result<Self> {
-        Ok(match proto::RedundantPurityProofBasis::try_from(value)? {
-            proto::RedundantPurityProofBasis::WithoutPurityHints => Self::WithoutPurityHints,
-            proto::RedundantPurityProofBasis::WithOtherPurityHints => Self::WithOtherPurityHints,
-            proto::RedundantPurityProofBasis::Unspecified => {
-                anyhow::bail!("unspecified redundant purity proof basis")
-            }
-        })
-    }
-}
-
-impl ProtoConvert<i32> for RedundantPureMemberReason {
-    fn to_proto(&self) -> anyhow::Result<i32> {
-        Ok(match self {
-            Self::WhitelistedStaticCall => proto::RedundantPureMemberReason::WhitelistedStaticCall,
-        } as i32)
-    }
-
-    fn from_proto(value: i32) -> anyhow::Result<Self> {
-        Ok(match proto::RedundantPureMemberReason::try_from(value)? {
-            proto::RedundantPureMemberReason::WhitelistedStaticCall => Self::WhitelistedStaticCall,
-            proto::RedundantPureMemberReason::Unspecified => {
-                anyhow::bail!("unspecified redundant pure member reason")
-            }
         })
     }
 }

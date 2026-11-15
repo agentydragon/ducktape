@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::saved_proto::{ProtoConvert, proto, required};
-use anyhow::{Result, bail};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 
@@ -86,17 +86,7 @@ pub enum UnknownEffectCoverage {
 /// Why a root's kernel attempt did not seal its owner, so the executor
 /// rewound it and the flattened lane ran (`roots/body.rs`). The first failing
 /// condition of the seal, in its check order.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RootAttemptRewind {
-    IncompleteExecution,
-    UnknownCall,
-    PrecisionLoss,
-    UninitializedRead,
-    FallbackOnlyEffect,
-    OpenEffectLedger,
-    LexicalReceiptUnsealed,
-}
+pub use crate::saved_proto::proto::RootAttemptRewind;
 
 /// The outcome of one root's kernel attempt.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
@@ -391,40 +381,13 @@ fn record(
         });
 }
 
-impl ProtoConvert<i32> for RootAttemptRewind {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(match self {
-            Self::IncompleteExecution => proto::RootAttemptRewind::IncompleteExecution as i32,
-            Self::UnknownCall => proto::RootAttemptRewind::UnknownCall as i32,
-            Self::PrecisionLoss => proto::RootAttemptRewind::PrecisionLoss as i32,
-            Self::UninitializedRead => proto::RootAttemptRewind::UninitializedRead as i32,
-            Self::FallbackOnlyEffect => proto::RootAttemptRewind::FallbackOnlyEffect as i32,
-            Self::OpenEffectLedger => proto::RootAttemptRewind::OpenEffectLedger as i32,
-            Self::LexicalReceiptUnsealed => proto::RootAttemptRewind::LexicalReceiptUnsealed as i32,
-        })
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        Ok(match proto::RootAttemptRewind::try_from(value)? {
-            proto::RootAttemptRewind::IncompleteExecution => Self::IncompleteExecution,
-            proto::RootAttemptRewind::UnknownCall => Self::UnknownCall,
-            proto::RootAttemptRewind::PrecisionLoss => Self::PrecisionLoss,
-            proto::RootAttemptRewind::UninitializedRead => Self::UninitializedRead,
-            proto::RootAttemptRewind::FallbackOnlyEffect => Self::FallbackOnlyEffect,
-            proto::RootAttemptRewind::OpenEffectLedger => Self::OpenEffectLedger,
-            proto::RootAttemptRewind::LexicalReceiptUnsealed => Self::LexicalReceiptUnsealed,
-            proto::RootAttemptRewind::Unspecified => {
-                bail!("unspecified saved-analysis root attempt rewind")
-            }
-        })
-    }
-}
 impl ProtoConvert<proto::RootAttempt> for RootAttempt {
     fn to_proto(&self) -> Result<proto::RootAttempt> {
         use proto::root_attempt::Value;
         Ok(proto::RootAttempt {
             value: Some(match self {
                 Self::Sealed => Value::Sealed(Default::default()),
-                Self::Rewound(reason) => Value::Rewound(reason.to_proto()?),
+                Self::Rewound(reason) => Value::Rewound(*reason as i32),
             }),
         })
     }
@@ -432,7 +395,7 @@ impl ProtoConvert<proto::RootAttempt> for RootAttempt {
         use proto::root_attempt::Value;
         Ok(match required(value.value, "RootAttempt.value")? {
             Value::Sealed(_) => Self::Sealed,
-            Value::Rewound(value) => Self::Rewound(RootAttemptRewind::from_proto(value)?),
+            Value::Rewound(value) => Self::Rewound(RootAttemptRewind::try_from(value)?),
         })
     }
 }

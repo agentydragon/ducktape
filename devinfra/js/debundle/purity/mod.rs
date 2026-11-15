@@ -73,6 +73,7 @@ pub(crate) use ts_enum_iife::*;
 // Public API: importable at `purity::<item>` exactly as before the split.
 pub use code_graph::ChunkCodeGraph;
 pub use purity_type::{Purity, PurityReason, PurityRule};
+pub use redundant_hints::RedundantHintExplanation;
 pub use redundant_hints::{
     RedundantPureMemberHint, RedundantPureMemberReason, RedundantPurityHint,
     RedundantPurityProofBasis, RedundantPurityReason,

@@ -259,12 +259,26 @@ message ConstructionRejection {
   }
 }
 
+// One shape that defeats the dataflow-aware S-chain's cell tracking for
+// a statement (StatementFacts::havoc). The first three are policy-independent
+// source shapes; OpaqueAtInitCall consults the purity classifier, so a
+// declared-pure hint or exact completed operation coverage can discharge it
+// without erasing the source provenance.
 enum DataflowOpacityCause {
-  DATAFLOW_OPACITY_CAUSE_UNSPECIFIED = 0;
-  DATAFLOW_OPACITY_CAUSE_MEMBER_WRITE_OR_ALIAS = 1;
-  DATAFLOW_OPACITY_CAUSE_DYNAMIC_CELL_WRITES = 2;
-  DATAFLOW_OPACITY_CAUSE_GLOBAL_OBJECT_ALIAS_ESCAPE = 3;
-  DATAFLOW_OPACITY_CAUSE_OPAQUE_AT_INIT_CALL = 4;
+  // A member write through a tracked binding or an alias shape: the
+  // written heap cell cannot be attributed.
+  DATAFLOW_OPACITY_CAUSE_MEMBER_WRITE_OR_ALIAS = 0;
+  // with, direct or indirect eval, Function(...), a dynamic-key global
+  // access, or defineProperty/Proxy on the global object: the statement
+  // may write arbitrary cells (StatementFacts::cell_writes_summarizable).
+  DATAFLOW_OPACITY_CAUSE_DYNAMIC_CELL_WRITES = 1;
+  // The statement reads a binding a bare global-object alias flowed
+  // into (facts/global_object.rs), so its summary misses global property
+  // cells.
+  DATAFLOW_OPACITY_CAUSE_GLOBAL_OBJECT_ALIAS_ESCAPE = 2;
+  // An at-init call or new the purity classifier does not prove Pure:
+  // I/O is not a cell and callee bodies may touch globals.
+  DATAFLOW_OPACITY_CAUSE_OPAQUE_AT_INIT_CALL = 3;
 }
 
 message DeferredRecordMember {
@@ -357,9 +371,8 @@ message ExecutionPrecisionLossReason {
 }
 
 enum ExportLinkage {
-  EXPORT_LINKAGE_UNSPECIFIED = 0;
-  EXPORT_LINKAGE_LOCAL = 1;
-  EXPORT_LINKAGE_DEPENDENCY = 2;
+  EXPORT_LINKAGE_LOCAL = 0;
+  EXPORT_LINKAGE_DEPENDENCY = 1;
 }
 
 message ExportReentryClosureBlocker {
@@ -532,9 +545,8 @@ message GlobalAccessEvidence {
 }
 
 enum GlobalAccessKind {
-  GLOBAL_ACCESS_KIND_UNSPECIFIED = 0;
-  GLOBAL_ACCESS_KIND_READ = 1;
-  GLOBAL_ACCESS_KIND_WRITE = 2;
+  GLOBAL_ACCESS_KIND_READ = 0;
+  GLOBAL_ACCESS_KIND_WRITE = 1;
 }
 
 message GlobalAccessSite {
@@ -761,24 +773,23 @@ message IntrinsicsNeverWritten {
 
 // Kind of a source allocation in the abstract value domain.
 enum Kind {
-  KIND_UNSPECIFIED = 0;
   // A function, arrow, or method body.
-  KIND_FUNCTION = 1;
-  KIND_CLASS = 2;
+  KIND_FUNCTION = 0;
+  KIND_CLASS = 1;
   // An object, array or regular-expression literal: value flow gives them
   // one identity lane. Builtin rows allocate Object, Array and RegExp by
   // their own kinds.
-  KIND_OBJECT = 3;
+  KIND_OBJECT = 2;
   // A native Set.
-  KIND_SET = 4;
-  KIND_ARRAY = 5;
-  KIND_MAP = 6;
-  KIND_WEAK_MAP = 7;
-  KIND_WEAK_SET = 8;
-  KIND_REG_EXP = 9;
+  KIND_SET = 3;
+  KIND_ARRAY = 4;
+  KIND_MAP = 5;
+  KIND_WEAK_MAP = 6;
+  KIND_WEAK_SET = 7;
+  KIND_REG_EXP = 8;
   // A FinalizationRegistry.
-  KIND_REGISTRY = 10;
-  KIND_PROXY = 11;
+  KIND_REGISTRY = 9;
+  KIND_PROXY = 10;
 }
 
 // Why a target is not loader-closed. A report keeps the first witness and the
@@ -1216,43 +1227,42 @@ enum OrderedFieldReadRefusal {
 }
 
 enum OwnerInitializationCoverageRefusalReason {
-  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNSPECIFIED = 0;
-  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNSUPPORTED_OWNER_KIND = 1;
-  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_EXPORTED_OWNER = 2;
-  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_SPLIT_DECLARATION = 3;
-  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNSUPPORTED_BINDING_SHAPE = 4;
-  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_MISSING_INITIALIZER = 5;
-  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNSUPPORTED_INITIALIZER = 6;
-  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_OWNER_BINDING_MISMATCH = 7;
-  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_INITIALIZER_RESULT_UNPROVED = 8;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNSUPPORTED_OWNER_KIND = 0;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_EXPORTED_OWNER = 1;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_SPLIT_DECLARATION = 2;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNSUPPORTED_BINDING_SHAPE = 3;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_MISSING_INITIALIZER = 4;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNSUPPORTED_INITIALIZER = 5;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_OWNER_BINDING_MISMATCH = 6;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_INITIALIZER_RESULT_UNPROVED = 7;
   // A root receiver.property store is outside the admitted roots/operands:
   // its receiver is not an initialized module record with a writable own data
   // slot at its prefix, or the owner is excluded. A store whose value can run
   // code keeps UnsupportedOwnerKind.
-  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNPROVED_FIELD_STORE = 9;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNPROVED_FIELD_STORE = 8;
   // A root binding store targets an imported binding, which throws.
-  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_IMPORTED_BINDING_STORE = 10;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_IMPORTED_BINDING_STORE = 9;
   // A root binding store targets a const binding, which throws.
-  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_CONST_BINDING_STORE = 11;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_CONST_BINDING_STORE = 10;
   // A root binding store targets a lexical binding still in its TDZ, which throws.
-  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNINITIALIZED_BINDING_STORE = 12;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNINITIALIZED_BINDING_STORE = 11;
   // A root binding store targets a binding read by a closure, so the closure's
   // view is not a module-prefix value.
-  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_CAPTURED_BINDING_STORE = 13;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_CAPTURED_BINDING_STORE = 12;
   // A root binding store targets an exported binding observable by an importer.
-  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_EXPORTED_BINDING_STORE = 14;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_EXPORTED_BINDING_STORE = 13;
   // The kernel did not seal an admitted root statement; the flattened lane ran it.
-  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNPROVED_STATEMENT_OPERATION = 15;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNPROVED_STATEMENT_OPERATION = 14;
   // A callback captures a live activation cell, so its call lacks an effect
   // receipt until call-effect coverage follows live captures.
-  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_CALLBACK_CAPTURES_LIVE_CELL = 16;
-  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNKNOWN_CALL = 17;
-  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_PRECISION_LOSS = 18;
-  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNINITIALIZED_READ = 19;
-  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_INCOMPLETE_EXECUTION = 20;
-  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_BINDING_NOT_INITIALIZED = 21;
-  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_NO_EXECUTION_SUMMARY = 22;
-  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_REFUSAL_UNAVAILABLE = 23;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_CALLBACK_CAPTURES_LIVE_CELL = 15;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNKNOWN_CALL = 16;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_PRECISION_LOSS = 17;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNINITIALIZED_READ = 18;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_INCOMPLETE_EXECUTION = 19;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_BINDING_NOT_INITIALIZED = 20;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_NO_EXECUTION_SUMMARY = 21;
+  OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_REFUSAL_UNAVAILABLE = 22;
 }
 
 message PossibleGetterLookupSite {
@@ -1303,30 +1313,50 @@ message PurityNodeId {
   optional uint64 index = 1;
 }
 
+// The direct classifier rule behind a structured expression-purity reason.
 enum PurityRule {
-  PURITY_RULE_UNSPECIFIED = 0;
-  PURITY_RULE_ASSIGN_OR_UPDATE = 1;
-  PURITY_RULE_AWAIT_OR_YIELD = 2;
-  PURITY_RULE_DELETE_OPERATOR = 3;
-  PURITY_RULE_THROW_STMT = 4;
-  PURITY_RULE_DEBUGGER_STMT = 5;
-  PURITY_RULE_UNKNOWN_CALL = 6;
-  PURITY_RULE_IMPURE_FUNCTION_CALL = 7;
-  PURITY_RULE_UNKNOWN_NEW = 8;
-  PURITY_RULE_UNKNOWN_MEMBER = 9;
-  PURITY_RULE_SUPER_PROP = 10;
-  PURITY_RULE_TAGGED_TPL = 11;
-  PURITY_RULE_ARRAY_SPREAD = 12;
-  PURITY_RULE_OBJECT_SPREAD = 13;
-  PURITY_RULE_OBJECT_ASSIGN_PROP = 14;
-  PURITY_RULE_CLASS_STATIC_OBSERVABLE = 15;
-  PURITY_RULE_BARE_CONTROL_FLOW = 16;
-  PURITY_RULE_COERCING_OPERATOR = 17;
-  PURITY_RULE_TO_PROPERTY_KEY_COERCION = 18;
-  PURITY_RULE_ITERATION_PROTOCOL = 19;
-  PURITY_RULE_DESTRUCTURING_PATTERN = 20;
-  PURITY_RULE_ORDER_DEPENDENT_READ = 21;
-  PURITY_RULE_OTHER = 22;
+  PURITY_RULE_ASSIGN_OR_UPDATE = 0;
+  PURITY_RULE_AWAIT_OR_YIELD = 1;
+  PURITY_RULE_DELETE_OPERATOR = 2;
+  PURITY_RULE_THROW_STMT = 3;
+  PURITY_RULE_DEBUGGER_STMT = 4;
+  PURITY_RULE_UNKNOWN_CALL = 5;
+  // A direct call to a chunk-top or imported function whose body was
+  // classified as impure. Record this call site once rather than copying
+  // the callee's (possibly shared) transitive reason list.
+  PURITY_RULE_IMPURE_FUNCTION_CALL = 6;
+  PURITY_RULE_UNKNOWN_NEW = 7;
+  PURITY_RULE_UNKNOWN_MEMBER = 8;
+  PURITY_RULE_SUPER_PROP = 9;
+  PURITY_RULE_TAGGED_TPL = 10;
+  PURITY_RULE_ARRAY_SPREAD = 11;
+  PURITY_RULE_OBJECT_SPREAD = 12;
+  PURITY_RULE_OBJECT_ASSIGN_PROP = 13;
+  PURITY_RULE_CLASS_STATIC_OBSERVABLE = 14;
+  PURITY_RULE_BARE_CONTROL_FLOW = 15;
+  // A coercing operator (+, -, relational, loose equality, ~, unary +/-
+  // template interpolation, in, instanceof) whose operand is not statically
+  // known to be a primitive. ToPrimitive / ToNumber / ToString /
+  // Symbol.hasInstance / proxy has on an object operand fires user code.
+  PURITY_RULE_COERCING_OPERATOR = 16;
+  // A computed property key (obj[key], {[key]: v}, class {[key]() {}})
+  // whose key expression is not statically known to be a primitive or a
+  // whitelisted Symbol.* well-known symbol. ToPropertyKey on an object key
+  // fires toString or Symbol.toPrimitive.
+  PURITY_RULE_TO_PROPERTY_KEY_COERCION = 17;
+  // for-of, for-await-of, or for-in: iteration fires the iterator protocol
+  // or proxy enumeration traps on the iterated value.
+  PURITY_RULE_ITERATION_PROTOCOL = 18;
+  // A destructuring pattern (declarator name or function parameter):
+  // object patterns fire Get, array patterns fire the iterator protocol
+  // on the bound value.
+  PURITY_RULE_DESTRUCTURING_PATTERN = 19;
+  // A read of another chunk's cell: an import whose provider binding can
+  // be rebound, or, inside an exported function, module state of its own
+  // chunk. The reader's dependency graph has no node for that cell's
+  // writers, so the read is ordered with every impure statement.
+  PURITY_RULE_ORDER_DEPENDENT_READ = 20;
+  PURITY_RULE_OTHER = 21;
 }
 
 // Why an annotated record-factory call kept the conservative path. The
@@ -1390,8 +1420,11 @@ message RedundantPureMemberHint {
 }
 
 enum RedundantPureMemberReason {
-  REDUNDANT_PURE_MEMBER_REASON_UNSPECIFIED = 0;
-  REDUNDANT_PURE_MEMBER_REASON_WHITELISTED_STATIC_CALL = 1;
+  // <binding>.<prop> names an intrinsic whose builtin row admits any
+  // operands (for example, Array.isArray): the call classifies pure on its
+  // own with no pure_members annotation. The hint is a no-op.
+  // The wire name predates the builtin table.
+  REDUNDANT_PURE_MEMBER_REASON_WHITELISTED_STATIC_CALL = 0;
 }
 
 message RedundantPurityHint {
@@ -1400,16 +1433,21 @@ message RedundantPurityHint {
   optional .ducktape.debundle.saved_analysis.RedundantPurityProofBasis proof_basis = 3;
 }
 
+// Whether the independent-purity proof consumed other author purity hints.
 enum RedundantPurityProofBasis {
-  REDUNDANT_PURITY_PROOF_BASIS_UNSPECIFIED = 0;
-  REDUNDANT_PURITY_PROOF_BASIS_WITHOUT_PURITY_HINTS = 1;
-  REDUNDANT_PURITY_PROOF_BASIS_WITH_OTHER_PURITY_HINTS = 2;
+  REDUNDANT_PURITY_PROOF_BASIS_WITHOUT_PURITY_HINTS = 0;
+  REDUNDANT_PURITY_PROOF_BASIS_WITH_OTHER_PURITY_HINTS = 1;
 }
 
 enum RedundantPurityReason {
-  REDUNDANT_PURITY_REASON_UNSPECIFIED = 0;
-  REDUNDANT_PURITY_REASON_INFERRED_PURE_FUNCTION = 1;
-  REDUNDANT_PURITY_REASON_INFERRED_PLAIN_DATA_BINDING = 2;
+  // Chunk-local function/arrow whose body classifies Pure by recursive
+  // analysis (with the hint on this binding removed from declared_pure;
+  // hints on other bindings still apply).
+  REDUNDANT_PURITY_REASON_INFERRED_PURE_FUNCTION = 0;
+  // Chunk-local binding that admits as PlainData. The purity: pure
+  // callsite-override is a no-op because the binding is not called as
+  // binding(...) in any pure-relevant way that the override would gate.
+  REDUNDANT_PURITY_REASON_INFERRED_PLAIN_DATA_BINDING = 1;
 }
 
 message ReentryFreeOperationUse {
@@ -1460,15 +1498,16 @@ message RootAttempt {
   }
 }
 
+// The first seal condition that failed for an attempted kernel root; the
+// executor rewound the root and ran the flattened lane.
 enum RootAttemptRewind {
-  ROOT_ATTEMPT_REWIND_UNSPECIFIED = 0;
-  ROOT_ATTEMPT_REWIND_INCOMPLETE_EXECUTION = 1;
-  ROOT_ATTEMPT_REWIND_UNKNOWN_CALL = 2;
-  ROOT_ATTEMPT_REWIND_PRECISION_LOSS = 3;
-  ROOT_ATTEMPT_REWIND_UNINITIALIZED_READ = 4;
-  ROOT_ATTEMPT_REWIND_FALLBACK_ONLY_EFFECT = 5;
-  ROOT_ATTEMPT_REWIND_OPEN_EFFECT_LEDGER = 6;
-  ROOT_ATTEMPT_REWIND_LEXICAL_RECEIPT_UNSEALED = 7;
+  ROOT_ATTEMPT_REWIND_INCOMPLETE_EXECUTION = 0;
+  ROOT_ATTEMPT_REWIND_UNKNOWN_CALL = 1;
+  ROOT_ATTEMPT_REWIND_PRECISION_LOSS = 2;
+  ROOT_ATTEMPT_REWIND_UNINITIALIZED_READ = 3;
+  ROOT_ATTEMPT_REWIND_FALLBACK_ONLY_EFFECT = 4;
+  ROOT_ATTEMPT_REWIND_OPEN_EFFECT_LEDGER = 5;
+  ROOT_ATTEMPT_REWIND_LEXICAL_RECEIPT_UNSEALED = 6;
 }
 
 message SavedBinding { optional string symbol = 1; optional uint32 context_ordinal = 2; }
@@ -1573,7 +1612,7 @@ message SavedPurityGraph {
 }
 
 message SavedReason {
-  PurityRule rule = 1;
+  optional PurityRule rule = 1;
   SourceLocation source_location = 2;
   optional string detail = 3;
   optional string author_guidance = 4;
@@ -1741,13 +1780,20 @@ message SourceMatchClaim {
 message SourceSpan { optional uint32 lo = 1; optional uint32 hi = 2; }
 
 enum StatementKind {
-  STATEMENT_KIND_UNSPECIFIED = 0;
-  STATEMENT_KIND_VAR_DECL = 1;
-  STATEMENT_KIND_FN_DECL = 2;
-  STATEMENT_KIND_CLASS_DECL = 3;
-  STATEMENT_KIND_EXPORT = 4;
-  STATEMENT_KIND_IMPORT = 5;
-  STATEMENT_KIND_SIDE_EFFECT = 6;
+  // var X = ..., let X = ..., const X = .... RHS reads at-init.
+  STATEMENT_KIND_VAR_DECL = 0;
+  // function X() { ... }. Hoisted; no at-init reads from body.
+  STATEMENT_KIND_FN_DECL = 1;
+  // class X { ... }. Extends, decorators, computed keys, and
+  // static blocks read at-init.
+  STATEMENT_KIND_CLASS_DECL = 2;
+  // export { ... }, export X, etc. Lazy reads (re-exports).
+  STATEMENT_KIND_EXPORT = 3;
+  // import { ... } from .... Linked, no at-init body code.
+  STATEMENT_KIND_IMPORT = 4;
+  // Bare expression / control-flow / etc. that does not declare a
+  // top-level binding.
+  STATEMENT_KIND_SIDE_EFFECT = 5;
 }
 
 message Value {

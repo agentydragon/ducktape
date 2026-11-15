@@ -53,9 +53,10 @@ pub use execution_evidence::SourceLocation;
 pub use facts::{
     CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection, CallbackFactoryWriteWitness,
     CellOverlap, CellOverlapIndex, CellOverlapLaw, ChunkFactAnalysis, DataflowOpacityCause,
-    EffectCell, PositionBucketed, StatementEffectSummary, StatementFacts, StatementKind,
-    StructuralChunkAnalysis, StructuralStatementFacts, analyze_chunk, analyze_chunk_structural,
-    analyze_chunk_with_policy, analyze_vendor_prune_chunk, local_namespace_iife_target,
+    DataflowOpacityExplanation, EffectCell, PositionBucketed, StatementEffectSummary,
+    StatementFacts, StatementKind, StructuralChunkAnalysis, StructuralStatementFacts,
+    analyze_chunk, analyze_chunk_structural, analyze_chunk_with_policy, analyze_vendor_prune_chunk,
+    local_namespace_iife_target,
 };
 pub use graph::{
     BindingTimelineOrder, CellConflict, CellEffectClass, CellOverlapReport,

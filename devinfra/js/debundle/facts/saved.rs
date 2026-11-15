@@ -290,7 +290,7 @@ fn snapshot_statement<'a>(
 ) -> Result<proto::SavedStatementFacts> {
     Ok(proto::SavedStatementFacts {
         ordinal: Some(fact.ordinal.to_proto()?),
-        export_linkage: fact.export_linkage.to_proto()?,
+        export_linkage: fact.export_linkage.map(|value| value as i32),
         stable_iterable_producers: fact.stable_iterable_producers.to_proto()?,
         source_location: fact.source_location.to_proto()?,
         callback_factory_barriers: fact.callback_factory_barriers.to_proto()?,
@@ -335,8 +335,12 @@ fn snapshot_statement<'a>(
         declares_direct_function: Some(fact.declares_direct_function),
         global_writes: fact.global_writes.to_proto()?,
         global_reads: fact.global_reads.to_proto()?,
-        havoc: fact.havoc.to_proto()?,
-        trusted_summary_discharged: fact.trusted_summary_discharged.to_proto()?,
+        havoc: fact.havoc.iter().map(|value| *value as i32).collect(),
+        trusted_summary_discharged: fact
+            .trusted_summary_discharged
+            .iter()
+            .map(|value| *value as i32)
+            .collect(),
         heap_contents: Some(snapshot_heap_cells(&fact.heap_contents, ordinals)?),
         heap_one_shot_allocations: snapshot_effect_cells(
             &fact.heap_one_shot_allocations,
@@ -350,7 +354,7 @@ fn snapshot_statement<'a>(
         .to_proto()?,
         heap_native_integrity_uses: fact.heap_native_integrity_uses.to_proto()?,
         purity: Some(purities.snapshot_value(&fact.purity)?),
-        kind: Some(fact.kind.to_proto()?),
+        kind: Some(fact.kind as i32),
     })
 }
 
@@ -364,7 +368,10 @@ fn restore_statement(
             value.ordinal,
             "SavedStatementFacts.ordinal",
         )?)?,
-        export_linkage: Option::from_proto(value.export_linkage)?,
+        export_linkage: value
+            .export_linkage
+            .map(ExportLinkage::try_from)
+            .transpose()?,
         stable_iterable_producers: BTreeSet::from_proto(value.stable_iterable_producers)?,
         source_location: Option::from_proto(value.source_location)?,
         callback_factory_barriers: Vec::from_proto(value.callback_factory_barriers)?,
@@ -431,8 +438,16 @@ fn restore_statement(
         )?,
         global_writes: BTreeSet::from_proto(value.global_writes)?,
         global_reads: BTreeSet::from_proto(value.global_reads)?,
-        havoc: BTreeSet::from_proto(value.havoc)?,
-        trusted_summary_discharged: BTreeSet::from_proto(value.trusted_summary_discharged)?,
+        havoc: value
+            .havoc
+            .into_iter()
+            .map(|value| Ok(DataflowOpacityCause::try_from(value)?))
+            .collect::<Result<_>>()?,
+        trusted_summary_discharged: value
+            .trusted_summary_discharged
+            .into_iter()
+            .map(|value| Ok(DataflowOpacityCause::try_from(value)?))
+            .collect::<Result<_>>()?,
         heap_contents: restore_heap_cells(
             required(value.heap_contents, "SavedStatementFacts.heap_contents")?,
             ordinals,
@@ -447,7 +462,7 @@ fn restore_statement(
         )?,
         heap_native_integrity_uses: Vec::from_proto(value.heap_native_integrity_uses)?,
         purity: purities.restore_value(required(value.purity, "SavedStatementFacts.purity")?)?,
-        kind: StatementKind::from_proto(required(value.kind, "SavedStatementFacts.kind")?)?,
+        kind: StatementKind::try_from(required(value.kind, "SavedStatementFacts.kind")?)?,
     })
 }
 
@@ -492,31 +507,6 @@ struct SavedSynchronousCalls<'a> {
     returned_record_uses: Cow<'a, [super::ReturnedRecordUseFact]>,
     author_host_contract_uses: Cow<'a, [ReentryFreeOperationUse]>,
     purity_disagreement: Option<SavedPurityDisagreement>,
-}
-
-fn refusal_reason_from_prost_field(
-    value: i32,
-) -> Result<crate::facts::OwnerInitializationCoverageRefusalReason> {
-    use crate::facts::OwnerInitializationCoverageRefusalReason as Reason;
-
-    let reason = Reason::try_from(value)?;
-    ensure!(
-        reason != Reason::Unspecified,
-        "unspecified saved-analysis initialization coverage refusal"
-    );
-    Ok(reason)
-}
-
-fn refusal_reason_to_prost_field(
-    value: crate::facts::OwnerInitializationCoverageRefusalReason,
-) -> Result<i32> {
-    use crate::facts::OwnerInitializationCoverageRefusalReason as Reason;
-
-    ensure!(
-        value != Reason::Unspecified,
-        "unspecified saved-analysis initialization coverage refusal"
-    );
-    Ok(value as i32)
 }
 
 struct SavedPurityDisagreement {
@@ -844,9 +834,7 @@ impl<'a> ProtoConvert<proto::SavedSynchronousCalls> for SavedSynchronousCalls<'a
             completed_initialization: self.completed_initialization.to_proto()?,
             initialization_coverage_refusal: self
                 .initialization_coverage_refusal
-                .as_ref()
-                .map(refusal_reason_to_prost_field)
-                .transpose()?,
+                .map(|value| value as i32),
             root_attempt: self.root_attempt.to_proto()?,
             evaluation_effects: Some(self.evaluation_effects.to_proto()?),
             local_record_factory_uses: self.local_record_factory_uses.to_proto()?,
@@ -906,7 +894,7 @@ impl<'a> ProtoConvert<proto::SavedSynchronousCalls> for SavedSynchronousCalls<'a
             initialization_coverage_refusal: Cow::Owned(
                 value
                     .initialization_coverage_refusal
-                    .map(refusal_reason_from_prost_field)
+                    .map(crate::facts::OwnerInitializationCoverageRefusalReason::try_from)
                     .transpose()?,
             ),
             root_attempt: Option::from_proto(value.root_attempt)?,
@@ -1038,9 +1026,8 @@ mod tests {
             assert_eq!(serde_json::from_str::<Reason>(&json).unwrap(), reason);
         }
 
-        assert!(serde_json::to_string(&Reason::Unspecified).is_err());
-        assert!(serde_json::from_str::<Reason>("\"unspecified\"").is_err());
-        assert!(refusal_reason_from_prost_field(0).is_err());
+        assert_eq!(Reason::try_from(0).unwrap(), Reason::UnsupportedOwnerKind);
+        assert!(Reason::try_from(i32::MAX).is_err());
     }
 
     #[test]
@@ -1095,7 +1082,8 @@ mod tests {
             "ordinal",
             "heap_contents",
             "purity",
-            "kind",
+            "missing_kind",
+            "unknown_kind",
             "reads",
             "duplicate_binding",
             "unknown_opacity",
@@ -1107,14 +1095,15 @@ mod tests {
                 "ordinal" => fact.ordinal = None,
                 "heap_contents" => fact.heap_contents = None,
                 "purity" => fact.purity = None,
-                "kind" => fact.kind = Some(0),
+                "missing_kind" => fact.kind = None,
+                "unknown_kind" => fact.kind = Some(i32::MAX),
                 "reads" => fact.reads = None,
                 "duplicate_binding" => {
                     let bindings = &mut fact.declared;
                     bindings.push(bindings[0].clone());
                 }
                 "unknown_opacity" => fact.havoc.push(i32::MAX),
-                "export_linkage" => fact.export_linkage = Some(0),
+                "export_linkage" => fact.export_linkage = Some(i32::MAX),
                 _ => unreachable!(),
             }
             assert!(

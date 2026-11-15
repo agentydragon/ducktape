@@ -7,7 +7,7 @@
 
 use crate::saved_proto::{ProtoConvert, proto, required};
 use analysis_model::PrimKinds;
-use anyhow::{Result, bail};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 pub use crate::saved_proto::proto::Kind;
@@ -72,27 +72,13 @@ impl KindProperties for Kind {
     }
 }
 
-fn kind_from_prost_field(value: i32) -> Result<Kind> {
-    let kind = Kind::try_from(value)?;
-    if kind == Kind::Unspecified {
-        bail!("unspecified saved-analysis allocation kind");
-    }
-    Ok(kind)
-}
-
-fn kind_to_prost_field(value: Kind) -> Result<i32> {
-    if value == Kind::Unspecified {
-        bail!("unspecified saved-analysis allocation kind");
-    }
-    Ok(value as i32)
-}
 impl ProtoConvert<proto::Value> for Value {
     fn to_proto(&self) -> Result<proto::Value> {
         use proto::value::{Allocation, Value};
         Ok(proto::Value {
             value: Some(match self {
                 Self::Alloc(kind, site) => Value::Allocation(Allocation {
-                    kind: Some(kind_to_prost_field(*kind)?),
+                    kind: Some(*kind as i32),
                     site: Some(*site),
                 }),
                 Self::Prim(kinds) => Value::PrimitiveKinds(kinds.to_proto()?),
@@ -105,7 +91,7 @@ impl ProtoConvert<proto::Value> for Value {
         use proto::value::Value;
         Ok(match required(value.value, "Value.value")? {
             Value::Allocation(value) => Self::Alloc(
-                kind_from_prost_field(required(value.kind, "Value.allocation.kind")?)?,
+                Kind::try_from(required(value.kind, "Value.allocation.kind")?)?,
                 required(value.site, "Value.allocation.site")?,
             ),
             Value::PrimitiveKinds(kinds) => Self::Prim(PrimKinds::from_proto(kinds)?),
@@ -117,10 +103,10 @@ impl ProtoConvert<proto::Value> for Value {
 
 #[cfg(test)]
 mod tests {
-    use super::{Kind, KindProperties};
+    use super::Kind;
 
     #[test]
-    fn generated_kind_keeps_serde_names_and_unspecified_fails_closed() {
+    fn generated_kind_keeps_serde_names() {
         let kinds = [
             (Kind::Function, "function"),
             (Kind::Class, "class"),
@@ -139,13 +125,6 @@ mod tests {
             assert_eq!(json, format!("\"{name}\""));
             assert_eq!(serde_json::from_str::<Kind>(&json).unwrap(), kind);
         }
-
-        assert!(serde_json::to_string(&Kind::Unspecified).is_err());
-        assert!(serde_json::from_str::<Kind>("\"unspecified\"").is_err());
-        assert!(!Kind::Unspecified.supports_ordinary_own_data_read_proof());
-        assert!(!Kind::Unspecified.tracks_prefix_own_properties());
-        assert!(!Kind::Unspecified.tracks_prefix_references());
-        assert!(!Kind::Unspecified.is_keyed_collection());
     }
 }
 
@@ -170,7 +149,16 @@ mod protobuf_tests {
         assert!(
             Value::from_proto(proto::Value {
                 value: Some(proto::value::Value::Allocation(proto::value::Allocation {
-                    kind: Some(0),
+                    kind: None,
+                    site: Some(17)
+                }))
+            })
+            .is_err()
+        );
+        assert!(
+            Value::from_proto(proto::Value {
+                value: Some(proto::value::Value::Allocation(proto::value::Allocation {
+                    kind: Some(i32::MAX),
                     site: Some(17)
                 }))
             })

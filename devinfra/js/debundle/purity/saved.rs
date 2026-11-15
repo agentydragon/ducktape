@@ -62,7 +62,7 @@ impl<'a> PuritySnapshot<'a> {
                         .iter()
                         .map(|reason| {
                             Ok(proto::SavedReason {
-                                rule: reason.rule.to_proto()?,
+                                rule: Some(reason.rule as i32),
                                 source_location: reason
                                     .source_location
                                     .as_ref()
@@ -117,7 +117,7 @@ impl RestoredPurities {
                     .into_iter()
                     .map(|reason| {
                         Ok(PurityReason {
-                            rule: PurityRule::from_proto(reason.rule)?,
+                            rule: PurityRule::try_from(required(reason.rule, "SavedReason.rule")?)?,
                             source_location: reason
                                 .source_location
                                 .map(SourceLocation::from_proto)
@@ -226,7 +226,7 @@ mod tests {
                     value: Some(proto::saved_purity::Value::NotPure(
                         proto::saved_purity::NotPure {
                             reasons: vec![proto::SavedReason {
-                                rule: PurityRule::UnknownCall.to_proto().unwrap(),
+                                rule: Some(PurityRule::UnknownCall as i32),
                                 source_location: None,
                                 detail: None,
                                 author_guidance: None,
@@ -245,9 +245,9 @@ mod tests {
     #[test]
     fn rejects_unknown_reason_rules_and_missing_spans() {
         for (rule, span) in [
-            (0, Some(DUMMY_SP.to_proto().unwrap())),
-            (i32::MAX, Some(DUMMY_SP.to_proto().unwrap())),
-            (PurityRule::UnknownCall.to_proto().unwrap(), None),
+            (None, Some(DUMMY_SP.to_proto().unwrap())),
+            (Some(i32::MAX), Some(DUMMY_SP.to_proto().unwrap())),
+            (Some(PurityRule::UnknownCall as i32), None),
         ] {
             let graph = proto::SavedPurityGraph {
                 nodes: vec![proto::SavedPurity {

@@ -1,9 +1,7 @@
 use super::*;
 use crate::analysis_inputs::ProofDependencies;
 use crate::facts::abstract_domain::effect::{CoerceOperand, CoerceOperands};
-use crate::saved_proto::{ProtoConvert, proto};
 use analysis_model::PrimKinds;
-use anyhow::{Result, bail};
 use std::sync::Arc;
 
 /// Two-state expression-level purity with structured reasons.
@@ -88,59 +86,7 @@ impl PurityReason {
     }
 }
 
-#[derive(
-    Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::Display, strum::IntoStaticStr,
-)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum PurityRule {
-    AssignOrUpdate,
-    AwaitOrYield,
-    DeleteOperator,
-    ThrowStmt,
-    DebuggerStmt,
-    UnknownCall,
-    /// A direct call to a chunk-top or imported function whose body was
-    /// classified as impure. Record this call site once rather than copying
-    /// the callee's (possibly shared) transitive reason list.
-    ImpureFunctionCall,
-    UnknownNew,
-    UnknownMember,
-    SuperProp,
-    TaggedTpl,
-    ArraySpread,
-    ObjectSpread,
-    ObjectAssignProp,
-    ClassStaticObservable,
-    BareControlFlow,
-    /// A coercing operator (`+`, `-`, relational, loose equality,
-    /// `~`, unary `+`/`-`, template interpolation, `in`,
-    /// `instanceof`) whose operand is not statically known to be a
-    /// primitive. ToPrimitive / ToNumber / ToString /
-    /// `[Symbol.hasInstance]` / proxy-`has` on an object operand
-    /// fires user code.
-    CoercingOperator,
-    /// A computed property key (`obj[key]`, `{[key]: v}`,
-    /// `class { [key]() {} }`) whose key expression is not
-    /// statically known to be a primitive (or a whitelisted
-    /// `Symbol.*` well-known symbol). ToPropertyKey on an object
-    /// key fires `toString` / `[Symbol.toPrimitive]`.
-    ToPropertyKeyCoercion,
-    /// `for-of` / `for await-of` / `for-in` — iteration fires the
-    /// iterator protocol or proxy enumeration traps on the
-    /// iterated value.
-    IterationProtocol,
-    /// A destructuring pattern (declarator name or function
-    /// parameter) — object patterns fire `[[Get]]`, array patterns
-    /// fire the iterator protocol on the bound value.
-    DestructuringPattern,
-    /// A read of another chunk's cell: an import whose provider binding can
-    /// be rebound, or, inside an exported function, module state of its own
-    /// chunk. The reader's dependency graph has no node for that cell's
-    /// writers, so the read is ordered with every impure statement.
-    OrderDependentRead,
-    Other,
-}
+pub use crate::saved_proto::proto::PurityRule;
 
 /// The effects of evaluating source, in evaluation order, with the proof
 /// dependencies of the discharges that kept other steps effect-free. `Purity`
@@ -391,63 +337,6 @@ impl Effects {
     }
 }
 
-impl ProtoConvert<i32> for PurityRule {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(match self {
-            Self::AssignOrUpdate => proto::PurityRule::AssignOrUpdate,
-            Self::AwaitOrYield => proto::PurityRule::AwaitOrYield,
-            Self::DeleteOperator => proto::PurityRule::DeleteOperator,
-            Self::ThrowStmt => proto::PurityRule::ThrowStmt,
-            Self::DebuggerStmt => proto::PurityRule::DebuggerStmt,
-            Self::UnknownCall => proto::PurityRule::UnknownCall,
-            Self::ImpureFunctionCall => proto::PurityRule::ImpureFunctionCall,
-            Self::UnknownNew => proto::PurityRule::UnknownNew,
-            Self::UnknownMember => proto::PurityRule::UnknownMember,
-            Self::SuperProp => proto::PurityRule::SuperProp,
-            Self::TaggedTpl => proto::PurityRule::TaggedTpl,
-            Self::ArraySpread => proto::PurityRule::ArraySpread,
-            Self::ObjectSpread => proto::PurityRule::ObjectSpread,
-            Self::ObjectAssignProp => proto::PurityRule::ObjectAssignProp,
-            Self::ClassStaticObservable => proto::PurityRule::ClassStaticObservable,
-            Self::BareControlFlow => proto::PurityRule::BareControlFlow,
-            Self::CoercingOperator => proto::PurityRule::CoercingOperator,
-            Self::ToPropertyKeyCoercion => proto::PurityRule::ToPropertyKeyCoercion,
-            Self::IterationProtocol => proto::PurityRule::IterationProtocol,
-            Self::DestructuringPattern => proto::PurityRule::DestructuringPattern,
-            Self::OrderDependentRead => proto::PurityRule::OrderDependentRead,
-            Self::Other => proto::PurityRule::Other,
-        } as i32)
-    }
-
-    fn from_proto(value: i32) -> Result<Self> {
-        Ok(match proto::PurityRule::try_from(value)? {
-            proto::PurityRule::Unspecified => bail!("unspecified saved-analysis PurityRule"),
-            proto::PurityRule::AssignOrUpdate => Self::AssignOrUpdate,
-            proto::PurityRule::AwaitOrYield => Self::AwaitOrYield,
-            proto::PurityRule::DeleteOperator => Self::DeleteOperator,
-            proto::PurityRule::ThrowStmt => Self::ThrowStmt,
-            proto::PurityRule::DebuggerStmt => Self::DebuggerStmt,
-            proto::PurityRule::UnknownCall => Self::UnknownCall,
-            proto::PurityRule::ImpureFunctionCall => Self::ImpureFunctionCall,
-            proto::PurityRule::UnknownNew => Self::UnknownNew,
-            proto::PurityRule::UnknownMember => Self::UnknownMember,
-            proto::PurityRule::SuperProp => Self::SuperProp,
-            proto::PurityRule::TaggedTpl => Self::TaggedTpl,
-            proto::PurityRule::ArraySpread => Self::ArraySpread,
-            proto::PurityRule::ObjectSpread => Self::ObjectSpread,
-            proto::PurityRule::ObjectAssignProp => Self::ObjectAssignProp,
-            proto::PurityRule::ClassStaticObservable => Self::ClassStaticObservable,
-            proto::PurityRule::BareControlFlow => Self::BareControlFlow,
-            proto::PurityRule::CoercingOperator => Self::CoercingOperator,
-            proto::PurityRule::ToPropertyKeyCoercion => Self::ToPropertyKeyCoercion,
-            proto::PurityRule::IterationProtocol => Self::IterationProtocol,
-            proto::PurityRule::DestructuringPattern => Self::DestructuringPattern,
-            proto::PurityRule::OrderDependentRead => Self::OrderDependentRead,
-            proto::PurityRule::Other => Self::Other,
-        })
-    }
-}
-
 #[cfg(test)]
 impl Effects {
     /// The effects in evaluation order, as unit tests assert them; a call of an
@@ -568,17 +457,6 @@ impl PurityReason {
 mod tests {
     use super::*;
     use crate::analysis_inputs::ValueInputRef;
-
-    #[test]
-    fn saved_purity_rules_reject_unknown_values_instead_of_using_other() {
-        assert_eq!(
-            PurityRule::from_proto(PurityRule::Other.to_proto().unwrap()).unwrap(),
-            PurityRule::Other
-        );
-        for value in [0, i32::MAX] {
-            assert!(PurityRule::from_proto(value).is_err());
-        }
-    }
 
     fn dependency(chunk: &str, index: usize) -> ProofDependencies {
         ProofDependencies {

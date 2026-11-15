@@ -4,6 +4,7 @@ use std::io::{self, Write};
 use std::sync::Mutex;
 
 use analysis::diagnostics::{ChunkDiagnostic, Diagnostics, InvocationDiagnostic, progress};
+use analysis::purity::RedundantHintExplanation;
 use anyhow::Result;
 
 pub fn report(

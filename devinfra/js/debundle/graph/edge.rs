@@ -10,7 +10,9 @@ use swc_ecma_ast::Id;
 use crate::ModuleId;
 use crate::analysis_inputs::CommutingStatementsRef;
 use crate::execution_evidence::AssumedEffectReason;
-use crate::facts::{CellOverlap, CellOverlapLaw, DataflowOpacityCause, EffectCell};
+use crate::facts::{
+    CellOverlap, CellOverlapLaw, DataflowOpacityCause, DataflowOpacityExplanation, EffectCell,
+};
 
 use super::build::PremiseVerdict;
 

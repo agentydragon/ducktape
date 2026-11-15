@@ -1,7 +1,7 @@
 use super::*;
 use crate::execution_evidence::{AssumedEffectReason, ExecutionPrecisionLoss};
 use crate::saved_proto::{ProtoConvert, proto, required};
-use anyhow::{Result, bail, ensure};
+use anyhow::{Result, ensure};
 use source_identity::SourceUnitOrdinal;
 
 /// One value per syntactic position bucket. Collapses the repeated
@@ -839,34 +839,9 @@ impl ChunkFactAnalysis {
     }
 }
 
-#[derive(
-    Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::IntoStaticStr, strum::Display,
-)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum StatementKind {
-    /// `var X = ...`, `let X = ...`, `const X = ...`. RHS reads at-init.
-    VarDecl,
-    /// `function X() { ... }`. Hoisted; no at-init reads from body.
-    FnDecl,
-    /// `class X { ... }`. Extends, decorators, computed keys, and
-    /// static blocks read at-init.
-    ClassDecl,
-    /// `export { ... }`, `export X`, etc. Lazy reads (re-exports).
-    Export,
-    /// `import { ... } from ...`. Linked, no at-init body code.
-    Import,
-    /// Bare expression / control-flow / etc. that doesn't declare a
-    /// top-level binding.
-    SideEffect,
-}
+pub use crate::saved_proto::proto::StatementKind;
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum ExportLinkage {
-    Local,
-    Dependency,
-}
+pub(crate) use crate::saved_proto::proto::ExportLinkage;
 
 /// Policy-independent per-statement facts: everything the analyzer
 /// can compute about a top-level statement from the module text alone,
@@ -916,32 +891,15 @@ pub struct StructuralStatementFacts {
 /// are policy-independent source shapes; `OpaqueAtInitCall` consults the
 /// purity classifier, so a declared-pure hint or exact completed operation
 /// coverage can discharge it without erasing the source provenance.
-#[derive(
-    Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, strum::Display,
-)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum DataflowOpacityCause {
-    /// A member write through a tracked binding or an alias shape: the
-    /// written heap cell cannot be attributed.
-    MemberWriteOrAlias,
-    /// `with`, direct or indirect `eval`, `Function(...)`, a dynamic-key
-    /// global access, or `defineProperty`/`Proxy` on the global object:
-    /// the statement may write arbitrary cells
-    /// ([`StatementFacts::cell_writes_summarizable`]).
-    DynamicCellWrites,
-    /// The statement reads a binding a bare global-object alias flowed
-    /// into (`facts/global_object.rs`), so its summary misses global
-    /// property cells.
-    GlobalObjectAliasEscape,
-    /// An at-init call or `new` the purity classifier does not prove
-    /// `Pure`: I/O is not a cell and callee bodies may touch globals.
-    OpaqueAtInitCall,
+pub use crate::saved_proto::proto::DataflowOpacityCause;
+
+pub trait DataflowOpacityExplanation {
+    fn explanation(self) -> &'static str;
 }
 
-impl DataflowOpacityCause {
+impl DataflowOpacityExplanation for DataflowOpacityCause {
     /// Human description used in dataflow opacity diagnostics.
-    pub fn explanation(self) -> &'static str {
+    fn explanation(self) -> &'static str {
         match self {
             Self::MemberWriteOrAlias => "member write or alias",
             Self::DynamicCellWrites => "dynamic cell writes",
@@ -1337,71 +1295,6 @@ impl ProtoConvert<proto::SettledElements> for SettledElements {
             Value::Records(value) => Self::Records {
                 shared_keys: BTreeSet::from_proto(value.shared_keys)?,
             },
-        })
-    }
-}
-
-impl ProtoConvert<i32> for DataflowOpacityCause {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(match self {
-            Self::MemberWriteOrAlias => proto::DataflowOpacityCause::MemberWriteOrAlias,
-            Self::DynamicCellWrites => proto::DataflowOpacityCause::DynamicCellWrites,
-            Self::GlobalObjectAliasEscape => proto::DataflowOpacityCause::GlobalObjectAliasEscape,
-            Self::OpaqueAtInitCall => proto::DataflowOpacityCause::OpaqueAtInitCall,
-        } as i32)
-    }
-
-    fn from_proto(value: i32) -> Result<Self> {
-        Ok(match proto::DataflowOpacityCause::try_from(value)? {
-            proto::DataflowOpacityCause::Unspecified => {
-                bail!("unspecified saved-analysis DataflowOpacityCause")
-            }
-            proto::DataflowOpacityCause::MemberWriteOrAlias => Self::MemberWriteOrAlias,
-            proto::DataflowOpacityCause::DynamicCellWrites => Self::DynamicCellWrites,
-            proto::DataflowOpacityCause::GlobalObjectAliasEscape => Self::GlobalObjectAliasEscape,
-            proto::DataflowOpacityCause::OpaqueAtInitCall => Self::OpaqueAtInitCall,
-        })
-    }
-}
-
-impl ProtoConvert<i32> for ExportLinkage {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(match self {
-            Self::Local => proto::ExportLinkage::Local,
-            Self::Dependency => proto::ExportLinkage::Dependency,
-        } as i32)
-    }
-
-    fn from_proto(value: i32) -> Result<Self> {
-        Ok(match proto::ExportLinkage::try_from(value)? {
-            proto::ExportLinkage::Unspecified => bail!("unspecified saved-analysis ExportLinkage"),
-            proto::ExportLinkage::Local => Self::Local,
-            proto::ExportLinkage::Dependency => Self::Dependency,
-        })
-    }
-}
-
-impl ProtoConvert<i32> for StatementKind {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(match self {
-            Self::VarDecl => proto::StatementKind::VarDecl,
-            Self::FnDecl => proto::StatementKind::FnDecl,
-            Self::ClassDecl => proto::StatementKind::ClassDecl,
-            Self::Export => proto::StatementKind::Export,
-            Self::Import => proto::StatementKind::Import,
-            Self::SideEffect => proto::StatementKind::SideEffect,
-        } as i32)
-    }
-
-    fn from_proto(value: i32) -> Result<Self> {
-        Ok(match proto::StatementKind::try_from(value)? {
-            proto::StatementKind::Unspecified => bail!("unspecified saved-analysis StatementKind"),
-            proto::StatementKind::VarDecl => Self::VarDecl,
-            proto::StatementKind::FnDecl => Self::FnDecl,
-            proto::StatementKind::ClassDecl => Self::ClassDecl,
-            proto::StatementKind::Export => Self::Export,
-            proto::StatementKind::Import => Self::Import,
-            proto::StatementKind::SideEffect => Self::SideEffect,
         })
     }
 }

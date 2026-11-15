@@ -1129,4 +1129,54 @@ mod tests {
         );
         assert!(analysis_model::PrimKinds::from_proto(128).is_err());
     }
+
+    #[test]
+    fn generated_fact_enums_keep_report_names_and_numeric_values() {
+        macro_rules! check {
+            ($type:ident, $variant:ident, $json:literal) => {{
+                let value = proto::$type::$variant;
+                assert_eq!(serde_json::to_value(value).unwrap(), $json);
+                assert_eq!(
+                    serde_json::from_value::<proto::$type>(serde_json::json!($json)).unwrap(),
+                    value
+                );
+                assert!(proto::$type::try_from(0).is_ok());
+                assert!(proto::$type::try_from(i32::MAX).is_err());
+            }};
+        }
+
+        check!(
+            DataflowOpacityCause,
+            DynamicCellWrites,
+            "dynamic_cell_writes"
+        );
+        check!(ExportLinkage, Dependency, "dependency");
+        check!(GlobalAccessKind, Read, "read");
+        check!(
+            PurityRule,
+            ToPropertyKeyCoercion,
+            "to_property_key_coercion"
+        );
+        check!(
+            RedundantPureMemberReason,
+            WhitelistedStaticCall,
+            "whitelisted_static_call"
+        );
+        check!(
+            RedundantPurityProofBasis,
+            WithOtherPurityHints,
+            "with_other_purity_hints"
+        );
+        check!(
+            RedundantPurityReason,
+            InferredPlainDataBinding,
+            "inferred_plain_data_binding"
+        );
+        check!(
+            RootAttemptRewind,
+            LexicalReceiptUnsealed,
+            "lexical_receipt_unsealed"
+        );
+        check!(StatementKind, SideEffect, "side_effect");
+    }
 }
