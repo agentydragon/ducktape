@@ -204,81 +204,27 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
             ]
         )
         snapshot_ids = [f"{index}" * 64 for index in range(1, 9)]
+        progress_snapshot_cases = [
+            (snapshot_ids[0], datetime(2026, 1, 1, tzinfo=UTC), "complete", "complete", "complete"),
+            (snapshot_ids[1], datetime(2026, 1, 2, tzinfo=UTC), "complete", "complete", "pending"),
+            (snapshot_ids[2], datetime(2026, 1, 3, tzinfo=UTC), "complete", "complete", "failed"),
+            (snapshot_ids[3], datetime(2026, 1, 4, tzinfo=UTC), "complete", "complete", "partial"),
+            (snapshot_ids[4], datetime(2026, 1, 5, tzinfo=UTC), "complete", "failed", "complete"),
+            (snapshot_ids[5], datetime(2026, 1, 6, tzinfo=UTC), "complete", "pending", "complete"),
+            (snapshot_ids[6], datetime(2026, 1, 7, tzinfo=UTC), "failed", "failed", "complete"),
+            (snapshot_ids[7], datetime(2026, 1, 8, tzinfo=UTC), "pending", "pending", "pending"),
+        ]
         db.add_all(
-            [
-                ResticSnapshotRow(
-                    machine_id="progress-host",
-                    snapshot_id=snapshot_ids[0],
-                    captured_at=datetime(2026, 1, 1, tzinfo=UTC),
-                    paths=[],
-                    inventory_status="complete",
-                    processing_status="complete",
-                    codex_metadata_status="complete",
-                ),
-                ResticSnapshotRow(
-                    machine_id="progress-host",
-                    snapshot_id=snapshot_ids[1],
-                    captured_at=datetime(2026, 1, 2, tzinfo=UTC),
-                    paths=[],
-                    inventory_status="complete",
-                    processing_status="complete",
-                    codex_metadata_status="pending",
-                ),
-                ResticSnapshotRow(
-                    machine_id="progress-host",
-                    snapshot_id=snapshot_ids[2],
-                    captured_at=datetime(2026, 1, 3, tzinfo=UTC),
-                    paths=[],
-                    inventory_status="complete",
-                    processing_status="complete",
-                    codex_metadata_status="failed",
-                ),
-                ResticSnapshotRow(
-                    machine_id="progress-host",
-                    snapshot_id=snapshot_ids[3],
-                    captured_at=datetime(2026, 1, 4, tzinfo=UTC),
-                    paths=[],
-                    inventory_status="complete",
-                    processing_status="complete",
-                    codex_metadata_status="partial",
-                ),
-                ResticSnapshotRow(
-                    machine_id="progress-host",
-                    snapshot_id=snapshot_ids[4],
-                    captured_at=datetime(2026, 1, 5, tzinfo=UTC),
-                    paths=[],
-                    inventory_status="complete",
-                    processing_status="failed",
-                    codex_metadata_status="complete",
-                ),
-                ResticSnapshotRow(
-                    machine_id="progress-host",
-                    snapshot_id=snapshot_ids[5],
-                    captured_at=datetime(2026, 1, 6, tzinfo=UTC),
-                    paths=[],
-                    inventory_status="complete",
-                    processing_status="pending",
-                    codex_metadata_status="complete",
-                ),
-                ResticSnapshotRow(
-                    machine_id="progress-host",
-                    snapshot_id=snapshot_ids[6],
-                    captured_at=datetime(2026, 1, 7, tzinfo=UTC),
-                    paths=[],
-                    inventory_status="failed",
-                    processing_status="failed",
-                    codex_metadata_status="complete",
-                ),
-                ResticSnapshotRow(
-                    machine_id="progress-host",
-                    snapshot_id=snapshot_ids[7],
-                    captured_at=datetime(2026, 1, 8, tzinfo=UTC),
-                    paths=[],
-                    inventory_status="pending",
-                    processing_status="pending",
-                    codex_metadata_status="pending",
-                ),
-            ]
+            ResticSnapshotRow(
+                machine_id="progress-host",
+                snapshot_id=snapshot_id,
+                captured_at=captured_at,
+                paths=[],
+                inventory_status=inventory_status,
+                processing_status=processing_status,
+                codex_metadata_status=codex_metadata_status,
+            )
+            for snapshot_id, captured_at, inventory_status, processing_status, codex_metadata_status in progress_snapshot_cases
         )
         db.add_all(
             SnapshotFileRow(
