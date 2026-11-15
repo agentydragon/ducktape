@@ -1007,7 +1007,6 @@ fn run_prepared_transform(
         vendor_plan,
         provenance,
         embedded_loaders,
-        module_roots_by_chunk: _,
         ..
     } = prepared;
     let SourcePreparation {
