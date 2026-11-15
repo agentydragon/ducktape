@@ -82,7 +82,7 @@ def test_firecracker_mounts_stay_on_the_correct_side(scratch_app: App) -> None:
 def test_firecracker_native_grpc_urls_use_the_guest_relay_gateway(scratch_app: App) -> None:
     chart = Chart(scratch_app, "firecracker-grpc-routes")
     env = replace(staging.ENV, firecracker_sandboxes=True)
-    pod_state = {
+    pod_state: dict[str, Any] = {
         "name": "state",
         "claim": {
             "storageClassName": "piraeus-hdd-local",
@@ -91,7 +91,7 @@ def test_firecracker_native_grpc_urls_use_the_guest_relay_gateway(scratch_app: A
         },
         "layout": {"type": "DirectoryTree"},
     }
-    firecracker_state = {
+    firecracker_state: dict[str, Any] = {
         **pod_state,
         "claim": {**pod_state["claim"], "volumeMode": "Filesystem", "resources": {"requests": {"storage": "100Gi"}}},
         "layout": {"type": "RawDiskImage", "filesystem": "ext4"},
