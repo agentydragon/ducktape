@@ -1237,6 +1237,9 @@ impl ExecutionInputs<'_> {
 /// Execution-control state of the current run beside the semantic `World`.
 /// Observations of admission predicates are not here either; see
 /// [`Observations`].
+#[path = "reuse_census.rs"]
+mod reuse_census;
+
 pub(super) struct ExecutionState {
     /// Program-prefix values, heap facts, reachability and identity-bearing
     /// cells, copy-on-write so a fork clones the handle, not the contents.
@@ -1287,6 +1290,7 @@ pub(super) struct ExecutionState {
     /// Context lookup only; completed outcomes live in the shared fact store.
     invocation_memos: OrdMap<InvocationSignature, ProgramPoint>,
     export_callback_memos: ExportCallbackMemos,
+    reuse_probe: Option<reuse_census::Probe>,
 }
 
 /// Which export surface an export-callback walk starts from.
@@ -1560,6 +1564,7 @@ impl ExecutionState {
             invocation_memos: _,
             // Validated against the world contents each walk read.
             export_callback_memos: _,
+            reuse_probe: _,
             // Control state: the same at the end of every leaf's body as at
             // the fork, because each leaf runs the same remaining body.
             active_class_member_promotions: _,
@@ -1679,6 +1684,7 @@ impl Executor<'_, '_> {
             invocation_memos: _,
             // Validated against whichever world is current, restored or not.
             export_callback_memos: _,
+            reuse_probe: _,
             // A source function of the program alone.
             class_member_effects: _,
             // Control state: an owner's body leaves it as it found it.
@@ -6579,6 +6585,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // Also the walk's visited set: probed once per reached value. A
         // transient hash set keeps those probes off the persistent `Values`
         // tree, which is built once, in order, from the result.
+        let probe = self
+            .state
+            .reuse_probe
+            .as_ref()
+            .filter(|_| trace_targets.is_none());
+        let mut trace =
+            probe.map(|_| reuse_census::Walk::new(pending.iter().map(|work| work.value())));
         let mut callbacks = FxHashSet::default();
         let mut paths = BTreeMap::new();
         let mut visited_objects = BTreeSet::new();
@@ -6586,6 +6599,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let mut expanded_escaped = false;
         while let Some(work) = pending.pop() {
             let value = work.value();
+            if let Some(trace) = &mut trace {
+                trace.nodes += 1;
+            }
+            let mut census_edges = 0;
+            let mut census_escaped = false;
             let mut expand_stored_references = true;
             let mut expand_object_properties = true;
             match value {
@@ -6644,6 +6662,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     // separately at opaque call sites, and known object
                     // identities are expanded through their property maps.
                     expanded_escaped = true;
+                    census_escaped = true;
                     for escaped in self
                         .state
                         .world
@@ -6652,6 +6671,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         .iter()
                         .filter(|value| !matches!(value, AbstractValue::Value(Value::Top)))
                     {
+                        census_edges += 1;
                         pending.push(work.retained_child(
                             escaped,
                             StoredReferenceEdge::EscapedCallbackPoolExpansion,
@@ -6664,11 +6684,35 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 self.visit_stored_references_with_edges(
                     value,
                     expand_object_properties,
-                    |reference, edge| pending.push(work.retained_child(reference, edge)),
+                    |reference, edge| {
+                        census_edges += 1;
+                        pending.push(work.retained_child(reference, edge));
+                    },
+                );
+            }
+            if let (Some(probe), Some(trace)) = (probe, &mut trace) {
+                probe.node(
+                    trace,
+                    value,
+                    expand_stored_references,
+                    expand_object_properties,
+                    census_escaped,
+                    census_edges,
+                    &self.state.world,
+                    self.state.current_top_owner,
                 );
             }
         }
-        (callbacks.into_iter().collect(), paths)
+        let callbacks: Values = callbacks.into_iter().collect();
+        if let (Some(probe), Some(trace)) = (probe, trace) {
+            probe.walk(
+                trace,
+                &callbacks,
+                &self.state.world,
+                self.state.current_top_owner,
+            );
+        }
+        (callbacks, paths)
     }
 
     /// A direct call or construction of an imported callable carrying a
@@ -9171,6 +9215,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // pass over the joined state until nothing a member can observe
         // changes. Each extra pass spends the shared invocation budget, whose
         // exhaustion takes the order-insensitive fallback summary.
+        let mut census_passes = 0u64;
         let mut foreign_promoted = false;
         loop {
             let callbacks = self.possible_callback_pool(
@@ -9179,6 +9224,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 &mut foreign_promoted,
                 outcome,
             );
+            census_passes += 1;
             let before = self.callback_pool_observation();
             if self.invoke_callback_pool_once(
                 &callbacks,
@@ -9194,6 +9240,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // smaller state; changes outside prefix values do not bump it.
             self.state.world_mut().revision.bump_prefix();
             self.state.invocation_count += 1;
+        }
+        if let Some(probe) = &self.state.reuse_probe {
+            probe.pool_iterations(census_passes);
         }
         // An opaque callee can retain any callback passed to it and invoke it
         // during a later prefix event.
@@ -9295,6 +9344,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // callback set plus a non-callable/unknown possibility.
         // Allocate only when an invoked function consumes a formal. The input
         // pool is immutable; constructing this set reads no live heap state.
+        if let Some(probe) = &self.state.reuse_probe {
+            probe.pool(callbacks.len());
+        }
         let possible_argument = std::cell::OnceCell::new();
         let args_for = |key: u32, index: &ExecutionIndex| {
             let count = index
@@ -9348,6 +9400,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         limit: MAX_SYNCHRONOUS_INVOCATION_DEPTH,
                     }
                 };
+                if let Some(probe) = &self.state.reuse_probe {
+                    probe.fallback(
+                        reentrant_pool,
+                        callbacks.len() > MAX_SYNCHRONOUS_CALLBACK_POOL,
+                        self.state.invocation_count >= MAX_SYNCHRONOUS_INVOCATIONS,
+                    );
+                }
                 let mut nested =
                     self.bounded_invocation_fallback(BoundedInvocationFallbackRequest {
                         owner: self
@@ -14057,6 +14116,7 @@ pub(crate) fn annotate_synchronous_calls(
         active: BTreeSet::new(),
         invocation_memos: OrdMap::new(),
         export_callback_memos: ExportCallbackMemos::default(),
+        reuse_probe: reuse_census::Probe::new(hints.current_chunk_id.clone()),
     };
     let results =
         super::runtime_inference::infer_synchronous_execution(&inputs, state, facts.len());
