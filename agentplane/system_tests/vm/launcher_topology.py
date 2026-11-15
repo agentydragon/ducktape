@@ -49,11 +49,6 @@ class ProjectedPod(Protocol):
     def uid(self) -> str: ...
 
 
-def is_vm_template(template: str) -> bool:
-    """Select all VM templates without probing ordinary Pod Sandbox templates."""
-    return template == "environment-vm" or template.startswith("environment-vm-")
-
-
 def _state_name(container_status: dict[str, Any] | None) -> str:
     if container_status is None:
         return "missing"

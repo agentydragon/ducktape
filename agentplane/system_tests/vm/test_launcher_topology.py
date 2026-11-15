@@ -11,7 +11,7 @@ import pytest
 import pytest_bazel
 
 from agentplane.system_tests.vm import launcher_topology
-from agentplane.system_tests.vm.launcher_topology import inspect_launcher_topology, is_vm_template
+from agentplane.system_tests.vm.launcher_topology import inspect_launcher_topology
 
 
 @dataclass(frozen=True)
@@ -216,12 +216,6 @@ def test_sidecar_must_still_run_the_virtiofsd_command() -> None:
     assert _issue_codes(report) == {"virtiofs_daemon_command_mismatch"}
 
 
-def test_vm_template_match_does_not_select_ordinary_pod_templates() -> None:
-    assert is_vm_template("environment-vm")
-    assert is_vm_template("environment-vm-codex-oom")
-    assert not is_vm_template("environment-tools")
-
-
 async def test_live_observer_waits_for_the_exact_pod_and_retains_sanitized_evidence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -260,6 +254,53 @@ async def test_live_observer_waits_for_the_exact_pod_and_retains_sanitized_evide
     assert report["observation"]["state"] == "observed_ready_pair"
     assert report["pod"]["uid"] == "pod-uid"
     assert report["vmi"]["uid"] == "vmi-uid"
+
+
+@pytest.mark.parametrize(
+    ("pod_uid", "vmi_owner_uid", "expected_state", "expected_vmi_reads"),
+    [
+        ("replacement-pod-uid", "vmi-uid", "pod_uid_mismatch", 0),
+        ("pod-uid", "replacement-vmi-uid", "vmi_uid_mismatch", 1),
+    ],
+)
+async def test_live_observer_rejects_replaced_pod_or_vmi_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    pod_uid: str,
+    vmi_owner_uid: str,
+    expected_state: str,
+    expected_vmi_reads: int,
+) -> None:
+    monkeypatch.setattr(launcher_topology, "undeclared_outputs_dir", lambda: tmp_path)
+    monkeypatch.setattr(launcher_topology, "TOPOLOGY_OBSERVATION_SECONDS", 0)
+    vmi_reads = 0
+
+    class ReplacedCluster:
+        namespace = "test-namespace"
+
+        async def kubectl(self, *arguments: str, **_kwargs: Any) -> str:
+            nonlocal vmi_reads
+            if arguments[:2] == ("get", "pod"):
+                pod = _pod()
+                pod["metadata"]["uid"] = pod_uid
+                pod["metadata"]["ownerReferences"][0]["uid"] = vmi_owner_uid
+                return json.dumps(pod)
+            if arguments[:2] == ("get", "virtualmachineinstance"):
+                vmi_reads += 1
+                return json.dumps(_vmi())
+            raise AssertionError(f"unexpected kubectl call: {arguments}")
+
+    projected_pod = PodIdentity(name="virt-launcher-test-vmi-abcde", namespace="test-namespace", uid="pod-uid")
+
+    with pytest.raises(launcher_topology.LauncherTopologyObservationError):
+        await launcher_topology.assert_admitted_launcher_topology(
+            ReplacedCluster(), "test-sandbox", "sandbox-uid", projected_pod
+        )
+
+    report_path = tmp_path / "vm-artifacts/launcher-topology/pod-uid.json"
+    report = json.loads(report_path.read_text())
+    assert report["observation"]["state"] == expected_state
+    assert vmi_reads == expected_vmi_reads
 
 
 async def test_api_error_is_not_reported_as_a_topology_violation(
