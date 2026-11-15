@@ -36,7 +36,7 @@ from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.probes import grpc_probe
+from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -44,15 +44,11 @@ from cluster.cdk8s.settings_file import SettingsFile
 
 NAME = "mcp-edge"
 DATABASE_URL_ENV = "AGENTPLANE_MCP_EDGE_DATABASE_URL"
+RPC_PORT = 8080
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-mcp-edge:unset"
 _SECRET_DIR = "/etc/agentplane-mcp"
 _DEFAULT_MEMORY_REQUEST = Size.mebibytes(128)
-
-
-def service(namespace: str) -> ServiceRef:
-    """The gRPC listener: ConnectionService and health."""
-    return ServiceRef(name=NAME, port=Port(name="grpc", number=8080), pods=Pods(namespace, tuple(_LABELS.items())))
 
 
 def http_service(namespace: str) -> ServiceRef:
@@ -82,7 +78,6 @@ class McpEdge(Construct):
     ) -> None:
         super().__init__(scope, id)
         self.env = env
-        self.endpoint = service(env.namespace)
         self.http = http_service(env.namespace)
         self.tls = tls_service(env.namespace)
         props = env.mcp_edge
@@ -92,21 +87,18 @@ class McpEdge(Construct):
         workload = add_service_workload(
             self,
             env,
-            serves=[self.endpoint, self.http, self.tls],
+            serves=[self.http, self.tls],
             container=NAME,
             image=_IMAGE,
+            extra_ports=[Port(name="grpc", number=RPC_PORT).container_port()],
             image_pull_policy=image_pull_policy,
             replica_profile=props.replicas,
             env_variables=variables,
             service_account_labels={CALLER_LABEL: "true"} if props.oauth_secret_name is not None else None,
-            readiness=grpc_probe(port=self.endpoint.pod_port, initial_delay_seconds=3),
-            liveness=grpc_probe(port=self.endpoint.pod_port, service="livez", initial_delay_seconds=20),
-            startup=grpc_probe(
-                port=self.endpoint.pod_port,
-                service="livez",
-                initial_delay_seconds=0,
-                period_seconds=5,
-                failure_threshold=60,
+            readiness=http_probe("/readyz", port=self.http.pod_port, initial_delay_seconds=3),
+            liveness=http_probe("/healthz", port=self.http.pod_port, initial_delay_seconds=20),
+            startup=http_probe(
+                "/healthz", port=self.http.pod_port, initial_delay_seconds=0, period_seconds=5, failure_threshold=60
             ),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
@@ -161,7 +153,7 @@ class McpEdge(Construct):
             actions_token_file=None,
             oauth_file=Path(_SECRET_DIR) / "oauth" if props.oauth_secret_name is not None else None,
             host="0.0.0.0",
-            port=self.endpoint.pod_port,
+            port=RPC_PORT,
             http_port=self.http.pod_port,
             operator_oidc=props.operator_oidc,
         )
@@ -197,7 +189,6 @@ class McpEdge(Construct):
 
     def add_platform_resources(self) -> None:
         namespace = self.env.namespace
-        endpoint = self.endpoint
         hostname = self.env.mcp_edge.hostname
         if hostname is not None:
             add_public_route(self, endpoint=self.http, hostname=hostname)
@@ -225,14 +216,13 @@ class McpEdge(Construct):
             self,
             "networkpolicy",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
-            endpoint_selector=endpoint.pods.selector,
+            endpoint_selector=self.tls.pods.selector,
             ingress=[
                 *(
                     [IngressRule.from_gateway(self.http.pod_port)]
                     if hostname is not None or action_hostname is not None
                     else []
                 ),
-                app_component.service(namespace).pods.admit(endpoint.pod_port),
                 app_component.service(namespace).pods.admit(self.tls.pod_port),
                 cilium.SCRAPERS.admit(self.http.pod_port),
             ],
@@ -248,6 +238,6 @@ class McpEdge(Construct):
             self,
             "service-monitor",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
-            selector=ServiceMonitorSpecSelector(match_labels=endpoint.labels),
+            selector=ServiceMonitorSpecSelector(match_labels=self.http.labels),
             endpoints=[Endpoint.plain(port=self.http.port.name)],
         )

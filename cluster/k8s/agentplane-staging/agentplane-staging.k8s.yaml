@@ -8721,26 +8721,29 @@ spec:
           imagePullPolicy: Always
           livenessProbe:
             failureThreshold: 3
-            grpc:
-              port: 8080
-              service: livez
+            httpGet:
+              path: /healthz
+              port: 8081
+              scheme: HTTP
             initialDelaySeconds: 20
             periodSeconds: 10
           name: mcp-edge
           ports:
-            - containerPort: 8080
-              name: grpc
-              protocol: TCP
             - containerPort: 8081
               name: http
               protocol: TCP
             - containerPort: 8443
               name: grpc-tls
               protocol: TCP
+            - containerPort: 8080
+              name: grpc
+              protocol: TCP
           readinessProbe:
             failureThreshold: 3
-            grpc:
-              port: 8080
+            httpGet:
+              path: /readyz
+              port: 8081
+              scheme: HTTP
             initialDelaySeconds: 3
             periodSeconds: 10
           resources:
@@ -8759,9 +8762,10 @@ spec:
             runAsNonRoot: true
           startupProbe:
             failureThreshold: 60
-            grpc:
-              port: 8080
-              service: livez
+            httpGet:
+              path: /healthz
+              port: 8081
+              scheme: HTTP
             initialDelaySeconds: 0
             periodSeconds: 5
           volumeMounts:
@@ -8836,10 +8840,6 @@ metadata:
 spec:
   externalIPs: []
   ports:
-    - name: grpc
-      port: 8080
-      protocol: TCP
-      targetPort: 8080
     - name: http
       port: 8081
       protocol: TCP
@@ -9096,14 +9096,6 @@ spec:
       toPorts:
         - ports:
             - port: "8081"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: app
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
               protocol: TCP
     - fromEndpoints:
         - matchLabels:

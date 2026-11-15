@@ -225,6 +225,15 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     edge_pod = _resource(docs, "Deployment", "mcp-edge")["spec"]["template"]["spec"]
     assert not edge_pod.get("initContainers")
     edge_container = edge_pod["containers"][0]
+    edge_service_ports = {port["port"] for port in _resource(docs, "Service", "mcp-edge")["spec"]["ports"]}
+    assert 8080 not in edge_service_ports
+    assert {8081, 8443} <= edge_service_ports
+    edge_container_ports = {port["containerPort"] for port in edge_container["ports"]}
+    assert {8080, 8081, 8443} <= edge_container_ports
+    assert edge_container["readinessProbe"]["httpGet"]["path"] == "/readyz"
+    assert edge_container["readinessProbe"]["httpGet"]["port"] == 8081
+    assert edge_container["livenessProbe"]["httpGet"]["path"] == "/healthz"
+    assert edge_container["startupProbe"]["httpGet"]["path"] == "/healthz"
     edge_config = yaml.safe_load(_resource(docs, "ConfigMap", "mcp-edge-settings")["data"]["settings.yaml"])
     assert edge_config["actions_target"] == (
         f"{fixture_chart.ACTIONS_SERVICE.fqdn}:{fixture_chart.ACTIONS_SERVICE.port.number}"

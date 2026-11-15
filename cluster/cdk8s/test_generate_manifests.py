@@ -219,6 +219,26 @@ def test_cpap_guest_filesystem_metrics_are_scraped_only_by_alloy(
     assert "egress" not in policy
 
 
+def test_mcp_edge_removes_plaintext_service_and_ingress(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    documents = _generated_documents(generated, parsed_yaml_documents)
+    service = next(doc for doc in documents if doc["kind"] == "Service" and doc["metadata"]["name"] == "mcp-edge")
+    assert {(port["name"], port["port"]) for port in service["spec"]["ports"]} == {("http", 8081), ("grpc-tls", 8443)}
+
+    policy = next(
+        doc for doc in documents if doc["kind"] == "CiliumNetworkPolicy" and doc["metadata"]["name"] == "mcp-edge"
+    )["spec"]
+    ingress_ports = {
+        port["port"]
+        for rule in policy["ingress"]
+        for group in rule.get("toPorts", [])
+        for port in group.get("ports", [])
+    }
+    assert "8080" not in ingress_ports
+    assert {"8081", "8443"} <= ingress_ports
+
+
 def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:
