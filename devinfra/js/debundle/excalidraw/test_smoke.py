@@ -73,6 +73,24 @@ async def origin(runfiles: Runfiles) -> AsyncIterator[str]:
         yield served
 
 
+async def test_help_dialog_opens_and_closes(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        await page.locator("button.help-icon").click()
+        dialog = page.locator(".HelpDialog")
+        await expect(dialog).to_be_visible()
+        await expect(dialog.locator(".HelpDialog__island--tools")).to_be_visible()
+        await expect(dialog.locator(".HelpDialog__island--view")).to_be_visible()
+        await expect(dialog.locator(".HelpDialog__island--editor")).to_be_visible()
+        await page.keyboard.press("Escape")
+        await expect(dialog).to_be_hidden()
+        assert await page.evaluate("globalThis.__debundleHarness.errors") == []
+
+
 async def test_app_loads_and_draws(playwright_driver: Playwright, origin: str) -> None:
     async with deterministic_browser_context(
         playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None

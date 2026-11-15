@@ -1,0 +1,85 @@
+# Original home: packages/excalidraw/components/HelpDialog.tsx
+source_matches:
+  - match: |
+      var ANYTHING = ANYTHING,
+        Header = () => (0, ANYTHING.jsxs)("div", {
+          className: "HelpDialog__header",
+          children: ANYTHING
+        }),
+        ANYTHING = ANYTHING;
+    bindings:
+      - Header
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        Section = (props) => (0, ANYTHING.jsxs)(ANYTHING.Fragment, {
+          children: ANYTHING
+        }),
+        ANYTHING = ANYTHING;
+    bindings:
+      - Section
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        ShortcutIsland = (props) => (0, ANYTHING.jsxs)("div", {
+          className: `HelpDialog__island ${props.className}`,
+          children: ANYTHING
+        }),
+        ANYTHING = ANYTHING;
+    bindings:
+      - ShortcutIsland
+
+  - match: |
+      function* intersperse(items, delimiter) {
+        let first = !0;
+        for (let item of items) first || (yield delimiter), first = !1, yield item;
+      }
+    bindings:
+      - intersperse
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        upperCaseSingleChars = (str) => str.replace(/\b[a-z]\b/, (char) => char.toUpperCase()),
+        ANYTHING = ANYTHING;
+    bindings:
+      - upperCaseSingleChars
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        Shortcut = ({ label, shortcuts, isOr = !0 }) => {
+          STMT_LIST;
+          return (0, ANYTHING.jsxs)("div", {
+            className: "HelpDialog__shortcut",
+            children: ANYTHING
+          });
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - Shortcut
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        ShortcutKey = (props) => (0, ANYTHING.jsx)("kbd", {
+          className: "HelpDialog__key",
+          ...props
+        }),
+        ANYTHING = ANYTHING;
+    bindings:
+      - ShortcutKey
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        HelpDialog = ({ onClose }) => {
+          STMT_LIST;
+          return (0, ANYTHING.jsx)(ANYTHING.Fragment, {
+            children: (0, ANYTHING.jsxs)(ANYTHING, {
+              onCloseRequest: ANYTHING,
+              title: ANYTHING("helpDialog.title"),
+              className: "HelpDialog",
+              children: ANYTHING
+            })
+          });
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - HelpDialog
