@@ -172,9 +172,9 @@ fn check_family(family: Family) {
                 "--only-units".to_string(),
                 only_path.to_string_lossy().into_owned(),
             ];
-            for index in 0..3 {
+            for (index, unit) in units.iter().enumerate() {
                 if required_mask & (1 << index) != 0 {
-                    args.extend(["--require".to_string(), units[index].clone()]);
+                    args.extend(["--require".to_string(), unit.clone()]);
                 }
             }
             if owner_cap == 0 {

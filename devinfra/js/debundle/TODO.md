@@ -627,7 +627,7 @@ paths and source-unit IDs belong in the consuming repo.
 
 ### Planner CLI follow-ups
 
-- **Diagnostics toggle for `modules propose`.** `--limit` now bounds
+- **Diagnostics toggle for `modules propose --strategy auto`.** `--limit` bounds
   proposals and diagnostics and the `limits` summary reports totals
   when details are truncated, but there is still no explicit
   diagnostics on/off toggle for first-pass planning, where proposal
@@ -640,8 +640,10 @@ paths and source-unit IDs belong in the consuming repo.
   landable today.
 - **Patch-plan naming.** `coverage` is useful for intersecting existing
   module YAML with atomic-group coverage, but it is not the only way to
-  discover readable work: `atoms --readable-only` and `modules propose`
-  may show graph-valid work even when no whole patch section is ready.
+  discover readable work: `atoms --readable-only` and the explicit
+  `modules propose --strategy auto` inventory may show candidate work even when
+  no whole patch section is ready. Default `modules propose` constructs an exact
+  positive-gain placement or gives a scoped complete/incomplete outcome.
   Docs and skill text should reserve "plan" for proposed edits that can be
   reviewed/applied, and avoid implying that empty coverage output means there
   is no landable work.
