@@ -350,48 +350,127 @@ Likewise, anonymous effects are first-class source units in the graph and spec;
 categorically excluding them from the main residual applicator leaves the
 relocation model incomplete as a user workflow.
 
-## Required contract and prioritized follow-up
+## Proposed CLI contract and implementation plan
 
-The existing [W9 task][w9] already requests a unified assignment/validation
-contract. This audit supplies concrete defects and controls for it. Adding
-another competing extraction command would not resolve the underlying mismatch.
+The agreed direction is one plan/check/apply workflow, building on the existing
+[W9 task][w9]. The contracts below are targets, not claims about the commands
+audited above. In particular, `modules check` is proposed and `modules apply`
+needs a broader contract. Exact flags and serialized shapes remain implementation
+decisions.
 
-1. **Repair misleading positive results first.** Retain all residual dependencies
-   in readiness accounting even when targets are not emitted. Add P1 as a neutral
-   CLI regression. Stop describing readiness as complete acceptance.
-2. **Retain the accepted starting assignment directly.** Structural atoms and
-   existing owner blocks must be present from construction, not recovered through
-   independently gated partial merges. Preserve P3 as a regression/control.
-3. **Give all strategies the same input/output contract.** Input is the prepared
-   source/spec context, `A0`, allowed units/destinations, and explicit budgets.
-   Output is an explicit destination-change batch. Omitted units stay put.
-4. **Check every returned accepted plan completely.** Include structural atoms,
-   rebinding and global ESM evaluation, then report selector/emission assessment
-   separately. Validate the exact requested destination, including extensions.
-5. **Support a usable joint residual search with fixed named owners.** It must
-   consider multi-atom batches and return honest budget/exhaustion information.
-   It need not enumerate every subset to be useful; it must not claim that an
-   empty heuristic result proves impossibility.
-6. **Unify preview and application around that plan.** Move existing selectors;
-   synthesize/review selectors for new claims; include anonymous units; prove the
-   complete resolved assignment equals the reviewed candidate before writing.
-7. **Only then enable bounded existing-owner reorganization.** Report extra
-   residual gain and moved existing units/homes. Avoid optimizing toward many
-   fragments or one huge mixed SCC merely because either layout passes.
-8. **Make progress and search scope visible.** Return residual-origin units
-   claimed, actual emitted bytes/lines when assessed, unchanged-unit checks,
-   candidate counts, budgets, and distinct stop reasons. Bound diagnostic output
-   and provide meaningful progress for long checks.
+### Operations and guarantees
 
-Keep distinct result states: proposed, graph-rejected, graph-accepted,
-selector-unrealizable, emission-assessed, applied, and runtime-tested. These are
-conceptual distinctions; they do not require inventing a parallel graph format or
-discarding existing typed APIs. Unsupported input, engine failure, interruption,
-budget exhaustion and search exhaustion must also remain distinct.
+| Operation                                                          | Responsibility and guarantee                                                                                                                                                                                                      |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `spec validate`                                                    | Resolve selectors and validate the spec against the configured source. Report source/spec validity separately from complete assignment acceptance.                                                                                |
+| `graph-summary`, `atoms`, `coverage`, `describe`, `inspect-source` | Inspect the current program and assignment. A displayed group carries no extraction guarantee.                                                                                                                                    |
+| `modules propose`                                                  | Search for destination-change plans. Every plan labeled graph-accepted passes the complete assignment gate, including global ESM evaluation. Rejected candidates remain diagnostics.                                              |
+| `modules check`                                                    | Check an arbitrary explicit batch against the baseline assignment, using the same complete gate as discovery and application. Support residual units, existing claims, anonymous statements and unions of atoms.                  |
+| `modules apply`                                                    | Realize the reviewed plan as spec edits, preserve existing selector metadata, and validate the complete resolved assignment before writing. Validation failure writes no spec edits; dry-run performs the same acceptance checks. |
+| `run`                                                              | Materialize the exact spec through the normal pipeline. Report emission and its validation separately from planning and runtime testing.                                                                                          |
 
-This initial report documents findings and prioritizes follow-up implementation
-and regression tests. Broader completeness and individual conservative-effect
-precision remain open questions.
+All operations consume the same prepared source/spec context. Resolve graph-cache
+provenance, engine identity, analysis assumptions and package relocation roots
+there; callers should not reconstruct a different environment for each command.
+Reuse `AssignmentAnalysis` and the existing typed assignment/checking APIs rather
+than introducing a second graph model or compatibility format.
+
+### What a plan means
+
+A plan identifies its exact source, engine, assumptions and baseline assignment
+`A0`, then lists explicit source-unit destination changes. Omitted units keep
+their destinations. An extension names the actual existing owner to check, not a
+stand-in fresh module. Structural atoms stay whole; a plan may move a union of
+atoms, possibly into several destinations in one batch.
+
+Start from an accepted `A0` with existing selected units' destinations fixed.
+Existing modules can still receive residual units. Seed required atoms and owners
+directly from that assignment; do not reconstruct them through independently
+gated pairwise merges. Existing-owner reorganization is a later, explicit move
+scope, independent of the selected search strategy.
+
+Report residual-origin units removed from the residual and any existing units or
+owners moved. Include emitted bytes/lines when emission has been assessed. The
+objective is useful residual reduction, with source review deciding semantic
+ownership and module size. For a reorganization, report the additional residual
+gain over the fixed-owner search and the disturbance to existing modules.
+
+### Composition and evidence
+
+The normal workflow is:
+
+```text
+inspect → propose → review names/selectors → check → apply → run
+```
+
+Manual batches enter at `check`. Discovery and checking use the same acceptance
+path. Application must check the reviewed batch, not silently regroup or replan
+it. Source, baseline, assumptions, names or selector changes require rechecking;
+stale context is an explicit failure. Before writing, prove that the complete
+resolved assignment equals the reviewed plan, including unchanged units.
+
+Acceptance does not compose by concatenation. Two plans accepted independently
+against `A0` require another check as a combined batch. Conversely, a joint move
+may pass even when each constituent move fails alone. Discovery must therefore
+consider multi-atom batches rather than treat individually rejected moves as
+proof that their unions cannot work.
+
+Keep distinct evidence states: proposed, graph-rejected, graph-accepted,
+realization-pending, realization-failed, emission-assessed, applied and
+runtime-tested. “Graph accepted; selectors pending” is useful and honest.
+“Ready to apply” additionally requires checked final names, selectors and spec
+realization. Graph acceptance is a guarantee under the analyzer's supported
+semantics and declared assumptions; it does not replace emission assessment or
+runtime evidence.
+
+Report the searched candidate family, permitted moves, candidate counts, budget
+and stopping condition. Distinguish unsupported input, engine failure,
+interruption, budget exhaustion and search exhaustion. An empty heuristic result
+does not prove no extraction exists. Bound diagnostic output and expose progress
+during long searches. Completeness claims require a defined search family and an
+exhaustive procedure for that family.
+
+### Consolidating the existing tools
+
+Single-atom probing, dependency-closure search, decomposition and coarsening or
+rejoining should become strategies under `modules propose`, sharing the plan and
+checker above. A strategy chooses which candidates to try; it does not supply a
+different placement authority or acceptance standard.
+
+`per_atomic_group` and `coarse_atomic_groups` remain output layout policies under
+`run`. They can supply discovery candidates but are not alternative authoring
+workflows. Fold `modules refine` into generalized application once its metadata
+preservation and whole-assignment checks are supported there. Keep convenience
+operations such as `modules merge`, `bindings assign`, rename and unassign only
+as frontends to the shared plan/check/apply machinery. Commutation-premise
+authoring stays separate: it changes assumptions and needs source audit.
+
+Retire duplicate placement paths after the replacement demonstrates their useful
+cases. Migrate callers directly rather than adding transitional compatibility
+shims.
+
+### Implementation order
+
+1. **Correct the demonstrated false positive.** Add P1 as a neutral real-CLI
+   regression, with the successful uncapped/grouped control. Retain full
+   dependency accounting when a target class is excluded by a size or output
+   cap. This narrow repair does not establish that all proposals are safe.
+2. **Build the common checked-plan path.** Preserve the accepted starting
+   assignment, then support arbitrary batches, the complete checker, spec
+   realization and application. Cover P3's three-unit atom, remote TDZ, a joint
+   move whose individual moves reject, anonymous units, unchanged-unit identity
+   and preview/apply agreement. Use behavioral CLI regressions rather than a
+   second implementation of the checker as the test oracle.
+3. **Add joint discovery and demonstrate useful residual reduction.** Search
+   unions of atoms with existing owners fixed first. Prove that a returned
+   accepted plan can be applied exactly, checked as a complete assignment and
+   materialized through the normal pipeline, with emitted behavior checked where
+   relevant. Then retire duplicate placement implementations and enable bounded
+   existing-owner rearrangements that demonstrate additional useful peels.
+
+Broader completeness and individual conservative-effect precision remain open
+questions. This plan records the implementation direction without changing the
+audited behavior or treating the proposed guarantees as already delivered.
 
 ## Reproducing the neutral checks
 
