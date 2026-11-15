@@ -122,7 +122,7 @@
         return html`<${Container} size="lg" py="xl">
           <${Anchor} href="../">All reports<//>
           <${Title} order=${1} mt="md">Agentplane CI: current branch plan<//>
-          ${paragraph("A pinned comparison of experimental PR #16489 and its devel base, plus an independent measured concurrency port to devel. The goal is good PR regression coverage with at least 30% faster complete required feedback, allowing up to 25% more compute. That latency improvement is not yet proven.")}
+          ${paragraph("All four native acceptance architecture ports are now merged on devel. This pinned comparison shows the remaining manual harness and experiment records in draft PR #16489, alongside the landed architecture and its correctness checks. The goal remains good PR regression coverage with at least 30% faster complete required feedback and at most 25% more compute; that improvement is not yet established.")}
           <${Paper} withBorder p="md" radius="md">
             <${Stack} gap="xs">
               <${Text}>${"Reviewed " + data.observed_at_utc}<//>
@@ -164,7 +164,7 @@
             data.devel_pod_concurrency &&
             html`<${Section}
               id="devel-pod-concurrency"
-              title="Independent devel port: all 22 Pod cases"
+              title="Historical concurrency port: matched 22-case cohort"
             >
               ${paragraph(data.devel_pod_concurrency.decision)}
               <${Rows}
@@ -202,7 +202,28 @@
             <//>`
           }
           <${Section} id="devel" title="What devel already has">
-            ${paragraph("These mechanisms are part of the rebased base and are not claimed as new improvements in this PR.")}
+            ${paragraph("All four ports below are merged. Their CI checks establish correctness and preserved scenario inventories; they are not a new latency or flake-rate measurement.")}
+            <${Rows}
+              headers=${["Merged port", "Checked source", "Result", "Immutable evidence"]}
+              rows=${data.merged_ports.map((row) => [
+                html`<${Anchor} href=${repo + "/pull/" + row.pr}
+                  >${"#" + row.pr + " · " + row.label}<//
+                >`,
+                html`<${Anchor} href=${repo + "/commit/" + row.head}
+                  >${row.head.slice(0, 10)}<//
+                >`,
+                row.result,
+                html`<${Stack} gap="xs"
+                  ><${Anchor}
+                    href=${"https://app.buildbuddy.io/invocation/" + row.invocation}
+                    >CI run<//
+                  ><${Anchor} href=${repo + "/commit/" + row.merge}
+                    >Merged commit<//
+                  ><//
+                >`,
+              ])}
+            />
+            ${paragraph("The architecture below is inherited from devel. The former prototype's Controller bearer opt-in and extra certificate are absent; native clients use the existing App-role service SVID without an App process.")}
             <${Rows}
               headers=${["Existing mechanism", "Current owner"]}
               rows=${data.already_on_devel.map((row) => [row.description, link(row.path, row.label, data.source.base)])}
@@ -213,11 +234,11 @@
               headers=${["Boundary", "Remaining change", "Coverage retained"]}
               rows=${data.remaining_changes.map((row) => [link(row.path, row.label), row.change, row.retained])}
             />
-            ${paragraph("The split changes dependency and ownership boundaries. Direct native clients replace App access only where the scenario's assertion does not require the App. The App-backed delegated Action journey, real Pod/VM/Firecracker paths, trust, RBAC, Secret projection, policy revocation and deployment packaging remain covered. Selection still follows Bazel dependencies; there is no new blind path filter or manual-only replacement for required acceptance.")}
+            ${paragraph("The remaining diff contains no required-suite, native-client, pooling or production authentication implementation change. The manual targets inherit devel's current sixteen App scenarios; the previous fifteen-case shard result remains pinned historical evidence. Required acceptance and its failure coverage stay on devel's CaseBatch.")}
           <//>
           <${Section}
             id="pytest-fixtures"
-            title="Fixture reuse and pytest lifecycle"
+            title="Fixture architecture now on devel"
           >
             <${SimpleGrid} cols=${{ base: 1, sm: 3 }}>
               <${Paper} withBorder p="md"
@@ -252,7 +273,7 @@
             data.pod_concurrency &&
             html`<${Section}
               id="pod-concurrency"
-              title="Pod concurrency with memory settings held fixed"
+              title="Historical 15-case concurrency screen: fixed memory settings"
             >
               ${paragraph(data.pod_concurrency.decision)}
               <${Rows}
@@ -277,7 +298,10 @@
               >
             <//>`
           }
-          <${Section} id="measurements" title="Current experiment evidence">
+          <${Section}
+            id="measurements"
+            title="Retained experiment evidence at original sources"
+          >
             <${Rows}
               headers=${["Screen", "Observed result", "What it establishes"]}
               rows=${data.current_screens.map((row) => [

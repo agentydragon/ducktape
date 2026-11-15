@@ -1,9 +1,9 @@
 {
   "schema_version": 2,
-  "observed_at_utc": "2026-11-15T11:09:19.519616+00:00",
+  "observed_at_utc": "2026-11-15T13:35:35.634811+00:00",
   "source": {
-    "base": "b83d8b0f00cda1729fce43fc3085f343093bd1a2",
-    "head": "22f982f5d9557f9844eb9058d62b79ae1e4e5754",
+    "base": "a4c8ee98430d365c237954bde3ca3767dfa844bd",
+    "head": "82cac3a7dc4b6324565f8a59568455d3a59598dc",
     "pr": 16489,
     "branch": "agent/native-pod-services-partitions",
     "draft": true
@@ -25,7 +25,7 @@
       "label": "Cleanup diagnostics"
     },
     {
-      "description": "Sequential CaseBatch workers own and discard reusable Pod Sandboxes. A fresh case closes that worker\u2019s reusable Sandbox before creating its resources.",
+      "description": "Sequential CaseBatch workers own and discard reusable Pod Sandboxes. A fresh case closes that worker’s reusable Sandbox before creating its resources.",
       "path": "agentplane/system_tests/suites/pod_worker.py",
       "label": "Pod worker ownership"
     },
@@ -35,14 +35,9 @@
       "label": "CaseBatch"
     },
     {
-      "description": "Explicit component configuration and one fixture finalizer; common EnvironmentService authority projection.",
+      "description": "Explicit component configuration and one fixture finalizer. Native profiles reuse the existing App-role service SVID certificate without an App process or a new issuer.",
       "path": "agentplane/system_tests/deployment/fixture_chart.py",
       "label": "Fixture chart"
-    },
-    {
-      "description": "EnvironmentService is served and authorized by the Controller; the Gateway retains Dispatcher and Runner control.",
-      "path": "cluster/cdk8s/agentplane/sandbox_controller.py",
-      "label": "EnvironmentService receiver"
     },
     {
       "description": "Central-sampler LLM ingress uses service identity delegation; scripted requests route by verified Session attribution. The native client account remains explicit in the partitioned central scenarios.",
@@ -53,50 +48,45 @@
       "description": "Four Pod case slots and an explicit same-source experiment override, merged in PR #16659. The full 22-case devel screen and required PR check passed.",
       "path": "agentplane/system_tests/suites/test_pod.py",
       "label": "Pod case concurrency"
+    },
+    {
+      "description": "Explicit App and MCP operator fixture loading; neutral Sandbox types and separate App lifecycle ownership, merged in #16675.",
+      "path": "agentplane/system_tests/app_fixtures.py",
+      "label": "App fixtures"
+    },
+    {
+      "description": "SVID-backed EnvironmentService, Dispatcher, History and Gateway clients with acknowledged-create registration and exact UID cleanup, merged in #16689. No Controller bearer opt-in or extra certificate.",
+      "path": "agentplane/system_tests/driver/native_platform.py",
+      "label": "Native clients"
+    },
+    {
+      "description": "Runtime JUnit confirms 16 App plus seven native Pod cases and one App Action plus three MCP plus four native central cases, merged in #16695. The Runtime proxy witness remains in App.",
+      "path": "agentplane/system_tests/suites/test_pod_platform.py",
+      "label": "Required suite partitions"
+    },
+    {
+      "description": "Module-owned clients and one validated Pod for three compatible trust probes, merged in #16700. Full target, live Pod UID/readiness, body-failure discard and fresh Egress mutation ownership remain checked.",
+      "path": "agentplane/system_tests/driver/native_pod_pool.py",
+      "label": "Trust Pod reuse"
+    },
+    {
+      "description": "The Bridge recovery witness waits for Claude-owned transcript persistence before deliberately killing the harness, with History ingress still fenced, merged in #16704.",
+      "path": "agentplane/app/test_bridge.py",
+      "label": "Bridge reliability"
     }
   ],
   "remaining_changes": [
     {
-      "label": "Explicit App fixture ownership",
-      "path": "agentplane/system_tests/app_fixtures.py",
-      "change": "Common hooks remain neutral; App fixtures and MCP operator login load only in explicit consumers. Shared Sandbox definitions and App lifecycle operations have separate owners.",
-      "retained": "The same six App fixtures, diagnostic privacy/error precedence, App lifecycle assertions and positive App acceptance remain."
-    },
-    {
-      "label": "Pod suite split",
-      "path": "agentplane/system_tests/suites/test_pod_platform.py",
-      "change": "15 App cases remain in the Pod target; seven platform cases use the App-independent native profile.",
-      "retained": "Real workload trust, certificate reissue, SVID identity and revocation checks; App protocol and lifecycle witnesses remain."
-    },
-    {
-      "label": "Services suite split",
-      "path": "agentplane/system_tests/suites/mcp/test_services_central.py",
-      "change": "Separate three MCP cases and four native central-service cases; keep the delegated Action journey on the App-backed stack.",
-      "retained": "OAuth consent, policy-bound approval, native gateway failure/resume and App Action admission."
-    },
-    {
-      "label": "Native transport and identity",
-      "path": "agentplane/system_tests/driver/native_platform.py",
-      "change": "Pod-bound native clients call EnvironmentService on the Controller at port 8082 with its audience, alongside separate Gateway/Dispatcher/History clients.",
-      "retained": "The Controller grants the native reader/manager/operator roles. Only native fixture profiles enable Kubernetes bearer authentication and TokenReview RBAC; production remains SPIFFE-only."
-    },
-    {
-      "label": "Shared trust resources",
-      "path": "agentplane/system_tests/driver/native_pod_pool.py",
-      "change": "Share module-scoped clients and one healthy Pod across three compatible trust probes.",
-      "retained": "Exact Sandbox and Pod UID/readiness checks for each lease; failed/replaced lease cleanup and fresh mutation resources."
-    },
-    {
-      "label": "Pytest runner spike",
-      "path": "agentplane/system_tests/driver/test_async_fixture_lifecycle.py",
-      "change": "Keep the isolated AnyIO lifecycle/control test and honor an explicit asyncio strict mode. Actual fixtures retain pytest-asyncio.",
-      "retained": "No runner migration without machinery to remove; bounded CaseBatch remains."
-    },
-    {
       "label": "Manual ordinary-pytest comparisons",
       "path": "agentplane/system_tests/suites/test_pod_sequential_spike.py",
-      "change": "One unsharded control and two ordinary sequential pytest targets invoke the same scenario functions. All are manual experiments. The latest implementation uses devel\u2019s Worker owner.",
-      "retained": "All 15 case identities and marks are preserved; storage checks run first. Required CaseBatch inherits the four-worker bound already on devel."
+      "change": "One unsharded control and two complementary sequential selectors use devel's Worker.open and SVID Dispatcher client. All three targets remain manual.",
+      "retained": "Inherit the current 16 App cases and their marks, including the Runtime proxy witness; exclusive fresh-inventory checks run first. Required CaseBatch is unchanged."
+    },
+    {
+      "label": "Experiment evidence and dispositions",
+      "path": "agentplane/debug/2026_11_15_after_native_ports.md",
+      "change": "Retain immutable sources, invocation records, rejected layouts and the merged-port inventory. Older AnyIO test/strict-mode code is available at its pinned source, not in this diff.",
+      "retained": "Historical 15-case and 22-case cohorts remain distinct. No fresh performance trial or required-gate policy change."
     }
   ],
   "next_steps": [
@@ -111,64 +101,80 @@
       "acceptance": "Count complete required feedback, action CPU and failures. Selected-test reductions alone do not qualify this branch; App Pod may still dominate the critical path."
     },
     {
-      "title": "3. Remove deployment machinery from protocol contracts",
-      "action": "Audit which App Pod/central cases require Kubernetes reconciliation, issuance, workload identity, volume replacement or actual suspension. Run pure Session, History, authorization and turn-state contracts against real service processes with a small database fixture; keep real deployment witnesses for every unique boundary. Spike the largest transferable critical-path group first.",
-      "acceptance": "Proceed only with an assertion-to-owner inventory, a real failing regression control, and an end-to-end saving plausibly \u226530%. No blanket path filter and no fake replacement for a real deployment assertion."
+      "title": "3. Measure the extracted split and trust reuse",
+      "action": "Inspect current configured image/runfiles inputs, then compare matched complete required-check arms across the suite split and fresh-resource/shared-trust parents. Count actual allocations and independent stack lifetimes.",
+      "acceptance": "Preserve JUnit inventories and real trust/identity/revocation boundaries. Report queue, setup, execution, cleanup and CPU separately. Two fewer allocations do not by themselves establish elapsed savings."
     },
     {
-      "title": "4. Qualify a promising architecture",
-      "action": "If the small screen clears the latency/compute threshold, run 30 matched PR pairs and \u2265100 fresh contract executions across three busy windows, warm/cold conditions and a four-PR burst. Include seeded/historical failures and scenario-isolation controls.",
-      "acceptance": "\u226530% faster complete required feedback; CPU ratio \u22641.25; no lost unique assertion or unexplained failure signature. Record p90, reruns, source/image inputs and unknown metrics."
+      "title": "4. Screen a larger contract architecture only if needed",
+      "action": "Audit which App Pod/central cases require Kubernetes reconciliation, issuance, workload identity, volume replacement or actual suspension. Run pure Session, History, authorization and turn-state contracts against real service processes with a small database fixture; keep real deployment witnesses for every unique boundary. Spike the largest transferable critical-path group first.",
+      "acceptance": "Proceed only with an assertion-to-owner inventory, a real failing regression control, and an end-to-end saving plausibly ≥30%. No blanket path filter and no fake replacement for a real deployment assertion."
+    },
+    {
+      "title": "5. Qualify a promising architecture",
+      "action": "If the small screen clears the latency/compute threshold, run 30 matched PR pairs and ≥100 fresh contract executions across three busy windows, warm/cold conditions and a four-PR burst. Include seeded/historical failures and scenario-isolation controls.",
+      "acceptance": "≥30% faster complete required feedback; CPU ratio ≤1.25; no lost unique assertion or unexplained failure signature. Record p90, reruns, source/image inputs and unknown metrics."
     }
   ],
   "validation": {
-    "implementation_checks_passed": false,
-    "summary": "Rebased-head CI in progress",
-    "detail": "Rebased head 22f982f5d9557f9844eb9058d62b79ae1e4e5754 includes devel b83d8b0f00cda1729fce43fc3085f343093bd1a2. Range-diff preserves the fixture and partition changes, drops the redundant concurrency knob commit, and retains updated experiment records. test_pod.py has no diff from devel. Fresh pre-commit passed; Bazel and artifact/import checks are still in progress at this snapshot. Earlier green runs remain commit-pinned evidence, not current-head validation.",
+    "implementation_checks_passed": true,
+    "summary": "Rebased checks passed",
+    "detail": "Head 82cac3a7dc4b6324565f8a59568455d3a59598dc is rebased onto merged devel a4c8ee98430d365c237954bde3ca3767dfa844bd. PR checks, artifacts/imports and pre-commit passed; visual review completed neutral. Ordinary CI reported no targets affected, so it did not execute a Bazel test/build. Separately, all three manual targets built and exact-head collection passed: unsharded 16 cases, shard A 7, shard B 9, with disjoint shards whose union exactly matches the full inventory and includes the new Runtime proxy witness. Collection does not execute acceptance case bodies and is not a timing sample.",
     "links": [
       {
-        "label": "Rebased-head Bazel CI",
-        "url": "https://github.com/agentydragon/ducktape/actions/runs/43707302660"
+        "label": "Current PR CI: no ordinary targets affected",
+        "url": "https://github.com/agentydragon/ducktape/actions/runs/43719272041/job/132827523482"
       },
       {
-        "label": "Rebased-head pre-commit passed",
-        "url": "https://github.com/agentydragon/ducktape/actions/runs/43707302737"
+        "label": "Prepublication manual-target overlay build",
+        "url": "https://app.buildbuddy.io/invocation/993e60f6-8156-4438-a377-3c93c0650c2d"
       },
       {
-        "label": "Merged full-suite concurrency port",
-        "url": "https://github.com/agentydragon/ducktape/pull/16659"
+        "label": "Current manual collection check",
+        "url": "https://app.buildbuddy.io/invocation/b0393be4-339e-49d0-8efe-5d9f470bdc44"
       }
-    ]
+    ],
+    "manual_collection": {
+      "invocation": "b0393be4-339e-49d0-8efe-5d9f470bdc44",
+      "source_head": "82cac3a7dc4b6324565f8a59568455d3a59598dc",
+      "unsharded": 16,
+      "a": 7,
+      "b": 9,
+      "union_matches": true,
+      "disjoint": true,
+      "runtime_proxy_witness_in_b": true,
+      "mode": "collection only; acceptance bodies not executed"
+    }
   },
   "records": {
-    "previous_report": "https://github.com/agentydragon/ducktape/blob/f51409e51399ef32d95c1eb937b579293a425ca4/agentplane-test-architecture/index.html",
-    "experiments": "https://github.com/agentydragon/ducktape/tree/22f982f5d9557f9844eb9058d62b79ae1e4e5754/agentplane/debug"
+    "previous_report": "https://github.com/agentydragon/ducktape/blob/924d44650a70a6a80171109f17373d32176fc135/agentplane-test-architecture/index.html",
+    "experiments": "https://github.com/agentydragon/ducktape/blob/82cac3a7dc4b6324565f8a59568455d3a59598dc/agentplane/debug/2026_11_15_after_native_ports.md"
   },
   "limits": [
-    "No fleet latency/reliability window refreshed.",
-    "A small passing screen does not establish a reliability-rate improvement.",
-    "Source pins distinguish the initial screen from the post-worker-rebase implementation.",
-    "Complete required feedback and full historical PR selection have not been measured by the single-file selector screen.",
-    "Selector and Pod timing screens predate the final Session-routing rebase; sources remain pinned. That integration is validated separately by current-head correctness checks."
+    "No fleet latency/reliability window was refreshed.",
+    "The port runs verify correctness and case inventories, not a new speedup or rerun-rate delta.",
+    "The earlier selector and timing screens retain their original source revisions; the current required inventory has 23 Pod cases across App/native targets.",
+    "Complete historical PR selection and matched whole-required-feedback benefit remain unmeasured.",
+    "The earlier VM API/Controller outage did not recur in a later run; its root trigger remains unknown."
   ],
-  "decision": "Four Pod case slots and the experiment override are now on devel via merged PR #16659. This rebased draft retains the explicit App fixture boundary, native suite partitions, checked Pod reuse and manual runner experiments. Fresh rebased-head CI is in progress; the complete-feedback goal remains unqualified.",
+  "decision": "All four architecture ports are merged on devel. This draft now retains only the manual ordinary-pytest comparison harness and experiment records. The extracted code uses devel's SVID clients and stronger ownership checks. The rejected two-stack layout stays manual; a 30% complete-feedback improvement remains unqualified.",
   "current_screens": [
     {
       "title": "Pinned configured runfiles",
       "url": "https://app.buildbuddy.io/invocation/4769ce31-d34a-4645-915a-8ffdea0c815d",
       "result": "Zero agentplane/app/ runfiles in native Pod, central services and Gateway crash. App Pod retains eight.",
-      "scope": "Verified at pinned prior source d747cd1c39829b1e1a8fafde84594b7abeabcb05. Earlier matched query measured 4/5/5 \u2192 0/0/0 and App Pod 8 \u2192 8. Action-input evidence, not elapsed-time savings."
+      "scope": "Verified at pinned prior source d747cd1c39829b1e1a8fafde84594b7abeabcb05. Earlier matched query measured 4/5/5 → 0/0/0 and App Pod 8 → 8. Action-input evidence, not elapsed-time savings."
     },
     {
       "title": "Earlier pinned production selector replay",
       "url": "https://app.buildbuddy.io/invocation/20d7de33-6b2e-4200-b873-2ddc91b8bc18",
-      "result": "App Client source edit: 79 \u2192 15 ordinary tests. Gateway 45 \u2192 45; Controller 20 \u2192 20. All 42 selection commands completed successfully.",
+      "result": "App Client source edit: 79 → 15 ordinary tests. Gateway 45 → 45; Controller 20 → 20. All 42 selection commands completed successfully.",
       "scope": "Control 5dc6d1a567cb9f21db696a9ed26bf36e78c7d8f9 versus candidate 6e6ad85a4c9c28a86fed31d83a6ea760677c171b. Exact historical single-file before/after blobs; no full historical PR replay or frequency/latency estimate. These measured sources precede the final Session-routing rebase."
     },
     {
       "title": "Earlier pinned same-source ordinary-pytest screen",
       "url": "https://app.buildbuddy.io/invocation/63ebfa7e-c7f1-472f-960e-f46d5fcaee52",
-      "result": "Control 293.6s; two-shard maximum 313.9s (+6.9%). TestRunner CPU 719 \u2192 1,046 CPU-s (+45.6%). Bazel elapsed 323.1 \u2192 366.7s (+13.5%).",
+      "result": "Control 293.6s; two-shard maximum 313.9s (+6.9%). TestRunner CPU 719 → 1,046 CPU-s (+45.6%). Bazel elapsed 323.1 → 366.7s (+13.5%).",
       "scope": "Both arms use 6e6ad85a4c9c28a86fed31d83a6ea760677c171b and a warm clean baseline. Identical 15-case inventories, all passed, no skips or extra physical test attempts. One pair; action screen only. This allocation fails the speed and compute screen. This pair predates the displayed final rebase."
     },
     {
@@ -829,7 +835,7 @@
         "relative_reduction": 0.06392870157188901
       }
     },
-    "decision": "Default this branch's 15-case App Pod suite to four workers; keep Pod requests, memory limits, outer executor sizing and case ownership unchanged.",
+    "decision": "This frozen fifteen-case App Pod screen compared two, three and four workers with Pod requests, memory limits, outer executor sizing and case ownership fixed. The four-worker default is now on devel; these are historical measurements at the linked benchmark source.",
     "scope": "Two uncached actions per setting, ordered 2/3/4 then 4/3/2. All 90 JUnit case executions passed. Identical input trees and executor properties; Commands differ only by the case-limit environment variable. Infrastructure was warm, fixtures were distinct, and cleanup completed. This is an action screen, not complete PR feedback or a fleet failure-rate estimate. Control setup averaged 17 seconds slower than four-worker setup, so the full 21.4% action difference cannot all be attributed to concurrency; the case envelope fell 23.6%.",
     "memory_finding": "No memory setting changed. Maximum whole-action memory was 4.95 GiB at two workers, 4.99 at three and 4.87 at four. Kubelet samples retained at least about 4.70 GiB available and sampled up to five concurrent runtime Pods in the four-worker arm. Before-import/final snapshots contain no FailedScheduling, OOMKilled or eviction reasons. Ten-second sampling and final snapshots can miss transient events.",
     "limitations": [
@@ -1169,8 +1175,8 @@
       "Keep the larger architecture goal open: at least 30% faster complete required feedback with no lost unique boundary assertion and CPU ratio no greater than 1.25.",
       "Diagnose the trust-probe wait variance using existing Gateway and Kubernetes lifecycle evidence; distinguish certificate/Secret projection, observer reconnect and cleanup before proposing a repair."
     ],
-    "decision": "Keep four case slots in the independent devel port, PR #16659. All 22 cases passed in every matched run. Mean action time fell from 363.3s to 289.2s (20.4%); the case envelope fell 29.8%. Pod requests, memory limits and executor sizing stayed fixed.",
-    "scope": "Two fresh actions per setting, sequential order 2/4/4/2, with all 88 JUnit case executions passing. Input trees, executor properties and case identities are identical; decoded Commands differ only in the case-limit environment variable. All fixtures were distinct, infrastructure was warm, and cleanup completed. Mean setup was 35.2s at two slots and 40.4s at four; setup variation is separate from case concurrency. This small action screen does not establish whole-PR savings, p90, cold-start behavior or a fleet reliability rate. Two-slot action times ranged 335.6\u2013391.1s; four-slot times ranged 285.2\u2013293.1s. One trust probe took 94.5s in the slower control versus 12\u201317s elsewhere; its wait is not subdivided in existing traces, so that outlier is not attributed to concurrency. Against the faster control alone, the four-slot mean is 13.8% shorter; this is a sensitivity comparison, not a confidence bound.",
+    "decision": "Four Pod case slots landed through PR #16659. In its frozen unsplit 22-case cohort, all cases passed and mean action time fell from 363.3s to 289.2s (20.4%); the case envelope fell 29.8%. Pod requests, memory limits and executor sizing stayed fixed. The current required inventory is partitioned differently, so this is not a new port measurement.",
+    "scope": "Two fresh actions per setting, sequential order 2/4/4/2, with all 88 JUnit case executions passing. Input trees, executor properties and case identities are identical; decoded Commands differ only in the case-limit environment variable. All fixtures were distinct, infrastructure was warm, and cleanup completed. Mean setup was 35.2s at two slots and 40.4s at four; setup variation is separate from case concurrency. This small action screen does not establish whole-PR savings, p90, cold-start behavior or a fleet reliability rate. Two-slot action times ranged 335.6–391.1s; four-slot times ranged 285.2–293.1s. One trust probe took 94.5s in the slower control versus 12–17s elsewhere; its wait is not subdivided in existing traces, so that outlier is not attributed to concurrency. Against the faster control alone, the four-slot mean is 13.8% shorter; this is a sensitivity comparison, not a confidence bound.",
     "memory_finding": "Maximum whole-action memory was 5.07 GiB at two slots and 5.12 GiB at four. Kubelet samples retained at least 4.51 GiB available and sampled up to 5 runtime Pods in the four-slot arm. Before-import/final snapshots contain no FailedScheduling, OOMKilled or eviction reasons. Ten-second sampling and snapshots can miss transient events.",
     "required_ci": {
       "source_head": "d46827cb676f6e2c09044f6a3fce4a465440df0f",
@@ -1215,5 +1221,67 @@
       "commit": "b83d8b0f00cda1729fce43fc3085f343093bd1a2",
       "merged_at_utc": "2026-11-15T11:01:01Z"
     }
+  },
+  "merged_ports": [
+    {
+      "pr": 16675,
+      "label": "Explicit App fixtures",
+      "head": "e874dc89e2fbc0b4a17614123a316d23e68270d6",
+      "merge": "ffdb0b275b1ce465d25732b2b2948c315150b603",
+      "invocation": "8d7d28e3-d13a-5de8-9285-7acebb5da064",
+      "result": "Required CI passed; merged."
+    },
+    {
+      "pr": 16689,
+      "label": "SVID native clients and ownership",
+      "head": "1183f536f75b93de8fa123adc34dc28f2fa2b37c",
+      "merge": "bb449861d8ef2f4fb6bb57569631dceaa78ece2a",
+      "invocation": "bada925e-ab64-5e59-9778-73078ff2b8f8",
+      "result": "Required CI passed, including VM and all four Bridge shards; merged."
+    },
+    {
+      "pr": 16695,
+      "label": "Dependency-based suite partitions",
+      "head": "33dd5b631759b50f1c7f99ff1b952f4ffc9f3646",
+      "merge": "94791bfbb9f0bb8b30d1552621e5423c58ea2976",
+      "invocation": "8dc2680b-c7af-5fbd-abff-e37be13f988b",
+      "result": "All 14 selected test targets passed. JUnit inventories: Pod 16+7; MCP/central 1+3+4. Merged."
+    },
+    {
+      "pr": 16700,
+      "label": "Validated shared trust Pod",
+      "head": "e159531320921ae562ce76d0c3513437cf90c669",
+      "merge": "a4c8ee98430d365c237954bde3ca3767dfa844bd",
+      "invocation": "f86aeaa8-7807-56c6-97b2-8333148298bf",
+      "result": "Seven native Pod cases executed remotely, all passed with no errors/failures/skips. Pool unit check passed from remote cache; merged."
+    }
+  ],
+  "diagnoses": {
+    "bridge": {
+      "pr": 16704,
+      "status": "merged",
+      "mechanism": "Test killed Claude before its native resume transcript was flushed. Wait for the existing seed reply through live Runner status while History ingress remains fenced.",
+      "invocations": [
+        "f85c63b4-764b-41d2-a75f-6eb97bf62d77",
+        "20ded4a3-06ad-5000-a201-ce092b630cf8"
+      ],
+      "rerun_rate_delta": null
+    },
+    "vm": {
+      "status": "unresolved trigger",
+      "failed_invocation": "1e04db43-23de-5681-be63-5a941f6062e2",
+      "later_passing_invocation": "bada925e-ab64-5e59-9778-73078ff2b8f8",
+      "finding": "Containerd exec/API timeouts and Controller leader loss. Warm failing baseline versus cold comparison is correlation; retained samples do not show OOM/pressure proof. Do not label the later pass or intervening cgroup setup fix a repair.",
+      "next_step": "On recurrence correlate exact action executor, baseline and containerd/k3s/API timestamps, and unconfirmed teardown ownership."
+    }
+  },
+  "qualification_followups": {
+    "tracker": "https://github.com/agentydragon/ducktape/issues/16099#issuecomment-6894330879",
+    "runtime_inventory": "Verified from suite-split JUnit; all 14 selected test targets passed.",
+    "configured_inputs": "Pending inspection on merged devel; shared renderer Python coupling remains.",
+    "historical_pr_selection": "Pending complete-PR replay with Gateway/Controller positive controls.",
+    "full_feedback_and_compute": "Pending matched required-check comparisons that include failures and added stack lifetimes.",
+    "trust_reuse": "Pending matched allocations/time/compute comparison, retaining replacement/not-ready/body-error discard.",
+    "concurrency_exposure_end_utc": "2026-11-22T11:01:01Z"
   }
 }
