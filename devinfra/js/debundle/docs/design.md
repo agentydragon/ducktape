@@ -12,12 +12,13 @@
 > derive the imports graph `I` plus side-effect ordering graph
 > `S` and runs a two-pass realizability gate: Pass 1 rejects any
 > cycle among the constraining edges (at-init reads and `S`);
-> Pass 2 accepts a cycle that also runs through lazy reads only if
-> an ESM evaluation simulator, run over the emitted import order,
-> proves every constraining edge's target evaluates before its
-> source. The emit is source-order: each logical module's body is
-> its assigned statements in original chunk order, with explicit
-> `import` / `export` declarations. There is no init-wrapper
+> Pass 2 accepts a cycle that also runs through lazy reads only when
+> the concrete import schedule gives every constraining edge a
+> dependency-before-consumer ESM evaluation order. The scheduler first
+> preserves the preferred import policy when valid, then constructs an
+> exact alternative when needed. The emit is source-order: each logical
+> module's body is its assigned statements in original chunk order, with
+> explicit `import` / `export` declarations. There is no init-wrapper
 > machinery, no closure pass, no implicit binding pulls — every
 > owned binding is named explicitly in the spec, and `Imported`
 > bindings flow through `AssignmentInputs::binding_catalogue` /
@@ -998,18 +999,26 @@ verdict ("Emit-side responsibilities").
 The ordinary assignment path retains a concrete `EsmImportSchedule` on
 `AssignmentAnalysis`. It contains the ordered intra-chunk import targets for
 entry and every emitted module, including phantom imports and empty authored
-owners. The existing `EsmImportOrder` remains the policy that constructs it.
-`check_realizability_with_schedule` first checks the exact required target sets,
-then evaluates that schedule. Translation/effect sweeps and lowering consume the
-same immutable object; lowering does not reconstruct a second ordering. This
-refactor preserves the existing policy and accepted placements. Alternative
-schedule construction remains tracked in <../plans/module_placement.md>.
+owners. `EsmImportOrder` supplies a deterministic preferred policy. The exact
+constructor keeps it when its concrete lists pass the schedule verifier, and
+otherwise derives an alternative schedule; if none exists, the preferred
+schedule remains available as a rejection witness. The schedule-aware gate
+checks the exact required target sets before evaluating the retained schedule.
+Translation/effect sweeps and accepted lowering consume this same immutable
+object. Missing canonical targets are emitted as phantom side-effect imports,
+including deferred closure dependencies. Accepted output verifies exact target
+equality. Rejected reading-only output under `--emit-on-rejection` has no valid
+schedule and preserves preferred diagnostic ordering without certification. See
+the [exact scheduler and placement proof](module_placement.md).
 
 The predicate has two forms:
 
-1. **The pure function `check_realizability`**, `O(N + M)` per call. The
-   validator (`validate_assignment`) calls it on the spec's actual
-   assignment; a non-empty verdict stops materialization.
+1. **The pure function `check_realizability`** projects the assignment, computes
+   SCCs and constructs an exact import schedule. The preferred-valid path uses
+   graph traversal and deterministic ordering; alternative scheduling may revisit
+   failed trials, so there is no general linear-time claim. The validator
+   (`validate_assignment`) calls it on the spec's actual assignment; a non-empty
+   verdict stops accepted materialization.
 2. **`RealizabilityIndex`**, a stateful index over a working assignment for
    callers that ask many hypothetical questions. `apply` commits the legacy
    single-target `ModuleAssignmentDelta`; `apply_batch` commits one final mapping
@@ -1032,12 +1041,12 @@ Differential tests (`realizability/tests.rs`,
 
 ### Invariant: no bespoke parallel walks
 
-No production code answers the validity question by walking the dependency graph or
-the quotient with its own algorithm: two algorithms drift, one shared
-implementation cannot. A caller that needs a verdict over a hypothetical
-assignment asks the index. Adjacent diagnostics may read the verdict's
-dependency-edge provenance, but the validity decision goes through the primitive
-only.
+Concrete assignment certification uses the shared primitive or index. The
+constructive proposer derives necessary graph constraints from the canonical
+projection and calls the same exact schedule constructor; its final positive
+witness is certified through the full primitive. Do not introduce a second
+interpretation of edge kinds or a weaker gate. Adjacent diagnostics may read the
+verdict's dependency-edge provenance without becoming acceptance authority.
 
 ### Peel planner unification
 
@@ -2067,132 +2076,48 @@ current chunk-admission check sees only eager eval.
 
 ## Lemma 2: entry-side import ordering
 
-Clause 3's Pass 1 (no multi-module SCC in the constraining-edge
-subgraph of `Q`) admits mixed cycles in the imports graph `I` — cycles
-whose back-edges are `LazyUse`. For the ESM linker to actually evaluate
-these without TDZ, the entry module's `import` directives must be emitted
-in a specific source order so that depth-first link traversal lands on a
-Phase-2 evaluation order matching the constraining-edge linearization;
-Pass 2 (below) checks that it does.
+Pass 1 rejects any multi-module SCC in the constraining projection `C` of the
+quotient: no import-list order can make every dependency in a directed `C`
+cycle evaluate first. When Pass 1 passes, the full import graph `I` can still
+contain cycles closed by lazy imports. Their validity depends on the actual
+ordered import lists because ESM evaluates imports by depth-first traversal.
 
-The materializer computes the source-import order on
-`esm_import_order::EsmImportOrder` (held by `AssignmentAnalysis`)
-to drive this. The algorithm:
+`EsmImportOrder` computes a preferred deterministic policy from the canonical
+edge projection. It uses the constraining linker order and reverses members
+within import SCCs, with readable source-order refinements where safe. This
+policy is a preference, not the complete validity rule. The scheduler first
+reifies and verifies those ordered target lists. If they expose a TDZ, the exact
+constructor searches the complete `I` and `C` relations for another set of
+actual ordered target lists. It preserves successful DFS subtrees and explores
+only choices among currently unvisited actual imports; it does not treat a failed
+preferred traversal as proof that all schedules fail. Its completeness argument
+is in the [exact scheduler and placement proof](module_placement.md).
 
-1. Compute SCCs of the full quotient `I ∪ S` via Tarjan.
-2. Each SCC is assigned a dependency rank = the minimum
-   `linker_position` of its members. `linker_position` itself comes
-   from a toposort of the **constraining-edge subgraph** (which is
-   acyclic per clause 3, even when `I ∪ S` is cyclic).
-3. Sort all modules by `(SCC dep rank ascending, intra-SCC
-linker_position DESCENDING)`.
+The true entry imports every emitted module, including binding-less and empty
+authored modules. A constraining dependency into entry is unschedulable because
+entry is the ESM DFS root and evaluates last. Pure-lazy import cycles need no
+constraining-order repair. For other cycles, the exact scheduler's output is a
+concrete list for entry and for every module; an independent verifier checks
+that each list contains exactly the canonical import targets and that every
+constraining dependency evaluates before its consumer.
 
-For acyclic shapes every SCC is a singleton, so the within-SCC
-reverse is a no-op and the order matches `linker_order`
-(dependency-first source). For cyclic-I shapes the within-SCC
-reverse is load-bearing: ESM Phase-2 evaluates by recursing into
-imports before running the module's own init, so DFS into the
-FIRST imported SCC member traverses the cycle and finalizes its
-constraining dependency LAST in post-order. Reversing within the
-SCC means the dependent is imported first; DFS unwinds through the
-dependency; post-order evaluates dependency first.
+`AssignmentAnalysis` retains the preferred policy for deterministic ordering and
+diagnostics and the concrete schedule used by validation. Gate validation,
+candidate translation/effect sweeps, and lowering consume that retained
+schedule. The from-scratch and incremental realizability paths use the same
+`EsmImportSchedule::construct` routine when they assess a hypothetical
+assignment. If construction fails, both use `EsmImportSchedule::from_policy`
+only to produce a useful TDZ witness:
+a Pass-2 `esm_evaluation_tdz` rejection means no valid schedule exists, while the
+displayed emitted-order TDZ identifies one blocking constraining pair. The
+witness by itself does not establish that one fixed policy is exhaustive.
 
-For the canonical
-[mod_a (lazy → mod_b) + mod_b (eager → mod_a)] case the algorithm
-produces entry imports `[mod_b, mod_a]` so the linker DFS visits
-mod_b → mod_a → mod_b (cycle no-op) and evaluates mod_a first, then
-mod_b. mod_b's at-init read of A succeeds.
-
-**Asymmetric-I-cycle gating: a runtime-DFS simulator.** Lemma 2's
-reversal trick only rescues an asymmetric I-cycle when
-ECMA-262's actual evaluation DFS, run over the materializer's
-import-order choices, lands every constraining edge's target
-strictly before its source. Two facts about the emitted structure
-decide that:
-
-1. **The entry imports every logical module.** The emitted entry
-   file carries one `import` directive per plan — named imports
-   for binding-owning plans, side-effect-only
-   `import "./<plan>.js";` for binding-less plans (anonymous-
-   statement-only modules) — in `source_import_position` order.
-   ESM DFS therefore always enters an SCC without entry at its
-   most-dependent member (Lemma 2's intra-SCC reversal) before
-   any mediator's dependency-first imports can reach it. This is
-   why a mediator outside entry reaching into an SCC does NOT
-   reject: the entry's own import of the SCC's dependent wins
-   the race (pinned by
-   `e2e/mediator_reaches_asymmetric_cycle_test` and
-   `e2e/asymmetric_non_residual_cycle_test`).
-2. **Entry in the cycle, with a constraining edge whose
-   target is entry, always TDZs.** Entry is the ESM DFS
-   root — post-order evaluates every other cycle member first,
-   then entry. A constraining read of entry's
-   `class`/`const`/`let` bindings TDZs. ESM hoists every
-   `import` above any statement, so no source-order trick fixes
-   it.
-
-The realizability primitive (`check_realizability` and the
-matching `IncrementalQuotient::verdict*` helpers) makes the
-verdict by:
-
-1. Pass 1: Tarjan over the constraining-edge subgraph. Any
-   multi-module SCC there is a mutual-eager cycle that no source
-   order can satisfy. Reject.
-2. Pass 2: Tarjan over the full I-graph (constraining ∪ lazy).
-   For every multi-module SCC carrying at least one constraining
-   edge, run an in-process **ESM evaluation simulator** rooted at
-   entry:
-   - At entry, fan out to EVERY module in the I-graph (the
-     entry's universal per-plan imports), in entry-import order
-     (`EsmImportOrder::sort_entry_imports` — Lemma 2's intra-SCC
-     reverse of constraining linker order).
-   - At every other module, visit its I-successors in
-     module-import order (`EsmImportOrder::sort_module_imports`
-     — dependency-first toposort of the constraining subgraph,
-     `ModuleId` tie-break).
-   - Walk DFS; record each module's post-order index when its
-     body would evaluate.
-   - For each constraining edge `(M, X)` inside the SCC, demand
-     `post_order[X] < post_order[M]`. Any violation = TDZ at
-     runtime → reject the SCC.
-
-SCC results belong to the graph used to compute them. Reuse between the gate,
-module quotient reports, and other graph walks requires identical edge sets
-and isolated-node handling; sharing a vertex type or a Tarjan implementation
-does not establish that equivalence.
-
-The source I-graph omits entry's implicit imports of every emitted module.
-Independently of its SCCs, reject every constraining dependency **into entry**:
-entry evaluates last, so that dependency cannot be satisfied. The pure reference,
-committed/overlay verdicts and boolean tier ladder all enforce this guard and
-report the offending dependency edges as `EsmEvaluationTdz`. There is no need to inflate
-the maintained I-graph with universal entry fan-out: a violated pair targeting
-any non-entry ancestor already has a return path in the source I-graph and is
-covered by its ordinary SCC check.
-
-Pure-lazy I-cycles (no constraining edge inside the SCC) skip
-pass 2's simulator and pass. The simulator and the emitter share
-ONE ordering implementation — `esm_import_order::EsmImportOrder`,
-built from the canonical `ChunkConstrainingEdgeSet` — so the
-import order the gate simulates is structurally the order
-`lowering::lower::prepare_candidate_emission_plan` emits: the entry's import list and every
-module's merged intra-chunk import list (cross-module binding
-imports, phantom side-effect imports, and the residual-entry
-import, interleaved by one sort) come from the same two sort
-rules the simulator's DFS uses for its neighbor order. A spec
-accepted by the gate is one the emitted ESM bundle actually
-evaluates without TDZ.
-
-Because Lemma 2 is implemented in the materializer and the
-gate's simulator decides asymmetric I-SCCs precisely, the
-validator (`validate_assignment` in
-`validation.rs`) and read-only planner
-checks share the realizability primitive's verdict — a
-`peelable_now` proposal is a peel the gate accepts and Node will
-execute correctly at runtime (the contract pinned by
-`e2e/lemma_two_rescued_asymmetric_cycle_test`,
-`e2e/mediator_reaches_asymmetric_cycle_test`, and
-`e2e/runtime_tdz_on_imported_class_test`).
+SCC partitions remain specific to their graph: Pass 1 uses `C`, while Pass 2
+uses `I` and checks constraining edges within its cyclic components. A pure-lazy
+`I`-cycle carries no constraining obligation and passes. The shared concrete schedule,
+rather than a second policy sort in the gate or emitter, keeps simulated ESM
+evaluation and emitted import lists aligned. Real-source and Node differential
+tests cover rescued asymmetric-cycle behavior.
 
 ## The realizability theorem
 
@@ -2201,18 +2126,17 @@ execute correctly at runtime (the contract pinned by
 > multi-module ESM bundle observationally equivalent to the input chunk.
 >
 > **Gate.** The gate accepts iff no rebinding write crosses a module boundary
-> (clause 2) and the quotient's I-graph passes both passes of clause 3
-> ("Lemma 2: entry-side import ordering"):
+> (clause 2), the constraining-edge subgraph (`R ∪ S`) has no multi-module SCC
+> (Pass 1), and a concrete ordered import schedule exists whose ESM post-order
+> evaluates every constraining dependency before its consumer (Pass 2). The
+> exact scheduler preserves the preferred policy when valid and constructs an
+> alternative when needed. An independent verifier checks the complete target
+> lists and the resulting evaluation order. If construction fails, the
+> preferred-order TDZ is retained as a diagnostic witness; the Pass-2 rejection
+> means no valid schedule exists, not that one fixed policy was exhaustive.
 >
-> 1. **Pass 1.** The constraining-edge subgraph (`R ∪ S`) has no multi-module
->    SCC.
-> 2. **Pass 2.** In every multi-module SCC of the full I-graph (constraining ∪
->    lazy) that contains a constraining edge, the ESM evaluation simulator
->    evaluates each constraining edge's target before its source under the
->    emitted import order.
->
-> A cycle with no constraining edge (every cross-module edge lazy) is accepted
-> without simulation.
+> A cycle with no constraining edge (every cross-module edge lazy) has no
+> constraining-order obligation.
 >
 > **Implementation.** The implementation computes per-statement
 > facts, builds the dependency graph, then quotients that graph by the
@@ -2238,15 +2162,15 @@ judges it in two passes. Two weaker gates would be wrong:
 
 1. **Pass 1 alone (`R ∪ S` acyclic).** A cycle in `I` whose constraining
    projection is acyclic still affects the linker: lazy reads emit `import`
-   directives that the linker's DFS follows. Two modules that import each
-   other — one direction at-init, the other lazy — have acyclic `R` but cyclic
-   `I`; whether the at-init read TDZs depends on which member the DFS enters
-   first, that is, on the emitted import order. Pass 2 simulates that order.
-2. **Rejecting every I-cycle that contains a constraining edge.** Lemma 2
-   steers the DFS into the cycle at its dependent member, so the dependency
-   evaluates first, and Pass 2 accepts the cycles where that works. Rejecting
-   all of them would force colocation of bindings whose only relationship is
-   an eager read one way and a lazy reference back.
+   directives that the linker's DFS follows. Whether an at-init read TDZs
+   depends on the actual ordered import lists. Pass 2 constructs a concrete
+   schedule and checks its ESM post-order; a constraining DAG alone does not
+   guarantee that a valid schedule exists.
+2. **Rejecting every I-cycle that contains a constraining edge.** Some mixed
+   cycles admit an actual import-list order that evaluates each constraining
+   dependency first. Rejecting every such cycle would force colocation even
+   when the exact scheduler can construct a valid schedule, such as an eager
+   read one way with a lazy reference back.
 
 A cycle whose every cross-module edge is lazy needs neither pass to fail: no
 read fires until every member has finished evaluating, so rejecting it would
@@ -2284,8 +2208,8 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   gaps".
 - **A2. No top-level `await` in any emitted module.** TLA changes
   the linker's evaluation algorithm to AsyncCycleRoot semantics
-  (TC39 §16.2.1.5.4 + §16.2.1.5.5). The proof's reverse-DFS
-  argument doesn't apply unmodified — async modules form their own
+  (TC39 §16.2.1.5.4 + §16.2.1.5.5). The synchronous evaluation-order
+  argument does not apply unmodified — async modules form their own
   ordering hazards, and a cycle through two async modules has
   semantics this design has not analyzed. **Enforced**: the TLA
   scan runs inside fact analysis (`analyze_chunk` /
@@ -2657,28 +2581,20 @@ in `I`, sort the import list so that the earliest-in-`L` successor
 appears first (DFS goes deepest into the first import). The
 resulting DFS post-order is `L`. ∎
 
-**Implementation.** `esm_import_order::EsmImportOrder` (held on
-`AssignmentAnalysis`, see "Lemma 2: entry-side import ordering"
-above) computes `L` from the constraining-edge subgraph's toposort,
-reversed within each `I ∪ S` SCC so that the cycle dependent is
-imported first and DFS unwinds through the dependency.
-`lowering::lower::prepare_candidate_emission_plan` sorts entry's emitted `import` directives
-with `sort_entry_imports` and every module's merged intra-chunk
-import list with `sort_module_imports`; the realizability gate's
-evaluation simulator applies the same two sorts to its DFS neighbor
-order, so the simulated linker order and the emitted one cannot
-diverge. The validator rejects any spec the primitive's tightened
-clause-3 rule does not accept, so every spec the materializer
-reaches `prepare_candidate_emission_plan` for has an `L` Lemma 2 can realize.
+**Implementation.** `EsmImportOrder` on `AssignmentAnalysis` supplies the
+deterministic preferred policy. The exact scheduler first reifies that policy
+as concrete import lists; if the lists do not satisfy the constraining
+post-order, it constructs an alternative from the complete import and
+constraining graphs. `AssignmentAnalysis` retains the resulting schedule, and
+the gate independently checks its exact target sets. Lowering orders entry's
+complete fanout and every module's merged intra-chunk import list from those
+retained lists, so emission cannot silently choose a different traversal. The
+constructor's completeness proof and the target-list verifier are documented
+in the [exact scheduler and placement proof](module_placement.md).
 
-The remaining principled gap is the `(at-init forward, lazy back)`
-shape **where entry itself is a cycle member**. Lemma 2's
-"unwind through the dependency" fails there — entry is the ESM
-DFS root, so post-order evaluates every other cycle member first,
-and a constraining read into entry TDZs. The primitive's
-tightened rule rejects this shape outright (see the entry-in-
-cycle carve-out under "Lemma 2: entry-side import ordering"); the
-emitter never sees one.
+A constraining edge into entry is always impossible to schedule: entry is the
+ESM DFS root and evaluates last. Other cycles involving entry are assessed by
+the complete constructor, which may find an order or reject the assignment.
 
 **Lemma 3 (At-init read correctness).**
 Under any evaluation order `L` respecting `I`, every at-init read
@@ -2734,13 +2650,13 @@ _Proof._ Pass 1 makes the constraining subgraph `R ∪ S` acyclic, so it
 admits a topological linearization `L`. The full graph `I` may have
 additional cycles. A cycle whose cross-module edges are all lazy is sound
 for lazy reads regardless of which member the DFS enters first (Lemma 4). A
-cycle that also carries constraining edges is accepted only by Pass 2, which
-fixes the evaluation order the emitted imports produce and checks that every
-constraining edge's target evaluates before its source. By Lemma 2 we author
-each emitted module's import directive list to make ECMA-262 produce a
-linker order respecting both `R` and `S`. By Lemmas 3 and 4 every binding
-read in the emitted bundle sees an initialized value identical to the input
-chunk's read at the same source ordinal. By Lemma 5 every side-effecting
+cycle that also carries constraining edges is accepted only when the exact
+scheduler constructs concrete imports whose ESM post-order satisfies every
+constraining dependency; the independent target-list verifier checks that
+result. The scheduling construction and completeness argument are given in
+the [exact scheduler and placement proof](module_placement.md). By Lemmas 3
+and 4 every binding read in the emitted bundle sees an initialized value
+identical to the input chunk's read at the same source ordinal. By Lemma 5 every side-effecting
 statement fires in the same relative order as in the input chunk. By the
 emit's same-module source-order invariant, statements within a module fire
 in their original source ordinal order. The observation-trace of the emitted
@@ -2748,10 +2664,10 @@ bundle is therefore identical to the input chunk's. ∎
 
 Scope of the argument: Lemmas 3–5 are stated for evaluation orders `L`
 respecting `I`. An I-SCC that carries both constraining and lazy edges has no
-such `L`; for it the conclusion rests on the simulator reproducing the
-ECMA-262 evaluation order under the emitted import order (both consume
-`EsmImportOrder`; `e2e/simulator_node_differential_sweep_test` compares the
-simulated order against Node), not on a proof in this document.
+such `L`; the exact scheduler instead constructs ordered import lists and
+the verifier checks their ESM post-order against the constraining dependencies.
+The scheduler proof is linked above; `e2e/simulator_node_differential_sweep_test`
+compares the simulated evaluation order with Node for its covered fixtures.
 
 ### Coverage gaps (what the proof does NOT cover)
 
@@ -2811,11 +2727,11 @@ The constraining subgraph holds only `(mod_b, mod_a)` and is acyclic, so
 Pass 1 passes, but the lazy `readB` body emits `import { B } from "./mod_b"`
 in `mod_a`, so `I` has the cycle `{mod_a, mod_b}`. Its outcome depends on the
 linker's DFS order: entering `mod_a` first would evaluate `mod_b` first, and
-`const B = A + "-postfix"` would run while `A` is in TDZ. The emitter avoids
-that: the entry imports every module with the SCC's dependent first
-(`[mod_b, mod_a]`, Lemma 2), so the DFS runs `entry → mod_b → mod_a → mod_b`
-(cycle, no-op), `mod_a` evaluates first, and `mod_b` sees `A` initialized.
-Pass 2's simulator reproduces that order and accepts; the e2e test
+`const B = A + "-postfix"` would run while `A` is in TDZ. The preferred policy gives the entry imports with the SCC's dependent first
+(`[mod_b, mod_a]`, Lemma 2). Because that concrete schedule is valid, the exact
+constructor preserves it: DFS runs `entry → mod_b → mod_a → mod_b` (cycle,
+no-op), `mod_a` evaluates first, and `mod_b` sees `A` initialized. The
+schedule verifier accepts it; the e2e test
 `lemma_two_rescued_asymmetric_cycle_test`
 (<../e2e/lemma_two_rescued_asymmetric_cycle_test.rs>) runs the emitted bundle
 of the same shape under Node.
@@ -3020,11 +2936,12 @@ destination assignment passes the shared gate.
 
 An assignment-induced cycle is one level up. Distinct singleton atoms
 can be grouped into destinations so that the quotient has a constraining
-cycle or a full import SCC whose simulator finds a TDZ. The worked
-example in §"Worked example: cycle through a lazy back-edge" has a
-binding-level read DAG, while the spec's choice to put `B` and `readB`
-in different modules creates a module-level `I ∪ S` cycle; it is
-unrealizable when Pass 2 proves a TDZ. Co-location may repair that
+cycle or a full import SCC with no valid concrete import schedule. A reported
+Pass-2 TDZ is a witness from the preferred schedule; the constructor establishes
+that no valid schedule exists. The worked example in §"Worked example: cycle
+through a lazy back-edge" has a binding-level read DAG, while the spec's choice
+to put `B` and `readB` in different modules creates a module-level `I ∪ S`
+cycle. It is unrealizable when Pass 2 finds no valid schedule. Co-location may repair that
 assignment, but it is only one candidate repair and still needs the
 shared gate.
 
@@ -3198,9 +3115,10 @@ wholly-unclaimed atomic groups. It assigns each
 candidate atom a temporary destination using the borrowed graph and ownership
 catalogue, then initially groups atoms with equal reachable nonvirtual owners
 in the canonical strict constraining module projection and the same interval
-between fixed-owner evaluations in the fine layout. The shared ESM simulator
-supplies that evaluation order from the borrowed canonical quotient. Its
-temporary module and entry IDs match fine lowering's domain and tie breaks.
+between fixed-owner evaluations in the fine layout. The shared ESM schedule
+constructor supplies that evaluation order from the borrowed canonical quotient,
+preserving the preferred policy when valid and deriving an alternative otherwise.
+Its temporary module and entry IDs match fine lowering's domain and tie breaks.
 Atoms in the same candidate bucket combine only when each literal public
 export name still identifies one source binding or export site in the combined
 module. Incompatible atoms remain separate; their export names are preserved
@@ -3406,12 +3324,12 @@ A destination assignment is **valid** iff:
 1. Every cross-destination read edge in `Q` is importable.
 2. No cross-destination rebinding write edge remains in `Q`.
 3. The I-graph of `Q` passes the two-pass gate ("Lemma 2: entry-side import
-   ordering"): its constraining-edge subgraph — `Q` with every `LazyUse` and `HoistedUse`
-   cross edge dropped — has no multi-module SCC (Pass 1), and in every
-   multi-module SCC of the full I-graph that contains a constraining edge the
-   ESM evaluation simulator evaluates each constraining edge's target before
-   its source (Pass 2). Pure lazy-read import cycles are realizable because
-   ESM evaluates the lazy side without observing a TDZ on the eager side.
+   ordering"): its constraining-edge subgraph — `Q` with every `LazyUse` and
+   `HoistedUse` cross edge dropped — has no multi-module SCC (Pass 1), and a
+   concrete schedule exists whose ESM post-order evaluates every constraining
+   dependency before its consumer (Pass 2). The exact constructor preserves the
+   preferred policy when valid and otherwise searches the complete graphs.
+   Pure lazy-read import cycles carry no constraining-order obligation.
 
 Clauses 2 and 3 are what the "Realizability primitive" section above defines
 as the single shared implementation; clause 1 is emit policy ("Emit-side
@@ -3621,8 +3539,8 @@ legacy-gate-rejected but mappable candidate can still produce
 marked inspection output. This scoped candidate result is not emission
 authority: the existing realizability gate remains the only authority to emit
 runnable output until later coverage domains are closed. The candidate's effect
-assessment is computed once for that same assignment and import order; it does
-not rerun realizability or source analysis.
+assessment is computed once for that same assignment and concrete import
+schedule; it does not rerun realizability or source analysis.
 
 `EmissionFiles` owns reconstructed syntax while body transformations are still
 allowed. Its output-path indexes are built once after lowering changes entry and
@@ -3737,7 +3655,7 @@ An anonymous source unit belongs to the entry destination unless a
 module claims it through `anonymous_statements`.
 `assignment_assembly::compute_source_unit_claims` resolves those claims (each module's
 `anonymous_statement_ordinals`) into the assignment that
-`AssignmentAnalysis::build_with` quotients by, so the gate sees the module dep
+``AssignmentAnalysis`::build_with` quotients by, so the gate sees the module dep
 graph the materializer will emit. Without that resolution, an anonymous source unit with a
 constraining in-edge from a peeled named source unit would create a fake
 cross-module edge, and the validator would reject a spec whose closure the
@@ -3820,9 +3738,9 @@ source unit it depends on. Once both endpoints share a destination, that
 edge disappears from the quotient.
 
 Rewriting source so the constraining read becomes lazy can also help, but the
-debundler normally does not rewrite program structure. Lazy read edges still
-emit import directives and still participate in `I`, so the cycle that is left
-behind is judged by Pass 2.
+debundler normally does not rewrite program structure. Lazy read edges still emit import directives and still participate in `I`, so
+Pass 2 checks whether the remaining graph admits a valid concrete import
+schedule.
 
 `render_cycle_summary` (<../validation.rs>) names the binding pairs to
 colocate, per blocking SCC.
@@ -3883,13 +3801,11 @@ design invariants:
    quotient, not separate heuristic analyses.
 4. **Source-order emission** — each module's body in source order;
    cross-module imports + source-chunk re-imports; `export { ... }`.
-   No init wrappers. Import-directive ordering comes from the shared
-   `esm_import_order::EsmImportOrder` (the same object the
-   realizability gate's evaluation simulator consults): the entry
-   imports every logical module — side-effect-only for binding-less
-   plans — in entry-import order, and each module's intra-chunk
-   imports (binding, phantom side-effect, residual-entry) form one
-   merged list in module-import order.
+   No init wrappers. `AssignmentAnalysis` retains the exact ordered
+   intra-chunk target lists selected by the preferred-policy-first
+   constructor. The gate verifies those lists; the entry fanout and each
+   module's merged intra-chunk imports (binding, phantom side-effect,
+   residual-entry) are emitted in that same schedule.
 
 Local named exports (`export { binding as public }`) are also part of the
 source chunk's public interface. If such a directive is assigned to a
@@ -4367,10 +4283,10 @@ class B extends A { … }
 `mod_b → mod_a` is a constraining edge: the `extends` clause reads `A` at
 init, and class declarations are TDZ-prone. If `mod_a` also reads anything
 owned by `mod_b` at module top, the cycle is mutual and Pass 1 rejects it. If
-`mod_a`'s read is lazy (inside a function body), the cycle is asymmetric and
-Pass 2 decides: it accepts when the emitted import order evaluates `mod_a`
-before `mod_b`, and rejects when `mod_a` is the entry destination, which as the
-DFS root evaluates last — `class B extends A` would throw
+`mod_a`'s read is lazy (inside a function body), the cycle is asymmetric.
+The exact scheduler accepts when a concrete import order evaluates `mod_a`
+before `mod_b`; it rejects when `mod_a` is the entry destination, which as
+the DFS root evaluates last — `class B extends A` would throw
 `ReferenceError: Cannot access 'A' before initialization`.
 
 Resolution: colocate `A` and `B`, or remove the cross edge that closes the
@@ -4392,7 +4308,7 @@ the dep graph captures that read without special-case logic. If the spec also
 gives `mod_a` an at-init read of something in `mod_b`, the cycle is mutual and
 rejected.
 
-## AssignmentInputs + AssignmentAnalysis: dependency graph plus quotient
+## AssignmentInputs + `AssignmentAnalysis`: dependency graph plus quotient
 
 The runtime data structures the validator and emitter both consume are a pair:
 the `gate` crate's per-chunk `AssignmentInputs` (inputs + IR, built from the
@@ -4404,7 +4320,7 @@ quotienting that dependency graph under the spec assignment.
 
 Statement facts feed the dependency graph (stored on `AssignmentInputs`), and the
 module dep graph is a quotient of that dependency graph under the current spec
-assignment (stored on `AssignmentAnalysis`). `AssignmentAnalysis::inputs()`
+assignment (stored on `AssignmentAnalysis`). ``AssignmentAnalysis`::inputs()`
 returns the shared inputs; `module_quotient()` and `module_quotient_sccs()` expose
 the derived module graph. `ValidatedAssignment::assignment_analysis()` retains
 the accepted analysis while lowering projects its emission placement.
@@ -4416,11 +4332,11 @@ yields a `ValidatedAssignment` only when atomic-group, schedule, and
 cross-destination rebinding checks pass. Lowering requires this immutable borrow
 of the checked assignment. Assignment inputs and
 derived graph views are private and exposed only through immutable accessors, so
-callers cannot change the assignment independently of its cached import order or
-quotient. Rejection reports remain
-available to diagnostics without constructing an emission capability. This checks
-the assignment and shared import order; vendor consumer and final export checks
-still run on the emitted files.
+callers cannot change the assignment independently of its retained concrete
+import schedule or quotient. Rejection reports remain available to diagnostics
+without constructing an emission capability. This checks the assignment and
+shared schedule; vendor consumer and final export checks still run on the
+emitted files.
 
 `BindingId` carries the interned source `ChunkId` together with the full SWC
 `Id` (symbol and `SyntaxContext`). `BindingCatalogue` stores that chunk identity
