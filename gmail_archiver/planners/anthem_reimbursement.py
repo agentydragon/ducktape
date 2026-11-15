@@ -2,15 +2,15 @@
 
 import contextlib
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
 
 from pydantic import BaseModel
 
-from gmail_api.labels import SystemLabel
 from gmail_archiver.inbox import GmailInbox
 from gmail_archiver.models import Email
-from gmail_archiver.plan import LABEL_AUTO_CLEANED, Plan
+from gmail_archiver.plan import Plan
+from gmail_archiver.planners.age_archive import plan_age_archive
 
 
 class AnthemReimbursement(BaseModel):
@@ -69,41 +69,13 @@ class AnthemReimbursementPlanner:
     DAYS_THRESHOLD = 30
 
     def plan(self, inbox: GmailInbox) -> Plan:
-        plan = Plan(planner=self)
-
-        # Fetch messages with insurance/anthem/reimbursement label that are in inbox
-        messages = inbox.fetch_messages("label:insurance/anthem/reimbursement label:INBOX")
-
-        cutoff_date = datetime.now(UTC) - timedelta(days=self.DAYS_THRESHOLD)
-
-        for message in messages:
-            parsed = parse_anthem_reimbursement(message)
-
-            if not parsed.email_date:
-                plan.add_action(message=message, labels_to_add=[], labels_to_remove=[], reason="No email date found")
-                continue
-
-            # Make date timezone-aware for comparison
-            email_date = parsed.email_date
-            if email_date.tzinfo is None:
-                email_date = email_date.replace(tzinfo=UTC)
-
-            if email_date >= cutoff_date:
-                plan.add_action(
-                    message=message,
-                    labels_to_add=[],
-                    labels_to_remove=[],
-                    reason=f"Too recent (within {self.DAYS_THRESHOLD} days)",
-                )
-            else:
-                plan.add_action(
-                    message=message,
-                    labels_to_add=[LABEL_AUTO_CLEANED],
-                    labels_to_remove=[SystemLabel.INBOX],
-                    reason=f"Old enough (> {self.DAYS_THRESHOLD} days)",
-                )
-
-        # Count actual archive operations
-        archive_count = sum(1 for pa in plan.actions.values() if SystemLabel.INBOX in pa.action.labels_to_remove)
-        plan.add_message(f"Archiving {archive_count} old reimbursements (> {self.DAYS_THRESHOLD} days)")
-        return plan
+        return plan_age_archive(
+            inbox,
+            planner=self,
+            query="label:insurance/anthem/reimbursement label:INBOX",
+            days_threshold=self.DAYS_THRESHOLD,
+            parse=parse_anthem_reimbursement,
+            date_from=lambda parsed: parsed.email_date,
+            missing_date_reason="No email date found",
+            archive_item_plural="reimbursements",
+        )

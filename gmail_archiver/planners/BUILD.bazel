@@ -18,7 +18,7 @@ py_library(
     srcs = ["anthem_eob.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//gmail_api:labels",
+        ":age_archive",
         "//gmail_archiver:inbox",
         "//gmail_archiver:models",
         "//gmail_archiver:plan",
@@ -31,7 +31,7 @@ py_library(
     srcs = ["anthem_reimbursement.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//gmail_api:labels",
+        ":age_archive",
         "//gmail_archiver:inbox",
         "//gmail_archiver:models",
         "//gmail_archiver:plan",
@@ -44,7 +44,7 @@ py_library(
     srcs = ["anthropic.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//gmail_api:labels",
+        ":age_archive",
         "//gmail_archiver:date_patterns",
         "//gmail_archiver:inbox",
         "//gmail_archiver:models",
@@ -59,7 +59,7 @@ py_library(
     srcs = ["dbsa.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//gmail_api:labels",
+        ":age_archive",
         "//gmail_archiver:event_classifier",
         "//gmail_archiver:inbox",
         "//gmail_archiver:models",
@@ -122,7 +122,7 @@ py_library(
     srcs = ["usps.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//gmail_api:labels",
+        ":age_archive",
         "//gmail_archiver:date_patterns",
         "//gmail_archiver:inbox",
         "//gmail_archiver:models",
@@ -160,6 +160,33 @@ py_test(
         ":conftest",
         ":square",
         "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "age_archive",
+    srcs = ["age_archive.py"],
+    deps = [
+        "//gmail_api:labels",
+        "//gmail_archiver:inbox",
+        "//gmail_archiver:models",
+        "//gmail_archiver:plan",
+    ],
+)
+
+py_test(
+    name = "test_age_archive",
+    srcs = ["test_age_archive.py"],
+    deps = [
+        ":age_archive",
+        ":conftest",
+        "//:conftest",
+        "//gmail_api:labels",
+        "//gmail_archiver:inbox",
+        "//gmail_archiver:models",
+        "//gmail_archiver:plan",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
