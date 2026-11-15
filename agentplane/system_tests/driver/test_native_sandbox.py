@@ -78,7 +78,7 @@ async def test_native_scope_retains_identity_when_sandbox_cleanup_is_unconfirmed
     platform = create_autospec(NativePlatformClients, instance=True)
     platform.environment = create_autospec(EnvironmentServiceClient, instance=True)
     target = EnvironmentTarget(namespace="test", name="owned-native", uid="acknowledged-uid")
-    identity = {"namespace": "test", "name": "owned-native", "uid": "identity-uid"}
+    identity: ScenarioIdentity = {"namespace": "test", "name": "owned-native", "uid": "identity-uid"}
     identity_deletions: list[str] = []
 
     async def create_identity(_cluster: Cluster, _name: str, _policies: list[str]) -> ScenarioIdentity:

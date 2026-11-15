@@ -10,8 +10,8 @@ import pytest
 import pytest_bazel
 from google.protobuf.message import Message
 
-from agentplane.env.runtime.control import environment_runtime_pb2, environment_runtime_pb2_grpc
-from agentplane.proto import identity_pb2
+from agentplane.env.runtime.control import environment_runtime_pb2_grpc
+from agentplane.proto import identity_pb2, session_pb2
 from agentplane.runner_gateway import client as gateway_client
 from agentplane.runner_gateway.api import (
     INCARNATION_UID_HEADER,
@@ -31,9 +31,9 @@ async def test_runner_proxy_omits_bearer_and_keeps_sandbox_identity(monkeypatch:
     async def fake_dial(_target: str, **_kwargs: object) -> AsyncIterator[grpc.aio.Channel]:
         yield cast(grpc.aio.Channel, object())
 
-    async def get_status(_request: Message, **kwargs: object) -> environment_runtime_pb2.EnvironmentRuntimeStatus:
+    async def get_status(_request: Message, **kwargs: object) -> session_pb2.EnvironmentRuntimeStatus:
         observed.append(cast(tuple[tuple[str, str], ...], kwargs["metadata"]))
-        return environment_runtime_pb2.EnvironmentRuntimeStatus()
+        return session_pb2.EnvironmentRuntimeStatus()
 
     monkeypatch.setattr(gateway_client, "dial", fake_dial)
     monkeypatch.setattr(
@@ -50,7 +50,7 @@ async def test_runner_proxy_omits_bearer_and_keeps_sandbox_identity(monkeypatch:
     await client.runner_unary(
         destination,
         lambda stub: stub.GetStatus,
-        environment_runtime_pb2.GetStatusRequest(),
+        session_pb2.GetStatusRequest(),
         expected_incarnation_uid="incarnation-uid",
     )
 
