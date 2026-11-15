@@ -767,13 +767,16 @@ flowchart LR
 
 ## Staged Policy and Egress Admin certificate admission
 
-Receiver code supports exact service SVID allowlists alongside current bearer accounts. Deployment
-settings and callers wait for receiver image pins. Policy readers and writers have separate grants;
-the forward proxy continues to authenticate workload Identities independently of its admin API.
+The Policy TLS listener verifies client SVIDs against the workload CA and grants the exact App SVID
+separate reader and writer authority. Existing bearer accounts remain admitted during the caller
+cutover; App→Policy still uses its bearer over verified server TLS until its separate caller switch.
+Egress Admin already admits the App SVID and the App uses it over mTLS. The forward proxy continues
+to authenticate workload Identities independently of its admin API.
 
 ```mermaid
 flowchart LR
-    app[App service SVID] -->|mTLS: explicit reader or writer grant| policy[Policy Service]
+    app[App service] -->|current bearer over verified TLS| policy[Policy Service]
+    app -.->|App SVID reader and writer grants applied before caller switch| policy
     app -->|mTLS: admin read methods| admin[Egress Admin]
     workload[Workload Identity SVID] -.->|existing workload authentication| proxy[Egress forward proxy]
 ```

@@ -13,7 +13,7 @@ from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, MemoryResources
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from agentplane.net.peertls.config import POLICY_CONTROLLER_URI, ServerTLSListener
+from agentplane.net.peertls.config import APP_URI, POLICY_CONTROLLER_URI, ServerTLSListener
 from agentplane.policy_controller.settings import Settings
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import workload_tls
@@ -102,6 +102,7 @@ class PolicyController(Construct):
                 listen=f":{grpc_tls_service.pod_port}",
                 cert_file=Path(workload_tls.CERT_FILE),
                 key_file=Path(workload_tls.KEY_FILE),
+                client_ca_file=Path(workload_tls.TRUST_BUNDLE_FILE),
             ),
             grpc_audience=TOKEN_AUDIENCE,
             workload_issuer=WORKLOAD_ISSUER.name,
@@ -109,6 +110,8 @@ class PolicyController(Construct):
             workload_namespaces=workload_namespaces,
             reader_accounts=frozenset({f"{namespace}/app"}),
             writer_accounts=frozenset({f"{namespace}/app"}),
+            reader_services=frozenset({APP_URI}),
+            writer_services=frozenset({APP_URI}),
         )
         settings_file = SettingsFile(
             self,
