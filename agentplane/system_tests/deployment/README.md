@@ -50,7 +50,8 @@ family with the VM resource estimate. Baseline fingerprints include the layer mo
 `baseline.py`, its bootstrap, iptables and release helpers, `pki_infrastructure.py`,
 `certificates.py`, and PKI releases/images. VM stacks also include `vm/infrastructure.py` and VM
 releases/images/configuration. `stack.py` owns fresh workload orchestration and cleanup;
-`vm/runtime.py` owns per-action VM volumes and guest evidence. The fingerprint includes
+`vm/runtime.py` owns guest configuration and evidence; its runtime composition selects retained
+KubeVirt infrastructure and optional workspace block storage. The fingerprint includes
 `certificates.py` because its cleanup determines whether retained PKI is clean.
 Every k3s entrypoint registers the same `deployment.pytest_plugin` module. Its ordinary session
 `deployment` fixture starts only when requested. The rendered runtime selects the Pod, KubeVirt or

@@ -21,18 +21,20 @@ def test_device_allocation_releases_after_pod_deletion(tmp_path: Path, runfiles:
         process = node.start(layers_in_memory=True)
         cleanup.callback(node.stop, process)
         node.import_images({image: runfiles.root() / location for image, location in images.items()})
-        runtime = Runtime(tmp_path)
+        runtime = Runtime()
         # This tests Kubernetes device registration/allocation/release, not KVM ioctls.
         # The production Firecracker acceptance retains /dev/kvm and its unchanged guest.
-        container = runtime.releases[1]["spec"]["template"]["spec"]["containers"][0]
+        container = runtime.setup_objects[1]["spec"]["template"]["spec"]["containers"][0]
         container["args"][1] = (
             "--device=name: kvm\ngroups:\n  - paths:\n      - path: /dev/null\n        mountPath: /dev/kvm\n    count: 1"
         )
-        runtime.releases[1]["spec"]["template"]["spec"]["volumes"][1]["hostPath"] = {
+        runtime.setup_objects[1]["spec"]["template"]["spec"]["volumes"][1]["hostPath"] = {
             "path": "/dev/null",
             "type": "CharDevice",
         }
-        runtime.releases[1]["spec"]["template"]["spec"]["containers"][0]["volumeMounts"][1]["mountPath"] = "/dev/null"
+        runtime.setup_objects[1]["spec"]["template"]["spec"]["containers"][0]["volumeMounts"][1]["mountPath"] = (
+            "/dev/null"
+        )
         runtime.install(node)
         runtime.wait_until_ready(node)
         consumer_image = os.environ["KVM_PLUGIN_CONSUMER_IMAGE"]

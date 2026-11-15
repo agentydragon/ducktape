@@ -50,7 +50,7 @@ def test_probe_cadence(arm: str, runfiles: Runfiles, k3s_binary: Path, scripted_
         with running_stack(
             inputs,
             models=LocalModel(url=f"http://{scripted_listener.host}:{scripted_listener.port}"),
-            virtualization_factory=None,
+            runtime_factory=None,
             validate_vm_shutdown=lambda: True,
             persist_infrastructure=True,
         ) as stack:

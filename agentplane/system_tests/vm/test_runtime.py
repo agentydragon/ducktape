@@ -16,7 +16,7 @@ from agentplane.system_tests.vm import (
     infrastructure as vm_infrastructure,
     sandboxes as vm_sandboxes,
 )
-from agentplane.system_tests.vm.runtime import VmRuntime
+from agentplane.system_tests.vm.runtime import VmRuntime, runtime as vm_runtime
 
 
 @pytest.mark.parametrize("leftover", [None, "vm", "storage_class"])
@@ -25,7 +25,10 @@ def test_vm_clean_certification_requires_empty_vm_inventory_and_removed_storage_
 ) -> None:
     monkeypatch.setattr(vm_infrastructure, "releases", list)
     monkeypatch.setattr(baseline, "_BASELINE_MARKER", tmp_path / "server.json")
-    runtime = VmRuntime(tmp_path)
+    runtime = vm_runtime(tmp_path)
+    guest = runtime.guest
+    storage = runtime.workspace_storage
+    assert storage is not None
     node = baseline.K3s(tmp_path, tmp_path / "unused-binary")
     marker: dict[str, Any] = {"state": "dirty"}
     baseline.write_marker(marker)
@@ -35,12 +38,12 @@ def test_vm_clean_certification_requires_empty_vm_inventory_and_removed_storage_
     def clean_workloads(_node: baseline.K3s, _fixture: rendered_fixture.RenderedFixture) -> None:
         nonlocal namespaces_deleted
         namespaces_deleted = True
-        assert not runtime.closed
+        assert not storage.closed
 
     def kubectl(*args: str) -> str:
         nonlocal storage_class_deleted
         assert namespaces_deleted
-        assert not runtime.closed
+        assert not storage.closed
         if args[:2] == ("get", "vm,vmi"):
             return json.dumps({"items": [{"metadata": {"name": "test-leftover-vm"}}] if leftover == "vm" else []})
         if args[:2] == ("delete", "storageclass"):
@@ -63,15 +66,15 @@ def test_vm_clean_certification_requires_empty_vm_inventory_and_removed_storage_
         objects=[],
     )
     with contextlib.ExitStack() as resources, contextlib.ExitStack() as volumes:
-        volumes.enter_context(runtime)
+        volumes.enter_context(storage)
         if leftover is not None:
             with pytest.raises(RuntimeError):
-                stack._certify_baseline(node, fixture, runtime, marker, resources, volumes)
-            assert not runtime.closed
+                stack._certify_baseline(node, fixture, guest, storage, marker, resources, volumes)
+            assert not storage.closed
             assert json.loads((tmp_path / "server.json").read_text())["state"] == "dirty"
         else:
-            assert stack._certify_baseline(node, fixture, runtime, marker, resources, volumes) == 0
-            assert runtime.closed
+            assert stack._certify_baseline(node, fixture, guest, storage, marker, resources, volumes) == 0
+            assert storage.closed
             assert json.loads((tmp_path / "server.json").read_text())["state"] == "clean"
 
 
@@ -84,7 +87,7 @@ def test_vm_runtime_skips_qmp_report_probe_for_opted_in_passive_timeline(
     monkeypatch.setattr(host_qemu, "snapshot_pending", lambda *_args: calls.append("qmp"))
     monkeypatch.setattr(vm_sandboxes, "report", lambda *_args: "report")
 
-    runtime = VmRuntime(tmp_path)
+    runtime = VmRuntime()
     k3s = baseline.K3s(tmp_path, tmp_path / "unused-binary")
     assert runtime.report(k3s, "systest") == "report"
     assert calls == []
@@ -112,7 +115,7 @@ def test_boot_rcu_observer_is_off_by_default_for_all_full_suite_templates(
     monkeypatch.setattr(vm_infrastructure, "releases", list)
     objects = [_vm_template("base"), _vm_template("oom"), {"kind": "ConfigMap", "metadata": {"name": "other"}}]
 
-    runtime = VmRuntime(tmp_path)
+    runtime = VmRuntime()
     runtime.configure(objects)
 
     assert runtime._boot_rcu_observer is False
@@ -130,7 +133,7 @@ def test_boot_rcu_observer_opt_in_mutates_each_vm_template_once(
     monkeypatch.delenv("AGENTPLANE_VM_NATIVE_PROFILE", raising=False)
     monkeypatch.setattr(vm_infrastructure, "releases", list)
     objects = [_vm_template("base"), _vm_template("oom")]
-    runtime = VmRuntime(tmp_path)
+    runtime = VmRuntime()
 
     runtime.configure(objects)
     runtime.configure(objects)
@@ -145,7 +148,7 @@ def test_boot_rcu_observer_opt_in_mutates_each_vm_template_once(
 def test_boot_rcu_observer_rejects_malformed_opt_in(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AGENTPLANE_VM_BOOT_RCU_OBSERVER", "true")
     monkeypatch.setattr(vm_infrastructure, "releases", list)
-    runtime = VmRuntime(tmp_path)
+    runtime = VmRuntime()
 
     with pytest.raises(ValueError, match="AGENTPLANE_VM_BOOT_RCU_OBSERVER"):
         runtime.configure([_vm_template("base")])
@@ -155,7 +158,7 @@ def test_shutdown_sysrq_is_on_by_default_and_can_be_disabled(tmp_path: Path, mon
     monkeypatch.delenv("AGENTPLANE_VM_SHUTDOWN_SYSRQ", raising=False)
     monkeypatch.setattr(vm_infrastructure, "releases", list)
     objects = [_vm_template("base"), _vm_template("oom"), {"kind": "ConfigMap", "metadata": {"name": "other"}}]
-    runtime = VmRuntime(tmp_path)
+    runtime = VmRuntime()
     runtime.configure(objects)
 
     def args(obj: dict[str, Any]) -> str:
@@ -207,7 +210,7 @@ def test_boot_rcu_capture_lifecycle_is_opt_in_and_wraps_host_capture(
 
     monkeypatch.setattr(boot_rcu, "capture_namespace", fake_boot_capture)
     monkeypatch.setattr(boot_rcu, "summarize_guest_serials", lambda *_args: events.append("guest-summary"))
-    runtime = VmRuntime(tmp_path)
+    runtime = VmRuntime()
     runtime.configure([_vm_template("base")])
     k3s = baseline.K3s(tmp_path, tmp_path / "unused-binary")
 
@@ -248,7 +251,7 @@ def test_boot_rcu_summary_failure_does_not_mask_test_failure(
     if marker_fails:
         monkeypatch.setattr(boot_rcu, "record_guest_summary_failure", fail_summary)
 
-    runtime = VmRuntime(tmp_path)
+    runtime = VmRuntime()
     runtime.configure([_vm_template("base")])
     k3s = baseline.K3s(tmp_path, tmp_path / "unused-binary")
     expected_error = RuntimeError if body_fails else ValueError

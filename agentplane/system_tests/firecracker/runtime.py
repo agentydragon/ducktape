@@ -3,24 +3,23 @@
 import json
 import os
 from collections.abc import Callable
-from contextlib import AbstractContextManager, nullcontext
+from contextlib import AbstractContextManager
 from pathlib import Path
-from types import TracebackType
 from typing import Any
 
 import yaml
 from kubernetes.utils.quantity import parse_quantity
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.deployment.virtualization import RuntimeCapabilities
 from agentplane.system_tests.k3s.baseline import K3s
 from agentplane.system_tests.vm import guest_logs
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 class Runtime:
-    def __init__(self, _work: Path) -> None:
-        self.releases: list[dict[str, Any]] = [
+    def __init__(self) -> None:
+        self.setup_objects: list[dict[str, Any]] = [
             {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "kvm-device-plugin"}},
             {
                 "apiVersion": "apps/v1",
@@ -59,41 +58,12 @@ class Runtime:
             },
         ]
 
-    def __enter__(self) -> Runtime:
-        return self
-
-    def __exit__(
-        self, exc_type: type[BaseException] | None, exc: BaseException | None, traceback: TracebackType | None
-    ) -> None:
-        # Filesystem PVCs belong to Kubernetes; this adapter owns no host loop devices.
-        return None
-
-    @property
-    def closed(self) -> bool:
-        return True
-
-    @property
-    def released_devices(self) -> int:
-        return 0
-
-    def baseline_objects(self) -> list[dict[str, Any]]:
-        return self.releases
-
-    def baseline_helpers(self) -> dict[str, Path]:
-        return {"firecracker/runtime.py": Path(__file__)}
-
-    def baseline_identity(self, k3s: K3s) -> dict[str, str]:
-        raise ValueError("the Firecracker fixture does not retain an infrastructure baseline")
-
-    def storage_class_uid(self, k3s: K3s) -> str:
-        raise ValueError("the Firecracker fixture does not retain a block-storage baseline")
-
     def configure(self, objects: list[dict[str, Any]]) -> None:
         # The suite's image manifest selects the guest; no VM root/profile selection is needed.
         return None
 
     def install(self, k3s: K3s) -> None:
-        k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(self.releases))
+        k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(self.setup_objects))
 
     def wait_for_apis(self, k3s: K3s) -> None:
         # A device plugin uses only the core API and has no CRDs or admission webhook.
@@ -111,9 +81,6 @@ class Runtime:
                     for node in nodes
                 ), "the KVM device plugin has not advertised its resource"
 
-    def provisioning(self, cluster: Cluster) -> AbstractContextManager[None]:
-        return nullcontext()
-
     def capture(self, k3s: K3s, namespace: str, validate_shutdown: Callable[[], bool]) -> AbstractContextManager[None]:
         return guest_logs.capture(
             log_root=Path("/var/log/pods"),
@@ -130,5 +97,8 @@ class Runtime:
         return k3s.kubectl("get", "sandboxes,pods,pvc", "-n", namespace, "-o", "yaml", check=False)
 
     def clean(self, k3s: K3s) -> None:
-        # There is no fixture-owned block StorageClass outside the deleted namespaces.
         return None
+
+
+def runtime(_work: Path) -> RuntimeCapabilities:
+    return RuntimeCapabilities(guest=Runtime())

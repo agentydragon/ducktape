@@ -9,6 +9,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any
 
+from agentplane.system_tests.deployment.virtualization import RuntimeCapabilities
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.k3s.baseline import K3s
 from agentplane.system_tests.vm import (
@@ -33,41 +34,9 @@ def _opt_in(name: str, *, default: str = "0") -> bool:
 
 
 class VmRuntime:
-    def __init__(self, work: Path) -> None:
-        self.releases = vm_infrastructure.releases()
-        self._storage = block_storage.BlockStorage(work)
+    def __init__(self) -> None:
+        self.setup_objects: list[dict[str, Any]] = []
         self._boot_rcu_observer = False
-
-    def __enter__(self) -> VmRuntime:
-        self._storage.__enter__()
-        return self
-
-    def __exit__(
-        self, exc_type: type[BaseException] | None, exc: BaseException | None, traceback: TracebackType | None
-    ) -> None:
-        self._storage.__exit__(exc_type, exc, traceback)
-
-    @property
-    def closed(self) -> bool:
-        return self._storage.closed
-
-    @property
-    def released_devices(self) -> int:
-        return len(self._storage.devices)
-
-    def baseline_objects(self) -> list[dict[str, Any]]:
-        return vm_infrastructure.baseline_objects()
-
-    def baseline_helpers(self) -> dict[str, Path]:
-        # Retained KubeVirt/Kyverno mutations belong to vm_infrastructure.py. Guest and
-        # workspace resources must disappear before stack.py can certify the baseline clean.
-        return {"vm_infrastructure.py": Path(vm_infrastructure.__file__)}
-
-    def baseline_identity(self, k3s: K3s) -> dict[str, str]:
-        return vm_infrastructure.baseline_identity(k3s.kubectl)
-
-    def storage_class_uid(self, k3s: K3s) -> str:
-        return k3s.kubectl("get", "storageclass", block_storage.STORAGE_CLASS, "-o", "jsonpath={.metadata.uid}")
 
     def configure(self, objects: list[dict[str, Any]]) -> None:
         self._boot_rcu_observer = _opt_in(BOOT_RCU_OBSERVER_ENV)
@@ -84,16 +53,13 @@ class VmRuntime:
         )
 
     def install(self, k3s: K3s) -> None:
-        vm_infrastructure.install(k3s.kubectl, self.releases)
+        return None
 
     def wait_for_apis(self, k3s: K3s) -> None:
-        vm_infrastructure.wait_for_apis(k3s.kubectl)
+        return None
 
     def wait_until_ready(self, k3s: K3s) -> None:
-        vm_infrastructure.wait_until_ready(k3s.kubectl)
-
-    def provisioning(self, cluster: Cluster) -> AbstractContextManager[None]:
-        return self._storage.provisioning(cluster, node_name="env")
+        return None
 
     @contextmanager
     def capture(self, k3s: K3s, namespace: str, validate_shutdown: Callable[[], bool]) -> Iterator[None]:
@@ -162,7 +128,66 @@ class VmRuntime:
     def clean(self, k3s: K3s) -> None:
         if json.loads(k3s.kubectl("get", "vm,vmi", "-A", "-o", "json"))["items"]:
             raise RuntimeError("fixture-owned virtual machines survived namespace deletion")
+
+
+class VmInfrastructure:
+    def __init__(self) -> None:
+        self.resources = vm_infrastructure.releases()
+
+    def baseline_objects(self) -> list[dict[str, Any]]:
+        return vm_infrastructure.baseline_objects()
+
+    def baseline_helpers(self) -> dict[str, Path]:
+        return {"vm_infrastructure.py": Path(vm_infrastructure.__file__)}
+
+    def identity(self, k3s: K3s) -> dict[str, str]:
+        return vm_infrastructure.baseline_identity(k3s.kubectl)
+
+    def install(self, k3s: K3s) -> None:
+        vm_infrastructure.install(k3s.kubectl, self.resources)
+
+    def wait_for_apis(self, k3s: K3s) -> None:
+        vm_infrastructure.wait_for_apis(k3s.kubectl)
+
+    def wait_until_ready(self, k3s: K3s) -> None:
+        vm_infrastructure.wait_until_ready(k3s.kubectl)
+
+
+class VmWorkspaceStorage:
+    def __init__(self, work: Path) -> None:
+        self._storage = block_storage.BlockStorage(work)
+
+    def __enter__(self) -> VmWorkspaceStorage:
+        self._storage.__enter__()
+        return self
+
+    def __exit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, traceback: TracebackType | None
+    ) -> None:
+        self._storage.__exit__(exc_type, exc, traceback)
+
+    @property
+    def closed(self) -> bool:
+        return self._storage.closed
+
+    @property
+    def released_devices(self) -> int:
+        return len(self._storage.devices)
+
+    def storage_class_uid(self, k3s: K3s) -> str:
+        return k3s.kubectl("get", "storageclass", block_storage.STORAGE_CLASS, "-o", "jsonpath={.metadata.uid}")
+
+    def provisioning(self, cluster: Cluster) -> AbstractContextManager[None]:
+        return self._storage.provisioning(cluster, node_name="env")
+
+    def clean(self, k3s: K3s) -> None:
         # The provisioner owns this cluster-scoped object outside the rendered fixture.
         k3s.kubectl("delete", "storageclass", block_storage.STORAGE_CLASS, "--wait=true")
         if k3s.kubectl("get", "storageclass", block_storage.STORAGE_CLASS, "--ignore-not-found=true", "-o", "name"):
             raise RuntimeError("fixture-owned StorageClass survived cleanup")
+
+
+def runtime(work: Path) -> RuntimeCapabilities:
+    return RuntimeCapabilities(
+        guest=VmRuntime(), retained_infrastructure=VmInfrastructure(), workspace_storage=VmWorkspaceStorage(work)
+    )

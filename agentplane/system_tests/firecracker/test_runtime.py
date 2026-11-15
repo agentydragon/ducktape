@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from agentplane.system_tests.firecracker.runtime import Runtime
+from agentplane.system_tests.firecracker.runtime import runtime as firecracker_runtime
 from agentplane.system_tests.k3s import baseline
 
 
@@ -25,7 +25,7 @@ def test_readiness_accepts_kubernetes_quantity_without_vm_policies(
         return "condition met"
 
     monkeypatch.setattr(node, "kubectl", kubectl)
-    Runtime(tmp_path).wait_until_ready(node)
+    firecracker_runtime(tmp_path).guest.wait_until_ready(node)
     assert any(call[:2] == ("get", "nodes") for call in calls)
 
 
