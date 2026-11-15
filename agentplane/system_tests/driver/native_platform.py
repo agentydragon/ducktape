@@ -17,9 +17,8 @@ from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.environment_transport import (
-    GATEWAY_PORT,
-    GATEWAY_SERVICE,
-    GATEWAY_TLS_SERVICE,
+    ENVIRONMENT_PORT,
+    ENVIRONMENT_SERVICE,
     EnvironmentServiceClient,
 )
 from agentplane.system_tests.driver.native_auth import write_bound_fixture_token
@@ -31,6 +30,9 @@ from agentplane.system_tests.driver.tls import service_credentials
 
 DISPATCHER_SERVICE = "session-dispatcher"
 DISPATCHER_AUDIENCE = "session-dispatcher"
+GATEWAY_SERVICE = "runner-gateway"
+# The shared Gateway/Dispatcher listener serves the fixture's Dispatcher DNS certificate.
+GATEWAY_TLS_SERVICE = "session-dispatcher"
 GATEWAY_AUDIENCE = "agentplane-runner-gateway"
 HISTORY_SERVICE = "history-service"
 HISTORY_AUDIENCE = "agentplane-history-service"
@@ -84,8 +86,8 @@ async def native_platform_clients(cluster: Cluster, directory: Path) -> AsyncIte
     dispatcher_token = directory / "dispatcher-token"
     history_token = directory / "history-token"
 
-    # All credentials are bound to the same fixture Pod UID. EnvironmentService shares the
-    # Dispatcher's method audience; the gateway token is only for SandboxControl reads.
+    # All credentials are bound to the same fixture Pod UID. EnvironmentService retains
+    # the Gateway audience after moving to the Controller's separate listener.
     principal = await write_bound_fixture_token(cluster, gateway_token, audience=GATEWAY_AUDIENCE)
     dispatcher_principal = await write_bound_fixture_token(cluster, dispatcher_token, audience=DISPATCHER_AUDIENCE)
     history_principal = await write_bound_fixture_token(cluster, history_token, audience=HISTORY_AUDIENCE)
@@ -94,13 +96,16 @@ async def native_platform_clients(cluster: Cluster, directory: Path) -> AsyncIte
 
     async with AsyncExitStack() as opened:
         credentials = await service_credentials(cluster)
-        gateway_target = await opened.enter_async_context(_service_forward(cluster, GATEWAY_SERVICE, GATEWAY_PORT))
+        gateway_target = await opened.enter_async_context(_service_forward(cluster, GATEWAY_SERVICE, SERVICE_PORT))
+        environment_target = await opened.enter_async_context(
+            _service_forward(cluster, ENVIRONMENT_SERVICE, ENVIRONMENT_PORT)
+        )
         environment = await opened.enter_async_context(
             EnvironmentServiceClient.connect(
-                gateway_target,
-                token_file=dispatcher_token,
+                environment_target,
+                token_file=gateway_token,
                 channel_credentials=credentials,
-                server_name=f"{GATEWAY_TLS_SERVICE}.{cluster.namespace}.svc.cluster.local",
+                server_name=f"{ENVIRONMENT_SERVICE}.{cluster.namespace}.svc.cluster.local",
             )
         )
         dispatcher_target = await opened.enter_async_context(
