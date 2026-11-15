@@ -44,7 +44,6 @@ func startWithSVIDs(t *testing.T, ca *peertlstesting.CA, tune func(*config)) run
 	}
 	c := defaultConfig()
 	c.DatabaseURL = integrationDatabase.URL
-	c.ReaderAccounts = []auth.Account{{Namespace: "test-reader-namespace", Name: "test-reader"}}
 	c.TokenAudience, c.Ingress.TokenAudience = "test-history-service", "test-runner-ingress"
 	c.Kubeconfig, c.PolicyNamespace = kubeconfig, testPolicyNamespace
 	c.RPC.TLS = &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile}

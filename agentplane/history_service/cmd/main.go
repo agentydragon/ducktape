@@ -162,7 +162,6 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	history := storage.NewStore(readDB, storage.Options{})
 	service := rpc.NewService(rpc.Options{
 		Reader:         &reads.Reader{DB: readDB, History: history, NativeFrameReadBatchSize: c.NativeFrameReadBatchSize},
-		ReaderAccounts: c.ReaderAccounts,
 		Wakeups:        hub,
 		RequestTimeout: seconds(c.RequestTimeoutSeconds), WatchLease: seconds(c.WatchLeaseSeconds),
 	})

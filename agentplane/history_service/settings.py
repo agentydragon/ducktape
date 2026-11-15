@@ -3,27 +3,22 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, ClassVar, Literal
+from typing import ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
-from agentplane.identity.auth.listener import KubernetesBearerAuth, Listener, SPIFFEAuth
+from agentplane.identity.auth.listener import Listener, SPIFFEAuth
 from agentplane.net.peertls.config import ServiceSPIFFEID
 from agentplane.subjects import ServiceAccountRef
 
 RUNNER_INGRESS_AUDIENCE = "agentplane-runner-ingress"
-type ServiceAccountName = Annotated[str, StringConstraints(pattern=r"^[^/]+/[^/]+$")]
 
 
 class DelegationSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    actor: ServiceAccountName = Field(description="Actions ServiceAccount trusted to delegate, as namespace/name.")
-    identity_callers: Literal[True] = Field(
-        description="Must be true: Actions may assert a live Identity in policy_namespace as the effective caller."
-    )
-    methods: tuple[str, ...] = Field(
-        min_length=1, description="Full HistoryService RPC method names that admit delegation."
-    )
+    actor: str | None = None
+    identity_callers: bool = False
+    methods: tuple[str, ...] = ()
 
 
 class ServiceDelegator(BaseModel):
@@ -42,16 +37,17 @@ class ServiceDelegationSettings(BaseModel):
 
 class IngressSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    token_audience: str = Field(min_length=1, description="The token audience for journal pushes by central samplers.")
+    # CLEANUP(added 2026-11-15): Remove after manifests omit ingress.token_audience and that rollout completes.
+    token_audience: str = Field(default="", description="Ignored legacy bearer audience.")
     writer_namespaces: frozenset[str] = Field(
         min_length=1, description="Namespaces whose ServiceAccounts may push: the ones Sandboxes run in."
     )
+    # CLEANUP(added 2026-11-15): Remove these ignored legacy sampler settings after manifests omit them and that rollout completes.
     sampler_accounts: frozenset[ServiceAccountRef] = Field(
-        default=frozenset(), description="ServiceAccounts allowed to publish centrally hosted Sessions."
+        default_factory=frozenset, description="Ignored legacy ServiceAccount sampler allowlist."
     )
     sampler_identity_callers: bool = Field(
-        default=False,
-        description="Whether configured sampler ServiceAccounts may push as a delegating actor for a Session Identity.",
+        default=False, description="Ignored legacy sampler Identity delegation setting."
     )
     sampler_service_actor: ServiceSPIFFEID | None = Field(
         default=None,
@@ -84,22 +80,23 @@ class Settings(BaseModel):
     config_file_env: ClassVar[str] = "AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE"
     model_config = ConfigDict(extra="forbid")
 
-    reader_accounts: frozenset[ServiceAccountRef] = Field(min_length=1)
+    # CLEANUP(added 2026-11-15): Remove these ignored legacy reader and account-delegation settings after manifests omit them and that rollout completes.
+    reader_accounts: frozenset[ServiceAccountRef] = Field(
+        default_factory=frozenset, description="Ignored legacy ServiceAccount reader allowlist."
+    )
+    delegation: DelegationSettings | None = Field(default=None, description="Ignored legacy ServiceAccount delegation.")
+    # CLEANUP(added 2026-11-15): Remove after manifests omit token_audience and that rollout completes.
+    token_audience: str = Field(default="", description="Ignored legacy bearer audience.")
     reader_service_callers: frozenset[ServiceSPIFFEID] = Field(
         default=frozenset(),
         exclude_if=lambda value: not value,
         description="Exact component SVIDs granted backend-wide History read access.",
-    )
-    delegation: DelegationSettings | None = Field(
-        default=None,
-        description="Independent Actions delegation trust; a delegated actor keeps ordinary caller read scope.",
     )
     service_delegation: ServiceDelegationSettings | None = Field(
         default=None,
         exclude_if=lambda value: not value,
         description="Independent exact service actors allowed to read History as a live effective Identity.",
     )
-    token_audience: str = Field(min_length=1)
     request_timeout_s: float = Field(default=15, gt=0, le=60)
     migration_timeout_s: float = Field(default=600, ge=0.001, le=86400)
     rpc: Listener
@@ -126,31 +123,7 @@ class Settings(BaseModel):
         return sorted(value)
 
     @model_validator(mode="after")
-    def bearer_audiences(self) -> Settings:
-        audiences = frozenset(
-            audience
-            for method in self.rpc.auth
-            if isinstance(method, KubernetesBearerAuth)
-            for audience in method.audiences
-        )
-        if not {self.token_audience, self.ingress.token_audience} <= audiences:
-            raise ValueError("rpc.auth must allow the read and ingress bearer audiences")
-        return self
-
-    @model_validator(mode="after")
-    def sampler_identity_callers_need_ingress_identity_trust(self) -> Settings:
-        if self.ingress.sampler_identity_callers and (
-            not self.ingress.sampler_accounts or not any(isinstance(method, SPIFFEAuth) for method in self.rpc.auth)
-        ):
-            raise ValueError(
-                "ingress.sampler_identity_callers requires ingress.sampler_accounts and a spiffe rpc listener"
-            )
-        return self
-
-    @model_validator(mode="after")
-    def service_callers_need_spiffe_listener(self) -> Settings:
-        if (
-            self.reader_service_callers or self.service_delegation is not None or self.ingress.sampler_service_actor
-        ) and not any(isinstance(method, SPIFFEAuth) for method in self.rpc.auth):
-            raise ValueError("History service callers require a spiffe rpc listener")
+    def workload_svid_trust(self) -> Settings:
+        if not any(isinstance(method, SPIFFEAuth) for method in self.rpc.auth):
+            raise ValueError("rpc.auth must enable spiffe client trust")
         return self

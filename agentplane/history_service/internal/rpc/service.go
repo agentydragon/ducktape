@@ -19,14 +19,12 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 // Service is the HistoryService server.
 type Service struct {
 	historypb.UnimplementedHistoryServiceServer
 	reader         *reads.Reader
-	readerAccounts sets.Set[auth.Account]
 	wakeups        *wakeups.Hub
 	requestTimeout time.Duration
 	lease          time.Duration
@@ -37,8 +35,6 @@ type Service struct {
 // Options are what a Service reads.
 type Options struct {
 	Reader *reads.Reader
-	// ReaderAccounts retain the existing Pod-bound backend-wide read path.
-	ReaderAccounts []auth.Account
 	// Wakeups listens to raw history, summary changes and Sessions.
 	Wakeups *wakeups.Hub
 	// RequestTimeout bounds a call's backend work and each write to a watch or follow stream.
@@ -48,8 +44,7 @@ type Options struct {
 	WatchLease time.Duration
 }
 
-// Methods admits a workload SVID naming a live ServiceAccount or Identity. The handler scopes
-// ordinary callers to their retained execution Identity and keeps configured readers explicit.
+// Methods admits workload SVID subjects; exact service peers require explicit service caller rules.
 func Methods(subjects auth.SubjectResolver) auth.Methods {
 	rule := auth.AnySubject(subjects)
 	return auth.Methods{
@@ -103,7 +98,7 @@ func MethodsWithServiceDelegation(
 func NewService(options Options) *Service {
 	draining, drain := context.WithCancel(context.Background())
 	return &Service{
-		reader: options.Reader, readerAccounts: sets.New(options.ReaderAccounts...), wakeups: options.Wakeups,
+		reader: options.Reader, wakeups: options.Wakeups,
 		requestTimeout: options.RequestTimeout, lease: options.WatchLease, draining: draining, drain: drain,
 	}
 }
@@ -136,21 +131,7 @@ func (s *Service) scopedReader(ctx context.Context) (*reads.Reader, error) {
 			Name: identity.EffectiveCaller.Name, UID: identity.EffectiveCaller.UID,
 		})), nil
 	}
-	caller, err := auth.EffectiveCaller(ctx)
-	if err != nil {
-		return nil, err
-	}
-	account := caller.GetAccount()
-	if account == nil || account.GetNamespace() == "" || account.GetName() == "" || caller.GetUid() == "" {
-		return nil, status.Error(codes.Unauthenticated, "effective ServiceAccount identity is incomplete")
-	}
-	if direct, ok := admission.(auth.DirectAdmission); ok && direct.Pod != nil && direct.Pod.IsPodBound() {
-		if s.readerAccounts.Has(auth.Account{Namespace: account.GetNamespace(), Name: account.GetName()}) {
-			return s.reader.WithReadScope(storage.AllSessions()), nil
-		}
-	}
-	// A component account may be an explicit platform reader, but it never acquires ownership
-	// from a retained execution account, its writer provenance, or an actor's reader role.
+	// A workload ServiceAccount without a retained execution Identity has no History read scope.
 	return s.reader.WithReadScope(storage.ReadScope{}), nil
 }
 

@@ -1,4 +1,4 @@
-"""History's Python settings mirror the Go service's ingress prerequisites."""
+"""History settings retain retired YAML keys while requiring live workload SVID trust."""
 
 from typing import Any
 
@@ -52,31 +52,40 @@ def test_policy_namespace_is_required(value: str) -> None:
         Settings.model_validate(source)
 
 
-def test_sampler_identity_callers_default_off() -> None:
+def test_retired_settings_are_optional_without_bearer_listener() -> None:
     source = _settings_source()
+    del source["reader_accounts"]
+    del source["token_audience"]
+    del source["ingress"]["token_audience"]
+    del source["ingress"]["sampler_accounts"]
     del source["ingress"]["sampler_identity_callers"]
+    source["rpc"]["auth"] = [{"mode": "spiffe", "ca_file": "/test/workload-ca.crt"}]
     settings = Settings.model_validate(source)
+    assert not settings.reader_accounts
+    assert not settings.token_audience
+    assert not settings.ingress.token_audience
+    assert not settings.ingress.sampler_accounts
     assert not settings.ingress.sampler_identity_callers
 
 
-def test_sampler_identity_callers_accepts_all_go_prerequisites() -> None:
-    settings = Settings.model_validate(_settings_source(sampler_identity_callers=True))
+def test_retired_settings_accept_empty_and_incomplete_legacy_values() -> None:
+    source = _settings_source(sampler_identity_callers=True, sampler_accounts=[])
+    source["reader_accounts"] = []
+    source["token_audience"] = ""
+    source["delegation"] = {"actor": "", "identity_callers": False, "methods": []}
+    source["ingress"]["token_audience"] = ""
+    settings = Settings.model_validate(source)
+    assert not settings.reader_accounts
+    assert not settings.token_audience
+    assert settings.delegation is not None
+    assert settings.delegation.actor == ""
+    assert not settings.delegation.identity_callers
+    assert not settings.delegation.methods
+    assert not settings.ingress.sampler_accounts
     assert settings.ingress.sampler_identity_callers
 
 
-@pytest.mark.parametrize("missing", ["sampler_accounts", "spiffe_listener"])
-def test_sampler_identity_callers_require_all_go_prerequisites(missing: str) -> None:
-    source = _settings_source(sampler_identity_callers=True)
-    if missing == "sampler_accounts":
-        source["ingress"]["sampler_accounts"] = []
-    else:
-        source["rpc"]["auth"] = [method for method in source["rpc"]["auth"] if method["mode"] != "spiffe"]
-
-    with pytest.raises(ValidationError, match=r"ingress\.sampler_identity_callers requires"):
-        Settings.model_validate(source)
-
-
-def test_settings_reject_runtime_secrets_and_legacy_namespace_authority() -> None:
+def test_settings_reject_runtime_secrets() -> None:
     source = _settings_source()
     source["database_url"] = "postgresql://secret.invalid/history"
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
@@ -107,8 +116,7 @@ def test_service_callers_require_exact_service_ids_and_spiffe_listener() -> None
             Settings.model_validate(invalid_source)
 
     no_spiffe = _settings_source(spiffe_listener=False)
-    no_spiffe["reader_service_callers"] = ["spiffe://agentplane/app"]
-    with pytest.raises(ValidationError, match="service callers require"):
+    with pytest.raises(ValidationError, match=r"rpc.auth must enable spiffe client trust"):
         Settings.model_validate(no_spiffe)
 
 
@@ -119,9 +127,9 @@ def test_disabled_service_callers_are_absent_from_serialized_settings() -> None:
     assert "sampler_service_actor" not in serialized["ingress"]
 
 
-def test_sampler_service_actor_requires_spiffe_listener() -> None:
+def test_spiffe_trust_is_required_and_account_delegation_is_ignored() -> None:
     source = _settings_source(sampler_service_actor="spiffe://agentplane/central-sampler", spiffe_listener=False)
-    with pytest.raises(ValidationError, match="service callers require"):
+    with pytest.raises(ValidationError, match=r"rpc.auth must enable spiffe client trust"):
         Settings.model_validate(source)
 
     source = _settings_source()
@@ -130,8 +138,9 @@ def test_sampler_service_actor_requires_spiffe_listener() -> None:
         "identity_callers": False,
         "methods": ["/agentplane.history_service.HistoryService/ReadSessionEvents"],
     }
-    with pytest.raises(ValidationError):
-        Settings.model_validate(source)
+    settings = Settings.model_validate(source)
+    assert settings.delegation is not None
+    assert not settings.delegation.identity_callers
 
     source = _settings_source()
     source["delegation"] = {

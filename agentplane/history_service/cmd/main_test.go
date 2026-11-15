@@ -405,7 +405,6 @@ func TestAWatchRenewsAtTheConfiguredLease(t *testing.T) {
 func TestAListenerThatFailsEndsTheServiceWithItsError(t *testing.T) {
 	c := defaultConfig()
 	c.DatabaseURL = integrationDatabase.URL
-	c.ReaderAccounts = []auth.Account{{Namespace: "test-reader-namespace", Name: "test-reader"}}
 	c.TokenAudience, c.Ingress.TokenAudience = "test-history-service", "test-runner-ingress"
 	c.RPC.Auth = []listener.Authentication{&listener.KubernetesBearerAuth{Audiences: []string{c.TokenAudience, c.Ingress.TokenAudience}}}
 	c.Ingress.WriterNamespaces = []string{"test-sandbox-namespace"}
@@ -472,7 +471,6 @@ func TestRunServesTheReadAPIAndTheIngressOnOneConfiguredListener(t *testing.T) {
 	readerFD := duplicateListenerFD(t, readerListener)
 	c := defaultConfig()
 	c.DatabaseURL = integrationDatabase.URL
-	c.ReaderAccounts = []auth.Account{{Namespace: "test-reader-namespace", Name: "test-reader"}}
 	c.TokenAudience, c.Ingress.TokenAudience = "test-history-service", "test-runner-ingress"
 	c.RPC.Auth = []listener.Authentication{&listener.KubernetesBearerAuth{Audiences: []string{c.TokenAudience, c.Ingress.TokenAudience}}}
 	c.Ingress.WriterNamespaces = []string{"test-sandbox-namespace"}

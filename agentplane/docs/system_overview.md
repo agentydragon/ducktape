@@ -372,7 +372,8 @@ origin, while the Dispatcher role remains separate from operator authority. Hist
 SVID list includes Actions. Actions presents that SVID for both direct orchestration and
 caller-delegated Dispatcher/History requests. Delegated calls retain their typed Action/Identity
 envelope; direct component grants never supply the effective caller's authority. Gateway receiver
-bearer admission is retired; projection and RBAC removal follow their own rollout.
+bearer admission is retired; projection and RBAC removal follow their own rollout. History's read
+and journal paths admit workload or exact service SVIDs only.
 
 ```mermaid
 flowchart LR
@@ -635,7 +636,7 @@ flowchart LR
 
 The app initiates each Electric HTTP request and streams the shape response through to the browser.
 Generated History HTTP routes at the app's `/upstream/history/v1/` prefix let the browser call
-annotated unary History reads; the app forwards them over gRPC with its projected service token.
+annotated unary History reads; the app forwards them over gRPC with its service SVID over mTLS.
 The separate `History PostgreSQL → Electric → app → browser` arrows show replicated and returned data.
 The HTTPS Gateway routes static files directly to the frontend Service and all API, login and stream
 requests to the app Service. The frontend has no backend credentials and makes no outbound service

@@ -15,16 +15,12 @@ const databaseURLEnv = settingPrefix + "DATABASE_URL=postgres://test-user:never-
 // requiredFile is a deployment's settings file with every setting that has no default.
 const requiredFile = `rpc:
   listen_address: 0.0.0.0:8080
+  tls: {cert_file: /test/history.crt, key_file: /test/history.key}
   auth:
-    - mode: kubernetes_bearer
-      audiences: [test-history-service, test-runner-ingress]
-reader_accounts:
-  - {namespace: test-agentplane, name: test-app}
-  - test-agentplane/test-notifications
-token_audience: test-history-service
+    - mode: spiffe
+      ca_file: /test/workload-ca.crt
 policy_namespace: test-policies
 ingress:
-  token_audience: test-runner-ingress
   writer_namespaces: [test-agentplane]
 `
 
@@ -41,8 +37,8 @@ func TestSettingsLoadFromTheFileAndRuntimeSecretWithTheirDefaults(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantReaders := []auth.Account{{Namespace: "test-agentplane", Name: "test-app"}, {Namespace: "test-agentplane", Name: "test-notifications"}}
-	if !slices.Equal(c.ReaderAccounts, wantReaders) || c.DatabaseURL != "postgres://test-user:never-print-this@test-database/history" ||
+	if len(c.ReaderAccounts) != 0 || c.TokenAudience != "" || c.Ingress.TokenAudience != "" ||
+		c.DatabaseURL != "postgres://test-user:never-print-this@test-database/history" ||
 		c.Ingress.WriterNamespaces[0] != "test-agentplane" {
 		t.Errorf("settings were not read: %+v", c)
 	}
@@ -54,33 +50,27 @@ func TestSettingsLoadFromTheFileAndRuntimeSecretWithTheirDefaults(t *testing.T) 
 	}
 }
 
-func TestDelegationTrustIsAnIndependentExactMethodSetting(t *testing.T) {
-	file := requiredFile + `delegation:
-  actor: test-agentplane/actions
-  identity_callers: true
-  methods: [/agentplane.history_service.HistoryService/ReadSessionEvents]
+func TestRetiredAccountSettingsRemainDecodableAndAreNotRequired(t *testing.T) {
+	file := strings.Replace(requiredFile, "  auth:\n", "  auth:\n    - mode: kubernetes_bearer\n      audiences: [legacy-reader, legacy-ingress]\n", 1)
+	file = strings.Replace(file, "ingress:\n  writer_namespaces: [test-agentplane]\n", `ingress:
+  token_audience: ""
+  writer_namespaces: [test-agentplane]
+  sampler_accounts: []
+  sampler_identity_callers: true
+`, 1)
+	file += `reader_accounts: []
+token_audience: ""
+delegation: {actor: test-agentplane/actions, identity_callers: false, methods: []}
 `
 	c, err := loadTestConfig(t, file)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Delegation == nil || c.Delegation.Actor != (auth.Account{Namespace: "test-agentplane", Name: "actions"}) ||
-		!slices.Equal(c.Delegation.Methods, []string{"/agentplane.history_service.HistoryService/ReadSessionEvents"}) {
-		t.Fatalf("delegation settings were not kept separate and explicit: %+v", c.Delegation)
-	}
-	for _, incomplete := range []string{
-		requiredFile + "delegation: {actor: test-agentplane/actions}\n",
-		requiredFile + "delegation: {actor: test-agentplane/actions, identity_callers: false, methods: [x]}\n",
-		requiredFile + "delegation: {actor: malformed, identity_callers: true, methods: [x]}\n",
-		requiredFile + "delegation: {actor: test-agentplane/actions, identity_callers: true, caller_namespaces: [test-agentplane], methods: [x]}\n",
-	} {
-		if _, err := loadTestConfig(t, incomplete); err == nil {
-			t.Fatalf("accepted incomplete or malformed delegation setting: %s", incomplete)
-		}
-	}
-	identityOnly, err := loadTestConfig(t, requiredFile+"delegation: {actor: test-agentplane/actions, identity_callers: true, methods: [x]}\n")
-	if err != nil || !identityOnly.Delegation.IdentityCallers {
-		t.Fatalf("an Identity-only delegation grant: %+v %v", identityOnly.Delegation, err)
+	if len(c.ReaderAccounts) != 0 || c.TokenAudience != "" || c.Ingress.TokenAudience != "" ||
+		c.Delegation == nil || c.Delegation.Actor != (auth.Account{Namespace: "test-agentplane", Name: "actions"}) ||
+		c.Delegation.IdentityCallers || len(c.Delegation.Methods) != 0 || len(c.Ingress.SamplerAccounts) != 0 ||
+		!c.Ingress.SamplerIdentityCallers {
+		t.Fatalf("legacy settings were not decoded without requiring their old grants: %+v", c)
 	}
 }
 
@@ -124,45 +114,6 @@ ingress:
 		t.Run(name, func(t *testing.T) {
 			if _, err := loadTestConfig(t, file); err == nil {
 				t.Fatal("accepted invalid service trust")
-			}
-		})
-	}
-}
-
-// The sampler's grant to push as a delegating actor for a Session's Identity is its own setting,
-// and needs what Push admitting Identity writers needs: the policy namespace and the SPIFFE listener.
-func TestSamplerIdentityCallersNeedsSamplerAccountsThePolicyNamespaceAndTheSPIFFEListener(t *testing.T) {
-	const granted = `rpc:
-  listen_address: 0.0.0.0:8080
-  tls: {cert_file: /test/tls.crt, key_file: /test/tls.key}
-  auth:
-    - mode: kubernetes_bearer
-      audiences: [test-history-service, test-runner-ingress]
-    - mode: spiffe
-      ca_file: /test/workload-ca.crt
-reader_accounts:
-  - test-agentplane/test-app
-token_audience: test-history-service
-policy_namespace: test-policies
-ingress:
-  token_audience: test-runner-ingress
-  writer_namespaces: [test-agentplane]
-  sampler_accounts: [test-agentplane/test-sampler]
-  sampler_identity_callers: true
-`
-	c, err := loadTestConfig(t, granted)
-	if err != nil || !c.Ingress.SamplerIdentityCallers || len(c.Ingress.SamplerAccounts) != 1 {
-		t.Fatalf("sampler delegation grant: %+v %v", c.Ingress, err)
-	}
-	for name, incomplete := range map[string]string{
-		"no policy namespace": strings.Replace(granted, "policy_namespace: test-policies\n", "", 1),
-		"no sampler accounts": strings.Replace(granted, "  sampler_accounts: [test-agentplane/test-sampler]\n", "", 1),
-		"a bearer-only listener": strings.Replace(strings.Replace(granted, "  tls: {cert_file: /test/tls.crt, key_file: /test/tls.key}\n", "", 1),
-			"    - mode: spiffe\n      ca_file: /test/workload-ca.crt\n", "", 1),
-	} {
-		t.Run(name, func(t *testing.T) {
-			if _, err := loadTestConfig(t, incomplete); err == nil {
-				t.Fatalf("accepted the sampler delegation grant without its prerequisites:\n%s", incomplete)
 			}
 		})
 	}
@@ -224,10 +175,8 @@ func TestMigrationTimeoutIsReadFromTheSettingsFile(t *testing.T) {
 func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 	for name, file := range map[string]string{
 		"unknown key":                      requiredFile + "bogus: 1\n",
+		"unknown legacy delegation key":    requiredFile + "delegation: {caller_namespaces: [test-agentplane]}\n",
 		"runtime secret in file":           requiredFile + "database_url: postgres://file.invalid/history\n",
-		"no readers":                       "reader_accounts: []\n" + requiredFile[strings.Index(requiredFile, "token_audience"):],
-		"no audience":                      strings.Replace(requiredFile, "token_audience: test-history-service\n", "", 1),
-		"no ingress audience":              strings.Replace(requiredFile, "  token_audience: test-runner-ingress\n", "", 1),
 		"no writer namespaces":             strings.Replace(requiredFile, "  writer_namespaces: [test-agentplane]\n", "", 1),
 		"request timeout too long":         requiredFile + "request_timeout_s: 61\n",
 		"fold page larger than served":     requiredFile + "fold_page_size: 1001\n",
@@ -247,6 +196,14 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 	}
 	if _, err := loadTestConfig(t, requiredFile, databaseURLEnv[:len(settingPrefix)]+"DATABASE_URL="); err == nil {
 		t.Error("accepted without a database URL")
+	}
+}
+
+func TestSettingsRequireSPIFFEClientTrust(t *testing.T) {
+	bearerOnly := strings.Replace(requiredFile, "    - mode: spiffe\n      ca_file: /test/workload-ca.crt\n",
+		"    - mode: kubernetes_bearer\n      audiences: [legacy-reader]\n", 1)
+	if _, err := loadTestConfig(t, bearerOnly); err == nil || !strings.Contains(err.Error(), "rpc.auth must enable spiffe client trust") {
+		t.Fatalf("bearer-only listener error = %v", err)
 	}
 }
 
