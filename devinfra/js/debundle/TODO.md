@@ -248,6 +248,22 @@ to one exact source/spec pair and held to the interactive budget in
 2. **Ground selector-stabilization skill fixtures.** Add tested, anonymized
    fixtures for the common anchor-choice cases of the `debundle_stabilize`
    playbook so its guidance is executable rather than only prose.
+3. **H1 — Combine source-marker policies with retained constructors.** Optional
+   integration coverage: select a neutral provider through `source_markers`,
+   apply `retained_callback_constructor_exports`, construct an object that stores
+   a callback, then invoke it after its captured lexical value initializes.
+   Assert fixed original/emitted callback values and constructor-effect traces,
+   intended module ownership and provider context. Removing the retention
+   contract should reject a split that depends on it. Start from
+   <e2e/source_export_policy_test.rs> and
+   <e2e/retained_constructor_callback_test.rs>; the two features have independent
+   coverage already.
+4. **H3 — Scope additional intrinsic-family probes.** Optional investigation,
+   not a confirmed coverage gap. Before adding tests, identify a concrete
+   `program_premises.intrinsics_never_written` premise used by a passing private
+   spec, a distinct supported operation, and an observable result or rejection
+   that existing tests do not establish. Start from
+   <e2e/intrinsics_never_written_test.rs>.
 
 ### Encountered tooling friction
 
