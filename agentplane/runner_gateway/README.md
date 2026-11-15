@@ -1,14 +1,10 @@
 # Runner Gateway
 
-The Runner Gateway combines durable Session Dispatcher admission and delivery, the
-`EnvironmentService` inventory, management and explicit-resume API, and a Sandbox-fenced Runner proxy. Explicit
-resume and Dispatcher automatic wake use the shared lifecycle manager. Automatic wake preserves the
-effective caller and applies the Sandbox's `wakeOnSend` setting and the configured `wake_callers` grant.
-EnvironmentService and Dispatcher share the Gateway listener and Dispatcher TokenReview audience.
-Deployment no longer grants Gateway EnvironmentService component roles or delegation and no longer
-publishes its Runtime catalog. App and Actions call the Controller receiver. The Gateway registration
-and settings decoder remain until existing Sandbox CLI callers have moved; automatic-wake grants
-remain with Sessions. Remove obsolete settings from the applied ConfigMap before removing their decoder.
+The Runner Gateway combines durable Session Dispatcher admission and delivery with a Sandbox-fenced
+Runner proxy. Dispatcher automatic wake preserves the effective caller and applies the Sandbox's
+`wakeOnSend` setting, configured wake grants and shared budget. EnvironmentService is served by the
+[Sandbox Controller](../environments/README.md) on every replica at `sandbox-controller:8082`;
+the Gateway no longer registers it or accepts its deployment settings.
 The Gateway dials each Runner's native gRPC server on private port `9090`. Every Gateway replica
 independently opens a `WatchState` to each current Runtime and may serve calls for it; no Gateway
 connection Lease or per-Sandbox `-control` EndpointSlice participates in routing.
@@ -21,7 +17,7 @@ authorization remains in force, and uncertain mutations are never replayed autom
 
 Dispatcher delivery Leases are unchanged.
 
-One TLS gRPC listener serves Dispatcher, EnvironmentService, Gateway proxy, Executor and health
+One TLS gRPC listener serves Dispatcher, Gateway proxy, Executor and health
 methods, with independent per-method authorization. Only the Pod-bound Gateway/Dispatcher workload
 can proxy Runtime Session creation and commands; `gateway_callers` grants read-only diagnostics.
 Startup reviews `runner_token_file` with the Gateway audience and verifies its Pod name, current UID
@@ -31,8 +27,8 @@ The Sandbox Controller owns `Sandbox.status`.
 
 The required `rpc` settings block configures this shared TLS listener. It enables SPIFFE and
 Kubernetes bearer authentication, with exactly the Dispatcher and Gateway audiences. Dispatcher
-and EnvironmentService methods use the Dispatcher audience; Gateway proxy and Executor methods use
-the Gateway audience. Dispatcher and EnvironmentService methods also accept a verified Sandbox
+methods use the Dispatcher audience; Gateway proxy and Executor methods use the Gateway audience.
+Dispatcher methods also accept a verified Sandbox
 SVID. Each method retains its existing caller allowlist, delegation, and effective-caller checks.
 Calls select one enabled credential: an invalid presented SVID cannot fall back to bearer
 authentication, and certificate plus authorization or delegation credentials are rejected as
@@ -87,15 +83,8 @@ conversation and from Runner admission.
   [`settings.py`](settings.py) is the authoring schema). The Dispatcher database URL Secret and
   Pod name are runtime environment inputs. Generic
   `AGENTPLANE_RUNNER_GATEWAY_*` variables do not override file values. The independent `delegation`
-  policy names an Actions actor and exact full RPC methods; it can include the
-  `EnvironmentService` list/get/watch methods and, when separately configured, `ResumeEnvironment`, without
-  delegating other Gateway methods. `operator_callers` is optional and defaults empty; it is
-  restricted to direct, Pod-bound callers and gives only its configured operator broker the
-  requested-stop override. No deployment caller or delegated-method activation is part of this
-  backend slice. `environment_managers` grants direct Pod-bound accounts full Sandbox management;
-  `environment_launchers` grants Action brokers create-only authority with required caller origin.
-  `CreateEnvironment` names the Identity the Sandbox acts as and binds no PolicySets: a launch
-  creates the Identity and grants it, including the default sets, before calling it.
+  policy names an Actions actor and exact Dispatcher RPC methods; it grants no Runtime proxy or
+  Executor authority. EnvironmentService roles and delegation belong to the Controller settings.
 - `internal/gateway/`: direct Runner connections, authenticated proxy and Sandbox/Pod validation.
 - `internal/sandboxinventory/`: informer-backed Sandbox reads and the uncached Identity reader that supply the Dispatcher contract.
 - `dispatcher/`: durable admission, watch, delivery, guarded wake and scheduling ownership.

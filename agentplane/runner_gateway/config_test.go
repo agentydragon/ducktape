@@ -8,27 +8,16 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
-	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
-	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
-	"github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
-	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/sets"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -53,29 +42,6 @@ rpc:
     - {mode: kubernetes_bearer, audiences: [session-dispatcher, runner-gateway]}
 `
 
-type configTestTokenReviews struct{}
-
-type configTestWakeBudget struct{}
-
-func (configTestWakeBudget) ReserveWakeAttempt(context.Context, lifecycle.WakeBudgetKey, string, int64) (time.Duration, error) {
-	return 0, nil
-}
-
-func (configTestTokenReviews) Create(
-	_ context.Context,
-	request *authenticationv1.TokenReview,
-	_ metav1.CreateOptions,
-) (*authenticationv1.TokenReview, error) {
-	return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
-		Authenticated: true,
-		Audiences:     request.Spec.Audiences,
-		User: authenticationv1.UserInfo{
-			Username: "system:serviceaccount:agentplane:app",
-			UID:      "app-account-uid",
-		},
-	}}, nil
-}
-
 // required includes the explicit database Secret runtime input plus the static settings file.
 func required(t *testing.T, extra ...string) []string {
 	t.Helper()
@@ -98,23 +64,20 @@ func TestPolicyNamespaceIsRequired(t *testing.T) {
 	}
 }
 
-func TestCallerListsComeFromTheFileAndKeepAuthWakeAndOperatorPoliciesSeparate(t *testing.T) {
-	path := configtest.WriteSettings(t, requiredFile+"wake_callers: [agentplane/notifications]\noperator_callers: [agentplane/app]\ndelegation:\n  actor: agentplane/actions\n  identity_callers: true\n  methods:\n    - /agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput\n    - /agentplane.environments.v1.EnvironmentService/ListEnvironments\n    - /agentplane.environments.v1.EnvironmentService/GetEnvironment\n")
+func TestCallerListsComeFromTheFileAndKeepAuthenticationAndWakeSeparate(t *testing.T) {
+	path := configtest.WriteSettings(t, requiredFile+"wake_callers: [agentplane/notifications]\ndelegation:\n  actor: agentplane/actions\n  identity_callers: true\n  methods:\n    - /agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput\n")
 	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(c.DispatcherCallers, []auth.Account{{Namespace: "agentplane", Name: "app"}, {Namespace: "agentplane", Name: "notifications"}}) ||
 		!slices.Equal(c.WakeCallers, []auth.Account{{Namespace: "agentplane", Name: "notifications"}}) ||
-		!slices.Equal(c.OperatorCallers, []auth.Account{{Namespace: "agentplane", Name: "app"}}) ||
 		!slices.Equal(c.GatewayCallers, []auth.Account{{Namespace: "agentplane", Name: "runner-gateway"}}) ||
 		c.DispatcherAudience == c.GatewayAudience || c.ControllerAccount.Name != "sandbox-controller" || c.Delegation == nil ||
 		c.Delegation.Actor != (auth.Account{Namespace: "agentplane", Name: "actions"}) ||
 		!c.Delegation.IdentityCallers ||
 		!slices.Equal(c.Delegation.Methods, []string{
 			"/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput",
-			"/agentplane.environments.v1.EnvironmentService/ListEnvironments",
-			"/agentplane.environments.v1.EnvironmentService/GetEnvironment",
 		}) {
 		t.Fatalf("policy boundaries were merged: %+v", c)
 	}
@@ -156,18 +119,10 @@ func TestServiceCallerSettingsRequireSPIFFEListener(t *testing.T) {
 		"runtime proxy controller caller": "runtime_proxy_controller_callers: [\"spiffe://agentplane/sandbox-controller\"]\n",
 		"executor caller":                 "executor_service_callers: [\"spiffe://agentplane/actions\"]\n",
 		"dispatcher caller":               "dispatcher_service_callers: [\"spiffe://agentplane/actions\"]\n",
-		"environment reader":              "environment_service_readers: [\"spiffe://agentplane/actions\"]\n",
-		"environment manager":             "environment_service_managers: [\"spiffe://agentplane/actions\"]\n",
-		"environment launcher":            "environment_service_launchers: [\"spiffe://agentplane/actions\"]\n",
-		"environment operator":            "environment_service_operators: [\"spiffe://agentplane/actions\"]\n",
 		"wake caller":                     "wake_service_callers: [\"spiffe://agentplane/actions\"]\n",
 		"Dispatcher delegation": `dispatcher_service_delegation:
   actors: [{spiffe_id: "spiffe://agentplane/actions"}]
   methods: [/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput]
-`,
-		"EnvironmentService delegation": `environment_service_delegation:
-  actors: [{spiffe_id: "spiffe://agentplane/actions"}]
-  methods: [/agentplane.environments.v1.EnvironmentService/ListEnvironments]
 `,
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -208,135 +163,6 @@ func TestDispatcherServiceDelegationIsScopedToServiceMethodsAndActionActors(t *t
 				t.Fatal("invalid Dispatcher service delegation was accepted")
 			}
 		})
-	}
-}
-
-func TestEnvironmentServiceDelegationAllowsReadsAndResumeWithoutConnectionProvenance(t *testing.T) {
-	base := `environment_service_delegation:
-  actors: [{spiffe_id: "spiffe://agentplane/actions"}]
-  methods: [/agentplane.environments.v1.EnvironmentService/ListEnvironments, /agentplane.environments.v1.EnvironmentService/ResumeEnvironment]
-`
-	path := configtest.WriteSettings(t, requiredFile+base)
-	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.EnvironmentServiceDelegation == nil || len(c.EnvironmentServiceDelegation.Actors) != 1 ||
-		c.EnvironmentServiceDelegation.Actors[0].SPIFFEID != peertls.ActionsURI {
-		t.Fatalf("EnvironmentService service delegation = %+v", c.EnvironmentServiceDelegation)
-	}
-
-	for name, settings := range map[string]string{
-		"mutation method":       strings.Replace(base, "/agentplane.environments.v1.EnvironmentService/ListEnvironments", "/agentplane.environments.v1.EnvironmentService/CreateEnvironment", 1),
-		"Connection provenance": strings.Replace(base, `spiffe_id: "spiffe://agentplane/actions"`, `spiffe_id: "spiffe://agentplane/actions", connection_provenance: true`, 1),
-		"Identity URI actor":    strings.Replace(base, "spiffe://agentplane/actions", "spiffe://agentplane/test/sandbox/credential-id", 1),
-	} {
-		t.Run(name, func(t *testing.T) {
-			path := configtest.WriteSettings(t, requiredFile+settings)
-			if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path)); err == nil {
-				t.Fatal("invalid EnvironmentService delegation was accepted")
-			}
-		})
-	}
-}
-
-func TestOperatorCallersMustAlsoBeAuthenticatedDispatcherCallers(t *testing.T) {
-	path := configtest.WriteSettings(t, requiredFile+"operator_callers: [agentplane/unknown]\n")
-	if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path)); err == nil {
-		t.Fatal("operator caller not admitted by Dispatcher auth was accepted")
-	}
-	path = configtest.WriteSettings(t, requiredFile+"operator_callers: []\n")
-	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))
-	if err != nil {
-		t.Fatalf("empty operator caller list: %v", err)
-	}
-	if len(c.OperatorCallers) != 0 {
-		t.Fatalf("empty operator caller list loaded as %v", c.OperatorCallers)
-	}
-}
-
-func TestConfiguredHarnessNamesRoundTripThroughEnvironmentService(t *testing.T) {
-	settings := requiredFile + `environment_readers: [agentplane/app]
-runtime_catalog:
-  models:
-    models:
-      - model: model-a
-        display_name: Model A
-        reasoning_efforts: [high]
-    harnesses:
-      HARNESS_CLAUDE: [model-a]
-  templates:
-    runner-vm:
-      workspace_root: /state/workspaces
-      workspace_provenance: DEPLOYMENT_CONFIG
-      workspace_root_enforced: false
-      creates_missing_cwd: true
-`
-	config, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+configtest.WriteSettings(t, settings)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := config.RuntimeCatalog.Models.Harnesses; len(got) != 1 || len(got["HARNESS_CLAUDE"]) != 1 || got["HARNESS_CLAUDE"][0] != "model-a" {
-		t.Fatalf("loadConfig returned noncanonical harness catalog: %#v", got)
-	}
-
-	scheme := runtime.NewScheme()
-	if err := api.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	sandboxUID := types.UID("sandbox-uid")
-	controller := true
-	sandbox := &api.Sandbox{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "agentplane", Name: "workspace", UID: sandboxUID},
-		Spec:       api.SandboxSpec{Template: "runner-vm"},
-	}
-	executionAccount := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{
-		Namespace: "agentplane", Name: "workspace", UID: "execution-account-uid",
-		OwnerReferences: []metav1.OwnerReference{{
-			APIVersion: api.GroupVersion.String(), Kind: "Sandbox", Name: "workspace", UID: sandboxUID, Controller: &controller,
-		}},
-	}}
-	objects := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox, executionAccount).Build()
-	lifecycleManager, err := lifecycle.NewManager(lifecycle.Options{
-		Namespace: "agentplane", Objects: objects, WakeBudget: configTestWakeBudget{},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	service, err := environments.New(
-		"agentplane", objects, config.RuntimeCatalog, lifecycleManager,
-		sets.New(config.EnvironmentReaders...), environments.ManagementOptions{},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resolver, err := auth.NewResolver(configTestTokenReviews{}, config.DispatcherAudience, []string{"agentplane"}, auth.WithVerdictTTL(0))
-	if err != nil {
-		t.Fatal(err)
-	}
-	connection := grpcmethods.Serve(t, environments.Methods(resolver), func(server *grpc.Server) {
-		environmentpb.RegisterEnvironmentServiceServer(server, service)
-	})
-	client := environmentpb.NewEnvironmentServiceClient(connection)
-	ctx := metadata.AppendToOutgoingContext(t.Context(), "authorization", "Bearer test-token")
-	response, err := client.ListEnvironments(ctx, &environmentpb.ListEnvironmentsRequest{Limit: 10})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(response.Items) != 1 || len(response.Items[0].GetConfiguration().GetConfigurations()) != 1 {
-		t.Fatalf("discovery response = %+v", response)
-	}
-	harnessName := response.Items[0].GetConfiguration().GetConfigurations()[0].GetHarness()
-	harnessValue, ok := sessionpb.Harness_value[harnessName]
-	if !ok {
-		t.Fatalf("discovery returned harness %q, which does not decode as SessionSpec.Harness", harnessName)
-	}
-	harness := sessionpb.Harness(harnessValue)
-	if harness != sessionpb.Harness_HARNESS_CLAUDE {
-		t.Fatalf("discovery harness decoded to %s", harness)
 	}
 }
 

@@ -20,9 +20,8 @@ The service definitions are `env/runtime/control/environment_runtime.proto` and 
 The Controller serves EnvironmentService on every replica at `sandbox-controller:8082`, using its
 existing service SVID. This inventory/desired-state listener has no Runtime command client and does
 not change Runtime proxy traffic or the leader-only observation below. Its readiness depends on
-local serving and policy watches, independently of leadership. App and Actions call this receiver with their service SVIDs. Gateway deployment configuration
-no longer grants component EnvironmentService roles or delegation. Its registration and decoders
-remain during the final Sandbox CLI rollout; automatic wake grants remain with the Dispatcher. See [the Controller contract](../environments/SPEC.md#environmentservice-listener).
+local serving and policy watches, independently of leadership. App, Actions and Sandbox CLIs call this receiver with their service or workload SVIDs. The Gateway
+no longer registers EnvironmentService; automatic wake grants remain with the Dispatcher. See [the Controller contract](../environments/SPEC.md#environmentservice-listener).
 
 The leader-elected Sandbox Controller independently opens `WatchState(observe_only=true)` directly
 to each accepted incarnation, authenticating with its dedicated client SVID. This stream grants no

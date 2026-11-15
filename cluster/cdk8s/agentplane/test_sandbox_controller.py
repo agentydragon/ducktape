@@ -155,11 +155,6 @@ def test_environment_receiver_owns_authority_and_uses_controller_certificate(
     assert set(receiver.service_managers) == {APP_URI}
     assert set(receiver.service_launchers) == {ACTIONS_URI}
     assert set(receiver.service_operators) == {APP_URI}
-    assert not gateway.environment_service_readers
-    assert not gateway.environment_service_managers
-    assert not gateway.environment_service_launchers
-    assert not gateway.environment_service_operators
-    assert gateway.environment_service_delegation is None
     assert set(receiver.wake_callers) == set(gateway.wake_callers or ())
     assert set(receiver.wake_service_callers) == set(gateway.wake_service_callers)
     assert receiver.service_delegation is not None

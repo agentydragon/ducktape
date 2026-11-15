@@ -5,12 +5,10 @@ existing Sandbox Controller service SVID. Reconcilers and Runtime observation st
 the listener and its independent policy watches determine readiness on leaders and standbys. See
 [the serving contract](SPEC.md#environmentservice-listener). App and Actions use this receiver with
 service SVIDs. Actions preserves effective-Identity delegation for list/get/resume and the separate
-launcher grant for reviewed orchestration. Managed Sandbox CLIs use the dedicated local
-EnvironmentService route; existing Sandbox processes retain the Gateway route until cycled.
-Gateway deployment configuration no longer grants component EnvironmentService roles or delegation;
-its registration remains until existing CLI callers move. Automatic wake stays with Sessions.
-Retiring the Gateway registration follows all caller cutovers. Enabling `environment_service` requires the accepting Controller image to be pinned
-first; remove that configuration before rolling back to an image that cannot decode it.
+launcher grant for reviewed orchestration. Managed Sandbox CLIs use the dedicated local EnvironmentService route. The Gateway no longer
+registers EnvironmentService or accepts its obsolete settings; automatic wake stays with Sessions.
+Enabling `environment_service` requires the accepting Controller image to be pinned first; remove
+that configuration before rolling back to an image that cannot decode it.
 
 Reconciles `Sandbox` into retained state and optional workspace PVCs and, while running as the
 `Identity` its spec names, one Pod or KubeVirt VM from its `SandboxTemplate`. Contract: [`SPEC.md`](SPEC.md). The CRDs are in

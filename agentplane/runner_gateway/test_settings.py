@@ -30,7 +30,6 @@ def _settings(runner_security: object, *, kubernetes_client_qps: float = 0) -> S
                 },
                 "dispatcher_callers": {"test-app/test-dispatcher"},
                 "gateway_callers": {"test-app/test-gateway"},
-                "operator_callers": {"test-app/test-dispatcher"},
                 "runner_security": runner_security,
                 "kubernetes_client_qps": kubernetes_client_qps,
             }
@@ -67,15 +66,6 @@ def test_gateway_accepts_kubernetes_client_qps_modes(qps: float) -> None:
 def test_gateway_rejects_invalid_kubernetes_client_qps(qps: float) -> None:
     with pytest.raises(ValidationError):
         _settings({"mode": "insecure"}, kubernetes_client_qps=qps)
-
-
-def test_operator_callers_are_an_optional_subset_of_dispatcher_callers() -> None:
-    settings = _settings({"mode": "insecure"})
-    assert settings.operator_callers == {"test-app/test-dispatcher"}
-    source = settings.model_dump()
-    source["operator_callers"] = {"test-app/other"}
-    with pytest.raises(ValidationError, match="operator_callers must be a subset"):
-        Settings.model_validate(source)
 
 
 def test_shared_listener_bearer_audiences_are_exactly_method_scoped() -> None:
@@ -173,15 +163,6 @@ def test_service_settings_require_spiffe_listener_authentication() -> None:
     with pytest.raises(ValidationError, match=r"service caller settings require rpc\.auth to include spiffe"):
         Settings.model_validate(source)
 
-    source = _settings({"mode": "insecure"}).model_dump(mode="json")
-    source["rpc"]["auth"] = [source["rpc"]["auth"][1]]
-    source["environment_service_delegation"] = {
-        "actors": [{"spiffe_id": "spiffe://agentplane/actions"}],
-        "methods": ["/agentplane.environments.v1.EnvironmentService/ListEnvironments"],
-    }
-    with pytest.raises(ValidationError, match=r"service caller settings require rpc\.auth to include spiffe"):
-        Settings.model_validate(source)
-
 
 def test_empty_service_settings_are_omitted_from_deployment_output() -> None:
     source = _settings({"mode": "insecure"}).model_dump(mode="json")
@@ -192,11 +173,6 @@ def test_empty_service_settings_are_omitted_from_deployment_output() -> None:
         "executor_service_callers",
         "dispatcher_service_delegation",
         "dispatcher_service_callers",
-        "environment_service_readers",
-        "environment_service_managers",
-        "environment_service_launchers",
-        "environment_service_operators",
-        "environment_service_delegation",
         "wake_service_callers",
     }
     assert new_optional_fields.isdisjoint(source)
@@ -224,37 +200,6 @@ def test_dispatcher_service_delegation_is_scoped_to_dispatcher_and_action_proven
         Settings.model_validate(source)
 
     source["dispatcher_service_delegation"]["actors"] = [
-        {"spiffe_id": "spiffe://agentplane/test/sandbox/credential-id"}
-    ]
-    with pytest.raises(ValidationError):
-        Settings.model_validate(source)
-
-
-def test_environment_service_delegation_allows_reads_and_resume_with_action_only() -> None:
-    source = _settings({"mode": "insecure"}).model_dump(mode="json")
-    source["environment_service_delegation"] = {
-        "actors": [{"spiffe_id": "spiffe://agentplane/actions"}],
-        "methods": [
-            "/agentplane.environments.v1.EnvironmentService/ListEnvironments",
-            "/agentplane.environments.v1.EnvironmentService/ResumeEnvironment",
-        ],
-    }
-    assert Settings.model_validate(source).environment_service_delegation is not None
-
-    source["environment_service_delegation"]["methods"] = [
-        "/agentplane.environments.v1.EnvironmentService/CreateEnvironment"
-    ]
-    with pytest.raises(ValidationError, match="environment_service_delegation methods must be allowed"):
-        Settings.model_validate(source)
-
-    source["environment_service_delegation"]["methods"] = [
-        "/agentplane.environments.v1.EnvironmentService/ListEnvironments"
-    ]
-    source["environment_service_delegation"]["actors"][0]["connection_provenance"] = True
-    with pytest.raises(ValidationError):
-        Settings.model_validate(source)
-
-    source["environment_service_delegation"]["actors"] = [
         {"spiffe_id": "spiffe://agentplane/test/sandbox/credential-id"}
     ]
     with pytest.raises(ValidationError):
@@ -298,12 +243,9 @@ def test_runtime_inputs_are_not_settings_fields() -> None:
 def test_account_sets_serialize_in_sorted_order() -> None:
     source = _settings({"mode": "insecure"}).model_dump(mode="python")
     source["dispatcher_callers"] = {"test-a-z/app", "test-a/worker"}
-    source["operator_callers"] = {"test-a/worker"}
-    source["environment_readers"] = {"test-a-z/app", "test-a/worker"}
     settings = Settings.model_validate(source)
     rendered = settings.model_dump(mode="json")
     assert rendered["dispatcher_callers"] == ["test-a/worker", "test-a-z/app"]
-    assert rendered["environment_readers"] == ["test-a/worker", "test-a-z/app"]
 
 
 def test_settings_ignore_static_environment_overrides(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -14,9 +14,7 @@ the approval gateway for any MCP-capable LLM product, exposed externally through
 - [MCP edge](mcp_edge/README.md): external Connection/OAuth authority and `/mcp`; forwards authenticated Actions calls over gRPC.
 - [Runner Gateway](runner_gateway/README.md): one process providing runner state observation,
   authorized live Runner proxy, [Session Dispatcher](runner_gateway/dispatcher/README.md) durable queue,
-  and `EnvironmentService` inventory (`ListEnvironments`, `WatchEnvironments`, immediate
-  `GetEnvironment`, current-state `WatchEnvironment`), Sandbox creation/templates/management,
-  and explicit resume through shared lifecycle machinery.
+  and automatic wake for admitted Session delivery.
   New serving Pods run the queue migration before starting ([deployment](runner_gateway/README.md#deployment)).
 - [History Service](history_service/README.md): retained Session history, read by the
   integration app and the Notification service.
@@ -29,7 +27,8 @@ the approval gateway for any MCP-capable LLM product, exposed externally through
 - [Policy Controller](policy_controller/README.md): expires `PolicyBinding`s and keeps the
   RoleBindings they grant.
 - [Sandbox Controller](environments/README.md): reconciles `Sandbox` Identity credentials,
-  retained state PVCs and Pods or a KubeVirt VM.
+  retained state PVCs and Pods or a KubeVirt VM; serves EnvironmentService inventory, creation,
+  management and explicit resume on every replica.
 - [LLM ingress](llm_ingress/README.md): authenticated hop in front of LiteLLM.
 - [Notification service](notification_service/README.md): subscriptions and session inboxes.
 - [Indexing](x/indexing/README.md): Git semantic search.

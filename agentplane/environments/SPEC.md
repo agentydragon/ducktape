@@ -34,8 +34,8 @@ its RPC listener; clients reconnect and reconcile uncertain mutation outcomes wi
 
 Omitting `environment_service` retains the controller-only process and existing readiness behavior.
 Deployment configuration enables the listener only after the accepting image is pinned; caller
-configuration changes follow the running receiver. Existing Gateway registration remains during
-that cutover.
+configuration changes follow the running receiver. The Gateway does not register EnvironmentService;
+restoring it for rollback requires its accepting image before callers are retargeted.
 
 ## State PVC
 
