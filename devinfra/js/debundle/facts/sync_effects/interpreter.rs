@@ -7664,6 +7664,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // still expand their own captures below, but share each binding's
         // identical prefix expansion. A later pass starts with an empty set.
         let mut expanded_prefix_reads = FxHashSet::default();
+        // The read list depends on the callable, not its captured context.
+        // Distinct closures still traverse their own retained references, but
+        // need not probe the same binding list again in this pass.
+        let mut expanded_callable_reads = FxHashSet::default();
         let mut changed = false;
         while let Some(value) = pending.pop() {
             if !visited.insert(value.clone()) {
@@ -7691,7 +7695,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
                 AbstractValue::Value(Value::Alloc(Kind::Function, key))
                 | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => {
-                    if let Some(callable) = self.inputs.index.callables.get(key) {
+                    if expanded_callable_reads.insert(*key)
+                        && let Some(callable) = self.inputs.index.callables.get(key)
+                    {
                         pending.extend(
                             callable
                                 .reads
