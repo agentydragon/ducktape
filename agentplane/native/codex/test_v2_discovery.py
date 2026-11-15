@@ -49,7 +49,7 @@ async def test_v2_child_discovery_and_resume(
 ) -> None:
     active = scenario == "crash-active"
     async with asyncio.timeout(90):
-        async with server(codex, openai_responses, "initial", client_name="agentplane-v2-probe") as process:
+        async with server(codex, openai_responses, "initial") as process:
             root = (
                 await rpc(
                     process,
@@ -148,7 +148,7 @@ async def test_v2_child_discovery_and_resume(
             spawn_model = wire.SubAgentActivityItem.model_validate(spawn["item"])
             assert spawn_model.model == MODEL
             assert spawn_model.reasoning_effort == EFFORT
-        async with server(codex, openai_responses, "resumed", client_name="agentplane-v2-probe") as resumed:
+        async with server(codex, openai_responses, "resumed") as resumed:
             assert await listed(resumed, "thread/loaded/list") == []
             restored = (await rpc(resumed, "thread/resume", threadId=root_id, excludeTurns=True))["thread"]
             assert restored["id"] == root_id
@@ -191,7 +191,7 @@ async def test_concurrent_child_transcripts_and_recovery(
     child_ids: dict[str, str] = {}
     completed_items: dict[str, list[dict[str, Any]]] = {}
     async with asyncio.timeout(90):
-        async with server(codex, openai_responses, "siblings", client_name="agentplane-v2-probe") as process:
+        async with server(codex, openai_responses, "siblings") as process:
             root = (
                 await rpc(
                     process,
@@ -338,9 +338,7 @@ async def test_concurrent_child_transcripts_and_recovery(
                     ]
                 assert await process.crash() < 0
                 await parent.wait_client_closed()
-        async with server(
-            codex, openai_responses, "recovered-siblings", client_name="agentplane-v2-probe"
-        ) as recovered:
+        async with server(codex, openai_responses, "recovered-siblings") as recovered:
             assert await listed(recovered, "thread/loaded/list") == []
             for name, child_id in child_ids.items():
                 snapshot = (await rpc(recovered, "thread/read", threadId=child_id, includeTurns=True))["thread"]
@@ -370,7 +368,7 @@ async def test_nested_child_ancestry_and_terminal_recovery(
     namespace = "collaboration" if v2 else "multi_agent_v1"
     ancestry: dict[str, str] = {}
     async with asyncio.timeout(90):
-        async with server(codex, openai_responses, "nested", client_name="agentplane-v2-probe") as process:
+        async with server(codex, openai_responses, "nested") as process:
             root = (
                 await rpc(
                     process,
@@ -461,7 +459,7 @@ async def test_nested_child_ancestry_and_terminal_recovery(
                     await parent.wait_client_closed()
                 if ending == "crash-active":
                     await current.wait_client_closed()
-        async with server(codex, openai_responses, "nested-recovery", client_name="agentplane-v2-probe") as recovered:
+        async with server(codex, openai_responses, "nested-recovery") as recovered:
             for child_id, parent_id in ancestry.items():
                 snapshot = (await rpc(recovered, "thread/read", threadId=child_id, includeTurns=True))["thread"]
                 assert snapshot["id"] == child_id
