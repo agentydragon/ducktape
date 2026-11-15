@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	streamhttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/streams"
 	upstreamproxy "github.com/agentydragon/ducktape/agentplane/app/internal/upstream"
 	egresspb "github.com/agentydragon/ducktape/agentplane/egress/api/admin/egress_adminpb"
 	rulespb "github.com/agentydragon/ducktape/agentplane/egress/api/rules/egress_rulespb"
@@ -46,7 +47,7 @@ func (s *policyFacadeService) WatchPolicyBindings(request *policypb.WatchPolicyB
 }
 
 // policyUpstream serves service behind the generated gateway, as the app's Policy Service facade does.
-func policyUpstream(t *testing.T, service policypb.PolicyServiceServer) streamingUpstream {
+func policyUpstream(t *testing.T, service policypb.PolicyServiceServer) streamhttp.Upstream {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

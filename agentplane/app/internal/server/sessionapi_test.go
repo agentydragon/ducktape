@@ -45,7 +45,7 @@ func TestSessionRoutesRequireCallerAuthentication(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := newHTTPServer(authentication)
-	if err := registerSessionRoutes(server, &appService{}); err != nil {
+	if err := (&sessionhttp.Handler{}).RegisterRoutes(server); err != nil {
 		t.Fatal(err)
 	}
 	handler := server.Handler(authentication)
@@ -124,7 +124,7 @@ func sessionTestGateway(t *testing.T, peer *sessionTestPeer) (http.Handler, *tes
 		SandboxNamespace: config.SandboxNamespace, SandboxPresets: config.SandboxPresets,
 		ThreadPresets: config.ThreadPresets, Environments: peer, SessionOpener: peer, ThreadOpener: peer,
 	})
-	if err := registerSessionRoutes(server, &appService{sessions: handler}); err != nil {
+	if err := handler.RegisterRoutes(server); err != nil {
 		t.Fatal(err)
 	}
 	return server.Handler(authentication), fixture
@@ -280,8 +280,6 @@ func TestSessionGatewayPreservesConflictAndUncertainOutcomes(t *testing.T) {
 		}
 	}
 }
-
-var _ apppb.AppServiceServer = (*appService)(nil)
 
 // Frozen pre-facade Huma boundary: exercise the request emitted by the generated browser codec
 // against the parser still serving in old app replicas during a rolling deployment.

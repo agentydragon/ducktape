@@ -1,3 +1,7 @@
+// Package threads owns app-browser Thread metadata over the app's retained-history projection. It
+// consumes app metadata storage and History summaries, returns generated AppService responses, and
+// streams Thread changes through the generated ProtoJSON encoder. The caller registrar enforces
+// browser authentication; History owns events and the Dispatcher owns Session delivery.
 package threads
 
 import (
@@ -83,6 +87,10 @@ type Dependencies struct {
 
 // Handler implements the app's Thread metadata RPCs and its typed watch stream.
 type Handler struct {
+	// The generated in-process gateway accepts the full aggregate service interface. This owner
+	// intentionally implements only Thread methods; all other RPCs stay unimplemented here and are
+	// not mounted by RegisterRoutes.
+	apppb.UnimplementedAppServiceServer
 	store              Store
 	history            History
 	sandboxNamespace   string

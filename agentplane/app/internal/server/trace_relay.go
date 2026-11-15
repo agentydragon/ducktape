@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	apphttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 )
 
@@ -49,55 +50,55 @@ func appHTTPHandler(next http.Handler) http.Handler {
 func relayTraces(writer http.ResponseWriter, request *http.Request, client *http.Client) {
 	contentType := strings.ToLower(strings.TrimSpace(strings.SplitN(request.Header.Get("Content-Type"), ";", 2)[0]))
 	if contentType != "application/x-protobuf" {
-		writeDetailError(writer, http.StatusUnsupportedMediaType, "expected application/x-protobuf")
+		apphttp.WriteDetailError(writer, http.StatusUnsupportedMediaType, "expected application/x-protobuf")
 		return
 	}
 	encoding := strings.ToLower(request.Header.Get("Content-Encoding"))
 	if encoding != "" && encoding != "identity" {
-		writeDetailError(writer, http.StatusUnsupportedMediaType, "compressed trace payloads are not accepted")
+		apphttp.WriteDetailError(writer, http.StatusUnsupportedMediaType, "compressed trace payloads are not accepted")
 		return
 	}
 	endpoint := configuredTracesEndpoint()
 	if endpoint == "" {
-		writeDetailError(writer, http.StatusServiceUnavailable, "trace receiver is not configured")
+		apphttp.WriteDetailError(writer, http.StatusServiceUnavailable, "trace receiver is not configured")
 		return
 	}
 	if request.ContentLength > maxTracePayloadBytes {
-		writeDetailError(writer, http.StatusRequestEntityTooLarge, "trace payload is too large")
+		apphttp.WriteDetailError(writer, http.StatusRequestEntityTooLarge, "trace payload is too large")
 		return
 	}
 	payload, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, maxTracePayloadBytes))
 	if err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			writeDetailError(writer, http.StatusRequestEntityTooLarge, "trace payload is too large")
+			apphttp.WriteDetailError(writer, http.StatusRequestEntityTooLarge, "trace payload is too large")
 		} else {
-			writeDetailError(writer, http.StatusBadRequest, "invalid trace payload")
+			apphttp.WriteDetailError(writer, http.StatusBadRequest, "invalid trace payload")
 		}
 		return
 	}
 	upstreamRequest, err := http.NewRequestWithContext(request.Context(), http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
-		writeDetailError(writer, http.StatusBadGateway, "trace receiver unavailable")
+		apphttp.WriteDetailError(writer, http.StatusBadGateway, "trace receiver unavailable")
 		return
 	}
 	upstreamRequest.Header.Set("Content-Type", "application/x-protobuf")
 	for name, value := range configuredTraceHeaders() {
 		if !validTraceHeader(name, value) {
-			writeDetailError(writer, http.StatusBadGateway, "trace receiver unavailable")
+			apphttp.WriteDetailError(writer, http.StatusBadGateway, "trace receiver unavailable")
 			return
 		}
 		upstreamRequest.Header.Set(name, value)
 	}
 	response, err := client.Do(upstreamRequest)
 	if err != nil {
-		writeDetailError(writer, http.StatusBadGateway, "trace receiver unavailable")
+		apphttp.WriteDetailError(writer, http.StatusBadGateway, "trace receiver unavailable")
 		return
 	}
 	defer response.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		writeDetailError(writer, http.StatusBadGateway, "trace receiver rejected the export")
+		apphttp.WriteDetailError(writer, http.StatusBadGateway, "trace receiver rejected the export")
 		return
 	}
 	writer.WriteHeader(http.StatusOK)

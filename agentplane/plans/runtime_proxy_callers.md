@@ -52,7 +52,7 @@ as services separate. Deployed and wire names remain unchanged.
 [`GatewayEnvironmentRuntimeProxy`](../app/internal/sessionclient/environment_runtime.go), using the
 App SVID. Active calls are `GetStatus`:
 
-- [The browser Runtime-status route](../app/internal/server/environment_runtime_api.go) calls
+- [The browser Runtime-status route](../app/internal/httpapi/sessions/routes.go) calls
   [the Session handler](../app/internal/httpapi/sessions/handler.go#L139), which resolves an exact
   Environment through EnvironmentService before forwarding the live snapshot.
 - [Thread archival](../app/internal/httpapi/threads/handler.go#L483) resolves the retained exact

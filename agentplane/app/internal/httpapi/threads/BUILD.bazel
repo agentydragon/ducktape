@@ -4,11 +4,15 @@ package(default_visibility = ["//agentplane/app:__subpackages__"])
 
 go_library(
     name = "threads",
-    srcs = ["handler.go"],
+    srcs = [
+        "handler.go",
+        "routes.go",
+    ],
     importpath = "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/threads",
     deps = [
         "//agentplane/app:app_service_go_proto",
         "//agentplane/app/internal/historydata",
+        "//agentplane/app/internal/httpapi",
         "//agentplane/app/internal/threads",
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/history_service/api/history:history_service_go_proto",

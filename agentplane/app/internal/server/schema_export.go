@@ -13,7 +13,6 @@ import (
 // operation declarations without invoking handlers.
 func ExportOpenAPI(writer io.Writer) error {
 	server := newHTTPServer(nil)
-	registerOperatorRoutes(server, nil)
 	if err := apphttp.NewSystemStatusHandler(nil).RegisterRoutes(server); err != nil {
 		return fmt.Errorf("register System status facade: %w", err)
 	}

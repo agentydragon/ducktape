@@ -42,7 +42,7 @@ func TestEnvironmentRuntimeStatusServesLifecycleProgressAndExactCursors(t *testi
 			},
 		},
 	}}})
-	if err := registerEnvironmentRuntimeRoutes(server, &appService{sessions: handler}); err != nil {
+	if err := handler.RegisterRoutes(server); err != nil {
 		t.Fatal(err)
 	}
 	request := httptest.NewRequest(http.MethodGet, "/sandboxes/fixture/runner-status?sandbox_uid=uid", nil)
@@ -96,7 +96,7 @@ func TestEnvironmentRuntimeStatusRoutePreservesSandboxErrorsAndCallerAuthenticat
 	authentication := fixture.Auth
 	server := newHTTPServer(authentication)
 	handler := sessionhttp.NewHandler(sessionhttp.Dependencies{RuntimeStatus: runtimeStatusFake{err: status.Error(codes.NotFound, "fixture")}})
-	if err := registerEnvironmentRuntimeRoutes(server, &appService{sessions: handler}); err != nil {
+	if err := handler.RegisterRoutes(server); err != nil {
 		t.Fatal(err)
 	}
 

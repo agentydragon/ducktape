@@ -141,33 +141,33 @@ func TestListThreadMetadataScopesPagesAndArchiveCountToSandboxUID(t *testing.T) 
 		sandboxes:   map[uuid.UUID]string{ids[0]: "reused", ids[1]: "reused", ids[2]: "reused", ids[3]: "reused", ids[4]: "reused", ids[5]: "reused"},
 		sandboxUIDs: map[uuid.UUID]string{ids[0]: oldUID, ids[1]: currentUID, ids[2]: currentUID, ids[3]: currentUID, ids[4]: currentUID, ids[5]: currentUID},
 	}
-	service := &appService{threadMetadata: threadhttp.NewHandler(threadhttp.Dependencies{Store: store, History: history})}
-	first, err := service.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: currentUID, Limit: 1, IncludeArchived: true})
+	handler := threadhttp.NewHandler(threadhttp.Dependencies{Store: store, History: history})
+	first, err := handler.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: currentUID, Limit: 1, IncludeArchived: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(first.Threads) != 1 || first.Threads[0].ThreadId != ids[1].String() || first.NextPageToken == "" || first.ArchivedCount != 1 {
 		t.Fatalf("first current-incarnation page = %+v", first)
 	}
-	second, err := service.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: currentUID, Limit: 1, IncludeArchived: true, PageToken: first.NextPageToken})
+	second, err := handler.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: currentUID, Limit: 1, IncludeArchived: true, PageToken: first.NextPageToken})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(second.Threads) != 1 || second.Threads[0].ThreadId != ids[2].String() || second.ArchivedCount != 1 {
 		t.Fatalf("second current-incarnation page = %+v", second)
 	}
-	third, err := service.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: currentUID, Limit: 1, IncludeArchived: true, PageToken: second.NextPageToken})
+	third, err := handler.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: currentUID, Limit: 1, IncludeArchived: true, PageToken: second.NextPageToken})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(third.Threads) != 1 || third.Threads[0].ThreadId != ids[3].String() || third.NextPageToken != "" || third.ArchivedCount != 1 {
 		t.Fatalf("third current-incarnation page = %+v, want the matching archived Thread only", third)
 	}
-	_, err = service.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: oldUID, Limit: 1, IncludeArchived: true, PageToken: first.NextPageToken})
+	_, err = handler.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: oldUID, Limit: 1, IncludeArchived: true, PageToken: first.NextPageToken})
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("cross-incarnation page token = %v", err)
 	}
-	defaultPage, err := service.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: currentUID, Limit: 1})
+	defaultPage, err := handler.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: currentUID, Limit: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestListThreadMetadataScopesPagesAndArchiveCountToSandboxUID(t *testing.T) 
 		t.Fatalf("default current-incarnation page = %+v", defaultPage)
 	}
 	history.err = errors.New("History unavailable")
-	_, err = service.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: currentUID})
+	_, err = handler.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: currentUID})
 	if status.Code(err) != codes.Unavailable {
 		t.Fatalf("History failure = %v", err)
 	}
@@ -202,7 +202,7 @@ func TestThreadMetadataWatchStreamsUpdatesAndCloses(t *testing.T) {
 			threadMetadata := threadhttp.NewHandler(threadhttp.Dependencies{
 				Store: &threadReadStoreFake{}, Updates: changes, UpdatesConnected: connected.Load, DrainDone: server.DrainDone(),
 			})
-			if err := registerThreadMetadataGateway(server, &appService{threadMetadata: threadMetadata}); err != nil {
+			if err := threadMetadata.RegisterRoutes(server); err != nil {
 				t.Fatal(err)
 			}
 			httpServer := httptest.NewServer(server.Handler(authentication))
@@ -318,9 +318,9 @@ func (f *threadReadHistoryFake) FindSessions(_ context.Context, _, _, sandboxUID
 func TestRenameThreadReturnsNotFoundWhenHistorySessionIsMissing(t *testing.T) {
 	id := uuid.New()
 	store := &threadReadStoreFake{rows: []threads.Thread{{ID: id}}}
-	service := &appService{threadMetadata: threadhttp.NewHandler(threadhttp.Dependencies{Store: store, History: &threadReadHistoryFake{}})}
+	handler := threadhttp.NewHandler(threadhttp.Dependencies{Store: store, History: &threadReadHistoryFake{}})
 	name := "renamed"
-	_, err := service.RenameThread(context.Background(), &apppb.RenameThreadRequest{ThreadId: id.String(), Name: &name})
+	_, err := handler.RenameThread(context.Background(), &apppb.RenameThreadRequest{ThreadId: id.String(), Name: &name})
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("RenameThread: %v, want NotFound", err)
 	}
@@ -332,11 +332,11 @@ func TestRenameThreadReturnsNotFoundWhenHistorySessionIsMissing(t *testing.T) {
 func TestRenameThreadRequiresHistorySessionButNotSandboxIdentity(t *testing.T) {
 	id := uuid.New()
 	store := &threadReadStoreFake{rows: []threads.Thread{{ID: id}}}
-	service := &appService{threadMetadata: threadhttp.NewHandler(threadhttp.Dependencies{Store: store, History: &threadReadHistoryFake{
+	handler := threadhttp.NewHandler(threadhttp.Dependencies{Store: store, History: &threadReadHistoryFake{
 		summaries: map[uuid.UUID]*historypb.SessionSummary{id: {}},
-	}})}
+	}})
 	name := "renamed"
-	metadata, err := service.RenameThread(context.Background(), &apppb.RenameThreadRequest{ThreadId: id.String(), Name: &name})
+	metadata, err := handler.RenameThread(context.Background(), &apppb.RenameThreadRequest{ThreadId: id.String(), Name: &name})
 	if err != nil || metadata.GetName() != name {
 		t.Fatalf("RenameThread with a present History Session and no Sandbox identity = %v, %v", metadata, err)
 	}
@@ -354,7 +354,7 @@ func TestThreadMutationGateway(t *testing.T) {
 	authentication := fixture.Auth
 	server := newHTTPServer(authentication)
 	threadMetadata := threadhttp.NewHandler(threadhttp.Dependencies{Store: store, History: history, Environments: inventory})
-	if err := registerThreadMetadataGateway(server, &appService{threadMetadata: threadMetadata}); err != nil {
+	if err := threadMetadata.RegisterRoutes(server); err != nil {
 		t.Fatal(err)
 	}
 	handler := server.Handler(authentication)

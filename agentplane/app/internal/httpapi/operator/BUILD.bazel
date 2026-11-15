@@ -1,0 +1,30 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+go_library(
+    name = "operator",
+    srcs = ["routes.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/operator",
+    deps = [
+        "//agentplane/action_service/api/contracts:linkage_service_go_proto",
+        "@org_golang_google_genproto_googleapis_rpc//errdetails",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "routes_test",
+    srcs = ["routes_test.go"],
+    embed = [":operator"],
+    deps = [
+        "//agentplane/action_service/api/contracts:linkage_service_go_proto",
+        "@org_golang_google_genproto_googleapis_rpc//errdetails",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+    ],
+)

@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
+	sessionhttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/sessions"
+	streamhttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/streams"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
@@ -199,10 +201,10 @@ func TestHumaResponsesDoNotAddSchemaMetadata(t *testing.T) {
 
 func TestNonUUIDIDSegmentMatchesNoRoute(t *testing.T) {
 	server := newHTTPServer(nil)
-	if err := registerSessionRoutes(server, &appService{}); err != nil {
+	if err := (&sessionhttp.Handler{}).RegisterRoutes(server); err != nil {
 		t.Fatal(err)
 	}
-	registerStreamingRoutes(server, streamingDependencies{})
+	streamhttp.RegisterRoutes(server, server.DrainDone(), streamhttp.Dependencies{})
 	server.RegisterRawRoute("/threads/{thread_id}/sync/{rest...}", http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Fatal("non-UUID sync route reached its handler")
 	}), false)

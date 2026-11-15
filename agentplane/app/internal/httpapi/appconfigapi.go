@@ -1,3 +1,5 @@
+// Package httpapi owns shared route registration contracts and response helpers. Feature routes
+// stay with their resource packages; this package owns no backend state.
 package httpapi
 
 import (

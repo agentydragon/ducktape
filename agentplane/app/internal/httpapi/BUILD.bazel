@@ -6,6 +6,8 @@ go_library(
     name = "httpapi",
     srcs = [
         "appconfigapi.go",
+        "errors.go",
+        "gateway.go",
         "statusapi.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi",

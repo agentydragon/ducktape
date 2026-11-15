@@ -1,0 +1,28 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+go_library(
+    name = "streams",
+    srcs = ["routes.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/streams",
+    deps = [
+        "//agentplane/app/internal/auth",
+        "//agentplane/app/internal/federation",
+        "//agentplane/app/internal/httpapi",
+        "//agentplane/app/internal/sandboxes",
+        "//agentplane/app/internal/upstream",
+        "//agentplane/environments/v1:environment_service_go_proto",
+        "//agentplane/proto:identity_go_proto",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "routes_test",
+    srcs = ["routes_test.go"],
+    embed = [":streams"],
+)

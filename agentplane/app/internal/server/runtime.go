@@ -30,6 +30,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/internal/historywatch"
 	apphttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi"
 	sessionhttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/sessions"
+	streamhttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/streams"
 	threadhttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/threads"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/migrations"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/sandboxes"
@@ -332,44 +333,31 @@ func Run(ctx context.Context, config settings.Config) error {
 		Environments: environments, EnvironmentRuntime: environmentRuntime,
 		Updates: wakeupHub, UpdatesConnected: wakeupHub.Connected, DrainDone: server.DrainDone(),
 	})
-	app := &appService{
-		sessions: sessionHandlers, threadMetadata: threadMetadata,
-	}
 	appConfigHandler := apphttp.NewAppConfigHandler(config, policySetNames)
-	if err := appConfigHandler.RegisterRoutes(server); err != nil {
-		return fmt.Errorf("register app configuration facade: %w", err)
-	}
-	if err := registerSessionRoutes(server, app); err != nil {
-		return fmt.Errorf("register Session facade: %w", err)
-	}
-	if err := registerEnvironmentRuntimeRoutes(server, app); err != nil {
-		return fmt.Errorf("register Environment Runtime status facade: %w", err)
-	}
-	if err := registerThreadMetadataGateway(server, app); err != nil {
-		return fmt.Errorf("register Thread metadata facade: %w", err)
-	}
-	registerOperatorRoutes(server, linkageClient)
 	statusHandler := apphttp.NewSystemStatusHandler(serviceStatus)
-	if err := statusHandler.RegisterRoutes(server); err != nil {
-		return fmt.Errorf("register System status facade: %w", err)
-	}
-	server.RegisterRawRoute("POST /telemetry/v1/traces", traceRelayHandler(), true)
-	registerStreamingRoutes(server, streamingDependencies{
-		Auth:             appAuth,
-		SandboxNamespace: config.SandboxNamespace, Sandboxes: environments,
-		Federator:      federator,
-		DispatcherHTTP: dispatcherGateway, EnvironmentHTTP: environmentGateway, PolicyHTTP: policyGateway, EgressHTTP: egressGateway,
-		ActionHTTP: actionGateway, ConnectionHTTP: connectionGateway,
-		HistoryHTTP: historyGateway, NotificationHTTP: notificationGateway,
-		Console: consoleConnector, Logger: logger,
-	})
+	var electricHandler http.Handler
 	if config.ElectricURL != "" {
 		electric, electricErr := electricproxy.NewElectricProxy(baseClient, config.ElectricURL, threadEpochStore{history: history})
 		if electricErr != nil {
 			return fmt.Errorf("configure Electric thread sync: %w", electricErr)
 		}
-		electricHandler := electric.Handler()
-		server.RegisterRawRoute("/threads/{thread_id}/sync/{rest...}", electricHandler, false)
+		electricHandler = electric.Handler()
+	}
+	if err := registerRoutes(server, routeOwners{
+		appConfig: appConfigHandler, sessions: sessionHandlers, threads: threadMetadata,
+		operatorLinkage: linkageClient, systemStatus: statusHandler,
+		traceRelay: traceRelayHandler(), electric: electricHandler,
+		streams: streamhttp.Dependencies{
+			Auth:             appAuth,
+			SandboxNamespace: config.SandboxNamespace, Sandboxes: environments,
+			Federator:      federator,
+			DispatcherHTTP: dispatcherGateway, EnvironmentHTTP: environmentGateway, PolicyHTTP: policyGateway, EgressHTTP: egressGateway,
+			ActionHTTP: actionGateway, ConnectionHTTP: connectionGateway,
+			HistoryHTTP: historyGateway, NotificationHTTP: notificationGateway,
+			Console: consoleConnector, Logger: logger,
+		},
+	}); err != nil {
+		return err
 	}
 	workers := []processWorker{
 		{name: "history-watch", run: historyWatch.Run},

@@ -1,3 +1,8 @@
+// Package sessions owns browser Session creation and Environment Runtime status routes. It consumes
+// the current Sandbox identity and narrow Session, Environment and Thread dependencies, and emits
+// generated AppService ProtoJSON responses. The caller registrar enforces browser authentication;
+// the Dispatcher owns durable Session delivery, Environment Runtime owns process status, and the
+// threads package owns Thread metadata.
 package sessions
 
 import (
@@ -53,6 +58,10 @@ type Dependencies struct {
 
 // Handler implements the Session and Environment Runtime browser operations.
 type Handler struct {
+	// The generated in-process gateway accepts the full aggregate service interface. This owner
+	// intentionally implements only Session and Environment Runtime methods; all other RPCs stay
+	// unimplemented here and are not mounted by RegisterRoutes.
+	apppb.UnimplementedAppServiceServer
 	sandboxNamespace string
 	sandboxPresets   map[string]settings.SandboxPreset
 	threadPresets    map[string]settings.ThreadPreset
