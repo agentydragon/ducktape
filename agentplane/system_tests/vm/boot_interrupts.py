@@ -150,8 +150,20 @@ def _trace_one(
             record["stop_reason"] = "teardown-before-qemu"
             return
         record["host_before"] = sampled
-        process = proc_root / str(sampled["pid"])
-        cmdline = (process / "cmdline").read_bytes().split(b"\0")
+        # Domain startup may replace the host PID while query-status is in flight.
+        # A log setup race must not discard the independent QMP timeline.
+        process: Path | None = None
+        cmdline: list[bytes] = []
+        try:
+            logging_host = boot_rcu._sample_qemu(proc_root, uid)
+            record["host_at_logging_setup"] = logging_host
+            if logging_host.get("matching_qemu_processes") != 1:
+                raise RuntimeError("No unique QEMU at logging setup")
+            process = proc_root / str(logging_host["pid"])
+            cmdline = (process / "cmdline").read_bytes().split(b"\0")
+        except (OSError, RuntimeError) as error:
+            process = None
+            record["logging_skipped"] = f"Host process unavailable: {error}"
         # Never replace an existing emulator logger. Monitor sampling still runs.
         try:
             states = qmp({"execute": "trace-event-get-state", "arguments": {"name": "*"}})
@@ -160,7 +172,9 @@ def _trace_one(
         except Exception as error:
             record["errors"].append(f"trace discovery: {error}")
             candidates = []
-        if b"-D" in cmdline or b"-d" in cmdline:
+        if process is None:
+            pass  # The reason is retained above; continue with monitor sampling.
+        elif b"-D" in cmdline or b"-d" in cmdline:
             record["logging_skipped"] = "existing QEMU logging configuration"
         else:
             guest_path = f"/tmp/agentplane-boot-interrupts-{uid}.log"
