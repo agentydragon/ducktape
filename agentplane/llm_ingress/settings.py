@@ -20,8 +20,7 @@ class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     allowed_service_account_namespaces: frozenset[str] = Field(
-        min_length=1,
-        description="Namespaces whose Sandbox SVIDs or backend ServiceAccount bearers may authenticate here.",
+        min_length=1, description="Namespaces containing accepted live workload credentials."
     )
 
     @field_serializer("allowed_service_account_namespaces")
@@ -45,9 +44,9 @@ class Settings(BaseModel):
         default_factory=list,
         description="Exact service SPIFFE IDs allowed to delegate Session inference when central_sampler_identity_callers is enabled.",
     )
+    # CLEANUP(added 2026-11-15): Remove after manifests omit central_sampler_accounts and that rollout completes.
     central_sampler_accounts: frozenset[str] = Field(
-        default_factory=frozenset,
-        description="Trusted namespace/name sampler producers allowed to attribute public Session IDs.",
+        default_factory=frozenset, description="Legacy decoded setting; grants no caller admission."
     )
 
     @field_serializer("central_sampler_accounts")
@@ -57,7 +56,8 @@ class Settings(BaseModel):
     central_sampler_identity_callers: bool = Field(
         default=False, description="Whether trusted central samplers may act as delegating actors for an Identity."
     )
-    token_audience: str = Field(min_length=1, description="Accepted projected-token audience.")
+    # CLEANUP(added 2026-11-15): Remove after manifests omit token_audience and that rollout completes.
+    token_audience: str | None = Field(default=None, description="Legacy decoded setting; grants no caller admission.")
     log_llm_requests: bool = Field(
         default=False,
         description=(
@@ -89,12 +89,8 @@ class Settings(BaseModel):
     def validate_identity_attribution(self) -> Settings:
         if self.central_sampler_services and not self.central_sampler_identity_callers:
             raise ValueError("central_sampler_services requires central_sampler_identity_callers")
-        if self.central_sampler_identity_callers and not (
-            self.central_sampler_accounts or self.central_sampler_services
-        ):
-            raise ValueError(
-                "central_sampler_identity_callers requires central_sampler_accounts or central_sampler_services"
-            )
+        if self.central_sampler_identity_callers and not self.central_sampler_services:
+            raise ValueError("central_sampler_identity_callers requires central_sampler_services")
         if (self.model_config_service_callers or self.central_sampler_services) and not any(
             auth.mode == "spiffe" for auth in self.rpc.auth
         ):

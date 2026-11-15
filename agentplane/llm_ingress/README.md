@@ -4,10 +4,9 @@ This is the authenticated Sandbox-facing hop in front of the existing LiteLLM de
 authoring and the runner-facing model-config contract. Inference HTTP and native ModelConfig gRPC
 share one TLS HTTP/2 listener for Sandbox and backend callers. Sandbox requests arrive through an exact-origin
 sidecar route over opaque proxy CONNECT; the listener resolves the verified Runtime SVID against the
-live Sandbox and accepted credential before deriving the subject its `WorkloadCredential` names (the
-Sandbox's ServiceAccount, or an `Identity`) and the Pod. The same listener accepts configured backend TokenReview bearers; clients verify the
-service SPIFFE URI and hold no SVID. Supplying both a certificate and bearer is rejected, and a failed
-credential never enables another mode. Caller identity headers are never trusted.
+live accepted credential before deriving its Identity and optional Pod. Backend peers present service
+SVIDs from explicit method allowlists. Certificate and bearer combinations are rejected, and a failed
+certificate never enables another authentication mode. Caller identity headers are never trusted.
 Only inference requests forward provider-native traffic to LiteLLM with one server-held virtual key.
 
 The forwarded byte body, status, error body, and streamed chunks are not translated. Verified
@@ -20,17 +19,16 @@ object is:
 
 ```json
 {
-  "agentplane.namespace": "...",
-  "agentplane.service_account": "...",
+  "agentplane.identity": "...",
+  "agentplane.identity_uid": "...",
   "agentplane.pod_name": "...",
   "agentplane.pod_uid": "..."
 }
 ```
 
 `attribution` maps literal output keys to verified caller fields: `namespace`, `service_account`,
-`pod_name`, `pod_uid`, `identity` or `identity_uid`. A ServiceAccount caller has no `identity*`
-fields and an Identity caller no `namespace` or `service_account`; a field the caller lacks is
-omitted, never sent empty. The default sends all six as `agentplane.*` JSON members in
+`pod_name`, `pod_uid`, `identity` or `identity_uid`. Identity callers have no `namespace` or
+`service_account` claims. A field the caller lacks is omitted, never sent empty. The default sends all six as `agentplane.*` JSON members in
 `x-litellm-spend-logs-metadata`. Staging also configures
 four `litellm.metadata.spend_logs_metadata.agentplane.*` W3C baggage members, which
 LiteLLM places on its normal request span before the upstream call. For example, a custom
@@ -58,13 +56,13 @@ headers are removed before this object is stamped. Request bodies remain provide
 never identity evidence; a caller's body `metadata`, Agent, Thread, Pod, or Sandbox fields cannot
 replace the server-stamped object.
 
-A backend bearer is sent only to Kubernetes TokenReview. A Sandbox SVID request never attempts
-TokenReview. The LiteLLM virtual key is sent only on the internal LiteLLM
-hop. Neither credential is logged, placed in errors, returned to callers, or mounted into a runner
-or harness container.
+The LiteLLM virtual key is sent only on the internal LiteLLM hop. It is never logged, placed in
+errors, returned to callers, or mounted into a runner or harness container. Ingress does not call
+TokenReview or admit Kubernetes bearers.
 
 The `rpc` setting uses the shared listener schema: `listen_address`, serving `tls`, and `auth`
-with `spiffe` roots and `kubernetes_bearer.audiences`.
+with `spiffe` roots. Legacy bearer listener settings remain decodable during manifest rollout but
+grant no admission.
 
 The complete non-secret service settings, including `log_levels`, come from the required YAML file
 named by `AGENTPLANE_LLM_INGRESS_CONFIG_FILE`. Static settings have no per-setting environment or
@@ -74,9 +72,9 @@ environment input; it is not part of the settings file or ConfigMap.
 
 The required `policy_namespace` names the namespace holding Identities. An SVID whose
 `WorkloadCredential` (in an `allowed_service_account_namespaces` namespace) names an `Identity` is
-served only while that live Identity is the incarnation the credential names. Any Identity there may
-infer, as any ServiceAccount in the allowed namespaces may; it is attributed by `identity`,
-`identity_uid` and its Pod, so every attribution output must carry `identity`. Only a listed ServiceAccount may claim a central Session. TLS is required because inference HTTP and
+served only while that live Identity is the incarnation the credential names. Any live Identity there may infer. Its attribution includes `identity`, `identity_uid` and the
+credential's Pod when one is recorded. Only configured service actors with typed delegation may
+claim a central Session. TLS is required because inference HTTP and
 native gRPC share the listener. Kubernetes exec probes use `/healthprobe` against its verified TLS
 health service.
 
@@ -85,8 +83,8 @@ health service.
 The native `agentplane.llm_ingress.v1.ModelConfigService.GetModelConfig` gRPC method exposes the
 same configuration to authenticated workloads. The response omits `total_context_budget_tokens`
 for an unknown model; a configured budget is positive. The SVID TLS listener authenticates
-Environment Runtime callers from the verified TLS peer and live Sandbox state; the same listener
-retains Pod-bound TokenReview authentication for backend callers. Environment Runtime
+Environment Runtime callers from the verified TLS peer and live credential state; exact
+`model_config_service_callers` also receive model configuration. Environment Runtime
 uses the SVID route for Claude model budgets. For an unconfigured model, the Runtime uses harness
 defaults. Lookups are answered locally and never forwarded to LiteLLM; a gRPC error fails the lookup.
 
@@ -150,13 +148,11 @@ These are configured harness overrides, not a catalog of every known model capac
 
 ## Contract tests
 
-The Go ingress tests exercise request filtering, TokenReview response policy, proxy errors, streaming,
-cancellation, and native gRPC authentication on the SVID TLS listener. A typed TokenReview fake is
-used for handler behavior;
-it checks ingress interpretation and does not establish Kubernetes token-validation or Pod-binding
-semantics. One smoke test starts the Bazel-built binary with static YAML and the explicit provider
-Secret input against a small TokenReview HTTP fixture and fake LiteLLM, covering client-go wiring
-and the real listener configuration path.
+The Go ingress tests exercise verified mTLS, live credential revocation, delegated Identity and
+Session attribution, caller denial, mixed-credential refusal, proxy errors, streaming, cancellation,
+and native gRPC authentication. A smoke test starts the Bazel-built binary with static YAML and the
+explicit provider Secret, envtest credential records and real client certificates, and asserts that
+its HTTP and gRPC calls issue no TokenReviews.
 
 ```sh
 bbr test //agentplane/llm_ingress/...
@@ -164,38 +160,20 @@ bbr test //agentplane/llm_ingress/...
 
 ## Trusted central Session attribution
 
-`central_sampler_accounts` is a default-empty list of authenticated `namespace/name` accounts.
-Only those callers may supply `x-agentplane-session-id`, and its value must be a canonical UUID.
-The ingress strips that header and generates `agentplane.session_id` in the trusted LiteLLM spend
-metadata alongside the Kubernetes principal fields. A non-allowlisted caller's claim is rejected.
-This is an asserted conversation identity from an explicitly trusted shared sampler; it does not
-replace TokenReview or authorize arbitrary Session reads. LiteLLM promotes the configured Session
-metadata into exported traces; the frontend's metadata-key setting selects the matching Langfuse
-filter. Existing wrapped harness attribution continues to use its Sandbox identity.
+`central_sampler_services` grants exact service SPIFFE IDs typed Identity-and-Session delegation on
+inference and requires `central_sampler_identity_callers: true`. The sampler proves its actor with
+its service certificate. The `agentplane-delegation-bin` envelope names the effective Identity's
+name and UID and the Session it serves. A fresh Identity lookup refuses stale or missing
+incarnations. The actor contributes no effective-caller grant and no fabricated Pod claims.
 
-With `central_sampler_identity_callers: true` (requires `policy_namespace` and
-`central_sampler_accounts`), those accounts may also call as delegating actors under the
-[delegated authorization contract](../docs/delegated_authorization.md): `Authorization:
-Agentplane-Delegated <sampler token>` plus the base64 `agentplane-delegation-bin` envelope naming
-an Identity of the policy namespace and the Session it serves. The ingress verifies the sampler's
-token and its grant, reads the Identity live and refuses a stale or missing incarnation, then
-attributes the call to that Identity: `identity` and `identity_uid` are the Identity's, `pod_name`
-and `pod_uid` the sampler's Pod, the one that made the call, and `agentplane.session_id` comes from
-the envelope, so a delegated call may not also claim a Session by header. The envelope is stripped
-like every other caller header. A sampler calling for a Session with no Identity keeps using the
-bearer path above. Claiming a Session never implies this grant.
+Attribution contains that Identity and `agentplane.session_id` from the envelope. The ingress strips
+the envelope and all caller-provided attribution before forwarding. Duplicate, malformed, stale or
+absent delegation proof, unlisted actors, Action provenance and combined bearer credentials fail
+closed. `x-agentplane-session-id` is refused, including beside a valid envelope. Central Sessions do
+not need an environment attachment; the typed proof names the execution Identity independently.
 
-## Service certificate admission during the cutover
+`model_config_service_callers` separately grants exact service SPIFFE IDs access to ModelConfig
+RPCs. Both service allowlists require listener SPIFFE client trust and default empty.
 
-`model_config_service_callers` grants exact service SPIFFE IDs access to ModelConfig RPCs.
-`central_sampler_services` grants exact certificate actors typed Identity-and-Session delegation on
-inference, and requires `central_sampler_identity_callers`. Both require listener SPIFFE client trust.
-The actor's certificate proves the sampler; the envelope and a fresh Identity UID lookup prove the
-effective caller. Service delegation records no fabricated ServiceAccount or Pod claims. Duplicate,
-malformed, stale or absent delegation proof, unlisted actors and combined bearer credentials fail closed.
-
-These optional allowlists default empty. Staging now allowlists the exact
-`spiffe://agentplane/central-sampler` service identity and enables typed delegation while retaining
-the sampler's projected bearer account. The sampler still uses its bearer and Session header; its
-later caller cutover must select the existing `agentplane_ingress` provider mode. Existing bearer
-admission stays until all caller images are pinned; there is no certificate failure fallback to it.
+Legacy `central_sampler_accounts` and `token_audience` remain decoded and ignored until their
+manifest omission has rolled out.

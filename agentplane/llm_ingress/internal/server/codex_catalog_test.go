@@ -20,21 +20,21 @@ func writeCodexCatalog(t *testing.T, contents string) string {
 }
 
 func TestCodexCatalogIsServedAuthenticatedAndSignalledOnResponses(t *testing.T) {
-	tokenA := workloadToken(t, "test-sandbox-a")
+	caller := identityWorkload(t)
 	backend := newFakeLiteLLM()
 	backendServer := newBackendServer(t, backend)
-	ingress := newConfiguredIngressTestServer(t, api.TokenReviews(), config{
+	ingress := newConfiguredIngressTestServer(t, config{
 		LiteLLMURL: backendServer.URL, LiteLLMKey: testBackendKey,
 		CodexModelCatalogFile: writeCodexCatalog(t, testCodexCatalog),
 	})
-	client := testClient()
+	client := ingress.client(t, caller.URI)
 	defer client.CloseIdleConnections()
 
-	catalog, catalogBody := request(t, client, http.MethodGet, ingress.URL+codexCatalogPath+"?client_version=0.0.0", "", bearer(tokenA))
-	unauthenticated := doRequest(t, client, ingress.URL+codexCatalogPath, http.Header{})
+	catalog, catalogBody := request(t, client, http.MethodGet, ingress.URL+codexCatalogPath+"?client_version=0.0.0", "", http.Header{})
+	unauthenticated := doRequest(t, ingress.client(t, ""), ingress.URL+codexCatalogPath, http.Header{})
 	_ = unauthenticated.Body.Close()
-	responses, _ := request(t, client, http.MethodPost, ingress.URL+"/v1/responses", `{}`, bearer(tokenA))
-	messages, _ := request(t, client, http.MethodPost, ingress.URL+"/v1/messages", `{}`, bearer(tokenA))
+	responses, _ := request(t, client, http.MethodPost, ingress.URL+"/v1/responses", `{}`, http.Header{})
+	messages, _ := request(t, client, http.MethodPost, ingress.URL+"/v1/messages", `{}`, http.Header{})
 
 	etag := catalog.Header.Get("ETag")
 	if catalog.StatusCode != http.StatusOK || string(catalogBody) != testCodexCatalog || etag == "" ||
@@ -55,15 +55,15 @@ func TestCodexCatalogIsServedAuthenticatedAndSignalledOnResponses(t *testing.T) 
 }
 
 func TestCodexCatalogEndpointWithoutCatalogIsNotForwarded(t *testing.T) {
-	tokenA := workloadToken(t, "test-sandbox-a")
+	caller := identityWorkload(t)
 	backend := newFakeLiteLLM()
 	backendServer := newBackendServer(t, backend)
-	ingress := newIngressTestServer(t, api.TokenReviews(), backendServer.URL)
-	client := testClient()
+	ingress := newIngressTestServer(t, backendServer.URL)
+	client := ingress.client(t, caller.URI)
 	defer client.CloseIdleConnections()
 
-	catalog, _ := request(t, client, http.MethodGet, ingress.URL+codexCatalogPath, "", bearer(tokenA))
-	responses, _ := request(t, client, http.MethodPost, ingress.URL+"/v1/responses", `{}`, bearer(tokenA))
+	catalog, _ := request(t, client, http.MethodGet, ingress.URL+codexCatalogPath, "", http.Header{})
+	responses, _ := request(t, client, http.MethodPost, ingress.URL+"/v1/responses", `{}`, http.Header{})
 
 	if catalog.StatusCode != http.StatusNotFound || responses.Header.Get("X-Models-Etag") != "" {
 		t.Fatalf("catalog=%d X-Models-Etag=%q", catalog.StatusCode, responses.Header.Get("X-Models-Etag"))

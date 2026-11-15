@@ -14,21 +14,18 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"regexp"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/baggage"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 var (
-	bearerPattern     = regexp.MustCompile(`(?i)^Bearer +([A-Za-z0-9._~+/=-]+)$`)
 	credentialHeaders = map[string]struct{}{
 		"authorization": {}, "x-api-key": {}, "x-litellm-api-key": {},
 	}
@@ -53,32 +50,17 @@ type ingressHandler struct {
 	logger          *slog.Logger
 	pool            chan struct{}
 	poolWaitTimeout time.Duration
-
-	centralSamplerAccounts []string
 }
 
 // newIngressHandler serves inference for the subjects resolver authenticates. identities, required
 // by central_sampler_identity_callers, reads the live Identities the central samplers may act for.
-func newIngressHandler(c config, resolver *auth.Resolver, identities auth.IdentityUIDReader, logger *slog.Logger) (*ingressHandler, error) {
+func newIngressHandler(c config, resolver auth.SubjectResolver, identities auth.IdentityUIDReader, logger *slog.Logger) (*ingressHandler, error) {
 	baseURL, err := url.Parse(c.LiteLLMURL)
 	if err != nil {
 		return nil, errors.New("invalid LiteLLM URL")
 	}
 	admission := auth.AnySubject(resolver)
 	if c.CentralSamplerIdentityCallers {
-		delegators := make([]auth.Delegator, 0, len(c.CentralSamplerAccounts))
-		for _, name := range c.CentralSamplerAccounts {
-			var account auth.Account
-			if err := account.UnmarshalText([]byte(name)); err != nil {
-				return nil, fmt.Errorf("central_sampler_accounts: %w", err)
-			}
-			delegators = append(delegators, auth.Delegator{Account: account, IdentityCallers: true})
-		}
-		if len(delegators) > 0 {
-			if admission, err = admission.AllowDelegationFrom(delegators, identities); err != nil {
-				return nil, fmt.Errorf("central_sampler_identity_callers: %w", err)
-			}
-		}
 		if len(c.CentralSamplerServices) > 0 {
 			actors := make([]auth.ServiceDelegator, 0, len(c.CentralSamplerServices))
 			for _, id := range c.CentralSamplerServices {
@@ -125,8 +107,6 @@ func newIngressHandler(c config, resolver *auth.Resolver, identities auth.Identi
 		logger:          logger,
 		pool:            make(chan struct{}, 100),
 		poolWaitTimeout: 5 * time.Second,
-
-		centralSamplerAccounts: c.CentralSamplerAccounts,
 	}, nil
 }
 
@@ -189,24 +169,12 @@ func allowedMethod(method string) bool {
 type verifiedCaller struct {
 	claims   map[verifiedClaim]string
 	logAttrs []any
-	// account is a direct ServiceAccount caller, which alone may claim a Session by header.
-	account *auth.Principal
 	// sessionID is the central Session a delegating sampler named in its envelope; its Identity is
 	// the subject, so no header claim applies.
 	sessionID string
 }
 
 func (h *ingressHandler) authenticate(writer http.ResponseWriter, request *http.Request) (verifiedCaller, bool) {
-	// Preserve the HTTP API's case-insensitive Bearer spelling. Credential
-	// presence still selects one configured mode; malformed or combined
-	// credentials never enable a second authentication attempt.
-	values := request.Header.Values("Authorization")
-	if len(values) == 1 {
-		if match := bearerPattern.FindStringSubmatch(values[0]); match != nil {
-			request = request.Clone(request.Context())
-			request.Header.Set("Authorization", "Bearer "+match[1])
-		}
-	}
 	admitted, err := h.admission.AdmitRequest(request, 0)
 	var caller verifiedCaller
 	if err == nil {
@@ -216,7 +184,7 @@ func (h *ingressHandler) authenticate(writer http.ResponseWriter, request *http.
 	case err == nil:
 		return caller, true
 	case errors.Is(err, auth.ErrInvalidBearer) || status.Code(err) == codes.Unauthenticated:
-		writeJSONError(writer, http.StatusUnauthorized, "invalid workload bearer", "Bearer")
+		writeJSONError(writer, http.StatusUnauthorized, "invalid workload credentials", "")
 	case status.Code(err) == codes.PermissionDenied:
 		writeJSONError(writer, http.StatusForbidden, "delegated caller refused", "")
 	default:
@@ -226,8 +194,7 @@ func (h *ingressHandler) authenticate(writer http.ResponseWriter, request *http.
 }
 
 // admittedCaller attributes the admitted call: a direct subject by its own claims; a trusted
-// central sampler acting for an Identity by that Identity, with the sampler's Pod as the Pod that
-// called, and the Session its envelope names.
+// central sampler acting for an Identity by that Identity and the Session its envelope names.
 func admittedCaller(ctx context.Context) (verifiedCaller, error) {
 	admission, err := auth.Admitted(ctx)
 	if err != nil {
@@ -239,7 +206,7 @@ func admittedCaller(ctx context.Context) (verifiedCaller, error) {
 		if err != nil {
 			return verifiedCaller{}, err
 		}
-		return verifiedCaller{claims: subjectClaims(principal), logAttrs: callerLogAttrs(principal), account: &principal}, nil
+		return verifiedCaller{claims: subjectClaims(principal), logAttrs: callerLogAttrs(principal)}, nil
 	case auth.IdentityAdmission:
 		return verifiedCaller{claims: subjectClaims(admission.Caller), logAttrs: callerLogAttrs(admission.Caller)}, nil
 	case auth.DelegatedServiceIdentityAdmission:
@@ -248,23 +215,6 @@ func admittedCaller(ctx context.Context) (verifiedCaller, error) {
 			return verifiedCaller{}, status.Error(codes.PermissionDenied, "delegated inference requires Session provenance")
 		}
 		return verifiedCaller{claims: map[verifiedClaim]string{verifiedIdentity: admission.EffectiveCaller.Name, verifiedIdentityUID: admission.EffectiveCaller.UID}, logAttrs: []any{"subject_kind", "identity", "subject_name", admission.EffectiveCaller.Name, "actor_spiffe_id", admission.Actor.SPIFFEID}, sessionID: session.GetSessionId()}, nil
-	case auth.DelegatedIdentityAdmission:
-		session := admission.Provenance.GetSession()
-		if session == nil {
-			return verifiedCaller{}, status.Error(codes.PermissionDenied, "a delegated inference call names the Session it serves")
-		}
-		actor := admission.Actor
-		return verifiedCaller{
-			claims: map[verifiedClaim]string{
-				verifiedIdentity: admission.EffectiveCaller.Name, verifiedIdentityUID: admission.EffectiveCaller.UID,
-				verifiedPodName: actor.PodName, verifiedPodUID: actor.PodUID,
-			},
-			logAttrs: append([]any{
-				"subject_kind", "identity", "subject_name", admission.EffectiveCaller.Name,
-				"actor", actor.Account.Namespace + "/" + actor.Account.Name,
-			}, podLogAttrs(actor.PodName, actor.PodUID)...),
-			sessionID: session.GetSessionId(),
-		}, nil
 	default:
 		return verifiedCaller{}, status.Error(codes.PermissionDenied, "the admitted caller kind is not served")
 	}
@@ -293,16 +243,8 @@ func (h *ingressHandler) forward(writer http.ResponseWriter, incoming *http.Requ
 	case caller.sessionID != "":
 		sessionID = caller.sessionID
 	case sessionID != "":
-		// Central samplers are ServiceAccounts; an Identity caller never attributes a Session.
-		if caller.account == nil || !slices.Contains(h.centralSamplerAccounts, caller.account.Account.Namespace+"/"+caller.account.Account.Name) {
-			writeJSONError(writer, http.StatusForbidden, "Session attribution requires an authorized central sampler", "")
-			return
-		}
-		parsed, err := uuid.Parse(sessionID)
-		if err != nil || parsed.String() != sessionID {
-			writeJSONError(writer, http.StatusBadRequest, "Session attribution requires a canonical UUID", "")
-			return
-		}
+		writeJSONError(writer, http.StatusForbidden, "Session attribution requires typed delegation", "")
+		return
 	}
 	verified, err := verifiedRequestHeaders(caller.claims, h.key, h.attribution, sessionID)
 	if err != nil {
@@ -522,7 +464,7 @@ func verifiedRequestHeaders(
 		return forwarded, nil
 	}
 	// This claim is supplied by an explicitly trusted sampler, not inferred from
-	// its shared Pod. Existing workload attribution stays bound to TokenReview.
+	// its service certificate. Workload attribution comes from the verified SVID.
 	members := map[string]string{}
 	if value := forwarded.Get("x-litellm-spend-logs-metadata"); value != "" {
 		if err := json.Unmarshal([]byte(value), &members); err != nil {
