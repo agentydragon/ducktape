@@ -7582,9 +7582,7 @@ impl ExecutionIndex {
     /// exact site its consumer queries: the call for a callee identity, the
     /// constructor for a Set and the member read for an own-data read.
     fn intrinsic_axioms(&self) -> BTreeMap<u32, IntrinsicIntact> {
-        use IntrinsicSlot::{
-            ArrayIteratorPrototype, Global, Prototype, SetIteratorPrototype, Static,
-        };
+        use IntrinsicSlot::{ArrayIteratorPrototype, Global, Prototype, Static};
         use NativeIntrinsic::{Array, Object, Promise, Set, Symbol, WeakMap};
         use spec::{NativeCallIdentityKind as Callee, NativeOperationKind as Operation};
         const SET_FROM_ARRAY: &[IntrinsicSlot] = &[
@@ -7614,17 +7612,11 @@ impl ExecutionIndex {
                         vec![Global(Promise), Static(Promise, "resolve")],
                     ),
                     // A fresh Set value-flow origin and Set-content allocation
-                    // cell at the constructor, and constructor purity. A
-                    // spread additionally needs the certified seed interval
-                    // (`certify_stable_set_spreads`). Later Set methods and
-                    // iteration keep their own checks.
+                    // cell at the constructor, and constructor purity. Later
+                    // Set methods and iteration keep their own checks.
                     NativeInputKind::Operation(Operation::SetFromPrimitiveArray) => {
                         (input.call_span, SET_FROM_ARRAY.to_vec())
                     }
-                    NativeInputKind::Operation(Operation::SetFromSetSpread) => (
-                        input.call_span,
-                        [SET_FROM_ARRAY, &[SetIteratorPrototype]].concat(),
-                    ),
                     // Timing, purity and heap ordering of this construction;
                     // the platform result has no ordinary-object certificate.
                     NativeInputKind::Operation(Operation::TextEncoderEmpty) => {
@@ -8142,9 +8134,6 @@ impl ExecutionIndex {
                         initializer_span: call.span,
                         call_span: call.span,
                         initializer_ordinal: call.owner,
-                        spread_source: None,
-                        spread_source_span: None,
-                        spread_token_span: None,
                     });
                 continue;
             }
@@ -8196,25 +8185,14 @@ impl ExecutionIndex {
                         initializer_span: call.span,
                         call_span: call.span,
                         initializer_ordinal: call.owner,
-                        spread_source: None,
-                        spread_source_span: None,
-                        spread_token_span: None,
                     });
                 continue;
             }
             if matches!(
                 input.evidence.operation,
                 NativeInputKind::Operation(spec::NativeOperationKind::SetFromPrimitiveArray)
-                    | NativeInputKind::Operation(spec::NativeOperationKind::SetFromSetSpread)
             ) {
-                let spread = input.evidence.operation
-                    == NativeInputKind::Operation(spec::NativeOperationKind::SetFromSetSpread);
-                let known_mutation = if spread {
-                    self.known_set_spread_protocol_mutation()
-                } else {
-                    self.known_set_protocol_mutation()
-                };
-                if let Some(owner) = known_mutation {
+                if let Some(owner) = self.known_set_protocol_mutation() {
                     self.native_operation_input_errors.push(format!(
                         "{request} is contradicted by a positively identified required native slot write in source unit {}",
                         owner.0
@@ -8255,21 +8233,15 @@ impl ExecutionIndex {
                     ));
                     continue;
                 };
-                if !(if spread {
-                    declaration.set_from_set_spread_source.is_some()
-                } else {
-                    self.has_stable_primitive_set_array(declaration)
-                }) || constructor.0.as_ref() != "Set"
+                if !self.has_stable_primitive_set_array(declaration)
+                    || constructor.0.as_ref() != "Set"
                     || self.property_key_declarations.contains(constructor)
                     || self.imported_bindings.contains(constructor)
                 {
-                    let shape = if spread {
-                        "a direct unshadowed new Set([...source, primitive literals]) operation with one dense nonspread array literal"
-                    } else {
-                        "a direct unshadowed new Set([primitive literals or earlier stable primitive bindings]) operation with one dense nonspread array literal"
-                    };
                     self.native_operation_input_errors
-                        .push(format!("{request} requires {shape}"));
+                        .push(format!(
+                            "{request} requires a direct unshadowed new Set([primitive literals or earlier stable primitive bindings]) operation with one dense nonspread array literal"
+                        ));
                     continue;
                 }
                 let Some(call) = self.top_calls[declaration.owner.0]
@@ -8300,18 +8272,6 @@ impl ExecutionIndex {
                         initializer_span: declaration.initializer_span.unwrap_or(call.span),
                         call_span: call.span,
                         initializer_ordinal: declaration.owner,
-                        spread_source: declaration
-                            .set_from_set_spread_source
-                            .as_ref()
-                            .map(|(binding, _, _)| binding.clone()),
-                        spread_source_span: declaration
-                            .set_from_set_spread_source
-                            .as_ref()
-                            .map(|(_, span, _)| *span),
-                        spread_token_span: declaration
-                            .set_from_set_spread_source
-                            .as_ref()
-                            .map(|(_, _, span)| *span),
                     });
                 continue;
             }
@@ -8430,9 +8390,6 @@ impl ExecutionIndex {
                         initializer_span: declaration.initializer_span.unwrap_or(call.span),
                         call_span: call.span,
                         initializer_ordinal: declaration.owner,
-                        spread_source: None,
-                        spread_source_span: None,
-                        spread_token_span: None,
                     });
             }
         }
@@ -8464,9 +8421,6 @@ impl ExecutionIndex {
                             && candidate.initializer_span == input.initializer_span
                             && candidate.call_span == input.call_span
                             && candidate.initializer_ordinal == input.initializer_ordinal
-                            && input.spread_source.is_none()
-                            && input.spread_source_span.is_none()
-                            && input.spread_token_span.is_none()
                     }) => {
                         self.native_operation_input_evidence
                             .insert(input.call_span.into(), input.evidence.clone());
@@ -8546,16 +8500,8 @@ impl ExecutionIndex {
             if matches!(
                 input.evidence.operation,
                 NativeInputKind::Operation(spec::NativeOperationKind::SetFromPrimitiveArray)
-                    | NativeInputKind::Operation(spec::NativeOperationKind::SetFromSetSpread)
             ) {
-                let spread = input.evidence.operation
-                    == NativeInputKind::Operation(spec::NativeOperationKind::SetFromSetSpread);
-                let known_mutation = if spread {
-                    self.known_set_spread_protocol_mutation()
-                } else {
-                    self.known_set_protocol_mutation()
-                };
-                if let Some(owner) = known_mutation {
+                if let Some(owner) = self.known_set_protocol_mutation() {
                     self.native_operation_input_errors.push(format!(
                         "{request} is contradicted by a positively identified required native slot write in source unit {}",
                         owner.0
@@ -8581,20 +8527,7 @@ impl ExecutionIndex {
                 };
                 let is_same = declaration.direct_top_level
                     && declaration.simple_identifier
-                    && (if spread {
-                        declaration.set_from_set_spread_source.as_ref().is_some_and(
-                            |(binding, source_span, token_span)| {
-                                input.spread_source.as_ref() == Some(binding)
-                                    && input.spread_source_span == Some(*source_span)
-                                    && input.spread_token_span == Some(*token_span)
-                            },
-                        )
-                    } else {
-                        self.has_stable_primitive_set_array(declaration)
-                            && input.spread_source.is_none()
-                            && input.spread_source_span.is_none()
-                            && input.spread_token_span.is_none()
-                    })
+                    && self.has_stable_primitive_set_array(declaration)
                     && span_contains(input.selected_statement_span, declaration.binding_span)
                     && declaration.binding_span == input.declaration_span
                     && declaration.initializer_span == Some(input.initializer_span)
@@ -8815,9 +8748,6 @@ impl ExecutionIndex {
                 initializer_span,
                 call_span: *span,
                 initializer_ordinal: declaration.owner,
-                spread_source: None,
-                spread_source_span: None,
-                spread_token_span: None,
             })
         }).collect()
     }
@@ -8885,9 +8815,6 @@ impl ExecutionIndex {
                 initializer_span: span,
                 call_span: span,
                 initializer_ordinal: declaration.owner,
-                spread_source: None,
-                spread_source_span: None,
-                spread_token_span: None,
             });
     }
 
@@ -9395,26 +9322,6 @@ impl ExecutionIndex {
         .find_map(|slot| match self.source_slot_overlap(slot) {
             NativeSlotOverlap::Known(owner) => Some(owner),
             NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
-        })
-    }
-
-    fn known_set_spread_protocol_mutation(&self) -> Option<SourceUnitOrdinal> {
-        self.known_set_protocol_mutation().or_else(|| {
-            [
-                NativeWriteSlot {
-                    receiver: NativeReceiverPath::Prototype(NativeIntrinsic::Set),
-                    key: NativePropertyKey::SymbolIterator,
-                },
-                NativeWriteSlot {
-                    receiver: NativeReceiverPath::SetIteratorPrototype,
-                    key: NativePropertyKey::String("next".to_owned()),
-                },
-            ]
-            .iter()
-            .find_map(|slot| match self.source_slot_overlap(slot) {
-                NativeSlotOverlap::Known(owner) => Some(owner),
-                NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
-            })
         })
     }
 
@@ -15008,10 +14915,6 @@ impl PreparedCallableCapabilities {
 
     pub(crate) fn known_set_protocol_mutation_owner(&self) -> Option<SourceUnitOrdinal> {
         self.index.known_set_protocol_mutation()
-    }
-
-    pub(crate) fn known_set_spread_protocol_mutation_owner(&self) -> Option<SourceUnitOrdinal> {
-        self.index.known_set_spread_protocol_mutation()
     }
 
     pub(crate) fn known_native_read_contradiction_owner(

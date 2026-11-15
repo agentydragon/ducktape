@@ -43,7 +43,6 @@ pub(super) struct SavedProgramSummary<'a> {
     initializer_call_effect_inputs: BTreeMap<String, Vec<SavedInitializerCallEffectInput>>,
     imported_primitive_array_spread_inputs:
         BTreeMap<String, Vec<SavedImportedPrimitiveArraySpreadInput>>,
-    stable_set_spreads: BTreeMap<String, BTreeMap<u32, SavedStableSetIterableUse>>,
     inferred_set_constructions: BTreeMap<String, BTreeMap<u32, SavedInferredSetConstruction>>,
     argument_inputs: BTreeMap<String, Vec<SavedArgumentInput>>,
     stable_imports: Cow<'a, BTreeMap<String, BTreeSet<String>>>,
@@ -146,24 +145,6 @@ impl<'a> SavedProgramSummary<'a> {
                 )
             })
             .collect();
-        let stable_set_spreads = summary
-            .stable_set_spreads
-            .iter()
-            .map(|(chunk, spreads)| {
-                Ok((
-                    chunk.clone(),
-                    spreads
-                        .iter()
-                        .map(|(site, spread)| {
-                            Ok((
-                                *site,
-                                SavedStableSetIterableUse::snapshot(spread, ordinals)?,
-                            ))
-                        })
-                        .collect::<Result<_>>()?,
-                ))
-            })
-            .collect::<Result<_>>()?;
         let inferred_set_constructions = summary
             .inferred_set_constructions
             .iter()
@@ -212,7 +193,6 @@ impl<'a> SavedProgramSummary<'a> {
             native_operation_inputs,
             initializer_call_effect_inputs,
             imported_primitive_array_spread_inputs,
-            stable_set_spreads,
             inferred_set_constructions,
             argument_inputs,
             stable_imports: Cow::Borrowed(&summary.stable_imports),
@@ -314,19 +294,6 @@ impl<'a> SavedProgramSummary<'a> {
                 )
             })
             .collect();
-        let stable_set_spreads = self
-            .stable_set_spreads
-            .into_iter()
-            .map(|(chunk, spreads)| {
-                Ok((
-                    chunk,
-                    spreads
-                        .into_iter()
-                        .map(|(site, spread)| Ok((site, spread.restore(ordinals)?)))
-                        .collect::<Result<_>>()?,
-                ))
-            })
-            .collect::<Result<_>>()?;
         let inferred_set_constructions = self
             .inferred_set_constructions
             .into_iter()
@@ -370,7 +337,6 @@ impl<'a> SavedProgramSummary<'a> {
             native_operation_inputs,
             initializer_call_effect_inputs,
             imported_primitive_array_spread_inputs,
-            stable_set_spreads,
             inferred_set_constructions,
             argument_inputs,
             stable_imports: self.stable_imports.into_owned(),
@@ -508,9 +474,6 @@ struct SavedNativeOperationInput {
     initializer_span: Span,
     call_span: Span,
     initializer_ordinal: SourceUnitOrdinal,
-    spread_source: Option<SavedBinding>,
-    spread_source_span: Option<Span>,
-    spread_token_span: Option<Span>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -550,13 +513,6 @@ impl SavedNativeOperationInput {
             initializer_span: input.initializer_span,
             call_span: input.call_span,
             initializer_ordinal: input.initializer_ordinal,
-            spread_source: input
-                .spread_source
-                .as_ref()
-                .map(|binding| ordinals.snapshot_binding(binding))
-                .transpose()?,
-            spread_source_span: input.spread_source_span,
-            spread_token_span: input.spread_token_span,
         })
     }
 
@@ -569,12 +525,6 @@ impl SavedNativeOperationInput {
             initializer_span: self.initializer_span,
             call_span: self.call_span,
             initializer_ordinal: self.initializer_ordinal,
-            spread_source: self
-                .spread_source
-                .map(|binding| ordinals.restore_binding(binding))
-                .transpose()?,
-            spread_source_span: self.spread_source_span,
-            spread_token_span: self.spread_token_span,
         })
     }
 }
@@ -715,7 +665,6 @@ mod tests {
             native_operation_inputs: BTreeMap::new(),
             initializer_call_effect_inputs: BTreeMap::new(),
             imported_primitive_array_spread_inputs: BTreeMap::new(),
-            stable_set_spreads: BTreeMap::new(),
             inferred_set_constructions: BTreeMap::new(),
             argument_inputs: BTreeMap::new(),
             stable_imports: BTreeMap::new(),

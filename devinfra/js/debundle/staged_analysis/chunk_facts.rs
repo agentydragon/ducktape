@@ -188,11 +188,6 @@ pub fn compute_logical_chunk_facts(
             .get(chunk_id)
             .cloned()
             .unwrap_or_default();
-        inputs.stable_set_spreads = program_summary
-            .stable_set_spreads
-            .get(chunk_id)
-            .cloned()
-            .unwrap_or_default();
         inputs.assumptions.argument_inputs = program_summary
             .argument_inputs
             .get(chunk_id)
@@ -344,10 +339,6 @@ pub fn compute_logical_chunk_facts(
                     .get(chunk_id)
                     .map(Vec::as_slice)
                     .unwrap_or_default(),
-                program_summary
-                    .stable_set_spreads
-                    .get(chunk_id)
-                    .unwrap_or(&BTreeMap::new()),
                 program_summary
                     .inferred_set_constructions
                     .get(chunk_id)

@@ -760,81 +760,45 @@ fn composed_global_sites_and_dependencies_round_trip() {
 }
 
 #[test]
-fn inferred_and_selected_set_spread_bindings_survive_saved_analysis() {
-    const DECLARATION: &str = "var seed = new Set(['a', 'b']), sibling = new Set(['x']), copied = new Set([...seed, 'c']);";
+fn inferred_set_spread_bindings_survive_saved_analysis() {
     const SOURCE: &str = "console.log('before');\nvar seed = new Set(['a', 'b']), sibling = new Set(['x']), copied = new Set([...seed, 'c']);\nconsole.log('after', copied.size);\nexport {};\n";
-    for selected in [false, true] {
-        let mut opts = FixtureOpts::new(
-            SOURCE,
-            vec![logical_module(
-                "sets",
-                &[
-                    Member::new("seed"),
-                    Member::new("sibling"),
-                    Member::new("copied"),
-                ],
-            )],
+    let opts = FixtureOpts::new(
+        SOURCE,
+        vec![logical_module(
+            "sets",
+            &[
+                Member::new("seed"),
+                Member::new("sibling"),
+                Member::new("copied"),
+            ],
+        )],
+    );
+    let (staged, _fixture) = staged(opts);
+    let direct = staged.run(&[]);
+    assert_ok(&direct.result, "direct Set spread run");
+    let loaded = staged.run(&["--analysis", path(&staged.artifact)]);
+    assert_ok(&loaded.result, "Set spread run from saved analysis");
+    assert_same_invocation_trees(&direct, &loaded);
+    for invocation in [&direct, &loaded] {
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            "before\nafter 3\n",
+            "",
         );
-        if selected {
-            let inputs = [
-                ("seed", NativeOperationKind::SetFromPrimitiveArray),
-                ("sibling", NativeOperationKind::SetFromPrimitiveArray),
-                ("copied", NativeOperationKind::SetFromSetSpread),
-            ]
-            .into_iter()
-            .map(|(binding, operation)| NativeOperationInputContract {
-                selector: SourceUnitSelector::SourceMatch(source_match_selector(
-                    DECLARATION,
-                    &[binding],
-                )),
-                operation,
-                audited_source_sha256: source_sha256(SOURCE),
-                note: None,
-            })
-            .collect();
-            opts = opts.with_native_operation_inputs("static/app", inputs);
-        }
-        let (staged, _fixture) = staged(opts);
-        let direct = staged.run(&[]);
-        assert_ok(&direct.result, "direct Set spread run");
-        let loaded = staged.run(&["--analysis", path(&staged.artifact)]);
-        assert_ok(&loaded.result, "Set spread run from saved analysis");
-        assert_same_invocation_trees(&direct, &loaded);
-        for invocation in [&direct, &loaded] {
-            assert_node_output(
-                &invocation.output_root().join("app/static/app/entry.js"),
-                "before\nafter 3\n",
-                "",
-            );
-        }
-        let graph: Value = read_gzip_json(
-            &loaded
-                .output_root()
-                .join("reports/tree/static/app/dependency_graph.json.gz"),
-        );
-        let execution = &graph_node_for_binding(&graph, "copied")["synchronous_execution"];
-        assert_eq!(execution["complete"], true, "{execution:#}");
-        if selected {
-            assert!(
-                execution["native_operation_input_uses"]
-                    .as_array()
-                    .expect("selected Set spread input uses")
-                    .iter()
-                    .any(|use_site| {
-                        use_site["evidence"]["operation"] == "set_from_set_spread"
-                            && use_site["evidence"]["selected_binding"] == "copied"
-                    }),
-                "{execution:#}"
-            );
-        } else {
-            assert!(
-                execution["inference_uses"]
-                    .as_array()
-                    .expect("Set spread inference uses")
-                    .iter()
-                    .any(|proof| proof["conclusion"] == "primitive_set_iteration"),
-                "{execution:#}"
-            );
-        }
     }
+    let graph: Value = read_gzip_json(
+        &loaded
+            .output_root()
+            .join("reports/tree/static/app/dependency_graph.json.gz"),
+    );
+    let execution = &graph_node_for_binding(&graph, "copied")["synchronous_execution"];
+    assert_eq!(execution["complete"], true, "{execution:#}");
+    assert!(
+        execution["inference_uses"]
+            .as_array()
+            .expect("Set spread inference uses")
+            .iter()
+            .any(|proof| proof["conclusion"] == "primitive_set_iteration"),
+        "{execution:#}"
+    );
 }

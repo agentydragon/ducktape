@@ -742,11 +742,6 @@ pub(super) fn finish_logical_chunk(
         assignment_analysis.splits_or_reorders() || sealed_renames.renames_any(),
     )?;
     let redundant_purity_hints = analysis.redundant_purity_hints;
-    let stable_set_intervals = program_summary
-        .stable_set_spreads
-        .get(chunk_id)
-        .map(|intervals| intervals.values().cloned().collect::<Vec<_>>())
-        .unwrap_or_default();
     let assignment = assignment_analysis.assignment();
     let graph = assignment_analysis.inputs().dependency_graph();
     let local_bindings = assignment_analysis
@@ -762,7 +757,6 @@ pub(super) fn finish_logical_chunk(
         module_count: module_plans.len(),
         destructuring_groups: &ast_analysis.destructuring_groups,
         nested_var_statements: &ast_analysis.nested_var_statements,
-        stable_set_intervals: &stable_set_intervals,
     });
     if assessment_only {
         let no_reports = ReportEmission::None;

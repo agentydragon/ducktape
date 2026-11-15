@@ -884,10 +884,6 @@ pub struct ResolvedNativeOperationInput {
     /// reference and containing initializer without certifying its result.
     pub call_span: Span,
     pub initializer_ordinal: SourceUnitOrdinal,
-    /// Exact operand of an admitted Set spread, if this is a spread operation.
-    pub spread_source: Option<Id>,
-    pub spread_source_span: Option<Span>,
-    pub spread_token_span: Option<Span>,
 }
 
 /// Stable reference to one `commuting_statements` entry of its defining chunk.
@@ -936,15 +932,14 @@ pub struct ResolvedCommutingStatements {
     pub note: Option<String>,
 }
 
-/// Source-certified Set spread. This is independent, one-way evidence for the
-/// shared value-flow solve, not a result inferred from that solve or from the
-/// eventual dependency graph.
+/// Source-checked interval attached to an inferred protected Set spread. Its
+/// constructor-shape dependencies feed the shared value-flow and graph solves.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StableSetIterableUse {
     pub source_span: Span,
     pub spread_token_span: Span,
     /// The seed, every intervening constructor and the spread, in order. The
-    /// gate stage refuses an emission placement that splits them.
+    /// dependency graph co-locates this interval in the emitted module.
     pub interval_bindings: Vec<Id>,
     pub dependencies: ProofDependencies,
 }
@@ -1115,10 +1110,6 @@ impl AnalysisAssumptions {
 #[derive(Debug, Clone, Default)]
 pub struct AnalysisInputs {
     pub native_integrity: Option<NativeIntegrity>,
-    /// Source- and explicit-placement-certified spread uses, keyed by the
-    /// exact constructor call start. Their dependencies retain the author
-    /// native-operation inputs used to derive each certificate.
-    pub stable_set_spreads: BTreeMap<u32, StableSetIterableUse>,
     pub inferred_set_constructions: BTreeMap<u32, InferredSetConstruction>,
     /// Identity of this chunk within a supplied whole-program native census.
     /// Used only to separate local activation from already-present mutations.

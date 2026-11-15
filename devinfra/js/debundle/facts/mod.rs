@@ -95,7 +95,6 @@ pub(crate) use local_class_construction::{
 pub(crate) use local_effect_targets::*;
 pub(crate) use purity_classification::*;
 pub(crate) use semantic_inference::ArgumentNoEscapeFacts;
-pub use set_iterables::certify_stable_set_spreads;
 pub(crate) use set_iterables::{
     NativeIterableOperandOrigin, SetIterableProof, SetIterableShapes,
     TopLevelNativeIterableOperandProjection, TopLevelNativeIterableOperandSite,

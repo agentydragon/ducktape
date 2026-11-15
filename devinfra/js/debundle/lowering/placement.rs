@@ -72,10 +72,9 @@ fn diagnostic_with_destination_context(
         PlacementProjectionViolation::BindingDestinationMismatch { destinations, .. }
         | PlacementProjectionViolation::DestructuringDestinationSplit { destinations, .. }
         | PlacementProjectionViolation::NestedVarDestinationSplit { destinations, .. }
-        | PlacementProjectionViolation::StatementSourceDestinationSplit { destinations, .. }
-        | PlacementProjectionViolation::StableSetIntervalDestinationSplit {
-            destinations, ..
-        } => destinations.clone(),
+        | PlacementProjectionViolation::StatementSourceDestinationSplit { destinations, .. } => {
+            destinations.clone()
+        }
         PlacementProjectionViolation::OwnedBindingDestinationMismatch {
             declared_destination,
             source_destination,
@@ -99,15 +98,12 @@ fn diagnostic_with_destination_context(
         | PlacementProjectionViolation::DeclaratorGroupBindingsMismatch { .. }
         | PlacementProjectionViolation::NestedVarMissingOwner { .. }
         | PlacementProjectionViolation::NestedVarMissingSourceProjection { .. }
-        | PlacementProjectionViolation::NestedVarMissingWholeStatementClaim { .. }
-        | PlacementProjectionViolation::StableSetIntervalMissingSourceProjection { .. } => {
-            Vec::new()
-        }
+        | PlacementProjectionViolation::NestedVarMissingWholeStatementClaim { .. } => Vec::new(),
     };
     destinations.sort_unstable();
     destinations.dedup();
 
-    let diagnostic = violation.diagnostic();
+    let diagnostic = format!("{violation:?}");
     if destinations.is_empty() {
         return diagnostic;
     }
