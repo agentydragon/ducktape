@@ -42,7 +42,7 @@ reviewable first spec. Keep the generated output explicit about low-confidence
 names, unaddressable anonymous statements, and candidates needing manual
 context. The workflow must not make semantic ownership decisions on the
 author's behalf. Module proposal follow-ups are in
-<module_proposals.md>; naming conventions are in <../docs/naming.md>.
+<module_placement.md>; naming conventions are in <../docs/naming.md>.
 
 ### Bulk stabilization follow-through
 
