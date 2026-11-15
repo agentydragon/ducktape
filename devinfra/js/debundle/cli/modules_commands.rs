@@ -253,8 +253,7 @@ fn run_modules_check(args: ModulesCheckArgs, output: &mut dyn std::io::Write) ->
     } else {
         let path = args
             .plan
-            .as_ref()
-            .map(|path| path.as_path())
+            .as_deref()
             .or_else(|| args.batch.as_deref().map(std::path::Path::new))
             .expect("clap requires a batch or plan");
         fs::read(path).with_context(|| format!("reading {}", path.display()))?
