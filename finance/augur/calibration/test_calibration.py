@@ -10,8 +10,6 @@ from __future__ import annotations
 import math
 from datetime import date
 
-import numpy as np
-import numpy.typing as npt
 import pytest
 import pytest_bazel
 
@@ -39,16 +37,15 @@ from finance.augur.calibration.catalog import (
     MarketCatalog,
     PolymarketRef,
     PreIpoFailureMapping,
-    ThresholdLadderFamily,
-    ThresholdLadderMember,
 )
+from finance.augur.calibration.conftest import CpiLadder
 from finance.augur.calibration.platform import Direction, Market, PriceClient
 from finance.augur.calibration.quote import BookQuote, PoolQuote
 from finance.augur.calibration.testing import KalshiRungQuote, mock_price_clients
 from finance.augur.model.exogenous import ExogenousSamplingRequest
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
-from finance.augur.model.series import SP500_SYMBOL, InflationKey, IssuerId, PrivateEquityEventKindCode, SecurityKey
-from finance.augur.model.testing import ConstantFrameModel, PrivateEquityChannels
+from finance.augur.model.series import SP500_SYMBOL, IssuerId, SecurityKey
+from finance.augur.model.testing import ConstantFrameModel
 from finance.evidence.markets import Platform
 
 _ISSUER = IssuerId("issuer_x")
@@ -60,25 +57,6 @@ _INFLATION_HISTORY = {
     date(2026, 3, 1): 100.0,
     date(2026, 4, 1): 100.0,
 }
-
-
-def _event_kind_codes(request: ExogenousSamplingRequest) -> npt.NDArray[np.int64]:
-    """4 rollouts: IPO@7, IPO@60, collapse@3, stays-private (NONE everywhere)."""
-    none = int(PrivateEquityEventKindCode.NONE)
-    events = np.full((request.rollout_count, request.horizon_months + 1), none, dtype=np.int64)
-    events[0, 7] = int(PrivateEquityEventKindCode.PUBLIC_MARKET_OPEN)
-    events[1, 60] = int(PrivateEquityEventKindCode.PUBLIC_MARKET_OPEN)
-    events[2, 3] = int(PrivateEquityEventKindCode.COLLAPSE)
-    return events
-
-
-@pytest.fixture
-def model() -> ConstantFrameModel:
-    return ConstantFrameModel(
-        private_equity={
-            IssuerId(_ISSUER): PrivateEquityChannels(mark_usd_per_unit=50.0, event_kind_code=_event_kind_codes)
-        }
-    )
 
 
 def _sample_private_equity(model: ConstantFrameModel, rollout_seeds: tuple[int, ...]) -> PrivateEquityBundle:
@@ -180,24 +158,6 @@ async def test_surfaced_row_carries_augur_context(
 
 
 _SP500_ANCHOR = 6000.0
-
-
-def _sp500_levels(request: ExogenousSamplingRequest) -> npt.NDArray[np.float64]:
-    """4 rollouts: month 0 = anchor (so anchoring is identity); month 7 = [7000,7600,8000,5000]."""
-    matrix = np.full((request.rollout_count, request.horizon_months + 1), _SP500_ANCHOR, dtype=np.float64)
-    matrix[:, 7] = [7000.0, 7600.0, 8000.0, 5000.0]
-    return matrix
-
-
-@pytest.fixture
-def macro_model() -> ConstantFrameModel:
-    """A model emitting both the issuer's PE bundle and an sp500 level series (no inflation)."""
-    return ConstantFrameModel(
-        levels={SecurityKey(symbol=SP500_SYMBOL): _sp500_levels},
-        private_equity={
-            IssuerId(_ISSUER): PrivateEquityChannels(mark_usd_per_unit=50.0, event_kind_code=_event_kind_codes)
-        },
-    )
 
 
 async def test_macro_level_market_scored_over_full_rollouts(macro_model: ConstantFrameModel) -> None:
@@ -327,64 +287,15 @@ async def test_bucket_family_scored_as_multinomial(macro_model: ConstantFrameMod
     assert math.isclose(family.kl_bits, 0.0146, abs_tol=1e-3)
 
 
-def _inflation_levels(request: ExogenousSamplingRequest) -> npt.NDArray[np.float64]:
-    """4 rollouts: month 7 YoY rates = [2.0%, 3.25%, 3.75%, 5.0%] against history=100."""
-    matrix = np.full((request.rollout_count, request.horizon_months + 1), 100.0, dtype=np.float64)
-    matrix[:, 7] = [102.0, 103.25, 103.75, 105.0]
-    return matrix
-
-
-async def test_threshold_ladder_family_derives_categorical_distribution() -> None:
-    model = ConstantFrameModel(
-        levels={InflationKey(): _inflation_levels},
-        private_equity={
-            IssuerId(_ISSUER): PrivateEquityChannels(mark_usd_per_unit=50.0, event_kind_code=_event_kind_codes)
-        },
-    )
-    catalog = MarketCatalog(
-        metadata=CatalogMetadata(as_of=date(2026, 5, 27), anchors={"inflation": 100.0}),
-        markets=[],
-        threshold_ladder_families=[
-            ThresholdLadderFamily(
-                family_id="cpi_yoy",
-                question="CPI YoY threshold ladder",
-                platform=Platform.KALSHI,
-                series="inflation",
-                value_kind="inflation_yoy",
-                direction=Direction.ABOVE,
-                at_date=date(2026, 12, 31),
-                thresholds=[
-                    ThresholdLadderMember(market_id="CPI-T3.0", threshold=0.03),
-                    ThresholdLadderMember(market_id="CPI-T3.5", threshold=0.035),
-                    ThresholdLadderMember(market_id="CPI-T4.0", threshold=0.04),
-                ],
-            )
-        ],
-    )
-    seeds = tuple(range(4))
-    sampled = model.sample(
-        ExogenousSamplingRequest(
-            horizon_months=_HORIZON,
-            rollout_seeds=seeds,
-            required_index_series=frozenset({InflationKey()}),
-            required_private_equity_issuers=frozenset({IssuerId(_ISSUER)}),
-        )
-    )
-    level_paths = build_anchored_level_paths(
-        sampled,
-        anchors={"inflation": 100.0},
-        requested_wire_ids=catalog.referenced_level_series(),
-        rollout_count=4,
-        horizon_months=_HORIZON,
-    )
+async def test_threshold_ladder_family_derives_categorical_distribution(cpi_ladder: CpiLadder) -> None:
     clients = mock_price_clients({Platform.KALSHI: {"CPI-T3.0": 0.90, "CPI-T3.5": 0.60, "CPI-T4.0": 0.20}})
     result = await run_calibration(
-        catalog,
+        cpi_ladder.catalog,
         horizon_months=_HORIZON,
-        rollout_seeds=seeds,
+        rollout_seeds=cpi_ladder.seeds,
         price_clients=clients,
-        bundle=sampled.private_equity,
-        level_paths=level_paths,
+        bundle=cpi_ladder.sampled.private_equity,
+        level_paths=cpi_ladder.level_paths,
         inflation_history=_INFLATION_HISTORY,
     )
 
@@ -423,51 +334,9 @@ def test_fit_ladder_curve_interpolates_unpriced_rungs() -> None:
     assert _fit_ladder_curve([0.0, 1.0], [market(0.5), None], increasing=False) is None
 
 
-async def test_threshold_ladder_uses_quote_mids_and_interpolates_unpriced() -> None:
+async def test_threshold_ladder_uses_quote_mids_and_interpolates_unpriced(cpi_ladder: CpiLadder) -> None:
     """End-to-end on Kalshi mock responses: bucket masses come from order-book MIDS (not the spiky
     last trades) and an untraded rung is interpolated across, not dropped or read as zero."""
-    model = ConstantFrameModel(
-        levels={InflationKey(): _inflation_levels},
-        private_equity={
-            IssuerId(_ISSUER): PrivateEquityChannels(mark_usd_per_unit=50.0, event_kind_code=_event_kind_codes)
-        },
-    )
-    catalog = MarketCatalog(
-        metadata=CatalogMetadata(as_of=date(2026, 5, 27), anchors={"inflation": 100.0}),
-        markets=[],
-        threshold_ladder_families=[
-            ThresholdLadderFamily(
-                family_id="cpi_yoy",
-                question="CPI YoY threshold ladder",
-                platform=Platform.KALSHI,
-                series="inflation",
-                value_kind="inflation_yoy",
-                direction=Direction.ABOVE,
-                at_date=date(2026, 12, 31),
-                thresholds=[
-                    ThresholdLadderMember(market_id="CPI-T3.0", threshold=0.03),
-                    ThresholdLadderMember(market_id="CPI-T3.5", threshold=0.035),
-                    ThresholdLadderMember(market_id="CPI-T4.0", threshold=0.04),
-                ],
-            )
-        ],
-    )
-    seeds = tuple(range(4))
-    sampled = model.sample(
-        ExogenousSamplingRequest(
-            horizon_months=_HORIZON,
-            rollout_seeds=seeds,
-            required_index_series=frozenset({InflationKey()}),
-            required_private_equity_issuers=frozenset({IssuerId(_ISSUER)}),
-        )
-    )
-    level_paths = build_anchored_level_paths(
-        sampled,
-        anchors={"inflation": 100.0},
-        requested_wire_ids=catalog.referenced_level_series(),
-        rollout_count=4,
-        horizon_months=_HORIZON,
-    )
     clients = mock_price_clients(
         {
             Platform.KALSHI: {
@@ -486,12 +355,12 @@ async def test_threshold_ladder_uses_quote_mids_and_interpolates_unpriced() -> N
         }
     )
     result = await run_calibration(
-        catalog,
+        cpi_ladder.catalog,
         horizon_months=_HORIZON,
-        rollout_seeds=seeds,
+        rollout_seeds=cpi_ladder.seeds,
         price_clients=clients,
-        bundle=sampled.private_equity,
-        level_paths=level_paths,
+        bundle=cpi_ladder.sampled.private_equity,
+        level_paths=cpi_ladder.level_paths,
         inflation_history=_INFLATION_HISTORY,
     )
 
