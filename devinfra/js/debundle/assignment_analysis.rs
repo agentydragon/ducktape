@@ -19,13 +19,14 @@ use source_identity::SourceUnitId;
 
 use crate::AssignmentInputs;
 use crate::esm_import_order::EsmImportOrder;
+use crate::esm_schedule::EsmImportSchedule;
 use crate::realizability::CrossRebindEdge;
 use crate::realizability::RealizabilityIndex;
 use crate::realizability::{
     CandidateEmittedOrder, EffectConflictDiagnosticRow, EffectRelocationAssessment,
     EffectTranslationValidationInputs, EffectTranslationValidationResult, RealizabilityVerdict,
     SccRejection, TranslationValidationEvidenceReport, TranslationValidationReport,
-    TranslationValidationResult, check_realizability, effect_translation_assess,
+    TranslationValidationResult, check_realizability_with_schedule, effect_translation_assess,
     translation_validate,
 };
 use crate::validation::{AssignmentReport, AssignmentValidation, validation_from_verdict};
@@ -82,6 +83,7 @@ pub struct AssignmentAnalysis {
     /// realizability gate's evaluation simulator mirrors. See
     /// `esm_import_order::EsmImportOrder`.
     import_order: EsmImportOrder,
+    import_schedule: EsmImportSchedule,
     /// Planning and final validation share this verdict for the immutable
     /// graph/assignment pair. A rebuilt assignment starts with an empty cache.
     realizability: OnceLock<RealizabilityVerdict>,
@@ -668,6 +670,12 @@ impl AssignmentAnalysis {
             &assignment,
             &emitted_modules(planned_modules.len(), entry_module_id),
         );
+        let import_schedule = EsmImportSchedule::from_policy(
+            entry_module_id,
+            &canonical_edges.i_successors,
+            &emitted_modules(planned_modules.len(), entry_module_id),
+            &import_order,
+        );
         let inputs = Arc::new(AssignmentInputs::build(
             chunk_id,
             dependency_graph,
@@ -684,6 +692,7 @@ impl AssignmentAnalysis {
             module_quotient,
             module_quotient_sccs,
             import_order,
+            import_schedule,
             realizability: OnceLock::new(),
         })
     }
@@ -702,6 +711,11 @@ impl AssignmentAnalysis {
     /// (see `esm_import_order::EsmImportOrder` for the contract).
     pub fn import_order(&self) -> &EsmImportOrder {
         &self.import_order
+    }
+
+    /// Concrete schedule retained by the gate, effect sweeps and emitter.
+    pub fn import_schedule(&self) -> &EsmImportSchedule {
+        &self.import_schedule
     }
 
     /// Validate the assignment and its module quotient. Spec authors consume the
@@ -761,21 +775,23 @@ impl AssignmentAnalysis {
     }
 
     pub fn realizability_verdict(&self) -> &RealizabilityVerdict {
-        self.realizability
-            .get_or_init(|| check_realizability(self.inputs.dependency_graph(), &self.assignment))
+        self.realizability.get_or_init(|| {
+            check_realizability_with_schedule(
+                self.inputs.dependency_graph(),
+                &self.assignment,
+                &self.import_schedule,
+            )
+            .expect("retained schedule was built from this immutable assignment")
+        })
     }
 
     /// Project one immutable candidate through the emitter's exact ESM loader
     /// order before either translation sweep consumes it.
     fn candidate_emitted_order(&self) -> CandidateEmittedOrder {
-        CandidateEmittedOrder::from_assignment(
+        CandidateEmittedOrder::from_schedule(
             self.inputs.dependency_graph(),
             &self.assignment,
-            &emitted_modules(
-                self.inputs.planned_modules().len(),
-                self.assignment.entry_destination().module_id(),
-            ),
-            &self.import_order,
+            &self.import_schedule,
         )
     }
 

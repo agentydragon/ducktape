@@ -17,6 +17,7 @@ mod assignment_analysis;
 mod assignment_inputs;
 mod counted_digraph;
 mod esm_import_order;
+mod esm_schedule;
 mod realizability;
 mod report_builders;
 mod validation;
@@ -31,6 +32,7 @@ pub use assignment_analysis::{
 };
 pub use assignment_inputs::AssignmentInputs;
 pub use esm_import_order::EsmImportOrder;
+pub use esm_schedule::{EsmImportSchedule, ImportScheduleError};
 pub use realizability::{
     CrossRebindEdge, EffectConflictCell, EffectConflictDiagnosticRow, EffectConflictDisposition,
     EffectConflictRow, EffectCoverageReport, EffectOpacity, EffectRelocationAcceptanceScope,
@@ -39,7 +41,7 @@ pub use realizability::{
     LegacyEdgeComparisonCounts, ModuleAssignmentDelta, RealizabilityIndex, RealizabilityVerdict,
     SccDiagnosis, SccRejection, TranslationValidationEvidenceReport, TranslationValidationReport,
     TranslationValidationResult, check_realizability, check_realizability_touching,
-    simulated_evaluation_post_order,
+    check_realizability_with_schedule, simulated_evaluation_post_order,
 };
 pub use validation::{
     AssignmentReport, AssignmentValidation, AtInitReadPosition, BlockingRejection,

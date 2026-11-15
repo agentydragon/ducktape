@@ -390,9 +390,13 @@ pub(super) fn prepare_candidate_emission_plan<'output>(
     // The gate's evaluation simulator sorts residual's DFS
     // neighbors with the same call, so the emitted entry order and
     // the simulated order are structurally identical.
-    assignment_analysis
-        .import_order()
-        .sort_entry_imports(&mut entry_imports);
+    assignment_analysis.import_schedule().sort_imports(
+        assignment_analysis
+            .assignment()
+            .entry_destination()
+            .module_id(),
+        &mut entry_imports,
+    );
     let entry_imports: Vec<ModuleItem> = entry_imports.into_iter().map(|(_, it)| it).collect();
     // Capture probe: a read-only walk of the un-renamed entry body with
     // the pending Chunk-scope map, reporting the reference-resolution
