@@ -486,6 +486,8 @@ def configure_port_forward_tls(documents: list[dict[str, Any]]) -> None:
     for certificate_name, dns_name in names_by_certificate.items():
         certificates[certificate_name]["dnsNames"] = [dns_name]
     certificates["runner-gateway-workload"]["ipAddresses"] = ["127.0.0.1"]
+    if sampler := certificates.get("central-sampler-workload"):
+        sampler["dnsNames"] = [f"central-sampler.{NAMESPACE}.svc.cluster.local"]
 
 
 def new_chart(env: Environment) -> Chart:

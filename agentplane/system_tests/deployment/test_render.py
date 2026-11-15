@@ -830,11 +830,13 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     assert "litellm_key" not in llm_config
     assert llm_config["central_sampler_accounts"] == [f"{NAMESPACE}/{central_sampler.NAME}"]
     gateway_config = yaml.safe_load(_resource(docs, "ConfigMap", "runner-gateway-settings")["data"]["settings.yaml"])
-    assert gateway_config["central_sampler"] == {
-        "target": central_sampler.tls_target(NAMESPACE),
-        "token_file": "/var/run/secrets/agentplane-runner-gateway/central-sampler",
-        "tls": {"ca_file": workload_tls.TRUST_BUNDLE_FILE, "server_uri": CENTRAL_SAMPLER_URI},
-    }
+    sampler_target = gateway_config["central_sampler"]
+    assert sampler_target["target"] == central_sampler.tls_target(NAMESPACE)
+    assert "token_file" not in sampler_target
+    assert sampler_target["tls"]["server_uri"] == CENTRAL_SAMPLER_URI
+    assert sampler_target["tls"]["client_uri"] == GATEWAY_SESSIONS_URI
+    for field in ("cert_file", "key_file", "ca_file"):
+        assert sampler_target["tls"][field] == gateway_config["gateway_tls"][field]
     assert f"{NAMESPACE}/{central_sampler.NAME}" in gateway_config["executor_callers"]
     gateway_pod = _resource(docs, "Deployment", "runner-gateway")["spec"]["template"]["spec"]
     gateway_tokens = next(

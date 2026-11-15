@@ -1,11 +1,12 @@
 """A chart-deployed sampler Pod connected to the disposable k3s stack's service boundaries."""
 
 import asyncio
+import base64
 import json
 import shutil
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import TracebackType
 from uuid import uuid4
@@ -235,15 +236,6 @@ async def capture_sampler_diagnostics(cluster: Cluster, core: k8s.CoreV1Api | No
         return output
 
 
-async def sampler_caller_after_gateway_roll(cluster: Cluster, deployed: CentralStack) -> CentralStack:
-    """Replace the sampler caller token bound to the Gateway Pod that was rolled."""
-    async with cluster.api_client() as connection:
-        core = k8s.CoreV1Api(connection)
-        pod = await _pod(cluster, core, "runner-gateway")
-        token = await _bound_token(cluster, core, "runner-gateway", pod, SERVICE)
-    return replace(deployed, sampler_metadata=(("authorization", f"Bearer {token}"),))
-
-
 @asynccontextmanager
 async def central_stack(
     cluster: Cluster, directory: Path, *, template: str, caller_account: str = "app"
@@ -269,13 +261,22 @@ async def central_stack(
                 await cluster.kubectl("wait", f"sandbox/{sandbox}", "--for=condition=Ready=True", "--timeout=300s")
             ready = json.loads(await cluster.kubectl("get", "sandbox", sandbox, "-o", "json"))
             incarnation = ready["status"]["incarnation"]["uid"]
-            sampler_target = await _address(cluster, core, SERVICE, 8080)
+            sampler_target = await _address(cluster, core, SERVICE, 8083)
             sampler_pod = await _pod(cluster, core, SERVICE)
             stack.push_async_callback(capture_sampler_diagnostics, cluster, core)
-            gateway_pod = await _pod(cluster, core, "runner-gateway")
             # Call through the stable Service so Kubernetes can send every request to any replica.
             gateway_target = await _address(cluster, core, "runner-gateway", 8080)
-            sampler_token = await _bound_token(cluster, core, "runner-gateway", gateway_pod, SERVICE)
+            # Direct observations act as the same Sessions service principal as Gateway.
+            # Its certificate survives a Gateway Pod roll; no Pod-bound bearer is involved.
+            sampler_client = await core.read_namespaced_secret(
+                "runner-gateway-sessions-client-workload-tls", cluster.namespace
+            )
+            sampler_trust = await core.read_namespaced_config_map("agentplane-workload-ca-bundle", cluster.namespace)
+            sampler_credentials = grpc.ssl_channel_credentials(
+                root_certificates=sampler_trust.data["ca-certificates.crt"].encode(),
+                private_key=base64.b64decode(sampler_client.data["tls.key"]),
+                certificate_chain=base64.b64decode(sampler_client.data["tls.crt"]),
+            )
             server_credentials = await service_credentials(cluster)
             # Sandbox Ready proves Controller observation. A claimed EndpointSlice can precede
             # the Gateway's first snapshot, so prove the live read route before starting setup.
@@ -292,7 +293,13 @@ async def central_stack(
                 owner=ServiceAccount(namespace=cluster.namespace, name=sandbox),
                 target=EnvironmentTarget(namespace=cluster.namespace, name=sandbox, uid=uid),
             )
-            sampler_channel = await stack.enter_async_context(dial(sampler_target))
+            sampler_channel = await stack.enter_async_context(
+                dial(
+                    sampler_target,
+                    channel_credentials=sampler_credentials,
+                    server_name=f"{SERVICE}.{cluster.namespace}.svc.cluster.local",
+                )
+            )
             dispatcher_channel = await stack.enter_async_context(
                 dial(
                     await _address(cluster, core, "session-dispatcher", 8080),
@@ -314,7 +321,7 @@ async def central_stack(
                 dispatcher=session_dispatcher_pb2_grpc.SessionDispatcherStub(dispatcher_channel),
                 metadata=(("authorization", f"Bearer {caller_token}"),),
                 sampler=sampler_pb2_grpc.SamplerStub(sampler_channel),
-                sampler_metadata=(("authorization", f"Bearer {sampler_token}"),),
+                sampler_metadata=(),
                 history=history,
                 sandbox=sandbox,
                 sandbox_uid=uid,
