@@ -154,7 +154,7 @@ async def assert_reconstructed_request(stub: Any, request_id: str, expected: dic
                 request, metadata=(("authorization", "Bearer recreated-account-token"),), timeout=10
             )
         ]
-    assert denied.value.code() == grpc.StatusCode.NOT_FOUND
+    assert denied.value.code() == grpc.StatusCode.UNAUTHENTICATED
 
 
 @pytest.mark.parametrize("operation", ["partial_exec", "failed_compaction"])

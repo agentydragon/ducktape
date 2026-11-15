@@ -389,7 +389,7 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
         assert all(intent.result is not None for intent in intents)
 
 
-async def test_interrupt_streaming_evidence_and_uid_authorization(
+async def test_interrupt_streaming_evidence_and_service_svid_admission(
     database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
     async with Endpoint() as endpoint:
@@ -399,8 +399,7 @@ async def test_interrupt_streaming_evidence_and_uid_authorization(
         async with service(config) as stub:
             await stub.CreateSession(create_request(tmp_path), metadata=METADATA, timeout=10)
             for metadata, expected in (
-                ((), grpc.StatusCode.UNAUTHENTICATED),
-                ((("authorization", "Bearer recreated-account-token"),), grpc.StatusCode.PERMISSION_DENIED),
+                ((("authorization", "Bearer recreated-account-token"),), grpc.StatusCode.UNAUTHENTICATED),
             ):
                 with pytest.raises(grpc.aio.AioRpcError) as error:
                     await stub.GetSession(

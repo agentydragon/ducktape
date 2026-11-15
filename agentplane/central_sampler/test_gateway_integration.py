@@ -120,15 +120,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
     tmp_path: Path,
 ) -> None:
     sampler = ServiceAccountRef(namespace="test-central", name="sampler")
-    sampler_audience = "test-central-sampler"
     gateway_audience = "test-central-gateway"
-    sampler_api_token = tmp_path / "sampler-api-token"
-    sampler_api_token.write_text(await api_server.workload_token(sampler, [sampler_audience]))
-    wrong_audience_token = tmp_path / "wrong-audience-token"
-    wrong_audience_token.write_text(await api_server.workload_token(sampler, ["test-central-wrong-audience"]))
-    unauthorized_account = ServiceAccountRef(namespace=sampler.namespace, name="unauthorized")
-    unauthorized_token = tmp_path / "unauthorized-account-token"
-    unauthorized_token.write_text(await api_server.workload_token(unauthorized_account, [sampler_audience]))
     history_token = tmp_path / "history-token"
     history_token.write_text(await api_server.workload_token(sampler, [WRITER_AUDIENCE]))
     ensure_electric_role(postgres_admin_url)
@@ -228,31 +220,16 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                     "printf 'gateway setup stderr\\n' >&2\n"
                 )
                 session_id = request.session_id
-                sampler_settings = sampler_settings.model_copy(
-                    update={"audience": sampler_audience, "allowed_accounts": {f"{sampler.namespace}/{sampler.name}"}}
-                )
-                sampler_metadata = (("authorization", f"Bearer {sampler_api_token.read_text().strip()}"),)
-                async with (
-                    go_sampler(sampler_settings, api_server.kubeconfig, undeclared_outputs_dir()) as (
-                        sampler_target,
-                        root_certificates,
-                    ),
-                    grpc.aio.secure_channel(
-                        sampler_target, grpc.ssl_channel_credentials(root_certificates=root_certificates)
-                    ) as channel,
-                ):
-                    stub = sampler_pb2_grpc.SamplerStub(channel)
-                    for token, expected_code in (
-                        (wrong_audience_token, grpc.StatusCode.UNAUTHENTICATED),
-                        (unauthorized_token, grpc.StatusCode.PERMISSION_DENIED),
-                    ):
-                        with pytest.raises(grpc.aio.AioRpcError) as rejected:
-                            await stub.CreateSession(
-                                request,
-                                metadata=(("authorization", f"Bearer {token.read_text().strip()}"),),
-                                timeout=10,
-                            )
-                        assert rejected.value.code() == expected_code
+                sampler_metadata = ()
+                async with go_sampler(sampler_settings, undeclared_outputs_dir()) as sampler_endpoint:
+                    stub = sampler_pb2_grpc.SamplerStub(sampler_endpoint.channel)
+                    with pytest.raises(grpc.aio.AioRpcError) as bearer_rejected:
+                        await stub.GetSession(
+                            sampler_pb2.GetSessionRequest(session_id=session_id),
+                            metadata=(("authorization", "Bearer ignored"),),
+                            timeout=10,
+                        )
+                    assert bearer_rejected.value.code() == grpc.StatusCode.UNAUTHENTICATED
                     assert not await store.events(session_id, 0, limit=1000)
                     with pytest.raises(grpc.aio.AioRpcError) as absent_session:
                         await stub.GetSession(

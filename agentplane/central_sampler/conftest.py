@@ -1,4 +1,4 @@
-"""Real sampler fixtures; only provider and TokenReview are external scripted boundaries."""
+"""Real sampler fixtures; the provider is the external scripted boundary."""
 
 import asyncio
 from collections.abc import AsyncIterator

@@ -16,7 +16,7 @@ import (
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
@@ -24,7 +24,6 @@ import (
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -86,14 +85,14 @@ func (s *requestReadStream) Send(response *samplerpb.ReadProviderRequestResponse
 	return nil
 }
 
-func TestReadProviderRequestStreamsAuthorizedContentAndHidesCrossAccountRequests(t *testing.T) {
+func TestReadProviderRequestStreamsAuthorizedContentAndHidesCrossOwnerRequests(t *testing.T) {
 	store := newTestStore(t)
 	bodyText := strings.Repeat("provider request body ", maxProviderRequestBodyChunkSize/20+100)
 	launch := &samplerpb.CreateSessionRequest{
 		SessionId: uuid.NewString(),
 		Spec:      &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model", Instructions: bodyText},
 	}
-	session, err := openStoreSession(t, store, launch, "fixture-account", protocol.APIStyleResponses)
+	session, err := openStoreSession(t, store, launch, peertls.SessionsURI, protocol.APIStyleResponses)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +120,7 @@ func TestReadProviderRequestStreamsAuthorizedContentAndHidesCrossAccountRequests
 	if err != nil {
 		t.Fatal(err)
 	}
-	stored, err := store.LoadProviderRequest(t.Context(), session.ID, "fixture-account", requestID)
+	stored, err := store.LoadProviderRequest(t.Context(), session.ID, peertls.SessionsURI, requestID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,17 +132,9 @@ func TestReadProviderRequestStreamsAuthorizedContentAndHidesCrossAccountRequests
 	}
 
 	settings := fixtureSettings()
-	settings.AllowedAccounts = append(settings.AllowedAccounts, "test/other")
-	resolverFor := func(uid, account string) *auth.Resolver {
-		t.Helper()
-		resolver, err := auth.NewResolver(fixtureReviews{uid: uid, account: account}, "test-sampler", []string{"test"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return resolver
-	}
-	sampler := &Sampler{Store: store, Resolver: resolverFor("fixture-account", "system:serviceaccount:test:client"), Settings: settings}
-	stream := &requestReadStream{ctx: metadata.NewIncomingContext(t.Context(), metadata.Pairs("authorization", "Bearer test-token"))}
+	settings.ServiceCallers = []string{peertls.SessionsURI, peertls.ActionsURI}
+	sampler := &Sampler{Store: store, Settings: settings}
+	stream := &requestReadStream{ctx: serviceContext(t, peertls.SessionsURI)}
 	request := &samplerpb.ReadProviderRequestRequest{SessionId: session.ID, RequestId: requestID}
 	if err := sampler.ReadProviderRequest(request, stream); err != nil {
 		t.Fatal(err)
@@ -190,17 +181,17 @@ func TestReadProviderRequestStreamsAuthorizedContentAndHidesCrossAccountRequests
 		t.Fatalf("streamed body has %d bytes; stored body has %d", len(streamedBody), len(stored.Body))
 	}
 
-	otherSampler := &Sampler{Store: store, Resolver: resolverFor("other-account", "system:serviceaccount:test:other"), Settings: settings}
-	denied := &requestReadStream{ctx: metadata.NewIncomingContext(t.Context(), metadata.Pairs("authorization", "Bearer test-token"))}
+	otherSampler := &Sampler{Store: store, Settings: settings}
+	denied := &requestReadStream{ctx: serviceContext(t, peertls.ActionsURI)}
 	err = otherSampler.ReadProviderRequest(request, denied)
 	if status.Code(err) != codes.NotFound {
-		t.Fatalf("cross-account read code=%v, want NOT_FOUND", status.Code(err))
+		t.Fatalf("cross-owner read code=%v, want NOT_FOUND", status.Code(err))
 	}
 	if len(denied.responses) != 0 {
-		t.Fatalf("cross-account read returned %d response(s)", len(denied.responses))
+		t.Fatalf("cross-owner read returned %d response(s)", len(denied.responses))
 	}
 
-	wrongSession := &requestReadStream{ctx: metadata.NewIncomingContext(t.Context(), metadata.Pairs("authorization", "Bearer test-token"))}
+	wrongSession := &requestReadStream{ctx: serviceContext(t, peertls.SessionsURI)}
 	err = sampler.ReadProviderRequest(&samplerpb.ReadProviderRequestRequest{SessionId: "not-owned-session", RequestId: requestID}, wrongSession)
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("wrong-session read code=%v, want NOT_FOUND", status.Code(err))
@@ -209,7 +200,7 @@ func TestReadProviderRequestStreamsAuthorizedContentAndHidesCrossAccountRequests
 		t.Fatalf("wrong-session read returned %d response(s)", len(wrongSession.responses))
 	}
 
-	missing := &requestReadStream{ctx: metadata.NewIncomingContext(t.Context(), metadata.Pairs("authorization", "Bearer test-token"))}
+	missing := &requestReadStream{ctx: serviceContext(t, peertls.SessionsURI)}
 	err = sampler.ReadProviderRequest(&samplerpb.ReadProviderRequestRequest{SessionId: session.ID, RequestId: "missing-request"}, missing)
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("missing request code=%v, want NOT_FOUND", status.Code(err))

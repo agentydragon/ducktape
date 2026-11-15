@@ -54,6 +54,15 @@ def settings_data() -> dict[str, Any]:
     }
 
 
+def test_legacy_token_review_settings_are_optional() -> None:
+    data = settings_data()
+    data.pop("audience")
+    data.pop("allowed_accounts")
+    configured = Settings.model_validate(data)
+    assert configured.audience is None
+    assert configured.allowed_accounts == set()
+
+
 def test_actions_are_optional_and_only_accept_service_mtls() -> None:
     assert Settings(**settings_data()).actions is None
     configured = Settings.model_validate(

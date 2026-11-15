@@ -90,7 +90,7 @@ CPU and memory limits.
 
 Server-owned configuration names the service, provider connections and credential sources,
 model contracts and per-model reasoning-effort allowlists, the rendered Agentplane
-optional `platform_instructions`, TokenReview audience and allowed caller accounts,
+optional `platform_instructions` and exact service `service_callers`,
 code-mode host binary, executor-side Codex path, logs, concurrency/deadlines and limits. Each named
 connection uses `auth.type` (`bearer`, `agentplane_ingress` or `anthropic_api_key`). Bearer and
 Anthropic connections require exactly one of `auth.credential` or `auth.credential_file`;
@@ -375,12 +375,13 @@ central Session into a native harness Session.
 - Local model providers (LiteLLM routes models), Codex's OTel exporter, feedback upload and Windows
   support.
 
-## Service certificate admission during the cutover
+## Service certificate admission
 
-Optional `service_callers` grants exact service SPIFFE IDs the Sampler API and requires
-`listen_tls.client_ca_file`. It defaults empty; receiver images must be pinned before manifests set
-this field. Service peers authenticate without a Kubernetes token or account/Pod lookup. The
-existing bearer allowlist remains a separate path until the caller cutover is complete.
+`service_callers` grants exact service SPIFFE IDs access to Sampler RPCs and requires
+`listen_tls.client_ca_file`. It defaults empty, which admits no caller. Sampler RPCs require a
+verified client SVID and do not accept bearer tokens or perform account/Pod lookup. The legacy
+`audience` and `allowed_accounts` JSON fields remain decodable for rollout compatibility, but are
+optional and do not affect admission.
 
 Sampler Session ownership distinguishes service SPIFFE IDs from ServiceAccount UIDs. Migration 18
 adds a separate service owner column without rewriting existing rows. A service cannot reopen or

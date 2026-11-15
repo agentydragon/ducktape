@@ -245,13 +245,13 @@ class Settings(BaseModel):
     models: dict[str, ModelConfig] = Field(min_length=1)
 
     platform_instructions: str | None = Field(default=None, min_length=1)
-    audience: str
+    audience: str | None = None
     service_callers: list[ServiceSPIFFEID] = Field(
         exclude_if=lambda value: not value,
         default_factory=list,
         description="Exact service SPIFFE IDs admitted on the mTLS listener.",
     )
-    allowed_accounts: set[str] = Field(min_length=1)
+    allowed_accounts: set[str] = Field(default_factory=set, exclude_if=lambda value: not value)
     code_mode_host: Path
     executor_codex: str
     logs: Path
