@@ -1,0 +1,35 @@
+# Original home: packages/excalidraw/components/ExcalidrawLogo.tsx
+source_matches:
+  - match: |
+      var selected = () => EXPR("svg", {
+        viewBox: "0 0 40 40",
+        fill: "none",
+        xmlns: "http://www.w3.org/2000/svg",
+        className: "ExcalidrawLogo-icon",
+        children: EXPR,
+      });
+    bindings:
+      - local: selected
+        name: LogoIcon
+
+  - match: |
+      var selected = () => EXPR("svg", {
+        viewBox: "0 0 450 55",
+        xmlns: "http://www.w3.org/2000/svg",
+        fill: "none",
+        className: "ExcalidrawLogo-text",
+        children: EXPR,
+      });
+    bindings:
+      - local: selected
+        name: LogoText
+
+  - match: |
+      var selected = ({ style, size = "small", withText }) => EXPR("div", {
+        className: `ExcalidrawLogo is-${size}`,
+        style,
+        children: EXPR,
+      });
+    bindings:
+      - local: selected
+        name: ExcalidrawLogo
