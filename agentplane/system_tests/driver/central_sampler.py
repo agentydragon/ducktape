@@ -241,11 +241,9 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
                 private_key=base64.b64decode(sampler_client.data["tls.key"]),
                 certificate_chain=base64.b64decode(sampler_client.data["tls.crt"]),
             )
-            history_credentials = await service_svid_credentials(cluster, "central-sampler-workload-tls")
             # Sandbox Ready proves leader observation; independently prove the every-replica
             # Environments proxy has a callable snapshot before starting setup.
-            # Dispatcher commands and Runtime diagnostics use the App role. History reads use
-            # the central sampler's exact service identity.
+            # Dispatcher commands, Runtime diagnostics and History observations use the App reader role.
             caller_credentials = await service_svid_credentials(cluster, "app-workload-tls")
             gateway = SandboxControlClient(
                 control_target=gateway_target,
@@ -277,7 +275,7 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
                 HistoryServiceClient(
                     await _address(cluster, core, "history-service", 8080),
                     request_timeout_s=20,
-                    channel_credentials=history_credentials,
+                    channel_credentials=caller_credentials,
                     server_name=f"history-service.{cluster.namespace}.svc.cluster.local",
                 )
             )

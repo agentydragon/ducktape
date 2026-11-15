@@ -33,13 +33,13 @@ from agentplane.app.testing.replication_source import (
     add_replication_source,
 )
 from agentplane.app.testing.thread_test_support import ThreadHTTP
-from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.electric_service import (
     BrowserPostgres,
     ElectricService,
     browser_electric_service,
     browser_postgres_server,
 )
+from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.history_service.testing.history import History
 from agentplane.proto import event_log_pb2, event_pb2, session_pb2
 from agentplane.runner_gateway.client import SandboxControlClient
@@ -215,7 +215,7 @@ def thread_browser_session(
     content: SessionHistory,
     thread_source: ReplicationSource,
     history: History,
-    history_client: HistoryServiceClient,
+    history_service: GoHistoryService,
     replay_after: int | None,
     electric: ElectricService,
     certificate: BrowserCertificate,
@@ -235,7 +235,7 @@ def thread_browser_session(
             thread_source.ingesting(history),
             app_process(
                 db_url,
-                history_client,
+                history_service,
                 sandboxes=SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace),
                 gateway=gateway_access,
                 browser_login=True,

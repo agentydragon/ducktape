@@ -29,8 +29,8 @@ from agentplane.env.e2e.testing.claude_transcript import wait_for_claude_transcr
 from agentplane.env.e2e.testing.failure_journal import FailureEvidence
 from agentplane.env.e2e.testing.process import RunningRunner, kill_harness
 from agentplane.history_service.api.history import history_service_pb2
-from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
+from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.history_service.testing.history import History
 from agentplane.history_service.testing.protojson import thread_entity_from_record
 from agentplane.proto import event_log_pb2, event_pb2, session_pb2
@@ -691,7 +691,7 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
 async def test_replica_commands_and_history_reads_survive_owner_replica_exit(
     app: AppProcess,
     db_url: str,
-    history_client: HistoryServiceClient,
+    history_service: GoHistoryService,
     sandbox: SandboxCluster,
     gateway_service: GatewayProcess,
     app_token_file: Path,
@@ -704,7 +704,7 @@ async def test_replica_commands_and_history_reads_survive_owner_replica_exit(
     sandboxes = SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace)
     gateway = GatewayAccess(gateway_service.target, None, gateway_service.client_tls)
     async with (
-        app_process(db_url, history_client, sandboxes=sandboxes, gateway=gateway) as survivor,
+        app_process(db_url, history_service, sandboxes=sandboxes, gateway=gateway) as survivor,
         httpx.AsyncClient(
             base_url=survivor.url, cookies=survivor.cookies, headers={"Origin": survivor.url}, timeout=60
         ) as survivor_http,

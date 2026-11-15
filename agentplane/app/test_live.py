@@ -23,7 +23,7 @@ from agentplane.app.testing.replication_process import AppProcess, GatewayAccess
 from agentplane.app.testing.thread_test_support import ThreadHTTP
 from agentplane.egress.api.admin import egress_admin_pb2, egress_admin_pb2_grpc
 from agentplane.grpc.serving import serving
-from agentplane.history_service.client import HistoryServiceClient
+from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.history_service.testing.history import History
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess, run_gateway
 from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
@@ -144,7 +144,7 @@ async def test_the_streams_need_a_caller(app: AppProcess) -> None:
 
 async def test_environment_thread_rpc_reports_history_unavailable(
     db_url: str,
-    history_client: HistoryServiceClient,
+    history_service: GoHistoryService,
     namespace: SandboxNamespace,
     api_server: KubernetesApiServer,
     app_config: dict[str, object],
@@ -154,7 +154,7 @@ async def test_environment_thread_rpc_reports_history_unavailable(
     async with (
         app_process(
             db_url,
-            history_client,
+            history_service,
             sandboxes=SandboxesAccess(api_server.kubeconfig, namespace.name),
             gateway=namespace_gateway,
             config=app_config | {"history_service_target": refused_address, "history_service_request_timeout_s": 0.5},
@@ -176,7 +176,7 @@ async def test_thread_metadata_watch_follows_replica_commits(
     namespace: SandboxNamespace,
     event_logs: SessionHistory,
     db_url: str,
-    history_client: HistoryServiceClient,
+    history_service: GoHistoryService,
     api_server: KubernetesApiServer,
     app_config: dict[str, object],
     namespace_gateway: GatewayAccess,
@@ -184,7 +184,7 @@ async def test_thread_metadata_watch_follows_replica_commits(
     async with (
         app_process(
             db_url,
-            history_client,
+            history_service,
             sandboxes=SandboxesAccess(api_server.kubeconfig, namespace.name),
             gateway=namespace_gateway,
             config=app_config,
@@ -238,7 +238,7 @@ async def test_thread_metadata_watch_reports_listener_loss_and_reconnect(
     event_logs: SessionHistory,
     engine: AsyncEngine,
     database_reconnect_gate: tuple[str, asyncio.Event],
-    history_client: HistoryServiceClient,
+    history_service: GoHistoryService,
     namespace: SandboxNamespace,
     app_config: dict[str, object],
     namespace_gateway: GatewayAccess,
@@ -247,7 +247,7 @@ async def test_thread_metadata_watch_reports_listener_loss_and_reconnect(
     async with (
         app_process(
             database_url,
-            history_client,
+            history_service,
             sandboxes=SandboxesAccess(namespace.kubeconfig, namespace.name),
             gateway=namespace_gateway,
             config=app_config,

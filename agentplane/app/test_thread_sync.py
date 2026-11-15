@@ -15,7 +15,6 @@ from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.replication_process import SandboxesAccess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.history_service.api.history import history_service_pb2
-from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.electric_service import ElectricService, electric_service
 from agentplane.history_service.testing.history import History
 from agentplane.history_service.testing.protojson import thread_entity_from_record
@@ -33,7 +32,6 @@ async def test_materialized_revisions_replicate_with_restricted_role(
     db_url: str, history_on: Callable[[str], AbstractAsyncContextManager[History]], namespace: SandboxNamespace
 ) -> None:
     async with electric_service() as service, history_on(service.database_url) as history:
-        reader = history.service.reader
         event_logs = SessionHistory(history)
         source = ReplicationSource()
         source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
@@ -88,7 +86,7 @@ async def test_materialized_revisions_replicate_with_restricted_role(
             values = [message["value"] for message in chunks.json() if "value" in message]
             ordered = sorted(values, key=lambda row: int(row["chunk_index"]))
             assert "".join(json.loads(row["text"]) for row in ordered) == "Hello world"
-        await _cross_replica_sync(service, db_url, reader, history, source, thread, namespace)
+        await _cross_replica_sync(service, db_url, history, source, thread, namespace)
 
 
 Row = dict[str, Any]
@@ -166,7 +164,6 @@ def _bodies(*references: history_service_pb2.ThreadPayloadReference) -> dict[str
 async def _cross_replica_sync(
     service: ElectricService,
     db_url: str,
-    reader: HistoryServiceClient,
     history: History,
     source: ReplicationSource,
     thread: UUID,
@@ -175,8 +172,12 @@ async def _cross_replica_sync(
     sandboxes = SandboxesAccess(kubeconfig=namespace.kubeconfig, namespace=namespace.name)
     async with (
         asyncio.timeout(60),
-        app_process(db_url, history=reader, sandboxes=sandboxes, gateway=None, electric_url=service.url) as first,
-        app_process(db_url, history=reader, sandboxes=sandboxes, gateway=None, electric_url=service.url) as second,
+        app_process(
+            db_url, history=history.service, sandboxes=sandboxes, gateway=None, electric_url=service.url
+        ) as first,
+        app_process(
+            db_url, history=history.service, sandboxes=sandboxes, gateway=None, electric_url=service.url
+        ) as second,
         httpx.AsyncClient(
             base_url=first.url, cookies=first.cookies, headers={"Origin": first.url}, timeout=35
         ) as client_one,

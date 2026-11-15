@@ -51,7 +51,6 @@ from agentplane.app.testing.thread_browser import (
 from agentplane.app.testing.thread_test_support import ThreadHTTP
 from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.channels import Channel
-from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.fold.models import (
     ThreadCheckpoint,
     ThreadEntity,
@@ -62,6 +61,7 @@ from agentplane.history_service.fold.models import (
     ThreadPayloadManifest,
 )
 from agentplane.history_service.testing.electric_service import ElectricService
+from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.history_service.testing.history import History
 from agentplane.history_service.testing.protojson import thread_entity_from_record, thread_entity_state_json
 from agentplane.net.peertls.config import APP_URI, POLICY_CONTROLLER_URI, ClientTLS
@@ -186,7 +186,7 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
     async with (
         app_process(
             db_url,
-            history=event_logs.reader,
+            history=event_logs.history.service,
             sandboxes=SandboxesAccess(kubeconfig=namespace.kubeconfig, namespace=namespace.name),
             gateway=empty_gateway_access,
             browser_login=True,
@@ -311,7 +311,7 @@ async def test_environment_identity_change_obeys_real_gateway_and_kubernetes_adm
         serving_tls(policy, "127.0.0.1:0", policy_server_credentials) as policy_port,
         app_process(
             db_url,
-            history=event_logs.reader,
+            history=event_logs.history.service,
             sandboxes=SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace),
             gateway=gateway_access,
             browser_login=True,
@@ -424,7 +424,7 @@ async def test_switching_threads_starts_at_each_threads_tail(
     async with (
         app_process(
             db_url,
-            history=event_logs.reader,
+            history=event_logs.history.service,
             sandboxes=SandboxesAccess(kubeconfig=namespace.kubeconfig, namespace=namespace.name),
             gateway=empty_gateway_access,
             browser_login=True,
@@ -474,7 +474,7 @@ async def test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had(
     async with (
         app_process(
             db_url,
-            history=event_logs.reader,
+            history=event_logs.history.service,
             sandboxes=SandboxesAccess(kubeconfig=namespace.kubeconfig, namespace=namespace.name),
             gateway=empty_gateway_access,
             browser_login=True,
@@ -535,7 +535,7 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
     async with (
         app_process(
             db_url,
-            history=event_logs.reader,
+            history=event_logs.history.service,
             sandboxes=SandboxesAccess(kubeconfig=namespace.kubeconfig, namespace=namespace.name),
             gateway=empty_gateway_access,
             browser_login=True,
@@ -754,7 +754,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
     event_logs: SessionHistory,
     content: SessionHistory,
     history: History,
-    history_client: HistoryServiceClient,
+    history_service: GoHistoryService,
     electric: ElectricService,
     sandbox: SandboxCluster,
     gateway_service: GatewayProcess,
@@ -820,7 +820,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
         source.ingesting(history),
         app_process(
             db_url,
-            history_client,
+            history_service,
             sandboxes=SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace),
             gateway=gateway_access,
             browser_login=True,

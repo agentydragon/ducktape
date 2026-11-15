@@ -166,7 +166,7 @@ def app_config() -> dict[str, object]:
 @pytest.fixture
 async def app(
     db_url: str,
-    history_client: HistoryServiceClient,
+    history_service: GoHistoryService,
     sandbox: SandboxCluster,
     gateway_service: GatewayProcess,
     app_token_file: Path,
@@ -174,7 +174,7 @@ async def app(
 ) -> AsyncIterator[AppProcess]:
     async with app_process(
         db_url,
-        history_client,
+        history_service,
         sandboxes=SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace),
         gateway=GatewayAccess(gateway_service.target, None, gateway_service.client_tls),
         config=app_config,

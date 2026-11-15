@@ -12,7 +12,6 @@ from uuid import uuid4
 
 import grpc
 import pytest
-import yaml
 from kubernetes_asyncio import client as k8s
 from tenacity import AsyncRetrying, retry_if_exception, retry_if_exception_type, stop_after_delay, wait_fixed
 
@@ -27,7 +26,7 @@ from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.driver.cleanup_diagnostics import capture_without_masking
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.dispatcher_operations import session_until
-from agentplane.system_tests.driver.dispatcher_transport import Caller, bound_caller, forward, service_caller
+from agentplane.system_tests.driver.dispatcher_transport import Caller, forward, service_caller
 from agentplane.system_tests.driver.identity import (
     LAUNCH_DEFAULT_POLICY_SETS,
     ScenarioIdentity,
@@ -38,7 +37,6 @@ from agentplane.system_tests.driver.identity import (
 from agentplane.system_tests.driver.sandbox import ENVIRONMENT_RUNTIME_CONTAINER, POD_TEMPLATE
 from agentplane.system_tests.driver.sandbox_diagnostics import container_mount_sources
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
-from agentplane.system_tests.driver.tls import service_credentials
 from agentplane.testing.scripted_model import Text
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -275,7 +273,6 @@ async def deployed_session_command_cannot_cross_deletion(
             cwd="/state",
             reasoning_effort="low",
         )
-        server_credentials = await service_credentials(cluster)
         target = await stack.enter_async_context(forward(cluster))
         channel = await stack.enter_async_context(
             dial(
@@ -291,14 +288,11 @@ async def deployed_session_command_cannot_cross_deletion(
                 server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
             )
         )
-        history_settings = json.loads(await cluster.kubectl("get", "configmap", "history-service-config", "-o", "json"))
-        history_config = yaml.safe_load(history_settings["data"]["config.yaml"])
-        history_caller, _, _ = await bound_caller(cluster, "app", audience=history_config["token_audience"])
         history_target = await stack.enter_async_context(forward(cluster, "service/history-service"))
         history_channel = await stack.enter_async_context(
             dial(
                 history_target,
-                channel_credentials=server_credentials,
+                channel_credentials=app.channel_credentials,
                 server_name=f"history-service.{cluster.namespace}.svc.cluster.local",
             )
         )
@@ -440,7 +434,7 @@ async def deployed_session_command_cannot_cross_deletion(
                 pod = json.loads(await cluster.kubectl("get", "pod", incarnation["name"], "-o", "json"))
                 assert pod["metadata"]["uid"] == incarnation["uid"]
                 assert not pod["metadata"].get("deletionTimestamp")
-                before = await _read_sealed_history(history, history_caller, session)
+                before = await _read_sealed_history(history, app, session)
                 assert positive in before[1]
                 assert delayed not in before[1]
                 assert turn_id in before[2]
@@ -458,7 +452,7 @@ async def deployed_session_command_cannot_cross_deletion(
                 assert refused.value.code() == grpc.StatusCode.FAILED_PRECONDITION, refused.value
                 assert evidence["runtime_handler_result"] == "FailedPrecondition", evidence
                 assert refused.value.details() == "journal is sealed", evidence
-                assert await _read_sealed_history(history, history_caller, session) == before
+                assert await _read_sealed_history(history, app, session) == before
                 evidence["sealed_cursor_unchanged"] = before[0]
                 persist()
         except Exception as error:
@@ -677,10 +671,6 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
         gateway, _, _ = await service_caller(
             cluster, "runner-gateway", certificate_secret="runner-gateway-sessions-client-workload-tls"
         )
-        history_settings = json.loads(await cluster.kubectl("get", "configmap", "history-service-config", "-o", "json"))
-        history_config = yaml.safe_load(history_settings["data"]["config.yaml"])
-        history_reader, _, _ = await bound_caller(cluster, "app", audience=history_config["token_audience"])
-        server_credentials = await service_credentials(cluster)
         async with (
             forward(cluster) as dispatcher_target,
             forward(cluster, "service/history-service") as history_target,
@@ -703,7 +693,7 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
             history_channel = await identities.enter_async_context(
                 dial(
                     history_target,
-                    channel_credentials=server_credentials,
+                    channel_credentials=app.channel_credentials,
                     server_name=f"history-service.{cluster.namespace}.svc.cluster.local",
                 )
             )
@@ -728,7 +718,7 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
                     app=app,
                     gateway=gateway,
                     history=history,
-                    history_reader=history_reader,
+                    history_reader=app,
                     dispatcher=dispatcher,
                     runner=runner,
                     runner_reader=runner_reader,
@@ -737,10 +727,10 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
                     pod=old_pod,
                     marker=f"old-identity-{uuid4().hex}",
                 )
-            old_cursor = await _wait_retained_turn(history, history_reader, old_session)
+            old_cursor = await _wait_retained_turn(history, app, old_session)
             await delete_scenario_identity(cluster, old_identity)
             await _wait_identity_and_binding_deleted(cluster, old_identity)
-            old_cursor_after_identity_delete = await _wait_retained_turn(history, history_reader, old_session)
+            old_cursor_after_identity_delete = await _wait_retained_turn(history, app, old_session)
 
             other_identity = await create_scenario_identity(cluster, other_name, list(LAUNCH_DEFAULT_POLICY_SETS))
             identities.push_async_callback(delete_scenario_identity, cluster, other_identity)
@@ -758,7 +748,7 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
                     app=app,
                     gateway=gateway,
                     history=history,
-                    history_reader=history_reader,
+                    history_reader=app,
                     dispatcher=dispatcher,
                     runner=runner,
                     runner_reader=runner_reader,
@@ -786,7 +776,7 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
                     app=app,
                     gateway=gateway,
                     history=history,
-                    history_reader=history_reader,
+                    history_reader=app,
                     dispatcher=dispatcher,
                     runner=runner,
                     runner_reader=runner_reader,
