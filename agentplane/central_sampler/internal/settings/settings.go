@@ -24,7 +24,6 @@ type Settings struct {
 	Models                               map[string]ModelConfig      `json:"models"`
 	Connections                          map[string]ConnectionConfig `json:"connections"`
 	DatabaseURL                          string                      `json:"database_url"`
-	Listen                               string                      `json:"listen,omitempty"`
 	Audience                             string                      `json:"audience"`
 	AllowedAccounts                      []string                    `json:"allowed_accounts"`
 	PlatformInstructions                 *string                     `json:"platform_instructions,omitempty"`
@@ -55,8 +54,7 @@ type Settings struct {
 
 const defaultHealthListen = ":8081"
 
-// HealthListenAddress returns the gRPC health-only listener address. The default is kept in
-// code so a binary can introduce the listener before a manifest needs to set a new key.
+// HealthListenAddress returns the gRPC health-only listener address.
 func (s Settings) HealthListenAddress() string {
 	if s.HealthListen == nil {
 		return defaultHealthListen

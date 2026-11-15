@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
-	"net"
 	"os"
 	"os/signal"
 	"strings"
@@ -50,21 +49,6 @@ func atStartupStage(stage string, err error) error {
 		return nil
 	}
 	return &startupFailure{stage: stage, err: err}
-}
-
-func newPlaintextServer(
-	listen string,
-	options []grpc.ServerOption,
-	registerApplication func(*grpc.Server),
-	healthServer *health.Server,
-) *grpc.Server {
-	if listen == "" {
-		return nil
-	}
-	server := grpc.NewServer(options...)
-	registerApplication(server)
-	healthpb.RegisterHealthServer(server, healthServer)
-	return server
 }
 
 func newHealthOnlyServer(healthServer *health.Server) *grpc.Server {
@@ -174,35 +158,20 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 		return atStartupStage("grpc_health_listener", err)
 	}
 	defer healthListener.Close()
-	server := newPlaintextServer(settings.Listen, serverOptions, register, healthServer)
-	var listener net.Listener
-	if server != nil {
-		listener, err = netlistener.Open(settings.Listen)
-		if err != nil {
-			server.Stop()
-			healthOnlyServer.Stop()
-			return atStartupStage("grpc_listener", err)
-		}
-		defer listener.Close()
+	credentials, err := settings.ListenTLS.Credentials(peertls.CentralSamplerURI)
+	if err != nil {
+		return atStartupStage("grpc_tls_credentials", err)
 	}
-	var tlsServer *grpc.Server
-	var tlsListener net.Listener
-	if settings.ListenTLS != nil {
-		credentials, err := settings.ListenTLS.Credentials(peertls.CentralSamplerURI)
-		if err != nil {
-			return atStartupStage("grpc_tls_credentials", err)
-		}
-		tlsOptions := append(append([]grpc.ServerOption(nil), serverOptions...), grpc.Creds(credentials))
-		tlsServer = grpc.NewServer(tlsOptions...)
-		register(tlsServer)
-		healthpb.RegisterHealthServer(tlsServer, healthServer)
-		tlsListener, err = netlistener.Open(settings.ListenTLS.Listen)
-		if err != nil {
-			tlsServer.Stop()
-			return atStartupStage("grpc_tls_listener", err)
-		}
-		defer tlsListener.Close()
+	tlsOptions := append(append([]grpc.ServerOption(nil), serverOptions...), grpc.Creds(credentials))
+	tlsServer := grpc.NewServer(tlsOptions...)
+	register(tlsServer)
+	healthpb.RegisterHealthServer(tlsServer, healthServer)
+	tlsListener, err := netlistener.Open(settings.ListenTLS.Listen)
+	if err != nil {
+		tlsServer.Stop()
+		return atStartupStage("grpc_tls_listener", err)
 	}
+	defer tlsListener.Close()
 	running, runningCtx := errgroup.WithContext(ctx)
 	running.Go(func() error { return runtime.Run(runningCtx, work) })
 	if settings.HistoryTarget != "" {
@@ -217,28 +186,17 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 		}
 		return err
 	})
-	if server != nil {
-		running.Go(func() error {
-			err := server.Serve(listener)
-			if errors.Is(err, grpc.ErrServerStopped) {
-				return nil
-			}
-			return err
-		})
-	}
-	if tlsServer != nil {
-		running.Go(func() error {
-			err := tlsServer.Serve(tlsListener)
-			if errors.Is(err, grpc.ErrServerStopped) {
-				return nil
-			}
-			return err
-		})
-	}
+	running.Go(func() error {
+		err := tlsServer.Serve(tlsListener)
+		if errors.Is(err, grpc.ErrServerStopped) {
+			return nil
+		}
+		return err
+	})
 	running.Go(func() error {
 		<-runningCtx.Done()
 		healthServer.Shutdown()
-		for _, server := range []*grpc.Server{healthOnlyServer, server, tlsServer} {
+		for _, server := range []*grpc.Server{healthOnlyServer, tlsServer} {
 			if server == nil {
 				continue
 			}

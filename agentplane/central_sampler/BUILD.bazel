@@ -24,6 +24,7 @@ py_library(
         "//agentplane/proto:identity_pb2",
         "//agentplane/proto:session_pb2",
         "//agentplane/testing:go_process",
+        "//agentplane/testing:tls",
         "//util:net",
         "@pypi//aiohttp",
         "@pypi//grpcio",

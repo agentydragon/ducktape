@@ -396,7 +396,7 @@ flowchart LR
     llm[LLM ingress]
     responses[Responses API providers]
     anthropic[Anthropic Messages API]
-    dispatcher -->|Sampler gRPC: Sessions service SVID mTLS| sampler
+    dispatcher -->|Sampler gRPC :8083; Sessions service SVID mTLS| sampler
     sampler -->|continuation, commands and ownership leases| db
     db -->|NOTIFY: central_sampler_work| sampler
     db -->|NOTIFY: central_sampler_outbox| sampler
@@ -412,7 +412,8 @@ flowchart LR
 The sampler's TLS listener trusts the workload bundle and admits exactly
 `spiffe://agentplane/sessions`, the owner stored by the explicit Gateway-account Session rewrite.
 The Gateway authenticates with its mounted Sessions role certificate and verifies the sampler server SVID.
-The sampler retains its bearer account allowlist and plaintext listener during the overlap.
+The sampler retains its bearer account allowlist. Application RPCs use only the TLS listener; the
+plaintext gRPC listener on port 8080 is removed, and port 8081 serves health checks only.
 
 The staging picker gives direct Anthropic models only to the central sampler, keeping them out of the
 subscription-backed Codex and Claude harnesses. The Anthropic key is copied by ESO from the existing
@@ -708,7 +709,7 @@ flowchart LR
 
     mcp_client -->|MCP over OAuth| edge
     app -->|Action RPCs: gRPC; MCP OAuth callback: HTTP| actions
-    app -->|ConnectionService RPCs and health: gRPC| edge
+    app -->|ConnectionService RPCs and health: mTLS gRPC :8443| edge
     edge -->|account scoped gRPC| actions
     edge -->|public MCP client metadata: gRPC| actions
     actions -->|create + watch Pods| k8s
@@ -757,10 +758,9 @@ Both tiers send operator Connection calls and gRPC health probes to the [MCP edg
 Staging's external MCP/OAuth routes terminate there too, preserving the public issuer/resource URLs.
 Actions retains upstream MCP linkage and its public client metadata. The edge verifies operator OIDC separately from
 external MCP bearers, then calls Actions with its exact service SVID and typed Connection/grant provenance. It sends no
-Action audience bearer and has no bearer fallback. Its additional gRPC listener on port 8443
-checks the App service SVID against the workload CA; operator OIDC remains required for App's
-operator methods and is separate from the edge's Connection delegation. The App still uses port 8080
-until its separate caller cutover.
+Action audience bearer and has no bearer fallback. Its gRPC listener on port 8443 checks the App
+service SVID against the workload CA; operator OIDC remains required for App's operator methods and
+is separate from the edge's Connection delegation. The App uses that TLS listener.
 
 ## Staged Action Service certificate callers
 

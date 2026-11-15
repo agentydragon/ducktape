@@ -69,17 +69,14 @@ func TestSettingsPlatformGuidanceAcceptsOldConfigurationAndRejectsEmptyGuide(t *
 	}
 }
 
-func TestOptionalTLSListenerRequiresASeparateAddressAndAbsoluteFiles(t *testing.T) {
+func TestRequiredTLSListenerUsesASeparateAddressAndAbsoluteFiles(t *testing.T) {
 	settings := fixtureSettings()
-	settings.ListenTLS = &peertls.ServerTLSListener{
-		Listen: ":8083", CertFile: "/run/agentplane/workload-tls/tls.crt", KeyFile: "/run/agentplane/workload-tls/tls.key",
-	}
 	if err := settings.Validate(); err != nil {
 		t.Fatalf("valid TLS listener rejected: %v", err)
 	}
-	settings.ListenTLS.Listen = settings.Listen
+	settings.ListenTLS.Listen = settings.HealthListenAddress()
 	if err := settings.Validate(); err == nil {
-		t.Fatal("accepted TLS and plaintext listeners on the same address")
+		t.Fatal("accepted TLS and health listeners on the same address")
 	}
 	settings.ListenTLS.Listen = ":8083"
 	settings.ListenTLS.CertFile = "relative.pem"
@@ -88,14 +85,10 @@ func TestOptionalTLSListenerRequiresASeparateAddressAndAbsoluteFiles(t *testing.
 	}
 }
 
-func TestPlaintextListenerCanBeOmittedAndHealthListenerDefaultsSeparately(t *testing.T) {
+func TestHealthListenerDefaultsSeparatelyAndPlaintextListenerIsUnknown(t *testing.T) {
 	settings := fixtureSettings()
-	settings.Listen = ""
-	settings.ListenTLS = &peertls.ServerTLSListener{
-		Listen: ":8083", CertFile: "/run/agentplane/workload-tls/tls.crt", KeyFile: "/run/agentplane/workload-tls/tls.key",
-	}
 	if err := settings.Validate(); err != nil {
-		t.Fatalf("omitted plaintext listener rejected: %v", err)
+		t.Fatalf("required TLS listener rejected: %v", err)
 	}
 	if got := settings.HealthListenAddress(); got != ":8081" {
 		t.Fatalf("health listener address=%q, want :8081", got)
@@ -110,17 +103,20 @@ func TestPlaintextListenerCanBeOmittedAndHealthListenerDefaultsSeparately(t *tes
 		t.Fatal(err)
 	}
 	if _, ok := fields["listen"]; ok {
-		t.Fatal("omitted plaintext listener was serialized")
+		t.Fatal("removed plaintext listener was serialized")
 	}
 	decoded, err := DecodeSettings(strings.NewReader(string(encoded)))
 	if err != nil {
-		t.Fatalf("decode settings without listen: %v", err)
+		t.Fatalf("decode settings without a plaintext listener: %v", err)
 	}
-	if decoded.Listen != "" || decoded.HealthListenAddress() != ":8081" {
-		t.Fatalf("decoded listeners = (%q, %q), want omitted RPC listener and :8081 health listener", decoded.Listen, decoded.HealthListenAddress())
+	if decoded.ListenTLS == nil || decoded.HealthListenAddress() != ":8081" {
+		t.Fatalf("decoded listeners = (%+v, %q), want TLS RPC and :8081 health listener", decoded.ListenTLS, decoded.HealthListenAddress())
+	}
+	if _, err := DecodeSettings(strings.NewReader(`{"listen":"127.0.0.1:8080"}`)); err == nil {
+		t.Fatal("accepted the removed plaintext listener setting")
 	}
 
-	healthListen := ":8083"
+	healthListen := settings.ListenTLS.Listen
 	settings.HealthListen = &healthListen
 	if err := settings.Validate(); err == nil {
 		t.Fatal("accepted TLS and health listeners on the same address")
@@ -133,7 +129,7 @@ func TestPlaintextListenerCanBeOmittedAndHealthListenerDefaultsSeparately(t *tes
 	settings.HealthListen = nil
 	settings.ListenTLS = nil
 	if err := settings.Validate(); err == nil {
-		t.Fatal("accepted settings with neither a TLS nor plaintext application listener")
+		t.Fatal("accepted settings without the required TLS listener")
 	}
 }
 

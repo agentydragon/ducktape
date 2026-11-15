@@ -29,12 +29,9 @@ type config struct {
 	DatabaseURL   string                     `mapstructure:"-" yaml:"-"`
 	ActionsTarget string                     `yaml:"actions_target"`
 	// PolicyNamespace holds live Identities; ActionsTokenFile is the rotating Action-audience token.
-	PolicyNamespace  string `yaml:"policy_namespace"`
-	ActionsTokenFile string `yaml:"actions_token_file"`
-	Host             string `yaml:"host"`
-	// Port is the gRPC listener's: ConnectionService and health. HTTPPort is the HTTP listener's: the facade, /mcp,
-	// OAuth, HTTP health and metrics.
-	Port              int               `yaml:"port"`
+	PolicyNamespace   string            `yaml:"policy_namespace"`
+	ActionsTokenFile  string            `yaml:"actions_token_file"`
+	Host              string            `yaml:"host"`
 	HTTPPort          int               `yaml:"http_port"`
 	OperatorOIDC      operator.Settings `yaml:"operator_oidc"`
 	OperatorServices  []string          `yaml:"operator_services,omitempty"`
@@ -59,7 +56,7 @@ type oauthSettings struct {
 
 func loadConfig() (config, error) {
 	c := config{
-		Host: "0.0.0.0", Port: 8080, HTTPPort: 8081, MaxWaitSeconds: 30, DirectWaitSeconds: 30,
+		Host: "0.0.0.0", HTTPPort: 8081, MaxWaitSeconds: 30, DirectWaitSeconds: 30,
 		OperatorOIDC: operator.DefaultSettings(),
 	}
 	path := os.Getenv(settingPrefix + "CONFIG_FILE")
@@ -122,13 +119,8 @@ func (c config) validate() error {
 	if len(validation.IsDNS1123Label(c.PolicyNamespace)) > 0 {
 		return errors.New("policy_namespace must be a namespace name")
 	}
-	for name, port := range map[string]int{"port": c.Port, "http_port": c.HTTPPort} {
-		if port < 1 || port > 65535 {
-			return errors.New(name + " must be between 1 and 65535")
-		}
-	}
-	if c.Port == c.HTTPPort {
-		return errors.New("port and http_port must differ")
+	if c.HTTPPort < 1 || c.HTTPPort > 65535 {
+		return errors.New("http_port must be between 1 and 65535")
 	}
 	for _, seconds := range []float64{c.MaxWaitSeconds, c.DirectWaitSeconds} {
 		if seconds < 0 || math.IsNaN(seconds) || math.IsInf(seconds, 0) {
@@ -138,13 +130,14 @@ func (c config) validate() error {
 	if err := c.OperatorOIDC.Validate(); err != nil {
 		return err
 	}
-	if c.RPCTLS != nil {
-		if err := c.RPCTLS.Validate(); err != nil {
-			return fmt.Errorf("rpc_tls: %w", err)
-		}
-		if c.RPCTLS.Listen == c.grpcAddress() || c.RPCTLS.Listen == c.httpAddress() {
-			return errors.New("rpc_tls.listen must differ from port and http_port")
-		}
+	if c.RPCTLS == nil {
+		return errors.New("rpc_tls is required")
+	}
+	if err := c.RPCTLS.Validate(); err != nil {
+		return fmt.Errorf("rpc_tls: %w", err)
+	}
+	if c.RPCTLS.Listen == c.httpAddress() {
+		return errors.New("rpc_tls.listen must differ from http_port")
 	}
 	if err := auth.ValidateServiceCallers(c.OperatorServices); err != nil {
 		return fmt.Errorf("invalid operator_services: %w", err)
@@ -179,7 +172,5 @@ func (c config) validate() error {
 	}
 	return nil
 }
-
-func (c config) grpcAddress() string { return fmt.Sprintf("%s:%d", c.Host, c.Port) }
 
 func (c config) httpAddress() string { return fmt.Sprintf("%s:%d", c.Host, c.HTTPPort) }

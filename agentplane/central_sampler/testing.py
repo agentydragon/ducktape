@@ -20,9 +20,10 @@ from agentplane.central_sampler.api import sampler_pb2, sampler_pb2_grpc
 from agentplane.central_sampler.settings import AuthConfig, ConnectionConfig, ModelConfig, ResponsesConfig, Settings
 from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.native.testing.model_endpoint import ModelEndpoint, ModelExchange
-from agentplane.net.peertls.config import ClientTLS
+from agentplane.net.peertls.config import ClientTLS, ServerTLSListener
 from agentplane.proto import event_pb2, identity_pb2, session_pb2
 from agentplane.testing.go_process import go_process
+from agentplane.testing.tls import issue_workload_leaf, make_ca
 from util.net import listen_tcp
 
 METADATA = (("authorization", "Bearer test-token"),)
@@ -121,7 +122,9 @@ def settings(
 ) -> Settings:
     return Settings(
         database_url=database_url,
-        listen="127.0.0.1:0",
+        listen_tls=ServerTLSListener(
+            listen="127.0.0.1:0", cert_file=Path("/fixture/tls.crt"), key_file=Path("/fixture/tls.key")
+        ),
         connections={
             "provider": ConnectionConfig(
                 base_url=endpoint, auth=AuthConfig(type="bearer", credential=SecretStr("test-key"))
@@ -187,14 +190,20 @@ def create_request(cwd: Path) -> sampler_pb2.CreateSessionRequest:
 
 
 @asynccontextmanager
-async def go_sampler(config: Settings, kubeconfig: Path, directory: Path) -> AsyncIterator[str]:
+async def go_sampler(config: Settings, kubeconfig: Path, directory: Path) -> AsyncIterator[tuple[str, bytes]]:
     """Run the Go binary, which migrates before serving."""
     await asyncio.to_thread(directory.mkdir, parents=True, exist_ok=True)
     binary = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/central_sampler/cmd/main_bin_/main_bin"
     if config.database_url is None:
         raise ValueError("system-test sampler settings require database_url")
+    with listen_tcp() as health_listener:
+        health_port = health_listener.port
     with listen_tcp() as bound, TemporaryDirectory(prefix="sampler-credentials-") as credentials_directory:
         fd = bound.socket.fileno()
+        ca = make_ca("central sampler fixture")
+        cert_path, key_path = issue_workload_leaf(
+            ca, "spiffe://agentplane/central-sampler", Path(credentials_directory), dns_name="localhost"
+        )
         values = config.model_dump(mode="json", exclude_none=True)
         values["database_url"] = (
             make_url(config.database_url)
@@ -202,7 +211,8 @@ async def go_sampler(config: Settings, kubeconfig: Path, directory: Path) -> Asy
             .update_query_dict({"sslmode": "disable"})
             .render_as_string(hide_password=False)
         )
-        values["listen"] = f"fd:{fd}"
+        values["listen_tls"].update(listen=f"fd:{fd}", cert_file=str(cert_path), key_file=str(key_path))
+        values["health_listen"] = f"127.0.0.1:{health_port}"
         values["kubeconfig"] = str(kubeconfig)
         for index, (connection, connection_config) in enumerate(config.connections.items()):
             credential = connection_config.auth.credential
@@ -220,11 +230,11 @@ async def go_sampler(config: Settings, kubeconfig: Path, directory: Path) -> Asy
             binary,
             env={"AGENTPLANE_CENTRAL_SAMPLER_CONFIG": str(config_path)},
             stderr=directory / "sampler.log",
-            health_port=bound.port,
+            health_port=health_port,
             grace_s=10,
             pass_fds=(fd,),
         ):
-            yield f"{bound.host}:{bound.port}"
+            yield f"localhost:{bound.port}", ca.cert_pem
 
 
 @asynccontextmanager
@@ -233,8 +243,8 @@ async def service(config: Settings) -> AsyncIterator[sampler_pb2_grpc.SamplerAsy
     directory.mkdir(parents=True)
     async with (
         authentication(directory) as kubeconfig,
-        go_sampler(config, kubeconfig, directory) as target,
-        grpc.aio.insecure_channel(target) as channel,
+        go_sampler(config, kubeconfig, directory) as (target, root_certificates),
+        grpc.aio.secure_channel(target, grpc.ssl_channel_credentials(root_certificates=root_certificates)) as channel,
     ):
         yield sampler_pb2_grpc.SamplerStub(channel)
 

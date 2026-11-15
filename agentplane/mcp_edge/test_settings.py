@@ -13,6 +13,11 @@ def _settings_source() -> dict[str, object]:
     return {
         "actions_target": "actions:8080",
         "policy_namespace": "test-policy",
+        "rpc_tls": {
+            "listen": "0.0.0.0:8443",
+            "cert_file": Path("/etc/agentplane/tls/tls.crt"),
+            "key_file": Path("/etc/agentplane/tls/tls.key"),
+        },
         "operator_oidc": {
             "issuer": "https://operator.example",
             "audience": "test-edge",
@@ -44,6 +49,15 @@ def test_identity_settings_are_typed() -> None:
     settings = Settings.model_validate(source)
     assert settings.policy_namespace == "test-policy"
     assert settings.actions_token_file == "/var/run/actions"
+
+
+def test_tls_grpc_listener_is_required_and_plaintext_port_is_unknown() -> None:
+    source = _settings_source()
+    del source["rpc_tls"]
+    with pytest.raises(ValidationError):
+        Settings.model_validate(source)
+    with pytest.raises(ValidationError):
+        Settings.model_validate({**_settings_source(), "port": 8080})
 
 
 def test_operator_services_require_the_additional_mutual_tls_listener() -> None:

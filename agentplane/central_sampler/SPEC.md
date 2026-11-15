@@ -34,13 +34,9 @@ admission nor the continuation database.
 
 ## RPC listeners
 
-`listen` is the optional plaintext application RPC listener; `listen_tls` serves the same application
-RPCs with the sampler's verified workload-CA server SVID. A separate plaintext `health_listen`
-listener defaults to `:8081` and serves only gRPC health. During rollout, a configured `listen`
-continues serving health too, so existing kubelet probes remain healthy until manifests move them to
-`health_listen`. Omitting `listen` creates no plaintext application RPC server; the TLS listener
-continues serving sampler RPCs. After manifests omit `listen` and probe `health_listen`, a later code
-change can remove the transitional field and listener.
+`listen_tls` serves application RPCs with the sampler's verified workload-CA server SVID. The
+separate plaintext `health_listen` listener defaults to `:8081` and serves only gRPC health, so
+kubelet probes do not require TLS. There is no plaintext application RPC listener.
 
 This V1 placement retains the existing Sandbox-backed identity, admission, notification, wake and
 deletion behavior. Its exact executor environment is required and fixed for the Session. It does not

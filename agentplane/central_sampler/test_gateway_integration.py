@@ -242,8 +242,13 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 )
                 sampler_metadata = (("authorization", f"Bearer {sampler_api_token.read_text().strip()}"),)
                 async with (
-                    go_sampler(sampler_settings, api_server.kubeconfig, undeclared_outputs_dir()) as sampler_target,
-                    grpc.aio.insecure_channel(sampler_target) as channel,
+                    go_sampler(sampler_settings, api_server.kubeconfig, undeclared_outputs_dir()) as (
+                        sampler_target,
+                        root_certificates,
+                    ),
+                    grpc.aio.secure_channel(
+                        sampler_target, grpc.ssl_channel_credentials(root_certificates=root_certificates)
+                    ) as channel,
                 ):
                     stub = sampler_pb2_grpc.SamplerStub(channel)
                     for token, expected_code in (
