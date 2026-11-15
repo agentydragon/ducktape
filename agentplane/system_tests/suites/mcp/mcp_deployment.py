@@ -62,7 +62,9 @@ def render() -> RenderedFixture:
     central_sampler = fixture_chart.add_central_sampler(chart, env)
     app = fixture_chart.add_app(chart, env)
     edge = fixture_chart.add_mcp_edge(chart, env)
-    fixture_chart.add_sandbox_templates(chart, env)
+    fixture_chart.add_runner_templates(chart, env)
+    boxes = fixture_chart.add_command_templates(chart, env)
+    fixture_chart.add_svid_box_template(boxes, env)
     fixture_chart.add_model_credentials(chart, env, models=models)
     fixture_chart.add_policy_controller(chart, env)
     mcp_fixture_chart.add_mcp_fixtures(

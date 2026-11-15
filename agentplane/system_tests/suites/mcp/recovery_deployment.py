@@ -43,7 +43,9 @@ def render() -> RenderedFixture:
         chart, env, models=models, platform_callers=fixture_chart.NATIVE_CALLERS, notification_callers=[]
     )
     central_sampler = fixture_chart.add_central_sampler(chart, env)
-    fixture_chart.add_sandbox_templates(chart, env)
+    fixture_chart.add_runner_templates(chart, env)
+    boxes = fixture_chart.add_command_templates(chart, env)
+    fixture_chart.add_svid_box_template(boxes, env)
     fixture_chart.add_model_credentials(chart, env, models=models)
     fixture_chart.add_policy_controller(chart, env)
     return finalize_fixture(chart, env, models, central_sampler=central_sampler)
