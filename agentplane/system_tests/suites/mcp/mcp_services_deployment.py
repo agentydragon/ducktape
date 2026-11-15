@@ -2,16 +2,14 @@
 
 from dataclasses import asdict
 
-from cdk8s import Testing
-
-from agentplane.system_tests.deployment import dex, fixture_chart, fixture_database, mcp_fixture_chart
+from agentplane.system_tests.deployment import fixture_chart, fixture_database, mcp_fixture_chart
+from agentplane.system_tests.deployment.fixture_finalization import finalize_fixture
 from agentplane.system_tests.deployment.render_fixture import write_output
 from agentplane.system_tests.deployment.rendered_fixture import (
     MCP_PLACEHOLDERS,
     MODEL_PLACEHOLDERS,
     PLACEHOLDERS,
     Backend,
-    BrowserService,
     McpFixtures,
     RenderedFixture,
     SandboxRuntime,
@@ -52,32 +50,16 @@ def render() -> RenderedFixture:
     mcp_fixture_chart.add_mcp_fixtures(
         chart, MCP_PLACEHOLDERS, system_roots=PLACEHOLDERS.system_roots, app=app, actions=actions, edge=edge
     )
-    documents = list(Testing.synth(chart))
-    fixture_chart.add_svid_box_template(documents)
-    fixture_chart.configure_port_forward_tls(documents)
-    # Bare k3s has no Cilium controller.
-    documents = [doc for doc in documents if doc["kind"] != "CiliumNetworkPolicy"]
-    return RenderedFixture(
-        backend=Backend.LOCAL_MODEL,
-        runtime=SandboxRuntime.POD,
-        central_sampler=False,
-        namespace=env.namespace,
-        app_origin=MCP_PLACEHOLDERS.app_origin,
-        browser_services=[
-            BrowserService(name=service.name, host=service.host, fqdn=service.fqdn)
-            for service in (fixture_chart.APP_SERVICE, dex.service())
-        ],
-        mcp_fixtures=McpFixtures(
-            dex_host=fixture_chart.DEX_HOST,
-            operator_secret=mcp_fixture_chart.OPERATOR_SECRET,
-            operator_token_grant=mcp_fixture_chart.OPERATOR_TOKEN_GRANT,
-            mcp_edge_service=fixture_chart.MCP_EDGE_HTTP_SERVICE.name,
-            mcp_edge_port=fixture_chart.MCP_EDGE_HTTP_SERVICE.port.number,
-            app_service=fixture_chart.APP_SERVICE.name,
-            app_port=fixture_chart.APP_SERVICE.port.number,
-        ),
-        objects=documents,
+    mcp_fixtures = McpFixtures(
+        dex_host=fixture_chart.DEX_HOST,
+        operator_secret=mcp_fixture_chart.OPERATOR_SECRET,
+        operator_token_grant=mcp_fixture_chart.OPERATOR_TOKEN_GRANT,
+        mcp_edge_service=fixture_chart.MCP_EDGE_HTTP_SERVICE.name,
+        mcp_edge_port=fixture_chart.MCP_EDGE_HTTP_SERVICE.port.number,
+        app_service=app.service.name,
+        app_port=app.service.port.number,
     )
+    return finalize_fixture(chart, env, models, app=app, mcp_fixtures=mcp_fixtures)
 
 
 if __name__ == "__main__":
