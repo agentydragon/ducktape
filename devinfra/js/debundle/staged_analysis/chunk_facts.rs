@@ -201,6 +201,7 @@ pub fn compute_logical_chunk_facts(
         inputs.assumptions.reentry_free_operations = host_behavior.reentry_free_operations.clone();
         inputs.assumptions.predefined_globals = host_behavior.predefined_globals;
         inputs.assumptions.bundle_globals = program_summary.bundle_globals.clone();
+        inputs.executables = program_summary.executables.clone();
         inputs.imported_purities = program_summary
             .bindings
             .get(chunk_id)

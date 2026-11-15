@@ -30,6 +30,7 @@ mod inference;
 pub mod loader_closure;
 pub mod module_assignment;
 pub mod placement_projection;
+pub mod program_execution;
 pub mod purity;
 pub mod reports;
 mod swc_parallel;

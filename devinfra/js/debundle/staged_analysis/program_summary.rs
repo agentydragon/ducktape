@@ -83,6 +83,7 @@ pub struct ReparsedEntry {
 
 /// Program-wide analysis summaries, keyed by source chunk name.
 pub struct ProgramSummary {
+    pub executables: Option<Arc<analysis::program_execution::ProgramExecutables>>,
     /// Per-chunk imported-binding verdicts (`AnalysisInputs::imported_purities`).
     pub bindings: BTreeMap<String, BTreeMap<String, Arc<Purity>>>,
     /// Per-chunk imports of never-rebound provider cells
@@ -880,6 +881,7 @@ pub fn collect_program_summary(
         };
     }
     Ok(ProgramSummary {
+        executables: Some(callable_summaries.executables),
         no_reentry_callback_exports: members!(
             no_reentry_callback_exports,
             NoReentryCallbackExports

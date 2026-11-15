@@ -6194,7 +6194,7 @@ fn stored_global_alias(
     }
 }
 
-pub(super) struct ExecutionIndex {
+pub(crate) struct ExecutionIndex {
     pub(super) member_owners: BTreeMap<CallSite, SourceUnitOrdinal>,
     pub(super) retained_record_factories: BTreeSet<String>,
     owner: SourceUnitOrdinal,
@@ -6479,6 +6479,29 @@ pub(super) struct ExecutionIndex {
     pub(super) returned_record_summaries:
         BTreeMap<Id, crate::analysis_inputs::ReturnedRecordSummary>,
     pub(super) namespace_wrapper_summaries: BTreeMap<Id, NamespaceWrapperSummary>,
+}
+
+impl ExecutionIndex {
+    pub(crate) fn callable_for_local(&self, local: &str) -> Option<u32> {
+        let binding = self
+            .hoisted_bindings
+            .keys()
+            .chain(
+                self.top_assignments
+                    .iter()
+                    .flatten()
+                    .map(|(binding, _)| binding),
+            )
+            .find(|binding| binding.0.as_ref() == local);
+        if let Some(binding) = binding
+            && let Some(callable) = direct_callable_binding(self, binding, &mut BTreeSet::new())
+        {
+            return Some(callable);
+        }
+        self.class_bindings
+            .iter()
+            .find_map(|(origin, binding)| (binding.0.as_ref() == local).then_some(*origin))
+    }
 }
 
 impl Default for ExecutionIndex {
@@ -7705,7 +7728,7 @@ impl ExecutionIndex {
             .collect()
     }
 
-    pub(crate) fn prepare_semantic_facts(
+    pub(super) fn prepare_semantic_facts(
         &self,
         flow: &ChunkValueFlow,
         shadowed: &BTreeSet<&'static str>,
@@ -14874,6 +14897,7 @@ pub(crate) struct InferredCallableCapabilities {
     pub intact_collections: BTreeSet<NativeIntrinsic>,
     pub stable_providers: BTreeSet<String>,
     pub namespace_wrappers: BTreeMap<String, InferredNamespaceWrapper>,
+    pub executable: Arc<ExecutionIndex>,
 }
 
 pub(crate) struct InferredForeignCall {
@@ -15409,12 +15433,9 @@ pub(crate) fn infer_callable_capabilities<'f>(
         flow: mut prepared_flow,
     } = prepared;
     index.apply_native_integrity(integrity);
-    let mut result = InferredCallableCapabilities {
-        foreign_calls: BTreeMap::new(),
-        intact_collections: BTreeSet::new(),
-        stable_providers: BTreeSet::new(),
-        namespace_wrappers: BTreeMap::new(),
-    };
+    let mut foreign_calls = BTreeMap::new();
+    let mut stable_providers = BTreeSet::new();
+    let mut namespace_wrappers = BTreeMap::new();
     let has_candidate = index.hoisted_bindings.iter().any(|(id, key)| {
         required_stable_providers.contains(id.0.as_ref())
             || (exported_locals.contains(id.0.as_ref())
@@ -15437,7 +15458,7 @@ pub(crate) fn infer_callable_capabilities<'f>(
             },
             None,
         ));
-        result.stable_providers = index
+        stable_providers = index
             .hoisted_bindings
             .iter()
             .filter(|(binding, _)| required_stable_providers.contains(binding.0.as_ref()))
@@ -15453,11 +15474,11 @@ pub(crate) fn infer_callable_capabilities<'f>(
             })
             .map(|(binding, _)| binding.0.to_string())
             .collect();
-        result.namespace_wrappers = infer_namespace_wrappers(&index, &exported_locals);
+        namespace_wrappers = infer_namespace_wrappers(&index, &exported_locals);
         prepared_flow = Some(flow);
     }
     if derive_foreign_calls {
-        result.foreign_calls = infer_foreign_calls(
+        foreign_calls = infer_foreign_calls(
             &index,
             body,
             &exported_locals,
@@ -15474,7 +15495,7 @@ pub(crate) fn infer_callable_capabilities<'f>(
             |call| call.availability.available_to_importer() || call.callback_factory,
         );
     }
-    result.intact_collections = [
+    let intact_collections = [
         NativeIntrinsic::Map,
         NativeIntrinsic::Set,
         NativeIntrinsic::WeakMap,
@@ -15490,7 +15511,13 @@ pub(crate) fn infer_callable_capabilities<'f>(
         )
     })
     .collect();
-    result
+    InferredCallableCapabilities {
+        foreign_calls,
+        intact_collections,
+        stable_providers,
+        namespace_wrappers,
+        executable: Arc::new(index),
+    }
 }
 
 /// Exported top-level function and class declarations, and single-declarator

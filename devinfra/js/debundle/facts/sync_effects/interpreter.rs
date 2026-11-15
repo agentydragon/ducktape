@@ -908,6 +908,7 @@ fn top_level_effect_view<'source>(
 
 pub(super) struct ExecutionInputs<'source> {
     pub(super) index: &'source ExecutionIndex,
+    executables: Option<&'source crate::program_execution::ProgramExecutables>,
     graph: &'source ChunkCodeGraph,
     pub(super) facts: &'source [StatementFacts],
     /// Each statement's source-only purity transfer, before its coercions
@@ -6683,6 +6684,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return None;
         };
         let summary = self.inputs.index.foreign_call_imports.get(binding)?;
+        if let Some(programs) = self.inputs.executables {
+            programs.exported_callable(
+                &summary.defining_module,
+                &summary.export,
+                &summary.local,
+            )?;
+        }
         matches!(
             (kind, summary.invocation),
             (CallKind::Call, ForeignInvocation::Call)
@@ -13919,6 +13927,7 @@ pub(crate) fn annotate_synchronous_calls(
         })
         .collect();
     let inputs = ExecutionInputs {
+        executables: hints.executables.as_deref(),
         index: &index,
         graph: proofs.graph,
         facts,
