@@ -98,10 +98,15 @@
   },
   "five_port_dispatch_provenance": {
     "dispatch_evidence": "../agentplane-test-architecture/five-port-dispatch.json",
-    "dispatch_evidence_sha256": "b646f8992ccd774f512be2348679c5dbff2d4764a934919414fcef8e5db3838b",
+    "dispatch_evidence_sha256": "6be05e6281183d4ef8e734e9ed7d216666f5c6ffd37368faa83c2d19dbbfedd4",
     "visual_dispatch_record_sha256_at_capture": "d0544c6bc1636b7adfdfeb0ac01b62f58763cb706ab9c9f82520d0ebc6259c71",
     "visual_validation": "visual-validation.json#current_five_port_dispatch_refresh",
     "page_sha256": "74b091fdf5cc291354be469d3cded0505eaaffad04f99b46cf17b40dc22f8768",
-    "historical_windows_and_denominators_unchanged": true
+    "historical_windows_and_denominators_unchanged": true,
+    "dispatch_source_pr_state": "merged",
+    "dispatch_record_as_of_utc": "2026-11-15T03:23:43Z",
+    "dispatch_source_pr_merge_sha": "afb571b3b362d8c84ce2431bd75e148bf29cc63c",
+    "dispatch_source_pr_merged_at_utc": "2026-11-15T03:15:16Z",
+    "dispatch_source_pr_number": 16485
   }
 }

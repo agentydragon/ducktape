@@ -195,7 +195,7 @@
     },
     "dispatch_record_sha256_at_capture": "d0544c6bc1636b7adfdfeb0ac01b62f58763cb706ab9c9f82520d0ebc6259c71",
     "preview_source_base_commit": "27ebb9531394b0ed63e8f8e251bfbfc6cad079ca",
-    "preview_note": "The RBE preview fetched dispatch JSON d0544c6b with the exact HTML hashes above. The record now contains the rebased #3 head and current pending CI links (current JSON SHA above); the HTML/template bytes did not change. Screenshots represent the capture-time record, with no recapture after this fixed-length metadata update.",
+    "preview_note": "The full-page RBE preview first fetched dispatch JSON d0544c6b. A focused four-mode Session-card check later fetched b646f899 with PR #16485 open and required CI in progress. After that capture, required checks passed and #16485 merged as afb571b3. The current dispatch JSON hash is recorded in dispatch_record_sha256_current. The HTML/template bytes did not change. The focused screenshots show the capture-time in-progress badge; the final merged status is recorded in JSON and was not separately recaptured.",
     "target": "//x/ci_reports_preview:visual_test",
     "runs": [
       {
@@ -329,6 +329,76 @@
     "raw_artifacts_disposition": "Raw logs, test XML, browser diagnostics and screenshot files remain private; this record publishes only invocation links, scoped outcomes and hashes.",
     "page_path": "agentplane-test-architecture/index.html",
     "page_sha256": "44a608afe8b6ec279379155ba0bf124af6c76f42803c649299304e1a31ca9e2a",
-    "dispatch_record_sha256_current": "b646f8992ccd774f512be2348679c5dbff2d4764a934919414fcef8e5db3838b"
+    "dispatch_record_sha256_current": "6be05e6281183d4ef8e734e9ed7d216666f5c6ffd37368faa83c2d19dbbfedd4"
+  },
+  "current_dispatch_card_follow_up": {
+    "status": "passed",
+    "recorded_at_utc": "2026-11-15T03:23:43Z",
+    "target": "//x/ci_reports_preview:visual_test",
+    "invocation_id": "afed24b7-aae4-4366-8698-7fc63079670a",
+    "invocation_url": "https://app.buildbuddy.io/invocation/afed24b7-aae4-4366-8698-7fc63079670a",
+    "command": "bbr test //x/ci_reports_preview:visual_test --nocache_test_results --test_output=errors --test_arg=-k --test_arg=test_current_dispatch",
+    "native_result": {
+      "bazel_targets": 1,
+      "pytest_cases": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0
+    },
+    "test_case_names": [
+      "test_current_dispatch[desktop-light]",
+      "test_current_dispatch[desktop-dark]",
+      "test_current_dispatch[mobile-light]",
+      "test_current_dispatch[mobile-dark]"
+    ],
+    "test_started_at_utc": "2026-11-15T03:14:19.899552Z",
+    "test_finished_at_utc": "2026-11-15T03:14:41.605Z",
+    "html_sha256": "44a608afe8b6ec279379155ba0bf124af6c76f42803c649299304e1a31ca9e2a",
+    "dispatch_record_sha256_at_capture": "b646f8992ccd774f512be2348679c5dbff2d4764a934919414fcef8e5db3838b",
+    "captured_source_state": {
+      "pr": "https://github.com/agentydragon/ducktape/pull/16485",
+      "state": "open",
+      "required_ci_status": "in_progress",
+      "source_sha": "b6c2e93fdec51c158ff391ae141e35d403f97ba2"
+    },
+    "assertions": [
+      "Session-driver card heading is visible.",
+      "PR #16485 and source head b6c2e93fde are visible.",
+      "Open \u00b7 checks in progress is visible.",
+      "The Session-driver card is scrolled into view before screenshot capture."
+    ],
+    "screenshots": [
+      {
+        "viewport_theme": "desktop-light",
+        "sha256": "0fd4375dca8aef2d9920ed333c9e86f383e2ea711d7a13ec167565256ddcf75e"
+      },
+      {
+        "viewport_theme": "desktop-dark",
+        "sha256": "b9711a10a5a5a81770987ff194be334bf4cf615d2bfe5f56f2e5077425656897"
+      },
+      {
+        "viewport_theme": "mobile-light",
+        "sha256": "caecac1dc9b5924bd6e671727531cd98511f8c14dcd589f6ed16701d7f596ca5"
+      },
+      {
+        "viewport_theme": "mobile-dark",
+        "sha256": "4f8483bf414fcf26b78816e554cb5645aa25094d151397aaae5feba2046b8bab"
+      }
+    ],
+    "screenshot_review": {
+      "status": "passed",
+      "reviewed_capture_count": 4,
+      "finding": "The Session-driver card, source head, and in-progress CI badge are visible in all four captures. Desktop and mobile layouts are legible in light and dark themes, with no clipping or overlap. The images remain private; only their hashes are published."
+    },
+    "terminal_metadata_refresh_after_capture": {
+      "current_dispatch_record_sha256": "6be05e6281183d4ef8e734e9ed7d216666f5c6ffd37368faa83c2d19dbbfedd4",
+      "as_of_utc": "2026-11-15T03:23:43Z",
+      "pr_state": "merged",
+      "merged_at_utc": "2026-11-15T03:15:16Z",
+      "required_ci_status": "passed",
+      "note": "Current JSON records final CI and merge state. Only JSON status/links/provenance changed after the focused capture; HTML/template bytes remained unchanged, so no recapture was run. The screenshots represent the pre-merge open/in-progress record identified by dispatch_record_sha256_at_capture.",
+      "merge_sha": "afb571b3b362d8c84ce2431bd75e148bf29cc63c"
+    },
+    "raw_artifacts_disposition": "Raw screenshot files, JUnit XML and other test artifacts remain in private task scratch; this proof publishes only invocation, outcomes and image hashes."
   }
 }

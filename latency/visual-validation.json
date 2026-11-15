@@ -373,7 +373,7 @@
     },
     "dispatch_record_sha256_at_capture": "d0544c6bc1636b7adfdfeb0ac01b62f58763cb706ab9c9f82520d0ebc6259c71",
     "preview_source_base_commit": "27ebb9531394b0ed63e8f8e251bfbfc6cad079ca",
-    "preview_note": "The RBE preview fetched dispatch JSON d0544c6b with the exact HTML hashes above. The record now contains the rebased #3 head and current pending CI links (current JSON SHA above); the HTML/template bytes did not change. Screenshots represent the capture-time record, with no recapture after this fixed-length metadata update.",
+    "preview_note": "The page captures and HTML hashes remain those of the original RBE visual run; its dispatch reference was d0544c6b at capture. The current shared dispatch JSON hash is recorded in dispatch_record_sha256_current after PR #16485's required checks passed and the PR merged as afb571b3. This metadata-only update does not affect this page's HTML or its screenshots; the focused Session-card follow-up was run on the architecture page and captured the earlier open/in-progress state.",
     "target": "//x/ci_reports_preview:visual_test",
     "runs": [
       {
@@ -507,6 +507,6 @@
     "raw_artifacts_disposition": "Raw logs, test XML, browser diagnostics and screenshot files remain private; this record publishes only invocation links, scoped outcomes and hashes.",
     "page_path": "latency/index.html",
     "page_sha256": "4df5532c904528676680acb1c0dc22f49b6b20e47b223019d1e46ab32a166114",
-    "dispatch_record_sha256_current": "b646f8992ccd774f512be2348679c5dbff2d4764a934919414fcef8e5db3838b"
+    "dispatch_record_sha256_current": "6be05e6281183d4ef8e734e9ed7d216666f5c6ffd37368faa83c2d19dbbfedd4"
   }
 }
