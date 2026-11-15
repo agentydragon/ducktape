@@ -72,10 +72,6 @@ func serveIdentitySVIDsWithPolicy(
 	if err != nil {
 		t.Fatal(err)
 	}
-	tokens, err := auth.NewResolver(tokenReviewStub{}, authorityTestAudience, []string{caller.Namespace}, auth.WithVerdictTTL(0))
-	if err != nil {
-		t.Fatal(err)
-	}
 	ca := transporttesting.NewCA(t)
 	serverCredential := ca.IssueWithUsage(t, peertls.SessionDispatcherURI, x509.ExtKeyUsageServerAuth)
 	listenerConfig := listener.Config{
@@ -88,17 +84,13 @@ func serveIdentitySVIDsWithPolicy(
 		t.Fatal(err)
 	}
 	serverTLS.NextProtos = []string{"h2"}
-	workloadAuth, err := tokens.WithListenerAuthentication(listenerConfig, svids)
-	if err != nil {
-		t.Fatal(err)
-	}
 	store := testStore(t, 10)
 	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, connected: true}
 	service := &Service{
 		Store: store, DispatcherCallers: sets.New[auth.Account](),
 		Sandboxes: inventory, EnvironmentRules: rules, PolicyReady: policyReady, Hub: hub, WatchLease: 10 * time.Second,
 	}
-	server := grpc.NewServer(append(Methods(auth.ReviewedServiceAccountOrIdentity(workloadAuth)).ServerOptions(time.Second),
+	server := grpc.NewServer(append(Methods(auth.AnySubject(svids)).ServerOptions(time.Second),
 		grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	dispatcherpb.RegisterSessionDispatcherServer(server, service)
 	netListener, err := net.Listen("tcp", "127.0.0.1:0")
