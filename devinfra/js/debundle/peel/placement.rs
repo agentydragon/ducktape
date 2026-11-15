@@ -72,7 +72,15 @@ struct Partition {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-struct PartitionKey(Vec<(BTreeSet<Token>, Option<Owner>, BTreeSet<Owner>, bool)>);
+struct BlockKey {
+    tokens: BTreeSet<Token>,
+    owner: Option<Owner>,
+    allowed_owners: BTreeSet<Owner>,
+    allow_fresh: bool,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+struct PartitionKey(Vec<BlockKey>);
 
 impl Partition {
     fn new(mut blocks: Vec<Block>) -> Self {
@@ -84,13 +92,11 @@ impl Partition {
         PartitionKey(
             self.blocks
                 .iter()
-                .map(|block| {
-                    (
-                        block.tokens.clone(),
-                        block.owner.clone(),
-                        block.allowed_owners.clone(),
-                        block.allow_fresh,
-                    )
+                .map(|block| BlockKey {
+                    tokens: block.tokens.clone(),
+                    owner: block.owner.clone(),
+                    allowed_owners: block.allowed_owners.clone(),
+                    allow_fresh: block.allow_fresh,
                 })
                 .collect(),
         )
@@ -581,10 +587,10 @@ impl Solver<'_, '_, '_> {
                         return Ok(());
                     }
                     let owner_block = Token::Owner(owner.clone());
-                    if let Some(next) = self.try_branch_merge(&state, &block.key(), &owner_block) {
-                        if next != state {
-                            branches.push(next);
-                        }
+                    if let Some(next) = self.try_branch_merge(&state, &block.key(), &owner_block)
+                        && next != state
+                    {
+                        branches.push(next);
                     }
                 }
                 self.visit_branches(branches)?;
@@ -1066,8 +1072,8 @@ impl Solver<'_, '_, '_> {
             .scope
             .baseline_owners
             .iter()
+            .filter(|&owner| !matches!(owner, Owner::Module(path) if self.scope.explicit_fresh_targets.contains(path)))
             .cloned()
-            .filter(|owner| !matches!(owner, Owner::Module(path) if self.scope.explicit_fresh_targets.contains(path)))
             .collect();
         for key in &selected_set {
             if self.stop_if_time() {
