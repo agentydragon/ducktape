@@ -1967,7 +1967,10 @@ The policy stays conservative when:
 
 Each of these hands out the whole namespace. Under `reentry_through`, only the
 named exports (`default` for the default export) are synthetic execution
-roots and exposed capabilities for unknown-call fallback.
+roots and exposed capabilities for unknown-call fallback. Unknown execution
+can observe their binding cells before initialization, even when they do not
+yet hold callbacks. Those reads retain the source initialization order;
+callback discovery uses only values available at the current source prefix.
 
 Soundness: while the target evaluates, its bindings are reachable only from
 the target itself, from chunks that evaluated before it (which cannot import
