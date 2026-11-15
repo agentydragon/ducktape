@@ -493,21 +493,21 @@ impl StatementFacts {
 /// non-summarizable.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum EffectCell {
-    Binding(Id),
+pub enum EffectCell<A = u32, B = Id> {
+    Binding(B),
     GlobalProp(String),
     /// Heap contents of one array allocation, keyed by its canonical object
     /// origin from chunk value flow.
-    ArrayContents(u32),
+    ArrayContents(A),
     /// Mutable contents of one proved fresh native Set construction.
-    SetContents(u32),
+    SetContents(A),
     /// Own keys and descriptor attributes, shared by every generation of
     /// this source allocation. Distinct from stored data values.
-    ObjectShape(u32),
+    ObjectShape(A),
     /// One static own property, conservatively shared by every runtime
     /// generation of the source allocation. This supplies no strong update.
     OwnProperty {
-        origin: u32,
+        origin: A,
         property: String,
     },
 }
@@ -540,20 +540,41 @@ pub(crate) enum SettledElements {
 /// Heap-content cells one body touches: allocations it performs, cells it
 /// reads and writes, and whether an operation may touch contents the cells do
 /// not name (a heap-frontier barrier in the graph builder).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct HeapContentCells {
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(bound(deserialize = "A: Ord + Deserialize<'de>, B: Ord + Deserialize<'de>"))]
+pub(crate) struct HeapContentCells<A = u32, B = Id> {
     /// Fresh allocations seed later observations without overwriting a prior
     /// content timeline: source-span identities can denote many runtime arrays.
-    pub allocations: BTreeSet<EffectCell>,
-    pub reads: BTreeSet<EffectCell>,
-    pub writes: BTreeSet<EffectCell>,
+    pub allocations: BTreeSet<EffectCell<A, B>>,
+    pub reads: BTreeSet<EffectCell<A, B>>,
+    pub writes: BTreeSet<EffectCell<A, B>>,
     pub opaque: bool,
     /// An observation of pre-existing external storage, with no unique source
     /// allocation birth. Its heap ordering cannot be discharged by completion.
     pub observes_external_heap: bool,
 }
 
-impl HeapContentCells {
+impl<A, B> Default for HeapContentCells<A, B> {
+    fn default() -> Self {
+        Self {
+            allocations: BTreeSet::new(),
+            reads: BTreeSet::new(),
+            writes: BTreeSet::new(),
+            opaque: false,
+            observes_external_heap: false,
+        }
+    }
+}
+impl<A, B> Default for HeapContentAccesses<A, B> {
+    fn default() -> Self {
+        Self {
+            reads: BTreeSet::new(),
+            writes: BTreeSet::new(),
+        }
+    }
+}
+
+impl<A: Ord + Clone, B: Ord + Clone> HeapContentCells<A, B> {
     pub(crate) fn extend(&mut self, other: &Self) {
         self.allocations.extend(other.allocations.iter().cloned());
         self.reads.extend(other.reads.iter().cloned());
@@ -565,19 +586,20 @@ impl HeapContentCells {
 
 /// Source-known heap may-accesses whose invocation path was not assumed.
 /// Allocations are excluded: a fresh birth is not a content write.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct HeapContentAccesses {
-    pub reads: BTreeSet<EffectCell>,
-    pub writes: BTreeSet<EffectCell>,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(bound(deserialize = "A: Ord + Deserialize<'de>, B: Ord + Deserialize<'de>"))]
+pub(crate) struct HeapContentAccesses<A = u32, B = Id> {
+    pub reads: BTreeSet<EffectCell<A, B>>,
+    pub writes: BTreeSet<EffectCell<A, B>>,
 }
 
-impl HeapContentAccesses {
+impl<A: Ord + Clone, B: Ord + Clone> HeapContentAccesses<A, B> {
     pub(crate) fn extend(&mut self, other: &Self) {
         self.reads.extend(other.reads.iter().cloned());
         self.writes.extend(other.writes.iter().cloned());
     }
 
-    pub(crate) fn extend_cells(&mut self, cells: &HeapContentCells) {
+    pub(crate) fn extend_cells(&mut self, cells: &HeapContentCells<A, B>) {
         self.reads.extend(cells.reads.iter().cloned());
         self.writes.extend(cells.writes.iter().cloned());
     }
