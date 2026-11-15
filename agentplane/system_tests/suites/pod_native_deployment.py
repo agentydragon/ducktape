@@ -35,7 +35,9 @@ def render() -> RenderedFixture:
     fixture_chart.add_backend_services(
         chart, env, models=models, platform_callers=fixture_chart.NATIVE_CALLERS, notification_callers=[]
     )
-    fixture_chart.add_sandbox_templates(chart, env)
+    fixture_chart.add_runner_templates(chart, env)
+    boxes = fixture_chart.add_command_templates(chart, env)
+    fixture_chart.add_svid_box_template(boxes, env)
     fixture_chart.add_model_credentials(chart, env, models=models)
     fixture_chart.add_policy_controller(chart, env)
     return finalize_fixture(chart, env, models)
