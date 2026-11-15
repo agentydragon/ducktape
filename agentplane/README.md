@@ -46,9 +46,9 @@ Wrapped Codex and Claude continue to sample and execute inside their Sandbox. St
 optional cdk8s sampler with shared Responses routes and a separate direct-API selection. Existing
 native Sessions retain their harness. The sampler selects direct Anthropic Messages API routes
 independently; those direct models are not offered by the Codex or Claude harnesses. Responses calls
-use LLM ingress with the projected workload token, while Anthropic calls use a separate mounted API
-key and a host-pinned Cilium egress rule. The [k3s sampler scenarios](system_tests/README.md#central-sampler)
-use the same workload construct, including its database migration and projected service-account credentials.
+use LLM ingress with the sampler service SVID and typed Identity/Session delegation. Anthropic calls
+use a separate mounted API key and a host-pinned Cilium egress rule. The [k3s sampler scenarios](system_tests/README.md#central-sampler)
+use the same workload construct, including its database migration and service SVIDs.
 
 ## Go service images
 
