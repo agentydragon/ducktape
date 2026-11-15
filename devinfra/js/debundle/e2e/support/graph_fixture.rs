@@ -165,7 +165,7 @@ impl GraphFixture {
             if !with_graph {
                 command.env_remove("DEBUNDLE_GRAPH");
             }
-            let out = command.output().expect("run fixture command");
+            let out = process::debundle_output(&mut command).expect("run fixture command");
             let stderr = String::from_utf8_lossy(&out.stderr);
             // `debundle` exits 1 when it refuses an edit and clap exits 2 on a usage error; a
             // panic exits 101 and is no refusal.
@@ -198,7 +198,7 @@ impl GraphFixture {
     }
 
     pub fn command(&self, args: &[&str]) -> std::process::Output {
-        self.process(args).output().expect("run fixture command")
+        process::debundle_output(&mut self.process(args)).expect("run fixture command")
     }
 
     pub fn json(&self, args: &[&str]) -> Value {
@@ -267,14 +267,15 @@ impl GraphFixture {
 
     fn run_current_spec(&self, out_root: &Path) -> std::process::Output {
         let root = self.run.root();
-        Command::new(debundler_path())
-            .arg("run")
-            .arg("--graphs")
-            .args(tree_spec_args(root))
-            .arg("--out-root")
-            .arg(out_root)
-            .output()
-            .unwrap()
+        process::debundle_output(
+            Command::new(debundler_path())
+                .arg("run")
+                .arg("--graphs")
+                .args(tree_spec_args(root))
+                .arg("--out-root")
+                .arg(out_root),
+        )
+        .unwrap()
     }
 
     pub fn dependency_graph(&self) -> DependencyGraphReport {

@@ -7,6 +7,7 @@ mod ast_assertions;
 mod failure_workspace;
 mod fixture_spec;
 pub use failure_workspace::CaseWorkspace;
+pub mod process;
 pub mod saved_analysis;
 mod tree_assertions;
 mod workspace;
@@ -672,13 +673,14 @@ pub fn outcomes(report: &Value) -> &[Value] {
 pub fn run_spec_validate(spec_path: &Path, extra_args: &[&str]) -> CommandResult {
     let bin = debundler_path();
     command_result(
-        Command::new(&bin)
-            .args(["spec", "validate", "--spec"])
-            .arg(spec_path)
-            .arg("--report-only")
-            .args(extra_args)
-            .output()
-            .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display())),
+        process::debundle_output(
+            Command::new(&bin)
+                .args(["spec", "validate", "--spec"])
+                .arg(spec_path)
+                .arg("--report-only")
+                .args(extra_args),
+        )
+        .unwrap_or_else(|e| panic!("{e}")),
     )
 }
 
@@ -687,13 +689,14 @@ pub fn run_spec_validate(spec_path: &Path, extra_args: &[&str]) -> CommandResult
 pub fn spec_lint_json(spec_path: &Path, extra_args: &[&str]) -> Value {
     let bin = debundler_path();
     let out = command_result(
-        Command::new(&bin)
-            .args(["spec", "lint", "--spec"])
-            .arg(spec_path)
-            .args(["--format", "json"])
-            .args(extra_args)
-            .output()
-            .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display())),
+        process::debundle_output(
+            Command::new(&bin)
+                .args(["spec", "lint", "--spec"])
+                .arg(spec_path)
+                .args(["--format", "json"])
+                .args(extra_args),
+        )
+        .unwrap_or_else(|e| panic!("{e}")),
     );
     assert!(
         out.status.success(),
@@ -748,10 +751,8 @@ pub fn assert_preserved_entry_error(fixture: &Fixture, expected_error: &str) {
 pub fn assert_preserved_entry_output_with_bun(fixture: &Fixture, expected_stdout: &str) {
     let bun = bun_1_3_10_path();
     for path in [&fixture.source_path, &fixture.entry_path] {
-        let output = Command::new(&bun)
-            .arg(path)
-            .output()
-            .unwrap_or_else(|err| panic!("spawn Bun {}: {err}", bun.display()));
+        let output =
+            process::output(Command::new(&bun).arg(path)).unwrap_or_else(|err| panic!("{err}"));
         assert!(
             output.status.success(),
             "Bun {} exited {:?}: {}",
@@ -774,22 +775,22 @@ pub fn assert_compiled_bun_entry_output(fixture: &Fixture, expected_stdout: &str
     let bun = bun_1_3_10_path();
     let dir = TempDir::with_prefix("debundle-bun-standalone-").expect("compile tempdir");
     let executable = dir.path().join("probe");
-    let compile = Command::new(&bun)
-        .arg("build")
-        .arg("--compile")
-        .arg(&fixture.source_path)
-        .arg("--outfile")
-        .arg(&executable)
-        .output()
-        .unwrap_or_else(|err| panic!("spawn Bun compiler {}: {err}", bun.display()));
+    let compile = process::output(
+        Command::new(&bun)
+            .arg("build")
+            .arg("--compile")
+            .arg(&fixture.source_path)
+            .arg("--outfile")
+            .arg(&executable),
+    )
+    .unwrap_or_else(|err| panic!("{err}"));
     assert!(
         compile.status.success(),
         "Bun compile failed: {}",
         String::from_utf8_lossy(&compile.stderr)
     );
-    let output = Command::new(&executable)
-        .output()
-        .unwrap_or_else(|err| panic!("spawn compiled Bun {}: {err}", executable.display()));
+    let output =
+        process::output(&mut Command::new(&executable)).unwrap_or_else(|err| panic!("{err}"));
     assert!(
         output.status.success(),
         "compiled Bun exited {:?}: {}",
@@ -809,10 +810,8 @@ fn bun_1_3_10_path() -> PathBuf {
     let runfiles = Runfiles::create().expect("create runfiles");
     let bun = rlocation!(runfiles, relative.as_str())
         .unwrap_or_else(|| panic!("resolve Bun runfile: {relative}"));
-    let version = Command::new(&bun)
-        .arg("--version")
-        .output()
-        .unwrap_or_else(|err| panic!("spawn Bun version {}: {err}", bun.display()));
+    let version =
+        process::output(Command::new(&bun).arg("--version")).unwrap_or_else(|err| panic!("{err}"));
     assert!(version.status.success(), "Bun version check failed");
     assert_eq!(String::from_utf8_lossy(&version.stdout).trim(), "1.3.10");
     bun
@@ -837,11 +836,8 @@ pub fn assert_all_emitted_js_checks(fixture: &Fixture) {
     files.sort();
     let node = node_path();
     for file in files {
-        let output = Command::new(&node)
-            .arg("--check")
-            .arg(&file)
-            .output()
-            .unwrap_or_else(|err| panic!("spawn node --check {}: {err}", file.display()));
+        let output = process::output(Command::new(&node).arg("--check").arg(&file))
+            .unwrap_or_else(|err| panic!("{err}"));
         assert!(
             output.status.success(),
             "node --check failed for {}\nstdout:\n{}\nstderr:\n{}",
@@ -1305,10 +1301,8 @@ pub fn parse_stdout_json(out: &std::process::Output) -> Value {
 
 /// Run `debundle <args>` and return its raw output.
 pub fn run_debundle(args: &[&str]) -> std::process::Output {
-    Command::new(debundler_path())
-        .args(args)
-        .output()
-        .expect("spawn debundle")
+    process::debundle_output(Command::new(debundler_path()).args(args))
+        .unwrap_or_else(|err| panic!("{err}"))
 }
 
 /// Run `debundle spec synthesize-selectors --modules <dir> [extra...]`, asserting
@@ -1410,11 +1404,9 @@ impl StandaloneDebundle {
 
     pub fn run(&self, args: &[&str]) -> CommandResult {
         let bin = self.dir.path().join("debundle");
-        let output = Command::new(&bin)
-            .args(args)
-            .env_clear()
-            .output()
-            .unwrap_or_else(|e| panic!("spawn debundle {}: {e}", bin.display()));
+        let mut command = Command::new(&bin);
+        let output = process::debundle_output(&mut command.args(args).env_clear())
+            .unwrap_or_else(|e| panic!("{e}"));
         command_result(output)
     }
 }
@@ -1432,11 +1424,6 @@ pub struct CommandResult {
 }
 
 fn command_result(output: std::process::Output) -> CommandResult {
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        !stderr.contains("purity-completion-disagreement"),
-        "classifier-pure completion regression is an e2e bug: {stderr}"
-    );
     CommandResult {
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
@@ -1452,15 +1439,16 @@ pub fn run_source_only_validate(
     extra_args: &[&str],
 ) -> CommandResult {
     let bin = debundler_path();
-    let output = Command::new(&bin)
-        .args(["spec", "validate", "--modules"])
-        .arg(modules_root)
-        .arg("--source-file")
-        .arg(source_file)
-        .arg("--report-only")
-        .args(extra_args)
-        .output()
-        .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display()));
+    let output = process::debundle_output(
+        Command::new(&bin)
+            .args(["spec", "validate", "--modules"])
+            .arg(modules_root)
+            .arg("--source-file")
+            .arg(source_file)
+            .arg("--report-only")
+            .args(extra_args),
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
     command_result(output)
 }
 
@@ -1469,13 +1457,14 @@ pub fn run_source_only_validate(
 pub fn run_match_selector(source_file: &Path, selector: &str, extra_args: &[&str]) -> Value {
     let bin = debundler_path();
     let result = command_result(
-        Command::new(&bin)
-            .args(["spec", "match-selector", "--source-file"])
-            .arg(source_file)
-            .args(["--match", selector, "--format", "json"])
-            .args(extra_args)
-            .output()
-            .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display())),
+        process::debundle_output(
+            Command::new(&bin)
+                .args(["spec", "match-selector", "--source-file"])
+                .arg(source_file)
+                .args(["--match", selector, "--format", "json"])
+                .args(extra_args),
+        )
+        .unwrap_or_else(|e| panic!("{e}")),
     );
     assert!(
         result.status.success(),
@@ -1582,13 +1571,14 @@ pub fn find_outcome<'a>(outcomes: &'a [Value], kind: &str, export_name: &str) ->
 fn spawn_transform_with_args(spec_path: &Path, extra_args: &[&str]) -> CommandResult {
     let bin = debundler_path();
     command_result(
-        Command::new(&bin)
-            .arg("run")
-            .arg("--spec")
-            .arg(spec_path)
-            .args(extra_args)
-            .output()
-            .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display())),
+        process::debundle_output(
+            Command::new(&bin)
+                .arg("run")
+                .arg("--spec")
+                .arg(spec_path)
+                .args(extra_args),
+        )
+        .unwrap_or_else(|e| panic!("{e}")),
     )
 }
 
@@ -1613,23 +1603,14 @@ pub fn run_debundler_with_args(
             .arg("--package-root")
             .arg(format!("{name}={}", dir.display()));
     }
-    command_result(
-        command
-            .output()
-            .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display())),
-    )
+    command_result(process::debundle_output(&mut command).unwrap_or_else(|e| panic!("{e}")))
 }
 
 /// A tree-authored spec over several chunks: `chunks` are `(chunk id,
 /// source)`, `module_roots` are `(tree root, chunk id)`, and `modules` are
 fn run_node_script(path: &Path) -> CommandResult {
     let node = node_path();
-    command_result(
-        Command::new(&node)
-            .arg(path)
-            .output()
-            .unwrap_or_else(|e| panic!("spawn node {}: {e}", node.display())),
-    )
+    command_result(process::output(Command::new(&node).arg(path)).unwrap_or_else(|e| panic!("{e}")))
 }
 
 /// With `DEBUNDLE_TV_AUDIT` (the L4c discrepancy audit, beside the CLI's

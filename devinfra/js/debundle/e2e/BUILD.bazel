@@ -1,4 +1,4 @@
-load("@rules_rust//rust:defs.bzl", "rust_library")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 load(":defs.bzl", "debundle_e2e_test")
 
 package(default_testonly = True)
@@ -445,6 +445,7 @@ rust_library(
         "support/failure_workspace.rs",
         "support/fixture_spec.rs",
         "support/mod.rs",
+        "support/process.rs",
         "support/saved_analysis.rs",
         "support/tree_assertions.rs",
         "support/workspace.rs",
@@ -472,6 +473,15 @@ rust_library(
         "@crates//:tempfile",
         "@rules_rust//tools/runfiles",
     ],
+)
+
+rust_test(
+    name = "process_runner_test",
+    srcs = ["support/process.rs"],
+    crate_name = "debundle_e2e_process_runner_test",
+    crate_root = "support/process.rs",
+    edition = "2024",
+    deps = [":support"],
 )
 
 rust_library(
