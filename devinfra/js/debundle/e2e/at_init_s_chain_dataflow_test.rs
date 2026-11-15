@@ -40,6 +40,27 @@ fn sequenced_edges_between<'a>(
         .collect()
 }
 
+fn assert_split_behavior(
+    fixture: &Fixture,
+    expected_output: &str,
+    mod_a_exports: &[&str],
+    mod_b_exports: &[&str],
+) {
+    assert_preserved_entry_output(fixture, expected_output);
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/mod_a.js",
+        mod_a_exports,
+        mod_b_exports,
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/mod_b.js",
+        mod_b_exports,
+        mod_a_exports,
+    );
+}
+
 #[test]
 fn s_chain_skips_disjoint_global_property_writes() {
     // Two top-level impure statements, each writing a distinct
@@ -62,7 +83,12 @@ export { tagA, tagB };
         )
         .with_dataflow_aware_s_chain(),
     );
-    assert_entry_output(&fixture, "tag-a tag-b alpha-val beta-val\n");
+    assert_split_behavior(
+        &fixture,
+        "tag-a tag-b alpha-val beta-val\n",
+        &["tagA"],
+        &["tagB"],
+    );
 
     let graph = fixture.dependency_graph();
     let source_unit_a = source_unit_for_binding(&graph, "tagA");
@@ -104,7 +130,7 @@ export { tagA, boxedB };
         )
         .with_dataflow_aware_s_chain(),
     );
-    assert_entry_output(&fixture, "tag-a fresh first\n");
+    assert_split_behavior(&fixture, "tag-a fresh first\n", &["tagA"], &["boxedB"]);
 
     let graph = fixture.dependency_graph();
     let source_unit_a = source_unit_for_binding(&graph, "tagA");
@@ -146,7 +172,12 @@ export { Holder1, Holder2, instA, instB };
         )
         .with_dataflow_aware_s_chain(),
     );
-    assert_entry_output(&fixture, "h1 h2\n");
+    assert_split_behavior(
+        &fixture,
+        "h1 h2\n",
+        &["Holder1", "instA"],
+        &["Holder2", "instB"],
+    );
 
     let graph = fixture.dependency_graph();
     let source_unit_a = source_unit_for_binding(&graph, "instA");
@@ -176,7 +207,12 @@ export { Holder1, Holder2, instA, instB };
         )
         .with_dataflow_aware_s_chain(),
     );
-    assert_entry_output(&fixture, "h1 h2\n");
+    assert_split_behavior(
+        &fixture,
+        "h1 h2\n",
+        &["Holder1", "instA"],
+        &["Holder2", "instB"],
+    );
 
     let graph = fixture.dependency_graph();
     let source_unit_a = source_unit_for_binding(&graph, "instA");
@@ -212,7 +248,12 @@ export { Holder1, Holder2, instA, instB };
             logical_module("mod_b", &[Member::new("Holder2"), Member::new("instB")]),
         ],
     ));
-    assert_entry_output(&fixture, "h1 h2\n");
+    assert_split_behavior(
+        &fixture,
+        "h1 h2\n",
+        &["Holder1", "instA"],
+        &["Holder2", "instB"],
+    );
 
     let graph = fixture.dependency_graph();
     let source_unit_a = source_unit_for_binding(&graph, "instA");
@@ -247,7 +288,7 @@ export { tagA, tagB };
         )
         .with_dataflow_aware_s_chain(),
     );
-    assert_entry_output(&fixture, "tag-a tag-b from-b\n");
+    assert_split_behavior(&fixture, "tag-a tag-b from-b\n", &["tagA"], &["tagB"]);
 
     let graph = fixture.dependency_graph();
     let source_unit_a = source_unit_for_binding(&graph, "tagA");
@@ -305,7 +346,12 @@ export { tagA, tagB };
         .with_dataflow_aware_s_chain()
         .with_admission_overrides(&["a1_eval"]),
     );
-    assert_entry_output(&fixture, "tag-a tag-b alpha-val beta-val\n");
+    assert_split_behavior(
+        &fixture,
+        "tag-a tag-b alpha-val beta-val\n",
+        &["tagA"],
+        &["tagB"],
+    );
 
     let graph = fixture.dependency_graph();
     assert_kept_sequenced_between(
@@ -335,7 +381,12 @@ export { tagA, tagB };
         )
         .with_dataflow_aware_s_chain(),
     );
-    assert_entry_output(&fixture, "tag-a tag-b alpha-val beta-val\n");
+    assert_split_behavior(
+        &fixture,
+        "tag-a tag-b alpha-val beta-val\n",
+        &["tagA", "keyB"],
+        &["tagB"],
+    );
 
     let graph = fixture.dependency_graph();
     assert_kept_sequenced_between(
@@ -365,7 +416,18 @@ export { tagA, tagB };
         )
         .with_dataflow_aware_s_chain(),
     );
-    assert_entry_output(&fixture, "tag-a tag-b alpha-val beta-val\n");
+    assert_split_behavior(
+        &fixture,
+        "tag-a tag-b alpha-val beta-val\n",
+        &["tagA"],
+        &["tagB"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/mod_b.js",
+        &["fnB", "new Function"],
+        &[],
+    );
 
     let graph = fixture.dependency_graph();
     assert_kept_sequenced_between(
