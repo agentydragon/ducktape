@@ -68,7 +68,7 @@ func internalMode(args []string) (bool, int) {
 		return false, 0
 	}
 	if len(args) != 2 || args[1] == "" {
-		fmt.Fprintln(os.Stderr, "--vm-resource-properties requires one Runner config path")
+		fmt.Fprintln(os.Stderr, "--vm-resource-properties requires one Environment Runtime config path")
 		return true, 64
 	}
 	properties, err := configuration.GuestResourceSystemdProperties(args[1])

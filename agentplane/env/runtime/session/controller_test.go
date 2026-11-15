@@ -59,7 +59,7 @@ func TestSessionControllerMapsAppServerStatusToCodexSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got, want := pointerIDs(mapped), []string{"claude-session", "codex-session"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("Runner runtime mappings = %v, want %v", got, want)
+		t.Fatalf("Environment Runtime mappings = %v, want %v", got, want)
 	}
 }
 

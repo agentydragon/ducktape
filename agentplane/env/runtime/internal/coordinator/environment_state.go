@@ -88,7 +88,7 @@ func (s *EnvironmentState) RequireIncarnationUID() (string, error) {
 		return "", s.uncertainSealErrorLocked()
 	}
 	if !s.incarnationSet {
-		return "", errors.New("the Runner cannot quiesce before the Gateway names its incarnation UID")
+		return "", errors.New("the Environment Runtime cannot quiesce before the Gateway names its incarnation UID")
 	}
 	return s.incarnationUID, nil
 }
@@ -97,7 +97,7 @@ func (s *EnvironmentState) AdoptIncarnation(incarnationUID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if incarnationUID == "" {
-		return errors.New("Runner incarnation UID is required")
+		return errors.New("Environment Runtime incarnation UID is required")
 	}
 	if s.sealPersistenceErr != nil {
 		return s.uncertainSealErrorLocked()
@@ -123,7 +123,7 @@ func (s *EnvironmentState) EnterLameduck() error {
 		return s.uncertainSealErrorLocked()
 	}
 	if !s.incarnationSet {
-		return errors.New("the Runner cannot quiesce before the Gateway names its incarnation UID")
+		return errors.New("the Environment Runtime cannot quiesce before the Gateway names its incarnation UID")
 	}
 	if s.sealed {
 		return nil

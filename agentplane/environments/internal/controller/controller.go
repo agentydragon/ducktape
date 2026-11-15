@@ -42,10 +42,10 @@ const (
 	// Indexes Events by the UID of the object they are about.
 	eventObjectUID = "involvedObject.uid"
 	// How long a failed or unfinished quiesce is left alone before the idempotent Quiesce call is
-	// repeated. Runner facts enqueue the Sandbox on progress; this deadline recovers a lost event or a
-	// stuck runner without polling.
+	// repeated. Environment Runtime facts enqueue the Sandbox on progress; this deadline recovers a
+	// lost event or a stuck Runtime without polling.
 	quiesceDeadline = time.Minute
-	// How long after an observation heartbeat timeout a runner still counts as connected.
+	// How long after an observation heartbeat timeout an Environment Runtime still counts as connected.
 	// Lifecycle decisions require fresh state throughout this status grace.
 	runtimeDisconnectGrace = time.Minute
 )
@@ -61,7 +61,7 @@ type Reconciler struct {
 	// Whether the cluster serves KubeVirt's API. Without it VM Sandboxes stay unready and Pod
 	// Sandboxes are unaffected.
 	KubeVirt bool
-	// Seals a Sandbox's Sessions through its runner before it stops or is deleted.
+	// Seals a Sandbox's Sessions through its Environment Runtime before it stops or is deleted.
 	Quiescer Quiescer
 	States   *RuntimeStates
 	// Requests each incarnation's WorkloadCredential, which the Policy Controller issues.
@@ -116,7 +116,7 @@ type workload struct {
 	runtimeIncarnationPublished bool
 }
 
-// incarnation is the Pod the runner runs in, if any.
+// incarnation is the Pod the Environment Runtime runs in, if any.
 func (w workload) incarnation() *corev1.Pod {
 	if w.pod != nil {
 		return w.pod
@@ -268,7 +268,7 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 		return w, nil, err
 	}
 	own := pvc != nil && metav1.IsControlledBy(pvc, sandbox)
-	// Without an owned state PVC the Sandbox never had a runner. A retained published
+	// Without an owned state PVC the Sandbox never had an Environment Runtime. A retained published
 	// incarnation still needs sealing even when its Pod disappeared before deletion.
 	needsQuiesce := own && !sandboxSessionsQuiesced(sandbox)
 	var runtimeUID string
@@ -280,7 +280,7 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 		needsQuiesce = runtimeUID != ""
 	}
 	if needsQuiesce {
-		// Only a running runner seals, so a stopped Sandbox runs once more; the Runner Gateway
+		// Only a running Environment Runtime seals, so a stopped Sandbox runs once more; the Runner Gateway
 		// refuses every new Session and command for a deleting Sandbox.
 		w, credentialGate, err := r.ensureRuntimeCredential(ctx, sandbox, w, true)
 		if err != nil {
@@ -345,7 +345,7 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 }
 
 // unquiescedRuntime conservatively seals a published incarnation after takeover.
-// Losing controller memory cannot establish that a runner never admitted work.
+// Losing controller memory cannot establish that an Environment Runtime never admitted work.
 func (r *Reconciler) unquiescedRuntime(ctx context.Context, sandbox *sandboxapi.Sandbox) (string, error) {
 	if sandbox.Status.Incarnation == nil {
 		return "", nil
@@ -375,8 +375,8 @@ func (r *Reconciler) trackRuntime(sandbox *sandboxapi.Sandbox, w workload) {
 	r.States.Track(sandbox, pod, credentialID)
 }
 
-// quiesceBeforeStop holds a Sandbox that is to stop while its current incarnation's runner has Sessions
-// to seal, and seals them. Published incarnations remain subject to sealing after takeover.
+// quiesceBeforeStop holds a Sandbox that is to stop while its current Environment Runtime has
+// Sessions to seal. Published incarnations remain subject to sealing after takeover.
 func (r *Reconciler) quiesceBeforeStop(ctx context.Context, sandbox *sandboxapi.Sandbox, w workload) (*unready, error) {
 	pod := w.incarnation()
 	if pod == nil {
@@ -396,7 +396,8 @@ func (r *Reconciler) quiesceBeforeStop(ctx context.Context, sandbox *sandboxapi.
 
 // holdSuspend holds a suspend that has not begun quiescing while the incarnation's bootstrap or any
 // Session's setup runs, keeping delivery fenced while initialization finishes. The
-// runner's next fact enqueues the Sandbox, so no retry is set. A delete does not come here.
+// The Environment Runtime's next fact enqueues the Sandbox, so no retry is set. A delete does not
+// come here.
 func (r *Reconciler) holdSuspend(ctx context.Context, sandbox *sandboxapi.Sandbox, runtimeUID string) (*unready, error) {
 	facts := r.States.Snapshot(sandbox, runtimeUID).Facts
 	switch {
@@ -408,13 +409,13 @@ func (r *Reconciler) holdSuspend(ctx context.Context, sandbox *sandboxapi.Sandbo
 	return nil, nil
 }
 
-// quiesce asks the runner of the Pod with this UID to seal every Session and, once the ingress has
-// acknowledged each seal, records it on the Sandbox's status for the caller to write. The returned
+// quiesce asks the Environment Runtime in the Pod with this UID to seal every Session and, once the
+// ingress acknowledges each seal, records it on the Sandbox's status for the caller to write. The returned
 // unready always says why the Sandbox is still held and has no retryAfter once the seal is recorded.
 // Before each call, the controller persists its attempt time so watch events and restarts cannot
 // bypass the one-minute retry deadline.
 //
-// A runner that reports `Quiesced` on its direct state stream is recorded without another call. Other
+// A Runtime that reports `Quiesced` on its direct state stream is recorded without another call. Other
 // stage reports enqueue the Sandbox; the persisted deadline throttles calls while a stage is absent
 // or stalled.
 func (r *Reconciler) quiesce(ctx context.Context, sandbox *sandboxapi.Sandbox, runtimeUID string) (*unready, error) {
@@ -424,11 +425,11 @@ func (r *Reconciler) quiesce(ctx context.Context, sandbox *sandboxapi.Sandbox, r
 	case snapshot.fresh(r.Now()) && facts.Stage == QuiesceQuiesced:
 		sandbox.Status.QuiescedIncarnation = &runtimeUID
 		sandbox.Status.QuiesceAttempt = nil
-		return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: "the runner has quiesced every Session"}, nil
+		return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: "the Environment Runtime has quiesced every Session"}, nil
 	}
 	if attempt := sandbox.Status.QuiesceAttempt; attempt != nil && attempt.RunnerPodUID == runtimeUID {
 		if remaining := attempt.AttemptedAt.Add(quiesceDeadline).Sub(r.Now()); remaining > 0 {
-			return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: "waiting to retry runner quiescence", retryAfter: remaining}, nil
+			return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: "waiting to retry Environment Runtime quiescence", retryAfter: remaining}, nil
 		}
 	}
 	sandbox.Status.QuiesceAttempt = &sandboxapi.QuiesceAttempt{RunnerPodUID: runtimeUID, AttemptedAt: metav1.NewTime(r.Now())}
@@ -445,11 +446,11 @@ func (r *Reconciler) quiesce(ctx context.Context, sandbox *sandboxapi.Sandbox, r
 		return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: err.Error(), retryAfter: quiesceDeadline}, nil
 	}
 	if result.Quiescing {
-		return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: "the runner has not finished quiescing", retryAfter: quiesceDeadline}, nil
+		return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: "the Environment Runtime has not finished quiescing", retryAfter: quiesceDeadline}, nil
 	}
 	sandbox.Status.QuiescedIncarnation = &runtimeUID
 	sandbox.Status.QuiesceAttempt = nil
-	return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: "the runner has quiesced every Session"}, nil
+	return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: "the Environment Runtime has quiesced every Session"}, nil
 }
 
 // deleteIfLive deletes obj, that very object, unless its deletion has begun.
@@ -551,7 +552,7 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 			return w, blocked, err
 		}
 	}
-	// A runner that sealed its Sessions takes no new ones, so a Sandbox resumed meanwhile starts anew.
+	// An Environment Runtime that sealed its Sessions takes no new ones, so a Sandbox resumed meanwhile starts anew.
 	if pod := w.incarnation(); pod != nil && sandboxQuiescedIncarnation(sandbox, string(pod.UID)) {
 		if err := r.deleteIfLive(ctx, pod); err != nil {
 			return w, nil, err
@@ -799,7 +800,7 @@ func workloadReadyCondition(sandbox *sandboxapi.Sandbox, running metav1.Conditio
 		return condition
 	}
 	if incarnation == nil {
-		condition.Reason, condition.Message = "IncarnationUnpublished", "the runner incarnation has not been accepted"
+		condition.Reason, condition.Message = "IncarnationUnpublished", "the Environment Runtime incarnation has not been accepted"
 		return condition
 	}
 	if podReady(incarnation) {
@@ -848,7 +849,7 @@ func runtimeBootstrappedCondition(sandbox *sandboxapi.Sandbox, incarnation *core
 	switch facts.Bootstrap {
 	case BootstrapNone:
 		condition.Status = metav1.ConditionUnknown
-		condition.Reason, condition.Message = "BootstrapNotReported", "the Sandbox Controller has not received bootstrap status from the runner"
+		condition.Reason, condition.Message = "BootstrapNotReported", "the Sandbox Controller has not received bootstrap status from the Environment Runtime"
 	case BootstrapRunning:
 		condition.Reason, condition.Message = "BootstrapRunning", "the bootstrap is running"
 	case BootstrapSucceeded:

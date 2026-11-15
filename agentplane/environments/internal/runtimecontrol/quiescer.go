@@ -37,7 +37,7 @@ type GatewayQuiescer struct {
 
 func (g GatewayQuiescer) Quiesce(ctx context.Context, sandbox *sandboxapi.Sandbox, ifIdleSince *time.Time) (sandboxcontroller.QuiesceResult, error) {
 	if sandbox.Status.Incarnation == nil || sandbox.Status.Incarnation.UID == "" {
-		return sandboxcontroller.QuiesceResult{}, fmt.Errorf("quiescing %s requires a runner incarnation", sandbox.Name)
+		return sandboxcontroller.QuiesceResult{}, fmt.Errorf("quiescing %s requires an Environment Runtime incarnation", sandbox.Name)
 	}
 	incarnationUID := sandbox.Status.Incarnation.UID
 	target := environmentruntimeclient.ExpandTarget(g.Target, sandbox.Name, sandbox.Namespace)

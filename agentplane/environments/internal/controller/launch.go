@@ -15,10 +15,10 @@ import (
 const (
 	// EnvironmentRuntimeContainer is the template container that gets the launch file.
 	EnvironmentRuntimeContainer = "environment-runtime"
-	// LaunchMountPath is the directory the runner container finds LaunchFile in. Must equal the
-	// runner's --launch-file directory in cluster/cdk8s/agentplane/environment_sandbox.py.
+	// LaunchMountPath is where the Environment Runtime container finds LaunchFile. It must equal
+	// the Environment Runtime's --launch-file directory in cluster/cdk8s/agentplane/environment_sandbox.py.
 	LaunchMountPath = "/run/agentplane/sandbox"
-	// LaunchFile is the key of the Sandbox's launch ConfigMap that the Go runner reads.
+	// LaunchFile is the key of the Sandbox's launch ConfigMap that the Environment Runtime reads.
 	// A VM guest finds the same file on the disk of serial
 	// LaunchDiskSerial, mounted at the same LaunchMountPath by agentplane/env/images/vm.nix.
 	LaunchFile       = "launch.json"
@@ -30,8 +30,8 @@ const (
 // LaunchConfigMapName is the Sandbox's launch ConfigMap.
 func LaunchConfigMapName(sandbox string) string { return sandbox + "-launch" }
 
-// launch is what the runner needs to know of its Sandbox: who it is, for the destination its
-// Sessions give the agent, and the bootstrap it runs once before its first Session.
+// launch gives the Environment Runtime its Sandbox identity, the destination its Sessions give the
+// agent, and the bootstrap to run once before its first Session.
 type launch struct {
 	Sandbox   launchSandbox `json:"sandbox"`
 	Bootstrap string        `json:"bootstrap,omitempty"`
@@ -59,7 +59,7 @@ func (r *Reconciler) ensureLaunch(ctx context.Context, sandbox *sandboxapi.Sandb
 			WithData(map[string]string{LaunchFile: string(content)}), "ConfigMapConflict")
 }
 
-// withLaunch mounts the Sandbox's launch ConfigMap into the template's runner container.
+// withLaunch mounts the Sandbox's launch ConfigMap into the template's Environment Runtime container.
 func withLaunch(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate, spec *corev1.PodSpec) *unready {
 	i := slices.IndexFunc(spec.Containers, func(c corev1.Container) bool { return c.Name == EnvironmentRuntimeContainer })
 	if i < 0 {

@@ -50,7 +50,7 @@ func runtimeFactsFromProto(message *environmentruntimestatepb.EnvironmentRuntime
 	case environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_QUIESCED:
 		facts.Stage = QuiesceQuiesced
 	default:
-		return EnvironmentRuntimeFacts{}, fmt.Errorf("unknown runner quiesce stage %d", message.GetQuiesceStage())
+		return EnvironmentRuntimeFacts{}, fmt.Errorf("unknown Environment Runtime quiesce stage %d", message.GetQuiesceStage())
 	}
 	switch message.GetBootstrap() {
 	case environmentruntimestatepb.EnvironmentRuntimeFacts_BOOTSTRAP_UNSPECIFIED:
@@ -63,7 +63,7 @@ func runtimeFactsFromProto(message *environmentruntimestatepb.EnvironmentRuntime
 	case environmentruntimestatepb.EnvironmentRuntimeFacts_BOOTSTRAP_INTERRUPTED:
 		facts.Bootstrap = BootstrapInterrupted
 	default:
-		return EnvironmentRuntimeFacts{}, fmt.Errorf("unknown runner bootstrap state %d", message.GetBootstrap())
+		return EnvironmentRuntimeFacts{}, fmt.Errorf("unknown Environment Runtime bootstrap state %d", message.GetBootstrap())
 	}
 	facts.SetupsRunning = message.GetSetupsRunning()
 	if timestamp := message.GetIdleSince(); timestamp != nil {

@@ -32,7 +32,7 @@ func (c Config) ResolveModelConfig(ctx context.Context, harness sessionpb.Harnes
 		launch = c.Codex
 	}
 	if launch == nil {
-		return nil, errors.New("the selected harness is not configured on this runner")
+		return nil, errors.New("the selected harness is not configured on this Environment Runtime")
 	}
 	if harness == sessionpb.Harness_HARNESS_CODEX {
 		return nil, nil

@@ -29,7 +29,7 @@ var pid1Children = sync.OnceValue(func() *childReaper {
 // including adopted orphans; exec.Cmd.Wait is never used.
 func NewPID1Supervisor() (*Supervisor, error) {
 	if os.Getpid() != 1 {
-		return nil, errors.New("Pod PID1 supervision requires Runner to be PID 1 in a private container PID namespace")
+		return nil, errors.New("Pod PID1 supervision requires Environment Runtime to be PID 1 in a private container PID namespace")
 	}
 	reaper := pid1Children()
 	return &Supervisor{makeBackend: func(config ProcessConfig) processBackend {

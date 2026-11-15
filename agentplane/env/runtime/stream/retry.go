@@ -23,7 +23,7 @@ func Retry(ctx context.Context, name string, attempt func(context.Context) (bool
 		if code := status.Code(lastError); code == codes.PermissionDenied || code == codes.FailedPrecondition {
 			wait = 30 * time.Second
 		}
-		zap.L().Warn("runner stream lost", zap.String("stream", name), zap.Error(lastError), zap.Duration("retry_after", wait))
+		zap.L().Warn("Environment Runtime stream lost", zap.String("stream", name), zap.Error(lastError), zap.Duration("retry_after", wait))
 		return wait, stop
 	})
 	err := retry.Do(ctx, waits, func(ctx context.Context) error {

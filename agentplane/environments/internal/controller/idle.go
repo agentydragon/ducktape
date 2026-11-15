@@ -15,16 +15,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// idleTimers holds, per Sandbox, when this controller first saw its runner idle since the instant the runner
-// publishes. Elapsed time is measured on the controller's clock from that first sight, so a skewed runner
-// clock cannot suspend a Sandbox early; a restarted controller starts every timer over.
+// idleTimers records, per Sandbox, when the controller first observed its Runtime idle, measured
+// from the instant the Runtime publishes. Elapsed time uses the controller's clock, so a skewed
+// Runtime clock cannot suspend a Sandbox early; a restarted controller starts every timer over.
 type idleTimers struct {
 	mu        sync.Mutex
 	sightings map[types.NamespacedName]idleSighting
 }
 
 type idleSighting struct {
-	// The runner's `idle-since` fact: a different value is a new idle period.
+	// The Runtime's `idle-since` fact: a different value is a new idle period.
 	idleSince  time.Time
 	connection string
 	firstSeen  time.Time
@@ -62,9 +62,9 @@ func (t *idleTimers) forget(key types.NamespacedName) {
 	delete(t.sightings, key)
 }
 
-// idleCheck is what the runner's facts say about stopping a Sandbox that is to run.
+// idleCheck holds the Environment Runtime facts used to decide when to stop a running Sandbox.
 type idleCheck struct {
-	// The runner has entered lameduck, so it refuses every Session, though nothing records why: the
+	// The Environment Runtime has entered lameduck, so it refuses every Session, though nothing records why: the
 	// controller's suspension write failed, or it restarted before making one. The Sandbox takes the stop
 	// path, which seals the incarnation and, as it is to run, replaces it.
 	lameduck bool
@@ -74,12 +74,13 @@ type idleCheck struct {
 	suspendAt *metav1.Time
 }
 
-// suspendIfIdle suspends a Sandbox that is to run once its runner has been idle for `spec.idleSuspendAfter`. It
-// asks Pod and VM runners to quiesce only if still idle since the instant the timer ran on, so work that arrives
-// after the decision makes the runner refuse instead of draining a Sandbox with new work. Once the runner accepts,
-// the suspension is set on the in-memory status for the write that follows, at the wake generation read before the
-// call: a wake that lands meanwhile fails that write on the stale resource version, and the next reconcile finds
-// the runner in lameduck, which it replaces rather than leaving the wake unanswered.
+// suspendIfIdle suspends a Sandbox after its Environment Runtime has been idle for
+// `spec.idleSuspendAfter`. It asks the Runtime in a Pod or VM to quiesce only if it has remained
+// idle since the timer started. Work that arrives after that check makes the Runtime refuse instead
+// of draining a Sandbox with new work. Once the Runtime accepts, suspension is set in memory for
+// the following write, using the wake generation read before the call. A concurrent wake makes
+// that write fail on the stale resource version; the next reconcile finds the Runtime in lameduck
+// and replaces it rather than leaving the wake unanswered.
 // Firecracker instead persists an attempt before convergence conditionally fences Runtime admission
 // and checkpoints RAM, preserving Sessions through the matching resume.
 func (r *Reconciler) suspendIfIdle(ctx context.Context, sandbox *sandboxapi.Sandbox, w workload) (idleCheck, error) {
@@ -141,14 +142,14 @@ func (r *Reconciler) suspendIfIdle(ctx context.Context, sandbox *sandboxapi.Sand
 	result, err := r.Quiescer.Quiesce(ctx, sandbox, facts.IdleSince)
 	switch {
 	case status.Code(err) == codes.Aborted:
-		// The runner is busy again, or idle since another instant: its next fact, which enqueues the
+		// The Environment Runtime is busy again, or idle since another instant: its next fact, which enqueues the
 		// Sandbox, says which. Otherwise the timer starts over.
 		notBefore := now.Add(after)
 		r.idle.holdUntil(key, notBefore)
 		deadline := idleSuspendStatusTime(notBefore)
 		return idleCheck{recheck: after, suspendAt: &deadline}, nil
 	case err != nil:
-		logger.Error(err, "asking an idle runner to quiesce", "sandbox", key.String())
+		logger.Error(err, "asking an idle Environment Runtime to quiesce", "sandbox", key.String())
 		notBefore := now.Add(quiesceDeadline)
 		r.idle.holdUntil(key, notBefore)
 		deadline := idleSuspendStatusTime(notBefore)

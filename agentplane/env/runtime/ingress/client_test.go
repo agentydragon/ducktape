@@ -388,7 +388,7 @@ func (s *windowIngress) Push(stream grpc.BidiStreamingServer[ingresspb.PushFrame
 	select {
 	case frame := <-next:
 		s.premature <- receivedFrame{frame: frame}
-		return errors.New("runner sent a frame before the window was acknowledged")
+		return errors.New("Environment Runtime sent a frame before the window was acknowledged")
 	case <-timer.C:
 		close(s.checked)
 	case <-stream.Context().Done():
@@ -456,7 +456,7 @@ func TestBackpressureSendsSealAfterTheFinalAcknowledgedWindow(t *testing.T) {
 	await(t, ctx, service.checked, "in-flight cap check")
 	select {
 	case received := <-service.premature:
-		t.Fatalf("runner did not remain behind the in-flight cap: frame=%v err=%v", received.frame, received.err)
+		t.Fatalf("Environment Runtime did not remain behind the in-flight cap: frame=%v err=%v", received.frame, received.err)
 	default:
 	}
 	if ack, err := store.ReadAcknowledgement(source.ID); err != nil || ack == nil || ack.Cursor != 0 || ack.Sealed {

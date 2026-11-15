@@ -131,12 +131,12 @@ func testRuntimeHealthAndFencing(t *testing.T, mode environmentruntimetransport.
 		t.Fatalf("GetStatus without fencing metadata = %v, want Unauthenticated", err)
 	}
 	if _, err := statusClient.GetStatus(callContext("pod-uid-1", "old-runner-boot"), &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
-		t.Fatalf("GetStatus for old runner boot = %v, want Unavailable", err)
+		t.Fatalf("GetStatus for old Environment Runtime boot = %v, want Unavailable", err)
 	}
 	if _, err := statusClient.SubmitInput(callContext("pod-uid-1", "old-runner-boot"), &environmentruntimepb.SubmitInputRequest{
 		SessionId: "not-created", CommandId: "stale-boot-input", Text: "must not be admitted",
 	}); status.Code(err) != codes.Unavailable {
-		t.Fatalf("SubmitInput for old runner boot = %v, want retryable rejection before admission", err)
+		t.Fatalf("SubmitInput for old Environment Runtime boot = %v, want retryable rejection before admission", err)
 	}
 	currentStatus, err := statusClient.GetStatus(callContext("pod-uid-1", first.GetEnvironmentRuntimeBootId()), &sessionpb.GetStatusRequest{})
 	if err != nil {

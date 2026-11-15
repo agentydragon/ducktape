@@ -43,7 +43,7 @@ func (r *Reconciler) vmi(ctx context.Context, sandbox *sandboxapi.Sandbox) (*kub
 	return &vmi, nil
 }
 
-// launcher is the VMI's live virt-launcher Pod, the runner's incarnation, or nil.
+// launcher is the VMI's live virt-launcher Pod, the Environment Runtime's incarnation, or nil.
 func (r *Reconciler) launcher(ctx context.Context, sandbox *sandboxapi.Sandbox, vmi *kubevirtv1.VirtualMachineInstance) (*corev1.Pod, error) {
 	if vmi == nil {
 		return nil, nil
