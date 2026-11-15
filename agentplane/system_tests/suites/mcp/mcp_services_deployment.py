@@ -18,16 +18,26 @@ from agentplane.system_tests.deployment.rendered_fixture import (
 
 def render() -> RenderedFixture:
     models = MODEL_PLACEHOLDERS[Backend.LOCAL_MODEL]
+    routes = fixture_chart.LOCAL_MODEL_ROUTES
+    operator_oidc = fixture_chart.operator_oidc()
+    app_props = fixture_chart.app_props(
+        routes=routes, operator_oidc=operator_oidc, operator_token_key=None, app_origin=MCP_PLACEHOLDERS.app_origin
+    )
+    actions_props = fixture_chart.actions_props(
+        operator_oidc=operator_oidc, oauth_secret_items=("client-secret",), central_sampler_session_delegation=False
+    )
+    actions_props = mcp_fixture_chart.mcp_actions_props(actions_props, MCP_PLACEHOLDERS)
     env = fixture_chart.environment(
         runtime=SandboxRuntime.POD,
         platform_callers=fixture_chart.APP_CALLERS,
-        models=models,
-        operator_token_key=None,
-        app_enabled=True,
-        central_sampler=False,
-        app_origin=MCP_PLACEHOLDERS.app_origin,
+        routes=routes,
+        app=app_props,
+        central_sampler=None,
+        actions=actions_props,
+        mcp_edge=fixture_chart.mcp_edge_props(
+            operator_oidc=operator_oidc, oauth_secret_name=mcp_fixture_chart.MCP_EDGE_OAUTH_SECRET
+        ),
     )
-    env = mcp_fixture_chart.configure_environment(env, MCP_PLACEHOLDERS)
     chart = fixture_chart.new_chart(env)
     fixture_database.add_database(
         chart,

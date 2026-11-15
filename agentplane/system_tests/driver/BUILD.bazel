@@ -836,16 +836,10 @@ py_library(
 )
 
 py_library(
-    name = "cleanup_task",
-    srcs = ["cleanup_task.py"],
-)
-
-py_library(
     name = "native_pod_pool",
     srcs = ["native_pod_pool.py"],
     deps = [
         ":cleanup_diagnostics",
-        ":cleanup_task",
         ":cluster",
         ":native_platform",
         ":native_sandbox",
@@ -863,18 +857,6 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//anyio",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_cleanup_task",
-    srcs = ["test_cleanup_task.py"],
-    deps = [
-        ":cleanup_task",
-        "//:conftest",
-        "//agentplane/system_tests:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

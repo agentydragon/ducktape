@@ -6,7 +6,6 @@ from uuid import uuid4
 
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.system_tests.driver.cleanup_diagnostics import cleanup_without_masking
-from agentplane.system_tests.driver.cleanup_task import finish_cleanup
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.native_platform import NativePlatformClients
 from agentplane.system_tests.driver.native_sandbox import native_sandbox_scope
@@ -44,4 +43,4 @@ async def shared_pod(cluster: Cluster, platform: NativePlatformClients) -> Async
         try:
             yield borrow
         finally:
-            await finish_cleanup(resources.pop_all().aclose())
+            await cleanup_without_masking(None, resources.pop_all().aclose)
