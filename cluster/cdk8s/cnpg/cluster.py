@@ -152,7 +152,11 @@ def cluster(
             managed=managed,
             postgresql=postgresql,
             plugins=(
-                [ClusterSpecPlugins(name=BARMAN_PLUGIN, is_wal_archiver=True, parameters={"barmanObjectName": ref.name})]
+                [
+                    ClusterSpecPlugins(
+                        name=BARMAN_PLUGIN, is_wal_archiver=True, parameters={"barmanObjectName": ref.name}
+                    )
+                ]
                 if wal_archive
                 else None
             ),
