@@ -58,3 +58,72 @@ source_matches:
     bindings:
       - local: selected
         name: getUncroppedWidthAndHeight
+
+  - match: |
+      var selected = (element, elementsMap) => {
+        if (element.crop) {
+          let { width, height } = getUncroppedWidthAndHeight(element),
+            [x1, y1, x2, y2, centerX, centerY] = EXPR(element, elementsMap),
+            topLeftVector = EXPR,
+            topRightVector = EXPR,
+            topEdgeNormalized = EXPR,
+            bottomLeftVector = EXPR,
+            leftEdgeVector = EXPR,
+            leftEdgeNormalized = EXPR,
+            { cropX, cropY } = adjustCropPosition(element.crop, element.scale),
+            rotatedTopLeft = EXPR,
+            center = EXPR,
+            unrotatedTopLeft = EXPR;
+          return {
+            ...element,
+            x: unrotatedTopLeft[0],
+            y: unrotatedTopLeft[1],
+            width,
+            height,
+            crop: null,
+          };
+        }
+        return element;
+      };
+    bindings:
+      - local: selected
+        name: getUncroppedImageElement
+
+  - match: |
+      var selected = (crop, scale) => {
+        let cropX = crop.x,
+          cropY = crop.y,
+          flipX = scale[0] === -1,
+          flipY = scale[1] === -1;
+        return flipX && (cropX = crop.naturalWidth - Math.abs(cropX) - crop.width),
+          flipY && (cropY = crop.naturalHeight - Math.abs(cropY) - crop.height),
+          { cropX, cropY };
+      };
+    bindings:
+      - local: selected
+        name: adjustCropPosition
+
+  - match: |
+      var selected = (element, natural = !1) => {
+        let crop = element.crop;
+        if (!crop) return null;
+        let isFlippedByX = element.scale[0] === -1,
+          isFlippedByY = element.scale[1] === -1,
+          cropX = crop.x,
+          cropY = crop.y;
+        if (
+          isFlippedByX &&
+          (cropX = crop.naturalWidth - crop.width - crop.x),
+          isFlippedByY &&
+          (cropY = crop.naturalHeight - crop.height - crop.y),
+          natural
+        ) return { x: cropX, y: cropY };
+        let { width, height } = getUncroppedWidthAndHeight(element);
+        return {
+          x: cropX / (crop.naturalWidth / width),
+          y: cropY / (crop.naturalHeight / height),
+        };
+      };
+    bindings:
+      - local: selected
+        name: getFlipAdjustedCropPosition

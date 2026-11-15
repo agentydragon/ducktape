@@ -229,13 +229,26 @@ async def test_resize_and_crop_geometry(playwright_driver: Playwright, origin: s
                     id: 'crop-smoke', type: 'image', x: 0, y: 0,
                     width: 100, height: 50, angle: 0, scale: [1, 1], crop: null,
                 };
-                const cropped = crop.cropElement(image, 'e', 200, 100, 75, 25);
+                const cropped = {
+                    ...image,
+                    ...crop.cropElement(image, 'e', 200, 100, 75, 25),
+                };
+                const flipped = { ...cropped, scale: [-1, 1] };
                 return {
                     resized,
                     centered: [latest.x, latest.y, latest.width, latest.height],
                     cropped: [cropped.x, cropped.y, cropped.width, cropped.height,
                         cropped.crop.x, cropped.crop.y, cropped.crop.width, cropped.crop.height],
                     uncropped: crop.getUncroppedWidthAndHeight(cropped),
+                    uncroppedElement: (() => {
+                        const element = crop.getUncroppedImageElement(
+                            cropped, new Map([[cropped.id, cropped]]));
+                        return [element.x, element.y, element.width, element.height, element.crop];
+                    })(),
+                    flipAdjustedCrop: [
+                        crop.getFlipAdjustedCropPosition(flipped),
+                        crop.getFlipAdjustedCropPosition(flipped, true),
+                    ],
                 };
             }"""
         )
@@ -244,6 +257,8 @@ async def test_resize_and_crop_geometry(playwright_driver: Playwright, origin: s
             "centered": [-15, 7.5, 150, 75],
             "cropped": [0, 0, 75, 50, 0, 0, 150, 100],
             "uncropped": {"width": 100, "height": 50},
+            "uncroppedElement": [0, 0, 100, 50, None],
+            "flipAdjustedCrop": [{"x": 25, "y": 0}, {"x": 50, "y": 0}],
         }
 
 
