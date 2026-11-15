@@ -225,10 +225,135 @@ debundle_e2e_test(
     ],
 )
 
-# 820 debundler runs, each followed by two Node runs.
+rust_library(
+    name = "foreign_state_node_differential_sweep_cases",
+    srcs = ["foreign_state_node_differential_sweep_cases.rs"],
+    crate_name = "debundle_e2e_differential_sweep_cases",
+    crate_root = "foreign_state_node_differential_sweep_cases.rs",
+    edition = "2024",
+    deps = [":support"],
+)
+
+# The ordinary target covers all 820 stable case IDs once. Manual targets use
+# the same compiled case registry for matched 2- and 4-way experiments.
 debundle_e2e_test(
     name = "foreign_state_node_differential_sweep_test",
     timeout = "moderate",
+    deps = [":foreign_state_node_differential_sweep_cases"],
+)
+
+rust_test(
+    name = "foreign_state_node_differential_sweep_partition_2_0_test",
+    srcs = ["foreign_state_node_differential_sweep_test.rs"],
+    crate_root = "foreign_state_node_differential_sweep_test.rs",
+    data = ["//devinfra/js/debundle:debundle_e2e"],
+    edition = "2024",
+    env = {
+        "DEBUNDLE_TEST_DEBUNDLER": "$(rlocationpath //devinfra/js/debundle:debundle_e2e)",
+        "DEBUNDLE_TV_ORACLE": "1",
+        "DEBUNDLE_SWEEP_PARTITION_COUNT": "2",
+        "DEBUNDLE_SWEEP_PARTITION_INDEX": "0",
+    },
+    tags = ["manual"],
+    deps = [
+        ":foreign_state_node_differential_sweep_cases",
+        ":support",
+    ],
+)
+
+rust_test(
+    name = "foreign_state_node_differential_sweep_partition_2_1_test",
+    srcs = ["foreign_state_node_differential_sweep_test.rs"],
+    crate_root = "foreign_state_node_differential_sweep_test.rs",
+    data = ["//devinfra/js/debundle:debundle_e2e"],
+    edition = "2024",
+    env = {
+        "DEBUNDLE_TEST_DEBUNDLER": "$(rlocationpath //devinfra/js/debundle:debundle_e2e)",
+        "DEBUNDLE_TV_ORACLE": "1",
+        "DEBUNDLE_SWEEP_PARTITION_COUNT": "2",
+        "DEBUNDLE_SWEEP_PARTITION_INDEX": "1",
+    },
+    tags = ["manual"],
+    deps = [
+        ":foreign_state_node_differential_sweep_cases",
+        ":support",
+    ],
+)
+
+rust_test(
+    name = "foreign_state_node_differential_sweep_partition_4_0_test",
+    srcs = ["foreign_state_node_differential_sweep_test.rs"],
+    crate_root = "foreign_state_node_differential_sweep_test.rs",
+    data = ["//devinfra/js/debundle:debundle_e2e"],
+    edition = "2024",
+    env = {
+        "DEBUNDLE_TEST_DEBUNDLER": "$(rlocationpath //devinfra/js/debundle:debundle_e2e)",
+        "DEBUNDLE_TV_ORACLE": "1",
+        "DEBUNDLE_SWEEP_PARTITION_COUNT": "4",
+        "DEBUNDLE_SWEEP_PARTITION_INDEX": "0",
+    },
+    tags = ["manual"],
+    deps = [
+        ":foreign_state_node_differential_sweep_cases",
+        ":support",
+    ],
+)
+
+rust_test(
+    name = "foreign_state_node_differential_sweep_partition_4_1_test",
+    srcs = ["foreign_state_node_differential_sweep_test.rs"],
+    crate_root = "foreign_state_node_differential_sweep_test.rs",
+    data = ["//devinfra/js/debundle:debundle_e2e"],
+    edition = "2024",
+    env = {
+        "DEBUNDLE_TEST_DEBUNDLER": "$(rlocationpath //devinfra/js/debundle:debundle_e2e)",
+        "DEBUNDLE_TV_ORACLE": "1",
+        "DEBUNDLE_SWEEP_PARTITION_COUNT": "4",
+        "DEBUNDLE_SWEEP_PARTITION_INDEX": "1",
+    },
+    tags = ["manual"],
+    deps = [
+        ":foreign_state_node_differential_sweep_cases",
+        ":support",
+    ],
+)
+
+rust_test(
+    name = "foreign_state_node_differential_sweep_partition_4_2_test",
+    srcs = ["foreign_state_node_differential_sweep_test.rs"],
+    crate_root = "foreign_state_node_differential_sweep_test.rs",
+    data = ["//devinfra/js/debundle:debundle_e2e"],
+    edition = "2024",
+    env = {
+        "DEBUNDLE_TEST_DEBUNDLER": "$(rlocationpath //devinfra/js/debundle:debundle_e2e)",
+        "DEBUNDLE_TV_ORACLE": "1",
+        "DEBUNDLE_SWEEP_PARTITION_COUNT": "4",
+        "DEBUNDLE_SWEEP_PARTITION_INDEX": "2",
+    },
+    tags = ["manual"],
+    deps = [
+        ":foreign_state_node_differential_sweep_cases",
+        ":support",
+    ],
+)
+
+rust_test(
+    name = "foreign_state_node_differential_sweep_partition_4_3_test",
+    srcs = ["foreign_state_node_differential_sweep_test.rs"],
+    crate_root = "foreign_state_node_differential_sweep_test.rs",
+    data = ["//devinfra/js/debundle:debundle_e2e"],
+    edition = "2024",
+    env = {
+        "DEBUNDLE_TEST_DEBUNDLER": "$(rlocationpath //devinfra/js/debundle:debundle_e2e)",
+        "DEBUNDLE_TV_ORACLE": "1",
+        "DEBUNDLE_SWEEP_PARTITION_COUNT": "4",
+        "DEBUNDLE_SWEEP_PARTITION_INDEX": "3",
+    },
+    tags = ["manual"],
+    deps = [
+        ":foreign_state_node_differential_sweep_cases",
+        ":support",
+    ],
 )
 
 debundle_e2e_test(
