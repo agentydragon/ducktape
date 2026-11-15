@@ -108,6 +108,9 @@ def test_egress_uses_embedded_migrations_and_startup_probe(catalog_manifests: li
     assert config["admin_grpc_audience"] == ADMIN_GRPC_AUDIENCE
     assert config["admin_grpc_callers"] == [f"{staging.ENV.namespace}/app"]
     assert config["admin_grpc_service_callers"] == [APP_URI]
+    # The next image accepts key omission; manifests retain both legacy fields until it is pinned.
+    reduced = {key: value for key, value in config.items() if key not in {"admin_grpc_audience", "admin_grpc_callers"}}
+    assert EgressSettings.model_validate(reduced).admin_grpc_service_callers == frozenset({APP_URI})
 
 
 @pytest.fixture(scope="module")
