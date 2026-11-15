@@ -38,7 +38,7 @@ def render() -> RenderedFixture:
         databases=(*fixture_chart.BACKEND_DATABASES, fixture_database.Database.CENTRAL_SAMPLER),
     )
     fixture_chart.add_fixture_pki(chart, env, **asdict(PLACEHOLDERS))
-    fixture_chart.add_native_test_client(chart)
+    fixture_chart.add_native_test_client(chart, env)
     fixture_chart.add_backend_services(
         chart, env, models=models, platform_callers=fixture_chart.NATIVE_CALLERS, notification_callers=[]
     )
