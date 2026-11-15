@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import shlex
 from dataclasses import dataclass
 from typing import Any
@@ -17,33 +16,15 @@ from agentplane.app.testing.client import Client
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.system_tests.driver.action_cli import CLI, submission
 from agentplane.system_tests.driver.agent import Agent
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
 
-# Where the environment disk mounts the CLI in a Sandbox Pod (`agentplane/env/images/BUILD.bazel`).
-CLI = "/run/agentplane/environment/bin/agentplane"
-
 
 def cli_command(*args: str) -> str:
     return shlex.join([CLI, "--json", *args])
-
-
-def submission(group: str, action: str, arguments: dict[str, Any], *, title: str, wait: bool) -> list[str]:
-    """Build CLI arguments for one Action request under a fresh idempotency key."""
-    return [
-        "actions",
-        "submit",
-        f"{group}/{action}",
-        "--title",
-        title,
-        "--arguments",
-        json.dumps(arguments),
-        "--key",
-        str(uuid4()),
-        *(["--wait"] if wait else []),
-    ]
 
 
 def _action_receipt(request: ModelRequest[Any], call_id: str) -> action_service_pb2.ActionRequest:
