@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+go_library(
+    name = "session",
+    srcs = [
+        "doc.go",
+        "store.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/app/internal/auth/session",
+    deps = [],
+)
+
+go_test(
+    name = "session_test",
+    srcs = ["store_test.go"],
+    embed = [":session"],
+)
