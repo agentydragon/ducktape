@@ -41,6 +41,7 @@ py_library(
 py_library(
     name = "peel_more",
     srcs = ["peel_more.py"],
+    imports = ["."],
     deps = ["//devinfra/js/debundle/skills/shared/examples:isolated_edit"],
 )
 
