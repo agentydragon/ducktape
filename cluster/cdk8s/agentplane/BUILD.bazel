@@ -1410,6 +1410,7 @@ py_test(
         ":workload_tls",
         "//:conftest",
         "//agentplane:subjects",
+        "//agentplane/app:settings",
         "//agentplane/environments:settings",
         "//agentplane/net/peertls:config",
         "//agentplane/runner_gateway:settings",

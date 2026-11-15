@@ -3,11 +3,10 @@
 Deployment enables EnvironmentService on every replica at `sandbox-controller:8082`, using the
 existing Sandbox Controller service SVID. Reconcilers and Runtime observation stay leader-only;
 the listener and its independent policy watches determine readiness on leaders and standbys. See
-[the serving contract](SPEC.md#environmentservice-listener). App and Actions continue using the
-Gateway until the receiver is verified on every replica. Retiring the Gateway registration follows
-caller cutover. Managed Sandbox CLIs use the dedicated local EnvironmentService route after
-the accepting CLI image is pinned; old Sandbox processes keep the Gateway route until cycled.
-Enabling `environment_service` requires the accepting Controller image to be pinned
+[the serving contract](SPEC.md#environmentservice-listener). App uses this receiver with its service
+SVID. Actions cutover is in flight. Managed Sandbox CLIs use the dedicated local EnvironmentService
+route; existing Sandbox processes retain the Gateway route until cycled. Retiring the Gateway
+registration follows caller cutover. Enabling `environment_service` requires the accepting Controller image to be pinned
 first; remove that configuration before rolling back to an image that cannot decode it.
 
 Reconciles `Sandbox` into retained state and optional workspace PVCs and, while running as the

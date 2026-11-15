@@ -1,8 +1,8 @@
 # Agentplane integration app
 
 The human-facing API is a Go service built from `//agentplane/app/cmd:agentplane-app` and packaged as
-`//agentplane/app:image`. It proxies Sandbox management through the Runner Gateway's
-`EnvironmentService` with its Pod-bound service token, creates Sessions and submits commands through
+`//agentplane/app:image`. It proxies Sandbox management through the Sandbox Controller
+`EnvironmentService` with its App service SVID, creates Sessions and submits commands through
 the Session Dispatcher, and uses the Runner
 Gateway for UID-fenced live checks and read-only runner status diagnostics. It reads archived Session
 history and Threads (each Session's conversation projection) from the History Service and synchronizes
@@ -38,9 +38,9 @@ clients can use History's `FollowSession` gRPC stream.
 
 ## Sandbox lifecycle ownership
 
-The Runner Gateway's `EnvironmentService` owns Sandbox creation, templates, suspend, delete, wake
+The Sandbox Controller serves `EnvironmentService` on every replica for Sandbox creation, templates, suspend, delete, wake
 policy, idle suspend policy, and stopped-Sandbox identity changes. The app authenticates the operator and forwards the generated HTTP
-facade with its projected Pod-bound service token. The service applies configured default policy
+facade with its App service SVID, verifying the exact Sandbox Controller server SVID. The service applies configured default policy
 sets and fences mutations on Sandbox UID and resourceVersion. Identity changes additionally use
 Dispatcher's per-Sandbox Session admission lock and retained-Session check. The app still reads Sandbox inventory
 through its existing read routes and watch. The Sandbox Controller reconciles the requested `spec`
@@ -54,7 +54,7 @@ attachments, and app-only provisioning or prompt/bootstrap state, including in v
 [service dependency rule](../docs/service_boundaries.md).
 
 Backend responsibilities needed by another service move to an independent owner, not a temporary
-app endpoint. EnvironmentService in Runner Gateway owns inventory reads, watches and management;
+app endpoint. EnvironmentService on the Sandbox Controller owns inventory reads, watches and management;
 the app calls its generated authenticated facade. The app retains Thread and policy composition. The [Session Dispatcher](../runner_gateway/dispatcher/README.md)
 owns logical Session records and durable command delivery; the [Runner Gateway](../runner_gateway/README.md) owns the
 runner control stream and authorized live Runner proxy; the
@@ -440,7 +440,8 @@ restarted History Session-recording worker replays recorded Sessions; creating a
 browser (OIDC session)  /  agent (Kubernetes token)
    |  REST + Electric sync + inventory SSE, through the cluster gateway
 integration app (Deployment, namespace agentplane-staging)
-   |  Kubernetes API              |  gRPC Dispatcher / live Gateway checks
+   |  EnvironmentService (Sandbox Controller) / Kubernetes reads
+   |                              |  gRPC Dispatcher / live Gateway checks
 Sandbox -> Pod, PVC               v
                     Session Dispatcher
                          | runner proxy
@@ -677,10 +678,10 @@ snapshot, and changing the Environment incarnation or account discards the prior
   it, and nothing brings that back. The rule lives in the API rather than in the browser, so it also
   binds the agent driving staging with a token; the two clicks it costs an operator are suspend and
   then delete. A running sandbox answers `DELETE` with 409 and a message saying to suspend it.
-- **Resume is owned by the Runner Gateway:** the browser calls the generated
+- **Resume is owned by EnvironmentService:** the browser calls the generated
   `EnvironmentService.ResumeEnvironment` HTTP facade with the current Sandbox UID; the app
-  forwards it with its Pod-bound service token. The
-  Gateway rechecks target state and operator authority before changing desired state; the app does
+  forwards it to the Sandbox Controller with its App service SVID. The
+  service rechecks target state and operator authority before changing desired state; the app does
   not patch `running` or `wakeGeneration`. A response confirms acceptance only, not readiness.
   `wake_on_send` remains a separate setting for automatic wake caused by queued work.
 - **Raw is additive:** both modes use the same chronological thread blocks and disclosure

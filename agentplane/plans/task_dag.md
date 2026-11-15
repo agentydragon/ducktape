@@ -4018,11 +4018,10 @@ flowchart LR
 **In flight; operator approved the [serving contract](environment_service_serving.md) and released
 implementation on 2026-11-15.** Every replica serves mutations as well as reads, readiness never
 waits for leadership, authorization fails closed, and rollout uses separate image/config PRs.
-Receiver/composition support is available disabled; listener configuration waits for its accepting
-Controller image to be pinned and running. Retarget callers after verifying the new receiver.
-Caller cutover includes the Sandbox CLI: [#16550](https://github.com/agentydragon/ducktape/pull/16550)
-accepts a separate EnvironmentService URL. Its route/launch configuration is in flight and waits for
-that accepting runner-disk pin. Keep the Gateway registration until existing CLI callers have moved.
+Receiver configuration landed in #16556 after the accepting image pin; both staging replicas are
+Ready on that configuration (2026-11-15). App and Actions retargeting is in flight. CLI support
+(#16550) and route/launch configuration (#16568) landed after the accepting runner-disk pin.
+Keep the Gateway registration until existing CLI callers have moved and service callers have rolled.
 The agreed destination remains the Sandbox Controller (operator, 2026-11-14 01:10 UTC).
 Explicit resume already reserves no budget ([lifecycle contract](../runner_gateway/environments/lifecycle/SPEC.md)).
 Then move `runner_gateway/environments` with `lifecycle`,

@@ -10,9 +10,8 @@ history and browser sync, notifications, actions and egress) and direct API defi
 
 The Controller serves EnvironmentService on each replica at `sandbox-controller:8082`, with
 `spiffe://agentplane/sandbox-controller`. Its independent policy watches and uncached Kubernetes
-reads do not require leadership. App and Actions still call the Gateway during receiver deployment;
-caller retargeting follows verification of the new listener on every replica. Runtime-proxy calls
-remain at the Gateway.
+reads do not require leadership. App calls this receiver; Actions and Sandbox CLIs still use the
+Gateway EnvironmentService during caller cutover. Runtime-proxy calls remain at the Gateway.
 
 Managed Sandbox CLIs use a separate `AGENTPLANE_ENVIRONMENTS_URL` on the local platform listener.
 Its exact EnvironmentService prefix selects Sandbox-SVID TLS through central CONNECT to
@@ -92,7 +91,8 @@ flowchart LR
     edge -->|HTML, assets and service worker| frontend
     edge -->|API, auth and streams| app
     app -->|service SVID mTLS: Runtime diagnostics and health| gw
-    app -->|service SVID mTLS: Dispatcher and EnvironmentService| gw
+    app -->|service SVID mTLS: Dispatcher| gw
+    app -->|App SVID mTLS: EnvironmentService| sandboxctl
     app -->|service SVID mTLS: History reads| hs
     app -->|service SVID mTLS: operator watches and health| notif
     app -->|mTLS plus operator authority: Action and MCP Linkage RPCs| actions
@@ -245,9 +245,9 @@ for resident Session work and History export wakeups.
 
 ### Sandbox lifecycle and runner control
 
-The app forwards authenticated Sandbox management requests to the Runner Gateway's
-`EnvironmentService`, which writes Sandbox desired state to Kubernetes; the Sandbox Controller
-also serves the API on every replica during receiver overlap. The elected Controller
+The app forwards authenticated Sandbox management requests to the Sandbox Controller
+EnvironmentService on every replica, which writes Sandbox desired state to Kubernetes. The
+Gateway retains the API for callers still moving to the new receiver. The elected Controller
 reconciles desired state, owns `Sandbox.status`, and holds
 deletion until the runner has sealed its Sessions through the Gateway. Notifications and the
 Runner Gateway read Sandbox inventory directly. The Runner Gateway implements Dispatcher Session
@@ -290,7 +290,7 @@ flowchart LR
     k8s[Kubernetes API]
     app -->|Session creation + commands| dispatcher
     app -->|Dispatch watch for the browser: gRPC| dispatcher
-    app -->|Pod-bound operator resume broker: gRPC| environments
+    app -->|operator EnvironmentService facade: App SVID mTLS| sandboxctl
     actions -->|caller-delegated EnvironmentService list/get; resume when enabled: gRPC| environments
     actions -->|Session commands: broker or delegated caller, gRPC| dispatcher
     actions -->|Session reads: broker or delegated caller, gRPC| history
