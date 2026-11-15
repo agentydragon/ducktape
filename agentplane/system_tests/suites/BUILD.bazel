@@ -232,7 +232,7 @@ _POD_DEPS = [
     "@pypi//pytest_bazel",
 ]
 
-# App scenarios retain their two case slots; platform cases own a separate native stack.
+# App scenarios share a bounded case batch; platform cases own a separate native stack.
 py_test(
     name = "test_pod",
     size = "enormous",
