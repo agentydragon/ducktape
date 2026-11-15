@@ -452,7 +452,7 @@ func duplicateListenerFD(t *testing.T, listener net.Listener) int {
 // run is what main serves: the settings name the addresses, and the Kubernetes client is built from the kubeconfig.
 func TestRunServesTheReadAPIAndTheIngressOnOneConfiguredListener(t *testing.T) {
 	kubeconfig := filepath.Join(t.TempDir(), "kubeconfig")
-	// The Kubernetes client dials only when a token needs review, which no call here presents.
+	// Workload identities are resolved lazily; this test makes no authenticated workload call.
 	const unreachableCluster = `{"apiVersion": "v1", "kind": "Config", "current-context": "test",
 		"clusters": [{"name": "test", "cluster": {"server": "http://127.0.0.1:1"}}],
 		"contexts": [{"name": "test", "context": {"cluster": "test", "user": "test"}}],

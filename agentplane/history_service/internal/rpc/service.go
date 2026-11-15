@@ -40,7 +40,7 @@ type Options struct {
 	// RequestTimeout bounds a call's backend work and each write to a watch or follow stream.
 	RequestTimeout time.Duration
 	// WatchLease ends each watch and follow after this long: a stream is admitted once, so the lease bounds
-	// how long a revoked token keeps reading.
+	// how long a revoked caller credential keeps reading.
 	WatchLease time.Duration
 }
 
@@ -119,10 +119,6 @@ func (s *Service) scopedReader(ctx context.Context) (*reads.Reader, error) {
 		return s.reader.WithReadScope(storage.OwnedByIdentity(storage.Identity{
 			Name: identity.Caller.Identity.Name, UID: identity.Caller.Identity.UID,
 		})), nil
-	case auth.DelegatedIdentityAdmission:
-		return s.reader.WithReadScope(storage.OwnedByIdentity(storage.Identity{
-			Name: identity.EffectiveCaller.Name, UID: identity.EffectiveCaller.UID,
-		})), nil
 	case auth.ServiceAdmission:
 		// Exact service reader allowlists grant the configured backend-wide read role.
 		return s.reader.WithReadScope(storage.AllSessions()), nil
@@ -131,7 +127,7 @@ func (s *Service) scopedReader(ctx context.Context) (*reads.Reader, error) {
 			Name: identity.EffectiveCaller.Name, UID: identity.EffectiveCaller.UID,
 		})), nil
 	}
-	// A workload ServiceAccount without a retained execution Identity has no History read scope.
+	// A workload credential without a retained execution Identity has no History read scope.
 	return s.reader.WithReadScope(storage.ReadScope{}), nil
 }
 

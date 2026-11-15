@@ -101,7 +101,6 @@ async def native_platform_clients(cluster: Cluster) -> AsyncIterator[NativePlatf
         history_target = await opened.enter_async_context(_service_forward(cluster, HISTORY_SERVICE, SERVICE_PORT))
         history = HistoryServiceClient(
             history_target,
-            token_file=None,
             request_timeout_s=REQUEST_TIMEOUT_SECONDS,
             channel_credentials=credentials,
             server_name=f"{HISTORY_SERVICE}.{cluster.namespace}.svc.cluster.local",
