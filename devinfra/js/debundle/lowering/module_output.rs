@@ -17,7 +17,8 @@ use crate::imports::{
     PlannedVendorReimports, VendorReimportOracle, cross_module_imports_for_plan,
     final_module_exports, group_specifiers_into_import_decls, imported_binding_named_specifier,
     phantom_side_effect_imports, plan_module_reference_needs, plan_vendor_reimports,
-    residual_entry_imports_for_moved_body, source_chunk_imports_for_moved_body,
+    rebase_source_chunk_loader_calls_for_moved_body, residual_entry_imports_for_moved_body,
+    source_chunk_imports_for_moved_body,
 };
 use crate::naturalize::NaturalizedModuleBody;
 use crate::plans::ModulePlan;
@@ -253,6 +254,13 @@ pub(super) fn prepare_module_emission<'output>(
                 set_str_value(&mut import.src, source);
             }
         }
+        rebase_source_chunk_loader_calls_for_moved_body(
+            &mut cache,
+            chunk_id,
+            entry_file,
+            &plan.target_file,
+            &mut body,
+        )?;
         source_chunk_imports_for_moved_body(
             &mut cache,
             chunk_id,

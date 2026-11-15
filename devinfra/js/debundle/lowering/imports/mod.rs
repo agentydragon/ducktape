@@ -15,8 +15,8 @@ pub(super) use imports_cross::{
     final_module_exports, phantom_side_effect_imports, residual_entry_imports_for_moved_body,
 };
 pub(super) use imports_runtime::{
-    group_specifiers_into_import_decls, resolve_imported_binding,
-    source_chunk_imports_for_moved_body,
+    group_specifiers_into_import_decls, rebase_source_chunk_loader_calls_for_moved_body,
+    resolve_imported_binding, source_chunk_imports_for_moved_body,
 };
 pub(super) use plan_references::{
     ArtifactSourceImportResolutionCache, EntryExport, ModuleReferenceNeeds,

@@ -4,6 +4,13 @@ load(":defs.bzl", "debundle_e2e_test")
 package(default_testonly = True)
 
 debundle_e2e_test(
+    name = "bun_loader_runtime_test",
+    data = ["@debundle_bun_1_3_10//:bun"],
+    env = {"DEBUNDLE_TEST_BUN": "$(rlocationpath @debundle_bun_1_3_10//:bun)"},
+    deps = ["@crates//:tempfile"],
+)
+
+debundle_e2e_test(
     name = "ordered_own_data_field_test",
     deps = [
         ":graph_support",
