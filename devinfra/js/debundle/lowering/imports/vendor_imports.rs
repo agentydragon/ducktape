@@ -81,7 +81,7 @@ impl<'a> VendorReimportOracle<'a> {
         target_file: &str,
         references_by_symbol: &mut BTreeMap<(ChunkId, String), usize>,
     ) {
-        vendor::rewrite_peeled_module_imports(
+        let rewrites = vendor::rewrite_peeled_module_imports(
             body,
             source_chunk_id,
             target_file,
@@ -89,8 +89,10 @@ impl<'a> VendorReimportOracle<'a> {
             self.references,
             self.chunk_table,
             &self.materialized_index,
-            references_by_symbol,
         );
+        for (key, count) in rewrites {
+            *references_by_symbol.entry(key).or_insert(0) += count;
+        }
     }
 
     /// Classify one runtime re-import by the chunk its source directive

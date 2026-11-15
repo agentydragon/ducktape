@@ -115,8 +115,7 @@ pub fn rewrite_peeled_module_imports(
     references: &ArtifactIndexes,
     chunk_table: &ChunkTable,
     materialized_index: &MaterializedOutputChunkIndex,
-    references_by_symbol: &mut BTreeMap<(ChunkId, String), usize>,
-) {
+) -> BTreeMap<(ChunkId, String), usize> {
     let context = PassthroughContext {
         plan,
         references,
@@ -146,9 +145,7 @@ pub fn rewrite_peeled_module_imports(
         rewritten.visit_mut_with(&mut rewriter);
     }
     *body = rewritten;
-    for (key, count) in state.references_rewritten {
-        *references_by_symbol.entry(key).or_insert(0) += count;
-    }
+    state.references_rewritten
 }
 
 fn rewrite_directive_items(
