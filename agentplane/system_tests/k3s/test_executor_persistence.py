@@ -1,5 +1,6 @@
 """Executor retention permission and image-cache safety."""
 
+import errno
 import json
 from pathlib import Path
 from typing import Any
@@ -399,6 +400,50 @@ def test_retained_daemon_logs_are_bounded_and_survive_a_missing_log(
     assert (outputs / "containerd-retained.log").read_text() == "inerd tail\n"
     assert (outputs / "baseline-transitions.jsonl").read_text() == "ewer event\n"
     assert not (outputs / "containerd-teardown-retained.log").exists()
+
+
+@pytest.mark.parametrize("vanishes", [False, True])
+def test_enabling_cgroup_controllers_drains_children_forked_during_the_move(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, vanishes: bool
+) -> None:
+    root = tmp_path / "cgroup"
+    root.mkdir()
+    (root / "cgroup.controllers").write_text("cpu memory")
+    pending = {"101", "202"}
+    moved: list[str] = []
+    enabled: list[str] = []
+    original_read = Path.read_text
+    original_write = Path.write_text
+
+    def read(path: Path, *args: Any, **kwargs: Any) -> str:
+        if path == root / "cgroup.procs":
+            return "\n".join(sorted(pending))
+        return original_read(path, *args, **kwargs)
+
+    def write(path: Path, value: str, *args: Any, **kwargs: Any) -> int:
+        if path == root / "init/cgroup.procs":
+            pending.remove(value)
+            if value == "101":
+                pending.add("303")  # forked after root's snapshot, before moving its parent
+            if value == "202" and vanishes:
+                raise ProcessLookupError("process exited before its move")
+            moved.append(value)
+            return len(value)
+        if path == root / "cgroup.subtree_control":
+            if pending:
+                raise OSError(errno.EBUSY, "cgroup has internal processes")
+            enabled.append(value)
+            return len(value)
+        return original_write(path, value, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", read)
+    monkeypatch.setattr(Path, "write_text", write)
+
+    baseline._enable_child_cgroup_controllers(root)
+
+    assert not pending
+    assert moved == (["101", "303"] if vanishes else ["101", "202", "303"])
+    assert enabled == ["+cpu +memory"]
 
 
 if __name__ == "__main__":
