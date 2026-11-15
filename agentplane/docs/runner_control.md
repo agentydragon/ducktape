@@ -1,7 +1,7 @@
 # Runner control
 
 The runner serves native gRPC on one private listener: `Runner`, `Executor` and standard gRPC
-health. The Gateway derives its address from the current workload's Pod IP and the runner port;
+health. The Environments proxy derives its address from the current workload's Pod IP and the runner port;
 KubeVirt forwards that port into the guest. Gateway workloads and the Sandbox Controller may reach it; method authorization separates their roles. History Event
 ingress remains a separate outbound platform route.
 
@@ -19,7 +19,8 @@ The service definitions are `env/runtime/control/environment_runtime.proto` and 
 
 The Controller serves EnvironmentService on every replica at `sandbox-controller:8082`, using its
 existing service SVID. This inventory/desired-state listener has no Runtime command client and does
-not change Runtime proxy traffic or the leader-only observation below. Its readiness depends on
+not change the leader-only observation below. The optional Runtime proxy on the same listener
+separately owns callable Runtime connections on every replica. Its readiness depends on
 local serving and policy watches, independently of leadership. App, Actions and Sandbox CLIs call this receiver with their service or workload SVIDs. The Gateway
 no longer registers EnvironmentService; automatic wake grants remain with the Dispatcher. See [the Controller contract](../environments/SPEC.md#environmentservice-listener).
 
@@ -68,9 +69,10 @@ runner journal; a repeated ID with a different operation or payload fails `ALREA
 
 ## Runner proxy
 
-Every Gateway replica serves `agentplane.env.runtime.control.EnvironmentRuntime` on the shared gRPC
-listener and can forward unary calls over its own direct Runtime connection. Callers reach that
-listener through the stable `runner-gateway` Service.
+Every Environments replica serves `agentplane.env.runtime.control.EnvironmentRuntime` on
+`sandbox-controller:8082` and forwards unary calls over its own direct Runtime connection. App,
+Notifications, Sessions, central sampler and Controller lifecycle callers pin the Sandbox Controller
+server SVID. The Gateway receiver remains available for rollback until their rollout is complete.
 
 - **Sandbox.** The caller names it in the `x-agentplane-sandbox` header. A missing or repeated header is
   `INVALID_ARGUMENT`, an unknown Sandbox `NOT_FOUND`.
@@ -78,12 +80,11 @@ listener through the stable `runner-gateway` Service.
   `x-agentplane-sandbox-owner-namespace` and `x-agentplane-sandbox-owner-name` exactly once.
   The proxy checks them against the current Sandbox and ready runner Pod before resolving its
   connection. A stale UID or owner returns `NOT_FOUND`; an unavailable runner returns `UNAVAILABLE`.
-- **Authorization.** A Pod-bound `gateway_audience` bearer proves the caller. `gateway_callers`
-  grants only `ListSessions` and `GetStatus`. Runtime Session creation and commands admit only the
-  verified combined Gateway/Dispatcher workload; clients use SessionDispatcher with their existing
-  direct or delegated authority. Only `sandbox_controller_account` may `Quiesce`; unset, nobody may.
-  Executor permissions stay separate. See the [proxy contract](../environments/runtimeproxy/SPEC.md).
-- **Replica.** Any Gateway replica with a fresh observation of the current Sandbox incarnation can
+- **Authorization.** Exact service SVIDs grant App and Notifications `ListSessions` and `GetStatus`,
+  Sessions creation and command methods, and Controller lifecycle methods. Executor grants admit
+  only the central sampler. Proxy calls reject bearers, workload Identities and delegation; public
+  Session callers use SessionDispatcher with their existing direct or delegated authority. See the [proxy contract](../environments/runtimeproxy/SPEC.md).
+- **Replica.** Any Environments replica with a fresh observation of the current Sandbox incarnation can
   serve the request. A replica without a matching local Runtime connection answers `UNAVAILABLE`.
 - **Deadline.** The proxy propagates the caller's remaining gRPC deadline; a call without one waits until
   the runner answers or the connection ends.
@@ -227,8 +228,8 @@ unrelated and remains part of durable command scheduling.
 
 ## Lifecycle operations
 
-The Runner Gateway makes Session calls over the runner gRPC connection. App and Notification callers
-reach any replica through the stable `runner-gateway` Service.
+Sessions makes native Session calls through the Environments proxy. App and Notifications reach
+any Environments replica through `sandbox-controller:8082`.
 
 - `ListSessions` reads retained Session inventory.
 - `GetStatus` reads a coherent live snapshot of process incarnations, Session assignments and
@@ -399,6 +400,7 @@ facts watch stays leader-only. This receiver presents the dedicated `runtime-pro
 callers verify the existing Sandbox Controller server SVID and receive only their exact per-method
 service grants. It admits no bearer, workload Identity or delegated proxy calls, and requires no
 proxy audience. Sandbox/Pod/boot fences and uncertain outcomes remain unchanged. Caller targets
-retain the Gateway endpoint until the receiver is Ready; the caller cutover follows separately.
+now select Environments for diagnostics, inventory, native delivery, lifecycle and Executor.
+Dispatcher API callers retain their separate `session-dispatcher:8080` endpoint and server pin.
 Enable receiver configuration only after its accepting image is pinned and running. See the
 [receiver contract](../environments/SPEC.md#optional-runtime-proxy-and-executor-receiver).

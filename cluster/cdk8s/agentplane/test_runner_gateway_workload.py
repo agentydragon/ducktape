@@ -125,7 +125,7 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
     assert settings["executor_service_callers"] == [CENTRAL_SAMPLER_URI]
     assert settings["gateway_tls"] == {
         "ca_file": "/run/agentplane/workload-trust/ca-certificates.crt",
-        "server_uri": SESSION_DISPATCHER_URI,
+        "server_uri": SANDBOX_CONTROLLER_URI,
         "cert_file": "/run/agentplane/runner-gateway-sessions-client-tls/tls.crt",
         "key_file": "/run/agentplane/runner-gateway-sessions-client-tls/tls.key",
         "client_uri": GATEWAY_SESSIONS_URI,

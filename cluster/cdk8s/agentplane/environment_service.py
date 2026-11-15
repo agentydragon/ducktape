@@ -11,3 +11,8 @@ def service(namespace: str) -> ServiceRef:
         port=Port(name="grpc", number=8082),
         pods=Pods(namespace=namespace, labels=(("app.kubernetes.io/name", NAME),)),
     )
+
+
+def control_target(namespace: str) -> str:
+    """Runtime proxy target, parameterized by the destination Sandbox namespace."""
+    return f"{NAME}.{{namespace}}.svc:{service(namespace).pod_port}"

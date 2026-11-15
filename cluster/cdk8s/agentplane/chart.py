@@ -302,7 +302,7 @@ def environment_chart(
         env,
         gateway=runner_gateway.service(env.namespace),
         gateway_audience=runner_gateway.TOKEN_AUDIENCE,
-        gateway_control_target=runner_gateway.control_target(env.namespace),
+        gateway_control_target=environment_service.control_target(env.namespace),
         authority=sandbox_controller.environment_service_authority(
             env,
             operator_callers=app_caller,
@@ -339,7 +339,7 @@ def environment_chart(
         database_url=notifications_database_url,
         actions=actions.service(env.namespace),
         gateway=runner_gateway.service(env.namespace),
-        gateway_control_target=runner_gateway.control_target(env.namespace),
+        gateway_control_target=environment_service.control_target(env.namespace),
         history=history_service.service(env.namespace),
         dispatcher=session_dispatcher.service(env.namespace),
         callers=[app_component.service(env.namespace).pods],

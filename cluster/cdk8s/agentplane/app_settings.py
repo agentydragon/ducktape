@@ -34,10 +34,10 @@ from agentplane.sandboxes.runtimeconfig.model_catalog import (
 # string. The Pod execution environment a preset launches on is the caller's: `settings()` takes its name.
 from cluster.cdk8s.agentplane import (
     egress,
+    environment_service,
     history_service,
     notifications,
     policy_controller,
-    runner_gateway,
     session_dispatcher,
     workload_tls,
 )
@@ -204,13 +204,15 @@ def settings(
         egress_admin_url=AnyHttpUrl(egress.admin(namespace).url),
         action_federation=action_federation,
         sandbox_namespace=namespace,
-        runner_gateway_target=runner_gateway.target(namespace),
+        runner_gateway_target=(
+            f"{environment_service.service(namespace).fqdn}:{environment_service.service(namespace).pod_port}"
+        ),
         session_dispatcher_target=(
             f"{session_dispatcher.service(namespace).fqdn}:{session_dispatcher.service(namespace).port.number}"
         ),
         policy_service_target=policy_controller.tls_target(namespace),
         policy_service_tls=workload_tls.service_client_tls(POLICY_CONTROLLER_URI, client_uri=APP_URI),
-        runner_gateway_control_target=runner_gateway.control_target(namespace),
+        runner_gateway_control_target=environment_service.control_target(namespace),
         history_service_target=(
             f"{history_service.service(namespace).fqdn}:{history_service.service(namespace).port.number}"
         ),

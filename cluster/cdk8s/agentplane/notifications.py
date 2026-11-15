@@ -1,4 +1,4 @@
-"""Notification-owned persistence and workload API; only the Runner Gateway reaches runners, and
+"""Notification-owned persistence and workload API; Environments proxies Runtime calls, and
 receipts are read from the History Service."""
 
 from collections.abc import Mapping
@@ -25,6 +25,7 @@ from agentplane.net.peertls.config import (
     APP_URI,
     HISTORY_SERVICE_URI,
     NOTIFICATIONS_URI,
+    SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
 )
 from agentplane.notification_service.settings import (
@@ -176,7 +177,7 @@ class Notifications(Construct):
             ),
             runner_gateway=RunnerGatewaySettings(
                 control_target=gateway_control_target,
-                tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=NOTIFICATIONS_URI),
+                tls=workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=NOTIFICATIONS_URI),
             ),
             history_service=HistoryServiceSettings(
                 target=f"{history.fqdn}:{history.pod_port}",

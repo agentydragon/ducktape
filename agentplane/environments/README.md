@@ -16,7 +16,9 @@ that configuration before rolling back to an image that cannot decode it.
 Deployment enables `environment_service.runtime_proxy` to serve the existing Runtime proxy and
 Executor on every replica at `sandbox-controller:8082`, with independent routing watches and narrow
 service SVID grants. Its outbound `runtime-proxy` certificate is separate from the Controller's
-binding observer certificate. Callers keep the Gateway target until this receiver's rollout is verified.
+binding observer certificate. App diagnostics, Notifications inventory, Sessions delivery, central sampler Executor and Controller
+lifecycle calls target this Service and pin its Sandbox Controller server identity. The Gateway
+receiver remains available for rollback until those callers have rolled.
 Proxy admission uses service SVIDs directly; `runtime_proxy` has no bearer audience setting.
 See [the receiver contract](SPEC.md#optional-runtime-proxy-and-executor-receiver).
 
@@ -31,7 +33,7 @@ Reconciles `Sandbox` into retained state and optional workspace PVCs and, while 
 `Identity` its spec names, one Pod or KubeVirt VM from its `SandboxTemplate`. Contract: [`SPEC.md`](SPEC.md). The CRDs are in
 [`agentplane/crds`](../crds/BUILD.bazel). The integration app submits Sandbox desired state and
 operator grants through the Kubernetes API; this controller reconciles each Sandbox and owns its
-status. Each runner serves mTLS on its workload network, and the Runner Gateway connects to the
+status. Each runner serves mTLS on its workload network, and the Environments proxy connects to the
 current incarnation using its per-incarnation certificate. The elected Controller observes Runtime
 facts directly with a narrow SVID; that authenticated watch binds the current workload UID before
 publishing facts, while Gateway watches cannot select or replace the binding. History and telemetry
@@ -39,8 +41,8 @@ use the egress sidecar's platform routes. `spec.bootstrap` and the Sandbox's ide
 through the Sandbox's launch ConfigMap (a Pod mounts it, a VM gets it as a disk). Session launch
 defaults live in the app's preset catalog and are resolved before an opening reaches the Dispatcher.
 Deletion first has the runner seal every
-Session: the controller calls `Runner.Quiesce` through the [Runner Gateway](../runner_gateway/README.md)'s
-[runner proxy](../docs/runner_control.md#runner-proxy), at the stable Runner Gateway Service, and sets the
+Session: the controller calls `Runner.Quiesce` through Environments'
+[runner proxy](../docs/runner_control.md#runner-proxy), at the stable Sandbox Controller Service, and sets the
 `Quiesced` condition. Suspension seals the same way before the Pod stops, recorded as
 `status.quiescedIncarnation`. `runner_security` selects the Controller's own direct observer credentials;
 `runner_gateway_target` and `runner_gateway_token_file` remain required settings in the mounted YAML file.
@@ -121,10 +123,10 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   deletion a blocking reference would remove the state while a sealing runner still writes to it.
 - **The Pod is deleted before the finalizer clears**, in separate reconciles, so the PVC, which
   garbage collection removes afterwards, never goes while a container can still write to it.
-- **The runner seals, the controller asks.** The seal is a unary `Runner.Quiesce` through the gateway
+- **The runner seals, the controller asks.** The seal is a unary `Runner.Quiesce` through the Environments
   proxy. The controller records the last request time for that runner incarnation before calling,
   and makes at most three attempts on transient `Unavailable` replies within one 30-second handshake, opening a new connection through the stable
-  Gateway Service on each try and fencing every call to that same incarnation Pod UID. A changed
+  Environments Service on each try and fencing every call to that same incarnation Pod UID. A changed
   incarnation or refused caller ends the handshake. A failed or unfinished handshake then waits
   up to one minute before another attempt. Runner stage changes
   enqueue it sooner; `quiesced` completes without another call. The recorded deadline survives

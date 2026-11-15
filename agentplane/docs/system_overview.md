@@ -14,8 +14,8 @@ reads do not require leadership. App and Actions use this receiver with service 
 preserves typed delegation. EnvironmentService rejects Kubernetes bearer credentials and performs no
 TokenReview; its exact reader, manager, launcher and operator SVID roles remain independent. Legacy
 receiver audience/account/delegation settings decode without authority until manifest omission and
-rollout; RBAC cleanup follows receiver retirement. Runtime-proxy calls remain at the Gateway, which no longer registers
-EnvironmentService.
+rollout; RBAC cleanup follows receiver retirement. Runtime proxy and Executor calls target this same Environments listener. The Gateway retains its
+old receiver for rollback until callers have rolled, and no longer registers EnvironmentService.
 
 Managed Sandbox CLIs use a separate `AGENTPLANE_ENVIRONMENTS_URL` on the local platform listener.
 Its exact EnvironmentService prefix selects Sandbox-SVID TLS through central CONNECT to
@@ -93,7 +93,7 @@ flowchart LR
     browser -->|HTTPS, one origin| httpsGateway
     httpsGateway -->|HTML, assets and service worker| frontend
     httpsGateway -->|API, auth and streams| app
-    app -->|service SVID mTLS: Runtime diagnostics and health| gw
+    app -->|App SVID mTLS: Runtime diagnostics and health| sandboxctl
     app -->|service SVID mTLS: Dispatcher| gw
     app -->|App SVID mTLS: EnvironmentService| sandboxctl
     app -->|service SVID mTLS: History reads| hs
@@ -118,7 +118,7 @@ flowchart LR
     samplerdb -->|NOTIFY: central_sampler_work| sampler
     samplerdb -->|NOTIFY: central_sampler_outbox| sampler
     sampler -.->|optional Action tools: service mTLS and Session delegation, gRPC| actions
-    sampler -->|Executor gRPC: mTLS, sampler SVID| gw
+    sampler -->|Executor gRPC: mTLS, sampler SVID| sandboxctl
     sampler -->|mTLS sampler SVID + typed Session delegation: journal push| hs
     sampler -->|Responses HTTPS: sampler SVID mTLS + typed Identity/Session delegation| llm -->|model API| responses
     sampler -->|direct Anthropic Messages API| anthropic
@@ -127,7 +127,10 @@ flowchart LR
     actions -->|Action Pods, launched Sandboxes and their launcher grants| k8s
     policy --> k8s
     sandboxctl --> k8s
-    sandboxctl -->|Quiesce and suspend admission: service SVID mTLS gRPC| gw
+    sandboxctl -->|Quiesce and suspend admission: service SVID mTLS to every-replica proxy| sandboxctl
+    gw -->|native Session calls: Sessions SVID mTLS| sandboxctl
+    sandboxctl -->|proxy / Executor: runtime-proxy SVID; independent watches and fenced calls| runtime
+    sandboxctl -->|proxy / Executor: runtime-proxy SVID; independent watches and fenced calls| vmruntime
     sandboxctl -->|passive WatchState binds workload UID and observes facts: mTLS gRPC| runtime
     sandboxctl -->|passive WatchState binds workload UID and observes facts: mTLS gRPC| vmruntime
     runner -->|local Codex JSON-RPC over WebSocket, isolated mode| podexec
@@ -150,8 +153,8 @@ flowchart LR
     sidecar -->|OTLP/gRPC| alloy
     guest -.->|OTLP/gRPC telemetry route| relay
     relay -->|OTLP/gRPC| alloy
-    gw -->|mTLS Runner / Executor; independent WatchState; UID and boot fences| runtime
-    gw -->|mTLS Runner / Executor; independent WatchState; UID and boot fences| vmruntime
+    gw -->|retained rollback receiver: independent WatchState, fenced mTLS| runtime
+    gw -->|retained rollback receiver: independent WatchState, fenced mTLS| vmruntime
     runner -.->|History mTLS through CONNECT| sidecar
     sidecar -.->|opaque History TLS| egress
     egress -.->|opaque SessionJournalIngress.Push TLS| hs
@@ -300,11 +303,11 @@ flowchart LR
     actions -->|caller-delegated EnvironmentService list/get/resume; reviewed launches: Actions SVID mTLS| sandboxctl
     actions -->|Actions SVID mTLS: Session commands; typed envelope for delegation| dispatcher
     actions -->|Actions SVID mTLS: Session reads; typed envelope for delegation| history
-    app -->|per-Sandbox Runner Proxy: live inventory + diagnostics| gateway
-    dispatcher -->|Pod-bound workload token: wrapped Codex and Claude opens + commands| gateway
+    app -->|Runtime proxy: live inventory + diagnostics| sandboxctl
+    dispatcher -->|Sessions SVID mTLS: native opens + commands| sandboxctl
     dispatcher -->|central opens + commands: Gateway Sessions SVID mTLS :8083| central
     sandboxctl -->|every-replica inventory and guarded desired-state writes| k8s
-    sandboxctl -->|Quiesce| gateway
+    sandboxctl -->|Controller SVID mTLS: Quiesce via every-replica proxy| sandboxctl
     sandboxctl -->|every-replica proxy: runtime-proxy SVID; independent watches and fenced calls| runtime
     sandboxctl -->|passive WatchState binds workload UID and observes facts: mTLS gRPC| runtime
     dispatcher -->|Sandbox + independent environment-policy watches| k8s
@@ -392,7 +395,7 @@ flowchart LR
     dispatcher[Gateway Dispatcher]
     sampler[Central sampler and shared Codex host]
     db[(Sampler PostgreSQL)]
-    gateway[Gateway Executor]
+    gateway[Environments Executor :8082]
     runtime[Environment Runtime]
     execution[Execution Service]
     executor[Loopback Codex exec-server]
@@ -437,7 +440,7 @@ The separate `central_sampler_outbox` notification wakes History export. Notific
 Session or Pod routing, and startup scans, listener reconnect catch-up and periodic reconciliation
 cover missed signals.
 The Pod has aggregate CPU/memory limits, with no per-Session or per-cell kernel boundary today.
-Gateway proxies the sandbox-owned [Executor service](../env/runtime/execution/executor.proto) through Environment Runtime to Execution Service,
+Environments proxies the sandbox-owned [Executor service](../env/runtime/execution/executor.proto) through Environment Runtime to Execution Service,
 whose execution adapter owns the local
 Codex JSON-RPC connection and native session handshake. A held `OpenSession` stream owns that
 connection; process and file operations use unary RPCs. Native frames return as evidence for the
@@ -662,7 +665,7 @@ flowchart LR
     notifications --> github
     notifications -->|Action history: gRPC mTLS, Notifications SVID| actions
     notifications -->|live workload credentials, Identities, Sandboxes and send grants| k8s
-    notifications -->|Session validation: mTLS, Notifications SVID| gateway
+    notifications -->|Session validation: mTLS, Notifications SVID| environments[Environments Runtime proxy :8082]
     notifications -->|SubmitInput: mTLS, Notifications SVID| dispatcher
     notifications -->|command receipts: mTLS, Notifications SVID| history
 ```
@@ -879,5 +882,8 @@ Deployment enables `environment_service.runtime_proxy` on the existing every-rep
 grants. Each replica's routing inventory and Runtime watches operate independently of leadership
 and the leader's lifecycle facts. The dedicated outbound `runtime-proxy` SVID remains separate
 from the Controller's incarnation-binding observer; UID/incarnation/boot fencing and uncertain
-mutation outcomes stay unchanged. Callers keep using the retained Gateway endpoint until the
-separate caller configuration cutover. No new Environments-to-Sessions edge is added.
+mutation outcomes stay unchanged. App diagnostics, Notifications inventory, Sessions delivery,
+Controller lifecycle and central sampler Executor now target this Service and pin its Sandbox
+Controller server SVID. Dispatcher API calls retain their separate endpoint and identity.
+The Gateway receiver and grants remain for rollback until callers have rolled; their retirement
+follows separately. No new Environments-to-Sessions edge is added.

@@ -61,8 +61,9 @@ Sessions commands, Controller lifecycle calls and Executor operations. The recei
 workload Identity or delegated proxy access, and does not expose `WatchState` to callers. Its
 service-only admission needs no TokenReview resolver or `runtime_proxy.audience` setting.
 The Gateway continues to serve its old endpoint during migration, using the same
-[proxy implementation](runtimeproxy/SPEC.md). Caller targets change only after the receiving image
-and grants are deployed; the Gateway endpoint retires after all callers have rolled. Before reverting
+[proxy implementation](runtimeproxy/SPEC.md). Deployment targets this receiver for App diagnostics, Notifications inventory, Sessions delivery,
+central sampler Executor and Controller lifecycle calls, after pinning the accepting caller images.
+The Gateway endpoint retires only after all callers have rolled. Before reverting
 an image that accepts this setting, remove the setting and verify its ConfigMap and rollout.
 
 ## State PVC

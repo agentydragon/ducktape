@@ -3124,7 +3124,7 @@ data:
       },
       "gateway_tls": {
         "ca_file": "/run/agentplane/workload-trust/ca-certificates.crt",
-        "server_uri": "spiffe://agentplane/session-dispatcher",
+        "server_uri": "spiffe://agentplane/sandbox-controller",
         "cert_file": "/run/agentplane/workload-tls/tls.crt",
         "key_file": "/run/agentplane/workload-tls/tls.key",
         "client_uri": "spiffe://agentplane/central-sampler"
@@ -3497,7 +3497,7 @@ data:
       "executor_codex": "codex",
       "logs": "/var/log/central-sampler",
       "history_target": "history-service.agentplane-staging.svc.cluster.local:8080",
-      "gateway_target": "runner-gateway.{namespace}.svc:8080",
+      "gateway_target": "sandbox-controller.{namespace}.svc:8082",
       "direct_executor_insecure_localtest": false,
       "max_live_sessions": 32,
       "rpc_timeout_seconds": 30,
@@ -4356,7 +4356,7 @@ data:
       client_uri: spiffe://agentplane/app
     runner_gateway_tls:
       ca_file: /run/agentplane/workload-trust/ca-certificates.crt
-      server_uri: spiffe://agentplane/session-dispatcher
+      server_uri: spiffe://agentplane/sandbox-controller
       cert_file: /run/agentplane/workload-tls/tls.crt
       key_file: /run/agentplane/workload-tls/tls.key
       client_uri: spiffe://agentplane/app
@@ -4391,7 +4391,7 @@ data:
       key_file: /run/agentplane/workload-tls/tls.key
       client_uri: spiffe://agentplane/app
     sandbox_namespace: agentplane-staging
-    runner_gateway_target: runner-gateway.agentplane-staging.svc.cluster.local:8080
+    runner_gateway_target: sandbox-controller.agentplane-staging.svc.cluster.local:8082
     session_dispatcher_target: session-dispatcher.agentplane-staging.svc.cluster.local:8080
     environment_service:
       target: sandbox-controller.agentplane-staging.svc.cluster.local:8082
@@ -4403,7 +4403,7 @@ data:
         key_file: /run/agentplane/workload-tls/tls.key
         client_uri: spiffe://agentplane/app
     policy_service_target: policy-controller.agentplane-staging.svc.cluster.local:8083
-    runner_gateway_control_target: runner-gateway.{namespace}.svc:8080
+    runner_gateway_control_target: sandbox-controller.{namespace}.svc:8082
     history_service_target: history-service.agentplane-staging.svc.cluster.local:8080
     notifications_url: http://notifications.agentplane-staging.svc:8080/
     notifications_request_timeout_s: 5
@@ -6695,7 +6695,7 @@ data:
   config.yaml: |
     runner_gateway_tls:
       ca_file: /run/agentplane/workload-trust/ca-certificates.crt
-      server_uri: spiffe://agentplane/session-dispatcher
+      server_uri: spiffe://agentplane/sandbox-controller
       cert_file: /run/agentplane/sandbox-controller-client-tls/tls.crt
       key_file: /run/agentplane/sandbox-controller-client-tls/tls.key
       client_uri: spiffe://agentplane/sandbox-controller
@@ -6919,7 +6919,7 @@ data:
     namespace: agentplane-staging
     metrics_bind_address: :8080
     health_probe_bind_address: :8081
-    runner_gateway_target: runner-gateway.{namespace}.svc:8080
+    runner_gateway_target: sandbox-controller.{namespace}.svc:8082
 immutable: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -9376,11 +9376,11 @@ data:
     runner_gateway:
       tls:
         ca_file: /run/agentplane/workload-trust/ca-certificates.crt
-        server_uri: spiffe://agentplane/session-dispatcher
+        server_uri: spiffe://agentplane/sandbox-controller
         cert_file: /run/agentplane/workload-tls/tls.crt
         key_file: /run/agentplane/workload-tls/tls.key
         client_uri: spiffe://agentplane/notifications
-      control_target: runner-gateway.{namespace}.svc:8080
+      control_target: sandbox-controller.{namespace}.svc:8082
       request_timeout_s: 5
     session_dispatcher:
       tls:

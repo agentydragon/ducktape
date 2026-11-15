@@ -33,7 +33,6 @@ from agentplane.net.peertls.config import (
     MTLS,
     NOTIFICATIONS_URI,
     SANDBOX_CONTROLLER_URI,
-    SESSION_DISPATCHER_URI,
     ClientTLS,
     ServiceSPIFFEID,
 )
@@ -259,7 +258,7 @@ class SandboxController(Construct):
             environment_service=serving,
             runner_gateway_tls=ClientTLS(
                 ca_file=Path(runner_tls.ca_file),
-                server_uri=SESSION_DISPATCHER_URI,
+                server_uri=SANDBOX_CONTROLLER_URI,
                 cert_file=Path(runner_tls.cert_file),
                 key_file=Path(runner_tls.key_file),
                 client_uri=SANDBOX_CONTROLLER_URI,

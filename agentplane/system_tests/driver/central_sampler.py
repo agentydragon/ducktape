@@ -235,7 +235,7 @@ async def central_stack(
             sampler_pod = await _pod(cluster, core, SERVICE)
             stack.push_async_callback(capture_sampler_diagnostics, cluster, core)
             # Call through the stable Service so Kubernetes can send every request to any replica.
-            gateway_target = await _address(cluster, core, "runner-gateway", 8080)
+            gateway_target = await _address(cluster, core, "sandbox-controller", 8082)
             # Direct observations act as the same Sessions service principal as Gateway.
             # Its certificate survives a Gateway Pod roll; no Pod-bound bearer is involved.
             sampler_client = await core.read_namespaced_secret(
@@ -248,8 +248,8 @@ async def central_stack(
                 certificate_chain=base64.b64decode(sampler_client.data["tls.crt"]),
             )
             server_credentials = await service_credentials(cluster)
-            # Sandbox Ready proves Controller observation. A claimed EndpointSlice can precede
-            # the Gateway's first snapshot, so prove the live read route before starting setup.
+            # Sandbox Ready proves leader observation; independently prove the every-replica
+            # Environments proxy has a callable snapshot before starting setup.
             # Dispatcher commands and Runtime diagnostics use the App role. The separate
             # history_account selects only the still-legacy History reader token binding.
             caller_credentials = await service_svid_credentials(cluster, "app-workload-tls")
@@ -258,7 +258,7 @@ async def central_stack(
                 token_file=None,
                 request_timeout_s=2,
                 channel_credentials=caller_credentials,
-                server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+                server_name=f"sandbox-controller.{cluster.namespace}.svc.cluster.local",
             )
             destination = SandboxDestination(
                 owner=ServiceAccount(namespace=cluster.namespace, name=sandbox),

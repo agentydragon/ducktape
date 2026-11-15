@@ -2,7 +2,7 @@
 
 Standalone Actions and GitHub App subscriptions, messages between workloads, and durable session inboxes. The
 service reads Action history over the generated ActionService gRPC API, reads destination Sandboxes from their Sandbox resources, validates Sessions through
-the read-only Runner Gateway, sends every runner notice through the Session Dispatcher, and reads command receipts
+the read-only Environments Runtime proxy, sends every runner notice through the Session Dispatcher, and reads command receipts
 from the Session's runner entries in the History Service. It authorizes messages by the `session_inbox_access`
 rules of the PolicySets bound to the sender, which it watches. It does not depend on the integration app or
 connect directly to runners.
@@ -159,9 +159,9 @@ and TLS for `https`. A peer `tls` block verifies its configured server SPIFFE UR
 With `cert_file`, `key_file` and `client_uri`, it presents Notifications' exact service SVID and
 requires `token_file` to be absent. This block applies independently of the legacy Actions URL scheme.
 `runner_gateway` uses `control_target` for runner proxy calls through the stable
-Runner Gateway Service. Its `tls.server_uri` accepts that receiver's
-`spiffe://agentplane/session-dispatcher` identity or Environments'
-`spiffe://agentplane/sandbox-controller` identity for the staged proxy cutover. Each connection pins
+Environments Service at `sandbox-controller:8082`, pinning
+`spiffe://agentplane/sandbox-controller`. Settings also accept the retained Gateway
+`spiffe://agentplane/session-dispatcher` identity for rollback. Each connection pins
 only the configured identity. The separate `session_dispatcher` connection always pins
 `spiffe://agentplane/session-dispatcher`.
 `history_service` and `session_dispatcher` each contain a `target`
