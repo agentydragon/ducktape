@@ -1,11 +1,11 @@
 """Home network overview dashboard."""
 
-from grafana_foundation_sdk.cog.variants import Dataquery
 from grafana_foundation_sdk.models import common, dashboard, logs, loki, statetimeline
 
 from cluster.cdk8s.monitoring.dashboards.foundation import (
     HeaderLink,
     field_override,
+    gateway_error_queries,
     line_style,
     loki_datasource,
     mimir,
@@ -63,9 +63,9 @@ def _timeline_options() -> statetimeline.Options:
     )
 
 
-def _optics_fields() -> dashboard.FieldConfigSource:
+def _optics_fields(unit: str = "dBm") -> dashboard.FieldConfigSource:
     return dashboard.FieldConfigSource(
-        defaults=dashboard.FieldConfig(unit="dBm", custom=line_style()),
+        defaults=dashboard.FieldConfig(unit=unit, custom=line_style()),
         overrides=[
             field_override(
                 ".*(warning|alarm).*",
@@ -153,19 +153,29 @@ def _probe_episode_starts() -> str:
     )
 
 
-def _gateway_errors(interface: str, window: str) -> list[Dataquery]:
-    return [
-        mimir_query(
-            f"increase(att_gateway_{interface}_{direction}_{kind}_total[{window}])",
-            legend=("port {{port}} " if interface == "lan_port" else "") + f"{label} {kind}",
-            ref_id=chr(ord("A") + index),
-        ).build()
-        for index, (direction, label, kind) in enumerate(
-            (direction, label, kind)
-            for direction, label in (("receive", "rx"), ("transmit", "tx"))
-            for kind in ("errors", "drops")
+def _uptime_fields() -> dashboard.FieldConfigSource:
+    return dashboard.FieldConfigSource(
+        defaults=dashboard.FieldConfig(
+            unit="s",
+            thresholds=dashboard.ThresholdsConfig(
+                steps=[dashboard.Threshold(color="orange"), dashboard.Threshold(value=3600, color="green")]
+            ),
         )
-    ]
+    )
+
+
+def _host_probe_rate(metric: str, source_matcher: str) -> str:
+    return f'sum by (target) (rate({metric}{{job="monitoring/smokeping",{source_matcher}}}[5m]))'
+
+
+def _host_probe_loss(source_matcher: str) -> str:
+    return (
+        f"1 - {_host_probe_rate(_RECEIVED_PROBES, source_matcher)} / {_host_probe_rate(_SENT_PROBES, source_matcher)}"
+    )
+
+
+def _host_probe_rtt(source_matcher: str) -> str:
+    return f"{_host_probe_rate('smokeping_response_duration_seconds_sum', source_matcher)} / {_host_probe_rate(_RECEIVED_PROBES, source_matcher)}"
 
 
 def build_dashboard() -> dashboard.Dashboard:
@@ -228,14 +238,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=4, w=4, x=12, y=1),
                 options=stat_options(common.BigValueColorMode.BACKGROUND),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="s",
-                        thresholds=dashboard.ThresholdsConfig(
-                            steps=[dashboard.Threshold(color="orange"), dashboard.Threshold(value=3600, color="green")]
-                        ),
-                    )
-                ),
+                field_config=_uptime_fields(),
             ),
             dashboard.Panel(
                 type_val="stat",
@@ -380,12 +383,7 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=43,
-                targets=[
-                    mimir_query(
-                        '1 - sum by (target) (rate(smokeping_response_duration_seconds_count{job="monitoring/smokeping",source_node=~"optiplex|"}[5m])) / sum by (target) (rate(smokeping_requests_total{job="monitoring/smokeping",source_node=~"optiplex|"}[5m]))',
-                        legend="{{target}}",
-                    ).build()
-                ],
+                targets=[mimir_query(_host_probe_loss('source_node=~"optiplex|"'), legend="{{target}}").build()],
                 title="Ping loss from optiplex",
                 description="Share of pings from optiplex (5/s per target) that got no reply. Loss to the gateway with none to the switch is the uplink fault in debug/home_network_connectivity/2026_10_gateway_uplink_loss.md.",
                 datasource=mimir(),
@@ -398,12 +396,7 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=45,
-                targets=[
-                    mimir_query(
-                        '1 - sum by (target) (rate(smokeping_response_duration_seconds_count{job="monitoring/smokeping",source_node="wyrm2"}[5m])) / sum by (target) (rate(smokeping_requests_total{job="monitoring/smokeping",source_node="wyrm2"}[5m]))',
-                        legend="{{target}}",
-                    ).build()
-                ],
+                targets=[mimir_query(_host_probe_loss('source_node="wyrm2"'), legend="{{target}}").build()],
                 title="Ping loss from wyrm2",
                 description="ICMP probes from wyrm2 to the AT&T gateway, MikroTik switch, optiplex LAN address (192.168.1.10), and ovh-ns104952 over Nebula. Loss is the unanswered fraction of 5 pings/s, averaged over 5 minutes. Compare with optiplex beside it; a gap means missing observations.",
                 datasource=mimir(),
@@ -419,12 +412,7 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=44,
-                targets=[
-                    mimir_query(
-                        'sum by (target) (rate(smokeping_response_duration_seconds_sum{job="monitoring/smokeping",source_node=~"optiplex|"}[5m])) / sum by (target) (rate(smokeping_response_duration_seconds_count{job="monitoring/smokeping",source_node=~"optiplex|"}[5m]))',
-                        legend="{{target}}",
-                    ).build()
-                ],
+                targets=[mimir_query(_host_probe_rtt('source_node=~"optiplex|"'), legend="{{target}}").build()],
                 title="Ping RTT from optiplex",
                 description="Mean round-trip time of answered pings from optiplex, per target.",
                 datasource=mimir(),
@@ -437,12 +425,7 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=46,
-                targets=[
-                    mimir_query(
-                        'sum by (target) (rate(smokeping_response_duration_seconds_sum{job="monitoring/smokeping",source_node="wyrm2"}[5m])) / sum by (target) (rate(smokeping_response_duration_seconds_count{job="monitoring/smokeping",source_node="wyrm2"}[5m]))',
-                        legend="{{target}}",
-                    ).build()
-                ],
+                targets=[mimir_query(_host_probe_rtt('source_node="wyrm2"'), legend="{{target}}").build()],
                 title="Ping RTT from wyrm2",
                 description="ICMP probes from wyrm2 to the AT&T gateway, MikroTik switch, optiplex LAN address (192.168.1.10), and ovh-ns104952 over Nebula. Mean round-trip time of answered pings, per target.",
                 datasource=mimir(),
@@ -596,25 +579,12 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Temperature of the gateway's optical module, against its warning and alarm bounds.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=8, x=16, y=71),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(unit="celsius", custom=line_style()),
-                    overrides=[
-                        field_override(
-                            ".*(warning|alarm).*",
-                            {
-                                "custom.lineStyle": {"dash": [10, 10], "fill": "dash"},
-                                "custom.fillOpacity": 0,
-                                "custom.lineWidth": 1,
-                            },
-                            regex=True,
-                        )
-                    ],
-                ),
+                field_config=_optics_fields("celsius"),
             ),
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=16,
-                targets=_gateway_errors("wan", "5m"),
+                targets=gateway_error_queries("wan", "5m"),
                 title="Gateway WAN errors and drops",
                 description="Errors and drops on the gateway's WAN interface, per 5 minutes.",
                 datasource=mimir(),
@@ -624,7 +594,7 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=17,
-                targets=_gateway_errors("lan_port", "5m"),
+                targets=gateway_error_queries("lan_port", "5m", legend_prefix="port {{port}} "),
                 title="Gateway LAN port errors and drops",
                 description="Errors and drops on each gateway LAN port, per 5 minutes. Port 1 is the uplink to the home switch.",
                 datasource=mimir(),
@@ -730,14 +700,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=4, w=6, x=6, y=94),
                 options=stat_options(common.BigValueColorMode.BACKGROUND),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="s",
-                        thresholds=dashboard.ThresholdsConfig(
-                            steps=[dashboard.Threshold(color="orange"), dashboard.Threshold(value=3600, color="green")]
-                        ),
-                    )
-                ),
+                field_config=_uptime_fields(),
             ),
             dashboard.Panel(
                 type_val="stat",

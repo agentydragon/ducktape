@@ -1,30 +1,15 @@
 """Home gateway dashboard."""
 
-from grafana_foundation_sdk.cog.variants import Dataquery
 from grafana_foundation_sdk.models import common, dashboard, logs, loki, statetimeline
 
 from cluster.cdk8s.monitoring.dashboards.foundation import (
+    gateway_error_queries,
     loki_datasource,
     mimir,
     mimir_query,
     stat_options,
     up_down_fields,
 )
-
-
-def _gateway_errors(interface: str, window: str) -> list[Dataquery]:
-    return [
-        mimir_query(
-            f"increase(att_gateway_{interface}_{direction}_{kind}_total[{window}])",
-            legend=("Port {{port}} " if interface == "lan_port" else "") + f"{label} {kind}",
-            ref_id=chr(ord("A") + index),
-        ).build()
-        for index, (direction, label, kind) in enumerate(
-            (direction, label, kind)
-            for direction, label in (("receive", "rx"), ("transmit", "tx"))
-            for kind in ("errors", "drops")
-        )
-    ]
 
 
 def build_dashboard() -> dashboard.Dashboard:
@@ -211,7 +196,7 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=12,
-                targets=_gateway_errors("lan_port", "$__rate_interval"),
+                targets=gateway_error_queries("lan_port", "$__rate_interval", legend_prefix="Port {{port}} "),
                 title="LAN port errors and drops",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, y=26),
@@ -219,7 +204,7 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=13,
-                targets=_gateway_errors("wan", "$__rate_interval"),
+                targets=gateway_error_queries("wan", "$__rate_interval"),
                 title="WAN errors and drops",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, x=12, y=26),

@@ -2,7 +2,13 @@
 
 from grafana_foundation_sdk.models import common, dashboard, statetimeline, timeseries
 
-from cluster.cdk8s.monitoring.dashboards.foundation import loki_datasource, loki_query, mimir_query, series_options
+from cluster.cdk8s.monitoring.dashboards.foundation import (
+    loki_datasource,
+    loki_query,
+    mimir,
+    mimir_query,
+    series_options,
+)
 
 
 def _event_options() -> timeseries.Options:
@@ -13,7 +19,9 @@ def _event_options() -> timeseries.Options:
     )
 
 
-def _event_panel(id: int, title: str, message: str, legend: str, position: dashboard.GridPos) -> dashboard.Panel:
+def _event_panel(
+    id: int, title: str, message: str, legend: str, position: dashboard.GridPos, fill_opacity: int
+) -> dashboard.Panel:
     return dashboard.Panel(
         type_val="timeseries",
         id_val=id,
@@ -31,10 +39,7 @@ def _event_panel(id: int, title: str, message: str, legend: str, position: dashb
                 unit="short",
                 decimals=0,
                 custom=common.GraphFieldConfig(
-                    draw_style=common.GraphDrawStyle.BARS,
-                    line_width=1,
-                    fill_opacity=80 if id <= 2 else 60,
-                    span_nulls=True,
+                    draw_style=common.GraphDrawStyle.BARS, line_width=1, fill_opacity=fill_opacity, span_nulls=True
                 ),
             )
         ),
@@ -55,14 +60,15 @@ def build_dashboard() -> dashboard.Dashboard:
         version=1,
         panels=[
             *[
-                _event_panel(id, title, message, legend, position)
-                for id, title, message, legend, position in [
+                _event_panel(id, title, message, legend, position, fill_opacity)
+                for id, title, message, legend, position, fill_opacity in [
                     (
                         1,
                         "Veth bring-up events per 5m",
                         "entered forwarding state",
                         "veth bring-up events",
                         dashboard.GridPos(h=8),
+                        80,
                     ),
                     (
                         2,
@@ -70,6 +76,7 @@ def build_dashboard() -> dashboard.Dashboard:
                         "unregistering",
                         "veth teardown events",
                         dashboard.GridPos(h=8, x=12),
+                        80,
                     ),
                     (
                         3,
@@ -77,8 +84,16 @@ def build_dashboard() -> dashboard.Dashboard:
                         "eth0: renamed from tmp",
                         "CNI interface recreations",
                         dashboard.GridPos(h=8, w=8, y=8),
+                        60,
                     ),
-                    (4, "KubeVirt tap0 events per 5m", "tap0", "tap0 events", dashboard.GridPos(h=8, w=8, x=8, y=8)),
+                    (
+                        4,
+                        "KubeVirt tap0 events per 5m",
+                        "tap0",
+                        "tap0 events",
+                        dashboard.GridPos(h=8, w=8, x=8, y=8),
+                        60,
+                    ),
                 ]
             ],
             dashboard.Panel(
@@ -91,7 +106,7 @@ def build_dashboard() -> dashboard.Dashboard:
                     ).build()
                 ],
                 title="Observed carrier changes per hour",
-                datasource=common.DataSourceRef(type_val="prometheus", uid="${DS_MIMIR}"),
+                datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=8, x=16, y=8),
                 options=series_options(sort=common.SortOrder.DESCENDING, legend_calcs=("lastNotNull", "max")),
                 field_config=dashboard.FieldConfigSource(
@@ -119,7 +134,7 @@ def build_dashboard() -> dashboard.Dashboard:
                     ).build()
                 ],
                 title="Current carrier state (physical by default)",
-                datasource=common.DataSourceRef(type_val="prometheus", uid="${DS_MIMIR}"),
+                datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=10, w=24, y=16),
                 options=statetimeline.Options(
                     per_page=None,
@@ -186,7 +201,7 @@ def build_dashboard() -> dashboard.Dashboard:
                     label="Instance",
                     hide=dashboard.VariableHide.HIDE_VARIABLE,
                     query='label_values(node_uname_info{nodename=~"$node"}, instance)',
-                    datasource=common.DataSourceRef(type_val="prometheus", uid="${DS_MIMIR}"),
+                    datasource=mimir(),
                     current=dashboard.VariableOption(),
                     refresh=dashboard.VariableRefresh.ON_DASHBOARD_LOAD,
                     sort=dashboard.VariableSort.ALPHABETICAL_ASC,
@@ -210,7 +225,7 @@ def build_dashboard() -> dashboard.Dashboard:
                     name="device",
                     label="Interface",
                     query='label_values(node_network_carrier{instance=~"$instance",device=~"$interface_scope"}, device)',
-                    datasource=common.DataSourceRef(type_val="prometheus", uid="${DS_MIMIR}"),
+                    datasource=mimir(),
                     current=dashboard.VariableOption(text="All", value=["$__all"]),
                     multi=True,
                     refresh=dashboard.VariableRefresh.ON_DASHBOARD_LOAD,

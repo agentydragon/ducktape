@@ -9,6 +9,22 @@ _GUEST_METRICS = 'namespace="buildbuddy-executor",service="buildbuddy-kvm-worker
 _CURRENT_EXECUTORS = 'and on (namespace, pod) kube_pod_info{namespace="buildbuddy-executor"}'
 
 
+def _guest_filesystem(metric: str, mount: str) -> str:
+    return f'node_filesystem_{metric}_bytes{{{_GUEST_METRICS},mountpoint="{mount}",pod=~"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*"}}'
+
+
+def _worker_max(expression: str) -> str:
+    return f'max by (worker) (label_replace(({expression}), "worker", "$1", "pod", "^virt-launcher-(buildbuddy-kvm-worker-[0-9]+)-.*$"))'
+
+
+def _filesystem_used(mount: str) -> str:
+    return _worker_max(f"{_guest_filesystem('size', mount)} - {_guest_filesystem('free', mount)}")
+
+
+def _filesystem_unavailable(mount: str) -> str:
+    return _worker_max(f"100 * (1 - {_guest_filesystem('avail', mount)} / {_guest_filesystem('size', mount)})")
+
+
 def _series_fields(
     unit: str = "short", min_val: float = 0, max_val: float | None = None
 ) -> dashboard.FieldConfigSource:
@@ -241,14 +257,9 @@ def build_dashboard() -> dashboard.Dashboard:
                 type_val="timeseries",
                 id_val=20,
                 targets=[
+                    mimir_query(_filesystem_used("/"), legend="{{worker}} used").build(),
                     mimir_query(
-                        f'max by (worker) (label_replace((node_filesystem_size_bytes{{{_GUEST_METRICS},mountpoint="/",pod=~"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*"}} - node_filesystem_free_bytes{{{_GUEST_METRICS},mountpoint="/",pod=~"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*"}}), "worker", "$1", "pod", "^virt-launcher-(buildbuddy-kvm-worker-[0-9]+)-.*$"))',
-                        legend="{{worker}} used",
-                    ).build(),
-                    mimir_query(
-                        f'max by (worker) (label_replace((node_filesystem_size_bytes{{{_GUEST_METRICS},mountpoint="/",pod=~"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*"}}), "worker", "$1", "pod", "^virt-launcher-(buildbuddy-kvm-worker-[0-9]+)-.*$"))',
-                        legend="{{worker}} capacity",
-                        ref_id="B",
+                        _worker_max(_guest_filesystem("size", "/")), legend="{{worker}} capacity", ref_id="B"
                     ).build(),
                 ],
                 title="Root filesystem used and capacity",
@@ -262,14 +273,9 @@ def build_dashboard() -> dashboard.Dashboard:
                 type_val="timeseries",
                 id_val=14,
                 targets=[
+                    mimir_query(_filesystem_used("/buildbuddy"), legend="{{worker}} used").build(),
                     mimir_query(
-                        f'max by (worker) (label_replace((node_filesystem_size_bytes{{{_GUEST_METRICS},mountpoint="/buildbuddy",pod=~"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*"}} - node_filesystem_free_bytes{{{_GUEST_METRICS},mountpoint="/buildbuddy",pod=~"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*"}}), "worker", "$1", "pod", "^virt-launcher-(buildbuddy-kvm-worker-[0-9]+)-.*$"))',
-                        legend="{{worker}} used",
-                    ).build(),
-                    mimir_query(
-                        f'max by (worker) (label_replace((node_filesystem_size_bytes{{{_GUEST_METRICS},mountpoint="/buildbuddy",pod=~"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*"}}), "worker", "$1", "pod", "^virt-launcher-(buildbuddy-kvm-worker-[0-9]+)-.*$"))',
-                        legend="{{worker}} capacity",
-                        ref_id="B",
+                        _worker_max(_guest_filesystem("size", "/buildbuddy")), legend="{{worker}} capacity", ref_id="B"
                     ).build(),
                 ],
                 title="Work filesystem used and capacity",
@@ -282,12 +288,7 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=21,
-                targets=[
-                    mimir_query(
-                        f'max by (worker) (label_replace((100 * (1 - node_filesystem_avail_bytes{{{_GUEST_METRICS},mountpoint="/",pod=~"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*"}} / node_filesystem_size_bytes{{{_GUEST_METRICS},mountpoint="/",pod=~"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*"}})), "worker", "$1", "pod", "^virt-launcher-(buildbuddy-kvm-worker-[0-9]+)-.*$"))',
-                        legend="{{worker}}",
-                    ).build()
-                ],
+                targets=[mimir_query(_filesystem_unavailable("/"), legend="{{worker}}").build()],
                 title="Root filesystem unavailable %",
                 description="Percentage of root filesystem capacity not available to unprivileged processes, including reserved ext4 blocks. Series are grouped by stable worker identity across launcher-pod replacements; overlapping samples keep the maximum percentage.",
                 datasource=mimir(),
@@ -298,12 +299,7 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=16,
-                targets=[
-                    mimir_query(
-                        f'max by (worker) (label_replace((100 * (1 - node_filesystem_avail_bytes{{{_GUEST_METRICS},mountpoint="/buildbuddy",pod=~"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*"}} / node_filesystem_size_bytes{{{_GUEST_METRICS},mountpoint="/buildbuddy",pod=~"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*"}})), "worker", "$1", "pod", "^virt-launcher-(buildbuddy-kvm-worker-[0-9]+)-.*$"))',
-                        legend="{{worker}}",
-                    ).build()
-                ],
+                targets=[mimir_query(_filesystem_unavailable("/buildbuddy"), legend="{{worker}}").build()],
                 title="Work filesystem unavailable %",
                 description="Percentage of /buildbuddy capacity not available to unprivileged processes, including reserved ext4 blocks. Series are grouped by stable worker identity across launcher-pod replacements; overlapping samples keep the maximum percentage.",
                 datasource=mimir(),

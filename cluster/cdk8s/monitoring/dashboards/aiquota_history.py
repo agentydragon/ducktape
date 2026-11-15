@@ -1,8 +1,15 @@
 """AIQuota history dashboard."""
 
+from textwrap import dedent
+
 from grafana_foundation_sdk.models import common, dashboard
 
-from cluster.cdk8s.monitoring.dashboards.foundation import clickhouse_query, series_options
+from cluster.cdk8s.monitoring.dashboards.foundation import clickhouse_datasource, clickhouse_query, series_options
+
+_WINDOW_NAME = "if(empty(window_name), '(default)', window_name)"
+_OBSERVATION_COLUMNS = (
+    "observed_at, source, status_code, content_type, raw_body_size_bytes, raw_body_truncated, error, raw_body_sha256"
+)
 
 
 def build_dashboard() -> dashboard.Dashboard:
@@ -22,11 +29,24 @@ def build_dashboard() -> dashboard.Dashboard:
                 id_val=1,
                 targets=[
                     clickhouse_query(
-                        sql="SELECT provider, if(empty(window_name), '(default)', window_name) AS window, formatReadableTimeDelta(toUInt64(argMax(window_seconds, observed_at))) AS duration, round(argMax(remaining_percent, observed_at), 1) AS remaining_percent, round(argMax(used_percent, observed_at), 1) AS used_percent, formatReadableTimeDelta(toUInt64(argMax(reset_seconds, observed_at))) AS resets_in, formatDateTime(max(observed_at), '%Y-%m-%d %H:%i:%S') AS last_observed_at FROM aiquota.aiquota_windows WHERE $__timeFilter(observed_at) GROUP BY provider, window_name, window_seconds ORDER BY provider, window_seconds, window_name"
+                        sql=dedent(f"""\
+                            SELECT
+                              provider,
+                              {_WINDOW_NAME} AS window,
+                              formatReadableTimeDelta(toUInt64(argMax(window_seconds, observed_at))) AS duration,
+                              round(argMax(remaining_percent, observed_at), 1) AS remaining_percent,
+                              round(argMax(used_percent, observed_at), 1) AS used_percent,
+                              formatReadableTimeDelta(toUInt64(argMax(reset_seconds, observed_at))) AS resets_in,
+                              formatDateTime(max(observed_at), '%Y-%m-%d %H:%i:%S') AS last_observed_at
+                            FROM aiquota.aiquota_windows
+                            WHERE $__timeFilter(observed_at)
+                            GROUP BY provider, window_name, window_seconds
+                            ORDER BY provider, window_seconds, window_name
+                            """).strip()
                     )
                 ],
                 title="Current quota by provider and window",
-                datasource=common.DataSourceRef(type_val="grafana-clickhouse-datasource", uid="clickhouse"),
+                datasource=clickhouse_datasource(),
                 grid_pos=dashboard.GridPos(h=10, w=24),
             ),
             dashboard.Panel(
@@ -34,11 +54,19 @@ def build_dashboard() -> dashboard.Dashboard:
                 id_val=2,
                 targets=[
                     clickhouse_query(
-                        sql="SELECT observed_at AS time, remaining_percent AS value, concat(provider, ' / ', if(empty(window_name), '(default)', window_name), ' / ', formatReadableTimeDelta(toUInt64(window_seconds))) AS metric FROM aiquota.aiquota_windows WHERE $__timeFilter(observed_at) ORDER BY time, metric"
+                        sql=dedent(f"""\
+                            SELECT
+                              observed_at AS time,
+                              remaining_percent AS value,
+                              concat(provider, ' / ', {_WINDOW_NAME}, ' / ', formatReadableTimeDelta(toUInt64(window_seconds))) AS metric
+                            FROM aiquota.aiquota_windows
+                            WHERE $__timeFilter(observed_at)
+                            ORDER BY time, metric
+                            """).strip()
                     )
                 ],
                 title="Quota remaining by provider and window",
-                datasource=common.DataSourceRef(type_val="grafana-clickhouse-datasource", uid="clickhouse"),
+                datasource=clickhouse_datasource(),
                 grid_pos=dashboard.GridPos(h=10, w=24, y=10),
                 options=series_options(legend_calcs=("lastNotNull", "min")),
                 field_config=dashboard.FieldConfigSource(
@@ -55,12 +83,22 @@ def build_dashboard() -> dashboard.Dashboard:
                 id_val=3,
                 targets=[
                     clickhouse_query(
-                        sql="SELECT observed_at, source, status_code, content_type, raw_body_size_bytes, raw_body_truncated, error, raw_body_sha256 FROM (SELECT observed_at, source, status_code, content_type, raw_body_size_bytes, raw_body_truncated, error, raw_body_sha256 FROM aiquota.raw_http_observations WHERE $__timeFilter(observed_at) ORDER BY observed_at DESC LIMIT 200) AS latest_observations ORDER BY observed_at ASC",
+                        sql=dedent(f"""\
+                            SELECT {_OBSERVATION_COLUMNS}
+                            FROM (
+                              SELECT {_OBSERVATION_COLUMNS}
+                              FROM aiquota.raw_http_observations
+                              WHERE $__timeFilter(observed_at)
+                              ORDER BY observed_at DESC
+                              LIMIT 200
+                            ) AS latest_observations
+                            ORDER BY observed_at ASC
+                            """).strip(),
                         format=1,
                     )
                 ],
                 title="Raw upstream observation metadata",
-                datasource=common.DataSourceRef(type_val="grafana-clickhouse-datasource", uid="clickhouse"),
+                datasource=clickhouse_datasource(),
                 grid_pos=dashboard.GridPos(h=10, w=24, y=20),
             ),
             dashboard.Panel(
@@ -68,11 +106,20 @@ def build_dashboard() -> dashboard.Dashboard:
                 id_val=4,
                 targets=[
                     clickhouse_query(
-                        sql="SELECT observed_at AS time, max(extra_spend_used_usd) AS used_usd, max(extra_spend_limit_usd) AS monthly_limit_usd FROM aiquota.aiquota_windows WHERE provider = 'claude' AND extra_spend_enabled = true AND $__timeFilter(observed_at) GROUP BY observed_at ORDER BY time"
+                        sql=dedent("""\
+                            SELECT
+                              observed_at AS time,
+                              max(extra_spend_used_usd) AS used_usd,
+                              max(extra_spend_limit_usd) AS monthly_limit_usd
+                            FROM aiquota.aiquota_windows
+                            WHERE provider = 'claude' AND extra_spend_enabled = true AND $__timeFilter(observed_at)
+                            GROUP BY observed_at
+                            ORDER BY time
+                            """).strip()
                     )
                 ],
                 title="Claude extra usage (current billing month)",
-                datasource=common.DataSourceRef(type_val="grafana-clickhouse-datasource", uid="clickhouse"),
+                datasource=clickhouse_datasource(),
                 grid_pos=dashboard.GridPos(h=10, w=24, y=30),
                 options=series_options(legend_calcs=("lastNotNull", "max")),
                 field_config=dashboard.FieldConfigSource(

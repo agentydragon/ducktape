@@ -5,6 +5,7 @@ from collections.abc import Mapping, Sequence
 from grafana_foundation_sdk.builders import loki, prometheus, timeseries
 from grafana_foundation_sdk.builders.common import VizTooltipOptions
 from grafana_foundation_sdk.cog.runtime import UnknownDataquery
+from grafana_foundation_sdk.cog.variants import Dataquery
 from grafana_foundation_sdk.models import (  # Builder/model name collision.
     common,
     dashboard,
@@ -122,11 +123,15 @@ def line_style(draw_style: common.GraphDrawStyle | None = common.GraphDrawStyle.
     )
 
 
+def postgres_datasource() -> common.DataSourceRef:
+    return common.DataSourceRef(type_val="grafana-postgresql-datasource", uid="cdviz")
+
+
 def postgres_query(sql: str, format: str = "table", ref_id: str = "A") -> UnknownDataquery:
     # The SDK has no PostgreSQL query model; keep the plugin's native query shape.
     return UnknownDataquery(
         {
-            "datasource": common.DataSourceRef(type_val="grafana-postgresql-datasource", uid="cdviz"),
+            "datasource": postgres_datasource(),
             "editorMode": "code",
             "format": format,
             "rawQuery": True,
@@ -136,14 +141,42 @@ def postgres_query(sql: str, format: str = "table", ref_id: str = "A") -> Unknow
     )
 
 
+def clickhouse_datasource() -> common.DataSourceRef:
+    return common.DataSourceRef(type_val="grafana-clickhouse-datasource", uid="clickhouse")
+
+
 def clickhouse_query(sql: str, format: int = 0, ref_id: str = "A") -> UnknownDataquery:
     # The SDK has no ClickHouse query model; keep the plugin's native query shape.
     return UnknownDataquery(
-        {
-            "datasource": common.DataSourceRef(type_val="grafana-clickhouse-datasource", uid="clickhouse"),
-            "format": format,
-            "queryType": "sql",
-            "rawSql": sql,
-            "refId": ref_id,
-        }
+        {"datasource": clickhouse_datasource(), "format": format, "queryType": "sql", "rawSql": sql, "refId": ref_id}
     )
+
+
+def storage_tier_variable() -> dashboard.VariableModel:
+    return dashboard.VariableModel(
+        type_val=dashboard.VariableType.CUSTOM,
+        name="storage_tier",
+        label="Storage tier",
+        query="SSD : ssd,HDD : hdd,Both : ssd|hdd",
+        current=dashboard.VariableOption(selected=True, text="Both", value="ssd|hdd"),
+        options=[
+            dashboard.VariableOption(selected=False, text="SSD", value="ssd"),
+            dashboard.VariableOption(selected=False, text="HDD", value="hdd"),
+            dashboard.VariableOption(selected=True, text="Both", value="ssd|hdd"),
+        ],
+    )
+
+
+def gateway_error_queries(interface: str, window: str, *, legend_prefix: str = "") -> list[Dataquery]:
+    return [
+        mimir_query(
+            f"increase(att_gateway_{interface}_{direction}_{kind}_total[{window}])",
+            legend=f"{legend_prefix}{label} {kind}",
+            ref_id=chr(ord("A") + index),
+        ).build()
+        for index, (direction, label, kind) in enumerate(
+            (direction, label, kind)
+            for direction, label in (("receive", "rx"), ("transmit", "tx"))
+            for kind in ("errors", "drops")
+        )
+    ]

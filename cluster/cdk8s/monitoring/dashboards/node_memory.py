@@ -35,7 +35,38 @@ _ALL_POD_WORKING_SETS = _pod_working_sets()
 _TOTAL_POD_WORKING_SET = f"sum by (node) ({_ALL_POD_WORKING_SETS})"
 _SELECTED_POD_WORKING_SETS = _pod_working_sets(selected=True)
 
+_TOP_POD_WORKING_SETS = f"({_SELECTED_POD_WORKING_SETS}) and on (node, namespace, pod) topk by (node) (6, max_over_time(({_SELECTED_POD_WORKING_SETS})[${{__range_s}}s:1m] @ end()))"
+_OTHER_PODS = f"({_TOTAL_POD_WORKING_SET}) - sum by (node) ({_TOP_POD_WORKING_SETS})"
+_NODE_USED = f"({_NODE_TOTAL}) - ({_NODE_AVAILABLE})"
+_HOST_REMAINDER = f"({_NODE_USED}) - ({_TOTAL_POD_WORKING_SET})"
+
 _MEMORY_PRESSURE = f'max by (node) (kube_node_status_condition{{condition="MemoryPressure",status="true",node=~"$node"}} and on (node) ({_NODE_TOTAL})) or on (node) (0 * max by (node) (kube_node_status_condition{{condition="MemoryPressure",status="false",node=~"$node"}} and on (node) ({_NODE_TOTAL})))'
+
+
+_NODE_VARIABLE_QUERY = 'query_result(max by (node) (max by (node) (node_memory_MemTotal_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+"}))))'
+
+_NAMESPACE_VARIABLE_QUERY = 'query_result(max by (namespace) (container_memory_working_set_bytes{node=~"$node",container!="",container!="POD"} and on (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1)))'
+
+
+def _node_table_transforms(columns: tuple[str, ...]) -> list[dashboard.DataTransformerConfig]:
+    values = {f"Value #{chr(65 + index)}": title for index, title in enumerate(columns)}
+    return [
+        dashboard.DataTransformerConfig(id_val="joinByField", options={"byField": "node", "mode": "outerTabular"}),
+        dashboard.DataTransformerConfig(
+            id_val="organize",
+            options={
+                "excludeByName": dict.fromkeys(
+                    [
+                        *(f"Time {index}" for index in range(1, len(columns) + 1)),
+                        *(f"node {index}" for index in range(2, len(columns) + 1)),
+                    ],
+                    True,
+                ),
+                "indexByName": {name: index for index, name in enumerate(("node", *values))},
+                "renameByName": values,
+            },
+        ),
+    ]
 
 
 def build_dashboard() -> dashboard.Dashboard:
@@ -45,7 +76,6 @@ def build_dashboard() -> dashboard.Dashboard:
         tags=["cluster", "memory", "nodes", "kubernetes"],
         graph_tooltip=dashboard.DashboardCursorSync.CROSSHAIR,
         time=dashboard.DashboardDashboardTime(from_val="now-1h"),
-        week_start="",
         refresh="1m",
         schema_version=39,
         version=1,
@@ -71,58 +101,20 @@ def build_dashboard() -> dashboard.Dashboard:
                         ("C", f"({_TOTAL_POD_WORKING_SET}) and on (node) ({_NODE_TOTAL})"),
                         ("D", f"({_RUNNING_MEMORY_REQUESTS}) and on (node) ({_NODE_TOTAL})"),
                         ("E", _MEMORY_PRESSURE),
-                        ("F", f"({_NODE_TOTAL}) - ({_NODE_AVAILABLE})"),
-                        ("G", f"(({_NODE_TOTAL}) - ({_NODE_AVAILABLE})) - ({_TOTAL_POD_WORKING_SET})"),
+                        ("F", _NODE_USED),
+                        ("G", _HOST_REMAINDER),
                     )
                 ],
                 title="Node memory overview",
                 description="One row per node with current physical capacity, MemAvailable, running Pod working sets, declared running-Pod memory requests, MemoryPressure, node used RAM, and the signed host/unattributed remainder. Nodes without current node-exporter memory samples are not synthesized as zero.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=10, w=24, y=6),
-                transformations=[
-                    dashboard.DataTransformerConfig(
-                        id_val="joinByField", options={"byField": "node", "mode": "outerTabular"}
-                    ),
-                    dashboard.DataTransformerConfig(
-                        id_val="organize",
-                        options={
-                            "excludeByName": dict.fromkeys(
-                                (
-                                    *(f"Time {index}" for index in range(1, 8)),
-                                    *(f"node {index}" for index in range(2, 8)),
-                                ),
-                                True,
-                            ),
-                            "indexByName": {
-                                name: index
-                                for index, name in enumerate(
-                                    (
-                                        "node",
-                                        "Value #A",
-                                        "Value #B",
-                                        "Value #C",
-                                        "Value #D",
-                                        "Value #E",
-                                        "Value #F",
-                                        "Value #G",
-                                    )
-                                )
-                            },
-                            "renameByName": {
-                                "Value #A": "Capacity",
-                                "Value #B": "Available",
-                                "Value #C": "Pod working sets",
-                                "Value #D": "Requests",
-                                "Value #E": "Pressure",
-                                "Value #F": "Used RAM",
-                                "Value #G": "Host / other",
-                            },
-                        },
-                    ),
-                ],
+                transformations=_node_table_transforms(
+                    ("Capacity", "Available", "Pod working sets", "Requests", "Pressure", "Used RAM", "Host / other")
+                ),
                 options=table.Options(sort_by=[common.TableSortByFieldState(display_name="Used RAM", desc=True)]),
                 field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(unit="bytes", decimals=1, custom=common.TableFieldOptions()),
+                    defaults=dashboard.FieldConfig(unit="bytes", decimals=1),
                     overrides=[field_override("Pressure", {"unit": "short", "decimals": 0})],
                 ),
             ),
@@ -134,7 +126,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 id_val=5,
                 targets=[
                     mimir_table_query(
-                        f'(label_join((({_SELECTED_POD_WORKING_SETS}) and on (node, namespace, pod) topk by (node) (6, max_over_time(({_SELECTED_POD_WORKING_SETS})[${{__range_s}}s:1m] @ end()))), "part", "/", "namespace", "pod") or label_replace((({_TOTAL_POD_WORKING_SET}) - sum by (node) (({_SELECTED_POD_WORKING_SETS}) and on (node, namespace, pod) topk by (node) (6, max_over_time(({_SELECTED_POD_WORKING_SETS})[${{__range_s}}s:1m] @ end())))), "part", "Other Pods", "node", ".*") or label_replace(((({_NODE_TOTAL}) - ({_NODE_AVAILABLE})) - ({_TOTAL_POD_WORKING_SET})), "part", "Host / unattributed", "node", ".*") or label_replace(({_NODE_AVAILABLE}), "part", "Available to Linux (MemAvailable)", "node", ".*")) and on (node) ({_NODE_TOTAL})'
+                        f'(label_join(({_TOP_POD_WORKING_SETS}), "part", "/", "namespace", "pod") or label_replace(({_OTHER_PODS}), "part", "Other Pods", "node", ".*") or label_replace(({_HOST_REMAINDER}), "part", "Host / unattributed", "node", ".*") or label_replace(({_NODE_AVAILABLE}), "part", "Available to Linux (MemAvailable)", "node", ".*")) and on (node) ({_NODE_TOTAL})'
                     ).build()
                 ],
                 title="Memory accounting: ${node:text}",
@@ -279,18 +271,9 @@ def build_dashboard() -> dashboard.Dashboard:
                     mimir_query(expr, legend=legend, ref_id=chr(ord("A") + index)).build()
                     for index, (expr, legend) in enumerate(
                         (
-                            (
-                                f"(({_SELECTED_POD_WORKING_SETS}) and on (node, namespace, pod) topk by (node) (6, max_over_time(({_SELECTED_POD_WORKING_SETS})[${{__range_s}}s:1m] @ end()))) and on (node) ({_NODE_TOTAL})",
-                                "{{namespace}}/{{pod}}",
-                            ),
-                            (
-                                f"(({_TOTAL_POD_WORKING_SET}) - sum by (node) (({_SELECTED_POD_WORKING_SETS}) and on (node, namespace, pod) topk by (node) (6, max_over_time(({_SELECTED_POD_WORKING_SETS})[${{__range_s}}s:1m] @ end())))) and on (node) ({_NODE_TOTAL})",
-                                "Other Pods",
-                            ),
-                            (
-                                f"((({_NODE_TOTAL}) - ({_NODE_AVAILABLE})) - ({_TOTAL_POD_WORKING_SET})) and on (node) ({_NODE_TOTAL})",
-                                "Host / unattributed",
-                            ),
+                            (f"({_TOP_POD_WORKING_SETS}) and on (node) ({_NODE_TOTAL})", "{{namespace}}/{{pod}}"),
+                            (f"({_OTHER_PODS}) and on (node) ({_NODE_TOTAL})", "Other Pods"),
+                            (f"({_HOST_REMAINDER}) and on (node) ({_NODE_TOTAL})", "Host / unattributed"),
                             (_NODE_TOTAL, "Node capacity"),
                         )
                     )
@@ -368,7 +351,12 @@ def build_dashboard() -> dashboard.Dashboard:
                         decimals=0,
                         min_val=0,
                         max_val=1,
-                        custom={"drawStyle": "stepAfter", "lineWidth": 2, "fillOpacity": 10},
+                        custom=common.GraphFieldConfig(
+                            draw_style=common.GraphDrawStyle.LINE,
+                            line_interpolation=common.LineInterpolation.STEP_AFTER,
+                            line_width=2,
+                            fill_opacity=10,
+                        ),
                     )
                 ),
             ),
@@ -386,19 +374,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Current node-exporter cache and buffers gauges. These host views can overlap cAdvisor working sets and are not separate buckets to add to the Pod accounting bars.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=11, w=24, y=65),
-                transformations=[
-                    dashboard.DataTransformerConfig(
-                        id_val="joinByField", options={"byField": "node", "mode": "outerTabular"}
-                    ),
-                    dashboard.DataTransformerConfig(
-                        id_val="organize",
-                        options={
-                            "excludeByName": {"Time 1": True, "Time 2": True, "node 2": True},
-                            "indexByName": {"node": 0, "Value #A": 1, "Value #B": 2},
-                            "renameByName": {"Value #A": "Cached", "Value #B": "Buffers"},
-                        },
-                    ),
-                ],
+                transformations=_node_table_transforms(("Cached", "Buffers")),
                 field_config=dashboard.FieldConfigSource(defaults=dashboard.FieldConfig(unit="bytes", decimals=1)),
             ),
             dashboard.Panel(
@@ -420,47 +396,17 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Current slab, reclaimable and unreclaimable slab, kernel stack, page tables, vmalloc, and per-CPU gauges from node-exporter. Slab contains its reclaimable and unreclaimable components; all these host metrics overlap the broader Pod/host memory accounting and must not be added together as disjoint buckets.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=11, w=24, y=76),
-                transformations=[
-                    dashboard.DataTransformerConfig(
-                        id_val="joinByField", options={"byField": "node", "mode": "outerTabular"}
-                    ),
-                    dashboard.DataTransformerConfig(
-                        id_val="organize",
-                        options={
-                            "excludeByName": dict.fromkeys(
-                                (
-                                    *(f"Time {index}" for index in range(1, 8)),
-                                    *(f"node {index}" for index in range(2, 8)),
-                                ),
-                                True,
-                            ),
-                            "indexByName": {
-                                name: index
-                                for index, name in enumerate(
-                                    (
-                                        "node",
-                                        "Value #A",
-                                        "Value #B",
-                                        "Value #C",
-                                        "Value #D",
-                                        "Value #E",
-                                        "Value #F",
-                                        "Value #G",
-                                    )
-                                )
-                            },
-                            "renameByName": {
-                                "Value #A": "Slab",
-                                "Value #B": "Reclaimable slab",
-                                "Value #C": "Unreclaimable slab",
-                                "Value #D": "Kernel stack",
-                                "Value #E": "Page tables",
-                                "Value #F": "Vmalloc used",
-                                "Value #G": "Per-CPU",
-                            },
-                        },
-                    ),
-                ],
+                transformations=_node_table_transforms(
+                    (
+                        "Slab",
+                        "Reclaimable slab",
+                        "Unreclaimable slab",
+                        "Kernel stack",
+                        "Page tables",
+                        "Vmalloc used",
+                        "Per-CPU",
+                    )
+                ),
                 field_config=dashboard.FieldConfigSource(defaults=dashboard.FieldConfig(unit="bytes", decimals=1)),
             ),
         ],
@@ -469,7 +415,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 dashboard.VariableModel(
                     name="node",
                     label="Node",
-                    query='query_result(max by (node) (max by (node) (node_memory_MemTotal_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+"}))))',
+                    query=_NODE_VARIABLE_QUERY,
                     datasource=mimir(),
                     current=dashboard.VariableOption(selected=True, text="All", value=["$__all"]),
                     multi=True,
@@ -478,12 +424,12 @@ def build_dashboard() -> dashboard.Dashboard:
                     include_all=True,
                     all_value=".*",
                     regex='/node="([^"]+)"/',
-                    definition='query_result(max by (node) (max by (node) (node_memory_MemTotal_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+"}))))',
+                    definition=_NODE_VARIABLE_QUERY,
                 ),
                 dashboard.VariableModel(
                     name="namespace",
                     label="Namespace focus",
-                    query='query_result(max by (namespace) (container_memory_working_set_bytes{node=~"$node",container!="",container!="POD"} and on (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1)))',
+                    query=_NAMESPACE_VARIABLE_QUERY,
                     datasource=mimir(),
                     current=dashboard.VariableOption(selected=True, text="All", value=["$__all"]),
                     multi=True,
@@ -492,20 +438,8 @@ def build_dashboard() -> dashboard.Dashboard:
                     include_all=True,
                     all_value=".*",
                     regex='/namespace="([^"]+)"/',
-                    definition='query_result(max by (namespace) (container_memory_working_set_bytes{node=~"$node",container!="",container!="POD"} and on (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1)))',
+                    definition=_NAMESPACE_VARIABLE_QUERY,
                 ),
-            ]
-        ),
-        annotations=dashboard.AnnotationContainer(
-            list_val=[
-                dashboard.AnnotationQuery(
-                    name="Annotations & Alerts",
-                    datasource=common.DataSourceRef(type_val="grafana", uid="-- Grafana --"),
-                    hide=True,
-                    icon_color="rgba(0, 211, 255, 1)",
-                    type_val="dashboard",
-                    built_in=1,
-                )
             ]
         ),
     )

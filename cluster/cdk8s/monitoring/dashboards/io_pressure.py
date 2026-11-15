@@ -8,6 +8,7 @@ from cluster.cdk8s.monitoring.dashboards.foundation import (
     mimir,
     mimir_query,
     mimir_table_query,
+    storage_tier_variable,
 )
 
 _PHYSICAL_DISKS = 'device!~"^(loop|ram|fd|dm-|sr|nbd|drbd).*"'
@@ -67,7 +68,6 @@ def build_dashboard() -> dashboard.Dashboard:
         title="IO pressure",
         tags=["cluster", "storage", "io", "pressure"],
         graph_tooltip=dashboard.DashboardCursorSync.CROSSHAIR,
-        week_start="",
         refresh="1m",
         schema_version=39,
         version=1,
@@ -325,18 +325,7 @@ def build_dashboard() -> dashboard.Dashboard:
         ],
         templating=dashboard.DashboardDashboardTemplating(
             list_val=[
-                dashboard.VariableModel(
-                    type_val=dashboard.VariableType.CUSTOM,
-                    name="storage_tier",
-                    label="Storage tier",
-                    query="SSD : ssd,HDD : hdd,Both : ssd|hdd",
-                    current=dashboard.VariableOption(selected=True, text="Both", value="ssd|hdd"),
-                    options=[
-                        dashboard.VariableOption(selected=False, text="SSD", value="ssd"),
-                        dashboard.VariableOption(selected=False, text="HDD", value="hdd"),
-                        dashboard.VariableOption(selected=True, text="Both", value="ssd|hdd"),
-                    ],
-                ),
+                storage_tier_variable(),
                 dashboard.VariableModel(
                     name="node",
                     label="Node",
@@ -373,18 +362,6 @@ def build_dashboard() -> dashboard.Dashboard:
                         dashboard.VariableOption(selected=False, text="50", value="50"),
                     ],
                 ),
-            ]
-        ),
-        annotations=dashboard.AnnotationContainer(
-            list_val=[
-                dashboard.AnnotationQuery(
-                    name="Annotations & Alerts",
-                    datasource=common.DataSourceRef(type_val="grafana", uid="-- Grafana --"),
-                    hide=True,
-                    icon_color="rgba(0, 211, 255, 1)",
-                    type_val="dashboard",
-                    built_in=1,
-                )
             ]
         ),
     )

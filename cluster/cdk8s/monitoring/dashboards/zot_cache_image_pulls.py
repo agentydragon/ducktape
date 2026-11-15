@@ -21,6 +21,30 @@ def _stat_fields(unit: str) -> dashboard.FieldConfigSource:
     )
 
 
+def _series_fields(unit: str) -> dashboard.FieldConfigSource:
+    return dashboard.FieldConfigSource(
+        defaults=dashboard.FieldConfig(
+            unit=unit,
+            min_val=0,
+            custom=common.GraphFieldConfig(
+                draw_style=common.GraphDrawStyle.LINE,
+                line_width=1,
+                line_interpolation=common.LineInterpolation.LINEAR,
+                fill_opacity=10,
+                show_points=common.VisibilityMode.NEVER,
+            ),
+        )
+    )
+
+
+def _bar_options() -> bargauge.Options:
+    return bargauge.Options(
+        display_mode=common.BarGaugeDisplayMode.BASIC,
+        reduce_options=last_value(),
+        orientation=common.VizOrientation.HORIZONTAL,
+    )
+
+
 def build_dashboard() -> dashboard.Dashboard:
     return dashboard.Dashboard(
         uid="zot-cache-image-pulls",
@@ -135,19 +159,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, y=7),
                 options=series_options(sort=common.SortOrder.DESCENDING, legend_calcs=("lastNotNull",)),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="short",
-                        min_val=0,
-                        custom=common.GraphFieldConfig(
-                            draw_style=common.GraphDrawStyle.LINE,
-                            line_width=1,
-                            line_interpolation=common.LineInterpolation.LINEAR,
-                            fill_opacity=10,
-                            show_points=common.VisibilityMode.NEVER,
-                        ),
-                    )
-                ),
+                field_config=_series_fields("short"),
             ),
             dashboard.Panel(
                 type_val="timeseries",
@@ -168,19 +180,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, x=12, y=7),
                 options=series_options(sort=common.SortOrder.DESCENDING, legend_calcs=("lastNotNull",)),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="bytes",
-                        min_val=0,
-                        custom=common.GraphFieldConfig(
-                            draw_style=common.GraphDrawStyle.LINE,
-                            line_width=1,
-                            line_interpolation=common.LineInterpolation.LINEAR,
-                            fill_opacity=10,
-                            show_points=common.VisibilityMode.NEVER,
-                        ),
-                    )
-                ),
+                field_config=_series_fields("bytes"),
             ),
             dashboard.Panel(
                 type_val="bargauge",
@@ -197,11 +197,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Zot counts image-store manifest reads, including HEAD checks, multi-architecture manifests and internal reads. These are not complete image pulls, cache hits or unique images. Fixed 24h window ending at the selected time. Repositories with zero reads remain visible when the counter exists.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=10, y=15),
-                options=bargauge.Options(
-                    display_mode=common.BarGaugeDisplayMode.BASIC,
-                    reduce_options=last_value(),
-                    orientation=common.VizOrientation.HORIZONTAL,
-                ),
+                options=_bar_options(),
                 field_config=_stat_fields("short"),
             ),
             dashboard.Panel(
@@ -218,11 +214,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Zot walks each repository directory and sums file sizes. Hard-linked shared blobs can be counted more than once, and metadata outside repository directories is excluded. Do not add this to filesystem usage or interpret it as physical replicated allocation.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=10, x=12, y=15),
-                options=bargauge.Options(
-                    display_mode=common.BarGaugeDisplayMode.BASIC,
-                    reduce_options=last_value(),
-                    orientation=common.VizOrientation.HORIZONTAL,
-                ),
+                options=_bar_options(),
                 field_config=_stat_fields("bytes"),
             ),
             dashboard.Panel(
@@ -238,19 +230,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, y=25),
                 options=series_options(sort=common.SortOrder.DESCENDING, legend_calcs=("lastNotNull",)),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="short",
-                        min_val=0,
-                        custom=common.GraphFieldConfig(
-                            draw_style=common.GraphDrawStyle.LINE,
-                            line_width=1,
-                            line_interpolation=common.LineInterpolation.LINEAR,
-                            fill_opacity=10,
-                            show_points=common.VisibilityMode.NEVER,
-                        ),
-                    )
-                ),
+                field_config=_series_fields("short"),
             ),
             dashboard.Panel(
                 type_val="table",
