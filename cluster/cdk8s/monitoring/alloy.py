@@ -1,10 +1,7 @@
-"""Grafana Alloy, as three HelmReleases: the central `alloy` Deployment for cluster-wide work, the
-`alloy-node` DaemonSet scraping each node's own targets into a WAL on that node's disk, and the
-`alloy-syslog` Deployment receiving the home switch's and the AT&T gateway's syslog on optiplex. Also the NetworkPolicy
-admitting OTLP from Authentik's outpost to the central one, and the ConfigMaps.
+"""Central, node-local, NixOS journal and syslog Alloy releases.
 
-Their configs are `config.alloy`, `node.alloy` and `syslog.alloy` beside this module. They read the addresses other
-modules own through `sys.env`, from the environment the HelmReleases set.
+Node-local pod logs and NixOS journals use explicit migration gates; the staged
+handoff and pending retirement checks are in docs/promtail-alloy-cutover.md.
 """
 
 from __future__ import annotations
@@ -36,6 +33,8 @@ _NODE_CONFIG_MAP = "alloy-node-config"
 _NODE_CONFIG_KEY = "node.alloy"
 # Node-local disk for the per-node WAL, so a buffered outage survives a pod restart.
 _NODE_STORAGE_PATH = "/var/lib/alloy-node"
+_JOURNAL_NAME = "alloy-journal"
+_JOURNAL_STORAGE_PATH = "/var/lib/alloy-journal"
 _SYSLOG_NAME = "alloy-syslog"
 _SYSLOG_CONFIG_MAP = "alloy-syslog-config"
 _SYSLOG_CONFIG_KEY = "syslog.alloy"
@@ -61,17 +60,25 @@ _CONFIG_ENV = {
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
     runfiles_root = Runfiles.CreateOrRaise().root()
-    config_map, node_config_map, syslog_config_map = (
+    config_map, node_config_map, syslog_config_map, journal_config_map = (
         ConfigMap(
             chart,
             name,
             metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
-            data={key: (runfiles_root / f"ducktape/cluster/cdk8s/monitoring/{key}").read_text()},
+            data={
+                key: (runfiles_root / f"ducktape/cluster/cdk8s/monitoring/{key}").read_text()
+                + (
+                    (runfiles_root / "ducktape/cluster/cdk8s/monitoring/pod-logs.alloy").read_text()
+                    if key == _NODE_CONFIG_KEY
+                    else ""
+                )
+            },
         )
         for name, key in (
             (_CONFIG_MAP, _CONFIG_KEY),
             (_NODE_CONFIG_MAP, _NODE_CONFIG_KEY),
             (_SYSLOG_CONFIG_MAP, _SYSLOG_CONFIG_KEY),
+            ("alloy-journal-config", "journal.alloy"),
         )
     )
     helm_release(
@@ -124,19 +131,109 @@ def chart(app: App) -> Chart:
             "alloy": {
                 "configMap": {"name": node_config_map.name, "key": _NODE_CONFIG_KEY, "create": False},
                 "storagePath": _NODE_STORAGE_PATH,
-                "mounts": {"extra": [{"name": "wal", "mountPath": _NODE_STORAGE_PATH}]},
+                "mounts": {
+                    "extra": [
+                        {"name": "wal", "mountPath": _NODE_STORAGE_PATH},
+                        {"name": "pod-logs", "mountPath": "/var/log/pods", "readOnly": True},
+                    ]
+                },
+                "securityContext": {
+                    "runAsUser": 0,
+                    "allowPrivilegeEscalation": False,
+                    "readOnlyRootFilesystem": True,
+                    "capabilities": {"drop": ["ALL"]},
+                },
                 "extraEnv": [
                     {"name": "MIMIR_PUSH_URL", "value": mimir.PUSH_URL},
+                    {"name": "LOKI_PUSH_URL", "value": loki.PUSH_URL},
                     {"name": "NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName"}}},
                 ],
-                "resources": {"requests": {"cpu": "20m", "memory": "256Mi"}},
+                # Keep both the metrics working set and Promtail's measured page-cache
+                # headroom; never reinstate its etcd-starving 128Mi cap (2026_06_19 incident).
+                "resources": {"requests": {"cpu": "70m", "memory": "512Mi"}, "limits": {"memory": "2Gi"}},
             },
             "controller": {
                 "type": "daemonset",
+                # `drained` stops both writers before first-import state preparation;
+                # removing it restarts metrics against the same persistent WAL.
+                "affinity": {
+                    "nodeAffinity": {
+                        "requiredDuringSchedulingIgnoredDuringExecution": {
+                            "nodeSelectorTerms": [
+                                {
+                                    "matchExpressions": [
+                                        {"key": loki.POD_COLLECTOR_LABEL, "operator": "NotIn", "values": ["drained"]}
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                },
                 "volumes": {
-                    "extra": [{"name": "wal", "hostPath": {"path": _NODE_STORAGE_PATH, "type": "DirectoryOrCreate"}}]
+                    "extra": [
+                        {"name": "wal", "hostPath": {"path": _NODE_STORAGE_PATH, "type": "DirectoryOrCreate"}},
+                        {"name": "pod-logs", "hostPath": {"path": "/var/log/pods", "type": "Directory"}},
+                    ]
                 },
                 "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION, node_scheduling.ROAMING_TOLERATION],
+            },
+            "serviceMonitor": {"enabled": True},
+        },
+    )
+    # Journal paths and root journal-reader permissions stay off Talos nodes. A
+    # separate Alloy is necessary because host mounts are a Pod-template property.
+    helm_release(
+        chart,
+        _JOURNAL_NAME,
+        NAMESPACE,
+        repository=grafana_helmrepository.SOURCE_REF,
+        chart=_NAME,
+        version="1.x",
+        interval="30m",
+        chart_interval="12h",
+        values={
+            "nameOverride": _JOURNAL_NAME,
+            "rbac": {"create": False},
+            "serviceAccount": {"automountServiceAccountToken": False},
+            "alloy": {
+                "configMap": {"name": journal_config_map.name, "key": "journal.alloy", "create": False},
+                "storagePath": _JOURNAL_STORAGE_PATH,
+                "extraEnv": [{"name": "LOKI_PUSH_URL", "value": loki.PUSH_URL}],
+                "mounts": {
+                    "extra": [
+                        {"name": name, "mountPath": path, "readOnly": name != "positions"}
+                        for name, path in (
+                            ("positions", _JOURNAL_STORAGE_PATH),
+                            ("journal", "/var/log/journal"),
+                            ("machine-id", "/etc/machine-id"),
+                        )
+                    ]
+                },
+                "securityContext": {
+                    "runAsUser": 0,
+                    "allowPrivilegeEscalation": False,
+                    "readOnlyRootFilesystem": True,
+                    "capabilities": {"drop": ["ALL"]},
+                },
+                "resources": {
+                    "requests": {"cpu": "50m", "memory": "256Mi"},
+                    "limits": {"cpu": "500m", "memory": "512Mi"},
+                },
+            },
+            "controller": {
+                "type": "daemonset",
+                "nodeSelector": {"node-vendor": "nixos", loki.JOURNAL_COLLECTOR_LABEL: "alloy"},
+                "tolerations": [{"effect": "NoSchedule", "operator": "Exists"}],
+                "volumes": {
+                    "extra": [
+                        {"name": name, "hostPath": {"path": path, "type": kind}}
+                        for name, path, kind in (
+                            ("positions", _JOURNAL_STORAGE_PATH, "DirectoryOrCreate"),
+                            ("journal", "/var/log/journal", "Directory"),
+                            ("machine-id", "/etc/machine-id", "File"),
+                        )
+                    ]
+                },
             },
             "serviceMonitor": {"enabled": True},
         },
@@ -255,7 +352,7 @@ def alloy(chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomiza
             KustomizationSpecHealthChecks(
                 api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=name, namespace=NAMESPACE
             )
-            for name in (_NAME, _NODE_NAME, _SYSLOG_NAME)
+            for name in (_NAME, _NODE_NAME, _JOURNAL_NAME, _SYSLOG_NAME)
         ],
         timeout="5m",
         # the chart's serviceMonitor

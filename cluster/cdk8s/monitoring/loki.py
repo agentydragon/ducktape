@@ -45,6 +45,9 @@ READ_URL = "http://loki-read.loki.svc.cluster.local:3100"
 PUSH_URL = f"{WRITE_URL}/loki/api/v1/push"
 _CREDENTIALS_ENV_FROM = [{"secretRef": {"name": _CREDENTIALS_SECRET}}]
 _GOLDILOCKS_OFF = {"goldilocks.fairwinds.com/enabled": "false"}
+# Per-node cutover protocol; pod-logs.alloy uses the sanitized Node-label spelling.
+POD_COLLECTOR_LABEL = "observability.allegedly.works/pod-collector"
+JOURNAL_COLLECTOR_LABEL = "observability.allegedly.works/journal-collector"
 _TOLERATE_NO_SCHEDULE = [{"effect": "NoSchedule", "operator": "Exists"}]
 
 
@@ -217,8 +220,23 @@ def _loki_values() -> dict[str, object]:
     }
 
 
+def _legacy_collector_affinity(label: str) -> dict[str, object]:
+    # Missing labels retain legacy collection. Draining is separate from activation
+    # so an operator can stop the writer before snapshotting its final checkpoint.
+    return {
+        "nodeAffinity": {
+            "requiredDuringSchedulingIgnoredDuringExecution": {
+                "nodeSelectorTerms": [
+                    {"matchExpressions": [{"key": label, "operator": "NotIn", "values": ["drained", "alloy"]}]}
+                ]
+            }
+        }
+    }
+
+
 def _promtail_values() -> dict[str, object]:
     return {
+        "affinity": _legacy_collector_affinity(POD_COLLECTOR_LABEL),
         "config": {
             "clients": [
                 # SimpleScalable writes through loki-write; the old single-binary
@@ -254,6 +272,7 @@ def _promtail_journal_values() -> dict[str, object]:
     return {
         # Restrict to systemd/journald nodes; label set in nix/nixos/hosts/*/default.nix.
         "nodeSelector": {"node-vendor": "nixos"},
+        "affinity": _legacy_collector_affinity(JOURNAL_COLLECTOR_LABEL),
         "tolerations": _TOLERATE_NO_SCHEDULE,
         "config": {
             "clients": [{"url": PUSH_URL}],
@@ -404,6 +423,7 @@ def _network_policy(chart: Chart) -> None:
                     *_from_pods({"app.kubernetes.io/name": "alloy", namespace_label: "monitoring"}),
                     *_from_pods({"app.kubernetes.io/name": "alloy-node", namespace_label: "monitoring"}),
                     *_from_pods({"app.kubernetes.io/name": "alloy-syslog", namespace_label: "monitoring"}),
+                    *_from_pods({"app.kubernetes.io/name": "alloy-journal", namespace_label: "monitoring"}),
                 ],
                 to_ports=_ingress_tcp("3100"),
             ),

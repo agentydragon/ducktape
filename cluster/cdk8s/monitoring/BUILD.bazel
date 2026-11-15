@@ -1,3 +1,4 @@
+# gazelle:resolve py third_party.containers.alloy_config //third_party/containers:alloy_config
 # gazelle:resolve py grafana_grafanaserviceaccount_crds //cluster/cdk8s/providers/grafana_operator:grafanaserviceaccount
 load("@image_pins//:pins.bzl", "BLACKBOX_EXPORTER_DIGEST", "BLACKBOX_EXPORTER_IMAGE")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
@@ -99,7 +100,9 @@ py_library(
     srcs = ["alloy.py"],
     data = [
         "config.alloy",
+        "journal.alloy",
         "node.alloy",
+        "pod-logs.alloy",
         "syslog.alloy",
     ],
     visibility = [
@@ -522,6 +525,29 @@ py_test(
         "//cluster/cdk8s:conftest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_test(
+    name = "test_alloy_config",
+    size = "medium",
+    srcs = ["test_alloy_config.py"],
+    data = [
+        "journal.alloy",
+        "node.alloy",
+        "pod-logs.alloy",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    requires_docker = True,
+    deps = [
+        "//:conftest",
+        "//cluster/cdk8s:conftest",
+        "//devinfra/oci",
+        "//third_party/containers:alloy_config",
+        "@pypi//docker",
+        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )
