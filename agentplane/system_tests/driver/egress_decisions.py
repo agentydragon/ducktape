@@ -6,7 +6,6 @@ from contextlib import asynccontextmanager
 from agentplane.egress.api.admin import egress_admin_pb2 as pb, egress_admin_pb2_grpc as rpc
 from agentplane.egress.api.rules import egress_rules_pb2
 from agentplane.grpc.calls import dial
-from agentplane.proto import identity_pb2
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
 from agentplane.system_tests.driver.tls import service_svid_credentials
@@ -18,7 +17,8 @@ from agentplane.system_tests.driver.tls import service_svid_credentials
 
 
 @asynccontextmanager
-async def watch_client(cluster: Cluster) -> AsyncIterator[rpc.EgressAdminAsyncStub]:
+async def watch_client(cluster: Cluster, *, svid_secret: str) -> AsyncIterator[rpc.EgressAdminAsyncStub]:
+    """Read decisions over mTLS as the service identity in `svid_secret`."""
     forward = PortForward(
         cluster.command("port-forward"),
         resource="service/egress-admin",
@@ -26,7 +26,7 @@ async def watch_client(cluster: Cluster) -> AsyncIterator[rpc.EgressAdminAsyncSt
         local_port=None,
         remote_port=8081,
     )
-    credentials = await service_svid_credentials(cluster, "app-workload-tls")
+    credentials = await service_svid_credentials(cluster, svid_secret)
     async with (
         async_port_forward(forward) as target,
         dial(
@@ -35,10 +35,6 @@ async def watch_client(cluster: Cluster) -> AsyncIterator[rpc.EgressAdminAsyncSt
     ):
         stub: rpc.EgressAdminAsyncStub = rpc.EgressAdminStub(channel)
         yield stub
-
-
-async def snapshot(stub: rpc.EgressAdminAsyncStub, subject: identity_pb2.ServiceAccount) -> list[pb.Decision]:
-    return await _snapshot(stub, pb.DecisionFilter(subject=subject))
 
 
 async def snapshot_identity(stub: rpc.EgressAdminAsyncStub, identity_name: str) -> list[pb.Decision]:

@@ -598,7 +598,6 @@ py_library(
         "//agentplane/egress/api/admin:egress_admin_pb2_grpc",
         "//agentplane/egress/api/rules:egress_rules_pb2",
         "//agentplane/grpc:calls",
-        "//agentplane/proto:identity_pb2",
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//types_grpcio",
@@ -659,6 +658,7 @@ py_library(
     name = "scripted_agent",
     srcs = ["scripted_agent.py"],
     deps = [
+        ":action_cli",
         ":agent",
         ":scripted_upstream",
         ":tracing",
@@ -885,4 +885,9 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "action_cli",
+    srcs = ["action_cli.py"],
 )

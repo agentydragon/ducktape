@@ -26,6 +26,7 @@ from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.proto import identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.deployment import mcp_servers
+from agentplane.system_tests.driver.action_cli import submission
 from agentplane.system_tests.driver.action_requests import (
     action_request,
     assert_echoed_result,
@@ -44,7 +45,7 @@ from agentplane.system_tests.driver.operator_login import (
 )
 from agentplane.system_tests.driver.policy_objects import POLICY_READY_SECONDS, PolicyBindingPresentError, PolicyObjects
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes
-from agentplane.system_tests.driver.scripted_agent import ScriptedAgent, play_cli_turn, submission
+from agentplane.system_tests.driver.scripted_agent import ScriptedAgent, play_cli_turn
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
 

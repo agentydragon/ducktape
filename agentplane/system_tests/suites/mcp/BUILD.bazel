@@ -125,22 +125,13 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
-        "//agentplane/app/testing:client",
-        "//agentplane/runner_gateway/dispatcher:testing_client",
-        "//agentplane/system_tests:app_fixtures",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/deployment:pytest_plugin",
-        "//agentplane/system_tests/deployment:stack",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:executor",
-        "//agentplane/system_tests/driver:harness_pair",
-        "//agentplane/system_tests/driver:operator_login",
-        "//agentplane/system_tests/driver:policy_objects",
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/scenarios:central_sampler",
-        "//agentplane/system_tests/scenarios:dcr",
-        "//agentplane/system_tests/scenarios:mcp",
         "//agentplane/system_tests/suites/mcp:operator_fixtures",
         "@pypi//httpx",
         "@pypi//pytest",
@@ -497,4 +488,121 @@ py_library(
         "@pypi//httpx",
         "@pypi//pytest",
     ],
+)
+
+image_manifest(
+    name = "mcp_services_image_manifest",
+    testonly = True,
+    fixture = BACKEND_SERVICE_IMAGES | APP_IMAGES | MCP_EDGE_IMAGES | HARNESSES_IMAGES | MCP_FIXTURE_IMAGES | RUNNER_DISK_IMAGE,
+    pki = PKI_IMAGES,
+)
+
+py_test(
+    name = "test_services_mcp",
+    size = "enormous",
+    srcs = ["test_services_mcp.py"],
+    data = [
+        "//agentplane/crds",
+        K3S_BINARY,
+        ":mcp_services_image_manifest",
+        "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
+        "//agentplane/system_tests/suites/mcp:mcp_services_manifests",
+        "@cert_manager_v1_21_2_release//file",
+    ],
+    env = {
+        "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
+        "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
+        "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites/mcp:mcp_services_manifests)",
+        "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :mcp_services_image_manifest)",
+    },
+    exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
+        "test.runner-recycling-key": k3s_recycling_key(vm = False),
+    },
+    tags = K3S_TAGS,
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests:app_fixtures",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/deployment:pytest_plugin",
+        "//agentplane/system_tests/deployment:stack",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:harness_pair",
+        "//agentplane/system_tests/driver:operator_login",
+        "//agentplane/system_tests/driver:policy_objects",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/scenarios:dcr",
+        "//agentplane/system_tests/scenarios:mcp",
+        "//agentplane/system_tests/suites/mcp:operator_fixtures",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_services_central",
+    size = "enormous",
+    srcs = ["test_services_central.py"],
+    data = [
+        "//agentplane/crds",
+        K3S_BINARY,
+        ":central_native_image_manifest",
+        "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
+        "//agentplane/system_tests/suites/mcp:recovery_manifests",
+        "@cert_manager_v1_21_2_release//file",
+    ],
+    env = {
+        "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
+        "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
+        "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites/mcp:recovery_manifests)",
+        "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :central_native_image_manifest)",
+    },
+    exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
+        "test.runner-recycling-key": k3s_recycling_key(vm = False),
+    },
+    tags = K3S_TAGS,
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/deployment:pytest_plugin",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:executor",
+        "//agentplane/system_tests/driver:native_fixtures",
+        "//agentplane/system_tests/driver:native_platform",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/scenarios:central_sampler",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_binary(
+    name = "mcp_services_deployment_bin",
+    main_module = "agentplane.system_tests.suites.mcp.mcp_services_deployment",
+    deps = [":mcp_services_deployment"],
+)
+
+py_library(
+    name = "mcp_services_deployment",
+    srcs = ["mcp_services_deployment.py"],
+    deps = [
+        "//agentplane/system_tests/deployment:fixture_chart",
+        "//agentplane/system_tests/deployment:fixture_database",
+        "//agentplane/system_tests/deployment:fixture_finalization",
+        "//agentplane/system_tests/deployment:mcp_fixture_chart",
+        "//agentplane/system_tests/deployment:render_fixture",
+        "//agentplane/system_tests/deployment:rendered_fixture",
+    ],
+)
+
+render_fixture(
+    name = "mcp_services_manifests",
+    renderer = ":mcp_services_deployment_bin",
 )

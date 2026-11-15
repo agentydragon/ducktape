@@ -15,7 +15,6 @@ import pytest
 from google.protobuf.json_format import ParseDict
 
 from agentplane.action_service.api.contracts import action_service_pb2
-from agentplane.app.testing.client import Client
 from agentplane.central_sampler.api import sampler_pb2
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.grpc.calls import ServiceError
@@ -26,7 +25,6 @@ from agentplane.proto import event_log_pb2, event_pb2, identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2
 from agentplane.system_tests.deployment import mcp_servers
 from agentplane.system_tests.driver.action_requests import action_request, assert_echoed_result, decide_pending_action
-from agentplane.system_tests.driver.app_sandbox import wait_until_running
 from agentplane.system_tests.driver.central_sampler import (
     MODEL,
     CentralStack,
@@ -34,7 +32,10 @@ from agentplane.system_tests.driver.central_sampler import (
     central_stack,
 )
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.environment_transport import EnvironmentServiceClient
 from agentplane.system_tests.driver.executor import Executor
+from agentplane.system_tests.driver.native_auth import NATIVE_CLIENT_NAME
+from agentplane.system_tests.driver.native_sandbox import wait_until_running
 from agentplane.system_tests.driver.sandbox import SANDBOX_READY_SECONDS
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
@@ -840,7 +841,9 @@ async def gateway_roll_keeps_live_central_read_and_turn(
 ) -> None:
     """A real Gateway outage interrupts process/read, then the same call and turn finish."""
     session_id, first_command, second_command = str(uuid4()), str(uuid4()), str(uuid4())
-    async with central_stack(cluster, tmp_path, template=executor.template) as deployed:
+    async with central_stack(
+        cluster, tmp_path, template=executor.template, history_account=NATIVE_CLIENT_NAME
+    ) as deployed:
         model = scripted.session_model(session_id, session_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
         spec = session_pb2.SessionSpec(
@@ -1117,7 +1120,7 @@ async def gateway_crash_settles_live_central_read_and_accepts_next_input(
     """A killed Gateway leaves its Lease held; the active read still settles truthfully."""
     session_id, first_command, second_command = str(uuid4()), str(uuid4()), str(uuid4())
     async with central_stack(
-        cluster, tmp_path, template=executor.template, history_account="system-test-native-client"
+        cluster, tmp_path, template=executor.template, history_account=NATIVE_CLIENT_NAME
     ) as deployed:
         model = scripted.session_model(session_id, session_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
@@ -1236,7 +1239,7 @@ async def gateway_retry_exhaustion_reports_unknown_and_accepts_next_input(
     """An outage beyond the resume budget settles the read without blocking History or input."""
     session_id, first_command, second_command = str(uuid4()), str(uuid4()), str(uuid4())
     async with central_stack(
-        cluster, tmp_path, template=executor.template, history_account="system-test-native-client"
+        cluster, tmp_path, template=executor.template, history_account=NATIVE_CLIENT_NAME
     ) as deployed:
         model = scripted.session_model(session_id, session_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
@@ -1378,7 +1381,9 @@ async def gateway_outage_restarts_exec_server_then_notifies_model(
 ) -> None:
     """An in-flight read loses its native server during Gateway outage and the model sees the loss."""
     session_id, first_command, second_command = str(uuid4()), str(uuid4()), str(uuid4())
-    async with central_stack(cluster, tmp_path, template=executor.template) as deployed:
+    async with central_stack(
+        cluster, tmp_path, template=executor.template, history_account=NATIVE_CLIENT_NAME
+    ) as deployed:
         model = scripted.session_model(session_id, session_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
         spec = session_pb2.SessionSpec(
@@ -1544,7 +1549,7 @@ async def dispatcher_central_setup_tool_and_retained_answer(
     prompt = "Read the setup marker and report the result."
     reasoning = "I will read the marker created during setup."
     answer = "The executor returned prepared-on-executor."
-    async with central_stack(cluster, tmp_path, template=template) as deployed:
+    async with central_stack(cluster, tmp_path, template=template, history_account=NATIVE_CLIENT_NAME) as deployed:
         model = scripted.session_model(session_id, session_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
         session_spec = session_pb2.SessionSpec(
@@ -1825,13 +1830,19 @@ async def dispatcher_central_setup_tool_and_retained_answer(
 
 
 async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
-    cluster: Cluster, client: Client, tmp_path: Path, scripted: ScriptedUpstream, executor: Executor
+    cluster: Cluster,
+    environments: EnvironmentServiceClient,
+    tmp_path: Path,
+    scripted: ScriptedUpstream,
+    executor: Executor,
 ) -> None:
     """A resident central Session continues its next requested exec on the resumed Pod."""
     session_id = str(uuid4())
     first_command_id, resumed_command_id = str(uuid4()), str(uuid4())
     cwd = executor.cwd
-    async with central_stack(cluster, tmp_path, template=executor.template) as deployed:
+    async with central_stack(
+        cluster, tmp_path, template=executor.template, history_account=NATIVE_CLIENT_NAME
+    ) as deployed:
         target = identity_pb2.EnvironmentTarget(
             namespace=cluster.namespace, name=deployed.sandbox, uid=deployed.sandbox_uid
         )
@@ -1898,10 +1909,10 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
         )
 
         previous_incarnation = deployed.incarnation_uid
-        await client.suspend_sandbox(target)
+        await environments.suspend_environment(target)
         async with asyncio.timeout(SANDBOX_READY_SECONDS):
             while True:
-                suspended = await client.get_environment(target)
+                suspended = await environments.get_environment(target)
                 if (
                     suspended.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED
                     and not suspended.kubernetes_diagnostics.HasField("pod")
@@ -1909,8 +1920,8 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
                     break
                 await asyncio.sleep(0.2)
 
-        await client.resume_sandbox(target)
-        resumed = await wait_until_running(client, target)
+        await environments.resume_environment(target)
+        resumed = await wait_until_running(environments, target)
         assert resumed.target.uid == deployed.sandbox_uid
         assert resumed.kubernetes_diagnostics.HasField("pod")
         assert resumed.kubernetes_diagnostics.pod.uid != previous_incarnation
@@ -2019,7 +2030,7 @@ async def sampler_roll_retains_active_turn_and_history_accepts_next_input(
     """Lost JavaScript work is settled once before the successor continues the confirmed input."""
     session_id, command_id, next_command_id = str(uuid4()), str(uuid4()), str(uuid4())
     async with central_stack(
-        cluster, tmp_path, template=executor.template, history_account="system-test-native-client"
+        cluster, tmp_path, template=executor.template, history_account=NATIVE_CLIENT_NAME
     ) as deployed:
         model = scripted.session_model(session_id, session_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
