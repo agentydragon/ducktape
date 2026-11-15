@@ -57,7 +57,7 @@ each full method name to the `Rule` admitting its callers and refuses any method
 ([gRPC services](../../docs/grpc_services.md#authentication)).
 
 `Services` admits only verified client SVIDs in its exact service allowlist and returns a
-`ServiceAdmission`; an empty list admits nobody. It refuses bearer credentials, workload SVIDs
+`ServiceAdmission`; an empty list grants no direct access. It refuses bearer credentials, workload SVIDs
 and ungranted delegation. PolicyService uses this rule for its separate reader and writer grants.
 A service admission supplies no Identity, ServiceAccount UID or Pod proof. Stream revalidation
 rechecks the certificate validity and exact grant.
@@ -106,8 +106,9 @@ Bearer helper.
 **Backend service admission.** `AllowServiceCallers` adds an exact service allowlist to an
 existing authenticated rule; `Services` constructs a service-only rule with no workload or bearer
 resolver. `AllowServiceDelegationFrom` separately grants service actors permission to assert live
-Identities on Identity-admitting rules, retaining the service actor, effective Identity and typed
-provenance. Service principals never become `Account`, `Principal`, `IdentityPrincipal` or workload
+Identities on service-only or Identity-admitting rules, retaining the service actor, effective Identity
+and typed provenance. A service-only rule with no direct callers can admit only its configured
+service delegators; it cannot gain legacy bearer delegation. Service principals never become `Account`, `Principal`, `IdentityPrincipal` or workload
 `WorkloadCredential` values. Receiver-specific bearer paths remain until their own removal.
 
 [`audience.py`](audience.py) defines `WORKLOAD_TOKEN_AUDIENCE`, the `agentplane-egress` audience
