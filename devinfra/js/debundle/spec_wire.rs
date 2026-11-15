@@ -490,7 +490,7 @@ pub fn encode_swap_mark(value: &spec::SwapMark) -> pb::SwapMark {
         version: Some(value.version.clone()),
         subpath: Some(value.subpath.clone()),
         wrapper_shape: value.wrapper_shape.map(|shape| shape as i32),
-        default_export_aliases: value.default_export_aliases.iter().cloned().collect(),
+        default_export_aliases: value.default_export_aliases.clone(),
     }
 }
 
@@ -846,10 +846,7 @@ pub fn decode_passed_to_call_selector(
     Ok(spec::PassedToCallSelector {
         callee_member: required(v.callee_member)?,
         object: v.object,
-        arg_index: v
-            .arg_index
-            .map(|index| usize::try_from(index))
-            .transpose()?,
+        arg_index: v.arg_index.map(usize::try_from).transpose()?,
         kind: v.kind.map(pb::BindingSourceKind::try_from).transpose()?,
     })
 }
@@ -950,8 +947,8 @@ pub fn encode_binding_annotation(value: &spec::BindingAnnotation) -> pb::Binding
             .initializer_external_effects
             .map(|effects| effects as i32),
         effect: Some(value.effect as i32),
-        pure_members: value.pure_members.iter().cloned().collect(),
-        no_sync_callback_members: value.no_sync_callback_members.iter().cloned().collect(),
+        pure_members: value.pure_members.clone(),
+        no_sync_callback_members: value.no_sync_callback_members.clone(),
         comment: value.comment.clone(),
         note: value.note.clone(),
     }
@@ -1124,10 +1121,7 @@ pub fn encode_unassigned_mode(value: &spec::UnassignedMode) -> pb::UnassignedMod
             spec::UnassignedMode::CoarseAtomicGroups {
                 complete_partial_atomic_groups_for,
             } => Value::CoarseAtomicGroups(pb::UnassignedModeCoarseAtomicGroups {
-                complete_partial_atomic_groups_for: complete_partial_atomic_groups_for
-                    .iter()
-                    .cloned()
-                    .collect(),
+                complete_partial_atomic_groups_for: complete_partial_atomic_groups_for.clone(),
             }),
         }),
     }
