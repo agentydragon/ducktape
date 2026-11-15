@@ -5937,6 +5937,23 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         &mut self,
         roots: impl IntoIterator<Item = SourceUnitOrdinal>,
     ) -> bool {
+        let world = &self.state.world;
+        let roots: Vec<_> = roots
+            .into_iter()
+            .filter(|root| {
+                root.0 < self.inputs.synchronous_owner_adjacency.len()
+                    && !world.reachability.expanded.contains(root)
+            })
+            .collect();
+        // Ready deferred reads still need draining when all explicit roots
+        // were expanded at an earlier prefix.
+        if roots.is_empty()
+            && !world.reachability.deferred.keys().any(|binding| {
+                world.reachability.incomplete || world.module.initialized_bindings.contains(binding)
+            })
+        {
+            return false;
+        }
         let before = self.state.world.reachability.owners.len();
         // A reachable callback can read only its synchronous prefix while the
         // chunk is initializing. In particular, a binding used after a
