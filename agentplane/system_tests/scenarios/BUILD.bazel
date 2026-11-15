@@ -101,7 +101,6 @@ py_library(
 py_library(
     name = "dispatcher",
     srcs = ["dispatcher.py"],
-    data = ["//agentplane/system_tests/driver:runner_data_archive_bin"],
     deps = [
         "//agentplane:crd_group",
         "//agentplane:sandbox_resource",
@@ -115,9 +114,11 @@ py_library(
         "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_pb2_grpc",
         "//agentplane/system_tests/driver:cleanup_diagnostics",
         "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:dispatcher_operations",
         "//agentplane/system_tests/driver:dispatcher_transport",
         "//agentplane/system_tests/driver:identity",
         "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:sandbox_diagnostics",
         "//agentplane/system_tests/driver:tls",
         "//agentplane/system_tests/driver:tracing",
         "//devinfra/testing:undeclared_outputs",
@@ -127,7 +128,6 @@ py_library(
         "@pypi//pytest",
         "@pypi//pyyaml",
         "@pypi//tenacity",
-        "@rules_python//python/runfiles",
     ],
 )
 
@@ -393,7 +393,6 @@ py_library(
     name = "session_deletion",
     srcs = ["session_deletion.py"],
     deps = [
-        ":dispatcher",
         "//agentplane:crd_group",
         "//agentplane:sandbox_resource",
         "//agentplane/env/runtime/control:environment_runtime_pb2",
@@ -407,9 +406,11 @@ py_library(
         "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_pb2_grpc",
         "//agentplane/system_tests/driver:cleanup_diagnostics",
         "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:dispatcher_operations",
         "//agentplane/system_tests/driver:dispatcher_transport",
         "//agentplane/system_tests/driver:identity",
         "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:sandbox_diagnostics",
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/driver:tls",
         "//agentplane/testing:scripted_model",

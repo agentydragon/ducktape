@@ -26,6 +26,7 @@ from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.driver.cleanup_diagnostics import capture_without_masking
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.dispatcher_operations import session_until
 from agentplane.system_tests.driver.dispatcher_transport import Caller, bound_caller, forward
 from agentplane.system_tests.driver.identity import (
     LAUNCH_DEFAULT_POLICY_SETS,
@@ -35,9 +36,9 @@ from agentplane.system_tests.driver.identity import (
     scenario_identity,
 )
 from agentplane.system_tests.driver.sandbox import ENVIRONMENT_RUNTIME_CONTAINER, POD_TEMPLATE
+from agentplane.system_tests.driver.sandbox_diagnostics import container_mount_sources
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tls import service_credentials
-from agentplane.system_tests.scenarios.dispatcher import container_mount_sources, session_until
 from agentplane.testing.scripted_model import Text
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
