@@ -91,7 +91,7 @@ def add_database(scope: Construct, *, namespace: str, databases: Sequence[Databa
         metadata=ApiObjectMetadata(name=f"{NAME}-bootstrap-credentials", namespace=namespace),
         string_data={"password": _PASSWORD},
     )
-    bootstrap_statements = []
+    bootstrap_statements: list[str] = []
     for database in databases:
         _database_secret(db_scope, namespace=namespace, database=database)
         bootstrap_statements.extend(
