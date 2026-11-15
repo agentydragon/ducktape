@@ -12,11 +12,111 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/cosistate"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
+	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
 )
+
+type closePreparationRuntime struct {
+	controller.Runtime
+	storage    state.State
+	events     chan controller.ReconcileEvent
+	reconciled chan struct{}
+}
+
+func (p closePreparationRuntime) Get(ctx context.Context, ptr resource.Pointer, opts ...state.GetOption) (resource.Resource, error) {
+	return p.storage.Get(ctx, ptr, opts...)
+}
+
+func (p closePreparationRuntime) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, _ ...controller.ModifyOption) error {
+	return p.storage.Modify(ctx, value, update, state.WithUpdateOwner(runtimeLifecycleControllerName))
+}
+
+func (p closePreparationRuntime) EventCh() <-chan controller.ReconcileEvent { return p.events }
+
+func (p closePreparationRuntime) ResetRestartBackoff() { close(p.reconciled) }
+
+func TestCloseControllerExitCancelsPendingPreparation(t *testing.T) {
+	store := state.WrapCore(namespaced.NewState(inmem.Build))
+	desired := lifecycle.EnvironmentDesired{Mode: lifecycle.Closing, Generation: 7}
+	if err := lifecycle.PublishEnvironmentDesired(t.Context(), store, desired); err != nil {
+		t.Fatal(err)
+	}
+	lifecycleCtx, cancelLifecycle := context.WithCancel(t.Context())
+	defer cancelLifecycle()
+	r := &Runtime{desired: desired, lifecycleCancel: cancelLifecycle}
+	c := &runtimeCloseController{r: r, stopped: make(chan struct{})}
+	probe := closePreparationRuntime{storage: store, events: make(chan controller.ReconcileEvent), reconciled: make(chan struct{})}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan struct{})
+	var runErr error
+	t.Cleanup(func() {
+		cancel()
+		cleanupCtx, cancelCleanup := context.WithTimeout(context.Background(), lifecycleTestTimeout)
+		defer cancelCleanup()
+		select {
+		case <-done:
+			if c.plan.cancelFence != nil {
+				c.plan.cancelFence()
+			}
+		case <-cleanupCtx.Done():
+			t.Error("Close controller did not join its preparation worker")
+		}
+	})
+	go func() {
+		runErr = c.Run(ctx, probe, nil)
+		close(done)
+	}()
+	waitCtx, cancelWait := context.WithTimeout(t.Context(), lifecycleTestTimeout)
+	defer cancelWait()
+	func() {
+		// Let reconciliation start preparation, but keep that worker from
+		// installing its fence context until after the controller exits.
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		select {
+		case probe.events <- controller.ReconcileEvent{}:
+		case <-waitCtx.Done():
+			t.Fatal("Close controller did not start reconciliation")
+		}
+		select {
+		case <-probe.reconciled:
+		case <-waitCtx.Done():
+			t.Fatal("Close controller did not launch preparation")
+		}
+		cancel()
+		select {
+		case <-c.stopped:
+		case <-waitCtx.Done():
+			t.Fatal("Close controller did not signal its exit before joining preparation")
+		}
+		if !errors.Is(lifecycleCtx.Err(), context.Canceled) {
+			t.Fatalf("Runtime lifecycle after controller exit = %v, want canceled", lifecycleCtx.Err())
+		}
+		select {
+		case <-done:
+			t.Fatal("Close controller returned before preparation settled")
+		default:
+		}
+	}()
+	select {
+	case <-done:
+	case <-waitCtx.Done():
+		t.Fatal("Close controller did not join preparation after the mutex was released")
+	}
+	if runErr != nil {
+		t.Fatal(runErr)
+	}
+	if c.plan.fenceCtx == nil {
+		t.Fatal("Close preparation did not create its fence context")
+	}
+	if err := c.plan.fenceCtx.Err(); !errors.Is(err, context.Canceled) {
+		t.Fatalf("fence context after Close controller exit = %v, want canceled", err)
+	}
+}
 
 func TestRuntimeCloseStatusRequiresExactGeneration(t *testing.T) {
 	store := state.WrapCore(namespaced.NewState(inmem.Build))
