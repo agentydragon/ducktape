@@ -22,6 +22,15 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "modules_constraints_cli_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+    ],
+)
+
+debundle_e2e_test(
     name = "modules_placement_order_test",
     deps = [
         ":graph_support",
