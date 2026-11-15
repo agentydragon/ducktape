@@ -61,6 +61,7 @@ py_library(
         ":model_test_data",
         ":notifications",
         "//agentplane/app:oidc",
+        "//agentplane/app:settings",
         "//agentplane/environments/testing:process",
         "//agentplane/grpc:serving",
         "//agentplane/history_service:client",
