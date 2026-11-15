@@ -18,7 +18,7 @@ use super::super::value_model::{
 use crate::facts::abstract_domain::builtins::IntrinsicOp;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::evaluation_effects::GlobalAccessKind;
-use crate::reports::schema::{CallbackFactoryUseKind, NativeIntegrityGuard};
+use crate::reports::schema::CallbackFactoryUseKind;
 use swc_common::Span;
 use swc_ecma_ast::*;
 
