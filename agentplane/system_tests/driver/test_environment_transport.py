@@ -53,11 +53,15 @@ async def test_environment_unary_and_watch_send_no_bearer(monkeypatch: pytest.Mo
         )
         == target
     )
-    assert create.await_args.kwargs["metadata"] == ()
+    create_call = create.await_args
+    assert create_call is not None
+    assert create_call.kwargs["metadata"] == ()
 
     async with aclosing(client.environment_snapshots()) as snapshots:
         assert await anext(snapshots) == []
-    assert watch.call_args.kwargs["metadata"] == ()
+    watch_call = watch.call_args
+    assert watch_call is not None
+    assert watch_call.kwargs["metadata"] == ()
     assert stream.cancelled
 
 

@@ -874,9 +874,9 @@ py_test(
     srcs = ["test_native_platform_clients.py"],
     deps = [
         "//:conftest",
-        "//agentplane/env/runtime/control:environment_runtime_pb2",
         "//agentplane/env/runtime/control:environment_runtime_pb2_grpc",
         "//agentplane/proto:identity_pb2",
+        "//agentplane/proto:session_pb2",
         "//agentplane/runner_gateway:api",
         "//agentplane/runner_gateway:client",
         "//agentplane/system_tests:conftest",
