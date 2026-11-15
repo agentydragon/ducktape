@@ -118,7 +118,7 @@ func testRulesAuthWithCA(t *testing.T, ca *environmentruntimetransporttesting.CA
 	return authentication, policy.NewIndex()
 }
 
-func TestAdminServicePeerTLSIsMethodScopedAndPreservesBearerAccess(t *testing.T) {
+func TestAdminServicePeerTLSIsMethodScopedAndRejectsBearers(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
 	proxySVID := ca.Issue(t, peertls.EgressProxyURI)
 	forward := listener.Config{
@@ -132,7 +132,7 @@ func TestAdminServicePeerTLSIsMethodScopedAndPreservesBearerAccess(t *testing.T)
 		AdminGRPCCallers:        []string{"test-ns/test-app"},
 		AdminGRPCServiceCallers: []string{peertls.ActionsURI},
 		Forward:                 forward,
-	}, api.TokenReviews(), admin.ServiceOptions{
+	}, admin.ServiceOptions{
 		Decisions: noDecisions{}, Changes: quietChanges{}, HistoryHealth: idleHistory{}, Index: readyIndex{},
 	}, authentication, index)
 	if err != nil {
@@ -187,11 +187,14 @@ func TestAdminServicePeerTLSIsMethodScopedAndPreservesBearerAccess(t *testing.T)
 		t.Fatal(err)
 	}
 	bearer := dial(t, bearerTLS)
+	if _, err := healthpb.NewHealthClient(bearer).Check(context.Background(), &healthpb.HealthCheckRequest{}); err != nil {
+		t.Fatalf("certificate-free TLS probe: %v", err)
+	}
 	if _, err := egressadminpb.NewEgressAdminClient(bearer).GetHealth(
 		metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer "+testToken),
 		&egressadminpb.GetHealthRequest{},
-	); err != nil {
-		t.Fatalf("legacy admin bearer over TLS: %v", err)
+	); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("legacy admin bearer over TLS: %v, want Unauthenticated", err)
 	}
 
 	untrustedCA := environmentruntimetransporttesting.NewCA(t)
@@ -207,9 +210,18 @@ func TestAdminServicePeerTLSIsMethodScopedAndPreservesBearerAccess(t *testing.T)
 }
 
 func TestAdminListenerServesGRPCAndShutsDownWithAnOpenWatch(t *testing.T) {
-	c := config{AdminGRPCAudience: testAudience, AdminGRPCCallers: []string{"test-ns/test-app"}}
-	authentication, index := testRulesAuth(t)
-	server, err := newAdminServer(c, api.TokenReviews(), admin.ServiceOptions{
+	ca := environmentruntimetransporttesting.NewCA(t)
+	proxySVID := ca.Issue(t, peertls.EgressProxyURI)
+	c := config{
+		AdminGRPCServiceCallers: []string{peertls.AppURI},
+		Forward: listener.Config{
+			ListenAddress: "127.0.0.1:0",
+			TLS:           &listener.TLS{CertFile: proxySVID.CertFile, KeyFile: proxySVID.KeyFile},
+			Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: ca.RootFile}},
+		},
+	}
+	authentication, index := testRulesAuthWithCA(t, ca)
+	server, err := newAdminServer(c, admin.ServiceOptions{
 		Decisions: noDecisions{}, Changes: quietChanges{}, HistoryHealth: idleHistory{}, Index: readyIndex{},
 	}, authentication, index)
 	if err != nil {
@@ -222,7 +234,11 @@ func TestAdminListenerServesGRPCAndShutsDownWithAnOpenWatch(t *testing.T) {
 	served := make(chan error, 1)
 	go func() { served <- serving("admin", server.Serve(listener)) }()
 
-	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	clientCredentials, err := ca.Issue(t, peertls.AppURI).ClientCredentials(peertls.EgressProxyURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(clientCredentials))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +247,7 @@ func TestAdminListenerServesGRPCAndShutsDownWithAnOpenWatch(t *testing.T) {
 	if err != nil || probe.GetStatus() != healthpb.HealthCheckResponse_SERVING {
 		t.Fatalf("health probe: %v, %v", probe, err)
 	}
-	admitted := metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer "+testToken)
+	admitted := context.Background()
 	health, err := egressadminpb.NewEgressAdminClient(connection).GetHealth(admitted, &egressadminpb.GetHealthRequest{})
 	if err != nil || !health.GetReady() {
 		t.Fatalf("GetHealth: %v, %v", health, err)
@@ -245,11 +261,11 @@ func TestAdminListenerServesGRPCAndShutsDownWithAnOpenWatch(t *testing.T) {
 	if _, err := egressrulespb.NewEgressRulesClient(connection).GetRules(workload, &egressrulespb.GetRulesRequest{}); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("workload bearer rules access: %v, want Unauthenticated", err)
 	}
-	if _, err := egressadminpb.NewEgressAdminClient(connection).GetHealth(workload, &egressadminpb.GetHealthRequest{}); status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("workload admin access: %v, want PermissionDenied", err)
+	if _, err := egressadminpb.NewEgressAdminClient(connection).GetHealth(workload, &egressadminpb.GetHealthRequest{}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("workload admin access: %v, want Unauthenticated", err)
 	}
-	if _, err := egressrulespb.NewEgressRulesClient(connection).GetRules(context.Background(), &egressrulespb.GetRulesRequest{}); status.Code(err) != codes.Unauthenticated {
-		t.Fatalf("anonymous rules access: %v, want Unauthenticated", err)
+	if _, err := egressrulespb.NewEgressRulesClient(connection).GetRules(context.Background(), &egressrulespb.GetRulesRequest{}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("service peer rules access: %v, want PermissionDenied", err)
 	}
 	stream, err := egressadminpb.NewEgressAdminClient(connection).WatchDecisions(
 		admitted,
@@ -290,8 +306,8 @@ func TestAdminListenerServesRulesAndBackendAdministrationOverTLS(t *testing.T) {
 		t.Fatal(err)
 	}
 	server, err := newAdminServer(config{
-		Forward: forward, AdminGRPCAudience: testAudience, AdminGRPCCallers: []string{"test-ns/test-app"},
-	}, api.TokenReviews(), admin.ServiceOptions{
+		Forward: forward, AdminGRPCServiceCallers: []string{peertls.AppURI},
+	}, admin.ServiceOptions{
 		Decisions: noDecisions{}, Changes: quietChanges{}, HistoryHealth: idleHistory{}, Index: readyIndex{},
 	}, workloadAuth, identityRulesIndex())
 	if err != nil {
@@ -313,7 +329,7 @@ func TestAdminListenerServesRulesAndBackendAdministrationOverTLS(t *testing.T) {
 		_ = server.Shutdown(ctx)
 	})
 
-	backendCredentials, err := (&peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.EgressProxyURI}).Credentials()
+	backendCredentials, err := ca.Issue(t, peertls.AppURI).ClientCredentials(peertls.EgressProxyURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,13 +342,13 @@ func TestAdminListenerServesRulesAndBackendAdministrationOverTLS(t *testing.T) {
 	if err != nil || probe.GetStatus() != healthpb.HealthCheckResponse_SERVING {
 		t.Fatalf("TLS health probe: %v, %v", probe, err)
 	}
-	adminContext := metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer "+testToken)
+	adminContext := context.Background()
 	adminHealth, err := egressadminpb.NewEgressAdminClient(backend).GetHealth(adminContext, &egressadminpb.GetHealthRequest{})
 	if err != nil || !adminHealth.GetReady() {
 		t.Fatalf("TLS admin API: %v, %v", adminHealth, err)
 	}
-	if _, err := egressrulespb.NewEgressRulesClient(backend).GetRules(adminContext, &egressrulespb.GetRulesRequest{}); status.Code(err) != codes.Unauthenticated {
-		t.Fatalf("Rules with a backend bearer: %v, want Unauthenticated", err)
+	if _, err := egressrulespb.NewEgressRulesClient(backend).GetRules(adminContext, &egressrulespb.GetRulesRequest{}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("Rules with a service certificate: %v, want PermissionDenied", err)
 	}
 
 	runnerURI, err := workloadid.ID{Namespace: "test-ns", Name: "test-sandbox", CredentialID: runnerCredentialID}.URI()
@@ -374,7 +390,10 @@ func TestAdminListenerServesRulesAndBackendAdministrationOverTLS(t *testing.T) {
 		t.Fatalf("Identity Rules response: %v, %v", response, err)
 	}
 
-	if _, err := egressadminpb.NewEgressAdminClient(secured).GetHealth(adminContext, &egressadminpb.GetHealthRequest{}); status.Code(err) != codes.Unauthenticated {
+	if _, err := egressadminpb.NewEgressAdminClient(secured).GetHealth(context.Background(), &egressadminpb.GetHealthRequest{}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("workload SVID admin access: %v, want Unauthenticated", err)
+	}
+	if _, err := egressadminpb.NewEgressAdminClient(secured).GetHealth(metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer "+testToken), &egressadminpb.GetHealthRequest{}); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("SVID plus admin bearer: %v, want Unauthenticated", err)
 	}
 	plain, err := grpc.NewClient(adminListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -480,7 +499,7 @@ func testResolver(t *testing.T) *resolver.Resolver {
 // API is configured.
 func TestAdminListenerServesHealthWithoutTheAdminGRPCAPI(t *testing.T) {
 	authentication, index := testRulesAuth(t)
-	server, err := newAdminServer(config{}, api.TokenReviews(), admin.ServiceOptions{Index: readyIndex{}}, authentication, index)
+	server, err := newAdminServer(config{}, admin.ServiceOptions{Index: readyIndex{}}, authentication, index)
 	if err != nil {
 		t.Fatal(err)
 	}

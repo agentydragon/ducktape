@@ -33,7 +33,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
-	authenticationv1 "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	"k8s.io/client-go/rest"
 )
 
@@ -183,10 +182,7 @@ func serve(ctx context.Context, c config, proxyListener, adminListener net.Liste
 	if err != nil {
 		return err
 	}
-	reviews, err := authenticationv1.NewForConfig(base)
-	if err != nil {
-		return err
-	}
+
 	records, err := resolver.NewKubernetes(base, c.AllowedServiceAccountNamespaces, &resolver.Identities{PolicyNamespace: c.RulesNamespace})
 	if err != nil {
 		return fmt.Errorf("create live WorkloadCredential resolver: %w", err)
@@ -244,7 +240,7 @@ func serve(ctx context.Context, c config, proxyListener, adminListener net.Liste
 	if err != nil {
 		return err
 	}
-	adminServer, err := newAdminServer(c, reviews.TokenReviews(), admin.ServiceOptions{
+	adminServer, err := newAdminServer(c, admin.ServiceOptions{
 		Decisions: store, Changes: changes, HistoryHealth: decisions, Index: index.Health, Credentials: index,
 	}, authentication, index)
 	if err != nil {

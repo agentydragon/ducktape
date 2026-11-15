@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -24,7 +25,7 @@ func TestWatchCredentialsRedactedUpdatesAndHealth(t *testing.T) {
 		Targets: []resources.Target{resources.SchemeToken{Header: "Authorization", Scheme: "Bearer"}},
 	})
 	client, _ := serveGRPC(t, ServiceOptions{Credentials: index, Index: index.Health})
-	stream, err := client.WatchCredentials(bearing(readerToken), &egressadminpb.WatchCredentialsRequest{})
+	stream, err := client.WatchCredentials(context.Background(), &egressadminpb.WatchCredentialsRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +77,7 @@ func TestWatchCredentialsNamesTheAccountAnImpersonationCredentialActsAs(t *testi
 		Targets: []resources.Target{resources.SchemeToken{Header: "Authorization", Scheme: "Bearer"}},
 	})
 	client, _ := serveGRPC(t, ServiceOptions{Credentials: index, Index: index.Health})
-	stream, err := client.WatchCredentials(bearing(readerToken), &egressadminpb.WatchCredentialsRequest{})
+	stream, err := client.WatchCredentials(context.Background(), &egressadminpb.WatchCredentialsRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +101,7 @@ func TestWatchCredentialsChunksInitialSnapshot(t *testing.T) {
 		})
 	}
 	client, _ := serveGRPC(t, ServiceOptions{Credentials: index, Index: index.Health})
-	stream, err := client.WatchCredentials(bearing(readerToken), &egressadminpb.WatchCredentialsRequest{})
+	stream, err := client.WatchCredentials(context.Background(), &egressadminpb.WatchCredentialsRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}

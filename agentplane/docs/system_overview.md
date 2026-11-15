@@ -743,9 +743,8 @@ Kubernetes retains its destination-scoped projected token until the later impers
 Rules, Notification, ModelConfig and telemetry share the local gRPC listener on port 3130; exact
 service prefixes select independent upstream connections and authentication.
 
-Staging EgressAdmin continues to admit the App's TokenReview bearer and additionally trusts the exact
-`spiffe://agentplane/app` service identity. The App still uses its bearer while its caller is pending
-the separate SVID cutover.
+EgressAdmin admits only the exact configured service identities over mTLS. The App presents
+`spiffe://agentplane/app`; bearer credentials cannot authenticate its admin reads.
 
 Action command/build boxes present their own `WorkloadCredential`'s SVID, subject their caller's
 ServiceAccount; Haku UI/Anki present their standing records' SVIDs, subject `haku-ui`. Their
@@ -805,13 +804,14 @@ flowchart LR
 The Policy TLS listener verifies client SVIDs against the workload CA and grants the exact App SVID
 separate reader and writer authority. App→Policy presents the App SVID over verified mTLS.
 PolicyService accepts only service SVIDs; bearers, workload SVIDs and delegation envelopes are refused.
-Egress Admin already admits the App SVID and the App uses it over mTLS. The forward proxy continues
+Egress Admin admits only configured service SVIDs, and the App uses its SVID over mTLS. Its legacy
+bearer settings remain decodable until their manifest keys are removed and rolled out. The forward proxy continues
 to authenticate workload Identities independently of its admin API.
 
 ```mermaid
 flowchart LR
     app[App service] -->|App SVID only: reader and writer grants| policy[Policy Service]
-    app -->|mTLS: admin read methods| admin[Egress Admin]
+    app -->|App SVID mTLS only: admin read methods| admin[Egress Admin]
     workload[Workload Identity SVID] -.->|existing workload authentication| proxy[Egress forward proxy]
 ```
 

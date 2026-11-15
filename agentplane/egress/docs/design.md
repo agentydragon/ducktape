@@ -48,5 +48,6 @@ or CLI overrides; the proxy database URL remains an explicit Secret-backed envir
 ## Test tiers
 
 A real kube-apiserver and etcd (envtest) check CRD validation and list/watch/delete semantics.
-The admin gRPC tests use real Pod-bound, audience-scoped ServiceAccount tokens and TokenReview.
+The admin gRPC tests use disposable service certificates; a real Pod-bound, audience-scoped
+ServiceAccount token verifies that bearer authentication is rejected.
 Scripted API servers remain for controlled replica watch faults and process lifecycle scenarios.

@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 )
@@ -187,7 +186,7 @@ func TestAdminGRPCIsOffUnlessItsSettingsAreSet(t *testing.T) {
 	}
 }
 
-func TestAdminGRPCSettingsComeFromTheFileAndAreAllOrNothing(t *testing.T) {
+func TestAdminGRPCSettingsUseServiceCallersAndAcceptLegacyKeys(t *testing.T) {
 	contents := validSettings + "admin_grpc_audience: file-audience\nadmin_grpc_callers: [test-ns/test-app, test-ns/test-other]\nadmin_grpc_service_callers: [spiffe://agentplane/actions]\n"
 	c, err := configtest.Load(
 		t,
@@ -198,32 +197,21 @@ func TestAdminGRPCSettingsComeFromTheFileAndAreAllOrNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	callers, err := c.adminGRPCCallers()
-	if err != nil {
-		t.Fatal(err)
-	}
 	if !c.adminGRPCEnabled() || c.AdminGRPCAudience != "file-audience" ||
-		!slices.Equal(callers, []auth.Account{{Namespace: "test-ns", Name: "test-app"}, {Namespace: "test-ns", Name: "test-other"}}) ||
+		!slices.Equal(c.AdminGRPCCallers, []string{"test-ns/test-app", "test-ns/test-other"}) ||
 		!slices.Equal(c.AdminGRPCServiceCallers, []string{"spiffe://agentplane/actions"}) {
 		t.Fatalf("unexpected file settings: %+v", c)
 	}
-	const audience = "admin_grpc_audience: test-audience\n"
-	const callersList = "admin_grpc_callers: [test-ns/test-app]\n"
-	for name, extra := range map[string]string{
-		"audience without callers":                     audience,
-		"callers without audience":                     callersList,
-		"caller without a slash":                       audience + "admin_grpc_callers: [test-ns]\n",
-		"caller without namespace":                     audience + "admin_grpc_callers: [/test-app]\n",
-		"caller without a name":                        audience + "admin_grpc_callers: [test-ns/]\n",
-		"caller with a deep path":                      audience + "admin_grpc_callers: [test-ns/test-app/extra]\n",
-		"service caller without admin bearer settings": "admin_grpc_service_callers: [spiffe://agentplane/actions]\n",
-		"invalid service caller":                       audience + callersList + "admin_grpc_service_callers: [spiffe://agentplane/agents/worker]\n",
-	} {
-		t.Run(name, func(t *testing.T) {
-			if _, err := configtest.Load(t, "AGENTPLANE_EGRESS_", loadConfig, environment(t, validSettings+extra)); err == nil {
-				t.Fatal("accepted partial or malformed admin caller configuration")
-			}
-		})
+	serviceOnly := validSettings + "admin_grpc_service_callers: [spiffe://agentplane/app]\n"
+	if c, err := configtest.Load(t, "AGENTPLANE_EGRESS_", loadConfig, environment(t, serviceOnly)); err != nil || !c.adminGRPCEnabled() {
+		t.Fatalf("service-only admin configuration: %+v, %v", c, err)
+	}
+	if _, err := configtest.Load(t, "AGENTPLANE_EGRESS_", loadConfig, environment(t, validSettings+"admin_grpc_service_callers: [spiffe://agentplane/agents/worker]\n")); err == nil {
+		t.Fatal("accepted a non-service admin caller")
+	}
+	legacyOnly := validSettings + "admin_grpc_audience: test-audience\nadmin_grpc_callers: [test-ns/test-app]\n"
+	if c, err := configtest.Load(t, "AGENTPLANE_EGRESS_", loadConfig, environment(t, legacyOnly)); err != nil || c.adminGRPCEnabled() {
+		t.Fatalf("legacy settings enabled administration: %+v, %v", c, err)
 	}
 }
 
@@ -287,6 +275,19 @@ func TestLocalAPIServerLoadsWholeOrNotAtAll(t *testing.T) {
 	} {
 		if _, err := configtest.Load(t, "AGENTPLANE_EGRESS_", loadConfig, environment(t, validSettings+partial)); err == nil {
 			t.Errorf("%q accepted", partial)
+		}
+	}
+}
+
+func TestAdminGRPCRequiresTLSAndSPIFFETrust(t *testing.T) {
+	for _, forward := range []listener.Config{
+		{},
+		{TLS: &listener.TLS{CertFile: "cert", KeyFile: "key"}},
+		{Auth: []listener.Authentication{&listener.SPIFFEAuth{CAFile: "ca"}}},
+	} {
+		c := config{Forward: forward, AdminGRPCServiceCallers: []string{"spiffe://agentplane/app"}}
+		if err := c.validateAdminGRPC(); err == nil {
+			t.Fatalf("accepted admin listener without TLS and SPIFFE trust: %+v", forward)
 		}
 	}
 }

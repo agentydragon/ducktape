@@ -6,7 +6,6 @@ import (
 	"io"
 	"maps"
 	"net"
-	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -20,42 +19,20 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/decision"
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/history"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
-	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
-
-const (
-	testAudience    = "test-egress-admin"
-	callerNamespace = "test-callers"
-)
-
-var (
-	api *kubeapiserver.Server
-	// readerToken proves test-reader, an allowed caller; strangerToken proves test-stranger, which is
-	// not.
-	readerToken, strangerToken string
-)
-
-func TestMain(m *testing.M) {
-	os.Exit(kubeapiserver.Run(m, func(server *kubeapiserver.Server) (err error) {
-		api = server
-		ctx := context.Background()
-		if readerToken, err = server.WorkloadToken(ctx, auth.Account{Namespace: callerNamespace, Name: "test-reader"}, testAudience); err != nil {
-			return err
-		}
-		strangerToken, err = server.WorkloadToken(ctx, auth.Account{Namespace: callerNamespace, Name: "test-stranger"}, testAudience)
-		return err
-	}))
-}
 
 // changingDecisions serves the records it was last given.
 type changingDecisions struct {
@@ -117,38 +94,55 @@ func followOnTicks(ticks <-chan []uuid.UUID, settled chan<- struct{}) fakeChange
 	}
 }
 
-// serveGRPC serves a Service reading what options holds on an in-process gRPC server and returns a
-// client for it. Only test-reader is an allowed caller.
 func serveGRPC(t *testing.T, options ServiceOptions) (egressadminpb.EgressAdminClient, *Service) {
 	t.Helper()
-	resolver, err := auth.NewResolver(api.TokenReviews(), testAudience, []string{callerNamespace})
-	if err != nil {
-		t.Fatal(err)
-	}
 	service := NewService(options)
-	listener := bufconn.Listen(1 << 20)
-	methods, err := Methods(resolver, []auth.Account{{Namespace: callerNamespace, Name: "test-reader"}}, nil)
+	methods, err := Methods([]string{peertls.AppURI})
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := grpc.NewServer(methods.ServerOptions(0)...)
-	egressadminpb.RegisterEgressAdminServer(server, service)
-	go func() { _ = server.Serve(listener) }()
+	connection := serveServicePeer(t, methods, func(server *grpc.Server) {
+		egressadminpb.RegisterEgressAdminServer(server, service)
+	}, peertls.AppURI)
+	return egressadminpb.NewEgressAdminClient(connection), service
+}
+
+func serveServicePeer(t *testing.T, methods auth.Methods, register func(*grpc.Server), caller string) *grpc.ClientConn {
+	t.Helper()
+	ca := peertlstesting.NewCA(t)
+	svid := ca.Issue(t, peertls.EgressProxyURI)
+	rpc := listener.Config{
+		ListenAddress: "127.0.0.1:0",
+		TLS:           &listener.TLS{CertFile: svid.CertFile, KeyFile: svid.KeyFile},
+		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: ca.RootFile}},
+	}
+	serverCredentials, err := rpc.ServerCredentialsWithServices(peertls.EgressProxyURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport := bufconn.Listen(1 << 20)
+	server := grpc.NewServer(append(methods.ServerOptions(0), grpc.Creds(serverCredentials))...)
+	register(server)
+	go func() { _ = server.Serve(transport) }()
 	t.Cleanup(server.Stop)
+	clientTLS := peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.EgressProxyURI}
+	tlsConfig, err := clientTLS.TLSConfig()
+	if caller != "" {
+		tlsConfig, err = ca.Issue(t, caller).ClientTLSConfig(peertls.EgressProxyURI)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
 	connection, err := grpc.NewClient(
 		"passthrough:///egress-admin-test",
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
+		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return transport.Dial() }),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = connection.Close() })
-	return egressadminpb.NewEgressAdminClient(connection), service
-}
-
-func bearing(token string) context.Context {
-	return metadata.NewOutgoingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+token))
+	return connection
 }
 
 func ofSubject(namespace, name string) *egressadminpb.DecisionFilter {
@@ -168,38 +162,35 @@ var unauthenticated = &egressadminpb.DecisionFilter{Scope: &egressadminpb.Decisi
 }}
 
 func TestEveryRPCAdmitsOnlyAllowedCallers(t *testing.T) {
-	resolver, err := auth.NewResolver(api.TokenReviews(), testAudience, []string{callerNamespace})
-	if err != nil {
-		t.Fatal(err)
-	}
-	methods, err := Methods(resolver, []auth.Account{{Namespace: callerNamespace, Name: "test-reader"}}, nil)
+	methods, err := Methods([]string{peertls.AppURI})
 	if err != nil {
 		t.Fatal(err)
 	}
 	register := func(server *grpc.Server) {
 		egressadminpb.RegisterEgressAdminServer(server, egressadminpb.UnimplementedEgressAdminServer{})
 	}
-	connection := grpcmethods.Serve(t, methods, register)
 	for _, method := range grpcmethods.Of(egressadminpb.EgressAdmin_ServiceDesc) {
 		t.Run(method.Name, func(t *testing.T) {
 			// The stand-in servicer answers Unimplemented to a call the policy admitted.
 			for _, test := range []struct {
-				name string
-				ctx  context.Context
-				want codes.Code
+				name   string
+				caller string
+				ctx    context.Context
+				want   codes.Code
 			}{
-				{"no bearer", context.Background(), codes.Unauthenticated},
-				{"bearer no ServiceAccount proved", bearing("test-forged-token"), codes.Unauthenticated},
-				{"ServiceAccount not allowed", bearing(strangerToken), codes.PermissionDenied},
-				{"allowed", bearing(readerToken), codes.Unimplemented},
+				{"no certificate", "", context.Background(), codes.Unauthenticated},
+				{"bearer alone", "", metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer test-token"), codes.Unauthenticated},
+				{"service not allowed", peertls.NotificationsURI, context.Background(), codes.PermissionDenied},
+				{"allowed", peertls.AppURI, context.Background(), codes.Unimplemented},
+				{"certificate with bearer", peertls.AppURI, metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer test-token"), codes.Unauthenticated},
 			} {
-				if got := status.Code(method.Call(test.ctx, connection)); got != test.want {
+				if got := status.Code(method.Call(test.ctx, serveServicePeer(t, methods, register, test.caller))); got != test.want {
 					t.Errorf("%s: %v, want %v", test.name, got, test.want)
 				}
 			}
 			unlisted := maps.Clone(methods)
 			delete(unlisted, method.Name)
-			if got := status.Code(method.Call(bearing(readerToken), grpcmethods.Serve(t, unlisted, register))); got != codes.PermissionDenied {
+			if got := status.Code(method.Call(context.Background(), serveServicePeer(t, unlisted, register, peertls.AppURI))); got != codes.PermissionDenied {
 				t.Errorf("unlisted, an allowed caller got %v", got)
 			}
 		})
@@ -218,7 +209,7 @@ func TestListDecisionsReadsTheSelectedSubject(t *testing.T) {
 	store := &fakeDecisions{records: []decision.Record{admitted, refused}}
 	client, _ := serveGRPC(t, ServiceOptions{Decisions: store})
 
-	response, err := client.ListDecisions(bearing(readerToken), &egressadminpb.ListDecisionsRequest{Filter: ofSubject("test-namespace", "test-workload")})
+	response, err := client.ListDecisions(context.Background(), &egressadminpb.ListDecisionsRequest{Filter: ofSubject("test-namespace", "test-workload")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +235,7 @@ func TestListDecisionsReadsTheSelectedSubject(t *testing.T) {
 	}
 
 	for _, filter := range []*egressadminpb.DecisionFilter{unauthenticated, ofIdentity("test-workload")} {
-		if _, err := client.ListDecisions(bearing(readerToken), &egressadminpb.ListDecisionsRequest{Filter: filter}); err != nil {
+		if _, err := client.ListDecisions(context.Background(), &egressadminpb.ListDecisionsRequest{Filter: filter}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -266,7 +257,7 @@ func TestFilterMustSelectAWholeSubjectOrTheUnauthenticated(t *testing.T) {
 		"neither":      ofSubject("", ""),
 		"no identity":  ofIdentity(""),
 	} {
-		_, err := client.ListDecisions(bearing(readerToken), &egressadminpb.ListDecisionsRequest{Filter: filter})
+		_, err := client.ListDecisions(context.Background(), &egressadminpb.ListDecisionsRequest{Filter: filter})
 		if status.Code(err) != codes.InvalidArgument {
 			t.Errorf("%s: %v", name, err)
 		}
@@ -281,8 +272,8 @@ func TestHistoryFailureIsExplicitAndPrivate(t *testing.T) {
 	ticks, settled := make(chan []uuid.UUID), make(chan struct{}, 4)
 	client, _ := serveGRPC(t, ServiceOptions{Decisions: store, Changes: followOnTicks(ticks, settled)})
 
-	_, listed := client.ListDecisions(bearing(readerToken), &egressadminpb.ListDecisionsRequest{Filter: unauthenticated})
-	stream, err := client.WatchDecisions(bearing(readerToken), &egressadminpb.WatchDecisionsRequest{Filter: unauthenticated})
+	_, listed := client.ListDecisions(context.Background(), &egressadminpb.ListDecisionsRequest{Filter: unauthenticated})
+	stream, err := client.WatchDecisions(context.Background(), &egressadminpb.WatchDecisionsRequest{Filter: unauthenticated})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,7 +291,7 @@ func TestWatchSendsTheListOnSubscribingAndOnlyWhenItChanges(t *testing.T) {
 	store := &changingDecisions{records: []decision.Record{older, newer}}
 	ticks, settled := make(chan []uuid.UUID), make(chan struct{}, 4)
 	client, _ := serveGRPC(t, ServiceOptions{Decisions: store, Changes: followOnTicks(ticks, settled)})
-	ctx, cancel := context.WithTimeout(bearing(readerToken), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	stream, err := client.WatchDecisions(ctx, &egressadminpb.WatchDecisionsRequest{Filter: unauthenticated})
 	if err != nil {
@@ -328,7 +319,7 @@ func TestWatchSendsTheListOnSubscribingAndOnlyWhenItChanges(t *testing.T) {
 func TestDrainEndsOpenWatches(t *testing.T) {
 	ticks, settled := make(chan []uuid.UUID), make(chan struct{}, 4)
 	client, service := serveGRPC(t, ServiceOptions{Decisions: &changingDecisions{}, Changes: followOnTicks(ticks, settled)})
-	stream, err := client.WatchDecisions(bearing(readerToken), &egressadminpb.WatchDecisionsRequest{Filter: unauthenticated})
+	stream, err := client.WatchDecisions(context.Background(), &egressadminpb.WatchDecisionsRequest{Filter: unauthenticated})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -375,8 +366,7 @@ func TestWatchDecisionsEndsBlockedWriteOnDrainOrCancellation(t *testing.T) {
 				return changed(history.Initial{})
 			})
 			_, service := serveGRPC(t, ServiceOptions{Decisions: &changingDecisions{}, Changes: changes})
-			base := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+readerToken))
-			ctx, cancel := context.WithCancel(base)
+			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			release := make(chan struct{})
 			stream := &blockedDecisionsWatch{
@@ -477,7 +467,7 @@ func TestWatchFailsWhenHistoryFeedEnds(t *testing.T) {
 		return changed(history.Initial{})
 	})
 	client, _ := serveGRPC(t, ServiceOptions{Decisions: &changingDecisions{}, Changes: changes})
-	stream, err := client.WatchDecisions(bearing(readerToken), &egressadminpb.WatchDecisionsRequest{Filter: unauthenticated})
+	stream, err := client.WatchDecisions(context.Background(), &egressadminpb.WatchDecisionsRequest{Filter: unauthenticated})
 	if err != nil {
 		t.Fatal(err)
 	}

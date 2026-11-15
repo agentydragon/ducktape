@@ -78,21 +78,18 @@ type ServiceOptions struct {
 	Credentials   *policy.Index
 }
 
-// Methods admits configured bearer accounts and exact service peers to EgressAdmin's read methods.
-func Methods(resolver *auth.Resolver, callers []auth.Account, serviceCallers []string) (auth.Methods, error) {
-	rule := auth.Accounts(resolver, callers)
-	methods := auth.Methods{
+// Methods admits exact service peers to EgressAdmin's read methods.
+func Methods(serviceCallers []string) (auth.Methods, error) {
+	rule, err := auth.Services(serviceCallers)
+	if err != nil {
+		return nil, err
+	}
+	return auth.Methods{
 		egressadminpb.EgressAdmin_ListDecisions_FullMethodName:    rule,
 		egressadminpb.EgressAdmin_WatchDecisions_FullMethodName:   rule,
 		egressadminpb.EgressAdmin_GetHealth_FullMethodName:        rule,
 		egressadminpb.EgressAdmin_WatchCredentials_FullMethodName: rule,
-	}
-	return methods.WithServiceCallers([]string{
-		egressadminpb.EgressAdmin_ListDecisions_FullMethodName,
-		egressadminpb.EgressAdmin_WatchDecisions_FullMethodName,
-		egressadminpb.EgressAdmin_GetHealth_FullMethodName,
-		egressadminpb.EgressAdmin_WatchCredentials_FullMethodName,
-	}, serviceCallers)
+	}, nil
 }
 
 func NewService(options ServiceOptions) *Service {

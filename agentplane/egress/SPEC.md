@@ -251,12 +251,11 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   removals include expiry and capacity eviction. A quiet, healthy history feed sends heartbeats; a lost feed or failed history read ends the stream
   with `UNAVAILABLE`. A reconnect starts with a fresh snapshot, not a replay cursor.
 - The `EgressAdmin` gRPC service, when enabled, serves `ListDecisions`, `WatchDecisions`,
-  `WatchCredentials`, and `GetHealth`. Calls admit the configured ServiceAccount bearers and, when
-  `admin_grpc_service_callers` is set, exact service SPIFFE IDs on EgressAdmin methods only. Service
-  callers require the forward listener's client CA and the existing admin bearer settings; they do
-  not gain access to Rules and cannot combine a certificate with bearer metadata. Bearer-backed
-  decision and credential watches revalidate authorization without a forced lease and end on
-  revocation or proxy drain. Credential watches send an initial snapshot followed by upserts and UID-fenced removals,
+  `WatchCredentials`, and `GetHealth`. A nonempty `admin_grpc_service_callers` enables the API and
+  admits only those exact service SPIFFE IDs over mTLS. It requires the forward listener's TLS and
+  SPIFFE client CA. Service callers gain no Rules, Identity or ServiceAccount authority. Bearers
+  are rejected, including when combined with a certificate. Decision and credential watches
+  revalidate the admitted certificate without a forced lease and end on expiry or proxy drain. Credential watches send an initial snapshot followed by upserts and UID-fenced removals,
   and end when informer health is unavailable. Their protobuf contains only public descriptions, placeholders and presentation targets;
   it never exposes sources or Secret values. The standard gRPC health service beside it reports
   readiness (the empty service) and liveness (`livez`) to any caller.
