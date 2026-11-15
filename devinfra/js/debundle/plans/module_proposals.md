@@ -1,7 +1,7 @@
 # Residual extraction planning and application
 
-Status: planned. The source audit and neutral CLI probes were completed on
-2026-11-15; the contracts and search algorithms below remain to be implemented.
+Status: implementation in progress. The source audit and neutral CLI probes
+were completed on 2026-11-15; delivered and remaining work is tracked below.
 
 Given an accepted partial spec, find groups of residual source units that can
 move into existing or new modules, then apply the exact reviewed assignment.
@@ -443,11 +443,16 @@ shims.
 
 ### Implementation checklist
 
-- [ ] **Correct the demonstrated false positive.** Add P1 as a neutral real-CLI
+- [x] **Correct the demonstrated false positive.** Add P1 as a neutral real-CLI
       regression, with the successful uncapped/grouped control. Retain full
       dependency accounting when a target class is excluded by a size or output
       cap. Update affected readiness documentation to match the actual guarantee.
       This narrow repair does not establish that all proposals are safe.
+      The CLI regression failed on the unchanged engine in
+      [the baseline run](https://app.buildbuddy.io/invocation/55393916-fb3b-46a3-8057-1c7fa9aa0a42).
+      The repair passes both module-application and landability suites in
+      [the repaired run](https://app.buildbuddy.io/invocation/707c3357-deb6-4ef9-8cfc-3e7ad741dff0),
+      including refusal without spec edits and a grouped Node execution control.
 - [ ] **Establish the common checker and independent reference.** Preserve the
       accepted starting assignment and prepared context, and expose arbitrary
       complete-batch checking. Cover P3's three-unit atom, remote TDZ, joint moves,
