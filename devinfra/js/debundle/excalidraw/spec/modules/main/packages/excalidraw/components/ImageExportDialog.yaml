@@ -1,0 +1,30 @@
+# Original home: packages/excalidraw/components/ImageExportDialog.tsx
+source_matches:
+  - match: |
+      var selected = ({ appStateSnapshot, elementsSnapshot, files, actionManager, onExportImage, name }) => {
+        let hasSelection = EXPR(elementsSnapshot, appStateSnapshot),
+          [projectName, setProjectName] = EXPR(name), ANYTHING = ANYTHING;
+        STMT_LIST;
+      };
+    bindings:
+      - local: selected
+        name: ImageExportModal
+
+  - match: |
+      var selected = ({ label, children, tooltip, name }) => EXPR("div", {
+        className: "ImageExportModal__settings__setting", title: label, children: EXPR
+      });
+    bindings:
+      - local: selected
+        name: ExportSetting
+
+  - match: |
+      var selected = ({ elements, appState, files, actionManager, onExportImage, onCloseRequest, name }) => {
+        let [{ appStateSnapshot: appStateSnapshot, elementsSnapshot: elementsSnapshot }] = EXPR(() => ({
+          appStateSnapshot: EXPR(appState), elementsSnapshot: EXPR(elements)
+        }));
+        return EXPR;
+      };
+    bindings:
+      - local: selected
+        name: ImageExportDialog

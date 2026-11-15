@@ -1514,5 +1514,30 @@ async def test_create_text_element(playwright_driver: Playwright, origin: str) -
         assert await page.evaluate("globalThis.__debundleHarness.errors") == []
 
 
+async def test_image_export_dialog(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        await expect(page.locator(".App-toolbar")).to_be_visible()
+        rectangle = page.get_by_test_id("toolbar-rectangle")
+        await page.locator("label", has=rectangle).click()
+        canvas = page.locator("canvas.excalidraw__canvas.interactive")
+        await canvas.hover(position={"x": 400, "y": 300})
+        await page.mouse.down()
+        await page.mouse.move(550, 400, steps=4)
+        await page.mouse.up()
+        await page.get_by_test_id("main-menu-trigger").click()
+        await page.get_by_test_id("image-export-button").click()
+        dialog = page.locator(".ImageExportModal")
+        await expect(dialog).to_be_visible()
+        await expect(dialog.locator(".ImageExportModal__settings")).to_be_visible()
+        await page.keyboard.press("Escape")
+        await expect(dialog).to_have_count(0)
+        assert await page.evaluate("globalThis.__debundleHarness.errors") == []
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
