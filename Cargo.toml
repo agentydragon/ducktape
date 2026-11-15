@@ -94,6 +94,8 @@ regex = "^1.13.1"
 # debundle property-based test suites (test-only consumer; single
 # [dependencies] section because crate_universe pins one root manifest)
 proptest = "^1.11.0"
+# Debundle's runtime-generated semantic cases use the existing test harness.
+libtest-mimic = "^0.8.2"
 # tana/firebase_session_extractor
 rusty-leveldb = "^4.0.1"
 v8_valueserializer = "^0.1.2"

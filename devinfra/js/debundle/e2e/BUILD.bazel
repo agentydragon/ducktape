@@ -225,41 +225,12 @@ debundle_e2e_test(
     ],
 )
 
-rust_library(
-    name = "foreign_state_node_differential_sweep_cases",
-    srcs = ["foreign_state_node_differential_sweep_cases.rs"],
-    crate_name = "debundle_e2e_differential_sweep_cases",
-    crate_root = "foreign_state_node_differential_sweep_cases.rs",
-    edition = "2024",
-    deps = [":support"],
-)
-
-# A manual unsplit baseline retains the full 820-row sweep; routine CI runs
-# the two disjoint halves. All variants share the same case registry.
 debundle_e2e_test(
     name = "foreign_state_node_differential_sweep_test",
-    timeout = "moderate",
-    tags = ["manual"],
-    deps = [":foreign_state_node_differential_sweep_cases"],
+    args = ["--test-threads=12"],
+    use_libtest_harness = False,
+    deps = ["@crates//:libtest-mimic"],
 )
-
-[
-    debundle_e2e_test(
-        name = "foreign_state_node_differential_sweep_partition_{}_{}_test".format(partitions, index),
-        env = {
-            "DEBUNDLE_SWEEP_PARTITION_COUNT": str(partitions),
-            "DEBUNDLE_SWEEP_PARTITION_INDEX": str(index),
-        },
-        source = "foreign_state_node_differential_sweep_test.rs",
-        tags = ["manual"] if partitions == 4 else [],
-        deps = [":foreign_state_node_differential_sweep_cases"],
-    )
-    for partitions in [
-        2,
-        4,
-    ]
-    for index in range(partitions)
-]
 
 debundle_e2e_test(
     name = "foreign_cell_read_order_test",

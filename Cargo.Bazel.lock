@@ -1,5 +1,5 @@
 {
-  "checksum": "beee59baa78c0266e5c389d5c2ca8fba856084a4a428b75017ff58e3d30eb592",
+  "checksum": "e6b3f5819214ad364823f0fbf7f80154a6ca12f1c465bc5cab8513ec6ad80243",
   "conditions": {
     "aarch64-apple-darwin": [
       "aarch64-apple-darwin"
@@ -11768,6 +11768,10 @@
             "target": "libc"
           },
           {
+            "id": "libtest-mimic 0.8.2",
+            "target": "libtest_mimic"
+          },
+          {
             "id": "log 0.4.34",
             "target": "log"
           },
@@ -13030,6 +13034,34 @@
         }
       ],
       "version": "0.1.10"
+    },
+    "escape8259 0.5.4": {
+      "common_attrs": {
+        "edition": "2018"
+      },
+      "library_target_name": "escape8259",
+      "license": "MIT",
+      "license_file": "LICENSE",
+      "license_ids": [
+        "MIT"
+      ],
+      "name": "escape8259",
+      "package_url": "https://github.com/ericseppanen/escape8259",
+      "repository": {
+        "Http": {
+          "sha256": "9f1f0d310082fd5de539d4f41601182241147498444a7695c520288a0cdbead6",
+          "url": "https://static.crates.io/crates/escape8259/0.5.4/download"
+        }
+      },
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "escape8259",
+            "crate_root": "src/lib.rs"
+          }
+        }
+      ],
+      "version": "0.5.4"
     },
     "etcetera 0.11.0": {
       "common_attrs": {
@@ -22293,6 +22325,53 @@
         }
       ],
       "version": "0.30.1"
+    },
+    "libtest-mimic 0.8.2": {
+      "common_attrs": {
+        "deps": [
+          {
+            "id": "anstream 1.0.0",
+            "target": "anstream"
+          },
+          {
+            "id": "anstyle 1.0.14",
+            "target": "anstyle"
+          },
+          {
+            "id": "clap 4.6.6",
+            "target": "clap"
+          },
+          {
+            "id": "escape8259 0.5.4",
+            "target": "escape8259"
+          }
+        ],
+        "edition": "2021"
+      },
+      "library_target_name": "libtest_mimic",
+      "license": "MIT/Apache-2.0",
+      "license_file": "LICENSE-APACHE",
+      "license_ids": [
+        "Apache-2.0",
+        "MIT"
+      ],
+      "name": "libtest-mimic",
+      "package_url": "https://github.com/LukasKalbertodt/libtest-mimic",
+      "repository": {
+        "Http": {
+          "sha256": "14e6ba06f0ade6e504aff834d7c34298e5155c6baca353cc6a4aaff2f9fd7f33",
+          "url": "https://static.crates.io/crates/libtest-mimic/0.8.2/download"
+        }
+      },
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "libtest_mimic",
+            "crate_root": "src/lib.rs"
+          }
+        }
+      ],
+      "version": "0.8.2"
     },
     "lindera 3.0.7": {
       "common_attrs": {
@@ -48491,6 +48570,7 @@
     "imbl 7.0.2",
     "jsonwebtoken 11.0.0",
     "libc 0.2.189",
+    "libtest-mimic 0.8.2",
     "log 0.4.34",
     "lol_html 3.0.1",
     "multimap 0.10.1",
