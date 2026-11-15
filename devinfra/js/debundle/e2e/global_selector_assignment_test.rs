@@ -10,6 +10,54 @@ const SPECIFIC_ROUTE_EXPORTS: [&str; ROUTE_COUNT - 1] = [
 ];
 
 #[test]
+fn individual_selectors_match_plain_exported_and_destructured_declarators() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"
+const a = { label: "first" }, b = (value) => value + "-second";
+export const { label: c } = { label: "third" }, d = ["fourth"];
+console.log(a.label, b("value"), c, d[0]);
+"#,
+        vec![
+            logical_module(
+                "plain",
+                &[
+                    Member::source_alpha("First", r#"const selected = { label: "first" };"#),
+                    Member::source_alpha(
+                        "Second",
+                        r#"const selected = (input) => input + "-second";"#,
+                    ),
+                ],
+            ),
+            logical_module(
+                "exported",
+                &[
+                    Member::source_alpha_target(
+                        "Third",
+                        "selected",
+                        r#"export const { label: selected } = { label: "third" };"#,
+                    ),
+                    Member::source_alpha("Fourth", r#"export const selected = ["fourth"];"#),
+                ],
+            ),
+        ],
+    ));
+
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/plain.js",
+        &["First", "Second"],
+        &["Third", "Fourth"],
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/exported.js",
+        &["Third", "Fourth"],
+        &["First", "Second"],
+    );
+    assert_entry_output(&fixture, "first value-second third fourth\n");
+}
+
+#[test]
 fn broad_alpha_all_selector_resolves_to_remaining_global_target() {
     let source = route_source();
     let specific_members: Vec<Member> = SPECIFIC_ROUTE_EXPORTS
