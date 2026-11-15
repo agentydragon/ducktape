@@ -654,12 +654,20 @@ mod tests {
                     source_cells: BTreeSet::from([
                         analysis::analysis_inputs::PrimitiveExportCell {
                             module: "provider".to_string(),
+                            export: "".to_string(),
+                        },
+                        analysis::analysis_inputs::PrimitiveExportCell {
+                            module: "provider".to_string(),
                             export: "limit".to_string(),
                         },
                     ]),
                 },
             )]),
         )]);
+        assert_eq!(
+            serde_json::to_string(&primitive_reads["app"]["limit"].source_cells).unwrap(),
+            r#"[{"module":"provider","export":""},{"module":"provider","export":"limit"}]"#
+        );
         let mut summary = ProgramSummary {
             bindings: BTreeMap::new(),
             values: BTreeMap::new(),
@@ -719,6 +727,18 @@ mod tests {
             .bindings
             .insert("limit".into(), proto::ImportedPrimitiveRead::default());
         assert!(restore(missing_read_proof, &ordinals, &restored_purities).is_err());
+
+        let mut duplicate_cells = wire.clone();
+        let read = duplicate_cells
+            .primitive_reads
+            .get_mut("app")
+            .unwrap()
+            .bindings
+            .get_mut("limit")
+            .unwrap();
+        let duplicate = read.source_cells[0].clone();
+        read.source_cells.push(duplicate);
+        assert!(restore(duplicate_cells, &ordinals, &restored_purities).is_err());
 
         let mut missing_input_evidence = wire.clone();
         missing_input_evidence.value_inputs.insert(

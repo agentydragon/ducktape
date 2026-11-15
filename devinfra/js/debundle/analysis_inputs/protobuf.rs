@@ -12,8 +12,8 @@ use super::{
     ImportedPrimitiveArraySpreadInputEvidence, ImportedPrimitiveArraySpreadInputRef,
     ImportedPrimitiveArraySpreadInputUse, ImportedPrimitiveRead, InitializerCallEffectInputRef,
     NamespaceWrapperSummary, NativeIntegrity, NativeOperationInputEvidence,
-    NativeOperationInputRef, NoAccessorInstallRef, PrimitiveExportCell, ProofDependencies,
-    ReturnedRecordSummary, SourceDeclaration, ValueInputEvidence, ValueInputRef,
+    NativeOperationInputRef, NoAccessorInstallRef, ProofDependencies, ReturnedRecordSummary,
+    SourceDeclaration, ValueInputEvidence, ValueInputRef,
 };
 use super::{
     EffectiveInitializerCallReplacement, ForeignInvocation, ForeignReturn, HostBehaviorKey,
@@ -600,11 +600,7 @@ impl ProtoConvert<proto::ImportedPrimitiveRead> for ImportedPrimitiveRead {
             kinds: Some(self.kinds.to_proto()?),
             provider_module: Some(self.provider_module.clone()),
             dependency_closure: self.dependency_closure.iter().cloned().collect(),
-            source_cells: self
-                .source_cells
-                .iter()
-                .map(ProtoConvert::to_proto)
-                .collect::<Result<_>>()?,
+            source_cells: self.source_cells.iter().cloned().collect(),
         })
     }
 
@@ -616,7 +612,12 @@ impl ProtoConvert<proto::ImportedPrimitiveRead> for ImportedPrimitiveRead {
                 "ImportedPrimitiveRead.provider_module",
             )?,
             dependency_closure: decode_set(value.dependency_closure)?,
-            source_cells: decode_set(value.source_cells)?,
+            source_cells: {
+                let count = value.source_cells.len();
+                let cells: BTreeSet<_> = value.source_cells.into_iter().collect();
+                ensure!(cells.len() == count, "duplicate saved set member");
+                cells
+            },
         })
     }
 }
@@ -1075,22 +1076,6 @@ impl ProtoConvert<proto::DescriptorCopyAuthorRef> for DescriptorCopyAuthorRef {
             )?,
             export: required(value.export, "DescriptorCopyAuthorRef.export")?,
             spec_location: required(value.spec_location, "DescriptorCopyAuthorRef.spec_location")?,
-        })
-    }
-}
-
-impl ProtoConvert<proto::PrimitiveExportCell> for PrimitiveExportCell {
-    fn to_proto(&self) -> Result<proto::PrimitiveExportCell> {
-        Ok(proto::PrimitiveExportCell {
-            module: Some(self.module.clone()),
-            export: Some(self.export.clone()),
-        })
-    }
-
-    fn from_proto(value: proto::PrimitiveExportCell) -> Result<Self> {
-        Ok(Self {
-            module: required(value.module, "PrimitiveExportCell.module")?,
-            export: required(value.export, "PrimitiveExportCell.export")?,
         })
     }
 }

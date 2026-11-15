@@ -1209,8 +1209,8 @@ message PossibleGetterPromotion {
 }
 
 message PrimitiveExportCell {
-  optional string module = 1;
-  optional string export = 2;
+  string module = 1;
+  string export = 2;
 }
 
 enum ProgramPremiseKey {

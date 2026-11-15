@@ -529,11 +529,7 @@ pub struct ProofDependencies {
 /// A stable source module export cell that contributed to an imported
 /// primitive's value. Re-export aliases are not cells; their source cells are
 /// retained transitively.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct PrimitiveExportCell {
-    pub module: String,
-    pub export: String,
-}
+pub use crate::saved_proto::proto::PrimitiveExportCell;
 
 /// Source-derived primitive value evidence used only for an imported binding
 /// read after its provider's exact static dependency closure is shown to be
