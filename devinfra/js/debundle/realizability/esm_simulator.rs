@@ -1,11 +1,7 @@
-//! ECMA-262 Phase-2 evaluation-order simulator for the gate's
-//! Lemma-2 rescue check. The shared import ordering itself lives in
-//! `esm_import_order`.
+//! Canonical ESM evaluation for incremental gate queries. Preferred ordering
+//! lives in `esm_import_order`; concrete traversal lives in `esm_schedule`.
 
 use std::collections::{BTreeMap, BTreeSet};
-
-use petgraph::visit::{DfsPostOrder, GraphBase, GraphRef, IntoNeighbors, Visitable};
-use rustc_hash::FxHashSet;
 
 use analysis::ids::ModuleId;
 
@@ -58,18 +54,18 @@ impl EsmEvaluationSimulator {
             nodes.extend(succs.iter().copied());
         }
         let import_order = EsmImportOrder::build(constraining_pairs, i_successors, &nodes);
-        let post_order = match EsmImportSchedule::construct(
+        let schedule = EsmImportSchedule::construct(
             entry_module_id,
             constraining_pairs,
             i_successors,
             &nodes,
             &import_order,
-        ) {
-            Ok(schedule) => schedule.post_order().clone(),
-            Err(_) => simulate_esm_post_order(entry_module_id, i_successors, &nodes, &import_order),
-        };
+        )
+        .unwrap_or_else(|_| {
+            EsmImportSchedule::from_policy(entry_module_id, i_successors, &nodes, &import_order)
+        });
         Self {
-            post_order,
+            post_order: schedule.post_order().clone(),
             linker_order_available: constraining_pairs.is_empty()
                 || !import_order.linker_order().is_empty(),
         }
@@ -106,126 +102,5 @@ impl EsmEvaluationSimulator {
                 };
                 to_idx >= from_idx
             })
-    }
-}
-
-/// Simulate ECMA-262 Phase-2 DFS from `entry_module_id`. Returns a
-/// `post_order` map: lower index = earlier post-order = body
-/// evaluates earlier.
-///
-/// Import ordering per visitor (the shared `EsmImportOrder` rules):
-///   - At `entry_module_id`: fan out to **every** module in `nodes`
-///     (the emitted entry imports every logical module), in
-///     `sort_entry_imports` order (Lemma 2-aware).
-///   - Elsewhere: that module's I-successors in
-///     `sort_module_imports` order (dependency-first; mirrors the
-///     merged cross/phantom/entry-binding import list the emitter
-///     renders in `lowering::module_output::prepare_module_emission`).
-///
-/// Cycle no-op: a back-edge to a module already on the link-DFS
-/// stack is skipped. petgraph's `DfsPostOrder` filters neighbors
-/// already in its `discovered` set, which covers both back-edges
-/// (discovered-but-not-finished) and cross-edges (already finished).
-pub(super) fn simulate_esm_post_order(
-    entry_module_id: ModuleId,
-    i_successors: &BTreeMap<ModuleId, BTreeSet<ModuleId>>,
-    nodes: &BTreeSet<ModuleId>,
-    import_order: &EsmImportOrder,
-) -> BTreeMap<ModuleId, usize> {
-    let graph = EsmIGraph {
-        i_successors,
-        entry_module_id,
-        nodes,
-        import_order,
-    };
-    let mut dfs = DfsPostOrder::new(&graph, entry_module_id);
-    let mut post_order: BTreeMap<ModuleId, usize> = BTreeMap::new();
-    while let Some(node) = dfs.next(&graph) {
-        let idx = post_order.len();
-        post_order.insert(node, idx);
-    }
-    post_order
-}
-
-/// Petgraph view over `i_successors` that bakes in the ECMA-262
-/// import-order sort from the shared `EsmImportOrder`: entry fans
-/// out to every module in `nodes` in entry-import order, every other
-/// module to its I-successors in module-import order. Neighbors are
-/// yielded in REVERSE sort-key order so that `DfsPostOrder`'s
-/// push-all-then-pop-top semantics visits the smallest-key successor
-/// first.
-pub(super) struct EsmIGraph<'a> {
-    pub(super) i_successors: &'a BTreeMap<ModuleId, BTreeSet<ModuleId>>,
-    pub(super) entry_module_id: ModuleId,
-    /// The simulator's module universe (see
-    /// `EsmEvaluationSimulator::build`). Entry's neighbor set —
-    /// the emitted entry imports every logical module, not only the
-    /// ones entry's own statements reference.
-    pub(super) nodes: &'a BTreeSet<ModuleId>,
-    pub(super) import_order: &'a EsmImportOrder,
-}
-
-impl GraphBase for &EsmIGraph<'_> {
-    type NodeId = ModuleId;
-    type EdgeId = (ModuleId, ModuleId);
-}
-
-impl GraphRef for &EsmIGraph<'_> {}
-
-impl Visitable for &EsmIGraph<'_> {
-    // FxHash instead of std SipHash: the visit map is the per-node
-    // dedup set for the simulator's DFS, hit once per `simulate_esm_post_order`
-    // call (= once per `build_simulator` rebuild = once per gate
-    // `would_be_cycles_after_contract`). SipHash's DoS resistance is
-    // irrelevant on internal ModuleId data; FxHash is ~5× cheaper per
-    // probe.
-    type Map = FxHashSet<ModuleId>;
-
-    fn visit_map(&self) -> Self::Map {
-        FxHashSet::default()
-    }
-
-    fn reset_map(&self, map: &mut Self::Map) {
-        map.clear();
-    }
-}
-
-impl IntoNeighbors for &EsmIGraph<'_> {
-    type Neighbors = std::vec::IntoIter<ModuleId>;
-
-    fn neighbors(self, node: ModuleId) -> Self::Neighbors {
-        let mut succs: Vec<ModuleId> = if node == self.entry_module_id {
-            // The emitted entry imports EVERY logical module
-            // (binding-owning plans via named imports, binding-less
-            // plans via side-effect-only imports), not just the
-            // modules entry's own statements reference.
-            self.nodes
-                .iter()
-                .copied()
-                .filter(|m| *m != self.entry_module_id)
-                .collect()
-        } else {
-            self.i_successors
-                .get(&node)
-                .map(|succs| succs.iter().copied().collect())
-                .unwrap_or_default()
-        };
-        // Reverse sort: largest key first, smallest key last. petgraph's
-        // DfsPostOrder pushes neighbors in iteration order and visits
-        // the top of the stack next, so the LAST-yielded neighbor is
-        // descended into first.
-        if node == self.entry_module_id {
-            succs.sort_by_key(|m| std::cmp::Reverse(self.import_order.entry_import_sort_key(*m)));
-        } else if succs.len() >= 64 {
-            // Large import lists otherwise repeat the position-map lookup
-            // during every sort comparison. The cached-key sort is stable and
-            // uses the same shared emitter key, computed once per target.
-            succs.sort_by_cached_key(|m| {
-                std::cmp::Reverse(self.import_order.module_import_sort_key(*m))
-            });
-        } else {
-            succs.sort_by_key(|m| std::cmp::Reverse(self.import_order.module_import_sort_key(*m)));
-        }
-        succs.into_iter()
     }
 }
