@@ -82,8 +82,8 @@ def _write_app(path: Path, app: App) -> None:
     path.write_text(app.synth_yaml())
 
 
-def _app(chart_builders: Sequence[Callable[[App], Chart]]) -> App:
-    app = App()
+def _app(chart_builders: Sequence[Callable[[App], Chart]], app: App | None = None) -> App:
+    app = app if app is not None else App()
     for build in chart_builders:
         build(app)
     return app
@@ -135,6 +135,7 @@ def write_directory(
     root: Path,
     artifact: ArtifactGeneratorSpecArtifacts,
     *chart_builders: Callable[[App], Chart],
+    app: App | None = None,
     siblings: Sequence[str] = (),
     remote_resources: Sequence[str] = (),
     namespace: str | None = None,
@@ -160,6 +161,8 @@ def write_directory(
     For a directory whose `kustomization.yaml` the generator owns: under `GENERATED_ROOT`, or
     under `HAND_WRITTEN_ROOT` beside the hand-written files it names (a `.sops.yaml` sibling,
     an `image-pins` Component, a generated ConfigMap's source file).
+    Pass an already-built `app` when the Flux graph derives readiness from its charts;
+    `chart_builders`, if any, add further charts to that same app before writing.
     One keeping a hand-written `kustomization.yaml` uses `write_charts`. The returned
     directory's `decryption` is set when a sibling is SOPS ciphertext or a `secret_generator`
     reads a `.sops.yaml` file. Secret generators first package the encrypted file contents into
@@ -177,15 +180,15 @@ def write_directory(
     out_dir.mkdir(parents=True, exist_ok=True)
     resources = (
         [
-            write_charts(
+            write_app(
                 root,
                 directory,
-                *chart_builders,
+                _app(chart_builders, app),
                 unhardened_pods=unhardened_pods,
                 unpinned_https_egress=unpinned_https_egress,
             )
         ]
-        if chart_builders
+        if chart_builders or app is not None
         else []
     )
     patch_files: list[PatchFile] = []

@@ -89,7 +89,11 @@ def chart(app: App) -> Chart:
 
 
 def github_secrets_sync_secrets(
-    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization
+    chart: Chart,
+    directory: RenderedDirectory,
+    external_secrets_operator: Kustomization,
+    *,
+    health_checks: list[KustomizationSpecHealthChecks],
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -101,24 +105,5 @@ def github_secrets_sync_secrets(
         prune=False,
         timeout="2m",
         depends_on=flux_kustomization_depends_on_many(external_secrets_operator),
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="external-secrets.io/v1",
-                kind="ExternalSecret",
-                name="github-secrets-sync-pat",
-                namespace=_NAMESPACE,
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="external-secrets.io/v1",
-                kind="ExternalSecret",
-                name="buildbuddy-api-key",
-                namespace=_NAMESPACE,
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="external-secrets.io/v1",
-                kind="ExternalSecret",
-                name="gaffer-repo-fetch-pat",
-                namespace=_NAMESPACE,
-            ),
-        ],
+        health_checks=health_checks,
     )

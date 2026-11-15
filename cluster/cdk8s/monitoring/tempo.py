@@ -86,7 +86,12 @@ def chart(app: App) -> Chart:
 
 
 def tempo(
-    chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomization, seaweedfs_operator: Kustomization
+    chart: Chart,
+    directory: RenderedDirectory,
+    monitoring_crds: Kustomization,
+    seaweedfs_operator: Kustomization,
+    *,
+    health_checks: list[KustomizationSpecHealthChecks],
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -94,17 +99,7 @@ def tempo(
         directory,
         wait=None,
         suspend=False,
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1", kind="Bucket", name="tempo", namespace="monitoring"
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="seaweed.seaweedfs.com/v1", kind="S3Credentials", name="tempo", namespace="monitoring"
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="tempo", namespace="monitoring"
-            ),
-        ],
+        health_checks=health_checks,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
             # the chart's serviceMonitor.enabled

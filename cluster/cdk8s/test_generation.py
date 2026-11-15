@@ -27,8 +27,9 @@ def _chart(name: str) -> Callable[[App], Chart]:
     return functools.partial(config_map_chart, chart_name=name, configmap_name=name, namespace="test-ns", data={})
 
 
-def test_every_chart_goes_into_the_directory_file_listed_before_the_siblings(tmp_path: Path) -> None:
-    write_directory(tmp_path, _ARTIFACT, _chart("first"), _chart("second"), siblings=["test-secret.sops.yaml"])
+def test_every_chart_goes_into_the_directory_file_listed_before_the_siblings(scratch_app: App, tmp_path: Path) -> None:
+    _chart("first")(scratch_app)
+    write_directory(tmp_path, _ARTIFACT, _chart("second"), app=scratch_app, siblings=["test-secret.sops.yaml"])
     out_dir = tmp_path / artifact_directory(_ARTIFACT)
     # The sibling is hand-written, so absent here.
     assert sorted(path.name for path in out_dir.iterdir()) == ["app.k8s.yaml", "kustomization.yaml"]
