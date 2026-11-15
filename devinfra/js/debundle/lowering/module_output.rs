@@ -370,6 +370,21 @@ pub(super) fn prepare_module_emission<'output>(
             );
         }
     }
+    // Source import declarations peeled into this body bypass the runtime
+    // re-import planner above. Apply the same vendor plan to that original
+    // body segment after its URL rebase and sealed local renames. Keep the
+    // constructed imports outside this pass: rewriting them twice is not
+    // idempotent, and the final consumer gate still checks the full output.
+    if let Some(oracle) = vendor_import_oracle {
+        let mut peeled_body = body.split_off(original_module_body_start);
+        oracle.rewrite_peeled_imports(
+            &mut peeled_body,
+            chunk_id_interned,
+            &plan.target_file,
+            &mut vendor_reference_rewrites,
+        );
+        body.extend(peeled_body);
+    }
     // External package / facade imports join the runtime re-import
     // block after the retained chunk re-imports, deterministic in
     // first-need order. External targets are outside the per-chunk

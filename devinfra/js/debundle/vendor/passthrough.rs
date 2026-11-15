@@ -102,6 +102,55 @@ pub(crate) fn rewrite_passthrough_module(
     }
 }
 
+/// Rewrite only source imports carried into a materialized module with their
+/// atomic group. Their URLs have already been rebased to `caller_file_path`,
+/// and the module's sealed renames have already run. The ordinary pass-through
+/// canonicalizer must not run on this body: constructed lowering imports have
+/// already been resolved in the output coordinate system.
+pub fn rewrite_peeled_module_imports(
+    body: &mut Vec<ModuleItem>,
+    caller_chunk_id: ChunkId,
+    caller_file_path: &str,
+    plan: &VendorResolutionPlan,
+    references: &ArtifactIndexes,
+    chunk_table: &ChunkTable,
+    materialized_index: &MaterializedOutputChunkIndex,
+    references_by_symbol: &mut BTreeMap<(ChunkId, String), usize>,
+) {
+    let context = PassthroughContext {
+        plan,
+        references,
+        chunk_table,
+        materialized_index,
+    };
+    let mut state = VendorImportRewrites::default();
+    let mut rewritten = Vec::with_capacity(body.len());
+    for item in std::mem::take(body) {
+        match item {
+            ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => rewrite_import_decl(
+                import,
+                caller_chunk_id,
+                caller_file_path,
+                &context,
+                &mut state,
+                &mut rewritten,
+            ),
+            other => rewritten.push(other),
+        }
+    }
+    if !state.body_rewrites.is_empty() {
+        let mut rewriter = PartialSwapIdentRewriter {
+            bindings: &state.body_rewrites,
+            references_by_symbol: &mut state.references_rewritten,
+        };
+        rewritten.visit_mut_with(&mut rewriter);
+    }
+    *body = rewritten;
+    for (key, count) in state.references_rewritten {
+        *references_by_symbol.entry(key).or_insert(0) += count;
+    }
+}
+
 fn rewrite_directive_items(
     original_body: Vec<ModuleItem>,
     caller_chunk_id: ChunkId,

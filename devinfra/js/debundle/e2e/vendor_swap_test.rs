@@ -2305,6 +2305,67 @@ fn partial_swap_vendor(
     }
 }
 
+#[test]
+fn partial_swap_rewrites_import_peeled_into_coarse_residual() {
+    let (ws, package_root) = setup_partial_swap_consumer_fixture(
+        "vendor-partial-swap-coarse-residual-",
+        "const a = value => `bundled:${value}`; export { a };\n",
+        "import { a as U } from \"./megachunk.js\";\n\
+         const residual = U(\"ok\");\n\
+         export function App() { return residual; }\n",
+        "fac",
+        "1.0.0",
+        "lib/index.mjs",
+        "export default value => `package:${value}`;\n",
+    );
+    let spec = build_bundled_partial_swap_spec(
+        &ws,
+        json!({"static/megachunk.js": partial_swap_vendor(
+            "coarse residual import fixture",
+            &[("fac", partial_package("1.0.0", "lib/index.mjs", None))],
+            &[("a", swap_symbol("fac", PartialSwapKind::Default, None, None))],
+        )}),
+        Some(json!({
+            "logical_modules": {
+                "static/app": {
+                    "App": {
+                        "members": [{ "name": "App", "selector": { "binding": { "name": "App" } } }],
+                    },
+                },
+            },
+            "unassigned_mode": { "static/app": { "kind": "coarse_atomic_groups" } },
+            "materialize_logical_modules": {
+                "prune_other_chunks": false,
+                "report_out_dir": ws.out_root.join("reports/tree"),
+            },
+        })),
+    );
+    let spec_path = ws.root.path().join("transform_spec.yaml");
+    write_yaml_file(&spec_path, &spec);
+    let result = run_debundler(&spec_path, &[("fac", &package_root)]);
+    assert_success(&result);
+    let residual_path = ws
+        .out_root
+        .join("app/static/app/__auto/residual_groups/0000.js");
+    assert_source_file(
+        &residual_path,
+        &["fac", "residual"],
+        &["megachunk/entry.js"],
+    );
+    install_node_module(
+        &ws.out_root.join("app"),
+        "fac",
+        "1.0.0",
+        "export default value => `package:${value}`;\n",
+    );
+    let probe_path = ws.out_root.join("__run_coarse_residual.mjs");
+    write_text_file(
+        &probe_path,
+        "const { App } = await import('./app/static/app/App.js');\nconsole.log(App());\n",
+    );
+    assert_node_output(&probe_path, "package:ok\n", "");
+}
+
 fn partial_package(version: &str, subpath: &str, namespace: Option<&str>) -> PartialSwapPackage {
     PartialSwapPackage {
         version: version.into(),

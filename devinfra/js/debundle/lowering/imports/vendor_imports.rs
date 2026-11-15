@@ -71,6 +71,28 @@ impl<'a> VendorReimportOracle<'a> {
         })
     }
 
+    /// Apply the same plan-driven import surgery to source declarations
+    /// carried by a moved atomic group, after their URLs and local names have
+    /// been rewritten for the materialized destination.
+    pub(crate) fn rewrite_peeled_imports(
+        &self,
+        body: &mut Vec<ModuleItem>,
+        source_chunk_id: ChunkId,
+        target_file: &str,
+        references_by_symbol: &mut BTreeMap<(ChunkId, String), usize>,
+    ) {
+        vendor::rewrite_peeled_module_imports(
+            body,
+            source_chunk_id,
+            target_file,
+            self.plan,
+            self.references,
+            self.chunk_table,
+            &self.materialized_index,
+            references_by_symbol,
+        );
+    }
+
     /// Classify one runtime re-import by the chunk its source directive
     /// targets, resolved from the source chunk's own coordinate system —
     /// the same resolution the pass-through emission rewriter performs
