@@ -1,9 +1,9 @@
 {
   "schema_version": 2,
-  "observed_at_utc": "2026-11-15T07:02:45.919158+00:00",
+  "observed_at_utc": "2026-11-15T08:42:26.994035+00:00",
   "source": {
-    "base": "77e888907902e08c0183b7905fccf8e2ed7e513a",
-    "head": "cbce799899147a7b2d4cf3f426ccd31fafd1bdcb",
+    "base": "b9b280ef856546c67752cbb04331280d26559031",
+    "head": "a83552c866b300225ad2f80bfa3d2bd5708b5280",
     "pr": 16489,
     "branch": "agent/native-pod-services-partitions",
     "draft": true
@@ -18,6 +18,16 @@
       "description": "One cleanup drain and distinct cancellation/failure outcomes; Scenario, Policy and Sandbox owners already use it.",
       "path": "agentplane/system_tests/driver/cleanup.py",
       "label": "cleanup.py"
+    },
+    {
+      "description": "Cancellation-safe private diagnostics and primary-error precedence, including merged PR #16615.",
+      "path": "agentplane/system_tests/driver/cleanup_diagnostics.py",
+      "label": "Cleanup diagnostics"
+    },
+    {
+      "description": "Sequential CaseBatch workers own and discard reusable Pod Sandboxes. A fresh case closes that worker\u2019s reusable Sandbox before creating its resources.",
+      "path": "agentplane/system_tests/suites/pod_worker.py",
+      "label": "Pod worker ownership"
     },
     {
       "description": "Selected-item scheduling, exclusive-case ordering and timeout handling in the bounded case runner.",
@@ -36,6 +46,12 @@
     }
   ],
   "remaining_changes": [
+    {
+      "label": "Explicit App fixture ownership",
+      "path": "agentplane/system_tests/app_fixtures.py",
+      "change": "Common hooks remain neutral; App fixtures and MCP operator login load only in explicit consumers. Shared Sandbox definitions and App lifecycle operations have separate owners.",
+      "retained": "The same six App fixtures, diagnostic privacy/error precedence, App lifecycle assertions and positive App acceptance remain."
+    },
     {
       "label": "Pod suite split",
       "path": "agentplane/system_tests/suites/test_pod_platform.py",
@@ -61,92 +77,349 @@
       "retained": "Exact Sandbox and Pod UID/readiness checks for each lease; failed/replaced lease cleanup and fresh mutation resources."
     },
     {
-      "label": "Cleanup integration and controls",
-      "path": "agentplane/system_tests/driver/cleanup_diagnostics.py",
-      "change": "Adopt the landed cleanup primitive for private diagnostics and pooled teardown, remove the duplicate helper, extend cancellation and partial-setup tests.",
-      "retained": "Primary body-error precedence, failure cause, private secondary notes, acknowledged and unknown creates."
-    },
-    {
       "label": "Pytest runner spike",
       "path": "agentplane/system_tests/driver/test_async_fixture_lifecycle.py",
       "change": "Keep the isolated AnyIO lifecycle/control test and honor an explicit asyncio strict mode. Actual fixtures retain pytest-asyncio.",
       "retained": "No runner migration without machinery to remove; bounded CaseBatch remains."
+    },
+    {
+      "label": "Manual ordinary-pytest comparisons",
+      "path": "agentplane/system_tests/suites/test_pod_sequential_spike.py",
+      "change": "One unsharded control and two ordinary sequential pytest targets invoke the same scenario functions. All are manual experiments. The latest implementation uses devel\u2019s Worker owner.",
+      "retained": "The required two-slot CaseBatch gate is unchanged; all 15 case identities and marks are preserved. Storage checks run first."
     }
   ],
   "next_steps": [
     {
-      "title": "1. Cut the remaining App dependency fanout",
-      "action": "Extract App client/diagnostic fixtures from system_tests/conftest.py into an explicitly loaded App plugin. Keep common tracing and scenario reporting independent. Query configured dependencies and replay real historical base/head selection pairs before changing a gate.",
-      "acceptance": "Native targets lose unintended App imports and action inputs; every existing App fixture caller moves in the same change. Estimate end-to-end benefit from actual affected-target reductions."
+      "title": "1. Measure whole-PR selection benefit",
+      "action": "Replay complete historical App-only PR base/head pairs plus Gateway/Controller positive controls through the actual production selector, then execute matched required-check arms for a representative change.",
+      "acceptance": "Count complete required feedback, action CPU and failures. Selected-test reductions alone do not qualify this branch; App Pod may still dominate the critical path."
     },
     {
-      "title": "2. Test two ordinary pytest shards",
-      "action": "Partition the existing Pod cases by compatible state and duration; keep storage inventory checks isolated. Run two standard pytest targets with the same logical assertions and real deployment acceptance, measuring the duplicated setup and worker cost.",
-      "acceptance": "Use only if complete feedback improves and total compute stays within 1.25 of the matched control. Reject if setup duplication or lost concurrency consumes the gain."
+      "title": "2. Remove deployment machinery from protocol contracts",
+      "action": "Audit which App Pod/central cases require Kubernetes reconciliation, issuance, workload identity, volume replacement or actual suspension. Run pure Session, History, authorization and turn-state contracts against real service processes with a small database fixture; keep real deployment witnesses for every unique boundary. Spike the largest transferable critical-path group first.",
+      "acceptance": "Proceed only with an assertion-to-owner inventory, a real failing regression control, and an end-to-end saving plausibly \u226530%. No blanket path filter and no fake replacement for a real deployment assertion."
     },
     {
-      "title": "3. Qualify only a promising candidate",
-      "action": "Compare current required CI with the candidate across 30 matched PR pairs, at least 100 fresh contract executions, three busy windows, warm/cold conditions and a four-PR burst. Include seeded or historical regressions and positive controls.",
-      "acceptance": "At least 30% faster complete required feedback, compute ratio at most 1.25, no unassigned unique assertion or new unexplained isolation/failure signature. Record p90, failures, reruns and unknown metrics."
+      "title": "3. Qualify a promising architecture",
+      "action": "If the small screen clears the latency/compute threshold, run 30 matched PR pairs and \u2265100 fresh contract executions across three busy windows, warm/cold conditions and a four-PR burst. Include seeded/historical failures and scenario-isolation controls.",
+      "acceptance": "\u226530% faster complete required feedback; CPU ratio \u22641.25; no lost unique assertion or unexplained failure signature. Record p90, reruns, source/image inputs and unknown metrics."
     }
   ],
   "validation": {
-    "required_checks_passed": true,
-    "summary": "Required checks passed",
-    "detail": "All three required hosted checks pass for the displayed PR head. Ordinary CI has 921 passing test-target summaries on verified synthetic merge c6a3201630, whose parents are devel 00321e382b and this head. The native platform and central-service suites pass with Controller routing and Pod-bound fixture authentication. Three focused renderer, Controller and Gateway targets plus four explicit library builds pass at the exact source head. Passing summaries may include cached results.",
+    "summary": "Implementation checks passed",
+    "detail": "All three required checks passed for measured implementation 6e6ad85a4c9c28a86fed31d83a6ea760677c171b: 922 passing target summaries on verified synthetic merge f825f8a907f0f86de5d28b70cc023170374595a7, with parents fd2c5c1bbb4eb5f7bd3bbdab80b794ab4c880559 and that implementation head. The displayed final head adds only reviewed experiment records and README corrections. Both changed native suites and App acceptance pass. Passing summaries may include cached results. All six explicitly named fixture libraries build at the measured implementation. The manifest records final documentation-head CI separately.",
     "links": [
       {
-        "label": "Focused exact-head renderer and production-default checks: passed",
-        "url": "https://app.buildbuddy.io/invocation/9b3bdf78-0a0e-4f02-a9b4-5e6d349f6b97"
+        "label": "Implementation Bazel CI: passed",
+        "url": "https://github.com/agentydragon/ducktape/actions/runs/43694440686"
       },
       {
-        "label": "Required Bazel CI: passed",
-        "url": "https://github.com/agentydragon/ducktape/actions/runs/43687211943"
+        "label": "Implementation pre-commit: passed",
+        "url": "https://github.com/agentydragon/ducktape/actions/runs/43694440615"
       },
       {
-        "label": "Required pre-commit: passed",
-        "url": "https://github.com/agentydragon/ducktape/actions/runs/43687211984"
+        "label": "Implementation artifact/import check: passed",
+        "url": "https://github.com/agentydragon/ducktape/actions/runs/43694440590"
       },
       {
-        "label": "Required artifact/import check: passed",
-        "url": "https://github.com/agentydragon/ducktape/actions/runs/43687211892"
+        "label": "922 passing target summaries",
+        "url": "https://app.buildbuddy.io/invocation/e7da1861-e0e0-5558-85c7-01ad8a301b51"
       },
       {
-        "label": "Ordinary CI: 921 passing target summaries",
-        "url": "https://app.buildbuddy.io/invocation/ce7ff66d-4816-50de-97c6-2ed08f3fcb44"
+        "label": "Six explicit fixture library builds: passed",
+        "url": "https://app.buildbuddy.io/invocation/9688cc38-4ff6-4cb4-94a0-0c73f583c90e"
       }
     ],
-    "focused": {
-      "invocation": "https://app.buildbuddy.io/invocation/9b3bdf78-0a0e-4f02-a9b4-5e6d349f6b97",
-      "source_head": "cbce799899147a7b2d4cf3f426ccd31fafd1bdcb",
-      "test_targets": 3,
-      "library_targets_built_explicitly": 4,
-      "result": "PASSED",
-      "fresh_test_results": true
-    },
-    "ci": {
-      "source_head": "cbce799899147a7b2d4cf3f426ccd31fafd1bdcb",
-      "tested_merge": "c6a3201630d5c3f862d4a3086b2cc167cd5abbeb",
+    "implementation_ci": {
+      "source_head": "6e6ad85a4c9c28a86fed31d83a6ea760677c171b",
+      "tested_merge": "f825f8a907f0f86de5d28b70cc023170374595a7",
       "merge_parents": [
-        "00321e382bbe4334f714bb4f06a708bfa140295f",
-        "cbce799899147a7b2d4cf3f426ccd31fafd1bdcb"
+        "fd2c5c1bbb4eb5f7bd3bbdab80b794ab4c880559",
+        "6e6ad85a4c9c28a86fed31d83a6ea760677c171b"
       ],
-      "invocation": "ce7ff66d-4816-50de-97c6-2ed08f3fcb44",
+      "invocation": "e7da1861-e0e0-5558-85c7-01ad8a301b51",
       "result": "SUCCESS",
-      "test_target_summaries": 921,
+      "test_target_summaries": 922,
       "all_summaries_passed": true,
       "all_fresh": false,
-      "rbe_internal_retry_count": "unknown",
-      "precommit_attempts": 1
-    }
+      "rbe_internal_retry_count": "unknown"
+    },
+    "implementation_checks_passed": true
   },
   "records": {
-    "previous_report": "https://github.com/agentydragon/ducktape/blob/767f3e425def136d1e8bb74e36b22a722846a7e9/agentplane-test-architecture/index.html",
-    "experiments": "https://github.com/agentydragon/ducktape/blob/60022daeed0e0ac9e26c974d09d24d8a79d93a3b/agentplane-test-architecture/pytest-fixtures.json"
+    "previous_report": "https://github.com/agentydragon/ducktape/blob/2161883d0f189b2d92f5d5e7e91a323d985b126a/agentplane-test-architecture/index.html",
+    "experiments": "https://github.com/agentydragon/ducktape/blob/a83552c866b300225ad2f80bfa3d2bd5708b5280/agentplane/debug/2026_11_15_app_fixture_cut.md"
   },
   "limits": [
     "No fleet latency/reliability window refreshed.",
-    "Earlier measured sources and overlays remain records only.",
-    "The remaining diff and CI status are pinned to the displayed head/base, not unversioned branch names."
-  ]
+    "A small passing screen does not establish a reliability-rate improvement.",
+    "Source pins distinguish the initial screen from the post-worker-rebase implementation.",
+    "Complete required feedback and full historical PR selection have not been measured by the single-file selector screen."
+  ],
+  "decision": "Keep the explicit App fixture boundary: the current selector screen removes unintended native tests from an App Client edit. Retain required CaseBatch. The current same-source two-shard layout was 6.9% slower and used 45.6% more TestRunner CPU; do not expand its qualification. No 30% complete-feedback saving is established.",
+  "current_screens": [
+    {
+      "title": "Rebased configured runfiles",
+      "url": "https://app.buildbuddy.io/invocation/31396b90-7966-4676-8072-14aaecfaabef",
+      "result": "Zero agentplane/app/ runfiles in native Pod, central services and Gateway crash. App Pod retains eight.",
+      "scope": "Current implementation 6e6ad85a4c9c28a86fed31d83a6ea760677c171b. Earlier matched input query measured 4/5/5 \u2192 0/0/0 with App Pod 8 \u2192 8. No elapsed-time claim."
+    },
+    {
+      "title": "Current production selector replay",
+      "url": "https://app.buildbuddy.io/invocation/20d7de33-6b2e-4200-b873-2ddc91b8bc18",
+      "result": "App Client source edit: 79 \u2192 15 ordinary tests. Gateway 45 \u2192 45; Controller 20 \u2192 20. All 42 selection commands completed successfully.",
+      "scope": "Control 5dc6d1a567cb9f21db696a9ed26bf36e78c7d8f9 versus candidate 6e6ad85a4c9c28a86fed31d83a6ea760677c171b. Exact historical single-file before/after blobs; no full historical PR replay or frequency/latency estimate."
+    },
+    {
+      "title": "Current same-source ordinary-pytest screen",
+      "url": "https://app.buildbuddy.io/invocation/63ebfa7e-c7f1-472f-960e-f46d5fcaee52",
+      "result": "Control 293.6s; two-shard maximum 313.9s (+6.9%). TestRunner CPU 719 \u2192 1,046 CPU-s (+45.6%). Bazel elapsed 323.1 \u2192 366.7s (+13.5%).",
+      "scope": "Both arms use 6e6ad85a4c9c28a86fed31d83a6ea760677c171b and a warm clean baseline. Identical 15-case inventories, all passed, no skips or extra physical test attempts. One pair; action screen only. This allocation fails the speed and compute screen."
+    },
+    {
+      "title": "Required matched control",
+      "url": "https://app.buildbuddy.io/invocation/2f92a6ab-7b18-479f-ac13-8098bedca6cc",
+      "result": "Required CaseBatch keeps one stack and two worker scopes. The two ordinary shards duplicated stack setup (55/53s) and cleanup (28/30s).",
+      "scope": "Observed queue waits were ~0.06s per shard. Nested phase times overlap; do not add them to wall time. No cold-start, p90 or reliability-rate result."
+    }
+  ],
+  "selector_replay": {
+    "invocation": "20d7de33-6b2e-4200-b873-2ddc91b8bc18",
+    "control": "5dc6d1a567cb9f21db696a9ed26bf36e78c7d8f9",
+    "candidate": "6e6ad85a4c9c28a86fed31d83a6ea760677c171b",
+    "events": {
+      "app_client": {
+        "path": "agentplane/app/testing/client.py",
+        "historical_after_commit": "39689128345032164c0c2429ec321e743123db19",
+        "before_file_sha256": "802f5946582d5cac1c0cf5f9e231d192188fbf25ad0cf19d86afab6b22886dba",
+        "after_file_sha256": "b7271c141bce7a524ec72686f4da51fc5a2aa3299005aeb5d6c1ecf600c52c1d",
+        "ordinary_selected_control": 79,
+        "ordinary_selected_candidate": 15
+      },
+      "gateway": {
+        "path": "agentplane/runner_gateway/internal/gateway/gateway.go",
+        "historical_after_commit": "efacbf509178221d60e392168ba812aff360beae",
+        "before_file_sha256": "a4cb0bbf83302201d4ae1375a8b524909dd650a6aec6c0415fdd5ba7a6d1daa5",
+        "after_file_sha256": "f9013621100dff49ad53a32bdf1a0a36953d2956cf7953f8da92674b98502c1d",
+        "ordinary_selected_control": 45,
+        "ordinary_selected_candidate": 45
+      },
+      "controller": {
+        "path": "agentplane/environments/internal/controller/controller.go",
+        "historical_after_commit": "f1a62b7d43d6dd59f9f8e9362d1316e0219a0e6f",
+        "before_file_sha256": "a4e2d971018109f077f54cd686f76407cde6aeb192b0804a686ad6fbb4d8ca0d",
+        "after_file_sha256": "39b0428177abb16c8f9cb8d106270ec1411f8f6135be5ac97ff803fcf809c63e",
+        "ordinary_selected_control": 20,
+        "ordinary_selected_candidate": 20
+      }
+    },
+    "verified_private_archive_sha256": "eaee11140d387be210e809c14bfb1f7eae0c3b0e0f1319fba1a8eec96e4473ba",
+    "archive_size_bytes": 24707,
+    "scope": "Historical single-file replay through production bazel-diff and tag filtering. Controller sample is its current wording edit, a dependency positive control."
+  },
+  "pod_screen": {
+    "B2": {
+      "tests": [
+        {
+          "target": "//agentplane/system_tests/suites:test_pod_sequential_a_spike",
+          "execution_id": "/uploads/bc3f4564-83a6-47e3-9b74-ec4aca6c4e03/blobs/b6108cd5f703f7719095afae88bad49416130f6ad85a36f383b0eb6b3b1b1498/1218",
+          "action_digest": {
+            "hash": "b6108cd5f703f7719095afae88bad49416130f6ad85a36f383b0eb6b3b1b1498",
+            "sizeBytes": "1218"
+          },
+          "wall_seconds": 255.917228,
+          "cpu_seconds": 431.080922,
+          "peak_memory_bytes": 4991320064,
+          "queue_seconds": 0.061851,
+          "worker_seconds": 257.290852
+        },
+        {
+          "target": "//agentplane/system_tests/suites:test_pod_sequential_b_spike",
+          "execution_id": "/uploads/e3e776a9-edfd-4ba8-a6fd-51a5710f7b10/blobs/c0ade04d0fa54b79c969391c67f59404634f4c360f89947a9ef3cff609012d8b/1218",
+          "action_digest": {
+            "hash": "c0ade04d0fa54b79c969391c67f59404634f4c360f89947a9ef3cff609012d8b",
+            "sizeBytes": "1218"
+          },
+          "wall_seconds": 313.860605,
+          "cpu_seconds": 615.254154,
+          "peak_memory_bytes": 4824866816,
+          "queue_seconds": 0.057948,
+          "worker_seconds": 314.974088
+        }
+      ],
+      "physical_test_executions": 2,
+      "total_cpu_seconds": 1046.3350759999998,
+      "summed_worker_seconds": 572.26494,
+      "maximum_test_seconds": 313.860605,
+      "phases": [
+        [
+          {
+            "name": "system_test.k3s.baseline.open",
+            "seconds": 1.008571,
+            "attributes": {
+              "persistence.fingerprint": "f8fd58c598f0f2d2b79cceb311f818c1b7ce4da5a83d252f6f046375b17da4d8",
+              "persistence.layers_in_memory": true,
+              "persistence.previous_fingerprint": "f8fd58c598f0f2d2b79cceb311f818c1b7ce4da5a83d252f6f046375b17da4d8",
+              "persistence.previous_state": "clean",
+              "persistence.outcome": "warm",
+              "persistence.reason": "reused"
+            }
+          },
+          {
+            "name": "system_test.stack.setup",
+            "seconds": 55.208691,
+            "attributes": {}
+          },
+          {
+            "name": "system_test.stack.baseline.clean",
+            "seconds": 23.290654,
+            "attributes": {}
+          },
+          {
+            "name": "system_test.stack.baseline.certify",
+            "seconds": 0.001054,
+            "attributes": {}
+          },
+          {
+            "name": "system_test.stack.cleanup",
+            "seconds": 27.80402,
+            "attributes": {}
+          }
+        ],
+        [
+          {
+            "name": "system_test.k3s.baseline.open",
+            "seconds": 0.814523,
+            "attributes": {
+              "persistence.fingerprint": "f8fd58c598f0f2d2b79cceb311f818c1b7ce4da5a83d252f6f046375b17da4d8",
+              "persistence.layers_in_memory": true,
+              "persistence.previous_fingerprint": "f8fd58c598f0f2d2b79cceb311f818c1b7ce4da5a83d252f6f046375b17da4d8",
+              "persistence.previous_state": "clean",
+              "persistence.outcome": "warm",
+              "persistence.reason": "reused"
+            }
+          },
+          {
+            "name": "system_test.stack.setup",
+            "seconds": 52.613949,
+            "attributes": {}
+          },
+          {
+            "name": "system_test.stack.baseline.clean",
+            "seconds": 23.903198,
+            "attributes": {}
+          },
+          {
+            "name": "system_test.stack.baseline.certify",
+            "seconds": 0.000252,
+            "attributes": {}
+          },
+          {
+            "name": "system_test.stack.cleanup",
+            "seconds": 29.759389,
+            "attributes": {}
+          }
+        ]
+      ],
+      "bazel_elapsed_seconds": 366.699
+    },
+    "A3": {
+      "tests": [
+        {
+          "target": "//agentplane/system_tests/suites:test_pod",
+          "execution_id": "/uploads/f3147d80-1609-4b5f-bfe6-06a9282e31fb/blobs/2b42aef6484b72d8c9fcf77dc8c6703922afc463d5d5b0ba74720b0af8328457/1218",
+          "action_digest": {
+            "hash": "2b42aef6484b72d8c9fcf77dc8c6703922afc463d5d5b0ba74720b0af8328457",
+            "sizeBytes": "1218"
+          },
+          "wall_seconds": 293.607701,
+          "cpu_seconds": 718.739512,
+          "peak_memory_bytes": 5284343808,
+          "queue_seconds": 0.058788,
+          "worker_seconds": 294.28262
+        }
+      ],
+      "physical_test_executions": 1,
+      "total_cpu_seconds": 718.739512,
+      "summed_worker_seconds": 294.28262,
+      "maximum_test_seconds": 293.607701,
+      "phases": [
+        [
+          {
+            "name": "system_test.k3s.baseline.open",
+            "seconds": 0.840881,
+            "attributes": {
+              "persistence.fingerprint": "f8fd58c598f0f2d2b79cceb311f818c1b7ce4da5a83d252f6f046375b17da4d8",
+              "persistence.layers_in_memory": true,
+              "persistence.previous_fingerprint": "f8fd58c598f0f2d2b79cceb311f818c1b7ce4da5a83d252f6f046375b17da4d8",
+              "persistence.previous_state": "clean",
+              "persistence.outcome": "warm",
+              "persistence.reason": "reused"
+            }
+          },
+          {
+            "name": "system_test.stack.setup",
+            "seconds": 33.240501,
+            "attributes": {}
+          },
+          {
+            "name": "system_test.stack.baseline.clean",
+            "seconds": 23.936706,
+            "attributes": {}
+          },
+          {
+            "name": "system_test.stack.baseline.certify",
+            "seconds": 0.000442,
+            "attributes": {}
+          },
+          {
+            "name": "system_test.stack.cleanup",
+            "seconds": 30.147804,
+            "attributes": {}
+          }
+        ]
+      ],
+      "bazel_elapsed_seconds": 323.141
+    },
+    "coverage": {
+      "exact_case_inventory_equal": true,
+      "cases": [
+        "test_pod_scenarios[test_a_policy_granted_after_the_sandbox_is_running_takes_effect]",
+        "test_pod_scenarios[test_a_preset_launches_an_initialized_editable_codex_thread]",
+        "test_pod_scenarios[test_an_agent_messages_another_which_reads_and_acknowledges_it]",
+        "test_pod_scenarios[test_an_identity_creates_a_native_session_only_with_an_explicit_binding_grant]",
+        "test_pod_scenarios[test_an_unknown_history_session_is_not_found]",
+        "test_pod_scenarios[test_codex_standing_instructions_after_suspend_and_compact]",
+        "test_pod_scenarios[test_every_history_reader_observes_the_same_log_and_resume_uses_the_observed_cursor]",
+        "test_pod_scenarios[test_fresh_workspace_storage_survives_replacement]",
+        "test_pod_scenarios[test_operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_control]",
+        "test_pod_scenarios[test_pod_mtls_session_survives_replacement_and_keeps_history]",
+        "test_pod_scenarios[test_sandbox_cli_reaches_the_dispatcher_with_its_workload_svid]",
+        "test_pod_scenarios[test_the_model_call_itself_goes_through_the_proxy]",
+        "test_pod_scenarios[test_the_standing_instruction_reaches_the_model_and_only_in_its_own_session]",
+        "test_pod_scenarios[test_turns_nobody_watches_are_archived_and_a_failed_turn_leaves_the_next_input_its_own_turn]",
+        "test_pod_scenarios[test_two_harness_threads_keep_their_context_after_sandbox_suspend_resume]"
+      ],
+      "all_passed": true
+    },
+    "matched_B2_over_A3": {
+      "test_wall_ratio": 1.0689794713524903,
+      "cpu_ratio": 1.4557917834354428,
+      "bazel_elapsed_ratio": 1.1347956464824953
+    },
+    "source": "6e6ad85a4c9c28a86fed31d83a6ea760677c171b",
+    "control_invocation": "2f92a6ab-7b18-479f-ac13-8098bedca6cc",
+    "candidate_invocation": "63ebfa7e-c7f1-472f-960e-f46d5fcaee52",
+    "decision": "Keep targets manual; reject this allocation. Complete-feedback and reliability improvement remain unqualified.",
+    "runs_per_test": 1,
+    "flaky_test_attempts": 1,
+    "fresh_test_results": true,
+    "rbe_internal_retry_count": "unknown",
+    "limits": [
+      "One warm pair at one pinned source; no p90 or complete-required-feedback estimate.",
+      "The exact execution records show one execution per target; internal RBE retries not independently audited.",
+      "CPU is observed TestRunner CPU, not total complete-CI compute."
+    ]
+  }
 }
