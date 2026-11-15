@@ -33,6 +33,28 @@ _GATEWAY_NAME = "AT&T gateway (192.168.1.254)"
 _OPTIPLEX_NAME = "OptiPlex LAN (192.168.1.10)"
 
 
+def _metric_panel(
+    *,
+    id_val: int,
+    expr: str,
+    legend: str,
+    title: str,
+    description: str,
+    grid_pos: dashboard.GridPos,
+    field_config: dashboard.FieldConfigSource,
+) -> dashboard.Panel:
+    return dashboard.Panel(
+        type_val="timeseries",
+        id_val=id_val,
+        targets=[mimir_query(expr, legend=legend).build()],
+        title=title,
+        description=description,
+        datasource=mimir(),
+        grid_pos=grid_pos,
+        field_config=field_config,
+    )
+
+
 def _line_fields(
     unit: str = "short", min_val: float | None = 0, max_val: float | None = None
 ) -> dashboard.FieldConfigSource:
@@ -349,18 +371,12 @@ def build_dashboard() -> dashboard.Dashboard:
                 grid_pos=dashboard.GridPos(h=8, x=12, y=14),
                 field_config=_traffic_fields(),
             ),
-            dashboard.Panel(
-                type_val="timeseries",
+            _metric_panel(
                 id_val=50,
-                targets=[
-                    mimir_query(
-                        f'max(mktxp_interface_rate{{{_SWITCH},name="ether1"}}) * 1000000',
-                        legend="CRS310 ether1 to AT&T gateway",
-                    ).build()
-                ],
+                expr=f'max(mktxp_interface_rate{{{_SWITCH},name="ether1"}}) * 1000000',
+                legend="CRS310 ether1 to AT&T gateway",
                 title="AT&T gateway uplink negotiated speed",
                 description="Actual negotiated Ethernet speed between CRS310 ether1 and the AT&T BGW320 gateway, sampled every 30 seconds. Compare its transitions with the independent host ping-loss panels beside it.",
-                datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=8, y=22),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(
@@ -380,26 +396,24 @@ def build_dashboard() -> dashboard.Dashboard:
                     )
                 ),
             ),
-            dashboard.Panel(
-                type_val="timeseries",
+            _metric_panel(
                 id_val=43,
-                targets=[mimir_query(_host_probe_loss('source_node=~"optiplex|"'), legend="{{target}}").build()],
+                expr=_host_probe_loss('source_node=~"optiplex|"'),
+                legend="{{target}}",
                 title="Ping loss from optiplex",
                 description="Share of pings from optiplex (5/s per target) that got no reply. Loss to the gateway with none to the switch is the uplink fault in debug/home_network_connectivity/2026_10_gateway_uplink_loss.md.",
-                datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=8, x=8, y=22),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="percentunit", min_val=0, custom=line_style()),
                     overrides=_smokeping_target_names(),
                 ),
             ),
-            dashboard.Panel(
-                type_val="timeseries",
+            _metric_panel(
                 id_val=45,
-                targets=[mimir_query(_host_probe_loss('source_node="wyrm2"'), legend="{{target}}").build()],
+                expr=_host_probe_loss('source_node="wyrm2"'),
+                legend="{{target}}",
                 title="Ping loss from wyrm2",
                 description="ICMP probes from wyrm2 to the AT&T gateway, MikroTik switch, optiplex LAN address (192.168.1.10), and ovh-ns104952 over Nebula. Loss is the unanswered fraction of 5 pings/s, averaged over 5 minutes. Compare with optiplex beside it; a gap means missing observations.",
-                datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=8, x=16, y=22),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="percentunit", min_val=0, custom=line_style()),
@@ -409,26 +423,24 @@ def build_dashboard() -> dashboard.Dashboard:
                     ],
                 ),
             ),
-            dashboard.Panel(
-                type_val="timeseries",
+            _metric_panel(
                 id_val=44,
-                targets=[mimir_query(_host_probe_rtt('source_node=~"optiplex|"'), legend="{{target}}").build()],
+                expr=_host_probe_rtt('source_node=~"optiplex|"'),
+                legend="{{target}}",
                 title="Ping RTT from optiplex",
                 description="Mean round-trip time of answered pings from optiplex, per target.",
-                datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, y=30),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="s", min_val=0, custom=line_style()),
                     overrides=_smokeping_target_names(),
                 ),
             ),
-            dashboard.Panel(
-                type_val="timeseries",
+            _metric_panel(
                 id_val=46,
-                targets=[mimir_query(_host_probe_rtt('source_node="wyrm2"'), legend="{{target}}").build()],
+                expr=_host_probe_rtt('source_node="wyrm2"'),
+                legend="{{target}}",
                 title="Ping RTT from wyrm2",
                 description="ICMP probes from wyrm2 to the AT&T gateway, MikroTik switch, optiplex LAN address (192.168.1.10), and ovh-ns104952 over Nebula. Mean round-trip time of answered pings, per target.",
-                datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, x=12, y=30),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="s", min_val=0, custom=line_style()),
@@ -438,77 +450,57 @@ def build_dashboard() -> dashboard.Dashboard:
                     ],
                 ),
             ),
-            dashboard.Panel(
-                type_val="timeseries",
+            _metric_panel(
                 id_val=47,
-                targets=[
-                    mimir_query(
-                        f'max by (name) (mktxp_netwatch_icmp_loss_percent{{{_SWITCH},name=~"att-gateway|optiplex-lan",type="icmp"}}) / 100',
-                        legend="{{name}}",
-                    ).build()
-                ],
+                expr=f'max by (name) (mktxp_netwatch_icmp_loss_percent{{{_SWITCH},name=~"att-gateway|optiplex-lan",type="icmp"}}) / 100',
+                legend="{{name}}",
                 title="UNRELIABLE: Ping batch loss from MikroTik",
                 description="UNRELIABLE: captures at OptiPlex found invalid ICMP checksums in Netwatch requests; reported loss matched the malformed requests, and enabling a concurrent probe changed the pattern. These measurements cannot establish network delivery or outage frequency. Use the independent OptiPlex and wyrm2 host probes for reliability. Latest reported Netwatch batch, sent by the CRS310 itself: 200 pings at 150 ms intervals once per minute, with a 1 s reply timeout and no early termination. Unlike host smokeping, this is batch loss, not a rolling 5-minute ratio. Scraped every 30 seconds; gaps cannot reconstruct missed batches.",
-                datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, y=38),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="percentunit", min_val=0, custom=line_style()),
                     overrides=_netwatch_target_names(),
                 ),
             ),
-            dashboard.Panel(
-                type_val="timeseries",
+            _metric_panel(
                 id_val=48,
-                targets=[
-                    mimir_query(
-                        f'max by (name) (mktxp_netwatch_icmp_rtt_avg_ms{{{_SWITCH},name=~"att-gateway|optiplex-lan",type="icmp"}}) / 1000',
-                        legend="{{name}}",
-                    ).build()
-                ],
+                expr=f'max by (name) (mktxp_netwatch_icmp_rtt_avg_ms{{{_SWITCH},name=~"att-gateway|optiplex-lan",type="icmp"}}) / 1000',
+                legend="{{name}}",
                 title="UNRELIABLE: Ping batch RTT from MikroTik",
                 description="UNRELIABLE: captures at OptiPlex found invalid ICMP checksums in Netwatch requests; reported loss matched the malformed requests, and enabling a concurrent probe changed the pattern. These measurements cannot establish network delivery or outage frequency. Use the independent OptiPlex and wyrm2 host probes for reliability. Mean RTT of answered pings in the latest reported switch-originated Netwatch batch. 200 pings at 150 ms intervals, once per minute; scraped every 30 seconds. A zero RTT during 100% loss does not mean a fast response.",
-                datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, x=12, y=38),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="s", min_val=0, custom=line_style()),
                     overrides=_netwatch_target_names(),
                 ),
             ),
-            dashboard.Panel(
-                type_val="timeseries",
+            _metric_panel(
                 id_val=49,
-                targets=[
-                    mimir_query(
-                        f'max by (name) (increase(mktxp_netwatch_failed_tests{{{_SWITCH},name=~"att-gateway|optiplex-lan",type="icmp"}}[1h]))',
-                        legend="{{name}}",
-                    ).build()
-                ],
+                expr=f'max by (name) (increase(mktxp_netwatch_failed_tests{{{_SWITCH},name=~"att-gateway|optiplex-lan",type="icmp"}}[1h]))',
+                legend="{{name}}",
                 title="UNRELIABLE: Failed probe batches per hour from MikroTik",
                 description="UNRELIABLE: captures at OptiPlex found invalid ICMP checksums in Netwatch requests; reported loss matched the malformed requests, and enabling a concurrent probe changed the pattern. These measurements cannot establish network delivery or outage frequency. Use the independent OptiPlex and wyrm2 host probes for reliability. Estimated failed batches in the trailing hour, from reset-aware increase of RouterOS cumulative failed-tests (exported as a gauge by mktxp). Each batch tests 200 pings once per minute; a 5% loss threshold and 1 s RTT thresholds determine failure. This measures failed batches, not distinct outage episodes. Counts can survive missed scrapes unless a probe resets; increase may produce fractional estimates.",
-                datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=24, y=46),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="short", decimals=1, min_val=0, custom=line_style()),
                     overrides=_netwatch_target_names(),
                 ),
             ),
-            dashboard.Panel(
-                type_val="timeseries",
+            _metric_panel(
                 id_val=51,
-                targets=[mimir_query(_probe_minutes(affected=True), legend="{{source_node}} → {{target}}").build()],
+                expr=_probe_minutes(affected=True),
+                legend="{{source_node}} → {{target}}",
                 title="Affected probe minutes per trailing hour",
                 description="Number of one-minute classifications with at least 1% unanswered host ICMP pings. This is measured affected time, up to 60 minutes per hour, per source and target. A minute is classified only with fresh, reset-free request and reply counters and roughly 5 requests/s. Missing observations are excluded; compare the coverage panel. Computed from raw probe samples when queried, so buffered samples can fill historical gaps after delivery. Legacy unlabelled smokeping Pod samples are attributed to optiplex. A two-minute window spanning more than one Pod stays unclassified during a rollout.",
-                datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, y=54),
                 field_config=_observed_minute_fields(),
             ),
-            dashboard.Panel(
-                type_val="timeseries",
+            _metric_panel(
                 id_val=52,
-                targets=[mimir_query(_probe_episode_starts(), legend="{{source_node}} → {{target}}").build()],
+                expr=_probe_episode_starts(),
+                legend="{{source_node}} → {{target}}",
                 title="Observed episode starts per trailing hour",
                 description="An episode starts when an observed healthy minute (under 1% loss) is followed immediately by an affected minute (at least 1% loss). A return from a telemetry gap is left-censored and does not start a new counted episode. Zero requires at least one observed minute. Computed from raw probe samples when queried, so buffered samples can fill historical gaps after delivery. Legacy unlabelled smokeping Pod samples are attributed to optiplex. A two-minute window spanning more than one Pod stays unclassified during a rollout.",
-                datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, x=12, y=54),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(
@@ -525,13 +517,12 @@ def build_dashboard() -> dashboard.Dashboard:
                     )
                 ),
             ),
-            dashboard.Panel(
-                type_val="timeseries",
+            _metric_panel(
                 id_val=53,
-                targets=[mimir_query(_probe_minutes(affected=False), legend="{{source_node}} → {{target}}").build()],
+                expr=_probe_minutes(affected=False),
+                legend="{{source_node}} → {{target}}",
                 title="Observed probe minutes per trailing hour",
                 description="Coverage for affected-time and episode counts. Each source/target can contribute at most 60 classified minutes per trailing hour. Missing scrapes, stopped probes, and counter resets reduce coverage; low coverage prevents a claim of reliable delivery. Computed from raw probe samples when queried, so buffered samples can fill historical gaps after delivery. Legacy unlabelled smokeping Pod samples are attributed to optiplex. A two-minute window spanning more than one Pod stays unclassified during a rollout.",
-                datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=24, y=62),
                 field_config=_observed_minute_fields(),
             ),
@@ -758,33 +749,21 @@ def build_dashboard() -> dashboard.Dashboard:
                 grid_pos=dashboard.GridPos(h=8, y=98),
                 field_config=_traffic_fields(),
             ),
-            dashboard.Panel(
-                type_val="timeseries",
+            _metric_panel(
                 id_val=30,
-                targets=[
-                    mimir_query(
-                        f'max by (name) (increase(mktxp_interface_rx_error_total{{{_SWITCH},name=~"ether.*|sfp.*"}}[5m])) + max by (name) (increase(mktxp_interface_rx_drop_total{{{_SWITCH},name=~"ether.*|sfp.*"}}[5m])) + max by (name) (increase(mktxp_interface_tx_error_total{{{_SWITCH},name=~"ether.*|sfp.*"}}[5m])) + max by (name) (increase(mktxp_interface_tx_drop_total{{{_SWITCH},name=~"ether.*|sfp.*"}}[5m]))',
-                        legend="{{name}}",
-                    ).build()
-                ],
+                expr=f'max by (name) (increase(mktxp_interface_rx_error_total{{{_SWITCH},name=~"ether.*|sfp.*"}}[5m])) + max by (name) (increase(mktxp_interface_rx_drop_total{{{_SWITCH},name=~"ether.*|sfp.*"}}[5m])) + max by (name) (increase(mktxp_interface_tx_error_total{{{_SWITCH},name=~"ether.*|sfp.*"}}[5m])) + max by (name) (increase(mktxp_interface_tx_drop_total{{{_SWITCH},name=~"ether.*|sfp.*"}}[5m]))',
+                legend="{{name}}",
                 title="Switch port errors and drops",
                 description="Receive and transmit errors plus drops on each switch port, per 5 minutes.",
-                datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=6, x=12, y=98),
                 field_config=_line_fields(),
             ),
-            dashboard.Panel(
-                type_val="timeseries",
+            _metric_panel(
                 id_val=31,
-                targets=[
-                    mimir_query(
-                        f'max by (name) (increase(mktxp_link_downs_total{{{_SWITCH},name=~"ether.*|sfp.*"}}[1h]))',
-                        legend="{{name}}",
-                    ).build()
-                ],
+                expr=f'max by (name) (increase(mktxp_link_downs_total{{{_SWITCH},name=~"ether.*|sfp.*"}}[1h]))',
+                legend="{{name}}",
                 title="Switch port link flaps",
                 description="Times each switch port's link went down, per hour.",
-                datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=6, x=18, y=98),
                 field_config=_line_fields(),
             ),
@@ -861,129 +840,81 @@ def build_dashboard() -> dashboard.Dashboard:
                 grid_pos=dashboard.GridPos(h=8, y=125),
                 field_config=_traffic_fields(),
             ),
-            dashboard.Panel(
-                type_val="timeseries",
+            _metric_panel(
                 id_val=37,
-                targets=[
-                    mimir_query(
-                        f'sum by (instance, device) (increase(node_network_receive_errs_total{{job="node-exporter",device=~"en.*|eth.*"}}[5m])+increase(node_network_transmit_errs_total{{job="node-exporter",device=~"en.*|eth.*"}}[5m])+increase(node_network_receive_drop_total{{job="node-exporter",device=~"en.*|eth.*"}}[5m])+increase(node_network_transmit_drop_total{{job="node-exporter",device=~"en.*|eth.*"}}[5m])) * on (instance) group_left (nodename) {_HOME_NODE_INFO}',
-                        legend="{{nodename}} {{device}}",
-                    ).build()
-                ],
+                expr=f'sum by (instance, device) (increase(node_network_receive_errs_total{{job="node-exporter",device=~"en.*|eth.*"}}[5m])+increase(node_network_transmit_errs_total{{job="node-exporter",device=~"en.*|eth.*"}}[5m])+increase(node_network_receive_drop_total{{job="node-exporter",device=~"en.*|eth.*"}}[5m])+increase(node_network_transmit_drop_total{{job="node-exporter",device=~"en.*|eth.*"}}[5m])) * on (instance) group_left (nodename) {_HOME_NODE_INFO}',
+                legend="{{nodename}} {{device}}",
                 title="Home node NIC errors and drops",
                 description="Receive and transmit errors plus drops on each home node's physical NIC, per 5 minutes.",
-                datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=6, x=12, y=125),
                 field_config=_line_fields(),
             ),
-            dashboard.Panel(
-                type_val="timeseries",
+            _metric_panel(
                 id_val=38,
-                targets=[
-                    mimir_query(
-                        f'increase(node_network_carrier_changes_total{{job="node-exporter",device=~"en.*|eth.*"}}[1h]) * on (instance) group_left (nodename) {_HOME_NODE_INFO}',
-                        legend="{{nodename}} {{device}}",
-                    ).build()
-                ],
+                expr=f'increase(node_network_carrier_changes_total{{job="node-exporter",device=~"en.*|eth.*"}}[1h]) * on (instance) group_left (nodename) {_HOME_NODE_INFO}',
+                legend="{{nodename}} {{device}}",
                 title="Home node NIC link flaps",
                 description="Carrier changes (cable or switch port going down and up) on each home node's physical NIC, per hour.",
-                datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=6, x=18, y=125),
                 field_config=_line_fields(),
             ),
             dashboard.RowPanel(
                 title="Outage buffering (home Alloy)", grid_pos=dashboard.GridPos(h=1, w=24, y=133), id_val=39
             ),
-            dashboard.Panel(
-                type_val="timeseries",
+            _metric_panel(
                 id_val=40,
-                targets=[
-                    mimir_query(
-                        f"max by (node) ({_ALLOY_DELAY} * on (pod) group_left (node) {_HOME_ALLOY_PODS})",
-                        legend="{{node}}",
-                    ).build()
-                ],
+                expr=f"max by (node) ({_ALLOY_DELAY} * on (pod) group_left (node) {_HOME_ALLOY_PODS})",
+                legend="{{node}}",
                 title="Remote-write delay per home node",
                 description="How far each home Alloy's delivered data trails what it has collected. It is reported by the Alloy itself, so an outage shows up here only once its backlog is replayed.",
-                datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=8, y=134),
                 field_config=_line_fields(unit="s"),
             ),
-            dashboard.Panel(
-                type_val="timeseries",
+            _metric_panel(
                 id_val=41,
-                targets=[
-                    mimir_query(
-                        f'max by (node) (max by (pod) (prometheus_remote_storage_samples_pending{{job="alloy-node"}}) * on (pod) group_left (node) {_HOME_ALLOY_PODS})',
-                        legend="{{node}}",
-                    ).build()
-                ],
+                expr=f'max by (node) (max by (pod) (prometheus_remote_storage_samples_pending{{job="alloy-node"}}) * on (pod) group_left (node) {_HOME_ALLOY_PODS})',
+                legend="{{node}}",
                 title="Samples waiting to send",
                 description="Samples each home Alloy holds in its send queue.",
-                datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=8, x=8, y=134),
                 field_config=_line_fields(),
             ),
-            dashboard.Panel(
-                type_val="timeseries",
+            _metric_panel(
                 id_val=42,
-                targets=[
-                    mimir_query(
-                        f'max by (node) (max by (pod) (prometheus_remote_write_wal_storage_active_series{{job="alloy-node"}}) * on (pod) group_left (node) {_HOME_ALLOY_PODS})',
-                        legend="{{node}}",
-                    ).build()
-                ],
+                expr=f'max by (node) (max by (pod) (prometheus_remote_write_wal_storage_active_series{{job="alloy-node"}}) * on (pod) group_left (node) {_HOME_ALLOY_PODS})',
+                legend="{{node}}",
                 title="Series in WAL",
                 description="Active series in each home Alloy's write-ahead log.",
-                datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=8, x=16, y=134),
                 field_config=_line_fields(),
             ),
             dashboard.RowPanel(
                 title="Outbound application probes", grid_pos=dashboard.GridPos(h=1, w=24, y=142), id_val=54
             ),
-            dashboard.Panel(
-                type_val="timeseries",
+            _metric_panel(
                 id_val=55,
-                targets=[
-                    mimir_query(
-                        '100 * (1 - avg_over_time(probe_success{job="monitoring/home-application-probes"}[5m]))',
-                        legend="{{source_node}} → {{target}}",
-                    ).build()
-                ],
+                expr='100 * (1 - avg_over_time(probe_success{job="monitoring/home-application-probes"}[5m]))',
+                legend="{{source_node}} → {{target}}",
                 title="Observed probe failures",
                 description="Failure percentage among probe samples recorded in the preceding 5 minutes, split by source_node and target. 0% means all recorded probes passed. No data means no probe samples were available and is not treated as success.",
-                datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=8, y=143),
                 field_config=_line_fields(unit="percent", max_val=100),
             ),
-            dashboard.Panel(
-                type_val="timeseries",
+            _metric_panel(
                 id_val=56,
-                targets=[
-                    mimir_query(
-                        'probe_duration_seconds{job="monitoring/home-application-probes"}',
-                        legend="{{source_node}} → {{target}}",
-                    ).build()
-                ],
+                expr='probe_duration_seconds{job="monitoring/home-application-probes"}',
+                legend="{{source_node}} → {{target}}",
                 title="Probe duration",
                 description="Blackbox exporter probe duration in seconds for each source_node and target. HTTPS duration includes DNS, TCP connection, TLS verification, and the HTTP request.",
-                datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=8, x=8, y=143),
                 field_config=_line_fields(unit="s"),
             ),
-            dashboard.Panel(
-                type_val="timeseries",
+            _metric_panel(
                 id_val=57,
-                targets=[
-                    mimir_query(
-                        '100 * count_over_time(probe_success{job="monitoring/home-application-probes"}[5m]) / 30',
-                        legend="{{source_node}} → {{target}}",
-                    ).build()
-                ],
+                expr='100 * count_over_time(probe_success{job="monitoring/home-application-probes"}[5m]) / 30',
+                legend="{{source_node}} → {{target}}",
                 title="Probe sample coverage",
                 description="Observed probe samples as a percentage of the 30 expected samples in each 5-minute window (10-second scrape interval). Missing series remain No data; reduced values show missing observations.",
-                datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=8, x=16, y=143),
                 field_config=_line_fields(unit="percent", max_val=100),
             ),
