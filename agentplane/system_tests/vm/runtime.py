@@ -14,6 +14,7 @@ from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.k3s.baseline import K3s
 from agentplane.system_tests.vm import (
     block_storage,
+    boot_interrupts,
     boot_rcu,
     guest_logs,
     host_qemu,
@@ -73,6 +74,7 @@ class VmRuntime:
                 boot_rcu.capture_namespace(k3s.kubectl, namespace, host_boot_samples)
                 if self._boot_rcu_observer
                 else contextlib.nullcontext(),
+                boot_interrupts.capture(k3s.kubectl, namespace, artifacts),
                 host_qemu.capture(
                     k3s.kubectl, namespace, artifacts, passive_virtiofsd_timeline=passive_virtiofsd_timeline
                 ),

@@ -53,3 +53,25 @@ actual `virtiofs` devices, so block disks such as `/state/workspaces` and non-fi
 ContainerPath daemons are excluded. The sanitized observation is retained at
 `vm-artifacts/launcher-topology/<launcher-pod-uid>.json` on both pass and failure; API or
 incarnation convergence failures are reported separately from an admitted-topology violation.
+
+Boot capture also writes `vm-artifacts/boot-interrupts/<launcher-pod-uid>/` through
+`undeclared_outputs_dir()`. It starts when the exact launcher QEMU is Running and
+samples `info lapic` for CPUs 0 and 1 and `info pic` repeatedly until the serial
+console reaches `systemd[1]`, capture ends, or its 300-second/150-sample budget
+expires. Samples include command start/end timestamps and individual errors;
+the two-second interval starts after a sample completes. These read-only monitor
+commands may perturb emulator timing. They do not change readiness assertions.
+
+`summary.json` records the emulator's available APIC events and the exact events
+it accepted, rather than assuming upstream trace definitions are compiled in.
+`interrupts.log` retains supported APIC delivery/IOAPIC EOI events together with
+QEMU's `log int` delivery/register history. Unsupported events do not prevent
+monitor sampling. Existing QEMU logging is left alone; otherwise diagnostic
+logging is disabled and stderr restored on exit, including uncertain activation.
+Retained interrupt output is capped at 16 MiB per launcher. At the next sample
+after that threshold, logging stops; the emulator file can overshoot between
+samples. The APIC timeline continues. The summary records this coverage gap.
+Snapshots show pending/in-service/priority transitions but cannot prove every
+intervening delivery or EOI. The serial directory retains the early console
+independently, including failures before userspace. No diagnostic is printed to
+stdout, and collection errors never replace the scenario's failure.
