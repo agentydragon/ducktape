@@ -3,7 +3,7 @@
 A Certificate anyone may request from `cluster-internal-ca`, naming a live Sandbox's exact Runtime
 URI, its WorkloadCredential's, with client auth, must not authenticate to the egress proxy's forward
 listener; one naming the Runner Gateway must not authenticate to a runner's control listener; one
-naming a runner, served at that runner's address, must not authenticate to the Gateway dialing it.
+naming a runner, served at that runner's address, must not authenticate to the Environments proxy dialing it.
 The real credential, presented the same way, is the positive anchor: it shows the probe reaches the
 verifier and that only the issuer differs.
 """
@@ -266,10 +266,10 @@ async def _put_tls_secret(cluster: Cluster, name: str, crt: bytes, key: bytes) -
     )
 
 
-async def _gateway_handshake_failures(cluster: Cluster, sandbox: str) -> list[str]:
-    """The errors of the Gateway's failed attempts to observe `sandbox`'s runner."""
+async def _proxy_handshake_failures(cluster: Cluster, sandbox: str) -> list[str]:
+    """The errors of the Environments proxy's failed attempts to observe `sandbox`'s runner."""
     logs = await cluster.kubectl(
-        "logs", "-l", "app.kubernetes.io/name=runner-gateway", "--tail=-1", "--since=10m", "--prefix=false"
+        "logs", "-l", "app.kubernetes.io/name=sandbox-controller", "--tail=-1", "--since=10m", "--prefix=false"
     )
     failures = []
     for line in logs.splitlines():
@@ -280,12 +280,12 @@ async def _gateway_handshake_failures(cluster: Cluster, sandbox: str) -> list[st
     return failures
 
 
-async def a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway(
+async def a_cluster_ca_leaf_at_a_runner_address_is_refused_by_runtime_proxy(
     cluster: Cluster, view: environment_service_pb2.EnvironmentDescriptor
 ) -> None:
     """A Sandbox whose own Runtime serves a `cluster-internal-ca` leaf naming its runner URI: the
-    Gateway dials it at the runner's Pod address and fails the TLS handshake, and the Sandbox is not
-    Ready. Swapping the same file to the Sandbox's own credential makes it Ready, so the Gateway was
+    Environments dials it at the runner's Pod address and fails the TLS handshake, and the Sandbox is not
+    Ready. Swapping the same file to the Sandbox's own credential makes it Ready, so Environments was
     dialing that address and only the issuer differed. The real runner `view` stays connected."""
     name = f"systest-impostor-{uuid4().hex[:8]}"
     base = await _object(cluster, f"sandboxtemplates.{GROUP}", POD_TEMPLATE)
@@ -357,10 +357,13 @@ async def a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway(
         uri, own_secret = status["uri"], status["secretName"]
         impostor = await _cluster_ca_leaf(cluster, uri, ("digital signature", "server auth", "client auth"))
         await _put_tls_secret(cluster, name, *impostor)
+        # Restore a trusted leaf before deletion even when a trust assertion fails.
+        own = await _secret_pem(cluster, cluster.namespace, own_secret)
+        cleanup.push_async_callback(_put_tls_secret, cluster, name, *own)
 
         async with asyncio.timeout(READY_SECONDS):
             while True:
-                failures = await _gateway_handshake_failures(cluster, name)
+                failures = await _proxy_handshake_failures(cluster, name)
                 if any("authentication handshake failed" in error for error in failures):
                     break
                 await asyncio.sleep(2)
@@ -368,9 +371,9 @@ async def a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway(
         ready = {c["type"]: c["status"] for c in sandbox["status"].get("conditions", [])}.get("Ready")
         assert ready != "True", f"a Sandbox serving a cluster-internal-ca leaf naming {uri} is Ready"
 
-        await _put_tls_secret(cluster, name, *await _secret_pem(cluster, cluster.namespace, own_secret))
+        await _put_tls_secret(cluster, name, *own)
         await cluster.kubectl("wait", f"sandboxes.{GROUP}/{name}", "--for=condition=Ready=True", "--timeout=300s")
-    # The Gateway's real runner connection still holds: a Sandbox is Ready only while its runner is connected.
+    # The Controller's independent observer still sees the healthy Runtime.
     await cluster.kubectl(
         "wait",
         f"sandbox.agentplane.allegedly.works/{view.target.name}",

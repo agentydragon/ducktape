@@ -60,14 +60,16 @@ async def service_caller(cluster: Cluster, component: str, *, certificate_secret
 
 
 @asynccontextmanager
-async def forward(cluster: Cluster, resource: str = f"service/{SERVICE}") -> AsyncIterator[str]:
+async def forward(
+    cluster: Cluster, resource: str = f"service/{SERVICE}", *, remote_port: int = 8080
+) -> AsyncIterator[str]:
     """Port-forward the native gRPC endpoint; the caller owns the process lifetime."""
     port_forward = PortForward(
         cluster.command("port-forward"),
         resource=resource,
         local_address="127.0.0.1",
         local_port=None,
-        remote_port=8080,
+        remote_port=remote_port,
         readiness_timeout_s=30,
     )
     async with async_port_forward(port_forward) as target:
