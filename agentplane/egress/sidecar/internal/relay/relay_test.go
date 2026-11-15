@@ -218,7 +218,7 @@ func startTestSidecar(t *testing.T, central *testCentralProxy) string {
 }
 
 // startTestSidecarWithState presents central's client SVID to proxyAddress.
-func startTestSidecarWithState(t *testing.T, central *testCentralProxy, proxyAddress string) (*sidecar, string) {
+func startTestSidecarWithState(t *testing.T, central *testCentralProxy, proxyAddress string, middleware ...func(http.Handler) http.Handler) (*sidecar, string) {
 	t.Helper()
 	s, err := newSidecar(config{
 		Proxy: proxyConfig{
@@ -236,18 +236,22 @@ func startTestSidecarWithState(t *testing.T, central *testCentralProxy, proxyAdd
 	if err != nil {
 		t.Fatalf("configure test sidecar: %v", err)
 	}
-	address := serveTestSidecar(t, s)
+	address := serveTestSidecar(t, s, middleware...)
 	return s, address
 }
 
-func serveTestSidecar(t *testing.T, s *sidecar) string {
+func serveTestSidecar(t *testing.T, s *sidecar, middleware ...func(http.Handler) http.Handler) string {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	s.proxyListener = listener
-	s.proxyServer = &http.Server{Handler: s.proxyHandler(), MaxHeaderBytes: maxHeadBytes}
+	handler := s.proxyHandler()
+	for _, wrap := range middleware {
+		handler = wrap(handler)
+	}
+	s.proxyServer = &http.Server{Handler: handler, MaxHeaderBytes: maxHeadBytes}
 	finished := make(chan error, 1)
 	go func() { finished <- s.proxyServer.Serve(&trackingListener{Listener: listener, sidecar: s}) }()
 	t.Cleanup(func() {
@@ -537,58 +541,123 @@ func TestSidecarUnreachableCentralProxyRefuses(t *testing.T) {
 	}
 }
 
+// continueAfterBodyRead forces the transport's body reader to send the server's
+// automatic 100 before ReverseProxy forwards the upstream 100. Transport wakes
+// the body writer before calling Got1xxResponse, so either order can occur.
+func continueAfterBodyRead(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		body := &readSignallingBody{ReadCloser: request.Body, read: make(chan struct{})}
+		request.Body = body
+		next.ServeHTTP(&continueAfterBodyWriter{ResponseWriter: writer, bodyRead: body.read, done: request.Context().Done()}, request)
+	})
+}
+
+type readSignallingBody struct {
+	io.ReadCloser
+	read chan struct{}
+	once sync.Once
+}
+
+func (body *readSignallingBody) Read(data []byte) (int, error) {
+	n, err := body.ReadCloser.Read(data)
+	body.once.Do(func() { close(body.read) })
+	return n, err
+}
+
+type continueAfterBodyWriter struct {
+	http.ResponseWriter
+	bodyRead <-chan struct{}
+	done     <-chan struct{}
+}
+
+func (writer *continueAfterBodyWriter) WriteHeader(status int) {
+	if status == http.StatusContinue {
+		select {
+		case <-writer.bodyRead:
+		case <-writer.done:
+			return
+		}
+	}
+	writer.ResponseWriter.WriteHeader(status)
+}
+
+func (writer *continueAfterBodyWriter) Unwrap() http.ResponseWriter {
+	return writer.ResponseWriter
+}
+
 func TestSidecarForwardsInterimResponsesAndExpectContinue(t *testing.T) {
-	central := startTestCentralProxy(t)
-	address := startTestSidecar(t, central)
-	conn := dialSidecar(t, address)
-	reader := bufio.NewReader(conn)
-	if _, err := io.WriteString(conn,
-		"POST http://upstream.test/continue HTTP/1.1\r\n"+
-			"Host: upstream.test\r\n"+
-			"Content-Length: 4\r\n"+
-			"Expect: 100-continue\r\n"+
-			"Connection: close\r\n"+
-			forgedCredentials+"\r\n"); err != nil {
-		t.Fatal(err)
+	for _, test := range []struct {
+		name          string
+		middleware    []func(http.Handler) http.Handler
+		wantContinues int
+	}{
+		{name: "normal"},
+		{name: "automatic_continue_first", middleware: []func(http.Handler) http.Handler{continueAfterBodyRead}, wantContinues: 2},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			central := startTestCentralProxy(t)
+			_, address := startTestSidecarWithState(t, central, central.listener.Addr().String(), test.middleware...)
+			conn := dialSidecar(t, address)
+			reader := bufio.NewReader(conn)
+			if _, err := io.WriteString(conn,
+				"POST http://upstream.test/continue HTTP/1.1\r\n"+
+					"Host: upstream.test\r\n"+
+					"Content-Length: 4\r\n"+
+					"Expect: 100-continue\r\n"+
+					"Connection: close\r\n"+
+					forgedCredentials+"\r\n"); err != nil {
+				t.Fatal(err)
+			}
+			var gotEarlyHints bool
+			var continues int
+			var response *http.Response
+			for {
+				var err error
+				response, err = http.ReadResponse(reader, &http.Request{Method: http.MethodPost})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if response.StatusCode >= 200 {
+					break
+				}
+				switch response.StatusCode {
+				case http.StatusEarlyHints:
+					gotEarlyHints = response.Header.Get("Link") == "</style.css>; rel=preload"
+				case http.StatusContinue:
+					// Body reading and forwarding the upstream 100 race. Send the
+					// body once, then consume every interim response until the final.
+					if continues == 0 {
+						if _, err := io.WriteString(conn, "body"); err != nil {
+							t.Fatal(err)
+						}
+					}
+					continues++
+				default:
+					t.Fatalf("unexpected interim response: %d %v", response.StatusCode, response.Header)
+				}
+				_ = response.Body.Close()
+			}
+			defer response.Body.Close()
+			if !gotEarlyHints {
+				t.Fatal("central proxy's 103 Early Hints was not forwarded")
+			}
+			if continues == 0 || (test.wantContinues != 0 && continues != test.wantContinues) {
+				t.Fatalf("100 Continue count = %d, want nonzero (forced case: %d)", continues, test.wantContinues)
+			}
+			body, err := io.ReadAll(response.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if response.StatusCode != http.StatusOK || string(body) != "seen-peer="+central.peer {
+				t.Fatalf("final response = %d %q", response.StatusCode, body)
+			}
+			seen := central.nextRequest(t)
+			if seen.body != "body" {
+				t.Fatalf("central request body = %q", seen.body)
+			}
+			assertOnlySidecarCredentials(t, seen)
+		})
 	}
-	var gotEarlyHints, gotContinue bool
-	for !gotContinue {
-		response, err := http.ReadResponse(reader, &http.Request{Method: http.MethodPost})
-		if err != nil {
-			t.Fatal(err)
-		}
-		switch response.StatusCode {
-		case http.StatusEarlyHints:
-			gotEarlyHints = response.Header.Get("Link") == "</style.css>; rel=preload"
-		case http.StatusContinue:
-			gotContinue = true
-		default:
-			t.Fatalf("unexpected interim response: %d %v", response.StatusCode, response.Header)
-		}
-		_ = response.Body.Close()
-	}
-	if !gotEarlyHints {
-		t.Fatal("central proxy's 103 Early Hints was not forwarded")
-	}
-	if _, err := io.WriteString(conn, "body"); err != nil {
-		t.Fatal(err)
-	}
-	response, err := http.ReadResponse(reader, &http.Request{Method: http.MethodPost})
-	if err != nil {
-		t.Fatal(err)
-	}
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if response.StatusCode != http.StatusOK || string(body) != "seen-peer="+central.peer {
-		t.Fatalf("final response = %d %q", response.StatusCode, body)
-	}
-	seen := central.nextRequest(t)
-	if seen.body != "body" {
-		t.Fatalf("central request body = %q", seen.body)
-	}
-	assertOnlySidecarCredentials(t, seen)
 }
 
 func TestSidecarConnectIsAuthenticatedAndPipedBothWays(t *testing.T) {
