@@ -196,9 +196,7 @@ impl ProtoConvert<proto::NativeOperationSelectorProvenance> for NativeOperationS
             value: Some(match self {
                 Self::SourceMatch(claim) => Value::SourceMatch(spec_wire::Wire::to_proto(claim)),
                 Self::Declaration(declaration) => Value::Declaration(declaration.to_proto()?),
-                Self::ResolvedMember(member) => {
-                    Value::ResolvedMember(spec_wire::Wire::to_proto(member))
-                }
+                Self::ResolvedMember(member) => Value::ResolvedMember(member.clone()),
             }),
         })
     }
@@ -211,9 +209,7 @@ impl ProtoConvert<proto::NativeOperationSelectorProvenance> for NativeOperationS
                 Value::Declaration(value) => {
                     Self::Declaration(SourceDeclaration::from_proto(value)?)
                 }
-                Value::ResolvedMember(value) => {
-                    Self::ResolvedMember(spec_wire::Wire::from_proto(value)?)
-                }
+                Value::ResolvedMember(value) => Self::ResolvedMember(value),
             },
         )
     }

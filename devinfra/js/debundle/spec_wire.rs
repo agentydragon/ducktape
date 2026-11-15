@@ -803,7 +803,7 @@ impl Wire for spec::SourceMatchBinding {
         pb::SourceMatchBinding {
             value: Some(match self {
                 Self::Local(v) => Value::Local(v.clone()),
-                Self::Detailed(v) => Value::Detailed(v.to_proto()),
+                Self::Detailed(v) => Value::Detailed(v.clone()),
             }),
         }
     }
@@ -811,22 +811,7 @@ impl Wire for spec::SourceMatchBinding {
         use pb::source_match_binding::Value;
         Ok(match v.value.context("missing source match binding")? {
             Value::Local(v) => Self::Local(v),
-            Value::Detailed(v) => Self::Detailed(Wire::from_proto(v)?),
-        })
-    }
-}
-impl Wire for spec::SourceMatchBindingDetail {
-    type Proto = pb::SourceMatchBindingDetail;
-    fn to_proto(&self) -> Self::Proto {
-        pb::SourceMatchBindingDetail {
-            local: Some(self.local.clone()),
-            name: self.name.clone(),
-        }
-    }
-    fn from_proto(v: Self::Proto) -> Result<Self> {
-        Ok(Self {
-            local: required(v.local)?,
-            name: v.name,
+            Value::Detailed(v) => Self::Detailed(v),
         })
     }
 }
@@ -1130,7 +1115,7 @@ impl Wire for spec::SourceUnitSelector {
         pb::SourceUnitSelector {
             value: Some(match self {
                 Self::SourceMatch(v) => Value::SourceMatch(v.to_proto()),
-                Self::ResolvedMember(v) => Value::ResolvedMember(v.to_proto()),
+                Self::ResolvedMember(v) => Value::ResolvedMember(v.clone()),
             }),
         }
     }
@@ -1138,22 +1123,7 @@ impl Wire for spec::SourceUnitSelector {
         use pb::source_unit_selector::Value;
         Ok(match v.value.context("missing source unit selector")? {
             Value::SourceMatch(v) => Self::SourceMatch(Wire::from_proto(v)?),
-            Value::ResolvedMember(v) => Self::ResolvedMember(Wire::from_proto(v)?),
-        })
-    }
-}
-impl Wire for spec::ResolvedMemberSelector {
-    type Proto = pb::ResolvedMemberSelector;
-    fn to_proto(&self) -> Self::Proto {
-        pb::ResolvedMemberSelector {
-            module: Some(self.module.clone()),
-            name: Some(self.name.clone()),
-        }
-    }
-    fn from_proto(v: Self::Proto) -> Result<Self> {
-        Ok(Self {
-            module: required(v.module)?,
-            name: required(v.name)?,
+            Value::ResolvedMember(v) => Self::ResolvedMember(v),
         })
     }
 }
@@ -1161,7 +1131,7 @@ impl Wire for spec::InitializerCallEffectInputContract {
     type Proto = pb::InitializerCallEffectInputContract;
     fn to_proto(&self) -> Self::Proto {
         pb::InitializerCallEffectInputContract {
-            resolved_member: Some(self.resolved_member.to_proto()),
+            resolved_member: Some(self.resolved_member.clone()),
             audited_source_sha256: Some(self.audited_source_sha256.clone()),
             provider_chunk: Some(self.provider_chunk.clone()),
             provider_export: Some(self.provider_export.clone()),
@@ -1175,7 +1145,9 @@ impl Wire for spec::InitializerCallEffectInputContract {
     }
     fn from_proto(v: Self::Proto) -> Result<Self> {
         Ok(Self {
-            resolved_member: required(v.resolved_member)?,
+            resolved_member: v
+                .resolved_member
+                .context("missing required projection field")?,
             audited_source_sha256: required(v.audited_source_sha256)?,
             provider_chunk: required(v.provider_chunk)?,
             provider_export: required(v.provider_export)?,

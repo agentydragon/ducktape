@@ -874,12 +874,7 @@ pub enum SourceUnitSelector {
 }
 
 /// A previously resolved logical member in this provider chunk.
-#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct ResolvedMemberSelector {
-    pub module: String,
-    pub name: String,
-}
+pub use spec_wire_proto::debundle::spec::ResolvedMemberSelector;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -1772,13 +1767,7 @@ impl SourceMatchBinding {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct SourceMatchBindingDetail {
-    pub local: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-}
+pub use spec_wire_proto::debundle::spec::SourceMatchBindingDetail;
 
 impl AnonymousStatement {
     pub fn selector(
@@ -2440,6 +2429,47 @@ pub use spec_wire_proto::debundle::spec::MemberEffect;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generated_selector_leaves_keep_yaml_requiredness_and_json_shape() {
+        let resolved: ResolvedMemberSelector =
+            serde_yaml::from_str("module: ''\nname: ''\n").unwrap();
+        assert_eq!(resolved.module, "");
+        assert_eq!(resolved.name, "");
+        assert_eq!(
+            serde_json::to_value(&resolved).unwrap(),
+            serde_json::json!({"module": "", "name": ""})
+        );
+        assert!(serde_yaml::from_str::<ResolvedMemberSelector>("module: provider\n").is_err());
+        assert!(
+            serde_yaml::from_str::<ResolvedMemberSelector>(
+                "module: provider\nname: factory\nextra: rejected\n"
+            )
+            .is_err()
+        );
+
+        let detail: SourceMatchBindingDetail = serde_yaml::from_str("local: ''\n").unwrap();
+        assert_eq!(detail.local, "");
+        assert_eq!(detail.name, None);
+        assert_eq!(
+            serde_json::to_value(&detail).unwrap(),
+            serde_json::json!({"local": ""})
+        );
+        let named_empty: SourceMatchBindingDetail =
+            serde_yaml::from_str("local: alias\nname: ''\n").unwrap();
+        assert_eq!(named_empty.name.as_deref(), Some(""));
+        assert_eq!(
+            serde_json::to_value(&named_empty).unwrap(),
+            serde_json::json!({"local": "alias", "name": ""})
+        );
+        assert!(serde_yaml::from_str::<SourceMatchBindingDetail>("name: alias\n").is_err());
+        assert!(
+            serde_yaml::from_str::<SourceMatchBindingDetail>(
+                "local: alias\nname: alias\nextra: rejected\n"
+            )
+            .is_err()
+        );
+    }
 
     #[test]
     fn generated_enums_keep_authored_spellings_and_defaults() {

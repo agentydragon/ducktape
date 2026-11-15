@@ -378,7 +378,7 @@ message SourceMatchBinding {
 }
 
 message SourceMatchBindingDetail {
-  optional string local = 1;
+  string local = 1;
   optional string name = 2;
 }
 
@@ -544,8 +544,8 @@ message SourceUnitSelector {
 }
 
 message ResolvedMemberSelector {
-  optional string module = 1;
-  optional string name = 2;
+  string module = 1;
+  string name = 2;
 }
 
 enum NativeOperationKind {

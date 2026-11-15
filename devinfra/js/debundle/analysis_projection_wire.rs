@@ -532,7 +532,7 @@ impl AnalysisWire for NativeOperationSelectorProvenance {
             kind: Some(match self {
                 Self::SourceMatch(v) => Kind::SourceMatch(v.to_proto()),
                 Self::Declaration(v) => Kind::Declaration(v.to_wire()?),
-                Self::ResolvedMember(v) => Kind::ResolvedMember(v.to_proto()),
+                Self::ResolvedMember(v) => Kind::ResolvedMember(v.clone()),
             }),
         })
     }
@@ -545,7 +545,7 @@ impl AnalysisWire for NativeOperationSelectorProvenance {
             {
                 Kind::SourceMatch(v) => Self::SourceMatch(Wire::from_proto(v)?),
                 Kind::Declaration(v) => Self::Declaration(AnalysisWire::from_wire(v)?),
-                Kind::ResolvedMember(v) => Self::ResolvedMember(Wire::from_proto(v)?),
+                Kind::ResolvedMember(v) => Self::ResolvedMember(v),
             },
         )
     }

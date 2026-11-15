@@ -420,6 +420,15 @@ mod tests {
         assert_eq!(&T::from_proto(wire).unwrap(), value);
     }
 
+    fn round_trip_generated_spec<T>(value: &T)
+    where
+        T: prost::Message + Default + std::fmt::Debug + PartialEq,
+    {
+        let bytes = analysis_codec::encode_protobuf(value).unwrap();
+        let wire: T = analysis_codec::decode_protobuf(&bytes).unwrap();
+        assert_eq!(&wire, value);
+    }
+
     #[test]
     fn domain_evidence_preserves_internal_selectors_and_exact_capabilities() {
         let claim = spec::SourceMatchClaim {
@@ -439,7 +448,7 @@ mod tests {
             note: None,
         };
         round_trip_spec_wire(&claim);
-        round_trip_spec_wire(&spec::ResolvedMemberSelector {
+        round_trip_generated_spec(&spec::ResolvedMemberSelector {
             module: "provider".into(),
             name: "factory".into(),
         });
@@ -578,7 +587,7 @@ mod tests {
         );
 
         for name in [None, Some(String::new()), Some("renamed".into())] {
-            round_trip_spec_wire(&spec::SourceMatchBindingDetail {
+            round_trip_generated_spec(&spec::SourceMatchBindingDetail {
                 local: "value".into(),
                 name,
             });
