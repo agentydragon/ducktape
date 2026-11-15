@@ -193,13 +193,13 @@ is [section 17](#17-two-binaries-and-the-go-layout).
 | Central code-mode tools as Actions | 20:04, same release                     | `CENTRAL_SESSION_DELEGATED_ACTING`                                  | Merged #16418, #16422, #16423                                                                                                                                      |
 | Callers present service SVIDs      | 20:15, "Sounds to me good to dispatch"  | `PRIVILEGED_BACKEND_AUTH_DESIGN` (stage 4)                          | Caller code, grants and switches merged through #16442; #16447 in review                                                                                           |
 | Dead Dispatcher command states     | 21:15, card "Delete dead states only"   | `DISPATCHER_HARNESS_CONFIRMATION`                                   | Stored rows rewritten (#16438); removing `HARNESS_CONFIRMED` and `NO_OP` follows                                                                                   |
-| EnvironmentService serving note    | 23:13, card "Serving design note first" | `ENVIRONMENT_SERVICE_SERVING_DESIGN`                                | Plan merged (#16437) for operator approval; the move stays held                                                                                                    |
+| EnvironmentService serving note    | 23:13, card "Serving design note first" | `ENVIRONMENT_SERVICE_TO_ENVIRONMENTS`                               | Serving contract approved and implementation released by operator, 2026-11-15; receiver code precedes configuration                                                |
 
 Finished since and deleted: the environment rule slices (`resume` #16346, `bind_session` #16351),
 Sessions re-checking the live Identity (#16373), explicit resume reserving no wake budget (#16375),
 the Sandbox Controller's move into `agentplane/environments/` (#16407, released at 20:04 with the
-layout fixes and code-mode tools) and the stage 2 layout fixes. Not released: the stage 3 moves of
-section 17, auth stage 5, `CommandSettled`, retiring `orchestration_v1` and launcher auto-grants.
+layout fixes and code-mode tools) and the stage 2 layout fixes. Not released: the remaining stage 3 moves of
+section 17 after EnvironmentService, auth stage 5, `CommandSettled`, retiring `orchestration_v1` and launcher auto-grants.
 `SAMPLER_STABLE_PROVIDER_PREFIX` waits for the operator to review its design (20:04: "I would want
 to see the design"), in #16401.
 
@@ -209,9 +209,7 @@ flowchart LR
         PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: service SVIDs and TLS on every hop]
     end
     subgraph SPLIT_TRACK[Two-binary split, section 17]
-        ENVIRONMENT_SERVICE_SERVING_DESIGN[In review: every-replica serving contract]
-        ENVIRONMENT_SERVICE_TO_ENVIRONMENTS[Held: EnvironmentService into Environments]
-        ENVIRONMENT_SERVICE_SERVING_DESIGN -->|operator approval| ENVIRONMENT_SERVICE_TO_ENVIRONMENTS
+        ENVIRONMENT_SERVICE_TO_ENVIRONMENTS[In flight: EnvironmentService into Environments]
     end
     CENTRAL_SESSION_DELEGATED_ACTING[In flight: code-mode tools as Actions]
     DISPATCHER_HARNESS_CONFIRMATION[In flight: delete the dead command states first]
@@ -3988,46 +3986,43 @@ no wake budget (07:41 UTC, card "No budget for explicit resume"). The
 evidence and line-level steps for every track below; its stages are ordered by certainty. Stage 1
 (pre-cutover leftovers) is done and left the plan; the other stages keep their numbers.
 
-| Plan stage                      | DAG node                                                                                                                                                                                                         |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 3. The two-binary moves         | `ENVIRONMENT_SERVICE_SERVING_DESIGN`, `ENVIRONMENT_SERVICE_TO_ENVIRONMENTS`, `RUNTIME_PROXY_TO_ENVIRONMENTS`, `SESSIONS_BINARY_DIRECTORY`; `orchestration_v1` retirement is `SESSION_TOOL_SURFACE_CONSOLIDATION` |
-| 4. Local extractions            | `GO_LOCAL_EXTRACTIONS`                                                                                                                                                                                           |
-| 5. Waiting on service decisions | `NOTIFICATION_SERVICE_SPLIT`, `DISPATCHER_PERSISTENCE_MODEL_DESIGN`, `JOURNAL_REPRESENTATION_DESIGN`, `SERVICE_SETTINGS_RETHINK`                                                                                 |
-| 6. Deferred                     | `PRIVILEGED_BACKEND_AUTH_DESIGN` (moves no files), `PROTO_PACKAGE_ALIGNMENT`                                                                                                                                     |
+| Plan stage                      | DAG node                                                                                                                                                                   |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 3. The two-binary moves         | `ENVIRONMENT_SERVICE_TO_ENVIRONMENTS`, `RUNTIME_PROXY_TO_ENVIRONMENTS`, `SESSIONS_BINARY_DIRECTORY`; `orchestration_v1` retirement is `SESSION_TOOL_SURFACE_CONSOLIDATION` |
+| 4. Local extractions            | `GO_LOCAL_EXTRACTIONS`                                                                                                                                                     |
+| 5. Waiting on service decisions | `NOTIFICATION_SERVICE_SPLIT`, `DISPATCHER_PERSISTENCE_MODEL_DESIGN`, `JOURNAL_REPRESENTATION_DESIGN`, `SERVICE_SETTINGS_RETHINK`                                           |
+| 6. Deferred                     | `PRIVILEGED_BACKEND_AUTH_DESIGN` (moves no files), `PROTO_PACKAGE_ALIGNMENT`                                                                                               |
 
-The remaining stage 3 moves are not released. Sessions re-checking the live Identity landed in #16373.
+EnvironmentService implementation is released after operator approval of its serving contract
+(2026-11-15). The other remaining stage 3 moves are not released. Sessions re-checking the live
+Identity landed in #16373.
 
 ```mermaid
 flowchart LR
     PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: service SVIDs, section 15]
-    ENVIRONMENT_SERVICE_SERVING_DESIGN[In review: every-replica serving contract]
-    ENVIRONMENT_SERVICE_TO_ENVIRONMENTS[Held: EnvironmentService into Environments]
+    ENVIRONMENT_SERVICE_TO_ENVIRONMENTS[In flight: EnvironmentService into Environments]
+    RUNTIME_PROXY_CALLER_AUDIT[Unscheduled: audit direct Runtime-proxy callers]
     RUNTIME_PROXY_TO_ENVIRONMENTS[Agreed: Runtime proxy and Executor into Environments]
     SESSIONS_BINARY_DIRECTORY[Held: the rest moves to session_dispatcher/]
     ENVIRONMENT_KEEP_ALIVE_HOLDS[Proposed design: keep-alive holds]
     GO_LOCAL_EXTRACTIONS[Unscheduled: stage 4 local extractions]
     RUNNER_GATEWAY_RENAME[Unscheduled: deployed names, section 15]
-    ENVIRONMENT_SERVICE_SERVING_DESIGN -->|operator approval| ENVIRONMENT_SERVICE_TO_ENVIRONMENTS
     PRIVILEGED_BACKEND_AUTH_DESIGN --> RUNTIME_PROXY_TO_ENVIRONMENTS
     ENVIRONMENT_SERVICE_TO_ENVIRONMENTS --> SESSIONS_BINARY_DIRECTORY
     RUNTIME_PROXY_TO_ENVIRONMENTS --> SESSIONS_BINARY_DIRECTORY
     SESSIONS_BINARY_DIRECTORY --> RUNNER_GATEWAY_RENAME
 ```
 
-### `ENVIRONMENT_SERVICE_SERVING_DESIGN` — every-replica serving contract
-
-**In review; design only.** The operator released [the serving note](environment_service_serving.md)
-on 2026-11-14 at 23:13 UTC (card "Serving design note first"). **Exit:** operator approval of the
-listener lifecycle, readiness, authority and rollout contract. Implementation stays held until then.
-
 ### `ENVIRONMENT_SERVICE_TO_ENVIRONMENTS` — EnvironmentService moves into the Environments binary
 
-**Implementation held for operator approval of [the serving contract](environment_service_serving.md).**
-No code moves before `ENVIRONMENT_SERVICE_SERVING_DESIGN` is approved.
+**In flight; operator approved the [serving contract](environment_service_serving.md) and released
+implementation on 2026-11-15.** Every replica serves mutations as well as reads, readiness never
+waits for leadership, authorization fails closed, and rollout uses separate image/config PRs.
+Receiver/composition support lands disabled before enabling the listener and retargeting callers.
 The agreed destination remains the Sandbox Controller (operator, 2026-11-14 01:10 UTC).
 Explicit resume already reserves no budget ([lifecycle contract](../runner_gateway/environments/lifecycle/SPEC.md)).
 Then move `runner_gateway/environments` with `lifecycle`,
-`management` and `view` to `environments/internal/service`, and `environmentaccess` to
+`management` and `view` to `environments/internal/service`. The shared policy reader lives at
 `environments/access` (the Sessions binary imports it for `bind_session`). The automatic half of
 `lifecycle` stays with the Dispatcher. orchestration_v1's `fixture_test.go`, the only outside
 importer, is retired with `orchestration_v1` or rewritten against a test server first. No database
@@ -4042,6 +4037,17 @@ the move adds no hop. The proxy grants `CreateSession`, `SubmitInput`, `ChangeMo
 `ChangeReasoningEffort` and `InterruptTurn` to the Sessions binary's service SVID instead of the
 combined Gateway account; receivers before senders. **Exit:** Runtime calls reach Environments
 through its Service, and nothing in `runner_gateway/` calls a Runtime.
+
+### `RUNTIME_PROXY_CALLER_AUDIT` — route callers through their owning APIs
+
+**Unscheduled; requested by operator, 2026-11-15.** Inventory every caller of the proxy to
+Environment Runtimes, including Notifications' subscription-time `ListSessions` check, and its exact
+methods and grants. Determine which operations belong behind EnvironmentService or Session
+Dispatcher APIs and which need privileged Runtime access. The proxy may become a private/privileged
+API; do not treat its current caller set as the intended public boundary. **Exit:** every caller has
+an explicit disposition, required higher-level APIs and migration work are tracked, and retained
+proxy callers have narrow, reviewed authority. This audit does not block the approved serving move
+or authorize new proxy grants.
 
 ### `SESSIONS_BINARY_DIRECTORY` — what remains becomes the Sessions binary
 

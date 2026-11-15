@@ -1,0 +1,211 @@
+package serving
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"maps"
+	"net/http"
+	"sync"
+	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/environments/access"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
+	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
+	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	"github.com/agentydragon/ducktape/agentplane/observability"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/keepalive"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+type Server struct {
+	config       Config
+	server       *grpc.Server
+	watches      *reader.Watches
+	policyHealth *watchhealth.Health
+	rpcHealth    *health.Server
+	mu           sync.RWMutex
+	address      string
+	serving      bool
+}
+
+// New validates local credentials before the manager starts. All API reads used by RPCs bypass
+// the manager's leader-scoped caches, including watch streams and authorization conflict retries.
+func New(c Config, namespace string, apiConfig *rest.Config, scheme *runtime.Scheme) (*Server, error) {
+	if err := c.Validate(); err != nil {
+		return nil, err
+	}
+	credentials, err := c.RPC.ServerCredentialsWithServices(peertls.SandboxControllerURI)
+	if err != nil {
+		return nil, fmt.Errorf("EnvironmentService listener TLS: %w", err)
+	}
+	objects, err := client.NewWithWatch(apiConfig, client.Options{Scheme: scheme})
+	if err != nil {
+		return nil, err
+	}
+	kube, err := kubernetes.NewForConfig(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	namespaces := sets.New(namespace)
+	for _, accounts := range [][]auth.Account{c.Readers, c.Managers, c.Launchers, c.Operators} {
+		for _, account := range accounts {
+			namespaces.Insert(account.Namespace)
+		}
+	}
+	if c.Delegation != nil {
+		namespaces.Insert(c.Delegation.Actor.Namespace)
+	}
+	resolved, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.Audience, sets.List(namespaces))
+	if err != nil {
+		return nil, err
+	}
+	svids, err := auth.NewKubernetesSVIDResolver(apiConfig, []string{namespace}, &resolver.Identities{PolicyNamespace: c.PolicyNamespace})
+	if err != nil {
+		return nil, err
+	}
+	resolved, err = resolved.WithListenerAuthentication(c.RPC, svids)
+	if err != nil {
+		return nil, err
+	}
+	policyHealth := watchhealth.New()
+	watches := reader.NewWatches(apiConfig, policyHealth)
+	rules := access.NewIndex()
+	if err := reader.WatchRules(watches, rules, c.PolicyNamespace, access.Ready); err != nil {
+		return nil, err
+	}
+	manager, err := lifecycle.NewEnvironmentServiceManager(lifecycle.EnvironmentServiceOptions{
+		Namespace: namespace, Objects: objects, EnvironmentRules: rules,
+		PolicyReady: func() error {
+			if !policyHealth.Available() {
+				return errors.New("environment policy state is unavailable")
+			}
+			return nil
+		},
+		WakeCallers: c.WakeCallers, WakeServiceCallers: c.WakeServiceCallers,
+		OperatorCallers: c.Operators, OperatorServiceCallers: c.ServiceOperators,
+	})
+	if err != nil {
+		return nil, err
+	}
+	service, err := environments.New(namespace, objects, c.RuntimeCatalog, manager, sets.New(c.Readers...), environments.ManagementOptions{
+		Managers: sets.New(c.Managers...), Launchers: sets.New(c.Launchers...),
+		ServiceReaders: sets.New(c.ServiceReaders...), ServiceManagers: sets.New(c.ServiceManagers...),
+		ServiceLaunchers: sets.New(c.ServiceLaunchers...),
+	})
+	if err != nil {
+		return nil, err
+	}
+	methods, err := environments.WithServiceCallers(environments.Methods(resolved), c.ServiceReaders, c.ServiceManagers, c.ServiceLaunchers, c.ServiceOperators)
+	if err != nil {
+		return nil, err
+	}
+	identities, err := auth.KubernetesIdentityUIDs(objects, c.PolicyNamespace)
+	if err != nil {
+		return nil, err
+	}
+	if d := c.ServiceDelegation; d != nil {
+		methods, err = methods.WithServiceDelegation(d.Methods, d.Actors, identities)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if d := c.Delegation; d != nil {
+		methods, err = methods.WithDelegation(d.Methods, []auth.Delegator{{Account: d.Actor, IdentityCallers: d.IdentityCallers}}, identities)
+		if err != nil {
+			return nil, err
+		}
+	}
+	allMethods := auth.HealthMethods()
+	maps.Copy(allMethods, methods)
+	options := append(allMethods.ServerOptions(0), grpc.Creds(credentials), observability.GRPCServerOption(),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{MinTime: 30 * time.Second}))
+	server := grpc.NewServer(options...)
+	environmentpb.RegisterEnvironmentServiceServer(server, service)
+	rpcHealth := health.NewServer()
+	rpcHealth.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
+	healthpb.RegisterHealthServer(server, rpcHealth)
+	return &Server{config: c, server: server, watches: watches, policyHealth: policyHealth, rpcHealth: rpcHealth}, nil
+}
+
+// NeedLeaderElection keeps RPCs and their independent policy watches running on standbys.
+func (*Server) NeedLeaderElection() bool { return false }
+
+func (s *Server) Address() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.address
+}
+
+func (s *Server) Check(*http.Request) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if !s.serving || !s.policyHealth.Available() {
+		return errors.New("EnvironmentService is not ready")
+	}
+	return nil
+}
+
+func (s *Server) Start(ctx context.Context) error {
+	listener, err := netlistener.Open(s.config.RPC.ListenAddress)
+	if err != nil {
+		return fmt.Errorf("EnvironmentService listen: %w", err)
+	}
+	defer listener.Close()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	watchesDone := make(chan struct{})
+	go func() { defer close(watchesDone); s.watches.Run(ctx) }()
+	defer func() { <-watchesDone }()
+	served := make(chan error, 1)
+	go func() { served <- s.server.Serve(listener) }()
+	s.mu.Lock()
+	s.address, s.serving = listener.Addr().String(), true
+	s.mu.Unlock()
+	defer s.server.Stop()
+	for {
+		changed := s.policyHealth.Changed()
+		status := healthpb.HealthCheckResponse_NOT_SERVING
+		if s.Check(nil) == nil {
+			status = healthpb.HealthCheckResponse_SERVING
+		}
+		s.rpcHealth.SetServingStatus("", status)
+		select {
+		case <-changed:
+			continue
+		case err = <-served:
+			if ctx.Err() == nil {
+				err = fmt.Errorf("EnvironmentService listener stopped unexpectedly: %w", err)
+			} else {
+				err = nil
+			}
+		case <-ctx.Done():
+			err = nil
+		}
+		break
+	}
+	s.mu.Lock()
+	s.serving = false
+	s.mu.Unlock()
+	s.policyHealth.MarkDraining()
+	s.rpcHealth.Shutdown()
+	cancel()
+	closing, release := context.WithTimeout(context.Background(), 5*time.Second)
+	defer release()
+	graceful.Stop(closing, s.server)
+	return err
+}

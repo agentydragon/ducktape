@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environments/access"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
@@ -17,7 +18,6 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environmentaccess"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -56,7 +56,7 @@ func (r *placingRunner) CreateSession(_ context.Context, _ SandboxSnapshot, _ st
 // Identity subjects in policyNamespace, and returns its store and a client presenting a certificate
 // for a workload URI.
 func serveIdentitySVIDs(t *testing.T, objects client.Reader, policyNamespace string, inventory *authorityInventory) (*Store, func(uri string) dispatcherpb.SessionDispatcherClient) {
-	return serveIdentitySVIDsWithPolicy(t, objects, policyNamespace, inventory, environmentaccess.NewIndex(), func() error { return nil })
+	return serveIdentitySVIDsWithPolicy(t, objects, policyNamespace, inventory, access.NewIndex(), func() error { return nil })
 }
 
 func serveIdentitySVIDsWithPolicy(
@@ -64,7 +64,7 @@ func serveIdentitySVIDsWithPolicy(
 	objects client.Reader,
 	policyNamespace string,
 	inventory *authorityInventory,
-	rules *reader.Index[environmentaccess.Rule],
+	rules *reader.Index[access.Rule],
 	policyReady func() error,
 ) (*Store, func(uri string) dispatcherpb.SessionDispatcherClient) {
 	t.Helper()

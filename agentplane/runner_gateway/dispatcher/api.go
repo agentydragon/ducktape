@@ -8,6 +8,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environments/access"
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/observability"
@@ -18,7 +19,6 @@ import (
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/internal/placement"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/internal/terminalnotice"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environmentaccess"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
@@ -75,7 +75,7 @@ type Service struct {
 	DispatcherCallers  sets.Set[auth.Account]
 	DispatcherServices sets.Set[string]
 	Sandboxes          SandboxReader
-	EnvironmentRules   *reader.Index[environmentaccess.Rule]
+	EnvironmentRules   *reader.Index[access.Rule]
 	PolicyReady        func() error
 	Hub                *WatchHub
 	WatchLease         time.Duration
@@ -387,7 +387,7 @@ func (s *Service) authorizeIdentityPlacement(
 		return nil, status.Error(codes.NotFound, "sandbox not found")
 	}
 	policyCaller := reader.Identity{Name: caller.Identity.GetName(), UID: types.UID(caller.Identity.GetUid())}
-	granted := environmentaccess.Allowed(s.EnvironmentRules, policyCaller, "bind_session", environment)
+	granted := access.Allowed(s.EnvironmentRules, policyCaller, "bind_session", environment)
 	if !granted {
 		if sameIdentity(identity, caller.Identity) {
 			return nil, status.Error(codes.PermissionDenied, "caller may not bind a Session to this sandbox")

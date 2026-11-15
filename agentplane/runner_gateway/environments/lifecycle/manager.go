@@ -10,12 +10,12 @@ import (
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
+	"github.com/agentydragon/ducktape/agentplane/environments/access"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environmentaccess"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc/codes"
@@ -49,7 +49,7 @@ type Options struct {
 	WakeServiceCallers     []string
 	OperatorServiceCallers []string
 	OperatorCallers        []auth.Account
-	EnvironmentRules       *reader.Index[environmentaccess.Rule]
+	EnvironmentRules       *reader.Index[access.Rule]
 	PolicyReady            func() error
 }
 
@@ -66,13 +66,20 @@ type Manager struct {
 	wakeServices     sets.Set[string]
 	operatorServices sets.Set[string]
 	operatorCallers  sets.Set[auth.Account]
-	environmentRules *reader.Index[environmentaccess.Rule]
+	environmentRules *reader.Index[access.Rule]
 	policyReady      func() error
 }
 
 func NewManager(options Options) (*Manager, error) {
-	if options.Namespace == "" || options.Objects == nil || options.WakeBudget == nil {
+	if options.WakeBudget == nil {
 		return nil, errors.New("Sandbox namespace, uncached Kubernetes client, and shared wake budget are required")
+	}
+	return newManager(options)
+}
+
+func newManager(options Options) (*Manager, error) {
+	if options.Namespace == "" || options.Objects == nil {
+		return nil, errors.New("Sandbox namespace and uncached Kubernetes client are required")
 	}
 	if err := auth.ValidateServiceCallers(options.WakeServiceCallers); err != nil {
 		return nil, fmt.Errorf("wake service callers: %w", err)
@@ -454,7 +461,7 @@ func (s *Manager) identityEligibility(ctx context.Context, view *sandboxapi.Sand
 		return nil, status.Error(codes.Unavailable, "environment policy is unavailable")
 	}
 	policyCaller := reader.Identity{Name: caller.GetName(), UID: types.UID(caller.GetUid())}
-	granted := environmentaccess.Allowed(s.environmentRules, policyCaller, "resume", view)
+	granted := access.Allowed(s.environmentRules, policyCaller, "resume", view)
 	if granted && selectorRequiresLiveBoundIdentity(s.environmentRules, policyCaller, view) {
 		bound, found, err := s.sandboxes.ExecutionIdentity(ctx, &sandboxreader.Identity{
 			Namespace: view.Namespace, Name: view.Name, Uid: string(view.UID),
@@ -476,7 +483,7 @@ func (s *Manager) identityEligibility(ctx context.Context, view *sandboxapi.Sand
 	return denied(environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_CALLER_NOT_EXECUTION_ACCOUNT), nil
 }
 
-func selectorRequiresLiveBoundIdentity(index *reader.Index[environmentaccess.Rule], caller reader.Identity, sandbox *sandboxapi.Sandbox) bool {
+func selectorRequiresLiveBoundIdentity(index *reader.Index[access.Rule], caller reader.Identity, sandbox *sandboxapi.Sandbox) bool {
 	matchedBoundIdentity, matchedWithoutBoundIdentity := false, false
 	for _, grant := range index.Grants(caller) {
 		for _, set := range grant.Sets {

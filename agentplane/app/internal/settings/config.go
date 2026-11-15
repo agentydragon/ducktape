@@ -27,6 +27,7 @@ type Config struct {
 	NotificationsTLS                    *peertls.ClientTLS         `mapstructure:"notifications_tls"`
 	HistoryServiceTLS                   *peertls.ClientTLS         `mapstructure:"history_service_tls"`
 	SessionDispatcherTLS                *peertls.ClientTLS         `mapstructure:"session_dispatcher_tls"`
+	EnvironmentService                  *EnvironmentServicePeer    `mapstructure:"environment_service"`
 	RunnerGatewayTLS                    *peertls.ClientTLS         `mapstructure:"runner_gateway_tls"`
 	PolicyServiceTLS                    *peertls.ClientTLS         `mapstructure:"policy_service_tls"`
 	ConnectionServiceTLS                *peertls.ClientTLS         `mapstructure:"connection_service_tls"`
@@ -66,6 +67,35 @@ type Config struct {
 	EgressAdminTimeoutSeconds           float64                    `mapstructure:"egress_admin_timeout"`
 	ShutdownTimeoutSeconds              int                        `mapstructure:"shutdown_timeout"`
 	sandboxPresetOrder                  []string
+}
+
+// EnvironmentServicePeer is an optional dedicated EnvironmentService route. Its SVID is required
+// because this peer targets the receiver introduced by the receiver-before-config rollout.
+type EnvironmentServicePeer struct {
+	Target                string             `mapstructure:"target"`
+	RequestTimeoutSeconds float64            `mapstructure:"request_timeout_s"`
+	TLS                   *peertls.ClientTLS `mapstructure:"tls"`
+}
+
+// ServicePeer is a resolved backend connection. When no dedicated EnvironmentService peer is
+// configured, the legacy Session Dispatcher endpoint and credentials remain in use.
+type ServicePeer struct {
+	Target                string
+	TokenFile             string
+	RequestTimeoutSeconds float64
+	TLS                   *peertls.ClientTLS
+}
+
+func (c Config) EnvironmentServicePeer() ServicePeer {
+	if peer := c.EnvironmentService; peer != nil {
+		return ServicePeer{
+			Target: peer.Target, RequestTimeoutSeconds: peer.RequestTimeoutSeconds, TLS: peer.TLS,
+		}
+	}
+	return ServicePeer{
+		Target: c.SessionDispatcherTarget, TokenFile: c.SessionDispatcherTokenFile,
+		RequestTimeoutSeconds: c.SessionDispatcherRequestTimeoutSecs, TLS: c.SessionDispatcherTLS,
+	}
 }
 
 type ThreadPreset struct {
@@ -401,6 +431,17 @@ func (c Config) validate() error {
 		{"notifications", c.NotificationsTokenFile, peertls.NotificationsURI, c.NotificationsTLS},
 	} {
 		if err := validateAppServiceCaller(caller.name, caller.tls, caller.tokenFile, caller.serverURI); err != nil {
+			return err
+		}
+	}
+	if peer := c.EnvironmentService; peer != nil {
+		if strings.TrimSpace(peer.Target) == "" {
+			return errors.New("environment_service.target is required")
+		}
+		if peer.RequestTimeoutSeconds <= 0 || math.IsNaN(peer.RequestTimeoutSeconds) || math.IsInf(peer.RequestTimeoutSeconds, 0) {
+			return errors.New("environment_service.request_timeout_s must be positive")
+		}
+		if err := validateAppServiceCaller("environment_service", peer.TLS, "", peertls.SandboxControllerURI); err != nil {
 			return err
 		}
 	}

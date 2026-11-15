@@ -76,7 +76,7 @@ const CentralSamplerURI = "spiffe://agentplane/central-sampler"
 func isWorkloadServiceURI(uri string) bool {
 	switch uri {
 	case EgressProxyURI, HistoryIngressURI, NotificationsURI, LLMIngressURI, SessionDispatcherURI, ActionsURI,
-		PolicyControllerURI, CentralSamplerURI, MCPEdgeURI:
+		PolicyControllerURI, CentralSamplerURI, MCPEdgeURI, SandboxControllerURI:
 		return true
 	default:
 		return false

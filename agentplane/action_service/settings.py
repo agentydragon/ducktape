@@ -14,7 +14,13 @@ from agentplane.action_service.push_settings import WebPushSettings
 from agentplane.action_service.session_delegation.binding import SessionDelegationExecutorBinding
 from agentplane.identity.auth.listener import Listener
 from agentplane.identity.operator.settings import OperatorOidcSettings
-from agentplane.net.peertls.config import ACTIONS_URI, CENTRAL_SAMPLER_URI, ClientTLS, ServiceSPIFFEID
+from agentplane.net.peertls.config import (
+    ACTIONS_URI,
+    CENTRAL_SAMPLER_URI,
+    SANDBOX_CONTROLLER_URI,
+    ClientTLS,
+    ServiceSPIFFEID,
+)
 from agentplane.subjects import ServiceAccountRef
 
 DEFAULT_DIRECT_WAIT_SECONDS = 30.0
@@ -38,6 +44,18 @@ class ServicePeer(BaseModel):
             self.tls.validate_caller(self.token_file, ACTIONS_URI)
         elif not self.token_file:
             raise ValueError("a bearer token file or service SVID is required")
+        return self
+
+
+class EnvironmentServicePeer(ServicePeer):
+    """Dedicated EnvironmentService endpoint on the Sandbox Controller."""
+
+    @model_validator(mode="after")
+    def controller_svid(self) -> Self:
+        if self.tls is None or self.tls.server_uri != SANDBOX_CONTROLLER_URI:
+            raise ValueError(f"environment_service.tls.server_uri must identify {SANDBOX_CONTROLLER_URI}")
+        if not self.tls.uses_svid:
+            raise ValueError("environment_service must present the Actions service SVID")
         return self
 
 
@@ -105,6 +123,10 @@ class Settings(BaseModel):
     session_delegation_dispatcher: ServicePeer | None = Field(
         default=None,
         description="Delegated Discovery and Session Dispatcher endpoint/audience for session_delegation groups.",
+    )
+    environment_service: EnvironmentServicePeer | None = Field(
+        default=None,
+        description="Optional separate Sandbox Controller EnvironmentService endpoint; omission uses the configured Dispatcher peer.",
     )
     session_delegation_history: ServicePeer | None = Field(
         default=None, description="Delegated History endpoint/audience for session_delegation groups."

@@ -1,11 +1,12 @@
 # Environment lifecycle manager
 
 `lifecycle.Manager` is the Runner Gateway's backend-owned policy and mutation point for resuming an
-existing Sandbox. The public `EnvironmentService.ResumeEnvironment` handler delegates to it. It
-exposes `RequestWake` for Dispatcher's in-process automatic wake path. EnvironmentService reads use
-`Eligibility` and `AssessAutomaticWake` as read-only current assessments. All paths reread the exact
-Sandbox UID and current execution binding through an uncached Kubernetes client. Explicit Identity
-grants come from the consumer's typed policy reader and require healthy, synchronized watches.
+existing Sandbox. `NewManager` requires the shared wake budget used by Dispatcher's automatic
+`RequestWake` path. `EnvironmentServiceManager` exposes the same guarded explicit resume and
+read-only `Eligibility` and `AssessAutomaticWake` assessments without automatic wake execution or
+a budget dependency. Both reread the exact Sandbox UID and current execution binding through an
+uncached Kubernetes client. Explicit Identity grants come from the consumer's typed policy reader
+and require healthy, synchronized watches.
 
 Ordinary ServiceAccount self-resume is retired. Explicit resume accepts an Identity with a current
 `environment` grant for `resume`, or a direct Pod-bound ServiceAccount in `operator_callers`.

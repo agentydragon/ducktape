@@ -20,6 +20,7 @@ from agentplane.net.peertls.config import (
     MCP_EDGE_URI,
     NOTIFICATIONS_URI,
     POLICY_CONTROLLER_URI,
+    SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
     ClientTLS,
 )
@@ -71,6 +72,26 @@ class FrontendConfig(BaseModel):
         default=None,
         description="Optional Langfuse links filtered by configured Sandbox namespace and ServiceAccount metadata.",
     )
+
+
+class EnvironmentServicePeer(BaseModel):
+    """Optional standalone EnvironmentService endpoint on the Sandbox Controller."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    target: str = Field(min_length=1, description="Sandbox Controller gRPC host:port for EnvironmentService.")
+    request_timeout_s: float = Field(gt=0, allow_inf_nan=False)
+    tls: ClientTLS = Field(description="Verify the Sandbox Controller SVID and present the App service SVID.")
+
+    @model_validator(mode="after")
+    def validate_caller(self) -> EnvironmentServicePeer:
+        if self.tls.server_uri != SANDBOX_CONTROLLER_URI:
+            raise ValueError(f"environment_service.tls.server_uri must identify {SANDBOX_CONTROLLER_URI}")
+        try:
+            self.tls.validate_caller(None, APP_URI)
+        except ValueError as exc:
+            raise ValueError(f"environment_service caller authentication: {exc}") from exc
+        return self
 
 
 class Settings(BaseModel):
@@ -131,6 +152,10 @@ class Settings(BaseModel):
     session_dispatcher_target: str = Field(
         min_length=1,
         description="Runner Gateway gRPC host:port for Session Dispatcher commands and app-brokered resume requests.",
+    )
+    environment_service: EnvironmentServicePeer | None = Field(
+        default=None,
+        description="Optional separate Sandbox Controller EnvironmentService endpoint; omission uses the Session Dispatcher peer.",
     )
     policy_service_target: str = Field(default="policy-controller:8082", min_length=1)
     policy_service_token_file: Path | None = Path("/var/run/secrets/agentplane-policy/token")

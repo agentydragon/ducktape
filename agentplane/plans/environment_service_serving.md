@@ -1,6 +1,6 @@
 # EnvironmentService on every Environments replica
 
-Proposed serving contract; design only. Implementation waits for operator approval. The
+Approved serving contract (operator, 2026-11-15); implementation in progress. The
 [agreed binary shape](https://agentydragon.github.io/ducktape/agentplane-organization/#binaries)
 puts EnvironmentService beside the Sandbox Controller in `agentplane/environments/`.
 Source baseline: devel `ae73f98d0fd17a12edd6ee62d77b6a4cbfb4bd07` (2026-11-14).
@@ -44,9 +44,9 @@ Move explicit resume without its current constructor's mandatory `WakeBudget`: i
 already ([lifecycle contract](../runner_gateway/environments/lifecycle/SPEC.md)). Split the automatic
 wake implementation into Sessions, which keeps its own policy reader, guarded writes and PostgreSQL
 budget. Environments acquires no database and makes no call to Sessions. Sessions keeps checking the
-live Identity at admission ([Dispatcher](../runner_gateway/dispatcher/api.go)). Move
-[`environmentaccess`](../runner_gateway/environmentaccess/policy.go) to `environments/access`, outside
-`internal/`, so Sessions imports its `bind_session` rules without importing the serving package.
+live Identity at admission ([Dispatcher](../runner_gateway/dispatcher/api.go)). Shared
+[`environments/access`](../environments/access/policy.go) lives outside `internal/`, so Sessions
+imports its `bind_session` rules without importing the serving package.
 The two processes retain independent policy views and their existing fail-closed checks.
 
 Recreate only EnvironmentService's slice of
@@ -82,7 +82,7 @@ Inventory and separate connections by API before changing targets:
 
 ## Implementation rollout and rollback
 
-1. After approval, land receiver/composition code and caller code accepting separate environment
+1. Land receiver/composition code and caller code accepting separate environment
    targets, with the new settings optional or disabled. Keep manifests on existing settings and
    endpoints. During overlap both binaries import the existing public service implementation; move it
    into `environments/internal/service` only when the old Gateway registration retires. Move neither

@@ -195,3 +195,58 @@ func TestControllerGatewayCallerUsesOnlyItsOwnSVID(t *testing.T) {
 		})
 	}
 }
+
+const environmentServiceSettings = `environment_service:
+  policy_namespace: test-policy
+  audience: test-dispatcher
+  rpc:
+    listen_address: ":8082"
+    tls:
+      cert_file: /run/test/tls.crt
+      key_file: /run/test/tls.key
+    auth:
+      - mode: spiffe
+        ca_file: /run/test/ca.crt
+      - mode: kubernetes_bearer
+        audiences: [test-dispatcher]
+  service_readers: [spiffe://agentplane/app]
+  service_managers: [spiffe://agentplane/app]
+  service_operators: [spiffe://agentplane/app]
+  service_delegation:
+    actors:
+      - spiffe_id: spiffe://agentplane/actions
+    methods: [/agentplane.environments.v1.EnvironmentService/ResumeEnvironment]
+`
+
+func TestEnvironmentServiceIsOptInAndStrict(t *testing.T) {
+	t.Setenv(configFileEnv, writeSettings(t, validSettings))
+	c, err := loadConfig()
+	if err != nil || c.EnvironmentService != nil {
+		t.Fatalf("existing settings enabled EnvironmentService: %+v, %v", c.EnvironmentService, err)
+	}
+	t.Setenv(configFileEnv, writeSettings(t, validSettings+environmentServiceSettings))
+	c, err = loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.EnvironmentService == nil || c.EnvironmentService.RPC.ListenAddress != ":8082" ||
+		len(c.EnvironmentService.ServiceReaders) != 1 || c.EnvironmentService.ServiceReaders[0] != peertls.AppURI {
+		t.Fatalf("lost EnvironmentService peer roles: %+v", c.EnvironmentService)
+	}
+	for name, invalid := range map[string]string{
+		"incomplete":            "environment_service: {}\n",
+		"unknown nested key":    environmentServiceSettings + "  unknown: true\n",
+		"unknown listener key":  strings.Replace(environmentServiceSettings, "    listen_address:", "    misspelled_address:", 1),
+		"wrong bearer audience": strings.Replace(environmentServiceSettings, "audiences: [test-dispatcher]", "audiences: [another-audience]", 1),
+		"wrong service role":    strings.Replace(environmentServiceSettings, "[spiffe://agentplane/app]", "[spiffe://agentplane/test-unknown]", 1),
+		"foreign method":        strings.Replace(environmentServiceSettings, "/agentplane.environments.v1.EnvironmentService/ResumeEnvironment", "/other.Service/Method", 1),
+		"connection provenance": strings.Replace(environmentServiceSettings, "      - spiffe_id: spiffe://agentplane/actions", "      - spiffe_id: spiffe://agentplane/actions\n        connection_provenance: true", 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(configFileEnv, writeSettings(t, validSettings+invalid))
+			if _, err := loadConfig(); err == nil {
+				t.Fatal("accepted invalid EnvironmentService settings")
+			}
+		})
+	}
+}

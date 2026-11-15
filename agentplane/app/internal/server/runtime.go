@@ -142,8 +142,9 @@ func Run(ctx context.Context, config settings.Config) error {
 	if err != nil {
 		return fmt.Errorf("configure Session Dispatcher: %w", err)
 	}
-	environmentConn, err := bearer.Dial(config.SessionDispatcherTarget, config.SessionDispatcherTokenFile,
-		time.Duration(config.SessionDispatcherRequestTimeoutSecs*float64(time.Second)), config.SessionDispatcherTLS)
+	environmentPeer := config.EnvironmentServicePeer()
+	environmentTimeout := time.Duration(environmentPeer.RequestTimeoutSeconds * float64(time.Second))
+	environmentConn, err := bearer.Dial(environmentPeer.Target, environmentPeer.TokenFile, environmentTimeout, environmentPeer.TLS)
 	if err != nil {
 		return fmt.Errorf("configure Environment Service client: %w", err)
 	}
@@ -253,12 +254,20 @@ func Run(ctx context.Context, config settings.Config) error {
 		time.Duration(config.SessionDispatcherRequestTimeoutSecs*float64(time.Second)),
 		facade.HandlerOptions{TLS: config.SessionDispatcherTLS},
 		session_dispatcherpb.RegisterSessionDispatcherHandlerFromEndpoint,
-		environmentpb.RegisterEnvironmentServiceHandlerFromEndpoint,
 	)
 	if err != nil {
 		return fmt.Errorf("configure generated Session Dispatcher HTTP facade: %w", err)
 	}
 	dispatcherGateway := upstreamproxy.NewHandlerUpstream(dispatcherFacade, config.SessionDispatcherTokenFile)
+	environmentFacade, err := facade.NewHandlerWithOptions(
+		facadeContext, environmentPeer.Target, environmentTimeout,
+		facade.HandlerOptions{TLS: environmentPeer.TLS},
+		environmentpb.RegisterEnvironmentServiceHandlerFromEndpoint,
+	)
+	if err != nil {
+		return fmt.Errorf("configure generated Environment Service HTTP facade: %w", err)
+	}
+	environmentGateway := upstreamproxy.NewHandlerUpstream(environmentFacade, environmentPeer.TokenFile)
 	policyFacade, err := facade.NewHandlerWithOptions(
 		facadeContext, config.PolicyServiceTarget, 10*time.Second,
 		facade.HandlerOptions{TLS: config.PolicyServiceTLS},
@@ -349,7 +358,7 @@ func Run(ctx context.Context, config settings.Config) error {
 		Auth:             appAuth,
 		SandboxNamespace: config.SandboxNamespace, Sandboxes: environments,
 		Federator:      federator,
-		DispatcherHTTP: dispatcherGateway, EnvironmentHTTP: dispatcherGateway, PolicyHTTP: policyGateway, EgressHTTP: egressGateway,
+		DispatcherHTTP: dispatcherGateway, EnvironmentHTTP: environmentGateway, PolicyHTTP: policyGateway, EgressHTTP: egressGateway,
 		ActionHTTP: actionGateway, ConnectionHTTP: connectionGateway,
 		HistoryHTTP: historyGateway, NotificationHTTP: notificationGateway,
 		Console: consoleConnector, Logger: logger,

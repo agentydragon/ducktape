@@ -14,6 +14,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 
+	"github.com/agentydragon/ducktape/agentplane/environments/access"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
@@ -21,7 +22,6 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environmentaccess"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
@@ -241,7 +241,7 @@ func TestDispatcherServiceAccountSVIDDoesNotOwnSandboxIdentitySessions(t *testin
 	ownerSandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
 	ownerIdentity := &identitypb.Identity{Name: owner.Identity.Name, Uid: string(owner.Identity.UID)}
 	inventory := &authorityInventory{sandbox: ownerSandbox, identity: ownerIdentity}
-	environmentRules := environmentaccess.NewIndex()
+	environmentRules := access.NewIndex()
 	environmentRules.PutIdentity(owner.Identity)
 	svids, err := auth.NewSVIDResolver(owner.Objects, []string{caller.Namespace}, &resolver.Identities{PolicyNamespace: caller.Namespace})
 	if err != nil {
@@ -336,7 +336,7 @@ func TestDispatcherIdentitySVIDDoesNotInheritSameNamedAccountAuthority(t *testin
 	ownerIdentity := &identitypb.Identity{Name: owner.Identity.Name, Uid: string(owner.Identity.UID)}
 	ownerSandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
 	inventory := &authorityInventory{sandbox: ownerSandbox, identity: ownerIdentity}
-	environmentRules := environmentaccess.NewIndex()
+	environmentRules := access.NewIndex()
 	environmentRules.PutIdentity(owner.Identity)
 	svids, err := auth.NewSVIDResolver(owner.Objects, []string{caller.Namespace}, &resolver.Identities{PolicyNamespace: caller.Namespace})
 	if err != nil {

@@ -8,6 +8,12 @@ runner-initiated platform routes. Per-path diagrams (session delivery, runner co
 history and browser sync, notifications, actions and egress) and direct API definition links:
 [focused diagrams below](#focused-diagrams).
 
+The Controller binary additionally supports an opt-in EnvironmentService listener on each replica
+at `:8082`, with `spiffe://agentplane/sandbox-controller`. It uses its own policy watches and uncached
+Kubernetes reads, independent of the elected reconcilers. Deployment settings currently omit that
+listener, so the diagrams retain the Gateway EnvironmentService edges. Retargeting those edges
+follows the receiver image/config rollout; Runtime-proxy calls remain at the Gateway in this slice.
+
 ```mermaid
 flowchart LR
     browser([Browser])

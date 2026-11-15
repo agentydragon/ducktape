@@ -16,6 +16,7 @@ from agentplane.net.peertls.config import (
     MCP_EDGE_URI,
     NOTIFICATIONS_URI,
     POLICY_CONTROLLER_URI,
+    SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
     ClientTLS,
 )
@@ -76,6 +77,24 @@ def test_service_svids_clear_only_omitted_legacy_token_defaults() -> None:
     assert migrated.notifications_token_file is None
 
 
+def test_environment_service_peer_is_optional_and_uses_its_own_controller_svid() -> None:
+    legacy = _settings()
+    assert legacy.environment_service is None
+
+    configured = _settings(
+        environment_service={
+            "target": "sandbox-controller.agentplane.svc:8082",
+            "request_timeout_s": 12,
+            "tls": _svid(SANDBOX_CONTROLLER_URI),
+        }
+    )
+    assert configured.environment_service is not None
+    assert configured.environment_service.target == "sandbox-controller.agentplane.svc:8082"
+    assert configured.environment_service.tls.server_uri == SANDBOX_CONTROLLER_URI
+    assert configured.session_dispatcher_target == "session-dispatcher.test:8080"
+    assert configured.environment_service.model_dump(mode="json")["request_timeout_s"] == 12
+
+
 @pytest.mark.parametrize(
     ("updates", "message"),
     [
@@ -97,6 +116,37 @@ def test_service_svids_clear_only_omitted_legacy_token_defaults() -> None:
         ),
         ({"session_dispatcher_tls": None, "session_dispatcher_token_file": None}, "a token file is required"),
         ({"connection_service_tls": _svid(SESSION_DISPATCHER_URI)}, "connection_service_tls.server_uri must identify"),
+        ({"environment_service": {"target": "controller:8082", "request_timeout_s": 10}}, "Field required"),
+        (
+            {
+                "environment_service": {
+                    "target": "controller:8082",
+                    "request_timeout_s": 10,
+                    "tls": _svid(SESSION_DISPATCHER_URI),
+                }
+            },
+            "environment_service.tls.server_uri must identify",
+        ),
+        (
+            {
+                "environment_service": {
+                    "target": "controller:8082",
+                    "request_timeout_s": 10,
+                    "tls": _svid(SANDBOX_CONTROLLER_URI).model_copy(update={"client_uri": NOTIFICATIONS_URI}),
+                }
+            },
+            "client_uri must be",
+        ),
+        (
+            {
+                "environment_service": {
+                    "target": "controller:8082",
+                    "request_timeout_s": 10,
+                    "tls": _svid(SANDBOX_CONTROLLER_URI).model_copy(update={"key_file": None}),
+                }
+            },
+            "service SVID requires",
+        ),
     ],
 )
 def test_invalid_app_caller_tls_settings_are_rejected(updates: dict[str, object], message: str) -> None:

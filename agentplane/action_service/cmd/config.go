@@ -67,6 +67,9 @@ type config struct {
 	// caller identity; SessionDelegationHistory is the History Service listener with its own audience token.
 	SessionDelegationDispatcher *peer `mapstructure:"session_delegation_dispatcher"`
 	SessionDelegationHistory    *peer `mapstructure:"session_delegation_history"`
+	// EnvironmentService optionally overrides the EnvironmentService target while Dispatcher methods keep their
+	// direct or delegated peer. It must use the Action Service SVID against the Controller identity.
+	EnvironmentService *peer `mapstructure:"environment_service"`
 }
 
 // peer is a gRPC service this one calls as its workload, with its projected token for the peer's audience.
@@ -213,8 +216,31 @@ func (c *config) validate() error {
 	if err := c.validateSessionDelegation(); err != nil {
 		return err
 	}
+	if err := c.validateEnvironmentService(); err != nil {
+		return err
+	}
 	if c.operatorsEnabled() {
 		return c.OperatorOIDC.Validate()
+	}
+	return nil
+}
+
+func (c *config) validateEnvironmentService() error {
+	p := c.EnvironmentService
+	if p == nil {
+		return nil
+	}
+	if p.Target == "" || !(p.RequestTimeoutSeconds > 0) || math.IsInf(p.RequestTimeoutSeconds, 0) {
+		return errors.New("environment_service requires target and a finite positive request_timeout_s")
+	}
+	if p.TLS == nil || p.TLS.ServerURI != peertls.SandboxControllerURI {
+		return fmt.Errorf("environment_service.tls.server_uri must identify %s", peertls.SandboxControllerURI)
+	}
+	if !p.TLS.UsesSVID() {
+		return errors.New("environment_service must present the Actions service SVID")
+	}
+	if err := p.TLS.ValidateCaller(p.TokenFile, peertls.ActionsURI); err != nil {
+		return fmt.Errorf("environment_service authentication: %w", err)
 	}
 	return nil
 }

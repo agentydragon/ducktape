@@ -10,13 +10,13 @@ import (
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
+	"github.com/agentydragon/ducktape/agentplane/environments/access"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environmentaccess"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -132,7 +132,7 @@ func newIdentityHarness(
 	t *testing.T,
 	object client.WithWatch,
 	operatorCallers []auth.Account,
-	rules *reader.Index[environmentaccess.Rule],
+	rules *reader.Index[access.Rule],
 	policyReady func() error,
 ) lifecycleHarness {
 	return newConfiguredHarness(t, object, operatorCallers, rules, policyReady, true)
@@ -142,7 +142,7 @@ func newConfiguredHarness(
 	t *testing.T,
 	object client.WithWatch,
 	operatorCallers []auth.Account,
-	rules *reader.Index[environmentaccess.Rule],
+	rules *reader.Index[access.Rule],
 	policyReady func() error,
 	identityDelegation bool,
 ) lifecycleHarness {
@@ -157,6 +157,17 @@ func newConfiguredHarness(
 	if err != nil {
 		t.Fatal(err)
 	}
+	connection := serveEnvironmentService(t, object, service, identityDelegation)
+	return lifecycleHarness{client: object, service: service, budget: budget, conn: connection}
+}
+
+func serveEnvironmentService(
+	t *testing.T,
+	object client.WithWatch,
+	lifecycleManager lifecycle.EnvironmentServiceLifecycle,
+	identityDelegation bool,
+) *grpc.ClientConn {
+	t.Helper()
 	reviews := testReviews{
 		"execution":       {account: executionAccount, uid: executionUID, podName: "runner", podUID: "runner-pod"},
 		"stale-execution": {account: executionAccount, uid: "old-execution-uid", podName: "runner", podUID: "old-runner-pod"},
@@ -182,14 +193,14 @@ func newConfiguredHarness(
 			t.Fatal(err)
 		}
 	}
-	apiService, err := environments.New(testNamespace, object, runtimeconfig.Catalog{}, service, nil, environments.ManagementOptions{})
+	apiService, err := environments.New(testNamespace, object, runtimeconfig.Catalog{}, lifecycleManager, nil, environments.ManagementOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	connection := grpcmethods.Serve(t, methods, func(server *grpc.Server) {
 		environmentpb.RegisterEnvironmentServiceServer(server, apiService)
 	})
-	return lifecycleHarness{client: object, service: service, budget: budget, conn: connection}
+	return connection
 }
 
 func testScheme(t *testing.T) *runtime.Scheme {
@@ -255,8 +266,8 @@ func testIdentityObjects(t *testing.T, sandbox *sandboxapi.Sandbox, executionUID
 	return objects
 }
 
-func identityResumeRules(identity *policyapi.Identity, selectors []policyapi.EnvironmentSelector, expiresAt *metav1.Time) *reader.Index[environmentaccess.Rule] {
-	rules := environmentaccess.NewIndex()
+func identityResumeRules(identity *policyapi.Identity, selectors []policyapi.EnvironmentSelector, expiresAt *metav1.Time) *reader.Index[access.Rule] {
+	rules := access.NewIndex()
 	rules.PutIdentity(identity)
 	rules.PutPolicySet(&policyapi.PolicySet{
 		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: "resume-targets"},
@@ -362,7 +373,7 @@ func TestIdentityResumeHidesForeignTargetWithoutGrant(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	h := newIdentityHarness(t, objects, nil, environmentaccess.NewIndex(), func() error { return nil })
+	h := newIdentityHarness(t, objects, nil, access.NewIndex(), func() error { return nil })
 	_, err := environmentpb.NewEnvironmentServiceClient(h.conn).ResumeEnvironment(
 		delegatedContext(t), resumeRequest(testSandboxUID, 3),
 	)
@@ -443,7 +454,7 @@ func TestIdentityResumeFailsClosedWithoutPolicyReadiness(t *testing.T) {
 func TestDelegatedActorDoesNotAuthorizeIdentityResume(t *testing.T) {
 	sandbox := suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 2)
 	objects := testIdentityObjects(t, sandbox, executionUID)
-	h := newIdentityHarness(t, objects, []auth.Account{actorAccount}, environmentaccess.NewIndex(), func() error { return nil })
+	h := newIdentityHarness(t, objects, []auth.Account{actorAccount}, access.NewIndex(), func() error { return nil })
 	_, err := environmentpb.NewEnvironmentServiceClient(h.conn).ResumeEnvironment(
 		delegatedContext(t), resumeRequest(testSandboxUID, 2),
 	)
@@ -698,6 +709,47 @@ func TestExplicitResumeDoesNotReserveWakeBudget(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestNewManagerRequiresWakeBudget(t *testing.T) {
+	objects := testObjects(t, suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 4), executionUID)
+	if _, err := lifecycle.NewManager(lifecycle.Options{Namespace: testNamespace, Objects: objects}); err == nil {
+		t.Fatal("automatic-wake manager was constructed without a shared wake budget")
+	}
+}
+
+func TestEnvironmentServiceManagerResumesWithoutWakeBudget(t *testing.T) {
+	objects := testObjects(t, suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 4), executionUID)
+	manager, err := lifecycle.NewEnvironmentServiceManager(lifecycle.EnvironmentServiceOptions{
+		Namespace: testNamespace, Objects: objects,
+		WakeCallers:     []auth.Account{{Namespace: testNamespace, Name: "notifications"}},
+		OperatorCallers: []auth.Account{operatorAccount},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := &lifecycle.Target{Namespace: testNamespace, Name: testSandbox, Uid: testSandboxUID}
+	assessment, err := manager.AssessAutomaticWake(t.Context(), target, lifecycle.AccountWakeCaller{Account: &lifecycle.ServiceAccountIdentity{
+		Account: &identitypb.ServiceAccount{Namespace: testNamespace, Name: "notifications"}, Uid: notificationUID,
+	}})
+	if err != nil || assessment.GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_ELIGIBLE || assessment.GetReason() != environmentlifecyclepb.WakeReason_WAKE_REASON_ALLOWED_WAKE_BROKER {
+		t.Fatalf("budgetless manager automatic-wake assessment = %+v, %v", assessment, err)
+	}
+
+	connection := serveEnvironmentService(t, objects, manager, false)
+	response, err := environmentpb.NewEnvironmentServiceClient(connection).ResumeEnvironment(
+		directContext(t, "operator"), resumeRequest(testSandboxUID, 4),
+	)
+	if err != nil || response.GetOutcome() != environmentpb.ResumeOutcome_RESUME_OUTCOME_REQUESTED || response.GetWakeGeneration() != 5 {
+		t.Fatalf("budgetless manager guarded resume = %+v, %v", response, err)
+	}
+	var current sandboxapi.Sandbox
+	if err := objects.Get(t.Context(), client.ObjectKey{Namespace: testNamespace, Name: testSandbox}, &current); err != nil {
+		t.Fatal(err)
+	}
+	if !current.Spec.Running || current.Spec.WakeGeneration != 5 {
+		t.Fatalf("guarded resume wrote running=%t generation=%d, want true and 5", current.Spec.Running, current.Spec.WakeGeneration)
 	}
 }
 

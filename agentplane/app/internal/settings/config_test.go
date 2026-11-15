@@ -201,6 +201,61 @@ func TestAppSVIDSettingsRequireExactCallerIdentityAndPeer(t *testing.T) {
 	}
 }
 
+func TestEnvironmentServicePeerDefaultsToTheSessionDispatcher(t *testing.T) {
+	config := validTestConfig()
+	peer := config.EnvironmentServicePeer()
+	if peer.Target != config.SessionDispatcherTarget || peer.TokenFile != config.SessionDispatcherTokenFile ||
+		peer.RequestTimeoutSeconds != config.SessionDispatcherRequestTimeoutSecs || peer.TLS != config.SessionDispatcherTLS {
+		t.Fatalf("omitted EnvironmentService peer = %+v, want the Session Dispatcher settings", peer)
+	}
+}
+
+func TestLoadEnvironmentServicePeerUsesControllerTargetAndSVID(t *testing.T) {
+	writeConfig(t, validSettingsYAML+`environment_service:
+  target: sandbox-controller.agentplane.svc:8082
+  request_timeout_s: 12
+  tls:
+    ca_file: /run/agentplane/workload-trust/ca.pem
+    server_uri: spiffe://agentplane/sandbox-controller
+    cert_file: /run/agentplane/app/tls.crt
+    key_file: /run/agentplane/app/tls.key
+    client_uri: spiffe://agentplane/app
+`)
+	config, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer := config.EnvironmentServicePeer()
+	if peer.Target != "sandbox-controller.agentplane.svc:8082" || peer.RequestTimeoutSeconds != 12 ||
+		peer.TLS == nil || peer.TLS.ServerURI != peertls.SandboxControllerURI || peer.TLS.ClientURI != peertls.AppURI || peer.TokenFile != "" {
+		t.Fatalf("EnvironmentService peer = %+v", peer)
+	}
+	if config.SessionDispatcherTarget != "session-dispatcher:9090" || config.RunnerGatewayTarget != "runner-gateway:9090" {
+		t.Fatalf("EnvironmentService peer changed other targets: dispatcher=%q runtime=%q", config.SessionDispatcherTarget, config.RunnerGatewayTarget)
+	}
+}
+
+func TestEnvironmentServicePeerRejectsPartialOrWrongAuthentication(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		peer *EnvironmentServicePeer
+		want string
+	}{
+		{name: "missing SVID", peer: &EnvironmentServicePeer{Target: "controller:8082", RequestTimeoutSeconds: 10}, want: "environment_service caller authentication"},
+		{name: "wrong server URI", peer: &EnvironmentServicePeer{Target: "controller:8082", RequestTimeoutSeconds: 10, TLS: appSVIDTLS(peertls.SessionDispatcherURI)}, want: "environment_service_tls.server_uri"},
+		{name: "wrong caller SVID", peer: &EnvironmentServicePeer{Target: "controller:8082", RequestTimeoutSeconds: 10, TLS: &peertls.ClientTLS{CAFile: "/run/ca.pem", ServerURI: peertls.SandboxControllerURI, CertFile: "/run/app.crt", KeyFile: "/run/app.key", ClientURI: peertls.NotificationsURI}}, want: "environment_service caller authentication"},
+		{name: "partial SVID", peer: &EnvironmentServicePeer{Target: "controller:8082", RequestTimeoutSeconds: 10, TLS: &peertls.ClientTLS{CAFile: "/run/ca.pem", ServerURI: peertls.SandboxControllerURI, CertFile: "/run/app.crt"}}, want: "environment_service caller authentication"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			config := validTestConfig()
+			config.EnvironmentService = test.peer
+			if err := config.validate(); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("validate() error = %v, want substring %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestOperatorFacadesKeepOperatorBearerWhenAppSVIDIsConfigured(t *testing.T) {
 	config := validTestConfig()
 	config.ActionsTLS = appSVIDTLS(peertls.ActionsURI)

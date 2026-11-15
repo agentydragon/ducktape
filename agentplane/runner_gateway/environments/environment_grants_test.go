@@ -4,11 +4,11 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/environments/access"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environmentaccess"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
@@ -22,7 +22,7 @@ func TestIdentityResumeProjectionAndDelegatedAdmissionFollowCurrentGrant(t *test
 	sandbox.Spec.Identity = &sandboxapi.IdentityRef{Name: "test-agent"}
 	identity := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: discoveryNamespace, Name: "test-agent", UID: "test-agent-uid"}}
 	objects := readerWithObjects(t, sandbox, identity)
-	rules := environmentaccess.NewIndex()
+	rules := access.NewIndex()
 	rules.PutIdentity(identity)
 	var policyError error
 	manager, err := lifecycle.NewManager(lifecycle.Options{
