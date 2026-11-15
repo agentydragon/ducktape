@@ -18,7 +18,6 @@ from agentplane.net.peertls.config import (
     SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
     ClientTLS,
-    Security,
     ServiceSPIFFEID,
 )
 
@@ -88,24 +87,6 @@ class Settings(BaseModel):
         min_length=1,
         description="Stable Environments Service target or template used for each Sandbox Runtime proxy.",
     )
-    runtime_proxy_readers: list[ServiceSPIFFEID] = Field(
-        default_factory=list,
-        exclude_if=lambda value: not value,
-        description="Ignored retired Runtime diagnostic grants; the receiver lives in Environments.",
-    )
-    runtime_proxy_session_callers: list[ServiceSPIFFEID] = Field(
-        default_factory=list, exclude_if=lambda value: not value, description="Ignored retired Runtime Session grants."
-    )
-    runtime_proxy_controller_callers: list[ServiceSPIFFEID] = Field(
-        default_factory=list,
-        exclude_if=lambda value: not value,
-        description="Ignored retired Runtime lifecycle grants.",
-    )
-    executor_service_callers: list[ServiceSPIFFEID] = Field(
-        default_factory=list, exclude_if=lambda value: not value, description="Ignored retired Executor grants."
-    )
-    # CLEANUP(2026-11-15): drop after manifests omit it and configuration has rolled.
-    runner_security: Security | None = Field(default=None, description="Ignored retired direct Runtime transport.")
     dispatcher_service_delegation: ServiceDelegation | None = Field(default=None, exclude_if=lambda value: not value)
     dispatcher_service_callers: Set[ServiceSPIFFEID] = Field(
         default_factory=frozenset,
@@ -127,16 +108,7 @@ class Settings(BaseModel):
 
     @model_validator(mode="after")
     def validate_service_caller_scopes(self) -> Settings:
-        service_callers_present = any(
-            (
-                self.runtime_proxy_readers,
-                self.runtime_proxy_session_callers,
-                self.runtime_proxy_controller_callers,
-                self.executor_service_callers,
-                self.dispatcher_service_callers,
-                self.wake_service_callers,
-            )
-        )
+        service_callers_present = any((self.dispatcher_service_callers, self.wake_service_callers))
         service_delegation_present = self.dispatcher_service_delegation is not None
         spiffe_listener = any(method.mode == "spiffe" for method in self.rpc.auth)
         if (service_callers_present or service_delegation_present) and not spiffe_listener:

@@ -19,7 +19,6 @@ const requiredFile = `sandbox_namespace: agentplane
 policy_namespace: agentplane
 runner_token_file: /var/run/token
 runner_control_target_template: 'runner-gateway.{namespace}.svc:8080'
-runner_security: {mode: mtls, tls: {cert_file: /tmp/test-cert, key_file: /tmp/test-key, ca_file: /tmp/test-ca}}
 gateway_tls: {ca_file: /tmp/workload-ca, server_uri: spiffe://agentplane/session-dispatcher}
 rpc:
   listen_address: ':8080'
@@ -53,7 +52,6 @@ func TestPolicyNamespaceIsRequired(t *testing.T) {
 func TestServiceCallerListsKeepAuthenticationAndWakeSeparate(t *testing.T) {
 	path := configtest.WriteSettings(t, requiredFile+`dispatcher_service_callers: [spiffe://agentplane/app, spiffe://agentplane/notifications]
 wake_service_callers: [spiffe://agentplane/notifications]
-runtime_proxy_readers: [spiffe://agentplane/app]
 dispatcher_service_delegation:
   actors: [{spiffe_id: spiffe://agentplane/actions}]
   methods: [/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput]
@@ -64,7 +62,6 @@ dispatcher_service_delegation:
 	}
 	if !slices.Equal(c.DispatcherServiceCallers, []string{peertls.AppURI, peertls.NotificationsURI}) ||
 		!slices.Equal(c.WakeServiceCallers, []string{peertls.NotificationsURI}) ||
-		!slices.Equal(c.RuntimeProxyReaders, []string{peertls.AppURI}) ||
 		c.DispatcherServiceDelegation == nil ||
 		!slices.Equal(c.DispatcherServiceDelegation.Actors, []auth.ServiceDelegator{{SPIFFEID: peertls.ActionsURI}}) ||
 		!slices.Equal(c.DispatcherServiceDelegation.Methods, []string{"/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput"}) {
@@ -89,12 +86,8 @@ func TestSharedListenerRequiresSVIDTLS(t *testing.T) {
 func TestServiceCallerSettingsRequireSPIFFEListener(t *testing.T) {
 	withoutSPIFFE := strings.Replace(requiredFile, "    - {mode: spiffe, ca_file: /tmp/workload-ca}\n", "", 1)
 	for name, settings := range map[string]string{
-		"runtime proxy reader":            "runtime_proxy_readers: [\"spiffe://agentplane/actions\"]\n",
-		"runtime proxy session caller":    "runtime_proxy_session_callers: [\"spiffe://agentplane/sessions\"]\n",
-		"runtime proxy controller caller": "runtime_proxy_controller_callers: [\"spiffe://agentplane/sandbox-controller\"]\n",
-		"executor caller":                 "executor_service_callers: [\"spiffe://agentplane/actions\"]\n",
-		"dispatcher caller":               "dispatcher_service_callers: [\"spiffe://agentplane/actions\"]\n",
-		"wake caller":                     "wake_service_callers: [\"spiffe://agentplane/actions\"]\n",
+		"dispatcher caller": "dispatcher_service_callers: [\"spiffe://agentplane/actions\"]\n",
+		"wake caller":       "wake_service_callers: [\"spiffe://agentplane/actions\"]\n",
 		"Dispatcher delegation": `dispatcher_service_delegation:
   actors: [{spiffe_id: "spiffe://agentplane/actions"}]
   methods: [/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput]
@@ -219,18 +212,18 @@ users:
 
 func TestSettingsFileValuesIgnoreGenericEnvironmentOverrides(t *testing.T) {
 	settings := strings.Replace(requiredFile, "listen_address: ':8080'", "listen_address: 127.0.0.1:9000", 1)
-	path := configtest.WriteSettings(t, settings+"runtime_proxy_readers: [spiffe://agentplane/app]\n")
+	path := configtest.WriteSettings(t, settings+"dispatcher_service_callers: [spiffe://agentplane/app]\n")
 	c, err := configtest.Load(t, settingPrefix, loadConfig, required(
 		t,
 		settingPrefix+"CONFIG_FILE="+path,
 		settingPrefix+"RPC__LISTEN_ADDRESS=127.0.0.1:9999",
-		settingPrefix+"RUNTIME_PROXY_READERS=spiffe://agentplane/actions",
+		settingPrefix+"DISPATCHER_SERVICE_CALLERS=spiffe://agentplane/actions",
 	))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.RPC.ListenAddress != "127.0.0.1:9000" ||
-		!slices.Equal(c.RuntimeProxyReaders, []string{peertls.AppURI}) {
+		!slices.Equal(c.DispatcherServiceCallers, []string{peertls.AppURI}) {
 		t.Fatalf("settings file values changed under environment overrides: %+v", c)
 	}
 }
@@ -258,46 +251,18 @@ func TestSettingsAreRefusedWithoutEchoingRuntimeSecretValues(t *testing.T) {
 	}
 }
 
-func TestRetiredRuntimeCredentialsMayBeOmitted(t *testing.T) {
-	contents := strings.Replace(requiredFile,
-		"runner_security: {mode: mtls, tls: {cert_file: /tmp/test-cert, key_file: /tmp/test-key, ca_file: /tmp/test-ca}}\n", "", 1)
-	for _, grants := range []string{"", `runtime_proxy_readers: [spiffe://agentplane/app]
-runtime_proxy_session_callers: [spiffe://agentplane/sessions]
-runtime_proxy_controller_callers: [spiffe://agentplane/sandbox-controller]
-executor_service_callers: [spiffe://agentplane/central-sampler]
-`} {
-		path := configtest.WriteSettings(t, contents+grants)
-		c, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if c.RunnerSecurity != nil {
-			t.Fatal("Dispatcher required a direct Runtime credential")
-		}
-	}
-}
-
-func TestRetiredRuntimeSecurityStillDecodesConsistently(t *testing.T) {
-	for _, test := range []struct {
-		name, security string
-		valid          bool
-	}{
-		{name: "insecure", security: "{mode: insecure}", valid: true},
-		{name: "missing mode", security: "{}"},
-		{name: "unknown mode", security: "{mode: automatic}"},
-		{name: "missing mtls credentials", security: "{mode: mtls}"},
-		{name: "insecure with credentials", security: "{mode: insecure, tls: {cert_file: /a, key_file: /b, ca_file: /c}}"},
+func TestRetiredRuntimeSettingsAreRejected(t *testing.T) {
+	for _, setting := range []string{
+		"runner_security: {mode: insecure}\n",
+		"runtime_proxy_readers: [spiffe://agentplane/app]\n",
+		"runtime_proxy_session_callers: [spiffe://agentplane/sessions]\n",
+		"runtime_proxy_controller_callers: [spiffe://agentplane/sandbox-controller]\n",
+		"executor_service_callers: [spiffe://agentplane/central-sampler]\n",
 	} {
-		t.Run(test.name, func(t *testing.T) {
-			contents := strings.Replace(
-				requiredFile,
-				"runner_security: {mode: mtls, tls: {cert_file: /tmp/test-cert, key_file: /tmp/test-key, ca_file: /tmp/test-ca}}",
-				"runner_security: "+test.security,
-				1,
-			)
-			_, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+configtest.WriteSettings(t, contents)))
-			if (err == nil) != test.valid {
-				t.Fatalf("loadConfig error = %v, valid = %t", err, test.valid)
+		t.Run(strings.SplitN(setting, ":", 2)[0], func(t *testing.T) {
+			path := configtest.WriteSettings(t, requiredFile+setting)
+			if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path)); err == nil {
+				t.Fatal("accepted a retired receiver setting")
 			}
 		})
 	}

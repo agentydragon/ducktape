@@ -24,8 +24,7 @@ The required `rpc` block configures TLS and SPIFFE trust. `gateway_tls` and
 `runner_control_target_template` configure the Sessions client's Environments connection; their
 historical setting names remain. Retired `runner_security`, `runtime_proxy_readers`,
 `runtime_proxy_session_callers`, `runtime_proxy_controller_callers` and `executor_service_callers`
-remain decodable without receiver authority until their manifest omission has rolled out.
-`runner_security` is optional and no credential file it names is opened by this process. Obsolete
+are rejected as unknown settings after their manifest omission rolled out. Obsolete
 Runtime client certificates and mounts are no longer rendered after the receiver-free image
 was pinned and rolled; the Sessions client and Dispatcher listener certificates remain. The Gateway has no direct Runtime
 network permission, old Runtime peer admission or proxy grants. Its Kubernetes permissions cover

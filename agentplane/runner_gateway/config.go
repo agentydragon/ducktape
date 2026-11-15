@@ -32,15 +32,8 @@ const (
 //
 // The database URL is a Secret environment value. Kubernetes sets the Pod hostname to its name unless an
 // explicit hostname is configured.
-// CLEANUP(2026-11-15, Runtime proxy retirement): remove ignored receiver settings after
-// manifests omit them and that configuration has rolled. The receiver lives only in Environments.
 type config struct {
-	RuntimeProxyReaders           []string          `mapstructure:"runtime_proxy_readers"`
-	RuntimeProxySessionCallers    []string          `mapstructure:"runtime_proxy_session_callers"`
-	RuntimeProxyControllerCallers []string          `mapstructure:"runtime_proxy_controller_callers"`
-	ExecutorServiceCallers        []string          `mapstructure:"executor_service_callers"`
-	RunnerSecurity                *peertls.Security `mapstructure:"runner_security"`
-	Namespace                     string            `mapstructure:"sandbox_namespace"`
+	Namespace string `mapstructure:"sandbox_namespace"`
 	// PolicyNamespace holds the Identities a workload SVID may name.
 	PolicyNamespace       string `mapstructure:"policy_namespace"`
 	DispatcherDatabaseURL string `mapstructure:"-"`
@@ -127,12 +120,8 @@ func loadConfig() (config, error) {
 
 func (c *config) validate() error {
 	serviceCallers := map[string][]string{
-		"dispatcher_service_callers":       c.DispatcherServiceCallers,
-		"runtime_proxy_readers":            c.RuntimeProxyReaders,
-		"runtime_proxy_session_callers":    c.RuntimeProxySessionCallers,
-		"runtime_proxy_controller_callers": c.RuntimeProxyControllerCallers,
-		"executor_service_callers":         c.ExecutorServiceCallers,
-		"wake_service_callers":             c.WakeServiceCallers,
+		"dispatcher_service_callers": c.DispatcherServiceCallers,
+		"wake_service_callers":       c.WakeServiceCallers,
 	}
 	for name, callers := range serviceCallers {
 		if err := auth.ValidateServiceCallers(callers); err != nil {
@@ -179,11 +168,6 @@ func (c *config) validate() error {
 	databaseURL, err := url.Parse(c.DispatcherDatabaseURL)
 	if err != nil || (databaseURL.Scheme != "postgres" && databaseURL.Scheme != "postgresql") {
 		return errors.New("dispatcher_database_url must be a PostgreSQL URL")
-	}
-	if c.RunnerSecurity != nil {
-		if err := c.RunnerSecurity.Validate(); err != nil {
-			return fmt.Errorf("runner_security: %w", err)
-		}
 	}
 	if err := c.RPC.Validate(); err != nil {
 		return fmt.Errorf("rpc: %w", err)
