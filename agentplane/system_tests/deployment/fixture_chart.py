@@ -64,11 +64,13 @@ from agentplane.central_sampler.settings import (
 )
 from agentplane.env.config import CodexReadiness
 from agentplane.env.runtime.harness import Harness
+from agentplane.identity.operator.settings import OperatorOidcSettings
 from agentplane.net.peertls.config import LLM_INGRESS_URI, TLS
 from agentplane.notification_service.settings import NoticeDebounceSettings
 
 # gazelle:include_dep @pypi//protobuf
 from agentplane.proto import session_pb2
+from agentplane.sandboxes.runtimeconfig.model_catalog import Catalog
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests.deployment import dex, fixture_database, launch_preset, runtime_grant, send_grant, svid_box
 from agentplane.system_tests.deployment.local_models import LOCAL_MODEL_MODELS
@@ -134,7 +136,7 @@ from cluster.cdk8s.providers.cert_manager.bundle import Bundle
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
 from cluster.cdk8s.providers.cert_manager.cluster_issuer import ClusterIssuer
 from cluster.cdk8s.service_ref import Pods, ServiceRef
-from model_catalog.catalog import GPT6_LUNA_RESPONSES, HAIKU_API
+from model_catalog.catalog import GPT6_LUNA_RESPONSES, HAIKU_API, Route
 
 RUNNER_GATEWAY = "runner-gateway"
 SESSION_DISPATCHER = "session-dispatcher"
@@ -191,12 +193,12 @@ _VM_GUEST_ROOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root
 _VM_GUEST_ROOT_SERIAL = "guest-root"
 # What the app offers when LLM ingress forwards to the scenario's scripted model. Scenarios take each harness's
 # first model; a ChatGPT route puts Codex in code mode.
-_LOCAL_MODEL_MODELS = HarnessRoutes(
+LOCAL_MODEL_ROUTES = HarnessRoutes(
     claude=(LOCAL_MODEL_MODELS[session_pb2.HARNESS_CLAUDE],), codex=(LOCAL_MODEL_MODELS[session_pb2.HARNESS_CODEX],)
 )
 # What the app offers when LLM ingress forwards to the public LiteLLM: models the BuildBuddy live-test key's
 # lane admits (`cheap_experiments_models`), neither waiting on the shared GPU.
-_PUBLIC_LITELLM_MODELS = HarnessRoutes(claude=(HAIKU_API,), codex=(GPT6_LUNA_RESPONSES,))
+PUBLIC_LITELLM_ROUTES = HarnessRoutes(claude=(HAIKU_API,), codex=(GPT6_LUNA_RESPONSES,))
 _ONE_REPLICA = ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None)
 _EGRESS_CA = "systest-egress-ca"
 _LITELLM_KEY_SECRET = "litellm-key-cheap-experiments"
@@ -237,118 +239,170 @@ def linkage_client(app_origin: str) -> dex.StaticClient:
     return replace(_MCP_LINKAGE, redirect_uri=f"{app_origin}/mcp-linkage/callback")
 
 
-def environment(
-    *,
-    runtime: SandboxRuntime,
-    platform_callers: dict[ServiceAccountRef, Pods],
-    models: Models,
-    operator_token_key: str | None,
-    app_enabled: bool = True,
-    app_origin: str = APP_ORIGIN,
-    central_sampler: bool = False,
-) -> Environment:
-    """Build the common fixture settings; MCP renderers add their servers and Dex resources separately.
-    With `operator_token_key`, the app's OIDC issuer is `OPERATOR_TOKENS`'s, pinned to that key."""
-    app_login = login_client(app_origin)
-    app_operator_oidc = dex.operator_oidc(issuer=DEX_ISSUER, app_client_id=app_login.id)
-    operator_oidc = app_operator_oidc if app_enabled else None
-    routes = _PUBLIC_LITELLM_MODELS if isinstance(models, PublicLiteLLM) else _LOCAL_MODEL_MODELS
-    central_sampler_props = None
-    if central_sampler:
-        central_sampler_props = CentralSamplerProps(
-            actions=ActionsConfig(
-                target=f"{ACTIONS_SERVICE.fqdn}:{ACTIONS_SERVICE.port.number}",
-                tls=TLS(
-                    cert_file="/run/agentplane/workload-tls/tls.crt",
-                    key_file="/run/agentplane/workload-tls/tls.key",
-                    ca_file=workload_tls.TRUST_BUNDLE_FILE,
-                ),
-            ),
-            replicas=_ONE_REPLICA,
-            models={
-                GPT6_LUNA_RESPONSES.id: ModelConfig(
-                    connection="llm-ingress",
-                    provider_model=GPT6_LUNA_RESPONSES.id,
-                    reasoning_efforts={"", *GPT6_LUNA_RESPONSES.reasoning_efforts},
-                    api="responses",
-                    responses=ResponsesConfig(dialect="lite"),
-                    exec_encoding="freeform",
-                )
-            },
-            connections={
-                "llm-ingress": ConnectionConfig(
-                    base_url=(
-                        f"https://{llm_ingress.service(NAMESPACE).fqdn}:{llm_ingress.service(NAMESPACE).port.number}"
-                    ),
-                    auth=AuthConfig(type="bearer", credential_file=Path("/var/run/secrets/central-sampler/llm")),
-                    tls=workload_tls.client_tls(LLM_INGRESS_URI),
-                )
-            },
-            max_live_sessions=2,
-            # Gateway reconnect has a bounded 120s window; a live turn must outlast it.
-            rpc_timeout_seconds=10,
-            executor_initialize_timeout_seconds=30,
-            lease_seconds=60,
-        )
-    if central_sampler:
-        routes = replace(routes, central_sampler=(GPT6_LUNA_RESPONSES,))
-    catalog = app_settings.model_catalog(routes, central_sampler_enabled=central_sampler)
-    if central_sampler:
+def operator_oidc() -> OperatorOidcSettings:
+    return dex.operator_oidc(issuer=DEX_ISSUER, app_client_id=APP_CLIENT_ID)
+
+
+def runtime_catalog(routes: HarnessRoutes) -> Catalog:
+    """Publish the recipe's actual route selections and fixture Pod template."""
+    catalog = app_settings.runtime_catalog(
+        routes, templates=(POD_TEMPLATE,), central_sampler_enabled=bool(routes.central_sampler)
+    )
+    if routes.central_sampler:
         # This fixture exercises the pinned Lite host with its official model.
-        assert catalog.harnesses[Harness.CENTRAL_SAMPLER] == [GPT6_LUNA_RESPONSES.id]
+        assert catalog.models.harnesses[Harness.CENTRAL_SAMPLER] == [GPT6_LUNA_RESPONSES.id]
+    return catalog
+
+
+def app_props(
+    *, routes: HarnessRoutes, operator_oidc: OperatorOidcSettings, operator_token_key: str | None, app_origin: str
+) -> AppProps:
+    catalog = app_settings.model_catalog(routes, central_sampler_enabled=bool(routes.central_sampler))
     thread_presets = {launch_preset.THREAD_PRESET: launch_preset.thread_preset(model=GPT6_LUNA_RESPONSES.id)}
     sandbox_presets = {
         launch_preset.SANDBOX_PRESET: launch_preset.sandbox_preset(
             template=POD_TEMPLATE, policy_sets=[egress.PACKAGES_POLICY]
         )
     }
-    app_props = None
-    if app_enabled:
-        app_props = AppProps(
-            origin=app_origin,
-            oidc_issuer=DEX_ISSUER,
-            reach_incluster_authentik=False,
-            config=Settings(
-                models=catalog,
-                connection_service_url=AnyHttpUrl(f"https://{MCP_EDGE_SERVICE.fqdn}:{MCP_EDGE_SERVICE.port.number}"),
-                thread_presets=thread_presets,
-                sandbox_presets=sandbox_presets,
-                egress_admin_url=AnyHttpUrl(egress.admin(NAMESPACE).url),
-                sandbox_namespace=NAMESPACE,
-                runner_gateway_target=runner_gateway.target(NAMESPACE),
-                session_dispatcher_target=(
-                    f"{session_dispatcher.service(NAMESPACE).fqdn}:{session_dispatcher.service(NAMESPACE).port.number}"
+    return AppProps(
+        origin=app_origin,
+        oidc_issuer=DEX_ISSUER,
+        reach_incluster_authentik=False,
+        config=Settings(
+            models=catalog,
+            connection_service_url=AnyHttpUrl(f"https://{MCP_EDGE_SERVICE.fqdn}:{MCP_EDGE_SERVICE.port.number}"),
+            thread_presets=thread_presets,
+            sandbox_presets=sandbox_presets,
+            egress_admin_url=AnyHttpUrl(egress.admin(NAMESPACE).url),
+            sandbox_namespace=NAMESPACE,
+            runner_gateway_target=runner_gateway.target(NAMESPACE),
+            session_dispatcher_target=(
+                f"{session_dispatcher.service(NAMESPACE).fqdn}:{session_dispatcher.service(NAMESPACE).port.number}"
+            ),
+            runner_gateway_control_target=runner_gateway.control_target(NAMESPACE),
+            history_service_target=(
+                f"{history_service.service(NAMESPACE).fqdn}:{history_service.service(NAMESPACE).port.number}"
+            ),
+            notifications_url=AnyHttpUrl(notifications.service(NAMESPACE).url),
+            listen_address="0.0.0.0:8080",
+            log_levels={},
+            oidc=OIDCSettings(issuer=DEX_ISSUER, public_base_url=app_origin)
+            if operator_token_key is None
+            else OIDCSettings(
+                issuer=OPERATOR_TOKENS.issuer,
+                public_base_url=app_origin,
+                static_ed25519_keys=frozenset({operator_token_key}),
+            ),
+            action_federation=dex.action_federation(operator_oidc),
+            frontend_config=FrontendConfig(
+                trace_search=TraceSearchSettings(
+                    grafana_base_url=AnyHttpUrl("https://grafana.example.test/"),
+                    tempo_datasource_uid="fixture-tempo",
+                    deployment_environment="system-test",
                 ),
-                runner_gateway_control_target=runner_gateway.control_target(NAMESPACE),
-                history_service_target=(
-                    f"{history_service.service(NAMESPACE).fqdn}:{history_service.service(NAMESPACE).port.number}"
-                ),
-                notifications_url=AnyHttpUrl(notifications.service(NAMESPACE).url),
-                listen_address="0.0.0.0:8080",
-                log_levels={},
-                oidc=OIDCSettings(issuer=DEX_ISSUER, public_base_url=app_origin)
-                if operator_token_key is None
-                else OIDCSettings(
-                    issuer=OPERATOR_TOKENS.issuer,
-                    public_base_url=app_origin,
-                    static_ed25519_keys=frozenset({operator_token_key}),
-                ),
-                action_federation=dex.action_federation(app_operator_oidc),
-                frontend_config=FrontendConfig(
-                    trace_search=TraceSearchSettings(
-                        grafana_base_url=AnyHttpUrl("https://grafana.example.test/"),
-                        tempo_datasource_uid="fixture-tempo",
-                        deployment_environment="system-test",
-                    ),
-                    langfuse_search=LangfuseSearchSettings(
-                        base_url=AnyHttpUrl("https://langfuse.example.test/"),
-                        project_id="fixture-project",
-                        sandbox_namespace_metadata_key="fixture_namespace",
-                        sandbox_service_account_metadata_key="fixture_service_account",
-                    ),
+                langfuse_search=LangfuseSearchSettings(
+                    base_url=AnyHttpUrl("https://langfuse.example.test/"),
+                    project_id="fixture-project",
+                    sandbox_namespace_metadata_key="fixture_namespace",
+                    sandbox_service_account_metadata_key="fixture_service_account",
                 ),
             ),
+        ),
+    )
+
+
+def central_sampler_props(*, model: Route) -> CentralSamplerProps:
+    return CentralSamplerProps(
+        actions=ActionsConfig(
+            target=f"{ACTIONS_SERVICE.fqdn}:{ACTIONS_SERVICE.port.number}",
+            tls=TLS(
+                cert_file="/run/agentplane/workload-tls/tls.crt",
+                key_file="/run/agentplane/workload-tls/tls.key",
+                ca_file=workload_tls.TRUST_BUNDLE_FILE,
+            ),
+        ),
+        replicas=_ONE_REPLICA,
+        models={
+            model.id: ModelConfig(
+                connection="llm-ingress",
+                provider_model=model.id,
+                reasoning_efforts={"", *model.reasoning_efforts},
+                api="responses",
+                responses=ResponsesConfig(dialect="lite"),
+                exec_encoding="freeform",
+            )
+        },
+        connections={
+            "llm-ingress": ConnectionConfig(
+                base_url=f"https://{llm_ingress.service(NAMESPACE).fqdn}:{llm_ingress.service(NAMESPACE).port.number}",
+                auth=AuthConfig(type="bearer", credential_file=Path("/var/run/secrets/central-sampler/llm")),
+                tls=workload_tls.client_tls(LLM_INGRESS_URI),
+            )
+        },
+        max_live_sessions=2,
+        # Gateway reconnect has a bounded 120s window; a live turn must outlast it.
+        rpc_timeout_seconds=10,
+        executor_initialize_timeout_seconds=30,
+        lease_seconds=60,
+    )
+
+
+def actions_props(
+    *,
+    operator_oidc: OperatorOidcSettings | None,
+    oauth_secret_items: Sequence[str],
+    central_sampler_session_delegation: bool,
+) -> ActionsProps:
+    thread_presets = {launch_preset.THREAD_PRESET: launch_preset.thread_preset(model=GPT6_LUNA_RESPONSES.id)}
+    sandbox_presets = {
+        launch_preset.SANDBOX_PRESET: launch_preset.sandbox_preset(
+            template=POD_TEMPLATE, policy_sets=[egress.PACKAGES_POLICY]
         )
+    }
+    return ActionsProps(
+        central_sampler_session_delegation=central_sampler_session_delegation,
+        operator_oidc=operator_oidc,
+        caller_service_account_namespaces=frozenset({NAMESPACE}),
+        mcp_servers={},
+        action_groups={
+            "sandbox": ActionGroup(
+                title="Sandbox",
+                description="Boxes that run as the calling ServiceAccount, and bounded commands in them.",
+                executor=PodExecutorBinding(
+                    kind="pod",
+                    description="Created and exec'd by this service, as the caller, in its own namespace.",
+                    namespace=NAMESPACE,
+                    templates={
+                        **command_sandbox.TEMPLATES,
+                        svid_box.TEMPLATE: "The command box on fixture images, with the agentplane CLI.",
+                    },
+                ),
+            )
+        },
+        oauth_secret_items=oauth_secret_items,
+        orchestration_v1=OrchestrationProps(
+            presets=app_settings.orchestration_presets(sandbox_presets=sandbox_presets, thread_presets=thread_presets)
+        ),
+    )
+
+
+def mcp_edge_props(*, operator_oidc: OperatorOidcSettings, oauth_secret_name: str | None) -> McpEdgeProps:
+    return McpEdgeProps(
+        replicas=_ONE_REPLICA, operator_oidc=operator_oidc, oauth_secret_name=oauth_secret_name, hostname=None
+    )
+
+
+def environment(
+    *,
+    runtime: SandboxRuntime,
+    platform_callers: dict[ServiceAccountRef, Pods],
+    routes: HarnessRoutes,
+    app: AppProps | None,
+    central_sampler: CentralSamplerProps | None,
+    actions: ActionsProps,
+    mcp_edge: McpEdgeProps,
+) -> Environment:
+    """Build one frozen fixture Environment from explicit component props and route selections."""
     return Environment(
         namespace=NAMESPACE,
         description="Agentplane k3s fixture",
@@ -356,12 +410,10 @@ def environment(
         # These scenarios check delivery and acknowledgement; worker integration tests cover
         # debounce deadlines. Keep batching enabled without a minute-long wait per notice.
         notifications_debounce=NoticeDebounceSettings(quiet_seconds=1, max_wait_seconds=2),
-        runtime_catalog=app_settings.runtime_catalog(
-            routes, templates=(POD_TEMPLATE,), central_sampler_enabled=central_sampler
-        ),
+        runtime_catalog=runtime_catalog(routes),
         settle_deltas=True,
         compact_deltas=True,
-        central_sampler=central_sampler_props,
+        central_sampler=central_sampler,
         llm_ingress=LlmIngressProps(
             litellm_key_secret_name=_LITELLM_KEY_SECRET, models=model_configs(routes), codex_routes=routes.codex
         ),
@@ -371,37 +423,9 @@ def environment(
             replicas=_ONE_REPLICA,
             traffic_distribution=None,
         ),
-        app=app_props,
-        actions=ActionsProps(
-            central_sampler_session_delegation=central_sampler,
-            operator_oidc=operator_oidc,
-            caller_service_account_namespaces=frozenset({NAMESPACE}),
-            mcp_servers={},
-            action_groups={
-                "sandbox": ActionGroup(
-                    title="Sandbox",
-                    description="Boxes that run as the calling ServiceAccount, and bounded commands in them.",
-                    executor=PodExecutorBinding(
-                        kind="pod",
-                        description="Created and exec'd by this service, as the caller, in its own namespace.",
-                        namespace=NAMESPACE,
-                        templates={
-                            **command_sandbox.TEMPLATES,
-                            svid_box.TEMPLATE: "The command box on fixture images, with the agentplane CLI.",
-                        },
-                    ),
-                )
-            },
-            oauth_secret_items=("client-secret",) if app_enabled else (),
-            orchestration_v1=OrchestrationProps(
-                presets=app_settings.orchestration_presets(
-                    sandbox_presets=sandbox_presets, thread_presets=thread_presets
-                )
-            ),
-        ),
-        mcp_edge=McpEdgeProps(
-            replicas=_ONE_REPLICA, operator_oidc=app_operator_oidc, oauth_secret_name=None, hostname=None
-        ),
+        app=app,
+        actions=actions,
+        mcp_edge=mcp_edge,
         vm_sandboxes=runtime is SandboxRuntime.KUBEVIRT,
         firecracker_sandboxes=runtime is SandboxRuntime.FIRECRACKER,
         vm_resources=vm_configuration.RESOURCES if runtime is not SandboxRuntime.POD else None,

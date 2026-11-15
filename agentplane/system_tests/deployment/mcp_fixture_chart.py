@@ -17,7 +17,7 @@ from agentplane.system_tests.deployment import dex, fixture_chart, mcp_fixture_s
 from agentplane.system_tests.deployment.rendered_fixture import DexPasswordGrant, McpInputs
 from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from cluster.cdk8s.agentplane import actions, mcp_edge
-from cluster.cdk8s.agentplane.environment import Environment, SessionDelegationProps
+from cluster.cdk8s.agentplane.environment import ActionsProps, SessionDelegationProps
 from cluster.cdk8s.providers.agentplane.identity import Identity
 from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
 from cluster.cdk8s.providers.agentplane.policy_set import AutoApproveIf, PolicySet
@@ -26,7 +26,7 @@ DEX_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-dex:unset"
 MCP_EVERYTHING_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-mcp-everything:unset"
 OPERATOR_SECRET = "test-operator-login"
 _DEX_TLS_SECRET = "test-dex-tls"
-_MCP_EDGE_OAUTH_SECRET = "agentplane-mcp-edge-oauth"
+MCP_EDGE_OAUTH_SECRET = "agentplane-mcp-edge-oauth"
 _TRUST_BUNDLE = "test-fixture-ca"
 _TRUST_BUNDLE_KEY = "ca-certificates.crt"
 _TRUST_BUNDLE_DIR = "/etc/test-fixture-ca"
@@ -48,11 +48,11 @@ OPERATOR_TOKEN_GRANT = DexPasswordGrant(
 )
 
 
-def configure_environment(env: Environment, mcp: McpInputs) -> Environment:
-    """Configure the concrete MCP fixture servers and delegated action groups."""
+def mcp_actions_props(actions: ActionsProps, mcp: McpInputs) -> ActionsProps:
+    """Return the complete Actions contract for the MCP fixture."""
     mcp_linkage = fixture_chart.linkage_client(mcp.app_origin)
-    actions_config = replace(
-        env.actions,
+    return replace(
+        actions,
         connection_delegation_actor=ServiceAccountRef(namespace=NAMESPACE, name=mcp_edge.NAME),
         mcp_servers={
             server_id: mcp_fixture_servers.oauth_fixture_server(
@@ -65,7 +65,7 @@ def configure_environment(env: Environment, mcp: McpInputs) -> Environment:
             **{
                 server_id: mcp_fixture_servers.oauth_fixture_group(server_id) for server_id in mcp_servers.OAUTH_SERVERS
             },
-            "sandbox": env.actions.action_groups["sandbox"],
+            "sandbox": actions.action_groups["sandbox"],
         },
         oauth_secret_items=("client-secret",),
         session_delegation=SessionDelegationProps(
@@ -77,8 +77,6 @@ def configure_environment(env: Environment, mcp: McpInputs) -> Environment:
             }
         ),
     )
-    mcp_edge_config = replace(env.mcp_edge, oauth_secret_name=_MCP_EDGE_OAUTH_SECRET)
-    return replace(env, actions=actions_config, mcp_edge=mcp_edge_config)
 
 
 def add_mcp_fixtures(
@@ -95,7 +93,7 @@ def add_mcp_fixtures(
     edge_oauth = _mcp_edge_oauth(mcp.mcp_edge_origin, mcp.app_origin, mcp_edge_login.id)
     fixture_chart.add_secret(
         chart,
-        _MCP_EDGE_OAUTH_SECRET,
+        MCP_EDGE_OAUTH_SECRET,
         {"oauth": edge_oauth.model_dump_json(), "client-secret": "test-k3s-mcp-edge-client-secret"},
     )
     caller = Identity(
@@ -175,7 +173,7 @@ def _add_mcp_fixtures(
         image=DEX_IMAGE,
         config_secret=OPERATOR_SECRET,
         tls_secret=_DEX_TLS_SECRET,
-        mcp_edge_login_secret_name=_MCP_EDGE_OAUTH_SECRET,
+        mcp_edge_login_secret_name=MCP_EDGE_OAUTH_SECRET,
     )
     mcp_fixture_servers.add_mcp_everything(chart, image=MCP_EVERYTHING_IMAGE)
     mcp_fixture_servers.add_oauth_fixture(
