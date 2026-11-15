@@ -6,9 +6,8 @@ It fails at the first Deployment that does not, with the Pod states and logs of 
 
 The test process reaches the app (and Dex) by their in-cluster Service names, which it resolves
 through `/etc/hosts`: OIDC redirects name them. Dex's
-certificate comes from a CA made per stack, which `McpFixtureAccess.ca_bundle` adds to the system roots.
-In MCP fixtures the app and standalone MCP edge use loopback origins, served by port-forwards, so
-their plain HTTP URLs satisfy the OAuth endpoint contract.
+certificate and loopback origins are prepared by `mcp_access.py` before runtime fixture filling. After
+Deployments are Available, that module owns the app and MCP edge port-forwards and the Dex operator login.
 """
 
 import contextlib
@@ -17,8 +16,6 @@ import json
 import logging
 import os
 import shutil
-import socket
-import sys
 import tempfile
 import time
 from collections.abc import Callable, Iterator
@@ -27,13 +24,12 @@ from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
 
 import yaml
 from python.runfiles import Runfiles
 
-from agentplane.system_tests.deployment import certificates, process_traces, rendered_fixture
-from agentplane.system_tests.deployment.operator_tokens import OperatorTokens, dex_id_token
+from agentplane.system_tests.deployment import certificates, mcp_access, process_traces, rendered_fixture
+from agentplane.system_tests.deployment.operator_tokens import OperatorTokens
 from agentplane.system_tests.deployment.virtualization import (
     GuestLifecycle,
     RetainedInfrastructure,
@@ -41,12 +37,10 @@ from agentplane.system_tests.deployment.virtualization import (
     WorkspaceStorage,
 )
 from agentplane.system_tests.driver.cluster import Cluster
-from agentplane.system_tests.driver.port_forward import PortForward
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.k3s import baseline, pki_infrastructure
 from agentplane.system_tests.k3s.baseline import K3s, run
 from agentplane.system_tests.k3s.namespaces import CREDENTIALS_NAMESPACE
-from agentplane.testing import tls
 from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -83,16 +77,6 @@ def _openssl_ca(work: Path) -> tuple[str, str]:
 
 
 @dataclass(frozen=True)
-class McpFixtureAccess:
-    # The system roots and the CA of Dex's certificate.
-    ca_bundle: Path
-    # The Secret with the operator's Dex login.
-    operator_secret: str
-    # The standalone edge's MCP endpoint, at the origin its OAuth server names itself by.
-    mcp_edge_url: str
-
-
-@dataclass(frozen=True)
 class StackInputs:
     fixture: rendered_fixture.RenderedFixture
     binary: Path
@@ -109,43 +93,7 @@ class Stack:
     base_url: str | None
     # The test operator's ID token, which the app accepts as a bearer.
     token: str | None
-    mcp_fixtures: McpFixtureAccess | None
-
-
-def _mcp_inputs(work: Path, dex_host: str) -> rendered_fixture.McpInputs:
-    ca = tls.make_ca("test-k3s-fixture-ca")
-    cert, key = tls.issue_leaf(ca, dex_host, work)
-    # Free ports now; port-forwards listen once the app and MCP edge are Available.
-    with socket.socket() as probe, socket.socket() as app_probe:
-        probe.bind(("127.0.0.1", 0))
-        app_probe.bind(("127.0.0.1", 0))
-        port = probe.getsockname()[1]
-        app_port = app_probe.getsockname()[1]
-    return rendered_fixture.McpInputs(
-        dex_ca_cert=ca.cert_pem.decode(),
-        dex_cert=cert.read_text(),
-        dex_key=key.read_text(),
-        mcp_edge_origin=f"http://127.0.0.1:{port}",
-        app_origin=f"http://127.0.0.1:{app_port}",
-    )
-
-
-@contextlib.contextmanager
-def _port_forward(k3s: K3s, namespace: str, service: str, origin: str, port: int) -> Iterator[None]:
-    """Forward the loopback `origin` to `service`'s `port` from when kubectl says it listens."""
-    local = urlsplit(origin)
-    if local.hostname is None or local.port is None:
-        raise ValueError(f"port-forward origin needs a hostname and port: {origin!r}")
-    with PortForward(
-        (str(k3s.binary), "kubectl", "--kubeconfig", str(k3s.kubeconfig), "port-forward", "-n", namespace),
-        resource=f"service/{service}",
-        local_address=local.hostname,
-        local_port=local.port,
-        remote_port=port,
-        readiness_timeout_s=30,
-        output=sys.stdout.write,
-    ):
-        yield
+    mcp_fixtures: mcp_access.Access | None
 
 
 @tracer.start_as_current_span("system_test.network.resolve")
@@ -487,7 +435,7 @@ def running_stack(
             ca_cert, ca_key = _openssl_ca(work)
             cluster_ca = Path(k3s.data_dir / "server/tls/server-ca.crt").read_text()
             system_roots = Path("/etc/ssl/certs/ca-certificates.crt").read_text()
-            mcp = _mcp_inputs(work, fixture.mcp_fixtures.dex_host) if fixture.mcp_fixtures is not None else None
+            mcp = mcp_access.prepare_inputs(work, fixture.mcp_fixtures) if fixture.mcp_fixtures is not None else None
             operator_tokens = OperatorTokens(fixture.operator_tokens) if fixture.operator_tokens is not None else None
             with tracer.start_as_current_span("system_test.fixture.configure"):
                 fixture = rendered_fixture.fill(
@@ -631,32 +579,12 @@ def running_stack(
             access = None
             token = None
             if mcp is not None and fixture.mcp_fixtures is not None:
-                ca_bundle = work / "ca-certificates.crt"
-                ca_bundle.write_text(system_roots + mcp.dex_ca_cert)
-                cleanup.enter_context(
-                    _port_forward(
-                        k3s,
-                        fixture.namespace,
-                        fixture.mcp_fixtures.mcp_edge_service,
-                        mcp.mcp_edge_origin,
-                        fixture.mcp_fixtures.mcp_edge_port,
+                access = cleanup.enter_context(
+                    mcp_access.open_access(
+                        k3s, fixture.namespace, fixture.mcp_fixtures, mcp, work=work, system_roots=system_roots
                     )
                 )
-                cleanup.enter_context(
-                    _port_forward(
-                        k3s,
-                        fixture.namespace,
-                        fixture.mcp_fixtures.app_service,
-                        mcp.app_origin,
-                        fixture.mcp_fixtures.app_port,
-                    )
-                )
-                access = McpFixtureAccess(
-                    ca_bundle=ca_bundle,
-                    operator_secret=fixture.mcp_fixtures.operator_secret,
-                    mcp_edge_url=f"{mcp.mcp_edge_origin}/mcp",
-                )
-                token = dex_id_token(fixture.mcp_fixtures.operator_token_grant, ca_bundle=ca_bundle)
+                token = access.operator_token
             if operator_tokens is not None:
                 token = operator_tokens.mint(lifetime=OPERATOR_TOKEN_LIFETIME)
             if fixture.app_origin is None and token is not None:

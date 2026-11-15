@@ -211,17 +211,16 @@ py_library(
     visibility = ["//agentplane/system_tests:__subpackages__"],
     deps = [
         ":certificates",
+        ":mcp_access",
         ":operator_tokens",
         ":process_traces",
         ":rendered_fixture",
         ":virtualization",
         "//agentplane/system_tests/driver:cluster",
-        "//agentplane/system_tests/driver:port_forward",
         "//agentplane/system_tests/driver:tracing",
         "//agentplane/system_tests/k3s:baseline",
         "//agentplane/system_tests/k3s:namespaces",
         "//agentplane/system_tests/k3s:pki_infrastructure",
-        "//agentplane/testing:tls",
         "//cluster/cdk8s/agentplane:namespaces",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//pyyaml",
@@ -622,5 +621,17 @@ py_test(
         "//agentplane/system_tests/deployment:pytest_plugin",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "mcp_access",
+    srcs = ["mcp_access.py"],
+    deps = [
+        ":operator_tokens",
+        ":rendered_fixture",
+        "//agentplane/system_tests/driver:port_forward",
+        "//agentplane/system_tests/k3s:baseline",
+        "//agentplane/testing:tls",
     ],
 )
