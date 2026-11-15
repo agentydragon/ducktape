@@ -834,7 +834,7 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     assert history_config["native_frame_read_batch_size"] == 200
     assert "database_url" not in history_config
     assert "log_levels" not in history_config
-    assert {"namespace": NAMESPACE, "name": central_sampler.NAME} in history_config["ingress"]["sampler_accounts"]
+    assert sampler_certificate["uris"] == [history_config["ingress"]["sampler_service_actor"]]
     history_pod = _resource(docs, "Deployment", "history-service")["spec"]["template"]["spec"]
     history_container = history_pod["containers"][0]
     history_env = {entry["name"]: entry for entry in history_container["env"]}
@@ -903,9 +903,7 @@ def test_native_recovery_profile_uses_service_caller_without_app(
     assert set(certificate["uris"]) <= set(gateway["dispatcher_service_callers"])
     assert set(certificate["uris"]) <= set(gateway["runtime_proxy_readers"])
     history = yaml.safe_load(_resource(docs, "ConfigMap", "history-service-config")["data"]["config.yaml"])
-    readers = {(account["namespace"], account["name"]) for account in history["reader_accounts"]}
-    assert (NAMESPACE, native) in readers
-    assert (NAMESPACE, "app") not in readers
+    assert set(certificate["uris"]) <= set(history["reader_service_callers"])
     bootstrap = _resource(docs, "ConfigMap", "postgres-bootstrap")["data"]["bootstrap.sql"]
     assert "CREATE ROLE app " not in bootstrap
 

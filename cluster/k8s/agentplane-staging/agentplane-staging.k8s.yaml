@@ -2916,31 +2916,10 @@ metadata:
   namespace: agentplane-staging
 data:
   config.yaml: |
-    reader_accounts:
-      - namespace: agentplane-staging
-        name: actions
-      - namespace: agentplane-staging
-        name: app
-      - namespace: agentplane-staging
-        name: notifications
     reader_service_callers:
       - spiffe://agentplane/actions
       - spiffe://agentplane/app
       - spiffe://agentplane/notifications
-    delegation:
-      actor: agentplane-staging/actions
-      identity_callers: true
-      methods:
-        - /agentplane.history_service.HistoryService/ReadSessionEvents
-        - /agentplane.history_service.HistoryService/FollowSession
-        - /agentplane.history_service.HistoryService/ReadSessionObservations
-        - /agentplane.history_service.HistoryService/GetSessionSummary
-        - /agentplane.history_service.HistoryService/BatchGetSessionSummaries
-        - /agentplane.history_service.HistoryService/ReadThreadEntities
-        - /agentplane.history_service.HistoryService/ReadEntityEvidence
-        - /agentplane.history_service.HistoryService/ReadNativeFrames
-        - /agentplane.history_service.HistoryService/FindSessions
-        - /agentplane.history_service.HistoryService/WatchSessionSummaries
     service_delegation:
       actors:
         - spiffe_id: spiffe://agentplane/actions
@@ -2956,7 +2935,6 @@ data:
         - /agentplane.history_service.HistoryService/ReadNativeFrames
         - /agentplane.history_service.HistoryService/FindSessions
         - /agentplane.history_service.HistoryService/WatchSessionSummaries
-    token_audience: agentplane-history-service
     request_timeout_s: 15
     migration_timeout_s: 600
     rpc:
@@ -2965,21 +2943,12 @@ data:
         cert_file: /run/agentplane/workload-tls/tls.crt
         key_file: /run/agentplane/workload-tls/tls.key
       auth:
-        - mode: kubernetes_bearer
-          audiences:
-            - agentplane-history-service
-            - agentplane-runner-ingress
         - mode: spiffe
           ca_file: /run/agentplane/workload-trust/ca-certificates.crt
     policy_namespace: agentplane-staging
     ingress:
-      token_audience: agentplane-runner-ingress
       writer_namespaces:
         - agentplane-staging
-      sampler_accounts:
-        - namespace: agentplane-staging
-          name: central-sampler
-      sampler_identity_callers: true
       sampler_service_actor: spiffe://agentplane/central-sampler
       settle_deltas: true
       compact_deltas: true
