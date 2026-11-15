@@ -703,3 +703,35 @@ py_library(
         "@rules_python//python/runfiles",
     ],
 )
+
+py_test(
+    name = "test_thread_routes",
+    size = "medium",
+    srcs = ["test_thread_routes.py"],
+    data = [
+        "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harnesses the runner drives
+        "@claude_code_cli_linux_x64//:claude",  # keep: the pinned native harnesses the runner drives
+    ],
+    env = NATIVE_RUNNER_DOCKER_ENV | {"OTEL_SDK_DISABLED": "true"},
+    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES | POSTGRES_IMAGE_EXEC_PROPERTIES,
+    requires_docker = True,
+    target_compatible_with = [
+        # keep: the pinned native harnesses are Linux/x86_64 only.
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        "//:conftest",
+        "//agentplane/app:integration_fixtures",
+        "//agentplane/app/testing:runtime_fixtures",
+        "//agentplane/env/e2e/testing:process",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_pb2",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+    ],
+)
