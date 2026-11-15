@@ -2,10 +2,8 @@
 
 use super::*;
 use debundle_e2e_support::*;
-use std::collections::BTreeMap;
 use std::fs;
 use std::process::Command;
-use tempfile::TempDir;
 
 pub struct GraphFixture {
     run: TreeRun,
@@ -142,19 +140,7 @@ impl GraphFixture {
         diagnostics: &[&str],
         with_graph: bool,
     ) {
-        fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
-            let mut files = BTreeMap::new();
-            for entry in fs::read_dir(root).unwrap() {
-                let path = entry.unwrap().path();
-                if path.is_dir() {
-                    files.extend(snapshot(&path));
-                } else {
-                    files.insert(path.clone(), fs::read(path).unwrap());
-                }
-            }
-            files
-        }
-        let before = snapshot(&self.modules);
+        let before = read_tree(&self.modules);
         let mut codes = Vec::new();
         for dry_run in [true, false] {
             let mut args = args.to_vec();
@@ -165,7 +151,8 @@ impl GraphFixture {
             if !with_graph {
                 command.env_remove("DEBUNDLE_GRAPH");
             }
-            let out = process::debundle_output(&mut command).expect("run fixture command");
+            let out =
+                debundle_fixture_output(&mut command, self.root()).expect("run fixture command");
             let stderr = String::from_utf8_lossy(&out.stderr);
             // `debundle` exits 1 when it refuses an edit and clap exits 2 on a usage error; a
             // panic exits 101 and is no refusal.
@@ -177,7 +164,7 @@ impl GraphFixture {
                 assert!(stderr.contains(diagnostic), "{args:?}: {stderr}");
             }
             assert_eq!(
-                snapshot(&self.modules),
+                read_tree(&self.modules),
                 before,
                 "{args:?}: spec changed after refusal"
             );
@@ -198,7 +185,7 @@ impl GraphFixture {
     }
 
     pub fn command(&self, args: &[&str]) -> std::process::Output {
-        process::debundle_output(&mut self.process(args)).expect("run fixture command")
+        debundle_fixture_output(&mut self.process(args), self.root()).expect("run fixture command")
     }
 
     pub fn json(&self, args: &[&str]) -> Value {
@@ -233,8 +220,8 @@ impl GraphFixture {
         fs::copy(&fresh_graph, &self.graph).expect("refresh fixture graph from the real pipeline");
     }
 
-    fn rerun(&self) -> TempDir {
-        let rerun = TempDir::new_in(self.run.root()).expect("create fresh output directory");
+    fn rerun(&self) -> CaseWorkspace {
+        let rerun = self.run.workspace().child();
         let out = self.run_current_spec(rerun.path());
         assert!(
             out.status.success(),
@@ -247,8 +234,7 @@ impl GraphFixture {
     /// Run validation against the current input spec, independent of the
     /// saved graph used by CLI edit commands.
     pub fn assert_current_pipeline_rejects(&self, diagnostics: &[&str]) {
-        let output_root = TempDir::new_in(self.run.root())
-            .expect("create current-spec validation output directory");
+        let output_root = self.run.workspace().child();
         let out = self.run_current_spec(output_root.path());
         let stderr = String::from_utf8_lossy(&out.stderr);
         assert_eq!(
@@ -267,13 +253,14 @@ impl GraphFixture {
 
     fn run_current_spec(&self, out_root: &Path) -> std::process::Output {
         let root = self.run.root();
-        process::debundle_output(
+        debundle_fixture_output(
             Command::new(debundler_path())
                 .arg("run")
                 .arg("--graphs")
                 .args(tree_spec_args(root))
                 .arg("--out-root")
                 .arg(out_root),
+            root,
         )
         .unwrap()
     }

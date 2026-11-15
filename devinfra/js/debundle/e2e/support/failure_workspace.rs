@@ -96,6 +96,7 @@ impl CaseWorkspace {
             return Ok(());
         }
         copy_tree(self.root.directory.path(), destination)?;
+        super::case_commands::retain_tool_identities(destination)?;
         let _ = writeln!(
             io::stderr(),
             "retained failed case: {}",

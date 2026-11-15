@@ -603,8 +603,14 @@ pub fn command(args: &[&str]) -> CommandResult {
 }
 
 pub fn command_with(binary: &Path, args: &[&str]) -> CommandResult {
-    let output = process::debundle_output(std::process::Command::new(binary).args(args))
-        .unwrap_or_else(|error| panic!("{error}"));
+    let mut command = Command::new(binary);
+    command.args(args);
+    let hint = case_commands::command_hint(&command);
+    if !hint.as_os_str().is_empty() {
+        command.current_dir(&hint);
+    }
+    let output =
+        case_commands::debundle_fixture_output(&mut command, &hint).expect("spawn debundle tool");
     CommandResult {
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
