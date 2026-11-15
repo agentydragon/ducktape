@@ -517,6 +517,7 @@ def configure_port_forward_tls(documents: list[dict[str, Any]]) -> None:
         "agentplane-egress-proxy": f"egress-admin.{NAMESPACE}.svc.cluster.local",
         "runner-gateway-workload": f"{SESSION_DISPATCHER}.{NAMESPACE}.svc.cluster.local",
         "history-service-workload": f"history-service.{NAMESPACE}.svc.cluster.local",
+        "sandbox-controller-client-workload": f"sandbox-controller.{NAMESPACE}.svc.cluster.local",
     }
     certificates = {
         document["metadata"]["name"]: document["spec"]
@@ -648,12 +649,9 @@ def add_backend_services(
         "runner-gateway",
         env,
         dispatcher_callers=gateway_callers | orchestration_caller,
-        environment_launchers=orchestration_caller,
-        operator_callers=platform_callers,
-        operator_service_callers=sandbox_controller.OPERATOR_SERVICE_CALLERS,
+        orchestration_callers=orchestration_caller,
         wake_service_callers=sandbox_controller.WAKE_SERVICE_CALLERS,
         delegation_actor=environment_service_delegation_actor,
-        extra_delegated_methods=environment_service_delegated_methods,
         gateway_callers=gateway_callers,
         wake_callers=env.wake_caller_accounts | orchestration_caller.keys(),
         database_url=dispatcher_database_url,

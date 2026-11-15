@@ -12,7 +12,8 @@ The Controller serves EnvironmentService on each replica at `sandbox-controller:
 `spiffe://agentplane/sandbox-controller`. Its independent policy watches and uncached Kubernetes
 reads do not require leadership. App and Actions use this receiver with service SVIDs; Actions
 preserves typed delegation. Existing Sandbox CLI processes retain the Gateway API during overlap.
-Runtime-proxy calls remain at the Gateway.
+The Gateway has no deployed component EnvironmentService roles or delegation; its retained API
+registration serves the final workload CLI overlap. Runtime-proxy calls remain at the Gateway.
 
 Managed Sandbox CLIs use a separate `AGENTPLANE_ENVIRONMENTS_URL` on the local platform listener.
 Its exact EnvironmentService prefix selects Sandbox-SVID TLS through central CONNECT to

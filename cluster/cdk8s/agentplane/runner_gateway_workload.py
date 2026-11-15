@@ -147,11 +147,8 @@ class RunnerGateway(Construct):
         *,
         database_url: EnvValue,
         dispatcher_callers: Mapping[ServiceAccountRef, Pods],
-        environment_launchers: Mapping[ServiceAccountRef, Pods],
-        operator_callers: Mapping[ServiceAccountRef, Pods] | None = None,
+        orchestration_callers: Mapping[ServiceAccountRef, Pods],
         delegation_actor: ServiceAccountRef | None,
-        extra_delegated_methods: tuple[str, ...] = (),
-        operator_service_callers: frozenset[ServiceSPIFFEID] = frozenset(),
         wake_service_callers: frozenset[ServiceSPIFFEID] = frozenset(),
         gateway_callers: Mapping[ServiceAccountRef, Pods],
         wake_callers: frozenset[ServiceAccountRef],
@@ -168,8 +165,6 @@ class RunnerGateway(Construct):
             raise ValueError("Runner Gateway needs explicit Dispatcher and proxy caller grants")
         if not wake_callers <= dispatcher_callers.keys():
             raise ValueError("wake callers must also be Dispatcher callers")
-        if extra_delegated_methods and delegation_actor is None:
-            raise ValueError("extra delegated methods require a delegation actor")
 
         namespace = env.namespace
         self.env = env
@@ -177,12 +172,12 @@ class RunnerGateway(Construct):
         self.sandbox_controller_pods = controller_peer[1]
         proxy = runner_gateway.service(namespace)
         own_account = ServiceAccountRef(namespace=namespace, name=runner_gateway.NAME)
-        # `environment_launchers` is the existing orchestration_callers map from serving_chart.
+        # Only orchestration_v1 grants direct Actions Dispatcher authority.
         # The direct Actions SVID roles follow that exact feature gate; delegated session tools
         # do not make the Actions service a direct component caller.
         actions_orchestration_svids = (
             frozenset({ACTIONS_URI})
-            if ServiceAccountRef(namespace=namespace, name=actions.NAME) in environment_launchers
+            if ServiceAccountRef(namespace=namespace, name=actions.NAME) in orchestration_callers
             else frozenset()
         )
         # A delivery worker may run on a different replica from the holder. It calls
@@ -279,19 +274,8 @@ class RunnerGateway(Construct):
         assert serving_tls.cert_file is not None
         assert serving_tls.key_file is not None
         assert serving_tls.ca_file is not None
-        environment_authority = sandbox_controller.environment_service_authority(
-            env,
-            operator_callers=(operator_callers or {}).keys(),
-            launchers=environment_launchers,
-            operator_service_callers=operator_service_callers,
-            wake_callers=wake_callers,
-            wake_service_callers=wake_service_callers,
-            delegation_actor=delegation_actor,
-            extra_delegated_methods=extra_delegated_methods,
-        )
         delegation = None
         dispatcher_service_delegation = None
-        environment_service_delegation = None
         if delegation_actor is not None:
             delegation = DelegationSettings(
                 actor=_account(delegation_actor),
@@ -308,10 +292,6 @@ class RunnerGateway(Construct):
                     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/WatchDispatches",
                     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ListDispatches",
                     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
-                    "/agentplane.environments.v1.EnvironmentService/ListEnvironments",
-                    "/agentplane.environments.v1.EnvironmentService/GetEnvironment",
-                    "/agentplane.environments.v1.EnvironmentService/WatchEnvironment",
-                    *extra_delegated_methods,
                 ),
             )
             actor = ServiceDelegator(spiffe_id=ACTIONS_URI, connection_provenance=False)
@@ -322,9 +302,6 @@ class RunnerGateway(Construct):
                     for method in delegation.methods
                     if method.startswith("/agentplane.runner_gateway.dispatcher.SessionDispatcher/")
                 ),
-            )
-            environment_service_delegation = ServiceDelegation(
-                actors=(actor,), methods=environment_authority.service_delegation_methods
             )
         static_settings = Settings(
             sandbox_namespace=namespace,
@@ -357,26 +334,16 @@ class RunnerGateway(Construct):
             executor_service_callers=[CENTRAL_SAMPLER_URI] if central_sampler_target is not None else [],
             dispatcher_callers=dispatcher_accounts,
             dispatcher_service_callers=frozenset({APP_URI, NOTIFICATIONS_URI}) | actions_orchestration_svids,
-            environment_service_readers=environment_authority.service_readers,
-            environment_service_managers=environment_authority.service_managers,
-            environment_service_launchers=environment_authority.service_launchers,
-            environment_service_operators=environment_authority.service_operators,
-            wake_service_callers=environment_authority.wake_service_callers,
-            environment_readers=environment_authority.readers,
-            environment_managers=environment_authority.managers,
-            environment_launchers=environment_authority.launchers,
+            wake_service_callers=wake_service_callers,
             delegation=delegation,
             dispatcher_service_delegation=dispatcher_service_delegation,
-            environment_service_delegation=environment_service_delegation,
             gateway_callers=gateway_accounts,
-            wake_callers=environment_authority.wake_callers or None,
-            operator_callers=environment_authority.operators or None,
+            wake_callers=frozenset(map(_account, wake_callers)) or None,
             sandbox_controller_account=_account(controller_peer[0]),
             central_sampler=central_sampler_target,
             executor_callers=(
                 frozenset({_account(central_sampler_account)}) if central_sampler_target is not None else frozenset()
             ),
-            runtime_catalog=env.runtime_catalog,
         )
         settings_file = SettingsFile(
             self,
@@ -519,13 +486,7 @@ class RunnerGateway(Construct):
 
 
 def serving_chart(
-    app: App,
-    *,
-    env: Environment,
-    operator_callers: Mapping[ServiceAccountRef, Pods] | None = None,
-    extra_delegated_methods: tuple[str, ...] = (),
-    operator_service_callers: frozenset[ServiceSPIFFEID] = frozenset(),
-    wake_service_callers: frozenset[ServiceSPIFFEID] = frozenset(),
+    app: App, *, env: Environment, wake_service_callers: frozenset[ServiceSPIFFEID] = frozenset()
 ) -> Chart:
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
     callers = {
@@ -545,11 +506,8 @@ def serving_chart(
         env,
         database_url=dispatcher_database_url,
         dispatcher_callers=callers | orchestration | session_delegation,
-        operator_callers=operator_callers,
-        environment_launchers=orchestration,
+        orchestration_callers=orchestration,
         delegation_actor=(sandbox_controller.action_delegation_actor(env)),
-        extra_delegated_methods=extra_delegated_methods,
-        operator_service_callers=operator_service_callers,
         wake_service_callers=wake_service_callers,
         gateway_callers=callers,
         # The orchestration_v1 group sends input that wakes a Sandbox launched with wakeOnSend.

@@ -7,6 +7,8 @@ the listener and its independent policy watches determine readiness on leaders a
 service SVIDs. Actions preserves effective-Identity delegation for list/get/resume and the separate
 launcher grant for reviewed orchestration. Managed Sandbox CLIs use the dedicated local
 EnvironmentService route; existing Sandbox processes retain the Gateway route until cycled.
+Gateway deployment configuration no longer grants component EnvironmentService roles or delegation;
+its registration remains until existing CLI callers move. Automatic wake stays with Sessions.
 Retiring the Gateway registration follows all caller cutovers. Enabling `environment_service` requires the accepting Controller image to be pinned
 first; remove that configuration before rolling back to an image that cannot decode it.
 

@@ -31,13 +31,14 @@ from agentplane.system_tests.driver.dispatcher_transport import (
     forward as _forward,
 )
 from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS, scenario_identity
+from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE
 from agentplane.system_tests.driver.sandbox_diagnostics import (
     archive_runner_data,
     capture_cleanup_diagnostics,
     container_mount_sources,
 )
-from agentplane.system_tests.driver.tls import service_credentials
+from agentplane.system_tests.driver.tls import service_credentials, service_svid_credentials
 from agentplane.system_tests.driver.tracing import tracer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -471,19 +472,36 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
                         break
             evidence["deletion_observed_replicas"] = [item["metadata"]["uid"] for item in live]
         else:
-            environments = environment_service_pb2_grpc.EnvironmentServiceStub(channel)
+            environment_target = await stack.enter_async_context(
+                async_port_forward(
+                    PortForward(
+                        cluster.command("port-forward"),
+                        resource="service/sandbox-controller",
+                        local_address="127.0.0.1",
+                        local_port=None,
+                        remote_port=8082,
+                        readiness_timeout_s=30,
+                    )
+                )
+            )
+            environment_channel = await stack.enter_async_context(
+                dial(
+                    environment_target,
+                    channel_credentials=await service_svid_credentials(cluster, "app-workload-tls"),
+                    server_name=f"sandbox-controller.{cluster.namespace}.svc.cluster.local",
+                )
+            )
+            environments = environment_service_pb2_grpc.EnvironmentServiceStub(environment_channel)
             target_handle = identity_pb2.EnvironmentTarget(namespace=cluster.namespace, name=sandbox, uid=uid)
             next_identity = await identities.enter_async_context(
                 scenario_identity(cluster, f"{sandbox}-next", policies)
             )
             change = environments_pb.SetEnvironmentIdentityRequest(target=target_handle, identity_name=next_identity)
             with pytest.raises(grpc.aio.AioRpcError) as running_change:
-                await environments.SetEnvironmentIdentity(change, metadata=authentication.metadata, timeout=15)
+                await environments.SetEnvironmentIdentity(change, timeout=15)
             assert running_change.value.code() == grpc.StatusCode.FAILED_PRECONDITION
             await environments.SuspendEnvironment(
-                environments_pb.EnvironmentMutationRequest(target=target_handle),
-                metadata=authentication.metadata,
-                timeout=15,
+                environments_pb.EnvironmentMutationRequest(target=target_handle), timeout=15
             )
             await cluster.kubectl(
                 "wait",
@@ -491,7 +509,7 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
                 "--for=jsonpath={.status.stopStage}=Stopped",
                 "--timeout=300s",
             )
-            await environments.SetEnvironmentIdentity(change, metadata=authentication.metadata, timeout=15)
+            await environments.SetEnvironmentIdentity(change, timeout=15)
             rebound = json.loads(await cluster.kubectl("get", "sandbox", sandbox, "-o", "json"))
             assert rebound["spec"]["identity"]["name"] == next_identity
             retained_session = await stub.GetSession(
