@@ -170,6 +170,12 @@ container limits stop meeting the production resource contract.
 
 ## Agentplane opt in
 
+Staging selects the sampler service SVID for Gateway Executor and History export. History retains
+the typed Session delegation envelope naming the execution Identity; the certificate proves the
+sampler actor only. The LLM ingress connection still uses its configured bearer until the separate
+provider-delegation cutover. Projected tokens remain mounted for rollback, with no bearer fallback
+on a selected SVID connection.
+
 - Gateway `central_sampler` configures one gRPC target and either a rotating caller token file or
   `gateway_tls` with the Gateway server URI, trust bundle, and central sampler client SVID. Its
   separate `executor_callers` allowlist authorizes access to the same `Executor` API the Runner

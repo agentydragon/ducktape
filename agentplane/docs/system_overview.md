@@ -104,8 +104,8 @@ flowchart LR
     samplerdb -->|NOTIFY: central_sampler_work| sampler
     samplerdb -->|NOTIFY: central_sampler_outbox| sampler
     sampler -.->|optional Action tools: service mTLS and Session delegation, gRPC| actions
-    sampler -->|typed execution: Executor gRPC| gw
-    sampler -->|SessionJournalIngress.Push| hs
+    sampler -->|Executor gRPC: mTLS, sampler SVID| gw
+    sampler -->|mTLS sampler SVID + typed Session delegation: journal push| hs
     sampler -->|Responses API| llm -->|model API| responses
     sampler -->|direct Anthropic Messages API| anthropic
     gw --> k8s
@@ -370,11 +370,11 @@ flowchart LR
     sampler -->|continuation, commands and ownership leases| db
     db -->|NOTIFY: central_sampler_work| sampler
     db -->|NOTIFY: central_sampler_outbox| sampler
-    sampler -->|typed execution RPCs| gateway
+    sampler -->|Executor RPCs: mTLS, sampler SVID| gateway
     gateway -->|mTLS Executor gRPC| runtime
     runtime -->|direct Executor calls| execution
     execution -->|local Codex JSON-RPC over WebSocket| executor
-    sampler -->|acknowledged outbox: SessionJournalIngress.Push; typed Session provenance for Identity attribution| history
+    sampler -->|mTLS sampler SVID + typed Session delegation: acknowledged journal outbox| history
     sampler -->|Responses API| llm -->|model API| responses
     sampler -->|Anthropic Messages API| anthropic
 ```
@@ -701,8 +701,8 @@ and terminates TLS through an opaque central tunnel;
 the proxy never asserts the caller. History, Notification, Gateway, Action and LLM each serve
 bearer-authenticated and Sandbox-SVID RPCs on their primary TLS listener, with method-specific
 authorization preserved. With `service_callers` configured, the central sampler's TLS listener
-presents its service SVID and admits exact service peers. Its History exporter still uses the
-projected ServiceAccount bearer token pending Stage 4. Only LLM ingress holds the LiteLLM key.
+presents its service SVID and admits exact service peers. Its History exporter presents the
+sampler SVID with typed Session delegation for the effective Identity. Only LLM ingress holds the LiteLLM key.
 Kubernetes retains its destination-scoped projected token until the later impersonation cutover.
 Rules, Notification, ModelConfig and telemetry share the local gRPC listener on port 3130; exact
 service prefixes select independent upstream connections and authentication.

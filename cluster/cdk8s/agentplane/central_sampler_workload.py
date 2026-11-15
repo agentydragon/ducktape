@@ -51,8 +51,6 @@ from util.settings_contract import env_name
 
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-central-sampler:unset"
 _CONFIG_PATH = "/etc/agentplane-central-sampler/settings.json"
-_GATEWAY_TOKEN_FILE = Path("/var/run/secrets/central-sampler/gateway")
-_HISTORY_TOKEN_FILE = Path("/var/run/secrets/central-sampler/history")
 _LOGS_PATH = "/var/log/central-sampler"
 
 
@@ -110,11 +108,9 @@ class CentralSampler(Construct):
             executor_codex="codex",
             logs=Path(_LOGS_PATH),
             history_target=f"{self.history_ingress.fqdn}:{self.history_ingress.pod_port}",
-            history_token_file=_HISTORY_TOKEN_FILE,
-            history_tls=workload_tls.client_tls(HISTORY_SERVICE_URI),
+            history_tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=CENTRAL_SAMPLER_URI),
             gateway_target=runner_gateway.control_target(namespace),
-            gateway_token_file=_GATEWAY_TOKEN_FILE,
-            gateway_tls=workload_tls.client_tls(SESSION_DISPATCHER_URI),
+            gateway_tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=CENTRAL_SAMPLER_URI),
             max_live_sessions=props.max_live_sessions,
             rpc_timeout_seconds=props.rpc_timeout_seconds,
             executor_initialize_timeout_seconds=props.executor_initialize_timeout_seconds,
