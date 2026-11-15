@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import bcrypt
-from cdk8s import ApiObjectMetadata, Chart
+from cdk8s import ApiObjectMetadata, Chart, Testing
 from cdk8s_plus_34 import ConfigMap, Deployment, EnvValue, Volume
 from constructs import Construct
 from more_itertools import one
@@ -129,7 +129,10 @@ def objects(
         system_roots=system_roots,
         dex_clients=[fixture.app, fixture.actions, fixture.mcp_edge],
     )
-    return fixture_chart.synthesize(fixture.chart, vm_sandboxes=False)
+    documents = list(Testing.synth(fixture.chart))
+    fixture_chart.add_svid_box_template(documents)
+    fixture_chart.configure_port_forward_tls(documents)
+    return [doc for doc in documents if doc["kind"] != "CiliumNetworkPolicy"]
 
 
 def _add_mcp_fixtures(

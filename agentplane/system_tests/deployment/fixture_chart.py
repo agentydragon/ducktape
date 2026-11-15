@@ -12,6 +12,7 @@ and standalone edge use loopback HTTP origins for OAuth callbacks, served by por
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from enum import StrEnum
@@ -125,7 +126,6 @@ from cluster.cdk8s.providers.agentplane.policy_set import PolicySet, Rule
 from cluster.cdk8s.providers.cert_manager.bundle import Bundle
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
 from cluster.cdk8s.providers.cert_manager.cluster_issuer import ClusterIssuer
-from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods
 from model_catalog.catalog import GPT6_LUNA_RESPONSES, HAIKU_API
 
@@ -441,7 +441,7 @@ def _add_runner_root(chart: Chart) -> None:
     )
 
 
-def _add_native_test_client(chart: Chart) -> None:
+def add_native_test_client(chart: Chart) -> None:
     """Give native system-test clients one explicit Pod-bound ServiceAccount principal."""
     account = ServiceAccount(
         chart,
@@ -505,22 +505,15 @@ def objects(
         env=env,
         profile=profile,
     )
-    return synthesize(fixture.chart, vm_sandboxes=vm_sandboxes)
-
-
-def synthesize(chart: Chart, *, vm_sandboxes: bool) -> list[dict[str, Any]]:
-    """Apply the same k3s-only adaptations to every fixture variant."""
-    synthesized = list(Testing.synth(chart))
+    documents = list(Testing.synth(fixture.chart))
     if vm_sandboxes:
-        _boot_test_guest(synthesized)
-    _add_svid_box_template(synthesized)
-    _add_fixture_server_dns_names(synthesized)
-    # Service-owned workload listeners render Cilium admission in production. Bare k3s has no
-    # Cilium CRD or dataplane; network-policy validation remains a rendering/staging boundary.
-    return [doc for doc in synthesized if doc["kind"] != "CiliumNetworkPolicy"]
+        configure_test_vm_guests(documents)
+    add_svid_box_template(documents)
+    configure_port_forward_tls(documents)
+    return [doc for doc in documents if doc["kind"] != "CiliumNetworkPolicy"]
 
 
-def _add_fixture_server_dns_names(documents: list[dict[str, Any]]) -> None:
+def configure_port_forward_tls(documents: list[dict[str, Any]]) -> None:
     """Give port-forwarded Python gRPC clients DNS SANs to verify in the k3s-only fixture."""
     names_by_certificate = {
         "agentplane-egress-proxy": f"egress-admin.{NAMESPACE}.svc.cluster.local",
@@ -537,32 +530,15 @@ def _add_fixture_server_dns_names(documents: list[dict[str, Any]]) -> None:
     certificates["runner-gateway-workload"]["ipAddresses"] = ["127.0.0.1"]
 
 
-def build_chart(
-    *,
-    ca_cert: str,
-    ca_key: str,
-    system_roots: str,
-    cluster_ca: str,
-    models: Models,
-    env: Environment,
-    profile: FixtureProfile = FixtureProfile.FULL,
-) -> FixtureChart:
-    """Construct the shared stack and return its chart before synthesis for fixture-specific additions."""
-    app_enabled = profile.app_enabled
-    app_origin = str(env.app.origin)
-    app_login = login_client(app_origin) if app_enabled else None
-    mcp_linkage = linkage_client(app_origin) if app_enabled else None
-    sandbox_sidecar_resources = k8s.ResourceRequirements(
-        requests={
-            "cpu": k8s.Quantity.from_string(Cpu.millis(10).amount),
-            "memory": k8s.Quantity.from_string(Size.mebibytes(32).as_string()),
-        }
-    )
-    app = App()
-    chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
+def new_chart(env: Environment) -> Chart:
+    chart = Chart(App(), "agentplane", disable_resource_name_hashes=True)
     Namespace(chart, "namespace", env)
-    if not app_enabled:
-        _add_native_test_client(chart)
+    return chart
+
+
+def add_fixture_pki(
+    chart: Chart, env: Environment, *, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str
+) -> None:
     _add_runner_root(chart)
     add_runner_certificates(chart, env)
     add_workload_ca(chart)
@@ -573,33 +549,50 @@ def build_chart(
         service_requester="system:admin",
         cert_manager=ServiceAccountRef(namespace="cert-manager", name="cert-manager"),
     )
-    fixture_database.add_database(chart, env, include_app=app_enabled)
-    app_database_url = (
-        SecretRef(namespace=NAMESPACE, name="postgres-app").key("async-uri").env_value(chart, "app-database-url")
-        if app_enabled
-        else None
+    add_secret(chart, _EGRESS_CA, {"tls.crt": ca_cert, "tls.key": ca_key, "ca.crt": ca_cert}, kind="kubernetes.io/tls")
+    Bundle(
+        chart,
+        "fixture-egress-trust",
+        metadata=ApiObjectMetadata(name=_EGRESS_CA),
+        # The fixture's SVID root is independent of its Kubernetes API CA.
+        sources=[
+            BundleSpecSources(in_line=system_roots + ca_cert + cluster_ca),
+            BundleSpecSources(secret=BundleSpecSourcesSecret(name="test-runner-root", key="ca.crt")),
+        ],
+        target=BundleSpecTarget(
+            config_map=BundleSpecTargetConfigMap(key="ca-certificates.crt"),
+            namespace_selector=BundleSpecTargetNamespaceSelector(
+                match_labels={"kubernetes.io/metadata.name": NAMESPACE}
+            ),
+        ),
     )
-    actions_database_url = (
-        SecretRef(namespace=NAMESPACE, name="postgres-actions").key("uri").env_value(chart, "actions-database-url")
+    ConfigMap(
+        chart,
+        "fixture-public-web-pki",
+        metadata=ApiObjectMetadata(name="public-web-pki", namespace=NAMESPACE),
+        data={"ca-certificates.crt": system_roots},
     )
-    egress_database_url = (
-        SecretRef(namespace=NAMESPACE, name="postgres-egress").key("uri").env_value(chart, "egress-database-url")
+    ConfigMap(
+        chart,
+        "fixture-egress-upstream-ca",
+        metadata=ApiObjectMetadata(name="systest-egress-upstream-ca", namespace=NAMESPACE),
+        data={"ca-certificates.crt": system_roots + cluster_ca},
     )
-    history_database_url = (
-        SecretRef(namespace=NAMESPACE, name="postgres-sandbox-service")
-        .key("uri")
-        .env_value(chart, "history-database-url")
-    )
-    notifications_database_url = (
-        SecretRef(namespace=NAMESPACE, name="postgres-notifications")
-        .key("uri")
-        .env_value(chart, "notifications-database-url")
-    )
-    dispatcher_database_url = (
-        SecretRef(namespace=NAMESPACE, name="postgres-session-dispatcher")
-        .key("uri")
-        .env_value(chart, "session-dispatcher-database-url")
-    )
+
+
+def add_backend_services(
+    chart: Chart,
+    env: Environment,
+    *,
+    models: Models,
+    platform_callers: dict[ServiceAccountRef, Pods],
+    notification_callers: Sequence[Pods],
+) -> Construct:
+    actions_database_url = fixture_database.Database.ACTIONS.url(chart, namespace=env.namespace)
+    egress_database_url = fixture_database.Database.EGRESS.url(chart, namespace=env.namespace)
+    history_database_url = fixture_database.Database.HISTORY.url(chart, namespace=env.namespace)
+    notifications_database_url = fixture_database.Database.NOTIFICATIONS.url(chart, namespace=env.namespace)
+    dispatcher_database_url = fixture_database.Database.SESSION_DISPATCHER.url(chart, namespace=env.namespace)
     # Control-plane `memory_request`s below are the measured peak working set (`memory/peaks.json`
     # in a suite's undeclared outputs) plus about half again, so the node keeps room for Sandboxes.
     llm_ingress.LlmIngress(
@@ -619,10 +612,7 @@ def build_chart(
         env,
         database_url=egress_database_url,
         runners=environment_sandbox.pods(env.namespace),
-        admin_grpc_callers=[
-            *([ServiceAccountRef(namespace=NAMESPACE, name=NATIVE_TEST_CLIENT)] if not app_enabled else []),
-            *([ServiceAccountRef(namespace=NAMESPACE, name=app_component.NAME)] if app_enabled else []),
-        ],
+        admin_grpc_callers=list(platform_callers),
         litellm_host="litellm.allegedly.works" if isinstance(models, PublicLiteLLM) else None,
         litellm_cluster_internal=not isinstance(models, PublicLiteLLM),
         placement=None,
@@ -638,23 +628,10 @@ def build_chart(
             actions.service(NAMESPACE),
         ],
     )
-    sandbox_pod.add_tool_config(chart, env)
-    native_test_caller = ServiceAccountRef(namespace=NAMESPACE, name=NATIVE_TEST_CLIENT)
-    app_caller = (
-        {ServiceAccountRef(namespace=NAMESPACE, name=app_component.NAME): app_component.service(NAMESPACE).pods}
-        if app_enabled
-        else {}
-    )
-    native_caller = (
-        {native_test_caller: Pods(namespace=NAMESPACE, labels=tuple(_NATIVE_TEST_CLIENT_LABELS.items()))}
-        if not app_enabled
-        else {}
-    )
     notifications_caller = {
         ServiceAccountRef(namespace=NAMESPACE, name=notifications.NAME): notifications.service(NAMESPACE).pods
     }
     orchestration_caller = actions.orchestration_callers(env)
-    platform_callers = app_caller | native_caller
     gateway_callers = platform_callers | notifications_caller
     runner_gateway_workload.add_stable_services(chart, env)
     runner_gateway_workload.RunnerGateway(
@@ -690,15 +667,6 @@ def build_chart(
         memory_limit=None,
     )
     control_target = runner_gateway.control_target(NAMESPACE)
-    if env.central_sampler is not None:
-        sampler_database_url = (
-            SecretRef(namespace=NAMESPACE, name="postgres-central-sampler")
-            .key("uri")
-            .env_value(chart, "central-sampler-database-url")
-        )
-        central_sampler_workload.CentralSampler(
-            chart, "central-sampler", env, database_url=sampler_database_url, placement=None, registry_secret_name=None
-        )
     history_service.HistoryService(
         chart,
         "history-service",
@@ -715,75 +683,6 @@ def build_chart(
         container_env=database_env,
         memory_request=Size.mebibytes(48),
         memory_limit=None,
-    )
-    app_service = None
-    if app_enabled:
-        assert app_database_url is not None
-        app_service = app_component.App(
-            chart,
-            "app",
-            env,
-            electric=None,
-            database_url=app_database_url,
-            placement=None,
-            registry_secret_name=None,
-            memory_request=Size.mebibytes(48),
-            memory_limit=None,
-        )
-    mcp_edge_service: Construct | None = None
-    if profile == FixtureProfile.FULL:
-        mcp_edge_service = mcp_edge.McpEdge(
-            chart,
-            "mcp-edge",
-            env,
-            database_url=SecretRef(namespace=NAMESPACE, name="postgres-mcp-edge")
-            .key("uri")
-            .env_value(chart, "mcp-edge-database-url"),
-            placement=None,
-            registry_secret_name=None,
-            image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-            memory_request=Size.mebibytes(32),
-        )
-    environment_sandbox.EnvironmentSandbox(
-        chart,
-        "environment-sandbox",
-        env,
-        name=POD_TEMPLATE,
-        image=ENVIRONMENT_TOOLS_IMAGE,
-        storage_class="local-path",
-        vm_workspace_storage_class=block_storage.STORAGE_CLASS if env.vm_sandboxes else None,
-        # Sized so the pod suites' concurrent Sandboxes fit the nested node; the limits make an
-        # outgrown request an OOM kill rather than a silent squeeze. Measured working sets:
-        # `memory/peaks.json` in the suite's undeclared outputs.
-        environment_runtime_resources=k8s.ResourceRequirements(
-            requests={
-                "cpu": k8s.Quantity.from_string(Cpu.millis(500).amount),
-                "memory": k8s.Quantity.from_string(Size.mebibytes(256).as_string()),
-            },
-            limits={"memory": k8s.Quantity.from_string(Size.gibibytes(1).as_string())},
-        ),
-        executor_resources=k8s.ResourceRequirements(
-            requests={
-                "cpu": k8s.Quantity.from_string(Cpu.millis(250).amount),
-                "memory": k8s.Quantity.from_string(Size.mebibytes(128).as_string()),
-            },
-            limits={
-                "cpu": k8s.Quantity.from_string(Cpu.units(2).amount),
-                "memory": k8s.Quantity.from_string(Size.gibibytes(1).as_string()),
-            },
-        ),
-        sidecar_resources=sandbox_sidecar_resources,
-        image_pull_secret_name=None,
-        trust_mounts=sandbox_pod.egress_proxy_mounts(),
-        vm_codex_readiness=(
-            CodexReadiness(
-                exec_server_ready_timeout_ms=60_000,
-                exec_server_probe_timeout_ms=5_000,
-                exec_server_dependency_timeout_ms=120_000,
-            )
-            if env.vm_sandboxes or env.firecracker_sandboxes
-            else None
-        ),
     )
     sandbox_controller.SandboxController(
         chart,
@@ -825,71 +724,147 @@ def build_chart(
         history_audience=history_service.TOKEN_AUDIENCE,
         dispatcher=runner_gateway_workload.dispatcher_service(NAMESPACE),
         dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
-        callers=[app_component.service(NAMESPACE).pods] if app_enabled else [],
+        callers=list(notification_callers),
         placement=None,
         registry_secret_name=None,
         container_env=database_env,
         memory_request=Size.mebibytes(32),
         memory_limit=None,
     )
+    return action_service
+
+
+def add_central_sampler(chart: Chart, env: Environment) -> Construct:
+    sampler_database_url = fixture_database.Database.CENTRAL_SAMPLER.url(chart, namespace=env.namespace)
+    return central_sampler_workload.CentralSampler(
+        chart, "central-sampler", env, database_url=sampler_database_url, placement=None, registry_secret_name=None
+    )
+
+
+def add_app(chart: Chart, env: Environment) -> Construct:
+    app_database_url = fixture_database.Database.APP.url(chart, namespace=env.namespace, key="async-uri")
+    service = app_component.App(
+        chart,
+        "app",
+        env,
+        electric=None,
+        database_url=app_database_url,
+        placement=None,
+        registry_secret_name=None,
+        memory_request=Size.mebibytes(48),
+        memory_limit=None,
+    )
+    # The app and the Actions MCP client read their normal Secret names.
+    add_secret(
+        chart,
+        app_component.oidc_secret(NAMESPACE).name,
+        {
+            "client-id": APP_CLIENT_ID,
+            "client-secret": APP_CLIENT_SECRET,
+            "session-secret": "test-k3s-app-session-secret",
+        },
+    )
+    add_secret(
+        chart,
+        actions.mcp_oauth_secret(NAMESPACE).name,
+        {"client-id": _MCP_LINKAGE.id, "client-secret": "test-k3s-actions-client-secret"},
+    )
+    # Keep this policy probe off service-owned SVID routes, whose receivers authorize their
+    # requests after opaque CONNECT. The app origin is an ordinary intercepted destination.
+    PolicySet(
+        chart,
+        f"policy-set-{runtime_grant.POLICY_SET}",
+        metadata=ApiObjectMetadata(
+            name=runtime_grant.POLICY_SET,
+            namespace=NAMESPACE,
+            annotations={runtime_grant.PORT_ANNOTATION: str(APP_SERVICE.port.number)},
+        ),
+        rules=[
+            Rule.egress(
+                hosts=[APP_SERVICE.fqdn],
+                cluster_internal=True,
+                methods=[PolicySetSpecRulesMethods.GET],
+                paths=["/test-runtime-grant"],
+            )
+        ],
+    )
+    PolicySet(
+        chart,
+        f"policy-set-{send_grant.POLICY_SET}",
+        metadata=ApiObjectMetadata(name=send_grant.POLICY_SET, namespace=NAMESPACE),
+        rules=[Rule.send_message(inbox_tags=[send_grant.INBOX_TAG])],
+    )
+    return service
+
+
+def add_mcp_edge(chart: Chart, env: Environment) -> Construct:
+    return mcp_edge.McpEdge(
+        chart,
+        "mcp-edge",
+        env,
+        database_url=fixture_database.Database.MCP_EDGE.url(chart, namespace=env.namespace),
+        placement=None,
+        registry_secret_name=None,
+        image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
+        memory_request=Size.mebibytes(32),
+    )
+
+
+def add_sandbox_templates(chart: Chart, env: Environment) -> None:
+    sandbox_sidecar_resources = k8s.ResourceRequirements(
+        requests={
+            "cpu": k8s.Quantity.from_string(Cpu.millis(10).amount),
+            "memory": k8s.Quantity.from_string(Size.mebibytes(32).as_string()),
+        }
+    )
+    sandbox_pod.add_tool_config(chart, env)
+    environment_sandbox.EnvironmentSandbox(
+        chart,
+        "environment-sandbox",
+        env,
+        name=POD_TEMPLATE,
+        image=ENVIRONMENT_TOOLS_IMAGE,
+        storage_class="local-path",
+        vm_workspace_storage_class=block_storage.STORAGE_CLASS if env.vm_sandboxes else None,
+        # Sized so the pod suites' concurrent Sandboxes fit the nested node; the limits make an
+        # outgrown request an OOM kill rather than a silent squeeze. Measured working sets:
+        # `memory/peaks.json` in the suite's undeclared outputs.
+        environment_runtime_resources=k8s.ResourceRequirements(
+            requests={
+                "cpu": k8s.Quantity.from_string(Cpu.millis(500).amount),
+                "memory": k8s.Quantity.from_string(Size.mebibytes(256).as_string()),
+            },
+            limits={"memory": k8s.Quantity.from_string(Size.gibibytes(1).as_string())},
+        ),
+        executor_resources=k8s.ResourceRequirements(
+            requests={
+                "cpu": k8s.Quantity.from_string(Cpu.millis(250).amount),
+                "memory": k8s.Quantity.from_string(Size.mebibytes(128).as_string()),
+            },
+            limits={
+                "cpu": k8s.Quantity.from_string(Cpu.units(2).amount),
+                "memory": k8s.Quantity.from_string(Size.gibibytes(1).as_string()),
+            },
+        ),
+        sidecar_resources=sandbox_sidecar_resources,
+        image_pull_secret_name=None,
+        trust_mounts=sandbox_pod.egress_proxy_mounts(),
+        vm_codex_readiness=(
+            CodexReadiness(
+                exec_server_ready_timeout_ms=60_000,
+                exec_server_probe_timeout_ms=5_000,
+                exec_server_dependency_timeout_ms=120_000,
+            )
+            if env.vm_sandboxes or env.firecracker_sandboxes
+            else None
+        ),
+    )
     command_sandbox.CommandSandbox(
         chart, "command-sandbox", env, image_pull_secret_name=None, trust_mounts=sandbox_pod.egress_proxy_mounts()
     )
-    if app_enabled:
-        # The app and the Actions MCP client read their normal Secret names.
-        add_secret(
-            chart,
-            app_component.oidc_secret(NAMESPACE).name,
-            {
-                "client-id": APP_CLIENT_ID,
-                "client-secret": APP_CLIENT_SECRET,
-                "session-secret": "test-k3s-app-session-secret",
-            },
-        )
-        add_secret(
-            chart,
-            actions.mcp_oauth_secret(NAMESPACE).name,
-            {"client-id": _MCP_LINKAGE.id, "client-secret": "test-k3s-actions-client-secret"},
-        )
-    add_secret(chart, _EGRESS_CA, {"tls.crt": ca_cert, "tls.key": ca_key, "ca.crt": ca_cert}, kind="kubernetes.io/tls")
-    Bundle(
-        chart,
-        "fixture-egress-trust",
-        metadata=ApiObjectMetadata(name=_EGRESS_CA),
-        # The fixture's SVID root is independent of its Kubernetes API CA.
-        sources=[
-            BundleSpecSources(in_line=system_roots + ca_cert + cluster_ca),
-            BundleSpecSources(secret=BundleSpecSourcesSecret(name="test-runner-root", key="ca.crt")),
-        ],
-        target=BundleSpecTarget(
-            config_map=BundleSpecTargetConfigMap(key="ca-certificates.crt"),
-            namespace_selector=BundleSpecTargetNamespaceSelector(
-                match_labels={"kubernetes.io/metadata.name": NAMESPACE}
-            ),
-        ),
-    )
-    ConfigMap(
-        chart,
-        "fixture-public-web-pki",
-        metadata=ApiObjectMetadata(name="public-web-pki", namespace=NAMESPACE),
-        data={"ca-certificates.crt": system_roots},
-    )
-    ConfigMap(
-        chart,
-        "fixture-egress-upstream-ca",
-        metadata=ApiObjectMetadata(name="systest-egress-upstream-ca", namespace=NAMESPACE),
-        data={"ca-certificates.crt": system_roots + cluster_ca},
-    )
-    key = models.key if isinstance(models, PublicLiteLLM) else "unused-without-litellm"
-    add_secret(chart, _LITELLM_KEY_SECRET, {"api-key": key})
-    EgressCredentials(
-        chart, "egress-credentials", namespace=env.egress.credentials_namespace, proxy_namespace=NAMESPACE
-    )
-    KubernetesAccounts(
-        chart, "kubernetes-accounts", namespace=kubernetes_accounts_namespace(NAMESPACE), proxy_namespace=NAMESPACE
-    )
-    if isinstance(models, PublicLiteLLM):
-        add_secret(chart, _LITELLM_KEY_SECRET, {"api-key": key}, namespace=env.egress.credentials_namespace)
+
+
+def add_policy_controller(chart: Chart, env: Environment) -> None:
     tool_config_grant = sandbox_pod.tool_config_grant(NAMESPACE)
     PolicySet(
         chart,
@@ -897,32 +872,6 @@ def build_chart(
         metadata=ApiObjectMetadata(name=sandbox_pod.TOOL_CONFIG_GRANT, namespace=NAMESPACE),
         rules=access.rules_for_grants([tool_config_grant]),
     )
-    if app_enabled:
-        # Keep this policy probe off service-owned SVID routes, whose receivers authorize their
-        # requests after opaque CONNECT. The app origin is an ordinary intercepted destination.
-        PolicySet(
-            chart,
-            f"policy-set-{runtime_grant.POLICY_SET}",
-            metadata=ApiObjectMetadata(
-                name=runtime_grant.POLICY_SET,
-                namespace=NAMESPACE,
-                annotations={runtime_grant.PORT_ANNOTATION: str(APP_SERVICE.port.number)},
-            ),
-            rules=[
-                Rule.egress(
-                    hosts=[APP_SERVICE.fqdn],
-                    cluster_internal=True,
-                    methods=[PolicySetSpecRulesMethods.GET],
-                    paths=["/test-runtime-grant"],
-                )
-            ],
-        )
-        PolicySet(
-            chart,
-            f"policy-set-{send_grant.POLICY_SET}",
-            metadata=ApiObjectMetadata(name=send_grant.POLICY_SET, namespace=NAMESPACE),
-            rules=[Rule.send_message(inbox_tags=[send_grant.INBOX_TAG])],
-        )
     controller = policy_controller.PolicyController(
         chart,
         "policy-controller",
@@ -943,17 +892,82 @@ def build_chart(
         accounts_namespace=kubernetes_accounts_namespace(NAMESPACE),
         workload_namespaces={NAMESPACE},
     )
+
+
+def add_model_credentials(chart: Chart, env: Environment, *, models: Models) -> None:
+    key = models.key if isinstance(models, PublicLiteLLM) else "unused-without-litellm"
+    add_secret(chart, _LITELLM_KEY_SECRET, {"api-key": key})
+    EgressCredentials(
+        chart, "egress-credentials", namespace=env.egress.credentials_namespace, proxy_namespace=NAMESPACE
+    )
+    KubernetesAccounts(
+        chart, "kubernetes-accounts", namespace=kubernetes_accounts_namespace(NAMESPACE), proxy_namespace=NAMESPACE
+    )
+    if isinstance(models, PublicLiteLLM):
+        add_secret(chart, _LITELLM_KEY_SECRET, {"api-key": key}, namespace=env.egress.credentials_namespace)
+
+
+def build_chart(
+    *,
+    ca_cert: str,
+    ca_key: str,
+    system_roots: str,
+    cluster_ca: str,
+    models: Models,
+    env: Environment,
+    profile: FixtureProfile = FixtureProfile.FULL,
+) -> FixtureChart:
+    chart = new_chart(env)
+    app_enabled = profile.app_enabled
+    databases = [
+        fixture_database.Database.ACTIONS,
+        fixture_database.Database.EGRESS,
+        fixture_database.Database.NOTIFICATIONS,
+        fixture_database.Database.HISTORY,
+        fixture_database.Database.SESSION_DISPATCHER,
+    ]
+    if app_enabled:
+        databases.append(fixture_database.Database.APP)
+    if profile == FixtureProfile.FULL:
+        databases.append(fixture_database.Database.MCP_EDGE)
+    if env.central_sampler is not None:
+        databases.append(fixture_database.Database.CENTRAL_SAMPLER)
+    fixture_database.add_database(chart, namespace=env.namespace, databases=databases)
+    if app_enabled:
+        platform_callers = {
+            ServiceAccountRef(namespace=NAMESPACE, name=app_component.NAME): app_component.service(NAMESPACE).pods
+        }
+        notification_callers = [app_component.service(NAMESPACE).pods]
+    else:
+        add_native_test_client(chart)
+        platform_callers = {
+            ServiceAccountRef(namespace=NAMESPACE, name=NATIVE_TEST_CLIENT): Pods(
+                namespace=NAMESPACE, labels=tuple(_NATIVE_TEST_CLIENT_LABELS.items())
+            )
+        }
+        notification_callers = []
+    add_fixture_pki(chart, env, ca_cert=ca_cert, ca_key=ca_key, system_roots=system_roots, cluster_ca=cluster_ca)
+    action_service = add_backend_services(
+        chart, env, models=models, platform_callers=platform_callers, notification_callers=notification_callers
+    )
+    if env.central_sampler is not None:
+        add_central_sampler(chart, env)
+    app_service = add_app(chart, env) if app_enabled else None
+    edge_service = add_mcp_edge(chart, env) if profile == FixtureProfile.FULL else None
+    add_sandbox_templates(chart, env)
+    add_model_credentials(chart, env, models=models)
+    add_policy_controller(chart, env)
     return FixtureChart(
         chart=chart,
         app=app_service,
         actions=action_service,
-        mcp_edge=mcp_edge_service,
-        app_login=app_login,
-        mcp_linkage=mcp_linkage,
+        mcp_edge=edge_service,
+        app_login=login_client(str(env.app.origin)) if app_enabled else None,
+        mcp_linkage=linkage_client(str(env.app.origin)) if app_enabled else None,
     )
 
 
-def _add_svid_box_template(objects: list[dict[str, Any]]) -> None:
+def add_svid_box_template(objects: list[dict[str, Any]]) -> None:
     """`svid_box.TEMPLATE`: the rendered command box, its sidecar and credential wiring untouched, on
     the runner's workload image and with the runner disk mounted where a runner has it."""
     box = deepcopy(
@@ -975,7 +989,7 @@ def _add_svid_box_template(objects: list[dict[str, Any]]) -> None:
     objects.append(box)
 
 
-def _boot_test_guest(objects: list[dict[str, Any]]) -> None:
+def configure_test_vm_guests(objects: list[dict[str, Any]]) -> None:
     """Put the test guest (guest/) in the VM template in place of production's NixOS image, which boots
     too slowly without KVM. KubeVirt boots the guest's kernel directly; its initramfs finds the root disk
     by serial."""

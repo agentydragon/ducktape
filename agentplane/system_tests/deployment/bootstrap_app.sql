@@ -1,3 +1,0 @@
-\getenv app_password AGENTPLANE_DB_PASSWORD_APP
-CREATE ROLE app WITH LOGIN PASSWORD :'app_password';
-CREATE DATABASE app OWNER app;
