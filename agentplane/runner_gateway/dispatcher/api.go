@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"slices"
 	"time"
 
@@ -238,22 +237,6 @@ func Methods(rule auth.Rule) auth.Methods {
 		dispatcherpb.SessionDispatcher_ListDispatches_FullMethodName:        rule,
 		dispatcherpb.SessionDispatcher_CancelDispatch_FullMethodName:        rule,
 	}
-}
-
-// MethodsWithDelegation adds Actions trust to only the configured full RPC method names.
-func MethodsWithDelegation(
-	resolver *auth.Resolver,
-	delegator auth.Delegator,
-	identities auth.IdentityUIDReader,
-	delegatedMethods []string,
-) (auth.Methods, error) {
-	methods, err := Methods(auth.ReviewedServiceAccountOrIdentity(resolver)).WithDelegation(
-		delegatedMethods, []auth.Delegator{delegator}, identities,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("configure delegated Dispatcher methods: %w", err)
-	}
-	return methods, nil
 }
 
 func (s *Service) caller(ctx context.Context) (Caller, error) {
