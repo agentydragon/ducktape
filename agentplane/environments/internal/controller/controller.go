@@ -595,7 +595,7 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 		return w, &unready{reason: "Starting", message: fmt.Sprintf("VM %s is being deleted for the Pod template", w.vm.Name)}, nil
 	}
 	if !validRuntimeCredentialID(w.credential.ID) {
-		return w, &unready{reason: "RunnerCredentialMissing", message: "no runner credential is issued for the next Pod"}, nil
+		return w, &unready{reason: "RunnerCredentialMissing", message: "no Environment Runtime credential is issued for the next Pod"}, nil
 	}
 	pod, blocked := render(sandbox, template, w.credential)
 	if blocked != nil {
