@@ -152,6 +152,48 @@ console.log("marker");
 exporter(target, { value: () => 2 });
 ```
 
+## Additional base write-census failures
+
+On 2026-11-14, three further probes reproduced false commutation judgments
+with no upgrades, derivation, what-if settings or premises, including with
+`--exports-reachable`. Each uses the exact four-unit permutation `0,2,1,3`:
+the report counts one swapped pair and zero unproven pairs, while Node prints
+`1` in source order and `0` after the swap. All six Node runs exit successfully.
+
+```js
+var value = 0;
+if (true) {
+  var value = 1;
+}
+const seen = value;
+console.log(seen);
+```
+
+The existing top-level binding is discovered, but the initializer write
+inside the conditional is absent from the unit's `assigns`. The same omission
+occurs for parenthesized write targets:
+
+```js
+let value = 0;
+value++;
+const seen = value;
+console.log(seen);
+```
+
+Replacing `(value)++` with `(value) = 1` reproduces the third case.
+`helpers.rs::Assigned` handles bare identifier assignment/update targets and
+patterns, but neither unwraps these parenthesized targets nor records
+`VarDeclarator` initializer writes. `tier0.rs` uses that inventory to compute
+write reach. A checked producer must repair or exclude both forms; disabling
+optional rules does not remove these base defects.
+
+The three report-only invocations are `bc9cfefc-4660-4ef7-9945-f0dd9b029174`,
+`cab4b2aa-cae7-4b9e-a3a8-4293118fbf2e`, and
+`bbcff09f-3402-4bcf-b018-678e6e1386f3`, respectively. For either four-unit
+file, use the command above with `--order 0,2,1,3 --exports-reachable`.
+These are prototype commutation probes; they do not show a production gate
+accepting the same assignments.
+
 ## Unchecked assumptions
 
 The report can assume the absence of import cycles when no program is supplied,
