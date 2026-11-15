@@ -548,9 +548,6 @@ pub(crate) struct HeapContentCells {
     pub reads: BTreeSet<EffectCell>,
     pub writes: BTreeSet<EffectCell>,
     pub opaque: bool,
-    /// An observation of pre-existing external storage, with no unique source
-    /// allocation birth. Its heap ordering cannot be discharged by completion.
-    pub observes_external_heap: bool,
 }
 
 impl HeapContentCells {
@@ -559,7 +556,6 @@ impl HeapContentCells {
         self.reads.extend(other.reads.iter().cloned());
         self.writes.extend(other.writes.iter().cloned());
         self.opaque |= other.opaque;
-        self.observes_external_heap |= other.observes_external_heap;
     }
 }
 
@@ -724,13 +720,6 @@ impl ChunkFactAnalysis {
                     binding.0
                 )
             })?;
-            anyhow::ensure!(
-                !fact.heap_contents.observes_external_heap
-                    && !calls.heap_contents.observes_external_heap,
-                "initializer_external_effects: {effects} for `{}` cannot cover an observed external heap read at source unit {}",
-                binding.0,
-                fact.ordinal.0
-            );
             anyhow::ensure!(
                 fact.global_reads.is_empty() && fact.global_writes.is_empty(),
                 "initializer_external_effects: {effects} for `{}` contradicts direct global-property accesses at source unit {}: reads {:?}, writes {:?}",

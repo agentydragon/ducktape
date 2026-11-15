@@ -1157,10 +1157,6 @@ pub enum NativeOperationKind {
     Symbol,
     SymbolFor,
     SetFromPrimitiveArray,
-    /// Exact well-known Symbol data reads in a direct class initializer's method keys.
-    SymbolWellKnownClassKeys,
-    /// Exact class-key reads of own data properties with unknown primitive values.
-    SymbolPrimitiveClassKeys,
     PromiseResolve,
 }
 

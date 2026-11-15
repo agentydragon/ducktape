@@ -17,18 +17,24 @@ use debundle_e2e_support::*;
 
 #[test]
 fn disposal_symbol_method_keys_do_not_block_class_split() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"console.log("before");
-class a {
-  [Symbol.dispose]() {}
-  [Symbol.asyncDispose]() {}
-}
-console.log("after", a.name);
-export { a };
-"#,
-        vec![logical_module("mod_x", &[Member::new("a")])],
-    ));
-    assert_entry_output(&fixture, "before\nafter a\n");
+    for declaration in ["class a", "const a = class"] {
+        let source = format!(
+            r#"console.log("before");
+{declaration} {{
+  [Symbol.dispose]() {{ return "sync"; }}
+  [Symbol.asyncDispose]() {{ return "async"; }}
+}}
+const instance = new a();
+console.log("after", a.name, instance[Symbol.dispose](), instance[Symbol.asyncDispose]());
+export {{ a }};
+"#
+        );
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module("mod_x", &[Member::new("a")])],
+        ));
+        assert_preserved_entry_output(&fixture, "before\nafter a sync async\n");
+    }
 }
 
 #[test]

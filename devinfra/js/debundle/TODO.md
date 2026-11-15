@@ -256,8 +256,7 @@ audit candidates, not a removal decision. Schema: <spec/spec.rs>.
 - **Decorator effects:** `typescript_decorate_helper`.
 - **Native call identity variant:** `native_call_identity_inputs`'s
   `set_empty_private_field`.
-- **Native operation variants:** `native_operation_inputs`'s `symbol_for`,
-  `symbol_well_known_class_keys`, `symbol_primitive_class_keys`, and
+- **Native operation variants:** `native_operation_inputs`'s `symbol_for` and
   `promise_resolve`.
 
 For each candidate, check consumers in both repositories, including public
@@ -501,8 +500,7 @@ without a fresh runtime ownership proof. Do not whitelist a cell merely because
 its allocation site occurs in the same initializer's invoked helpers: source
 origins conflate earlier, recursive and deferred runtime generations. Extend
 admission only with a real source/spec acceptance case requiring stronger fresh
-ownership evidence. `observes_external_heap` currently records known native
-class-key reads without a cell witness and must remain a separate rejection.
+ownership evidence.
 
 ## Rename pipeline
 

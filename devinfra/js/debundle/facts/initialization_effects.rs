@@ -215,8 +215,7 @@ impl StatementFacts {
             .and_then(|calls| calls.completed_initialization.as_ref())
             .filter(|proof| proof.covers(self.ordinal));
         OwnHeapContentSummary {
-            opaque: self.heap_contents.observes_external_heap
-                || (self.heap_contents.opaque && completed_initialization.is_none()),
+            opaque: self.heap_contents.opaque && completed_initialization.is_none(),
             completed_initialization,
         }
     }

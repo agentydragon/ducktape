@@ -219,19 +219,6 @@ impl Executor<'_, '_> {
             // kernel path) and this evaluator's own flattened lanes (gate:
             // L4e deletes `legacy/`). Delete the arm with the last one.
             ValueExpr::Member(object, property, is_static_identifier, site) => {
-                if let Some(premise) = self
-                    .inputs
-                    .index
-                    .primitive_class_key_read_premise(site.source_span())
-                {
-                    self.record_proof_dependencies(
-                        NativeIntegrityGuard::NativeCallIdentity,
-                        &premise.dependencies,
-                    );
-                    self.observations
-                        .record_inference_use(premise.inference_use);
-                    return Values::from([AbstractValue::PRIMITIVE]);
-                }
                 if let Some(read) = self.root_own_data_read(expr) {
                     return read.values;
                 }

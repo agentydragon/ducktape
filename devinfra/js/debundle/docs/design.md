@@ -196,40 +196,7 @@ data-property identity; known writes to that exact slot also contradict it.
 Automatic recognition of an Object function-property read requires intact
 Object/global-object integrity and certifies only a getter-free read.
 Invoking the resulting function keeps ordinary call analysis.
-The `symbol_well_known_class_keys` input uses the same own-data proof for
-computed ordinary method keys in one direct plain class-variable initializer.
-The canonical declaration visitor retains only exact eager reads of
-`Symbol.asyncIterator`, `Symbol.asyncDispose` and `Symbol.dispose`; the shared
-recognizer also requires their existing primitive data-property rows. Other
-computed keys, inheritance, decorators and static blocks reject the input.
-Each selected read independently asserts the original global Symbol data
-binding and exact own data property through every admitted initialization
-schedule. Fresh and restored validation share resolution and known-slot
-contradiction checks, including writes in other chunks. The existing member
-read consumers use the canonical read span for the site axiom and evidence.
-Static field initializers and deferred instance code keep ordinary analysis;
-neither class result shape nor whole-class purity is inferred from this input.
-The additive `symbol_primitive_class_keys` capability shares that source shape
-and exact-site resolution but promises only data reads yielding unknown
-primitives. It supports native and filled property values without asserting
-original-value integrity. It never enters `IntrinsicIntact`, supplies no known
-Symbol identity/type and grants no later call capability. Each source chunk's
-canonical visitor recognizes only direct top-level typeof-guarded fills with a
-matching `Symbol.for("Symbol.<name>")` assignment and empty catch; whole-program
-admission applies the same known-write check to every analyzed chunk. Global
-Symbol replacement and every other known selected-slot write reject it.
-The guard, call, assignment/setter and catch keep ordinary effects.
 
-Primitive own-data reads remain observations of mutable external storage.
-Their getter/coercion callbacks are excluded while heap collection and the
-executor retain an opaque read. `HeapContentCells.observes_external_heap`
-propagates through composition and saved facts and seeds the existing heap
-timeline from chunk entry, including deferred observations. This storage has
-no unique source birth, so an earlier guarded fill cannot be skipped merely
-because the chunk has allocated no tracked array yet. Completion certificates
-cannot discharge this observed obligation. The interpreter records dependencies
-and inference uses; heap collection remains the producer of exact-read input
-use evidence. Ordinary heap constraints can still require expanded ownership.
 For a local primitive array spread, the source shape proves fresh dense
 producer arrays and no intervening user code or producer exposure, while
 native-integrity inference establishes the Array iterator and iterator `next`

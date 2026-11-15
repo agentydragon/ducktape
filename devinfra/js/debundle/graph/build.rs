@@ -1084,8 +1084,6 @@ fn emit_heap_content_order(
     // A hoisted or escaped callable can allocate before its lexical statement.
     // Ordinary own-property cells likewise have no unique eager birth proof.
     // Array length inherits the array's checked eager birth below.
-    // External storage already exists at chunk entry. Scan every observation
-    // before emitting events so its preceding opaque writers are retained too.
     let mut has_live_heap_contents = facts.iter().any(|stmt| {
         // A lexical-only initializer assertion can remove the conservative
         // binding coupling without bounding provider-owned heap state. Keep
@@ -1093,11 +1091,6 @@ fn emit_heap_content_order(
         stmt.synchronous_calls
             .as_ref()
             .is_some_and(|calls| calls.initializer_binding_effects.is_some())
-            || stmt.heap_contents.observes_external_heap
-            || stmt
-                .synchronous_calls
-                .as_ref()
-                .is_some_and(|calls| calls.heap_contents.observes_external_heap)
             || !stmt.deferred_heap_allocations.is_empty()
             || stmt
                 .synchronous_calls
@@ -1138,7 +1131,7 @@ fn emit_heap_content_order(
                 &mut effects,
                 &heap_content_cells(&callees.reads, &callees.writes),
             );
-            if callees.opaque || callees.observes_external_heap {
+            if callees.opaque {
                 opaque_causes.insert(HeapBarrierCause::CalleeHeapEffects);
             }
         }
