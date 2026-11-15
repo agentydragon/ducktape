@@ -137,6 +137,13 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
         "client_uri": GATEWAY_SESSIONS_URI,
     }
     assert "runner_token_file" not in settings
+    sampler = settings["central_sampler"]
+    assert "token_file" not in sampler
+    assert sampler["tls"]["server_uri"] == CENTRAL_SAMPLER_URI
+    assert sampler["tls"]["client_uri"] == GATEWAY_SESSIONS_URI
+    # Both outgoing Sessions connections use the same mounted role certificate.
+    for field in ("cert_file", "key_file", "ca_file"):
+        assert sampler["tls"][field] == settings["gateway_tls"][field]
     assert settings["runner_security"] == {
         "mode": "mtls",
         "tls": {
