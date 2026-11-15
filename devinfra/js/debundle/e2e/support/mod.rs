@@ -1457,7 +1457,7 @@ pub fn run_source_only_validate(
     extra_args: &[&str],
 ) -> CommandResult {
     let bin = debundler_path();
-    let output = process::debundle_output(
+    let output = debundle_fixture_output(
         Command::new(&bin)
             .args(["spec", "validate", "--modules"])
             .arg(modules_root)
@@ -1465,6 +1465,7 @@ pub fn run_source_only_validate(
             .arg(source_file)
             .arg("--report-only")
             .args(extra_args),
+        source_file,
     )
     .unwrap_or_else(|e| panic!("{e}"));
     command_result(output)
@@ -1475,12 +1476,13 @@ pub fn run_source_only_validate(
 pub fn run_match_selector(source_file: &Path, selector: &str, extra_args: &[&str]) -> Value {
     let bin = debundler_path();
     let result = command_result(
-        process::debundle_output(
+        debundle_fixture_output(
             Command::new(&bin)
                 .args(["spec", "match-selector", "--source-file"])
                 .arg(source_file)
                 .args(["--match", selector, "--format", "json"])
                 .args(extra_args),
+            source_file,
         )
         .unwrap_or_else(|e| panic!("{e}")),
     );
