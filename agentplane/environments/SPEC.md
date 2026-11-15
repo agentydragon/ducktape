@@ -60,10 +60,9 @@ incarnation-binding observer identity. Incoming callers pin the existing
 Sessions commands, Controller lifecycle calls and Executor operations. The receiver grants no bearer,
 workload Identity or delegated proxy access, and does not expose `WatchState` to callers. Its
 service-only admission needs no TokenReview resolver or `runtime_proxy.audience` setting.
-The Gateway continues to serve its old endpoint during migration, using the same
-[proxy implementation](runtimeproxy/SPEC.md). Deployment targets this receiver for App diagnostics, Notifications inventory, Sessions delivery,
-central sampler Executor and Controller lifecycle calls, after pinning the accepting caller images.
-The Gateway endpoint retires only after all callers have rolled. Before reverting
+Deployment targets this [proxy implementation](runtimeproxy/SPEC.md) for App diagnostics,
+Notifications inventory, Sessions delivery, central sampler Executor and Controller lifecycle calls.
+The Gateway registers no Runtime proxy or Executor receiver and makes no direct Runtime calls. Before reverting
 an image that accepts this setting, remove the setting and verify its ConfigMap and rollout.
 
 ## State PVC
@@ -117,7 +116,7 @@ an image that accepts this setting, remove the setting and verify its ConfigMap 
   the controller's clock from when it first saw that idle period, the controller asks the runner to
   quiesce only if it is still idle since then for Pod and VM templates. A Firecracker Sandbox first
   persists a `Preparing` attempt with a monotonically increasing generation and the observed idle
-  timestamp. This fences Gateway dispatch before `PrepareSuspend` atomically checks Runtime idleness
+  timestamp. This fences proxy dispatch before `PrepareSuspend` atomically checks Runtime idleness
   and closes new admission without sealing Sessions. A busy Runtime refuses; `ResumeAdmission`
   invalidates the attempt before dispatch reopens. An acknowledged attempt progresses through
   `Checkpointing` and `Resuming`, retaining its identity across lost replies and controller restarts.
@@ -299,14 +298,14 @@ an image that accepts this setting, remove the setting and verify its ConfigMap 
   cold start is not implemented yet.
 - A deleted Sandbox that must run once more to seal waits for a live Identity.
 
-## Runner Gateway calls
+## Runtime lifecycle calls
 
-The controller uses `runner_gateway_target` to call the stable `runner-gateway` Service while sealing
-a Sandbox with `Runner.Quiesce`. It supplies the Sandbox identity and incarnation UID on each call;
-the receiving Gateway replica routes the request to its local runner connection. Sandbox Controller
-creates no per-Sandbox control Service. Every Gateway replica maintains its own direct Runtime
-watch; the Runtime's Sandbox UID, accepted workload UID and boot ID fence its calls, so the
-controller does not assign Gateway connection ownership.
+The controller uses the historically named `runner_gateway_target` to call the stable
+`sandbox-controller:8082` Service while sealing a Sandbox with `Runner.Quiesce` or performing suspend
+admission. It supplies the Sandbox identity and incarnation UID; the receiving Environments replica
+routes the request to its own Runtime connection. No per-Sandbox control Service is created.
+Every Environments replica maintains an independent Runtime watch, fenced by Sandbox UID, the
+Controller-bound workload UID and Runtime boot ID. The Gateway does not observe or call Runtimes.
 
 ## Launch
 

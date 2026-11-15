@@ -1,4 +1,4 @@
-"""Real Gateway, envtest, Sandbox, and PostgreSQL fixtures for native contracts."""
+"""Real Dispatcher, Environments, envtest, Sandbox and PostgreSQL fixtures for native contracts."""
 
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from agentplane.env.config import EnvironmentRuntimeControl
-from agentplane.net.peertls.config import MTLS
+from agentplane.net.peertls.config import MTLS, SANDBOX_CONTROLLER_URI
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess, run_gateway
@@ -64,7 +64,7 @@ async def gateway_service(
         api_server.kubeconfig,
         database_url=dispatcher_database_url,
         namespace=sandbox.namespace,
-        controller_enabled=controller_enabled,
+        runtime_proxy_controller_callers=(SANDBOX_CONTROLLER_URI,) if controller_enabled else (),
         dispatcher_audience=DISPATCHER_AUDIENCE,
         gateway_audience=GATEWAY_AUDIENCE,
     ) as service:
@@ -73,7 +73,7 @@ async def gateway_service(
 
 @pytest.fixture
 def runtime_client(gateway_service: GatewayProcess) -> SandboxControlClient:
-    return gateway_service.gateway_client()
+    return gateway_service.environment_runtime_client()
 
 
 @pytest.fixture
@@ -92,7 +92,7 @@ def control(gateway_service: GatewayProcess, sandbox: SandboxCluster, tmp_path: 
     return EnvironmentRuntimeControl(
         listen_address="127.0.0.1:9090",
         security=MTLS(
-            tls=gateway_service.issue_environment_runtime_tls(
+            tls=gateway_service.environment_service.issue_workload_tls(
                 sandbox.environment_runtime_identity_uri, tmp_path / "runtime-tls"
             )
         ),

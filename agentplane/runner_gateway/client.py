@@ -23,7 +23,7 @@ from agentplane.runner_gateway.api import (
 
 
 class SandboxControlClient:
-    """Calls the Runner Gateway Service on a fresh connection for each RPC; the Gateway replica
+    """Calls the Environments Service on a fresh connection for each RPC; the proxy replica
     receiving the call uses the Sandbox identity to select its local runner connection."""
 
     def __init__(
@@ -35,7 +35,7 @@ class SandboxControlClient:
         channel_credentials: grpc.ChannelCredentials | None = None,
         server_name: str | None = None,
     ) -> None:
-        # A template of `{namespace}`: `runner-gateway.{namespace}.svc:8080`.
+        # A template of `{namespace}`: `sandbox-controller.{namespace}.svc:8082`.
         self.control_target = control_target
         self.token_file = token_file
         self.request_timeout_s = request_timeout_s
@@ -54,7 +54,7 @@ class SandboxControlClient:
         timeout_s: float | None = None,
         expected_incarnation_uid: str | None = None,
     ) -> T:
-        """Call a Runner RPC through the shared Gateway Service, fenced to the Sandbox identity."""
+        """Call a Runner RPC through the Environments Service, fenced to the Sandbox identity."""
         incarnation_metadata = (
             ((INCARNATION_UID_HEADER, expected_incarnation_uid),) if expected_incarnation_uid is not None else ()
         )

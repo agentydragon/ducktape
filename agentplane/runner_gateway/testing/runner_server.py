@@ -1,4 +1,4 @@
-"""Serve a scripted Runner directly to the Runner Gateway over mTLS."""
+"""Serve a scripted Runtime directly to the Environments proxy over mTLS."""
 
 from __future__ import annotations
 
@@ -12,17 +12,15 @@ import grpc
 from cryptography import x509
 
 from agentplane.env.runtime.control import environment_runtime_pb2
-from agentplane.net.peertls.config import TLS
+from agentplane.net.peertls.config import GATEWAY_RUNTIME_PROXY_URI, TLS
 from agentplane.proto import environment_runtime_state_pb2
 
 # gazelle:include_dep @pypi//protobuf
 
-# The Gateway authenticates this certificate identity before it sends Runner RPCs.
-_RUNNER_GATEWAY_URI = "spiffe://agentplane/runner-gateway"
 _WATCH_INTERVAL_S = 5
 
 
-def _gateway_peer_uri(context: grpc.aio.ServicerContext) -> str | None:
+def _proxy_peer_uri(context: grpc.aio.ServicerContext) -> str | None:
     certificates = tuple(context.auth_context().get("x509_pem_cert", ()))
     if len(certificates) != 1:
         return None
@@ -46,8 +44,8 @@ class _WatchStateInterceptor(grpc.aio.ServerInterceptor):
         async def watch_state(
             request: environment_runtime_pb2.WatchStateRequest, context: grpc.aio.ServicerContext
         ) -> AsyncIterator[environment_runtime_pb2.WatchStateResponse]:
-            if _gateway_peer_uri(context) != _RUNNER_GATEWAY_URI:
-                await context.abort(grpc.StatusCode.PERMISSION_DENIED, "peer is not the Runner Gateway")
+            if _proxy_peer_uri(context) != GATEWAY_RUNTIME_PROXY_URI:
+                await context.abort(grpc.StatusCode.PERMISSION_DENIED, "peer is not the Runtime proxy")
             if not request.sandbox_uid or not request.incarnation_uid:
                 await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Sandbox and incarnation are required")
             response = environment_runtime_pb2.WatchStateResponse(
@@ -73,7 +71,7 @@ async def runner_server(
 ) -> AsyncIterator[grpc.aio.Server]:
     """Serve the scripted Runner RPCs on `listen_address` until the context exits.
 
-    `tls` carries the Runner's server certificate and the CA used to authenticate the Gateway client.
+    `tls` carries the Runner's server certificate and the CA used to authenticate the Runtime proxy client.
     `add_services` registers the scripted Runner methods; WatchState is supplied by this fixture.
     """
     if tls.ca_file is None or tls.key_file is None or tls.cert_file is None:

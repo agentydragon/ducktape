@@ -81,8 +81,8 @@ class RunnerGatewaySettings(BaseModel):
     tls: ClientTLS | None = None
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     control_target: str = Field(
-        description="Stable Runner Gateway Service target, typically `runner-gateway.{namespace}.svc:8080`; "
-        "the Gateway routes each lifecycle call using the Sandbox identity."
+        description="Environments Runtime proxy target, typically `sandbox-controller.{namespace}.svc:8082`; "
+        "the proxy routes each Runtime call using the Sandbox identity."
     )
     request_timeout_s: PositiveSeconds = 5
     token_file: Path | None = Field(

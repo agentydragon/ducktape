@@ -12,7 +12,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/environmentruntimeclient"
 )
 
-// GatewayEnvironmentRuntimeProxy invokes Environment Runtime RPCs through the stable Runner Gateway Service
+// GatewayEnvironmentRuntimeProxy invokes Environment Runtime RPCs through the stable Environments Service
 // and supplies the named Sandbox's identity on every call.
 type GatewayEnvironmentRuntimeProxy struct{ config EnvironmentRuntimeConfig }
 
@@ -25,7 +25,7 @@ func NewGatewayEnvironmentRuntimeProxy(config EnvironmentRuntimeConfig) (*Gatewa
 		return nil, errors.New("Runner Gateway caller authentication is invalid")
 	}
 	if config.TargetTemplate == "" {
-		config.TargetTemplate = sandboxapi.RunnerGatewayTargetTemplate()
+		config.TargetTemplate = sandboxapi.RuntimeProxyTargetTemplate()
 	}
 	return &GatewayEnvironmentRuntimeProxy{config: config}, nil
 }

@@ -1,86 +1,43 @@
 # Runner Gateway
 
-The Runner Gateway combines durable Session Dispatcher admission and delivery with a Sandbox-fenced
-Runner proxy. Dispatcher automatic wake preserves the effective caller and applies the Sandbox's
-`wakeOnSend` setting, configured wake grants and shared budget. EnvironmentService is served by the
-[Sandbox Controller](../environments/README.md) on every replica at `sandbox-controller:8082`;
-the Gateway no longer registers it or accepts its deployment settings. Production Runtime and
-Executor calls now target that Environments listener, including Dispatcher delivery under the
-Sessions SVID. The Gateway proxy below is retained for rollback until callers have rolled; its
-receiver, watches and grants retire separately.
-The Gateway dials each Runner's native gRPC server on private port `9090`. Every Gateway replica
-independently opens a `WatchState` to each current Runtime and may serve calls for it; no Gateway
-connection Lease or per-Sandbox `-control` EndpointSlice participates in routing.
-Callers use the stable `runner-gateway` Service. Each Gateway resolves the live Sandbox and
-workload, then calls the Runtime with the Sandbox UID, current workload Pod UID and boot ID
-observed from that Runtime. The Sandbox Controller's authenticated direct watch binds the workload
-UID before facts are published. The Runtime rejects stale Sandbox, incarnation or boot identities;
-the shared Gateway SVID cannot select or advance the binding. The Gateway's per-method caller
-authorization remains in force, and uncertain mutations are never replayed automatically.
+The deployed Runner Gateway serves the Session Dispatcher: durable Session admission, watches,
+automatic wake and delivery. Its TLS gRPC listener at `:8080` serves Dispatcher and health methods.
+It admits live workload Identity SVIDs, exact service SVIDs and explicitly scoped typed service
+delegation. Kubernetes bearers grant no admission. The deployed names and
+`spiffe://agentplane/session-dispatcher` server identity stay unchanged.
 
-The Gateway Role reads workloads and policy, patches existing Sandboxes for Dispatcher automatic
-wake, and maintains Dispatcher delivery Leases. It cannot create or delete Sandboxes or read
-SandboxTemplates; EnvironmentService owns launch and deletion through the Controller Role.
+EnvironmentService, the Runtime proxy and Executor serve on every
+[Environments](../environments/README.md) replica at `sandbox-controller:8082`. The Gateway opens no
+Runtime connection or `WatchState` stream and registers none of those services. Native Dispatcher
+delivery calls Environments under the Sessions SVID (`spiffe://agentplane/sessions`), pinning the
+Sandbox Controller server identity. Central delivery calls the sampler. These calls retain the
+original command ID and never forward caller credentials. Environments does not call Sessions.
 
-One TLS gRPC listener serves Dispatcher, Runtime proxy, Executor and health methods with independent
-per-method authorization. Runtime proxy and Executor methods admit only configured service SVIDs:
-App and Notifications diagnostics, Sessions commands, Controller lifecycle and sampler execution
-have separate exact grants. Dispatcher also admits live workload Identity SVIDs and explicitly
-configured typed service delegation. Kubernetes bearer credentials grant no admission. See the
-[proxy contract](../environments/runtimeproxy/SPEC.md) and [Dispatcher contract](dispatcher/SPEC.md).
+Dispatcher automatic wake preserves the effective caller and applies `wakeOnSend`, configured wake
+grants and the shared budget. Its Kubernetes Role still reads workload and policy state, patches
+existing Sandboxes for automatic wake and maintains delivery Leases. It cannot create or delete
+Sandboxes or read SandboxTemplates. The Controller owns `Sandbox.status`; its leader election and
+Runtime observation are independent of Dispatcher scheduling ownership. See the
+[Dispatcher contract](dispatcher/SPEC.md) and [Runtime proxy contract](../environments/runtimeproxy/SPEC.md).
 
-The required `rpc` block configures TLS and SPIFFE trust. Receiver audiences, account grants and bearer
-delegation settings have retired. The shared listener schema still decodes `kubernetes_bearer`
-entries, but these receivers only use SPIFFE authentication. Dispatcher
-workers use the Sessions service SVID in `gateway_tls` to call the proxy across replicas. Neither
-caller credentials nor effective Identity metadata replace that service proof. The Sandbox
-Controller owns `Sandbox.status`; delivery leases and Runtime incarnation fencing are unchanged. Dispatcher
-Runtime calls pin either the Gateway's `spiffe://agentplane/session-dispatcher` server identity or
-Environments' `spiffe://agentplane/sandbox-controller` identity in `gateway_tls` during cutover.
-Each connection verifies only its configured identity. Retargeting waits for the enabled
-Environments receiver and accepting caller images to roll; separate Dispatcher API clients retain
-the Session Dispatcher server pin.
-
-Cluster and k3s Gateways and Runners use certificates from cert-manager and roots distributed by
-trust-manager. Required `runner_security.mode: mtls` uses a `tls` block naming the Gateway's client
-`cert_file`, `key_file` and `ca_file`. The Gateway identity
-is `spiffe://agentplane/runner-gateway`; runner identities bind the Sandbox UID and its current
-controller-assigned credential ID. Mutual TLS plus Sandbox UID, workload incarnation and Runtime
-boot ID fence every direct Runner RPC. Each replica opens an independent Runtime watch. The Runtime
-protocol has no Gateway connection epoch; observation loss does not revoke another replica's calls
-or Runtime-owned admitted work.
-
-Local tests may explicitly select `runner_security: {mode: insecure}`, with the Runner's
-`control.security` set to the same value. This disables transport encryption and peer authentication;
-it preserves workload ownership validation, fencing and public Gateway caller authorization. The
-mode has no default; insecure rejects a `tls` block and invalid mTLS never falls back. The Sandbox
-Controller still provisions certificates, so cluster and k3s stacks retain real certificate controllers.
+The required `rpc` block configures TLS and SPIFFE trust. `gateway_tls` and
+`runner_control_target_template` configure the Sessions client's Environments connection; their
+historical setting names remain. Retired `runner_security`, `runtime_proxy_readers`,
+`runtime_proxy_session_callers`, `runtime_proxy_controller_callers` and `executor_service_callers`
+remain decodable without receiver authority until their manifest omission has rolled out.
+`runner_security` is optional and no credential file it names is opened by this process. Obsolete
+Runtime client certificates, network permissions and mounts retire after this image is pinned and
+running. Restoring the old receiver for rollback requires its image and credentials before callers
+are retargeted.
 
 ## Replica ownership decision
 
-**Selected by Rai, 2026-11-14 02:36 UTC, relayed by Claude.** Callers route through the stable
-`runner-gateway` Service, so any authenticated Gateway replica may receive a call and connect
-directly to the current Runtime. No per-Sandbox `<sandbox>-control` EndpointSlice or Gateway
-connection Lease participates in routing. The Controller-bound
-Sandbox UID and workload Pod UID plus the Runtime's boot ID fence each call. The shared Gateway SVID
-does not let a replica choose or advance an incarnation. Per-method caller authorization remains,
-and uncertain mutations are never replayed automatically. The Dispatcher delivery Lease is separate
-and unchanged.
-
-The Dispatcher role retains its PostgreSQL queue, command IDs, per-Sandbox delivery Leases
-and database ownership generations. Those delivery Leases are separate from Gateway-to-Runtime
-connections and remain out of scope. There is no separate Gateway database or Session registry and
-no History Service client. The selected Controller ownership has its leader-elected manager observe
-Runtime state directly and keep lifecycle facts in memory. Runtime restart, workload replacement and
-same-name Sandbox replacement invalidate old calls through boot ID, incarnation UID and Sandbox UID.
-Observation loss makes facts stale; they cannot prove connectivity, quiescence or idleness. A fresh
-snapshot restores observation and resets the Controller's idle timer. Every Gateway observer has its own callable connection.
-
-Every Gateway forwards an execution mutation at most once. If the direct call loses its connection
-after the Runtime may have acted, its outcome is uncertain and the Gateway does not automatically
-replay it after reconnect or failover. A new call must be explicitly made by the caller.
-[Queue semantics](dispatcher/README.md) remain distinct from History's retained
-conversation and from Runner admission.
+The selected any-replica Runtime contract now belongs to Environments: no connection Lease, epoch
+or per-Sandbox control EndpointSlice; every proxy replica may call the Controller-bound Sandbox UID
+and workload Pod UID with the observed Runtime boot ID. Watch loss closes only that replica's route;
+Runtime restart or same-name replacement invalidates stale fences. Uncertain mutations are never
+automatically replayed. The [proxy specification](../environments/runtimeproxy/SPEC.md) owns this
+contract; the separate Dispatcher delivery Lease remains unchanged.
 
 ## Source and tests
 
@@ -91,7 +48,6 @@ conversation and from Runner admission.
   `AGENTPLANE_RUNNER_GATEWAY_*` variables do not override file values. The independent `dispatcher_service_delegation`
   policy names an exact service actor and exact Dispatcher RPC methods; it grants no Runtime proxy or
   Executor authority. EnvironmentService roles and delegation belong to the Controller settings.
-- [`../environments/runtimeproxy/`](../environments/runtimeproxy/): shared direct Runtime connections, proxy and Sandbox/Pod validation during the receiver migration.
 - `internal/sandboxinventory/`: informer-backed Sandbox reads and the uncached Identity reader that supply the Dispatcher contract.
 - `dispatcher/`: durable admission, watch, delivery, guarded wake and scheduling ownership.
 - `migrations/`: Goose migrations for the Dispatcher database.
@@ -120,7 +76,7 @@ The same binary embeds Goose migrations and applies them before request handling
 `runner-gateway --migrate-only` initializes a database using the same lifecycle and
 `AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL`. PostgreSQL session locks serialize simultaneous
 startup attempts. Integration tests exercise real PostgreSQL and queue-to-Runner delivery over
-the direct mTLS connection on RBE.
+the separate Environments mTLS receiver on RBE.
 The cross-language Notification acceptance runs a real Kubernetes API server and etcd through
 `envtest`, installs the Agentplane CRDs and issues Pod-bound ServiceAccount tokens. Narrow
 consumer tests continue using lightweight gRPC peers.
@@ -154,16 +110,7 @@ ProxyRunner. Central controls bypass executor readiness/wake checks after Sessio
 Central sampler V1 retains the existing Sandbox identity and requires the bound Sandbox object; it
 does not support optional attachments or environment-free Sessions.
 
-The separate, default-empty `executor_service_callers` policy enables typed `Executor` RPCs for
-trusted samplers. The Gateway checks destination and incarnation, then forwards process and file
-operations to the Runner's authenticated `Executor` service using the same
-[sandbox-owned contract](../env/runtime/execution/executor.proto). The Runner alone translates the
-local Codex JSON-RPC protocol. A server-streaming `OpenSession` owns each adapter connection and
-returns native-frame evidence; execution operations use unary RPCs with that session ID. Closing
-the stream releases the adapter connection and detaches the native Codex session. Codex's
-30-second resume grace period ends by expiring the session and terminating its remaining processes.
-The Gateway adds no persistence or operation
-receipts and never replays mutations. Open execution sessions participate in Runner activity and
-quiesce.
-The Dispatcher is absent from this tool path. See the
-[central sampler contract](../central_sampler/SPEC.md).
+Executor runs in Environments, independently of Dispatcher admission. The sampler presents its own
+narrow service SVID grant there; this process has no Executor receiver. See the
+[central sampler contract](../central_sampler/SPEC.md) and the
+[Runtime proxy contract](../environments/runtimeproxy/SPEC.md).

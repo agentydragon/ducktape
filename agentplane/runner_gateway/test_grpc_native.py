@@ -16,7 +16,8 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 from agentplane.env.e2e.testing import events, launches
 from agentplane.env.e2e.testing.config import RunnerTestConfig
 from agentplane.env.e2e.testing.process import RunningRunner
-from agentplane.env.runtime.control import environment_runtime_pb2
+from agentplane.env.runtime.control import environment_runtime_pb2, environment_runtime_pb2_grpc
+from agentplane.env.runtime.execution import executor_pb2, executor_pb2_grpc
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.testing.go_service import wait_for_history_session
 from agentplane.proto import command_pb2, event_log_pb2, session_pb2
@@ -56,7 +57,7 @@ async def test_workload_listener_requires_svid_and_refuses_bearer(
     gateway_service: GatewayProcess, sandbox: SandboxCluster, tmp_path: Path, app_token_file: Path
 ) -> None:
     bearer = (await asyncio.to_thread(app_token_file.read_text)).strip()
-    root_certificates = gateway_service.environment_runtime_ca_file.read_bytes()
+    root_certificates = gateway_service.environment_service.ca_file.read_bytes()
 
     async def list_sessions(*, client_certificate: tuple[Path, Path] | None = None, token: str | None = None) -> None:
         private_key = certificate_chain = None
@@ -75,7 +76,7 @@ async def test_workload_listener_requires_svid_and_refuses_bearer(
     with pytest.raises(grpc.aio.AioRpcError) as bearer_rejected:
         await list_sessions(token=bearer)
     assert bearer_rejected.value.code() == grpc.StatusCode.UNAUTHENTICATED
-    workload_tls = gateway_service.issue_environment_runtime_tls(
+    workload_tls = gateway_service.environment_service.issue_workload_tls(
         sandbox.environment_runtime_identity_uri, tmp_path / "mixed-workload-client"
     )
     assert workload_tls.cert_file is not None
@@ -85,6 +86,37 @@ async def test_workload_listener_requires_svid_and_refuses_bearer(
     with pytest.raises(grpc.aio.AioRpcError) as rejected:
         await list_sessions(client_certificate=client_certificate, token=bearer)
     assert rejected.value.code() == grpc.StatusCode.UNAUTHENTICATED
+
+
+async def test_gateway_dispatches_sessions_and_environment_service_owns_runtime_receiver(
+    gateway_service: GatewayProcess,
+    sandbox_control: SandboxControlClient,
+    sandbox: SandboxCluster,
+    runner: RunningRunner,
+    session_dispatcher: SessionDispatcherClient,
+) -> None:
+    """The live Dispatcher and Environments endpoints work; the retired Gateway RPCs do not."""
+    await gateway_service.environment_service.wait_for_runner(sandbox_control, sandbox.destination)
+    assert await sandbox_control.list_sessions(sandbox.destination) == []
+    await session_dispatcher.unary(session_dispatcher.stub.ListSessions, session_dispatcher_pb2.ListSessionsRequest())
+
+    async with grpc.aio.secure_channel(
+        gateway_service.target, gateway_service.service_credentials("spiffe://agentplane/app")
+    ) as runtime_channel:
+        with pytest.raises(grpc.aio.AioRpcError) as runtime_absent:
+            await environment_runtime_pb2_grpc.EnvironmentRuntimeStub(runtime_channel).ListSessions(
+                session_pb2.ListSessionsRequest(), timeout=5
+            )
+    assert runtime_absent.value.code() == grpc.StatusCode.UNIMPLEMENTED
+
+    async with grpc.aio.secure_channel(
+        gateway_service.target, gateway_service.service_credentials("spiffe://agentplane/central-sampler")
+    ) as executor_channel:
+        with pytest.raises(grpc.aio.AioRpcError) as executor_absent:
+            await executor_pb2_grpc.ExecutorStub(executor_channel).ReadProcess(
+                executor_pb2.ReadProcessRequest(), timeout=5
+            )
+    assert executor_absent.value.code() == grpc.StatusCode.UNIMPLEMENTED
 
 
 def _spec_at_target(spec: session_pb2.SessionSpec, target: SandboxDestination) -> session_pb2.SessionSpec:
@@ -299,7 +331,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     assert native_session_id
     assert len(active.processes) == 1
     await runner.restart()
-    await gateway_service.wait_for_runner(remote, sandbox.destination)
+    await gateway_service.environment_service.wait_for_runner(remote, sandbox.destination)
     await wait_for_entries(
         runner, session, entries[-1].cursor, lambda tail: any(events.kind(entry) == "harness_exited" for entry in tail)
     )

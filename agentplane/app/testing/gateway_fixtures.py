@@ -68,12 +68,12 @@ async def app_token_file(api_server: KubernetesApiServer, tmp_path: Path) -> Pat
 
 @pytest.fixture
 def sandbox_control(gateway_service: GatewayProcess) -> SandboxControlClient:
-    return gateway_service.gateway_client()
+    return gateway_service.environment_runtime_client()
 
 
 @asynccontextmanager
 async def session_dispatcher_client(gateway: GatewayProcess) -> AsyncIterator[SessionDispatcherClient]:
-    """A replica's own Dispatcher client: a channel of its own to the one Gateway."""
+    """A replica's own Dispatcher client, connected to the Gateway listener."""
     async with dial(
         gateway.target, channel_credentials=gateway.service_credentials("spiffe://agentplane/app")
     ) as channel:

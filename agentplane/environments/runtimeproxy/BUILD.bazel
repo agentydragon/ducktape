@@ -14,7 +14,6 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/environments/runtimeproxy",
     visibility = [
         "//agentplane/environments:__subpackages__",
-        "//agentplane/runner_gateway:__subpackages__",
     ],
     deps = [
         "//agentplane/env/runtime/control:environment_runtime_go_proto",

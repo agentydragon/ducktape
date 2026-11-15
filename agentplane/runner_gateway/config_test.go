@@ -258,7 +258,26 @@ func TestSettingsAreRefusedWithoutEchoingRuntimeSecretValues(t *testing.T) {
 	}
 }
 
-func TestRunnerSecurityMustBeExplicitAndConsistent(t *testing.T) {
+func TestRetiredRuntimeCredentialsMayBeOmitted(t *testing.T) {
+	contents := strings.Replace(requiredFile,
+		"runner_security: {mode: mtls, tls: {cert_file: /tmp/test-cert, key_file: /tmp/test-key, ca_file: /tmp/test-ca}}\n", "", 1)
+	for _, grants := range []string{"", `runtime_proxy_readers: [spiffe://agentplane/app]
+runtime_proxy_session_callers: [spiffe://agentplane/sessions]
+runtime_proxy_controller_callers: [spiffe://agentplane/sandbox-controller]
+executor_service_callers: [spiffe://agentplane/central-sampler]
+`} {
+		path := configtest.WriteSettings(t, contents+grants)
+		c, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.RunnerSecurity != nil {
+			t.Fatal("Dispatcher required a direct Runtime credential")
+		}
+	}
+}
+
+func TestRetiredRuntimeSecurityStillDecodesConsistently(t *testing.T) {
 	for _, test := range []struct {
 		name, security string
 		valid          bool

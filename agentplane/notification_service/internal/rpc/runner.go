@@ -13,20 +13,20 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 )
 
-// ProxyRunner asks a Sandbox's runner through the stable Runner Gateway Service, as the Session Dispatcher does.
+// ProxyRunner asks a Sandbox's runner through the stable Environments Service, as the Session Dispatcher does.
 type ProxyRunner struct {
 	TLS *peertls.ClientTLS
 	// TokenFile is the projected token used when TLS does not present a client SVID.
 	TokenFile string
 	Timeout   time.Duration
-	// TargetTemplate defaults to the stable Runner Gateway Service when empty. A test points it at a fixed server.
+	// TargetTemplate defaults to the stable Environments Service when empty. A test points it at a fixed server.
 	TargetTemplate string
 }
 
 func (r *ProxyRunner) ListSessions(ctx context.Context, sandbox *sandboxreader.Identity) ([]string, error) {
 	template := r.TargetTemplate
 	if template == "" {
-		template = sandboxapi.RunnerGatewayTargetTemplate()
+		template = sandboxapi.RuntimeProxyTargetTemplate()
 	}
 	var sessions []string
 	err := environmentruntimeclient.WithClient(ctx, environmentruntimeclient.Config{

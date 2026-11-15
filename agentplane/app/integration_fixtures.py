@@ -176,7 +176,9 @@ async def app(
         db_url,
         history_service,
         sandboxes=SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace),
-        gateway=GatewayAccess(gateway_service.target, None, gateway_service.client_tls),
+        gateway=GatewayAccess(
+            gateway_service.target, None, gateway_service.client_tls, gateway_service.environment_service.ca
+        ),
         config=app_config,
     ) as process:
         yield process

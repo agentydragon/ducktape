@@ -63,11 +63,11 @@ type config struct {
 	RPC      listener.Config `mapstructure:"rpc"`
 }
 
-// runnerGateway is how the service reaches a Sandbox's runner through the Runner Gateway's proxy.
+// runnerGateway is how the service reaches a Sandbox's Runtime through the Environments proxy.
 type runnerGateway struct {
 	TLS *peertls.ClientTLS `mapstructure:"tls"`
-	// ControlTarget is the stable Runner Gateway Service, a template of `{namespace}` such as
-	// `runner-gateway.{namespace}.svc:8080`.
+	// ControlTarget is the Environments Runtime proxy Service, a template of `{namespace}` such as
+	// `sandbox-controller.{namespace}.svc:8082`.
 	ControlTarget string `mapstructure:"control_target"`
 	// TokenFile is the projected token used when TLS does not present a client SVID.
 	TokenFile             string  `mapstructure:"token_file"`

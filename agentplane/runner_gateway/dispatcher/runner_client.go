@@ -14,15 +14,15 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/environmentruntimeclient"
 )
 
-// ProxyRunner dials the stable Runner Gateway Service for each call. Any replica can
+// ProxyRunner dials the stable Environments Service for each call. Any replica can
 // serve the call, and command IDs reconcile uncertain replies at the runner journal.
 type ProxyRunner struct {
 	Namespace string
 	TokenFile string
 	Timeout   time.Duration
-	// GatewayTLS pins the Session Dispatcher server SVID and may present the Sessions role SVID.
+	// GatewayTLS pins the Environments server SVID and may present the Sessions role SVID.
 	GatewayTLS *peertls.ClientTLS
-	// Defaults to the stable Runner Gateway Service when empty. Templates can also
+	// Defaults to the stable Environments Service when empty. Templates can also
 	// be a fixed target for host-process integration tests.
 	TargetTemplate string
 }
@@ -30,7 +30,7 @@ type ProxyRunner struct {
 func (r *ProxyRunner) target(sandbox string) string {
 	template := r.TargetTemplate
 	if template == "" {
-		template = sandboxapi.RunnerGatewayTargetTemplate()
+		template = sandboxapi.RuntimeProxyTargetTemplate()
 	}
 	return environmentruntimeclient.ExpandTarget(template, sandbox, r.Namespace)
 }

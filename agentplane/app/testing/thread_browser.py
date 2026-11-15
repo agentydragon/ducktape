@@ -158,7 +158,12 @@ async def electric(
 
 @pytest.fixture
 def gateway_access(gateway_service: GatewayProcess, app_token_file: Path) -> GatewayAccess:
-    return GatewayAccess(target=gateway_service.target, token_file=None, tls=gateway_service.client_tls)
+    return GatewayAccess(
+        target=gateway_service.target,
+        token_file=None,
+        tls=gateway_service.client_tls,
+        environment_runtime_ca=gateway_service.environment_service.ca,
+    )
 
 
 @asynccontextmanager
@@ -169,15 +174,15 @@ async def scripted_runner(
     sandbox_control: SandboxControlClient,
     tmp_path: Path,
 ) -> AsyncIterator[None]:
-    """`source`'s scripted runner, connected to the Runner Gateway as `sandbox`'s runner."""
+    """`source`'s scripted Runtime, observed by Environments as `sandbox`'s Runtime."""
     async with runner_server(
         "127.0.0.1:9090",
-        gateway_service.issue_environment_runtime_tls(
+        gateway_service.environment_service.issue_workload_tls(
             sandbox.environment_runtime_identity_uri, tmp_path / "environment-runtime-transport"
         ),
         partial(add_replication_source, source),
     ):
-        await gateway_service.wait_for_runner(sandbox_control, sandbox.destination)
+        await gateway_service.environment_service.wait_for_runner(sandbox_control, sandbox.destination)
         yield
 
 

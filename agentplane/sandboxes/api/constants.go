@@ -27,14 +27,14 @@ const (
 	RunnerProxySandboxOwnerNameMetadataKey      = "x-agentplane-sandbox-owner-name"
 	RunnerProxyIncarnationUIDMetadataKey        = "x-agentplane-incarnation-uid"
 
-	ControlServicePort   = 8080
-	RunnerGatewayService = "runner-gateway"
+	RuntimeProxyServicePort = 8082
+	RuntimeProxyService     = "sandbox-controller"
 	// EnvironmentRuntimeServicePort is the Environment Runtime's mTLS listener port in a Pod or KubeVirt guest.
 	EnvironmentRuntimeServicePort           = 9090
 	EnvironmentRuntimeCredentialMetadataKey = "agentplane.allegedly.works/environment-runtime-credential"
 )
 
-// RunnerGatewayTargetTemplate routes each Sandbox's Environment Runtime RPCs through the stable Runner Gateway Service.
-func RunnerGatewayTargetTemplate() string {
-	return fmt.Sprintf("%s.{namespace}.svc:%d", RunnerGatewayService, ControlServicePort)
+// RuntimeProxyTargetTemplate routes each Sandbox's Environment Runtime RPCs through the stable Environments Service.
+func RuntimeProxyTargetTemplate() string {
+	return fmt.Sprintf("%s.{namespace}.svc:%d", RuntimeProxyService, RuntimeProxyServicePort)
 }

@@ -1,4 +1,4 @@
-"""The production client routes through the authenticated Go Runner Gateway."""
+"""The production Runtime client routes through the authenticated Environments proxy."""
 
 import pytest
 import pytest_bazel

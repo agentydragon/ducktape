@@ -32,7 +32,7 @@ from agentplane.env.runtime.execution.testing.codex_exec_server_container import
 from agentplane.grpc.calls import dial
 from agentplane.history_service.testing.go_service import go_history_service, migrate_history_database
 from agentplane.native.codex.testing.responses_sse import CustomToolCall, Message, response_stream
-from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, MTLS
+from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, MTLS, SANDBOX_CONTROLLER_URI
 from agentplane.proto import event_pb2, session_pb2
 from agentplane.runner_gateway.testing.gateway_process import run_gateway
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
@@ -78,7 +78,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 api_server.kubeconfig,
                 database_url=gateway_database,
                 namespace=sandbox.namespace,
-                executor_services=("spiffe://agentplane/central-sampler",),
+                runtime_proxy_executor_callers=(CENTRAL_SAMPLER_URI,),
                 dispatcher_audience="test-central-dispatcher",
                 gateway_audience=gateway_audience,
             ) as gateway,
@@ -89,7 +89,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 writer_namespaces=[sampler.namespace, sandbox.namespace],
                 sampler_service_actor=CENTRAL_SAMPLER_URI,
                 policy_namespace=sandbox.namespace,
-                svid_ca=gateway.environment_runtime_ca,
+                svid_ca=gateway.environment_service.ca,
             ) as history,
         ):
             store = Store(engine)
@@ -109,7 +109,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
             control = configuration.EnvironmentRuntimeControl(
                 listen_address="127.0.0.1:9090",
                 security=MTLS(
-                    tls=gateway.issue_environment_runtime_tls(
+                    tls=gateway.environment_service.issue_workload_tls(
                         sandbox.environment_runtime_identity_uri, tmp_path / "environment-runtime-transport"
                     )
                 ),
@@ -128,11 +128,13 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                     ),
                     control_endpoint=control,
                     observe_control=False,
-                    controller_credentials=gateway.controller_credentials(tmp_path / "controller-transport"),
+                    controller_credentials=gateway.environment_service.channel_credentials(SANDBOX_CONTROLLER_URI),
                     incarnation_uid=sandbox.pod_uid,
                 ) as running_runner,
             ):
-                await gateway.wait_for_runner(gateway.gateway_client(), sandbox.destination)
+                await gateway.environment_service.wait_for_runner(
+                    gateway.environment_runtime_client(), sandbox.destination
+                )
                 sampler_settings = settings(
                     database_url,
                     endpoint.origin,
@@ -140,8 +142,8 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                     "/opt/codex/bin/codex",
                     code_mode_host,
                     undeclared_outputs_dir(),
-                    gateway_target=gateway.target,
-                    gateway_tls=gateway.service_tls("spiffe://agentplane/central-sampler"),
+                    gateway_target=gateway.environment_service.target,
+                    gateway_tls=gateway.environment_service.tls_for(CENTRAL_SAMPLER_URI),
                     gateway_token_file=None,
                     history_target=history.ingress_target,
                     history_tls=history.history_tls,
@@ -232,8 +234,8 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                     finally:
                         event_stream.cancel()
                     async with dial(
-                        gateway.target,
-                        channel_credentials=gateway.service_credentials("spiffe://agentplane/central-sampler"),
+                        gateway.environment_service.target,
+                        channel_credentials=gateway.environment_service.channel_credentials(CENTRAL_SAMPLER_URI),
                     ) as gateway_channel:
                         stale_stream = executor_pb2_grpc.ExecutorStub(gateway_channel).OpenSession(
                             executor_pb2.OpenSessionRequest(

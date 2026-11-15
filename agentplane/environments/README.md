@@ -18,7 +18,7 @@ Executor on every replica at `sandbox-controller:8082`, with independent routing
 service SVID grants. Its outbound `runtime-proxy` certificate is separate from the Controller's
 binding observer certificate. App diagnostics, Notifications inventory, Sessions delivery, central sampler Executor and Controller
 lifecycle calls target this Service and pin its Sandbox Controller server identity. The Gateway
-receiver remains available for rollback until those callers have rolled.
+registers no Runtime proxy or Executor receiver and starts no direct Runtime watches.
 Proxy admission uses service SVIDs directly; `runtime_proxy` has no bearer audience setting.
 See [the receiver contract](SPEC.md#optional-runtime-proxy-and-executor-receiver).
 
@@ -36,7 +36,7 @@ operator grants through the Kubernetes API; this controller reconciles each Sand
 status. Each runner serves mTLS on its workload network, and the Environments proxy connects to the
 current incarnation using its per-incarnation certificate. The elected Controller observes Runtime
 facts directly with a narrow SVID; that authenticated watch binds the current workload UID before
-publishing facts, while Gateway watches cannot select or replace the binding. History and telemetry
+publishing facts, while proxy watches cannot select or replace the binding. History and telemetry
 use the egress sidecar's platform routes. `spec.bootstrap` and the Sandbox's identity reach its runner
 through the Sandbox's launch ConfigMap (a Pod mounts it, a VM gets it as a disk). Session launch
 defaults live in the app's preset catalog and are resolved before an opening reaches the Dispatcher.
@@ -146,7 +146,7 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   recorded cause; the Sandbox is to run, so the stop path seals it and replaces the incarnation.
   A restart between the call and the write ends the same way, at the cost of one incarnation.
 - **The elected leader watches Runtime directly.** `WatchState(observe_only=true)` uses the
-  Controller's own SVID and grants no Gateway command authority. This
+  Controller's own SVID and grants no Runtime command authority. This
   authenticated request binds the current workload UID for that Runtime process before facts are
   published; reconnects may retry only that UID. `runtime_states.go` keeps snapshots in memory by
   Sandbox UID and Pod UID, with boot ID and a local stream generation. A replacement fences late
@@ -156,7 +156,7 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   ineligible immediately; connectivity keeps a one-minute grace. Reopening a stream restarts its
   full idle timer, including when `idle-since` is unchanged. Quiesce retry deadlines remain durable;
   only fresh observed quiescence or an acknowledged quiesce RPC completes a seal. Bootstrap failure
-  stays terminal for that incarnation. Every Gateway replica independently observes the
+  stays terminal for that incarnation. Every Environments proxy replica independently observes the
   Controller-bound Runtime UID and may call using the current Sandbox UID,
   workload UID and Runtime boot ID.
 - **Gotcha:** a deleted Sandbox whose runner cannot seal stays in `Quiescing`. To give up on the seal,

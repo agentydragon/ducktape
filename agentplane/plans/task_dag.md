@@ -189,7 +189,7 @@ States as of 14:55 UTC.
 | Track                                      | Operator release (UTC) | Node                             | State                                                                                                                                                                                                                                                                          |
 | ------------------------------------------ | ---------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Retire bearer admission (auth stage 5)     | 2026-11-15             | `PRIVILEGED_BACKEND_AUTH_DESIGN` | Receiver code merged for every receiver, History last (#16728, 14:35 UTC); retired keys omitted and fields deleted for Policy (#16718), Gateway (#16722) and the sampler (#16729); the other receivers' key and field removal, the shared TokenReview code and its RBAC follow |
-| Runtime proxy and Executor to Environments | 2026-11-15             | `RUNTIME_PROXY_TO_ENVIRONMENTS`  | Callers reach the Runtime through Environments since 14:20 UTC (#16723); retiring the Gateway receiver follows                                                                                                                                                                 |
+| Runtime proxy and Executor to Environments | 2026-11-15             | `RUNTIME_PROXY_TO_ENVIRONMENTS`  | Caller cutover (#16723) rolled and traffic verified; retiring the Gateway receiver, then obsolete config and grants after its image pin                                                                                                                                        |
 | Runtime proxy caller audit                 | 2026-11-15             | `RUNTIME_PROXY_CALLER_AUDIT`     | Proposal merged (#16643); its dispositions await operator review, and the migrations it proposes are not released                                                                                                                                                              |
 | Sessions binary directory                  | 2026-11-15 11:35       | `SESSIONS_BINARY_DIRECTORY`      | Starts after the Runtime proxy move's exit                                                                                                                                                                                                                                     |
 
@@ -3898,20 +3898,16 @@ flowchart LR
 
 ### `RUNTIME_PROXY_TO_ENVIRONMENTS` — the Runtime proxy and Executor move into Environments
 
-**In flight, 2026-11-15: receiver enabled (#16692), accepting caller images (#16696) rolled, and
-callers retargeted to Environments (#16723, 14:20 UTC); retiring the Gateway receiver and its
-obsolete grants is next.** The Gateway still registers the proxy and Executor
-(`runner_gateway/main.go`). The
-proxy lives at `environments/runtimeproxy`, its final home: Go's internal-import rule
-keeps it outside `internal/` while the Gateway still imports it. The Dispatcher already calls the proxy over the network, so
-the move adds no hop. The proxy grants `CreateSession`, `SubmitInput`, `ChangeModel`,
-`ChangeReasoningEffort` and `InterruptTurn` to the Sessions binary's service SVID instead of the
-combined Gateway account; receivers before senders. Sequence: accepting receiver code with optional
-settings; replace its unused bearer resolver with shared `auth.Services` and remove
-`runtime_proxy.audience` before any configuration enables it; enable after that image is pinned;
-accept and pin the Environments server identity in caller images before changing their proxy target
-and exact TLS server pin; retarget and roll callers; retire the Gateway receiver
-and obsolete grants only after cutover. Keep deployed names and wire names unchanged. The operator
+**In flight, 2026-11-15: caller cutover (#16723) rolled and verified at 14:20 UTC.** Claude
+verified all five workloads 2/2 Ready without restarts or auth/TLS errors, and Dispatcher delivery
+reached Runtime admission through Environments. The Gateway receiver and direct Runtime watches
+are removed; its image pin/roll and deployment cleanup remain. Retired settings stay decodable until manifests omit them and that configuration has rolled.
+After the receiver-removal image is pinned and running, remove only the obsolete Gateway Runtime
+certificate/mounts, network permissions and proxy grants, and Runtime's old Gateway-SVID admission.
+Keep Dispatcher inventory/policy RBAC, automatic wake patches and delivery Leases. No cluster objects
+or retained state are deleted as a cutover shortcut. Verify the image/config rollout after each
+step; only then release the directory move. The proxy remains at its final `environments/runtimeproxy`
+home. Deployed names and wire names stay unchanged. The operator
 also released the Runtime diagnostics API and App cutover after this transport migration; Session
 activity and Sandbox-independent Notifications remain their separately tracked contracts.
 **Exit:** Runtime calls reach Environments

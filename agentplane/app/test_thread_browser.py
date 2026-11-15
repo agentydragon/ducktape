@@ -163,7 +163,7 @@ async def empty_gateway_access(
         dispatcher_audience=DISPATCHER_AUDIENCE,
         gateway_audience=GATEWAY_AUDIENCE,
     ) as gateway:
-        yield GatewayAccess(gateway.target, None, gateway.client_tls)
+        yield GatewayAccess(gateway.target, None, gateway.client_tls, gateway.environment_service.ca)
 
 
 async def test_archived_thread_page_survives_deleted_sandbox_and_reload(

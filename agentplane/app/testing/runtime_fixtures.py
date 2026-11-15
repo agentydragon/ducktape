@@ -31,13 +31,13 @@ async def runner(
     sandbox_control: SandboxControlClient,
     tmp_path: Path,
 ) -> AsyncIterator[RunningRunner]:
-    """The production Go runner as `sandbox`'s, taking control through the Go Runner Gateway; it still
+    """The production Go Runtime as `sandbox`'s, controlled through the Environments proxy; it still
     pushes its journal directly to the Go History Service ingress. Failed tests retain native
     evidence."""
     control = EnvironmentRuntimeControl(
         listen_address="127.0.0.1:9090",
         security=MTLS(
-            tls=gateway_service.issue_environment_runtime_tls(
+            tls=gateway_service.environment_service.issue_workload_tls(
                 sandbox.environment_runtime_identity_uri, tmp_path / "environment-runtime-transport"
             )
         ),
@@ -53,7 +53,7 @@ async def runner(
             api=history_service.api,
             directory=ingress_directory,
             writer_namespaces=(sandbox.namespace,),
-            svid_ca=gateway_service.environment_runtime_ca,
+            svid_ca=gateway_service.environment_service.ca,
             policy_namespace=sandbox.namespace,
         ) as ingress_service,
         history_tunnel(ingress_service.ingress_target) as proxy,
@@ -67,11 +67,13 @@ async def runner(
                 svid=SVIDEndpoint(server_uri="spiffe://agentplane/history-ingress", proxy_address=proxy),
             ),
             observe_control=False,
-            controller_credentials=gateway_service.controller_credentials(tmp_path / "controller-transport"),
+            controller_credentials=gateway_service.environment_service.channel_credentials(
+                "spiffe://agentplane/sandbox-controller"
+            ),
             incarnation_uid=sandbox.pod_uid,
         ) as started,
     ):
-        await gateway_service.wait_for_runner(sandbox_control, sandbox.destination)
+        await gateway_service.environment_service.wait_for_runner(sandbox_control, sandbox.destination)
         yield started
         if (evidence := FailureEvidence.for_failed_call(request)) is not None:
             await evidence.preserve_runner(started)
