@@ -137,6 +137,7 @@ async def test_app_loads_and_draws(playwright_driver: Playwright, origin: str) -
         await page.mouse.up()
         # Drawing records a history entry, which enables undo.
         await expect(undo).to_be_enabled()
+        await expect(page.locator(".panelColumn")).to_be_visible()
         await undo.click()
         await expect(undo).to_be_disabled()
         await expect(redo).to_be_enabled()
