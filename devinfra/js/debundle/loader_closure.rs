@@ -24,7 +24,7 @@ use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use spec::{
     EmbeddedLoader, HostBehavior, HostModule, LoaderResultForEvaluatingModule,
-    SynchronousLoadRunsAppCallbacks,
+    NodeBuiltinModuleExt, SynchronousLoadRunsAppCallbacks,
 };
 
 use crate::analysis_inputs::{HostBehaviorKey, ProgramPremiseKey, ProofDependencies};

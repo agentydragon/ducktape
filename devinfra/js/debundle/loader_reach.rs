@@ -29,6 +29,7 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
 use artifact::reports::LoaderUseConsumer;
+use spec::NodeBuiltinModuleExt;
 
 use crate::loader_phase::{SiteKey, site_key};
 use js_ast::str_value;

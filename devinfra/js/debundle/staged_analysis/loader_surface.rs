@@ -17,6 +17,7 @@ use artifact::reports::{
 };
 use artifact::{ArtifactIndexes, ChunkBundle, ResolvedImportReference};
 use serde::{Deserialize, Serialize};
+use spec::NodeBuiltinModuleExt;
 use swc_common::Span;
 
 use super::{ExportReentryTarget, report_target};

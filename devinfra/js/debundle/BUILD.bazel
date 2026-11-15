@@ -450,6 +450,7 @@ rust_library(
     crate_root = "spec/spec.rs",
     edition = "2024",
     deps = [
+        ":spec_wire_rust_proto",
         "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
@@ -1522,10 +1523,48 @@ rust_prost_transform(
     prost_opts = ["btree_map=."],
 )
 
+rust_prost_transform(
+    name = "spec_wire_serde_enums",
+    prost_opts = [
+        "btree_map=.",
+        "type_attribute=debundle.spec.VendorRole=#[derive(::serde::Serialize)]",
+        "type_attribute=debundle.spec.VendorRole=#[derive(::serde::Deserialize)]",
+        "type_attribute=debundle.spec.WrapperShape=#[derive(::serde::Serialize)]",
+        "type_attribute=debundle.spec.WrapperShape=#[derive(::serde::Deserialize)]",
+        "type_attribute=debundle.spec.BindingSourceKind=#[derive(::serde::Serialize)]",
+        "type_attribute=debundle.spec.BindingSourceKind=#[derive(::serde::Deserialize)]",
+        "type_attribute=debundle.spec.MemberPurity=#[derive(::serde::Serialize)]",
+        "type_attribute=debundle.spec.MemberPurity=#[derive(::serde::Deserialize)]",
+        "type_attribute=debundle.spec.InitializerPurity=#[derive(::serde::Serialize)]",
+        "type_attribute=debundle.spec.InitializerPurity=#[derive(::serde::Deserialize)]",
+        "type_attribute=debundle.spec.InitializerBindingEffects=#[derive(::serde::Serialize)]",
+        "type_attribute=debundle.spec.InitializerBindingEffects=#[derive(::serde::Deserialize)]",
+        "type_attribute=debundle.spec.MemberEffect=#[derive(::serde::Serialize)]",
+        "type_attribute=debundle.spec.MemberEffect=#[derive(::serde::Deserialize)]",
+        "type_attribute=debundle.spec.BuiltinGlobalRoot=#[derive(::serde::Serialize)]",
+        "type_attribute=debundle.spec.BuiltinGlobalRoot=#[derive(::serde::Deserialize)]",
+        "type_attribute=debundle.spec.NodeBuiltinModule=#[derive(::serde::Serialize)]",
+        "type_attribute=debundle.spec.NodeBuiltinModule=#[derive(::serde::Deserialize)]",
+        "type_attribute=debundle.spec.BunModule=#[derive(::serde::Serialize)]",
+        "type_attribute=debundle.spec.BunModule=#[derive(::serde::Deserialize)]",
+        "type_attribute=debundle.spec.VendorRole=#[serde(rename_all = \"snake_case\")]",
+        "type_attribute=debundle.spec.WrapperShape=#[serde(rename_all = \"snake_case\")]",
+        "type_attribute=debundle.spec.BindingSourceKind=#[serde(rename_all = \"snake_case\")]",
+        "type_attribute=debundle.spec.MemberPurity=#[serde(rename_all = \"snake_case\")]",
+        "type_attribute=debundle.spec.InitializerPurity=#[serde(rename_all = \"snake_case\")]",
+        "type_attribute=debundle.spec.InitializerBindingEffects=#[serde(rename_all = \"snake_case\")]",
+        "type_attribute=debundle.spec.MemberEffect=#[serde(rename_all = \"snake_case\")]",
+        "type_attribute=debundle.spec.BuiltinGlobalRoot=#[serde(rename_all = \"snake_case\")]",
+        "type_attribute=debundle.spec.NodeBuiltinModule=#[serde(rename_all = \"snake_case\")]",
+        "type_attribute=debundle.spec.BunModule=#[serde(rename_all = \"snake_case\")]",
+    ],
+    deps = ["@crates//:serde"],
+)
+
 proto_library(
     name = "spec_wire_proto",
     srcs = ["spec_wire.proto"],
-    data = [":debundle_btree_maps"],
+    data = [":spec_wire_serde_enums"],
 )
 
 rust_prost_library(
@@ -1817,7 +1856,6 @@ proto_library(
 
 rust_prost_transform(
     name = "saved_analysis_serde_enums",
-    deps = ["@crates//:serde"],
     prost_opts = [
         "type_attribute=ducktape.debundle.saved_analysis.Kind=#[derive(::serde::Serialize)]",
         "type_attribute=ducktape.debundle.saved_analysis.Kind=#[derive(::serde::Deserialize)]",
@@ -1828,6 +1866,7 @@ rust_prost_transform(
         "type_attribute=ducktape.debundle.saved_analysis.OwnerInitializationCoverageRefusalReason=#[serde(rename_all = \"snake_case\")]",
         "field_attribute=ducktape.debundle.saved_analysis.OwnerInitializationCoverageRefusalReason.OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNSPECIFIED=#[serde(skip)]",
     ],
+    deps = ["@crates//:serde"],
 )
 
 rust_prost_library(

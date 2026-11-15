@@ -133,7 +133,7 @@ pub fn global_names_to_proto(
     value
         .iter()
         .map(|(root, names)| pb::GlobalNames {
-            root: Some(root.to_proto()),
+            root: Some(*root as i32),
             names: names.to_proto(),
         })
         .collect()
@@ -141,11 +141,12 @@ pub fn global_names_to_proto(
 pub fn global_names_from_proto(
     value: Vec<pb::GlobalNames>,
 ) -> Result<BTreeMap<spec::BuiltinGlobalRoot, BTreeSet<String>>> {
-    unique_map(
-        value
-            .into_iter()
-            .map(|entry| Ok((required(entry.root)?, Wire::from_proto(entry.names)?))),
-    )
+    unique_map(value.into_iter().map(|entry| {
+        Ok((
+            pb::BuiltinGlobalRoot::try_from(entry.root.context("missing global root")?)?,
+            Wire::from_proto(entry.names)?,
+        ))
+    }))
 }
 pub fn member_names_to_proto(
     value: &BTreeMap<String, BTreeSet<String>>,
@@ -298,8 +299,16 @@ impl Wire for spec::HostBehavior {
                 .synchronous_load_runs_app_callbacks
                 .to_proto(),
             synchronous_load_drains_microtasks: self.synchronous_load_drains_microtasks.to_proto(),
-            reentry_free_builtin_modules: self.reentry_free_builtin_modules.to_proto(),
-            reentry_free_bun_modules: self.reentry_free_bun_modules.to_proto(),
+            reentry_free_builtin_modules: self
+                .reentry_free_builtin_modules
+                .iter()
+                .map(|module| *module as i32)
+                .collect(),
+            reentry_free_bun_modules: self
+                .reentry_free_bun_modules
+                .iter()
+                .map(|module| *module as i32)
+                .collect(),
             reentry_free_embedded_loaders: self.reentry_free_embedded_loaders.to_proto(),
             reentry_free_operations: self.reentry_free_operations.to_proto(),
             predefined_globals: Some(self.predefined_globals.to_proto()),
@@ -318,8 +327,16 @@ impl Wire for spec::HostBehavior {
             synchronous_load_drains_microtasks: Wire::from_proto(
                 v.synchronous_load_drains_microtasks,
             )?,
-            reentry_free_builtin_modules: Wire::from_proto(v.reentry_free_builtin_modules)?,
-            reentry_free_bun_modules: Wire::from_proto(v.reentry_free_bun_modules)?,
+            reentry_free_builtin_modules: unique_set(
+                v.reentry_free_builtin_modules
+                    .into_iter()
+                    .map(|value| Ok(pb::NodeBuiltinModule::try_from(value)?)),
+            )?,
+            reentry_free_bun_modules: unique_set(
+                v.reentry_free_bun_modules
+                    .into_iter()
+                    .map(|value| Ok(pb::BunModule::try_from(value)?)),
+            )?,
             reentry_free_embedded_loaders: Wire::from_proto(v.reentry_free_embedded_loaders)?,
             reentry_free_operations: Wire::from_proto(v.reentry_free_operations)?,
             predefined_globals: required(v.predefined_globals)?,
@@ -389,14 +406,14 @@ impl Wire for spec::VendorMark {
     fn to_proto(&self) -> Self::Proto {
         pb::VendorMark {
             identity: Some(self.identity.clone()),
-            role: Some(self.role.to_proto()),
+            role: Some(self.role as i32),
             level: Some(self.level.to_proto()),
         }
     }
     fn from_proto(v: Self::Proto) -> Result<Self> {
         Ok(Self {
             identity: required(v.identity)?,
-            role: required(v.role)?,
+            role: pb::VendorRole::try_from(v.role.context("missing vendor role")?)?,
             level: required(v.level)?,
         })
     }
@@ -429,7 +446,7 @@ impl Wire for spec::SwapMark {
             package: Some(self.package.clone()),
             version: Some(self.version.clone()),
             subpath: Some(self.subpath.clone()),
-            wrapper_shape: self.wrapper_shape.to_proto(),
+            wrapper_shape: self.wrapper_shape.map(|shape| shape as i32),
             default_export_aliases: self.default_export_aliases.to_proto(),
         }
     }
@@ -438,7 +455,10 @@ impl Wire for spec::SwapMark {
             package: required(v.package)?,
             version: required(v.version)?,
             subpath: required(v.subpath)?,
-            wrapper_shape: Wire::from_proto(v.wrapper_shape)?,
+            wrapper_shape: v
+                .wrapper_shape
+                .map(pb::WrapperShape::try_from)
+                .transpose()?,
             default_export_aliases: Wire::from_proto(v.default_export_aliases)?,
         })
     }
@@ -611,13 +631,13 @@ impl Wire for spec::BindingSelector {
     fn to_proto(&self) -> Self::Proto {
         pb::BindingSelector {
             name: Some(self.name.clone()),
-            kind: self.kind.to_proto(),
+            kind: self.kind.map(|kind| kind as i32),
         }
     }
     fn from_proto(v: Self::Proto) -> Result<Self> {
         Ok(Self {
             name: required(v.name)?,
-            kind: Wire::from_proto(v.kind)?,
+            kind: v.kind.map(pb::BindingSourceKind::try_from).transpose()?,
         })
     }
 }
@@ -627,14 +647,14 @@ impl Wire for spec::CrossRefSelector {
         pb::CrossRefSelector {
             references: self.references.clone(),
             aliases: self.aliases.clone(),
-            kind: self.kind.to_proto(),
+            kind: self.kind.map(|kind| kind as i32),
         }
     }
     fn from_proto(v: Self::Proto) -> Result<Self> {
         Ok(Self {
             references: v.references,
             aliases: v.aliases,
-            kind: Wire::from_proto(v.kind)?,
+            kind: v.kind.map(pb::BindingSourceKind::try_from).transpose()?,
         })
     }
 }
@@ -644,14 +664,14 @@ impl Wire for spec::ReadsMemberSelector {
         pb::ReadsMemberSelector {
             member: Some(self.member.clone()),
             object: self.object.clone(),
-            kind: self.kind.to_proto(),
+            kind: self.kind.map(|kind| kind as i32),
         }
     }
     fn from_proto(v: Self::Proto) -> Result<Self> {
         Ok(Self {
             member: required(v.member)?,
             object: v.object,
-            kind: Wire::from_proto(v.kind)?,
+            kind: v.kind.map(pb::BindingSourceKind::try_from).transpose()?,
         })
     }
 }
@@ -661,14 +681,14 @@ impl Wire for spec::MemberOfModuleSelector {
         pb::MemberOfModuleSelector {
             module: Some(self.module.clone()),
             member: Some(self.member.clone()),
-            kind: self.kind.to_proto(),
+            kind: self.kind.map(|kind| kind as i32),
         }
     }
     fn from_proto(v: Self::Proto) -> Result<Self> {
         Ok(Self {
             module: required(v.module)?,
             member: required(v.member)?,
-            kind: Wire::from_proto(v.kind)?,
+            kind: v.kind.map(pb::BindingSourceKind::try_from).transpose()?,
         })
     }
 }
@@ -679,7 +699,7 @@ impl Wire for spec::PassedToCallSelector {
             callee_member: Some(self.callee_member.clone()),
             object: self.object.clone(),
             arg_index: self.arg_index.to_proto(),
-            kind: self.kind.to_proto(),
+            kind: self.kind.map(|kind| kind as i32),
         }
     }
     fn from_proto(v: Self::Proto) -> Result<Self> {
@@ -687,7 +707,7 @@ impl Wire for spec::PassedToCallSelector {
             callee_member: required(v.callee_member)?,
             object: v.object,
             arg_index: Wire::from_proto(v.arg_index)?,
-            kind: Wire::from_proto(v.kind)?,
+            kind: v.kind.map(pb::BindingSourceKind::try_from).transpose()?,
         })
     }
 }
@@ -697,14 +717,14 @@ impl Wire for spec::MakesDecorateCallSelector {
         pb::MakesDecorateCallSelector {
             class: Some(self.class.clone()),
             member: self.member.clone(),
-            kind: self.kind.to_proto(),
+            kind: self.kind.map(|kind| kind as i32),
         }
     }
     fn from_proto(v: Self::Proto) -> Result<Self> {
         Ok(Self {
             class: required(v.class)?,
             member: v.member,
-            kind: Wire::from_proto(v.kind)?,
+            kind: v.kind.map(pb::BindingSourceKind::try_from).transpose()?,
         })
     }
 }
@@ -781,11 +801,13 @@ impl Wire for spec::BindingAnnotation {
     fn to_proto(&self) -> Self::Proto {
         pb::BindingAnnotation {
             retained_record_factory: Some(self.retained_record_factory),
-            purity: Some(self.purity.to_proto()),
-            initializer_purity: Some(self.initializer_purity.to_proto()),
-            initializer_binding_effects: self.initializer_binding_effects.to_proto(),
+            purity: Some(self.purity as i32),
+            initializer_purity: Some(self.initializer_purity as i32),
+            initializer_binding_effects: self
+                .initializer_binding_effects
+                .map(|effects| effects as i32),
             initializer_external_effects: self.initializer_external_effects.to_proto(),
-            effect: Some(self.effect.to_proto()),
+            effect: Some(self.effect as i32),
             pure_members: self.pure_members.to_proto(),
             no_sync_callback_members: self.no_sync_callback_members.to_proto(),
             comment: self.comment.clone(),
@@ -795,11 +817,16 @@ impl Wire for spec::BindingAnnotation {
     fn from_proto(v: Self::Proto) -> Result<Self> {
         Ok(Self {
             retained_record_factory: required(v.retained_record_factory)?,
-            purity: required(v.purity)?,
-            initializer_purity: required(v.initializer_purity)?,
-            initializer_binding_effects: Wire::from_proto(v.initializer_binding_effects)?,
+            purity: pb::MemberPurity::try_from(v.purity.context("missing member purity")?)?,
+            initializer_purity: pb::InitializerPurity::try_from(
+                v.initializer_purity.context("missing initializer purity")?,
+            )?,
+            initializer_binding_effects: v
+                .initializer_binding_effects
+                .map(pb::InitializerBindingEffects::try_from)
+                .transpose()?,
             initializer_external_effects: Wire::from_proto(v.initializer_external_effects)?,
-            effect: required(v.effect)?,
+            effect: pb::MemberEffect::try_from(v.effect.context("missing member effect")?)?,
             pure_members: Wire::from_proto(v.pure_members)?,
             no_sync_callback_members: Wire::from_proto(v.no_sync_callback_members)?,
             comment: v.comment,
@@ -1565,110 +1592,6 @@ impl Wire for spec::SynchronousLoadDrainsMicrotasks {
         })
     }
 }
-impl Wire for spec::NodeBuiltinModule {
-    type Proto = i32;
-    fn to_proto(&self) -> i32 {
-        match self {
-            Self::Assert => pb::NodeBuiltinModule::Assert as i32,
-            Self::AsyncHooks => pb::NodeBuiltinModule::AsyncHooks as i32,
-            Self::Buffer => pb::NodeBuiltinModule::Buffer as i32,
-            Self::ChildProcess => pb::NodeBuiltinModule::ChildProcess as i32,
-            Self::Constants => pb::NodeBuiltinModule::Constants as i32,
-            Self::Crypto => pb::NodeBuiltinModule::Crypto as i32,
-            Self::Dns => pb::NodeBuiltinModule::Dns as i32,
-            Self::DnsPromises => pb::NodeBuiltinModule::DnsPromises as i32,
-            Self::Events => pb::NodeBuiltinModule::Events as i32,
-            Self::Fs => pb::NodeBuiltinModule::Fs as i32,
-            Self::FsPromises => pb::NodeBuiltinModule::FsPromises as i32,
-            Self::Http => pb::NodeBuiltinModule::Http as i32,
-            Self::Http2 => pb::NodeBuiltinModule::Http2 as i32,
-            Self::Https => pb::NodeBuiltinModule::Https as i32,
-            Self::Net => pb::NodeBuiltinModule::Net as i32,
-            Self::Os => pb::NodeBuiltinModule::Os as i32,
-            Self::Path => pb::NodeBuiltinModule::Path as i32,
-            Self::PathPosix => pb::NodeBuiltinModule::PathPosix as i32,
-            Self::PathWin32 => pb::NodeBuiltinModule::PathWin32 as i32,
-            Self::PerfHooks => pb::NodeBuiltinModule::PerfHooks as i32,
-            Self::Process => pb::NodeBuiltinModule::Process as i32,
-            Self::StreamConsumers => pb::NodeBuiltinModule::StreamConsumers as i32,
-            Self::Querystring => pb::NodeBuiltinModule::Querystring as i32,
-            Self::Readline => pb::NodeBuiltinModule::Readline as i32,
-            Self::Stream => pb::NodeBuiltinModule::Stream as i32,
-            Self::StreamPromises => pb::NodeBuiltinModule::StreamPromises as i32,
-            Self::StringDecoder => pb::NodeBuiltinModule::StringDecoder as i32,
-            Self::Tls => pb::NodeBuiltinModule::Tls as i32,
-            Self::TimersPromises => pb::NodeBuiltinModule::TimersPromises as i32,
-            Self::Tty => pb::NodeBuiltinModule::Tty as i32,
-            Self::Url => pb::NodeBuiltinModule::Url as i32,
-            Self::Util => pb::NodeBuiltinModule::Util as i32,
-            Self::UtilTypes => pb::NodeBuiltinModule::UtilTypes as i32,
-            Self::Zlib => pb::NodeBuiltinModule::Zlib as i32,
-            Self::Vm => pb::NodeBuiltinModule::Vm as i32,
-            Self::WorkerThreads => pb::NodeBuiltinModule::WorkerThreads as i32,
-            Self::Module => pb::NodeBuiltinModule::Module as i32,
-        }
-    }
-    fn from_proto(v: i32) -> Result<Self> {
-        Ok(match pb::NodeBuiltinModule::try_from(v)? {
-            pb::NodeBuiltinModule::Assert => Self::Assert,
-            pb::NodeBuiltinModule::AsyncHooks => Self::AsyncHooks,
-            pb::NodeBuiltinModule::Buffer => Self::Buffer,
-            pb::NodeBuiltinModule::ChildProcess => Self::ChildProcess,
-            pb::NodeBuiltinModule::Constants => Self::Constants,
-            pb::NodeBuiltinModule::Crypto => Self::Crypto,
-            pb::NodeBuiltinModule::Dns => Self::Dns,
-            pb::NodeBuiltinModule::DnsPromises => Self::DnsPromises,
-            pb::NodeBuiltinModule::Events => Self::Events,
-            pb::NodeBuiltinModule::Fs => Self::Fs,
-            pb::NodeBuiltinModule::FsPromises => Self::FsPromises,
-            pb::NodeBuiltinModule::Http => Self::Http,
-            pb::NodeBuiltinModule::Http2 => Self::Http2,
-            pb::NodeBuiltinModule::Https => Self::Https,
-            pb::NodeBuiltinModule::Net => Self::Net,
-            pb::NodeBuiltinModule::Os => Self::Os,
-            pb::NodeBuiltinModule::Path => Self::Path,
-            pb::NodeBuiltinModule::PathPosix => Self::PathPosix,
-            pb::NodeBuiltinModule::PathWin32 => Self::PathWin32,
-            pb::NodeBuiltinModule::PerfHooks => Self::PerfHooks,
-            pb::NodeBuiltinModule::Process => Self::Process,
-            pb::NodeBuiltinModule::StreamConsumers => Self::StreamConsumers,
-            pb::NodeBuiltinModule::Querystring => Self::Querystring,
-            pb::NodeBuiltinModule::Readline => Self::Readline,
-            pb::NodeBuiltinModule::Stream => Self::Stream,
-            pb::NodeBuiltinModule::StreamPromises => Self::StreamPromises,
-            pb::NodeBuiltinModule::StringDecoder => Self::StringDecoder,
-            pb::NodeBuiltinModule::Tls => Self::Tls,
-            pb::NodeBuiltinModule::TimersPromises => Self::TimersPromises,
-            pb::NodeBuiltinModule::Tty => Self::Tty,
-            pb::NodeBuiltinModule::Url => Self::Url,
-            pb::NodeBuiltinModule::Util => Self::Util,
-            pb::NodeBuiltinModule::UtilTypes => Self::UtilTypes,
-            pb::NodeBuiltinModule::Zlib => Self::Zlib,
-            pb::NodeBuiltinModule::Vm => Self::Vm,
-            pb::NodeBuiltinModule::WorkerThreads => Self::WorkerThreads,
-            pb::NodeBuiltinModule::Module => Self::Module,
-            pb::NodeBuiltinModule::Unspecified => bail!("unspecified Node builtin module"),
-        })
-    }
-}
-impl Wire for spec::BunModule {
-    type Proto = i32;
-    fn to_proto(&self) -> i32 {
-        match self {
-            Self::BunFfi => pb::BunModule::BunFfi as i32,
-            Self::Undici => pb::BunModule::Undici as i32,
-            Self::Ws => pb::BunModule::Ws as i32,
-        }
-    }
-    fn from_proto(v: i32) -> Result<Self> {
-        Ok(match pb::BunModule::try_from(v)? {
-            pb::BunModule::BunFfi => Self::BunFfi,
-            pb::BunModule::Undici => Self::Undici,
-            pb::BunModule::Ws => Self::Ws,
-            pb::BunModule::Unspecified => bail!("unspecified Bun module"),
-        })
-    }
-}
 impl Wire for spec::EmbeddedLoader {
     type Proto = i32;
     fn to_proto(&self) -> i32 {
@@ -1809,40 +1732,6 @@ impl Wire for spec::IntrinsicFamily {
         })
     }
 }
-impl Wire for spec::VendorRole {
-    type Proto = i32;
-    fn to_proto(&self) -> i32 {
-        match self {
-            Self::Module => pb::VendorRole::Module as i32,
-            Self::Worker => pb::VendorRole::Worker as i32,
-        }
-    }
-    fn from_proto(v: i32) -> Result<Self> {
-        Ok(match pb::VendorRole::try_from(v)? {
-            pb::VendorRole::Module => Self::Module,
-            pb::VendorRole::Worker => Self::Worker,
-            pb::VendorRole::Unspecified => bail!("unspecified vendor role"),
-        })
-    }
-}
-impl Wire for spec::WrapperShape {
-    type Proto = i32;
-    fn to_proto(&self) -> i32 {
-        match self {
-            Self::NamedFromDefault => pb::WrapperShape::NamedFromDefault as i32,
-            Self::NamedFromJsonDefault => pb::WrapperShape::NamedFromJsonDefault as i32,
-            Self::NamedFromModuleDefault => pb::WrapperShape::NamedFromModuleDefault as i32,
-        }
-    }
-    fn from_proto(v: i32) -> Result<Self> {
-        Ok(match pb::WrapperShape::try_from(v)? {
-            pb::WrapperShape::NamedFromDefault => Self::NamedFromDefault,
-            pb::WrapperShape::NamedFromJsonDefault => Self::NamedFromJsonDefault,
-            pb::WrapperShape::NamedFromModuleDefault => Self::NamedFromModuleDefault,
-            pb::WrapperShape::Unspecified => bail!("unspecified wrapper shape"),
-        })
-    }
-}
 impl Wire for spec::PartialSwapKind {
     type Proto = i32;
     fn to_proto(&self) -> i32 {
@@ -1860,26 +1749,6 @@ impl Wire for spec::PartialSwapKind {
             pb::PartialSwapKind::Default => Self::Default,
             pb::PartialSwapKind::Named => Self::Named,
             pb::PartialSwapKind::Unspecified => bail!("unspecified partial swap kind"),
-        })
-    }
-}
-impl Wire for spec::BindingSourceKind {
-    type Proto = i32;
-    fn to_proto(&self) -> i32 {
-        match self {
-            Self::ImportSpecifier => pb::BindingSourceKind::ImportSpecifier as i32,
-            Self::VariableDeclarator => pb::BindingSourceKind::VariableDeclarator as i32,
-            Self::FunctionDeclaration => pb::BindingSourceKind::FunctionDeclaration as i32,
-            Self::ClassDeclaration => pb::BindingSourceKind::ClassDeclaration as i32,
-        }
-    }
-    fn from_proto(v: i32) -> Result<Self> {
-        Ok(match pb::BindingSourceKind::try_from(v)? {
-            pb::BindingSourceKind::ImportSpecifier => Self::ImportSpecifier,
-            pb::BindingSourceKind::VariableDeclarator => Self::VariableDeclarator,
-            pb::BindingSourceKind::FunctionDeclaration => Self::FunctionDeclaration,
-            pb::BindingSourceKind::ClassDeclaration => Self::ClassDeclaration,
-            pb::BindingSourceKind::Unspecified => bail!("unspecified binding source kind"),
         })
     }
 }
@@ -1901,56 +1770,6 @@ impl Wire for spec::SourceMatchIdentifierMode {
         })
     }
 }
-impl Wire for spec::MemberPurity {
-    type Proto = i32;
-    fn to_proto(&self) -> i32 {
-        match self {
-            Self::Default => pb::MemberPurity::Default as i32,
-            Self::Pure => pb::MemberPurity::Pure as i32,
-            Self::PureNew => pb::MemberPurity::PureNew as i32,
-        }
-    }
-    fn from_proto(v: i32) -> Result<Self> {
-        Ok(match pb::MemberPurity::try_from(v)? {
-            pb::MemberPurity::Default => Self::Default,
-            pb::MemberPurity::Pure => Self::Pure,
-            pb::MemberPurity::PureNew => Self::PureNew,
-            pb::MemberPurity::Unspecified => bail!("unspecified member purity"),
-        })
-    }
-}
-impl Wire for spec::InitializerPurity {
-    type Proto = i32;
-    fn to_proto(&self) -> i32 {
-        match self {
-            Self::Default => pb::InitializerPurity::Default as i32,
-            Self::Pure => pb::InitializerPurity::Pure as i32,
-        }
-    }
-    fn from_proto(v: i32) -> Result<Self> {
-        Ok(match pb::InitializerPurity::try_from(v)? {
-            pb::InitializerPurity::Default => Self::Default,
-            pb::InitializerPurity::Pure => Self::Pure,
-            pb::InitializerPurity::Unspecified => bail!("unspecified initializer purity"),
-        })
-    }
-}
-impl Wire for spec::InitializerBindingEffects {
-    type Proto = i32;
-    fn to_proto(&self) -> i32 {
-        match self {
-            Self::SourceOnly => pb::InitializerBindingEffects::SourceOnly as i32,
-        }
-    }
-    fn from_proto(v: i32) -> Result<Self> {
-        Ok(match pb::InitializerBindingEffects::try_from(v)? {
-            pb::InitializerBindingEffects::SourceOnly => Self::SourceOnly,
-            pb::InitializerBindingEffects::Unspecified => {
-                bail!("unspecified initializer binding effects")
-            }
-        })
-    }
-}
 impl Wire for spec::InitializerExternalEffects {
     type Proto = i32;
     fn to_proto(&self) -> i32 {
@@ -1966,40 +1785,6 @@ impl Wire for spec::InitializerExternalEffects {
             pb::InitializerExternalEffects::Unspecified => {
                 bail!("unspecified initializer external effects")
             }
-        })
-    }
-}
-impl Wire for spec::MemberEffect {
-    type Proto = i32;
-    fn to_proto(&self) -> i32 {
-        match self {
-            Self::Default => pb::MemberEffect::Default as i32,
-            Self::TypescriptDecorateHelper => pb::MemberEffect::TypescriptDecorateHelper as i32,
-            Self::TypescriptMetadataDecorateHelper => {
-                pb::MemberEffect::TypescriptMetadataDecorateHelper as i32
-            }
-            Self::TypescriptMetadataDecorateHelperWithMemberDecorators => {
-                pb::MemberEffect::TypescriptMetadataDecorateHelperWithMemberDecorators as i32
-            }
-            Self::TypescriptMetadataDecorateHelperThreeArgs => {
-                pb::MemberEffect::TypescriptMetadataDecorateHelperThreeArgs as i32
-            }
-        }
-    }
-    fn from_proto(v: i32) -> Result<Self> {
-        Ok(match pb::MemberEffect::try_from(v)? {
-            pb::MemberEffect::Default => Self::Default,
-            pb::MemberEffect::TypescriptDecorateHelper => Self::TypescriptDecorateHelper,
-            pb::MemberEffect::TypescriptMetadataDecorateHelper => {
-                Self::TypescriptMetadataDecorateHelper
-            }
-            pb::MemberEffect::TypescriptMetadataDecorateHelperWithMemberDecorators => {
-                Self::TypescriptMetadataDecorateHelperWithMemberDecorators
-            }
-            pb::MemberEffect::TypescriptMetadataDecorateHelperThreeArgs => {
-                Self::TypescriptMetadataDecorateHelperThreeArgs
-            }
-            pb::MemberEffect::Unspecified => bail!("unspecified member effect"),
         })
     }
 }
@@ -2080,22 +1865,6 @@ impl Wire for spec::NativeCallIdentityKind {
             pb::NativeCallIdentityKind::Unspecified => {
                 bail!("unspecified native call identity kind")
             }
-        })
-    }
-}
-impl Wire for spec::BuiltinGlobalRoot {
-    type Proto = i32;
-    fn to_proto(&self) -> i32 {
-        match self {
-            Self::GlobalThis => pb::BuiltinGlobalRoot::GlobalThis as i32,
-            Self::Window => pb::BuiltinGlobalRoot::Window as i32,
-        }
-    }
-    fn from_proto(v: i32) -> Result<Self> {
-        Ok(match pb::BuiltinGlobalRoot::try_from(v)? {
-            pb::BuiltinGlobalRoot::GlobalThis => Self::GlobalThis,
-            pb::BuiltinGlobalRoot::Window => Self::Window,
-            pb::BuiltinGlobalRoot::Unspecified => bail!("unspecified builtin global root"),
         })
     }
 }

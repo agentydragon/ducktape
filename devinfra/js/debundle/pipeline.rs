@@ -29,7 +29,7 @@ use lowering::{
 use output_layout::GLOBAL_RESOLUTION_REPORT;
 use prepare_chunks::{SourcePreparation, prepare_js_chunks};
 use reconstruction::{EmittablePlan, ReconstructionPlan, RejectedPlan, VendorManifestOutput};
-use spec::{ChunkExportPurity, LogicalModule, TransformSpec};
+use spec::{ChunkExportPurity, LogicalModule, NodeBuiltinModuleExt, TransformSpec};
 use spec_modules::read_flat_transform_spec;
 use spec_tree::{
     CompileSpecTreeOptions, compile_spec_tree, compile_spec_tree_with_roots, graph_module_roots,

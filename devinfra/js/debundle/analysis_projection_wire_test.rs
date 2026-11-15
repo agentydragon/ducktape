@@ -147,7 +147,7 @@ fn decode_rejects_missing_fields_variants_duplicate_set_members_and_truncated_da
         .as_mut()
         .unwrap()
         .reentry_free_builtin_modules
-        .push(spec::NodeBuiltinModule::Fs.to_proto());
+        .push(spec::NodeBuiltinModule::Fs as i32);
     assert!(AnalysisSpec::from_proto(message).is_err());
 
     assert!(AnalysisSpec::decode(&[]).is_err());

@@ -128,11 +128,9 @@ impl ProtoConvert<proto::HostBehaviorKey> for HostBehaviorKey {
                     Value::SynchronousLoadDrainsMicrotasks(Default::default())
                 }
                 Self::ReentryFreeBuiltinModule(module) => {
-                    Value::ReentryFreeBuiltinModule(module.to_proto()?)
+                    Value::ReentryFreeBuiltinModule(*module as i32)
                 }
-                Self::ReentryFreeBunModule(module) => {
-                    Value::ReentryFreeBunModule(module.to_proto()?)
-                }
+                Self::ReentryFreeBunModule(module) => Value::ReentryFreeBunModule(*module as i32),
                 Self::ReentryFreeEmbeddedLoader(loader) => {
                     Value::ReentryFreeEmbeddedLoader(loader.to_proto()?)
                 }
@@ -151,10 +149,10 @@ impl ProtoConvert<proto::HostBehaviorKey> for HostBehaviorKey {
             Value::SynchronousLoadRunsAppCallbacks(_) => Self::SynchronousLoadRunsAppCallbacks,
             Value::SynchronousLoadDrainsMicrotasks(_) => Self::SynchronousLoadDrainsMicrotasks,
             Value::ReentryFreeBuiltinModule(value) => {
-                Self::ReentryFreeBuiltinModule(spec::NodeBuiltinModule::from_proto(value)?)
+                Self::ReentryFreeBuiltinModule(spec::NodeBuiltinModule::try_from(value)?)
             }
             Value::ReentryFreeBunModule(value) => {
-                Self::ReentryFreeBunModule(spec::BunModule::from_proto(value)?)
+                Self::ReentryFreeBunModule(spec::BunModule::try_from(value)?)
             }
             Value::ReentryFreeEmbeddedLoader(value) => {
                 Self::ReentryFreeEmbeddedLoader(spec::EmbeddedLoader::from_proto(value)?)
@@ -1434,12 +1432,18 @@ mod tests {
         assert!(ProofDependencies::from_proto(invalid_proof).is_err());
         for value in [
             None,
-            Some(Value::ReentryFreeBuiltinModule(0)),
             Some(Value::ReentryFreeBuiltinModule(i32::MAX)),
             Some(Value::ReentryFreeOperation(0)),
         ] {
             assert!(HostBehaviorKey::from_proto(proto::HostBehaviorKey { value }).is_err());
         }
+        assert_eq!(
+            HostBehaviorKey::from_proto(proto::HostBehaviorKey {
+                value: Some(Value::ReentryFreeBuiltinModule(0)),
+            })
+            .unwrap(),
+            HostBehaviorKey::ReentryFreeBuiltinModule(spec::NodeBuiltinModule::Assert)
+        );
     }
 
     #[test]

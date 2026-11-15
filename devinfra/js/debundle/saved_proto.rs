@@ -18,18 +18,11 @@ pub fn required<T>(value: Option<T>, field: &str) -> Result<T> {
     value.with_context(|| format!("missing saved-analysis field {field}"))
 }
 
-// Spec enums use the same Protobuf vocabulary in both projection and saved
-// artifacts. Keep their conversion in spec_wire rather than maintaining a
-// second set of enum mappings here.
+// Domain-owned spec enums use the same Protobuf vocabulary in both projection
+// and saved artifacts. Keep their conversion in spec_wire rather than
+// maintaining a second set of enum mappings here. Generated spec enums are
+// cast only at their Protobuf fields.
 impl ProtoConvert<i32> for spec::AllIntrinsicFamilies {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(spec_wire::Wire::to_proto(self))
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        spec_wire::Wire::from_proto(value)
-    }
-}
-impl ProtoConvert<i32> for spec::BunModule {
     fn to_proto(&self) -> Result<i32> {
         Ok(spec_wire::Wire::to_proto(self))
     }
@@ -86,14 +79,6 @@ impl ProtoConvert<i32> for spec::NativeCallIdentityKind {
     }
 }
 impl ProtoConvert<i32> for spec::NativeOperationKind {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(spec_wire::Wire::to_proto(self))
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        spec_wire::Wire::from_proto(value)
-    }
-}
-impl ProtoConvert<i32> for spec::NodeBuiltinModule {
     fn to_proto(&self) -> Result<i32> {
         Ok(spec_wire::Wire::to_proto(self))
     }
@@ -537,13 +522,13 @@ impl ProtoConvert<proto::HostBehavior> for spec::HostBehavior {
             reentry_free_builtin_modules: self
                 .reentry_free_builtin_modules
                 .iter()
-                .map(ProtoConvert::to_proto)
-                .collect::<Result<_>>()?,
+                .map(|module| *module as i32)
+                .collect(),
             reentry_free_bun_modules: self
                 .reentry_free_bun_modules
                 .iter()
-                .map(ProtoConvert::to_proto)
-                .collect::<Result<_>>()?,
+                .map(|module| *module as i32)
+                .collect(),
             reentry_free_embedded_loaders: self
                 .reentry_free_embedded_loaders
                 .iter()
@@ -576,8 +561,18 @@ impl ProtoConvert<proto::HostBehavior> for spec::HostBehavior {
                 .synchronous_load_drains_microtasks
                 .map(spec::SynchronousLoadDrainsMicrotasks::from_proto)
                 .transpose()?,
-            reentry_free_builtin_modules: decode_set(value.reentry_free_builtin_modules)?,
-            reentry_free_bun_modules: decode_set(value.reentry_free_bun_modules)?,
+            reentry_free_builtin_modules: spec_wire::unique_set(
+                value
+                    .reentry_free_builtin_modules
+                    .into_iter()
+                    .map(|value| Ok(spec::NodeBuiltinModule::try_from(value)?)),
+            )?,
+            reentry_free_bun_modules: spec_wire::unique_set(
+                value
+                    .reentry_free_bun_modules
+                    .into_iter()
+                    .map(|value| Ok(spec::BunModule::try_from(value)?)),
+            )?,
             reentry_free_embedded_loaders: decode_set(value.reentry_free_embedded_loaders)?,
             reentry_free_operations: decode_set(value.reentry_free_operations)?,
             predefined_globals: read_domain(
@@ -594,16 +589,16 @@ impl ProtoConvert<proto::HostModule> for spec::HostModule {
         use proto::host_module::Value;
         Ok(proto::HostModule {
             value: Some(match self {
-                Self::Node(module) => Value::Node(module.to_proto()?),
-                Self::Bun(module) => Value::Bun(module.to_proto()?),
+                Self::Node(module) => Value::Node(*module as i32),
+                Self::Bun(module) => Value::Bun(*module as i32),
             }),
         })
     }
     fn from_proto(value: proto::HostModule) -> Result<Self> {
         use proto::host_module::Value;
         Ok(match required(value.value, "HostModule.value")? {
-            Value::Node(value) => Self::Node(spec::NodeBuiltinModule::from_proto(value)?),
-            Value::Bun(value) => Self::Bun(spec::BunModule::from_proto(value)?),
+            Value::Node(value) => Self::Node(spec::NodeBuiltinModule::try_from(value)?),
+            Value::Bun(value) => Self::Bun(spec::BunModule::try_from(value)?),
         })
     }
 }
@@ -900,14 +895,19 @@ mod tests {
         premises.process_prototype_chain_accessors = None;
         assert!(spec::ProgramPremises::from_proto(premises).is_err());
         assert!(spec::HostModule::from_proto(proto::HostModule { value: None }).is_err());
-        for value in [0, i32::MAX] {
-            assert!(
-                spec::HostModule::from_proto(proto::HostModule {
-                    value: Some(proto::host_module::Value::Node(value)),
-                })
-                .is_err()
-            );
-        }
+        assert_eq!(
+            spec::HostModule::from_proto(proto::HostModule {
+                value: Some(proto::host_module::Value::Node(0)),
+            })
+            .unwrap(),
+            spec::HostModule::Node(spec::NodeBuiltinModule::Assert)
+        );
+        assert!(
+            spec::HostModule::from_proto(proto::HostModule {
+                value: Some(proto::host_module::Value::Node(i32::MAX)),
+            })
+            .is_err()
+        );
         assert!(
             spec::IntrinsicFamilies::from_proto(proto::IntrinsicFamilies { value: None }).is_err()
         );

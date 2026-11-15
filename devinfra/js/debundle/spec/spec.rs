@@ -352,52 +352,17 @@ pub enum ReentryFreeOperation {
 /// Exact Node builtin module identities admissible in
 /// `reentry_free_builtin_modules`. Unknown bare packages are absent; Bun's
 /// package replacements are [`BunModule`]s.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum NodeBuiltinModule {
-    Assert,
-    AsyncHooks,
-    Buffer,
-    ChildProcess,
-    Constants,
-    Crypto,
-    Dns,
-    DnsPromises,
-    Events,
-    Fs,
-    FsPromises,
-    Http,
-    Http2,
-    Https,
-    Net,
-    Os,
-    Path,
-    PathPosix,
-    PathWin32,
-    PerfHooks,
-    Process,
-    Querystring,
-    Readline,
-    Stream,
-    StreamConsumers,
-    StreamPromises,
-    StringDecoder,
-    TimersPromises,
-    Tls,
-    Tty,
-    Url,
-    Util,
-    UtilTypes,
-    Vm,
-    WorkerThreads,
-    Zlib,
-    Module,
+pub use spec_wire_proto::debundle::spec::NodeBuiltinModule;
+
+pub trait NodeBuiltinModuleExt: Sized {
+    fn from_static_specifier(specifier: &str) -> Option<Self>;
+    fn reads_process_accessors(self) -> bool;
 }
 
-impl NodeBuiltinModule {
+impl NodeBuiltinModuleExt for NodeBuiltinModule {
     /// Recognize only explicitly supported static-import spellings. This is not a
     /// bare-package or `node:` prefix fallback resolver.
-    pub fn from_static_specifier(specifier: &str) -> Option<Self> {
+    fn from_static_specifier(specifier: &str) -> Option<Self> {
         Some(match specifier {
             "assert" | "node:assert" => Self::Assert,
             "async_hooks" | "node:async_hooks" => Self::AsyncHooks,
@@ -439,22 +404,26 @@ impl NodeBuiltinModule {
             _ => return None,
         })
     }
+
+    /// Building this builtin's namespace, or loading it, can run accessors the
+    /// program defines on `process` or its prototype chain.
+    fn reads_process_accessors(self) -> bool {
+        matches!(self, Self::Process | Self::WorkerThreads)
+    }
 }
 
 /// Exact host-provided modules outside Node's builtin namespace admissible in
 /// `reentry_free_bun_modules`: Bun's own `bun:` modules and the packages Bun
 /// replaces with built-in implementations.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BunModule {
-    BunFfi,
-    Undici,
-    Ws,
+pub use spec_wire_proto::debundle::spec::BunModule;
+
+pub trait BunModuleExt: Sized {
+    fn from_static_specifier(specifier: &str) -> Option<Self>;
 }
 
-impl BunModule {
+impl BunModuleExt for BunModule {
     /// Recognize only the exact request spellings.
-    pub fn from_static_specifier(specifier: &str) -> Option<Self> {
+    fn from_static_specifier(specifier: &str) -> Option<Self> {
         Some(match specifier {
             "bun:ffi" => Self::BunFfi,
             "undici" => Self::Undici,
@@ -477,14 +446,6 @@ impl HostModule {
         NodeBuiltinModule::from_static_specifier(specifier)
             .map(Self::Node)
             .or_else(|| BunModule::from_static_specifier(specifier).map(Self::Bun))
-    }
-}
-
-impl NodeBuiltinModule {
-    /// Building this builtin's namespace, or loading it, can run accessors the
-    /// program defines on `process` or its prototype chain.
-    pub fn reads_process_accessors(self) -> bool {
-        matches!(self, Self::Process | Self::WorkerThreads)
     }
 }
 
@@ -1159,12 +1120,7 @@ pub enum CapturedValueKind {
     OrdinaryObject,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BuiltinGlobalRoot {
-    GlobalThis,
-    Window,
-}
+pub use spec_wire_proto::debundle::spec::BuiltinGlobalRoot;
 
 /// One named input-chunk admission check, identified by the
 /// docs/design.md assumption it enforces. Used both as the
@@ -1669,13 +1625,7 @@ fn is_default_partial_swap_kind(kind: &PartialSwapKind) -> bool {
     matches!(kind, PartialSwapKind::Member)
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum WrapperShape {
-    NamedFromDefault,
-    NamedFromJsonDefault,
-    NamedFromModuleDefault,
-}
+pub use spec_wire_proto::debundle::spec::WrapperShape;
 
 // --- Logical modules -----------------------------------------------------
 
@@ -2623,57 +2573,17 @@ pub enum MemberSelectorError {
     MultipleSelectors,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
-#[serde(rename_all = "snake_case")]
-pub enum BindingSourceKind {
-    /// The bound name comes from an `import` specifier in the source
-    /// chunk, not a top-level decl. The materializer rewrites the import
-    /// statement to a re-import in the destination module.
-    ImportSpecifier,
-    /// Top-level `var` / `let` / `const` declaration in the source chunk.
-    /// Carried for documentation; no special materializer path.
-    VariableDeclarator,
-    /// Top-level `function` declaration in the source chunk.
-    FunctionDeclaration,
-    /// Top-level `class` declaration in the source chunk.
-    ClassDeclaration,
-}
+pub use spec_wire_proto::debundle::spec::BindingSourceKind;
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, Eq, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum MemberPurity {
-    #[default]
-    Default,
-    /// Author asserts that calls to the bound function have no observable
-    /// side effects. Validator drops `S` edges for `<binding>(...)` call
-    /// sites. See <docs/purity_soundness.md> "Declared purity" + docs/design.md A9.
-    Pure,
-    /// Author asserts that `new <binding>(...)` has no observable side
-    /// effects beyond evaluating its constructor arguments. The analyzer
-    /// still requires every argument expression to classify pure; this
-    /// annotation does not affect ordinary `<binding>(...)` calls.
-    PureNew,
-}
+pub use spec_wire_proto::debundle::spec::MemberPurity;
 
 /// Trust contract scoped to evaluation of one selected variable initializer.
 /// Unlike [`MemberPurity`], this says nothing about later uses of its value.
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, Eq, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum InitializerPurity {
-    #[default]
-    Default,
-    Pure,
-}
+pub use spec_wire_proto::debundle::spec::InitializerPurity;
 
 /// Lexical effects allowed while evaluating one selected top-level variable
 /// initializer.
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum InitializerBindingEffects {
-    /// Evaluation reads and rebinds no top-level lexical bindings beyond the
-    /// initializer's syntactic eager-read and rebind footprint.
-    SourceOnly,
-}
+pub use spec_wire_proto::debundle::spec::InitializerBindingEffects;
 
 /// External effects of one selected simple top-level variable initializer.
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq, strum::Display)]
@@ -2694,33 +2604,47 @@ pub enum InitializerExternalEffects {
     PrivateMetadata,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, Eq, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum MemberEffect {
-    #[default]
-    Default,
-    /// Author asserts that recognized calls to the bound helper have a
-    /// TypeScript `__decorate`-style target-local mutation effect.
-    /// The analyzer shape-checks the call and models it as a local
-    /// effect on the target class/prototype instead of as a global
-    /// side-effect-order edge. See docs/design.md A10.
-    TypescriptDecorateHelper,
-    /// Stronger, application-wide author contract: every recognized member
-    /// decoration only records metadata on the target. The helper and every
-    /// supplied decorator neither invoke target behavior nor publish callbacks
-    /// or synchronously reenter other caller/host/export callbacks. See SPEC.md.
-    TypescriptMetadataDecorateHelper,
-    /// Like `typescript_metadata_decorate_helper`, additionally admits an
-    /// audited one-hop static member of an imported decorator provider.
-    TypescriptMetadataDecorateHelperWithMemberDecorators,
-    /// The same metadata-only contract for standalone three-argument property
-    /// applications. The helper determines its descriptor without a kind argument.
-    TypescriptMetadataDecorateHelperThreeArgs,
-}
+pub use spec_wire_proto::debundle::spec::MemberEffect;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generated_enums_keep_authored_spellings_and_defaults() {
+        fn check<T>(value: T, spelling: &str)
+        where
+            T: std::fmt::Debug + PartialEq + Serialize + serde::de::DeserializeOwned,
+        {
+            assert_eq!(serde_yaml::from_str::<T>(spelling).unwrap(), value);
+            assert_eq!(
+                serde_json::to_string(&value).unwrap(),
+                format!("\"{spelling}\"")
+            );
+        }
+
+        check(VendorRole::Worker, "worker");
+        check(
+            WrapperShape::NamedFromJsonDefault,
+            "named_from_json_default",
+        );
+        check(BindingSourceKind::ImportSpecifier, "import_specifier");
+        check(MemberPurity::PureNew, "pure_new");
+        check(InitializerPurity::Pure, "pure");
+        check(InitializerBindingEffects::SourceOnly, "source_only");
+        check(
+            MemberEffect::TypescriptMetadataDecorateHelperThreeArgs,
+            "typescript_metadata_decorate_helper_three_args",
+        );
+        check(BuiltinGlobalRoot::GlobalThis, "global_this");
+        check(NodeBuiltinModule::FsPromises, "fs_promises");
+        check(BunModule::BunFfi, "bun_ffi");
+
+        assert_eq!(VendorRole::default(), VendorRole::Module);
+        assert_eq!(MemberPurity::default(), MemberPurity::Default);
+        assert_eq!(InitializerPurity::default(), InitializerPurity::Default);
+        assert_eq!(MemberEffect::default(), MemberEffect::Default);
+    }
 
     #[test]
     fn source_match_unknown_field_is_rejected_naming_the_field() {
