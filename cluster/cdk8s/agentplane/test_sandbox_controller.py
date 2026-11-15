@@ -1,15 +1,18 @@
 """The Controller authenticates Gateway calls with its mounted service SVID."""
 
+from dataclasses import replace
 from pathlib import PurePosixPath
 from typing import Any
 
+import pytest
 import pytest_bazel
 import yaml
 from more_itertools import one
 
 from agentplane.environments.settings import Settings
-from agentplane.net.peertls.config import SANDBOX_CONTROLLER_URI, SESSION_DISPATCHER_URI
+from agentplane.net.peertls.config import ACTIONS_URI, SANDBOX_CONTROLLER_URI, SESSION_DISPATCHER_URI
 from agentplane.runner_gateway.settings import Settings as GatewaySettings
+from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s.agentplane import (
     actions,
     app,
@@ -161,6 +164,32 @@ def test_environment_receiver_preserves_gateway_authority_and_uses_controller_ce
     deployment = _resource(staging_manifests, "Deployment", sandbox_controller.NAME)
     container = one(deployment["spec"]["template"]["spec"]["containers"])
     assert port["targetPort"] in {entry["containerPort"] for entry in container["ports"]}
+
+
+@pytest.mark.parametrize(
+    ("launcher", "allowed"),
+    [
+        (None, False),
+        (ServiceAccountRef(namespace="receiver-test", name="actions"), True),
+        (ServiceAccountRef(namespace="other-test", name="actions"), False),
+        (ServiceAccountRef(namespace="receiver-test", name="other-launcher"), False),
+    ],
+)
+def test_actions_service_launcher_requires_its_existing_namespaced_launcher_grant(
+    launcher: ServiceAccountRef | None, allowed: bool
+) -> None:
+    authority = sandbox_controller.environment_service_authority(
+        replace(staging.ENV, namespace="receiver-test"),
+        operator_callers=(),
+        launchers=() if launcher is None else (launcher,),
+        operator_service_callers=frozenset(),
+        wake_callers=(),
+        wake_service_callers=frozenset(),
+        delegation_actor=None,
+    )
+    assert authority.service_launchers == (frozenset({ACTIONS_URI}) if allowed else frozenset())
+    assert ACTIONS_URI not in authority.service_managers
+    assert ACTIONS_URI not in authority.service_operators
 
 
 def test_environment_receiver_can_watch_policy_and_mutate_only_desired_state(

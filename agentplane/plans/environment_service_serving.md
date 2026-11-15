@@ -102,7 +102,10 @@ Service caller routing:
    edges. Verify every replica, including a standby, serves authorized calls and refuses wrong
    peers/methods. Check the mounted server certificate, healthy policy watches and readiness on
    both Pods. Keep the old Gateway EnvironmentService registered.
-3. With the receiver image pinned and running, and auth stage 4's exact grants present, switch each
+3. Stage the Actions service-SVID launcher grant on the receivers wherever its existing namespaced
+   launcher grant permits orchestration. Roll and verify those receiver grants before retargeting
+   Actions; delegated read/resume grants confer no direct launch or management authority.
+   With the receiver image pinned and running, and auth stage 4's exact grants present, switch each
    real EnvironmentService caller's target and verified server URI, including Sandbox CLI routes and
    launch-time URLs after their accepting tools image is pinned. Pin caller code before enabling
    new caller settings; roll callers and verify their effective configuration. Long-lived watches
