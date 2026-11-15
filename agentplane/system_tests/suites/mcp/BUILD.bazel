@@ -402,7 +402,6 @@ py_test(
         "//agentplane/system_tests/driver:policy_objects",
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/driver:scripted_upstream",
-        "//agentplane/system_tests/scenarios:mcp",
         "//agentplane/testing:scripted_model",
         "@pypi//more_itertools",
         "@pypi//protobuf",
