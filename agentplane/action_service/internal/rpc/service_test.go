@@ -12,6 +12,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
+	"github.com/agentydragon/ducktape/agentplane/identity/operator/testissuer"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -133,7 +134,7 @@ func TestAnOperatorsDecisionAndACallersCancellationNameWhoActed(t *testing.T) {
 	decision := got.GetActionRequest().GetDecision()
 	if got.GetActionRequest().GetState() != action_servicepb.ActionState_ACTION_STATE_DENIED ||
 		decision.GetVerdict() != action_servicepb.Verdict_VERDICT_DENY ||
-		!proto.Equal(decision.GetOperator().GetOperator(), &action_servicepb.Operator{Issuer: s.issuer.url, Subject: operatorSubject}) {
+		!proto.Equal(decision.GetOperator().GetOperator(), &action_servicepb.Operator{Issuer: s.issuer.URL, Subject: testissuer.Subject}) {
 		t.Errorf("operator's decision: %v", got.GetActionRequest())
 	}
 

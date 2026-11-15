@@ -13,6 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
+	"github.com/agentydragon/ducktape/agentplane/identity/operator/testissuer"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -51,7 +52,7 @@ func TestAnOperatorsDecisionIsRecordedAndAnAllowQueuesTheDispatch(t *testing.T) 
 	if got.GetState() != action_servicepb.ActionState_ACTION_STATE_ALLOWED ||
 		got.GetDecision().GetVerdict() != allow ||
 		got.GetDecision().GetOperator().GetDecisionNote() != "test note for the caller" ||
-		!proto.Equal(got.GetDecision().GetOperator().GetOperator(), &action_servicepb.Operator{Issuer: s.issuer.url, Subject: operatorSubject}) ||
+		!proto.Equal(got.GetDecision().GetOperator().GetOperator(), &action_servicepb.Operator{Issuer: s.issuer.URL, Subject: testissuer.Subject}) ||
 		got.GetExecution().GetState() != action_servicepb.ExecutionState_EXECUTION_STATE_PENDING_DISPATCH {
 		t.Errorf("the allowed request: %v", got)
 	}
@@ -81,7 +82,7 @@ func TestADecisionThatCannotBeRecordedFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	pending := s.submit(t, s.caller, "test-pending")
-	expired := s.issuer.token(t, map[string]any{"exp": time.Now().Add(-time.Hour).Unix()})
+	expired := s.issuer.Token(t, map[string]any{"exp": time.Now().Add(-time.Hour).Unix()})
 	for name, tc := range map[string]struct {
 		change func(*operator_action_servicepb.DecideActionRequestRequest)
 		token  string
@@ -142,7 +143,7 @@ func TestAWorkloadsBearerNeverReachesTheOperatorService(t *testing.T) {
 
 func TestOfTwoOperatorsDecidingAtOnceOneDecidesAndTheOtherIsTold(t *testing.T) {
 	s := serve(t)
-	otherOperator := s.issuer.token(t, map[string]any{"sub": "test-other-operator"})
+	otherOperator := s.issuer.Token(t, map[string]any{"sub": "test-other-operator"})
 	for i := range 10 {
 		request := s.submit(t, s.caller, fmt.Sprintf("test-contested-%d", i))
 		var wg sync.WaitGroup
@@ -173,7 +174,7 @@ func TestOfTwoOperatorsDecidingAtOnceOneDecidesAndTheOtherIsTold(t *testing.T) {
 			t.Fatalf("neither operator decided %s: %v", request.ID, errs)
 		}
 		got, err := s.client.GetActionRequest(as(t, readerCertificate), &action_servicepb.GetActionRequestRequest{RequestId: request.ID.String()})
-		wantSubject := []string{operatorSubject, "test-other-operator"}[won]
+		wantSubject := []string{testissuer.Subject, "test-other-operator"}[won]
 		if err != nil || got.GetActionRequest().GetDecision().GetOperator().GetOperator().GetSubject() != wantSubject {
 			t.Errorf("the request carries %v, %v; want the Decision of %s", got.GetActionRequest().GetDecision(), err, wantSubject)
 		}

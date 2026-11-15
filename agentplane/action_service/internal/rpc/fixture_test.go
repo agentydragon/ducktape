@@ -27,6 +27,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/worker"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	operatoroidc "github.com/agentydragon/ducktape/agentplane/identity/operator" // The API package has an operator projection helper.
+	"github.com/agentydragon/ducktape/agentplane/identity/operator/testissuer"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
@@ -51,7 +52,8 @@ const (
 	testAudience  = "test-actions"
 	testNamespace = "test-agentplane"
 	// callDeadline only bounds a call that stopped making progress, so a hang fails the test.
-	callDeadline = 30 * time.Second
+	callDeadline      = 30 * time.Second
+	operatorClockSkew = 30 * time.Second
 )
 
 var (
@@ -119,7 +121,7 @@ type served struct {
 	store  *store.Store
 	db     *sql.DB
 	gate   *Gate
-	issuer *issuer
+	issuer *testissuer.Issuer
 	// policy is the namespace whose PolicySets and PolicyBindings the policy index reads, this API's alone.
 	policy string
 	index  *informer.Index
@@ -301,9 +303,9 @@ func serveWithPolicy(
 	}
 	t.Cleanup(func() { updates.Close() })
 	s := &served{
-		store: store.New(db), db: db, issuer: newIssuer(t), policy: string(namespace), index: index, databaseURL: dsn,
+		store: store.New(db), db: db, issuer: testissuer.New(t), policy: string(namespace), index: index, databaseURL: dsn,
 	}
-	s.operatorToken = s.issuer.token(t, nil)
+	s.operatorToken = s.issuer.Token(t, nil)
 	configured := map[string]linkage.Server{}
 	for _, server := range servers {
 		configured[server.ServerID] = server
@@ -314,7 +316,7 @@ func serveWithPolicy(
 	if s.linkages, err = linkage.New(db, configured, linkage.ClientMetadata{}); err != nil {
 		t.Fatal(err)
 	}
-	operators, err := operatoroidc.NewVerifier(s.issuer.settings(operatoroidc.ProfileAuthentik))
+	operators, err := operatoroidc.NewVerifier(s.issuer.Settings(operatoroidc.ProfileAuthentik))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -396,11 +398,15 @@ func (s *served) decide(t *testing.T, request store.ActionRequest, verdict store
 	t.Helper()
 	decided, _, err := s.store.Decide(t.Context(), request.ID, store.DecisionInput{
 		Verdict: verdict, ExpectedVersion: request.Version, IdempotencyKey: "decision-" + request.IdempotencyKey,
-	}, s.issuer.operator())
+	}, operatorPrincipal(s.issuer))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return decided
+}
+
+func operatorPrincipal(i *testissuer.Issuer) store.OperatorPrincipal {
+	return store.OperatorPrincipal{Issuer: i.URL, Subject: testissuer.Subject}
 }
 
 func wantCode(t *testing.T, what string, err error, code codes.Code) {

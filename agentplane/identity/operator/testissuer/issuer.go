@@ -1,4 +1,5 @@
-package operator_test
+// Package testissuer provides a local OIDC issuer for operator token tests.
+package testissuer
 
 import (
 	"crypto/rand"
@@ -15,21 +16,22 @@ import (
 )
 
 const (
-	operatorAudience = "test-operator-audience"
-	operatorSubject  = "test-operator"
-	operatorKeyID    = "test-key"
+	Audience = "test-operator-audience"
+	Subject  = "test-operator"
+	KeyID    = "test-key"
 )
 
-type issuer struct {
-	url string
-	key *rsa.PrivateKey
+// Issuer publishes its signing key at /jwks/ and signs operator tokens.
+type Issuer struct {
+	URL string
+	Key *rsa.PrivateKey
 }
 
-func newIssuer(t *testing.T) *issuer {
+func New(t testing.TB) *Issuer {
 	t.Helper()
-	i := &issuer{key: newKey(t)}
+	i := &Issuer{Key: NewKey(t)}
 	keys := jose.JSONWebKeySet{Keys: []jose.JSONWebKey{
-		{Key: &i.key.PublicKey, KeyID: operatorKeyID, Algorithm: string(jose.RS256), Use: "sig"},
+		{Key: &i.Key.PublicKey, KeyID: KeyID, Algorithm: string(jose.RS256), Use: "sig"},
 	}}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/jwks/" {
@@ -42,11 +44,11 @@ func newIssuer(t *testing.T) *issuer {
 		}
 	}))
 	t.Cleanup(server.Close)
-	i.url = server.URL + "/"
+	i.URL = server.URL + "/"
 	return i
 }
 
-func newKey(t *testing.T) *rsa.PrivateKey {
+func NewKey(t testing.TB) *rsa.PrivateKey {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -55,14 +57,15 @@ func newKey(t *testing.T) *rsa.PrivateKey {
 	return key
 }
 
-func (i *issuer) settings(profile operator.TokenProfile) operator.Settings {
-	return operator.Settings{Issuer: i.url, Audience: operatorAudience, JWKSURI: i.url + "jwks/", TokenProfile: profile}
+func (i *Issuer) Settings(profile operator.TokenProfile) operator.Settings {
+	return operator.Settings{Issuer: i.URL, Audience: Audience, JWKSURI: i.URL + "jwks/", TokenProfile: profile}
 }
 
-func (i *issuer) claims(changes map[string]any) map[string]any {
+// Claims applies changes to the default operator claims; a nil value omits the claim.
+func (i *Issuer) Claims(changes map[string]any) map[string]any {
 	now := time.Now()
 	claims := map[string]any{
-		"iss": i.url, "aud": operatorAudience, "azp": operatorAudience, "sub": operatorSubject,
+		"iss": i.URL, "aud": Audience, "azp": Audience, "sub": Subject,
 		"iat": now.Unix(), "exp": now.Add(time.Hour).Unix(),
 	}
 	for name, value := range changes {
@@ -75,7 +78,7 @@ func (i *issuer) claims(changes map[string]any) map[string]any {
 	return claims
 }
 
-func sign(t *testing.T, key jose.SigningKey, keyID string, claims map[string]any) string {
+func Sign(t testing.TB, key jose.SigningKey, keyID string, claims map[string]any) string {
 	t.Helper()
 	signer, err := jose.NewSigner(key, (&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", keyID))
 	if err != nil {
@@ -88,7 +91,7 @@ func sign(t *testing.T, key jose.SigningKey, keyID string, claims map[string]any
 	return token
 }
 
-func (i *issuer) token(t *testing.T, changes map[string]any) string {
+func (i *Issuer) Token(t testing.TB, changes map[string]any) string {
 	t.Helper()
-	return sign(t, jose.SigningKey{Algorithm: jose.RS256, Key: i.key}, operatorKeyID, i.claims(changes))
+	return Sign(t, jose.SigningKey{Algorithm: jose.RS256, Key: i.Key}, KeyID, i.Claims(changes))
 }

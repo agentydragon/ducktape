@@ -28,11 +28,11 @@ go_library(
 go_test(
     name = "operator_test",
     srcs = [
-        "issuer_test.go",
         "verifier_test.go",
     ],
     embed = [":operator"],
     deps = [
+        "//agentplane/identity/operator/testissuer",
         "@com_github_go_jose_go_jose_v4//:go-jose",
         "@com_github_go_jose_go_jose_v4//jwt",
     ],
