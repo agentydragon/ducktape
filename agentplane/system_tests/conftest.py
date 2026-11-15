@@ -39,6 +39,7 @@ _CALL_REPORT = pytest.StashKey[pytest.TestReport]()
 
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "case_batch: selected cases own their async execution and trace spans")
+    config.addinivalue_line("markers", "exclusive_case: run alone before the other cases in this module")
     config.addinivalue_line("markers", "vm_sandboxes: needs a deployment that runs VM Sandboxes")
     config.addinivalue_line("markers", "real_model: its evidence is what a real model does")
     config.addinivalue_line("markers", "scripted_model: the scenario plays the model (`scripted` fixture)")

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
+from typing import cast
 
 import pytest
 import pytest_asyncio
@@ -19,7 +19,7 @@ from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatche
 from agentplane.system_tests.deployment import mcp_servers
 from agentplane.system_tests.deployment.stack import Stack
 from agentplane.system_tests.driver import scenario
-from agentplane.system_tests.driver.case_batch import CASE_RESULT, Case, CaseBatch, Result
+from agentplane.system_tests.driver.case_batch import Case, CaseBatch, selected_items
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.dispatcher_transport import native_client
 from agentplane.system_tests.driver.harness_pair import run_harness_pair_in_own_sandboxes
@@ -50,6 +50,12 @@ class ActionResources:
     token: str
     scripted: ScriptedUpstream
     tmp_path_factory: pytest.TempPathFactory
+    credentials: OperatorCredentials | None
+
+    def operator_credentials(self) -> OperatorCredentials:
+        if self.credentials is None:
+            raise RuntimeError("this MCP Actions case requires operator credentials")
+        return self.credentials
 
     @asynccontextmanager
     async def open_case(self, name: str) -> AsyncIterator[tuple[Client, SessionDispatcherClient, Sandboxes]]:
@@ -84,7 +90,8 @@ async def _executes_action(resources: ActionResources) -> None:
         )
 
 
-async def _bff_decision(resources: ActionResources, credentials: OperatorCredentials) -> None:
+async def _bff_decision(resources: ActionResources) -> None:
+    credentials = resources.operator_credentials()
     async with (
         resources.open_case("bff") as (client, dispatcher, _),
         operator_bff_client(resources.base_url, credentials) as operator_bff,
@@ -106,7 +113,8 @@ async def _bff_decision(resources: ActionResources, credentials: OperatorCredent
         )
 
 
-async def _launcher_ownership(resources: ActionResources, credentials: OperatorCredentials) -> None:
+async def _launcher_ownership(resources: ActionResources) -> None:
+    credentials = resources.operator_credentials()
     async with (
         resources.open_case("launcher") as (client, dispatcher, _),
         operator_bff_client(resources.base_url, credentials) as operator_bff,
@@ -130,9 +138,8 @@ async def _launcher_ownership(resources: ActionResources, credentials: OperatorC
         )
 
 
-async def _oauth_linkage(
-    resources: ActionResources, credentials: OperatorCredentials, harness: session_pb2.Harness
-) -> None:
+async def _oauth_linkage(resources: ActionResources, *, harness: session_pb2.Harness) -> None:
+    credentials = resources.operator_credentials()
     server_id = {
         session_pb2.HARNESS_CLAUDE: mcp_servers.OAUTH_CLAUDE,
         session_pb2.HARNESS_CODEX: mcp_servers.OAUTH_CODEX,
@@ -157,37 +164,27 @@ async def _oauth_linkage(
         )
 
 
-def _case_runner(
-    name: str, resources: ActionResources, credentials: OperatorCredentials | None
-) -> Callable[[], Awaitable[None]]:
-    match name:
-        case "test_agent_executes_mcp_action":
-            return partial(_executes_action, resources)
-        case "test_agent_mcp_bff_decision":
-            if credentials is None:
-                raise RuntimeError("the BFF decision case requires operator credentials")
-            return partial(_bff_decision, resources, credentials)
-        case "test_launcher_drives_only_the_sandbox_it_launched":
-            if credentials is None:
-                raise RuntimeError("the launcher case requires operator credentials")
-            return partial(_launcher_ownership, resources, credentials)
-        case "test_operator_links_oauth_mcp_server[claude]" | "test_operator_links_oauth_mcp_server[codex]":
-            if credentials is None:
-                raise RuntimeError("the OAuth linkage case requires operator credentials")
-            harness = session_pb2.HARNESS_CLAUDE if name.endswith("[claude]") else session_pb2.HARNESS_CODEX
-            return partial(_oauth_linkage, resources, credentials, harness)
-        case _:
-            raise ValueError(f"unsupported MCP Actions case: {name}")
+@dataclass(frozen=True)
+class ActionCase:
+    run: Callable[[ActionResources], Awaitable[None]]
+    requires_operator: bool = True
 
 
-_BATCHED_CASES = {
-    "test_agent_executes_mcp_action",
-    "test_agent_mcp_bff_decision",
-    "test_launcher_drives_only_the_sandbox_it_launched",
-    "test_operator_links_oauth_mcp_server[claude]",
-    "test_operator_links_oauth_mcp_server[codex]",
-}
-_OPERATOR_CASES = _BATCHED_CASES - {"test_agent_executes_mcp_action"}
+CASES = (
+    pytest.param(ActionCase(_executes_action, requires_operator=False), id="test_agent_executes_mcp_action"),
+    pytest.param(ActionCase(_bff_decision), id="test_agent_mcp_bff_decision"),
+    pytest.param(ActionCase(_launcher_ownership), id="test_launcher_drives_only_the_sandbox_it_launched"),
+    pytest.param(
+        ActionCase(partial(_oauth_linkage, harness=session_pb2.HARNESS_CLAUDE)),
+        id="test_operator_links_oauth_mcp_server-claude",
+    ),
+    pytest.param(
+        ActionCase(partial(_oauth_linkage, harness=session_pb2.HARNESS_CODEX)),
+        id="test_operator_links_oauth_mcp_server-codex",
+    ),
+)
+
+pytestmark = [pytest.mark.scripted_model, pytest.mark.case_batch, pytest.mark.asyncio(loop_scope="module")]
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
@@ -201,15 +198,8 @@ async def action_cases(
     scripted_listener: Listener,
     tmp_path_factory: pytest.TempPathFactory,
 ) -> AsyncIterator[CaseBatch]:
-    selected = [
-        item
-        for item in request.session.items
-        if isinstance(item, pytest.Function) and item.parent is request.node and item.name in _BATCHED_CASES
-    ]
-    if not selected:
-        raise RuntimeError("the MCP Actions batch has no selected cases")
-
-    needs_operator = any(item.name in _OPERATOR_CASES for item in selected)
+    selected = {item: cast(ActionCase, item.callspec.params["case"]) for item in selected_items(request)}
+    needs_operator = any(case.requires_operator for case in selected.values())
     credentials = None
     if needs_operator:
         if pytestconfig.option.showlocals:
@@ -227,71 +217,29 @@ async def action_cases(
 
     scripted = ScriptedUpstream()
     resources = ActionResources(
-        cluster=cluster, base_url=base_url, token=token, scripted=scripted, tmp_path_factory=tmp_path_factory
+        cluster=cluster,
+        base_url=base_url,
+        token=token,
+        scripted=scripted,
+        tmp_path_factory=tmp_path_factory,
+        credentials=credentials,
     )
-    cases = {
-        item.name: Case(nodeid=item.nodeid, run=_case_runner(item.name, resources, credentials)) for item in selected
-    }
+    cases = {item.nodeid: Case.for_item(item, partial(case.run, resources)) for item, case in selected.items()}
 
-    batch: CaseBatch | None = None
     previous_logging = logging.root.manager.disable
     if needs_operator:
         logging.disable(logging.CRITICAL)
     try:
-        async with (
-            scripted.serving(listener=scripted_listener.socket),
-            CaseBatch.running(cases, limit=2, exclusive=None) as running,
-        ):
-            await asyncio.gather(*(running.result(name) for name in cases))
-            batch = running
+        async with scripted.serving(listener=scripted_listener.socket), CaseBatch.running(cases, limit=2) as running:
+            yield running
     finally:
         if needs_operator:
             logging.disable(previous_logging)
 
-    assert batch is not None
-    yield batch
 
-
-async def _report_case(name: str, cases: CaseBatch, request: pytest.FixtureRequest) -> None:
-    result: Result = await cases.result(name)
-    request.node.stash[CASE_RESULT] = result
-    if result.error is not None:
-        raise result.error
-
-
-@pytest.mark.scripted_model
-@pytest.mark.case_batch
-@pytest.mark.asyncio(loop_scope="module")
-async def test_agent_executes_mcp_action(action_cases: CaseBatch, request: pytest.FixtureRequest) -> None:
-    await _report_case("test_agent_executes_mcp_action", action_cases, request)
-
-
-@pytest.mark.scripted_model
-@pytest.mark.case_batch
-@pytest.mark.asyncio(loop_scope="module")
-async def test_agent_mcp_bff_decision(action_cases: CaseBatch, request: pytest.FixtureRequest) -> None:
-    await _report_case("test_agent_mcp_bff_decision", action_cases, request)
-
-
-@pytest.mark.scripted_model
-@pytest.mark.case_batch
-@pytest.mark.asyncio(loop_scope="module")
-async def test_launcher_drives_only_the_sandbox_it_launched(
-    action_cases: CaseBatch, request: pytest.FixtureRequest
-) -> None:
-    await _report_case("test_launcher_drives_only_the_sandbox_it_launched", action_cases, request)
-
-
-# Each harness owns its server linkage and Sandbox. The same two case slots bound
-# all five cases. A launcher with three Sandboxes and a BFF case with two
-# can fill the fixture's five-Sandbox cap; keep the two-slot bound.
-@pytest.mark.scripted_model
-@pytest.mark.case_batch
-@pytest.mark.asyncio(loop_scope="module")
-async def test_operator_links_oauth_mcp_server(
-    action_cases: CaseBatch, request: pytest.FixtureRequest, harness: session_pb2.Harness
-) -> None:
-    await _report_case(request.node.name, action_cases, request)
+@pytest.mark.parametrize("case", CASES)
+async def test_mcp_actions(case: ActionCase, action_cases: CaseBatch, request: pytest.FixtureRequest) -> None:
+    await action_cases.report(request)
 
 
 if __name__ == "__main__":

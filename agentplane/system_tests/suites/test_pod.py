@@ -8,7 +8,7 @@ import pytest
 import pytest_asyncio
 import pytest_bazel
 
-from agentplane.system_tests.driver.case_batch import CASE_RESULT, Case, CaseBatch
+from agentplane.system_tests.driver.case_batch import Case, CaseBatch, selected_items
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.dispatcher_transport import native_client
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
@@ -41,24 +41,17 @@ async def pod_cases(
         resources = Resources(
             cluster=cluster, base_url=base_url, token=token, scripted=upstream, dispatcher=dispatcher, borrow=borrow
         )
-        selected_cases: dict[str, Case] = {}
-        for item in request.session.items:
-            if isinstance(item, pytest.Function) and item.parent is request.node:
-                selected = cast(Scenario, item.callspec.params["case"])
-                selected_cases[selected.__name__] = Case(nodeid=item.nodeid, run=partial(selected, resources))
-        storage = "fresh_workspace_storage_survives_replacement"
-        async with CaseBatch.running(
-            selected_cases, limit=CASE_LIMIT, exclusive=storage if storage in selected_cases else None
-        ) as batch:
+        cases = {
+            item.nodeid: Case.for_item(item, partial(cast(Scenario, item.callspec.params["case"]), resources))
+            for item in selected_items(request)
+        }
+        async with CaseBatch.running(cases, limit=CASE_LIMIT) as batch:
             yield batch
 
 
 @pytest.mark.parametrize("case", SCENARIOS, ids=lambda case: "test_" + case.__name__)
 async def test_pod_scenarios(case: Scenario, pod_cases: CaseBatch, request: pytest.FixtureRequest) -> None:
-    result = await pod_cases.result(case.__name__)
-    request.node.stash[CASE_RESULT] = result
-    if result.error is not None:
-        raise result.error
+    await pod_cases.report(request)
 
 
 if __name__ == "__main__":

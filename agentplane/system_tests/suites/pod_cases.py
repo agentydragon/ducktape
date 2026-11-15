@@ -284,7 +284,7 @@ SCENARIOS = (
         pod_mtls_session_survives_replacement_and_keeps_history,
         marks=[pytest.mark.scripted_model, pytest.mark.timeout(600)],
     ),
-    pytest.param(fresh_workspace_storage_survives_replacement),
+    pytest.param(fresh_workspace_storage_survives_replacement, marks=pytest.mark.exclusive_case),
     pytest.param(
         the_standing_instruction_reaches_the_model_and_only_in_its_own_session, marks=pytest.mark.scripted_model
     ),
