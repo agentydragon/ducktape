@@ -396,6 +396,8 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     assert postgres["spec"]["template"]["spec"]["securityContext"]["runAsUser"] == 26
     bootstrap_config = _resource(docs, "ConfigMap", "postgres-bootstrap")
     assert set(bootstrap_config["data"]) == {"bootstrap.sql", "postgres_entrypoint.sh"}
+    # History migration 18 grants to this non-login replication role.
+    assert "CREATE ROLE electric;" in bootstrap_config["data"]["bootstrap.sql"]
     assert not any(doc["kind"] in {"Cluster", "Database"} for doc in docs)
 
     bootstrap_env = {entry["name"]: entry for entry in postgres_container["env"]}

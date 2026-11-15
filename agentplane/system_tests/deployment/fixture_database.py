@@ -101,6 +101,10 @@ def add_database(scope: Construct, *, namespace: str, databases: Sequence[Databa
                 f"CREATE DATABASE {database} OWNER {database};",
             )
         )
+    if Database.HISTORY in databases:
+        # History's baseline migration grants Electric its replication read access.
+        # It needs the role even though this fixture does not run an Electric service.
+        bootstrap_statements.append("CREATE ROLE electric;")
     bootstrap = ConfigMap(
         db_scope,
         "bootstrap-config",
