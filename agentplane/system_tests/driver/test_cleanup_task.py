@@ -47,5 +47,29 @@ async def test_cleanup_propagates_its_own_cancellation_without_waiting_forever()
             await finish_cleanup(cancelled())
 
 
+async def test_late_cancellation_does_not_replace_an_existing_body_failure() -> None:
+    original = AssertionError("scenario failed")
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def cleanup() -> None:
+        started.set()
+        await release.wait()
+
+    async def scenario() -> None:
+        try:
+            raise original
+        finally:
+            await finish_cleanup(cleanup(), primary_error=original)
+
+    owner = asyncio.create_task(scenario())
+    await started.wait()
+    owner.cancel()
+    release.set()
+    with pytest.raises(AssertionError) as caught:
+        await owner
+    assert caught.value is original
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
