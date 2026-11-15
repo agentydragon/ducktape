@@ -206,9 +206,9 @@ fn restore_effect_cells(
 
 #[derive(Serialize, Deserialize)]
 struct SavedFallbackOnlyEffects {
-    reads: BTreeMap<SavedBinding, crate::execution_evidence::AssumedEffectReason>,
-    rebinds: BTreeMap<SavedBinding, crate::execution_evidence::AssumedEffectReason>,
-    uninitialized_reads: BTreeMap<SavedBinding, crate::execution_evidence::AssumedEffectReason>,
+    reads: Vec<(SavedBinding, crate::execution_evidence::AssumedEffectReason)>,
+    rebinds: Vec<(SavedBinding, crate::execution_evidence::AssumedEffectReason)>,
+    uninitialized_reads: Vec<(SavedBinding, crate::execution_evidence::AssumedEffectReason)>,
 }
 
 impl SavedFallbackOnlyEffects {
@@ -216,8 +216,7 @@ impl SavedFallbackOnlyEffects {
         fn snapshot_reasons(
             reasons: &BTreeMap<Id, crate::execution_evidence::AssumedEffectReason>,
             ordinals: &ContextOrdinals,
-        ) -> Result<BTreeMap<SavedBinding, crate::execution_evidence::AssumedEffectReason>>
-        {
+        ) -> Result<Vec<(SavedBinding, crate::execution_evidence::AssumedEffectReason)>> {
             reasons
                 .iter()
                 .map(|(binding, reason)| Ok((ordinals.snapshot_binding(binding)?, reason.clone())))
@@ -233,7 +232,7 @@ impl SavedFallbackOnlyEffects {
 
     fn restore(self, ordinals: &ContextOrdinals) -> Result<FallbackOnlyEffects> {
         fn restore_reasons(
-            reasons: BTreeMap<SavedBinding, crate::execution_evidence::AssumedEffectReason>,
+            reasons: Vec<(SavedBinding, crate::execution_evidence::AssumedEffectReason)>,
             ordinals: &ContextOrdinals,
         ) -> Result<BTreeMap<Id, crate::execution_evidence::AssumedEffectReason>> {
             reasons
@@ -497,8 +496,8 @@ struct SavedSynchronousCalls<'a> {
     #[serde(default)]
     proven_private_own_field_reads: Cow<'a, [(SourceUnitOrdinal, swc_common::Span)]>,
     local_record_factory_heap_call: Option<swc_common::Span>,
-    reads: BTreeSet<(SavedBinding, SourceUnitOrdinal)>,
-    rebinds: BTreeSet<(SavedBinding, SourceUnitOrdinal)>,
+    reads: Vec<(SavedBinding, SourceUnitOrdinal)>,
+    rebinds: Vec<(SavedBinding, SourceUnitOrdinal)>,
     uninitialized_reads: BTreeSet<SavedBinding>,
     fallback_only: SavedFallbackOnlyEffects,
     complete: bool,
