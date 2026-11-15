@@ -32,6 +32,7 @@ from cluster.cdk8s.agentplane import (
     environment_service,
     history_service,
     kubernetes_account_ref,
+    launcher_relay,
     llm_ingress,
     notifications,
     platform_routes,
@@ -441,11 +442,11 @@ def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dic
         _by_name(catalog_manifests, "ConfigMap", "environment-vm-config")["data"]["environment-runtime.json"]
     )
     assert vm_runtime["harness_environment"]["values"]["AGENTPLANE_HISTORY_URL"] == (
-        f"http://{environment_sandbox.launcher_relay.GUEST_GATEWAY}:{history_route.listen_port}"
+        f"http://{launcher_relay.GUEST_GATEWAY}:{history_route.listen_port}"
     )
 
     assert vm_runtime["harness_environment"]["values"]["AGENTPLANE_ENVIRONMENTS_URL"] == (
-        f"http://{environment_sandbox.launcher_relay.GUEST_GATEWAY}:{environments_route.listen_port}"
+        f"http://{launcher_relay.GUEST_GATEWAY}:{environments_route.listen_port}"
     )
 
 
