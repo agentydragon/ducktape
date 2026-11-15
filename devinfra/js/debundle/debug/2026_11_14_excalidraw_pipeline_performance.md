@@ -103,8 +103,8 @@ found unsafe reorderings. Do not adopt it from historical zero-conflict counts.
 The existing base classifier was checked with all optional upgrades,
 derivation and premises disabled against the frozen editor's accepted order.
 The source hash matches, and all 1,787 ordinals form an exact permutation.
-The syntax census found no default export, direct eval, with, disposal,
-top-level await or module-scope var nested in control flow.
+The syntax census found no default export, direct `eval`, `with`, disposal,
+top-level `await` or module-scope `var` nested in control flow.
 
 Of 253,092 inversions, the prototype leaves 34 unproven with its optimistic
 no-cycle export roots. Those involve two relocated class definitions.

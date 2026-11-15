@@ -210,7 +210,7 @@ spec's emitted order, with only the premises the spec declares:
   premise.
 - **Soundness evidence so far.** Existing fixtures pass, but the
   [independent audit](../debug/2026_11_10_statement_class_independent_audit.md)
-  found eleven accepted reorderings with divergent Node behavior, including
+  found accepted reorderings with divergent Node behavior, including
   default-export cells and observable abrupt completion in the base classifier.
   Optional intrinsic, enum and helper rules have further counterexamples.
   It remains report-only; precision and cost results do not establish soundness.
