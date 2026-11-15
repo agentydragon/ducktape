@@ -59,7 +59,6 @@ fn parse_signature(value: &str) -> Result<RetainedCallbackSignature, String> {
 #[value(rename_all = "snake_case")]
 enum ContractKind {
     PureExports,
-    PureNewExports,
     PureMembers,
     FluentExports,
     CallbackFactoryExports,
@@ -535,7 +534,6 @@ fn select_targets(
         };
     }
     add_exports!(PureExports, pure_exports);
-    add_exports!(PureNewExports, pure_new_exports);
     add_exports!(FluentExports, fluent_exports);
     add_exports!(CallbackFactoryExports, callback_factory_exports);
     add_exports!(
@@ -599,7 +597,6 @@ fn remove_one(
         .context("selected policy disappeared")?;
     let removed = match target.kind {
         ContractKind::PureExports => policy.pure_exports.remove(&target.export),
-        ContractKind::PureNewExports => policy.pure_new_exports.remove(&target.export),
         ContractKind::FluentExports => policy.fluent_exports.remove(&target.export),
         ContractKind::CallbackFactoryExports => {
             policy.callback_factory_exports.remove(&target.export)

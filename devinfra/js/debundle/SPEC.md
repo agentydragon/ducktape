@@ -4105,7 +4105,7 @@ timing. Extracting an instance member, invoking it or publishing the instance
 can expose every retained callback and its captures, including graphs returned
 by those callbacks. Argument evaluation and provider-private effects retain
 their normal checks and ordering. The contract does not assert construction
-purity: `pure_new_exports` or `purity: pure_new` requires its own audit.
+purity: `purity: pure_new` on the defining binding requires its own audit.
 
 ### Calls without synchronous reentry
 

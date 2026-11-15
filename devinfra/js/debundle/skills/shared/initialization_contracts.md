@@ -231,8 +231,8 @@ body, runtime, host setup, or intrinsic integrity.
 - `purity: pure_new` asserts purity only for `new BoundClass(...)`. A selected
   defining class's assertion follows its exports to importers. Prefer a
   structural `source_match` for a minified class.
-- `chunk_export_purity.<provider>.pure_exports` and `pure_new_exports` assert
-  call or construction purity for named imports from that provider.
+- `chunk_export_purity.<provider>.pure_exports` asserts call purity for named
+  imports from that provider.
 - Member-level `pure_members` covers listed static calls through a binding.
   `fluent_exports` asserts the broader transitive derived-value contract;
   audit that complete surface before selecting it.

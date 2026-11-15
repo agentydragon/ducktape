@@ -247,8 +247,8 @@ audit candidates, not a removal decision. Schema: <spec/spec.rs>.
 - **Selectors:** `member_of_module` and `passed_to_call`.
 - **Analysis contracts:** `value_inputs`, `argument_inputs`, and
   `imported_primitive_array_spread_inputs`.
-- **Purity assertions:** `chunk_export_purity`'s `pure_new_exports` and
-  `pure_members`, plus local binding annotations' `pure_members`.
+- **Purity assertions:** `chunk_export_purity`'s `pure_members`, plus local
+  binding annotations' `pure_members`.
 - **Callback contracts:** `retained_callback_factory_exports`,
   `descriptor_copy_factory_exports`, and `no_reentry_callback_exports`.
 - **Host contracts:** `host_behavior.reentry_free_operations`.
@@ -272,10 +272,8 @@ with a concrete justification. Absence from private specs alone is insufficient:
   Weigh the value of those distinctions against their maintenance cost rather
   than expanding the matcher just to delete the selector. Audit
   `member_of_module`'s import-source identity separately.
-- Unused native-operation annotations do not imply unused automatic native
-  recognition. Unused `pure_new_exports` does not imply unused constructor
-  purity: local `purity: pure_new` annotations are used. The stronger decorator
-  metadata variants also have different promises from the unused weaker one.
+- The stronger decorator metadata variants have different promises from the
+  unused weaker one.
 
 Close this item when every remaining candidate has an explicit disposition.
 For removals or consolidation, update schema, implementation, consumers,

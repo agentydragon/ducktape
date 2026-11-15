@@ -102,8 +102,7 @@ pub struct ProgramSummary {
     /// Per-chunk fluent-trusted import binding names (deep-purity roots),
     /// merged into `AnalysisAssumptions::fluent_bindings`.
     pub fluent: BTreeMap<String, BTreeSet<String>>,
-    /// Per-chunk local names whose imported exports have an asserted pure
-    /// construction contract (`chunk_export_purity.pure_new_exports`).
+    /// Per-chunk local names whose defining bindings assert `purity: pure_new`.
     pub constructors: BTreeMap<String, BTreeSet<String>>,
     /// Per-chunk bare imported callable summaries with their defining evidence.
     pub imported_callables: BTreeMap<String, BTreeMap<String, CallableSummary>>,
@@ -716,23 +715,26 @@ pub fn collect_program_summary(
         &projection.source_sites.no_accessor_install_callables,
         chunk_filter,
     )?;
-    let mut asserted_pure_new = scoped(chunk_export_purity, &modules, |p| &p.pure_new_exports);
     // A structurally selected member's trusted constructor contract follows
     // every export of that resolved binding. The importer sees its local
     // binding name; neither spec nor analysis needs the minified export name.
-    for (chunk, bindings) in declared_pure_new_bindings {
-        let Some(facts) = modules.get(chunk) else {
-            continue;
-        };
-        for (export, local) in &facts.exports {
-            if bindings.contains(local) {
-                asserted_pure_new
-                    .entry(chunk.clone())
-                    .or_default()
-                    .insert(export.clone());
-            }
-        }
-    }
+    let constructors = modules
+        .iter()
+        .map(|(importer, facts)| {
+            let locals = facts
+                .imports
+                .iter()
+                .filter_map(|(local, target)| {
+                    let binding = modules.get(&target.module)?.exports.get(&target.export)?;
+                    declared_pure_new_bindings
+                        .get(&target.module)?
+                        .contains(binding)
+                        .then(|| local.clone())
+                })
+                .collect();
+            (importer.clone(), locals)
+        })
+        .collect();
     let requested_original_provider_exports = initializer_call_effect_inputs
         .values()
         .flatten()
@@ -900,12 +902,7 @@ pub fn collect_program_summary(
         stable_imports,
         members: members!(pure_members, PureMembers),
         fluent: exports!(fluent_exports, FluentExports),
-        constructors: project_export_set(
-            &modules,
-            &asserted_pure_new,
-            ExportContract::PureNewExports,
-            diagnostics,
-        ),
+        constructors,
         imported_callables: callable_summaries.imported_callables,
         native_integrity: callable_summaries.native_integrity,
         bundle_globals: callable_summaries.bundle_globals,

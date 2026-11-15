@@ -2,10 +2,10 @@
 //!
 //! A premise is trusted, not checked: it states a contract the analysis
 //! cannot or does not establish. The callee kinds mirror the spec's
-//! `chunk_export_purity` vocabulary (`pure_exports`, `pure_new_exports`,
-//! `pure_members`, `callback_factory_exports`, `callback_factory_members`)
-//! and its decorator-helper effect family; the site kinds mirror
-//! `initializer_purity: pure` and `native_operation_inputs`.
+//! `chunk_export_purity` vocabulary (`pure_exports`, `pure_members`,
+//! `callback_factory_exports`, `callback_factory_members`), local
+//! `purity: pure_new`, and its decorator-helper effect family; the site kinds
+//! mirror `initializer_purity: pure` and `native_operation_inputs`.
 
 use serde::Deserialize;
 
