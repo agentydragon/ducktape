@@ -10,7 +10,7 @@ import (
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/internal/view"
+	"github.com/agentydragon/ducktape/agentplane/environments/internal/service/view"
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"

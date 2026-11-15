@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"slices"
 
+	environmentservice "github.com/agentydragon/ducktape/agentplane/environments/internal/service"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 )
 
@@ -101,7 +101,7 @@ func (c Config) Validate() error {
 		if d.Actor.Namespace == "" || d.Actor.Name == "" || !d.IdentityCallers || len(d.Methods) == 0 {
 			return errors.New("delegation requires actor, identity_callers and methods")
 		}
-		methods := environments.Methods(nil)
+		methods := environmentservice.Methods(nil)
 		for _, method := range d.Methods {
 			if _, ok := methods[method]; !ok {
 				return fmt.Errorf("delegation method %q must belong to EnvironmentService", method)

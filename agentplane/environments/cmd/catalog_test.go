@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
+	environmentservice "github.com/agentydragon/ducktape/agentplane/environments/internal/service"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
@@ -98,9 +98,9 @@ func TestConfiguredHarnessNamesRoundTripThroughEnvironmentService(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := environments.New(
+	service, err := environmentservice.New(
 		"agentplane", objects, config.RuntimeCatalog, lifecycleManager,
-		sets.New(config.Readers...), environments.ManagementOptions{},
+		sets.New(config.Readers...), environmentservice.ManagementOptions{},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -109,7 +109,7 @@ func TestConfiguredHarnessNamesRoundTripThroughEnvironmentService(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	connection := grpcmethods.Serve(t, environments.Methods(resolver), func(server *grpc.Server) {
+	connection := grpcmethods.Serve(t, environmentservice.Methods(resolver), func(server *grpc.Server) {
 		environmentpb.RegisterEnvironmentServiceServer(server, service)
 	})
 	client := environmentpb.NewEnvironmentServiceClient(connection)

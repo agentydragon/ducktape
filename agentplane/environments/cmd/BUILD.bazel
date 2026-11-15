@@ -52,11 +52,11 @@ go_test(
     ],
     embed = [":cmd_lib"],
     deps = [
+        "//agentplane/environments/internal/service",
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/identity/auth",
         "//agentplane/net/peertls",
         "//agentplane/proto:session_go_proto",
-        "//agentplane/runner_gateway/environments",
         "//agentplane/runner_gateway/environments/lifecycle",
         "//agentplane/sandboxes/api",
         "//agentplane/testing/grpcmethods",

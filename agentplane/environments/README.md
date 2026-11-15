@@ -154,3 +154,7 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   tests create VMIs and launcher Pods by hand.
 - **Gotcha:** the fake client's default managed-fields tracker panics on KubeVirt's `uint64`
   fields, so the tests build it on a plain object tracker.
+
+EnvironmentService handlers, management and views live in [internal/service](internal/service/README.md).
+The shared lifecycle manager remains outside that internal boundary until the explicit/automatic
+split; automatic wake execution and budget ownership stay with Dispatcher.

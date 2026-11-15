@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/environments/access"
+	environmentservice "github.com/agentydragon/ducktape/agentplane/environments/internal/service"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
@@ -18,7 +19,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"google.golang.org/grpc"
@@ -102,7 +102,7 @@ func New(c Config, namespace string, apiConfig *rest.Config, scheme *runtime.Sch
 	if err != nil {
 		return nil, err
 	}
-	service, err := environments.New(namespace, objects, c.RuntimeCatalog, manager, sets.New(c.Readers...), environments.ManagementOptions{
+	service, err := environmentservice.New(namespace, objects, c.RuntimeCatalog, manager, sets.New(c.Readers...), environmentservice.ManagementOptions{
 		Managers: sets.New(c.Managers...), Launchers: sets.New(c.Launchers...),
 		ServiceReaders: sets.New(c.ServiceReaders...), ServiceManagers: sets.New(c.ServiceManagers...),
 		ServiceLaunchers: sets.New(c.ServiceLaunchers...),
@@ -110,7 +110,7 @@ func New(c Config, namespace string, apiConfig *rest.Config, scheme *runtime.Sch
 	if err != nil {
 		return nil, err
 	}
-	methods, err := environments.WithServiceCallers(environments.Methods(resolved), c.ServiceReaders, c.ServiceManagers, c.ServiceLaunchers, c.ServiceOperators)
+	methods, err := environmentservice.WithServiceCallers(environmentservice.Methods(resolved), c.ServiceReaders, c.ServiceManagers, c.ServiceLaunchers, c.ServiceOperators)
 	if err != nil {
 		return nil, err
 	}

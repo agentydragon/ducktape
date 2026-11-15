@@ -1,6 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-package(default_visibility = ["//agentplane/runner_gateway/environments:__pkg__"])
+package(default_visibility = ["//agentplane/environments/internal/service:__pkg__"])
 
 go_library(
     name = "management",
@@ -8,13 +8,13 @@ go_library(
         "access.go",
         "errors.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/internal/management",
+    importpath = "github.com/agentydragon/ducktape/agentplane/environments/internal/service/management",
     deps = [
+        "//agentplane/environments/internal/service/view",
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/identity/auth",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/proto:identity_go_proto",
-        "//agentplane/runner_gateway/environments/internal/view",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/sandboxreader",
         "@io_k8s_apimachinery//pkg/api/errors",
@@ -35,11 +35,11 @@ go_test(
     srcs = ["access_test.go"],
     embed = [":management"],
     deps = [
+        "//agentplane/environments/internal/service/view",
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/identity/auth",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/proto:identity_go_proto",
-        "//agentplane/runner_gateway/environments/internal/view",
         "//agentplane/sandboxes/api",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/api/errors",

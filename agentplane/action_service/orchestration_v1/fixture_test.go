@@ -15,15 +15,13 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
+	"github.com/agentydragon/ducktape/agentplane/environments/testing/servicefixture"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -38,7 +36,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -52,12 +49,6 @@ func (r launchTokenReview) Create(_ context.Context, request *authenticationv1.T
 			Extra: map[string]authenticationv1.ExtraValue{"authentication.kubernetes.io/pod-name": {"actions-pod"}, "authentication.kubernetes.io/pod-uid": {"actions-pod-uid"}},
 		},
 	}}, nil
-}
-
-type unusedWakeBudget struct{}
-
-func (unusedWakeBudget) ReserveWakeAttempt(context.Context, lifecycle.WakeBudgetKey, string, int64) (time.Duration, error) {
-	return 0, nil
 }
 
 const (
@@ -128,22 +119,12 @@ func newFixture(t *testing.T) fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manager, err := lifecycle.NewManager(lifecycle.Options{Namespace: namespace, Objects: objects, WakeBudget: unusedWakeBudget{}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	service, err := environments.New(namespace, objects, runtimeconfig.Catalog{}, manager, nil, environments.ManagementOptions{
-		Launchers: sets.New(auth.Account{Namespace: namespace, Name: "actions"}),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	resolver, err := auth.NewResolver(launchTokenReview{namespace}, "environment-test", []string{namespace}, auth.WithVerdictTTL(0))
 	if err != nil {
 		t.Fatal(err)
 	}
-	methods := environments.Methods(resolver)
-	environment := environmentpb.NewEnvironmentServiceClient(serve(t, func(s *grpc.Server) { environmentpb.RegisterEnvironmentServiceServer(s, service) }, methods.ServerOptions(0)...))
+	service, options := servicefixture.Launcher(t, namespace, objects, resolver, auth.Account{Namespace: namespace, Name: "actions"})
+	environment := environmentpb.NewEnvironmentServiceClient(serve(t, func(s *grpc.Server) { environmentpb.RegisterEnvironmentServiceServer(s, service) }, options...))
 	executor, err := NewExecutor(testGroup, catalog.OrchestrationBinding{
 		Description: "test orchestration", Namespace: namespace,
 		Presets: json.RawMessage(testPresets),

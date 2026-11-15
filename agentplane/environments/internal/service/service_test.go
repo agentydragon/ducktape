@@ -1,4 +1,4 @@
-package environments
+package service
 
 import (
 	"context"

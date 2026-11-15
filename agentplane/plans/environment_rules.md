@@ -199,7 +199,7 @@ without global locking or a promise of instantaneous revocation.
 
 | Evaluator                                                 | Caller it evaluates                                                                                                                     | Reads                                                                                                               |
 | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| EnvironmentService (`runner_gateway/environments/`)       | direct Identity or delegated Identity effective caller for existing reads; Identity admission is a planned addition for explicit resume | current self-read checks Sandbox name/UID/spec binding and live Identity; planned resume adds its environment index |
+| EnvironmentService (`environments/internal/service/`)     | direct Identity or delegated Identity effective caller for existing reads; Identity admission is a planned addition for explicit resume | current self-read checks Sandbox name/UID/spec binding and live Identity; planned resume adds its environment index |
 | Dispatcher `CreateSession`                                | existing Identity admission is followed by an explicit Identity rejection; grant is planned for new environment placement               | its environment index plus exact selected Sandbox and its current bound Identity                                    |
 | Action Service (`session_delegation`, `orchestration_v1`) | nothing itself: it forwards the request's caller as the effective caller and the backend evaluates                                      | `action_auto_approve` only, for the Action request itself                                                           |
 
@@ -233,8 +233,8 @@ Implementation validation is scoped to the changed code:
 
 - Run these Go suites with `bbr test`:
   `//agentplane/policy/reader:reader_test`,
-  `//agentplane/runner_gateway/environments:environments_test`,
-  `//agentplane/runner_gateway/environments/lifecycle:lifecycle_test`, and
+  `//agentplane/environments/internal/service:service_test`,
+  `//agentplane/environments/internal/service:lifecycle_test`, and
   `//agentplane/runner_gateway/dispatcher:store_integration_test`.
 - Build generated policy API targets with `bbr build`:
   `//agentplane/policy/api/v1alpha1:generated_crds` and
