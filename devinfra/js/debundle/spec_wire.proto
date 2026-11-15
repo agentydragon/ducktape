@@ -645,8 +645,6 @@ message ChunkExportPurity {
   // Absence selects defaults; a present empty message explicitly selects none.
   SourceMarkers source_markers = 1;
   repeated string pure_exports = 2;
-  repeated string pure_new_exports = 3;
-  map<string, MemberNames> pure_members = 4;
   repeated string fluent_exports = 5;
   repeated string callback_factory_exports = 6;
   repeated string inline_callback_factory_exports = 7;

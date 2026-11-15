@@ -1358,8 +1358,6 @@ impl Wire for spec::ChunkExportPurity {
                     markers: markers.to_proto(),
                 }),
             pure_exports: self.pure_exports.to_proto(),
-            pure_new_exports: self.pure_new_exports.to_proto(),
-            pure_members: member_names_to_proto(&self.pure_members),
             fluent_exports: self.fluent_exports.to_proto(),
             callback_factory_exports: self.callback_factory_exports.to_proto(),
             inline_callback_factory_exports: self.inline_callback_factory_exports.to_proto(),
@@ -1403,8 +1401,6 @@ impl Wire for spec::ChunkExportPurity {
                 .map(|value| Wire::from_proto(value.markers))
                 .transpose()?,
             pure_exports: Wire::from_proto(v.pure_exports)?,
-            pure_new_exports: Wire::from_proto(v.pure_new_exports)?,
-            pure_members: member_names_from_proto(v.pure_members)?,
             fluent_exports: Wire::from_proto(v.fluent_exports)?,
             callback_factory_exports: Wire::from_proto(v.callback_factory_exports)?,
             inline_callback_factory_exports: Wire::from_proto(v.inline_callback_factory_exports)?,

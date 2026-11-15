@@ -123,7 +123,6 @@ chunk_export_purity:
   main:
     source_markers: []
     pure_exports: [read]
-    pure_members: {api: [read]}
     retained_callback_factory_members:
       api: {register: [{argument_count: 3, callback_arguments: [0, 2]}]}
     descriptor_copy_factory_exports:
