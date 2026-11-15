@@ -1,11 +1,10 @@
 //! Owned tree inputs shared by ordinary, graph and staged CLI workflows.
 
-use super::{CommandResult, command_result, current_test_prefix, debundler_path, write_text_file};
+use super::{CaseWorkspace, CommandResult, command_result, debundler_path, write_text_file};
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use tempfile::TempDir;
 
 /// `(path below the modules root, module YAML)`. Every chunk is inlined into
 /// its entry when unassigned; the first chunk is `main_chunk_id`.
@@ -16,7 +15,7 @@ pub struct TreeFixture<'a> {
 }
 
 pub struct TreeRun {
-    _root: TempDir,
+    _root: CaseWorkspace,
     pub out_root: PathBuf,
     pub report_root: PathBuf,
     pub result: CommandResult,
@@ -25,6 +24,10 @@ pub struct TreeRun {
 impl TreeRun {
     pub fn root(&self) -> &Path {
         self._root.path()
+    }
+
+    pub fn workspace(&self) -> CaseWorkspace {
+        self._root.clone()
     }
 }
 
@@ -60,7 +63,7 @@ pub fn run_tree_fixture(fixture: &TreeFixture<'_>, extra_args: &[&str]) -> TreeR
 /// A materialized tree input, owned until its last command finishes.
 /// Preparing it does not execute the CLI or create an output tree.
 pub struct TreeWorkspace {
-    root: TempDir,
+    root: CaseWorkspace,
 }
 
 impl TreeWorkspace {
@@ -90,7 +93,7 @@ impl TreeWorkspace {
 }
 
 pub fn write_tree_fixture(fixture: &TreeFixture<'_>) -> TreeWorkspace {
-    let root = TempDir::with_prefix(current_test_prefix()).expect("create tempdir");
+    let root = CaseWorkspace::default();
     let snapshot = root.path().join("snapshot");
     let modules = root.path().join("modules");
     fs::create_dir_all(&modules).expect("create modules root");

@@ -4,7 +4,9 @@
 //! tree by reading files and re-running them under `node`.
 
 mod ast_assertions;
+mod failure_workspace;
 mod fixture_spec;
+pub use failure_workspace::CaseWorkspace;
 pub mod saved_analysis;
 mod tree_assertions;
 mod workspace;
@@ -65,7 +67,6 @@ const NODE_RLOCATION: &str = "nodejs_linux_amd64/bin/node";
 
 static MODULE_EXPORT_PROBE_COUNTER: AtomicUsize = AtomicUsize::new(0);
 static GENERATED_MODULE_SCRIPT_COUNTER: AtomicUsize = AtomicUsize::new(0);
-static FAILED_FIXTURE_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 pub struct Fixture {
     pub chunk_id: String,
@@ -80,7 +81,7 @@ pub struct Fixture {
     pub harness_root: Option<PathBuf>,
     source_path: PathBuf,
     // Held to keep the tempdir alive for the duration of assertions.
-    _root: TempDir,
+    _root: CaseWorkspace,
 }
 
 pub struct RejectedFixture {
@@ -98,7 +99,7 @@ pub struct RejectedFixture {
     /// [`FixtureOpts::with_browser_harness`].
     pub harness_root: Option<PathBuf>,
     // Held to keep the tempdir alive for the duration of assertions.
-    _root: TempDir,
+    _root: CaseWorkspace,
 }
 
 impl Fixture {
@@ -207,7 +208,7 @@ pub struct DryRunFixture {
     pub stderr: String,
     pub report_root: PathBuf,
     // Held to keep the tempdir alive for the duration of assertions.
-    _root: TempDir,
+    _root: CaseWorkspace,
 }
 
 pub fn run_fixture(opts: FixtureOpts<'_>) -> Fixture {
@@ -235,9 +236,6 @@ fn run_fixture_with_options(opts: FixtureOpts<'_>, extra_args: &[&str], graphs: 
     let result = spawn_transform_with_args(&setup.spec_path, &args);
     let app_root = setup.out_root.join(APP_DIR);
     mirror_runtime_extra_files(&app_root, opts.extra_files, result.status.success());
-    if !result.status.success() {
-        preserve_failed_fixture_reports(&setup, opts.chunk_id);
-    }
     assert!(
         result.status.success(),
         "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
@@ -270,59 +268,6 @@ fn run_fixture_with_options(opts: FixtureOpts<'_>, extra_args: &[&str], graphs: 
     }
 }
 
-/// Preserve reports and any emitted app before an unexpected exit drops its tempdir.
-/// Earlier pipeline failures can legitimately precede individual reports.
-fn preserve_failed_fixture_reports(setup: &PreparedFixture, chunk_id: &str) {
-    let output = PathBuf::from(
-        std::env::var_os("TEST_UNDECLARED_OUTPUTS_DIR")
-            .expect("Bazel undeclared outputs directory is set"),
-    )
-    .join("failed-fixtures")
-    .join(format!(
-        "{}{}",
-        current_test_prefix(),
-        FAILED_FIXTURE_COUNTER.fetch_add(1, Ordering::Relaxed),
-    ));
-    fs::create_dir_all(&output).expect("create failed fixture report directory");
-    fs::copy(&setup.spec_path, output.join("transform_spec.yaml"))
-        .expect("preserve failed fixture spec");
-    for name in [
-        "candidate_relocation_assessment.json",
-        "effect_translation_validation.json",
-        "dependency_graph.json.gz",
-    ] {
-        let source = setup.report_root.join(chunk_id).join(name);
-        if source.exists() {
-            fs::copy(&source, output.join(name)).unwrap_or_else(|error| {
-                panic!(
-                    "preserve failed fixture report {}: {error}",
-                    source.display()
-                )
-            });
-        }
-    }
-
-    let program_graph = setup.report_root.join("program_graph.json.gz");
-    if program_graph.exists() {
-        fs::copy(&program_graph, output.join("program_graph.json.gz")).unwrap_or_else(|error| {
-            panic!(
-                "preserve failed fixture report {}: {error}",
-                program_graph.display()
-            )
-        });
-    }
-
-    let app_root = setup.out_root.join(APP_DIR);
-    if app_root.is_dir() {
-        copy_generated_tree(&app_root, &output.join(APP_DIR)).unwrap_or_else(|error| {
-            panic!(
-                "preserve failed fixture emitted tree {}: {error}",
-                app_root.display()
-            )
-        });
-    }
-}
-
 /// Mirror runtime-only siblings after transformation so materialized imports can
 /// resolve, and before a failed fixture's emitted tree is retained. A failed
 /// pipeline may stop before producing `app/`; keep that output absent.
@@ -339,22 +284,6 @@ fn mirror_runtime_extra_files(
     }
 }
 
-/// Copy the generated app while retaining module paths, package metadata, and assets.
-fn copy_generated_tree(source: &Path, destination: &Path) -> std::io::Result<()> {
-    fs::create_dir_all(destination)?;
-    for entry in fs::read_dir(source)? {
-        let entry = entry?;
-        let source_path = entry.path();
-        let destination_path = destination.join(entry.file_name());
-        if source_path.is_dir() {
-            copy_generated_tree(&source_path, &destination_path)?;
-        } else {
-            fs::copy(&source_path, &destination_path)?;
-        }
-    }
-    Ok(())
-}
-
 /// What the authoritative gate decided for a fixture, and how its source and
 /// the entry emitted for that spec run under Node.
 pub struct GateOutcome {
@@ -366,7 +295,7 @@ pub struct GateOutcome {
     /// The entry chunk's `candidate_relocation_assessment.json`.
     pub assessment: Value,
     // Keep the generated tree alive for callers inspecting `out_root`.
-    _root: TempDir,
+    _root: CaseWorkspace,
 }
 
 /// `debundle run --emit-on-rejection` over a spec the gate may accept or
@@ -378,7 +307,6 @@ pub fn run_fixture_to_gate_outcome(opts: FixtureOpts<'_>) -> GateOutcome {
         Some(0) => true,
         Some(3) => false,
         code => {
-            preserve_failed_fixture_reports(&setup, opts.chunk_id);
             panic!(
                 "debundler exited {code:?}\nstdout:\n{}\nstderr:\n{}",
                 result.stdout, result.stderr
@@ -673,9 +601,6 @@ fn run_rejection_fixture_with_options(
         opts.extra_files,
         result.status.success(),
     );
-    if result.status.code() != Some(exit_code) {
-        preserve_failed_fixture_reports(&setup, opts.chunk_id);
-    }
     assert_eq!(
         result.status.code(),
         Some(exit_code),
@@ -697,16 +622,22 @@ fn run_rejection_fixture_with_options(
 }
 
 /// A written transform spec ready to feed to a `debundle` subcommand other
-/// than `run` (e.g. `spec validate`). The held [`TempDir`] keeps the spec,
+/// than `run` (e.g. `spec validate`). The held [`CaseWorkspace`] keeps the spec,
 /// source snapshot, and js-list alive for the duration of the test.
 pub struct ValidateFixture {
     pub spec_path: PathBuf,
-    _root: TempDir,
+    _root: CaseWorkspace,
 }
 
 /// Materialize `opts` into an on-disk transform spec without running the
 /// pipeline. Lets a CLI test point `debundle spec validate --spec <path>` at
 /// exactly the same fixture shape the keep-going materialize tests build.
+impl ValidateFixture {
+    pub fn workspace(&self) -> CaseWorkspace {
+        self._root.clone()
+    }
+}
+
 pub fn write_validate_fixture_spec(opts: FixtureOpts<'_>) -> ValidateFixture {
     let setup = prepare_fixture(&opts);
     ValidateFixture {
@@ -1195,7 +1126,7 @@ pub fn assert_node_error(path: &Path, expected_error: &str) {
 
 /// Real source files plus a serialized spec, ready for any CLI execution mode.
 struct PreparedFixture {
-    root: TempDir,
+    root: CaseWorkspace,
     spec_path: PathBuf,
     out_root: PathBuf,
     report_root: PathBuf,
@@ -1224,7 +1155,7 @@ struct AssetSummaryEntryPoints<'a> {
 }
 
 fn prepare_fixture(opts: &FixtureOpts<'_>) -> PreparedFixture {
-    let root = TempDir::with_prefix(current_test_prefix()).expect("create tempdir");
+    let root = CaseWorkspace::default();
     let extracted_root = root.path().join("extracted");
     let out_root = root.path().join("out");
     let report_root = out_root.join("reports").join("tree");

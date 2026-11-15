@@ -442,6 +442,7 @@ rust_library(
     name = "support",
     srcs = [
         "support/ast_assertions.rs",
+        "support/failure_workspace.rs",
         "support/fixture_spec.rs",
         "support/mod.rs",
         "support/saved_analysis.rs",
@@ -1629,3 +1630,9 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(name = "fixture_workspace_test")
+
+debundle_e2e_test(
+    name = "failure_workspace_test",
+    saved_analysis_tools = True,
+    deps = ["@crates//:serde_json"],
+)

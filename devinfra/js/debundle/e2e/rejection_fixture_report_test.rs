@@ -73,8 +73,8 @@ console.log(identity7(x()));
     let [preserved] = directories.as_slice() else {
         panic!("expected one retained failure directory, got {directories:#?}");
     };
-    let app = preserved.join("app");
-    let program_graph = preserved.join("program_graph.json.gz");
+    let app = preserved.join("out/app");
+    let program_graph = preserved.join("out/reports/tree/program_graph.json.gz");
     let importer_entry = app.join("static/importer/entry.js");
     let provider_entry = app.join("static/provider/entry.js");
     let package_json = app.join("package.json");
