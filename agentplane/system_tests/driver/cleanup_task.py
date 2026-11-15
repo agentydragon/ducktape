@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import Awaitable
 
 
-async def finish_cleanup[T](cleanup: Awaitable[T]) -> T:
+async def finish_cleanup[T](cleanup: Awaitable[T], *, primary_error: BaseException | None = None) -> T:
     # shield() alone still cancels its caller. Keep awaiting the same owned task,
     # including after a second cancellation, so the deployment outlives its guests.
     closing = asyncio.ensure_future(cleanup)
@@ -19,7 +19,8 @@ async def finish_cleanup[T](cleanup: Awaitable[T]) -> T:
         except BaseException:
             break
 
-    if cancellation is not None:
+    # An already-propagating body failure retains precedence over late cancellation.
+    if cancellation is not None and primary_error is None:
         try:
             closing.result()
         except BaseException as error:
