@@ -157,6 +157,9 @@ creator scope across Identities.
 The queue case leaves a stopped Sandbox unchanged. The replica case raises Gateway replicas to two,
 removes the recorded lease owner and verifies durable queue recovery through its peer; opted-in app
 and Notification submissions share a wake generation ([`dispatcher.py`](scenarios/dispatcher.py)).
+Shared Session polling lives in [`dispatcher_operations.py`](driver/dispatcher_operations.py), and
+runner mount inspection, archives and cleanup evidence capture live in
+[`sandbox_diagnostics.py`](driver/sandbox_diagnostics.py).
 The [Dispatcher guide](../runner_gateway/dispatcher/README.md) owns the command delivery contract.
 
 ## Phase tracing
