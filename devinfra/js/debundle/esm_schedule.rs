@@ -24,8 +24,12 @@ pub struct EsmImportSchedule {
 pub enum ImportScheduleError {
     #[error("import schedule does not contain exactly the emitted modules")]
     ModuleUniverse,
-    #[error("import schedule for {module:?} has missing, extra or duplicate targets")]
-    ImportTargets { module: ModuleId },
+    #[error("import schedule for {module:?} expects {expected:?}, received {actual:?}")]
+    ImportTargets {
+        module: ModuleId,
+        expected: Vec<ModuleId>,
+        actual: Vec<ModuleId>,
+    },
 }
 
 impl EsmImportSchedule {
@@ -97,7 +101,13 @@ impl EsmImportSchedule {
             if actual.len() != targets.len()
                 || actual != required_targets(entry, module, successors, nodes)
             {
-                return Err(ImportScheduleError::ImportTargets { module });
+                return Err(ImportScheduleError::ImportTargets {
+                    module,
+                    expected: required_targets(entry, module, successors, nodes)
+                        .into_iter()
+                        .collect(),
+                    actual: targets.clone(),
+                });
             }
         }
         Ok(())
@@ -137,7 +147,11 @@ impl EsmImportSchedule {
     ) -> Result<(), ImportScheduleError> {
         let actual: BTreeSet<_> = imports.iter().map(|(target, _)| *target).collect();
         if actual != self.imports(module).iter().copied().collect() {
-            return Err(ImportScheduleError::ImportTargets { module });
+            return Err(ImportScheduleError::ImportTargets {
+                module,
+                expected: self.imports(module).to_vec(),
+                actual: actual.into_iter().collect(),
+            });
         }
         let positions: BTreeMap<_, _> = self
             .imports(module)
@@ -348,10 +362,10 @@ mod tests {
         ] {
             let mut bad = imports.clone();
             bad.insert(module, targets);
-            assert_eq!(
+            assert!(matches!(
                 EsmImportSchedule::from_imports(entry, &successors, &nodes, bad),
-                Err(ImportScheduleError::ImportTargets { module })
-            );
+                Err(ImportScheduleError::ImportTargets { module: actual, .. }) if actual == module
+            ));
         }
     }
 

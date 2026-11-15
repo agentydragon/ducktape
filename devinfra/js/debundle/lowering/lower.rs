@@ -256,8 +256,8 @@ pub(super) fn prepare_candidate_emission_plan<'output>(
     );
     // Two passes: build entry imports in plan order (so the
     // first plan to claim a binding wins disambiguation), then
-    // order them through the shared `EsmImportOrder` so ECMA-262's
-    // depth-first link traversal evaluates dependencies first.
+    // order them through the verified concrete import schedule so
+    // ECMA-262's depth-first traversal evaluates dependencies first.
     // Plan-order disambiguation + shared-order placement keeps
     // the import-collision contract while satisfying Lemma 2's
     // emit-side constraint. See docs/design.md "Module dep graphs"
@@ -331,19 +331,16 @@ pub(super) fn prepare_candidate_emission_plan<'output>(
             // A plan with no importable bindings can still carry
             // emitted content (anonymous claimed statements). The
             // entry must still load it — a module nothing imports
-            // never evaluates, silently dropping its side effects —
-            // so emit a side-effect-only `import "./<plan>.js";`.
-            // Included in the shared entry ordering below, exactly
-            // like the gate simulator's universal residual edges.
-            if !selected_by_module[module_index].is_empty() {
-                entry_imports.push((
-                    ModuleId(module_index),
-                    import_decl_module_item(
-                        Vec::new(),
-                        &relative_source(entry_file, &plan.target_file),
-                    ),
-                ));
-            }
+            // never evaluates, silently dropping its side effects.
+            // Empty authored owners also persist in the emitted universe;
+            // import them to match the schedule's universal entry fanout.
+            entry_imports.push((
+                ModuleId(module_index),
+                import_decl_module_item(
+                    Vec::new(),
+                    &relative_source(entry_file, &plan.target_file),
+                ),
+            ));
             continue;
         }
         let mut emit_renames = BTreeMap::<String, String>::new();

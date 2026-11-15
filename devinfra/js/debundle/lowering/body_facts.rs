@@ -136,6 +136,23 @@ impl Visit for RefCollector {
 
     fn visit_import_decl(&mut self, _node: &ImportDecl) {}
 
+    fn visit_named_export(&mut self, node: &NamedExport) {
+        // Public export names are labels, not references to same-named
+        // locals. Match the source dependency collector: only a local
+        // export's original binding can require an intra-chunk import.
+        if node.src.is_none() {
+            for specifier in &node.specifiers {
+                if let ExportSpecifier::Named(named) = specifier
+                    && let ModuleExportName::Ident(original) = &named.orig
+                {
+                    original.visit_with(self);
+                }
+            }
+        }
+    }
+
+    fn visit_export_all(&mut self, _node: &ExportAll) {}
+
     fn visit_function(&mut self, node: &Function) {
         let shadowed = node
             .params
