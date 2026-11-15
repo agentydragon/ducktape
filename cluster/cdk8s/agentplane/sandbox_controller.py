@@ -43,6 +43,7 @@ from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, Ne
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
+from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 
 _GATEWAY_TOKEN_DIR = "/var/run/secrets/agentplane-runner-gateway"
 _SETTINGS_PATH = "/etc/agentplane-sandbox-controller/config.yaml"
@@ -171,6 +172,7 @@ class SandboxController(Construct):
         gateway_audience: str,
         gateway_control_target: str,
         authority: EnvironmentServiceAuthority,
+        environment_service_kubernetes_bearer: bool = False,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
         memory_request: Size = _DEFAULT_MEMORY_REQUEST,
@@ -208,11 +210,23 @@ class SandboxController(Construct):
         assert runner_tls.cert_file is not None
         assert runner_tls.key_file is not None
         assert runner_tls.ca_file is not None
+        environment_auth: list[workload_listener.Authentication] = [
+            workload_listener.SPIFFEAuth(ca_file=Path(runner_tls.ca_file))
+        ]
+        if environment_service_kubernetes_bearer:
+            environment_auth.append(workload_listener.KubernetesBearerAuth(audiences=frozenset({gateway_audience})))
+            token_reviewer_cluster_rbac(
+                self,
+                "environment-token-reviewer",
+                name=f"{namespace}-{NAME}-token-reviewer",
+                service_account_name=NAME,
+                namespace=namespace,
+            )
         serving = EnvironmentService(
             rpc=workload_listener.Listener(
                 listen_address=f"0.0.0.0:{environment_endpoint.port.number}",
                 tls=workload_listener.TLS(cert_file=Path(runner_tls.cert_file), key_file=Path(runner_tls.key_file)),
-                auth=[workload_listener.SPIFFEAuth(ca_file=Path(runner_tls.ca_file))],
+                auth=environment_auth,
             ),
             policy_namespace=namespace,
             audience=gateway_audience,
