@@ -17,7 +17,7 @@ from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.monitoring import grafana_helmrepository, loki, mimir, tempo, wyrm2_cutover_job
+from cluster.cdk8s.monitoring import grafana_helmrepository, loki, mimir, tempo
 
 _NAME = "alloy"
 NAMESPACE = "monitoring"
@@ -59,18 +59,31 @@ _CONFIG_ENV = {
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
+    # Flux owns only these migration gates; never prune the kubelet-owned Node.
+    k8s.KubeNode(
+        chart,
+        "wyrm2-log-collectors",
+        metadata=k8s.ObjectMeta(
+            name="wyrm2",
+            labels={loki.POD_COLLECTOR_LABEL: "alloy", loki.JOURNAL_COLLECTOR_LABEL: "alloy"},
+            annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
+        ),
+    )
     runfiles_root = Runfiles.CreateOrRaise().root()
-    configs = {
-        key: (runfiles_root / f"ducktape/cluster/cdk8s/monitoring/{key}").read_text()
-        + (
-            (runfiles_root / "ducktape/cluster/cdk8s/monitoring/pod-logs.alloy").read_text()
-            if key == _NODE_CONFIG_KEY
-            else ""
-        )
-        for key in (_CONFIG_KEY, _NODE_CONFIG_KEY, _SYSLOG_CONFIG_KEY, "journal.alloy")
-    }
     config_map, node_config_map, syslog_config_map, journal_config_map = (
-        ConfigMap(chart, name, metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE), data={key: configs[key]})
+        ConfigMap(
+            chart,
+            name,
+            metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
+            data={
+                key: (runfiles_root / f"ducktape/cluster/cdk8s/monitoring/{key}").read_text()
+                + (
+                    (runfiles_root / "ducktape/cluster/cdk8s/monitoring/pod-logs.alloy").read_text()
+                    if key == _NODE_CONFIG_KEY
+                    else ""
+                )
+            },
+        )
         for name, key in (
             (_CONFIG_MAP, _CONFIG_KEY),
             (_NODE_CONFIG_MAP, _NODE_CONFIG_KEY),
@@ -78,7 +91,6 @@ def chart(app: App) -> Chart:
             ("alloy-journal-config", "journal.alloy"),
         )
     )
-    wyrm2_cutover_job.add(chart, node_config=configs[_NODE_CONFIG_KEY], journal_config=configs["journal.alloy"])
     helm_release(
         chart,
         _NAME,
