@@ -672,7 +672,7 @@ flowchart LR
     github([GitHub / web-push])
     app[Integration app]
     actions[Action Service]
-    edge["MCP edge<br/>gRPC 8080 + mTLS 8443"]
+    edge["MCP edge<br/>gRPC 8080 + mTLS 8443<br/>/v1 handler in process"]
     k8s[Kubernetes API]
     subgraph box[Action box Pod]
         workload[Box workload]
