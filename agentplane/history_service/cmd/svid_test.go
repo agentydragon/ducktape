@@ -209,3 +209,48 @@ func TestAnIdentitySVIDReadsTheSessionsItsIdentityExecuted(t *testing.T) {
 		t.Fatalf("a same-named successor Identity read its predecessor's Session: %v", err)
 	}
 }
+
+// Exercise the production listener wiring, not a test-owned TLS server. Service certificates
+// prove the peer while the read allowlist remains the authority for each method.
+func TestSharedListenerAdmitsOnlyGrantedServiceReaders(t *testing.T) {
+	ca := peertlstesting.NewCA(t)
+	service := startWithSVIDs(t, ca, func(c *config) {
+		c.PolicyNamespace = testPolicyNamespace
+		c.ReaderServiceCallers = []string{peertls.AppURI}
+	})
+	for _, attempt := range []struct {
+		name   string
+		uri    string
+		bearer bool
+		want   codes.Code
+	}{
+		{"granted App", peertls.AppURI, false, codes.NotFound},
+		{"ungranted service", peertls.NotificationsURI, false, codes.PermissionDenied},
+		{"mixed bearer cannot rescue ungranted peer", peertls.NotificationsURI, true, codes.Unauthenticated},
+	} {
+		t.Run(attempt.name, func(t *testing.T) {
+			leaf := ca.Issue(t, attempt.uri)
+			security, err := (&peertls.ClientTLS{
+				CAFile: leaf.CAFile, ServerURI: peertls.HistoryIngressURI,
+				CertFile: leaf.CertFile, KeyFile: leaf.KeyFile, ClientURI: attempt.uri,
+			}).Credentials()
+			if err != nil {
+				t.Fatal(err)
+			}
+			conn, err := grpc.NewClient(service.rpcAddress, grpc.WithTransportCredentials(security))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
+			defer cancel()
+			if attempt.bearer {
+				ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+readerToken)
+			}
+			_, err = historypb.NewHistoryServiceClient(conn).GetSessionSummary(ctx, &historypb.GetSessionSummaryRequest{SessionId: uuid.NewString()})
+			if status.Code(err) != attempt.want {
+				t.Fatalf("service reader: got %v, want %v", err, attempt.want)
+			}
+		})
+	}
+}
