@@ -99,6 +99,96 @@ console.log(JSON.stringify({
 }
 
 #[test]
+fn chunk_rename_initializer_purity_preserves_residual_reads_and_sibling_effects() {
+    let options = || {
+        let mut renames = chunk_rename("readableStore", "store");
+        renames
+            .annotations
+            .entry("readableStore".to_owned())
+            .or_default()
+            .initializer_purity = InitializerPurity::Pure;
+        FixtureOpts::new(
+            r#"import './factory.js';
+const seed = "ready";
+const store = globalThis.factory(() => seed + "store");
+const selected = globalThis.factory(() => seed + "selected");
+const side = console.log("side");
+console.log(store, selected);
+export { store, selected };
+"#,
+            vec![logical_module(
+                "selected",
+                &[Member::new("seed"), Member::new("selected")],
+            )],
+        )
+        .with_chunk_renames(renames)
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_extra_files(OPAQUE_FACTORY_FILES)
+    };
+    let mut unannotated = options();
+    unannotated
+        .chunk_renames
+        .as_mut()
+        .unwrap()
+        .annotations
+        .clear();
+    let rejected = run_rejection_fixture(unannotated);
+    assert!(
+        rejected.stderr.contains("unrealizable"),
+        "{}",
+        rejected.stderr
+    );
+
+    let fixture = run_fixture(options());
+    assert_preserved_entry_output(&fixture, "side\nreadystore readyselected\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/entry.js",
+        &[
+            "const readableStore",
+            "const side",
+            "console.log(readableStore, selected)",
+        ],
+        &["const store", "const seed", "const selected"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/selected.js",
+        &["const seed", "const selected"],
+        &["readableStore", "const side"],
+    );
+}
+
+#[test]
+fn chunk_rename_initializer_purity_does_not_cover_a_sibling_declarator() {
+    let mut renames = chunk_rename("readableStore", "store");
+    renames
+        .annotations
+        .entry("readableStore".to_owned())
+        .or_default()
+        .initializer_purity = InitializerPurity::Pure;
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(
+            r#"import './factory.js';
+const store = globalThis.factory(() => 1), side = console.log("first");
+const selected = console.log("middle");
+const last = console.log("last");
+export { store, side, selected, last };
+"#,
+            vec![logical_module("selected", &[Member::new("selected")])],
+        )
+        .with_chunk_renames(renames)
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_extra_files(OPAQUE_FACTORY_FILES),
+    );
+    assert!(
+        rejected.stderr.contains("unrealizable"),
+        "{}",
+        rejected.stderr
+    );
+}
+
+#[test]
 fn initializer_override_does_not_make_later_calls_pure() {
     expect_sequenced_cycle_rejection(
         FixtureOpts::new(
