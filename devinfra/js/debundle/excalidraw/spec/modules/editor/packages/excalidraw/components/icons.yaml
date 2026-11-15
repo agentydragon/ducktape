@@ -1,0 +1,743 @@
+# Upstream owner: packages/excalidraw/components/icons.tsx (@excalidraw/excalidraw 0.18.1)
+note: >-
+  This exact-snapshot candidate maps the upstream declarations in source order to the
+  bundled source-unit binding names. Binding selectors are snapshot-specific and do not
+  assert stability across a rebuilt bundle. Refresh them from the pinned source and graph
+  when the configured bundle changes.
+members:
+  - name: iconFillColor
+    selector:
+      binding:
+        name: wt
+  - name: handlerColor
+    selector:
+      binding:
+        name: Es
+  - name: createIcon
+    selector:
+      binding:
+        name: _
+  - name: tablerIconProps
+    selector:
+      binding:
+        name: z
+  - name: modifiedTablerIconProps
+    selector:
+      binding:
+        name: N
+  - name: PlusPromoIcon
+    selector:
+      binding:
+        name: ry
+  - name: LibraryIcon
+    selector:
+      binding:
+        name: Uy
+  - name: PlusIcon
+    selector:
+      binding:
+        name: ly
+  - name: DotsIcon
+    selector:
+      binding:
+        name: oy
+  - name: PinIcon
+    selector:
+      binding:
+        name: dy
+  - name: UnlockedIcon
+    selector:
+      binding:
+        name: sy
+  - name: LockedIcon
+    selector:
+      binding:
+        name: cy
+  - name: WelcomeScreenMenuArrow
+    selector:
+      binding:
+        name: fy
+  - name: WelcomeScreenHelpArrow
+    selector:
+      binding:
+        name: hy
+  - name: WelcomeScreenTopToolbarArrow
+    selector:
+      binding:
+        name: uy
+  - name: ExcalLogo
+    selector:
+      binding:
+        name: by
+  - name: SelectionIcon
+    selector:
+      binding:
+        name: P7
+  - name: RectangleIcon
+    selector:
+      binding:
+        name: B7
+  - name: DiamondIcon
+    selector:
+      binding:
+        name: H7
+  - name: EllipseIcon
+    selector:
+      binding:
+        name: $7
+  - name: ArrowIcon
+    selector:
+      binding:
+        name: O7
+  - name: LineIcon
+    selector:
+      binding:
+        name: F7
+  - name: PenModeIcon
+    selector:
+      binding:
+        name: py
+  - name: FreedrawIcon
+    selector:
+      binding:
+        name: Ul
+  - name: TextIcon
+    selector:
+      binding:
+        name: N7
+  - name: ImageIcon
+    selector:
+      binding:
+        name: j7
+  - name: EraserIcon
+    selector:
+      binding:
+        name: W7
+  - name: ZoomInIcon
+    selector:
+      binding:
+        name: gy
+  - name: ZoomOutIcon
+    selector:
+      binding:
+        name: my
+  - name: ZoomResetIcon
+    selector:
+      binding:
+        name: wy
+  - name: TrashIcon
+    selector:
+      binding:
+        name: vy
+  - name: EmbedIcon
+    selector:
+      binding:
+        name: yy
+  - name: DuplicateIcon
+    selector:
+      binding:
+        name: xy
+  - name: MoonIcon
+    selector:
+      binding:
+        name: Ey
+  - name: SunIcon
+    selector:
+      binding:
+        name: My
+  - name: HamburgerMenuIcon
+    selector:
+      binding:
+        name: _y
+  - name: ExportIcon
+    selector:
+      binding:
+        name: ky
+  - name: HelpIcon
+    selector:
+      binding:
+        name: Ry
+  - name: HelpIconThin
+    selector:
+      binding:
+        name: Sy
+  - name: ExternalLinkIcon
+    selector:
+      binding:
+        name: Iy
+  - name: GithubIcon
+    selector:
+      binding:
+        name: Ay
+  - name: DiscordIcon
+    selector:
+      binding:
+        name: Cy
+  - name: XBrandIcon
+    selector:
+      binding:
+        name: Dy
+  - name: checkIcon
+    selector:
+      binding:
+        name: Ty
+  - name: LinkIcon
+    selector:
+      binding:
+        name: zy
+  - name: save
+    selector:
+      binding:
+        name: Ly
+  - name: saveAs
+    selector:
+      binding:
+        name: Xy
+  - name: LoadIcon
+    selector:
+      binding:
+        name: Py
+  - name: clipboard
+    selector:
+      binding:
+        name: By
+  - name: palette
+    selector:
+      binding:
+        name: Hy
+  - name: bucketFillIcon
+    selector:
+      binding:
+        name: $y
+  - name: ExportImageIcon
+    selector:
+      binding:
+        name: Oy
+  - name: exportToFileIcon
+    selector:
+      binding:
+        name: Fy
+  - name: zoomIn
+    selector:
+      binding:
+        name: Ny
+  - name: zoomOut
+    selector:
+      binding:
+        name: jy
+  - name: done
+    selector:
+      binding:
+        name: Wy
+  - name: menu
+    selector:
+      binding:
+        name: Zy
+  - name: UndoIcon
+    selector:
+      binding:
+        name: Gy
+  - name: RedoIcon
+    selector:
+      binding:
+        name: Vy
+  - name: questionCircle
+    selector:
+      binding:
+        name: Yy
+  - name: share
+    selector:
+      binding:
+        name: Ky
+  - name: warning
+    selector:
+      binding:
+        name: qy
+  - name: shareIOS
+    selector:
+      binding:
+        name: Jy
+  - name: exportToPlus
+    selector:
+      binding:
+        name: Qy
+  - name: shareWindows
+    selector:
+      binding:
+        name: ex
+  - name: resetZoom
+    selector:
+      binding:
+        name: tx
+  - name: arrowBarToTopJSX
+    selector:
+      binding:
+        name: Ms
+  - name: arrownNarrowUpJSX
+    selector:
+      binding:
+        name: _s
+  - name: BringForwardIcon
+    selector:
+      binding:
+        name: ax
+  - name: SendBackwardIcon
+    selector:
+      binding:
+        name: ix
+  - name: BringToFrontIcon
+    selector:
+      binding:
+        name: nx
+  - name: SendToBackIcon
+    selector:
+      binding:
+        name: rx
+  - name: AlignTopIcon
+    selector:
+      binding:
+        name: Ux
+  - name: AlignBottomIcon
+    selector:
+      binding:
+        name: lx
+  - name: AlignLeftIcon
+    selector:
+      binding:
+        name: ox
+  - name: AlignRightIcon
+    selector:
+      binding:
+        name: dx
+  - name: DistributeHorizontallyIcon
+    selector:
+      binding:
+        name: sx
+  - name: DistributeVerticallyIcon
+    selector:
+      binding:
+        name: cx
+  - name: CenterVerticallyIcon
+    selector:
+      binding:
+        name: fx
+  - name: CenterHorizontallyIcon
+    selector:
+      binding:
+        name: hx
+  - name: usersIcon
+    selector:
+      binding:
+        name: ux
+  - name: start
+    selector:
+      binding:
+        name: bx
+  - name: stop
+    selector:
+      binding:
+        name: px
+  - name: CloseIcon
+    selector:
+      binding:
+        name: gx
+  - name: clone
+    selector:
+      binding:
+        name: mx
+  - name: shield
+    selector:
+      binding:
+        name: wx
+  - name: file
+    selector:
+      binding:
+        name: vx
+  - name: GroupIcon
+    selector:
+      binding:
+        name: yx
+  - name: UngroupIcon
+    selector:
+      binding:
+        name: xx
+  - name: FillZigZagIcon
+    selector:
+      binding:
+        name: Ex
+  - name: FillHachureIcon
+    selector:
+      binding:
+        name: Mx
+  - name: FillCrossHatchIcon
+    selector:
+      binding:
+        name: _x
+  - name: FillSolidIcon
+    selector:
+      binding:
+        name: kx
+  - name: StrokeWidthBaseIcon
+    selector:
+      binding:
+        name: Rx
+  - name: StrokeWidthBoldIcon
+    selector:
+      binding:
+        name: Sx
+  - name: StrokeWidthExtraBoldIcon
+    selector:
+      binding:
+        name: Ix
+  - name: StrokeStyleSolidIcon
+    selector:
+      binding:
+        name: Ax
+  - name: StrokeStyleDashedIcon
+    selector:
+      binding:
+        name: Cx
+  - name: StrokeStyleDottedIcon
+    selector:
+      binding:
+        name: Dx
+  - name: SloppinessArchitectIcon
+    selector:
+      binding:
+        name: Tx
+  - name: SloppinessArtistIcon
+    selector:
+      binding:
+        name: zx
+  - name: SloppinessCartoonistIcon
+    selector:
+      binding:
+        name: Lx
+  - name: EdgeSharpIcon
+    selector:
+      binding:
+        name: Xx
+  - name: EdgeRoundIcon
+    selector:
+      binding:
+        name: Px
+  - name: ArrowheadNoneIcon
+    selector:
+      binding:
+        name: Bx
+  - name: ArrowheadArrowIcon
+    selector:
+      binding:
+        name: Hx
+  - name: ArrowheadCircleIcon
+    selector:
+      binding:
+        name: $x
+  - name: ArrowheadCircleOutlineIcon
+    selector:
+      binding:
+        name: Ox
+  - name: ArrowheadBarIcon
+    selector:
+      binding:
+        name: Fx
+  - name: ArrowheadTriangleIcon
+    selector:
+      binding:
+        name: Nx
+  - name: ArrowheadTriangleOutlineIcon
+    selector:
+      binding:
+        name: jx
+  - name: ArrowheadDiamondIcon
+    selector:
+      binding:
+        name: Wx
+  - name: ArrowheadDiamondOutlineIcon
+    selector:
+      binding:
+        name: Zx
+  - name: ArrowheadCrowfootIcon
+    selector:
+      binding:
+        name: Gx
+  - name: ArrowheadCrowfootOneIcon
+    selector:
+      binding:
+        name: Vx
+  - name: ArrowheadCrowfootOneOrManyIcon
+    selector:
+      binding:
+        name: Yx
+  - name: FontSizeSmallIcon
+    selector:
+      binding:
+        name: Kx
+  - name: FontSizeMediumIcon
+    selector:
+      binding:
+        name: qx
+  - name: FontSizeLargeIcon
+    selector:
+      binding:
+        name: Jx
+  - name: FontSizeExtraLargeIcon
+    selector:
+      binding:
+        name: Qx
+  - name: fontSizeIcon
+    selector:
+      binding:
+        name: eE
+  - name: FontFamilyHeadingIcon
+    selector:
+      binding:
+        name: Z7
+  - name: FontFamilyNormalIcon
+    selector:
+      binding:
+        name: P1
+  - name: FontFamilyCodeIcon
+    selector:
+      binding:
+        name: B1
+  - name: TextAlignLeftIcon
+    selector:
+      binding:
+        name: tE
+  - name: TextAlignCenterIcon
+    selector:
+      binding:
+        name: aE
+  - name: TextAlignRightIcon
+    selector:
+      binding:
+        name: iE
+  - name: TextAlignTopIcon
+    selector:
+      binding:
+        name: nE
+  - name: TextAlignBottomIcon
+    selector:
+      binding:
+        name: rE
+  - name: TextAlignMiddleIcon
+    selector:
+      binding:
+        name: UE
+  - name: angleIcon
+    selector:
+      binding:
+        name: lE
+  - name: publishIcon
+    selector:
+      binding:
+        name: oE
+  - name: eraser
+    selector:
+      binding:
+        name: dE
+  - name: handIcon
+    selector:
+      binding:
+        name: sE
+  - name: downloadIcon
+    selector:
+      binding:
+        name: cE
+  - name: copyIcon
+    selector:
+      binding:
+        name: fE
+  - name: cutIcon
+    selector:
+      binding:
+        name: hE
+  - name: helpIcon
+    selector:
+      binding:
+        name: uE
+  - name: playerPlayIcon
+    selector:
+      binding:
+        name: bE
+  - name: playerStopFilledIcon
+    selector:
+      binding:
+        name: pE
+  - name: tablerCheckIcon
+    selector:
+      binding:
+        name: gE
+  - name: alertTriangleIcon
+    selector:
+      binding:
+        name: mE
+  - name: eyeDropperIcon
+    selector:
+      binding:
+        name: wE
+  - name: extraToolsIcon
+    selector:
+      binding:
+        name: vE
+  - name: frameToolIcon
+    selector:
+      binding:
+        name: yE
+  - name: mermaidLogoIcon
+    selector:
+      binding:
+        name: xE
+  - name: ArrowRightIcon
+    selector:
+      binding:
+        name: EE
+  - name: laserPointerToolIcon
+    selector:
+      binding:
+        name: ME
+  - name: MagicIcon
+    selector:
+      binding:
+        name: _E
+  - name: MagicIconThin
+    selector:
+      binding:
+        name: kE
+  - name: OpenAIIcon
+    selector:
+      binding:
+        name: RE
+  - name: fullscreenIcon
+    selector:
+      binding:
+        name: SE
+  - name: eyeIcon
+    selector:
+      binding:
+        name: IE
+  - name: eyeClosedIcon
+    selector:
+      binding:
+        name: AE
+  - name: brainIcon
+    selector:
+      binding:
+        name: CE
+  - name: brainIconThin
+    selector:
+      binding:
+        name: DE
+  - name: searchIcon
+    selector:
+      binding:
+        name: TE
+  - name: clockIcon
+    selector:
+      binding:
+        name: zE
+  - name: microphoneIcon
+    selector:
+      binding:
+        name: LE
+  - name: microphoneMutedIcon
+    selector:
+      binding:
+        name: XE
+  - name: boltIcon
+    selector:
+      binding:
+        name: PE
+  - name: selectAllIcon
+    selector:
+      binding:
+        name: BE
+  - name: abacusIcon
+    selector:
+      binding:
+        name: HE
+  - name: flipVertical
+    selector:
+      binding:
+        name: $E
+  - name: flipHorizontal
+    selector:
+      binding:
+        name: OE
+  - name: paintIcon
+    selector:
+      binding:
+        name: FE
+  - name: zoomAreaIcon
+    selector:
+      binding:
+        name: NE
+  - name: svgIcon
+    selector:
+      binding:
+        name: jE
+  - name: pngIcon
+    selector:
+      binding:
+        name: WE
+  - name: magnetIcon
+    selector:
+      binding:
+        name: ZE
+  - name: coffeeIcon
+    selector:
+      binding:
+        name: GE
+  - name: DeviceDesktopIcon
+    selector:
+      binding:
+        name: VE
+  - name: loginIcon
+    selector:
+      binding:
+        name: YE
+  - name: youtubeIcon
+    selector:
+      binding:
+        name: KE
+  - name: gridIcon
+    selector:
+      binding:
+        name: qE
+  - name: lineEditorIcon
+    selector:
+      binding:
+        name: JE
+  - name: sharpArrowIcon
+    selector:
+      binding:
+        name: QE
+  - name: elbowArrowIcon
+    selector:
+      binding:
+        name: eM
+  - name: roundArrowIcon
+    selector:
+      binding:
+        name: tM
+  - name: collapseDownIcon
+    selector:
+      binding:
+        name: aM
+  - name: collapseUpIcon
+    selector:
+      binding:
+        name: iM
+  - name: upIcon
+    selector:
+      binding:
+        name: nM
+  - name: cropIcon
+    selector:
+      binding:
+        name: rM
+  - name: elementLinkIcon
+    selector:
+      binding:
+        name: UM

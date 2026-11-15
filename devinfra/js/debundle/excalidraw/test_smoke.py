@@ -1270,6 +1270,33 @@ async def test_library_and_icon_picker(playwright_driver: Playwright, origin: st
         await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
         await expect(page.locator(".App-toolbar")).to_be_visible()
 
+        icon_shape = await page.evaluate(
+            """async () => {
+                const { PlusPromoIcon } = await import(
+                    './editor/packages/excalidraw/components/icons.js'
+                );
+                const icon = PlusPromoIcon;
+                return {
+                    type: icon.type,
+                    viewBox: icon.props.viewBox,
+                    ariaHidden: icon.props['aria-hidden'],
+                    focusable: icon.props.focusable,
+                    role: icon.props.role,
+                    childType: icon.props.children.type,
+                    childCount: icon.props.children.props.children.length,
+                };
+            }"""
+        )
+        assert icon_shape == {
+            "type": "svg",
+            "viewBox": "0 0 24 24",
+            "ariaHidden": "true",
+            "focusable": "false",
+            "role": "img",
+            "childType": "g",
+            "childCount": 5,
+        }
+
         # Opening the library exercises the extracted menu's empty-library branch.
         library = page.get_by_role("checkbox", name="Library", exact=True)
         await page.locator("label", has=library).click()

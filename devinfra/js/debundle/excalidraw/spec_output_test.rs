@@ -5,7 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use debundle_e2e_support::{
-    assert_export_named_specifiers, assert_module_source, assert_node_output,
+    assert_export_named_specifiers, assert_module_exports, assert_module_source, assert_node_output,
 };
 use runfiles::{Runfiles, rlocation};
 use serde_json::Value;
@@ -266,6 +266,81 @@ fn claimed_modules_export_their_entry_points() {
             "Scene, \"sceneMapById\", new Map",
         ],
         &[],
+    );
+}
+
+#[test]
+fn extracted_icons_module_owns_upstream_declarations_and_runs_under_node() {
+    let out = out_root();
+    let app = out.join("app");
+    let module_path = "editor/packages/excalidraw/components/icons.js";
+
+    let report: Value = serde_json::from_slice(
+        &fs::read(out.join("reports/tree/editor/modules.json")).expect("read editor modules.json"),
+    )
+    .expect("parse editor modules.json");
+    let module = report["final_module_contents"]
+        .as_array()
+        .expect("final_module_contents")
+        .iter()
+        .find(|module| module["file"] == "packages/excalidraw/components/icons.js")
+        .expect("icons module layout row");
+    let source_units: std::collections::BTreeSet<_> = module["source_unit_ids"]
+        .as_array()
+        .expect("icons source_unit_ids")
+        .iter()
+        .map(|unit| unit.as_str().expect("source unit id").to_owned())
+        .collect();
+    let expected_source_units: std::collections::BTreeSet<_> =
+        (677..=860).map(|unit| format!("unit:{unit}")).collect();
+    assert_eq!(source_units, expected_source_units);
+    assert_eq!(
+        module["member_names"]
+            .as_array()
+            .expect("member_names")
+            .len(),
+        184
+    );
+
+    assert_module_exports(
+        &app,
+        module_path,
+        &[
+            "iconFillColor",
+            "createIcon",
+            "PlusPromoIcon",
+            "elementLinkIcon",
+        ],
+        &[],
+    );
+
+    let probe_dir = tempfile::tempdir().expect("tempdir");
+    let probe = probe_dir.path().join("icons_probe.mjs");
+    let module_url = serde_json::to_string(&format!("file://{}", app.join(module_path).display()))
+        .expect("serialize module URL");
+    fs::write(
+        &probe,
+        format!(
+            r#"
+const {{ PlusPromoIcon }} = await import({module_url});
+const icon = PlusPromoIcon;
+console.log(JSON.stringify({{
+  type: icon.type,
+  viewBox: icon.props.viewBox,
+  ariaHidden: icon.props["aria-hidden"],
+  focusable: icon.props.focusable,
+  role: icon.props.role,
+  childType: icon.props.children.type,
+  childCount: icon.props.children.props.children.length,
+}}));
+"#
+        ),
+    )
+    .expect("write icons probe");
+    assert_node_output(
+        &probe,
+        "{\"type\":\"svg\",\"viewBox\":\"0 0 24 24\",\"ariaHidden\":\"true\",\"focusable\":\"false\",\"role\":\"img\",\"childType\":\"g\",\"childCount\":5}\n",
+        "",
     );
 }
 
