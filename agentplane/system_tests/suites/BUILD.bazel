@@ -946,6 +946,7 @@ py_test(
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:native_auth",
         "//agentplane/system_tests/driver:native_fixtures",
+        "//agentplane/system_tests/driver:native_platform",
         "//agentplane/system_tests/driver:native_pod_pool",
         "//agentplane/system_tests/driver:policy_objects",
         "//agentplane/system_tests/driver:sandbox",
