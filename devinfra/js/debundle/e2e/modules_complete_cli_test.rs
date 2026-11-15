@@ -88,7 +88,7 @@ fn exhaustive_negative_and_explicit_budget_exhaustion_are_distinct() {
 }
 
 #[test]
-fn budgets_also_interrupt_combinations_skipped_by_required_unit_filters() {
+fn entry_constraints_exhaust_a_large_required_scope_without_filtered_enumeration() {
     let mut source = String::from("const seed = 'alpha';\n");
     for index in 0..30 {
         let operand = if index == 0 {
@@ -119,28 +119,17 @@ fn budgets_also_interrupt_combinations_skipped_by_required_unit_filters() {
     for unit in units {
         args.extend(["--require".to_string(), unit]);
     }
-    // The sole permitted move rejects on global ESM evaluation. The remaining
-    // billion combinations are out of scope, but still must honor the budget.
+    // Every required consumer depends on a fixed true-entry seed. The direct
+    // graph constraint proves this impossible; no scan of the other billion
+    // stay/move combinations is necessary. A zero budget remains covered above.
     let before = read_tree(&fixture.modules);
-    for (flag, limit, reason) in [
-        ("--time-budget-ms", "50", "time_budget"),
-        ("--max-checks", "1", "max_checks"),
-    ] {
-        let mut args: Vec<_> = args.iter().map(String::as_str).collect();
-        args.extend([flag, limit]);
-        let started = std::time::Instant::now();
-        let output = fixture.command(&args);
-        assert_eq!(output.status.code(), Some(1), "{output:?}");
-        let report = parse_stdout_json(&output);
-        assert_eq!(report["status"], "incomplete", "{report}");
-        assert_eq!(report["stop_reason"], reason, "{report}");
-        if reason == "max_checks" {
-            assert_eq!(report["checks"], 1);
-        }
-        assert!(report["plan"].is_null());
-        assert!(started.elapsed() < std::time::Duration::from_secs(10));
-        assert_eq!(read_tree(&fixture.modules), before);
-    }
+    let mut args: Vec<_> = args.iter().map(String::as_str).collect();
+    args.extend(["--max-checks", "2", "--time-budget-ms", "1000"]);
+    let report = fixture.json(&args);
+    assert_eq!(report["status"], "exhausted_no_peel", "{report}");
+    assert!(report["checks"].as_u64().unwrap() <= 2, "{report}");
+    assert!(report["plan"].is_null());
+    assert_eq!(read_tree(&fixture.modules), before);
 }
 
 #[test]
