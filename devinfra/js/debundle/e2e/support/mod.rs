@@ -1405,7 +1405,7 @@ impl StandaloneDebundle {
     pub fn run(&self, args: &[&str]) -> CommandResult {
         let bin = self.dir.path().join("debundle");
         let mut command = Command::new(&bin);
-        let output = process::debundle_output(&mut command.args(args).env_clear())
+        let output = process::debundle_output(command.args(args).env_clear())
             .unwrap_or_else(|e| panic!("{e}"));
         command_result(output)
     }
