@@ -289,3 +289,35 @@ cancellation tests also passed twice in `6b324d31`. Worker/snapshot state was un
 candidate base includes intervening devel changes, including kvm-clock restoration work. These
 samples do not isolate a causal CI latency improvement. Alternative runner compatibility results
 are recorded in [the framework evaluation](../../debug/concurrent_runners.md).
+
+## Pod worker reuse, 2026-11-15
+
+One uncached parent run at `e5ebacbb29`
+([`13b2ce2e`](https://app.buildbuddy.io/invocation/13b2ce2e-95a3-4b3c-af00-9ed828921679))
+and one uncached candidate at `07bded2614`
+([`59d77f6e`](https://app.buildbuddy.io/invocation/59d77f6e-d592-4021-b006-3ec3074a4582))
+passed the same 22 Pod cases. The candidate replaces shared Claude/Codex pairs with one cached
+Sandbox per sequential worker. Both runs report warm retention with identical K3s boot, process,
+node and baseline fingerprints, and fresh per-run namespaces in `persistence-suite.json`.
+
+| Metric                                     |  Parent | Candidate |
+| ------------------------------------------ | ------: | --------: |
+| Test-action duration, seconds              | 399.576 |   361.866 |
+| Stack setup span, seconds                  |  38.196 |    28.650 |
+| First case start to last case end, seconds | 304.642 |   280.015 |
+| Protocol Sandbox creations                 |       4 |         2 |
+| All traced Sandbox creations               |      23 |        21 |
+| Peak concurrent cases                      |       2 |         2 |
+
+Creation counts come from `system_test.sandbox.create` spans, not a census of all guests: the
+impostor scenario also creates a guest directly through Kubernetes. Storage finishes before every
+other case in both traces. Candidate Session spans and scripted request bodies show both Claude
+Messages and Codex Responses on each protocol Sandbox; one Sandbox serves the proxy, reader-resume
+and unwatched-turn scenarios without replacement.
+
+The candidate's observed action time is 9.4% lower, with 9.5 seconds less stack setup. These single
+samples establish retained overlap and fewer protocol guest starts, not a repeatable CI speedup.
+The subsequent nested-cleanup change at `037992a34e` passed the worker, harness and batch checks
+([`ec4981fa`](https://app.buildbuddy.io/invocation/ec4981fa-f947-4eb8-875c-888c81649f5d));
+its filtered proxy run passed exactly one case with 21 deselected
+([`4d1cc67a`](https://app.buildbuddy.io/invocation/4d1cc67a-20c1-457e-a796-803f4afe2f99)).
