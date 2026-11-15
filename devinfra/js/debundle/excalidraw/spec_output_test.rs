@@ -56,6 +56,10 @@ fn claimed_modules_export_their_entry_points() {
             &["restore", "restoreElements", "restoreLibraryItems"],
         ),
         (
+            "main/packages/excalidraw/components/ImageExportDialog.js",
+            &["ImageExportDialog"],
+        ),
+        (
             "main/packages/excalidraw/components/ExcalidrawLogo.js",
             &["ExcalidrawLogo"],
         ),
