@@ -69,9 +69,6 @@ K3S_BINARY = "@k3s_linux_amd64//file:k3s"
 
 K3S_BINARY_RLOCATION = "$(rlocationpath " + K3S_BINARY + ")"
 
-CERT_MANAGER_INSTALL = "@cert_manager_v1_21_2_release//file"
-TRUST_MANAGER_INSTALL = "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml"
-
 # Each entry is an OCI image target mapped to the reference used when importing it into k3s.
 # Keep shared image facts here; each BUILD target selects the image groups it needs.
 # Fixture and guest references stay under baseline.FIXTURE_IMAGE_REPOSITORY: a stack removes
