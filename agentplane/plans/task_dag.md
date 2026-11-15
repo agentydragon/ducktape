@@ -194,11 +194,21 @@ is [section 17](#17-two-binaries-and-the-go-layout).
 | Callers present service SVIDs      | 20:15, "Sounds to me good to dispatch"  | `PRIVILEGED_BACKEND_AUTH_DESIGN` (stage 4)                          | Most callers switched; [readiness audit](service_svid_stage5_readiness.md) finds Actions→Dispatcher/History and sampler→LLM still on bearers; #16467 grant merged  |
 | Dead Dispatcher command states     | 21:15, card "Delete dead states only"   | `DISPATCHER_HARNESS_CONFIRMATION`                                   | Stored rows rewritten (#16438); removing `HARNESS_CONFIRMED` and `NO_OP` follows                                                                                   |
 
+### Released 2026-11-15
+
+The operator released stage 5 of `PRIVILEGED_BACKEND_AUTH_DESIGN` for implementation on
+2026-11-15, including receiver bearer-admission retirements, their positive test-client cleanups,
+documentation updates, and the planned credential cleanup. This releases the work under the
+existing rollout gates; it does not mark the stage complete. Receiver images and settings must
+accept the reduced configuration before manifests omit legacy keys, projected tokens and minting
+permissions follow caller cutovers, and TokenReview RBAC is removed last.
+
 Finished since and deleted: the environment rule slices (`resume` #16346, `bind_session` #16351),
 Sessions re-checking the live Identity (#16373), explicit resume reserving no wake budget (#16375),
 the Sandbox Controller's move into `agentplane/environments/` (#16407, released at 20:04 with the
-layout fixes and code-mode tools) and the stage 2 layout fixes. Not released: the remaining stage 3 moves of
-section 17 after EnvironmentService, auth stage 5, `CommandSettled`, retiring `orchestration_v1` and launcher auto-grants.
+layout fixes and code-mode tools) and the stage 2 layout fixes. The 2026-11-14 ledger left these
+tracks unreleased: the remaining stage 3 moves of section 17 after EnvironmentService,
+`CommandSettled`, retiring `orchestration_v1` and launcher auto-grants.
 `SAMPLER_STABLE_PROVIDER_PREFIX` waits for the operator to review its design (20:04: "I would want
 to see the design"), in #16401.
 
@@ -3736,8 +3746,10 @@ Stages, each a separate set of PRs that is safe to roll and states its rollback:
 **Roll gates:** certificates exist before code relies on them; receiver images admitting SVIDs are
 pinned before callers switch; code accepting settings is pinned before manifests set them. No
 fallback from a failed or absent certificate to a bearer. PRs #16333 (Policy Controller and sampler
-server TLS) and #16334 (verified client TLS) are merged foundations. Stage 4 is released; stage 5
-implementation remains held. The readiness audit prepares its sequence without releasing it.
+server TLS) and #16334 (verified client TLS) are merged foundations. Stage 4 is complete: the
+remaining Actions and sampler caller switches have landed and were verified in staging. Stage 5
+was released for implementation on 2026-11-15; receiver, settings, token and RBAC changes remain
+subject to the gates above and the TokenReview RBAC stays last.
 
 **Exit:** no Agentplane receiver admits a Kubernetes bearer; tests cover peer and actor
 verification, rotation, caller denial and delegation without a bearer fallback.
@@ -3748,9 +3760,11 @@ direct/delegated Dispatcher and History peers switched in #16620; the sampler's 
 switched in #16624. The audit records the live delegated reads and completed central Session smoke
 through the SVID provider, Executor and History export. The
 [stage 1 inventory](service_svid_authentication.md) remains a dated baseline. Retained Session shapes
-and zero-or-several central environment attachments are preserved. Stage 5 is not released: its plan
-lists receiver-specific admission removal, manifests-before-fields gates, token cleanup and RBAC
-removal last. App OIDC, MCP OAuth and Kubernetes API credentials retain their own contracts.
+and zero-or-several central environment attachments are preserved. At this 09:00 UTC snapshot,
+stage 5 was not released; its plan listed receiver-specific admission removal,
+manifests-before-fields gates, token cleanup and RBAC removal last. The operator released stage 5
+for implementation later on 2026-11-15; the stage is not complete. App OIDC, MCP OAuth and
+Kubernetes API credentials retain their own contracts.
 
 #### Authentication: dead or stale today
 

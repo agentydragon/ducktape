@@ -1,7 +1,8 @@
 # Service SVID cutover readiness
 
-Stage 5 remains **not released**. This audit prepares the remaining caller work and the
-receiver removal sequence; it changes no admission, settings, images or RBAC.
+Stage 5 was released for implementation on 2026-11-15. This audit records the caller verification
+and receiver removal sequence; it changes no code, admission, settings, images or RBAC. The release
+authorizes implementation under the existing rollout gates; stage 5 remains incomplete.
 The selected decision and rollout gates remain in
 [`PRIVILEGED_BACKEND_AUTH_DESIGN`](task_dag.md#privileged_backend_auth_design--one-service-authentication-mode).
 
@@ -28,7 +29,8 @@ this audit did not repeat them. No claim that every caller has switched follows 
 Source: fresh devel `aaa39328e439c7ceda96588ef7bd9b0d55c0125e`. Read-only Kubernetes
 snapshot: Deployments, Pods and mounted-settings ConfigMaps at 09:34 UTC, and Services at
 09:40 UTC. No credential values, Secret contents or database rows were read. No workloads,
-settings, admission, RBAC or stored data were changed. Stage 5 remains held.
+settings, admission, RBAC or stored data were changed. This snapshot's held status is historical;
+the implementation release is recorded at the top of this plan.
 
 The eleven auth-related Deployments and their 23 Pods were Ready, with zero container restarts.
 Their image tags matched the devel pins: Actions, Egress, History, LLM ingress and Notifications
@@ -114,9 +116,9 @@ legacy audience/account settings; sampler and EnvironmentService require legacy 
 validation; other receivers still construct TokenReview resolvers and retain account/delegation
 branches. A manifest-only mode edit cannot achieve the exit condition.
 
-After stage 5 is released, migrate each receiver's positive test clients with its admission
-change, land/pin code accepting reduced settings before changing manifests, roll out key omission
-before deleting settings fields, and remove obsolete projections/mints before RBAC last. Preserve
+For each receiver, migrate its positive test clients with its admission change, land and pin code
+accepting reduced settings before changing manifests, roll out key omission before deleting
+settings fields, and remove obsolete projections and mints before RBAC last. Preserve
 operator OIDC/MCP OAuth, Kubernetes API access, workload Identity admission, exact role service
 allowlists and typed delegation. No new Session field, Sandbox requirement or data rewrite is
 needed. This audit ran source searches and live read-only checks; it did not rerun system tests or
@@ -155,14 +157,17 @@ their smoke-window logs contained no x509, Unauthenticated or PermissionDenied e
 
 This bounded smoke verifies the remaining sampler provider cutover; it does not exercise every
 method or external provider. History separately logged `executionPrincipal` decode failures while
-folding two other Sessions; the smoke Session folded successfully. Stage 5 still requires its
-separate release. All projected tokens and receiver bearer admission stay in place.
+folding two other Sessions; the smoke Session folded successfully. As recorded at 09:00 UTC, stage 5
+still required its separate release, and all projected tokens and receiver bearer admission stayed
+in place. The Actions and sampler caller switches complete the stage 4 caller work identified by
+the original audit; they do not establish that every method has been exercised.
 
-## Remaining stage 4 callers at the original audit
+## Stage 4 caller state at the original audit
 
-At the 07:08 UTC snapshot, stage 4 was **incomplete**. Two caller families still selected Kubernetes
-bearer authentication in both source and live settings. Keep their receiver bearer admission until
-their separate caller cutovers are merged, applied and verified.
+At the 07:08 UTC snapshot, stage 4 was **incomplete**: two caller families still selected Kubernetes
+bearer authentication in both source and live settings. This is the historical state from the
+original audit. Their caller cutovers are now merged, applied and verified in the stage 4 follow-up
+above; stage 4 is complete.
 
 | Caller and target                                              | Live selection and source                                                                                                                                                                                                       | Remaining work                                                                                                                                                           |
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -222,21 +227,21 @@ live. The existing operator OIDC and MCP OAuth contracts remain unchanged.
 
 ## Receiver-specific removal sequence
 
-All implementation in this section waits for the stage 5 release and completion of the caller
-gates above. One receiver per PR, with its own rollback and relevant system suites, keeps the
-operator's review bounded. The shared TokenReview implementation goes only after its last consumer.
+Stage 5 is released, and the caller gates above are complete. Implement one receiver per PR, with its
+own rollback and relevant system suites. The shared TokenReview implementation goes only after its
+last consumer.
 
-| Receiver                                      | Remaining bearer surface                                                                                                                                                                                                    | Cutover constraint                                                                                                                                                                                                                                                           |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Policy Service                                | `grpc_audience`, `reader_accounts`, `writer_accounts`; mandatory TokenReview resolvers in [`policy_controller/cmd/main.go`](../policy_controller/cmd/main.go).                                                              | App is configured for SVID. Remove component account admission without changing the controller's Kubernetes API clients.                                                                                                                                                     |
-| Egress Admin                                  | `admin_grpc_audience`, `admin_grpc_callers` and TokenReview resolver in [`admin_grpc.go`](../egress/cmd/admin_grpc.go).                                                                                                     | App is configured for SVID. Validator currently ties service callers to bearer fields; make service-only operation possible before retiring those fields. Preserve SVID-authenticated Rules and forward-proxy routes.                                                        |
-| Notifications                                 | `rpc.auth` bearer mode, token audience, operator reader account and TokenReview dependency in [`main.go`](../notification_service/main.go).                                                                                 | App already uses SVID. Preserve workload Identity routes, inbox ownership and automatic wake authorization.                                                                                                                                                                  |
-| Actions                                       | `rpc.auth` bearer mode, account/delegation actor settings and mandatory resolver in [`cmd/main.go`](../action_service/cmd/main.go).                                                                                         | Current incoming App/Notifications/MCP edge/sampler paths use certificates or the separately retained operator/OAuth contracts. Preserve effective Identity and typed Connection/Session provenance; retain outgoing tokens until the Actions caller cutover.                |
-| Central sampler                               | Account allowlist and audience on the TLS serving path in [`cmd/main.go`](../central_sampler/cmd/main.go) and [`rpc`](../central_sampler/internal/rpc). The optional plaintext application listener is disabled in staging. | Gateway uses the Sessions SVID on 8083. Preserve the rewritten service owner and retained Sessions; preserve the separate health-only listener.                                                                                                                              |
-| History                                       | `rpc.auth` bearer mode, reader/writer audiences, account grants and bearer delegation in [`cmd/main.go`](../history_service/cmd/main.go).                                                                                   | Wait for Actions direct and delegated callers. `serve` synthesizes a bearer reader listener in code, so a manifest-only mode removal is insufficient. Preserve journal writer ownership and Sessions without a Sandbox.                                                      |
-| LLM ingress                                   | `rpc.auth` bearer mode, `central_sampler_accounts`, token audience and resolver in [`runtime.go`](../llm_ingress/internal/server/runtime.go).                                                                               | Wait for the sampler provider cutover. Keep workload Identity admission and provider authorization; the actor certificate supplies no effective-caller grant.                                                                                                                |
-| Gateway Dispatcher / Runtime proxy / Executor | Bearer listener modes, two audiences, account grants and bearer delegation in [`main.go`](../runner_gateway/main.go).                                                                                                       | Wait for Actions. Preserve separate peer grants for App, Notifications, Sessions, Controller and sampler, and effective Identity delegation. `rpcForMethodAudience` respects configured bearer modes; startup validation and the resolver dependencies also need retirement. |
-| Extracted EnvironmentService                  | [`serving/server.go`](../environments/internal/serving/server.go) still constructs a TokenReview resolver.                                                                                                                  | The live Controller-hosted 8082 listener is already SPIFFE-only. Retire the unused resolver/account machinery without adding environment requirements to Sessions or changing lifecycle grants.                                                                              |
+| Receiver                                      | Remaining bearer surface                                                                                                                                                                                                    | Cutover constraint                                                                                                                                                                                                                                                                                                                   |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Policy Service                                | `grpc_audience`, `reader_accounts`, `writer_accounts`; mandatory TokenReview resolvers in [`policy_controller/cmd/main.go`](../policy_controller/cmd/main.go).                                                              | App is configured for SVID. Remove component account admission without changing the controller's Kubernetes API clients.                                                                                                                                                                                                             |
+| Egress Admin                                  | `admin_grpc_audience`, `admin_grpc_callers` and TokenReview resolver in [`admin_grpc.go`](../egress/cmd/admin_grpc.go).                                                                                                     | App is configured for SVID. Validator currently ties service callers to bearer fields; make service-only operation possible before retiring those fields. Preserve SVID-authenticated Rules and forward-proxy routes.                                                                                                                |
+| Notifications                                 | `rpc.auth` bearer mode, token audience, operator reader account and TokenReview dependency in [`main.go`](../notification_service/main.go).                                                                                 | App already uses SVID. Preserve workload Identity routes, inbox ownership and automatic wake authorization.                                                                                                                                                                                                                          |
+| Actions                                       | `rpc.auth` bearer mode, account/delegation actor settings and mandatory resolver in [`cmd/main.go`](../action_service/cmd/main.go).                                                                                         | Current incoming App/Notifications/MCP edge/sampler paths use certificates or the separately retained operator/OAuth contracts. Its Dispatcher and History callers are verified in SVID mode (#16620); retire their old token projections with stage 5 cleanup. Preserve effective Identity and typed Connection/Session provenance. |
+| Central sampler                               | Account allowlist and audience on the TLS serving path in [`cmd/main.go`](../central_sampler/cmd/main.go) and [`rpc`](../central_sampler/internal/rpc). The optional plaintext application listener is disabled in staging. | Gateway uses the Sessions SVID on 8083. Preserve the rewritten service owner and retained Sessions; preserve the separate health-only listener.                                                                                                                                                                                      |
+| History                                       | `rpc.auth` bearer mode, reader/writer audiences, account grants and bearer delegation in [`cmd/main.go`](../history_service/cmd/main.go).                                                                                   | Actions' direct and delegated callers are verified in SVID mode (#16620). `serve` synthesizes a bearer reader listener in code, so a manifest-only mode removal is insufficient. Preserve journal writer ownership and Sessions without a Sandbox.                                                                                   |
+| LLM ingress                                   | `rpc.auth` bearer mode, `central_sampler_accounts`, token audience and resolver in [`runtime.go`](../llm_ingress/internal/server/runtime.go).                                                                               | The sampler provider cutover is verified (#16624). Keep workload Identity admission and provider authorization; the actor certificate supplies no effective-caller grant.                                                                                                                                                            |
+| Gateway Dispatcher / Runtime proxy / Executor | Bearer listener modes, two audiences, account grants and bearer delegation in [`main.go`](../runner_gateway/main.go).                                                                                                       | The Actions caller cutover is verified (#16620). Preserve separate peer grants for App, Notifications, Sessions, Controller and sampler, and effective Identity delegation. `rpcForMethodAudience` respects configured bearer modes; startup validation and the resolver dependencies also need retirement.                          |
+| Extracted EnvironmentService                  | [`serving/server.go`](../environments/internal/serving/server.go) still constructs a TokenReview resolver.                                                                                                                  | The live Controller-hosted 8082 listener is already SPIFFE-only. Retire the unused resolver/account machinery without adding environment requirements to Sessions or changing lifecycle grants.                                                                                                                                      |
 
 Settings reject unknown keys. For every receiver, determine whether the currently pinned image
 accepts omission of each legacy field. Where it does not, land and pin code accepting the reduced
@@ -307,4 +312,5 @@ does not execute a receiver cutover or re-run the accepted live smoke.
   [Session model](session_environment_model.md#a-central-session-can-use-zero-one-or-many-environments)
   still permits zero or several central attachments.
 - The two caller families identified by this audit are now activated and verified as described
-  above. Stage 5 receiver/RBAC implementation still waits for an explicit release.
+  above, completing stage 4. Stage 5 was released for implementation on 2026-11-15; receiver and
+  RBAC work remains in progress under the rollout sequence above.

@@ -1,9 +1,10 @@
 # Service SVID authentication inventory — stage 1 baseline
 
 The deployment matrix below records the 2026-11-14 stage 1 baseline, not the current deployment.
-For current callers, remaining bearer dependencies and the held stage 5 PR sequence, use the
-[cutover readiness audit](service_svid_stage5_readiness.md). It found two remaining stage 4 caller
-families; stage 5 is not released.
+For caller cutovers, remaining bearer dependencies and the stage 5 implementation sequence, use
+the [cutover readiness audit](service_svid_stage5_readiness.md). Its 2026-11-15 follow-up verifies
+the two remaining stage 4 caller families; stage 4 is complete, and stage 5 was released for
+implementation on 2026-11-15 but remains incomplete.
 
 This is the stage-one inventory for `PRIVILEGED_BACKEND_AUTH_DESIGN` (operator decision,
 2026-11-14). The approved direction is one first-party service authentication mode: service SVID
