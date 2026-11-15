@@ -2,13 +2,29 @@
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Duration, JsonPatch, Size
+from cdk8s_plus_34 import (
+    ContainerResources,
+    ContainerSecurityContextProps,
+    Cpu,
+    CpuResources,
+    Deployment,
+    DeploymentStrategy,
+    EnvValue,
+    ImagePullPolicy,
+    LabelSelector,
+    MemoryResources,
+    Pods as PodSelector,
+    PodSecurityContextProps,
+    Probe,
+    Service,
+    k8s,
+)
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecPostgresql
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from seaweed_s3identity_crds.com.seaweedfs.seaweed import S3IdentitySpecReclaimPolicy
 
-from cluster.cdk8s import cilium, node_scheduling, pod_policy, session_backup
+from cluster.cdk8s import cilium, node_scheduling, pod_policy, probes, session_backup
 from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry import pull_credentials
@@ -94,13 +110,13 @@ def _migration_container() -> k8s.Container:
     )
 
 
-def _web_environment() -> list[k8s.EnvVar]:
-    return [
-        DATABASE.app_secret.key("uri").env_var(env_name(WebSettings, "database_url")),
-        k8s.EnvVar(name=env_name(WebSettings, "public_base_url"), value=f"https://{HOSTNAME}"),
-        k8s.EnvVar(name=env_name(WebSettings, "port"), value=str(_WEB_PORT)),
-        *(
-            _OIDC.key(env_name(WebSettings, field)).env_var(env_name(WebSettings, field))
+def _web_environment(chart: Chart) -> dict[str, EnvValue]:
+    return {
+        env_name(WebSettings, "database_url"): DATABASE.app_secret.key("uri").env_value(chart, "database-url-ref"),
+        env_name(WebSettings, "public_base_url"): EnvValue.from_value(f"https://{HOSTNAME}"),
+        env_name(WebSettings, "port"): EnvValue.from_value(str(_WEB_PORT)),
+        **{
+            env_name(WebSettings, field): _OIDC.key(env_name(WebSettings, field)).env_value(chart, f"{field}-ref")
             for field in (
                 "oidc_issuer",
                 "oidc_client_id",
@@ -108,80 +124,60 @@ def _web_environment() -> list[k8s.EnvVar]:
                 "oidc_session_secret",
                 "oidc_allowed_subject",
             )
-        ),
-    ]
+        },
+    }
 
 
 def _web(chart: Chart) -> None:
-    workload = k8s.KubeDeployment(
+    workload = Deployment(
         chart,
         "web-deployment",
-        metadata=k8s.ObjectMeta(
+        metadata=ApiObjectMetadata(
             name=NAME,
             namespace=NAMESPACE,
             labels=_WEB_LABELS,
             annotations={"description": "Owner-authenticated browser and API for the session archive."},
         ),
-        spec=k8s.DeploymentSpec(
-            replicas=2,
-            selector=k8s.LabelSelector(match_labels=_WEB_LABELS),
-            strategy=k8s.DeploymentStrategy(type="RollingUpdate"),
-            template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_WEB_LABELS),
-                spec=k8s.PodSpec(
-                    automount_service_account_token=False,
-                    image_pull_secrets=[k8s.LocalObjectReference(name=pull_credentials.SECRET_NAME)],
-                    security_context=k8s.PodSecurityContext(
-                        run_as_non_root=True,
-                        run_as_user=_UID,
-                        run_as_group=_UID,
-                        fs_group=_UID,
-                        seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
-                    ),
-                    init_containers=[_migration_container()],
-                    containers=[
-                        k8s.Container(
-                            name=NAME,
-                            image=_WEB_IMAGE,
-                            image_pull_policy="IfNotPresent",
-                            env=_web_environment(),
-                            ports=[_WEB.port.k8s_container_port()],
-                            readiness_probe=k8s.Probe(
-                                http_get=k8s.HttpGetAction(
-                                    path="/healthz", port=k8s.IntOrString.from_number(_WEB_PORT)
-                                ),
-                                period_seconds=10,
-                            ),
-                            liveness_probe=k8s.Probe(
-                                http_get=k8s.HttpGetAction(
-                                    path="/healthz", port=k8s.IntOrString.from_number(_WEB_PORT)
-                                ),
-                                initial_delay_seconds=30,
-                                period_seconds=20,
-                            ),
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("50m"),
-                                    "memory": k8s.Quantity.from_string("256Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("1Gi")},
-                            ),
-                            # The Aspect launcher materializes its runtime venv under runfiles at startup.
-                            security_context=k8s.SecurityContext(read_only_root_filesystem=False),
-                        )
-                    ],
-                ),
-            ),
+        pod_metadata=ApiObjectMetadata(labels=_WEB_LABELS),
+        replicas=2,
+        strategy=DeploymentStrategy.rolling_update(),
+        select=False,
+        enable_service_links=True,
+        docker_registry_auth=pull_credentials.forgejo_images_creds_secret_ref(chart, "forgejo-images-creds-ref"),
+        security_context=PodSecurityContextProps(
+            ensure_non_root=True, user=_UID, group=_UID, fs_group=_UID
         ),
+    )
+    # Deployment selectors are immutable, so keep the existing labels.
+    workload.select(LabelSelector.of(labels=_WEB_LABELS))
+    workload.add_container(
+        name=NAME,
+        image=_WEB_IMAGE,
+        image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
+        env_variables=_web_environment(chart),
+        ports=[_WEB.port.container_port()],
+        readiness=Probe.from_http_get("/healthz", port=_WEB_PORT, period_seconds=Duration.seconds(10)),
+        liveness=probes.http_probe("/healthz", port=_WEB_PORT, initial_delay_seconds=30, period_seconds=20),
+        resources=ContainerResources(
+            cpu=CpuResources(request=Cpu.millis(50)),
+            memory=MemoryResources(request=Size.mebibytes(256), limit=Size.gibibytes(1)),
+        ),
+        # The Aspect launcher materializes its runtime venv under runfiles at startup.
+        security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
+    )
+    # This core typed container is also shared by the importer CronJobs below.
+    ApiObject.of(workload).add_json_patch(
+        JsonPatch.add("/spec/template/spec/initContainers", [_migration_container()])
     )
     pod_policy.harden(workload)
     pod_policy.place(workload, node_scheduling.HIL_OVH)
 
-    k8s.KubeService(
+    Service(
         chart,
         "web-service",
-        metadata=k8s.ObjectMeta(name=_WEB.name, namespace=NAMESPACE, labels=_WEB.labels),
-        spec=k8s.ServiceSpec(selector=_WEB.pods.selector, ports=[_WEB.port.k8s_service_port()], type="ClusterIP"),
+        metadata=ApiObjectMetadata(name=_WEB.name, namespace=NAMESPACE, labels=_WEB.labels),
+        selector=PodSelector.select(chart, "web-pods", labels=_WEB.pods.selector),
+        ports=[_WEB.service_port()],
     )
     https_route(
         chart,

@@ -33,31 +33,47 @@ metadata:
   name: website
   namespace: website
 spec:
+  minReadySeconds: 0
+  progressDeadlineSeconds: 600
   replicas: 2
+  revisionHistoryLimit: 10
   selector:
     matchLabels:
       app.kubernetes.io/name: website
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
   template:
     metadata:
       labels:
         app.kubernetes.io/name: website
+        cdk8s.io/metadata.addr: website-deployment-c8c01ad4
     spec:
       automountServiceAccountToken: false
       containers:
         - image: git.allegedly.works/ducktape-ci/website:unset
+          imagePullPolicy: IfNotPresent
           livenessProbe:
+            failureThreshold: 3
             httpGet:
               path: /health
               port: 8080
+              scheme: HTTP
             initialDelaySeconds: 5
             periodSeconds: 10
           name: server
           ports:
             - containerPort: 8080
+              name: http
+              protocol: TCP
           readinessProbe:
+            failureThreshold: 3
             httpGet:
               path: /health
               port: 8080
+              scheme: HTTP
             initialDelaySeconds: 2
             periodSeconds: 5
           resources:
@@ -72,13 +88,23 @@ spec:
             capabilities:
               drop:
                 - ALL
+            privileged: false
             readOnlyRootFilesystem: true
             runAsNonRoot: true
+      dnsPolicy: ClusterFirst
+      enableServiceLinks: true
+      hostNetwork: false
       imagePullSecrets:
         - name: forgejo-images-creds
+      restartPolicy: Always
       securityContext:
+        fsGroupChangePolicy: Always
+        runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 30
 ---
 apiVersion: v1
 kind: Service
@@ -86,6 +112,7 @@ metadata:
   name: website
   namespace: website
 spec:
+  externalIPs: []
   ports:
     - name: http
       port: 80
