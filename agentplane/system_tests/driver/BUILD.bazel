@@ -53,7 +53,11 @@ py_library(
         ":dispatcher_transport",
         "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_pb2",
         "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_pb2_grpc",
+        "@pypi//grpcio",  # keep: mypy follows generated gRPC interfaces
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//tenacity",
+        "@pypi//types_grpcio",  # keep: mypy follows generated gRPC interfaces
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )
 
