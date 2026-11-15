@@ -38,6 +38,7 @@ from agentplane.app.testing.notifications import FakeNotifications
 from agentplane.environments.testing.process import run_environment_service
 from agentplane.grpc.serving import serving
 from agentplane.history_service.client import HistoryServiceClient
+from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.net.peertls.config import APP_URI, POLICY_CONTROLLER_URI, ClientTLS
 from agentplane.notification_service.api.notifications import notifications_pb2_grpc
 from agentplane.testing.tls import make_ca
@@ -576,7 +577,7 @@ async def _whole_body(response: httpx.Response) -> AsyncIterator[bytes]:
 @asynccontextmanager
 async def app_process(
     database_url: str,
-    history: HistoryServiceClient,
+    history: GoHistoryService,
     *,
     sandboxes: SandboxesAccess,
     gateway: GatewayAccess | None,
@@ -613,8 +614,9 @@ async def app_process(
                 "database_url": database_url,
                 "kubeconfig": str(sandboxes.kubeconfig),
                 "sandbox_namespace": sandboxes.namespace,
-                "history_service_target": history.target,
-                "history_service_token_file": str(history.token_file),
+                "history_service_target": history.read_target,
+                "history_service_token_file": "",
+                "history_service_tls": history.reader_tls.model_dump(mode="json"),
                 "policy_service_target": "127.0.0.1:1",
                 "policy_service_tls": {"ca_file": str(policy_ca_file), "server_uri": POLICY_CONTROLLER_URI},
                 "notifications_url": f"http://127.0.0.1:{notices_port}",
@@ -675,7 +677,7 @@ async def app_process(
                 if browser_login or app.gate is not None:
                     async with (
                         httpx.AsyncClient(base_url=app.url, timeout=65) as upstream,
-                        serve_app_in_loop(BrowserProxy(upstream, history, app.gate)) as proxy,
+                        serve_app_in_loop(BrowserProxy(upstream, history.reader, app.gate)) as proxy,
                     ):
                         app.url = proxy
                         yield app

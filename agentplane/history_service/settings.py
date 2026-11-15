@@ -85,19 +85,19 @@ class Settings(BaseModel):
     reader_accounts: frozenset[ServiceAccountRef] = Field(
         default_factory=frozenset, description="Ignored legacy ServiceAccount reader allowlist."
     )
-    delegation: DelegationSettings | None = Field(default=None, description="Ignored legacy ServiceAccount delegation.")
-    # CLEANUP(added 2026-11-15): Remove after manifests omit token_audience and that rollout completes.
-    token_audience: str = Field(default="", description="Ignored legacy bearer audience.")
     reader_service_callers: frozenset[ServiceSPIFFEID] = Field(
         default=frozenset(),
         exclude_if=lambda value: not value,
         description="Exact component SVIDs granted backend-wide History read access.",
     )
+    delegation: DelegationSettings | None = Field(default=None, description="Ignored legacy ServiceAccount delegation.")
     service_delegation: ServiceDelegationSettings | None = Field(
         default=None,
         exclude_if=lambda value: not value,
         description="Independent exact service actors allowed to read History as a live effective Identity.",
     )
+    # CLEANUP(added 2026-11-15): Remove after manifests omit token_audience and that rollout completes.
+    token_audience: str = Field(default="", description="Ignored legacy bearer audience.")
     request_timeout_s: float = Field(default=15, gt=0, le=60)
     migration_timeout_s: float = Field(default=600, ge=0.001, le=86400)
     rpc: Listener

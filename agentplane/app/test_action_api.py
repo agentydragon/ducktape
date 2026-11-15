@@ -26,8 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.action_service.api.contracts import action_service_pb2
 from agentplane.app.testing.fake_action_service import FakeActionService, served_action_service
 from agentplane.app.testing.replication_process import AppProcess, OIDCProviderOptions, SandboxesAccess, app_process
-from agentplane.history_service.client import HistoryServiceClient
-from agentplane.history_service.testing.go_service import WRITER
+from agentplane.history_service.testing.go_service import WRITER, GoHistoryService
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 
 # gazelle:include_dep //agentplane/app:integration_fixtures
@@ -66,7 +65,7 @@ def history_writer_namespaces() -> tuple[str, ...]:
 @pytest.fixture
 async def federation_review(
     db_url: str,
-    history_client: HistoryServiceClient,
+    history_service: GoHistoryService,
     api_server: KubernetesApiServer,
     token_renew_before_seconds: int,
     reject_refresh_token: bool,
@@ -103,7 +102,7 @@ async def federation_review(
 
         async with app_process(
             db_url,
-            history_client,
+            history_service,
             sandboxes=SandboxesAccess(api_server.kubeconfig, ACTION_POLICY_SUBJECT_NAMESPACE),
             gateway=None,
             oidc_provider_options=provider,

@@ -16,7 +16,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
-from agentplane.history_service.client import HistoryServiceClient
+from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.net.peertls.config import SESSION_DISPATCHER_URI, ClientTLS
 from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
@@ -181,7 +181,7 @@ async def test_another_replica_logout_ends_only_its_sessions_stream(
     http: httpx.AsyncClient,
     peer: Peer,
     db_url: str,
-    history_client: HistoryServiceClient,
+    history_service: GoHistoryService,
     sandbox: SandboxCluster,
     gateway_service: GatewayProcess,
     app_token_file: Path,
@@ -190,7 +190,7 @@ async def test_another_replica_logout_ends_only_its_sessions_stream(
     async with (
         app_process(
             db_url,
-            history_client,
+            history_service,
             sandboxes=SandboxesAccess(sandbox.server.kubeconfig, sandbox.namespace),
             gateway=GatewayAccess(gateway_service.target, None, gateway_service.client_tls),
             config=app_config,

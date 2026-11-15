@@ -209,7 +209,7 @@ async def _followed_body(
             serve_app_in_loop(BrowserProxy(electric, history_client, None)) as upstream,
             app_process(
                 db_url,
-                history_client,
+                history.service,
                 sandboxes=SandboxesAccess(namespace.kubeconfig, namespace.name),
                 gateway=None,
                 electric_url=upstream,

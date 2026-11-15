@@ -107,6 +107,7 @@ class GoHistoryService:
     api: KubernetesApiServer
     process: GoProcess
     history_tls: ClientTLS
+    reader_tls: ClientTLS
     svid_ca: CertificateAuthority
     directory: Path
     policy_namespace: str
@@ -408,6 +409,13 @@ async def go_history_service(
                 api=api,
                 process=process,
                 history_tls=history_tls,
+                reader_tls=ClientTLS(
+                    ca_file=ca_file,
+                    server_uri=HISTORY_SERVICE_URI,
+                    cert_file=reader_cert,
+                    key_file=reader_key,
+                    client_uri=APP_URI,
+                ),
                 svid_ca=svid_ca,
                 directory=directory,
                 policy_namespace=policy_namespace,
