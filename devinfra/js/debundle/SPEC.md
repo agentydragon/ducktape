@@ -2192,7 +2192,8 @@ runtime requirement.
 
 ## Vendor swap equivalence
 
-Vendor marks select `swap`, `partial_swap`, or `bundled_partial_swap`.
+Vendor marks carry an `identity` label and level-specific configuration for
+`swap`, `partial_swap`, or `bundled_partial_swap`.
 Whole-chunk `swap` maps caller imports from vendor-local binding names to
 public export names before replacing the chunk; the partial modes rewrite
 only the selected exports.
