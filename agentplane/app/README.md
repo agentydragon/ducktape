@@ -67,9 +67,9 @@ runner control stream and authorized live Runner proxy; the
 [History Service](../history_service/README.md) owns the Session Event archive and its Thread fold.
 The app is a client of each service for its distinct operation. The browser's pure History reads
 use the generated ProtoJSON HTTP surface under `/upstream/history/v1/`; the app forwards them to
-History over gRPC with its projected service token, which stays server-side.
-These reads do not require an app Thread row: History applies the app service account's read policy
-to the requested Session. The app's Thread metadata and Electric routes have their own checks.
+History over gRPC using its App service SVID. History grants that exact SVID its configured read
+scope, while browser-session authorization stays at the App boundary. These reads do not require an
+app Thread row. The app's Thread metadata and Electric routes have their own checks.
 Notifications depends on that backend and Actions, not this app. The app's own state is browser
 sessions and its `thread` table: each Thread, keyed by its Session's ID, with the name and archive
 state an operator sets; like any state the app holds, these are candidates to move into a dedicated

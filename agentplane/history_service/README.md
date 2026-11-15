@@ -3,8 +3,8 @@
 Serves retained Session history: the raw runner Event log and its observation metadata, keyed by
 public Session ID. An Identity reads Sessions retained under that exact Identity name and UID,
 independently of the original Sandbox remaining. Exact service SVID readers have an explicit
-service-wide read path. Other ServiceAccount calls have no ownership scope, including when a
-retained execution-account tuple matches the caller. A Session UUID by itself grants nothing.
+service-wide read path. A workload SVID without an Identity has no read scope, even when a retained
+writer-account tuple matches its ServiceAccount. A Session UUID by itself grants nothing.
 Consumers use `client.py`; `testing/go_service.py` runs the built Go service over a test database.
 Tests can inspect the fold's storage through `fold/models.py` and use the generated Thread entity
 messages for semantic reads.
@@ -46,10 +46,9 @@ During shutdown the fold stops and hands back its leases while existing ingress 
 already acknowledged remain committed in raw history, and a restarted fold projects any remaining
 history from its checkpoint.
 
-What waits: the app's Thread reads and command retries, Notification Service deliveries, and
-Sandbox teardown, which deletes nothing until the ingress has acknowledged every seal. Each of those
-services' README says how. The Action Service, egress proxy, Policy Controller and LLM ingress do
-not call it.
+The app's Thread reads and command retries, Action Service session orchestration, and Notification
+Service deliveries wait for History. Sandbox teardown deletes nothing until the ingress has
+acknowledged every seal. The egress proxy, Policy Controller and LLM ingress do not call it.
 
 ## Runner ingress
 
@@ -62,8 +61,7 @@ History presents `spiffe://agentplane/history-ingress`, verifies the client SVID
 Agentplane workload CA with an explicit clientAuth EKU, and resolves its Identity, WorkloadCredential,
 and Sandbox owner from live Kubernetes records. A deleted Sandbox, stale credential, changed Identity
 incarnation, or missing bound Pod is refused before the ingress handler. No header selects the caller
-and the proxy asserts none. The runner-ingress projected-token audience is absent from Sandbox
-templates and proxy audiences.
+and the proxy asserts none.
 
 `rpc` configures the shared native gRPC listener and server TLS files. History admits live workload SVIDs
 for Identity reads and runner `Push` calls, plus explicitly configured service SVIDs for component reads
@@ -104,7 +102,8 @@ checks again. Previously committed entries remain durable when a stream is refus
 Go callers use the generated `historypb.HistoryServiceClient`, as for the other History RPCs.
 The browser continues following fold tables through Electric. Unary reads used by the browser also
 have generated ProtoJSON HTTP bindings (`/v1/sessions/...`); the integration app forwards those
-same-origin requests to this service with its projected History token.
+same-origin requests to History over gRPC using its App service SVID. The App SVID has an exact
+service-reader grant; browser-session authorization remains at the App boundary.
 
 Each request chooses exactly one start:
 

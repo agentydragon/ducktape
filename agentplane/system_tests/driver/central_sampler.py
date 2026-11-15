@@ -207,9 +207,7 @@ async def capture_sampler_diagnostics(cluster: Cluster, core: k8s.CoreV1Api | No
 
 
 @asynccontextmanager
-async def central_stack(
-    cluster: Cluster, directory: Path, *, template: str
-) -> AsyncIterator[CentralStack]:
+async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> AsyncIterator[CentralStack]:
     async with AsyncExitStack() as cleanup, AsyncExitStack() as stack:
         with tracer.start_as_current_span(
             "system_test.central_sampler.setup", record_exception=False, set_status_on_exception=False

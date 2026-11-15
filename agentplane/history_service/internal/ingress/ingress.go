@@ -47,7 +47,6 @@ type Timing struct {
 // Session it announces is bound to the ServiceAccount or Identity that first pushed it.
 type Service struct {
 	session_ingresspb.UnimplementedSessionJournalIngressServer
-	SandboxUIDs         SandboxUIDResolver
 	History             *storage.Store
 	Timing              Timing
 	SamplerServiceActor string

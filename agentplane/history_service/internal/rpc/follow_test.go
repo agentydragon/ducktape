@@ -38,7 +38,7 @@ type following struct {
 
 func (s testServer) follow(t *testing.T, request *historypb.FollowSessionRequest) following {
 	t.Helper()
-	ctx, cancel := context.WithCancel(bearing(t, readerToken))
+	ctx, cancel := context.WithCancel(callContext(t))
 	t.Cleanup(cancel)
 	stream, err := s.client.FollowSession(ctx, request)
 	if err != nil {
@@ -209,7 +209,7 @@ func TestFollowSessionRejectsMissingHistoryAndInvalidInputs(t *testing.T) {
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			stream, err := server.client.FollowSession(bearing(t, readerToken), test.request)
+			stream, err := server.client.FollowSession(callContext(t), test.request)
 			if err == nil {
 				_, err = stream.Recv()
 			}

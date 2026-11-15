@@ -90,9 +90,8 @@ func start(t *testing.T, tune func(*config)) running {
 	return startWithSVIDs(t, peertlstesting.NewCA(t), tune)
 }
 
-func bearing(t *testing.T, token string) context.Context {
+func callContext(t *testing.T) context.Context {
 	t.Helper()
-	_ = token
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	t.Cleanup(cancel)
 	return ctx
@@ -109,7 +108,7 @@ func journalEntry(cursor uint64) *eventlogpb.EventEntry {
 // pushJournal returns once the Session journal's last entry is acknowledged.
 func pushJournal(t *testing.T, service running, sessionID uuid.UUID, entries ...*eventlogpb.EventEntry) {
 	t.Helper()
-	push, err := service.ingress.Push(bearing(t, ""))
+	push, err := service.ingress.Push(callContext(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +136,7 @@ func pushJournal(t *testing.T, service running, sessionID uuid.UUID, entries ...
 // A pushed journal is stored, folded, announced to a watcher and read back on the same native gRPC listener.
 func TestAJournalPushedToTheIngressIsFoldedAndReadFromTheAPI(t *testing.T) {
 	service := start(t, nil)
-	watch, err := service.reads.WatchSessionSummaries(bearing(t, readerToken), &historypb.WatchSessionSummariesRequest{})
+	watch, err := service.reads.WatchSessionSummaries(callContext(t), &historypb.WatchSessionSummariesRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +148,7 @@ func TestAJournalPushedToTheIngressIsFoldedAndReadFromTheAPI(t *testing.T) {
 	pushJournal(t, service, sessionID, journalEntry(1), journalEntry(2), journalEntry(3))
 
 	for {
-		summary, err := service.reads.GetSessionSummary(bearing(t, readerToken), &historypb.GetSessionSummaryRequest{SessionId: sessionID.String()})
+		summary, err := service.reads.GetSessionSummary(callContext(t), &historypb.GetSessionSummaryRequest{SessionId: sessionID.String()})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -171,7 +170,7 @@ func TestTheIngressSettlesDeltasOnlyWhenConfigured(t *testing.T) {
 			sessionID := uuid.New()
 			journal := spans.ClaudeText([]string{"Hel", "lo"}, spans.TextOptions{}).Entries
 			pushJournal(t, service, sessionID, journal...)
-			observations, err := service.reads.ReadSessionObservations(bearing(t, readerToken),
+			observations, err := service.reads.ReadSessionObservations(callContext(t),
 				&historypb.ReadSessionObservationsRequest{SessionId: sessionID.String(), Limit: uint32(len(journal))})
 			if err != nil {
 				t.Fatal(err)
@@ -197,7 +196,7 @@ func TestIncrementalCompactionFlagPreservesPublicReadsAndNativeEvidence(t *testi
 			service := start(t, func(c *config) {
 				c.Ingress.CompactDeltas, c.Ingress.SettleDeltas = compact, false
 			})
-			watch, err := service.reads.WatchSessionSummaries(bearing(t, readerToken), &historypb.WatchSessionSummariesRequest{})
+			watch, err := service.reads.WatchSessionSummaries(callContext(t), &historypb.WatchSessionSummariesRequest{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -212,7 +211,7 @@ func TestIncrementalCompactionFlagPreservesPublicReadsAndNativeEvidence(t *testi
 			prefix := span.Entries[:len(span.Entries)-2]
 			sessionID := uuid.New()
 			pushJournal(t, service, sessionID, prefix...)
-			page, err := service.reads.ReadSessionEvents(bearing(t, readerToken), &historypb.ReadSessionEventsRequest{SessionId: sessionID.String(), Limit: 1000})
+			page, err := service.reads.ReadSessionEvents(callContext(t), &historypb.ReadSessionEventsRequest{SessionId: sessionID.String(), Limit: 1000})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -237,7 +236,7 @@ func TestIncrementalCompactionFlagPreservesPublicReadsAndNativeEvidence(t *testi
 				t.Fatalf("compact=%t created %d blocks", compact, blocks)
 			}
 			for {
-				summary, err := service.reads.GetSessionSummary(bearing(t, readerToken), &historypb.GetSessionSummaryRequest{SessionId: sessionID.String()})
+				summary, err := service.reads.GetSessionSummary(callContext(t), &historypb.GetSessionSummaryRequest{SessionId: sessionID.String()})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -256,11 +255,11 @@ func TestIncrementalCompactionFlagPreservesPublicReadsAndNativeEvidence(t *testi
 				}
 			}
 			key := &historypb.EntityKey{EntityKind: historypb.ThreadEntityKind_THREAD_ENTITY_KIND_ITEM, EntityId: delta.Event.GetTextDelta().GetItemId()}
-			entities, err := service.reads.ReadThreadEntities(bearing(t, readerToken), &historypb.ReadThreadEntitiesRequest{SessionId: sessionID.String(), Window: &historypb.ReadThreadEntitiesRequest_Keys{Keys: &historypb.EntityKeys{Keys: []*historypb.EntityKey{key}}}})
+			entities, err := service.reads.ReadThreadEntities(callContext(t), &historypb.ReadThreadEntitiesRequest{SessionId: sessionID.String(), Window: &historypb.ReadThreadEntitiesRequest_Keys{Keys: &historypb.EntityKeys{Keys: []*historypb.EntityKey{key}}}})
 			if err != nil {
 				t.Fatal(err)
 			}
-			frames, err := service.reads.ReadNativeFrames(bearing(t, readerToken), &historypb.ReadNativeFramesRequest{SessionId: sessionID.String(), ProjectionEpoch: entities.ProjectionEpoch, Entity: key, ObservationCursor: delta.Cursor, Limit: 10})
+			frames, err := service.reads.ReadNativeFrames(callContext(t), &historypb.ReadNativeFramesRequest{SessionId: sessionID.String(), ProjectionEpoch: entities.ProjectionEpoch, Entity: key, ObservationCursor: delta.Cursor, Limit: 10})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -273,13 +272,12 @@ func TestIncrementalCompactionFlagPreservesPublicReadsAndNativeEvidence(t *testi
 
 func TestEachMethodEnforcesItsCallerContract(t *testing.T) {
 	service := start(t, nil)
-	_, err := service.reads.GetSessionSummary(bearing(t, writerToken), &historypb.GetSessionSummaryRequest{SessionId: uuid.NewString()})
-	// The read API admits reviewed ServiceAccounts, then scopes reads to the
-	// retained execution principal. An unknown Session stays hidden.
+	_, err := service.reads.GetSessionSummary(callContext(t), &historypb.GetSessionSummaryRequest{SessionId: uuid.NewString()})
+	// The exact App service SVID has the read role; an unknown Session stays hidden.
 	if got := status.Code(err); got != codes.NotFound {
-		t.Errorf("a writer without a matching principal on the read API: %v, want NotFound", got)
+		t.Errorf("a missing Session read: %v, want NotFound", got)
 	}
-	pushCtx := metadata.AppendToOutgoingContext(bearing(t, ""), "authorization", "Bearer "+readerToken)
+	pushCtx := metadata.AppendToOutgoingContext(callContext(t), "authorization", "Bearer "+readerToken)
 	push, err := service.ingress.Push(pushCtx)
 	if err != nil {
 		t.Fatal(err)
@@ -291,7 +289,7 @@ func TestEachMethodEnforcesItsCallerContract(t *testing.T) {
 
 func TestShuttingDownEndsOpenWatchesWithReconnectRequired(t *testing.T) {
 	service := start(t, nil)
-	watch, err := service.reads.WatchSessionSummaries(bearing(t, readerToken), &historypb.WatchSessionSummariesRequest{})
+	watch, err := service.reads.WatchSessionSummaries(callContext(t), &historypb.WatchSessionSummariesRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -360,7 +358,7 @@ func awaitHealth(t *testing.T, watch healthpb.Health_WatchClient, want healthpb.
 
 func TestTheServiceReportsServingOnceItsFoldRuns(t *testing.T) {
 	service := start(t, nil)
-	awaitHealth(t, watchHealth(bearing(t, readerToken), t, service, projection.FoldHealthService), healthpb.HealthCheckResponse_SERVING)
+	awaitHealth(t, watchHealth(callContext(t), t, service, projection.FoldHealthService), healthpb.HealthCheckResponse_SERVING)
 	if health, err := service.health.Check(t.Context(), &healthpb.HealthCheckRequest{}); err != nil || health.GetStatus() != healthpb.HealthCheckResponse_SERVING {
 		t.Errorf("overall health: %v, %v", health, err)
 	}
@@ -368,7 +366,7 @@ func TestTheServiceReportsServingOnceItsFoldRuns(t *testing.T) {
 
 func TestTheServiceReportsNotServingWhenToldToStop(t *testing.T) {
 	service := start(t, nil)
-	ctx, cancel := context.WithCancel(bearing(t, readerToken))
+	ctx, cancel := context.WithCancel(callContext(t))
 	defer cancel()
 	watch := watchHealth(ctx, t, service, "")
 	awaitHealth(t, watch, healthpb.HealthCheckResponse_SERVING)
@@ -385,7 +383,7 @@ func TestTheServiceReportsNotServingWhenToldToStop(t *testing.T) {
 func TestAWatchRenewsAtTheConfiguredLease(t *testing.T) {
 	service := start(t, func(c *config) { c.WatchLeaseSeconds = 0.2 })
 	// A watch that kept the default lease, or took the request timeout's, would not end within this.
-	ctx, cancel := context.WithTimeout(bearing(t, readerToken), 5*time.Second)
+	ctx, cancel := context.WithTimeout(callContext(t), 5*time.Second)
 	defer cancel()
 	watch, err := service.reads.WatchSessionSummaries(ctx, &historypb.WatchSessionSummariesRequest{})
 	if err != nil {
@@ -423,7 +421,7 @@ func TestAListenerThatFailsEndsTheServiceWithItsError(t *testing.T) {
 func TestACallThatOutlastsTheConfiguredRequestTimeoutIsAbandoned(t *testing.T) {
 	// Any positive timeout has run out by the time the call reaches the database.
 	service := start(t, func(c *config) { c.RequestTimeoutSeconds = 1e-9 })
-	_, err := service.reads.GetSessionSummary(bearing(t, readerToken), &historypb.GetSessionSummaryRequest{SessionId: uuid.NewString()})
+	_, err := service.reads.GetSessionSummary(callContext(t), &historypb.GetSessionSummaryRequest{SessionId: uuid.NewString()})
 	if got := status.Code(err); got != codes.DeadlineExceeded {
 		t.Errorf("%v, want DeadlineExceeded", got)
 	}
