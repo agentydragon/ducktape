@@ -1,25 +1,25 @@
 {
   "schema_version": 3,
   "artifact_kind": "source-grounded organization proposal and file ledger",
-  "source_sha": "6c912fd595bfebd96292e6682f552cafde211dc2",
-  "observed_at_utc": "2026-11-15T14:15:00Z",
+  "source_sha": "aeb5e12acd53f06a6e6099c6b55e3f3f2b013b5a",
+  "observed_at_utc": "2026-11-15T14:40:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "freshness": {
-    "checked_origin_devel": "6c912fd595bfebd96292e6682f552cafde211dc2",
-    "checked_at_utc": "2026-11-15T14:15:00+00:00",
-    "previous_pin": "26dc93a444ab38ebeb0bf7030dc88711b2ccf3c1",
-    "go_or_proto_delta": "Since 26dc93a444, #16725 moved `server/operatorapi.go` to `httpapi/operator/routes.go` and `server/streamapi.go` to `httpapi/streams/routes.go`, added `routes.go` to `httpapi/{sessions,threads}` and `httpapi/{errors,gateway}.go`, replaced `appservice.go`, `environment_runtime_api.go`, `sandboxapi.go`, `sessionapi.go` and `threadreadapi.go` with the root registrar `server/routes.go`; stage 5 field deletions (#16722, #16729) edited code only. No proto change.",
+    "checked_origin_devel": "aeb5e12acd53f06a6e6099c6b55e3f3f2b013b5a",
+    "checked_at_utc": "2026-11-15T14:40:00+00:00",
+    "previous_pin": "6c912fd595bfebd96292e6682f552cafde211dc2",
+    "go_or_proto_delta": "Since 6c912fd595, no Go file was added, moved or deleted and no proto changed. #16723 retargeted the Runtime proxy callers in configuration and manifests; Environment Runtime wording and stage 5 changes edited code only.",
     "landed": [
       {
-        "track": "app-http-owners",
-        "pr": 16725,
-        "result": "Resource packages under `app/internal/httpapi` (sessions, threads, streams, operator) own their routes; `server.Run` owns construction and a root registrar composes them; the aggregate `appService` is gone."
+        "track": "runner-era-names",
+        "pr": 16705,
+        "result": "Kind (1) runner names outside the Runner Gateway and Notification Service are renamed (#16691, #16694, #16698, #16702, #16705). The proxy's, the Dispatcher's and the Notification Service's remaining names move to the tracks that move those files."
       }
     ],
-    "interpretation": "Landed work items are removed, not listed as done. Moved and new files are reclassified at their new paths as retained owners; `app/internal/server` is retained as process composition."
+    "interpretation": "Landed work items are removed, not listed as done. Stage 2 lost its last track and is dropped; stage numbers stay."
   },
   "inventory": {
-    "source_sha": "6c912fd595bfebd96292e6682f552cafde211dc2",
+    "source_sha": "aeb5e12acd53f06a6e6099c6b55e3f3f2b013b5a",
     "counts": {
       "files": 1340,
       "directories": 246,
