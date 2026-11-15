@@ -58,6 +58,8 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
   documented in [Session delegation](../action_service/session_delegation/README.md)
 - [Generated HTTP facades](grpc_http_facade.md) — remaining app contracts, Session-opening
   follow-ups, browser error codes, attribution, and direct browser access as a later option
+- [Runtime proxy callers](runtime_proxy_callers.md) — source inventory, proposed privileged backend
+  boundary, caller API migrations and the subscription materialization question
 - [History read and follow consumers](history_read_follow.md) — whether the Notification outcome scan
   moves to `FollowSession`, and whether `ReadSessionEvents` folds into it
 - [Storage representations and compression](storage_representations.md) — measured content copies
