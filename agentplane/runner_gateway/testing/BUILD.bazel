@@ -10,7 +10,6 @@ py_library(
     srcs = ["gateway_process.py"],
     data = ["//agentplane/runner_gateway:runner-gateway"],
     deps = [
-        "//agentplane:subjects",
         "//agentplane/grpc:calls",
         "//agentplane/identity/auth:listener",
         "//agentplane/net/peertls:config",

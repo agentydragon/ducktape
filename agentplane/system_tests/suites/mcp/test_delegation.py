@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -117,7 +116,6 @@ async def test_external_connection_cannot_control_an_identity_sandbox(
     operator_bff: httpx.AsyncClient,
     operator_credentials: OperatorCredentials,
     base_url: str,
-    tmp_path: Path,
 ) -> None:
     """An external Identity Connection cannot discover or create Sessions for another Identity."""
     if pytestconfig.option.showlocals:
@@ -204,9 +202,8 @@ async def test_external_connection_cannot_control_an_identity_sandbox(
             app_needs_restore = False
 
             # The external caller got a definite refusal while the app was unavailable. Now
-            # use a fresh operator token bound to the replacement app Pod to prove no Session
-            # was created. The original Pod-bound token was revoked by the scale-down.
-            async with native_client(cluster, tmp_path / "restored-app-dispatcher-token") as dispatcher:
+            # use the App service SVID to prove no Session was created.
+            async with native_client(cluster) as dispatcher:
                 with pytest.raises(ServiceError) as missing:
                     await dispatcher.get_session(session_id)
                 assert missing.value.code == grpc.StatusCode.NOT_FOUND

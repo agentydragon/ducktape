@@ -280,7 +280,7 @@ flowchart LR
     history[History Service]
     subgraph unified[Runner Gateway]
         dispatcher[Dispatcher API and durable delivery]
-        rpc[Shared TLS RPC listener :8080<br/>bearer and Sandbox SVID auth]
+        rpc[Shared TLS RPC listener :8080<br/>service and workload Identity SVID auth]
         gateway[Runner proxy and state observation]
     end
     pod[Managed Pod agent process and CLI]
@@ -353,8 +353,9 @@ uses no History bearer credential or projected audience token and adds no `reade
 
 ### Service admission in the current Gateway
 
-The co-hosted receivers can additionally admit exact service SVIDs when configured.
-Their reader, manager, launcher, operator, Executor and proxy grants remain separate.
+Gateway admits exact service SVIDs for Dispatcher component calls, Runtime proxy and Executor.
+Dispatcher also admits live workload Identity SVIDs and configured service delegation.
+EnvironmentService has its own receiver and separate reader, manager, launcher and operator grants.
 App and Notifications have exact service-SVID automatic wake-broker grants, separately from
 explicit operator resume. Notification wake remains conditional on the target's wake-on-send policy.
 When `orchestration_v1` is configured, the exact `spiffe://agentplane/actions` SVID also receives
@@ -364,8 +365,8 @@ launcher handler allows template listing and environment creation with a complet
 origin, while the Dispatcher role remains separate from operator authority. History's exact reader
 SVID list includes Actions. Actions presents that SVID for both direct orchestration and
 caller-delegated Dispatcher/History requests. Delegated calls retain their typed Action/Identity
-envelope; direct component grants never supply the effective caller's authority. Projected tokens
-and receiver bearer admission remain until the separately released removal stage.
+envelope; direct component grants never supply the effective caller's authority. Gateway receiver
+bearer admission is retired; projection and RBAC removal follow their own rollout.
 
 ```mermaid
 flowchart LR
@@ -477,8 +478,7 @@ flowchart LR
 
 ## Environment control and native Sessions
 
-The Gateway's Runtime proxy and Executor listener admits exact component service SVIDs alongside
-the existing bearer callers: App and Notifications for diagnostics, Sessions for native Session
+The Gateway's Runtime proxy and Executor admit only exact component service SVIDs: App and Notifications for diagnostics, Sessions for native Session
 operations, Sandbox Controller for lifecycle operations, and Central Sampler for Executor methods.
 These are independent method grants. Caller configuration activates each edge only after its image
 is pinned; the proxy's existing native Runtime mTLS identity remains separate.
@@ -487,7 +487,7 @@ is pinned; the proxy's existing native Runtime mTLS identity remains separate.
 flowchart LR
     gateway[Runner Gateway]
     services[Configured App, Notifications, Sessions, Controller and sampler service SVIDs]
-    services -->|mTLS: method-scoped proxy and Executor grants| gateway
+    services -->|service SVID only: method-scoped proxy and Executor grants| gateway
     subgraph environment_runtime[Environment Runtime process]
       runtime[Runtime admission and lifecycle]
       sessions[Session manager, adapters and journals]
@@ -821,16 +821,17 @@ flowchart LR
 ## Staged Dispatcher and EnvironmentService service grants
 
 The shared Gateway listener admits the exact App and Notifications service SVIDs to the
-Dispatcher while retaining bearer callers. The App SVID separately has EnvironmentService
+Dispatcher. Its live workload Identity SVID path and typed service delegation remain; Kubernetes
+bearers grant no admission. The App SVID separately has EnvironmentService
 inventory and management grants. Staging explicitly grants the App SVID resume and automatic
 wake authority; these grants are independent of delegation and direct Dispatcher admission.
-Caller settings still use bearers until the corresponding receiver grants have applied.
+Dispatcher callers use their configured service certificates.
 Actions service grants and delegated Resume require their own reviewed configuration.
 
 ```mermaid
 flowchart LR
-    app[App SVID] -->|accepted; caller switch pending| dispatcher[Dispatcher]
-    notifications[Notifications SVID] -->|accepted; caller switch pending| dispatcher
+    app[App SVID] -->|service SVID only: component grant| dispatcher[Dispatcher]
+    notifications[Notifications SVID] -->|service SVID only: component grant| dispatcher
     app -->|separate inventory, management, resume grants| environments[EnvironmentService]
 ```
 

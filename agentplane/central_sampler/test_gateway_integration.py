@@ -121,12 +121,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
 ) -> None:
     sampler = ServiceAccountRef(namespace="test-central", name="sampler")
     sampler_audience = "test-central-sampler"
-    gateway_account = ServiceAccountRef(namespace=sandbox.namespace, name="gateway")
     gateway_audience = "test-central-gateway"
-    gateway_token = tmp_path / "gateway-token"
-    gateway_token.write_text(await api_server.workload_token(gateway_account, [gateway_audience]))
-    sampler_token = tmp_path / "sampler-token"
-    sampler_token.write_text(await api_server.workload_token(sampler, [gateway_audience]))
     sampler_api_token = tmp_path / "sampler-api-token"
     sampler_api_token.write_text(await api_server.workload_token(sampler, [sampler_audience]))
     wrong_audience_token = tmp_path / "wrong-audience-token"
@@ -150,13 +145,9 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 api_server.kubeconfig,
                 database_url=gateway_database,
                 namespace=sandbox.namespace,
-                dispatcher_callers=(gateway_account,),
-                gateway_callers=(gateway_account,),
-                workload=gateway_account,
-                executor_callers=(sampler,),
+                executor_services=("spiffe://agentplane/central-sampler",),
                 dispatcher_audience="test-central-dispatcher",
                 gateway_audience=gateway_audience,
-                runner_proxy_token_file=gateway_token,
             ) as gateway,
             go_history_service(
                 history_database,
@@ -209,7 +200,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                     incarnation_uid=sandbox.pod_uid,
                 ) as running_runner,
             ):
-                await gateway.wait_for_runner(gateway.gateway_client(gateway_token), sandbox.destination)
+                await gateway.wait_for_runner(gateway.gateway_client(), sandbox.destination)
                 sampler_settings = settings(
                     database_url,
                     endpoint.origin,
@@ -218,8 +209,8 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                     code_mode_host,
                     undeclared_outputs_dir(),
                     gateway_target=gateway.target,
-                    gateway_tls=gateway.client_tls,
-                    gateway_token_file=sampler_token,
+                    gateway_tls=gateway.service_tls("spiffe://agentplane/central-sampler"),
+                    gateway_token_file=None,
                     history_target=history.ingress_target,
                     history_token_file=history_token,
                     history_tls=history.history_tls,
@@ -325,7 +316,8 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                     finally:
                         event_stream.cancel()
                     async with dial(
-                        gateway.target, channel_credentials=gateway.channel_credentials()
+                        gateway.target,
+                        channel_credentials=gateway.service_credentials("spiffe://agentplane/central-sampler"),
                     ) as gateway_channel:
                         stale_stream = executor_pb2_grpc.ExecutorStub(gateway_channel).OpenSession(
                             executor_pb2.OpenSessionRequest(
@@ -335,8 +327,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                                     session_id=session_id,
                                 ),
                                 request_id=str(uuid4()),
-                            ),
-                            metadata=(("authorization", f"Bearer {sampler_token.read_text().strip()}"),),
+                            )
                         )
                         with pytest.raises(grpc.aio.AioRpcError) as rejected:
                             await stale_stream.read()

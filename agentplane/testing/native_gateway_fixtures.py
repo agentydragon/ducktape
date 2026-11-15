@@ -11,7 +11,6 @@ from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess, run_gateway
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
-from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.kubernetes_apiserver_fixtures import api_server, kubeconfig
 from agentplane.testing.sandbox_fixtures import sandbox
@@ -26,26 +25,21 @@ from util.testing.postgres_fixtures import (
 
 __all__ = [
     "api_server",
-    "client_token",
     "control",
-    "controller_token",
+    "controller_enabled",
     "database_clones",
     "database_names",
     "dispatcher",
     "dispatcher_database_url",
     "gateway_service",
-    "gateway_token",
     "kubeconfig",
     "postgres_admin_url",
     "postgres_container",
     "postgres_image",
     "runtime_client",
     "sandbox",
-    "sandbox_controller_account",
 ]
 
-CLIENT = ServiceAccountRef(namespace="test-contract-client", name="client")
-CONTROLLER = ServiceAccountRef(namespace="test-contract-controller", name="sandbox-controller")
 DISPATCHER_AUDIENCE = "test-contract-dispatcher"
 GATEWAY_AUDIENCE = "test-contract-gateway"
 
@@ -57,71 +51,38 @@ def dispatcher_database_url(postgres_admin_url: str, database_names: DatabaseNam
 
 
 @pytest.fixture
-async def gateway_token(api_server: KubernetesApiServer, sandbox: SandboxCluster, tmp_path: Path) -> Path:
-    workload = ServiceAccountRef(namespace=sandbox.namespace, name="gateway")
-    path = tmp_path / "gateway-token"
-    path.write_text(await api_server.workload_token(workload, [GATEWAY_AUDIENCE]))
-    return path
-
-
-@pytest.fixture
-async def controller_token(api_server: KubernetesApiServer, tmp_path: Path) -> Path:
-    """A distinct Pod-bound token for the configured Sandbox Controller caller."""
-    path = tmp_path / "controller-token"
-    path.write_text(await api_server.workload_token(CONTROLLER, [GATEWAY_AUDIENCE]))
-    return path
-
-
-@pytest.fixture
-def sandbox_controller_account() -> ServiceAccountRef | None:
+def controller_enabled() -> bool:
     """No Runtime lifecycle caller is authorized unless a contract opts in."""
-    return None
+    return False
 
 
 @pytest.fixture
 async def gateway_service(
-    api_server: KubernetesApiServer,
-    sandbox: SandboxCluster,
-    dispatcher_database_url: str,
-    gateway_token: Path,
-    sandbox_controller_account: ServiceAccountRef | None,
+    api_server: KubernetesApiServer, sandbox: SandboxCluster, dispatcher_database_url: str, controller_enabled: bool
 ) -> AsyncIterator[GatewayProcess]:
-    workload = ServiceAccountRef(namespace=sandbox.namespace, name="gateway")
     async with run_gateway(
         api_server.kubeconfig,
         database_url=dispatcher_database_url,
         namespace=sandbox.namespace,
-        dispatcher_callers=(CLIENT,),
-        gateway_callers=(CLIENT, workload),
-        workload=workload,
-        sandbox_controller_account=sandbox_controller_account,
+        controller_enabled=controller_enabled,
         dispatcher_audience=DISPATCHER_AUDIENCE,
         gateway_audience=GATEWAY_AUDIENCE,
-        runner_proxy_token_file=gateway_token,
     ) as service:
         yield service
 
 
 @pytest.fixture
-def runtime_client(gateway_service: GatewayProcess, gateway_token: Path) -> SandboxControlClient:
-    # Runtime mutation RPCs accept only the actual Gateway/Dispatcher service account.
-    return gateway_service.gateway_client(gateway_token)
+def runtime_client(gateway_service: GatewayProcess) -> SandboxControlClient:
+    return gateway_service.gateway_client()
 
 
 @pytest.fixture
-async def client_token(api_server: KubernetesApiServer, tmp_path: Path) -> Path:
-    path = tmp_path / "client-token"
-    path.write_text(await api_server.workload_token(CLIENT, [DISPATCHER_AUDIENCE, GATEWAY_AUDIENCE]))
-    return path
-
-
-@pytest.fixture
-async def dispatcher(gateway_service: GatewayProcess, client_token: Path) -> AsyncIterator[SessionDispatcherClient]:
+async def dispatcher(gateway_service: GatewayProcess) -> AsyncIterator[SessionDispatcherClient]:
     async with SessionDispatcherClient.connect(
         gateway_service.target,
-        token_file=client_token,
+        token_file=None,
         request_timeout_s=10,
-        channel_credentials=gateway_service.channel_credentials(),
+        channel_credentials=gateway_service.service_credentials("spiffe://agentplane/app"),
     ) as client:
         yield client
 

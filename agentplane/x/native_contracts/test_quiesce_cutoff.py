@@ -30,7 +30,6 @@ from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, accepted_session, admitted
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
-from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.scripted_model import ScriptedModel, Text
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -43,9 +42,9 @@ _GATE_DIRECTORY = "deletion-test-admission"
 
 
 @pytest.fixture
-def sandbox_controller_account() -> ServiceAccountRef:
+def controller_enabled() -> bool:
     """Opt this case into the distinct production Controller Quiesce authorization."""
-    return ServiceAccountRef(namespace="test-contract-controller", name="sandbox-controller")
+    return True
 
 
 @pytest.fixture
@@ -60,14 +59,13 @@ async def start_runtime(
     control: EnvironmentRuntimeControl,
     ingress: Endpoint,
     gateway_service: GatewayProcess,
-    client_token: Path,
     sandbox: SandboxCluster,
     runtime_binary: Path,
     tmp_path: Path,
 ) -> AsyncIterator[Callable[[str], Awaitable[tuple[RunnerProcess, str]]]]:
     """Start the same real Runtime binary on a caller-supplied Pod incarnation UID."""
     environment = {**config.harness_environment, "ANTHROPIC_AUTH_TOKEN": launches.TOKEN, "OTEL_SDK_DISABLED": "true"}
-    remote = gateway_service.gateway_client(client_token, request_timeout_s=2)
+    remote = gateway_service.gateway_client(request_timeout_s=2)
     controller_credentials = gateway_service.controller_credentials(tmp_path / "controller-transport")
     async with model_config() as model_endpoint, AsyncExitStack() as processes:
         command = launches.command(
@@ -212,7 +210,6 @@ async def _wait_for_session_status(
 
 async def test_routed_interrupt_cannot_cross_quiesce_history_seal(
     gateway_service: GatewayProcess,
-    controller_token: Path,
     dispatcher: SessionDispatcherClient,
     runtime_client: SandboxControlClient,
     history_service: GoHistoryService,
@@ -262,14 +259,14 @@ async def test_routed_interrupt_cannot_cross_quiesce_history_seal(
     gate = config.state_dir / _GATE_DIRECTORY
     # This distinct, real controller caller crosses the public Gateway and waits for Runtime's
     # close-admission -> terminate-harness -> seal-journal -> History acknowledgement barrier.
-    controller = gateway_service.gateway_client(controller_token, request_timeout_s=30)
+    controller = gateway_service.gateway_client("spiffe://agentplane/sandbox-controller", request_timeout_s=30)
     delayed_call: asyncio.Task[environment_runtime_pb2.InterruptTurnResponse] | None = None
     diagnostic_dir = undeclared_outputs_dir() / "quiesce-cutoff"
     try:
         await asyncio.to_thread(gate.mkdir, parents=True, exist_ok=True)
         await asyncio.to_thread((gate / "command").write_text, delayed_id)
         delayed_call = asyncio.create_task(
-            runtime_client.runner_unary(
+            gateway_service.gateway_client("spiffe://agentplane/sessions").runner_unary(
                 sandbox.destination,
                 lambda stub: stub.InterruptTurn,
                 environment_runtime_pb2.InterruptTurnRequest(

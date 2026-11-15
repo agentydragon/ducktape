@@ -49,7 +49,6 @@ class ActionResources:
     base_url: str
     token: str
     scripted: ScriptedUpstream
-    tmp_path_factory: pytest.TempPathFactory
     credentials: OperatorCredentials | None
 
     def operator_credentials(self) -> OperatorCredentials:
@@ -58,22 +57,20 @@ class ActionResources:
         return self.credentials
 
     @asynccontextmanager
-    async def open_case(self, name: str) -> AsyncIterator[tuple[Client, SessionDispatcherClient, Sandboxes]]:
+    async def open_case(self) -> AsyncIterator[tuple[Client, SessionDispatcherClient, Sandboxes]]:
         async with (
             self.scripted.case_scope(),
             scenario.open_resources(self.cluster, self.base_url, self.token, tracer, native_diagnostics=False) as (
                 client,
                 sandboxes,
             ),
-            native_client(
-                self.cluster, self.tmp_path_factory.mktemp(f"mcp-actions-{name}") / "dispatcher-token"
-            ) as dispatcher,
+            native_client(self.cluster) as dispatcher,
         ):
             yield client, dispatcher, sandboxes
 
 
 async def _executes_action(resources: ActionResources) -> None:
-    async with resources.open_case("executes") as (client, dispatcher, _), PolicyObjects(resources.cluster) as policies:
+    async with resources.open_case() as (client, dispatcher, _), PolicyObjects(resources.cluster) as policies:
         await run_harness_pair_in_own_sandboxes(
             resources.cluster,
             client,
@@ -93,7 +90,7 @@ async def _executes_action(resources: ActionResources) -> None:
 async def _bff_decision(resources: ActionResources) -> None:
     credentials = resources.operator_credentials()
     async with (
-        resources.open_case("bff") as (client, dispatcher, _),
+        resources.open_case() as (client, dispatcher, _),
         operator_bff_client(resources.base_url, credentials) as operator_bff,
     ):
         await run_harness_pair_in_own_sandboxes(
@@ -116,7 +113,7 @@ async def _bff_decision(resources: ActionResources) -> None:
 async def _launcher_ownership(resources: ActionResources) -> None:
     credentials = resources.operator_credentials()
     async with (
-        resources.open_case("launcher") as (client, dispatcher, _),
+        resources.open_case() as (client, dispatcher, _),
         operator_bff_client(resources.base_url, credentials) as operator_bff,
         PolicyObjects(resources.cluster) as policies,
     ):
@@ -145,7 +142,7 @@ async def _oauth_linkage(resources: ActionResources, *, harness: session_pb2.Har
         session_pb2.HARNESS_CODEX: mcp_servers.OAUTH_CODEX,
     }[harness]
     async with (
-        resources.open_case(server_id) as (client, dispatcher, sandboxes),
+        resources.open_case() as (client, dispatcher, sandboxes),
         operator_bff_client(resources.base_url, credentials) as operator_bff,
         PolicyObjects(resources.cluster) as policies,
     ):
@@ -196,7 +193,6 @@ async def action_cases(
     token: str,
     deployment: Stack,
     scripted_listener: Listener,
-    tmp_path_factory: pytest.TempPathFactory,
 ) -> AsyncIterator[CaseBatch]:
     selected = {item: cast(ActionCase, item.callspec.params["case"]) for item in selected_items(request)}
     needs_operator = any(case.requires_operator for case in selected.values())
@@ -217,12 +213,7 @@ async def action_cases(
 
     scripted = ScriptedUpstream()
     resources = ActionResources(
-        cluster=cluster,
-        base_url=base_url,
-        token=token,
-        scripted=scripted,
-        tmp_path_factory=tmp_path_factory,
-        credentials=credentials,
+        cluster=cluster, base_url=base_url, token=token, scripted=scripted, credentials=credentials
     )
     cases = {item.nodeid: Case.for_item(item, case.run) for item, case in selected.items()}
 

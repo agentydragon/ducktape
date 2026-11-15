@@ -14,8 +14,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// Config contains the per-process proxy role wiring. Service-only receivers need no TokenReview
-// resolver; the retained Gateway may still configure bearer accounts during migration.
+// Config contains the per-process Gateway role wiring. Callers use exact service SVID grants;
+// runner connections use explicitly configured transport security and incarnation-fenced metadata.
 type Config struct {
 	RuntimeReaders     []string
 	SessionServices    []string
@@ -23,15 +23,7 @@ type Config struct {
 	ExecutorServices   []string
 	RunnerSecurity     peertls.Security
 	Namespace          string
-	CallerAccounts     []auth.Account
-	// DispatcherAccount is the combined Gateway/Dispatcher workload. Its Pod-bound
-	// projected token is the only public route to Runtime Session creation and commands.
-	DispatcherAccount        auth.Account
-	SandboxControllerAccount *auth.Account
-	ControlTiming            ControlTiming
-	// ExecutorCallers enables the typed execution API independently from the Runner proxy's
-	// caller allowlist. An empty set leaves the public service unregistered.
-	ExecutorCallers []auth.Account
+	ControlTiming      ControlTiming
 }
 
 // ControlTiming bounds Runtime observation liveness.
@@ -57,7 +49,6 @@ func validateControlTiming(timing ControlTiming) error {
 // Both processes use this owner until callers have moved to Environments.
 type Gateway struct {
 	config      Config
-	callerAuth  *auth.Resolver
 	sandboxes   *sandboxResolver
 	connections *connections
 	objects     client.Reader
@@ -66,11 +57,9 @@ type Gateway struct {
 }
 
 // New builds a Gateway reading Sandboxes, Pods and KubeVirt objects through objects, which in production is
-// an informer cache whose health is objectsHealth. A nil callerAuth selects service-only admission
-// and requires every bearer-account role to be empty.
+// an informer cache whose health is objectsHealth.
 func New(
 	config Config,
-	callerAuth *auth.Resolver,
 	objects client.Reader,
 	objectsHealth *watchhealth.Health,
 ) (*Gateway, error) {
@@ -80,13 +69,6 @@ func New(
 	if config.Namespace == "" {
 		return nil, fmt.Errorf("Runtime proxy namespace is required")
 	}
-	if callerAuth == nil && (len(config.CallerAccounts) != 0 || config.DispatcherAccount != (auth.Account{}) ||
-		config.SandboxControllerAccount != nil || len(config.ExecutorCallers) != 0) {
-		return nil, fmt.Errorf("Runtime proxy bearer accounts require a token resolver")
-	}
-	if config.DispatcherAccount != (auth.Account{}) && (config.DispatcherAccount.Namespace == "" || config.DispatcherAccount.Name == "") {
-		return nil, fmt.Errorf("Gateway Dispatcher account is required")
-	}
 	config.ControlTiming = defaultControlTiming(config.ControlTiming)
 	if err := validateControlTiming(config.ControlTiming); err != nil {
 		return nil, err
@@ -95,25 +77,8 @@ func New(
 	if err != nil {
 		return nil, err
 	}
-	for _, account := range config.CallerAccounts {
-		if account.Namespace == "" || account.Name == "" {
-			return nil, fmt.Errorf("Gateway caller account namespace and name are required")
-		}
-	}
-	for _, account := range config.ExecutorCallers {
-		if account.Namespace == "" || account.Name == "" {
-			return nil, fmt.Errorf("Gateway executor caller account namespace and name are required")
-		}
-	}
-	if config.SandboxControllerAccount != nil {
-		if config.SandboxControllerAccount.Namespace == "" || config.SandboxControllerAccount.Name == "" {
-			return nil, fmt.Errorf("Sandbox controller account namespace and name are required")
-		}
-		copy := *config.SandboxControllerAccount
-		config.SandboxControllerAccount = &copy
-	}
 	return &Gateway{
-		config: config, callerAuth: callerAuth, objects: objects,
+		config: config, objects: objects,
 		sandboxes: sandboxes, connections: newConnections(),
 		observerQueue: workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]()),
 	}, nil
@@ -122,34 +87,21 @@ func New(
 // Methods admits callers of the Environment Runtime proxy and the typed execution API. Only the Sandbox
 // controller may quiesce or change Firecracker suspension admission; with no controller configured, nobody may.
 func (g *Gateway) Methods() (auth.Methods, error) {
-	var callers, dispatcher, controllerRule, executors auth.Rule
-	var dispatchers []auth.Account
-	if g.config.DispatcherAccount != (auth.Account{}) {
-		dispatchers = []auth.Account{g.config.DispatcherAccount}
+	callers, err := auth.Services(g.config.RuntimeReaders)
+	if err != nil {
+		return nil, err
 	}
-	var controllers []auth.Account
-	if g.config.SandboxControllerAccount != nil {
-		controllers = []auth.Account{*g.config.SandboxControllerAccount}
+	dispatcher, err := auth.Services(g.config.SessionServices)
+	if err != nil {
+		return nil, err
 	}
-	var err error
-	for _, entry := range []struct {
-		rule     *auth.Rule
-		accounts []auth.Account
-		services []string
-	}{
-		{&callers, g.config.CallerAccounts, g.config.RuntimeReaders},
-		{&dispatcher, dispatchers, g.config.SessionServices},
-		{&controllerRule, controllers, g.config.ControllerServices},
-		{&executors, g.config.ExecutorCallers, g.config.ExecutorServices},
-	} {
-		if g.callerAuth == nil {
-			*entry.rule, err = auth.Services(entry.services)
-		} else {
-			*entry.rule, err = auth.Accounts(g.callerAuth, entry.accounts).AllowServiceCallers(entry.services)
-		}
-		if err != nil {
-			return nil, err
-		}
+	controllerRule, err := auth.Services(g.config.ControllerServices)
+	if err != nil {
+		return nil, err
+	}
+	executors, err := auth.Services(g.config.ExecutorServices)
+	if err != nil {
+		return nil, err
 	}
 	return auth.Methods{
 		environmentruntimepb.EnvironmentRuntime_ListSessions_FullMethodName:          callers,
@@ -183,7 +135,7 @@ func (g *Gateway) RegisterProxy(server *grpc.Server) {
 // RegisterExecutor enables the typed execution path only when its own caller allowlist is
 // configured. Existing Gateway deployments therefore keep the RPC absent by default.
 func (g *Gateway) RegisterExecutor(server *grpc.Server) {
-	if len(g.config.ExecutorCallers) == 0 && len(g.config.ExecutorServices) == 0 {
+	if len(g.config.ExecutorServices) == 0 {
 		return
 	}
 	executorpb.RegisterExecutorServer(server, &executorServer{gateway: g})

@@ -52,7 +52,7 @@ async def inspect(runner: SandboxRunner, session_id: str) -> session_pb2.Session
     return one(summary for summary in await runner.list_sessions() if summary.session_id == session_id)
 
 
-async def test_mixed_workload_listener_accepts_one_svid_or_bearer(
+async def test_workload_listener_requires_svid_and_refuses_bearer(
     gateway_service: GatewayProcess, sandbox: SandboxCluster, tmp_path: Path, app_token_file: Path
 ) -> None:
     bearer = (await asyncio.to_thread(app_token_file.read_text)).strip()
@@ -72,7 +72,9 @@ async def test_mixed_workload_listener_accepts_one_svid_or_bearer(
                 session_dispatcher_pb2.ListSessionsRequest(), metadata=metadata, timeout=10
             )
 
-    await list_sessions(token=bearer)
+    with pytest.raises(grpc.aio.AioRpcError) as bearer_rejected:
+        await list_sessions(token=bearer)
+    assert bearer_rejected.value.code() == grpc.StatusCode.UNAUTHENTICATED
     workload_tls = gateway_service.issue_environment_runtime_tls(
         sandbox.environment_runtime_identity_uri, tmp_path / "mixed-workload-client"
     )

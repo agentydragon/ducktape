@@ -295,7 +295,6 @@ py_test(
     deps = [
         "//:conftest",
         "//agentplane:sandbox_resource",
-        "//agentplane:subjects",
         "//agentplane/app:integration_fixtures",
         "//agentplane/app/testing:egress_proxy",
         "//agentplane/app/testing:gateway_fixtures",
@@ -330,7 +329,6 @@ py_test(
     tags = ["visual"],
     deps = [
         "//:conftest",
-        "//agentplane:subjects",
         "//agentplane/app:integration_fixtures",
         "//agentplane/app/frontend/testing:history_interactions",
         "//agentplane/app/testing:browser_certificate",

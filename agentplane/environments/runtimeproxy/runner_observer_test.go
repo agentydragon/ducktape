@@ -133,10 +133,10 @@ func testAnyReplicaObservesAndCallsOneRuntime(t *testing.T, uri string) {
 	connectionB := awaitConnection(t, gatewayB, string(f.sandbox.UID), "shared-runtime-boot", doneB)
 	clientA := startProxyClient(t, gatewayA)
 	clientB := startProxyClient(t, gatewayB)
-	if _, err := clientA.GetStatus(f.callerContext(f.appToken), &sessionpb.GetStatusRequest{}); err != nil {
+	if _, err := clientA.GetStatus(f.callerContext(peertls.AppURI), &sessionpb.GetStatusRequest{}); err != nil {
 		t.Fatalf("Gateway A did not call the shared Runtime: %v", err)
 	}
-	if _, err := clientB.GetStatus(f.callerContext(f.appToken), &sessionpb.GetStatusRequest{}); err != nil {
+	if _, err := clientB.GetStatus(f.callerContext(peertls.AppURI), &sessionpb.GetStatusRequest{}); err != nil {
 		t.Fatalf("Gateway B did not call the shared Runtime: %v", err)
 	}
 	if got := backend.calls.Load(); got != 2 {
@@ -145,13 +145,13 @@ func testAnyReplicaObservesAndCallsOneRuntime(t *testing.T, uri string) {
 
 	cancelA()
 	waitObserver(t, doneA)
-	if _, err := clientB.GetStatus(f.callerContext(f.appToken), &sessionpb.GetStatusRequest{}); err != nil {
+	if _, err := clientB.GetStatus(f.callerContext(peertls.AppURI), &sessionpb.GetStatusRequest{}); err != nil {
 		t.Fatalf("Gateway B stopped serving after observer A closed: %v", err)
 	}
 	cancelA, doneA, _ = runObserver(t, gatewayA, destinationA)
 	defer cancelA()
 	awaitConnection(t, gatewayA, string(f.sandbox.UID), "shared-runtime-boot", doneA)
-	if _, err := clientB.GetStatus(f.callerContext(f.appToken), &sessionpb.GetStatusRequest{}); err != nil {
+	if _, err := clientB.GetStatus(f.callerContext(peertls.AppURI), &sessionpb.GetStatusRequest{}); err != nil {
 		t.Fatalf("Gateway B stopped serving after observer A restarted: %v", err)
 	}
 	if current, err := gatewayB.connections.holder(string(f.sandbox.UID)); err != nil || current != connectionB {
@@ -324,26 +324,13 @@ func awaitConnection(t *testing.T, g *Gateway, sandboxUID, bootID string, done <
 
 func startProxyClient(t *testing.T, g *Gateway) environmentruntimepb.EnvironmentRuntimeClient {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := grpc.NewServer(gatewayMethods(t, g).ServerOptions(0)...)
-	g.RegisterProxy(server)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
-	return environmentruntimepb.NewEnvironmentRuntimeClient(conn)
+	return environmentruntimepb.NewEnvironmentRuntimeClient(serveGateway(t, g, g.RegisterProxy))
 }
 
 func testRunnerObserver(t *testing.T, mode peertls.SecurityMode) {
 	t.Helper()
 	f := newSandboxFixture(t)
-	g := f.newGateway(t, executorAccount)
+	g := f.newGateway(t, peertls.CentralSamplerURI)
 	g.config.RunnerSecurity = peertls.Security{Mode: mode}
 	runnerSecurity := peertls.Security{Mode: mode}
 	if mode == peertls.MutualTLS {
@@ -384,20 +371,8 @@ func testRunnerObserver(t *testing.T, mode peertls.SecurityMode) {
 	if runner.calls.Load() != 1 {
 		t.Fatal("Runner call did not reach server")
 	}
-	publicListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	publicServer := grpc.NewServer(gatewayMethods(t, g).ServerOptions(0)...)
-	g.RegisterExecutor(publicServer)
-	go func() { _ = publicServer.Serve(publicListener) }()
-	t.Cleanup(publicServer.Stop)
-	publicConn, err := grpc.NewClient(publicListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = publicConn.Close() })
-	execCtx, stopExec := context.WithTimeout(metadata.NewOutgoingContext(t.Context(), metadata.Pairs("authorization", "Bearer "+f.executorToken)), 5*time.Second)
+	publicConn := serveGateway(t, g, g.RegisterExecutor)
+	execCtx, stopExec := context.WithTimeout(context.WithValue(t.Context(), serviceConnectionKey{}, peertls.CentralSamplerURI), 5*time.Second)
 	defer stopExec()
 	exec, err := executorpb.NewExecutorClient(publicConn).OpenSession(execCtx, &executorpb.OpenSessionRequest{
 		Scope: &executorpb.ExecutionScope{
@@ -446,7 +421,7 @@ func testRunnerObserver(t *testing.T, mode peertls.SecurityMode) {
 
 func TestExecutionConnectionOnlySignalsVerifiedIncarnationChanges(t *testing.T) {
 	f := newSandboxFixture(t)
-	g := f.newGateway(t, executorAccount)
+	g := f.newGateway(t, peertls.CentralSamplerURI)
 	server := &executorServer{gateway: g}
 	scope := &executorpb.ExecutionScope{
 		Destination: &identitypb.SandboxDestination{
@@ -598,7 +573,7 @@ func TestExecutionConnectionReportsVerifiedEnvironmentFailures(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			g := f.newGateway(t, executorAccount)
+			g := f.newGateway(t, peertls.CentralSamplerURI)
 			server := &executorServer{gateway: g}
 			scope := &executorpb.ExecutionScope{
 				Destination: &identitypb.SandboxDestination{

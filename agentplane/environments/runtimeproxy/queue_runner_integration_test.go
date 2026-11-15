@@ -4,8 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"net"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -189,19 +187,11 @@ func TestQueuedDeliveryThroughGatewayRunnerRPC(t *testing.T) {
 		}
 	}()
 
-	proxyListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	proxyServer := grpc.NewServer(gatewayMethods(t, gateway).ServerOptions(0)...)
-	gateway.RegisterProxy(proxyServer)
-	go func() { _ = proxyServer.Serve(proxyListener) }()
-	defer proxyServer.Stop()
-	defer proxyListener.Close()
-
-	tokenFile := filepath.Join(t.TempDir(), "caller-token")
-	if err := os.WriteFile(tokenFile, []byte(f.dispatcherToken), 0o600); err != nil {
-		t.Fatal(err)
+	proxy := serveGateway(t, gateway, gateway.RegisterProxy)
+	sessionsCertificate := proxy.ca.Issue(t, peertls.SessionsURI)
+	gatewayTLS := &peertls.ClientTLS{
+		CAFile: proxy.ca.RootFile, ServerURI: peertls.SessionDispatcherURI,
+		CertFile: sessionsCertificate.CertFile, KeyFile: sessionsCertificate.KeyFile, ClientURI: peertls.SessionsURI,
 	}
 	hub := dispatcher.NewWatchHub(integrationDatabase.URL)
 	hubDone := make(chan error, 1)
@@ -217,8 +207,8 @@ func TestQueuedDeliveryThroughGatewayRunnerRPC(t *testing.T) {
 			Name: testSandbox, Namespace: f.namespace, UID: sandboxUID, Incarnation: string(f.pod.UID),
 		}}, Wake: queueWake{}, Leases: queueLease{store: store},
 		Runner: &dispatcher.ProxyRunner{
-			Namespace: f.namespace, TokenFile: tokenFile, Timeout: 5 * time.Second,
-			TargetTemplate: proxyListener.Addr().String(),
+			Namespace: f.namespace, GatewayTLS: gatewayTLS, Timeout: 5 * time.Second,
+			TargetTemplate: proxy.target,
 		},
 		Hub: hub, Ready: make(chan struct{}),
 	}

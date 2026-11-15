@@ -30,7 +30,7 @@ class SandboxControlClient:
         self,
         *,
         control_target: str,
-        token_file: Path,
+        token_file: Path | None,
         request_timeout_s: float,
         channel_credentials: grpc.ChannelCredentials | None = None,
         server_name: str | None = None,

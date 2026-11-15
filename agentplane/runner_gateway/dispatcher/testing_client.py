@@ -1,4 +1,4 @@
-"""Generated Dispatcher stub with rotating bearer and deadline transport."""
+"""Generated Dispatcher stub with explicit channel credentials and deadline transport."""
 
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -19,7 +19,7 @@ from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_
 class SessionDispatcherClient:
     """Keep transport concerns beside the generated stub, not RPC business logic."""
 
-    def __init__(self, channel: grpc.aio.Channel, *, token_file: Path, request_timeout_s: float) -> None:
+    def __init__(self, channel: grpc.aio.Channel, *, token_file: Path | None, request_timeout_s: float) -> None:
         self.stub: session_dispatcher_pb2_grpc.SessionDispatcherAsyncStub = (
             session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
         )
@@ -32,7 +32,7 @@ class SessionDispatcherClient:
         cls,
         target: str,
         *,
-        token_file: Path,
+        token_file: Path | None,
         request_timeout_s: float,
         channel_credentials: grpc.ChannelCredentials | None = None,
         server_name: str | None = None,
