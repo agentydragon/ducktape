@@ -286,9 +286,9 @@ message DeferredRecordMember {
 }
 
 message DescriptorCopyAuthorRef {
-  optional string defining_module = 1;
-  optional string export = 2;
-  optional string spec_location = 3;
+  string defining_module = 1;
+  string export = 2;
+  string spec_location = 3;
 }
 
 message DescriptorCopyFactorySignature {

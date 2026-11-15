@@ -8,12 +8,11 @@ use anyhow::{Result, ensure};
 use super::{
     ArgumentInputEvidence, ArgumentInputRef, BundleGlobalNames, CallableSummary,
     CallbackFactoryEvidence, CallbackObjectArguments, DeferredRecordMember,
-    DescriptorCopyAuthorRef, DescriptorCopyFactorySummary, ForeignCallSummary,
-    ImportedPrimitiveArraySpreadInputEvidence, ImportedPrimitiveArraySpreadInputRef,
-    ImportedPrimitiveArraySpreadInputUse, ImportedPrimitiveRead, InitializerCallEffectInputRef,
-    NamespaceWrapperSummary, NativeIntegrity, NativeOperationInputEvidence,
-    NativeOperationInputRef, NoAccessorInstallRef, ProofDependencies, ReturnedRecordSummary,
-    SourceDeclaration, ValueInputEvidence, ValueInputRef,
+    DescriptorCopyFactorySummary, ForeignCallSummary, ImportedPrimitiveArraySpreadInputEvidence,
+    ImportedPrimitiveArraySpreadInputRef, ImportedPrimitiveArraySpreadInputUse,
+    ImportedPrimitiveRead, InitializerCallEffectInputRef, NamespaceWrapperSummary, NativeIntegrity,
+    NativeOperationInputEvidence, NativeOperationInputRef, NoAccessorInstallRef, ProofDependencies,
+    ReturnedRecordSummary, SourceDeclaration, ValueInputEvidence, ValueInputRef,
 };
 use super::{
     EffectiveInitializerCallReplacement, ForeignInvocation, ForeignReturn, HostBehaviorKey,
@@ -21,7 +20,8 @@ use super::{
     ProgramPremiseKey,
 };
 use crate::saved_proto::{
-    ProtoConvert, decode_native_intrinsics, decode_set, encode_native_intrinsics, proto, required,
+    ProtoConvert, decode_native_intrinsics, decode_set, decode_set_direct,
+    encode_native_intrinsics, proto, required,
 };
 
 impl ProtoConvert<proto::CallbackFactoryEvidence> for CallbackFactoryEvidence {
@@ -567,12 +567,7 @@ impl ProtoConvert<proto::ImportedPrimitiveRead> for ImportedPrimitiveRead {
                 "ImportedPrimitiveRead.provider_module",
             )?,
             dependency_closure: decode_set(value.dependency_closure)?,
-            source_cells: {
-                let count = value.source_cells.len();
-                let cells: BTreeSet<_> = value.source_cells.into_iter().collect();
-                ensure!(cells.len() == count, "duplicate saved set member");
-                cells
-            },
+            source_cells: decode_set_direct(value.source_cells)?,
         })
     }
 }
@@ -1014,27 +1009,6 @@ impl ProtoConvert<proto::NoAccessorInstallRef> for NoAccessorInstallRef {
     }
 }
 
-impl ProtoConvert<proto::DescriptorCopyAuthorRef> for DescriptorCopyAuthorRef {
-    fn to_proto(&self) -> Result<proto::DescriptorCopyAuthorRef> {
-        Ok(proto::DescriptorCopyAuthorRef {
-            defining_module: Some(self.defining_module.clone()),
-            export: Some(self.export.clone()),
-            spec_location: Some(self.spec_location.clone()),
-        })
-    }
-
-    fn from_proto(value: proto::DescriptorCopyAuthorRef) -> Result<Self> {
-        Ok(Self {
-            defining_module: required(
-                value.defining_module,
-                "DescriptorCopyAuthorRef.defining_module",
-            )?,
-            export: required(value.export, "DescriptorCopyAuthorRef.export")?,
-            spec_location: required(value.spec_location, "DescriptorCopyAuthorRef.spec_location")?,
-        })
-    }
-}
-
 impl ProtoConvert<proto::ProofDependencies> for ProofDependencies {
     fn to_proto(&self) -> Result<proto::ProofDependencies> {
         Ok(proto::ProofDependencies {
@@ -1058,11 +1032,7 @@ impl ProtoConvert<proto::ProofDependencies> for ProofDependencies {
                 .iter()
                 .map(ProtoConvert::to_proto)
                 .collect::<Result<_>>()?,
-            descriptor_copy_authors: self
-                .descriptor_copy_authors
-                .iter()
-                .map(ProtoConvert::to_proto)
-                .collect::<Result<_>>()?,
+            descriptor_copy_authors: self.descriptor_copy_authors.iter().cloned().collect(),
             argument_inputs: self
                 .argument_inputs
                 .iter()
@@ -1099,7 +1069,7 @@ impl ProtoConvert<proto::ProofDependencies> for ProofDependencies {
             imported_primitive_array_spread_inputs: decode_set(
                 value.imported_primitive_array_spread_inputs,
             )?,
-            descriptor_copy_authors: decode_set(value.descriptor_copy_authors)?,
+            descriptor_copy_authors: decode_set_direct(value.descriptor_copy_authors)?,
             argument_inputs: decode_set(value.argument_inputs)?,
             host_behavior: decode_set(value.host_behavior)?,
             program_premises,
@@ -1293,8 +1263,9 @@ impl ProtoConvert<proto::NativeIntegrity> for NativeIntegrity {
 #[cfg(test)]
 mod tests {
     use crate::analysis_inputs::{
-        ArgumentInputRef, CallableSummary, ForeignCallSummary, ForeignInvocation, ForeignReturn,
-        NamespaceWrapperSummary, NativeIntrinsic, ProofDependencies, ValueInputRef,
+        ArgumentInputRef, CallableSummary, DescriptorCopyAuthorRef, ForeignCallSummary,
+        ForeignInvocation, ForeignReturn, NamespaceWrapperSummary, NativeIntrinsic,
+        ProofDependencies, ValueInputRef,
     };
     use crate::analysis_provenance::{InferenceRule, InferenceUse};
     use crate::execution_evidence::SourceLocation;
@@ -1522,11 +1493,28 @@ mod tests {
 
     #[test]
     fn protobuf_callable_dependencies_round_trip_and_stay_out_of_report_json() {
+        let descriptor_authors = BTreeSet::from([
+            DescriptorCopyAuthorRef {
+                defining_module: "static/peer".into(),
+                export: "".into(),
+                spec_location: "descriptor_copy_factory_exports.wrap".into(),
+            },
+            DescriptorCopyAuthorRef {
+                defining_module: "static/peer".into(),
+                export: "wrap".into(),
+                spec_location: "descriptor_copy_factory_exports.wrap".into(),
+            },
+        ]);
+        assert_eq!(
+            serde_json::to_string(&descriptor_authors).unwrap(),
+            r#"[{"defining_module":"static/peer","export":"","spec_location":"descriptor_copy_factory_exports.wrap"},{"defining_module":"static/peer","export":"wrap","spec_location":"descriptor_copy_factory_exports.wrap"}]"#
+        );
         let namespace_dependencies = ProofDependencies {
             value_inputs: BTreeSet::from([ValueInputRef {
                 defining_chunk: "provider".to_string(),
                 input_index: 2,
             }]),
+            descriptor_copy_authors: descriptor_authors.clone(),
             ..ProofDependencies::default()
         };
         let foreign_dependencies = ProofDependencies {
@@ -1540,7 +1528,7 @@ mod tests {
             conclusion: InferenceRule::NamespaceWrapper,
             derivation_rules: BTreeSet::from([InferenceRule::NamespaceWrapper]),
             value_input_refs: BTreeSet::new(),
-            descriptor_copy_author_refs: BTreeSet::new(),
+            descriptor_copy_author_refs: descriptor_authors.clone(),
             argument_input_refs: BTreeSet::<ArgumentInputRef>::new(),
             native_operation_input_refs: BTreeSet::new(),
             imported_primitive_array_spread_input_refs: BTreeSet::new(),
@@ -1587,6 +1575,18 @@ mod tests {
             CallableSummary::from_proto(decoded).expect("complete callable"),
             summary
         );
+
+        let mut duplicate_author = wire.clone();
+        let proof = duplicate_author
+            .namespace_wrapper
+            .as_mut()
+            .unwrap()
+            .dependencies
+            .as_mut()
+            .unwrap();
+        let duplicate = proof.descriptor_copy_authors[0].clone();
+        proof.descriptor_copy_authors.push(duplicate);
+        assert!(CallableSummary::from_proto(duplicate_author).is_err());
 
         let mut missing_proof = wire.clone();
         missing_proof

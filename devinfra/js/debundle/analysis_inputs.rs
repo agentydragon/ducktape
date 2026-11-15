@@ -381,12 +381,7 @@ pub struct ValueInputRef {
 }
 
 /// Exact authored provider contract consumed by a semantic certificate.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-pub struct DescriptorCopyAuthorRef {
-    pub defining_module: String,
-    pub export: String,
-    pub spec_location: String,
-}
+pub use crate::saved_proto::proto::DescriptorCopyAuthorRef;
 
 /// One audited exact imported-call initializer in the importer chunk.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]

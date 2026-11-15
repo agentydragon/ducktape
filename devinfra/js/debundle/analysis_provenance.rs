@@ -6,7 +6,7 @@
 
 use std::collections::BTreeSet;
 
-use crate::saved_proto::{ProtoConvert, decode_set, proto, required};
+use crate::saved_proto::{ProtoConvert, decode_set, decode_set_direct, proto, required};
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 
@@ -51,11 +51,7 @@ impl ProtoConvert<proto::InferenceUse> for InferenceUse {
                 .iter()
                 .map(ProtoConvert::to_proto)
                 .collect::<Result<_>>()?,
-            descriptor_copy_author_refs: self
-                .descriptor_copy_author_refs
-                .iter()
-                .map(ProtoConvert::to_proto)
-                .collect::<Result<_>>()?,
+            descriptor_copy_author_refs: self.descriptor_copy_author_refs.iter().cloned().collect(),
             argument_input_refs: self
                 .argument_input_refs
                 .iter()
@@ -85,7 +81,7 @@ impl ProtoConvert<proto::InferenceUse> for InferenceUse {
             conclusion,
             derivation_rules,
             value_input_refs: decode_set(value.value_input_refs)?,
-            descriptor_copy_author_refs: decode_set(value.descriptor_copy_author_refs)?,
+            descriptor_copy_author_refs: decode_set_direct(value.descriptor_copy_author_refs)?,
             argument_input_refs: decode_set(value.argument_input_refs)?,
             native_operation_input_refs: decode_set(value.native_operation_input_refs)?,
             imported_primitive_array_spread_input_refs: decode_set(

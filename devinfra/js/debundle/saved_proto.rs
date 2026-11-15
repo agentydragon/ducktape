@@ -304,6 +304,13 @@ where
     Ok(values)
 }
 
+pub(crate) fn decode_set_direct<T: Ord>(items: Vec<T>) -> Result<BTreeSet<T>> {
+    let count = items.len();
+    let values: BTreeSet<_> = items.into_iter().collect();
+    ensure!(values.len() == count, "duplicate saved set member");
+    Ok(values)
+}
+
 pub(crate) fn encode_native_intrinsics(
     items: &BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
 ) -> Result<Vec<i32>> {
