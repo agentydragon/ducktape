@@ -995,6 +995,16 @@ rebinds, with dependency-edge provenance. An empty verdict means the assignment 
 realizable. Clause 1 (importability) is emit policy and not part of the
 verdict ("Emit-side responsibilities").
 
+The ordinary assignment path retains a concrete `EsmImportSchedule` on
+`AssignmentAnalysis`. It contains the ordered intra-chunk import targets for
+entry and every emitted module, including phantom imports and empty authored
+owners. The existing `EsmImportOrder` remains the policy that constructs it.
+`check_realizability_with_schedule` first checks the exact required target sets,
+then evaluates that schedule. Translation/effect sweeps and lowering consume the
+same immutable object; lowering does not reconstruct a second ordering. This
+refactor preserves the existing policy and accepted placements. Alternative
+schedule construction remains tracked in <../plans/module_placement.md>.
+
 The predicate has two forms:
 
 1. **The pure function `check_realizability`**, `O(N + M)` per call. The

@@ -289,8 +289,8 @@ pub(super) fn prepare_module_emission<'output>(
     // (other source chunks) follow; they're outside the per-chunk
     // I-graph the gate reasons about.
     assignment_analysis
-        .import_order()
-        .sort_module_imports(&mut intra_chunk_imports);
+        .import_schedule()
+        .sort_imports(module, &mut intra_chunk_imports);
     let mut combined: Vec<ModuleItem> = intra_chunk_imports
         .into_iter()
         .map(|(_, item)| item)

@@ -54,6 +54,7 @@ mod incremental_quotient;
 mod translation_validation;
 
 use crate::esm_import_order::EsmImportOrder;
+use crate::esm_schedule::{EsmImportSchedule, ImportScheduleError};
 pub use effect_translation_validation::{
     EffectConflictCell, EffectConflictDiagnosticRow, EffectConflictDisposition, EffectConflictRow,
     EffectCoverageReport, EffectOpacity, EffectRelocationAcceptanceScope,
@@ -64,7 +65,9 @@ pub use effect_translation_validation::{
 pub(crate) use effect_translation_validation::{
     EffectTranslationValidationInputs, effect_translation_assess,
 };
-use esm_simulator::{EsmEvaluationSimulator, simulate_esm_post_order};
+#[cfg(test)]
+use esm_simulator::EsmEvaluationSimulator;
+use esm_simulator::simulate_esm_post_order;
 use incremental_quotient::{IncrementalQuotient, QuotientOverlay};
 pub use incremental_quotient::{LadderDecision, ModuleAssignmentDelta};
 pub(crate) use translation_validation::CandidateEmittedOrder;
@@ -185,6 +188,25 @@ pub fn check_realizability(
     dependency_graph: &DependencyGraph,
     assignment: &ModuleAssignment,
 ) -> RealizabilityVerdict {
+    check_realizability_using_schedule(dependency_graph, assignment, None)
+        .expect("the canonical policy has exactly the canonical import targets")
+}
+
+/// Validate the exact schedule retained for this assignment. Malformed target
+/// sets are errors, not a way to omit imports from the ESM traversal.
+pub fn check_realizability_with_schedule(
+    dependency_graph: &DependencyGraph,
+    assignment: &ModuleAssignment,
+    schedule: &EsmImportSchedule,
+) -> Result<RealizabilityVerdict, ImportScheduleError> {
+    check_realizability_using_schedule(dependency_graph, assignment, Some(schedule))
+}
+
+fn check_realizability_using_schedule(
+    dependency_graph: &DependencyGraph,
+    assignment: &ModuleAssignment,
+    schedule: Option<&EsmImportSchedule>,
+) -> Result<RealizabilityVerdict, ImportScheduleError> {
     // Cross-destination rebinds are a separate clause-2 violation and
     // not part of the I-graph. Collect them in a single pass over
     // source unit edges; the canonical edge set handles everything else.
@@ -215,11 +237,25 @@ pub fn check_realizability(
     // includes lazy import back-edges for Pass 2's ESM evaluation topology.
     // Sharing the projection does not make the two SCC partitions equivalent.
     let canonical = chunk_constraining_module_edges(dependency_graph, assignment);
-    verdict_from_canonical(
-        canonical,
-        cross_rebinds,
-        assignment.entry_destination().module_id(),
-    )
+    let entry = assignment.entry_destination().module_id();
+    if let Some(schedule) = schedule {
+        let nodes = schedule.modules();
+        if assignment
+            .iter()
+            .any(|(_, module)| !nodes.contains(&module))
+        {
+            return Err(ImportScheduleError::ModuleUniverse);
+        }
+        schedule.check_targets(entry, &canonical.i_successors, &nodes)?;
+        Ok(verdict_from_canonical_scheduled(
+            canonical,
+            cross_rebinds,
+            entry,
+            schedule,
+        ))
+    } else {
+        Ok(verdict_from_canonical(canonical, cross_rebinds, entry))
+    }
 }
 
 /// Run the complete gate over the canonical module projection. The pure
@@ -229,6 +265,30 @@ fn verdict_from_canonical(
     canonical: ChunkConstrainingEdgeSet,
     cross_rebinds: Vec<CrossRebindEdge>,
     entry_module_id: ModuleId,
+) -> RealizabilityVerdict {
+    if canonical.edges.is_empty() {
+        return RealizabilityVerdict {
+            unrealizable_sccs: Vec::new(),
+            cross_rebinds,
+        };
+    }
+    let mut nodes = BTreeSet::from([entry_module_id]);
+    for (&from, targets) in &canonical.i_successors {
+        nodes.insert(from);
+        nodes.extend(targets);
+    }
+    let pairs = canonical.pairs().collect();
+    let policy = EsmImportOrder::build(&pairs, &canonical.i_successors, &nodes);
+    let schedule =
+        EsmImportSchedule::from_policy(entry_module_id, &canonical.i_successors, &nodes, &policy);
+    verdict_from_canonical_scheduled(canonical, cross_rebinds, entry_module_id, &schedule)
+}
+
+fn verdict_from_canonical_scheduled(
+    canonical: ChunkConstrainingEdgeSet,
+    cross_rebinds: Vec<CrossRebindEdge>,
+    entry_module_id: ModuleId,
+    schedule: &EsmImportSchedule,
 ) -> RealizabilityVerdict {
     let mut verdict = RealizabilityVerdict {
         unrealizable_sccs: Vec::new(),
@@ -333,14 +393,10 @@ fn verdict_from_canonical(
     // no constraining cycle.
     if reported.is_empty() && !candidate_sccs.is_empty() {
         let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> = canonical.pairs().collect();
-        let simulation = EsmEvaluationSimulator::build(
-            &canonical.i_successors,
-            &constraining_pairs,
-            entry_module_id,
-        );
         for modules in candidate_sccs {
-            let tdz_pairs: Vec<(ModuleId, ModuleId)> = simulation
-                .tdz_pairs(&modules, &constraining_pairs)
+            let tdz_pairs: Vec<(ModuleId, ModuleId)> = schedule
+                .tdz_pairs(&constraining_pairs)
+                .filter(|(from, to)| modules.contains(from) && modules.contains(to))
                 .collect();
             if tdz_pairs.is_empty() {
                 continue;

@@ -4779,6 +4779,13 @@ can be interleaved by source unit without changing other modules' relative
 order. The candidate's exact emitted order still requires the ordinary
 relocation assessment.
 
+Assignment validation retains a concrete ordered import schedule for entry and
+all emitted modules. Its target sets must exactly cover canonical intra-chunk
+imports, including phantom imports and entry's universal fanout. Gate validation,
+candidate translation/effect sweeps and emission consume that same schedule.
+The current scheduling policy is unchanged; a supplied evaluation rank alone
+cannot replace traversal of the actual import lists.
+
 Each `cycles.json` entry names its `rejection`. `mutual_constraining_cycle`
 is a Pass-1 cycle of constraining edges. `esm_evaluation_tdz` is a Pass-2 TDZ
 proved under the materializer's linker order. Pass 2 runs only when Pass 1

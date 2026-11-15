@@ -859,6 +859,7 @@ rust_library(
         "assignment_inputs.rs",
         "counted_digraph.rs",
         "esm_import_order.rs",
+        "esm_schedule.rs",
         "gate.rs",
         "realizability/condensation_order.rs",
         "realizability/condensation_order_proptest.rs",

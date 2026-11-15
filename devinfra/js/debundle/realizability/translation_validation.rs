@@ -25,14 +25,13 @@ use serde::Serialize;
 use source_identity::SourceUnitOrdinal;
 
 use analysis::DependencyGraph;
-use analysis::graph::{DependencyEdgeId, chunk_constraining_module_edges};
+use analysis::graph::DependencyEdgeId;
 use analysis::ids::ModuleId;
 use analysis::module_assignment::ModuleAssignment;
 use source_identity::SourceUnitId;
 use spec::ModulePath;
 
-use super::esm_simulator::simulate_esm_post_order;
-use crate::esm_import_order::EsmImportOrder;
+use crate::esm_schedule::EsmImportSchedule;
 
 /// One swapped pair the sweep found conflicting: `runs_first` follows
 /// `runs_later` in the source, and the emit runs it first.
@@ -280,19 +279,12 @@ pub(crate) struct CandidateEmittedOrder {
 }
 
 impl CandidateEmittedOrder {
-    pub(crate) fn from_assignment(
+    pub(crate) fn from_schedule(
         dependency_graph: &DependencyGraph,
         assignment: &ModuleAssignment,
-        emitted_modules: &BTreeSet<ModuleId>,
-        import_order: &EsmImportOrder,
+        schedule: &EsmImportSchedule,
     ) -> Self {
-        let canonical = chunk_constraining_module_edges(dependency_graph, assignment);
-        let post_order = simulate_esm_post_order(
-            assignment.entry_destination().module_id(),
-            &canonical.i_successors,
-            emitted_modules,
-            import_order,
-        );
+        let post_order = schedule.post_order();
         let module_position = |unit: SourceUnitId| {
             let module = assignment.of(unit);
             *post_order
