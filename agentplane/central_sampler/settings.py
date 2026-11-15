@@ -8,7 +8,15 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_serializer, field_validator, model_validator
 from pydantic_settings import SettingsConfigDict
 
-from agentplane.net.peertls.config import SESSION_DISPATCHER_URI, TLS, ClientTLS, ServerTLSListener, ServiceSPIFFEID
+from agentplane.net.peertls.config import (
+    CENTRAL_SAMPLER_URI,
+    LLM_INGRESS_URI,
+    SESSION_DISPATCHER_URI,
+    TLS,
+    ClientTLS,
+    ServerTLSListener,
+    ServiceSPIFFEID,
+)
 
 DEFAULT_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS = 30
 MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS = (2**63 - 1) // 1_000_000_000
@@ -24,7 +32,7 @@ class ActionsConfig(BaseModel):
 class AuthConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # `agentplane_ingress` is Agentplane's LLM ingress called with the projected workload token;
+    # `agentplane_ingress` uses a projected workload token or the sampler's service SVID;
     # a Session executing as an Identity is sampled as a delegating actor for it (SPEC.md).
     type: Literal["bearer", "agentplane_ingress", "anthropic_api_key"]
     credential: SecretStr | None = None
@@ -39,6 +47,9 @@ class AuthConfig(BaseModel):
 
     @model_validator(mode="after")
     def exactly_one_credential_source(self) -> Self:
+        if self.type == "agentplane_ingress" and self.credential is None and self.credential_file is None:
+            # The containing ConnectionConfig validates the certificate source.
+            return self
         if (self.credential is None) == (self.credential_file is None):
             raise ValueError("configure exactly one of credential and credential_file")
         if self.credential is not None and not self.credential.get_secret_value():
@@ -67,6 +78,22 @@ class ConnectionConfig(BaseModel):
     def tls_requires_https(self) -> Self:
         if self.tls is not None and urlsplit(self.base_url).scheme != "https":
             raise ValueError("connection tls requires an https base_url")
+        return self
+
+    @model_validator(mode="after")
+    def ingress_authentication(self) -> Self:
+        uses_svid = self.tls is not None and self.tls.uses_svid
+        has_credential = self.auth.credential is not None or self.auth.credential_file is not None
+        if self.auth.type != "agentplane_ingress":
+            if uses_svid:
+                raise ValueError("service SVID authentication is only supported for agentplane_ingress connections")
+            return self
+        if self.tls is not None and self.tls.server_uri != LLM_INGRESS_URI:
+            raise ValueError("agentplane_ingress connections must verify the LLM ingress service")
+        if self.tls is not None and uses_svid:
+            self.tls.validate_caller("configured" if has_credential else None, CENTRAL_SAMPLER_URI)
+        elif not has_credential:
+            raise ValueError("agentplane_ingress requires a credential or central sampler service SVID")
         return self
 
     @field_validator("base_url")
@@ -363,10 +390,17 @@ class Settings(BaseModel):
 
     @model_validator(mode="after")
     def paired_service_credentials(self) -> Self:
-        if (self.history_target is None) != (self.history_token_file is None):
-            raise ValueError("history target and token file must be configured together")
-        if (self.gateway_target is None) != (self.gateway_token_file is None):
-            raise ValueError("gateway target and token file must be configured together")
+        for target, token, tls in (
+            (self.history_target, self.history_token_file, self.history_tls),
+            (self.gateway_target, self.gateway_token_file, self.gateway_tls),
+        ):
+            if target is None:
+                if token is not None or tls is not None:
+                    raise ValueError("service credentials require a target")
+            elif tls is not None:
+                tls.validate_caller(token, CENTRAL_SAMPLER_URI)
+            elif token is None:
+                raise ValueError("a service target requires a bearer token file or service SVID")
         return self
 
     @model_validator(mode="after")

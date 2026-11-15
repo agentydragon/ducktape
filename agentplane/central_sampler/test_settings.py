@@ -4,7 +4,17 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from agentplane.central_sampler.settings import MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS, Settings
+from agentplane.central_sampler.settings import MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS, ConnectionConfig, Settings
+
+
+def service_tls(server: str) -> dict[str, str]:
+    return {
+        "ca_file": "/fixture/workload-ca.pem",
+        "server_uri": f"spiffe://agentplane/{server}",
+        "cert_file": "/fixture/tls.crt",
+        "key_file": "/fixture/tls.key",
+        "client_uri": "spiffe://agentplane/central-sampler",
+    }
 
 
 def settings_data() -> dict[str, Any]:
@@ -84,6 +94,69 @@ def test_gateway_tls_must_name_runner_gateway_rpc_listener() -> None:
                     "ca_file": "/fixture/workload-ca.pem",
                     "server_uri": "spiffe://agentplane/runner-gateway",
                 },
+            }
+        )
+
+
+@pytest.mark.parametrize(("service", "server"), [("history", "history-ingress"), ("gateway", "session-dispatcher")])
+def test_service_targets_accept_svid_without_a_token(service: str, server: str) -> None:
+    data = settings_data()
+    data[f"{service}_target"] = "service.invalid:8080"
+    data.pop(f"{service}_token_file", None)
+    data[f"{service}_tls"] = service_tls(server)
+    configured = Settings.model_validate(data).model_dump(mode="json", exclude_none=True)
+    assert f"{service}_token_file" not in configured
+    assert configured[f"{service}_tls"]["client_uri"] == "spiffe://agentplane/central-sampler"
+
+    with pytest.raises(ValidationError, match="cannot be combined"):
+        Settings.model_validate({**data, f"{service}_token_file": "/fixture/token"})
+    with pytest.raises(ValidationError, match="client_uri must be"):
+        Settings.model_validate(
+            {**data, f"{service}_tls": {**service_tls(server), "client_uri": "spiffe://agentplane/app"}}
+        )
+
+
+def test_ingress_can_use_service_svid_or_rotating_bearer() -> None:
+    connection = {
+        "base_url": "https://llm-ingress.invalid",
+        "auth": {"type": "agentplane_ingress"},
+        "tls": service_tls("llm-ingress"),
+    }
+    configured = ConnectionConfig.model_validate(connection).model_dump(mode="json", exclude_none=True)
+    assert configured["auth"] == {"type": "agentplane_ingress"}
+    with pytest.raises(ValidationError, match="cannot be combined"):
+        ConnectionConfig.model_validate(
+            {**connection, "auth": {"type": "agentplane_ingress", "credential_file": "/fixture/token"}}
+        )
+    bearer = ConnectionConfig.model_validate(
+        {
+            **connection,
+            "auth": {"type": "agentplane_ingress", "credential_file": "/fixture/token"},
+            "tls": {"ca_file": "/fixture/workload-ca.pem", "server_uri": "spiffe://agentplane/llm-ingress"},
+        }
+    )
+    assert bearer.auth.credential_file == Path("/fixture/token")
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"tls": None},
+        {"tls": service_tls("history-ingress")},
+        {"tls": {**service_tls("llm-ingress"), "client_uri": "spiffe://agentplane/app"}},
+        {"tls": {**service_tls("llm-ingress"), "key_file": None}},
+        {"auth": {"type": "bearer", "credential": "provider-key"}},
+        {"auth": {"type": "anthropic_api_key", "credential": "provider-key"}},
+    ],
+)
+def test_ingress_rejects_missing_wrong_or_provider_service_credentials(changes: dict[str, Any]) -> None:
+    with pytest.raises(ValidationError):
+        ConnectionConfig.model_validate(
+            {
+                "base_url": "https://llm-ingress.invalid",
+                "auth": {"type": "agentplane_ingress"},
+                "tls": service_tls("llm-ingress"),
+                **changes,
             }
         )
 
