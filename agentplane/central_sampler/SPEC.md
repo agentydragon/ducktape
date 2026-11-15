@@ -421,8 +421,10 @@ Compaction requests carry the same summary and context but no effort.
 
 Agent turns have no elapsed-time deadline by default. Optional `turn_timeout_seconds` sets a positive
 elapsed-time limit while a driver serves a command, including provider retries and backoff; a new
-owner starts a fresh limit. Expiry cancels active work, settles provider-only failure and preserves
-uncertain executor effects for reconciliation. Provider phase budgets, durable attempt budgets,
+owner starts a fresh limit. Expiry cancels active work and joins it before settlement. A completed
+provider response persisted during cancellation can finish its exact active input turn from the durable
+settled transcript, under the same ownership fence. Otherwise expiry settles provider-only failure and
+preserves uncertain executor effects for reconciliation. Provider phase budgets, durable attempt budgets,
 database operation limits and native observation limits still bound each step. Shutdown and explicit
 interruption also cancel active work. Setup scripts have a separate `setup_timeout_seconds` limit
 (3600 seconds when omitted); setup policy and Session ownership leases do not set the turn limit.
