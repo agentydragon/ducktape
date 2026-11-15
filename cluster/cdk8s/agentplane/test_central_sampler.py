@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import replace
+from pathlib import PurePosixPath
 from typing import Any
 
 import pytest_bazel
@@ -17,8 +18,10 @@ from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.net.peertls.config import (
     CENTRAL_SAMPLER_URI,
     GATEWAY_SESSIONS_URI,
+    HISTORY_SERVICE_URI,
     LLM_INGRESS_URI,
     POLICY_CONTROLLER_URI,
+    SESSION_DISPATCHER_URI,
 )
 from cluster.cdk8s.agentplane import (
     central_sampler,
@@ -138,6 +141,19 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     assert llm_connection["base_url"] == f"https://{llm_service.fqdn}:{llm_service.port.number}"
     assert llm_connection["auth"] == {"type": "bearer", "credential_file": "/var/run/secrets/central-sampler/llm"}
     assert llm_connection["tls"] == {"ca_file": workload_tls.TRUST_BUNDLE_FILE, "server_uri": LLM_INGRESS_URI}
+    assert "history_token_file" not in config
+    assert "gateway_token_file" not in config
+    volumes = {volume["name"]: volume for volume in pod["volumes"]}
+    mounts = {PurePosixPath(m["mountPath"]): volumes[m["name"]] for m in container["volumeMounts"]}
+    for tls, server_uri in (
+        (config["history_tls"], HISTORY_SERVICE_URI),
+        (config["gateway_tls"], SESSION_DISPATCHER_URI),
+    ):
+        assert tls["server_uri"] == server_uri
+        assert tls["client_uri"] == serving_certificate["spec"]["uris"][0]
+        for field in ("cert_file", "key_file"):
+            path = PurePosixPath(tls[field])
+            assert mounts[path.parent]["secret"]["secretName"] == serving_certificate["spec"]["secretName"]
     anthropic_connection = config["connections"]["anthropic-api"]
     assert anthropic_connection["base_url"] == "https://api.anthropic.com"
     assert anthropic_connection["auth"] == {

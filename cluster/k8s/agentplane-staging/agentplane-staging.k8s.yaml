@@ -3108,11 +3108,17 @@ data:
     {
       "history_tls": {
         "ca_file": "/run/agentplane/workload-trust/ca-certificates.crt",
-        "server_uri": "spiffe://agentplane/history-ingress"
+        "server_uri": "spiffe://agentplane/history-ingress",
+        "cert_file": "/run/agentplane/workload-tls/tls.crt",
+        "key_file": "/run/agentplane/workload-tls/tls.key",
+        "client_uri": "spiffe://agentplane/central-sampler"
       },
       "gateway_tls": {
         "ca_file": "/run/agentplane/workload-trust/ca-certificates.crt",
-        "server_uri": "spiffe://agentplane/session-dispatcher"
+        "server_uri": "spiffe://agentplane/session-dispatcher",
+        "cert_file": "/run/agentplane/workload-tls/tls.crt",
+        "key_file": "/run/agentplane/workload-tls/tls.key",
+        "client_uri": "spiffe://agentplane/central-sampler"
       },
       "actions": {
         "target": "actions.agentplane-staging.svc.cluster.local:8080",
@@ -3480,9 +3486,7 @@ data:
       "executor_codex": "codex",
       "logs": "/var/log/central-sampler",
       "history_target": "history-service.agentplane-staging.svc.cluster.local:8080",
-      "history_token_file": "/var/run/secrets/central-sampler/history",
       "gateway_target": "runner-gateway.{namespace}.svc:8080",
-      "gateway_token_file": "/var/run/secrets/central-sampler/gateway",
       "direct_executor_insecure_localtest": false,
       "max_live_sessions": 32,
       "rpc_timeout_seconds": 30,
