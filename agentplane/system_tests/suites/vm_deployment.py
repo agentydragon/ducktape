@@ -1,14 +1,9 @@
 """Build the vm suite's deployment from explicit cdk8s additions."""
 
-from dataclasses import asdict
-
-from agentplane.system_tests.deployment import fixture_chart, fixture_database
-from agentplane.system_tests.deployment.fixture_finalization import finalize_fixture
+from agentplane.system_tests.deployment import fixture_chart, suite_deployment
 from agentplane.system_tests.deployment.render_fixture import write_output
 from agentplane.system_tests.deployment.rendered_fixture import (
     MODEL_PLACEHOLDERS,
-    OPERATOR_TOKEN_KEY_PLACEHOLDER,
-    PLACEHOLDERS,
     Backend,
     RenderedFixture,
     SandboxRuntime,
@@ -16,47 +11,13 @@ from agentplane.system_tests.deployment.rendered_fixture import (
 
 
 def render() -> RenderedFixture:
-    models = MODEL_PLACEHOLDERS[Backend.LOCAL_MODEL]
-    routes = fixture_chart.LOCAL_MODEL_ROUTES
-    operator_oidc = fixture_chart.operator_oidc()
-    app_props = fixture_chart.app_props(
-        routes=routes,
-        operator_oidc=operator_oidc,
-        operator_token_key=OPERATOR_TOKEN_KEY_PLACEHOLDER,
-        app_origin=fixture_chart.APP_ORIGIN,
+    deployment = suite_deployment.begin_suite(
+        runtime=SandboxRuntime.KUBEVIRT, backend=Backend.LOCAL_MODEL, include_mcp_edge=False
     )
-    actions_props = fixture_chart.actions_props(
-        operator_oidc=operator_oidc, oauth_secret_items=("client-secret",), central_sampler_session_delegation=False
-    )
-    env = fixture_chart.environment(
-        runtime=SandboxRuntime.KUBEVIRT,
-        platform_callers=fixture_chart.APP_CALLERS,
-        routes=routes,
-        app=app_props,
-        central_sampler=None,
-        actions=actions_props,
-        mcp_edge=fixture_chart.mcp_edge_props(operator_oidc=operator_oidc, oauth_secret_name=None),
-    )
-    chart = fixture_chart.new_chart(env)
-    fixture_database.add_database(
-        chart, namespace=env.namespace, databases=(*fixture_chart.BACKEND_DATABASES, fixture_database.Database.APP)
-    )
-    fixture_chart.add_fixture_pki(chart, env, **asdict(PLACEHOLDERS))
-    fixture_chart.add_backend_services(
-        chart,
-        env,
-        models=models,
-        platform_callers=fixture_chart.APP_CALLERS,
-        notification_callers=[fixture_chart.APP_SERVICE.pods],
-    )
-    app = fixture_chart.add_app(chart, env)
-    runner_template = fixture_chart.add_runner_templates(chart, env)
-    fixture_chart.add_vm_templates(chart, env, runner_template)
-    boxes = fixture_chart.add_command_templates(chart, env)
-    fixture_chart.add_svid_box_template(boxes, env)
-    fixture_chart.add_model_credentials(chart, env, models=models)
-    fixture_chart.add_policy_controller(chart, env)
-    return finalize_fixture(chart, env, models, app=app)
+    fixture_chart.add_vm_templates(deployment.chart, deployment.env, deployment.runner_template)
+    suite_deployment.add_common_postlude(deployment)
+    fixture_chart.add_policy_controller(deployment.chart, deployment.env)
+    return suite_deployment.render_suite(deployment)
 
 
 if __name__ == "__main__":
