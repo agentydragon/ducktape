@@ -7,15 +7,15 @@ in [the egress spec](../egress/SPEC.md).
 
 ## Where things live
 
-| Path                                    | Owns                                                      |
-| --------------------------------------- | --------------------------------------------------------- |
-| [`suites/`](suites/)                    | CI, manual and live test entrypoints                      |
-| [`scenarios/`](scenarios/)              | Behaviors and assertions against a deployment             |
-| [`driver/`](driver/)                    | Session, Sandbox, API, model and concurrency helpers      |
-| [`deployment/`](deployment/README.md)   | Fixture charts, workloads and stack lifecycle             |
-| [`k3s/`](k3s/README.md)                 | Retained test node, bootstrap, networking and suite macro |
-| [`firecracker/`](firecracker/README.md) | Firecracker lifecycle adapter and KVM acceptance          |
-| [`vm/`](vm/README.md)                   | VM runtime, storage, guest image and evidence             |
+| Path                                    | Owns                                                 |
+| --------------------------------------- | ---------------------------------------------------- |
+| [`suites/`](suites/)                    | CI, manual and live test entrypoints                 |
+| [`scenarios/`](scenarios/)              | Behaviors and assertions against a deployment        |
+| [`driver/`](driver/)                    | Session, Sandbox, API, model and concurrency helpers |
+| [`deployment/`](deployment/README.md)   | Fixture charts, workloads and stack lifecycle        |
+| [`k3s/`](k3s/README.md)                 | Retained test node, bootstrap and networking         |
+| [`firecracker/`](firecracker/README.md) | Firecracker lifecycle adapter and KVM acceptance     |
+| [`vm/`](vm/README.md)                   | VM runtime, storage, guest image and evidence        |
 
 Offline tests stay beside the helper they exercise. The deployment guide owns stack setup and
 artifacts; the VM guide owns guest details. The suite BUILD files and test modules are the source
@@ -23,7 +23,7 @@ of truth for exact case membership.
 
 ## Suite entrypoints
 
-Each `k3s_suite` target starts one fixture stack. Scenarios share it only when their resource
+Each k3s system-test target starts one fixture stack. Scenarios share it only when their resource
 changes are compatible. `test_dispatcher` owns a separate stack because it scales the Runner Gateway
 and deletes a controller Pod. The external MCP delegation acceptance owns another stack because it
 scales the app to zero after OAuth consent.

@@ -32,7 +32,7 @@ while a fresh kubelet waits for its image-GC minimum age. See the
 During imports, using half of a group's starting filesystem headroom triggers an intermediate
 sweep. Filesystem checks avoid a CRI round trip for each unchanged or small image import.
 
-Every `k3s_suite` retains live k3s and cert-manager/trust-manager in hosted BuildBuddy RBE snapshots. VM suites
+Each k3s system-test target explicitly retains live k3s and cert-manager/trust-manager in hosted BuildBuddy RBE snapshots. VM targets
 also retain KubeVirt and Kyverno. This is the default for Pod, Dispatcher, all MCP suites,
 normal/manual/profile VM suites and real-model tests; there are no separate persistence variants.
 The existing manual/live tags still determine which suites run in CI, and real-model tests require
