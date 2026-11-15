@@ -1,6 +1,8 @@
 //! Owned tree inputs shared by ordinary, graph and staged CLI workflows.
 
-use super::{CaseWorkspace, CommandResult, command_result, debundler_path, write_text_file};
+use super::{
+    CaseWorkspace, CommandResult, command_result, debundler_path, process, write_text_file,
+};
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -75,14 +77,15 @@ impl TreeWorkspace {
     pub fn run(self, extra_args: &[&str]) -> TreeRun {
         let out_root = self.root().join("out");
         let bin = debundler_path();
-        let output = Command::new(&bin)
-            .arg("run")
-            .args(tree_spec_args(self.root()))
-            .arg("--out-root")
-            .arg(&out_root)
-            .args(extra_args)
-            .output()
-            .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display()));
+        let output = process::debundle_output(
+            Command::new(&bin)
+                .arg("run")
+                .args(tree_spec_args(self.root()))
+                .arg("--out-root")
+                .arg(&out_root)
+                .args(extra_args),
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
         TreeRun {
             report_root: out_root.join("reports").join("tree"),
             out_root,

@@ -603,10 +603,8 @@ pub fn command(args: &[&str]) -> CommandResult {
 }
 
 pub fn command_with(binary: &Path, args: &[&str]) -> CommandResult {
-    let output = std::process::Command::new(binary)
-        .args(args)
-        .output()
-        .expect("spawn debundle tool");
+    let output = process::debundle_output(std::process::Command::new(binary).args(args))
+        .unwrap_or_else(|error| panic!("{error}"));
     CommandResult {
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
