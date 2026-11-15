@@ -460,7 +460,7 @@ def _code_mode_shell_stdout(output: ToolOutput) -> str:
     return "".join(output.blocks[1:])
 
 
-async def _wait_for_failed_gateway_resume(
+async def _wait_for_failed_proxy_resume(
     deployed: CentralStack, session_id: str, after_cursor: int, read_call_id: str
 ) -> int:
     """A failed resume in retained History proves its preceding event prefix is complete."""
@@ -495,7 +495,7 @@ async def _wait_for_failed_gateway_resume(
                     and payload.get("transport_error")
                 ):
                     assert read_cell_result is None, (
-                        "the model-facing process read returned before the verified failed Gateway resume: "
+                        "the model-facing process read returned before the verified failed Runtime proxy resume: "
                         + json.dumps(read_cell_result)
                     )
                     return entry.cursor
@@ -503,7 +503,7 @@ async def _wait_for_failed_gateway_resume(
 
 
 async def _wait_for_active_history_through(deployed: CentralStack, session_id: str, cursor: int) -> int:
-    """Require user-facing History to project the failed resume before Gateway returns."""
+    """Require user-facing History to project the failed resume before the Runtime proxy returns."""
     async with asyncio.timeout(10):
         while True:
             try:
@@ -550,15 +550,17 @@ async def _wait_for_cell_result_in_history(
 
 
 @asynccontextmanager
-async def _stopped_gateway_process(
+async def _stopped_runtime_proxy_process(
     cluster: Cluster, pod: dict[str, object], crictl_command: tuple[str, ...]
 ) -> AsyncIterator[None]:
-    """Stop the exact Gateway until its Pod is terminating, then kill it without Lease release."""
+    """Stop the exact Runtime proxy until its Pod is terminating, then kill it without graceful cleanup."""
     metadata = pod["metadata"]
     assert isinstance(metadata, dict)
     current = json.loads(await cluster.kubectl("get", "pod", metadata["name"], "-o", "json"))
     assert current["metadata"]["uid"] == metadata["uid"], current["metadata"]
-    (container,) = [status for status in current["status"]["containerStatuses"] if status["name"] == "runner-gateway"]
+    (container,) = [
+        status for status in current["status"]["containerStatuses"] if status["name"] == "sandbox-controller"
+    ]
     container_id = container["containerID"].removeprefix("containerd://")
     assert container_id, container
     assert container_id != container["containerID"], container
@@ -589,9 +591,9 @@ async def _stopped_gateway_process(
     matching = [line.split() for line in stdout.decode().splitlines()[1:] if line.split()[:1] == [container_id]]
     assert matching == [[container_id, str(pid), "RUNNING"]], matching
     executable = await asyncio.to_thread(Path(f"/proc/{pid}/exe").readlink)
-    assert executable.name == "runner-gateway", executable
+    assert executable.name == "sandbox-controller", executable
 
-    async def signal_gateway(name: str) -> None:
+    async def signal_proxy(name: str) -> None:
         process = await asyncio.create_subprocess_exec(
             *ctr_command,
             "tasks",
@@ -622,9 +624,9 @@ async def _stopped_gateway_process(
             "container_id": container_id,
             "pid": pid,
         }
-        output = undeclared_outputs_dir() / "gateway-crash-process.json"
+        output = undeclared_outputs_dir() / "runtime-proxy-crash-process.json"
         try:
-            await signal_gateway("SIGSTOP")
+            await signal_proxy("SIGSTOP")
             async with asyncio.timeout(5):
                 while True:
                     status = await asyncio.to_thread(read_status)
@@ -648,10 +650,10 @@ async def _stopped_gateway_process(
             output.write_text(json.dumps(diagnostic, indent=2) + "\n")
         finally:
             # This must run even if scaling, the deletion wait or diagnostics fail.
-            await signal_gateway("SIGKILL")
+            await signal_proxy("SIGKILL")
 
 
-async def _roll_gateway_for_central_session(
+async def _roll_runtime_proxy_for_central_session(
     cluster: Cluster,
     deployed: CentralStack,
     *,
@@ -664,9 +666,9 @@ async def _roll_gateway_for_central_session(
 ) -> tuple[
     CentralStack, float, str, str, tuple[str, str, str] | None, tuple[ModelRequest[ResponsesRequest], str, str] | None
 ]:
-    """Replace only the disposable k3s Gateway, proving an actual service outage."""
+    """Replace only the disposable k3s Runtime proxy, proving an actual service outage."""
     old_pods = json.loads(
-        await cluster.kubectl("get", "pods", "-l", "app.kubernetes.io/name=runner-gateway", "-o", "json")
+        await cluster.kubectl("get", "pods", "-l", "app.kubernetes.io/name=sandbox-controller", "-o", "json")
     )["items"]
     (old_pod,) = [pod for pod in old_pods if not pod["metadata"].get("deletionTimestamp")]
     old_uid = old_pod["metadata"]["uid"]
@@ -677,10 +679,12 @@ async def _roll_gateway_for_central_session(
     try:
         if abrupt:
             assert crictl_command is not None
-            (undeclared_outputs_dir() / "gateway-crash-before.json").write_text(json.dumps(old_pod, indent=2) + "\n")
+            (undeclared_outputs_dir() / "runtime-proxy-crash-before.json").write_text(
+                json.dumps(old_pod, indent=2) + "\n"
+            )
             # SIGSTOP prevents cleanup while deletion removes this Pod from kubelet's desired set.
-            async with _stopped_gateway_process(cluster, old_pod, crictl_command):
-                await cluster.kubectl("scale", "deployment/runner-gateway", "--replicas=0")
+            async with _stopped_runtime_proxy_process(cluster, old_pod, crictl_command):
+                await cluster.kubectl("scale", "deployment/sandbox-controller", "--replicas=0")
                 await cluster.kubectl(
                     "wait",
                     f"pod/{old_pod['metadata']['name']}",
@@ -690,34 +694,34 @@ async def _roll_gateway_for_central_session(
                 terminating_pod = json.loads(
                     await cluster.kubectl("get", "pod", old_pod["metadata"]["name"], "-o", "json")
                 )
-                (undeclared_outputs_dir() / "gateway-crash-terminating.json").write_text(
+                (undeclared_outputs_dir() / "runtime-proxy-crash-terminating.json").write_text(
                     json.dumps(terminating_pod, indent=2) + "\n"
                 )
         else:
-            await cluster.kubectl("scale", "deployment/runner-gateway", "--replicas=0")
+            await cluster.kubectl("scale", "deployment/sandbox-controller", "--replicas=0")
         await cluster.kubectl("wait", f"pod/{old_pod['metadata']['name']}", "--for=delete", "--timeout=45s")
-        gateway_slices = json.loads(
+        proxy_slices = json.loads(
             await cluster.kubectl(
-                "get", "endpointslices", "-l", "kubernetes.io/service-name=runner-gateway", "-o", "json"
+                "get", "endpointslices", "-l", "kubernetes.io/service-name=sandbox-controller", "-o", "json"
             )
         )["items"]
         assert not any(
             endpoint.get("conditions", {}).get("ready", True)
-            for item in gateway_slices
+            for item in proxy_slices
             for endpoint in item.get("endpoints") or []
-        ), "Gateway Service retained a ready endpoint after its only Pod was deleted"
+        ), "Runtime proxy Service retained a ready endpoint after its only Pod was deleted"
         unavailable_started = asyncio.get_running_loop().time()
         if failed_resume_after is not None:
             session_id, _, read_call_id = failed_resume_after
-            failed_resume_cursor = await _wait_for_failed_gateway_resume(deployed, *failed_resume_after)
+            failed_resume_cursor = await _wait_for_failed_proxy_resume(deployed, *failed_resume_after)
             folded_through = await _wait_for_active_history_through(deployed, session_id, failed_resume_cursor)
-            (undeclared_outputs_dir() / f"central-sampler-gateway-outage-{read_call_id}.json").write_text(
+            (undeclared_outputs_dir() / f"central-sampler-proxy-outage-{read_call_id}.json").write_text(
                 json.dumps(
                     {
                         "session_id": session_id,
                         "failed_resume_cursor": failed_resume_cursor,
-                        "history_folded_through_while_gateway_down": folded_through,
-                        "gateway_ready_endpoints": 0,
+                        "history_folded_through_while_proxy_down": folded_through,
+                        "proxy_ready_endpoints": 0,
                     },
                     indent=2,
                 )
@@ -741,10 +745,10 @@ async def _roll_gateway_for_central_session(
         if hold_down_seconds:
             await asyncio.sleep(hold_down_seconds)
     finally:
-        await cluster.kubectl("scale", "deployment/runner-gateway", "--replicas=1")
-        await cluster.kubectl("rollout", "status", "deployment/runner-gateway", "--timeout=120s")
+        await cluster.kubectl("scale", "deployment/sandbox-controller", "--replicas=1")
+        await cluster.kubectl("rollout", "status", "deployment/sandbox-controller", "--timeout=120s")
     new_pods = json.loads(
-        await cluster.kubectl("get", "pods", "-l", "app.kubernetes.io/name=runner-gateway", "-o", "json")
+        await cluster.kubectl("get", "pods", "-l", "app.kubernetes.io/name=sandbox-controller", "-o", "json")
     )["items"]
     (new_pod,) = [pod for pod in new_pods if not pod["metadata"].get("deletionTimestamp")]
     new_uid = new_pod["metadata"]["uid"]
@@ -753,7 +757,7 @@ async def _roll_gateway_for_central_session(
         while True:
             slices = json.loads(
                 await cluster.kubectl(
-                    "get", "endpointslices", "-l", "kubernetes.io/service-name=runner-gateway", "-o", "json"
+                    "get", "endpointslices", "-l", "kubernetes.io/service-name=sandbox-controller", "-o", "json"
                 )
             )["items"]
             if any(
@@ -915,7 +919,7 @@ async def gateway_roll_keeps_live_central_read_and_turn(
             new_gateway_uid,
             killed_native,
             read_failure,
-        ) = await _roll_gateway_for_central_session(
+        ) = await _roll_runtime_proxy_for_central_session(
             cluster, deployed, failed_resume_after=(session_id, cursor, "read-live-process")
         )
         assert killed_native is None
@@ -1189,7 +1193,7 @@ async def gateway_crash_settles_live_central_read_and_accepts_next_input(
                 ).events
             )
         await _wait_for_executor_dispatch_after(deployed, session_id, cursor, process_id, "read-crash-process")
-        recovered, _, _, _, killed_native, read_failure = await _roll_gateway_for_central_session(
+        recovered, _, _, _, killed_native, read_failure = await _roll_runtime_proxy_for_central_session(
             cluster,
             deployed,
             failed_resume_after=(session_id, cursor, "read-crash-process"),
@@ -1308,7 +1312,7 @@ async def gateway_retry_exhaustion_reports_unknown_and_accepts_next_input(
                 ).events
             )
         await _wait_for_executor_dispatch_after(deployed, session_id, cursor, process_id, "read-budget-process")
-        recovered, _, _, _, killed_native, read_failure = await _roll_gateway_for_central_session(
+        recovered, _, _, _, killed_native, read_failure = await _roll_runtime_proxy_for_central_session(
             cluster,
             deployed,
             failed_resume_after=(session_id, cursor, "read-budget-process"),
@@ -1458,7 +1462,7 @@ async def gateway_outage_restarts_exec_server_then_notifies_model(
             new_gateway_uid,
             killed_native,
             read_failure,
-        ) = await _roll_gateway_for_central_session(
+        ) = await _roll_runtime_proxy_for_central_session(
             cluster,
             deployed,
             failed_resume_after=(session_id, cursor, "read-expiring-process"),

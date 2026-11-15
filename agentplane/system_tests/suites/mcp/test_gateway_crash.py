@@ -1,4 +1,4 @@
-"""Abrupt Gateway loss with an in-flight central-sampler executor read."""
+"""Abrupt Runtime proxy loss with an in-flight central-sampler executor read."""
 
 from pathlib import Path
 
