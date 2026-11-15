@@ -89,6 +89,7 @@ type UserMessageConfirmation struct {
 type AdapterJournal interface {
 	ObservedItems(context.Context, string) (map[string]ObservedItem, error)
 	RecoveryTurns(context.Context) ([]string, error)
+	HasTurn(context.Context, string) (bool, error)
 	TurnEvents(context.Context, string) ([]*eventlogpb.EventEntry, error)
 	PendingCommandRecords(context.Context) ([]CommandRecord, error)
 	PendingNativeRequests(context.Context) ([]NativeRequest, error)

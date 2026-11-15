@@ -34,6 +34,18 @@ func (j *Journal) ObservedItems(context.Context, string) (map[string]harness.Obs
 
 func (j *Journal) RecoveryTurns(context.Context) ([]string, error) { return nil, nil }
 
+func (j *Journal) HasTurn(_ context.Context, turnID string) (bool, error) {
+	if j.TurnEventsError != nil && !errors.Is(j.TurnEventsError, harness.ErrUnknownRecoveryTurn) {
+		return false, j.TurnEventsError
+	}
+	for _, entry := range j.Events {
+		if entry.GetEvent().GetTurnStarted().GetTurnId() == turnID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (j *Journal) TurnEvents(context.Context, string) ([]*eventlogpb.EventEntry, error) {
 	return j.Events, j.TurnEventsError
 }

@@ -441,10 +441,7 @@ func (a *codexAdapter) OnFrame(ctx context.Context, raw json.RawMessage, sourceS
 		if err := json.Unmarshal(frame.Params, &params); err != nil {
 			return err
 		}
-		turnID := params.Turn.ID
-		if turnID != a.host.Session().ActiveTurnID {
-			return a.emit(ctx, &eventpb.Event_TurnStarted{TurnStarted: &eventpb.TurnStarted{TurnId: turnID, Model: a.host.Session().Model}}, sources)
-		}
+		return a.startTurn(ctx, params.Turn.ID, a.host.Session().Model, sources)
 	case "turn/completed":
 		var params protocol.TurnCompletedNotification
 		if err := json.Unmarshal(frame.Params, &params); err != nil {
@@ -550,30 +547,30 @@ func (a *codexAdapter) applyTurnStartResponse(ctx context.Context, frame jsonrpc
 	if result.Turn.ID == "" {
 		return errors.New("Codex turn/start returned no turn id")
 	}
-	started := false
-	turnEvents, err := a.host.Journal().TurnEvents(ctx, result.Turn.ID)
-	if err != nil && !errors.Is(err, harness.ErrUnknownRecoveryTurn) {
+	model := a.host.Session().Model
+	// Session snapshots expose committed configuration; this response may still be in its native batch.
+	if start.modelChange != nil {
+		model = start.modelChange.value
+	}
+	if err := a.startTurn(ctx, result.Turn.ID, model, sources); err != nil {
 		return err
-	}
-	for _, entry := range turnEvents {
-		if entry.GetEvent().GetTurnStarted() != nil {
-			started = true
-			break
-		}
-	}
-	if !started && result.Turn.ID != a.host.Session().ActiveTurnID {
-		model := a.host.Session().Model
-		// Session snapshots expose committed configuration; this response may still be in its native batch.
-		if start.modelChange != nil {
-			model = start.modelChange.value
-		}
-		if err := a.emit(ctx, &eventpb.Event_TurnStarted{TurnStarted: &eventpb.TurnStarted{TurnId: result.Turn.ID, Model: model}}, sources); err != nil {
-			return err
-		}
 	}
 	return a.host.ConfirmUserMessage(ctx, harness.UserMessageConfirmation{
 		HarnessMessageID: result.Turn.ID, Text: start.text, OriginCommandIDs: []string{start.commandID}, TurnID: result.Turn.ID,
 	}, sources)
+}
+
+func (a *codexAdapter) startTurn(ctx context.Context, turnID, model string, sources []uint64) error {
+	if turnID == a.host.Session().ActiveTurnID {
+		return nil
+	}
+	// A notification can follow its reply after a newer turn has become active.
+	// The durable boundary also survives adapter and app-server replacement.
+	started, err := a.host.Journal().HasTurn(ctx, turnID)
+	if err != nil || started {
+		return err
+	}
+	return a.emit(ctx, &eventpb.Event_TurnStarted{TurnStarted: &eventpb.TurnStarted{TurnId: turnID, Model: model}}, sources)
 }
 
 func (a *codexAdapter) projectItemStarted(ctx context.Context, raw json.RawMessage, sources []uint64) error {
