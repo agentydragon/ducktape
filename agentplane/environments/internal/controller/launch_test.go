@@ -59,7 +59,7 @@ func TestRuntimeContainerMountsTheSandboxsLaunchFile(t *testing.T) {
 		mounted = mounted || mount.MountPath == LaunchMountPath && mount.ReadOnly
 	}
 	if !mounted {
-		t.Errorf("runner container mounts = %v, want the launch ConfigMap at %s", pod.Spec.Containers[0].VolumeMounts, LaunchMountPath)
+		t.Errorf("Environment Runtime container mounts = %v, want the launch ConfigMap at %s", pod.Spec.Containers[0].VolumeMounts, LaunchMountPath)
 	}
 	var found bool
 	for _, volume := range pod.Spec.Volumes {

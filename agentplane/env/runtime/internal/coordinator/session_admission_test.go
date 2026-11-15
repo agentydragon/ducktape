@@ -766,7 +766,7 @@ func assertStillClosing(t *testing.T, closed <-chan error, stage string) {
 	t.Helper()
 	select {
 	case err := <-closed:
-		t.Fatalf("runner close returned before %s completed: %v", stage, err)
+		t.Fatalf("Environment Runtime close returned before %s completed: %v", stage, err)
 	case <-time.After(100 * time.Millisecond):
 	}
 }

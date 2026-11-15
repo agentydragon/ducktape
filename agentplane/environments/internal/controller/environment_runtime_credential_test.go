@@ -144,11 +144,11 @@ func TestPodEnvironmentRuntimeTLSVolumeUsesCredentialSpecificSecret(t *testing.T
 		InitContainers: []corev1.Container{{Name: EnvironmentRuntimeEgressSidecar}},
 	}
 	if blocked := withEnvironmentRuntimeTLS(template, &podSpec, runtimeCredentialTestSecret); blocked != nil {
-		t.Fatalf("runner TLS projection: %v", blocked)
+		t.Fatalf("Environment Runtime TLS projection: %v", blocked)
 	}
 	volume := podSpec.Volumes[0]
 	if volume.Name != EnvironmentRuntimeTLSVolumeName || volume.Projected == nil || volume.Projected.DefaultMode == nil || *volume.Projected.DefaultMode != 0440 {
-		t.Fatalf("runner TLS volume permissions/source = %#v", volume)
+		t.Fatalf("Environment Runtime TLS volume permissions/source = %#v", volume)
 	}
 	if got := volume.Projected.Sources[0].Secret.Name; got != runtimeCredentialTestSecret {
 		t.Fatalf("Pod mounts Secret %q, want the issued credential's %q", got, runtimeCredentialTestSecret)
@@ -164,13 +164,13 @@ func TestPodEnvironmentRuntimeTLSVolumeUsesCredentialSpecificSecret(t *testing.T
 		t.Fatalf("workload trust projection = %#v, want %s as %s", got, EnvironmentRuntimeWorkloadTrustBundleName, EnvironmentRuntimeWorkloadTrustFile)
 	}
 	if len(podSpec.Containers[0].VolumeMounts) != 1 || podSpec.Containers[0].VolumeMounts[0].Name != volume.Name {
-		t.Fatalf("runtime did not receive exactly the runner TLS mount: %#v", podSpec.Containers[0].VolumeMounts)
+		t.Fatalf("runtime did not receive exactly the Environment Runtime TLS mount: %#v", podSpec.Containers[0].VolumeMounts)
 	}
 	if len(podSpec.InitContainers[0].VolumeMounts) != 1 || podSpec.InitContainers[0].VolumeMounts[0].Name != volume.Name {
-		t.Fatalf("egress sidecar did not receive exactly the runner TLS mount: %#v", podSpec.InitContainers[0].VolumeMounts)
+		t.Fatalf("egress sidecar did not receive exactly the Environment Runtime TLS mount: %#v", podSpec.InitContainers[0].VolumeMounts)
 	}
 	if len(podSpec.Containers[1].VolumeMounts) != 0 {
-		t.Fatalf("workload received the runner TLS volume: %#v", podSpec.Containers[1].VolumeMounts)
+		t.Fatalf("workload received the Environment Runtime TLS volume: %#v", podSpec.Containers[1].VolumeMounts)
 	}
 }
 
@@ -222,7 +222,7 @@ func TestPodEnvironmentRuntimeTLSRejectsOtherContainersClaimingReservedMount(t *
 			}
 			blocked := withEnvironmentRuntimeTLS(template, &podSpec, runtimeCredentialTestSecret)
 			if blocked == nil || blocked.reason != "TemplateInvalid" {
-				t.Fatalf("reserved runner TLS mount was accepted: %v", blocked)
+				t.Fatalf("reserved Environment Runtime TLS mount was accepted: %v", blocked)
 			}
 			if len(podSpec.Volumes) != 0 || len(podSpec.Containers[0].VolumeMounts) != 0 {
 				t.Fatalf("rejected template was mutated before validation: volumes=%v runtime mounts=%v", podSpec.Volumes, podSpec.Containers[0].VolumeMounts)
@@ -519,7 +519,7 @@ func TestStatusBindingIgnoresRunnerCredentialAnnotations(t *testing.T) {
 	}
 	w, pending, err := r.ensureRuntimeCredential(ctx, current, workload{pod: pod}, true)
 	if err != nil || pending != nil || !w.runtimeCredentialAccepted {
-		t.Fatalf("annotations unbound the runner credential: pending=%v err=%v", pending, err)
+		t.Fatalf("annotations unbound the Environment Runtime credential: pending=%v err=%v", pending, err)
 	}
 	if got := getRuntimeCredential(t, c, sandbox); got != *current.Status.RunnerCredential {
 		t.Fatalf("status binding changed to %#v", got)

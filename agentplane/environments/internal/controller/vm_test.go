@@ -235,7 +235,7 @@ func TestVMTemplateGetsARunningVMWithStateOverVirtiofs(t *testing.T) {
 		}
 	}
 	if len(filesystems) != 4 || !filesystemNames[contract.State.VolumeName] || !filesystemNames[contract.EnvironmentRuntimeTLS.VolumeName] || !filesystemNames[contract.EnvironmentRuntimeTrust.VolumeName] || !filesystemNames[contract.EnvironmentRuntimeWorkloadTrust.VolumeName] {
-		t.Errorf("VM filesystems = %v, want state and runner TLS/trust/workload trust volumes over virtiofs", filesystems)
+		t.Errorf("VM filesystems = %v, want state and Environment Runtime TLS/trust/workload trust volumes over virtiofs", filesystems)
 	}
 	if trust := volume(vm, contract.EnvironmentRuntimeTrust.VolumeName); trust == nil || trust.ConfigMap == nil || trust.ConfigMap.Name != EnvironmentRuntimeTrustBundleName {
 		t.Errorf("VM trust volume = %v, want the cluster bundle", trust)
@@ -313,12 +313,12 @@ func TestVMSandboxIsReadyWhenItsLauncherPodIsReady(t *testing.T) {
 		t.Errorf("WorkloadReady = %s/%s with a Ready launcher, want True", got.Status, got.Reason)
 	}
 	if got := getReadyCondition(t, c); got.Status != metav1.ConditionFalse || got.Reason != "NeverConnected" {
-		t.Errorf("Ready = %s/%s with a guest runner that never reached the gateway, want False/NeverConnected", got.Status, got.Reason)
+		t.Errorf("Ready = %s/%s with a guest Environment Runtime that never reached the Gateway, want False/NeverConnected", got.Status, got.Reason)
 	}
 	connect(t, r, string(launcher.UID))
 	reconcileOnce(t, r)
 	if got := getReadyCondition(t, c); got.Status != metav1.ConditionTrue {
-		t.Errorf("Ready = %s/%s with a connected guest runner, want True", got.Status, got.Reason)
+		t.Errorf("Ready = %s/%s with a connected guest Environment Runtime, want True", got.Status, got.Reason)
 	}
 }
 
@@ -398,9 +398,9 @@ func TestVMDeletionWaitsForTheVMIBeforeTheStateVolume(t *testing.T) {
 	r, c := newReconciler(t, true, testVMTemplate("test-guest:v1"))
 	reconcileOnce(t, r)
 	vmi, launcher := startVMI(t, c, kubevirtv1.Running)
-	reconcileOnce(t, r) // Accept the VMI and publish its launcher as the runner incarnation.
+	reconcileOnce(t, r) // Accept the VMI and publish its launcher as the Environment Runtime incarnation.
 	connect(t, r, string(launcher.UID))
-	r.Quiescer.(*fakeQuiescer).err = errors.New("runner unreachable")
+	r.Quiescer.(*fakeQuiescer).err = errors.New("Environment Runtime unreachable")
 	deleteSandbox(t, c)
 	reconcileOnce(t, r)
 	if getVM(t, c) == nil {

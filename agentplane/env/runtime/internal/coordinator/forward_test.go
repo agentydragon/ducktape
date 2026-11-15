@@ -196,7 +196,7 @@ func TestRuntimeRejectsControlCertificateForAnotherSandbox(t *testing.T) {
 		},
 	}
 	if _, err := New(config); err == nil {
-		t.Fatal("Runner accepted a control certificate for another Sandbox")
+		t.Fatal("Environment Runtime accepted a control certificate for another Sandbox")
 	}
 }
 

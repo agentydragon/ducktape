@@ -151,7 +151,7 @@ func TestWorkspaceChangeRefusesResumeAndRetainsClaimAndHaltedVM(t *testing.T) {
 func TestWorkspaceRestartRecoversCreationRecordAfterFailedStatusWrite(t *testing.T) {
 	template := workspaceTemplate("vm", sandboxapi.RawDiskImage)
 	r, c := newReconciler(t, true, template)
-	// This reconcile requests the runner credential and waits for it. Install the injected failure
+	// This reconcile requests the Environment Runtime credential and waits for it. Install the injected failure
 	// only once the issued credential lets the next reconcile reach workspace binding.
 	if _, err := r.Reconcile(context.Background(), request); err != nil {
 		t.Fatal(err)

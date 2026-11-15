@@ -153,7 +153,7 @@ func (r *Reconciler) ensurePodRuntimeCredential(ctx context.Context, sandbox *sa
 		// A legacy Environment Runtime can stay published only while it is the exact incarnation already
 		// recorded in status. A replacement without a credential must never inherit that route.
 		w.runtimeIncarnationPublished = previouslyPublishedRuntimeIncarnation(sandbox, w)
-		return w, &unready{reason: "RunnerCredentialMissing", message: fmt.Sprintf("Pod %s has no controller-issued runner credential", pod.Name)}, nil
+		return w, &unready{reason: "RunnerCredentialMissing", message: fmt.Sprintf("Pod %s has no controller-issued Environment Runtime credential", pod.Name)}, nil
 	}
 	if pod.UID == "" {
 		return w, credentialPending("RunnerCredentialPending", fmt.Sprintf("Pod %s has no assigned UID yet", pod.Name)), nil
@@ -244,10 +244,10 @@ func (r *Reconciler) ensureVMRuntimeCredential(ctx context.Context, sandbox *san
 		return w, nil, nil
 	}
 	if !validRuntimeCredentialID(id) {
-		// Let an incarnation from before runner credentials finish through the normal quiesce and
+		// Let an incarnation from before Environment Runtime credentials finish through the normal quiesce and
 		// stop path; the stopped path then installs one.
 		w.runtimeIncarnationPublished = previouslyPublishedRuntimeIncarnation(sandbox, w)
-		return w, &unready{reason: "RunnerCredentialRequired", message: "runner mTLS credentials are installed after the legacy VM stops"}, nil
+		return w, &unready{reason: "RunnerCredentialRequired", message: "Environment Runtime mTLS credentials are installed after the legacy VM stops"}, nil
 	}
 	vmi := w.vmi
 	if vmi == nil {
@@ -260,7 +260,7 @@ func (r *Reconciler) ensureVMRuntimeCredential(ctx context.Context, sandbox *san
 		if err := r.haltVM(ctx, vm); err != nil {
 			return w, nil, err
 		}
-		return w, &unready{reason: "RunnerCredentialMismatch", message: fmt.Sprintf("VMI %s does not carry the VM's active runner credential", vmi.Name)}, nil
+		return w, &unready{reason: "RunnerCredentialMismatch", message: fmt.Sprintf("VMI %s does not carry the VM's active Environment Runtime credential", vmi.Name)}, nil
 	}
 	if acceptedVMI != "" && acceptedVMI != string(vmi.UID) {
 		// KubeVirt recreated a VMI from the accepted one's template. Stop it and unbind the record,
@@ -354,7 +354,7 @@ func withEnvironmentRuntimeTLS(template *sandboxapi.SandboxTemplate, spec *corev
 	// without declaring the volume itself, so check every container before injection.
 	if slices.ContainsFunc(spec.Volumes, func(volume corev1.Volume) bool { return volume.Name == EnvironmentRuntimeTLSVolumeName }) ||
 		slices.ContainsFunc(spec.Containers, reservedMount) || slices.ContainsFunc(spec.InitContainers, reservedMount) {
-		return &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s defines the reserved runner TLS volume or mount", template.Name)}
+		return &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s defines the reserved Environment Runtime TLS volume or mount", template.Name)}
 	}
 	mode := int32(0440)
 	spec.Volumes = append(spec.Volumes, corev1.Volume{
@@ -400,7 +400,7 @@ func withEnvironmentRuntimeTLSDisk(template *sandboxapi.SandboxTemplate, instanc
 	}) || slices.ContainsFunc(instance.Domain.Devices.Filesystems, func(filesystem kubevirtv1.Filesystem) bool {
 		return slices.Contains(reserved, filesystem.Name)
 	}) {
-		return &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s defines the reserved runner TLS volume", template.Name)}
+		return &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s defines the reserved Environment Runtime TLS volume", template.Name)}
 	}
 	instance.Volumes = append(instance.Volumes, kubevirtv1.Volume{
 		Name: EnvironmentRuntimeTLSVolumeName,
