@@ -100,7 +100,10 @@ pub fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>> {
 /// Inverse of [`encode`]. The saved value's caller restores bindings with the
 /// corresponding [`ContextOrdinals`].
 pub fn decode<T: DeserializeOwned>(bytes: &[u8]) -> Result<T> {
-    let mut reader = zstd::Decoder::new(bytes).context("decompress analysis output")?;
+    // MessagePack reads individual markers and short fields. Buffer decoded
+    // bytes so each such read does not re-enter the decompressor.
+    let mut reader =
+        std::io::BufReader::new(zstd::Decoder::new(bytes).context("decompress analysis output")?);
     let value = {
         let mut deserializer = rmp_serde::Deserializer::new(&mut reader);
         T::deserialize(&mut deserializer)?
