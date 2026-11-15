@@ -59,7 +59,9 @@ cleanup. The storage case carries an explicit exclusivity marker and runs before
 so no runner pair is retained while it allocates guests. A case's timeout bounds its own coroutine,
 even while pytest is awaiting a different case.
 
-The Pod batch has two sequential workers, each owning one lazily created Sandbox. Claude and Codex
+The Pod batch has four sequential workers, each owning one lazily created Sandbox.
+For matched concurrency experiments, override the slot count with
+`--test_env=AGENTPLANE_POD_CASE_LIMIT=2` (or another positive count). Claude and Codex
 open separate Sessions on that same Sandbox. Protocol cases reuse their worker's Sandbox; a
 fresh-guest case deletes its worker's cache before creating its own guests. Current nonexclusive
 cases, including auxiliary impostor guests, need at most two Sandboxes per worker. Storage runs
