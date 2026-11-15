@@ -11476,9 +11476,17 @@ impl ExecutionIndex {
                 }
             }
         }
-        for mutation in Arc::make_mut(&mut self.native_prototype_mutations) {
-            if mutation.chunk_id.is_empty() {
-                mutation.source_location = locate(mutation.span);
+        // Program-wide mutations already carry their source locations. Keep
+        // that shared census intact when this chunk has nothing to locate.
+        if self
+            .native_prototype_mutations
+            .iter()
+            .any(|mutation| mutation.chunk_id.is_empty())
+        {
+            for mutation in Arc::make_mut(&mut self.native_prototype_mutations) {
+                if mutation.chunk_id.is_empty() {
+                    mutation.source_location = locate(mutation.span);
+                }
             }
         }
     }
