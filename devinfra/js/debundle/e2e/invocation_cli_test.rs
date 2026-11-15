@@ -578,12 +578,31 @@ fn flat_transform_ignores_tree_environment_defaults_in_replay() {
     command.env("DEBUNDLE_OUT", "inherited-output");
     let record = run_json(&mut command);
     let argv = record["argv"].as_array().unwrap();
-    assert!(
-        !argv
-            .iter()
-            .any(|value| value == "--tree-source-root" || value == "--out-root")
-    );
+    assert!(!argv.iter().any(|value| value == "--tree-source-root"
+        || value == "--out-root"
+        || value == "--projection-root"
+        || value == "--apply-projection"
+        || value == "--analysis"));
     assert_eq!(replay_printed(&record)["argv"], record["argv"]);
+}
+
+#[test]
+fn explicit_projection_root_requires_projection_input() {
+    let fixture = GraphFixture::new("const value = 1;", &[]);
+    let output = fixture
+        .process(&[
+            "run",
+            "--spec",
+            "not-read.yaml",
+            "--projection-root",
+            ".",
+            "--print-invocation",
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let error = String::from_utf8_lossy(&output.stderr);
+    assert!(error.contains("--apply-projection"), "{error}");
 }
 
 #[test]
