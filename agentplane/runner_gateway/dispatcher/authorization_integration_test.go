@@ -158,12 +158,11 @@ func authorityContext(t *testing.T, token string) context.Context {
 	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)
 }
 
-func authoritySVIDContext(t *testing.T, token string) context.Context {
+func authoritySVIDContext(t *testing.T) context.Context {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
 	t.Cleanup(cancel)
 	return metadata.NewOutgoingContext(ctx, metadata.Pairs(
-		"authorization", "Bearer "+token,
 		"x-agentplane-subject", "attacker/forged",
 	))
 }
@@ -280,7 +279,7 @@ func TestDispatcherServiceAccountSVIDDoesNotOwnSandboxIdentitySessions(t *testin
 	for name, leaf := range invalidLeaves {
 		t.Run(name+"_leaf_rejected_before_dispatcher_handler", func(t *testing.T) {
 			client := authoritySVIDClient(t, listener.Addr().String(), owner.URI, ca, leaf)
-			_, err := client.ListSessions(authoritySVIDContext(t, "owner-bearer"), &dispatcherpb.ListSessionsRequest{})
+			_, err := client.ListSessions(authoritySVIDContext(t), &dispatcherpb.ListSessionsRequest{})
 			if err == nil {
 				t.Fatal("invalid workload leaf reached a successful Dispatcher RPC")
 			}
@@ -291,6 +290,13 @@ func TestDispatcherServiceAccountSVIDDoesNotOwnSandboxIdentitySessions(t *testin
 	}
 
 	ownerClient := authoritySVIDClient(t, listener.Addr().String(), owner.URI, ca, validOwnerLeaf)
+	mixed := metadata.AppendToOutgoingContext(authoritySVIDContext(t), "authorization", "Bearer foreign-bearer")
+	if _, err := ownerClient.ListSessions(mixed, &dispatcherpb.ListSessionsRequest{}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("certificate plus bearer = %v, want Unauthenticated", err)
+	}
+	if calls := counted.listCalls.Load(); calls != 0 {
+		t.Fatalf("mixed credentials reached Dispatcher ListSessions handler %d times", calls)
+	}
 	sessionID := uuid.NewString()
 	request := &dispatcherpb.CreateSessionRequest{
 		SessionId: sessionID,
@@ -301,7 +307,7 @@ func TestDispatcherServiceAccountSVIDDoesNotOwnSandboxIdentitySessions(t *testin
 			},
 		}}},
 	}
-	if _, err := ownerClient.CreateSession(authoritySVIDContext(t, "foreign-bearer"), request); status.Code(err) != codes.PermissionDenied {
+	if _, err := ownerClient.CreateSession(authoritySVIDContext(t), request); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("ServiceAccount SVID created a Session: %v, want PermissionDenied", err)
 	}
 	identity := &identitypb.Identity{Name: "svid-session-owner", Uid: "00000000-0000-4000-8000-00000000a002"}
@@ -311,12 +317,12 @@ func TestDispatcherServiceAccountSVIDDoesNotOwnSandboxIdentitySessions(t *testin
 		SessionExecution{Identity: identity}, IdentityCaller{Identity: identity, Proof: IdentitySVID{}}); err != nil {
 		t.Fatalf("seed Identity-owned Session: %v", err)
 	}
-	if _, err := ownerClient.GetSession(authoritySVIDContext(t, "foreign-bearer"), &dispatcherpb.GetSessionRequest{SessionId: sessionID}); status.Code(err) != codes.NotFound {
+	if _, err := ownerClient.GetSession(authoritySVIDContext(t), &dispatcherpb.GetSessionRequest{SessionId: sessionID}); status.Code(err) != codes.NotFound {
 		t.Fatalf("ServiceAccount SVID read an Identity-owned Session: %v, want NotFound", err)
 	}
 
 	foreignClient := authoritySVIDClient(t, listener.Addr().String(), foreign.URI, ca, ca.Issue(t, foreign.URI))
-	if _, err := foreignClient.GetSession(authoritySVIDContext(t, "owner-bearer"), &dispatcherpb.GetSessionRequest{SessionId: sessionID}); status.Code(err) != codes.NotFound {
+	if _, err := foreignClient.GetSession(authoritySVIDContext(t), &dispatcherpb.GetSessionRequest{SessionId: sessionID}); status.Code(err) != codes.NotFound {
 		t.Fatalf("foreign ServiceAccount SVID read an Identity-owned Session: %v, want NotFound", err)
 	}
 }
@@ -375,7 +381,7 @@ func TestDispatcherIdentitySVIDDoesNotInheritSameNamedAccountAuthority(t *testin
 	for name, leaf := range invalidLeaves {
 		t.Run(name+"_leaf_rejected_before_dispatcher_handler", func(t *testing.T) {
 			client := authoritySVIDClient(t, listener.Addr().String(), owner.URI, ca, leaf)
-			_, err := client.ListSessions(authoritySVIDContext(t, "owner-bearer"), &dispatcherpb.ListSessionsRequest{})
+			_, err := client.ListSessions(authoritySVIDContext(t), &dispatcherpb.ListSessionsRequest{})
 			if err == nil {
 				t.Fatal("invalid workload leaf reached a successful Dispatcher RPC")
 			}
@@ -386,8 +392,15 @@ func TestDispatcherIdentitySVIDDoesNotInheritSameNamedAccountAuthority(t *testin
 	}
 
 	ownerClient := authoritySVIDClient(t, listener.Addr().String(), owner.URI, ca, validOwnerLeaf)
+	mixed := metadata.AppendToOutgoingContext(authoritySVIDContext(t), "authorization", "Bearer foreign-bearer")
+	if _, err := ownerClient.ListSessions(mixed, &dispatcherpb.ListSessionsRequest{}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("certificate plus bearer = %v, want Unauthenticated", err)
+	}
+	if calls := counted.listCalls.Load(); calls != 0 {
+		t.Fatalf("mixed credentials reached Dispatcher ListSessions handler %d times", calls)
+	}
 	sessionID := uuid.NewString()
-	_, err = ownerClient.CreateSession(authoritySVIDContext(t, "foreign-bearer"), &dispatcherpb.CreateSessionRequest{
+	_, err = ownerClient.CreateSession(authoritySVIDContext(t), &dispatcherpb.CreateSessionRequest{
 		SessionId: sessionID,
 		Spec: &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{
 			EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{
@@ -399,7 +412,7 @@ func TestDispatcherIdentitySVIDDoesNotInheritSameNamedAccountAuthority(t *testin
 	if status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("Identity SVID inherited its same-named ServiceAccount's CreateSession authority: %v", err)
 	}
-	listed, err := ownerClient.ListSessions(authoritySVIDContext(t, "foreign-bearer"), &dispatcherpb.ListSessionsRequest{})
+	listed, err := ownerClient.ListSessions(authoritySVIDContext(t), &dispatcherpb.ListSessionsRequest{})
 	if err != nil || len(listed.GetSessions()) != 0 {
 		t.Fatalf("Identity SVID listed a Session through its same-named ServiceAccount: %v, %v", listed, err)
 	}
@@ -408,8 +421,8 @@ func TestDispatcherIdentitySVIDDoesNotInheritSameNamedAccountAuthority(t *testin
 	}
 
 	foreignClient := authoritySVIDClient(t, listener.Addr().String(), foreign.URI, ca, ca.Issue(t, foreign.URI))
-	if _, err := foreignClient.GetSession(authoritySVIDContext(t, "owner-bearer"), &dispatcherpb.GetSessionRequest{SessionId: sessionID}); status.Code(err) != codes.NotFound {
-		t.Fatalf("foreign Sandbox SVID with owner bearer GetSession = %v, want NotFound", err)
+	if _, err := foreignClient.GetSession(authoritySVIDContext(t), &dispatcherpb.GetSessionRequest{SessionId: sessionID}); status.Code(err) != codes.NotFound {
+		t.Fatalf("foreign Sandbox SVID GetSession = %v, want NotFound", err)
 	}
 }
 
