@@ -258,8 +258,8 @@ audit candidates, not a removal decision. Schema: <spec/spec.rs>.
   `set_empty_private_field`.
 - **Native operation variants:** `native_operation_inputs`'s `symbol_for`,
   `set_from_set_spread`, `object_own_data_function_read`,
-  `symbol_well_known_class_keys`, `symbol_primitive_class_keys`,
-  `array_spread_from_primitive_arrays`, and `promise_resolve`.
+  `symbol_well_known_class_keys`, `symbol_primitive_class_keys`, and
+  `promise_resolve`.
 
 For each candidate, check consumers in both repositories, including public
 specs and generated configuration; compare existing e2e contracts with simpler

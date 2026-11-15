@@ -13286,7 +13286,6 @@ pub(crate) fn prepare_synchronous_call_index_with_source_facts(
         Some(flow),
         plain_array_bindings,
         local_class_construction,
-        &stable_array_spread_shapes,
     );
     // The census is now complete. Publish its binding and mutation premises
     // into one immutable context shared by timing, purity and heap consumers.

@@ -264,7 +264,6 @@ pub(super) fn derive_class(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::facts::StableArraySpreadShapes;
     use crate::facts::item_views::top_level_item_views;
     use swc_ecma_ast::{Decl, Expr, FnDecl, ModuleItem, Stmt};
     use swc_ecma_visit::{Visit, VisitWith};
@@ -298,7 +297,6 @@ mod tests {
         let views = top_level_item_views(&module.body);
         let prepared = super::super::execution_index::prepare_callable_capabilities(
             &views,
-            StableArraySpreadShapes::default(),
             BTreeSet::from(["make".into()]),
             Vec::new(),
             Vec::new(),
@@ -413,7 +411,6 @@ mod tests {
                 let views = top_level_item_views(&module.body);
                 let prepared = super::super::execution_index::prepare_callable_capabilities(
                     &views,
-                    StableArraySpreadShapes::default(),
                     BTreeSet::from(["make".into()]),
                     Vec::new(),
                     Vec::new(),
@@ -457,7 +454,6 @@ mod tests {
                 let views = top_level_item_views(&module.body);
                 let prepared = super::super::execution_index::prepare_callable_capabilities(
                     &views,
-                    StableArraySpreadShapes::default(),
                     BTreeSet::from(["make".into()]),
                     Vec::new(),
                     Vec::new(),

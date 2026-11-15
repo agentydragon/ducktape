@@ -185,9 +185,8 @@ The selector and parser-input digest identify the selected native initializer
 sites, while `AnalysisAssumptions` retains their validated
 evidence separately from inferred native identity. Operations include direct
 `Symbol` and `Symbol.for` calls, exact Map, WeakMap, and Set constructions,
-static `Object` own-data function member reads, and primitive array spreads
-from preceding primitive-array declarators. For `Symbol`, the author asserts that its global
-data binding denotes the original operation through every synchronous
+and static `Object` own-data function member reads. For `Symbol`, the author
+asserts that its global data binding denotes the original operation through every synchronous
 initialization schedule admitted by emission. This is not a point observation
 or a whole-lifetime integrity claim; known in-source global `Symbol` changes
 anywhere in that region contradict it, and opaque receiver-write witnesses
@@ -232,9 +231,10 @@ because the chunk has allocated no tracked array yet. Completion certificates
 cannot discharge this observed obligation. The interpreter records dependencies
 and inference uses; heap collection remains the producer of exact-read input
 use evidence. Ordinary heap constraints can still require expanded ownership.
-For a primitive array spread, the premise covers only the Array iterator and
-iterator `next` identities at the selected initializer; the source shape, not
-the author, proves the declarator interval has no producer.
+For a local primitive array spread, the source shape proves fresh dense
+producer arrays and no intervening user code or producer exposure, while
+native-integrity inference establishes the Array iterator and iterator `next`
+identities at the selected initializer.
 Imported primitive arrays use a separate `imported_primitive_array_spread_inputs`
 contract. It selects one spread-only array initializer and direct imported
 identifier operands, resolves each provider export to its selected dense

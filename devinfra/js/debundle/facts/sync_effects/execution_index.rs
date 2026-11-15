@@ -7580,8 +7580,7 @@ impl ExecutionIndex {
 
     /// Each validated input asserts the slots its operation reads, at the
     /// exact site its consumer queries: the call for a callee identity, the
-    /// constructor for a Set, the member read for an own-data read and the
-    /// initializer for an array spread.
+    /// constructor for a Set and the member read for an own-data read.
     fn intrinsic_axioms(&self) -> BTreeMap<u32, IntrinsicIntact> {
         use IntrinsicSlot::{
             ArrayIteratorPrototype, Global, Prototype, SetIteratorPrototype, Static,
@@ -7676,11 +7675,6 @@ impl ExecutionIndex {
                     }
                     // A primitive own-data read supplies no original native identity.
                     NativeInputKind::Operation(Operation::SymbolPrimitiveClassKeys) => return None,
-                    // The spread of the co-located primitive-array interval.
-                    NativeInputKind::Operation(Operation::ArraySpreadFromPrimitiveArrays) => (
-                        input.initializer_span,
-                        vec![Prototype(Array), ArrayIteratorPrototype],
-                    ),
                     // The `Object.freeze` row at that call. A fresh plain-data
                     // literal argument also drops the call's opaque heap
                     // barrier; the returned value gains no value-flow origin.
@@ -8070,7 +8064,6 @@ impl ExecutionIndex {
         &mut self,
         selected: &[SelectedNativeOperationInput],
         resolved: &[ResolvedNativeOperationInput],
-        array_spreads: &StableArraySpreadShapes,
     ) {
         if selected.is_empty() && resolved.is_empty() {
             return;
@@ -8092,14 +8085,6 @@ impl ExecutionIndex {
         }
         for input in selected {
             let request = &input.evidence.spec_location;
-            if input.evidence.operation
-                == NativeInputKind::Operation(
-                    spec::NativeOperationKind::ArraySpreadFromPrimitiveArrays,
-                )
-            {
-                self.validate_selected_array_spread_input(input, array_spreads);
-                continue;
-            }
             if input.evidence.operation
                 == NativeInputKind::Operation(spec::NativeOperationKind::ObjectOwnDataFunctionRead)
             {
@@ -8454,14 +8439,6 @@ impl ExecutionIndex {
 
         for input in resolved {
             let request = &input.evidence.spec_location;
-            if input.evidence.operation
-                == NativeInputKind::Operation(
-                    spec::NativeOperationKind::ArraySpreadFromPrimitiveArrays,
-                )
-            {
-                self.validate_resolved_array_spread_input(input, array_spreads);
-                continue;
-            }
             if input.evidence.operation
                 == NativeInputKind::Operation(spec::NativeOperationKind::ObjectOwnDataFunctionRead)
             {
@@ -9395,100 +9372,6 @@ impl ExecutionIndex {
         })
     }
 
-    fn validate_selected_array_spread_input(
-        &mut self,
-        input: &SelectedNativeOperationInput,
-        shapes: &StableArraySpreadShapes,
-    ) {
-        let request = &input.evidence.spec_location;
-        let candidates: Vec<_> = self
-            .binding_declaration_writes
-            .iter()
-            .filter(|(binding, writes)| {
-                binding.0.as_ref() == input.selected_binding
-                    && writes.len() == 1
-                    && writes[0].direct_top_level
-                    && writes[0].simple_identifier
-                    && span_contains(input.selected_statement_span, writes[0].binding_span)
-                    && writes[0]
-                        .initializer_span
-                        .is_some_and(|span| shapes.by_initializer.contains_key(&span.lo.0))
-            })
-            .collect();
-        let [(binding, writes)] = candidates.as_slice() else {
-            self.native_operation_input_errors.push(format!(
-                "{request} must select exactly one direct const initializer with an inert same-declaration primitive-array spread"
-            ));
-            return;
-        };
-        let declaration = &writes[0];
-        let initializer_span = declaration
-            .initializer_span
-            .expect("candidate has initializer");
-        let binding = (*binding).clone();
-        let Some(shape) = shapes.by_initializer.get(&initializer_span.lo.0) else {
-            unreachable!("candidate has source shape")
-        };
-        if shape.consumer != declaration.owner
-            || !self.array_elements.contains_key(&initializer_span.lo.0)
-        {
-            self.native_operation_input_errors.push(format!(
-                "{request} no longer resolves to the source-checked array initializer"
-            ));
-            return;
-        }
-        let mut evidence = input.evidence.clone();
-        evidence.selected_binding = input.selected_binding.clone();
-        self.native_operation_input_evidence
-            .insert(CallSite::from(initializer_span), evidence.clone());
-        self.resolved_native_operation_inputs
-            .push(ResolvedNativeOperationInput {
-                evidence,
-                binding,
-                selected_statement_span: input.selected_statement_span,
-                declaration_span: declaration.binding_span,
-                initializer_span,
-                call_span: initializer_span,
-                initializer_ordinal: declaration.owner,
-                spread_source: None,
-                spread_source_span: None,
-                spread_token_span: None,
-            });
-    }
-
-    fn validate_resolved_array_spread_input(
-        &mut self,
-        input: &ResolvedNativeOperationInput,
-        shapes: &StableArraySpreadShapes,
-    ) {
-        let request = &input.evidence.spec_location;
-        let same_source = self
-            .binding_declaration_writes
-            .get(&input.binding)
-            .is_some_and(|writes| {
-                matches!(writes.as_slice(), [declaration]
-                if declaration.direct_top_level
-                    && declaration.simple_identifier
-                    && declaration.owner == input.initializer_ordinal
-                    && declaration.binding_span == input.declaration_span
-                    && declaration.initializer_span == Some(input.initializer_span)
-                    && input.call_span == input.initializer_span
-                    && shapes.by_initializer.get(&input.initializer_span.lo.0)
-                        .is_some_and(|shape| shape.consumer == declaration.owner))
-            });
-        if !same_source {
-            self.native_operation_input_errors.push(format!(
-                "{request} no longer identifies the exact source-checked array spread"
-            ));
-            return;
-        }
-        self.native_operation_input_evidence.insert(
-            CallSite::from(input.initializer_span),
-            input.evidence.clone(),
-        );
-        self.resolved_native_operation_inputs.push(input.clone());
-    }
-
     fn known_set_protocol_mutation(&self) -> Option<SourceUnitOrdinal> {
         [
             NativeWriteSlot {
@@ -9610,7 +9493,6 @@ impl ExecutionIndex {
         flow: Option<&ChunkValueFlow>,
         plain_array_bindings: &BTreeSet<String>,
         construction_proof: &LocalClassConstructionShapes,
-        array_spreads: &StableArraySpreadShapes,
     ) -> Self {
         let host_operations = &hints.assumptions.reentry_free_operations;
         let global_guards_requested = !hints.assumptions.deferred_global_publications.is_empty()
@@ -11144,7 +11026,6 @@ impl ExecutionIndex {
         index.validate_native_operation_inputs(
             &hints.selected_native_operation_inputs,
             &hints.assumptions.native_operation_inputs,
-            array_spreads,
         );
         index.ident_references.sort_unstable();
         index.ident_references.dedup();
@@ -15363,7 +15244,6 @@ fn direct_callable_binding(
 
 pub(crate) fn prepare_callable_capabilities(
     body: &[TopLevelItemView<'_>],
-    array_spreads: StableArraySpreadShapes,
     exported_locals: BTreeSet<String>,
     selected_value_inputs: Vec<SelectedBindingValueInput>,
     selected_native_operation_inputs: Vec<SelectedNativeOperationInput>,
@@ -15387,7 +15267,6 @@ pub(crate) fn prepare_callable_capabilities(
             flow.as_ref(),
             &BTreeSet::new(),
             &LocalClassConstructionShapes::default(),
-            &array_spreads,
         ),
         exported_locals,
         flow,
@@ -15840,7 +15719,6 @@ mod preflow_set_protocol_tests {
         let views = crate::facts::top_level_item_views(&module.body);
         let prepared = prepare_callable_capabilities(
             &views,
-            StableArraySpreadShapes::default(),
             BTreeSet::new(),
             Vec::new(),
             Vec::new(),

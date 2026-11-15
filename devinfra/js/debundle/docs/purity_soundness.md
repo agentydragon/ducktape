@@ -359,8 +359,8 @@ author premise for one exact direct native initializer. The schema admits
 `operation: symbol`, `operation: symbol_for`, `operation: promise_resolve`,
 `operation: set_from_primitive_array`,
 `operation: set_from_set_spread`, `operation: object_own_data_function_read`,
-`operation: symbol_well_known_class_keys`, `operation: symbol_primitive_class_keys`,
-and `operation: array_spread_from_primitive_arrays`.
+`operation: symbol_well_known_class_keys`, and
+`operation: symbol_primitive_class_keys`.
 For `symbol` and `symbol_for`, the canonical selector engine identifies one
 direct top-level simple binding initialized by an ordinary, nonoptional,
 uncomputed `Symbol(...)` or `Symbol.for(...)` call respectively, with zero or one syntactically primitive
@@ -564,16 +564,12 @@ integrity derives the same exact-read certificate. Purity, timing, and heap
 ordering consume that certificate. It certifies only a getter-free read:
 invoking the resulting function remains an ordinary call with its usual
 effects, arguments, and return uncertainty.
-For `array_spread_from_primitive_arrays`, the selector names the receiving
-binding of a top-level multi-declarator `const` whose preceding declarators
-are dense primitive-literal arrays and whose initializer holds only primitive
-literals and direct spreads of those bindings; no intervening declarator may
-run user code or expose a producer. The author asserts the original Array
-iterator and iterator `next` identities across every admitted initialization
-schedule. Positively identified Array-family or iterator `next` writes
-contradict the input; opaque writes are the author's audit obligation. Without
-the input, the same certificate needs completed `Array` native integrity. The
-source shape proves fresh dense elements and a closed interval, and the graph
+For a local primitive-array spread, the source shape identifies a top-level
+multi-declarator `const` whose preceding declarators are dense primitive
+literal arrays and whose initializer contains only primitive literals and
+direct spreads of those bindings. The certificate requires completed `Array`
+native integrity, including the iterator and iterator `next` slots. The source
+shape proves fresh dense elements and a closed interval, and the graph
 co-locates producer and consumer statements so the emitted module keeps it.
 No family-wide `Array` integrity follows; the external A11 obligation still
 applies.
