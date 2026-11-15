@@ -8,7 +8,7 @@ use std::path::Path;
 use analysis::{DependencyGraphReport, ModuleDestinationKind, StatementKind};
 use anonymous_resolution::resolve_source_claims;
 use anyhow::{Context, Result, anyhow, bail};
-use peel::assignment::SourceUnitAssignment;
+use peel::assignment::{AssignmentProblem, SourceUnitAssignment, accepted};
 use pipeline::assess_candidate_effect_relocation;
 use spec::{AnonymousStatement, LogicalModule, ModulePath, is_residual_namespace_path};
 use spec_modules::{coalesce_source_match_claims, module_path_from_file};
@@ -32,6 +32,8 @@ pub struct SourceUnitRefineOutcome {
     #[serde(flatten)]
     pub outcome: MutationOutcome,
     pub source_units_reassigned: usize,
+    pub residual_source_units_claimed: usize,
+    pub synthesized_claims: BTreeMap<String, LogicalModule>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub effect_relocation_assessment: Option<gate::CandidateRelocationAssessmentReport>,
 }
@@ -39,6 +41,8 @@ pub struct SourceUnitRefineOutcome {
 pub struct SourceUnitRefineOptions<'a> {
     pub tree_config: Option<&'a Path>,
     pub assignments: Vec<SourceUnitAssignment>,
+    pub verb: MutationVerb,
+    pub readable_names: BTreeMap<String, String>,
     pub dry_run: bool,
     pub effect_assessment_context: Option<CandidateEffectAssessmentContext<'a>>,
 }
@@ -95,11 +99,14 @@ pub fn run_source_unit_refine(
     let SourceUnitRefineOptions {
         tree_config,
         assignments,
+        verb,
+        readable_names,
         dry_run,
         effect_assessment_context,
     } = options;
+    let claim_residual = verb == MutationVerb::Apply;
     anyhow::ensure!(
-        effect_assessment_context.is_none() || dry_run,
+        effect_assessment_context.is_none() || dry_run || claim_residual,
         "candidate effect assessment requires --dry-run"
     );
     if assignments.is_empty() {
@@ -208,16 +215,10 @@ pub fn run_source_unit_refine(
         );
         let current_module = current_source_unit_modules
             .get(&assignment.unit_id)
-            .and_then(Option::as_ref)
-            .with_context(|| {
-                format!(
-                    "source unit {:?} is currently unclaimed/residual; modules refine moves existing claims only",
-                    assignment.unit_id
-                )
-            })?;
+            .and_then(Option::as_ref);
         anyhow::ensure!(
-            !is_residual_namespace_path(current_module.as_str()),
-            "source unit {:?} is claimed from a residual module and cannot be moved",
+            claim_residual || current_module.is_some(),
+            "source unit {:?} is currently unclaimed/residual; modules refine moves existing claims only",
             assignment.unit_id
         );
         let destination = if let Some(scope) = &scope {
@@ -233,18 +234,95 @@ pub fn run_source_unit_refine(
         requested_destinations.insert(assignment.unit_id, destination);
     }
 
+    if claim_residual {
+        let changes = requested_destinations
+            .iter()
+            .map(|(unit_id, destination)| {
+                Ok(SourceUnitAssignment {
+                    unit_id: unit_id.clone(),
+                    module: scope
+                        .as_ref()
+                        .map_or(Ok(destination.as_str()), |scope| {
+                            scope.logical_destination(destination)
+                        })?
+                        .to_string(),
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let problem = AssignmentProblem::new(&graph_input)?;
+        let candidate = problem.candidate(&changes)?;
+        let validation = problem.validate(&candidate)?;
+        anyhow::ensure!(
+            accepted(&validation),
+            "complete assignment gate rejected the batch: {:?}",
+            validation.report
+        );
+    }
+
     let mut expected_source_unit_modules = current_source_unit_modules.clone();
     let mut planned_moves = Vec::<PlannedSourceUnitMove>::new();
     let mut planned_move_by_slot = BTreeMap::<(String, SourceUnitClaimSlot), usize>::new();
     let mut source_modules = BTreeSet::new();
     let mut source_units_reassigned = 0;
+    let mut residual_source_units_claimed = 0;
+    let mut fresh_bindings =
+        BTreeMap::<std::path::PathBuf, BTreeMap<String, BTreeMap<String, String>>>::new();
+    let mut fresh_anonymous = BTreeMap::<
+        std::path::PathBuf,
+        BTreeMap<String, Vec<source_identity::SourceUnitOrdinal>>,
+    >::new();
+    let mut used_names = BTreeSet::new();
     let existing_destinations = physical_modules_by_logical_destination(&docs, scope.as_ref())?;
     for (source_unit_id, destination) in &requested_destinations {
-        let source_logical_module = current_source_unit_modules[source_unit_id]
-            .as_ref()
-            .expect("requested source units were checked as claimed")
-            .as_str()
-            .to_string();
+        let Some(source_logical_module) = current_source_unit_modules[source_unit_id].as_ref()
+        else {
+            let unit = graph_input
+                .source_unit_id(source_unit_id)
+                .expect("checked source unit");
+            let node = graph_input.source_unit_report(unit);
+            let location = node
+                .source_location
+                .as_ref()
+                .context("residual source unit has no source location")?;
+            let source = source_root.join(&location.source_path);
+            if node.declared_bindings.is_empty() {
+                fresh_anonymous
+                    .entry(source)
+                    .or_default()
+                    .entry(destination.clone())
+                    .or_default()
+                    .push(node.statement_ordinal);
+            } else {
+                for binding in &node.declared_bindings {
+                    let runtime = binding.binding.to_string();
+                    let readable = readable_names
+                        .get(&runtime)
+                        .cloned()
+                        .unwrap_or_else(|| runtime.clone());
+                    anyhow::ensure!(
+                        !readable.is_empty(),
+                        "readable name for {runtime:?} is empty"
+                    );
+                    if readable_names.contains_key(&runtime) {
+                        used_names.insert(runtime.clone());
+                    }
+                    anyhow::ensure!(
+                        fresh_bindings
+                            .entry(source.clone())
+                            .or_default()
+                            .entry(destination.clone())
+                            .or_default()
+                            .insert(runtime.clone(), readable)
+                            .is_none(),
+                        "binding {runtime:?} has several declaration units; selector realization requires an explicit spec claim"
+                    );
+                }
+            }
+            expected_source_unit_modules.insert(source_unit_id.clone(), Some(destination.clone()));
+            residual_source_units_claimed += 1;
+            continue;
+        };
+        let source_logical_module = source_logical_module.as_str().to_string();
         if destination == &source_logical_module {
             continue;
         }
@@ -299,6 +377,40 @@ pub fn run_source_unit_refine(
                     slot: location.slot.clone(),
                 });
             }
+        }
+    }
+
+    anyhow::ensure!(
+        used_names.len() == readable_names.len(),
+        "readable_names must name only newly claimed bindings"
+    );
+    let mut synthesized_claims = BTreeMap::<String, LogicalModule>::new();
+    for (source, modules) in fresh_bindings {
+        for (destination, claims) in
+            selector_codemod::synthesize_residual_claims_for_modules(&source, &modules)?
+        {
+            synthesized_claims
+                .entry(destination.clone())
+                .or_default()
+                .source_matches
+                .extend(claims.iter().cloned());
+            ensure_source_unit_destination(&mut docs, modules_root, &destination)
+                .source_matches
+                .extend(claims);
+        }
+    }
+    for (source, modules) in fresh_anonymous {
+        for (destination, statements) in
+            selector_codemod::synthesize_anonymous_claims_for_modules(&source, &modules)?
+        {
+            synthesized_claims
+                .entry(destination.clone())
+                .or_default()
+                .anonymous_statements
+                .extend(statements.iter().cloned());
+            ensure_source_unit_destination(&mut docs, modules_root, &destination)
+                .anonymous_statements
+                .extend(statements);
         }
     }
 
@@ -452,10 +564,16 @@ pub fn run_source_unit_refine(
         }
     }
 
-    let to_delete = drained_source_modules(&docs, &source_modules);
+    // Explicit destination checking retains authored owners, including empty
+    // shells. Preserve them here too so module ordering matches the preview.
+    let to_delete = if claim_residual {
+        BTreeSet::new()
+    } else {
+        drained_source_modules(&docs, &source_modules)
+    };
     let post_spec = post_edit_spec_from_docs(&docs, &to_delete)?;
-    // This unchanged gate first proves the complete expected source-unit map
-    // and applies its legacy realizability/atom-split checks to `post_spec`.
+    // Resolve the entire scoped spec, prove the expected source-unit map, then
+    // apply the same complete graph check used for the reviewed assignment.
     Gate::Run {
         graph_path: dependency_graph_path,
         input: std::sync::Arc::clone(&graph_input),
@@ -488,6 +606,9 @@ pub fn run_source_unit_refine(
     } else {
         None
     };
+    if claim_residual && let Some(assessment) = &effect_relocation_assessment {
+        pipeline::ensure_candidate_emittable_for_write(assessment, dry_run)?;
+    }
 
     let (files_written, files_deleted) =
         apply_doc_changes(&original_docs, &docs, &to_delete, dry_run)?;
@@ -500,7 +621,7 @@ pub fn run_source_unit_refine(
     };
     Ok(SourceUnitRefineOutcome {
         outcome: MutationOutcome::ownership_edit(
-            MutationVerb::Refine,
+            verb,
             action,
             GateOutcome::ClaimsChecked,
             effect_relocation_assessment.as_ref(),
@@ -508,6 +629,8 @@ pub fn run_source_unit_refine(
             files_deleted,
         ),
         source_units_reassigned,
+        residual_source_units_claimed,
+        synthesized_claims,
         effect_relocation_assessment,
     })
 }

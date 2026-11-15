@@ -12,7 +12,9 @@ use crate::source_unit_refine::{SourceUnitRefineOptions, run_source_unit_refine}
 use anyhow::{Context, Result, ensure};
 use clap::{Args as ClapArgs, Subcommand};
 use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
-use peel::assignment::{AssignmentProblem, SourceUnitAssignment, accepted};
+use peel::assignment::{
+    AssignmentPlan, AssignmentProblem, AssignmentSnapshot, SourceUnitAssignment, accepted,
+};
 use peel::decompose::{
     ModuleDecompositionCoarseningMode, ModuleDecompositionOptions, ModuleDecompositionReport,
     ModuleDecompositionStrategy, decompose_modules_from_files_with_options,
@@ -161,7 +163,8 @@ enum ModulesNsCommand {
     /// commutation for the exact post-delete candidate. It requires the full
     /// tree transform context and does not change the legacy gate.
     Delete(Box<DeleteArgs>),
-    /// Emit module-assignment proposals derived from the atomic DAG.
+    /// Discover residual assignments. Complete mode returns checked exact plans;
+    /// default/auto mode emits advisory atomic-DAG proposals.
     ///
     /// Read-only: surfaces *suggested* binding → module assignments +
     /// diagnostics; reviewed fresh residual proposals are claimed with
@@ -182,7 +185,9 @@ enum ModulesNsCommand {
     /// Check an explicit source-unit destination batch against the complete
     /// accepted assignment. Omitted units retain their owners; writes no spec.
     Check(ModulesCheckArgs),
-    /// Claim reviewed residual proposal bindings using proven structural selectors.
+    /// Apply exact source-unit assignments, or claim reviewed proposal bindings.
+    /// `--assignments` accepts the same changes as `modules check --batch`,
+    /// including anonymous and existing units, and proves the entire resolved map.
     /// `--dry-run --analysis` additionally reports statement-order commutation for
     /// the exact candidate using the full tree transform context; it does not
     /// change the realizability gate.
@@ -227,8 +232,11 @@ struct ModulesCheckArgs {
     #[command(flatten)]
     common: CommonArgs,
     /// JSON array of {unit_id, module} destination changes; `-` reads stdin.
-    #[arg(long)]
-    batch: String,
+    #[arg(long, required_unless_present = "plan", conflicts_with = "plan")]
+    batch: Option<String>,
+    /// Saved exact plan, including graph/program identity and logical destinations.
+    #[arg(long, conflicts_with = "batch")]
+    plan: Option<PathBuf>,
     #[arg(long = "tree-config", env = "DEBUNDLE_TREE_CONFIG")]
     tree_config: Option<PathBuf>,
     #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
@@ -238,16 +246,30 @@ struct ModulesCheckArgs {
 }
 
 fn run_modules_check(args: ModulesCheckArgs, output: &mut dyn std::io::Write) -> Result<()> {
-    let bytes = if args.batch == "-" {
+    let bytes = if args.batch.as_deref() == Some("-") {
         let mut bytes = Vec::new();
         std::io::stdin().read_to_end(&mut bytes)?;
         bytes
     } else {
-        fs::read(&args.batch).with_context(|| format!("reading {}", args.batch))?
+        let path = args
+            .plan
+            .as_ref()
+            .map(|path| path.as_path())
+            .or_else(|| args.batch.as_deref().map(std::path::Path::new))
+            .expect("clap requires a batch or plan");
+        fs::read(path).with_context(|| format!("reading {}", path.display()))?
     };
-    let mut changes: Vec<SourceUnitAssignment> = serde_json::from_slice(&bytes)?;
+    let mut changes: Vec<SourceUnitAssignment> = if args.plan.is_some() {
+        let plan: AssignmentPlan = serde_json::from_slice(&bytes)?;
+        plan.verify(&args.common.dependency_graph_path)?;
+        plan.changes
+    } else {
+        serde_json::from_slice(&bytes)?
+    };
     let input = analysis::DependencyGraphInput::read(&args.common.dependency_graph_path)?;
-    if let Some(config) = &args.tree_config {
+    if args.plan.is_none()
+        && let Some(config) = &args.tree_config
+    {
         let scope = spec_tree::ModuleTreeScope::from_config(config, &input.report().chunk_id)?;
         for change in &mut changes {
             let physical = scope.canonical_destination(&change.module)?;
@@ -257,6 +279,16 @@ fn run_modules_check(args: ModulesCheckArgs, output: &mut dyn std::io::Write) ->
     let problem = AssignmentProblem::new(&input)?;
     let candidate = problem.candidate(&changes)?;
     let validation = problem.validate(&candidate)?;
+    for change in &mut changes {
+        let unit = input
+            .source_unit_id(&change.unit_id)
+            .expect("checked source unit");
+        change.module = candidate[unit.0]
+            .as_ref()
+            .expect("explicit destination")
+            .as_str()
+            .to_string();
+    }
     let is_accepted = accepted(&validation);
     #[derive(serde::Serialize)]
     struct CheckReport {
@@ -265,9 +297,18 @@ fn run_modules_check(args: ModulesCheckArgs, output: &mut dyn std::io::Write) ->
         residual_units_extracted: usize,
         existing_units_moved: usize,
         validation: gate::AssignmentReport,
+        plan: Option<AssignmentPlan>,
     }
     let report = CheckReport {
         accepted: is_accepted,
+        plan: if is_accepted {
+            Some(AssignmentPlan {
+                snapshot: AssignmentSnapshot::read(&args.common.dependency_graph_path)?,
+                changes: changes.clone(),
+            })
+        } else {
+            None
+        },
         changes,
         residual_units_extracted: problem.residual_gain(&candidate),
         existing_units_moved: problem.existing_units_moved(&candidate),
@@ -287,6 +328,71 @@ fn run_modules_check(args: ModulesCheckArgs, output: &mut dyn std::io::Write) ->
         "writing assignment check",
     )?;
     ensure!(is_accepted, "complete assignment gate rejected the batch");
+    Ok(())
+}
+
+fn run_complete_proposals(args: &PlanWorkArgs, output: &mut dyn std::io::Write) -> Result<()> {
+    ensure!(
+        args.size_cap_lines.is_none() && args.limit == 0,
+        "complete search does not use size or display caps; use explicit search budgets"
+    );
+    let input = analysis::DependencyGraphInput::read(&args.common.dependency_graph_path)?;
+    let problem = AssignmentProblem::new(&input)?;
+    let mut into = args.into.clone();
+    if let Some(config) = &args.tree_config {
+        let scope = spec_tree::ModuleTreeScope::from_config(config, &input.report().chunk_id)?;
+        for destination in &mut into {
+            let physical = scope.canonical_destination(destination)?;
+            *destination = scope.logical_destination(&physical)?.to_string();
+        }
+    }
+    let options = peel::search::SearchOptions {
+        destinations: args.destinations.unwrap_or_default(),
+        into,
+        required: args.required.clone(),
+        only_units: args
+            .only_units
+            .as_ref()
+            .map(|path| -> Result<Vec<String>> { Ok(serde_json::from_slice(&fs::read(path)?)?) })
+            .transpose()?,
+        max_new_modules: args.max_new_modules,
+        max_checks: args.max_checks,
+        time_budget: args.time_budget_ms.map(std::time::Duration::from_millis),
+    };
+    let mut report = peel::search::search(&problem, &options)?;
+    let incomplete = report.status == peel::search::SearchStatus::Incomplete;
+    let plan = if report.status == peel::search::SearchStatus::Found {
+        Some(AssignmentPlan {
+            snapshot: AssignmentSnapshot::read(&args.common.dependency_graph_path)?,
+            changes: std::mem::take(&mut report.changes),
+        })
+    } else {
+        None
+    };
+    #[derive(serde::Serialize)]
+    struct CompleteReport<'a> {
+        #[serde(flatten)]
+        search: &'a peel::search::SearchReport,
+        plan: Option<AssignmentPlan>,
+    }
+    emit_report(
+        output,
+        args.format,
+        &CompleteReport {
+            search: &report,
+            plan,
+        },
+        |report, text| {
+            text.push_str(&serde_json::to_string_pretty(report)?);
+            text.push('\n');
+            Ok(())
+        },
+        "writing complete search",
+    )?;
+    ensure!(
+        !incomplete,
+        "assignment search incomplete: explicit budget exhausted"
+    );
     Ok(())
 }
 
@@ -770,6 +876,8 @@ fn run_modules_refine(
         SourceUnitRefineOptions {
             tree_config: args.tree_config.as_deref(),
             assignments,
+            verb: MutationVerb::Refine,
+            readable_names: Default::default(),
             dry_run: args.dry_run,
             effect_assessment_context,
         },
@@ -853,6 +961,20 @@ pub(super) fn run(
             run_delete(output, stderr, *d, source_context, analysis_engine_sha256)
         }
         ModulesNsCommand::Propose(p) => {
+            if p.strategy == Some(peel::plan::ProposalStrategy::Complete) {
+                return run_complete_proposals(&p, output);
+            }
+            ensure!(
+                p.existing_assignments.is_none()
+                    && p.destinations.is_none()
+                    && p.into.is_empty()
+                    && p.required.is_empty()
+                    && p.only_units.is_none()
+                    && p.max_new_modules.is_none()
+                    && p.max_checks.is_none()
+                    && p.time_budget_ms.is_none(),
+                "assignment search options require --strategy complete"
+            );
             let report = run_plan_work_report(&p, source_context)?;
             emit_report(
                 output,

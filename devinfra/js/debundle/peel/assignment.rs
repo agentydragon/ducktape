@@ -20,19 +20,67 @@ pub struct SourceUnitAssignment {
     pub module: String,
 }
 
+/// Identity of the exact analyzed program, assumptions and starting assignment.
+/// Provenance verification still checks these artifacts against current inputs.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct AssignmentSnapshot {
+    dependency_graph_sha256: String,
+    program_graph_sha256: String,
+}
+
+impl AssignmentSnapshot {
+    pub fn read(graph: &std::path::Path) -> Result<Self> {
+        let header = graph_provenance::read_graph_header(graph)?;
+        let program = graph_provenance::program_graph_path(graph, &header.program_graph);
+        Ok(Self {
+            dependency_graph_sha256: graph_provenance::sha256_reader(std::fs::File::open(graph)?)?,
+            program_graph_sha256: graph_provenance::sha256_reader(std::fs::File::open(program)?)?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AssignmentPlan {
+    pub snapshot: AssignmentSnapshot,
+    pub changes: Vec<SourceUnitAssignment>,
+}
+
+impl AssignmentPlan {
+    pub fn verify(&self, graph: &std::path::Path) -> Result<()> {
+        ensure!(
+            self.snapshot == AssignmentSnapshot::read(graph)?,
+            "assignment plan is stale for this graph or program context; propose or check a new plan"
+        );
+        Ok(())
+    }
+}
+
 /// Prepared graph and accepted baseline. Candidate construction never contracts
 /// source units through speculative intermediate assignments.
 pub struct AssignmentProblem<'a> {
-    input: &'a DependencyGraphInput,
-    baseline: Vec<Option<ModulePath>>,
-    existing_modules: BTreeSet<ModulePath>,
-    residual_origins: Vec<bool>,
-    residual_modules: BTreeSet<ModulePath>,
-    atoms: Vec<AtomicGroup>,
+    pub(super) input: &'a DependencyGraphInput,
+    pub(super) baseline: Vec<Option<ModulePath>>,
+    pub(super) existing_modules: BTreeSet<ModulePath>,
+    pub(super) residual_origins: Vec<bool>,
+    pub(super) residual_modules: BTreeSet<ModulePath>,
+    pub(super) atoms: Vec<AtomicGroup>,
 }
 
 impl<'a> AssignmentProblem<'a> {
     pub fn new(input: &'a DependencyGraphInput) -> Result<Self> {
+        let problem = Self::prepare(input)?;
+        let baseline = problem.validate(&problem.baseline)?;
+        ensure!(
+            accepted(&baseline),
+            "the current complete assignment is rejected: {:?}",
+            baseline.report
+        );
+        Ok(problem)
+    }
+
+    fn prepare(input: &'a DependencyGraphInput) -> Result<Self> {
         let report = input.report();
         let baseline = report
             .nodes
@@ -68,12 +116,6 @@ impl<'a> AssignmentProblem<'a> {
                 .collect(),
             atoms: compute_atomic_groups(input.graph()),
         };
-        let baseline = problem.validate(&problem.baseline)?;
-        ensure!(
-            accepted(&baseline),
-            "the current complete assignment is rejected: {:?}",
-            baseline.report
-        );
         Ok(problem)
     }
 
@@ -100,7 +142,8 @@ impl<'a> AssignmentProblem<'a> {
                 change.unit_id
             );
             ensure!(
-                !std::path::Path::new(&change.module).is_absolute(),
+                !std::path::Path::new(&change.module).is_absolute()
+                    && !change.module.contains('\0'),
                 "destination must be relative: {:?}",
                 change.module
             );
@@ -127,27 +170,7 @@ impl<'a> AssignmentProblem<'a> {
             candidate.len() == self.baseline.len(),
             "candidate must assign every source unit"
         );
-        // Retain empty authored modules too. Emission assigns module identities
-        // in path order, with the residual entry following the planned modules.
-        let paths: BTreeSet<_> = self
-            .existing_modules
-            .iter()
-            .cloned()
-            .chain(candidate.iter().flatten().cloned())
-            .collect();
-        // Authored modules precede generated residual-layout modules in the
-        // normal pipeline. Keep that distinction instead of collapsing every
-        // unclaimed destination into the entry module.
-        let paths: Vec<_> = paths
-            .iter()
-            .filter(|path| !self.residual_modules.contains(*path))
-            .chain(
-                paths
-                    .iter()
-                    .filter(|path| self.residual_modules.contains(*path)),
-            )
-            .cloned()
-            .collect();
+        let paths = self.ordered_modules(candidate);
         let ids: BTreeMap<_, _> = paths
             .iter()
             .enumerate()
@@ -191,6 +214,32 @@ impl<'a> AssignmentProblem<'a> {
         Ok(validation)
     }
 
+    /// Numeric module identities used by the full gate, in emitter order.
+    /// The residual entry follows this list.
+    pub fn ordered_modules(&self, candidate: &[Option<ModulePath>]) -> Vec<ModulePath> {
+        // Retain empty authored modules too. Emission assigns module identities
+        // in path order, with the residual entry following the planned modules.
+        let paths: BTreeSet<_> = self
+            .existing_modules
+            .iter()
+            .cloned()
+            .chain(candidate.iter().flatten().cloned())
+            .collect();
+        // Authored modules precede generated residual-layout modules in the
+        // normal pipeline. Keep that distinction instead of collapsing every
+        // unclaimed destination into the entry module.
+        paths
+            .iter()
+            .filter(|path| !self.residual_modules.contains(*path))
+            .chain(
+                paths
+                    .iter()
+                    .filter(|path| self.residual_modules.contains(*path)),
+            )
+            .cloned()
+            .collect()
+    }
+
     pub fn residual_gain(&self, candidate: &[Option<ModulePath>]) -> usize {
         self.residual_origins
             .iter()
@@ -212,6 +261,21 @@ impl<'a> AssignmentProblem<'a> {
             .filter(|((before, after), was_residual)| !**was_residual && before != after)
             .count()
     }
+}
+
+/// The exact resolved-map edit gate also supports repairing a rejected starting
+/// spec. Discovery/check commands require an accepted baseline via `new`; a
+/// legacy repair still checks its complete final assignment with the same gate.
+pub fn check_resolved_edit(
+    input: &DependencyGraphInput,
+    changes: &[SourceUnitAssignment],
+) -> Result<(Vec<ModulePath>, AssignmentValidation)> {
+    let problem = AssignmentProblem::prepare(input)?;
+    let candidate = problem.candidate(changes)?;
+    Ok((
+        problem.ordered_modules(&candidate),
+        problem.validate(&candidate)?,
+    ))
 }
 
 pub fn accepted(validation: &AssignmentValidation) -> bool {

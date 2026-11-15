@@ -66,6 +66,7 @@ DEBUNDLE_REFERENCES = [
     skill_mapping(
         srcs = [
             "//devinfra/js/debundle/skills/shared/examples:isolated_edit.py",
+            "//devinfra/js/debundle/skills/shared/examples:peel_more.py",
             "//devinfra/js/debundle/skills/shared/examples:contract_examples.py",
         ],
         prefix = "references/skills/shared/examples",
@@ -86,6 +87,7 @@ DEBUNDLE_REFERENCES = [
             "//devinfra/js/debundle/docs:bug_reproductions.md",
             "//devinfra/js/debundle/docs:cli.md",
             "//devinfra/js/debundle/docs:integration.md",
+            "//devinfra/js/debundle/docs:module_search.md",
             "//devinfra/js/debundle/docs:naming.md",
             "//devinfra/js/debundle/docs:planning.md",
             "//devinfra/js/debundle/docs:selectors.md",

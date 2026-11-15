@@ -1,16 +1,47 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
+# Shipped standalone recipes import helpers from their examples directory.
+# gazelle:resolve py isolated_edit //devinfra/js/debundle/skills/shared/examples:isolated_edit
+
 exports_files(
     [
         "isolated_edit.py",
+        "peel_more.py",
         "contract_examples.py",
     ] + glob(["contract_examples/**"]),
     visibility = ["//visibility:public"],
 )
 
+py_test(
+    name = "peel_more_test",
+    srcs = ["peel_more_test.py"],
+    data = glob(["fixture/**"]) + [
+        "//devinfra/js/debundle",
+        "//devinfra/js/debundle/skills/debundle_lane_worker:debundle_lane_worker_skill",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {
+        "DEBUNDLE_PEEL_ENGINE": "$(rlocationpath //devinfra/js/debundle)",
+        "DEBUNDLE_PEEL_NODE": "$(rlocationpath @nodejs_linux_amd64//:bin/node)",
+        "DEBUNDLE_PEEL_SKILL": "$(rlocationpath //devinfra/js/debundle/skills/debundle_lane_worker:debundle_lane_worker_skill)",
+    },
+    deps = [
+        ":isolated_edit",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)
+
 py_library(
     name = "isolated_edit",
     srcs = ["isolated_edit.py"],
+)
+
+py_library(
+    name = "peel_more",
+    srcs = ["peel_more.py"],
+    deps = ["//devinfra/js/debundle/skills/shared/examples:isolated_edit"],
 )
 
 py_library(

@@ -86,6 +86,17 @@ For a runnable composition of one reviewed `modules merge`, starting after
 runs the dry-run, applies with invocation capture, and regenerates explicitly;
 it is an example of that edit flow, not a generic adapter framework.
 
+For residual extraction from an accepted partial spec, use
+[complete fixed-owner search](../../docs/module_search.md) and the shipped
+[`examples/peel_more.py`](examples/peel_more.py) recipe. It saves an exact plan,
+checks its graph/program identity, previews and applies the same changes, then
+regenerates. Its explicit search budget may fail as incomplete; this is not a
+no-peel proof. Review ownership and synthesized selectors, and retain separate
+adapter behavioral evidence.
+These shared Python recipes import sibling helpers. Include their `examples`
+directory on `PYTHONPATH` when using an isolated interpreter that omits the
+script directory from its import path; the archive test supplies that scaffold.
+
 Use one writable snapshot per worker. A Git worktree does not isolate external
 source or package roots. A snapshot carries the graph inputs and engine, not
 the full runtime closure: adapter commands must point runtime checks at the

@@ -8,6 +8,41 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::process::Command;
 
+#[test]
+fn can_repair_a_rejected_baseline_without_weakening_the_final_check() {
+    let fixture = GraphFixture::rejected(
+        "const first = 1;\nconst second = first + 1;\nconst third = second + 1;\nconsole.log(third);\n",
+        &[
+            (
+                "endpoints.yaml",
+                "members: [{selector: {binding: {name: first}}}, {selector: {binding: {name: third}}}]\n",
+            ),
+            (
+                "middle.yaml",
+                "members: [{selector: {binding: {name: second}}}]\n",
+            ),
+        ],
+    );
+    let batch = fixture.root().join("repair.json");
+    fs::write(
+        &batch,
+        serde_json::to_vec(
+            &json!([{"unit_id": fixture.source_unit_for_binding("second"), "module": "endpoints"}]),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    fixture.assert_success(&[
+        "modules",
+        "refine",
+        "--batch",
+        batch.to_str().unwrap(),
+        "--dry-run",
+    ]);
+    fixture.assert_success(&["modules", "refine", "--batch", batch.to_str().unwrap()]);
+    fixture.assert_runs("3\n");
+}
+
 fn source_units_for_binding(fixture: &GraphFixture, binding: &str) -> Vec<String> {
     fixture
         .dependency_graph()

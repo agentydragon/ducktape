@@ -1272,6 +1272,12 @@ array. The rest are rejected:
 
 ## Checking explicit destination batches (`modules check`)
 
+For a residual-peel decision, use
+[`modules propose --strategy complete`](module_search.md). It returns a
+snapshot-bound `.plan`, an exhaustive no-peel result in its reported scope, or an
+explicitly incomplete result. It supports joint atoms and multiple destinations;
+default/auto factorizer readiness has a narrower advisory meaning.
+
 `modules check --batch changes.json` checks an explicit source-unit assignment
 against the accepted starting graph. Supply the same `--graph`, `--modules`,
 source context and optional `--tree-config` used by the other graph commands.
@@ -1293,7 +1299,36 @@ exact complete graph assignment; names/selectors and emitted output still need
 their normal checks. Independently accepted batches must be checked together
 before combining them. This command does not search or prove no peel exists.
 
-## Claiming fresh proposals (`modules apply`)
+Accepted JSON output also contains `.plan`. Save that object and use
+`modules check --plan plan.json` or `modules apply --plan plan.json` to retain
+the checked graph/program identity. Plans use logical destinations even with a
+configured physical tree root. `--plan` and a raw batch are mutually exclusive.
+
+## Applying explicit assignments (`modules apply --assignments`)
+
+Pass the same JSON array checked by `modules check --batch` to
+`modules apply --assignments changes.json`. Omitted units retain their owners.
+The command supports new residual declarations, anonymous statements, existing
+claims and several destinations in one batch. Use `--dry-run` first; preview and
+write perform the same checks. Both require the current graph, modules tree and
+source context. `--assignments -` reads stdin.
+
+Residual declarations receive proven structural `source_matches`; anonymous
+units receive proven `anonymous_statements` selectors. An ambiguous selector is
+a realization failure even when the graph assignment passed. Existing selectors
+and binding/statement metadata move intact. Module notes/comments remain with
+their owner, and this mode keeps empty authored owners so its module order agrees
+with the checked assignment. A JSON map supplied with `--readable-names FILE`
+can name newly claimed bindings; omitted names retain their source spelling.
+
+Before writing, the complete scoped spec resolves again and must match every
+requested and retained source-unit destination. The common graph checker then
+checks that exact assignment. Failure leaves the spec unchanged. JSON reports
+new residual claims, existing units moved, synthesized claims and changed files.
+Graph/selector acceptance still requires normal materialization and relevant
+runtime checks. Refresh the graph after applying an edit.
+
+## Claiming fresh proposals (`modules apply --batch`)
 
 For an app-level spec with several chunks, pass the same `--tree-config`
 to `modules propose` and `modules apply`. The config's `module_roots` maps

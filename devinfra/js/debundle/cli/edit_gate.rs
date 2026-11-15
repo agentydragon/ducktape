@@ -873,6 +873,7 @@ fn gate_post_edit_assignment_with_expected(
     })?;
     let claim_projection = project_source_unit_claims(input, post_spec, &resolved_claims)?;
     reject_unresolved_projected_claims(&claim_projection)?;
+    let mut complete_check = None;
     match expected {
         ExpectedPostEditClaims::SourceUnits {
             assignments: expected_source_unit_modules,
@@ -905,6 +906,22 @@ fn gate_post_edit_assignment_with_expected(
                     "post-edit source unit assignment does not match the reviewed complete candidate"
                 );
             }
+            let changes = actual_source_unit_modules
+                .iter()
+                .filter_map(|(unit_id, module)| {
+                    module.as_ref().map(|module| {
+                        Ok(peel::assignment::SourceUnitAssignment {
+                            unit_id: unit_id.clone(),
+                            module: scope
+                                .map_or(Ok(module.as_str()), |scope| {
+                                    scope.logical_destination(module)
+                                })?
+                                .to_string(),
+                        })
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            complete_check = Some(peel::assignment::check_resolved_edit(input, &changes)?);
         }
         ExpectedPostEditClaims::Members(expected) => {
             for target in expected {
@@ -961,19 +978,10 @@ fn gate_post_edit_assignment_with_expected(
         analysis::EntryDestination::from_module_id(residual),
     );
 
-    let module_path = |m: ModuleId| {
-        module_path_by_id.get(&m).cloned().unwrap_or_else(|| {
-            panic!(
-                "module id logical:{} not assigned by the post-edit spec",
-                m.0
-            )
-        })
-    };
-
     // Atom splits remain the primary diagnosis; the shared validation below
     // supplies any co-occurring cycle report as secondary evidence.
     let atomic_groups = compute_atomic_groups(dependency_graph);
-    let atomic_conflicts = atomic_groups
+    let mut atomic_conflicts = atomic_groups
         .iter()
         .filter_map(|atomic_group| {
             detect_atomic_group_conflict(
@@ -994,7 +1002,21 @@ fn gate_post_edit_assignment_with_expected(
             )
         })
         .collect::<Vec<_>>();
-    let report = validate_assignment(dependency_graph, &assignment, &module_path);
+    let report = if let Some((paths, validation)) = complete_check {
+        module_path_by_id = paths
+            .iter()
+            .enumerate()
+            .map(|(index, path)| (ModuleId(index), path.clone()))
+            .collect();
+        module_path_by_id.insert(ModuleId(paths.len()), ModulePath::parse("residual", "")?);
+        atomic_conflicts = validation.report.atomic_group_conflicts.clone();
+        validation.report
+    } else {
+        validate_assignment(dependency_graph, &assignment, &|id| {
+            module_path_by_id[&id].clone()
+        })
+    };
+    let module_path = |id: ModuleId| module_path_by_id[&id].clone();
 
     // Replace artifacts only after this candidate's assignment and shared
     // realizability report are complete. A preflight error keeps the last
@@ -1061,6 +1083,11 @@ fn gate_post_edit_assignment_with_expected(
             ),
         );
     }
+    anyhow::ensure!(
+        report.cross_rebinds.is_empty(),
+        "realizability gate rejected cross-module rebindings: {:?}",
+        report.cross_rebinds
+    );
     Ok(())
 }
 
