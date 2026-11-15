@@ -708,7 +708,7 @@ flowchart LR
     mcp_servers((MCP servers))
 
     mcp_client -->|MCP over OAuth| edge
-    app -->|Action RPCs: gRPC; MCP OAuth callback: HTTP| actions
+    app -->|Action RPCs: service SVID mTLS + operator OIDC; MCP OAuth callback: HTTP| actions
     app -->|ConnectionService RPCs and health: mTLS gRPC :8443| edge
     edge -->|account scoped gRPC| actions
     edge -->|public MCP client metadata: gRPC| actions
@@ -761,21 +761,24 @@ Action audience bearer and has no bearer fallback. Its gRPC listener on port 844
 service SVID against the workload CA; operator OIDC remains required for App's operator methods and
 is separate from the edge's Connection delegation. The App uses that TLS listener.
 
-## Staged Action Service certificate callers
+## Action Service certificate callers
 
-The Actions receiver accepts the exact App, Notifications, and MCP edge service SVIDs alongside
-existing bearer callers. MCP edge now uses its SVID with typed Connection delegation; App and
-Notifications retain their separate bearer caller configurations. App calls carrying a service SVID
-still require independently verified operator OIDC; Notifications receives read-only request access;
-MCP edge calls retain the configured actor account. MCP delegation uses the effective
-Identity's grants and live UID.
+The Actions receiver accepts exact App and Notifications service SVID grants and live workload
+Identity SVIDs. Kubernetes TokenReview bearers grant no admission. App operator calls also require
+independently verified operator OIDC; Notifications receives read-only request access. MCP edge
+presents its exact service SVID with typed Connection delegation, and Session delegation likewise
+requires its configured service actor. Delegation keeps the service actor separate from the effective
+Identity, whose grants and live UID govern the call. Public OAuth and client metadata endpoints retain
+their method-specific authentication exceptions.
 
 ```mermaid
 flowchart LR
-    app[App service SVID] -->|accepted with operator OIDC; caller config pending| actions[Action Service]
-    notifications[Notifications service SVID] -->|accepted for read methods; caller config pending| actions
-    mcp[MCP edge service SVID] -->|mTLS + typed Connection delegation; no bearer fallback| actions
-    actions -->|effective Identity grants| policy[Policy bindings]
+    app[App service SVID] -->|mTLS plus operator OIDC| actions[Action Service]
+    notifications[Notifications service SVID] -->|mTLS: read methods only| actions
+    mcp[MCP edge service SVID] -->|mTLS + typed Connection delegation| actions
+    session[Configured Session service actor] -->|mTLS + typed Session delegation| actions
+    workload[Live workload Identity SVID] -->|mTLS: Identity grants| actions
+    actions -->|effective Identity grants and live UID| policy[Policy bindings]
 ```
 
 ## Service definitions
