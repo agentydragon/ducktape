@@ -891,3 +891,37 @@ py_library(
     name = "action_cli",
     srcs = ["action_cli.py"],
 )
+
+py_library(
+    name = "native_pod_pool",
+    srcs = ["native_pod_pool.py"],
+    deps = [
+        ":cleanup_diagnostics",
+        ":cluster",
+        ":native_platform",
+        ":native_sandbox",
+        ":sandbox",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/proto:identity_pb2",
+        "@pypi//protobuf",
+    ],
+)
+
+py_test(
+    name = "test_native_pod_pool",
+    srcs = ["test_native_pod_pool.py"],
+    deps = [
+        ":cluster",
+        ":environment_transport",
+        ":native_platform",
+        ":native_pod_pool",
+        ":sandbox",
+        "//:conftest",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/proto:identity_pb2",
+        "//agentplane/system_tests:conftest",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
