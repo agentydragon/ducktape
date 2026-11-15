@@ -11,3 +11,9 @@
 - Don't hand over dashboards with unresolved macros, empty frames, datasource errors, or
   unexplained all-zero panels; record any explicit empty/all-zero allow-list exception and
   its reason in the PR.
+
+`home_network_overview.py` is a bounded panel-constructor pilot. It returns native Grafana
+JSON; unusual panels and complete `fieldConfig`, `options` and targets remain ordinary
+JSON dictionaries. Its Bazel `home_network_overview_json` target renders the existing
+`home-network-overview.json` artifact for both deployment and visual tests. Edit the Python
+source; there is no second maintained JSON copy. Other dashboards remain JSON files.

@@ -1,12 +1,12 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_library")
+load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 load("//grafana/visual_tests:visual_test.bzl", "grafana_dashboard_visual_test")
 
 exports_files(
     [
         "aiquota-history.json",
-        "home-network-overview.json",
     ],
     visibility = [
         "//cluster/cdk8s/monitoring:__pkg__",
@@ -15,11 +15,43 @@ exports_files(
 
 filegroup(
     name = "dashboards",
-    srcs = glob(["*.json"]),
+    srcs = glob(["*.json"]) + [":home-network-overview.json"],
     visibility = [
         "//cluster/cdk8s/monitoring:__pkg__",
         "//grafana/skill:__pkg__",
     ],
+)
+
+py_library(
+    name = "home_network_overview",
+    srcs = ["home_network_overview.py"],
+)
+
+py_binary(
+    name = "home_network_overview_bin",
+    main_module = "cluster.cdk8s.monitoring.dashboards.home_network_overview",
+    deps = [":home_network_overview"],
+)
+
+genrule(
+    name = "home_network_overview_raw",
+    outs = ["home-network-overview.raw.json"],
+    cmd = "$(location :home_network_overview_bin) > $@",
+    tools = [":home_network_overview_bin"],
+)
+
+js_run_binary(
+    name = "home_network_overview_json",
+    srcs = [":home_network_overview_raw"],
+    args = [
+        "--parser",
+        "json",
+        "home-network-overview.raw.json",
+    ],
+    chdir = package_name(),
+    stdout = "home-network-overview.json",
+    tool = "//devinfra:prettier_bin",
+    visibility = ["//cluster/cdk8s/monitoring:__pkg__"],
 )
 
 py_library(
