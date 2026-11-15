@@ -52,12 +52,12 @@ def test_clean_marker_requires_every_cleanup_boundary(
     volumes.callback(close, "volumes")
     node = baseline.K3s(tmp_path, tmp_path / "unused-binary")
     if failure is None:
-        assert stack._certify_baseline(node, fixture, None, marker, resources, volumes) == 0
+        assert stack._certify_baseline(node, fixture, None, None, marker, resources, volumes) == 0
         assert order == ["resources", "workloads", "volumes"]
         assert json.loads((tmp_path / "server.json").read_text())["state"] == "clean"
     else:
         with pytest.raises(RuntimeError, match="owned resource did not close"):
-            stack._certify_baseline(node, fixture, None, marker, resources, volumes)
+            stack._certify_baseline(node, fixture, None, None, marker, resources, volumes)
         assert json.loads((tmp_path / "server.json").read_text())["state"] == "dirty"
         assert order[-1] == failure
 

@@ -34,7 +34,12 @@ from python.runfiles import Runfiles
 
 from agentplane.system_tests.deployment import certificates, process_traces, rendered_fixture
 from agentplane.system_tests.deployment.operator_tokens import OperatorTokens, dex_id_token
-from agentplane.system_tests.deployment.virtualization import Virtualization, VirtualizationFactory
+from agentplane.system_tests.deployment.virtualization import (
+    GuestLifecycle,
+    RetainedInfrastructure,
+    RuntimeFactory,
+    WorkspaceStorage,
+)
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.port_forward import PortForward
 from agentplane.system_tests.driver.tracing import tracer
@@ -169,6 +174,19 @@ def _deployment_images(objects: list[dict[str, Any]]) -> set[str]:
     }
 
 
+def _runtime_images(objects: list[dict[str, Any]]) -> set[str]:
+    workload_kinds = {"Deployment", "DaemonSet", "StatefulSet", "ReplicaSet", "Job"}
+    return {
+        container["image"]
+        for doc in objects
+        if doc["kind"] in workload_kinds
+        for container in (
+            doc["spec"]["template"]["spec"].get("initContainers", [])
+            + doc["spec"]["template"]["spec"].get("containers", [])
+        )
+    }
+
+
 def _pod_template_images(objects: list[dict[str, Any]]) -> set[str]:
     return {
         container["image"]
@@ -220,7 +238,8 @@ def _baseline_evidence(
     pki: list[dict[str, Any]],
     marker: dict[str, Any],
     warm: bool,
-    virtualization: Virtualization | None,
+    retained_infrastructure: RetainedInfrastructure | None,
+    workspace_storage: WorkspaceStorage | None,
 ) -> dict[str, Any]:
     pods = json.loads(k3s.kubectl("get", "pods", "-n", fixture.namespace, "-o", "json"))["items"]
     deployment = json.loads(k3s.kubectl("get", "deployment", "postgres", "-n", fixture.namespace, "-o", "json"))
@@ -233,8 +252,8 @@ def _baseline_evidence(
         for doc in pki
         if doc["kind"] == "Deployment"
     }
-    vm_controllers = virtualization.baseline_identity(k3s) if virtualization is not None else {}
-    if warm and vm_controllers != marker.get("vm_controller_uids", {}):
+    vm_controllers = retained_infrastructure.identity(k3s) if retained_infrastructure is not None else {}
+    if warm and retained_infrastructure is not None and vm_controllers != marker.get("vm_controller_uids", {}):
         raise RuntimeError("retained virtualization identities changed; refusing to mark this baseline clean")
     marker["vm_controller_uids"] = vm_controllers
     if warm and controllers != marker["pki_controller_uids"]:
@@ -255,7 +274,9 @@ def _baseline_evidence(
         "collector_namespace_uid": k3s.kubectl("get", "namespace", "monitoring", "-o", "jsonpath={.metadata.uid}"),
         "pki_controller_uids": controllers,
         "vm_controller_uids": vm_controllers,
-        "workspace_storage_class_uid": (virtualization.storage_class_uid(k3s) if virtualization is not None else None),
+        "workspace_storage_class_uid": (
+            workspace_storage.storage_class_uid(k3s) if workspace_storage is not None else None
+        ),
         "layers_in_memory": fixture.runtime is not rendered_fixture.SandboxRuntime.KUBEVIRT,
         "model_endpoint": models.url if isinstance(models, rendered_fixture.LocalModel) else None,
     }
@@ -319,7 +340,8 @@ def _baseline_clean(k3s: K3s, fixture: rendered_fixture.RenderedFixture) -> None
 def _certify_baseline(
     k3s: K3s,
     fixture: rendered_fixture.RenderedFixture,
-    virtualization: Virtualization | None,
+    guest: GuestLifecycle | None,
+    workspace_storage: WorkspaceStorage | None,
     marker: dict[str, Any],
     resources: contextlib.ExitStack,
     volumes: contextlib.ExitStack,
@@ -327,15 +349,17 @@ def _certify_baseline(
     with tracer.start_as_current_span("system_test.stack.resources.close"):
         resources.close()
     _baseline_clean(k3s, fixture)
-    if virtualization is not None:
-        virtualization.clean(k3s)
+    if guest is not None:
+        guest.clean(k3s)
+    if workspace_storage is not None:
+        workspace_storage.clean(k3s)
     # Namespace deletion releases all VM users. A failed detach must leave the marker dirty.
     with tracer.start_as_current_span("system_test.stack.volumes.release"):
         volumes.close()
     with tracer.start_as_current_span("system_test.stack.baseline.certify"):
         marker["state"] = "clean"
         baseline.write_marker(marker)
-    return virtualization.released_devices if virtualization is not None else 0
+    return workspace_storage.released_devices if workspace_storage is not None else 0
 
 
 @contextlib.contextmanager
@@ -345,14 +369,14 @@ def running_stack(
     models: rendered_fixture.Models,
     validate_vm_shutdown: Callable[[], bool],
     persist_infrastructure: bool,
-    virtualization_factory: VirtualizationFactory | None,
+    runtime_factory: RuntimeFactory | None,
 ) -> Iterator[Stack]:
     """Create fresh fixtures; retain infrastructure only with the executor's lifecycle permission."""
     crds = sorted((Runfiles.CreateOrRaise().root() / "ducktape/agentplane/crds/manifests").glob("crd-*.yaml"))
     fixture = inputs.fixture
     # Virtualized suites keep image layers on disk: a 2026-10-30 tmpfs trial beside six VM guests
     # lost an executor without a reliable warm-start gain.
-    uses_virtualization = fixture.runtime is not rendered_fixture.SandboxRuntime.POD
+    uses_guest_runtime = fixture.runtime is not rendered_fixture.SandboxRuntime.POD
     if (fixture.runtime is rendered_fixture.SandboxRuntime.FIRECRACKER) and os.environ.get(
         "AGENTPLANE_K3S_REQUIRE_KVM"
     ) != "1":
@@ -361,18 +385,28 @@ def running_stack(
         raise ValueError("the Firecracker fixture does not retain executor snapshots")
     cert_manager, trust_manager = pki_infrastructure.releases()
     pki_images = inputs.pki_image_layouts
-    if uses_virtualization != (virtualization_factory is not None):
+    if uses_guest_runtime != (runtime_factory is not None):
         raise ValueError("VM/Firecracker deployment and lifecycle extension do not match")
     work = Path(tempfile.mkdtemp())
-    virtualization = virtualization_factory(work) if virtualization_factory is not None else None
-    releases = virtualization.releases if virtualization is not None else []
+    runtime = runtime_factory(work) if runtime_factory is not None else None
+    guest = runtime.guest if runtime is not None else None
+    retained_infrastructure = runtime.retained_infrastructure if runtime is not None else None
+    workspace_storage = runtime.workspace_storage if runtime is not None else None
+    baseline_resources = retained_infrastructure.resources if retained_infrastructure is not None else []
+    guest_setup_objects = guest.setup_objects if guest is not None else []
     infrastructure_images = inputs.vm_image_layouts
+    guest_setup_image_references = _runtime_images(guest_setup_objects)
+    if missing := guest_setup_image_references - infrastructure_images.keys():
+        raise ValueError(f"Guest runtime workloads lack OCI layouts for: {sorted(missing)}")
     fixture_images = inputs.image_layouts
     guest_images = inputs.guest_image_layouts
-    if uses_virtualization != bool(guest_images):
+    if uses_guest_runtime != bool(guest_images):
         raise ValueError("VM/Firecracker deployment and guest image inputs do not match")
-    for objects, images in [(cert_manager + trust_manager, pki_images), (releases, infrastructure_images)]:
-        if missing := _deployment_images(objects) - images.keys():
+    for objects, images in [
+        (cert_manager + trust_manager, pki_images),
+        (baseline_resources + guest_setup_objects, infrastructure_images),
+    ]:
+        if missing := _runtime_images(objects) - images.keys():
             raise ValueError(f"Infrastructure workloads lack OCI layouts for: {sorted(missing)}")
 
     k3s = K3s(work, inputs.binary)
@@ -399,23 +433,27 @@ def running_stack(
                         crds,
                         cert_manager
                         + trust_manager
-                        + releases
-                        + (virtualization.baseline_objects() if virtualization is not None else []),
+                        + baseline_resources
+                        + (retained_infrastructure.baseline_objects() if retained_infrastructure is not None else []),
                         pki_images | infrastructure_images,
-                        layers_in_memory=not uses_virtualization,
+                        layers_in_memory=not uses_guest_runtime,
                         helpers={
                             "certificates.py": Path(certificates.__file__),
-                            **(virtualization.baseline_helpers() if virtualization is not None else {}),
+                            **(
+                                retained_infrastructure.baseline_helpers()
+                                if retained_infrastructure is not None
+                                else {}
+                            ),
                         },
                     ),
-                    layers_in_memory=not uses_virtualization,
+                    layers_in_memory=not uses_guest_runtime,
                 )
             else:
                 # An executor can restore a retained snapshot even when this action opts out.
                 # Stop its exact owned server before resetting the ordinary stack's state.
                 baseline.stop_previous()
                 process = k3s.start(
-                    layers_in_memory=not uses_virtualization,
+                    layers_in_memory=not uses_guest_runtime,
                     preserve_image_store=k3s.image_store_is_retainable(),
                     database_in_memory=(fixture.runtime is rendered_fixture.SandboxRuntime.FIRECRACKER),
                 )
@@ -429,14 +467,14 @@ def running_stack(
             )
 
             def remove_work() -> None:
-                if virtualization is None or virtualization.closed:
+                if workspace_storage is None or workspace_storage.closed:
                     shutil.rmtree(work, ignore_errors=True)
                 else:
                     logger.error("preserving %s because a fixture loop device did not detach", work)
 
             block_cleanup.callback(remove_work)
-            if virtualization is not None:
-                block_cleanup.enter_context(virtualization)
+            if workspace_storage is not None:
+                block_cleanup.enter_context(workspace_storage)
             with tracer.start_as_current_span("system_test.collector.expose"):
                 k3s.kubectl(
                     "apply",
@@ -460,8 +498,8 @@ def running_stack(
                     mcp,
                     operator_tokens.public_key if operator_tokens is not None else None,
                 )
-                if virtualization is not None:
-                    virtualization.configure(fixture.objects)
+                if guest is not None:
+                    guest.configure(fixture.objects)
             deployment_images = _deployment_images(fixture.objects)
             if used := deployment_images & guest_images.keys():
                 raise ValueError(f"Guest images are used by Deployments: {sorted(used)}")
@@ -469,7 +507,7 @@ def running_stack(
                 raise ValueError(f"Fixture workloads lack OCI layouts for: {sorted(missing)}")
             # PodTemplates do not start Pods when applied. Import their private images while
             # the Deployments start, but join before the suite can create a Sandbox from them.
-            template_images = _pod_template_images(fixture.objects) if virtualization is None else set()
+            template_images = _pod_template_images(fixture.objects) if runtime is None else set()
             deferred_images = {
                 image: layout
                 for image, layout in fixture_images.items()
@@ -483,8 +521,10 @@ def running_stack(
             k3s.protect_image_layouts(declared_images)
             # A recycled node can hold another stack's images, e.g. the MCP fixtures on a Pod stack.
             k3s.remove_undeclared_fixture_images(declared_images.keys())
-            if virtualization is not None and install_baseline:
+            if install_baseline:
                 k3s.import_images(infrastructure_images)
+            elif guest_setup_image_references:
+                k3s.import_images({image: infrastructure_images[image] for image in guest_setup_image_references})
             cleanup.callback(certificates.report, k3s.kubectl, cert_manager + trust_manager)
             # Import the next group's images during apply/readiness work for the preceding group. A single
             # worker preserves blob deduplication and joins before k3s teardown, including on setup failure.
@@ -494,9 +534,11 @@ def running_stack(
                     if install_baseline
                     else None
                 )
-                if virtualization is not None and install_baseline:
-                    virtualization.install(k3s)
+                if retained_infrastructure is not None and install_baseline:
+                    retained_infrastructure.install(k3s)
                     setup.add_event("KubeVirt and Kyverno applied")
+                if guest is not None:
+                    guest.install(k3s)
                 # Applying a workload before its image is imported would pull it from the registry.
                 if pki_import is not None:
                     pki_import.result()
@@ -533,16 +575,18 @@ def running_stack(
                 with tracer.start_as_current_span("system_test.crds.apply"):
                     for crd in crds:
                         k3s.kubectl("apply", "-f", str(crd))
-                if virtualization is not None:
-                    virtualization.wait_for_apis(k3s)
+                if retained_infrastructure is not None:
+                    retained_infrastructure.wait_for_apis(k3s)
+                if guest is not None:
+                    guest.wait_for_apis(k3s)
                 setup.add_event("CRDs applied")
                 # Namespaces first, then CRD-backed and the rest; one apply tolerates ordering within a kind only.
                 namespaces = [d for d in fixture.objects if d["kind"] == "Namespace"]
                 rest = [d for d in fixture.objects if d["kind"] != "Namespace"]
                 with tracer.start_as_current_span("system_test.manifests.apply"):
                     k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(namespaces))
-                    if virtualization is not None:
-                        cleanup.enter_context(virtualization.provisioning(cluster))
+                    if workspace_storage is not None:
+                        cleanup.enter_context(workspace_storage.provisioning(cluster))
                         setup.add_event("workspace provisioner ready")
                     print("apply:", k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(rest)))
                     logger.info("applied %s objects", len(rest))
@@ -576,9 +620,12 @@ def running_stack(
                 if deferred_import is not None:
                     deferred_import.result()
                     setup.add_event("images imported")
-            if virtualization is not None:
-                virtualization.wait_until_ready(k3s)
+            if retained_infrastructure is not None:
+                retained_infrastructure.wait_until_ready(k3s)
                 setup.add_event("KubeVirt and Kyverno ready")
+            if guest is not None:
+                guest.wait_until_ready(k3s)
+                setup.add_event("guest runtime ready")
             _resolve_on_node(k3s, fixture)
             access = None
             token = None
@@ -617,27 +664,32 @@ def running_stack(
                 raise ValueError("the App fixture neither pins an operator-token key nor runs Dex")
             print("memory:", run("free", "-m"))
             setup.add_event("stack ready")
-            if virtualization is not None:
-                cleanup.enter_context(virtualization.capture(k3s, fixture.namespace, validate_vm_shutdown))
+            if guest is not None:
+                cleanup.enter_context(guest.capture(k3s, fixture.namespace, validate_vm_shutdown))
         persistence_output = undeclared_outputs_dir() / "persistence-suite.json"
         if persist_infrastructure:
             persistence_evidence = _baseline_evidence(
-                k3s, fixture, models, cert_manager + trust_manager, baseline_marker, baseline_warm, virtualization
+                k3s,
+                fixture,
+                models,
+                cert_manager + trust_manager,
+                baseline_marker,
+                baseline_warm,
+                retained_infrastructure,
+                workspace_storage,
             )
             persistence_output.write_text(json.dumps(persistence_evidence))
         yield Stack(k3s=k3s, cluster=cluster, base_url=fixture.app_origin, token=token, mcp_fixtures=access)
         with tracer.start_as_current_span("system_test.stack.diagnostics"):
             print(k3s.report(fixture.namespace))
-            if virtualization is not None:
-                (undeclared_outputs_dir() / "vm-sandboxes.txt").write_text(
-                    virtualization.report(k3s, fixture.namespace)
-                )
+            if guest is not None:
+                (undeclared_outputs_dir() / "vm-sandboxes.txt").write_text(guest.report(k3s, fixture.namespace))
         if persist_infrastructure:
             # Stop the provisioner, forwards, profilers and guest log capture first. Their checks
             # must pass before we can certify the baseline, while the API and retained node stay live.
             with tracer.start_as_current_span("system_test.stack.cleanup"):
                 released_devices = _certify_baseline(
-                    k3s, fixture, virtualization, baseline_marker, cleanup, block_cleanup
+                    k3s, fixture, guest, workspace_storage, baseline_marker, cleanup, block_cleanup
                 )
                 persistence_evidence["workspace_loop_devices_released"] = released_devices
                 persistence_evidence["cleanup"] = "complete"
