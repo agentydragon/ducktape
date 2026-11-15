@@ -8,20 +8,6 @@ backend. Grafana reaches Loki internally via the cluster Service.
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cilium_crds.io.cilium import (
-    CiliumNetworkPolicySpecEgress,
-    CiliumNetworkPolicySpecEgressToEndpoints,
-    CiliumNetworkPolicySpecEgressToEntities,
-    CiliumNetworkPolicySpecEgressToPorts,
-    CiliumNetworkPolicySpecEgressToPortsPorts,
-    CiliumNetworkPolicySpecEgressToPortsPortsProtocol,
-    CiliumNetworkPolicySpecIngress,
-    CiliumNetworkPolicySpecIngressFromEndpoints,
-    CiliumNetworkPolicySpecIngressFromEntities,
-    CiliumNetworkPolicySpecIngressToPorts,
-    CiliumNetworkPolicySpecIngressToPortsPorts,
-    CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
-)
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
 from cluster.cdk8s import cilium, namespaces, node_scheduling
@@ -30,7 +16,7 @@ from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import grafana_helmrepository
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.seaweedfs import s3
 
 NAME = "loki"
@@ -229,37 +215,8 @@ def _helm_releases(chart: Chart) -> None:
     )
 
 
-def _ingress_tcp(*ports: str) -> list[CiliumNetworkPolicySpecIngressToPorts]:
-    return [
-        CiliumNetworkPolicySpecIngressToPorts(
-            ports=[
-                CiliumNetworkPolicySpecIngressToPortsPorts(
-                    port=port, protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP
-                )
-                for port in ports
-            ]
-        )
-    ]
-
-
-def _from_pods(labels: dict[str, str]) -> list[CiliumNetworkPolicySpecIngressFromEndpoints]:
-    return [CiliumNetworkPolicySpecIngressFromEndpoints(match_labels=labels)]
-
-
-def _egress_ports(
-    *ports: tuple[str, CiliumNetworkPolicySpecEgressToPortsPortsProtocol],
-) -> list[CiliumNetworkPolicySpecEgressToPorts]:
-    return [
-        CiliumNetworkPolicySpecEgressToPorts(
-            ports=[CiliumNetworkPolicySpecEgressToPortsPorts(port=port, protocol=protocol) for port, protocol in ports]
-        )
-    ]
-
-
 def _network_policy(chart: Chart) -> None:
     namespace_label = "k8s:io.kubernetes.pod.namespace"
-    tcp = CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-    udp = CiliumNetworkPolicySpecEgressToPortsPortsProtocol.UDP
     loki_pods = {"app.kubernetes.io/name": NAME, namespace_label: NAME}
     # Loki has auth disabled: any pod reaching port 3100 can read, write, or delete
     # every cluster log. These per-consumer rules are its network access boundary.
@@ -272,99 +229,63 @@ def _network_policy(chart: Chart) -> None:
             # Vector Talos-log receiver → Loki (Talos node logs). The receiver runs in
             # hostNetwork so it can bind only 127.0.0.1:13333; Cilium represents it as
             # host on the local node and remote-node after a cross-node service hop.
-            CiliumNetworkPolicySpecIngress(
-                from_entities=[
-                    CiliumNetworkPolicySpecIngressFromEntities.HOST,
-                    CiliumNetworkPolicySpecIngressFromEntities.REMOTE_HYPHEN_NODE,
-                ],
-                to_ports=_ingress_tcp("3100"),
-            ),
+            IngressRule.from_entities(Entity.HOST, Entity.REMOTE_NODE, ports=(3100,)),
             # Grafana → Loki (log queries)
-            CiliumNetworkPolicySpecIngress(
-                from_endpoints=_from_pods({"app": "grafana", namespace_label: "monitoring"}),
-                to_ports=_ingress_tcp("3100"),
+            IngressRule.from_endpoints(
+                {"app": "grafana", namespace_label: "monitoring"}, ports=(3100,)
             ),
             # Props backend → Loki (GET /api/runs/{id}/logs reads agent container logs)
-            CiliumNetworkPolicySpecIngress(
-                from_endpoints=_from_pods(
-                    {
-                        "app.kubernetes.io/component": "backend",
-                        "app.kubernetes.io/instance": "props",
-                        namespace_label: "props",
-                    }
-                ),
-                to_ports=_ingress_tcp("3100"),
+            IngressRule.from_endpoints(
+                {
+                    "app.kubernetes.io/component": "backend",
+                    "app.kubernetes.io/instance": "props",
+                    namespace_label: "props",
+                },
+                ports=(3100,),
             ),
             # Central Alloy → Loki (OTel log forwarding), the syslog Alloy → Loki (the home switch's
             # logs); the per-node Alloys scrape the components' metrics on the same port.
-            CiliumNetworkPolicySpecIngress(
-                from_endpoints=[
-                    *_from_pods({"app.kubernetes.io/name": "alloy", namespace_label: "monitoring"}),
-                    *_from_pods({"app.kubernetes.io/name": "alloy-node", namespace_label: "monitoring"}),
-                    *_from_pods({"app.kubernetes.io/name": "alloy-syslog", namespace_label: "monitoring"}),
-                    *_from_pods({"app.kubernetes.io/name": "alloy-journal", namespace_label: "monitoring"}),
-                ],
-                to_ports=_ingress_tcp("3100"),
+            IngressRule.from_endpoints(
+                {"app.kubernetes.io/name": "alloy", namespace_label: "monitoring"},
+                {"app.kubernetes.io/name": "alloy-node", namespace_label: "monitoring"},
+                {"app.kubernetes.io/name": "alloy-syslog", namespace_label: "monitoring"},
+                {"app.kubernetes.io/name": "alloy-journal", namespace_label: "monitoring"},
+                ports=(3100,),
             ),
             # Per-node Alloy → Loki canary metrics (ServiceMonitor scraping)
-            CiliumNetworkPolicySpecIngress(
-                from_endpoints=_from_pods({"app.kubernetes.io/name": "alloy-node", namespace_label: "monitoring"}),
-                to_ports=_ingress_tcp("3500"),
+            IngressRule.from_endpoints(
+                {"app.kubernetes.io/name": "alloy-node", namespace_label: "monitoring"}, ports=(3500,)
             ),
             # Gatus → Loki (health checks)
-            CiliumNetworkPolicySpecIngress(
-                from_endpoints=_from_pods(cilium.PROBER.cilium), to_ports=_ingress_tcp("3100")
-            ),
+            cilium.PROBER.admit(3100),
             # Authentik proxy outpost → Loki (SSO-protected external access)
-            CiliumNetworkPolicySpecIngress(
-                from_endpoints=_from_pods({namespace_label: "authentik"}), to_ports=_ingress_tcp("3100")
-            ),
+            IngressRule.from_endpoints({namespace_label: "authentik"}, ports=(3100,)),
             # Haku's read-only, namespace-filtered proxy queries `loki-read` directly,
             # enforcing its validator/allowlist without the gateway resolver path (#4750).
-            CiliumNetworkPolicySpecIngress(
-                from_endpoints=_from_pods(
-                    {"app.kubernetes.io/name": "loki-read-proxy", namespace_label: "loki-read-proxy"}
-                ),
-                to_ports=_ingress_tcp("3100"),
+            IngressRule.from_endpoints(
+                {"app.kubernetes.io/name": "loki-read-proxy", namespace_label: "loki-read-proxy"}, ports=(3100,)
             ),
             # Loki ↔ Loki (SimpleScalable read/write/backend, gateway, and canary)
-            CiliumNetworkPolicySpecIngress(
-                from_endpoints=_from_pods(loki_pods), to_ports=_ingress_tcp("80", "8080", "3100", "9095", "7946")
+            IngressRule.from_endpoints(
+                loki_pods, ports=(80, 8080, 3100, 9095, 7946)
             ),
         ],
         egress=[
             # Loki → kube-apiserver (sc-rules sidecar watches secrets)
-            CiliumNetworkPolicySpecEgress(
-                to_entities=[CiliumNetworkPolicySpecEgressToEntities.KUBE_HYPHEN_APISERVER],
-                to_ports=_egress_ports(("443", tcp), ("6443", tcp)),
-            ),
+            EgressRule.to_entities(Entity.KUBE_APISERVER, ports=(443, 6443)),
             # Loki → kube-dns (DNS resolution)
-            CiliumNetworkPolicySpecEgress(
-                to_endpoints=[
-                    CiliumNetworkPolicySpecEgressToEndpoints(
-                        match_labels={namespace_label: "kube-system", "k8s-app": "kube-dns"}
-                    )
-                ],
-                to_ports=_egress_ports(("53", udp), ("53", tcp)),
-            ),
+            cilium.dns_egress(),
             # Loki → SeaweedFS S3 (S3 chunk/index storage)
-            CiliumNetworkPolicySpecEgress(
-                to_endpoints=[
-                    CiliumNetworkPolicySpecEgressToEndpoints(
-                        match_labels={
-                            "app.kubernetes.io/component": "s3",
-                            "app.kubernetes.io/name": _SEAWEEDFS,
-                            namespace_label: _SEAWEEDFS,
-                        }
-                    )
-                ],
-                to_ports=_egress_ports(("8333", tcp)),
+            EgressRule.to_endpoints(
+                {
+                    "app.kubernetes.io/component": "s3",
+                    "app.kubernetes.io/name": _SEAWEEDFS,
+                    namespace_label: _SEAWEEDFS,
+                },
+                8333,
             ),
             # Loki ↔ Loki (SimpleScalable read/write/backend, gateway, and canary)
-            CiliumNetworkPolicySpecEgress(
-                to_endpoints=[CiliumNetworkPolicySpecEgressToEndpoints(match_labels=loki_pods)],
-                to_ports=_egress_ports(("80", tcp), ("8080", tcp), ("7946", tcp), ("9095", tcp), ("3100", tcp)),
-            ),
+            EgressRule.to_endpoints(loki_pods, 80, 8080, 7946, 9095, 3100),
         ],
     )
 
