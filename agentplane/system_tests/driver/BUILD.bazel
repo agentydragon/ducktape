@@ -842,6 +842,7 @@ py_test(
         "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/proto:identity_pb2",
         "//agentplane/system_tests:conftest",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

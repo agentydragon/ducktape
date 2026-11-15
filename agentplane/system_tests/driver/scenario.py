@@ -48,7 +48,8 @@ async def open_resources(
                         type(error) if error is not None else None,
                         error,
                         error.__traceback__ if error is not None else None,
-                    )
+                    ),
+                    primary_error=error,
                 )
             except BaseException as cleanup_error:
                 if error is not None:

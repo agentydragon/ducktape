@@ -221,7 +221,12 @@ async def test_cancellation_during_teardown_waits_for_deletion_before_closing_cl
     async with asyncio.timeout(2):
         task = asyncio.create_task(run())
         await deleting.wait()
-        task.cancel()
+        for _ in range(3):
+            task.cancel()
+            delivered = asyncio.get_running_loop().create_future()
+            asyncio.get_running_loop().call_soon(delivered.set_result, None)
+            await delivered
+            assert not task.done()
         release.set()
         with pytest.raises(asyncio.CancelledError):
             await task

@@ -48,7 +48,7 @@ class PolicyObjects:
         del traceback
         with tracer.start_as_current_span("system_test.mcp.policy_cleanup"):
             try:
-                await finish_cleanup(self._delete_all())
+                await finish_cleanup(self._delete_all(), primary_error=exc)
             except BaseException as error:
                 if exc is None:
                     raise
