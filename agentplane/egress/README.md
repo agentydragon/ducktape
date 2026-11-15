@@ -209,8 +209,7 @@ In the rules namespace (`--rules-namespace`): `get`, `list`, `watch` on `egressc
 `policybindings/status`. Each admitted Sandbox namespace grants only `get`, `list` and `watch` on Sandboxes. The proxy
 uses the Sandbox's own ServiceAccount name without reading ServiceAccount or Pod objects. In the credentials namespace
 (required `--credentials-namespace`): `get`, `list`, `watch` on
-`secrets`, and nothing else. The proxy no longer calls TokenReview; removal of its legacy
-`tokenreviews.authentication.k8s.io` grant is gated on receiver rollout. There is no leader election: every replica applies the same `EgressReady` under one field manager, and
+`secrets`, and nothing else. The proxy has no TokenReview grant. There is no leader election: every replica applies the same `EgressReady` under one field manager, and
 writes only when the condition it decides differs from the one the binding carries.
 
 Substituted credentials live in a namespace of their own because RBAC cannot filter Secrets by

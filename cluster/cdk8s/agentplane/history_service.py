@@ -40,7 +40,6 @@ from cluster.cdk8s.probes import tls_grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
-from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 
 NAME = "history-service"
 _LABELS = {"app.kubernetes.io/name": NAME}
@@ -91,14 +90,6 @@ class HistoryService(Construct):
         self.env = env
         self.callers = callers
         endpoint = service(env.namespace)
-        # CLEANUP(added 2026-11-15): Remove after the receiver retirement and settings omission roll out.
-        token_reviewer_cluster_rbac(
-            self,
-            "token-reviewer",
-            name=f"{env.namespace}-history-service-token-reviewer",
-            service_account_name=NAME,
-            namespace=env.namespace,
-        )
         Role(
             self,
             "service-account-reader-role",

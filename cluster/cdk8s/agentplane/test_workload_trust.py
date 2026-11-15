@@ -109,6 +109,15 @@ def _deployment_trust(documents: list[Body]) -> dict[str, set[str]]:
     return trust
 
 
+def test_staging_grants_no_tokenreviews(staging_manifests: list[Body]) -> None:
+    for doc in staging_manifests:
+        if doc["kind"] in {"Role", "ClusterRole"}:
+            for rule in doc.get("rules", []):
+                assert "tokenreviews" not in rule.get("resources", []), doc["metadata"]["name"]
+        if doc["kind"] in {"RoleBinding", "ClusterRoleBinding"}:
+            assert "token-reviewer" not in doc["roleRef"]["name"], doc["metadata"]["name"]
+
+
 def test_every_deployment_verifies_agentplane_svids_against_the_workload_ca_alone(
     staging_manifests: list[Body],
 ) -> None:

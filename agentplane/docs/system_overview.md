@@ -196,8 +196,8 @@ flowchart LR
 ```
 
 First-party backend calls use mounted service SVIDs and the workload trust bundle. Their Pods
-do not project destination-audience ServiceAccount tokens; Kubernetes API credentials remain
-separate.
+do not project destination-audience ServiceAccount tokens and have no TokenReview RBAC grants.
+Kubernetes API credentials remain separate.
 
 Each runner incarnation has one Secret, issued by the Policy Controller for the Sandbox's
 `WorkloadCredential`. The Sandbox Controller projects it to Environment Runtime and the egress

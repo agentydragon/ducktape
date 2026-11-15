@@ -48,7 +48,6 @@ from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, In
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
-from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 
 NAME = "notifications"
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-notification-service"
@@ -106,13 +105,6 @@ class Notifications(Construct):
         self.dispatcher = dispatcher
         endpoint = service(env.namespace)
         http = webhook_service(env.namespace)
-        token_reviewer_cluster_rbac(
-            self,
-            "token-reviewer",
-            name=f"{env.namespace}-notifications-token-reviewer",
-            service_account_name=NAME,
-            namespace=env.namespace,
-        )
         variables = {"AGENTPLANE_NOTIFICATIONS_DATABASE_URL": database_url, **(container_env or {})}
         github = env.notifications_github
         readiness = tls_grpc_probe(

@@ -1321,32 +1321,6 @@ spec:
       app.kubernetes.io/name: llm-ingress
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: agentplane-staging-llm-ingress-token-reviewer
-rules:
-  - apiGroups:
-      - authentication.k8s.io
-    resources:
-      - tokenreviews
-    verbs:
-      - create
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: agentplane-staging-llm-ingress-token-reviewer
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: agentplane-staging-llm-ingress-token-reviewer
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: llm-ingress
-    namespace: agentplane-staging
----
-apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: llm-ingress-sandbox-reader
@@ -1842,32 +1816,6 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: egress
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: agentplane-staging-egress-token-reviewer
-rules:
-  - apiGroups:
-      - authentication.k8s.io
-    resources:
-      - tokenreviews
-    verbs:
-      - create
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: agentplane-staging-egress-token-reviewer
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: agentplane-staging-egress-token-reviewer
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: egress
-    namespace: agentplane-staging
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -2603,32 +2551,6 @@ spec:
     app.kubernetes.io/name: runner-gateway
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: agentplane-staging-history-service-token-reviewer
-rules:
-  - apiGroups:
-      - authentication.k8s.io
-    resources:
-      - tokenreviews
-    verbs:
-      - create
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: agentplane-staging-history-service-token-reviewer
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: agentplane-staging-history-service-token-reviewer
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: history-service
-    namespace: agentplane-staging
----
-apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: history-service-service-accounts
@@ -3027,32 +2949,6 @@ spec:
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: egress
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: agentplane-staging-central-sampler-token-reviewer
-rules:
-  - apiGroups:
-      - authentication.k8s.io
-    resources:
-      - tokenreviews
-    verbs:
-      - create
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: agentplane-staging-central-sampler-token-reviewer
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: agentplane-staging-central-sampler-token-reviewer
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: central-sampler
-    namespace: agentplane-staging
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -8075,32 +7971,6 @@ data:
 immutable: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: agentplane-staging-actions-token-reviewer
-rules:
-  - apiGroups:
-      - authentication.k8s.io
-    resources:
-      - tokenreviews
-    verbs:
-      - create
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: agentplane-staging-actions-token-reviewer
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: agentplane-staging-actions-token-reviewer
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: actions
-    namespace: agentplane-staging
----
-apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: actions
@@ -9015,32 +8885,6 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: mcp-edge
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: agentplane-staging-notifications-token-reviewer
-rules:
-  - apiGroups:
-      - authentication.k8s.io
-    resources:
-      - tokenreviews
-    verbs:
-      - create
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: agentplane-staging-notifications-token-reviewer
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: agentplane-staging-notifications-token-reviewer
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: notifications
-    namespace: agentplane-staging
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -11500,32 +11344,6 @@ spec:
     - digital signature
     - client auth
     - server auth
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: agentplane-staging-policy-controller-token-reviewer
-rules:
-  - apiGroups:
-      - authentication.k8s.io
-    resources:
-      - tokenreviews
-    verbs:
-      - create
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: agentplane-staging-policy-controller-token-reviewer
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: agentplane-staging-policy-controller-token-reviewer
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: policy-controller
-    namespace: agentplane-staging
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy

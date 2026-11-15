@@ -80,7 +80,7 @@ def add_service_workload(
     for ref in serves:
         ports.setdefault(ref.pod_port, ref.container_port())
     replicas = replica_profile or env.replicas
-    # API services call TokenReview; static workloads can opt out of both token mounts.
+    # Kubernetes API clients need a token; other workloads can opt out of both token mounts.
     account = ServiceAccount(
         scope,
         "account",

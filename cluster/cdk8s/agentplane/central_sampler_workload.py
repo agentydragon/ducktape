@@ -47,7 +47,6 @@ from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.service_ref import Port
 from cluster.cdk8s.settings_file import SettingsFile
-from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import env_name
 
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-central-sampler:unset"
@@ -78,14 +77,6 @@ class CentralSampler(Construct):
         self.service = central_sampler.service(namespace)
         self.llm_ingress = llm_ingress.service(namespace)
         self.history_ingress = history_service.service(namespace)
-
-        token_reviewer_cluster_rbac(
-            self,
-            "token-reviewer",
-            name=f"{namespace}-central-sampler-token-reviewer",
-            service_account_name=central_sampler.NAME,
-            namespace=namespace,
-        )
 
         settings = Settings(
             health_listen=f"0.0.0.0:{central_sampler.HEALTH_PORT}",

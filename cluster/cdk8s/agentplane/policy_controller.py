@@ -32,7 +32,6 @@ from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, gr
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
-from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 
 NAME = "policy-controller"
 _LABELS = {"app.kubernetes.io/name": NAME}
@@ -134,13 +133,6 @@ class PolicyController(Construct):
         workload_tls.service_certificate(self, env, container=workload.container, name=NAME, uri=POLICY_CONTROLLER_URI)
         settings_file.mount_into(workload.container, env=Settings.config_file_env)
         self.account = workload.account
-        token_reviewer_cluster_rbac(
-            self,
-            "token-reviewer",
-            name=f"{namespace}-policy-controller-token-reviewer",
-            service_account_name=NAME,
-            namespace=namespace,
-        )
 
     def add_platform_resources(self) -> None:
         """Add fleet network policy, scraping and expiry alert."""
