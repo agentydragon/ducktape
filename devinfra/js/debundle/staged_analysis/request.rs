@@ -7,7 +7,26 @@ use graph_provenance::{InputCapture, ProvenanceRoots};
 use prepare_chunks::prepare_js_chunks;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use tempfile::NamedTempFile;
+
+fn write_artifact_atomically(
+    path: &Path,
+    write: impl FnOnce(&mut fs::File) -> Result<()>,
+) -> Result<()> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let mut temp = NamedTempFile::new_in(parent)
+        .with_context(|| format!("create temporary artifact beside {}", path.display()))?;
+    write(temp.as_file_mut())?;
+    temp.as_file_mut().flush()?;
+    temp.persist(path)
+        .with_context(|| format!("replace analysis artifact {}", path.display()))?;
+    Ok(())
+}
 use vendor::{VendorPlanOptions, build_vendor_resolution_plan};
 
 /// Resolved inputs for computing a reusable analysis artifact.
@@ -91,7 +110,7 @@ pub fn analyze_from_projection(
         },
     )?;
     let provenance = capture.finish_inputs()?;
-    let bytes = super::analyze_program(
+    let artifact = super::analyze_program(
         source.program.into_artifact(),
         AnalyzeProgramInputs {
             diagnostics,
@@ -102,6 +121,32 @@ pub fn analyze_from_projection(
             analysis_engine_sha256,
         },
     )?;
-    fs::write(&args.out, bytes)
-        .with_context(|| format!("write analysis artifact {}", args.out.display()))
+    write_artifact_atomically(&args.out, |output| {
+        artifact
+            .write_to(output)
+            .with_context(|| format!("write analysis artifact {}", args.out.display()))
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn failed_artifact_write_preserves_existing_output() {
+        let path = PathBuf::from(std::env::var_os("TEST_TMPDIR").expect("TEST_TMPDIR"))
+            .join("analysis-artifact.dba");
+        fs::write(&path, b"previous artifact").expect("write previous artifact");
+
+        let result = write_artifact_atomically(&path, |output| {
+            output.write_all(b"partial artifact")?;
+            anyhow::bail!("fixture snapshot failure");
+        });
+
+        assert!(result.is_err());
+        assert_eq!(
+            fs::read(path).expect("read previous artifact"),
+            b"previous artifact"
+        );
+    }
 }

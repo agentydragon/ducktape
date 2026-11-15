@@ -20,6 +20,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use source_identity::ChunkId;
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::{Read, Write};
 use swc_common::GLOBALS;
 
 pub mod analysis_artifact;
@@ -170,7 +171,7 @@ fn chunk_source_digests(provenance: &GraphProvenance) -> BTreeMap<String, String
 /// engine or from other parser inputs. The projection is checked once the
 /// selector solve has completed it.
 pub fn load_analysis(
-    bytes: &[u8],
+    reader: &mut impl Read,
     artifact: &ChunkBundle,
     analysed_chunk_ids: &[String],
     file: Option<&str>,
@@ -178,7 +179,7 @@ pub fn load_analysis(
     provenance: Option<&GraphProvenance>,
     analysis_engine_sha256: &str,
 ) -> Result<(AnalysisArtifactHeader, AnalysisArtifactBody)> {
-    let (header, body) = analysis_artifact::read_header(bytes)?;
+    let header = analysis_artifact::read_header(reader)?;
     let provenance = provenance.context("an analysis artifact requires graph provenance")?;
     ensure!(
         header.analysis_engine_sha256 == analysis_engine_sha256,
@@ -204,7 +205,7 @@ pub fn load_analysis(
         );
     }
     let ordinals = context_ordinals(artifact, analysed_chunk_ids, file, reparsed)?;
-    let body = analysis_artifact::read_body(body, &ordinals)?;
+    let body = analysis_artifact::read_body(reader, &ordinals)?;
     Ok((header, body))
 }
 
@@ -219,6 +220,20 @@ pub struct AnalyzeProgramInputs<'a> {
     pub analysis_engine_sha256: &'a str,
 }
 
+/// Analysis facts ready to encode after the source program has been released.
+/// The compressed artifact is written only when `write_to` receives its sink.
+pub struct PreparedAnalysisArtifact {
+    header: AnalysisArtifactHeader,
+    body: AnalysisArtifactBody,
+    ordinals: ContextOrdinals,
+}
+
+impl PreparedAnalysisArtifact {
+    pub fn write_to(self, writer: &mut impl Write) -> Result<()> {
+        analysis_artifact::write_artifact(&self.header, &self.body, &self.ordinals, writer)
+    }
+}
+
 /// `debundle analyze`: the cross-module pass and every analysed chunk's facts,
 /// from the parsed program and a projection alone, encoded as an analysis
 /// artifact. A run with the same projection, engine and parser inputs reads it
@@ -226,7 +241,7 @@ pub struct AnalyzeProgramInputs<'a> {
 pub fn analyze_program(
     mut artifact: ChunkBundle,
     inputs: AnalyzeProgramInputs<'_>,
-) -> Result<Vec<u8>> {
+) -> Result<PreparedAnalysisArtifact> {
     let AnalyzeProgramInputs {
         diagnostics,
         spec,
@@ -332,10 +347,14 @@ pub fn analyze_program(
         chunks,
     };
     // Facts and context ordinals own everything encoding needs. Release the
-    // parsed program and its indexes before allocating the encoded artifact.
+    // parsed program and its indexes before returning the prepared artifact.
     drop(artifact_indexes);
     drop(artifact);
-    analysis_artifact::write_artifact(&header, &body, &ordinals)
+    Ok(PreparedAnalysisArtifact {
+        header,
+        body,
+        ordinals,
+    })
 }
 
 pub fn export_reentry_reports(

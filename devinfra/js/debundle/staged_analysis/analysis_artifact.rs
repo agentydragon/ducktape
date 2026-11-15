@@ -23,6 +23,7 @@ use analysis_stream_proto::debundle::analysis_stream as stream;
 use anyhow::{Context, Result, ensure};
 use prost::Message;
 use std::collections::BTreeMap;
+use std::io::{Read, Write};
 
 use super::ExportReentryReport;
 use super::program_summary::ProgramSummary;
@@ -61,7 +62,8 @@ pub fn write_artifact(
     header: &AnalysisArtifactHeader,
     body: &AnalysisArtifactBody,
     ordinals: &ContextOrdinals,
-) -> Result<Vec<u8>> {
+    writer: &mut impl Write,
+) -> Result<()> {
     let header = encode_header(header)?;
     let mut purities = PuritySnapshot::default();
     let summary = program_summary_proto::snapshot(&body.program_summary, ordinals, &mut purities)?;
@@ -83,27 +85,38 @@ pub fn write_artifact(
             .collect::<Result<_>>()?,
         chunks,
     };
-    let body = analysis_codec::encode_protobuf(&wire)?;
-    let mut bytes = Vec::with_capacity(4 + header.len() + body.len());
-    bytes.extend_from_slice(&u32::try_from(header.len())?.to_le_bytes());
-    bytes.extend_from_slice(&header);
-    bytes.extend_from_slice(&body);
-    Ok(bytes)
+    writer.write_all(&u32::try_from(header.len())?.to_le_bytes())?;
+    writer.write_all(&header)?;
+    analysis_codec::write_protobuf(&wire, writer)
 }
 
-/// The header and the still-encoded body.
-pub fn read_header(bytes: &[u8]) -> Result<(AnalysisArtifactHeader, &[u8])> {
-    let (length, rest) = bytes
-        .split_first_chunk::<4>()
+/// Read and validate the independently encoded artifact header, leaving the
+/// reader positioned at the compressed body. Callers can verify the source
+/// identities before asking [`read_body`] to consume or decompress it.
+pub fn read_header(reader: &mut impl Read) -> Result<AnalysisArtifactHeader> {
+    let mut length = [0; 4];
+    reader
+        .read_exact(&mut length)
         .context("analysis artifact is shorter than its header length")?;
-    let length = usize::try_from(u32::from_le_bytes(*length))?;
-    ensure!(
-        rest.len() >= length,
-        "analysis artifact header claims {length} bytes, {} remain",
-        rest.len()
-    );
-    let (header, body) = rest.split_at(length);
-    let header = wire::AnalysisHeader::decode(header).context("decode analysis artifact header")?;
+    let mut remaining = usize::try_from(u32::from_le_bytes(length))?;
+    let mut bytes = Vec::new();
+    let mut buffer = [0; 8192];
+    while remaining > 0 {
+        let read_len = remaining.min(buffer.len());
+        let count = match reader.read(&mut buffer[..read_len]) {
+            Ok(0) => anyhow::bail!("analysis artifact header claims more bytes than are present"),
+            Ok(count) => count,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error).context("read analysis artifact header"),
+        };
+        bytes
+            .try_reserve(count)
+            .context("reserve analysis artifact header")?;
+        bytes.extend_from_slice(&buffer[..count]);
+        remaining -= count;
+    }
+    let header = wire::AnalysisHeader::decode(bytes.as_slice())
+        .context("decode analysis artifact header")?;
     ensure!(
         !header.analysis_engine_sha256.is_empty(),
         "analysis artifact header has no engine identity"
@@ -113,18 +126,15 @@ pub fn read_header(bytes: &[u8]) -> Result<(AnalysisArtifactHeader, &[u8])> {
             .projection
             .context("analysis artifact header has no projection")?,
     )?;
-    Ok((
-        AnalysisArtifactHeader {
-            analysis_engine_sha256: header.analysis_engine_sha256,
-            projection,
-            chunk_sources: header.chunk_sources,
-        },
-        body,
-    ))
+    Ok(AnalysisArtifactHeader {
+        analysis_engine_sha256: header.analysis_engine_sha256,
+        projection,
+        chunk_sources: header.chunk_sources,
+    })
 }
 
-pub fn read_body(body: &[u8], ordinals: &ContextOrdinals) -> Result<AnalysisArtifactBody> {
-    let wire: stream::AnalysisBody = analysis_codec::decode_protobuf(body)?;
+pub fn read_body(reader: impl Read, ordinals: &ContextOrdinals) -> Result<AnalysisArtifactBody> {
+    let wire: stream::AnalysisBody = analysis_codec::decode_protobuf_from(reader)?;
     let purities = RestoredPurities::restore(wire.purity_graph.context("missing purity graph")?)?;
     let program_summary = program_summary_proto::restore(
         wire.program_summary.context("missing program summary")?,
@@ -355,6 +365,16 @@ mod tests {
         }
     }
 
+    fn artifact_bytes(
+        header: &AnalysisArtifactHeader,
+        body: &AnalysisArtifactBody,
+        ordinals: &ContextOrdinals,
+    ) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        write_artifact(header, body, ordinals, &mut bytes).expect("encode artifact");
+        bytes
+    }
+
     /// The summary owns the imported verdict; both statement causes must
     /// reference that same node after restoration, across the saved boundary.
     fn assert_shared_imported_cause(body: &AnalysisArtifactBody) {
@@ -389,7 +409,7 @@ mod tests {
             assert_shared_imported_cause(&body);
             let ordinals = ContextOrdinals::new(modules(&artifact));
             (
-                write_artifact(&header(), &body, &ordinals).expect("encode"),
+                artifact_bytes(&header(), &body, &ordinals),
                 format!("{:?}", body.chunks),
             )
         });
@@ -400,21 +420,22 @@ mod tests {
             let artifact = bundle(&[1, 0]);
             let fresh = analyze(&artifact);
             let ordinals = ContextOrdinals::new(modules(&artifact));
-            let (read, body) = read_header(&bytes).expect("header");
+            let mut reader = std::io::Cursor::new(&bytes);
+            let read = read_header(&mut reader).expect("header");
             assert_eq!(read.analysis_engine_sha256, header().analysis_engine_sha256);
             assert_eq!(read.chunk_sources, header().chunk_sources);
             assert_eq!(
                 read.projection.encode().unwrap(),
                 header().projection.encode().unwrap()
             );
-            let decoded = read_body(body, &ordinals).expect("decode");
+            let decoded = read_body(reader, &ordinals).expect("decode");
             assert_shared_imported_cause(&decoded);
             let debug_fresh = format!("{:?}", fresh.chunks);
             assert_ne!(debug_fresh, debug_first, "contexts are renumbered");
             assert_eq!(format!("{:?}", decoded.chunks), debug_fresh);
             assert_eq!(
-                write_artifact(&header(), &decoded, &ordinals).expect("re-encode"),
-                write_artifact(&header(), &fresh, &ordinals).expect("encode fresh"),
+                artifact_bytes(&header(), &decoded, &ordinals),
+                artifact_bytes(&header(), &fresh, &ordinals),
             );
         });
     }
@@ -425,16 +446,25 @@ mod tests {
             let artifact = bundle(&[0, 1]);
             let body = analyze(&artifact);
             let ordinals = ContextOrdinals::new(modules(&artifact));
-            let bytes = write_artifact(&header(), &body, &ordinals).expect("encode");
-            let (_, compressed) = read_header(&bytes).expect("header");
+            let bytes = artifact_bytes(&header(), &body, &ordinals);
+            let mut reader = std::io::Cursor::new(&bytes);
+            read_header(&mut reader).expect("header");
+            let body_offset = usize::try_from(reader.position()).expect("body offset");
+            let compressed = &bytes[body_offset..];
 
             let truncated = &compressed[..compressed.len() - 1];
-            assert!(read_body(truncated, &ordinals).is_err());
+            assert!(read_body(std::io::Cursor::new(truncated), &ordinals).is_err());
 
             let mut trailing = compressed.to_vec();
             trailing.extend(zstd::encode_all(&b"unexpected"[..], 3).expect("extra frame"));
-            assert!(read_body(&trailing, &ordinals).is_err());
+            assert!(read_body(std::io::Cursor::new(trailing), &ordinals).is_err());
         });
+    }
+
+    #[test]
+    fn truncated_large_header_does_not_reserve_its_claimed_length() {
+        let mut reader = std::io::Cursor::new(u32::MAX.to_le_bytes());
+        assert!(read_header(&mut reader).is_err());
     }
 
     const CHILD_OUTPUT: &str = "ANALYSIS_ARTIFACT_TEST_OUTPUT";
@@ -455,11 +485,10 @@ mod tests {
             let artifact = bundle(order);
             let body = analyze(&artifact);
             let ordinals = ContextOrdinals::new(modules(&artifact));
-            std::fs::write(
-                output.with_extension("dba"),
-                write_artifact(&header(), &body, &ordinals).expect("encode"),
-            )
-            .expect("write artifact");
+            let mut artifact_file =
+                std::fs::File::create(output.with_extension("dba")).expect("create artifact");
+            write_artifact(&header(), &body, &ordinals, &mut artifact_file)
+                .expect("write artifact");
             std::fs::write(
                 output.with_extension("raw"),
                 format!(

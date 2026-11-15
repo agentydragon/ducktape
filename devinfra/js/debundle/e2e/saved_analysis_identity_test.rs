@@ -363,7 +363,10 @@ fn identity_mismatch_is_refused() {
         "unmodified staged artifact",
     );
     let bytes = fs::read(&staged.artifact).unwrap();
-    let (mut header, body) = staged_analysis::analysis_artifact::read_header(&bytes).unwrap();
+    let mut reader = std::io::Cursor::new(bytes.as_slice());
+    let mut header = staged_analysis::analysis_artifact::read_header(&mut reader).unwrap();
+    let body_offset = usize::try_from(reader.position()).unwrap();
+    let body = &bytes[body_offset..];
     header.analysis_engine_sha256 = "another-compiled-engine".to_string();
     let encoded = staged_analysis::analysis_artifact::encode_header(&header).unwrap();
     let mut corrupt = u32::try_from(encoded.len()).unwrap().to_le_bytes().to_vec();
@@ -402,7 +405,10 @@ fn source_mismatch_is_refused() {
         "unmodified staged artifact",
     );
     let bytes = fs::read(&staged.artifact).unwrap();
-    let (mut header, body) = staged_analysis::analysis_artifact::read_header(&bytes).unwrap();
+    let mut reader = std::io::Cursor::new(bytes.as_slice());
+    let mut header = staged_analysis::analysis_artifact::read_header(&mut reader).unwrap();
+    let body_offset = usize::try_from(reader.position()).unwrap();
+    let body = &bytes[body_offset..];
     let source = header.chunk_sources.values_mut().next().unwrap();
     *source = "other-parser-input".to_string();
     let encoded = staged_analysis::analysis_artifact::encode_header(&header).unwrap();
@@ -449,8 +455,10 @@ fn staged_invocations_keep_outputs_and_refuse_reused_reports_destinations() {
     assert!(second.harness_root().unwrap().is_dir());
 
     let original_artifact = fs::read(&staged.artifact).unwrap();
-    let (mut header, body) =
-        staged_analysis::analysis_artifact::read_header(&original_artifact).unwrap();
+    let mut reader = std::io::Cursor::new(original_artifact.as_slice());
+    let mut header = staged_analysis::analysis_artifact::read_header(&mut reader).unwrap();
+    let body_offset = usize::try_from(reader.position()).unwrap();
+    let body = &original_artifact[body_offset..];
     header.analysis_engine_sha256 = "another-compiled-engine".to_string();
     let encoded_header = staged_analysis::analysis_artifact::encode_header(&header).unwrap();
     let mut invalid_artifact = Vec::new();

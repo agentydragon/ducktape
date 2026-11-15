@@ -1268,6 +1268,7 @@ rust_library(
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
+        "@crates//:tempfile",
         "@crates//:zstd",
         "@rules_rust_prost//private/3rdparty/crates:prost",
     ],

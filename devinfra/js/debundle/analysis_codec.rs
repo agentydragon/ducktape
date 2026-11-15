@@ -104,22 +104,44 @@ impl Visit for ContextOrdinals {
 
 /// Compress one typed protobuf message; the checksum covers the entire frame.
 pub fn encode_protobuf<T: prost::Message>(value: &T) -> Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    write_protobuf(value, &mut bytes)?;
+    Ok(bytes)
+}
+
+/// Write one typed protobuf message as a checksummed zstd frame.
+///
+/// Prost encodes into an uncompressed `Vec`; the compressed frame is written
+/// incrementally to `writer` instead of being collected as a second full-size
+/// artifact buffer.
+pub fn write_protobuf<T: prost::Message, W: std::io::Write>(value: &T, writer: W) -> Result<()> {
     use std::io::Write;
-    let mut encoder = zstd::Encoder::new(Vec::new(), ZSTD_LEVEL)?;
+    let mut encoder = zstd::Encoder::new(writer, ZSTD_LEVEL)?;
     encoder.include_checksum(true)?;
-    encoder.write_all(&value.encode_to_vec())?;
-    Ok(encoder.finish()?)
+    encoder
+        .write_all(&value.encode_to_vec())
+        .context("compress analysis protobuf")?;
+    encoder.finish()?;
+    Ok(())
 }
 
 /// Decode exactly one complete zstd frame before accepting the protobuf.
 pub fn decode_protobuf<T: prost::Message + Default>(bytes: &[u8]) -> Result<T> {
-    use std::io::Read;
-    let mut decoder = zstd::Decoder::with_buffer(bytes)?.single_frame();
+    decode_protobuf_from(bytes)
+}
+
+/// Decode exactly one complete zstd frame from a reader before accepting the
+/// protobuf. The frame and checksum are validated before any trailing bytes
+/// are rejected.
+pub fn decode_protobuf_from<T: prost::Message + Default, R: std::io::Read>(reader: R) -> Result<T> {
+    use std::io::{BufRead, BufReader, Read};
+    let mut decoder = zstd::Decoder::with_buffer(BufReader::new(reader))?.single_frame();
     let mut decoded = Vec::new();
     decoder
         .read_to_end(&mut decoded)
         .context("decompress analysis protobuf")?;
-    anyhow::ensure!(decoder.finish().is_empty(), "trailing compressed data");
+    let mut reader = decoder.finish();
+    anyhow::ensure!(reader.fill_buf()?.is_empty(), "trailing compressed data");
     T::decode(decoded.as_slice()).context("decode analysis protobuf")
 }
 
@@ -171,22 +193,117 @@ mod tests {
         value: String,
     }
 
+    struct ShortReader<R> {
+        inner: R,
+        max_read: usize,
+    }
+
+    impl<R: std::io::Read> std::io::Read for ShortReader<R> {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            let length = buffer.len().min(self.max_read);
+            self.inner.read(&mut buffer[..length])
+        }
+    }
+
+    struct ShortWriter<W> {
+        inner: W,
+        max_write: usize,
+    }
+
+    impl<W: std::io::Write> std::io::Write for ShortWriter<W> {
+        fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+            self.inner
+                .write(&buffer[..buffer.len().min(self.max_write)])
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            self.inner.flush()
+        }
+    }
+
+    struct FailingWriter;
+
+    impl std::io::Write for FailingWriter {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("fixture writer failure"))
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    struct FailingReader<R> {
+        inner: R,
+        remaining: usize,
+    }
+
+    impl<R: std::io::Read> std::io::Read for FailingReader<R> {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            if self.remaining == 0 {
+                return Err(std::io::Error::other("fixture reader failure"));
+            }
+            let length = buffer.len().min(self.remaining);
+            let read = self.inner.read(&mut buffer[..length])?;
+            self.remaining -= read;
+            Ok(read)
+        }
+    }
+
     #[test]
-    fn protobuf_decompression_checks_complete_frames() {
+    fn protobuf_streaming_io_handles_partial_reads_and_writes() {
+        let record = Record {
+            value: "payload repeated enough to span multiple short writes".repeat(8),
+        };
+        let mut bytes = ShortWriter {
+            inner: Vec::new(),
+            max_write: 3,
+        };
+        write_protobuf(&record, &mut bytes).expect("short writer accepts the full frame");
+        let reader = ShortReader {
+            inner: bytes.inner.as_slice(),
+            max_read: 2,
+        };
+        assert_eq!(
+            decode_protobuf_from::<Record, _>(reader)
+                .expect("short reader supplies the full frame"),
+            record
+        );
+    }
+
+    #[test]
+    fn protobuf_streaming_io_surfaces_reader_and_writer_errors() {
         let record = Record {
             value: "payload".into(),
         };
-        let bytes = encode_protobuf(&record).unwrap();
-        assert_eq!(decode_protobuf::<Record>(&bytes).unwrap(), record);
-        assert!(decode_protobuf::<Record>(&bytes[..bytes.len() - 1]).is_err());
+        assert!(write_protobuf(&record, FailingWriter).is_err());
+
+        let bytes = encode_protobuf(&record).expect("encode fixture");
+        let reader = FailingReader {
+            inner: bytes.as_slice(),
+            remaining: bytes.len() / 2,
+        };
+        assert!(decode_protobuf_from::<Record, _>(reader).is_err());
+    }
+
+    #[test]
+    fn streaming_protobuf_decode_rejects_truncated_corrupt_and_trailing_data() {
+        let record = Record {
+            value: "payload".into(),
+        };
+        let bytes = encode_protobuf(&record).expect("encode fixture");
+        assert!(decode_protobuf_from::<Record, _>(&bytes[..bytes.len() - 1]).is_err());
+
         let mut damaged = bytes.clone();
-        *damaged.last_mut().unwrap() ^= 1;
-        assert!(decode_protobuf::<Record>(&damaged).is_err());
-        let mut trailing = bytes;
+        *damaged.last_mut().expect("nonempty frame") ^= 1;
+        assert!(decode_protobuf_from::<Record, _>(damaged.as_slice()).is_err());
+
+        let mut trailing = bytes.clone();
         trailing.extend([0xff; 4]);
-        assert!(decode_protobuf::<Record>(&trailing).is_err());
-        let mut extra_frame = encode_protobuf(&record).unwrap();
-        extra_frame.extend(encode_protobuf(&record).unwrap());
-        assert!(decode_protobuf::<Record>(&extra_frame).is_err());
+        assert!(decode_protobuf_from::<Record, _>(trailing.as_slice()).is_err());
+
+        let mut extra_frame = bytes.clone();
+        extra_frame.extend_from_slice(&bytes);
+        assert!(decode_protobuf_from::<Record, _>(extra_frame.as_slice()).is_err());
     }
 }

@@ -489,8 +489,7 @@ pub fn run_transform_with_projection(
             analysis_engine_sha256,
         }) => AnalysisMode::Load {
             base: Box::new(AnalysisSpec::from_transform(&spec, &prepared.source_root)?),
-            artifact: fs::read(path)
-                .with_context(|| format!("read analysis artifact {}", path.display()))?,
+            artifact: path.to_path_buf(),
             analysis_engine_sha256: analysis_engine_sha256.to_string(),
         },
         None => AnalysisMode::Compute,
@@ -577,11 +576,9 @@ pub fn assess_candidate_effect_relocation(
     );
     validate_transform_spec(&spec)?;
 
-    let artifact = fs::read(analysis.path)
-        .with_context(|| format!("read analysis artifact {}", analysis.path.display()))?;
     let mode = AnalysisMode::Load {
         base: Box::new(AnalysisSpec::from_transform(&spec, &prepared.source_root)?),
-        artifact,
+        artifact: analysis.path.to_path_buf(),
         analysis_engine_sha256: analysis.analysis_engine_sha256.to_string(),
     };
     let outcome = run_prepared_transform(&spec, prepared, options, true, mode, true, diagnostics)?;

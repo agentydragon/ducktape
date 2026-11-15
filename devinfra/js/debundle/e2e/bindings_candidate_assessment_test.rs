@@ -298,8 +298,10 @@ fn bindings_assign_requested_assessment_refuses_stale_inputs_before_yaml_writes(
     let original_artifact = fs::read(&staged.artifact).unwrap();
 
     // Engine identity is checked by the production staged-artifact loader.
-    let (mut header, body) =
-        staged_analysis::analysis_artifact::read_header(&original_artifact).unwrap();
+    let mut reader = std::io::Cursor::new(original_artifact.as_slice());
+    let mut header = staged_analysis::analysis_artifact::read_header(&mut reader).unwrap();
+    let body_offset = usize::try_from(reader.position()).unwrap();
+    let body = &original_artifact[body_offset..];
     header.analysis_engine_sha256 = "another-compiled-engine".to_string();
     let encoded_header = staged_analysis::analysis_artifact::encode_header(&header).unwrap();
     let mut wrong_engine = Vec::new();

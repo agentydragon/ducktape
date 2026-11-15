@@ -269,7 +269,7 @@ pub enum AnalysisMode {
     /// run's selector solve.
     Load {
         base: Box<AnalysisSpec>,
-        artifact: Vec<u8>,
+        artifact: PathBuf,
         analysis_engine_sha256: String,
     },
 }
@@ -370,18 +370,22 @@ pub fn materialize_logical_modules(
     );
     let mut loaded = match &options.analysis {
         AnalysisMode::Load {
-            artifact: bytes,
+            artifact: path,
             analysis_engine_sha256,
             ..
-        } => Some(load_analysis(
-            bytes,
-            &artifact,
-            &selected_chunk_ids,
-            options.config.file.as_deref(),
-            &reparsed,
-            options.graph_provenance.as_ref(),
-            analysis_engine_sha256,
-        )?),
+        } => {
+            let mut reader = std::fs::File::open(path)
+                .with_context(|| format!("open analysis artifact {}", path.display()))?;
+            Some(load_analysis(
+                &mut reader,
+                &artifact,
+                &selected_chunk_ids,
+                options.config.file.as_deref(),
+                &reparsed,
+                options.graph_provenance.as_ref(),
+                analysis_engine_sha256,
+            )?)
+        }
         AnalysisMode::Compute => None,
     };
     let export_reentry_reports = match (&options.analysis, &mut loaded) {
