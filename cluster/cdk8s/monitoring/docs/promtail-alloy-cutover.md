@@ -1,12 +1,12 @@
 # Promtail → Alloy: staged node-by-node cutover
 
-**Preparatory configuration; no nodes are migrated by this PR. Live continuity
-verification and final Promtail retirement are pending.** Do not remove the old
-releases merely because Helm or render checks succeed. No deployment was performed.
+**Live continuity verification and final Promtail retirement are pending.** Do
+not remove the old releases merely because Helm or render checks succeed.
 
-The [wyrm2 canary](wyrm2-alloy-canary.md) is an active-on-deployment one-node replay
-proposal. Deploying its Job accepts retained-file duplicates and up to 12h journal
-replay; it does not claim a shared legacy checkpoint is independently trustworthy.
+The [wyrm2 canary](wyrm2-alloy-canary.md) uses Flux-managed Node labels to enable
+pod and journal logs on one node. It accepts retained-file duplicates and up to
+12h journal replay without importing checkpoints or resetting Alloy state. The
+checkpoint-import procedure below is a separate migration option.
 
 Pod-file logs join the existing `alloy-node` process and its persistent host
 storage. A separate `alloy-journal` runs only on opted-in NixOS nodes: journal
@@ -28,9 +28,12 @@ Each Node has independent `observability.allegedly.works/pod-collector` and
 | `drained`              | DaemonSet removes its pod | pod label stops node Alloy; no journal pod                   |
 | `alloy`                | excluded                  | node-local pod targets enabled / NixOS journal pod scheduled |
 
-Use `drained` as a real checkpoint, never jump directly from absent to `alloy`.
-Journal opt-in additionally requires `node-vendor=nixos`. Offline roaming nodes
-stay on Promtail until they return and are individually migrated. Keep both
+For checkpoint import, use `drained` as a real checkpoint before `alloy`.
+The linked wyrm2 replay canary changes directly to `alloy` with duplicates and
+transient overlap accepted; it does not require a metrics restart or state reset.
+Manage collector labels through partial, prune-disabled Node manifests in Flux;
+keep existing label ownership in one place. Journal opt-in additionally requires
+`node-vendor=nixos`. Offline roaming nodes stay on Promtail until they return and are individually migrated. Keep both
 legacy releases and their Loki ingress permission until every node is verified.
 The existing [roaming node controller](../../../docs/plans/roaming_nodes.md)
 marks offline laptops `node.kubernetes.io/out-of-service:NoExecute`; the new
@@ -44,8 +47,8 @@ image supports `legacy_positions_file` and journal `legacy_position` (the new
 configuration is validated against v1.21.1). Check the actual Promtail 6.x relabel
 rules against `pod-logs.alloy`; customizations in a deployed chart require review.
 
-**Inspect positions before draining.** Both current Promtail chart values default
-to host `/run/promtail/positions.yaml`, including journal Promtail. Do not assume
+**For checkpoint import, inspect positions before draining.** Both current
+Promtail chart values default to host `/run/promtail/positions.yaml`, including journal Promtail. Do not assume
 two independent files exist or that one snapshot contains both file offsets and
 the `journal` job cursor. Record each process's configured path and inspect the
 host file; retain separate immutable pod/journal snapshots and checksums. If they
@@ -53,7 +56,7 @@ share a path or either checkpoint is missing/stale, stop the migration until an
 operator has isolated and verified the checkpoints, or explicitly choose the
 replay fallback below. A render cannot establish which state was last written.
 
-## Canary, one online node at a time
+## Checkpoint import, one online node at a time
 
 1. Pick one ordinary worker, then a control-plane node, then a NixOS node before
    any roaming laptop. Record Loki's latest timestamp/line and existing label sets
@@ -61,10 +64,12 @@ replay fallback below. A render cannot establish which state was last written.
    pods, and (on NixOS) systemd and kernel logs. Emit unique numbered canary
    records before, during and after the handoff. Keep the node online and ensure
    log rotation/retention cannot expire data during the checkpoint pause.
-2. Set the relevant Node label to `drained`, e.g.
-   `kubectl label node NODE observability.allegedly.works/pod-collector=drained --overwrite`.
-   For pod migration this also stops that node's Alloy metrics process. Wait
-   for both Pods to terminate gracefully and flush clients and final checkpoints. Verify actual Pod termination, not just Helm Ready.
+2. Set the relevant label to `drained` in the node's Flux-managed partial Node
+   manifest and deploy that Git change. Keep the native
+   `kustomize.toolkit.fluxcd.io/prune: disabled` annotation throughout migration
+   and rollback. For pod migration this also stops that node's Alloy metrics
+   process. Wait for both Pods to terminate gracefully and flush clients and final
+   checkpoints. Verify actual Pod termination, not just Helm Ready.
    Do not force-delete a running collector or snapshot a file still being written.
    Drain both old collectors together if they share host state.
 3. Back up the final legacy state outside the collector directories. Copy the
@@ -81,13 +86,15 @@ replay fallback below. A render cannot establish which state was last written.
    `/var/lib/alloy-node/loki.source.file.pods/positions.yml` if it is demonstrably
    unused (no prior Alloy log collection). Never clear `/var/lib/alloy-node`,
    other component directories, or `prometheus.remote_write.mimir` WAL. Set the
-   pod-collector label to `alloy`; the DaemonSet restarts `alloy-node`.
+   pod-collector label to `alloy` in the same Node manifest and deploy through
+   Flux; the DaemonSet restarts `alloy-node`.
    Retain its release name and storage path. The temporary metrics
    pause must also be checked after it resumes. Do not do this reset on subsequent
    restarts: Alloy's own positions take precedence over the legacy snapshot.
 5. Journal activation has no pre-created state because its DS is not scheduled
    until opt-in. Check that its new cursor directory has no prior run, then set
-   `observability.allegedly.works/journal-collector=alloy`. Alloy imports the
+   `observability.allegedly.works/journal-collector=alloy` in that Node manifest
+   and deploy through Flux. Alloy imports the
    `journal` cursor. Keep `max_age=12h`, message format and `job=systemd-journal`,
    `unit`, `node`, `level` labels. Confirm the actual importer logs and new files;
    missing/invalid legacy files can silently cause a fresh start, not a safe handoff.
@@ -127,12 +134,18 @@ by this migration. Do not activate this fallback without documenting its exact
 window and confirming every pre-cutover canary remains queryable. If that cannot
 be demonstrated, leave Promtail running and report the node blocked.
 
-For rollback, first drain/stop the new source and preserve its state. Promtail
-cannot import Alloy positions. Reusing an old checkpoint replays from that
+For the direct Flux replay canary and its rollback, follow the
+[wyrm2 guide](wyrm2-alloy-canary.md); no checkpoint import/reset is required.
+
+For checkpoint-import rollback, first set the affected labels to `drained` in
+their Flux-managed Node manifests, deploy, verify the new sources stopped, and
+preserve their state. Promtail cannot import Alloy positions. Reusing an old checkpoint replays from that
 checkpoint (bounded by rotation/retention); it may duplicate the whole intervening
 window. Never run both against production streams to infer correctness from a
 higher rate. Restore the old label only after choosing and recording that replay
-window. Do not delete any state as part of rollback.
+window. Restore `promtail` in those same manifests and deploy through Flux;
+deleting a prune-disabled Node manifest intentionally preserves its labels and
+is not rollback. Do not delete any state as part of rollback.
 
 After all nodes, including returning roaming nodes, pass the live checks in a
 separate operator-reviewed retirement change: delete `_promtail_values`,
@@ -142,5 +155,5 @@ rule and its roaming-test entries. Keep all Alloy/Vector/syslog/OTLP permissions
 node labels and both legacy snapshots until the rollback window closes. Do not
 move Loki or its persistent resources between Flux Kustomizations. Confirm the
 Helm uninstalls leave host checkpoint/log/WAL data intact, and check the same
-canaries after retirement. The initial PR deliberately adds migration code; its
-LOC savings are deferred until verified retirement and must not be claimed now.
+canaries after retirement. LOC savings from removing Promtail are deferred until
+verified retirement.
