@@ -1,4 +1,4 @@
-// Package environmentruntimeclient shares the per-RPC transport used to reach a Sandbox's connected runner.
+// Package environmentruntimeclient shares the per-RPC transport used to reach a Sandbox's connected Environment Runtime.
 package environmentruntimeclient
 
 import (
@@ -38,10 +38,10 @@ func ExpandTarget(template, sandbox, namespace string) string {
 // preserves the dispatcher's existing behavior; callers that append metadata leave it false.
 func WithClient(ctx context.Context, config Config, call func(context.Context, environmentruntimepb.EnvironmentRuntimeClient) error) error {
 	if config.SandboxName == "" || config.SandboxUID == "" || config.SandboxNamespace == "" {
-		return errors.New("runner proxy Sandbox identity is required")
+		return errors.New("Environment Runtime proxy Sandbox identity is required")
 	}
 	if call == nil {
-		return errors.New("runner proxy call is required")
+		return errors.New("Environment Runtime proxy call is required")
 	}
 	conn, err := bearer.Dial(config.Target, config.TokenFile, config.Timeout, config.TLS)
 	if err != nil {

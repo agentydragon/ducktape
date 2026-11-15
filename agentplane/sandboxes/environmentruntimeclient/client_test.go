@@ -15,28 +15,28 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-// recordingRunner is the Runner Gateway proxy as WithClient reaches it; it records each call's metadata.
-type recordingRunner struct {
+// recordingRuntime is a fake Environment Runtime server that records each call's metadata.
+type recordingRuntime struct {
 	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
 	received chan metadata.MD
 }
 
-func (r *recordingRunner) ListSessions(ctx context.Context, _ *sessionpb.ListSessionsRequest) (*sessionpb.ListSessionsResponse, error) {
+func (r *recordingRuntime) ListSessions(ctx context.Context, _ *sessionpb.ListSessionsRequest) (*sessionpb.ListSessionsResponse, error) {
 	incoming, _ := metadata.FromIncomingContext(ctx)
 	r.received <- incoming
 	return &sessionpb.ListSessionsResponse{}, nil
 }
 
-// serve starts the recording runner on loopback and returns a Config for it whose token file holds token.
-func serve(t *testing.T, token string) (Config, *recordingRunner) {
+// serve starts the recording Environment Runtime server on loopback and returns its Config and token file.
+func serve(t *testing.T, token string) (Config, *recordingRuntime) {
 	t.Helper()
-	runner := &recordingRunner{received: make(chan metadata.MD, 4)}
+	runtime := &recordingRuntime{received: make(chan metadata.MD, 4)}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer()
-	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, runner)
+	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, runtime)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 	tokenFile := filepath.Join(t.TempDir(), "token")
@@ -48,7 +48,7 @@ func serve(t *testing.T, token string) (Config, *recordingRunner) {
 		SandboxName:      "test-sandbox",
 		SandboxUID:       "test-sandbox-uid",
 		SandboxNamespace: "test-namespace",
-	}, runner
+	}, runtime
 }
 
 func writeToken(t *testing.T, path, token string) {
@@ -75,13 +75,13 @@ func single(t *testing.T, md metadata.MD, key string) string {
 }
 
 func TestServerSeesTheCurrentTokenAndSandboxIdentity(t *testing.T) {
-	config, runner := serve(t, "test-token-one\n")
+	config, runtime := serve(t, "test-token-one\n")
 	config.ExpectedIncarnationUID = "test-incarnation-uid"
 	for _, want := range []string{"Bearer test-token-one", "Bearer test-token-rotated"} {
 		if err := listSessions(t.Context(), config); err != nil {
 			t.Fatal(err)
 		}
-		received := <-runner.received
+		received := <-runtime.received
 		if got := single(t, received, "authorization"); got != want {
 			t.Errorf("authorization = %q, want %q", got, want)
 		}
@@ -104,13 +104,13 @@ func TestServerSeesTheCurrentTokenAndSandboxIdentity(t *testing.T) {
 
 func TestReplaceOutgoingMetadataDropsTheCallersMetadata(t *testing.T) {
 	for _, replace := range []bool{false, true} {
-		config, runner := serve(t, "test-token")
+		config, runtime := serve(t, "test-token")
 		config.ReplaceOutgoingMetadata = replace
 		ctx := metadata.AppendToOutgoingContext(t.Context(), "test-caller-key", "test-caller-value")
 		if err := listSessions(ctx, config); err != nil {
 			t.Fatal(err)
 		}
-		received := <-runner.received
+		received := <-runtime.received
 		if forwarded := len(received.Get("test-caller-key")) > 0; forwarded == replace {
 			t.Errorf("ReplaceOutgoingMetadata=%v forwarded caller metadata=%v", replace, forwarded)
 		}

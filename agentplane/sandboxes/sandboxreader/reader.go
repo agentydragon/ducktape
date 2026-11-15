@@ -18,7 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// Identity is the exact Sandbox incarnation named by an authenticated runner or proxy
+// Identity is the exact Sandbox incarnation named by an authenticated Environment Runtime or proxy
 // request. Namespace/name alone are not sufficient because Kubernetes permits name reuse.
 type Identity = identitypb.EnvironmentTarget
 
