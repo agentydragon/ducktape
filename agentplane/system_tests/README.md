@@ -59,6 +59,14 @@ cleanup. The storage case carries an explicit exclusivity marker and runs before
 so no runner pair is retained while it allocates guests. A case's timeout bounds its own coroutine,
 even while pytest is awaiting a different case.
 
+The common [`conftest.py`](conftest.py) owns shared tracing, harness selection and scripted-model
+fixtures. App-backed tests explicitly load [`app_fixtures.py`](app_fixtures.py) for App clients,
+model discovery and warmup, per-scenario resources and App Sandbox ownership; MCP OAuth tests load
+[`operator_fixtures.py`](suites/mcp/operator_fixtures.py). The neutral [`sandbox.py`](driver/sandbox.py)
+contains shared template constants and the descriptor callable type. App lifecycle behavior lives in
+[`app_sandbox.py`](driver/app_sandbox.py), with its focused tests in
+[`test_app_sandbox.py`](driver/test_app_sandbox.py) (`//agentplane/system_tests/driver:test_app_sandbox`).
+
 The Pod batch has four sequential workers, each owning one lazily created Sandbox.
 For matched concurrency experiments, override the slot count with
 `--test_env=AGENTPLANE_POD_CASE_LIMIT=2` (or another positive count). Claude and Codex
@@ -192,7 +200,8 @@ separate traces, which can be joined by `session.id`, `thread.id` or `sandbox.ui
 
 Use bounded identity and outcome attributes only: no credentials, headers, request bodies or model
 content. Common case/scenario/readiness and cleanup spans separate Sandbox suspend acceptance,
-effective suspension, delete acceptance and actual deletion ([`sandbox.py`](driver/sandbox.py)). See the
+effective suspension, delete acceptance and actual deletion
+([`app_sandbox.py`](driver/app_sandbox.py)). See the
 [deployment guide](deployment/README.md) for export paths and the [VM guide](vm/README.md) for retained
 guest artifacts. VM journals live under `vm-artifacts/journals/<state-volume>/<machine-id>/`; inspect
 or verify them with `journalctl --directory=<machine-id-directory>` or
@@ -258,7 +267,7 @@ Keep test output with proxy and app decision evidence. The transcript explains w
 attempted; decision history is authoritative for what the proxy served. Teardown watches the live
 inventory until the created Sandbox's exact UID has effective `Suspended` mode before requesting
 deletion. It rejects a replacement UID and does not reconnect a dropped watch; a delete acknowledgment
-does not prove deletion completed ([`sandbox.py`](driver/sandbox.py)). After teardown, confirm no
+does not prove deletion completed ([`app_sandbox.py`](driver/app_sandbox.py)). After teardown, confirm no
 `systest-*` Sandboxes remain in the selected namespace (the command below uses the default):
 
 ```bash
