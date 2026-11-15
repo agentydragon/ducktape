@@ -11,7 +11,6 @@ use analysis::graph::{EdgeRole, build_dependency_graph_with};
 use analysis::ids::ModuleId;
 use analysis::module_assignment::ModuleAssignment;
 use analysis::{AnalysisInputs, DependencyGraph};
-use petgraph::visit::IntoNeighbors;
 use report_fixtures::{
     active_source_unit, dependency_edge, promoted_dependency_edge, residual_source_unit,
     singleton_graph,
@@ -334,9 +333,9 @@ fn empty_and_unchanged_batches_match_the_baseline() {
 }
 
 #[test]
-fn large_module_import_neighbors_match_the_shared_emitter_order() {
-    use super::esm_simulator::EsmIGraph;
+fn large_module_import_schedule_retains_every_target_in_shared_order() {
     use crate::esm_import_order::EsmImportOrder;
+    use crate::esm_schedule::EsmImportSchedule;
 
     let entry_module_id = ModuleId(0);
     let importer = ModuleId(1);
@@ -359,20 +358,33 @@ fn large_module_import_neighbors_match_the_shared_emitter_order() {
         (ModuleId(4), ModuleId(75)),
     ]);
     let import_order = EsmImportOrder::build(&constraining_pairs, &i_successors, &nodes);
-    let graph = EsmIGraph {
-        i_successors: &i_successors,
+    let schedule = EsmImportSchedule::construct(
         entry_module_id,
-        nodes: &nodes,
-        import_order: &import_order,
-    };
+        &constraining_pairs,
+        &i_successors,
+        &nodes,
+        &import_order,
+    )
+    .unwrap();
     let mut emitted_imports: Vec<_> = targets.iter().copied().map(|target| (target, ())).collect();
     import_order.sort_module_imports(&mut emitted_imports);
     let expected: Vec<_> = emitted_imports
         .into_iter()
-        .rev()
         .map(|(target, ())| target)
         .collect();
-    assert_eq!((&graph).neighbors(importer).collect::<Vec<_>>(), expected);
+    assert_eq!(schedule.imports(importer), expected);
+    assert!(schedule.tdz_pairs(&constraining_pairs).next().is_none());
+    schedule
+        .sort_imports(
+            importer,
+            &mut targets
+                .iter()
+                .rev()
+                .copied()
+                .map(|target| (target, ()))
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
 }
 
 /// Two top-level constants in different modules, with one reading
