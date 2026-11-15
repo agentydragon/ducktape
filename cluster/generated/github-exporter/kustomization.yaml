@@ -4,10 +4,3 @@ resources:
   - github-exporter.k8s.yaml
 components:
   - ../../k8s/github-exporter-image-pins
-configMapGenerator:
-  - name: github-exporter-dashboard
-    namespace: monitoring
-    files:
-      - dashboard.json
-configurations:
-  - kustomizeconfig

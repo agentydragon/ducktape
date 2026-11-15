@@ -28,8 +28,6 @@ import httpx
 import yaml
 from playwright.async_api import Page, async_playwright
 
-from cluster.cdk8s.monitoring.grafana_dashboard_inputs import FILE_DASHBOARDS
-
 DEFAULT_GRAFANA_URL = "https://grafana.allegedly.works"
 DEFAULT_SECRET = "monitoring/grafana-admin-password"
 # TODO: Consider a standalone grafana-image-renderer service for verifier and scheduled
@@ -232,9 +230,6 @@ def datasource_map(api: GrafanaApi) -> tuple[dict[str, dict[str, Any]], dict[str
 
 def operator_datasources(manifest_path: Path | None, dashboard_filename: str) -> dict[str, str]:
     if manifest_path is None:
-        for name, dashboard in FILE_DASHBOARDS.items():
-            if dashboard_filename == f"{name}.json":
-                return dict(dashboard.datasources)
         return {}
 
     try:
@@ -248,11 +243,12 @@ def operator_datasources(manifest_path: Path | None, dashboard_filename: str) ->
                 document.get("spec", {}).get("configMapRef", {}).get("key") == dashboard_filename
                 or (
                     isinstance(document.get("spec", {}).get("json"), str)
-                    and document.get("metadata", {}).get("name") == Path(dashboard_filename).stem
+                    and Path(dashboard_filename).stem
+                    in (document.get("metadata", {}).get("name"), json.loads(document["spec"]["json"]).get("uid"))
                 )
             )
         ]
-    except (OSError, yaml.YAMLError) as exc:
+    except (OSError, yaml.YAMLError, json.JSONDecodeError) as exc:
         raise VerificationError(f"cannot read generated GrafanaDashboard resources {manifest_path}: {exc}") from exc
     if len(matches) > 1:
         raise VerificationError(f"multiple GrafanaDashboard resources reference {dashboard_filename!r}")

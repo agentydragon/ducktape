@@ -2,77 +2,8 @@
 
 load("//devinfra/python:defs.bzl", "py_library")
 load("//grafana/visual_tests:visual_test.bzl", "grafana_dashboard_visual_test")
-load(":foundation.bzl", "foundation_dashboard")
 
-exports_files(
-    [
-        "aiquota-history.json",
-        "home-network-overview.json",
-    ],
-    visibility = [
-        "//cluster/cdk8s/monitoring:__pkg__",
-    ],
-)
-
-filegroup(
-    name = "dashboards",
-    srcs = glob(["*.json"]),
-    visibility = [
-        "//cluster/cdk8s/monitoring:__pkg__",
-        "//grafana/skill:__pkg__",
-    ],
-)
-
-py_library(
-    name = "foundation",
-    srcs = ["foundation.py"],
-    deps = ["@pypi//grafana_foundation_sdk"],
-)
-
-py_library(
-    name = "cpap_gateway_disk",
-    srcs = ["cpap_gateway_disk.py"],
-    visibility = ["//cluster/cdk8s/monitoring:__pkg__"],
-    deps = [
-        ":foundation",
-        "@pypi//grafana_foundation_sdk",
-    ],
-)
-
-foundation_dashboard(
-    name = "cpap_gateway_disk_json",
-    module = "cpap_gateway_disk",
-)
-
-py_library(
-    name = "flux_cluster",
-    srcs = ["flux_cluster.py"],
-    visibility = ["//cluster/cdk8s/monitoring:__pkg__"],
-    deps = [
-        ":foundation",
-        "@pypi//grafana_foundation_sdk",
-    ],
-)
-
-foundation_dashboard(
-    name = "flux_cluster_json",
-    module = "flux_cluster",
-)
-
-py_library(
-    name = "rugged_power",
-    srcs = ["rugged_power.py"],
-    visibility = ["//cluster/cdk8s/monitoring:__pkg__"],
-    deps = [
-        ":foundation",
-        "@pypi//grafana_foundation_sdk",
-    ],
-)
-
-foundation_dashboard(
-    name = "rugged_power_json",
-    module = "rugged_power",
-)
+package(default_visibility = ["//cluster/cdk8s:__subpackages__"])
 
 py_library(
     name = "piraeus_metrics",
@@ -83,97 +14,238 @@ py_library(
 
 grafana_dashboard_visual_test(
     name = "cpap_gateway_disk_dashboard_visual_test",
-    dashboard = ":cpap-gateway-disk.json",
+    dashboard = "//cluster/cdk8s:cpap-gateway-disk.json",
     fixture_data = ":visual_fixtures/cpap-gateway-disk.json",
 )
 
 grafana_dashboard_visual_test(
     name = "buildbuddy_executor_pool_dashboard_visual_test",
-    dashboard = ":buildbuddy-executor-pool.json",
+    dashboard = "//cluster/cdk8s:buildbuddy-executor-pool.json",
     fixture_data = ":visual_fixtures/buildbuddy-executor-pool.json",
 )
 
 grafana_dashboard_visual_test(
     name = "piraeus_query_backed_visual_test",
     src = "test_piraeus_dashboard_visual.py",
-    dashboard = ":piraeus-storage.json",
+    dashboard = "//cluster/cdk8s:piraeus-storage.json",
     fixture = ":piraeus_metrics",
 )
 
 grafana_dashboard_visual_test(
     name = "piraeus_dashboard_visual_test",
-    dashboard = ":piraeus-storage.json",
+    dashboard = "//cluster/cdk8s:piraeus-storage.json",
     fixture_data = ":visual_fixtures/piraeus-storage.json",
 )
 
 grafana_dashboard_visual_test(
     name = "cluster_disk_usage_dashboard_visual_test",
-    dashboard = ":cluster-disk-usage.json",
+    dashboard = "//cluster/cdk8s:cluster-disk-usage.json",
     fixture_data = ":visual_fixtures/cluster-disk-usage.json",
 )
 
 grafana_dashboard_visual_test(
     name = "cluster_storage_io_dashboard_visual_test",
-    dashboard = ":cluster-storage-io.json",
+    dashboard = "//cluster/cdk8s:cluster-storage-io.json",
     fixture_data = ":visual_fixtures/cluster-storage-io.json",
 )
 
 grafana_dashboard_visual_test(
     name = "flux_cluster_dashboard_visual_test",
-    dashboard = ":flux-cluster.json",
+    dashboard = "//cluster/cdk8s:flux-cluster.json",
     fixture_data = ":visual_fixtures/flux-cluster.json",
 )
 
 grafana_dashboard_visual_test(
     name = "home_network_overview_dashboard_visual_test",
-    dashboard = ":home-network-overview.json",
+    dashboard = "//cluster/cdk8s:home-network-overview.json",
     fixture_data = ":visual_fixtures/home-network-overview.json",
 )
 
 grafana_dashboard_visual_test(
     name = "interface_flap_frequency_dashboard_visual_test",
-    dashboard = ":interface-flap-frequency.json",
+    dashboard = "//cluster/cdk8s:interface-flap-frequency.json",
     fixture_data = ":visual_fixtures/interface-flap-frequency.json",
 )
 
 grafana_dashboard_visual_test(
     name = "io_pressure_dashboard_visual_test",
-    dashboard = ":io-pressure.json",
+    dashboard = "//cluster/cdk8s:io-pressure.json",
     fixture_data = ":visual_fixtures/io-pressure.json",
 )
 
 grafana_dashboard_visual_test(
     name = "node_memory_dashboard_visual_test",
-    dashboard = ":node-memory.json",
+    dashboard = "//cluster/cdk8s:node-memory.json",
     fixture_data = ":visual_fixtures/node-memory.json",
 )
 
 grafana_dashboard_visual_test(
     name = "rugged_power_dashboard_visual_test",
-    dashboard = ":rugged-power.json",
+    dashboard = "//cluster/cdk8s:rugged-power.json",
     fixture_data = ":visual_fixtures/rugged-power.json",
 )
 
 grafana_dashboard_visual_test(
     name = "s3_operations_dashboard_visual_test",
-    dashboard = ":s3-operations.json",
+    dashboard = "//cluster/cdk8s:s3-operations.json",
     fixture_data = ":visual_fixtures/s3-operations.json",
 )
 
 grafana_dashboard_visual_test(
     name = "storage_service_details_dashboard_visual_test",
-    dashboard = ":storage-service-details.json",
+    dashboard = "//cluster/cdk8s:storage-service-details.json",
     fixture_data = ":visual_fixtures/storage-service-details.json",
 )
 
 grafana_dashboard_visual_test(
     name = "aiquota_history_dashboard_visual_test",
-    dashboard = ":aiquota-history.json",
+    dashboard = "//cluster/cdk8s:aiquota-history.json",
     fixture_data = ":visual_fixtures/aiquota-history.json",
 )
 
 grafana_dashboard_visual_test(
     name = "zot_cache_image_pulls_dashboard_visual_test",
-    dashboard = ":zot-cache-image-pulls.json",
+    dashboard = "//cluster/cdk8s:zot-cache-image-pulls.json",
     fixture_data = ":visual_fixtures/zot-cache-image-pulls.json",
+)
+
+py_library(
+    name = "foundation",
+    srcs = ["foundation.py"],
+    deps = ["@pypi//grafana_foundation_sdk"],
+)
+
+py_library(
+    name = "buildbuddy_executor_pool",
+    srcs = ["buildbuddy_executor_pool.py"],
+    deps = [
+        ":foundation",
+        "@pypi//grafana_foundation_sdk",
+    ],
+)
+
+py_library(
+    name = "zot_cache_image_pulls",
+    srcs = ["zot_cache_image_pulls.py"],
+    deps = [
+        ":foundation",
+        "@pypi//grafana_foundation_sdk",
+    ],
+)
+
+py_library(
+    name = "interface_flap_frequency",
+    srcs = ["interface_flap_frequency.py"],
+    deps = [
+        ":foundation",
+        "@pypi//grafana_foundation_sdk",
+    ],
+)
+
+py_library(
+    name = "node_memory",
+    srcs = ["node_memory.py"],
+    deps = [
+        ":foundation",
+        "@pypi//grafana_foundation_sdk",
+    ],
+)
+
+py_library(
+    name = "cluster_storage_io",
+    srcs = ["cluster_storage_io.py"],
+    deps = [
+        ":foundation",
+        "@pypi//grafana_foundation_sdk",
+    ],
+)
+
+py_library(
+    name = "s3_operations",
+    srcs = ["s3_operations.py"],
+    deps = [
+        ":foundation",
+        "@pypi//grafana_foundation_sdk",
+    ],
+)
+
+py_library(
+    name = "cluster_disk_usage",
+    srcs = ["cluster_disk_usage.py"],
+    deps = [
+        ":foundation",
+        "@pypi//grafana_foundation_sdk",
+    ],
+)
+
+py_library(
+    name = "piraeus_storage",
+    srcs = ["piraeus_storage.py"],
+    deps = [
+        ":foundation",
+        "@pypi//grafana_foundation_sdk",
+    ],
+)
+
+py_library(
+    name = "storage_service_details",
+    srcs = ["storage_service_details.py"],
+    deps = [
+        ":foundation",
+        "@pypi//grafana_foundation_sdk",
+    ],
+)
+
+py_library(
+    name = "io_pressure",
+    srcs = ["io_pressure.py"],
+    deps = [
+        ":foundation",
+        "@pypi//grafana_foundation_sdk",
+    ],
+)
+
+py_library(
+    name = "home_network_overview",
+    srcs = ["home_network_overview.py"],
+    deps = [
+        ":foundation",
+        "@pypi//grafana_foundation_sdk",
+    ],
+)
+
+py_library(
+    name = "cpap_gateway_disk",
+    srcs = ["cpap_gateway_disk.py"],
+    deps = [
+        ":foundation",
+        "@pypi//grafana_foundation_sdk",
+    ],
+)
+
+py_library(
+    name = "flux_cluster",
+    srcs = ["flux_cluster.py"],
+    deps = [
+        ":foundation",
+        "@pypi//grafana_foundation_sdk",
+    ],
+)
+
+py_library(
+    name = "rugged_power",
+    srcs = ["rugged_power.py"],
+    deps = [
+        ":foundation",
+        "@pypi//grafana_foundation_sdk",
+    ],
+)
+
+py_library(
+    name = "aiquota_history",
+    srcs = ["aiquota_history.py"],
+    deps = [
+        ":foundation",
+        "@pypi//grafana_foundation_sdk",
+    ],
 )

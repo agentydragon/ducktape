@@ -14,26 +14,24 @@ from python.runfiles import Runfiles
 VERIFY_DASHBOARD = runpy.run_path(str(Runfiles.CreateOrRaise().root() / "ducktape/grafana/skill/verify_dashboard.py"))
 
 
-def test_monitoring_dashboard_datasources_come_from_generator_source() -> None:
-    assert VERIFY_DASHBOARD["operator_datasources"](None, "home-network-overview.json") == {"DS_LOKI": "Loki"}
-    assert VERIFY_DASHBOARD["operator_datasources"](None, "cluster-storage-io.json") == {
-        "DS_MIMIR": "Mimir",
-        "DS_LOKI": "Loki",
-    }
-    assert VERIFY_DASHBOARD["operator_datasources"](None, "unknown.json") == {}
-
-
 @pytest.mark.parametrize(
-    "source", [{"configMapRef": {"key": "home-network-overview.json"}}, {"json": '{"uid":"home-network-overview"}'}]
+    ("source", "resource_name"),
+    [
+        ({"configMapRef": {"key": "home-network-overview.json"}}, "home-network-overview"),
+        ({"json": '{"uid":"home-network-overview"}'}, "home-network-overview"),
+        ({"json": '{"uid":"home-network-overview"}'}, "different-resource-name"),
+    ],
 )
-def test_operator_mapping_uses_dashboard_resource_and_datasource_name(tmp_path: Path, source: dict[str, Any]) -> None:
+def test_operator_mapping_uses_dashboard_resource_and_datasource_name(
+    tmp_path: Path, source: dict[str, Any], resource_name: str
+) -> None:
     dashboard_resources = tmp_path / "dashboard.yaml"
     dashboard_resources.write_text(
         yaml.safe_dump_all(
             [
                 {
                     "kind": "GrafanaDashboard",
-                    "metadata": {"name": "home-network-overview", "namespace": "monitoring"},
+                    "metadata": {"name": resource_name, "namespace": "monitoring"},
                     "spec": {**source, "datasources": [{"inputName": "DS_LOKI", "datasourceName": "Loki"}]},
                 }
             ]

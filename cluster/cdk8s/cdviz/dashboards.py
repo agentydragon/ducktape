@@ -3,6 +3,7 @@
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ServiceAccount
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
+from grafana_foundation_sdk.cog.encoder import JSONEncoder
 from grafana_grafanadashboard_crds.org.integreatly.grafana import GrafanaDashboardSpecInstanceSelector
 from grafana_grafanadatasource_crds.org.integreatly.grafana import (
     GrafanaDatasourceSpecDatasource,
@@ -12,9 +13,8 @@ from grafana_grafanadatasource_crds.org.integreatly.grafana import (
     GrafanaDatasourceSpecValuesFromValueFromSecretKeyRef,
 )
 
-from cluster.cdk8s.cdviz import config
+from cluster.cdk8s.cdviz import config, dashboard, feedback_dashboard
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
-from cluster.cdk8s.grafana_dashboards import DashboardFile
 from cluster.cdk8s.monitoring import grafana_instance
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
@@ -22,10 +22,6 @@ from cluster.cdk8s.providers.grafana_operator.grafana_datasource import GrafanaD
 
 _NAMESPACE = grafana_instance.SERVICE.pods.namespace
 _PASSWORD = "cdviz-database"
-DASHBOARD = DashboardFile(source="cluster/cdk8s/cdviz/dashboard.json", config_map="cdviz-ci", namespace=_NAMESPACE)
-FEEDBACK_DASHBOARD = DashboardFile(
-    source="cluster/cdk8s/cdviz/feedback-dashboard.json", config_map="cdviz-ci-feedback", namespace=_NAMESPACE
-)
 
 
 def chart(app: App) -> Chart:
@@ -81,13 +77,16 @@ def chart(app: App) -> Chart:
             )
         ],
     )
-    for dashboard in (DASHBOARD, FEEDBACK_DASHBOARD):
+    for name, definition in (
+        ("cdviz-ci", dashboard.build_dashboard()),
+        ("cdviz-ci-feedback", feedback_dashboard.build_dashboard()),
+    ):
         GrafanaDashboard(
             chart,
-            dashboard.config_map,
-            metadata=ApiObjectMetadata(name=dashboard.config_map, namespace=_NAMESPACE),
+            name,
+            metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE),
             instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=grafana_instance.INSTANCE_LABELS),
             folder="CI",
-            config_map_ref=dashboard.config_map_ref(),
+            json=JSONEncoder().encode(definition),
         )
     return chart

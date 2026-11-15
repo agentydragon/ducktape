@@ -8,7 +8,7 @@ import pytest_bazel
 import yaml
 from python.runfiles import Runfiles
 
-_DASHBOARD = "ducktape/cluster/cdk8s/monitoring/dashboards/home-network-overview.json"
+_DASHBOARD = "ducktape/cluster/cdk8s/home-network-overview.json"
 
 
 def test_reliability_queries(runfiles: Runfiles, promtool: Path, tmp_path: Path) -> None:

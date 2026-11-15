@@ -3,7 +3,6 @@
 from grafana_foundation_sdk.builders import stat, timeseries
 from grafana_foundation_sdk.builders.common import ReduceDataOptions, VizLegendOptions, VizTooltipOptions
 from grafana_foundation_sdk.builders.dashboard import Dashboard, FieldColor, QueryVariable, ThresholdsConfig
-from grafana_foundation_sdk.cog.encoder import JSONEncoder
 from grafana_foundation_sdk.models import common, dashboard
 
 from cluster.cdk8s.monitoring.dashboards.foundation import line_panel, mimir, mimir_query
@@ -111,8 +110,7 @@ def build_dashboard() -> dashboard.Dashboard:
             .line_interpolation(common.LineInterpolation.SMOOTH)
             .with_target(
                 mimir_query(
-                    "sum(rate(gotk_reconcile_duration_seconds_sum[5m])) by (kind) / "
-                    "sum(rate(gotk_reconcile_duration_seconds_count[5m])) by (kind)",
+                    "sum(rate(gotk_reconcile_duration_seconds_sum[5m])) by (kind) / sum(rate(gotk_reconcile_duration_seconds_count[5m])) by (kind)",
                     "{{kind}}",
                 )
             )
@@ -170,11 +168,3 @@ def build_dashboard() -> dashboard.Dashboard:
     )
     result.schema_version = 39
     return result
-
-
-def main() -> None:
-    print(JSONEncoder(indent=2).encode(build_dashboard()))
-
-
-if __name__ == "__main__":
-    main()
