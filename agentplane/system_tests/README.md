@@ -21,6 +21,10 @@ Offline tests stay beside the helper they exercise. The deployment guide owns st
 artifacts; the VM guide owns guest details. The suite BUILD files and test modules are the source
 of truth for exact case membership.
 
+The App Pod suite inherits devel's four-worker default. The
+[concurrency experiment](../debug/2026_11_15_pod_concurrency.md) records the separate experimental
+and full devel suite measurements.
+
 ## Suite entrypoints
 
 Each k3s system-test target starts one fixture stack. Scenarios share it only when their resource
