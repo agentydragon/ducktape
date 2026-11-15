@@ -64,9 +64,8 @@ The central sampler writes the same vocabulary directly as its own output, plus 
 | History [fold](../history_service/internal/threadfold/fold.go), synced to the app's conversation view         | everything                                                                                       | yes                    |
 | History [summaries](../history_service/internal/projection/summary.go) (sidebar)                              | last turn status, `idle_since`; "model activity" recency from content Events                     | yes                    |
 
-The Dispatcher reads no Events and records nothing past `RUNNER_ADMITTED`; a harness-confirmation
-state stays with
-[`DISPATCHER_HARNESS_CONFIRMATION`](task_dag.md#dispatcher_harness_confirmation--settle-admitted-inputs-on-a-canonical-confirmation).
+The Dispatcher reads no Events and records nothing past `RUNNER_ADMITTED`; its unused confirmation
+states were deleted rather than given a writer.
 
 Harness knowledge already lives past the neutral layer. History's delta
 [settlement](../history_service/internal/storage/settlement.go) matches Claude and Codex native
@@ -169,9 +168,8 @@ Options:
    `observe_input` need per-kind decoders plus a newly published native-request-to-command map.
 
 Settlement is produced only where that map lives: the Runtime adapters, and the sampler for its
-Sessions. Readers keep getting it from History. Whether the Dispatch record also carries it, so
-notices and `observe_input` stop scanning History, stays with
-[`DISPATCHER_HARNESS_CONFIRMATION`](task_dag.md#dispatcher_harness_confirmation--settle-admitted-inputs-on-a-canonical-confirmation).
+Sessions. Readers, notices and `observe_input` included, keep getting it from History; the Dispatch
+record does not carry it.
 
 Option 2 stands alone: it needs neither per-kind commands nor native content, and changes no
 meaning, because `CommandSettled` fires where the Runtime already sets the journal's terminal cursor
