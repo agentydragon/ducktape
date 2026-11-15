@@ -11,33 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::analysis_inputs::{
     ArgumentInputRef, DescriptorCopyAuthorRef, NativeOperationInputRef, ValueInputRef,
 };
-
-/// Positive rules participating in a consumed construction certificate.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum InferenceRule {
-    NativeIntegrity,
-    NativeCallIdentity,
-    NativeOwnDataRead,
-    EmptyCollectionConstruction,
-    LocalClassConstruction,
-    PrimitiveSetIteration,
-    StablePrimitiveArraySpread,
-    ImportedPrimitiveArraySpread,
-    StableFunction,
-    StableProvider,
-    ArgumentNoEscape,
-    ReturnedRecord,
-    NamespaceWrapper,
-    OwnPropertySourceOrigin,
-    OwnPropertyShape,
-    OwnPropertyPrefixState,
-    OwnPropertyNamesProjection,
-    OwnPropertyDescriptorProjection,
-    DescriptorCopyProvider,
-    DescriptorCopyFactory,
-    ForeignCallSummary,
-}
+pub use saved_callable_proto::debundle::saved_callable::InferenceRule;
 
 /// Provenance actually consumed by one source-derived inference.
 ///

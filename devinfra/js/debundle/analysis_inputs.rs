@@ -17,10 +17,14 @@ use crate::purity::Purity;
 use spec::{BuiltinGlobalRoot, CapturedValueKind, ResolvedMemberSelector, SourceMatchClaim};
 
 pub mod saved;
+pub mod saved_callable;
 
 pub use analysis_projection_wire_proto::debundle::analysis_projection::{
     KnownEffect, LocalEffectPolicy,
 };
+/// Required invocation mode for a derived foreign callable's summary.
+pub use saved_callable_proto::debundle::saved_callable::ForeignInvocation;
+pub use saved_purity_proto::debundle::saved_purity::NativeIntrinsic;
 
 /// Evidence for a bare imported callable's return-only callback-factory behavior.
 /// An assertion is an author contract; an inferred wrapper depends on the
@@ -101,15 +105,6 @@ pub struct DescriptorCopyFactorySummary {
     pub export: String,
     pub author_location: String,
     pub signatures: Vec<spec::DescriptorCopyFactorySignature>,
-}
-
-/// How the importer must invoke a derived foreign callable for its summary to
-/// apply: a class only through `new`, a function only through an ordinary call.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ForeignInvocation {
-    Call,
-    Construct,
 }
 
 /// One possible result of a derived foreign call.
@@ -281,56 +276,23 @@ impl CallableSummary {
     }
 }
 
-/// Intrinsic families whose visible writes constrain inferred native operations.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, strum::Display,
-)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum NativeIntrinsic {
-    GlobalObject,
-    /// A global slot may hold any native value; descendants retain this root.
-    UnknownGlobalValue,
-    /// Host census only; not part of author `ALL_INTRINSIC_FAMILIES`.
-    TextEncoder,
-    Error,
-    FinalizationRegistry,
-    Function,
-    Object,
-    Array,
-    Math,
-    RegExp,
-    Symbol,
-    Promise,
-    Map,
-    Set,
-    WeakMap,
-    WeakSet,
-}
-
-impl From<spec::IntrinsicFamily> for NativeIntrinsic {
-    fn from(family: spec::IntrinsicFamily) -> Self {
-        match family {
-            spec::IntrinsicFamily::Error => Self::Error,
-            spec::IntrinsicFamily::FinalizationRegistry => Self::FinalizationRegistry,
-            spec::IntrinsicFamily::Function => Self::Function,
-            spec::IntrinsicFamily::Object => Self::Object,
-            spec::IntrinsicFamily::Array => Self::Array,
-            spec::IntrinsicFamily::Math => Self::Math,
-            spec::IntrinsicFamily::RegExp => Self::RegExp,
-            spec::IntrinsicFamily::Symbol => Self::Symbol,
-            spec::IntrinsicFamily::Promise => Self::Promise,
-            spec::IntrinsicFamily::Map => Self::Map,
-            spec::IntrinsicFamily::Set => Self::Set,
-            spec::IntrinsicFamily::WeakMap => Self::WeakMap,
-            spec::IntrinsicFamily::WeakSet => Self::WeakSet,
-        }
-    }
-}
-
-impl NativeIntrinsic {
+/// Runtime helpers for the generated native-intrinsic enum.
+///
+/// The enum is generated in another crate, so Rust does not allow inherent
+/// methods on it here.
+pub trait NativeIntrinsicExt {
     /// Every global property name `for_global_binding` recognizes.
-    pub(crate) const GLOBAL_BINDINGS: &[&str] = &[
+    const GLOBAL_BINDINGS: &[&str];
+
+    fn for_global_binding(property: &str) -> Option<NativeIntrinsic>;
+
+    /// The global object's own property holding the family's constructor or
+    /// namespace.
+    fn global_binding(self) -> Option<&'static str>;
+}
+
+impl NativeIntrinsicExt for NativeIntrinsic {
+    const GLOBAL_BINDINGS: &[&str] = &[
         "Error",
         "Function",
         "Object",
@@ -352,7 +314,7 @@ impl NativeIntrinsic {
         "top",
     ];
 
-    pub(crate) fn for_global_binding(property: &str) -> Option<Self> {
+    fn for_global_binding(property: &str) -> Option<Self> {
         match property {
             "TextEncoder" => Some(Self::TextEncoder),
             "Error" => Some(Self::Error),
@@ -373,9 +335,7 @@ impl NativeIntrinsic {
         }
     }
 
-    /// The global object's own property holding the family's constructor or
-    /// namespace.
-    pub(crate) fn global_binding(self) -> Option<&'static str> {
+    fn global_binding(self) -> Option<&'static str> {
         match self {
             Self::GlobalObject | Self::UnknownGlobalValue => None,
             Self::TextEncoder => Some("TextEncoder"),
@@ -393,6 +353,25 @@ impl NativeIntrinsic {
             Self::WeakMap => Some("WeakMap"),
             Self::WeakSet => Some("WeakSet"),
         }
+    }
+}
+
+/// Converts an authored intrinsic family into the saved/report vocabulary.
+pub fn native_intrinsic_from_spec(family: spec::IntrinsicFamily) -> NativeIntrinsic {
+    match family {
+        spec::IntrinsicFamily::Error => NativeIntrinsic::Error,
+        spec::IntrinsicFamily::FinalizationRegistry => NativeIntrinsic::FinalizationRegistry,
+        spec::IntrinsicFamily::Function => NativeIntrinsic::Function,
+        spec::IntrinsicFamily::Object => NativeIntrinsic::Object,
+        spec::IntrinsicFamily::Array => NativeIntrinsic::Array,
+        spec::IntrinsicFamily::Math => NativeIntrinsic::Math,
+        spec::IntrinsicFamily::RegExp => NativeIntrinsic::RegExp,
+        spec::IntrinsicFamily::Symbol => NativeIntrinsic::Symbol,
+        spec::IntrinsicFamily::Promise => NativeIntrinsic::Promise,
+        spec::IntrinsicFamily::Map => NativeIntrinsic::Map,
+        spec::IntrinsicFamily::Set => NativeIntrinsic::Set,
+        spec::IntrinsicFamily::WeakMap => NativeIntrinsic::WeakMap,
+        spec::IntrinsicFamily::WeakSet => NativeIntrinsic::WeakSet,
     }
 }
 

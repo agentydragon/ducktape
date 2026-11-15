@@ -6,7 +6,9 @@
 //! back to its opaque behavior. Rules and builtin rows name slots; nothing but
 //! this module reads the census for them.
 
-use crate::analysis_inputs::{NativeIntrinsic, NativeOperationInputRef, ProofDependencies};
+use crate::analysis_inputs::{
+    NativeIntrinsic, NativeIntrinsicExt, NativeOperationInputRef, ProofDependencies,
+};
 use crate::reports::schema::{
     NativeMutationOperation, NativeMutationWitness, NativePropertyKey, NativeReceiverPath,
 };

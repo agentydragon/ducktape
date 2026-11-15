@@ -669,6 +669,7 @@ rust_library(
     srcs = [
         "analysis_inputs.rs",
         "analysis_inputs/saved.rs",
+        "analysis_inputs/saved_callable.rs",
         "analysis_provenance.rs",
         "assignment_assembly.rs",
         "atomic_groups.rs",
@@ -817,10 +818,12 @@ rust_library(
         ":graph_provenance",
         ":js_ast",
         ":report_io",
+        ":saved_callable_rust_proto",
         ":saved_purity_rust_proto",
         ":selector_outcome",
         ":source_identity",
         ":spec",
+        ":spec_wire",
         "@crates//:anyhow",
         "@crates//:imbl",
         "@crates//:petgraph",
@@ -2240,9 +2243,24 @@ proto_library(
     deps = [":spec_wire_proto"],
 )
 
+proto_library(
+    name = "saved_callable_proto",
+    srcs = ["saved_callable.proto"],
+    data = [":saved_callable_options"],
+    deps = [
+        ":saved_purity_proto",
+        ":spec_wire_proto",
+    ],
+)
+
 rust_prost_library(
     name = "saved_purity_rust_proto",
     proto = ":saved_purity_proto",
+)
+
+rust_prost_library(
+    name = "saved_callable_rust_proto",
+    proto = ":saved_callable_proto",
 )
 
 rust_prost_transform(
@@ -2259,10 +2277,31 @@ rust_prost_transform(
         "type_attribute=debundle.saved_purity.ProgramPremiseKey=#[derive(::strum::Display)]",
         "type_attribute=debundle.saved_purity.ProgramPremiseKey=#[serde(rename_all = \"snake_case\")]",
         "type_attribute=debundle.saved_purity.ProgramPremiseKey=#[strum(serialize_all = \"snake_case\")]",
+        "type_attribute=debundle.saved_purity.NativeIntrinsic=#[derive(::serde::Serialize)]",
+        "type_attribute=debundle.saved_purity.NativeIntrinsic=#[derive(::serde::Deserialize)]",
+        "type_attribute=debundle.saved_purity.NativeIntrinsic=#[derive(::strum::Display)]",
+        "type_attribute=debundle.saved_purity.NativeIntrinsic=#[serde(rename_all = \"snake_case\")]",
+        "type_attribute=debundle.saved_purity.NativeIntrinsic=#[strum(serialize_all = \"snake_case\")]",
     ],
     deps = [
         "@crates//:serde",
         "@crates//:strum",
+    ],
+)
+
+rust_prost_transform(
+    name = "saved_callable_options",
+    prost_opts = [
+        "btree_map=.",
+        "type_attribute=debundle.saved_callable.ForeignInvocation=#[derive(::serde::Serialize)]",
+        "type_attribute=debundle.saved_callable.ForeignInvocation=#[derive(::serde::Deserialize)]",
+        "type_attribute=debundle.saved_callable.ForeignInvocation=#[serde(rename_all = \"snake_case\")]",
+        "type_attribute=debundle.saved_callable.InferenceRule=#[derive(::serde::Serialize)]",
+        "type_attribute=debundle.saved_callable.InferenceRule=#[derive(::serde::Deserialize)]",
+        "type_attribute=debundle.saved_callable.InferenceRule=#[serde(rename_all = \"snake_case\")]",
+    ],
+    deps = [
+        "@crates//:serde",
     ],
 )
 

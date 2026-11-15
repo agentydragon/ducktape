@@ -55,8 +55,8 @@ use super::world::object_surface::{AppliedAccessor, ObjectSurfaceStore};
 use super::world::prefix_values::{PrefixValues, TopBindingOrdinal, TopBindings};
 use super::world::{World, WorldScope};
 use crate::analysis_inputs::{
-    AnalysisInputs, ImportedPrimitiveRead, NativeInputKind, NativeIntrinsic, ProofDependencies,
-    ResolvedInitializerCallEffectInput,
+    AnalysisInputs, ImportedPrimitiveRead, NativeInputKind, NativeIntrinsic, NativeIntrinsicExt,
+    ProofDependencies, ResolvedInitializerCallEffectInput,
 };
 use crate::analysis_provenance::InferenceRule;
 use crate::execution_evidence::{
