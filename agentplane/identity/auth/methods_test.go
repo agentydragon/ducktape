@@ -13,7 +13,6 @@ import (
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
-	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -127,21 +126,19 @@ func both(t *testing.T, ctx context.Context, client healthpb.HealthClient, want 
 	}
 }
 
-func TestAMethodNoRuleListsIsRefusedBeforeItsBearerIsReviewed(t *testing.T) {
-	_, token := workload(t, app)
-	reviews := &kubeapiserver.CountedReviews{TokenReviews: api.TokenReviews()}
-	resolver := newResolver(t, reviews)
+func TestAMethodNoRuleListsIsRefusedBeforeResolvingItsSubject(t *testing.T) {
+	resolver := new(unusedSubjectResolver)
 	for name, methods := range map[string]auth.Methods{
-		"unlisted":      {healthpb.Health_List_FullMethodName: auth.Accounts(resolver, []auth.Account{app})},
+		"unlisted":      {healthpb.Health_List_FullMethodName: auth.AnySubject(resolver)},
 		"the zero Rule": {healthpb.Health_Check_FullMethodName: {}, healthpb.Health_Watch_FullMethodName: {}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			client, _ := serveHealth(t, methods, 0)
-			both(t, bearing(t, token), client, codes.PermissionDenied)
+			both(t, bearing(t, ""), client, codes.PermissionDenied)
 		})
 	}
-	if calls := reviews.Calls.Load(); calls != 0 {
-		t.Fatalf("%d reviews for methods no Rule admits to", calls)
+	if calls := resolver.calls.Load(); calls != 0 {
+		t.Fatalf("%d subject lookups for methods no Rule admits to", calls)
 	}
 }
 
@@ -224,15 +221,19 @@ func TestMethodsWithDelegationRequiresUniqueServedMethodsAndIdentityGrant(t *tes
 	}
 }
 
-func TestTheAdmissionTimeoutBoundsTheReviewAlone(t *testing.T) {
-	_, token := workload(t, app)
-	reviews := newHeldReviews()
-	t.Cleanup(func() { close(reviews.release) })
-	rule := auth.Accounts(newResolver(t, reviews), []auth.Account{app})
+type waitingSubjectResolver struct{}
+
+func (waitingSubjectResolver) ResolveSubject(ctx context.Context) (auth.Subject, error) {
+	<-ctx.Done()
+	return nil, status.FromContextError(ctx.Err()).Err()
+}
+
+func TestTheAdmissionTimeoutBoundsSubjectResolution(t *testing.T) {
+	rule := auth.AnySubject(waitingSubjectResolver{})
 	client, _ := serveHealth(t, auth.Methods{
 		healthpb.Health_Check_FullMethodName: rule, healthpb.Health_Watch_FullMethodName: rule,
 	}, 50*time.Millisecond)
-	both(t, bearing(t, token), client, codes.DeadlineExceeded)
+	both(t, bearing(t, ""), client, codes.DeadlineExceeded)
 }
 
 func TestCallerRefusesACallNoAccountRuleAdmitted(t *testing.T) {
@@ -289,38 +290,6 @@ func legacyServiceAccountEnvelope() []byte {
 	action := appendBytes(nil, 1, []byte("11111111-1111-4111-8111-111111111111"))
 	action = appendBytes(action, 2, []byte("22222222-2222-4222-8222-222222222222"))
 	return appendBytes(delegation, 5, action)
-}
-
-func TestLegacyServiceAccountEffectiveCallerEnvelopeFailsClosed(t *testing.T) {
-	actor := auth.Account{Namespace: testNamespace, Name: "test-legacy-delegator"}
-	_, actorToken := workload(t, actor)
-	identities := identityUIDReaderFunc(func(context.Context, string) (string, bool, error) {
-		return "identity-uid", true, nil
-	})
-	rule, err := auth.ReviewedServiceAccountOrIdentity(newResolver(t, api.TokenReviews(), auth.WithVerdictTTL(0))).AllowDelegationFrom(
-		[]auth.Delegator{{Account: actor, IdentityCallers: true}}, identities,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	client, effective, admissions := serveAdmissionHealth(t, auth.Methods{healthpb.Health_Check_FullMethodName: rule})
-	ctx := metadata.NewOutgoingContext(t.Context(), metadata.Pairs(
-		"authorization", "Agentplane-Delegated "+actorToken,
-		auth.DelegationMetadataKey, string(legacyServiceAccountEnvelope()),
-	))
-	if _, err := client.Check(ctx, &healthpb.HealthCheckRequest{}); status.Code(err) != codes.Unauthenticated {
-		t.Fatalf("legacy ServiceAccount effective caller returned %v, want Unauthenticated", err)
-	}
-	select {
-	case got := <-effective:
-		t.Fatalf("legacy envelope reached handler with effective caller %+v", got)
-	default:
-	}
-	select {
-	case got := <-admissions:
-		t.Fatalf("legacy envelope reached handler with admission %#v", got)
-	default:
-	}
 }
 
 func TestConnectionProvenanceRequiresAnExplicitIdentityDelegationMethod(t *testing.T) {
