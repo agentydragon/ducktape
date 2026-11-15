@@ -178,7 +178,6 @@ fn snapshot_heap_cells(
         reads: snapshot_effect_cells(&cells.reads, ordinals)?,
         writes: snapshot_effect_cells(&cells.writes, ordinals)?,
         opaque: Some(cells.opaque),
-        observes_external_heap: Some(cells.observes_external_heap),
     })
 }
 
@@ -191,10 +190,6 @@ fn restore_heap_cells(
         reads: restore_effect_cells(value.reads, ordinals)?,
         writes: restore_effect_cells(value.writes, ordinals)?,
         opaque: required(value.opaque, "SavedHeapContentCells.opaque")?,
-        observes_external_heap: required(
-            value.observes_external_heap,
-            "SavedHeapContentCells.observes_external_heap",
-        )?,
     })
 }
 

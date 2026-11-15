@@ -1485,7 +1485,6 @@ message SavedHeapContentCells {
   repeated SavedEffectCell reads = 2;
   repeated SavedEffectCell writes = 3;
   optional bool opaque = 4;
-  optional bool observes_external_heap = 5;
 }
 
 message SavedLexicalBindingEffectReceipt {
