@@ -16,7 +16,7 @@ from collections.abc import Callable
 from contextlib import ExitStack
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypedDict, cast
 
 import pytest
 import pytest_bazel
@@ -59,6 +59,13 @@ _DELEGATED_CGROUP_STRESS_STEPS = tuple(
     f"pair{pair}_{direction}" for pair in range(1, _DELEGATED_CGROUP_STRESS_PAIRS + 1) for direction in ("on", "off")
 )
 _DELEGATED_CGROUP_STRESS_WAIT_SECONDS = 150
+
+
+class _BootOptionVMIArgs(TypedDict, total=False):
+    boot_rcu_observe: bool
+    synthetic_slice_probe: bool
+    cgroup_pilot: bool
+    cgroup_stress: bool
 
 
 def _cycle_count() -> int:
@@ -1120,14 +1127,36 @@ def test_shutdown_policy_debug_kernel_args_change_only_guest_boot_args() -> None
     assert debug == plain
 
 
-def test_boot_rcu_observer_is_opt_in_and_changes_only_guest_boot_args(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(_BOOT_RCU_ENV, raising=False)
-    assert strict_env_flag(_BOOT_RCU_ENV) is False
-    monkeypatch.setenv(_BOOT_RCU_ENV, "1")
-    assert strict_env_flag(_BOOT_RCU_ENV) is True
-    monkeypatch.setenv(_BOOT_RCU_ENV, "true")
+@pytest.mark.parametrize(
+    ("environment", "vmi_options", "expected_arg"),
+    [
+        pytest.param(
+            _BOOT_RCU_ENV, _BootOptionVMIArgs(boot_rcu_observe=True), "agentplane.boot-rcu-observe=1", id="boot_rcu"
+        ),
+        pytest.param(
+            _SYNTHETIC_SLICE_ENV,
+            _BootOptionVMIArgs(synthetic_slice_probe=True),
+            "agentplane.synthetic-slice-probe=1",
+            id="synthetic_slice",
+        ),
+        pytest.param(
+            _CGROUP_PILOT_ENV, _BootOptionVMIArgs(cgroup_pilot=True), "agentplane.cgroup-pilot=1", id="cgroup_pilot"
+        ),
+        pytest.param(
+            _CGROUP_STRESS_ENV, _BootOptionVMIArgs(cgroup_stress=True), "agentplane.cgroup-stress=1", id="cgroup_stress"
+        ),
+    ],
+)
+def test_boot_option_is_opt_in_and_changes_only_guest_boot_args(
+    monkeypatch: pytest.MonkeyPatch, environment: str, vmi_options: _BootOptionVMIArgs, expected_arg: str
+) -> None:
+    monkeypatch.delenv(environment, raising=False)
+    assert strict_env_flag(environment) is False
+    monkeypatch.setenv(environment, "1")
+    assert strict_env_flag(environment) is True
+    monkeypatch.setenv(environment, "true")
     with pytest.raises(ValueError, match="must be '0' or '1'"):
-        strict_env_flag(_BOOT_RCU_ENV)
+        strict_env_flag(environment)
 
     images = {
         "agentplane-vm-guest-boot:unset": "boot",
@@ -1135,33 +1164,10 @@ def test_boot_rcu_observer_is_opt_in_and_changes_only_guest_boot_args(monkeypatc
         "agentplane-runner-disk:unset": "runner",
     }
     plain = _vmi(_NAMESPACE_PREFIX + "unit-test", images)
-    observed = _vmi(_NAMESPACE_PREFIX + "unit-test", images, boot_rcu_observe=True)
+    observed = _vmi(_NAMESPACE_PREFIX + "unit-test", images, **vmi_options)
     plain_args = plain["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
     observed_args = observed["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
-    assert observed_args == f"{plain_args} agentplane.boot-rcu-observe=1"
-    observed["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"] = plain_args
-    assert observed == plain
-
-
-def test_synthetic_slice_probe_is_opt_in_and_changes_only_guest_boot_args(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(_SYNTHETIC_SLICE_ENV, raising=False)
-    assert strict_env_flag(_SYNTHETIC_SLICE_ENV) is False
-    monkeypatch.setenv(_SYNTHETIC_SLICE_ENV, "1")
-    assert strict_env_flag(_SYNTHETIC_SLICE_ENV) is True
-    monkeypatch.setenv(_SYNTHETIC_SLICE_ENV, "true")
-    with pytest.raises(ValueError, match="must be '0' or '1'"):
-        strict_env_flag(_SYNTHETIC_SLICE_ENV)
-
-    images = {
-        "agentplane-vm-guest-boot:unset": "boot",
-        "agentplane-vm-guest-root:unset": "root",
-        "agentplane-runner-disk:unset": "runner",
-    }
-    plain = _vmi(_NAMESPACE_PREFIX + "unit-test", images)
-    observed = _vmi(_NAMESPACE_PREFIX + "unit-test", images, synthetic_slice_probe=True)
-    plain_args = plain["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
-    observed_args = observed["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
-    assert observed_args == f"{plain_args} agentplane.synthetic-slice-probe=1"
+    assert observed_args == f"{plain_args} {expected_arg}"
     observed["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"] = plain_args
     assert observed == plain
 
@@ -1205,29 +1211,6 @@ def test_synthetic_slice_success_requires_ordered_exact_guest_lines(
     assert output.read_text() == complete
 
 
-def test_cgroup_pilot_is_opt_in_and_changes_only_guest_boot_args(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(_CGROUP_PILOT_ENV, raising=False)
-    assert strict_env_flag(_CGROUP_PILOT_ENV) is False
-    monkeypatch.setenv(_CGROUP_PILOT_ENV, "1")
-    assert strict_env_flag(_CGROUP_PILOT_ENV) is True
-    monkeypatch.setenv(_CGROUP_PILOT_ENV, "true")
-    with pytest.raises(ValueError, match="must be '0' or '1'"):
-        strict_env_flag(_CGROUP_PILOT_ENV)
-
-    images = {
-        "agentplane-vm-guest-boot:unset": "boot",
-        "agentplane-vm-guest-root:unset": "root",
-        "agentplane-runner-disk:unset": "runner",
-    }
-    plain = _vmi(_NAMESPACE_PREFIX + "unit-test", images)
-    observed = _vmi(_NAMESPACE_PREFIX + "unit-test", images, cgroup_pilot=True)
-    plain_args = plain["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
-    observed_args = observed["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
-    assert observed_args == f"{plain_args} agentplane.cgroup-pilot=1"
-    observed["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"] = plain_args
-    assert observed == plain
-
-
 def test_cgroup_pilot_requires_all_ordered_exact_results_before_acpi(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1266,29 +1249,6 @@ def test_cgroup_pilot_requires_all_ordered_exact_results_before_acpi(
     )
     assert fake.calls == 2
     assert output.read_text() == complete
-
-
-def test_cgroup_stress_is_opt_in_and_changes_only_guest_boot_args(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(_CGROUP_STRESS_ENV, raising=False)
-    assert strict_env_flag(_CGROUP_STRESS_ENV) is False
-    monkeypatch.setenv(_CGROUP_STRESS_ENV, "1")
-    assert strict_env_flag(_CGROUP_STRESS_ENV) is True
-    monkeypatch.setenv(_CGROUP_STRESS_ENV, "true")
-    with pytest.raises(ValueError, match="must be '0' or '1'"):
-        strict_env_flag(_CGROUP_STRESS_ENV)
-
-    images = {
-        "agentplane-vm-guest-boot:unset": "boot",
-        "agentplane-vm-guest-root:unset": "root",
-        "agentplane-runner-disk:unset": "runner",
-    }
-    plain = _vmi(_NAMESPACE_PREFIX + "unit-test", images)
-    observed = _vmi(_NAMESPACE_PREFIX + "unit-test", images, cgroup_stress=True)
-    plain_args = plain["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
-    observed_args = observed["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
-    assert observed_args == f"{plain_args} agentplane.cgroup-stress=1"
-    observed["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"] = plain_args
-    assert observed == plain
 
 
 def test_cgroup_stress_resident_condition_matches_guest_boot_arg_and_probe_script() -> None:
