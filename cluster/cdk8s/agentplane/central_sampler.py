@@ -3,7 +3,6 @@
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "central-sampler"
-TOKEN_AUDIENCE = NAME
 HEALTH_PORT = 8081
 PORT = 8083
 _LABELS = {"app.kubernetes.io/name": NAME}
