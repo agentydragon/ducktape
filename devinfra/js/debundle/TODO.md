@@ -613,26 +613,17 @@ paths and source-unit IDs belong in the consuming repo.
   treat a failed coarse heuristic as evidence that the authored owner boundary
   is intrinsically impossible or hide it with purity assertions.
 
-- **W9 — Construct residual placements from shared constraints.**
-  Follow <plans/module_placement.md>. The common checker and exact application
-  exist; the current complete proposer enumerates atom assignments. Replace that
-  production architecture with prepared placement constraints, graph-derived
-  implications/owner exclusions and inexpensive whole-batch prediction. Keep
-  authored owners fixed by default and retain global ESM ordering checks.
-  Implement explicit verified import schedules: preserve the current policy in
-  the first refactor, then derive alternatives from constraints. The gate,
-  translation/effect validation and emitter must consume the same witness; saved
-  machine plans may retain it, authored YAML must not. This scheduling work is
-  part of W9, not a permanently deferred follow-up. Pin the three real-source
-  ordering/joint-move cases in the plan before changing their behavior.
-
-  Prove deduction soundness and construction coverage, including joint moves,
-  promoted-edge activation and fresh-owner ordering. Do not assume generic search
-  is necessary or present a closure heuristic as complete. Retain the shipped
-  complete invocation until a proved replacement is ready, then keep exhaustive
-  enumeration as a tiny-spec test oracle. Preserve independent CLI/property tests
-  and exact unchanged-unit application checks. Migrate docs, AGENTS.md, skills
-  and packaged examples with the delivered contracts.
+- **W9 — Complete and validate constructive residual placement.**
+  Follow <plans/module_placement.md> for the delivery checklist and
+  <docs/module_placement.md> for the derivation and coverage proofs. Whole-batch
+  prediction and shared concrete import schedules are implemented. Integrate the
+  constraint-driven finest-partition constructor and complete-default CLI;
+  remove production Cartesian assignment enumeration. Preserve exact Gate
+  projection, authored owners, global ESM semantics and all omitted assignments.
+  Finish independent raw-spec/Node and import-permutation oracles, structural
+  work-count regressions, optimized profiling, fresh downstream residual gain,
+  packaged skills/recipe checks and exact-head CI. Scheduling is part of this
+  project, not a deferred follow-up. Keep incomplete and error outcomes honest.
 
 ### Planner CLI follow-ups
 
