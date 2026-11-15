@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_testonly = True)
+
+go_library(
+    name = "testsupport",
+    srcs = ["central_sampler.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport",
+    visibility = ["//agentplane/central_sampler:__subpackages__"],
+    deps = [
+        "//agentplane/central_sampler/protocol",
+        "//agentplane/central_sampler/providers/responses",
+    ],
+)

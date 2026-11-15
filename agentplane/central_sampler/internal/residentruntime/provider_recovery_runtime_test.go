@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
@@ -152,7 +153,7 @@ func writeSamplingSuccess(w http.ResponseWriter, responseID, text string) error 
 func countUserMessage(t *testing.T, state protocol.Context, text string) int {
 	t.Helper()
 	count := 0
-	for _, item := range responsesItems(t, state) {
+	for _, item := range testsupport.ResponsesItems(t, state) {
 		if item.Type != responses.ItemMessage || item.Role != "user" {
 			continue
 		}
@@ -265,7 +266,7 @@ func TestRuntimeSamplingRetriesFrozenBodyAfter429AndPartialStream(t *testing.T) 
 	if got := countUserMessage(t, conversation.Context(), input); got != 1 {
 		t.Fatalf("original accepted input appears %d times after retries, want once", got)
 	}
-	for _, item := range responsesItems(t, conversation.Context()) {
+	for _, item := range testsupport.ResponsesItems(t, conversation.Context()) {
 		if item.CallID == "partial-provider-call" {
 			t.Fatal("tool call from the incomplete provider stream entered committed context")
 		}

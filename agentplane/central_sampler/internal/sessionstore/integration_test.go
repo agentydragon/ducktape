@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
@@ -433,7 +434,7 @@ func TestStoreIntentJournalBlocksReplayAndPersistsKnownRejection(t *testing.T) {
 		t.Fatalf("pending intent was replayable: %v", err)
 	}
 	call := responses.Item{Type: responses.ItemCustomToolCall, CallID: "call-1", Name: "exec", Input: "{}", ID: "item-1"}
-	if err := store.Finish(t.Context(), owner, first, map[string]any{"id": "response-1"}, nativeResponsesRecords(t, call), nil); err != nil {
+	if err := store.Finish(t.Context(), owner, first, map[string]any{"id": "response-1"}, testsupport.NativeResponsesRecords(t, call), nil); err != nil {
 		t.Fatal(err)
 	}
 	second, _, err := store.Begin(t.Context(), owner, IntentPayload{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
@@ -450,7 +451,7 @@ func TestStoreIntentJournalBlocksReplayAndPersistsKnownRejection(t *testing.T) {
 	if !conversation.Stopped || conversation.Pending != nil {
 		t.Fatalf("rejection left conversation live or pending: stopped=%v pending=%v", conversation.Stopped, conversation.Pending)
 	}
-	items := responsesItems(t, conversation.Transcript)
+	items := testsupport.ResponsesItems(t, conversation.Transcript)
 	if len(items) != 2 || items[1].Type != responses.ItemCustomToolOutput {
 		t.Fatalf("unstarted call output was not durably settled: %#v", items)
 	}
@@ -498,7 +499,7 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	}
 	call := responses.Item{Type: responses.ItemCustomToolCall, CallID: "recover-call", Name: "exec", Input: "text(1)", ID: "recover-item"}
 	toolCall := protocol.ToolInvocation{Encoding: protocol.ExecEncodingFreeform, CallID: call.CallID, Name: call.Name, Input: call.Input}
-	if err := store.Finish(t.Context(), owner, sampling, map[string]any{"id": "response"}, nativeResponsesRecords(t, call), nil); err != nil {
+	if err := store.Finish(t.Context(), owner, sampling, map[string]any{"id": "response"}, testsupport.NativeResponsesRecords(t, call), nil); err != nil {
 		t.Fatal(err)
 	}
 	cellIntent, _, err := store.Begin(t.Context(), owner, IntentPayload{Kind: PendingIntentCell, Call: &toolCall}, nil, nil)
@@ -649,11 +650,11 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	transcript := responsesItems(t, retained.Transcript)
+	transcript := testsupport.ResponsesItems(t, retained.Transcript)
 	if len(transcript) != 3 || transcript[1].Type != responses.ItemCustomToolOutput || transcript[1].CallID != call.CallID || transcript[2].Role != "developer" {
 		t.Fatalf("provider history was not completed with a matching aborted output: %#v", transcript)
 	}
-	active := responsesItems(t, retained.Context())
+	active := testsupport.ResponsesItems(t, retained.Context())
 	if len(active) != 3 || active[1].CallID != call.CallID || active[2].Role != "developer" {
 		t.Fatalf("model context did not retain the aborted output: %#v", active)
 	}
@@ -672,7 +673,7 @@ func TestStoreRecoverSessionPreservesKnownRejectedCellResult(t *testing.T) {
 	}
 	call := responses.Item{Type: responses.ItemFunctionCall, CallID: "invalid-cell", Name: "exec", Arguments: `{"cell_id":"native-session","terminate":true}`}
 	toolCall := protocol.ToolInvocation{Encoding: protocol.ExecEncodingJSON, CallID: call.CallID, Name: call.Name, Input: call.Arguments}
-	if err := store.Finish(t.Context(), owner, sampling, map[string]any{"id": "response"}, nativeResponsesRecords(t, call), nil); err != nil {
+	if err := store.Finish(t.Context(), owner, sampling, map[string]any{"id": "response"}, testsupport.NativeResponsesRecords(t, call), nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.RegisterProcess(t.Context(), owner, "other-process", false); err != nil {
@@ -720,7 +721,7 @@ func TestStoreRecoverSessionPreservesKnownRejectedCellResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	items := responsesItems(t, conversation.Transcript)
+	items := testsupport.ResponsesItems(t, conversation.Transcript)
 	if conversation.Pending != nil || len(items) != 3 || items[1].CallID != call.CallID {
 		t.Fatalf("unsettled call: %+v", conversation)
 	}
@@ -1026,7 +1027,7 @@ func TestStoreCodeHostLossNoticesOnceAndFencesPendingCalls(t *testing.T) {
 			var records []json.RawMessage
 			if api == protocol.APIStyleResponses {
 				call := responses.Item{Type: responses.ItemCustomToolCall, CallID: "lost-host-call", Name: "exec", Input: "text(load('x'))", ID: "lost-host-item"}
-				records = nativeResponsesRecords(t, call)
+				records = testsupport.NativeResponsesRecords(t, call)
 			} else {
 				records = []json.RawMessage{json.RawMessage(`{"id":"msg_lost_host","role":"assistant","content":[{"type":"tool_use","id":"lost-host-call","name":"exec","input":{"code":"text(load('x'))"}}],"stop_reason":"tool_use"}`)}
 			}
@@ -1081,7 +1082,7 @@ func TestStoreCodeHostLossNoticesOnceAndFencesPendingCalls(t *testing.T) {
 func TestStoreCodeHostLossSettlesUnresolvedExecutorIntentAndUnblocks(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
-	logged := captureLogs(t)
+	logged := testsupport.CaptureLogs(t)
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
 		t.Fatal(err)
@@ -1328,7 +1329,7 @@ func TestStoreCodeHostLossLeavesUnrelatedPendingCallForDispatcher(t *testing.T) 
 		t.Fatal(err)
 	}
 	call := responses.Item{Type: responses.ItemCustomToolCall, CallID: "unrelated-call", Name: "pure", Input: "{}", ID: "unrelated-item"}
-	if err := store.Finish(t.Context(), owner, intentID, map[string]any{"id": "response"}, nativeResponsesRecords(t, call), nil); err != nil {
+	if err := store.Finish(t.Context(), owner, intentID, map[string]any{"id": "response"}, testsupport.NativeResponsesRecords(t, call), nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Release(t.Context(), owner); err != nil {
@@ -1937,7 +1938,7 @@ func TestGooseInitializationPreservesRetainedState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	afterItems := responsesItems(t, afterConversation.Transcript)
+	afterItems := testsupport.ResponsesItems(t, afterConversation.Transcript)
 	retainedItem, err := jsonwire.DecodeJSONValue(afterItems[0].Raw)
 	if err != nil {
 		t.Fatal(err)
@@ -2226,7 +2227,7 @@ func TestSteeringInputJoinsTheActiveTurnOnceInAdmissionOrder(t *testing.T) {
 		}
 		return string(encoded)
 	}
-	items := responsesItems(t, conversation.Transcript)
+	items := testsupport.ResponsesItems(t, conversation.Transcript)
 	if got, want := normalized(items[len(items)-1]), normalized(expected); got != want {
 		t.Fatalf("last conversation item=%s, want %s", got, want)
 	}

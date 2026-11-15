@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
@@ -94,7 +95,7 @@ func TestConversationTranscriptIsAppendOnlyAcrossInputAndCompaction(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	compacted := responsesItems(t, conversation.Context())
+	compacted := testsupport.ResponsesItems(t, conversation.Context())
 	if len(compacted) == 0 || compacted[len(compacted)-1].EncryptedContent != "opaque" {
 		t.Fatalf("compacted context=%#v", compacted)
 	}

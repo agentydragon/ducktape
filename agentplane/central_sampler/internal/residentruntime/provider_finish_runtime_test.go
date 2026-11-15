@@ -9,6 +9,7 @@ import (
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -41,7 +42,7 @@ func TestFinishProviderResolvesAmbiguousPersistenceWithoutResampling(t *testing.
 				ID: "persisted-once", Type: responses.ItemMessage, Role: "assistant",
 				Content: json.RawMessage(`[{"type":"output_text","text":"persisted once"}]`),
 			}
-			records := nativeResponsesRecords(t, message)
+			records := testsupport.NativeResponsesRecords(t, message)
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			writes := 0
@@ -73,7 +74,7 @@ func TestFinishProviderResolvesAmbiguousPersistenceWithoutResampling(t *testing.
 				t.Fatal(err)
 			}
 			count := 0
-			for _, item := range responsesItems(t, conversation.Transcript) {
+			for _, item := range testsupport.ResponsesItems(t, conversation.Transcript) {
 				if item.ID != message.ID {
 					continue
 				}
@@ -123,7 +124,7 @@ func TestFinishProviderResolvesAmbiguousPersistenceWithoutResampling(t *testing.
 				t.Fatal(err)
 			}
 			tool := responses.Item{Type: responses.ItemFunctionCall, ID: "native-call-item", CallID: "native-call", Name: "exec", Arguments: `{"cmd":"must not be dispatched"}`}
-			if err := store.Finish(t.Context(), owner, toolIntent, map[string]any{"response": map[string]any{"status": "completed"}}, nativeResponsesRecords(t, tool), nil); err != nil {
+			if err := store.Finish(t.Context(), owner, toolIntent, map[string]any{"response": map[string]any{"status": "completed"}}, testsupport.NativeResponsesRecords(t, tool), nil); err != nil {
 				t.Fatal(err)
 			}
 			if settled, err := runtime.settleExpiredProviderCommand(t.Context(), owner, session.ID, "next-input"); err != nil || settled {

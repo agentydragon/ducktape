@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
@@ -679,7 +680,7 @@ func TestHostAdmissionRejectionPreservesLiveCodeModeSessionForNextExec(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	items := responsesItems(t, conversation.Transcript)
+	items := testsupport.ResponsesItems(t, conversation.Transcript)
 	if conversation.Pending != nil || len(items) < 2 {
 		t.Fatalf("rejected exec left pending work or no output: pending=%+v items=%+v", conversation.Pending, items)
 	}
@@ -735,7 +736,7 @@ func TestHostAdmissionRejectionPreservesLiveCodeModeSessionForNextExec(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	items = responsesItems(t, conversation.Transcript)
+	items = testsupport.ResponsesItems(t, conversation.Transcript)
 	if output := items[len(items)-1]; output.CallID != nextCall.CallID || len(output.Output) < 2 || output.Output[len(output.Output)-1].Text != "retained" {
 		t.Fatalf("next exec did not run through the retained logical session: %+v", output)
 	}
@@ -775,7 +776,7 @@ func TestHostWaitAndTerminateErrorsAreToolOutputsWithoutLifecycleClaims(t *testi
 			if err != nil {
 				t.Fatal(err)
 			}
-			items := responsesItems(t, conversation.Transcript)
+			items := testsupport.ResponsesItems(t, conversation.Transcript)
 			output := items[len(items)-1]
 			if !output.IsToolOutput() || output.CallID != call.CallID || len(output.Output) != 1 || output.Output[0].Text != "host operation returned an error" {
 				t.Fatalf("%s error output=%+v", test.name, output)
@@ -988,7 +989,7 @@ func appendModelToolCall(t *testing.T, store *sessionstore.Store, owner sessions
 	} else {
 		item.Input = call.Input
 	}
-	if err := store.Finish(t.Context(), owner, intentID, map[string]any{"output": []responses.Item{item}}, nativeResponsesRecords(t, item), nil); err != nil {
+	if err := store.Finish(t.Context(), owner, intentID, map[string]any{"output": []responses.Item{item}}, testsupport.NativeResponsesRecords(t, item), nil); err != nil {
 		t.Fatal(err)
 	}
 }

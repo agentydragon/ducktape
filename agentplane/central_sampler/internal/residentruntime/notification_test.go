@@ -11,6 +11,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
@@ -70,7 +71,7 @@ func TestNotificationFollowsStepOutputsAndTurnEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	call := responses.Item{Type: responses.ItemCustomToolCall, CallID: "exec-call", Name: "exec", Input: "notify('progress')"}
-	if err := store.Finish(t.Context(), owner, sampling, map[string]any{}, nativeResponsesRecords(t, call), nil); err != nil {
+	if err := store.Finish(t.Context(), owner, sampling, map[string]any{}, testsupport.NativeResponsesRecords(t, call), nil); err != nil {
 		t.Fatal(err)
 	}
 	cell, _, err := store.Begin(t.Context(), owner, sessionstore.IntentPayload{Kind: sessionstore.PendingIntentCell}, nil, nil)
@@ -107,7 +108,7 @@ func TestNotificationFollowsStepOutputsAndTurnEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	items := responsesItems(t, conversation.Transcript)
+	items := testsupport.ResponsesItems(t, conversation.Transcript)
 	if got, want := outputTexts(items), []string{"final", "progress", "after last step"}; !slices.Equal(got, want) {
 		t.Fatalf("outputs=%q, want %q", got, want)
 	}
@@ -156,7 +157,7 @@ func TestLostExecutorNoticeFollowsPendingToolResultForEachProvider(t *testing.T)
 				var records []json.RawMessage
 				if api == protocol.APIStyleResponses {
 					call := responses.Item{Type: responses.ItemCustomToolCall, CallID: "call-1", Name: "exec", Input: "text(1)", ID: "item-1"}
-					records = nativeResponsesRecords(t, call)
+					records = testsupport.NativeResponsesRecords(t, call)
 				} else {
 					records = []json.RawMessage{json.RawMessage(`{"id":"msg-1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"call-1","name":"exec","input":{"code":"text(1)"}}],"stop_reason":"tool_use","usage":{"input_tokens":1,"output_tokens":1}}`)}
 				}
@@ -209,7 +210,7 @@ func TestLostExecutorNoticeFollowsPendingToolResultForEachProvider(t *testing.T)
 					t.Fatalf("loss notice broke provider tool-result ordering: %v", err)
 				}
 				if api == protocol.APIStyleResponses {
-					items := responsesItems(t, conversation.Transcript)
+					items := testsupport.ResponsesItems(t, conversation.Transcript)
 					callIndex := -1
 					for i, item := range items {
 						if item.CallID == "call-1" && item.Type == responses.ItemCustomToolCall {
@@ -281,7 +282,7 @@ func TestNotificationIsDiscardedWhenTurnDoesNotComplete(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if texts := outputTexts(responsesItems(t, conversation.Transcript)); len(texts) != 0 {
+			if texts := outputTexts(testsupport.ResponsesItems(t, conversation.Transcript)); len(texts) != 0 {
 				t.Fatalf("aborted turn recorded notify outputs %q", texts)
 			}
 			if count := queuedNotifications(t, store, session.ConversationID); count != 0 {

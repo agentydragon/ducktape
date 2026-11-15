@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 )
@@ -100,7 +101,7 @@ func TestEnvironmentContextPrecedesTurnInputAndFollowsChanges(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return responsesItems(t, conversation.Context())
+		return testsupport.ResponsesItems(t, conversation.Context())
 	}
 
 	items := submit("first", "first input")
@@ -123,7 +124,7 @@ func TestEnvironmentContextPrecedesTurnInputAndFollowsChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	items = responsesItems(t, conversation.Context())
+	items = testsupport.ResponsesItems(t, conversation.Context())
 	var latestEnvironment string
 	for _, item := range items {
 		text := messageText(t, item)
@@ -138,7 +139,7 @@ func TestEnvironmentContextPrecedesTurnInputAndFollowsChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := len(responsesItems(t, unchanged.Context())); got != len(items) {
+	if got := len(testsupport.ResponsesItems(t, unchanged.Context())); got != len(items) {
 		t.Fatalf("unchanged environment appended %d items", got-len(items))
 	}
 
@@ -171,7 +172,7 @@ func TestCompactionReinjectsFullEnvironmentContextBeforeCompactionItem(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	originalItems := responsesItems(t, conversation.Context())
+	originalItems := testsupport.ResponsesItems(t, conversation.Context())
 	replacement := responseContextForTest(t, []responses.Item{
 		originalItems[0],
 		{Type: responses.ItemCompaction, EncryptedContent: "fixture-opaque"},
@@ -183,7 +184,7 @@ func TestCompactionReinjectsFullEnvironmentContextBeforeCompactionItem(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	items := responsesItems(t, compacted.Context())
+	items := testsupport.ResponsesItems(t, compacted.Context())
 	if len(items) != 2 || items[1].EncryptedContent != "fixture-opaque" {
 		t.Fatalf("compacted context=%+v", items)
 	}

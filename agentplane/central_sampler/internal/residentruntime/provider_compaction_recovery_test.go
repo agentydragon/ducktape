@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
@@ -240,7 +241,7 @@ func TestRuntimeCompactionRetriesFrozenProviderRequestAndPersistsOnce(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	items := responsesItems(t, conversation.Context())
+	items := testsupport.ResponsesItems(t, conversation.Context())
 	compactions := 0
 	for _, item := range items {
 		if item.Type == responses.ItemCompaction && item.EncryptedContent == "opaque-compact-summary" {
