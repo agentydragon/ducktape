@@ -10,12 +10,20 @@ from python.runfiles import Runfiles
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 _EXPECTED_OUTPUTS = {
-    "local-model-central.json",
     "local-model.json",
-    "local-model-firecracker.json",
-    "local-model-mcp-fixtures.json",
     "local-model-pod.json",
+    "local-model-pod-native.json",
+    "local-model-central.json",
+    "local-model-central-budget.json",
+    "local-model-central-services.json",
+    "local-model-central-services-native.json",
+    "local-model-firecracker.json",
+    "local-model-firecracker-native.json",
+    "local-model-firecracker-platform.json",
+    "local-model-mcp-fixtures.json",
+    "local-model-mcp-services.json",
     "local-model-vm.json",
+    "local-model-vm-native.json",
     "public-litellm.json",
 }
 

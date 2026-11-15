@@ -1,6 +1,5 @@
 """Test transport to the native Session Dispatcher with an existing bound service identity."""
 
-import asyncio
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -9,6 +8,7 @@ from pathlib import Path
 
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.native_auth import write_bound_fixture_token
 from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
 from agentplane.system_tests.driver.tls import service_credentials
 from agentplane.system_tests.driver.tracing import tracer
@@ -68,8 +68,7 @@ async def forward(cluster: Cluster, resource: str = f"service/{SERVICE}") -> Asy
 @asynccontextmanager
 async def native_client(cluster: Cluster, token_file: Path) -> AsyncIterator[SessionDispatcherClient]:
     """Own a native channel using the existing backend-authorized test principal."""
-    caller, _, _ = await bound_caller(cluster, "app", audience=TOKEN_AUDIENCE)
-    await asyncio.to_thread(token_file.write_text, caller.token)
+    await write_bound_fixture_token(cluster, token_file, audience=TOKEN_AUDIENCE)
     async with (
         forward(cluster) as target,
         SessionDispatcherClient.connect(

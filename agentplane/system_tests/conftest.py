@@ -23,6 +23,7 @@ from agentplane.system_tests.driver import native_artifacts, scenario, scripted_
 from agentplane.system_tests.driver.case_batch import CASE_RESULT
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.dispatcher_transport import native_client
+from agentplane.system_tests.driver.environment_transport import EnvironmentServiceClient, native_environment_client
 from agentplane.system_tests.driver.offered_models import models_offered_for
 from agentplane.system_tests.driver.ollama_warmup import warm_ollama
 from agentplane.system_tests.driver.sandbox import Sandboxes, sandbox_scope
@@ -35,11 +36,6 @@ from util.testing.otel_tracing import configure_tracing
 # gazelle:include_dep @pypi//protobuf
 
 _CALL_REPORT = pytest.StashKey[pytest.TestReport]()
-
-
-@pytest.fixture(scope="session")
-def k3s_binary(runfiles: Runfiles) -> Path:
-    return runfiles.root() / os.environ["K3S_BINARY_RLOCATION"]
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -86,7 +82,7 @@ def pytest_runtest_makereport(
 
 @pytest.fixture
 async def client(
-    base_url: str, token: str, request: pytest.FixtureRequest, phase_tracer: trace.Tracer
+    base_url: str, token: str, sandbox: Sandboxes, request: pytest.FixtureRequest, phase_tracer: trace.Tracer
 ) -> AsyncIterator[Client]:
     async with Client.connect(base_url=base_url, token=token) as opened:
         try:
@@ -94,7 +90,7 @@ async def client(
         finally:
             report = request.node.stash.get(_CALL_REPORT, None)
             if request.node.get_closest_marker("vm_sandboxes") is not None or (report is not None and report.failed):
-                for uid in opened.opened_sandbox_uids:
+                for uid in opened.opened_sandbox_uids | sandbox.opened_environment_uids:
                     with phase_tracer.start_as_current_span(
                         "system_test.diagnostics", attributes={"sandbox.uid": str(uid)}
                     ):
@@ -145,21 +141,32 @@ async def scripted(scripted_listener: Listener) -> AsyncIterator[scripted_upstre
 
 @pytest.fixture
 def scenario_resources(
-    cluster: Cluster, base_url: str, token: str, phase_tracer: trace.Tracer
+    cluster: Cluster, base_url: str, token: str, phase_tracer: trace.Tracer, tmp_path: Path
 ) -> scenario.ScenarioResources:
     """Each use owns its client and guests; the deployment and scripted server stay shared."""
-    return partial(scenario.open_resources, cluster, base_url, token, phase_tracer)
+    return partial(
+        scenario.open_resources, cluster, base_url, token, phase_tracer, token_file=tmp_path / "gateway-token"
+    )
 
 
 @pytest.fixture
-async def sandbox(cluster: Cluster, client: Client, phase_tracer: trace.Tracer) -> AsyncIterator[Sandboxes]:
+async def environment_client(cluster: Cluster, tmp_path: Path) -> AsyncIterator[EnvironmentServiceClient]:
+    """Native Runner Gateway client using the fixture-owned, Pod-bound test identity."""
+    async with native_environment_client(cluster, tmp_path / "gateway-token") as environments:
+        yield environments
+
+
+@pytest.fixture
+async def sandbox(
+    cluster: Cluster, environment_client: EnvironmentServiceClient, phase_tracer: trace.Tracer
+) -> AsyncIterator[Sandboxes]:
     """Creates sandboxes and deletes every one it created, whatever the test did.
 
     Deletion is refused while a sandbox runs, so each is suspended first. A sandbox that will not go
     fails the teardown rather than being swallowed: a leaked one holds a PVC and a node slot. A run
     killed outright still leaks — see the sweeper entry in this package's README.
     """
-    async with sandbox_scope(cluster, client, phase_tracer) as create:
+    async with sandbox_scope(cluster, environment_client, phase_tracer) as create:
         yield create
 
 

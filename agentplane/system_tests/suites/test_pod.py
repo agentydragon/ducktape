@@ -1,5 +1,6 @@
-"""Selectable Pod cases sharing one stack and two concurrent case slots."""
+"""Selectable Pod cases sharing one stack and a bounded concurrent case batch."""
 
+import os
 from collections.abc import AsyncIterator
 from functools import partial
 from typing import cast
@@ -14,10 +15,19 @@ from agentplane.system_tests.driver.dispatcher_transport import native_client
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.suites import pod_runners
 from agentplane.system_tests.suites.pod_cases import SCENARIOS, Resources, Scenario
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.net import Listener
 
 pytestmark = [pytest.mark.case_batch, pytest.mark.asyncio(loop_scope="module")]
-CASE_LIMIT = 2
+CASE_LIMIT = int(os.environ.get("AGENTPLANE_POD_CASE_SLOTS", "2"))
+
+
+@pytest_asyncio.fixture(scope="module", loop_scope="module", autouse=True)
+async def record_node_capacity(cluster: Cluster) -> None:
+    # Requested compute units do not prove the Kubernetes scheduler's actual capacity.
+    (undeclared_outputs_dir() / "pod-candidate-node-capacity.json").write_text(
+        await cluster.kubectl("get", "nodes", "-o", "json")
+    )
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")

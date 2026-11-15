@@ -4,7 +4,9 @@ The test fixture now owns an OTLP/gRPC and OTLP/HTTP receiver. A test-only `moni
 Service and Endpoints route the production service/Runner exporters to it without a production
 collector. Exports append immediately to `test.outputs/process-spans.jsonl` with trace, span,
 parent, service, source and timing fields and an allowlist of useful identity, HTTP/RPC outcome and
-numeric attributes. The test client injects the active W3C traceparent into app HTTP calls.
+numeric attributes. The test clients inject the active W3C traceparent into App HTTP and native
+Dispatcher unary calls. The native transport reads the current context for each call, so a
+channel reused outside a span does not retain its previous trace identity.
 The receiver starts before k3s and closes after k3s teardown; SDK batching can still lose spans
 from a process killed before it flushes. Request bodies and authorization fields are excluded.
 

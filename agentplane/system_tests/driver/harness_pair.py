@@ -1,10 +1,14 @@
 """Run one case for each harness within one pytest fixture lifetime."""
 
+import os
 from collections.abc import Awaitable, Callable
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from agentplane.app.testing.client import Client
 from agentplane.proto import session_pb2
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.environment_transport import native_environment_client
 from agentplane.system_tests.driver.offered_models import models_offered_for
 from agentplane.system_tests.driver.sandbox import Sandboxes, sandbox_scope
 from agentplane.system_tests.driver.tracing import tracer
@@ -41,7 +45,14 @@ async def run_harness_pair_in_own_sandboxes(
     #   cursors carry over, mutating cases (a policy granted while running) don't fit, and the second
     #   harness could pass on state the first left behind.
     async def scoped(harness: session_pb2.Harness, model: str) -> None:
-        async with sandbox_scope(cluster, client, tracer) as sandboxes:
-            await run(harness, model, sandboxes)
+        test_tmpdir = Path(os.environ["TEST_TMPDIR"])
+        if not test_tmpdir.is_absolute():
+            raise RuntimeError("TEST_TMPDIR must be absolute for the native Gateway token")
+        with TemporaryDirectory(prefix="agentplane-gateway-", dir=test_tmpdir) as directory:
+            async with (
+                native_environment_client(cluster, Path(directory) / "gateway-token") as environments,
+                sandbox_scope(cluster, environments, tracer) as sandboxes,
+            ):
+                await run(harness, model, sandboxes)
 
     await run_harness_pair(client, scoped)

@@ -60,3 +60,65 @@ This is one successful run on a preexisting worker, not a fleet percentile, mini
 concurrency result, or measured end-to-end CI saving. The target remains manual. The action's queued
 timestamp is later than its worker-start timestamp, so that cross-clock interval cannot establish queue latency.
 No pool configuration, worker size, required-CI routing, or Codex source changed.
+
+## Current native fixture, 14 November
+
+The manual target was rerun after the App-free native VM migration, using source
+`9b330689a24042259393a713b5f271b42bd7e669` plus the bounded namespace-observer and investigation
+documentation overlay. The launch log confirms those patches were applied. The VM scenario body,
+guest images and resource requests are unchanged. This fresh, non-retained KVM route does not call
+baseline namespace cleanup, so it is not a test of that observer.
+
+The [Bazel invocation](https://app.buildbuddy.io/invocation/9eb2043f-9480-48f6-9fb0-435fab21b1e2)
+and parent `e051d036-0219-4f28-92ea-997f34d816bf` finish successfully. One fresh physical
+TestRunner action takes 226.691s; Bazel elapsed is 286.416s. One aggregate JUnit case passes,
+containing both unchanged Claude and Codex scenarios and the required VM process-trace contract.
+Stack setup takes 119.410s; the concurrent case envelope is 84.096s. Both retained QEMU command
+diagnostics contain `-accel kvm`. The exact ActionResult is present with exit zero and requests
+4,000 milli-CPU, 7 GiB memory and 50 GiB free disk.
+
+The physical execution ID begins `/uploads/39f83c2b-06db-4030-82d3-83e8822dd96f/`, action digest
+`75527b1e074e499ad13750a2f81166c46fb599ccf99f90777dfb7085e015a189/596`. Its queued timestamp
+is later than worker start, so queue latency is unknown. Physical CPU and whole-action peak memory
+are absent from the response; per-Pod memory samples do not substitute for those measurements or
+the older run's cgroup proof.
+
+A read-only pool snapshot shortly before launch found one Ready 4-CPU/8-GiB VMI. No capacity or
+routing change was made. This establishes current-source feasibility on that worker, not a matched
+speed comparison, a repaired provider failure rate or sufficient capacity for VM and Firecracker
+concurrently. Any placement proposal must account for their competition and burst admission.
+
+## Concurrent native VM and Firecracker trial
+
+[Invocation 95addc45](https://app.buildbuddy.io/invocation/95addc45-0fad-4243-81ca-78c7485e6db9)
+completes successfully at explicit source `92316db30cf82843231e6cd8f6a111a7e5f7a8d7`, without an
+overlay. Both targets run twice with fresh test results and one allowed attempt per run. The
+four physical TestRunner actions pass six aggregate JUnit case exposures, with no failures,
+errors or skips. Both VM executions retain Claude/Codex behavior and the process-trace contract;
+their actual QEMU commands use `-accel kvm`.
+
+| Action            | Worker alias | Physical execution |
+| ----------------- | ------------ | -----------------: |
+| VM run 1          | A            |           239.105s |
+| VM run 2          | A            |           242.374s |
+| Firecracker run 1 | B            |           280.119s |
+| Firecracker run 2 | A            |           271.995s |
+
+The executions overlap on distinct workers, with observed peak concurrency two. Total Bazel
+elapsed is 824.898s; this is a repeated capacity trial, not a matched speed comparison.
+Twenty-nine retrieved artifacts have verified digest/size identities. Private reviewed evidence
+has SHA256 `e8817647fe64cb28684a78b34b134e07222eb4703a37783fb591d99a8fa9bcb0`.
+
+No infrastructure configuration changes. Existing autoscaling creates worker B at 19:44:51 UTC
+and reports it Ready at 19:47:59 UTC: 188 seconds, in addition to any prior scale-up admission.
+The existing policy has minimum one, maximum three, a 120-second scale-up stabilization window,
+and a limit of one added worker per 900 seconds. Each observed worker requests and limits four
+CPUs and 8 GiB. Warm capacity has an idle/opportunity cost; this is not a cost-neutral placement
+claim. The VM action requests four CPUs, 7 GiB and 50 GB disk; Firecracker requests four CPUs,
+6 GB and 20 GB disk.
+
+The first VM queue interval has inverted timestamps and remains unknown. Whole-TestRunner
+physical CPU and memory are absent; per-Pod memory samples and unrelated mypy usage do not
+substitute for them. One invocation cannot establish median/p90 feedback, fleet flakiness or
+reliable cold/burst admission. Source `92316db3` predates the later rebase; this does not validate
+the rebased platform fixtures or establish a complete required-graph saving.

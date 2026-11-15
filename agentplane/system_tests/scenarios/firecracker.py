@@ -16,19 +16,15 @@ from cryptography import x509
 from cryptography.hazmat.primitives.serialization import Encoding
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.app.testing.client import Client
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import session_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.system_tests.driver.agent import (
-    Agent,
-    environment_runtime_startup_retries,
-    scripted_turn_with_admission_and_history,
-)
+from agentplane.system_tests.deployment.local_models import LOCAL_MODEL_SCENARIO_IDS
 from agentplane.system_tests.driver.cluster import Cluster
-from agentplane.system_tests.driver.offered_models import models_offered_for
-from agentplane.system_tests.driver.sandbox import VM_WORKING_DIRECTORY, Sandboxes, wait_until_running
+from agentplane.system_tests.driver.native_platform import NativePlatformClients
+from agentplane.system_tests.driver.native_session import native_scripted_turn_with_admission_and_history
+from agentplane.system_tests.driver.sandbox import VM_WORKING_DIRECTORY, wait_until_running
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.driver.session import Session
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
@@ -151,36 +147,42 @@ async def _wait_for_served_certificate(cluster: Cluster, pod_name: str, credenti
 
 async def preserves_live_guest(
     cluster: Cluster,
-    client: Client,
-    dispatcher: SessionDispatcherClient,
-    sandbox: Sandboxes,
+    native_platform: NativePlatformClients,
+    view: environment_service_pb2.EnvironmentDescriptor,
     scripted: ScriptedUpstream,
 ) -> None:
-    view = await sandbox(f"systest-firecracker-{uuid4().hex[:8]}", template="environment-firecracker")
     pod = view.kubernetes_diagnostics.pod
     assert pod.uid
     harness = session_pb2.HARNESS_CODEX
-    offered = await models_offered_for(client, [harness])
+    model_id = LOCAL_MODEL_SCENARIO_IDS[harness]
     model = scripted.model(pod.name, harness)
-    agent = await Agent.create(
-        client,
-        dispatcher,
-        sandbox=view.target.name,
-        sandbox_uid=view.target.uid,
-        harness=harness,
-        model=offered[harness],
-        cwd=VM_WORKING_DIRECTORY,
+    session = await Session.create(
+        native_platform.dispatcher,
+        native_platform.history,
+        spec=session_pb2.SessionSpec(
+            placement=session_pb2.SessionPlacement(
+                environment_hosted=session_pb2.EnvironmentHostedPlacement(
+                    environment=session_pb2.ExactEnvironment(name=view.target.name, uid=view.target.uid),
+                    harness=harness,
+                )
+            ),
+            cwd=VM_WORKING_DIRECTORY,
+            model=model_id,
+            reasoning_effort="low",
+        ),
+        session_id=uuid4(),
     )
     output = undeclared_outputs_dir() / "firecracker"
     output.mkdir(exist_ok=True)
 
     async def probe(number: int) -> dict[str, object]:
-        turn, _, _ = await scripted_turn_with_admission_and_history(
-            client,
-            agent,
+        turn, _, _ = await native_scripted_turn_with_admission_and_history(
+            native_platform.history,
+            session,
+            view.target,
+            model,
             command_id=f"firecracker-{number}",
             prompt="Run the guest proof command.",
-            model=model,
             history_turns=number,
             shell_command=_probe(start=number == 1),
             shell_call_id=f"guest-proof-{number}",
@@ -221,9 +223,9 @@ async def preserves_live_guest(
     secret_name = record["status"]["secretName"]
     running_credential = await _renew_credentials(cluster, secret_name)
     await _wait_for_served_certificate(cluster, pod.name, running_credential)
-    initial = await client.runner_status(view.target.name, view.target.uid)
-    (session,) = [row for row in initial.sessions if row.session_id == str(agent.thread_id)]
-    assert session.HasField("process_id")
+    initial = await (await native_platform.runner(view.target)).status()
+    (session_status,) = [row for row in initial.sessions if row.session_id == str(session.session_id)]
+    assert session_status.HasField("process_id")
     assert initial.environment_runtime_boot_id
     # Exercise the conditional idle admission barrier as well as the VM primitive.
     # The live background child remains eligible for RAM-preserving autosuspend.
@@ -234,7 +236,7 @@ async def preserves_live_guest(
         stop=stop_after_delay(300), wait=wait_fixed(1), retry=retry_if_exception_type(AssertionError), reraise=True
     ):
         with attempt:
-            suspended = await client.get_environment(view.target)
+            suspended = await native_platform.environment.get_environment(view.target)
             assert suspended.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED
             assert suspended.observed_state.stop_stage == "Stopped", suspended.observed_state
             assert suspended.kubernetes_diagnostics.pod.uid == pod.uid
@@ -255,19 +257,17 @@ async def preserves_live_guest(
     await cluster.kubectl(
         "patch", "sandbox", view.target.name, "--type=merge", "-p", json.dumps({"spec": {"idleSuspendAfter": None}})
     )
-    await client.resume_sandbox(view.target)
-    resumed = await wait_until_running(client, view.target)
+    await native_platform.environment.resume_environment(view.target)
+    resumed = await wait_until_running(native_platform.environment, view.target)
     await _wait_for_served_certificate(cluster, pod.name, thaw_credential)
     assert resumed.kubernetes_diagnostics.pod.uid == pod.uid
     resumed_sandbox = json.loads(await cluster.kubectl("get", "sandbox", view.target.name, "-o", "json"))
     assert resumed_sandbox["status"]["firecrackerSuspension"]["phase"] == "Released", resumed_sandbox["status"]
-    async for attempt in environment_runtime_startup_retries():
-        with attempt:
-            restored = await client.runner_status(view.target.name, view.target.uid)
+    restored = await (await native_platform.ready_runner(view.target)).status()
     assert restored.environment_runtime_boot_id == initial.environment_runtime_boot_id
-    (continuation,) = [row for row in restored.sessions if row.session_id == session.session_id]
-    assert continuation.process_id == session.process_id
-    assert continuation.native_session_id == session.native_session_id
+    (continuation,) = [row for row in restored.sessions if row.session_id == str(session.session_id)]
+    assert continuation.process_id == session_status.process_id
+    assert continuation.native_session_id == session_status.native_session_id
     after = await probe(2)
     for key in ("boot_id", "pid", "start_ticks", "marker"):
         assert after[key] == before[key], (before, after)
@@ -279,8 +279,8 @@ async def preserves_live_guest(
                 "pod_uid": pod.uid,
                 "runtime_boot_id": initial.environment_runtime_boot_id,
                 "suspended_launcher": status,
-                "native_session_id": session.native_session_id,
-                "process_id": session.process_id,
+                "native_session_id": session_status.native_session_id,
+                "process_id": session_status.process_id,
                 "before": before,
                 "after": after,
             },

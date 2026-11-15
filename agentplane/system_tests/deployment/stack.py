@@ -20,11 +20,12 @@ import shutil
 import socket
 import sys
 import tempfile
+import threading
 import time
 from collections.abc import Callable, Iterator
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -52,6 +53,149 @@ DEPLOY_TIMEOUT_SECONDS = 480
 HOSTS_MARKER = "# k3s-env"
 # Outlasts the longest suite, whose `enormous` size allows 3600 s.
 OPERATOR_TOKEN_LIFETIME = timedelta(hours=1)
+NAMESPACE_DELETE_TIMEOUT_SECONDS = 60
+NAMESPACE_CLEANUP_POLL_SECONDS = 5
+NAMESPACE_CLEANUP_COMMAND_TIMEOUT_SECONDS = 2
+NAMESPACE_CLEANUP_OBSERVER_JOIN_SECONDS = 4
+NAMESPACE_CLEANUP_MAX_SNAPSHOTS = 13
+NAMESPACE_CLEANUP_MAX_OBJECTS = 512
+NAMESPACE_CLEANUP_MAX_OUTPUT_BYTES = 2 * 1024 * 1024
+
+_NAMESPACE_METADATA_COLUMNS = (
+    "name:.metadata.name,uid:.metadata.uid,deletionTimestamp:.metadata.deletionTimestamp,"
+    "finalizers:.spec.finalizers,phase:.status.phase,conditionTypes:.status.conditions[*].type,"
+    "conditionStates:.status.conditions[*].status,conditionReasons:.status.conditions[*].reason,"
+    "conditionMessages:.status.conditions[*].message"
+)
+_POD_PVC_COLUMNS = (
+    "apiVersion:.apiVersion,kind:.kind,name:.metadata.name,namespace:.metadata.namespace,uid:.metadata.uid,"
+    "deletionTimestamp:.metadata.deletionTimestamp,deletionGraceSeconds:.metadata.deletionGracePeriodSeconds,"
+    "finalizers:.metadata.finalizers,ownerKinds:.metadata.ownerReferences[*].kind,"
+    "ownerNames:.metadata.ownerReferences[*].name,ownerUIDs:.metadata.ownerReferences[*].uid,"
+    "phase:.status.phase,reason:.status.reason,volumeName:.spec.volumeName,"
+    "terminationGraceSeconds:.spec.terminationGracePeriodSeconds,nodeName:.spec.nodeName,"
+    "containerNames:.status.containerStatuses[*].name,containerReady:.status.containerStatuses[*].ready,"
+    "containerRestarts:.status.containerStatuses[*].restartCount,"
+    "containerWaitingReasons:.status.containerStatuses[*].state.waiting.reason,"
+    "containerTerminatedReasons:.status.containerStatuses[*].state.terminated.reason,"
+    "containerExitCodes:.status.containerStatuses[*].state.terminated.exitCode,"
+    "containerSignals:.status.containerStatuses[*].state.terminated.signal,"
+    "containerLastReasons:.status.containerStatuses[*].lastState.terminated.reason,"
+    "containerLastExitCodes:.status.containerStatuses[*].lastState.terminated.exitCode"
+)
+
+
+def _capture_namespace_cleanup_snapshot(k3s: K3s, namespaces: list[str], stopped: threading.Event) -> dict[str, Any]:
+    def query_columns(*args: str, columns: str) -> tuple[str, str | None]:
+        try:
+            output = k3s.kubectl(
+                *args,
+                f"-o=custom-columns={columns}",
+                "--request-timeout=2s",
+                check=True,
+                timeout=NAMESPACE_CLEANUP_COMMAND_TIMEOUT_SECONDS,
+                stdout_only=True,
+            )
+            return output, None
+        except Exception as error:
+            return "", type(error).__name__
+
+    def read_namespace(namespace: str) -> tuple[str, dict[str, Any]]:
+        if stopped.is_set():
+            return namespace, {"state_error": "observer_stopped", "objects_error": "observer_stopped"}
+        state, state_error = query_columns("get", "namespace", namespace, columns=_NAMESPACE_METADATA_COLUMNS)
+        if stopped.is_set():
+            return namespace, {"state": state, "state_error": state_error, "objects_error": "observer_stopped"}
+        objects, objects_error = query_columns(
+            "get", "-n", namespace, "pods,persistentvolumeclaims", "--chunk-size=200", columns=_POD_PVC_COLUMNS
+        )
+        lines = objects.splitlines()
+        return namespace, {
+            "state": state,
+            "state_error": state_error,
+            "pods_and_pvcs": "\n".join(lines[: NAMESPACE_CLEANUP_MAX_OBJECTS + 1]),
+            "object_count": max(0, len(lines) - 1),
+            "objects_truncated": len(lines) > NAMESPACE_CLEANUP_MAX_OBJECTS + 1,
+            "objects_error": objects_error,
+        }
+
+    max_workers = min(3, max(1, len(namespaces)))
+    with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="namespace-cleanup-snapshot") as pool:
+        futures = [pool.submit(read_namespace, namespace) for namespace in namespaces]
+        namespace_results = [future.result() for future in futures]
+    output: dict[str, Any] = {"observed_at": datetime.now(UTC).isoformat(), "namespaces": dict(namespace_results)}
+    return output
+
+
+def _observe_namespace_cleanup(k3s: K3s, namespaces: list[str], stopped: threading.Event) -> None:
+    try:
+        output_path = undeclared_outputs_dir() / "namespace-cleanup-state.jsonl"
+        output_path.write_text("")
+        written = 0
+        for _ in range(NAMESPACE_CLEANUP_MAX_SNAPSHOTS):
+            if stopped.is_set():
+                break
+            snapshot = _capture_namespace_cleanup_snapshot(k3s, namespaces, stopped)
+            if stopped.is_set():
+                break
+            line = (json.dumps(snapshot, separators=(",", ":")) + "\n").encode()
+            if written + len(line) > NAMESPACE_CLEANUP_MAX_OUTPUT_BYTES:
+                marker = (json.dumps({"truncated": True, "reason": "output_size_limit"}) + "\n").encode()
+                if written + len(marker) <= NAMESPACE_CLEANUP_MAX_OUTPUT_BYTES:
+                    with output_path.open("ab") as output:
+                        output.write(marker)
+                return
+            with output_path.open("ab") as output:
+                output.write(line)
+            written += len(line)
+            if stopped.wait(NAMESPACE_CLEANUP_POLL_SECONDS):
+                break
+    except Exception as error:
+        logger.warning("namespace cleanup observer failed (%s)", type(error).__name__)
+
+
+def _finish_namespace_cleanup_observer(
+    stopped: threading.Event, future: Future[None], executor: ThreadPoolExecutor
+) -> None:
+    stopped.set()
+    try:
+        future.result(timeout=NAMESPACE_CLEANUP_OBSERVER_JOIN_SECONDS)
+    except TimeoutError:
+        logger.warning("namespace cleanup observer did not stop within its join bound")
+        executor.shutdown(wait=False, cancel_futures=True)
+        return
+    except BaseException as error:
+        logger.warning("namespace cleanup observer failed (%s)", type(error).__name__)
+    executor.shutdown(wait=True, cancel_futures=True)
+
+
+def _delete_fixture_namespaces(k3s: K3s, namespaces: list[str]) -> None:
+    """Keep the cleanup wait unchanged while collecting bounded lifecycle metadata in parallel."""
+    with tracer.start_as_current_span(
+        "system_test.stack.namespaces.delete", attributes={"k8s.namespace.names": namespaces}
+    ):
+        stopped = threading.Event()
+        executor: ThreadPoolExecutor | None = None
+        observer: Future[None] | None = None
+        try:
+            executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="namespace-cleanup-observer")
+            context = contextvars.copy_context()
+            observer = executor.submit(context.run, _observe_namespace_cleanup, k3s, namespaces, stopped)
+        except Exception as error:
+            logger.warning("could not start namespace cleanup observer (%s)", type(error).__name__)
+            if executor is not None:
+                executor.shutdown(wait=False, cancel_futures=True)
+        try:
+            k3s.kubectl(
+                "delete", "namespace", *namespaces, "--wait=true", f"--timeout={NAMESPACE_DELETE_TIMEOUT_SECONDS}s"
+            )
+        except BaseException:
+            if observer is not None and executor is not None:
+                _finish_namespace_cleanup_observer(stopped, observer, executor)
+            raise
+        else:
+            if observer is not None and executor is not None:
+                _finish_namespace_cleanup_observer(stopped, observer, executor)
 
 
 @tracer.start_as_current_span("system_test.pki.fixture_ca")
@@ -101,9 +245,9 @@ class StackInputs:
 class Stack:
     k3s: K3s
     cluster: Cluster
-    base_url: str
+    base_url: str | None
     # The test operator's ID token, which the app accepts as a bearer.
-    token: str
+    token: str | None
     mcp_fixtures: McpFixtureAccess | None
 
 
@@ -256,7 +400,7 @@ def _baseline_evidence(
         "pki_controller_uids": controllers,
         "vm_controller_uids": vm_controllers,
         "workspace_storage_class_uid": (virtualization.storage_class_uid(k3s) if virtualization is not None else None),
-        "layers_in_memory": not fixture.vm_sandboxes,
+        "layers_in_memory": not (fixture.vm_sandboxes or fixture.firecracker_sandboxes),
         "model_endpoint": models.url if isinstance(models, rendered_fixture.LocalModel) else None,
     }
 
@@ -277,10 +421,7 @@ def _baseline_clean(k3s: K3s, fixture: rendered_fixture.RenderedFixture) -> None
     ]
     # Submit both fixture-owned namespace deletions before waiting, so their controller
     # reconciliation overlaps. Keep monitoring alive until the fixture services have stopped.
-    with tracer.start_as_current_span(
-        "system_test.stack.namespaces.delete", attributes={"k8s.namespace.names": namespaces}
-    ):
-        k3s.kubectl("delete", "namespace", *namespaces, "--wait=true", "--timeout=60s")
+    _delete_fixture_namespaces(k3s, namespaces)
     for name in owned_pvs:
         with tracer.start_as_current_span("system_test.stack.volume.delete", attributes={"k8s.pv.name": name}):
             k3s.kubectl("delete", "pv", name, "--ignore-not-found=true", "--wait=true", "--timeout=60s")
@@ -338,6 +479,19 @@ def _certify_baseline(
     return virtualization.released_devices if virtualization is not None else 0
 
 
+def _fresh_action_k3s_data_dir(*, persist_infrastructure: bool) -> Path | None:
+    """Choose the explicitly non-retained KVM lifecycle before any stack setup can mutate state."""
+    if persist_infrastructure or os.environ.get("AGENTPLANE_K3S_REQUIRE_KVM") != "1":
+        return None
+    test_tmpdir = os.environ.get("TEST_TMPDIR")
+    if not test_tmpdir:
+        raise RuntimeError("fresh KVM action requires Bazel TEST_TMPDIR")
+    data_parent = Path(test_tmpdir)
+    if not data_parent.is_absolute():
+        raise RuntimeError(f"fresh KVM action requires absolute Bazel TEST_TMPDIR: {test_tmpdir}")
+    return baseline.fresh_kvm_data_dir(data_parent=data_parent)
+
+
 @contextlib.contextmanager
 def running_stack(
     inputs: StackInputs,
@@ -348,6 +502,9 @@ def running_stack(
     virtualization_factory: VirtualizationFactory | None,
 ) -> Iterator[Stack]:
     """Create fresh fixtures; retain infrastructure only with the executor's lifecycle permission."""
+    # This read-only guard must precede work-directory creation, stop_previous, and K3s.start's
+    # reset. A normal KVM action gets a private empty store and does not touch retained ownership.
+    fresh_kvm_data_dir = _fresh_action_k3s_data_dir(persist_infrastructure=persist_infrastructure)
     crds = sorted((Runfiles.CreateOrRaise().root() / "ducktape/agentplane/crds/manifests").glob("crd-*.yaml"))
     fixture = inputs.fixture
     # Virtualized suites keep image layers on disk: a 2026-10-30 tmpfs trial beside six VM guests
@@ -355,8 +512,6 @@ def running_stack(
     uses_virtualization = fixture.vm_sandboxes or fixture.firecracker_sandboxes
     if fixture.firecracker_sandboxes and os.environ.get("AGENTPLANE_K3S_REQUIRE_KVM") != "1":
         raise ValueError("the Firecracker fixture requires a KVM-enabled executor")
-    if fixture.firecracker_sandboxes and persist_infrastructure:
-        raise ValueError("the Firecracker fixture does not retain executor snapshots")
     cert_manager, trust_manager = pki_infrastructure.releases()
     pki_images = inputs.pki_image_layouts
     if uses_virtualization != (virtualization_factory is not None):
@@ -373,7 +528,10 @@ def running_stack(
         if missing := _deployment_images(objects) - images.keys():
             raise ValueError(f"Infrastructure workloads lack OCI layouts for: {sorted(missing)}")
 
-    k3s = K3s(work, inputs.binary)
+    if fresh_kvm_data_dir is None:
+        k3s = K3s(work, inputs.binary)
+    else:
+        k3s = K3s(work, inputs.binary, data_dir=fresh_kvm_data_dir)
     with (
         baseline.invalidate_snapshot_on_action_error(enabled=persist_infrastructure),
         contextlib.ExitStack() as trace_cleanup,
@@ -409,9 +567,10 @@ def running_stack(
                     layers_in_memory=not uses_virtualization,
                 )
             else:
-                # An executor can restore a retained snapshot even when this action opts out.
-                # Stop its exact owned server before resetting the ordinary stack's state.
-                baseline.stop_previous()
+                # A non-KVM stack still leaves retention mode by stopping its exact owned server.
+                # Fresh KVM starts in an empty action-private store and must not touch v1/v2 state.
+                if fresh_kvm_data_dir is None:
+                    baseline.stop_previous()
                 process = k3s.start(
                     layers_in_memory=not uses_virtualization,
                     preserve_image_store=k3s.image_store_is_retainable(),
@@ -609,8 +768,10 @@ def running_stack(
                 token = dex_id_token(fixture.mcp_fixtures.operator_token_grant, ca_bundle=ca_bundle)
             if operator_tokens is not None:
                 token = operator_tokens.mint(lifetime=OPERATOR_TOKEN_LIFETIME)
-            if token is None:
-                raise ValueError("the fixture neither pins an operator-token key nor runs Dex")
+            if fixture.app_origin is None and token is not None:
+                raise ValueError("an App-free fixture cannot issue an App operator token")
+            if fixture.app_origin is not None and token is None:
+                raise ValueError("an App fixture neither pins an operator-token key nor runs Dex")
             print("memory:", run("free", "-m"))
             setup.add_event("stack ready")
             if virtualization is not None:

@@ -23,6 +23,189 @@ def retained_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return root
 
 
+@pytest.mark.parametrize(
+    ("permission", "require_kvm", "private"),
+    [(None, "1", False), ("0", "1", False), ("1", "0", False), ("1", "1", True)],
+)
+def test_persistent_data_dir_is_private_only_for_authorized_kvm(
+    retained_root: Path, monkeypatch: pytest.MonkeyPatch, permission: str | None, require_kvm: str, private: bool
+) -> None:
+    if permission is None:
+        monkeypatch.delenv("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE", raising=False)
+    else:
+        monkeypatch.setenv("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE", permission)
+    monkeypatch.setenv("AGENTPLANE_K3S_REQUIRE_KVM", require_kvm)
+
+    expected = retained_root / "data" if private else Path("/var/lib/k3s-env")
+    assert baseline._persistent_data_dir() == expected
+
+
+def test_open_baseline_records_private_kvm_data_path(
+    retained_root: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("AGENTPLANE_K3S_REQUIRE_KVM", "1")
+    source = tmp_path / "k3s-source"
+    source.write_bytes(b"test k3s binary")
+
+    class FakeK3s:
+        def __init__(self, work: Path, binary: Path, *, data_dir: Path) -> None:
+            self.work = work
+            self.binary = binary
+            self.data_dir = data_dir
+
+        def start(self, *, layers_in_memory: bool, detached: bool) -> Any:
+            assert not layers_in_memory
+            assert detached
+            return type("Process", (), {"pid": 123})()
+
+        def stop(self, _process: Any) -> None:
+            raise AssertionError("published marker should transfer process ownership")
+
+    monkeypatch.setattr(baseline, "K3s", FakeK3s)
+    monkeypatch.setattr(baseline, "_baseline_identity", lambda _k3s, _pid: {"pid": 123, "test": "owned"})
+
+    k3s, marker, warm = baseline.open_baseline(source, "private-kvm-fingerprint", layers_in_memory=False)
+
+    expected = retained_root / "data"
+    assert not warm
+    assert k3s.data_dir == expected
+    assert marker["data_dir"] == str(expected)
+    assert json.loads((retained_root / "server.json").read_text())["data_dir"] == str(expected)
+
+
+@pytest.mark.parametrize(
+    "existing",
+    ["marker", "marker_symlink", "marker_temp", "data_dir", "data_symlink", "data_dangling_symlink", "root_symlink"],
+)
+def test_fresh_kvm_data_dir_refuses_existing_state_without_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, existing: str
+) -> None:
+    root = tmp_path / "retained"
+    root.mkdir()
+    marker = root / "server.json"
+    data_parent = tmp_path / "action-test-tmp"
+    data_parent.mkdir()
+    data_dir = data_parent / "k3s"
+    monkeypatch.setattr(baseline, "_BASELINE_ROOT", root)
+    monkeypatch.setattr(baseline, "_BASELINE_MARKER", marker)
+    if existing == "marker":
+        marker.write_text('{"state":"dirty"}')
+    elif existing == "marker_symlink":
+        marker.symlink_to(tmp_path / "missing-marker-target")
+    elif existing == "marker_temp":
+        marker.with_suffix(".tmp").write_text('{"state":"dirty"}')
+    elif existing == "data_dir":
+        data_dir.mkdir()
+    elif existing == "data_symlink":
+        data_dir.symlink_to(tmp_path)
+    elif existing == "data_dangling_symlink":
+        data_dir.symlink_to(tmp_path / "missing-data-target")
+    elif existing == "root_symlink":
+        root.rmdir()
+        root.symlink_to(tmp_path / "other-root", target_is_directory=True)
+    else:
+        raise AssertionError(existing)
+
+    with pytest.raises(RuntimeError, match="fresh KVM action found"):
+        baseline.fresh_kvm_data_dir(data_parent=data_parent)
+
+    if existing == "root_symlink":
+        assert root.is_symlink()
+    elif existing.startswith("marker"):
+        marker_path = marker.with_suffix(".tmp") if existing == "marker_temp" else marker
+        assert os.path.lexists(marker_path)
+        if existing == "marker":
+            assert marker.read_text() == '{"state":"dirty"}'
+    else:
+        assert os.path.lexists(data_dir)
+
+
+def test_fresh_kvm_data_dir_uses_explicit_action_parent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    data_parent = tmp_path / "action-test-tmp"
+    data_parent.mkdir()
+    monkeypatch.setattr(baseline, "_BASELINE_ROOT", tmp_path / "retained")
+    monkeypatch.setattr(baseline, "_BASELINE_MARKER", tmp_path / "retained/server.json")
+
+    data_dir = baseline.fresh_kvm_data_dir(data_parent=data_parent)
+
+    assert data_dir == data_parent / "k3s"
+    assert not data_dir.exists()
+    assert not (tmp_path / "retained").exists()
+
+
+@pytest.mark.parametrize("invalid_parent", ["relative", "missing", "symlink"])
+def test_fresh_kvm_data_dir_requires_a_real_explicit_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, invalid_parent: str
+) -> None:
+    parent = tmp_path / "action-test-tmp"
+    if invalid_parent == "symlink":
+        target = tmp_path / "actual-action-test-tmp"
+        target.mkdir()
+        parent.symlink_to(target, target_is_directory=True)
+        data_parent = parent
+    elif invalid_parent == "missing":
+        data_parent = parent
+    else:
+        data_parent = Path("relative-action-test-tmp")
+    monkeypatch.setattr(baseline, "_BASELINE_ROOT", tmp_path / "retained")
+    monkeypatch.setattr(baseline, "_BASELINE_MARKER", tmp_path / "retained/server.json")
+
+    with pytest.raises(RuntimeError, match="fresh KVM action"):
+        baseline.fresh_kvm_data_dir(data_parent=data_parent)
+
+    assert not (tmp_path / "retained").exists()
+    if invalid_parent == "symlink":
+        assert parent.is_symlink()
+
+
+@pytest.mark.parametrize("private", [False, True])
+def test_stop_previous_uses_only_marker_owned_data_path(
+    retained_root: Path, monkeypatch: pytest.MonkeyPatch, private: bool
+) -> None:
+    expected = retained_root / "data" if private else Path("/var/lib/k3s-env")
+    marker: dict[str, Any] = {"state": "clean", "fingerprint": "owned", "identity": {"pid": 123}}
+    if private:
+        marker["data_dir"] = str(expected)
+    baseline.write_marker(marker)
+    constructed = []
+    stopped = []
+
+    class FakeK3s:
+        def __init__(self, work: Path, binary: Path, *, data_dir: Path) -> None:
+            self.data_dir = data_dir
+            constructed.append(data_dir)
+
+    monkeypatch.setattr(baseline, "K3s", FakeK3s)
+    monkeypatch.setattr(baseline, "stop_owned", lambda node, saved: stopped.append((node, saved)))
+
+    baseline.stop_previous()
+
+    assert constructed == [expected]
+    assert stopped[0][1] == marker
+    assert not (retained_root / "server.json").exists()
+
+
+def test_stop_previous_rejects_unowned_data_path(retained_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    marker = {"state": "clean", "fingerprint": "other", "identity": {"pid": 123}, "data_dir": "/tmp/other"}
+    baseline.write_marker(marker)
+    called = []
+    monkeypatch.setattr(baseline, "stop_owned", lambda *_args: called.append(True))
+
+    with pytest.raises(RuntimeError, match="unowned K3s data directory"):
+        baseline.stop_previous()
+
+    assert not called
+    assert (retained_root / "server.json").exists()
+
+
+def test_stop_owned_refuses_a_marker_for_another_data_path(retained_root: Path) -> None:
+    node = baseline.K3s(retained_root, retained_root / "unused-binary")
+    previous = {"identity": {"pid": os.getpid()}, "data_dir": str(retained_root / "data")}
+
+    with pytest.raises(RuntimeError, match="data directory does not match"):
+        baseline.stop_owned(node, previous)
+
+
 @pytest.mark.parametrize("changed", ["binary", "crd", "release", "image", "helper", "layer_mode"])
 def test_infrastructure_inputs_change_compatibility(tmp_path: Path, changed: str) -> None:
     binary = tmp_path / "k3s"

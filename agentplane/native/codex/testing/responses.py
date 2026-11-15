@@ -27,8 +27,8 @@ class OpenAIResponses(ModelEndpoint[ResponsesRequest]):
     then) and stamps that catalog's `ETag` on every Responses reply as `X-Models-Etag`.
     """
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, *, bind_host: str = "127.0.0.1") -> None:
+        super().__init__(bind_host=bind_host)
         self._catalog: _Catalog | None = None
         self._catalog_status = 200
         self.catalog_authorizations: list[str | None] = []

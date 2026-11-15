@@ -21,11 +21,12 @@ from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags, Trace
 
 from agentplane.app.testing import history_reads as history_reads_module
 from agentplane.app.testing.client import Client
-from agentplane.app.testing.history_reads import SessionEventReader, covered_cursor
+from agentplane.app.testing.history_reads import SessionEventReader
 from agentplane.app.testing.models import thread_view_from_proto_json
 from agentplane.env.runtime.harness import Harness as NamedHarness
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.history_service.api.history import history_service_pb2
+from agentplane.history_service.testing.session_events import covered_cursor
 from agentplane.proto import event_log_pb2, identity_pb2, session_pb2
 
 # A server answers one connection per call: `(after_cursor, writer)`. Raw sockets let the tests

@@ -2,7 +2,7 @@
 
 load("@artifact_pins//:pins.bzl", "CERT_MANAGER_V1_21_2_RELEASE_SHA256", "HELM_3_20_2_LINUX_AMD64_SHA256", "K3S_LINUX_AMD64_SHA256", "KUBEVIRT_OPERATOR_BUNDLE_SHA256", "KYVERNO_INSTALL_SHA256", "TRUST_MANAGER_CHART_V0_25_0_SHA256")
 load("@aspect_bazel_lib//lib:paths.bzl", "to_rlocation_path")
-load("@image_pins//:pins.bzl", "CERT_MANAGER_CAINJECTOR_DIGEST", "CERT_MANAGER_CAINJECTOR_REFERENCE", "CERT_MANAGER_CONTROLLER_DIGEST", "CERT_MANAGER_CONTROLLER_REFERENCE", "CERT_MANAGER_WEBHOOK_DIGEST", "CERT_MANAGER_WEBHOOK_REFERENCE", "GENERIC_DEVICE_PLUGIN_REFERENCE", "KUBEVIRT_VIRT_API_DIGEST", "KUBEVIRT_VIRT_API_REFERENCE", "KUBEVIRT_VIRT_CONTROLLER_DIGEST", "KUBEVIRT_VIRT_CONTROLLER_REFERENCE", "KUBEVIRT_VIRT_HANDLER_DIGEST", "KUBEVIRT_VIRT_HANDLER_REFERENCE", "KUBEVIRT_VIRT_LAUNCHER_DIGEST", "KUBEVIRT_VIRT_LAUNCHER_REFERENCE", "KUBEVIRT_VIRT_OPERATOR_DIGEST", "KUBEVIRT_VIRT_OPERATOR_REFERENCE", "KYVERNO_KYVERNOPRE_DIGEST", "KYVERNO_KYVERNOPRE_REFERENCE", "KYVERNO_KYVERNO_DIGEST", "KYVERNO_KYVERNO_REFERENCE", "TRUST_MANAGER_DIGEST", "TRUST_MANAGER_REFERENCE")
+load("@image_pins//:pins.bzl", "CERT_MANAGER_CAINJECTOR_DIGEST", "CERT_MANAGER_CAINJECTOR_REFERENCE", "CERT_MANAGER_CONTROLLER_DIGEST", "CERT_MANAGER_CONTROLLER_REFERENCE", "CERT_MANAGER_WEBHOOK_DIGEST", "CERT_MANAGER_WEBHOOK_REFERENCE", "GENERIC_DEVICE_PLUGIN_DIGEST", "GENERIC_DEVICE_PLUGIN_REFERENCE", "KUBEVIRT_VIRT_API_DIGEST", "KUBEVIRT_VIRT_API_REFERENCE", "KUBEVIRT_VIRT_CONTROLLER_DIGEST", "KUBEVIRT_VIRT_CONTROLLER_REFERENCE", "KUBEVIRT_VIRT_HANDLER_DIGEST", "KUBEVIRT_VIRT_HANDLER_REFERENCE", "KUBEVIRT_VIRT_LAUNCHER_DIGEST", "KUBEVIRT_VIRT_LAUNCHER_REFERENCE", "KUBEVIRT_VIRT_OPERATOR_DIGEST", "KUBEVIRT_VIRT_OPERATOR_REFERENCE", "KYVERNO_KYVERNOPRE_DIGEST", "KYVERNO_KYVERNOPRE_REFERENCE", "KYVERNO_KYVERNO_DIGEST", "KYVERNO_KYVERNO_REFERENCE", "TRUST_MANAGER_DIGEST", "TRUST_MANAGER_REFERENCE")
 load("//devinfra/python:defs.bzl", "py_test")
 
 K3S_EXEC_PROPERTIES = {
@@ -63,6 +63,14 @@ def k3s_recycling_key(vm):
         _COMMON_BASELINE_DIGESTS + (_VM_BASELINE_DIGESTS if vm else []),
     )
 
+def k3s_firecracker_recycling_key():
+    """The v1 shared-data key, retained only to clean the in-flight experiment owner."""
+    return k3s_recycling_key(vm = False) + "-firecracker-v1-" + GENERIC_DEVICE_PLUGIN_DIGEST
+
+def k3s_firecracker_recycling_key_v2():
+    """Isolate disk-backed Firecracker K3s state in a versioned runner family."""
+    return k3s_recycling_key(vm = False) + "-firecracker-v2-private-data-" + GENERIC_DEVICE_PLUGIN_DIGEST
+
 # A test that runs a k3s stack in its action. Such a test is an ordinary target otherwise: PR CI
 # runs it when its inputs change, and a pass caches.
 K3S_TAGS = ["requires-network"]
@@ -72,11 +80,19 @@ K3S_BINARY = "@k3s_linux_amd64//file:k3s"
 K3S_BINARY_RLOCATION = "$(rlocationpath " + K3S_BINARY + ")"
 
 _POD_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-pod.json"
+_POD_NATIVE_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-pod-native.json"
 _FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model.json"
 _CENTRAL_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-central.json"
+_CENTRAL_SERVICES_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-central-services.json"
+_CENTRAL_SERVICES_NATIVE_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-central-services-native.json"
+_CENTRAL_BUDGET_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-central-budget.json"
 _MCP_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-mcp-fixtures.json"
+_MCP_SERVICES_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-mcp-services.json"
 _VM_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-vm.json"
+_VM_NATIVE_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-vm-native.json"
 _FIRECRACKER_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-firecracker.json"
+_FIRECRACKER_NATIVE_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-firecracker-native.json"
+_FIRECRACKER_PLATFORM_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-firecracker-platform.json"
 _REAL_MODEL_FIXTURE = "//agentplane/system_tests/deployment:rendered/public-litellm.json"
 _CERT_MANAGER_INSTALL = "@cert_manager_v1_21_2_release//file"
 _TRUST_MANAGER_INSTALL = "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml"
@@ -97,6 +113,16 @@ _COMMON_SERVICE_IMAGES = {
     "//agentplane/runner_gateway:image": "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset",
     "//agentplane/environments:image": "git.allegedly.works/ducktape-ci/agentplane-sandbox-controller:unset",
     "@postgres_18_minimal_linux_amd64": "git.allegedly.works/ducktape-ci/agentplane-postgres:unset",
+}
+_APP_FREE_SERVICE_IMAGES = {
+    image: reference
+    for image, reference in _COMMON_SERVICE_IMAGES.items()
+    if image != "//agentplane/app:image"
+}
+_FIRECRACKER_PLATFORM_SERVICE_IMAGES = {
+    image: reference
+    for image, reference in _APP_FREE_SERVICE_IMAGES.items()
+    if image != "//agentplane/notification_service:service_image"
 }
 _HARNESSES_IMAGES = {
     "//agentplane/system_tests/deployment:environment_tools_harnesses_image": "git.allegedly.works/ducktape-ci/environment-tools:unset",
@@ -133,6 +159,10 @@ _VM_GUEST_ROOT_IMAGE = {
 _VM_GUEST_ROOT_PROFILE_IMAGE = {
     "//agentplane/system_tests/vm/guest:root_profile_image": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root-profile:unset",
 }
+_VM_GUEST_ROOT_PLATFORM_IMAGE = {
+    # Keep the rendered containerDisk reference; only this manual action's image bytes differ.
+    "//agentplane/system_tests/vm/guest:root_platform_image": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset",
+}
 _RUNNER_DISK_IMAGE = {
     "//agentplane/env/images:disk_image": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset",
 }
@@ -165,15 +195,23 @@ _SERVICE_IMAGES = _merge_image_maps(_COMMON_SERVICE_IMAGES, _MCP_EDGE_IMAGES)
 # Each preset explicitly owns the environment its selected scenarios need. Dispatcher failover
 # uses a dedicated stack because it mutates shared controller Deployments.
 _STACKS = {
-    "pod": struct(service_images = _SERVICE_IMAGES, fixture = _FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
-    "pod_scenarios": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _POD_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
+    "pod": struct(native_fixtures = False, service_images = _SERVICE_IMAGES, fixture = _FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
+    "pod_scenarios": struct(native_fixtures = False, service_images = _COMMON_SERVICE_IMAGES, fixture = _POD_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
+    "pod_scenarios_native": struct(native_fixtures = True, service_images = _APP_FREE_SERVICE_IMAGES, fixture = _POD_NATIVE_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
+    "central": struct(native_fixtures = False, service_images = _SERVICE_IMAGES, fixture = _CENTRAL_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
+    "central_services": struct(native_fixtures = False, service_images = _COMMON_SERVICE_IMAGES, fixture = _CENTRAL_SERVICES_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
+    "central_services_native": struct(native_fixtures = True, service_images = _APP_FREE_SERVICE_IMAGES, fixture = _CENTRAL_SERVICES_NATIVE_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
+    "central_budget": struct(native_fixtures = False, service_images = _SERVICE_IMAGES, fixture = _CENTRAL_BUDGET_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
     # Deletion keeps its dedicated runner disk but does not exercise external MCP Connections.
-    "deletion": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _POD_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
-    "central": struct(service_images = _SERVICE_IMAGES, fixture = _CENTRAL_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
-    "mcp": struct(service_images = _SERVICE_IMAGES, fixture = _MCP_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES, _MCP_FIXTURE_IMAGES)),
-    "vm": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _VM_FIXTURE, vm = True, firecracker = False, real_model = False, images = {}),
-    "firecracker": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _FIRECRACKER_FIXTURE, vm = False, firecracker = True, real_model = False, images = {}),
-    "real_model": struct(service_images = _SERVICE_IMAGES, fixture = _REAL_MODEL_FIXTURE, vm = False, firecracker = False, real_model = True, images = _HARNESSES_IMAGES),
+    "deletion": struct(native_fixtures = False, service_images = _COMMON_SERVICE_IMAGES, fixture = _POD_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
+    "mcp": struct(native_fixtures = False, service_images = _SERVICE_IMAGES, fixture = _MCP_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES, _MCP_FIXTURE_IMAGES)),
+    "mcp_services": struct(native_fixtures = False, service_images = _SERVICE_IMAGES, fixture = _MCP_SERVICES_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _MCP_FIXTURE_IMAGES)),
+    "vm": struct(native_fixtures = False, service_images = _COMMON_SERVICE_IMAGES, fixture = _VM_FIXTURE, vm = True, firecracker = False, real_model = False, images = {}),
+    "vm_native": struct(native_fixtures = True, service_images = _APP_FREE_SERVICE_IMAGES, fixture = _VM_NATIVE_FIXTURE, vm = True, firecracker = False, real_model = False, images = {}),
+    "firecracker": struct(native_fixtures = False, service_images = _COMMON_SERVICE_IMAGES, fixture = _FIRECRACKER_FIXTURE, vm = False, firecracker = True, real_model = False, images = {}),
+    "firecracker_native": struct(native_fixtures = True, service_images = _APP_FREE_SERVICE_IMAGES, fixture = _FIRECRACKER_NATIVE_FIXTURE, vm = False, firecracker = True, real_model = False, images = {}),
+    "firecracker_platform": struct(native_fixtures = True, service_images = _FIRECRACKER_PLATFORM_SERVICE_IMAGES, fixture = _FIRECRACKER_PLATFORM_FIXTURE, vm = False, firecracker = True, real_model = False, images = {}),
+    "real_model": struct(native_fixtures = False, service_images = _SERVICE_IMAGES, fixture = _REAL_MODEL_FIXTURE, vm = False, firecracker = False, real_model = True, images = _HARNESSES_IMAGES),
 }
 
 def _image_manifest_impl(ctx):
@@ -201,16 +239,24 @@ image_manifest = rule(
     doc = "Write grouped image references and OCI layout runfiles paths to one JSON manifest.",
 )
 
-def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False, shutdown_diagnostic = False, require_kvm = False, main = None, exec_properties = {}, args = []):
+def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, platform_guest = False, boot_evidence = False, shutdown_diagnostic = False, require_kvm = False, main = None, exec_properties = {}, args = [], shard_count = None, case_slots = None):
     """Run one suite with fresh fixture state and the selected executor lifecycle.
 
     `exec_properties` are added to the test's execution properties. A `require_kvm` suite must set its own
     `test.EstimatedCPU`, `test.EstimatedMemory` and `test.EstimatedFreeDiskBytes`, so no suite inherits another's size.
+    `case_slots` is a Pod-scenario-only override for the shared case batch limit.
     """
     if stack not in _STACKS:
         fail("unknown k3s stack: " + stack)
+    if case_slots != None:
+        if type(case_slots) != "int" or case_slots < 1:
+            fail("case_slots must be a positive integer")
+        if stack != "pod_scenarios":
+            fail("case_slots requires the pod_scenarios stack")
     if profile_guest and stack != "vm":
         fail("profile_guest requires the VM stack")
+    if platform_guest and (stack != "vm" or profile_guest):
+        fail("platform_guest requires the VM stack and cannot use the profile guest")
     if boot_evidence and stack != "vm":
         fail("boot_evidence requires the VM stack")
     if shutdown_diagnostic and stack != "vm":
@@ -233,8 +279,10 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath " + _CERT_MANAGER_INSTALL + ")",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath " + _TRUST_MANAGER_INSTALL + ")",
         "K3S_FIXTURE_RLOCATION": "$(rlocationpath " + config.fixture + ")",
-        "PYTEST_PLUGINS": "agentplane.system_tests.deployment.system_test_target" + (",agentplane.system_tests.vm.pytest_plugin" if config.vm else ",agentplane.system_tests.firecracker.pytest_plugin" if config.firecracker else ""),
+        "PYTEST_PLUGINS": "agentplane.system_tests.k3s.pytest_plugin,agentplane.system_tests.deployment.system_test_target" + (",agentplane.system_tests.driver.native_fixtures" if config.native_fixtures else "") + (",agentplane.system_tests.vm.pytest_plugin" if config.vm else ",agentplane.system_tests.firecracker.pytest_plugin" if config.firecracker else ""),
     }
+    if case_slots != None:
+        env["AGENTPLANE_POD_CASE_SLOTS"] = str(case_slots)
     properties = {}
     suite_tags = K3S_TAGS + tags
     if config.vm or config.firecracker:
@@ -242,7 +290,7 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         properties["EstimatedComputeUnits"] = "8"
         if config.vm:
             images["vm"] = _VM_IMAGES
-            guest_root_image = _VM_GUEST_ROOT_PROFILE_IMAGE if profile_guest else _VM_GUEST_ROOT_IMAGE
+            guest_root_image = _VM_GUEST_ROOT_PROFILE_IMAGE if profile_guest else _VM_GUEST_ROOT_PLATFORM_IMAGE if platform_guest else _VM_GUEST_ROOT_IMAGE
             images["guest"] = _merge_image_maps(_VM_GUEST_BOOT_IMAGE, guest_root_image)
         else:
             images["guest"] = _FIRECRACKER_GUEST_IMAGES
@@ -290,6 +338,7 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         name = name,
         size = "enormous",
         args = args,
+        shard_count = shard_count,
         srcs = srcs,
         main = main,
         data = data,
@@ -298,7 +347,8 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         tags = suite_tags,
         deps = deps + [
             "//agentplane/system_tests/deployment:system_test_target",
-        ] + (["//agentplane/system_tests/vm:pytest_plugin"] if config.vm else ["//agentplane/system_tests/firecracker:pytest_plugin"] if config.firecracker else []),
+            "//agentplane/system_tests/k3s:pytest_plugin",
+        ] + (["//agentplane/system_tests/driver:native_fixtures"] if config.native_fixtures else []) + (["//agentplane/system_tests/vm:pytest_plugin"] if config.vm else ["//agentplane/system_tests/firecracker:pytest_plugin"] if config.firecracker else []),
     )
 
 def k3s_tcg_vm_image_manifest(name):

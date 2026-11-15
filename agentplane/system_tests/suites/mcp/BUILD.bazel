@@ -33,6 +33,7 @@ k3s_suite(
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/driver:tracing",
         "//agentplane/system_tests/scenarios:mcp",
+        "//agentplane/system_tests/scenarios:policy_objects",
         "//util:net",
         "@pypi//protobuf",
         "@pypi//pytest",
@@ -41,34 +42,49 @@ k3s_suite(
     ],
 )
 
+# MCP discovery, consented identity and Policy binding keep their App-backed deployment.
 k3s_suite(
-    name = "test_services",
-    srcs = ["test_services.py"],
-    stack = "mcp",
+    name = "test_services_mcp",
+    srcs = ["test_services_mcp.py"],
+    main = "test_services_mcp.py",
+    stack = "mcp_services",
     deps = [
         ":conftest",
         "//:conftest",
-        "//agentplane/action_service/api/contracts:action_service_pb2",
         "//agentplane/app/testing:client",
-        "//agentplane/mcp_edge/api/connection:connection_service_pb2",
-        "//agentplane/net/peertls:config",
         "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests/deployment:mcp_servers",
         "//agentplane/system_tests/deployment:stack",
         "//agentplane/system_tests/driver:cluster",
-        "//agentplane/system_tests/driver:executor",
         "//agentplane/system_tests/driver:harness_pair",
-        "//agentplane/system_tests/driver:mcp_connection",
         "//agentplane/system_tests/driver:operator_login",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/scenarios:dcr",
+        "//agentplane/system_tests/scenarios:external_connection",
+        "//agentplane/system_tests/scenarios:mcp",
+        "//agentplane/system_tests/scenarios:policy_objects",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# Central sampler service scenarios use Pod-bound native readers.
+# Native fixtures replace this package's App-backed conftest and the ancestor system-test conftest.
+# gazelle:ignore
+k3s_suite(
+    name = "test_services_central",
+    srcs = ["test_services_central.py"],
+    main = "test_services_central.py",
+    stack = "central_services_native",
+    deps = [
+        "//:conftest",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:executor",
+        "//agentplane/system_tests/driver:native_platform",
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/scenarios:central_sampler",
-        "//agentplane/system_tests/scenarios:dcr",
-        "//agentplane/system_tests/scenarios:mcp",
-        "@pypi//httpx",
-        "@pypi//more_itertools",
-        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -76,15 +92,14 @@ k3s_suite(
 
 # Each disruptive Gateway case owns a stack so an aborted central turn cannot send an
 # unanswered model request into the following case's scripted upstream.
+# Native fixtures replace the App-backed ancestor conftests; the scenario is unchanged.
+# gazelle:ignore
 k3s_suite(
     name = "test_gateway_crash",
     srcs = ["test_gateway_crash.py"],
-    stack = "central",
+    stack = "central_services_native",
     deps = [
-        ":conftest",
         "//:conftest",
-        "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests/deployment:stack",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:executor",
         "//agentplane/system_tests/driver:sandbox",
@@ -95,10 +110,31 @@ k3s_suite(
     ],
 )
 
+# Native fixtures replace the App-backed ancestor conftests; the scenario is unchanged.
+# gazelle:ignore
 k3s_suite(
     name = "test_gateway_budget",
     srcs = ["test_gateway_budget.py"],
-    stack = "central",
+    stack = "central_services_native",
+    deps = [
+        "//:conftest",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:executor",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/scenarios:central_sampler",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# Same exhaustion assertions with a 45s configured budget; full 120s coverage stays required.
+k3s_suite(
+    name = "test_gateway_budget_short_candidate",
+    srcs = ["test_gateway_budget.py"],
+    main = "test_gateway_budget.py",
+    stack = "central_budget",
+    tags = ["manual"],
     deps = [
         ":conftest",
         "//:conftest",
@@ -114,14 +150,14 @@ k3s_suite(
 )
 
 # Replacing the central sampler Pod must not affect the services suite's other cases.
+# Native fixtures replace the App-backed ancestor conftests; the scenario is unchanged.
+# gazelle:ignore
 k3s_suite(
     name = "test_sampler_roll",
     srcs = ["test_sampler_roll.py"],
-    stack = "central",
+    stack = "central_services_native",
     deps = [
-        ":conftest",
         "//:conftest",
-        "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:executor",
         "//agentplane/system_tests/driver:sandbox",
@@ -133,6 +169,7 @@ k3s_suite(
 )
 
 # The History outage is isolated so a failed recovery assertion cannot leave another case without History.
+# It also asserts the App Pod remains unchanged during the outage, so retain the App fixture.
 k3s_suite(
     name = "test_history_outage",
     srcs = ["test_history_outage.py"],
@@ -160,7 +197,6 @@ k3s_suite(
     deps = [
         ":conftest",
         "//:conftest",
-        "//agentplane/app/testing:client",
         "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/grpc:calls",
         "//agentplane/mcp_edge/api/connection:connection_service_pb2",
@@ -169,10 +205,10 @@ k3s_suite(
         "//agentplane/system_tests/deployment:stack",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:dispatcher_transport",
+        "//agentplane/system_tests/driver:environment_transport",
         "//agentplane/system_tests/driver:identity",
         "//agentplane/system_tests/driver:mcp_connection",
         "//agentplane/system_tests/driver:operator_login",
-        "//agentplane/system_tests/driver:port_forward",
         "//agentplane/system_tests/driver:sandbox",
         "@pypi//grpcio",
         "@pypi//httpx",
@@ -202,6 +238,7 @@ k3s_suite(
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/scenarios:mcp",
+        "//agentplane/system_tests/scenarios:policy_objects",
         "//agentplane/testing:scripted_model",
         "@pypi//more_itertools",
         "@pypi//protobuf",
@@ -219,7 +256,28 @@ py_library(
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:operator_login",
         "//agentplane/system_tests/scenarios:mcp",
+        "//agentplane/system_tests/scenarios:policy_objects",
         "@pypi//httpx",
         "@pypi//pytest",
+    ],
+)
+
+# The delegated Action scenario requires the App's authenticated operator BFF.
+k3s_suite(
+    name = "test_services",
+    srcs = ["test_services.py"],
+    stack = "mcp",
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:executor",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/scenarios:central_sampler",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

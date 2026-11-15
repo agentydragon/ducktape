@@ -46,6 +46,7 @@ py_library(
         "//agentplane/history_service/fold:__pkg__",
         "//agentplane/runner_gateway:__pkg__",
         "//agentplane/testing:__pkg__",
+        "//agentplane/x/direct_vm_boot:__pkg__",
         "//agentplane/x/runner_layering:__pkg__",
     ],
     deps = [
@@ -108,6 +109,17 @@ py_library(
     srcs = ["unstored_ranges.py"],
     deps = [
         "//agentplane/history_service/api/history:history_service_pb2",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "session_events",
+    srcs = ["session_events.py"],
+    deps = [
+        ":unstored_ranges",
+        "//agentplane/history_service/api/history:history_service_pb2",
+        "//agentplane/proto:event_log_pb2",
         "@pypi//protobuf",
     ],
 )

@@ -1,6 +1,7 @@
-"""Render one ordinary, central-recovery or VM fixture chart into `$K3S_FIXTURE_DIR`.
+"""Render ordinary, central-recovery, native Pod, VM or Firecracker fixtures into `$K3S_FIXTURE_DIR`.
 
-`K3S_FIXTURE_VARIANT` selects an ordinary, Pod, VM or Firecracker fixture.
+`K3S_FIXTURE_VARIANT` selects an ordinary, Pod, native Pod, central-recovery, native central-services,
+VM, Firecracker or native virtualized fixture.
 The selector is an environment variable because the app's Settings parse `sys.argv` as their own.
 """
 
@@ -27,10 +28,17 @@ from agentplane.system_tests.k3s.namespaces import NAMESPACE
 
 class FixtureVariant(StrEnum):
     LOCAL_MODEL = "local-model"
-    LOCAL_MODEL_CENTRAL = "local-model-central"
     LOCAL_MODEL_POD = "local-model-pod"
+    LOCAL_MODEL_POD_NATIVE = "local-model-pod-native"
+    LOCAL_MODEL_CENTRAL = "local-model-central"
+    LOCAL_MODEL_CENTRAL_SERVICES = "local-model-central-services"
+    LOCAL_MODEL_CENTRAL_SERVICES_NATIVE = "local-model-central-services-native"
+    LOCAL_MODEL_CENTRAL_BUDGET = "local-model-central-budget"
     LOCAL_MODEL_VM = "local-model-vm"
+    LOCAL_MODEL_VM_NATIVE = "local-model-vm-native"
     LOCAL_MODEL_FIRECRACKER = "local-model-firecracker"
+    LOCAL_MODEL_FIRECRACKER_NATIVE = "local-model-firecracker-native"
+    LOCAL_MODEL_FIRECRACKER_PLATFORM = "local-model-firecracker-platform"
     PUBLIC_LITELLM = "public-litellm"
 
 
@@ -58,32 +66,39 @@ def _render(
     firecracker_sandboxes: bool = False,
     central_sampler: bool = False,
     profile: fixture_chart.FixtureProfile = fixture_chart.FixtureProfile.FULL,
+    executor_reconnect_timeout_seconds: int | None = None,
 ) -> None:
     models = MODEL_PLACEHOLDERS[backend]
+    app_enabled = profile.app_enabled
     fixture = RenderedFixture(
         backend=backend,
         vm_sandboxes=vm_sandboxes,
         firecracker_sandboxes=firecracker_sandboxes,
         central_sampler=central_sampler,
         namespace=NAMESPACE,
-        app_origin=fixture_chart.APP_ORIGIN,
-        browser_services=[
-            BrowserService(
-                name=fixture_chart.APP_SERVICE.name,
-                host=fixture_chart.APP_SERVICE.host,
-                fqdn=fixture_chart.APP_SERVICE.fqdn,
-            )
-        ],
+        app_origin=fixture_chart.APP_ORIGIN if app_enabled else None,
+        browser_services=(
+            [
+                BrowserService(
+                    name=fixture_chart.APP_SERVICE.name,
+                    host=fixture_chart.APP_SERVICE.host,
+                    fqdn=fixture_chart.APP_SERVICE.fqdn,
+                )
+            ]
+            if app_enabled
+            else []
+        ),
         mcp_fixtures=None,
-        operator_tokens=fixture_chart.OPERATOR_TOKENS,
+        operator_tokens=fixture_chart.OPERATOR_TOKENS if app_enabled else None,
         objects=fixture_chart.objects(
             **asdict(PLACEHOLDERS),
-            operator_token_key=OPERATOR_TOKEN_KEY_PLACEHOLDER,
+            operator_token_key=OPERATOR_TOKEN_KEY_PLACEHOLDER if app_enabled else None,
             models=models,
             vm_sandboxes=vm_sandboxes,
             firecracker_sandboxes=firecracker_sandboxes,
             central_sampler=central_sampler,
             profile=profile,
+            executor_reconnect_timeout_seconds=executor_reconnect_timeout_seconds,
         ),
     )
     write_fixture(output / f"{variant}.json", fixture, models=models, mcp=None)
@@ -93,8 +108,6 @@ def render_variant(output: Path, variant: FixtureVariant) -> None:
     match variant:
         case FixtureVariant.LOCAL_MODEL:
             _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=False)
-        case FixtureVariant.LOCAL_MODEL_CENTRAL:
-            _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=False, central_sampler=True)
         case FixtureVariant.LOCAL_MODEL_POD:
             _render(
                 output,
@@ -103,6 +116,40 @@ def render_variant(output: Path, variant: FixtureVariant) -> None:
                 vm_sandboxes=False,
                 profile=fixture_chart.FixtureProfile.NO_MCP_EDGE,
             )
+        case FixtureVariant.LOCAL_MODEL_POD_NATIVE:
+            _render(
+                output, variant, Backend.LOCAL_MODEL, vm_sandboxes=False, profile=fixture_chart.FixtureProfile.APP_FREE
+            )
+        case FixtureVariant.LOCAL_MODEL_CENTRAL:
+            _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=False, central_sampler=True)
+        case FixtureVariant.LOCAL_MODEL_CENTRAL_SERVICES:
+            _render(
+                output,
+                variant,
+                Backend.LOCAL_MODEL,
+                vm_sandboxes=False,
+                central_sampler=True,
+                profile=fixture_chart.FixtureProfile.NO_MCP_EDGE,
+            )
+        case FixtureVariant.LOCAL_MODEL_CENTRAL_SERVICES_NATIVE:
+            _render(
+                output,
+                variant,
+                Backend.LOCAL_MODEL,
+                vm_sandboxes=False,
+                central_sampler=True,
+                profile=fixture_chart.FixtureProfile.APP_FREE,
+            )
+        case FixtureVariant.LOCAL_MODEL_CENTRAL_BUDGET:
+            _render(
+                output,
+                variant,
+                Backend.LOCAL_MODEL,
+                vm_sandboxes=False,
+                central_sampler=True,
+                # Allow the native gRPC DNS resolver's 30s refresh interval after Gateway replacement.
+                executor_reconnect_timeout_seconds=45,
+            )
         case FixtureVariant.LOCAL_MODEL_VM:
             _render(
                 output,
@@ -110,6 +157,10 @@ def render_variant(output: Path, variant: FixtureVariant) -> None:
                 Backend.LOCAL_MODEL,
                 vm_sandboxes=True,
                 profile=fixture_chart.FixtureProfile.NO_MCP_EDGE,
+            )
+        case FixtureVariant.LOCAL_MODEL_VM_NATIVE:
+            _render(
+                output, variant, Backend.LOCAL_MODEL, vm_sandboxes=True, profile=fixture_chart.FixtureProfile.APP_FREE
             )
         case FixtureVariant.LOCAL_MODEL_FIRECRACKER:
             _render(
@@ -120,8 +171,26 @@ def render_variant(output: Path, variant: FixtureVariant) -> None:
                 firecracker_sandboxes=True,
                 profile=fixture_chart.FixtureProfile.NO_MCP_EDGE,
             )
+        case FixtureVariant.LOCAL_MODEL_FIRECRACKER_NATIVE:
+            _render(
+                output,
+                variant,
+                Backend.LOCAL_MODEL,
+                vm_sandboxes=False,
+                firecracker_sandboxes=True,
+                profile=fixture_chart.FixtureProfile.APP_FREE,
+            )
         case FixtureVariant.PUBLIC_LITELLM:
             _render(output, variant, Backend.PUBLIC_LITELLM, vm_sandboxes=False)
+        case FixtureVariant.LOCAL_MODEL_FIRECRACKER_PLATFORM:
+            _render(
+                output,
+                variant,
+                Backend.LOCAL_MODEL,
+                vm_sandboxes=False,
+                firecracker_sandboxes=True,
+                profile=fixture_chart.FixtureProfile.FIRECRACKER_PLATFORM,
+            )
 
 
 def main() -> None:

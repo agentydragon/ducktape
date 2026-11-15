@@ -9,8 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import shlex
-from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from dataclasses import dataclass
 from http import HTTPStatus
 from typing import Any
 from uuid import UUID, uuid4
@@ -23,15 +22,14 @@ from more_itertools import one
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.action_service.api.contracts import action_service_pb2, operator_action_service_pb2
-from agentplane.action_service.policies.resources import ACTION_RULE_TYPE, ACTIONS_READY_CONDITION
+from agentplane.action_service.policies.resources import ACTION_RULE_TYPE
 from agentplane.app.testing.client import Client
-from agentplane.crd_group import GROUP, VERSION
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.proto import identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.deployment import mcp_servers
-from agentplane.system_tests.driver.agent import RUNNER_ANSWERS_SECONDS, TURN_SECONDS, WORKING_DIRECTORY, Agent
+from agentplane.system_tests.driver.agent import RUNNER_ANSWERS_SECONDS, WORKING_DIRECTORY, Agent
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS
 from agentplane.system_tests.driver.operator_login import (
@@ -42,13 +40,14 @@ from agentplane.system_tests.driver.operator_login import (
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes, suspend_and_delete, wait_until_running
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
+from agentplane.system_tests.driver.turn import TURN_SECONDS
+from agentplane.system_tests.scenarios.action_cli import CLI, submission
+from agentplane.system_tests.scenarios.policy_objects import PolicyBindingPresentError, PolicyObjects
 from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
 
 # A status write follows the informer's next watch event; the bound covers a relist after a
 # dropped watch, not a healthy round trip.
 POLICY_READY_SECONDS = 120.0
-# Where the environment disk mounts the CLI in a Sandbox Pod (`agentplane/env/images/BUILD.bazel`).
-CLI = "/run/agentplane/environment/bin/agentplane"
 # The key of the orchestration_v1 group in every deployment that offers it (cluster/cdk8s/agentplane/actions.py).
 ORCHESTRATION_GROUP = "orchestration_v1"
 
@@ -66,22 +65,6 @@ def _assert_echoed(result: Value, message: str) -> None:
 
 def _command(*args: str) -> str:
     return shlex.join([CLI, "--json", *args])
-
-
-def submission(group: str, action: str, arguments: dict[str, Any], *, title: str, wait: bool) -> list[str]:
-    """The `agentplane` arguments that submit one Action request under a fresh key."""
-    return [
-        "actions",
-        "submit",
-        f"{group}/{action}",
-        "--title",
-        title,
-        "--arguments",
-        json.dumps(arguments),
-        "--key",
-        str(uuid4()),
-        *(["--wait"] if wait else []),
-    ]
 
 
 async def _play_cli_turn(model: ScriptedModel[Any], *args: str) -> action_service_pb2.ActionRequest:
@@ -149,114 +132,6 @@ class ScriptedAgent:
 
     async def submit_echo(self, group: str, message: str, *, wait: bool) -> action_service_pb2.ActionRequest:
         return await self.submit(group, mcp_servers.ECHO, {"message": message}, title="Echo a test marker", wait=wait)
-
-
-class PolicyObjectNotReadyError(Exception):
-    """The Action Service has not yet judged the binding's current generation."""
-
-
-class PolicyBindingPresentError(Exception):
-    """The binding, or the Action Service's view of it, is still there."""
-
-
-@dataclass
-class PolicyObjects:
-    """PolicySets and PolicyBindings this test writes with the caller's kubeconfig, deleted whatever
-    the test did. RBAC on the two kinds in the namespace is what gates this."""
-
-    cluster: Cluster
-    created: list[tuple[str, str]] = field(default_factory=list)
-
-    async def _create(self, kind: str, plural: str, name: str, spec: dict[str, Any]) -> str:
-        body = {"apiVersion": f"{GROUP}/{VERSION}", "kind": kind, "metadata": {"name": name}, "spec": spec}
-        await self.cluster.kubectl("create", "-f", "-", body=body)
-        self.created.append((plural, name))
-        return name
-
-    async def create_policy_set(self, name: str, auto_approve: list[dict[str, Any]]) -> str:
-        rules = [{"type": ACTION_RULE_TYPE, "policy": policy} for policy in auto_approve]
-        return await self._create("PolicySet", POLICY_SETS_PLURAL, name, {"rules": rules})
-
-    async def create_binding(
-        self, name: str, *, sandbox: environment_service_pb2.EnvironmentDescriptor, policy_sets: list[str]
-    ) -> str:
-        subject = {"identity": {"name": sandbox.identity_name}}
-        return await self._create(
-            "PolicyBinding", POLICY_BINDINGS_PLURAL, name, {"subject": subject, "policySets": policy_sets}
-        )
-
-    async def ensure_basic_binding(self, sandbox: environment_service_pb2.EnvironmentDescriptor) -> None:
-        inventory = json.loads(await self.cluster.kubectl("get", POLICY_BINDINGS_PLURAL, "-o", "json"))
-        names = [
-            binding["metadata"]["name"]
-            for binding in inventory["items"]
-            if binding.get("spec", {}).get("subject", {}).get("identity", {}).get("name") == sandbox.identity_name
-            and "basic-identity" in binding.get("spec", {}).get("policySets", [])
-        ]
-        if not names:
-            names = [
-                await self.create_binding(
-                    f"{sandbox.target.name}-delegation-basic", sandbox=sandbox, policy_sets=["basic-identity"]
-                )
-            ]
-        for name in names:
-            await self.wait_actions_ready(name)
-
-    async def bind(
-        self, sandbox: environment_service_pb2.EnvironmentDescriptor, name: str, auto_approve: list[dict[str, Any]]
-    ) -> tuple[str, str]:
-        """One set bound to `sandbox`'s Identity, the binding ActionsReady: the set's and the
-        binding's names."""
-        suffix = uuid4().hex[:8]
-        set_name = await self.create_policy_set(f"systest-{name}-{suffix}", auto_approve)
-        binding_name = await self.create_binding(
-            f"{sandbox.target.name}-{name}-{suffix}", sandbox=sandbox, policy_sets=[set_name]
-        )
-        await self.wait_actions_ready(binding_name)
-        return set_name, binding_name
-
-    async def expire_binding(self, name: str) -> None:
-        """Sets `expiresAt` in the past and waits until the Policy Controller has deleted the binding."""
-        past = (datetime.now(UTC) - timedelta(minutes=1)).isoformat().replace("+00:00", "Z")
-        await self.cluster.kubectl(
-            "patch", POLICY_BINDINGS_PLURAL, name, "--type=merge", "-p", json.dumps({"spec": {"expiresAt": past}})
-        )
-        # Yield during policy propagation so the other harness can continue its scenario.
-        async for attempt in AsyncRetrying(
-            stop=stop_after_delay(POLICY_READY_SECONDS),
-            wait=wait_fixed(1),
-            retry=retry_if_exception_type(PolicyBindingPresentError),
-            reraise=True,
-        ):
-            with attempt:
-                if await self.cluster.kubectl("get", POLICY_BINDINGS_PLURAL, name, "--ignore-not-found", "-o", "name"):
-                    raise PolicyBindingPresentError(f"{POLICY_BINDINGS_PLURAL}/{name}")
-
-    async def wait_actions_ready(self, name: str) -> None:
-        """Until the binding's ActionsReady condition is True for its current generation: the Action
-        Service's own acknowledgement that it holds the binding and every set it names."""
-        with tracer.start_as_current_span("system_test.mcp.policy_ready"):
-            async for attempt in AsyncRetrying(
-                stop=stop_after_delay(POLICY_READY_SECONDS),
-                wait=wait_fixed(1),
-                retry=retry_if_exception_type(PolicyObjectNotReadyError),
-                reraise=True,
-            ):
-                with attempt:
-                    obj = json.loads(await self.cluster.kubectl("get", POLICY_BINDINGS_PLURAL, name, "-o", "json"))
-                    conditions = obj.get("status", {}).get("conditions", [])
-                    ready = [c for c in conditions if c["type"] == ACTIONS_READY_CONDITION]
-                    generation = obj["metadata"]["generation"]
-                    if not ready or ready[0].get("observedGeneration") != generation or ready[0]["status"] != "True":
-                        # False is also how a set not yet seen reads, so only the deadline makes it final.
-                        raise PolicyObjectNotReadyError(
-                            f"{POLICY_BINDINGS_PLURAL}/{name} generation {generation}: {ready}"
-                        )
-
-    async def delete_all(self) -> None:
-        with tracer.start_as_current_span("system_test.mcp.policy_cleanup"):
-            for plural, name in reversed(self.created):
-                await self.cluster.kubectl("delete", plural, name, "--ignore-not-found")
 
 
 async def agent_executes_mcp_action(
@@ -663,7 +538,7 @@ async def launcher_drives_only_the_sandbox_it_launched(
         environment_target = identity_pb2.EnvironmentTarget(
             namespace=cluster.namespace, name=target["name"], uid=target["uid"]
         )
-        view = await wait_until_running(client, environment_target)
+        view = await wait_until_running(sandbox.environment, environment_target)
         assert view.target.uid == target["uid"]
         assert view.identity_name == name
         assert view.kubernetes_diagnostics.HasField("pod")
@@ -812,7 +687,7 @@ async def launcher_drives_only_the_sandbox_it_launched(
         assert refused.decision.WhichOneof("decider") == "policy"
         assert refused.decision.policy.evidence.matched.policy_set == f"{name}.launcher"
 
-        await suspend_and_delete(cluster, client, name, view.target.uid)
+        await suspend_and_delete(cluster, sandbox.environment, name, view.target.uid)
         deleted = True
         await _wait_unbound(launcher, launcher_view.identity_name, f"{name}.launcher")
         revoked = await launcher.submit(
@@ -821,7 +696,7 @@ async def launcher_drives_only_the_sandbox_it_launched(
         await _decide_pending(operator_bff, revoked.id, action_service_pb2.VERDICT_DENY)
     finally:
         if not deleted:
-            await suspend_and_delete(cluster, client, name, target["uid"])
+            await suspend_and_delete(cluster, sandbox.environment, name, target["uid"])
 
 
 # `session_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.

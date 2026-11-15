@@ -1,5 +1,12 @@
-load("//agentplane/system_tests/k3s:defs.bzl", "k3s_suite")
-load("//devinfra/python:defs.bzl", "py_library")
+load(
+    "//agentplane/system_tests/k3s:defs.bzl",
+    "K3S_BINARY",
+    "K3S_EXEC_PROPERTIES",
+    "K3S_TAGS",
+    "k3s_firecracker_recycling_key_v2",
+    "k3s_suite",
+)
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # gazelle:map_kind py_test k3s_suite //agentplane/system_tests/k3s:defs.bzl
 
@@ -54,7 +61,80 @@ k3s_suite(
     ],
 )
 
-# Bazel-built Debian guest and production launcher on the dedicated KVM worker.
+# Manual current-source comparison of the production serial importer and a bounded batch candidate.
+# The probe consumes the exact narrowed Pod suite image manifest and owns its K3s lifecycle.
+# gazelle:ignore
+py_test(
+    name = "test_import_batch_benchmark",
+    size = "enormous",
+    srcs = ["test_import_batch_benchmark.py"],
+    data = [
+        ":test_pod_image_manifest",
+        K3S_BINARY,
+    ],
+    env = {
+        "PYTEST_PLUGINS": "agentplane.system_tests.k3s.pytest_plugin",
+        "K3S_BINARY_RLOCATION": "$(rlocationpath " + K3S_BINARY + ")",
+        "K3S_IMPORT_BENCHMARK_GROUPS": "pki,fixture",
+        "K3S_IMPORT_BENCHMARK_LAYERS_IN_MEMORY": "1",
+        "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :test_pod_image_manifest)",
+    },
+    exec_properties = K3S_EXEC_PROPERTIES | {"test.recycle-runner": "false"},
+    tags = K3S_TAGS + ["manual"],
+    deps = [
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/driver:tracing",
+        "//agentplane/system_tests/k3s:baseline",
+        "//agentplane/system_tests/k3s:pytest_plugin",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+# Same importer comparison on the required VM suite's full image manifest and disk-backed store.
+# It starts no guests or workload Pods, so this import-only probe needs no KVM device.
+# gazelle:ignore
+py_test(
+    name = "test_vm_import_batch_benchmark",
+    size = "enormous",
+    srcs = ["test_import_batch_benchmark.py"],
+    data = [
+        ":test_vm_image_manifest",
+        K3S_BINARY,
+    ],
+    env = {
+        "PYTEST_PLUGINS": "agentplane.system_tests.k3s.pytest_plugin",
+        "K3S_BINARY_RLOCATION": "$(rlocationpath " + K3S_BINARY + ")",
+        "K3S_IMPORT_BENCHMARK_GROUPS": "vm,pki,fixture,guest",
+        "K3S_IMPORT_BENCHMARK_LAYERS_IN_MEMORY": "0",
+        "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :test_vm_image_manifest)",
+    },
+    exec_properties = K3S_EXEC_PROPERTIES | {
+        "EstimatedComputeUnits": "8",
+        "test.recycle-runner": "false",
+    },
+    main = "test_import_batch_benchmark.py",
+    tags = K3S_TAGS + ["manual"],
+    deps = [
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/driver:tracing",
+        "//agentplane/system_tests/k3s:baseline",
+        "//agentplane/system_tests/k3s:pytest_plugin",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+# Native fixtures deliberately replace the ancestor App-backed conftest for this target.
+# gazelle:ignore
 k3s_suite(
     name = "test_firecracker",
     srcs = ["test_firecracker.py"],
@@ -80,13 +160,11 @@ k3s_suite(
         "test.EstimatedMemory": "6GB",
     },
     require_kvm = True,
-    stack = "firecracker",
+    stack = "firecracker_platform",
     deps = [
         "//:conftest",
-        "//agentplane/app/testing:client",
-        "//agentplane/runner_gateway/dispatcher:testing_client",
-        "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:native_platform",
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/scenarios:firecracker",
@@ -96,25 +174,71 @@ k3s_suite(
     ],
 )
 
-_POD_DEPS = [
-    ":pod_cases",
-    ":pod_runners",
-    "//:conftest",
-    "//agentplane/system_tests:conftest",
-    "//agentplane/system_tests/driver:case_batch",
-    "//agentplane/system_tests/driver:cluster",
-    "//agentplane/system_tests/driver:dispatcher_transport",
-    "//agentplane/system_tests/driver:scripted_upstream",
-    "//util:net",
-    "@pypi//pytest",
-    "@pypi//pytest_asyncio",
-    "@pypi//pytest_bazel",
-]
+# Native fixtures deliberately replace the ancestor App-backed conftest for this target.
+# gazelle:ignore
+# Manual same-runner baseline experiment. Keep the required target cold and unchanged.
+k3s_suite(
+    name = "test_firecracker_prepared_baseline_candidate",
+    srcs = ["test_firecracker.py"],
+    exec_properties = {
+        "test.EstimatedCPU": "4",
+        "test.EstimatedFreeDiskBytes": "20GB",
+        "test.EstimatedMemory": "6GB",
+        "test.env-overrides": "AGENTPLANE_K3S_EXECUTOR_PERSISTENCE=1",
+        "test.recycle-runner": "true",
+        "test.runner-recycling-key": k3s_firecracker_recycling_key_v2(),
+    },
+    main = "test_firecracker.py",
+    require_kvm = True,
+    stack = "firecracker_native",
+    tags = ["manual"],
+    deps = [
+        "//:conftest",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:native_platform",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/scenarios:firecracker",
+        "//agentplane/system_tests/scenarios:workload_trust",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
 
-# Gazelle owns the required target's deps; it retains all 21 cases on one stack.
+# Native fixtures deliberately replace the ancestor App-backed conftest for this target.
+# gazelle:ignore
+# Keep the required two-guest control above; compare the same assertions on one fresh guest.
+k3s_suite(
+    name = "test_firecracker_shared_guest_candidate",
+    srcs = ["test_firecracker_shared_guest.py"],
+    exec_properties = {
+        "test.EstimatedCPU": "4",
+        "test.EstimatedFreeDiskBytes": "20GB",
+        "test.EstimatedMemory": "6GB",
+    },
+    main = "test_firecracker_shared_guest.py",
+    require_kvm = True,
+    stack = "firecracker_native",
+    tags = ["manual"],
+    deps = [
+        "//:conftest",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:native_platform",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/scenarios:firecracker",
+        "//agentplane/system_tests/scenarios:workload_trust",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# App Session, History and lifecycle scenarios share a bounded runner pool.
 k3s_suite(
     name = "test_pod",
     srcs = ["test_pod.py"],
+    case_slots = 6,
+    exec_properties = {"EstimatedComputeUnits": "8"},
     stack = "pod_scenarios",
     deps = [
         ":pod_cases",
@@ -125,9 +249,32 @@ k3s_suite(
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:dispatcher_transport",
         "//agentplane/system_tests/driver:scripted_upstream",
+        "//devinfra/testing:undeclared_outputs",
         "//util:net",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# Workload trust and Egress credentials run independently of App Session scenarios.
+# gazelle:ignore
+k3s_suite(
+    name = "test_pod_platform",
+    srcs = ["test_pod_platform.py"],
+    stack = "pod_scenarios_native",
+    deps = [
+        "//:conftest",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:native_auth",
+        "//agentplane/system_tests/driver:native_platform",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/scenarios:cert_manager_reissue",
+        "//agentplane/system_tests/scenarios:egress_native",
+        "//agentplane/system_tests/scenarios:policy_objects",
+        "//agentplane/system_tests/scenarios:workload_trust",
+        "@pypi//protobuf",
         "@pypi//pytest_bazel",
     ],
 )
@@ -153,43 +300,6 @@ k3s_suite(
     ],
 )
 
-# Manual comparison: historical case spans put about 212s here and 228s in the
-# complementary lane. Storage still runs exclusively first. Each target owns a
-# fresh stack; case ordering and the two-slot runner pool remain unchanged.
-_POD_BALANCED_A = " or ".join([
-    "operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_control",
-    "an_agent_messages_another_which_reads_and_acknowledges_it",
-    "the_model_call_itself_goes_through_the_proxy",
-    "pod_mtls_session_survives_replacement_and_keeps_history",
-    "fresh_workspace_storage_survives_replacement",
-])
-
-k3s_suite(
-    name = "test_pod_balanced_a_spike",
-    srcs = ["test_pod.py"],
-    args = [
-        "-k",
-        "'" + _POD_BALANCED_A + "'",
-    ],
-    main = "test_pod.py",
-    stack = "pod_scenarios",
-    tags = ["manual"],
-    deps = _POD_DEPS,
-)
-
-k3s_suite(
-    name = "test_pod_balanced_b_spike",
-    srcs = ["test_pod.py"],
-    args = [
-        "-k",
-        "'not (" + _POD_BALANCED_A + ")'",
-    ],
-    main = "test_pod.py",
-    stack = "pod_scenarios",
-    tags = ["manual"],
-    deps = _POD_DEPS,
-)
-
 # This suite scales the Dispatcher and deletes controller Pods; it needs its own no-MCP stack.
 k3s_suite(
     name = "test_dispatcher",
@@ -206,14 +316,107 @@ k3s_suite(
     ],
 )
 
+# Each existing Dispatcher case gets a fresh stack; compare wall time and duplicated setup cost.
+k3s_suite(
+    name = "test_dispatcher_sharded_candidate",
+    srcs = ["test_dispatcher.py"],
+    main = "test_dispatcher.py",
+    shard_count = 3,
+    stack = "pod_scenarios",
+    tags = ["manual"],
+    deps = [
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/deployment:stack",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/scenarios:dispatcher",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 # Every VM scenario boots independently on the same stack and runs concurrently.
+# Native fixtures replace the ancestor App-backed conftest for this target.
+# gazelle:ignore
 k3s_suite(
     name = "test_vm",
     srcs = ["test_vm.py"],
+    exec_properties = {
+        "test.EstimatedCPU": "4",
+        "test.EstimatedFreeDiskBytes": "50GB",
+        "test.EstimatedMemory": "7GiB",
+    },
+    require_kvm = True,
+    stack = "vm_native",
+    deps = [
+        "//:conftest",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/system_tests/deployment:local_models",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:native_platform",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/driver:tracing",
+        "//agentplane/system_tests/scenarios:vm_sandbox",
+        "//agentplane/system_tests/vm:configuration",
+        "//agentplane/system_tests/vm:trace_contract",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//opentelemetry_api",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# Two real guests retain the deployed boot/artifact path, per-Pod WorkloadCredential certificate
+# binding, and authenticated Runtime/Gateway readiness. Claude also requires the private guest
+# supervision receipt; both harnesses run supervised setup and one workspace write/read operation.
+# The required test_vm target still owns its full tool, egress, notification, and supervision probes.
+k3s_suite(
+    name = "test_vm_boot_contract_candidate",
+    srcs = ["test_vm_boot_contract.py"],
+    main = "test_vm_boot_contract.py",
     stack = "vm",
+    tags = ["manual"],
     deps = [
         "//:conftest",
         "//agentplane/app/testing:client",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:native_platform",
+        "//agentplane/system_tests/driver:offered_models",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scenario",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/driver:tracing",
+        "//agentplane/system_tests/driver:workload_credentials",
+        "//agentplane/system_tests/vm:configuration",
+        "//agentplane/system_tests/vm:guest_logs",
+        "//agentplane/system_tests/vm:supervision",
+        "//agentplane/system_tests/vm:trace_contract",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+    ],
+)
+
+# Manual next-generation platform witness: one real guest retains the kernel,
+# issuer, workspace and CLI routes; packaged guest contracts own model turns.
+k3s_suite(
+    name = "test_vm_platform_candidate",
+    srcs = ["test_vm_platform.py"],
+    main = "test_vm_platform.py",
+    stack = "vm",
+    tags = ["manual"],
+    deps = [
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/proto:session_pb2",
         "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/system_tests:conftest",
@@ -222,14 +425,49 @@ k3s_suite(
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/driver:scenario",
         "//agentplane/system_tests/driver:scripted_upstream",
-        "//agentplane/system_tests/driver:tracing",
-        "//agentplane/system_tests/scenarios:vm_sandbox",
+        "//agentplane/system_tests/driver:session_setup",
+        "//agentplane/system_tests/driver:workload_credentials",
         "//agentplane/system_tests/vm:configuration",
-        "//agentplane/system_tests/vm:trace_contract",
+        "//agentplane/system_tests/vm:guest_logs",
+        "//agentplane/system_tests/vm:guest_setup_probe",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+    ],
+)
+
+# Same platform assertions, without unused Claude. Codex supplies embedded Execution.
+k3s_suite(
+    name = "test_vm_platform_light_guest_candidate",
+    srcs = ["test_vm_platform.py"],
+    main = "test_vm_platform.py",
+    platform_guest = True,
+    stack = "vm",
+    tags = ["manual"],
+    deps = [
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:offered_models",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scenario",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/driver:session_setup",
+        "//agentplane/system_tests/driver:workload_credentials",
+        "//agentplane/system_tests/vm:configuration",
+        "//agentplane/system_tests/vm:guest_logs",
+        "//agentplane/system_tests/vm:guest_setup_probe",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
     ],
 )
 
@@ -243,9 +481,9 @@ k3s_suite(
     tags = ["manual"],
     deps = [
         "//:conftest",
-        "//agentplane/app/testing:client",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:environment_transport",
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/vm:host_qemu",
         "//agentplane/system_tests/vm:shutdown_diagnostic",
@@ -300,7 +538,8 @@ k3s_suite(
         "//agentplane/system_tests/driver:scenario",
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/driver:tracing",
-        "//agentplane/system_tests/scenarios:vm_sandbox",
+        "//agentplane/system_tests/scenarios:vm_oom",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -325,7 +564,8 @@ k3s_suite(
         "//agentplane/system_tests/driver:scenario",
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/driver:tracing",
-        "//agentplane/system_tests/scenarios:vm_sandbox",
+        "//agentplane/system_tests/scenarios:vm_oom",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -358,7 +598,6 @@ py_library(
         ":pod_runners",
         "//agentplane/app/testing:client",
         "//agentplane/runner_gateway/dispatcher:testing_client",
-        "//agentplane/system_tests/driver:agent",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:executor",
         "//agentplane/system_tests/driver:harness_pair",
@@ -370,14 +609,11 @@ py_library(
         "//agentplane/system_tests/scenarios:dispatcher_workload",
         "//agentplane/system_tests/scenarios:egress",
         "//agentplane/system_tests/scenarios:launch_presets",
-        "//agentplane/system_tests/scenarios:mcp",
         "//agentplane/system_tests/scenarios:runner_credentials",
         "//agentplane/system_tests/scenarios:session_instructions",
         "//agentplane/system_tests/scenarios:storage",
         "//agentplane/system_tests/scenarios:suspend_resume",
         "//agentplane/system_tests/scenarios:thread_history",
-        "//agentplane/system_tests/scenarios:workload_trust",
-        "@pypi//httpx",
         "@pypi//pytest",
     ],
 )

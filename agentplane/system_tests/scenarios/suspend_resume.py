@@ -21,18 +21,14 @@ from agentplane.environments.v1 import environment_service_pb2
 from agentplane.native.codex.testing import responses_sse
 from agentplane.proto import event_log_pb2, event_pb2, identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.system_tests.driver.agent import (
-    TURN_SECONDS,
-    WORKING_DIRECTORY,
-    Agent,
-    Turn,
-    environment_runtime_startup_retries,
-)
+from agentplane.system_tests.driver.agent import WORKING_DIRECTORY, Agent, environment_runtime_startup_retries
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.environment_transport import EnvironmentServiceClient
 from agentplane.system_tests.driver.executor import Executor
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes, wait_until_running
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
+from agentplane.system_tests.driver.turn import TURN_SECONDS, Turn
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import Text
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -106,7 +102,9 @@ def _assert_prefix(before: list[event_log_pb2.EventEntry], after: list[event_log
     ], "archived events, cursors or origins changed across suspension"
 
 
-async def _wait_until_suspended_without_pod(client: Client, target: identity_pb2.EnvironmentTarget) -> None:
+async def _wait_until_suspended_without_pod(
+    environments: EnvironmentServiceClient, target: identity_pb2.EnvironmentTarget
+) -> None:
     """Wait for the old Pod to disappear before the same Sandbox is resumed."""
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(POD_TRANSITION_SECONDS),
@@ -115,7 +113,7 @@ async def _wait_until_suspended_without_pod(client: Client, target: identity_pb2
         reraise=True,
     ):
         with attempt:
-            view = await client.get_environment(target)
+            view = await environments.get_environment(target)
             assert view.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED, (
                 f"{target.name} is still {view.observed_state.operating_mode}"
             )
@@ -125,7 +123,7 @@ async def _wait_until_suspended_without_pod(client: Client, target: identity_pb2
 
 
 async def _wait_until_idle_suspended_without_pod(
-    client: Client, target: identity_pb2.EnvironmentTarget
+    environments: EnvironmentServiceClient, target: identity_pb2.EnvironmentTarget
 ) -> environment_service_pb2.EnvironmentDescriptor:
     """Wait for the controller's idle suspension, distinguishing it from an operator stop."""
     async for attempt in AsyncRetrying(
@@ -135,7 +133,7 @@ async def _wait_until_idle_suspended_without_pod(
         reraise=True,
     ):
         with attempt:
-            view = await client.get_environment(target)
+            view = await environments.get_environment(target)
             assert view.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED, (
                 f"{target.name} is still {view.observed_state.operating_mode}"
             )
@@ -279,15 +277,15 @@ async def operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_c
     ]
 
     async with asyncio.timeout(POD_TRANSITION_SECONDS + 120):
-        suspended = await _wait_until_idle_suspended_without_pod(client, target)
+        suspended = await _wait_until_idle_suspended_without_pod(sandbox.environment, target)
     assert suspended.target.uid == target.uid
 
-    resume = await client.resume_sandbox(target)
+    resume = await sandbox.environment.resume_environment(target)
     assert resume.outcome == environment_service_pb2.RESUME_OUTCOME_REQUESTED, resume
     assert resume.HasField("wake_generation"), resume
     assert resume.wake_generation == suspended.actions.wake_generation + 1, (suspended, resume)
 
-    resumed = await wait_until_running(client, target)
+    resumed = await wait_until_running(sandbox.environment, target)
     assert resumed.kubernetes_diagnostics.HasField("pod")
     assert resumed.kubernetes_diagnostics.pod.uid != old_pod.uid
     assert resumed.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_RUNNING
@@ -484,6 +482,7 @@ class _ResumeRun:
 
     cluster: Cluster
     client: Client
+    environment: EnvironmentServiceClient
     dispatcher: SessionDispatcherClient
     view: environment_service_pb2.EnvironmentDescriptor
     template: str
@@ -508,6 +507,7 @@ class _ResumeRun:
         run = cls(
             cluster=cluster,
             client=client,
+            environment=sandbox.environment,
             dispatcher=dispatcher,
             view=view,
             template=template,
@@ -568,8 +568,8 @@ class _ResumeRun:
             attributes={"sandbox.name": self.view.target.name, "sandbox.uid": str(self.view.target.uid)},
         ):
             assert len({agent.thread_id for agent in self.agents.values()}) == len(self.agents)
-            await self.client.suspend_sandbox(self.view.target)
-            await _wait_until_suspended_without_pod(self.client, self.view.target)
+            await self.environment.suspend_environment(self.view.target)
+            await _wait_until_suspended_without_pod(self.environment, self.view.target)
             assert _storage_volumes(self.cluster, self.view.target.uid) == self.storage_volumes
             for harness, agent in self.agents.items():
                 self.suspended_history[harness] = await _history(self.client, agent.thread_id, completed_turns=None)
@@ -589,9 +589,9 @@ class _ResumeRun:
                 ]
             )
             self.save()
-            await self.client.resume_sandbox(self.view.target)
+            await self.environment.resume_environment(self.view.target)
 
-            resumed = await wait_until_running(self.client, self.view.target)
+            resumed = await wait_until_running(self.environment, self.view.target)
             assert resumed.target.uid == self.view.target.uid
             assert resumed.kubernetes_diagnostics.HasField("pod")
             assert resumed.kubernetes_diagnostics.pod.uid != self.original_incarnation

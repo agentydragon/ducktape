@@ -31,8 +31,18 @@ from agentplane.net.peertls.config import (
     MCP_EDGE_URI,
     SESSION_DISPATCHER_URI,
 )
+
+# gazelle:include_dep @pypi//protobuf
+from agentplane.proto import session_pb2
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
-from agentplane.system_tests.deployment import fixture_chart, fixture_database, rendered_fixture
+from agentplane.system_tests.deployment import (
+    fixture_chart,
+    fixture_database,
+    rendered_fixture,
+    runtime_grant,
+    send_grant,
+)
+from agentplane.system_tests.deployment.local_models import LOCAL_MODEL_SCENARIO_IDS
 from agentplane.system_tests.deployment.rendered_fixture import LocalModel, McpInputs, RuntimeInputs
 from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from agentplane.system_tests.vm import infrastructure as vm_infrastructure, sandboxes as vm_sandboxes
@@ -111,8 +121,8 @@ def test_pod_profile_omits_only_mcp_edge_and_keeps_app_and_action_flows(runfiles
     assert ("Role", "mcp-edge") in removed
     assert ("RoleBinding", "mcp-edge") in removed
     assert all(name.startswith("mcp-edge") for _, name in removed)
-    # Retained resources are identical, including the app, Actions' command-box executor,
-    # notifications, policy, certificates and storage.
+    # Every retained resource is unchanged, including app presets, runtime configuration,
+    # Actions' command-box executor, notifications, policy, certificates and storage.
     assert pod_objects == {key: value for key, value in ordinary_objects.items() if key not in removed}
     assert not any(
         "agentplane-mcp-edge:" in container["image"]
@@ -122,7 +132,8 @@ def test_pod_profile_omits_only_mcp_edge_and_keeps_app_and_action_flows(runfiles
     )
     _resource(pod.objects, "Deployment", "actions")
     _resource(pod.objects, "Deployment", "notifications")
-    # The app keeps its unused Connection routes; external Connections are out of scope here.
+    # This profile intentionally retains the app's unused Connection routes and health
+    # probe. It does not cover external connections; system status reports them unavailable.
     app_config = yaml.safe_load(_resource(pod.objects, "ConfigMap", "app-config")["data"]["config.yaml"])
     assert AnyHttpUrl(app_config["connection_service_url"]) == AnyHttpUrl(fixture_chart.MCP_EDGE_SERVICE.url)
 
@@ -137,6 +148,90 @@ def test_default_and_mcp_profiles_keep_real_connection_service(runfiles: Runfile
     _resource(fixture.objects, "ConfigMap", "mcp-edge-settings")
     _resource(fixture.objects, "Role", "mcp-edge")
     _resource(fixture.objects, "RoleBinding", "mcp-edge")
+
+
+def test_mcp_services_profile_keeps_oauth_and_omits_central_sampler(runfiles: Runfiles) -> None:
+    fixture = _filled_fixture(runfiles, "K3S_MCP_SERVICES_FIXTURE_RLOCATION")
+    assert not fixture.central_sampler
+    assert fixture.mcp_fixtures is not None
+    assert fixture.app_origin is not None
+    assert fixture.operator_tokens is None
+
+    docs = fixture.objects
+    deployments = {
+        doc["metadata"]["name"]: doc["spec"]["template"]["spec"] for doc in docs if doc["kind"] == "Deployment"
+    }
+    assert {
+        "actions",
+        "app",
+        "dex",
+        "egress",
+        "history-service",
+        "llm-ingress",
+        "mcp-edge",
+        "mcp-everything",
+        fixture_chart.NATIVE_TEST_CLIENT,
+        "notifications",
+        "oauth-fixture",
+        "postgres",
+        "runner-gateway",
+        "sandbox-controller",
+    } <= deployments.keys()
+    assert "agentplane-app:" in deployments["app"]["containers"][0]["image"]
+    assert "central-sampler" not in deployments
+    assert not any(
+        "agentplane-central-sampler:" in container["image"]
+        for pod in deployments.values()
+        for container in pod.get("containers", [])
+    )
+    assert not any(
+        source.get("serviceAccountToken", {}).get("audience") == central_sampler.TOKEN_AUDIENCE
+        for pod in deployments.values()
+        for volume in pod.get("volumes", [])
+        for source in volume.get("projected", {}).get("sources", [])
+    )
+    assert not any(
+        doc["metadata"]["name"] in {central_sampler.NAME, f"{NAMESPACE}-central-sampler-token-reviewer"} for doc in docs
+    )
+    assert not any(doc["metadata"]["name"] == "postgres-central-sampler" for doc in docs)
+    assert not any(doc["metadata"]["name"] == f"{central_sampler.NAME}-settings" for doc in docs)
+
+    bootstrap = _resource(docs, "ConfigMap", "postgres-bootstrap")["data"]["bootstrap.sql"]
+    assert "CREATE ROLE central_sampler " not in bootstrap
+    assert "CREATE DATABASE central_sampler " not in bootstrap
+    app_config = yaml.safe_load(_resource(docs, "ConfigMap", "app-config")["data"]["config.yaml"])
+    assert app_config["oidc"]["issuer"] == fixture_chart.DEX_ISSUER
+    assert Harness.CENTRAL_SAMPLER not in ModelCatalog.model_validate(app_config["models"]).harnesses
+    assert _resource(docs, "Secret", fixture.mcp_fixtures.operator_secret)
+
+    edge_config = yaml.safe_load(_resource(docs, "ConfigMap", "mcp-edge-settings")["data"]["settings.yaml"])
+    assert edge_config["actions_target"] == (
+        f"{fixture_chart.ACTIONS_SERVICE.fqdn}:{fixture_chart.ACTIONS_SERVICE.port.number}"
+    )
+    assert _resource(docs, "Secret", "agentplane-mcp-edge-oauth")
+    assert _resource(docs, "Identity", "mcp-edge-test-caller")["metadata"]["namespace"] == fixture.namespace
+    assert _resource(docs, "PolicyBinding", "mcp-edge-test-caller")["spec"] == {
+        "subject": {"identity": {"name": "mcp-edge-test-caller"}},
+        "policySets": ["mcp-edge-test-caller-session-delegation"],
+    }
+    assert _resource(docs, "PolicySet", "mcp-edge-test-caller-session-delegation")["spec"]["rules"] == [
+        {
+            "type": "action_auto_approve",
+            "policy": {"type": "exact_actions", "actions": {"environments": ["list", "get"], "sessions": ["create"]}},
+        }
+    ]
+    assert _resource(docs, "Deployment", "history-service")
+    assert _resource(docs, "Service", "history-service")
+    template = _resource(docs, "SandboxTemplate", fixture_chart.POD_TEMPLATE)
+    runtime = next(
+        container
+        for container in template["spec"]["pod"]["spec"]["containers"]
+        if container["name"] == "environment-runtime"
+    )
+    assert runtime["image"] == f"{fixture_chart.ENVIRONMENT_TOOLS_IMAGE}:unset"
+    assert _resource(docs, "ClusterIssuer", "agentplane-workload")
+    assert _resource(docs, "Bundle", "agentplane-workload-ca-bundle")
+    assert _resource(docs, "Bundle", "cluster-internal-ca-bundle")
 
 
 @pytest.mark.parametrize("location", ["K3S_VM_FIXTURE_RLOCATION", "K3S_FIRECRACKER_FIXTURE_RLOCATION"])
@@ -155,6 +250,8 @@ def test_virtualized_profiles_preserve_every_resource_except_unused_mcp_edge(run
     assert ("Deployment", "mcp-edge") in removed
     assert all(name.startswith("mcp-edge") for _, name in removed)
     assert candidate == {key: value for key, value in control.items() if key not in removed}
+    # App, Actions, credentials, storage, Runtime config and every retained object
+    # are unchanged. Neither virtualized suite exercises external Connections.
     _resource(fixture.objects, "Deployment", "actions")
     template = environment_firecracker.NAME if fixture.firecracker_sandboxes else SUPERVISION_TEMPLATE
     _resource(fixture.objects, "SandboxTemplate", template)
@@ -273,7 +370,7 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     assert proxy_certificate["issuerRef"] == {"name": "agentplane-workload", "kind": "ClusterIssuer"}
     assert any(mount["name"] == "svid" for mount in proxy["volumeMounts"])
     assert egress_config["admin_grpc_audience"] == "agentplane-egress-admin"
-    assert egress_config["admin_grpc_callers"] == [f"{NAMESPACE}/app"]
+    assert egress_config["admin_grpc_callers"] == [f"{NAMESPACE}/app", f"{NAMESPACE}/system-test-native-client"]
     assert egress_config["admin_grpc_service_callers"] == ["spiffe://agentplane/app"]
     app_pod = _resource(docs, "Deployment", "app")["spec"]["template"]["spec"]
     token = next(volume for volume in app_pod["volumes"] if volume["name"] == "egress-admin-token")
@@ -320,7 +417,12 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         "client_uri": GATEWAY_SESSIONS_URI,
     }
     assert gateway_config["gateway_audience"] == token["audience"]
-    assert gateway_config["operator_callers"] == [f"{NAMESPACE}/app"]
+    assert gateway_config["operator_callers"] == [f"{NAMESPACE}/app", f"{NAMESPACE}/{fixture_chart.NATIVE_TEST_CLIENT}"]
+    assert (
+        gateway_config["environment_readers"]
+        == gateway_config["environment_managers"]
+        == [f"{NAMESPACE}/app", f"{NAMESPACE}/{fixture_chart.NATIVE_TEST_CLIENT}"]
+    )
     assert gateway_config["environment_launchers"] == [f"{NAMESPACE}/actions"]
     assert gateway_config["rpc"]["listen_address"] == "0.0.0.0:8080"
     assert gateway_config["rpc"]["tls"] == {
@@ -339,6 +441,7 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         },
     }
     assert f"{NAMESPACE}/app" in gateway_config["wake_callers"]
+    assert f"{NAMESPACE}/{fixture_chart.NATIVE_TEST_CLIENT}" in gateway_config["wake_callers"]
 
     gateway_pod_labels = gateway["spec"]["template"]["metadata"]["labels"]
     gateway_listener_ports = {port["name"]: port["containerPort"] for port in container["ports"]}
@@ -724,9 +827,16 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: re
     }
 
 
-@pytest.mark.parametrize("location", ["K3S_FIXTURE_RLOCATION", "K3S_CENTRAL_FIXTURE_RLOCATION"])
+@pytest.mark.parametrize(
+    ("location", "reconnect_timeout"),
+    [
+        ("K3S_FIXTURE_RLOCATION", None),
+        ("K3S_CENTRAL_FIXTURE_RLOCATION", None),
+        ("K3S_CENTRAL_BUDGET_FIXTURE_RLOCATION", 45),
+    ],
+)
 def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
-    runfiles: Runfiles, location: str
+    runfiles: Runfiles, location: str, reconnect_timeout: int | None
 ) -> None:
     fixture = _filled_fixture(runfiles, location)
     assert fixture.central_sampler
@@ -759,7 +869,7 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     settings = CentralSamplerSettings.model_validate_json(
         _resource(docs, "ConfigMap", f"{central_sampler.NAME}-settings")["data"]["settings.json"]
     )
-    assert settings.executor_reconnect_timeout_seconds is None
+    assert settings.executor_reconnect_timeout_seconds == reconnect_timeout
     assert settings.actions is not None
     assert (
         settings.actions.target == f"{fixture_chart.ACTIONS_SERVICE.fqdn}:{fixture_chart.ACTIONS_SERVICE.port.number}"
@@ -878,6 +988,45 @@ def test_central_recovery_keeps_native_services_without_oauth_fixture_workloads(
         assert _resource(central.objects, "ConfigMap", config) == _resource(mcp.objects, "ConfigMap", config)
 
 
+def test_central_services_profile_omits_mcp_edge_and_keeps_recovery_workloads(runfiles: Runfiles) -> None:
+    central = _filled_fixture(runfiles, "K3S_CENTRAL_FIXTURE_RLOCATION")
+    services = _filled_fixture(runfiles, "K3S_CENTRAL_SERVICES_FIXTURE_RLOCATION")
+    native = _filled_fixture(runfiles, "K3S_CENTRAL_SERVICES_NATIVE_FIXTURE_RLOCATION")
+    assert services.central_sampler
+    assert services.mcp_fixtures is None
+    assert native.central_sampler
+    assert native.mcp_fixtures is None
+    central_deployments = {doc["metadata"]["name"] for doc in central.objects if doc["kind"] == "Deployment"}
+    service_deployments = {doc["metadata"]["name"] for doc in services.objects if doc["kind"] == "Deployment"}
+    assert service_deployments == central_deployments - {"mcp-edge"}
+    for component in ("app", "actions", "central-sampler", "runner-gateway", "history-service"):
+        assert _resource(services.objects, "Deployment", component) == _resource(
+            central.objects, "Deployment", component
+        )
+    assert _resource(native.objects, "ConfigMap", "central-sampler-settings") == _resource(
+        services.objects, "ConfigMap", "central-sampler-settings"
+    )
+
+
+def test_gateway_budget_fixture_changes_only_the_executor_reconnect_deadline(runfiles: Runfiles) -> None:
+    central = _filled_fixture(runfiles, "K3S_CENTRAL_FIXTURE_RLOCATION")
+    budget = _filled_fixture(runfiles, "K3S_CENTRAL_BUDGET_FIXTURE_RLOCATION")
+    central_config = _resource(central.objects, "ConfigMap", "central-sampler-settings")
+    budget_config = _resource(budget.objects, "ConfigMap", "central-sampler-settings")
+    central_settings = json.loads(central_config["data"]["settings.json"])
+    budget_settings = json.loads(budget_config["data"]["settings.json"])
+    assert "executor_reconnect_timeout_seconds" not in central_settings
+    assert (
+        CentralSamplerSettings.model_validate_json(
+            budget_config["data"]["settings.json"]
+        ).executor_reconnect_timeout_seconds
+        == 45
+    )
+    assert budget_settings == central_settings | {"executor_reconnect_timeout_seconds": 45}
+    budget_config["data"] = central_config["data"]
+    assert budget == central
+
+
 def test_firecracker_fixture_uses_production_construct_and_discloses_cilium_boundary(runfiles: Runfiles) -> None:
     fixture = rendered_fixture.read(runfiles.root() / os.environ["K3S_FIRECRACKER_FIXTURE_RLOCATION"])
     assert fixture.firecracker_sandboxes
@@ -921,6 +1070,138 @@ def test_firecracker_fixture_uses_production_construct_and_discloses_cilium_boun
         "path": "/dev/net/tun",
         "type": "CharDevice",
     }
+
+
+@pytest.mark.parametrize(
+    ("location", "vm_sandboxes", "firecracker_sandboxes", "central_sampler"),
+    [
+        ("K3S_VM_NATIVE_FIXTURE_RLOCATION", True, False, False),
+        ("K3S_FIRECRACKER_NATIVE_FIXTURE_RLOCATION", False, True, False),
+        ("K3S_FIRECRACKER_PLATFORM_FIXTURE_RLOCATION", False, True, False),
+        ("K3S_CENTRAL_SERVICES_NATIVE_FIXTURE_RLOCATION", False, False, True),
+        ("K3S_POD_NATIVE_FIXTURE_RLOCATION", False, False, False),
+    ],
+)
+def test_native_profile_omits_app_but_keeps_platform_and_bound_caller(
+    runfiles: Runfiles, location: str, vm_sandboxes: bool, firecracker_sandboxes: bool, central_sampler: bool
+) -> None:
+    fixture = _filled_fixture(runfiles, location)
+    assert fixture.firecracker_sandboxes is firecracker_sandboxes
+    assert fixture.vm_sandboxes is vm_sandboxes
+    assert fixture.central_sampler is central_sampler
+    assert fixture.app_origin is None
+    assert fixture.browser_services == []
+    assert fixture.operator_tokens is None
+    assert fixture.mcp_fixtures is None
+
+    docs = fixture.objects
+    notifications_enabled = location != "K3S_FIRECRACKER_PLATFORM_FIXTURE_RLOCATION"
+    native_name = fixture_chart.NATIVE_TEST_CLIENT
+    deployments = {
+        doc["metadata"]["name"]: doc["spec"]["template"]["spec"] for doc in docs if doc["kind"] == "Deployment"
+    }
+    assert {
+        "actions",
+        "egress",
+        "history-service",
+        "llm-ingress",
+        native_name,
+        "postgres",
+        "runner-gateway",
+        "sandbox-controller",
+    } <= deployments.keys()
+    assert ("notifications" in deployments) is notifications_enabled
+    if not notifications_enabled:
+        assert not any(
+            doc["metadata"]["name"] in {"notifications", "notifications-settings", "notifications-workload-tls"}
+            for doc in docs
+        )
+    if central_sampler:
+        assert "central-sampler" in deployments
+    else:
+        assert "central-sampler" not in deployments
+    assert not {"app", "dex", "mcp-edge", "mcp-everything", "oauth-fixture"} & deployments.keys()
+    assert not any(
+        doc["metadata"]["name"].startswith(("dex", "mcp-edge", "mcp-everything", "oauth-fixture")) for doc in docs
+    )
+    assert not any(
+        "agentplane-app:" in container["image"]
+        for pod in deployments.values()
+        for container in pod.get("containers", [])
+    )
+    assert not any(doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "app-config" for doc in docs)
+    assert not any(
+        doc["kind"] == "Secret" and doc["metadata"]["name"] in {"postgres-app", "agentplane-oidc"} for doc in docs
+    )
+    assert not any(
+        doc["metadata"].get("name") in {"app", "postgres-app", "agentplane-oidc", "app-config"} for doc in docs
+    )
+    assert not any(
+        doc["kind"] == "PolicySet" and doc["metadata"]["name"] in {runtime_grant.POLICY_SET, send_grant.POLICY_SET}
+        for doc in docs
+    )
+
+    native_account = _resource(docs, "ServiceAccount", native_name)
+    assert native_account["automountServiceAccountToken"] is False
+    native_deployment = _resource(docs, "Deployment", native_name)
+    native_pod = deployments[native_name]
+    assert native_pod["serviceAccountName"] == native_name
+    assert native_pod["automountServiceAccountToken"] is False
+    assert native_pod["securityContext"]["runAsUser"] == 1000
+    native_labels = native_deployment["spec"]["template"]["metadata"]["labels"]
+    assert native_labels["app.kubernetes.io/name"] == native_name
+    assert all(
+        native_labels[key] == value for key, value in native_deployment["spec"]["selector"]["matchLabels"].items()
+    )
+    native_container = native_pod["containers"][0]
+    assert native_container["image"] == fixture_database.IMAGE
+    assert native_container["command"] == ["/bin/sh", "-c", "trap 'exit 0' TERM; sleep infinity & wait"]
+
+    egress = EgressSettings.model_validate(
+        yaml.safe_load(_resource(docs, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"])
+    )
+    assert egress.admin_grpc_audience == "agentplane-egress-admin"
+    assert egress.admin_grpc_callers == [f"{NAMESPACE}/system-test-native-client"]
+    assert egress.forward.tls is not None
+
+    gateway = yaml.safe_load(_resource(docs, "ConfigMap", "runner-gateway-settings")["data"]["settings.yaml"])
+    native_account_name = f"{NAMESPACE}/{native_name}"
+    assert gateway["operator_callers"] == [native_account_name]
+    assert gateway["environment_readers"] == [native_account_name]
+    assert gateway["environment_managers"] == [native_account_name]
+    assert native_account_name in gateway["dispatcher_callers"]
+    assert native_account_name in gateway["gateway_callers"]
+    assert native_account_name in gateway["wake_callers"]
+    assert f"{NAMESPACE}/app" not in gateway["dispatcher_callers"]
+    if not notifications_enabled:
+        for callers in ("dispatcher_callers", "gateway_callers", "wake_callers"):
+            assert f"{NAMESPACE}/notifications" not in gateway[callers]
+
+    history = yaml.safe_load(_resource(docs, "ConfigMap", "history-service-config")["data"]["config.yaml"])
+    readers = {(account["namespace"], account["name"]) for account in history["reader_accounts"]}
+    assert (NAMESPACE, native_name) in readers
+    assert (NAMESPACE, "app") not in readers
+
+    bootstrap_sql = _resource(docs, "ConfigMap", "postgres-bootstrap")["data"]["bootstrap.sql"]
+    assert "CREATE ROLE app " not in bootstrap_sql
+    if firecracker_sandboxes:
+        template_name = environment_firecracker.NAME
+    elif vm_sandboxes:
+        template_name = environment_vm.NAME
+    else:
+        template_name = fixture_chart.POD_TEMPLATE
+    assert _resource(docs, "SandboxTemplate", template_name)
+    assert _resource(docs, "Service", fixture_chart.RUNNER_GATEWAY)
+    assert _resource(docs, "Service", fixture_chart.SESSION_DISPATCHER)
+    assert _resource(docs, "ClusterIssuer", "agentplane-workload")
+    assert _resource(docs, "Bundle", "agentplane-workload-ca-bundle")
+    assert _resource(docs, "Bundle", "cluster-internal-ca-bundle")
+
+    llm_settings = yaml.safe_load(_resource(docs, "ConfigMap", "llm-ingress-settings")["data"]["settings.yaml"])
+    claude_model_ids = {item["model"] for item in llm_settings["models"]}
+    assert LOCAL_MODEL_SCENARIO_IDS[session_pb2.HARNESS_CLAUDE] in claude_model_ids
+    codex_catalog = json.loads(_resource(docs, "ConfigMap", "llm-ingress-codex-models")["data"]["codex_models.json"])
+    assert LOCAL_MODEL_SCENARIO_IDS[session_pb2.HARNESS_CODEX] in {item["slug"] for item in codex_catalog["models"]}
 
 
 if __name__ == "__main__":

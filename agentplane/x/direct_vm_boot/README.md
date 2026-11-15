@@ -1,0 +1,156 @@
+# Direct guest contracts
+
+This package boots the current VM fixture's kernel, initramfs, root
+filesystem and Runtime disk with the pinned KubeVirt launcher image's QEMU and
+virtiofsd. It runs through Docker on managed RBE, using software emulation rather
+than KVM. No K3s cluster or service-image stack is started.
+
+The Claude and Codex Session contracts run in ordinary CI. The boot-only and
+isolated Runtime/Gateway probes remain manual. Deployed acceptance stays required
+while the replacement graph is qualified.
+
+The Runtime contracts bind those four image runfiles into Docker read-only;
+they remain required Bazel inputs. The observed A/B/B/A action timings, CPU and
+cache limits are in [the mount investigation](../../system_tests/debug/2026_11_13_guest_mounts.md).
+
+```sh
+bbr test //agentplane/x/direct_vm_boot:test_guest_boot --nocache_test_results
+```
+
+A test-only root overlay adds one systemd service. The guest verifies systemd as
+PID 1, cgroup v2, the real virtiofs state mount, a newly formatted workspace, the
+three serial-addressed configuration ISOs and the Runtime EROFS mount. It checks
+that the Runtime executable exists, writes a fresh host-chosen nonce through
+virtiofs, then powers off. The host requires the marker, all seven mount records,
+QEMU success and Linux's power-down message. Serial, tool and cleanup logs go to
+Bazel undeclared outputs.
+
+The configuration ISOs are empty. The Runtime is not configured or required to
+be healthy: this is a kernel/systemd/mount/packaging contract. It does not establish
+controller reconciliation, issued credentials, KubeVirt behavior, authenticated
+Runtime requests, harness turns, egress or Kubernetes storage. Existing deployment
+acceptance remains required.
+
+The opt-in control changes the required configuration disk's serial. It boots
+Linux and systemd but must fail the same guest-readiness assertion because the
+real configuration mount cannot appear:
+
+```sh
+bbr test //agentplane/x/direct_vm_boot:test_guest_boot --nocache_test_results \
+  --test_env=DIRECT_VM_BOOT_MISSING_CONFIG_CONTROL=1
+```
+
+The control has its own shorter bound. A failed control is expected evidence;
+ordinary runs execute only the healthy guest.
+
+## Authenticated packaged Runtime
+
+```sh
+bbr test //agentplane/x/direct_vm_boot:test_runtime_gateway --nocache_test_results
+```
+
+This separate manual target boots the unmodified fixture guest root and Runtime disk,
+with configuration, launch identity and fixture-issued TLS credentials. The real
+Gateway reaches the Runtime through QEMU's loopback port forward. The assertion
+requires authenticated status, a fresh boot ID, running lifecycle and a Gateway
+Lease owned by the exact Sandbox with the expected Pod UID and connection epoch.
+The fixture assigns the Pod address before Gateway starts observing it.
+
+State belongs to this case. Its exported ownership matches the guest's 107:107
+home-setup identity; launcher cleanup restores host ownership, stops QEMU and
+virtiofsd, removes the named container and checks that the listener is gone.
+The existing 120-second QEMU lifetime bounds Linux/systemd boot. The separate
+30-second authenticated-RPC deadline starts after the packaged Runtime emits a
+serial record; Docker loading and guest mounts cannot consume that RPC budget.
+
+This target does not assert orderly guest poweroff; the boot-only target above
+owns that behavior.
+
+No Session or supervised executor is created. The ingress endpoint is configured
+but unused, so this target makes no History-delivery, harness, executor or cgroup
+operation claim. Envtest authors Sandbox/Pod status, and a test CA supplies trust.
+The test does not establish controller reconciliation, cert-manager issuance,
+Secret projection, KubeVirt, PVC or App behavior. Those deployment cases remain.
+
+The client-trust control supplies an unrelated CA to the Runtime's Gateway-client
+verification. It retains the healthy authenticated-readiness assertion and must
+fail it after the packaged Runtime starts:
+
+```sh
+bbr test //agentplane/x/direct_vm_boot:test_runtime_gateway --nocache_test_results \
+  --runs_per_test=1 --flaky_test_attempts=1 \
+  --test_env=DIRECT_VM_BOOT_WRONG_GATEWAY_CLIENT_CA_CONTROL=1
+```
+
+## Packaged Claude Session
+
+```sh
+bbr test //agentplane/x/direct_vm_boot:test_runtime_session --nocache_test_results
+```
+
+This ordinary contract starts the real Dispatcher, Gateway and Go History Service against the
+fixture Kubernetes API, then starts the packaged Runtime under the guest's production systemd units.
+The guest launches the root image's pinned Claude CLI. Two Dispatcher inputs drive two real
+Claude Shell calls: the first writes a nonce to the workspace and the next reads that same file.
+The test checks both requested command IDs in contiguous, sourced History events and requires two
+completed turns under one Runtime boot ID.
+The first turn also runs the shared unprivileged guest probe: UID 107, systemd as PID 1, the Claude
+service cgroup under `agentplane-workloads.slice`, and denial of a `systemctl restart` request.
+
+The guest reaches model-config and History through the slirp host address. The scripted model origin
+is routed through the same Egress sidecar and Go proxy path as a deployed model route: the sidecar
+maps the guest's HTTP proxy request to the scripted model's TLS listener, presents the Sandbox
+Runtime SVID, and verifies the LLM-ingress service identity. The model server requires a client
+certificate, and an EgressAdmin decision filtered to the Sandbox Identity must show the allowed
+CONNECT to that listener before the test passes its two completed turns. Runtime also presents its
+fixture-issued client SVID and validates History's fixture-issued server SVID against the configured
+History identity. This target does not create a K3s cluster, controller, issued Secret, KubeVirt VM
+or PVC, and it disables the executor resource budget. Those deployment and executor acceptance
+boundaries remain with the existing system tests.
+
+The opt-in History identity control adds a test-only TLS relay with the same CA and localhost DNS
+but a different valid service URI. Before the guest starts, a real read-only Health.Check through
+both authenticated TLS legs must return SERVING from the healthy History process. Runtime still
+requires the canonical History URI. Its rejection must prevent the ordinary History-backed
+Session contract from completing; inspect the Runtime TLS rejection and preflight logs when
+qualifying the expected failure:
+
+```sh
+bbr test //agentplane/x/direct_vm_boot:test_runtime_session --nocache_test_results \
+  --test_env=DIRECT_VM_SESSION_WRONG_HISTORY_SERVER_IDENTITY_CONTROL=1
+```
+
+## Packaged Codex Session and executor
+
+```sh
+bbr test //agentplane/x/direct_vm_boot:test_runtime_codex_session --nocache_test_results
+```
+
+The Codex companion uses the same packaged guest and real Dispatcher, Gateway and History
+composition. The pinned Codex CLI handles two inputs against a scripted Responses endpoint routed
+through the Egress sidecar and Go proxy. The model server requires a fixture client certificate and
+uses the LLM-ingress service identity; the test requires an allowed EgressAdmin CONNECT decision
+from the Sandbox Identity to that listener alongside two completed turns. Its production VM executor
+writes a fresh nonce to the workspace, then reads that file on the next input. Assertions require
+the requested command and tool-call identities, completed native command frames with exit zero, two
+completed History turns, contiguous sourced events and the same Runtime boot ID.
+
+The first command checks UID 107, systemd as PID 1, denial of a privileged unit restart and membership
+in `agentplane-executors.slice`. It reads its actual leaf cgroup limits: 256 MiB memory and CPU quota
+200000/100000. These are configuration and placement checks; the deployed `test_vm_oom` acceptance
+still owns actual tool-OOM enforcement. The ordinary VM suite remains required.
+
+The state virtiofs daemon runs as 107:107, matching production's unprivileged daemon. Guest-root
+creation of private Codex state must therefore remain accessible to the native harness. The launcher
+keeps guest exits observable throughout both Session contracts and restores host ownership at
+cleanup. Failed contracts retain model-request, History, guest serial and container diagnostics in
+undeclared outputs.
+
+The opt-in executor control removes the executor configuration and its budget while retaining the
+ordinary executor slice and cgroup assertions:
+
+```sh
+bbr test //agentplane/x/direct_vm_boot:test_runtime_codex_session --nocache_test_results \
+  --runs_per_test=1 --flaky_test_attempts=1 \
+  --test_env=DIRECT_VM_CODEX_BYPASS_EXECUTOR_CONTROL=1
+```

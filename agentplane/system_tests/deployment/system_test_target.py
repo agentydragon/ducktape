@@ -90,11 +90,15 @@ def deployment(
 
 @pytest.fixture(scope="session")
 def base_url(deployment: Stack) -> str:
+    if deployment.base_url is None:
+        raise pytest.UsageError("this App-free system-test stack does not provide the base_url fixture")
     return deployment.base_url
 
 
 @pytest.fixture(scope="session")
 def token(deployment: Stack) -> str:
+    if deployment.token is None:
+        raise pytest.UsageError("this App-free system-test stack does not provide the App token fixture")
     return deployment.token
 
 

@@ -1,12 +1,13 @@
 # VM Sandbox scenarios on the KVM worker
 
 Run [`test_vm.py`](../../suites/test_vm.py) with KubeVirt hardware acceleration on the existing
-`kvm-vm` BuildBuddy pool. The target remains `manual` and is not a required CI lane.
+`kvm-vm` BuildBuddy pool. This target is a manual duplicate for focused experiments;
+ordinary CI runs the same source through `//agentplane/system_tests/suites:test_vm`.
 
 An earlier three-scenario suite passed on the existing 4-CPU/8-GiB KubeVirt worker with a 7-GiB
 scheduling estimate: 276.857s, a 5.51-GiB action cgroup peak, and no worker OOM or swap use. See the
 [measurement and its limits](../../debug/vm_kvm_existing_pool_2026_11_12.md). No separate canary or
-worker resize is needed for this measured run; CI routing and fleet concurrency remain separate decisions.
+worker resize is needed for this measured run; cold/burst capacity and whole-PR reliability remain separate qualification gates.
 The shared suite now runs the two harness-turn scenarios; the OOM probe has its own manual target.
 
 The earlier wyrm2 trial stayed red and took over ten minutes

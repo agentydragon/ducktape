@@ -1,7 +1,10 @@
 alias(
     name = "egress-sidecar",
     actual = "//agentplane/egress/sidecar/cmd:egress-sidecar",
-    visibility = ["//agentplane/egress:__pkg__"],
+    visibility = [
+        "//agentplane/egress:__pkg__",
+        "//agentplane/x/direct_vm_boot:__pkg__",
+    ],
 )
 
 test_suite(

@@ -116,10 +116,10 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
     with tracer.start_as_current_span(
         "system_test.launch_preset.suspend_queue", record_exception=False, set_status_on_exception=False
     ):
-        await client.suspend_sandbox(view.target)
+        await sandbox.environment.suspend_environment(view.target)
         async for attempt in _polling(SANDBOX_READY_SECONDS):
             with attempt:
-                suspended = await client.get_environment(view.target)
+                suspended = await sandbox.environment.get_environment(view.target)
                 assert suspended.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED
                 assert not suspended.kubernetes_diagnostics.HasField("pod"), (
                     f"Sandbox {view.target.name} still has a Pod"
@@ -149,15 +149,15 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
                 )
                 assert status.wake_assessment.state == environment_lifecycle_pb2.WAKE_STATE_DENIED
                 assert status.wake_assessment.reason == environment_lifecycle_pb2.WAKE_REASON_OPERATOR_REQUESTED_STOP
-        still_suspended = await client.get_environment(view.target)
+        still_suspended = await sandbox.environment.get_environment(view.target)
         assert still_suspended.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED
         assert not still_suspended.kubernetes_diagnostics.HasField("pod")
 
     with tracer.start_as_current_span(
         "system_test.launch_preset.resume_and_accept", record_exception=False, set_status_on_exception=False
     ):
-        await client.resume_sandbox(view.target)
-        resumed = await wait_until_running(client, view.target)
+        await sandbox.environment.resume_environment(view.target)
+        resumed = await wait_until_running(sandbox.environment, view.target)
         assert resumed.target.uid == view.target.uid
         assert resumed.kubernetes_diagnostics.HasField("pod")
         assert resumed.kubernetes_diagnostics.pod.uid != previous_incarnation

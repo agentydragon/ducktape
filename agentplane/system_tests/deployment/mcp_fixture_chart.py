@@ -50,10 +50,21 @@ OPERATOR_TOKEN_GRANT = DexPasswordGrant(
 
 
 def objects(
-    *, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, models: Models, mcp: McpInputs
+    *,
+    ca_cert: str,
+    ca_key: str,
+    system_roots: str,
+    cluster_ca: str,
+    models: Models,
+    mcp: McpInputs,
+    central_sampler: bool,
 ) -> list[dict[str, Any]]:
     env = fixture_chart.environment(
-        vm_sandboxes=False, models=models, operator_token_key=None, app_origin=mcp.app_origin, central_sampler=True
+        vm_sandboxes=False,
+        models=models,
+        operator_token_key=None,
+        app_origin=mcp.app_origin,
+        central_sampler=central_sampler,
     )
     mcp_linkage = fixture_chart.linkage_client(mcp.app_origin)
     mcp_edge_login = replace(_MCP_EDGE_LOGIN, redirect_uri=f"{mcp.mcp_edge_origin}/auth/callback")
@@ -90,6 +101,9 @@ def objects(
         ca_cert=ca_cert, ca_key=ca_key, system_roots=system_roots, cluster_ca=cluster_ca, models=models, env=env
     )
     assert fixture.mcp_edge is not None
+    assert fixture.app is not None
+    assert fixture.app_login is not None
+    assert fixture.mcp_linkage is not None
     fixture_chart.add_secret(
         fixture.chart,
         _MCP_EDGE_OAUTH_SECRET,
@@ -117,6 +131,7 @@ def objects(
         subject=caller.binding_subject(),
         policy_sets=[_MCP_EDGE_TEST_POLICY],
     )
+    assert fixture.mcp_edge is not None
     _add_mcp_fixtures(
         fixture.chart,
         mcp,

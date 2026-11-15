@@ -1,10 +1,12 @@
 """Leases for protocol-only cases that need fresh Sessions on unchanged Pod runners."""
 
 import asyncio
+import os
 from collections import deque
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from uuid import uuid4
 
 from agentplane.app.testing.client import Client
@@ -65,7 +67,14 @@ async def pool(cluster: Cluster, base_url: str, token: str, *, limit: int) -> As
                 else:
                     async with AsyncExitStack() as creating:
                         client, create = await creating.enter_async_context(
-                            open_resources(cluster, base_url, token, tracer, native_diagnostics=False)
+                            open_resources(
+                                cluster,
+                                base_url,
+                                token,
+                                tracer,
+                                token_file=Path(os.environ["TEST_TMPDIR"]) / f"pod-runner-gateway-{uuid4().hex}",
+                                native_diagnostics=False,
+                            )
                         )
                         prefix = f"systest-protocol-{uuid4().hex[:8]}"
                         async with asyncio.TaskGroup() as starting:

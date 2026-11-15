@@ -1036,14 +1036,13 @@ def _add_standing_identity_access(
 
 
 def delivery_chart(app: App, env: Environment = ENV) -> Chart:
+    app_account = ServiceAccountRef(namespace=env.namespace, name=app_component.NAME)
     return runner_gateway_workload.serving_chart(
         app,
         env=env,
-        operator_callers={
-            ServiceAccountRef(namespace=env.namespace, name=app_component.NAME): app_component.service(
-                env.namespace
-            ).pods
-        },
+        environment_readers=frozenset({app_account}),
+        environment_managers=frozenset({app_account}),
+        operator_callers={app_account: app_component.service(env.namespace).pods},
         operator_service_callers=frozenset({APP_URI}),
         wake_service_callers=frozenset({APP_URI, NOTIFICATIONS_URI}),
         extra_delegated_methods=("/agentplane.environments.v1.EnvironmentService/ResumeEnvironment",),

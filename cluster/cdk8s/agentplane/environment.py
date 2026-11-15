@@ -63,6 +63,7 @@ class CentralSamplerProps:
     # projected there, keyed by connection name.
     connection_credentials: Mapping[str, SecretKey] = field(default_factory=dict)
     executor_initialize_timeout_seconds: int = settings.DEFAULT_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS
+    executor_reconnect_timeout_seconds: int | None = None
     turn_timeout_seconds: int | None = None
     auto_compact_tokens: int | None = None
     actions: settings.ActionsConfig | None = None
@@ -153,7 +154,7 @@ class SessionDelegationProps:
 class ActionsProps:
     """This environment's Actions settings and secret wiring."""
 
-    operator_oidc: OperatorOidcSettings
+    operator_oidc: OperatorOidcSettings | None
     # Its own namespace included; the Action Service watches policies in its own.
     caller_service_account_namespaces: frozenset[str]
     mcp_servers: Mapping[Key, McpOAuthServer]
