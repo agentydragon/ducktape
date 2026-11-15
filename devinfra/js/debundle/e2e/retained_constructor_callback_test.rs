@@ -55,7 +55,6 @@ fn default_import_uses_the_defining_export_contract() {
         "import LocalBox from './peer.js';\nconst wrapped = new LocalBox(() => later);\nconst later = 42;\nconsole.log(wrapped.callback());\n",
         vec![logical_module("callbacks/wrapped", &[Member::new("wrapped")]), logical_module("values/later", &[Member::new("later")])],
     ).with_extra_chunks(&[("static/peer", "export default class Box { constructor(callback) { this.callback = callback; } }\n")])
-        .with_extra_chunk_logical_modules(&[("static/peer", constructor_module())])
         .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer").with_retained_callback_constructor("default", 1, &[0]).build()]));
     assert_preserved_entry_output(&fixture, "42\n");
 }
