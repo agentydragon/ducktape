@@ -20,6 +20,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator, Sequence, Set
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -442,23 +443,28 @@ class K3s:
             ("containerd-usage.txt", ["du", "-x", "-B1", "--max-depth=2", str(self.data_dir / "agent/containerd")]),
             ("images.txt", [str(self.binary), "ctr", "--address", CONTAINERD_SOCKET, "-n", "k8s.io", "images", "ls"]),
         ]:
-            capture(name, lambda command=command: run(*command, check=False, timeout=15))
-        capture("cri-images.json", lambda: self.crictl("images", "-o", "json", check=False))
+            capture(name, partial(run, *command, check=False, timeout=15))
+        capture("cri-images.json", partial(self.crictl, "images", "-o", "json", check=False))
         for name, resource in [
             ("summary.json", "/api/v1/nodes/env/proxy/stats/summary"),
             ("config.json", "/api/v1/nodes/env/proxy/configz"),
             ("metrics.txt", "/api/v1/nodes/env/proxy/metrics"),
         ]:
             capture(
-                name,
-                lambda resource=resource: self.kubectl(
-                    "get", "--raw", resource, "--request-timeout=5s", check=False, timeout=10
-                ),
+                name, partial(self.kubectl, "get", "--raw", resource, "--request-timeout=5s", check=False, timeout=10)
             )
         capture(
             "resources.yaml",
-            lambda: self.kubectl(
-                "get", "nodes,pods,events", "-A", "-o", "yaml", "--request-timeout=5s", check=False, timeout=10
+            partial(
+                self.kubectl,
+                "get",
+                "nodes,pods,events",
+                "-A",
+                "-o",
+                "yaml",
+                "--request-timeout=5s",
+                check=False,
+                timeout=10,
             ),
         )
 
