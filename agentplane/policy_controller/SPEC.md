@@ -13,8 +13,6 @@ every rule type, and is the reader of the Kubernetes rule types of `PolicySet`
 component service reader/writer allowlists come only from that file; generic environment
 overrides are not supported. This service has no service-specific runtime Secret settings.
 Kubernetes client configuration and telemetry still use their infrastructure environment.
-`grpc_audience`, `reader_accounts` and `writer_accounts` are decoded but ignored until their
-manifest omission has rolled out.
 
 ## Expiry
 

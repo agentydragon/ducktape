@@ -45,21 +45,16 @@ func TestSettingsComeFromTheFile(t *testing.T) {
 	settings["grpc_tls"] = map[string]any{
 		"listen": ":9092", "cert_file": "/run/server/tls.crt", "key_file": "/run/server/tls.key",
 	}
-	settings["grpc_audience"] = "custom-policy"
-	settings["reader_accounts"] = []string{"policies/reader"}
-	settings["writer_accounts"] = []string{"policies/app"}
 	writeSettings(t, settings)
-	// The old scalar and comma-separated allowlist overrides cannot change file values.
+	// Generic environment overrides cannot change file values.
 	t.Setenv("AGENTPLANE_POLICY_CONTROLLER_POLICY_NAMESPACE", "other")
 	t.Setenv("AGENTPLANE_POLICY_CONTROLLER_SUBJECT_NAMESPACES", "other")
-	t.Setenv("AGENTPLANE_POLICY_CONTROLLER_WRITER_ACCOUNTS", "other/admin")
 	c, err := loadConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.PolicyNamespace != "policies" || !slices.Equal(c.SubjectNamespaces, []string{"agents", "tools"}) || c.AccountsNamespace != "accounts" ||
-		c.MetricsBindAddress != ":9090" || c.HealthProbeBindAddress != ":9091" || c.GRPCTLS == nil || c.GRPCTLS.Listen != ":9092" || c.GRPCAudience != "custom-policy" ||
-		!slices.Equal(c.ReaderAccounts, []string{"policies/reader"}) || !slices.Equal(c.WriterAccounts, []string{"policies/app"}) {
+		c.MetricsBindAddress != ":9090" || c.HealthProbeBindAddress != ":9091" || c.GRPCTLS == nil || c.GRPCTLS.Listen != ":9092" {
 		t.Fatalf("settings were not read: %+v", c)
 	}
 }
@@ -70,7 +65,7 @@ func TestNonGRPCBindAddressesDefaultWhenOmitted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.MetricsBindAddress != ":8080" || c.HealthProbeBindAddress != ":8081" || c.GRPCTLS == nil || c.GRPCTLS.Listen != ":8083" || c.GRPCAudience != "agentplane-policy" {
+	if c.MetricsBindAddress != ":8080" || c.HealthProbeBindAddress != ":8081" || c.GRPCTLS == nil || c.GRPCTLS.Listen != ":8083" {
 		t.Fatalf("defaults were lost: %+v", c)
 	}
 }
