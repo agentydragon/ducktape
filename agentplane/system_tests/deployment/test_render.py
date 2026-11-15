@@ -98,7 +98,7 @@ def vm_fixture(_vm_fixture_template: rendered_fixture.RenderedFixture) -> render
     return _vm_fixture_template.model_copy(deep=True)
 
 
-def test_pod_profile_omits_only_mcp_edge_and_keeps_app_and_action_flows(runfiles: Runfiles) -> None:
+def test_pod_profile_omits_mcp_edge_database_and_keeps_app_and_action_flows(runfiles: Runfiles) -> None:
     ordinary = _filled_fixture(runfiles, "K3S_DEFAULT_FIXTURE_RLOCATION")
     pod = _filled_fixture(runfiles, "K3S_POD_FIXTURE_RLOCATION")
     assert pod.model_dump(exclude={"objects"}) == ordinary.model_dump(exclude={"objects"})
@@ -110,10 +110,14 @@ def test_pod_profile_omits_only_mcp_edge_and_keeps_app_and_action_flows(runfiles
     assert ("ServiceAccount", "mcp-edge") in removed
     assert ("Role", "mcp-edge") in removed
     assert ("RoleBinding", "mcp-edge") in removed
-    assert all(name.startswith("mcp-edge") for _, name in removed)
+    assert ("Secret", "postgres-mcp-edge") in removed
+    assert all(name.startswith("mcp-edge") or name == "postgres-mcp-edge" for _, name in removed)
     # Retained resources are identical, including the app, Actions' command-box executor,
     # notifications, policy, certificates and storage.
-    assert pod_objects == {key: value for key, value in ordinary_objects.items() if key not in removed}
+    database_resources = {("Deployment", "postgres"), ("ConfigMap", "postgres-bootstrap")}
+    assert {key: value for key, value in pod_objects.items() if key not in database_resources} == {
+        key: value for key, value in ordinary_objects.items() if key not in removed | database_resources
+    }
     assert not any(
         "agentplane-mcp-edge:" in container["image"]
         for doc in pod.objects
@@ -142,7 +146,7 @@ def test_default_and_mcp_profiles_keep_real_connection_service(runfiles: Runfile
 
 
 @pytest.mark.parametrize("location", ["K3S_VM_FIXTURE_RLOCATION", "K3S_FIRECRACKER_FIXTURE_RLOCATION"])
-def test_virtualized_profiles_preserve_every_resource_except_unused_mcp_edge(runfiles: Runfiles, location: str) -> None:
+def test_virtualized_profiles_omit_unused_mcp_edge_and_database(runfiles: Runfiles, location: str) -> None:
     fixture = rendered_fixture.read(runfiles.root() / os.environ[location])
     full = fixture_chart.objects(
         **asdict(rendered_fixture.PLACEHOLDERS),
@@ -155,8 +159,12 @@ def test_virtualized_profiles_preserve_every_resource_except_unused_mcp_edge(run
     candidate = {(doc["kind"], doc["metadata"]["name"]): doc for doc in fixture.objects}
     removed = control.keys() - candidate.keys()
     assert ("Deployment", "mcp-edge") in removed
-    assert all(name.startswith("mcp-edge") for _, name in removed)
-    assert candidate == {key: value for key, value in control.items() if key not in removed}
+    assert ("Secret", "postgres-mcp-edge") in removed
+    assert all(name.startswith("mcp-edge") or name == "postgres-mcp-edge" for _, name in removed)
+    database_resources = {("Deployment", "postgres"), ("ConfigMap", "postgres-bootstrap")}
+    assert {key: value for key, value in candidate.items() if key not in database_resources} == {
+        key: value for key, value in control.items() if key not in removed | database_resources
+    }
     _resource(fixture.objects, "Deployment", "actions")
     template = environment_firecracker.NAME if fixture.firecracker_sandboxes else SUPERVISION_TEMPLATE
     _resource(fixture.objects, "SandboxTemplate", template)
