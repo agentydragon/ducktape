@@ -45,7 +45,7 @@ binary checks the same listener through verified TLS without application credent
 
 Action command/build boxes and Haku's and `haku-ci`'s standing workloads present their own
 `WorkloadCredential`'s SVID; the egress proxy's `forward` listener authenticates SVIDs alone. Sandbox
-Runtime templates do not project first-party-service tokens or forward a caller-supplied Pod token
+Runtime templates project no Kubernetes ServiceAccount tokens and do not forward a caller-supplied Pod token
 for credential substitution. Kubernetes API credentials follow the separately granted egress flow.
 
 `ResolveServiceAccountToken` returns a `ServiceAccountPrincipal` for destinations whose authority

@@ -241,7 +241,7 @@ other Certificate against the issuer is refused. Certificates against other issu
 The central egress proxy's `forward` listener requires mTLS and authenticates SVIDs alone; a
 bearer does not authenticate the hop.
 
-Sandbox Runtime templates project no first-party-service tokens and expose no token-forwarding
+Sandbox Runtime templates project no Kubernetes ServiceAccount tokens and expose no token-forwarding
 credential source. The sidecar and proxy discard the retired `X-Agentplane-Workload-Token` header.
 Kubernetes API credentials remain destination credentials under explicit egress and Kubernetes grants;
 they do not authenticate calls to Agentplane receivers.
