@@ -4019,7 +4019,9 @@ flowchart LR
 implementation on 2026-11-15.** Every replica serves mutations as well as reads, readiness never
 waits for leadership, authorization fails closed, and rollout uses separate image/config PRs.
 Receiver configuration landed in #16556 after the accepting image pin; both staging replicas are
-Ready on that configuration (2026-11-15). App and Actions retargeting is in flight. CLI support
+Ready on that configuration (2026-11-15). App and Actions retargeting landed in #16565 and #16573;
+both services have rolled on staging. Config-first retirement removes the Gateway component
+EnvironmentService grants before decoder/registration removal, retaining automatic wake grants. CLI support
 (#16550) and route/launch configuration (#16568) landed after the accepting runner-disk pin.
 Keep the Gateway registration until existing CLI callers have moved and service callers have rolled.
 The agreed destination remains the Sandbox Controller (operator, 2026-11-14 01:10 UTC).

@@ -21,7 +21,6 @@ from agentplane.net.peertls.config import (
     SESSION_DISPATCHER_URI,
 )
 from agentplane.runner_gateway.settings import Settings
-from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s.agentplane import (
     actions,
     app,
@@ -157,15 +156,12 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
         f"{staging.ENV.namespace}/{notifications.NAME}",
         f"{staging.ENV.namespace}/{actions.NAME}",
     }
-    assert settings["operator_callers"] == [f"{staging.ENV.namespace}/{app.NAME}"]
     assert set(settings["dispatcher_service_callers"]) == {ACTIONS_URI, APP_URI, NOTIFICATIONS_URI}
-    assert settings["environment_service_readers"] == [APP_URI]
-    assert settings["environment_service_managers"] == [APP_URI]
-    assert settings["environment_service_launchers"] == [ACTIONS_URI]
-    assert settings["environment_service_operators"] == [APP_URI]
+    assert not any(key.startswith("environment_") for key in settings)
+    assert "operator_callers" not in settings
+    assert "runtime_catalog" not in settings
     assert set(settings["wake_service_callers"]) == {APP_URI, NOTIFICATIONS_URI}
     assert f"{staging.ENV.namespace}/{notifications.NAME}" in settings["wake_callers"]
-    assert settings["environment_launchers"] == [f"{staging.ENV.namespace}/{actions.NAME}"]
     assert f"{staging.ENV.namespace}/{runner_gateway.NAME}" in settings["gateway_callers"]
     assert f"{staging.ENV.namespace}/{app.NAME}" in settings["wake_callers"]
     for service_name in (runner_gateway.NAME, session_dispatcher.NAME):
@@ -239,22 +235,15 @@ def test_actions_delegation_is_explicit_for_each_receiving_backend(staging_manif
         "/agentplane.runner_gateway.dispatcher.SessionDispatcher/WatchDispatches",
         "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ListDispatches",
         "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
-        "/agentplane.environments.v1.EnvironmentService/ListEnvironments",
-        "/agentplane.environments.v1.EnvironmentService/GetEnvironment",
-        "/agentplane.environments.v1.EnvironmentService/WatchEnvironment",
-        "/agentplane.environments.v1.EnvironmentService/ResumeEnvironment",
     ]
     service_methods = set()
-    for key, prefix in (
-        ("dispatcher_service_delegation", "/agentplane.runner_gateway.dispatcher.SessionDispatcher/"),
-        ("environment_service_delegation", "/agentplane.environments.v1.EnvironmentService/"),
-    ):
+    for key, prefix in (("dispatcher_service_delegation", "/agentplane.runner_gateway.dispatcher.SessionDispatcher/"),):
         grant = gateway[key]
         assert grant["actors"] == [{"spiffe_id": ACTIONS_URI, "connection_provenance": False}]
         assert grant["methods"] == [method for method in gateway_delegation["methods"] if method.startswith(prefix)]
         service_methods.update(grant["methods"])
     assert service_methods == set(gateway_delegation["methods"])
-    assert ACTIONS_URI not in gateway["environment_service_operators"]
+    assert "environment_service_delegation" not in gateway
 
     history_delegation = history["delegation"]
     assert history_delegation["actor"] == actions_account
@@ -279,34 +268,6 @@ def test_actions_delegation_is_explicit_for_each_receiving_backend(staging_manif
     }
 
 
-def test_empty_operator_callers_are_omitted(scratch_app: App) -> None:
-    chart = runner_gateway_workload.serving_chart(scratch_app, env=staging.ENV, operator_callers={})
-    docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
-    settings = yaml.safe_load(_resource(docs, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"])
-
-    assert "operator_callers" not in settings
-    assert "environment_service_operators" not in settings
-    assert "wake_service_callers" not in settings
-    assert settings["environment_launchers"] == [f"{staging.ENV.namespace}/{actions.NAME}"]
-
-
-def test_gateway_can_explicitly_configure_operator_and_delegated_resume(scratch_app: App) -> None:
-    env = replace(staging.ENV, namespace="test-agentplane", wake_caller_accounts=frozenset())
-    operator = ServiceAccountRef(namespace=env.namespace, name=app.NAME)
-    resume_method = "/agentplane.environments.v1.EnvironmentService/ResumeEnvironment"
-    chart = runner_gateway_workload.serving_chart(
-        scratch_app,
-        env=env,
-        operator_callers={operator: app.service(env.namespace).pods},
-        extra_delegated_methods=(resume_method,),
-    )
-    docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
-    settings = yaml.safe_load(_resource(docs, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"])
-
-    assert settings["operator_callers"] == [f"{env.namespace}/{app.NAME}"]
-    assert resume_method in settings["delegation"]["methods"]
-
-
 def test_session_delegation_is_a_dispatcher_caller_without_wake_authority(scratch_app: App) -> None:
     env = replace(
         staging.ENV,
@@ -328,7 +289,7 @@ def test_session_delegation_is_a_dispatcher_caller_without_wake_authority(scratc
     }
     assert set(settings["dispatcher_service_callers"]) == {APP_URI, NOTIFICATIONS_URI}
     assert "operator_callers" not in settings
-    assert settings["environment_launchers"] == []
+    assert "environment_launchers" not in settings
     assert "environment_service_launchers" not in settings
     assert f"{env.namespace}/{actions.NAME}" not in settings["wake_callers"]
 

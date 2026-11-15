@@ -322,8 +322,8 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         "client_uri": GATEWAY_SESSIONS_URI,
     }
     assert gateway_config["gateway_audience"] == token["audience"]
-    assert gateway_config["operator_callers"] == [f"{NAMESPACE}/app"]
-    assert gateway_config["environment_launchers"] == [f"{NAMESPACE}/actions"]
+    assert "operator_callers" not in gateway_config
+    assert not any(key.startswith("environment_") for key in gateway_config)
     assert gateway_config["rpc"]["listen_address"] == "0.0.0.0:8080"
     assert gateway_config["rpc"]["tls"] == {
         "cert_file": "/run/agentplane/workload-tls/tls.crt",
@@ -905,8 +905,9 @@ def test_native_recovery_profile_uses_bound_caller_without_app(runfiles: Runfile
     assert pod["automountServiceAccountToken"] is False
     gateway = yaml.safe_load(_resource(docs, "ConfigMap", "runner-gateway-settings")["data"]["settings.yaml"])
     caller = f"{NAMESPACE}/{native}"
-    for role in ("operator_callers",):
-        assert gateway[role] == [caller]
+    assert "operator_callers" not in gateway
+    controller = yaml.safe_load(_resource(docs, "ConfigMap", "sandbox-controller-settings")["data"]["config.yaml"])
+    assert controller["environment_service"]["operators"] == [caller]
     assert caller in gateway["dispatcher_callers"]
     assert caller in gateway["gateway_callers"]
     assert f"{NAMESPACE}/app" not in gateway["dispatcher_callers"]

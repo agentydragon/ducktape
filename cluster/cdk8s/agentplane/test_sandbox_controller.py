@@ -131,7 +131,7 @@ def test_controller_rbac_keeps_only_leader_election_lease_access(staging_manifes
     ]
 
 
-def test_environment_receiver_preserves_gateway_authority_and_uses_controller_certificate(
+def test_environment_receiver_owns_authority_and_uses_controller_certificate(
     staging_manifests: list[dict[str, Any]],
 ) -> None:
     controller = Settings.model_validate(
@@ -146,18 +146,30 @@ def test_environment_receiver_preserves_gateway_authority_and_uses_controller_ce
     )
     receiver = controller.environment_service
     assert receiver is not None
-    # During overlap both receivers must enforce the same roles and effective-Identity delegation.
-    for role in ("readers", "managers", "launchers"):
-        assert set(getattr(receiver, role)) == set(getattr(gateway, f"environment_{role}"))
-        assert set(getattr(receiver, f"service_{role}")) == set(getattr(gateway, f"environment_service_{role}"))
-    assert set(receiver.operators) == set(gateway.operator_callers or ())
-    assert set(receiver.service_operators) == set(gateway.environment_service_operators)
+    namespace = staging.ENV.namespace
+    assert set(receiver.readers) == {f"{namespace}/{app.NAME}"}
+    assert set(receiver.managers) == {f"{namespace}/{app.NAME}"}
+    assert set(receiver.launchers) == {f"{namespace}/{actions.NAME}"}
+    assert set(receiver.operators) == {f"{namespace}/{app.NAME}"}
+    assert set(receiver.service_readers) == {APP_URI}
+    assert set(receiver.service_managers) == {APP_URI}
+    assert set(receiver.service_launchers) == {ACTIONS_URI}
+    assert set(receiver.service_operators) == {APP_URI}
+    assert not gateway.environment_service_readers
+    assert not gateway.environment_service_managers
+    assert not gateway.environment_service_launchers
+    assert not gateway.environment_service_operators
+    assert gateway.environment_service_delegation is None
     assert set(receiver.wake_callers) == set(gateway.wake_callers or ())
     assert set(receiver.wake_service_callers) == set(gateway.wake_service_callers)
-    delegation = gateway.environment_service_delegation
-    assert delegation is not None
     assert receiver.service_delegation is not None
-    assert receiver.service_delegation.model_dump() == delegation.model_dump()
+    assert [actor.spiffe_id for actor in receiver.service_delegation.actors] == [ACTIONS_URI]
+    assert set(receiver.service_delegation.methods) == {
+        "/agentplane.environments.v1.EnvironmentService/ListEnvironments",
+        "/agentplane.environments.v1.EnvironmentService/GetEnvironment",
+        "/agentplane.environments.v1.EnvironmentService/WatchEnvironment",
+        "/agentplane.environments.v1.EnvironmentService/ResumeEnvironment",
+    }
     assert controller.runner_security.mode == "mtls"
     assert receiver.rpc.tls is not None
     assert str(receiver.rpc.tls.cert_file) == controller.runner_security.tls.cert_file

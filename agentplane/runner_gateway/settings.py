@@ -133,13 +133,19 @@ class Settings(BaseModel):
         min_length=1, description="ServiceAccounts admitted as Dispatcher callers, as namespace/name."
     )
     environment_readers: Set[ServiceAccountName] = Field(
-        default_factory=frozenset, description="ServiceAccounts granted read access to all managed Environments."
+        default_factory=frozenset,
+        exclude_if=lambda value: not value,
+        description="ServiceAccounts granted read access to all managed Environments.",
     )
     environment_managers: Set[ServiceAccountName] = Field(
-        default_factory=frozenset, description="Direct Pod-bound ServiceAccounts allowed to manage Environments."
+        default_factory=frozenset,
+        exclude_if=lambda value: not value,
+        description="Direct Pod-bound ServiceAccounts allowed to manage Environments.",
     )
     environment_launchers: Set[ServiceAccountName] = Field(
-        default_factory=frozenset, description="Direct Pod-bound Action brokers authorized to create Environments."
+        default_factory=frozenset,
+        exclude_if=lambda value: not value,
+        description="Direct Pod-bound Action brokers authorized to create Environments.",
     )
     environment_service_readers: Set[ServiceSPIFFEID] = Field(
         default_factory=frozenset,

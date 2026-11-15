@@ -1063,16 +1063,7 @@ def _add_standing_identity_access(
 
 def delivery_chart(app: App, env: Environment = ENV) -> Chart:
     return runner_gateway_workload.serving_chart(
-        app,
-        env=env,
-        operator_callers={
-            ServiceAccountRef(namespace=env.namespace, name=app_component.NAME): app_component.service(
-                env.namespace
-            ).pods
-        },
-        operator_service_callers=sandbox_controller.OPERATOR_SERVICE_CALLERS,
-        wake_service_callers=sandbox_controller.WAKE_SERVICE_CALLERS,
-        extra_delegated_methods=sandbox_controller.environment_service_delegated_methods(env),
+        app, env=env, wake_service_callers=sandbox_controller.WAKE_SERVICE_CALLERS
     )
 
 

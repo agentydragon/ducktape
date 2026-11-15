@@ -5,6 +5,10 @@ The Runner Gateway combines durable Session Dispatcher admission and delivery, t
 resume and Dispatcher automatic wake use the shared lifecycle manager. Automatic wake preserves the
 effective caller and applies the Sandbox's `wakeOnSend` setting and the configured `wake_callers` grant.
 EnvironmentService and Dispatcher share the Gateway listener and Dispatcher TokenReview audience.
+Deployment no longer grants Gateway EnvironmentService component roles or delegation and no longer
+publishes its Runtime catalog. App and Actions call the Controller receiver. The Gateway registration
+and settings decoder remain until existing Sandbox CLI callers have moved; automatic-wake grants
+remain with Sessions. Remove obsolete settings from the applied ConfigMap before removing their decoder.
 The Gateway dials each Runner's native gRPC server on private port `9090`. Every Gateway replica
 independently opens a `WatchState` to each current Runtime and may serve calls for it; no Gateway
 connection Lease or per-Sandbox `-control` EndpointSlice participates in routing.
