@@ -14,6 +14,7 @@ from cdk8s import (
 from cluster.cdk8s.fleet_rules import (
     add_fleet_rules,
     cilium_rules_enforce_something,
+    daemonsets_leave_offline_nodes,
     https_egress_sni_conflicts,
     pinned_https_egress,
     pod_hardening,
@@ -154,6 +155,27 @@ def test_cilium_rules_with_every_section_empty_are_named() -> None:
         "CiliumNetworkPolicy/empty-list rule 0",
         "CiliumClusterwideNetworkPolicy/multi rule 1",
     ]
+
+
+@pytest.mark.parametrize(
+    ("toleration", "matches"),
+    [
+        pytest.param({"operator": "Exists"}, True, id="every-taint"),
+        pytest.param({"operator": "Exists", "effect": "NoExecute"}, True, id="every-noexecute"),
+        pytest.param({"key": "node.kubernetes.io/out-of-service", "operator": "Exists"}, True, id="by-key"),
+        pytest.param({"operator": "Exists", "effect": "NoSchedule"}, False, id="every-noschedule"),
+        pytest.param({"key": "node.kubernetes.io/not-ready", "operator": "Exists"}, False, id="other-key"),
+    ],
+)
+def test_daemonsets_must_not_tolerate_out_of_service(toleration: dict[str, str], matches: bool) -> None:
+    pod = {"spec": {"template": {"spec": {"containers": [], "tolerations": [toleration]}}}}
+    objects = [
+        {"apiVersion": "apps/v1", "kind": "DaemonSet", "metadata": {"name": "agent"}, **pod},
+        {"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": "service"}, **pod},
+    ]
+    assert [error.split(" ")[0] for error in daemonsets_leave_offline_nodes(objects)] == (
+        ["DaemonSet/agent"] if matches else []
+    )
 
 
 def test_waivers_name_objects_that_still_break_their_rule() -> None:

@@ -38,7 +38,10 @@ The Node object, its labels, PVCs and PV node affinity are untouched. A pod pinn
 laptop-local volume is recreated Pending and schedules back when the laptop returns.
 
 **Gotcha:** a DaemonSet that tolerates every taint (`- operator: Exists` with no key and no
-effect, Cilium's default) still counts an offline laptop and still blocks on it.
+effect, a common chart default) still counts an offline laptop and still blocks on it. The
+cdk8s fleet rule `daemonsets_leave_offline_nodes` rejects it in generated manifests; Helm
+charts need their values checked (Cilium's are overridden in
+`cluster/terraform/main/cilium-values.yaml`).
 
 **Gotcha:** upstream documents this taint for nodes that are actually shut down. A laptop
 that is running but cut off from the API server for 5 minutes has its pods deleted. Its

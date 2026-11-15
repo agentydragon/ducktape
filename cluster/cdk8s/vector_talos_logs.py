@@ -93,10 +93,9 @@ def chart(app: App) -> Chart:
                     host_network=True,
                     dns_policy="ClusterFirstWithHostNet",
                     node_selector={"node-vendor": "talos"},
-                    # Talos control-plane nodes carry the control-plane NoSchedule taint;
-                    # tolerate all taints so the receiver runs on every Talos node
-                    # (nodeSelector still restricts it).
-                    tolerations=[k8s.Toleration(operator="Exists")],
+                    # Every NoSchedule taint (control plane included) so the receiver runs
+                    # on every Talos node; nodeSelector still restricts it.
+                    tolerations=[k8s.Toleration(operator="Exists", effect="NoSchedule")],
                     containers=[
                         k8s.Container(
                             name="vector",

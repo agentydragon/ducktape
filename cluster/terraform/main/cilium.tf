@@ -53,8 +53,8 @@ resource "null_resource" "cilium_bootstrap" {
     environment = {
       KUBECONFIG = local_file.kubeconfig.filename
     }
-    # Roaming nodes can leave DaemonSet pods unavailable indefinitely. Do not
-    # roll back a healthy-node Cilium rollout just because Helm --wait times out.
+    # No --wait: agent rollouts are checked by hand, one node at a time
+    # (cluster/docs/network.md).
     command = <<-EOT
       set -e
       helm repo add cilium https://helm.cilium.io/ && helm repo update cilium
