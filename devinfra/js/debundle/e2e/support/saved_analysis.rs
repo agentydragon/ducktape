@@ -473,57 +473,56 @@ pub fn staged_tree_with_module_roots(
     module_roots: &[(&str, &str)],
     modules: &[(&str, &str)],
 ) -> TreeStaged {
-    let run = run_tree_graph_fixture(
-        &TreeFixture {
-            chunks,
-            module_roots,
-            modules,
-        },
-        &[],
+    let workspace = write_tree_fixture(&TreeFixture {
+        chunks,
+        module_roots,
+        modules,
+    });
+    let root = workspace.root().to_path_buf();
+    let projection = root.join("analysis.projection");
+    let artifact = root.join("analysis.dba");
+    let mut project_args = vec!["spec".to_string(), "project-analysis".to_string()];
+    project_args.extend(
+        tree_spec_args(&root)
+            .into_iter()
+            .map(|arg| arg.into_string().expect("UTF-8 fixture path")),
     );
-    let root = run.root();
+    project_args.extend([
+        "--out-root".to_string(),
+        path(&root.join("project-out")).to_string(),
+        "--out".to_string(),
+        path(&projection).to_string(),
+    ]);
+    assert_ok(
+        &command(&project_args.iter().map(String::as_str).collect::<Vec<_>>()),
+        "tree spec project-analysis",
+    );
+    assert_ok(
+        &command_with(
+            &analyzer_path(),
+            &[
+                "--projection",
+                path(&projection),
+                "--tree-source-root",
+                path(&root),
+                "--out",
+                path(&artifact),
+            ],
+        ),
+        "tree analyze",
+    );
+    let run = workspace.run(&["--analysis", path(&artifact), "--graphs"]);
     let staged = TreeStaged {
         modules: root.join("modules"),
         config: root.join("spec_config.yaml"),
         vendor_marks: root.join("vendor_marks.yaml"),
         graph: run.report_root.join("main/dependency_graph.json.gz"),
         source: root.join("snapshot/main.js"),
-        projection: root.join("analysis.projection"),
-        artifact: root.join("analysis.dba"),
+        projection,
+        artifact,
         run,
     };
     assert!(staged.graph.is_file(), "tree graph was not written");
-    let root_path = staged.root().to_path_buf();
-    let project_out = root_path.join("project-out");
-    let project_args = [
-        "spec",
-        "project-analysis",
-        "--tree-config",
-        path(&staged.config),
-        "--tree-modules",
-        path(&staged.modules),
-        "--tree-vendor-marks",
-        path(&staged.vendor_marks),
-        "--tree-source-root",
-        path(&root_path),
-        "--out-root",
-        path(&project_out),
-        "--out",
-        path(&staged.projection),
-    ];
-    assert_ok(&command(&project_args), "tree spec project-analysis");
-    let analyze_args = [
-        "--projection",
-        path(&staged.projection),
-        "--tree-source-root",
-        path(&root_path),
-        "--out",
-        path(&staged.artifact),
-    ];
-    assert_ok(
-        &command_with(&analyzer_path(), &analyze_args),
-        "tree analyze",
-    );
     staged
 }
 
@@ -549,19 +548,10 @@ pub fn source_unit_for_binding(staged: &TreeStaged, binding: &str) -> String {
 }
 
 pub fn module_snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
-    let mut files = BTreeMap::new();
-    let mut pending = vec![root.to_path_buf()];
-    while let Some(dir) = pending.pop() {
-        for entry in fs::read_dir(dir).unwrap() {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                pending.push(path);
-            } else {
-                files.insert(path.clone(), fs::read(&path).unwrap());
-            }
-        }
-    }
-    files
+    read_tree(root)
+        .into_iter()
+        .map(|(relative, bytes)| (root.join(relative), bytes))
+        .collect()
 }
 
 pub fn assert_candidate_assessment_matches_run(
@@ -649,32 +639,27 @@ pub fn staged(opts: FixtureOpts<'_>) -> (Staged, ValidateFixture) {
 /// Every file under `root`, JSON reports without their `provenance` (it
 /// records the generating command line, which differs by design).
 pub fn tree(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
-    let mut files = BTreeMap::new();
-    let mut pending = vec![root.to_path_buf()];
-    while let Some(dir) = pending.pop() {
-        for entry in fs::read_dir(&dir).unwrap() {
-            let entry = entry.unwrap().path();
-            if entry.is_dir() {
-                pending.push(entry);
-                continue;
-            }
-            let bytes = fs::read(&entry).unwrap();
-            let json = if entry.extension().is_some_and(|extension| extension == "gz") {
-                Ok(read_gzip_json::<Value>(&entry))
+    read_tree(root)
+        .into_iter()
+        .map(|(relative, bytes)| {
+            let json = if relative
+                .extension()
+                .is_some_and(|extension| extension == "gz")
+            {
+                Ok(read_gzip_json::<Value>(&root.join(&relative)))
             } else {
                 serde_json::from_slice::<Value>(&bytes)
             };
-            let bytes = match json {
+            let normalized = match json {
                 Ok(Value::Object(mut report)) if report.contains_key("provenance") => {
                     report.remove("provenance");
                     serde_json::to_vec(&report).unwrap()
                 }
                 _ => bytes,
             };
-            files.insert(entry.strip_prefix(root).unwrap().to_path_buf(), bytes);
-        }
-    }
-    files
+            (relative, normalized)
+        })
+        .collect()
 }
 
 pub fn assert_same_invocation_trees(direct: &StagedInvocation, staged: &StagedInvocation) {

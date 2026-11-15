@@ -6,6 +6,14 @@
 mod ast_assertions;
 mod fixture_spec;
 pub mod saved_analysis;
+mod tree_assertions;
+mod workspace;
+
+pub use tree_assertions::{assert_same_tree, read_tree};
+pub use workspace::{
+    TreeFixture, TreeRun, TreeWorkspace, run_tree_fixture, run_tree_graph_fixture, tree_spec_args,
+    write_tree_fixture,
+};
 
 pub use ast_assertions::{
     VariableDeclarationKind, VariableInitializerKind, assert_export_named_specifiers,
@@ -47,7 +55,6 @@ pub use spec::{
 
 use artifact::paths::path_from_module_path;
 use std::collections::BTreeSet;
-use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -961,39 +968,6 @@ pub fn assert_module_exports(
     }
 }
 
-/// Every file below `left` and `right` has the same bytes: two runs emitted
-/// the same tree.
-pub fn assert_same_tree(left: &Path, right: &Path) {
-    fn files(root: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
-        let mut out = std::collections::BTreeMap::new();
-        let mut pending = vec![root.to_path_buf()];
-        while let Some(dir) = pending.pop() {
-            for entry in
-                fs::read_dir(&dir).unwrap_or_else(|e| panic!("read {}: {e}", dir.display()))
-            {
-                let path = entry.expect("directory entry").path();
-                if path.is_dir() {
-                    pending.push(path);
-                } else {
-                    let bytes =
-                        fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-                    out.insert(path.strip_prefix(root).unwrap().to_path_buf(), bytes);
-                }
-            }
-        }
-        out
-    }
-    let (left, right) = (files(left), files(right));
-    assert_eq!(
-        left.keys().collect::<Vec<_>>(),
-        right.keys().collect::<Vec<_>>(),
-        "emitted file sets differ"
-    );
-    for (file, bytes) in &left {
-        assert!(right[file] == *bytes, "{} differs", file.display());
-    }
-}
-
 pub fn assert_same_module_bytes(left: &Fixture, right: &Fixture, module_path: &str) {
     let read = |fixture: &Fixture| {
         fs::read(fixture.out_root.join(module_path))
@@ -1717,112 +1691,6 @@ pub fn run_debundler_with_args(
 
 /// A tree-authored spec over several chunks: `chunks` are `(chunk id,
 /// source)`, `module_roots` are `(tree root, chunk id)`, and `modules` are
-/// `(path below the modules root, module YAML)`. Every chunk is inlined into
-/// its entry when unassigned; the first chunk is `main_chunk_id`.
-pub struct TreeFixture<'a> {
-    pub chunks: &'a [(&'a str, &'a str)],
-    pub module_roots: &'a [(&'a str, &'a str)],
-    pub modules: &'a [(&'a str, &'a str)],
-}
-
-pub struct TreeRun {
-    _root: TempDir,
-    pub out_root: PathBuf,
-    pub report_root: PathBuf,
-    pub result: CommandResult,
-}
-
-impl TreeRun {
-    pub fn root(&self) -> &Path {
-        self._root.path()
-    }
-}
-
-/// The `--tree-{config,modules,vendor-marks,source-root}` arguments for the
-/// tree-fixture layout [`run_tree_fixture`] writes under `root`.
-pub fn tree_spec_args(root: &Path) -> [OsString; 8] {
-    [
-        "--tree-config".into(),
-        root.join("spec_config.yaml").into(),
-        "--tree-modules".into(),
-        root.join("modules").into(),
-        "--tree-vendor-marks".into(),
-        root.join("vendor_marks.yaml").into(),
-        "--tree-source-root".into(),
-        root.into(),
-    ]
-}
-
-/// Writes `fixture` and runs `debundle run` on it in tree form with
-/// `extra_args`, writing the JS tree.
-/// A tree fixture for tests whose queries require full graph reports.
-pub fn run_tree_graph_fixture(fixture: &TreeFixture<'_>, extra_args: &[&str]) -> TreeRun {
-    let args = std::iter::once("--graphs")
-        .chain(extra_args.iter().copied())
-        .collect::<Vec<_>>();
-    run_tree_fixture(fixture, &args)
-}
-
-pub fn run_tree_fixture(fixture: &TreeFixture<'_>, extra_args: &[&str]) -> TreeRun {
-    let root = TempDir::with_prefix(current_test_prefix()).expect("create tempdir");
-    let snapshot = root.path().join("snapshot");
-    let modules = root.path().join("modules");
-    fs::create_dir_all(&modules).expect("create modules root");
-    let out_root = root.path().join("out");
-    let mut js_list = String::new();
-    let mut unassigned_mode = String::new();
-    for (chunk, source) in fixture.chunks {
-        write_text_file(&snapshot.join(format!("{chunk}.js")), source);
-        js_list.push_str(&format!("{chunk}.js\n"));
-        unassigned_mode.push_str(&format!("  {chunk}: {{ kind: inline_in_entry }}\n"));
-    }
-    write_text_file(&root.path().join("js-files.txt"), &js_list);
-    let module_roots = if fixture.module_roots.is_empty() {
-        String::new()
-    } else {
-        format!(
-            "module_roots:\n{}",
-            fixture
-                .module_roots
-                .iter()
-                .map(|(tree, chunk)| format!("  {tree}: {chunk}\n"))
-                .collect::<String>()
-        )
-    };
-    for (tree, _) in fixture.module_roots {
-        fs::create_dir_all(modules.join(tree)).expect("create chunk module root");
-    }
-    for (path, body) in fixture.modules {
-        write_text_file(&modules.join(path), body);
-    }
-    let config = root.path().join("spec_config.yaml");
-    write_text_file(
-        &config,
-        &format!(
-            "main_chunk_id: {}\n{module_roots}inputs:\n  root: snapshot\n  \
-             js_list_path: js-files.txt\nwrite_js_tree: true\nunassigned_mode:\n{unassigned_mode}",
-            fixture.chunks[0].0,
-        ),
-    );
-    let vendor_marks = root.path().join("vendor_marks.yaml");
-    write_text_file(&vendor_marks, "vendor_marks: []\n");
-    let bin = debundler_path();
-    let output = Command::new(&bin)
-        .arg("run")
-        .args(tree_spec_args(root.path()))
-        .arg("--out-root")
-        .arg(&out_root)
-        .args(extra_args)
-        .output()
-        .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display()));
-    TreeRun {
-        report_root: out_root.join("reports").join("tree"),
-        out_root,
-        result: command_result(output),
-        _root: root,
-    }
-}
-
 fn run_node_script(path: &Path) -> CommandResult {
     let node = node_path();
     command_result(
