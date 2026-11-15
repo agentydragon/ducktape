@@ -101,9 +101,9 @@ flowchart LR
     edge -->|authenticated ActionService gRPC| actions
     edge -->|public MCP client metadata: gRPC| actions
     notif -->|Action history: gRPC mTLS, Notifications SVID| actions
-    actions -->|Session commands: broker or delegated caller, gRPC| gw
+    actions -->|Actions SVID mTLS: Session commands; typed envelope for delegation| gw
     actions -->|EnvironmentService: Actions SVID mTLS; typed delegation for list/get/resume| sandboxctl
-    actions -->|Session reads: broker or delegated caller, gRPC| hs
+    actions -->|Actions SVID mTLS: Session reads; typed envelope for delegation| hs
     app -->|service SVID mTLS: admin reads| egress
     app --> electric
     app --> k8s
@@ -292,8 +292,8 @@ flowchart LR
     app -->|Dispatch watch for the browser: gRPC| dispatcher
     app -->|operator EnvironmentService facade: App SVID mTLS| sandboxctl
     actions -->|caller-delegated EnvironmentService list/get/resume; reviewed launches: Actions SVID mTLS| sandboxctl
-    actions -->|Session commands: broker or delegated caller, gRPC| dispatcher
-    actions -->|Session reads: broker or delegated caller, gRPC| history
+    actions -->|Actions SVID mTLS: Session commands; typed envelope for delegation| dispatcher
+    actions -->|Actions SVID mTLS: Session reads; typed envelope for delegation| history
     environments -->|resume + eligibility| lifecycle
     app -->|per-Sandbox Runner Proxy: live inventory + diagnostics| gateway
     dispatcher -->|Pod-bound workload token: wrapped Codex and Claude opens + commands| gateway
@@ -321,7 +321,7 @@ destination TLS bytes opaquely. The Gateway resolves the current Sandbox credent
 the unchanged Session method rules. No Dispatcher audience token is projected
 into Sandbox Pods. Backend checks of the Sandbox identity and
 object UID remain authoritative; network reachability grants no Session authority. The Action Service
-continues to use the configured Dispatcher audience and a pod-bound Actions token on the opted-in
+presents its service SVID on Dispatcher, History and EnvironmentService calls, including the opted-in
 `EnvironmentService` list/get methods and its separately configured
 `EnvironmentService.ResumeEnvironment` method. The receiver applies the caller identity from the
 shared delegation envelope, then checks the current Sandbox and explicit Identity resume grant.
@@ -357,15 +357,17 @@ Dispatcher component authority and EnvironmentService launcher authority. Both g
 existing `actions.orchestration_callers` map; session delegation alone does not enable them. The
 launcher handler allows template listing and environment creation with a complete Action launch
 origin, while the Dispatcher role remains separate from operator authority. History's exact reader
-SVID list already includes Actions, and the production listener fix from #16451 is pinned and Ready,
-so direct Action-to-History SVID reads work. This change keeps bearer tokens and receiver bearer
-admission unchanged.
+SVID list includes Actions. Actions presents that SVID for both direct orchestration and
+caller-delegated Dispatcher/History requests. Delegated calls retain their typed Action/Identity
+envelope; direct component grants never supply the effective caller's authority. Projected tokens
+and receiver bearer admission remain until the separately released removal stage.
 
 ```mermaid
 flowchart LR
     app[App service] -->|service mTLS: read, manage and direct create grants| environments[EnvironmentService]
     actions[Action service] -->|direct service mTLS: orchestration Dispatcher role| dispatcher[Dispatcher / Sessions role]
     actions -->|service mTLS + typed Identity envelope: session delegation| dispatcher
+    actions -->|service mTLS: direct orchestration reads or typed Identity envelope| history[History]
     actions -->|direct service mTLS: orchestration launcher role| environments
     actions -->|service mTLS + typed Identity envelope: session delegation| environments
     sessions[Sessions service role] -->|service mTLS: session methods| proxy[Runtime proxy role]
