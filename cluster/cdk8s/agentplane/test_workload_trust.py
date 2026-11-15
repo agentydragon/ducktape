@@ -143,6 +143,34 @@ def test_mcp_tls_listener_uses_its_mounted_certificate_and_only_admits_app(stagi
     assert any(p["targetPort"] == port for p in _resource(staging_manifests, "Service", "mcp-edge")["spec"]["ports"])
 
 
+def test_notifications_calls_backends_with_its_mounted_service_svid(staging_manifests: list[Body]) -> None:
+    pod = _resource(staging_manifests, "Deployment", "notifications")["spec"]["template"]["spec"]
+    container = one(pod["containers"])
+    volumes = {volume["name"]: volume for volume in pod["volumes"]}
+    mounts = {PurePosixPath(m["mountPath"]): volumes[m["name"]] for m in container["volumeMounts"]}
+    settings = yaml.safe_load(one(_resource(staging_manifests, "ConfigMap", "notifications-settings")["data"].values()))
+    for peer, server_uri in {
+        "actions": ACTIONS_URI,
+        "runner_gateway": SESSION_DISPATCHER_URI,
+        "history_service": HISTORY_SERVICE_URI,
+        "session_dispatcher": SESSION_DISPATCHER_URI,
+    }.items():
+        assert "token_file" not in settings[peer]
+        tls = settings[peer]["tls"]
+        assert tls["server_uri"] == server_uri
+        for field in ("cert_file", "key_file"):
+            path = PurePosixPath(tls[field])
+            secret_name = mounts[path.parent]["secret"]["secretName"]
+            certificate = one(
+                doc
+                for doc in staging_manifests
+                if doc["kind"] == "Certificate" and doc["spec"]["secretName"] == secret_name
+            )
+            assert certificate["spec"]["uris"] == [tls["client_uri"]] == [NOTIFICATIONS_URI]
+        ca = PurePosixPath(tls["ca_file"])
+        assert _bundle(mounts[ca.parent], ca.name) == cluster_ca.WORKLOAD_BUNDLE
+
+
 def _template_pods(documents: list[Body]) -> Iterator[tuple[str, Body]]:
     """Every Sandbox Pod shape: Pod and Firecracker SandboxTemplates, and the command boxes' PodTemplates."""
     for doc in documents:
