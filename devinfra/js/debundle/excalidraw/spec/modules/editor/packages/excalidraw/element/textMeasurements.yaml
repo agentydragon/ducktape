@@ -1,0 +1,57 @@
+# Original home: packages/excalidraw/element/textMeasurements.ts
+source_matches:
+  - match: |
+      var selected = (text, font, lineHeight) => {
+        let normalized = text.split(`\n`).map(EXPR).join(`\n`), fontSize = parseFloat(font), height = EXPR(normalized, fontSize, lineHeight);
+        return { width: EXPR(normalized, font), height };
+      };
+    bindings:
+      - local: selected
+        name: measureText
+
+  - match: |
+      var selected = (font, lineHeight) => {
+        let maxCharWidth = EXPR(font);
+        return maxCharWidth === 0 ? EXPR : maxCharWidth + EXPR * 2;
+      };
+    bindings:
+      - local: selected
+        name: getApproxMinLineWidth
+
+  - match: |
+      var selected = (font, lineHeight) => EXPR("", font, lineHeight).width + EXPR * 2;
+    bindings:
+      - local: selected
+        name: getMinTextElementWidth
+
+  - match: |
+      var selected = () => EXPR(EXPR, EXPR({fontSize: EXPR, fontFamily: EXPR})) > 0;
+    bindings:
+      - local: selected
+        name: isMeasureTextSupported
+
+  - match: |
+      var selected = (textElement) => {
+        let lineCount = EXPR(textElement.text).length;
+        return textElement.height / lineCount / textElement.fontSize;
+      };
+    bindings:
+      - local: selected
+        name: detectLineHeight
+
+  - match: |
+      var selected = (fontSize, lineHeight) => EXPR(fontSize, lineHeight) + EXPR * 2;
+    bindings:
+      - local: selected
+        name: getApproxMinLineHeight
+
+  - match: |
+      var selected = (font) => {
+        let cache = EXPR.getCache(font);
+        if (!cache) return 0;
+        let widths = cache.filter(EXPR);
+        return Math.max(...widths);
+      };
+    bindings:
+      - local: selected
+        name: getMaxCharWidth
