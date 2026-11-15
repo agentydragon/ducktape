@@ -1,0 +1,18 @@
+# Original home: packages/excalidraw/components/PasteChartDialog.tsx
+source_matches:
+  - match: |
+      var selected = ({ setAppState, appState, onClose }) => {
+        STMT_LIST;
+      };
+    bindings:
+      - local: selected
+        name: PasteChartDialog
+
+  - match: |
+      var selected = (props) => {
+        STMT_LIST;
+        return (EXPR, EXPR("button", { type: "button", className: "ChartPreview", ANYTHING }));
+      };
+    bindings:
+      - local: selected
+        name: ChartPreviewBtn

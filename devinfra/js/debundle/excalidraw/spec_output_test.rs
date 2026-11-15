@@ -68,6 +68,10 @@ fn claimed_modules_export_their_entry_points() {
             &["ImageExportDialog"],
         ),
         (
+            "main/packages/excalidraw/components/PasteChartDialog.js",
+            &["PasteChartDialog"],
+        ),
+        (
             "main/packages/excalidraw/components/ExcalidrawLogo.js",
             &["ExcalidrawLogo"],
         ),

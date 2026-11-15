@@ -1297,6 +1297,28 @@ async def test_library_and_icon_picker(playwright_driver: Playwright, origin: st
         assert await page.evaluate("globalThis.__debundleHarness.errors") == []
 
 
+async def test_paste_spreadsheet_shows_chart_dialog(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        await page.mouse.click(600, 400)
+        await page.evaluate(
+            """() => {
+                const data = new DataTransfer();
+                data.setData('text/plain', 'Name\\tCount\\nA\\t10\\nB\\t20');
+                document.dispatchEvent(new ClipboardEvent('paste', {clipboardData: data, bubbles: true}));
+            }"""
+        )
+        dialog = page.locator(".PasteChartDialog")
+        await expect(dialog).to_be_visible()
+        await expect(dialog.locator(".ChartPreview")).to_have_count(2)
+        await expect(dialog.locator(".ChartPreview svg")).to_have_count(2)
+        assert await page.evaluate("globalThis.__debundleHarness.errors") == []
+
+
 async def test_clipboard_parsing_and_system_round_trip(playwright_driver: Playwright, origin: str) -> None:
     async with deterministic_browser_context(
         playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
