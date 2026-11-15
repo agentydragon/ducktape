@@ -122,7 +122,7 @@ async def test_history_projection_against_resumed_model_input(
 ) -> None:
     evidence: dict[str, Any] = {"requestedHistoryMode": history_mode}
     async with asyncio.timeout(60):
-        async with server(codex, openai_responses, "initial", client_name="agentplane-history-probe") as process:
+        async with server(codex, openai_responses, "initial") as process:
             thread = (
                 await rpc(
                     process,
@@ -172,7 +172,7 @@ async def test_history_projection_against_resumed_model_input(
             for path in (codex.codex_home / "sessions").glob(f"**/*{thread_id}.jsonl")
             for line in path.read_text().splitlines()
         ]
-        async with server(codex, openai_responses, "restarted", client_name="agentplane-history-probe") as process:
+        async with server(codex, openai_responses, "restarted") as process:
             evidence["cold"] = await history(process, thread_id)
             evidence["resume"] = await rpc(process, "thread/resume", threadId=thread_id, excludeTurns=False)
             evidence["resumed"] = await history(process, thread_id)
@@ -205,9 +205,7 @@ async def test_compaction_history_projection_against_resumed_model_input(
 ) -> None:
     evidence: dict[str, Any] = {}
     async with asyncio.timeout(60):
-        async with server(
-            codex, openai_responses, "before-compaction", client_name="agentplane-history-probe"
-        ) as process:
+        async with server(codex, openai_responses, "before-compaction") as process:
             thread = (
                 await rpc(
                     process,
@@ -274,9 +272,7 @@ async def test_compaction_history_projection_against_resumed_model_input(
             evidence["compactionItem"], evidence["compactionTurnId"] = await compaction_completed(compact_cursor)
             evidence["afterCompactionLoaded"] = await history(process, thread_id)
 
-        async with server(
-            codex, openai_responses, "after-compaction-restart", client_name="agentplane-history-probe"
-        ) as process:
+        async with server(codex, openai_responses, "after-compaction-restart") as process:
             evidence["afterCompactionCold"] = await history(process, thread_id)
             evidence["resume"] = await rpc(process, "thread/resume", threadId=thread_id, excludeTurns=False)
             evidence["afterCompactionResumed"] = await history(process, thread_id)
