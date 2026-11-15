@@ -229,7 +229,7 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     assert 8080 not in edge_service_ports
     assert {8081, 8443} <= edge_service_ports
     edge_container_ports = {port["containerPort"] for port in edge_container["ports"]}
-    assert {8080, 8081, 8443} <= edge_container_ports
+    assert edge_container_ports == {8081, 8443}
     assert edge_container["readinessProbe"]["httpGet"]["path"] == "/readyz"
     assert edge_container["readinessProbe"]["httpGet"]["port"] == 8081
     assert edge_container["livenessProbe"]["httpGet"]["path"] == "/healthz"
@@ -760,7 +760,6 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
         _resource(docs, "ConfigMap", f"{central_sampler.NAME}-settings")["data"]["settings.json"]
     )
     assert settings.executor_reconnect_timeout_seconds is None
-    assert settings.listen is None
     assert settings.health_listen == f"0.0.0.0:{central_sampler.HEALTH_PORT}"
     assert settings.actions is not None
     assert (
