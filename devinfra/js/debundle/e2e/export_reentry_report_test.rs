@@ -303,7 +303,14 @@ fn static_import_of_empty_source_does_not_block_export_reentry_proof() {
 fn reports_independent_global_and_static_closure_blockers() {
     let bundle_root = CaseWorkspace::default();
     let bundle_path = bundle_root.path().join("replacement.mjs");
-    write_text_file(&bundle_path, "export const replacement = { other: 1 };\n");
+    write_text_file(
+        &bundle_root.path().join("package.json"),
+        r#"{"name":"fixture-provider","version":"1.0.0"}"#,
+    );
+    write_text_file(
+        &bundle_path,
+        "export const other = 1;\nexport const replacement = { other };\n",
+    );
     let vendor_marks = [(
         "static/vendor.js",
         bundled_vendor_mark(bundle_path, &["other"]),
@@ -313,7 +320,7 @@ fn reports_independent_global_and_static_closure_blockers() {
         "import './provider.js';\nawait Promise.resolve();\nexport const other = 1;\n",
     )];
     let extra_files = [("static/missing.js", "export {};\n")];
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_args(
         FixtureOpts::new(
             r#"const load = globalThis["require"];
 import "./vendor.js" with { type: "javascript" };
@@ -326,6 +333,10 @@ export const value = 1;
         .with_extra_chunks(&extra_chunks)
         .with_extra_files(&extra_files)
         .with_vendor_marks(&vendor_marks),
+        &[
+            "--package-root",
+            &format!("fixture-provider={}", bundle_root.path().display()),
+        ],
     );
     let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
 

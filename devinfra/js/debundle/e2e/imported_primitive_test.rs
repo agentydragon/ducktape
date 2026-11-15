@@ -1104,15 +1104,26 @@ fn vendor_marked_provider_keeps_its_primitive_facts() {
     let peers = [("static/peer", "export const limit = 2;\n")];
     let bundle_root = CaseWorkspace::default();
     let bundle_path = bundle_root.path().join("replacement.mjs");
-    write_text_file(&bundle_path, "export const replacement = { limit: 2 };\n");
+    write_text_file(
+        &bundle_root.path().join("package.json"),
+        r#"{"name":"fixture-provider","version":"1.0.0"}"#,
+    );
+    write_text_file(
+        &bundle_path,
+        "export const limit = 2;\nexport const replacement = { limit };\n",
+    );
     let vendor_marks = [(
         "static/peer.js",
         bundled_vendor_mark(bundle_path, &["limit"]),
     )];
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_args(
         FixtureOpts::new(&source, split_modules())
             .with_extra_chunks(&peers)
             .with_vendor_marks(&vendor_marks),
+        &[
+            "--package-root",
+            &format!("fixture-provider={}", bundle_root.path().display()),
+        ],
     );
     assert_preserved_entry_output(&fixture, "264 42\n");
 }

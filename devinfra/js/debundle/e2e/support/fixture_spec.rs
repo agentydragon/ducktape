@@ -29,7 +29,7 @@ pub fn bundled_vendor_mark(bundle_path: std::path::PathBuf, exports: &[&str]) ->
                 "fixture-provider".into(),
                 spec::BundledPartialSwapPackage {
                     version: "1.0.0".into(),
-                    subpath: "index.js".into(),
+                    subpath: "replacement.mjs".into(),
                     bundle_export: "replacement".into(),
                     namespace: Some("replacement".into()),
                 },
