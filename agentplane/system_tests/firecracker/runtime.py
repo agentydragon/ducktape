@@ -17,7 +17,7 @@ from agentplane.system_tests.vm import guest_logs
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
-class Runtime:
+class KvmDevicePluginSetup:
     def __init__(self) -> None:
         self.setup_objects: list[dict[str, Any]] = [
             {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "kvm-device-plugin"}},
@@ -58,10 +58,6 @@ class Runtime:
             },
         ]
 
-    def configure(self, objects: list[dict[str, Any]]) -> None:
-        # The suite's image manifest selects the guest; no VM root/profile selection is needed.
-        return None
-
     def install(self, k3s: K3s) -> None:
         k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(self.setup_objects))
 
@@ -80,6 +76,12 @@ class Runtime:
                     parse_quantity(node["status"].get("allocatable", {}).get("devices.kubevirt.io/kvm", "0")) > 0
                     for node in nodes
                 ), "the KVM device plugin has not advertised its resource"
+
+
+class FirecrackerGuestLifecycle:
+    def configure(self, objects: list[dict[str, Any]]) -> None:
+        # The suite's image manifest selects the guest; no VM root/profile selection is needed.
+        return None
 
     def capture(self, k3s: K3s, namespace: str, validate_shutdown: Callable[[], bool]) -> AbstractContextManager[None]:
         return guest_logs.capture(
@@ -101,4 +103,4 @@ class Runtime:
 
 
 def runtime(_work: Path) -> RuntimeCapabilities:
-    return RuntimeCapabilities(guest=Runtime())
+    return RuntimeCapabilities(guest=FirecrackerGuestLifecycle(), runtime_setup=KvmDevicePluginSetup())

@@ -10,7 +10,7 @@ import pytest_bazel
 import yaml
 from python.runfiles import Runfiles
 
-from agentplane.system_tests.firecracker.runtime import Runtime
+from agentplane.system_tests.firecracker.runtime import KvmDevicePluginSetup
 from agentplane.system_tests.k3s.baseline import K3s
 
 
@@ -21,7 +21,7 @@ def test_device_allocation_releases_after_pod_deletion(tmp_path: Path, runfiles:
         process = node.start(layers_in_memory=True)
         cleanup.callback(node.stop, process)
         node.import_images({image: runfiles.root() / location for image, location in images.items()})
-        runtime = Runtime()
+        runtime = KvmDevicePluginSetup()
         # This tests Kubernetes device registration/allocation/release, not KVM ioctls.
         # The production Firecracker acceptance retains /dev/kvm and its unchanged guest.
         container = runtime.setup_objects[1]["spec"]["template"]["spec"]["containers"][0]

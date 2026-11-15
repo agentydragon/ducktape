@@ -35,7 +35,6 @@ def _opt_in(name: str, *, default: str = "0") -> bool:
 
 class VmRuntime:
     def __init__(self) -> None:
-        self.setup_objects: list[dict[str, Any]] = []
         self._boot_rcu_observer = False
 
     def configure(self, objects: list[dict[str, Any]]) -> None:
@@ -51,15 +50,6 @@ class VmRuntime:
             enabled=os.environ.get("AGENTPLANE_VM_NATIVE_PROFILE") == "1",
             profile_root=os.environ.get("K3S_PROFILE_GUEST_ROOT") == "1",
         )
-
-    def install(self, k3s: K3s) -> None:
-        return None
-
-    def wait_for_apis(self, k3s: K3s) -> None:
-        return None
-
-    def wait_until_ready(self, k3s: K3s) -> None:
-        return None
 
     @contextmanager
     def capture(self, k3s: K3s, namespace: str, validate_shutdown: Callable[[], bool]) -> Iterator[None]:
