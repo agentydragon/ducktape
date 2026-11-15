@@ -15,7 +15,6 @@ use super::super::runtime_inference::CallTransfer;
 use super::super::value_model::{AbstractValue, CallSite, Context, ValueExpr, Values};
 use crate::execution_evidence::ExecutionOperation;
 use crate::facts::abstract_domain::value::{Kind, Value};
-use crate::reports::schema::NativeIntegrityGuard;
 
 impl Executor<'_, '_> {
     pub(in crate::facts::sync_effects) fn execute_call_transfer(
