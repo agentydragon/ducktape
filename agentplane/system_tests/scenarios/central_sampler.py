@@ -31,7 +31,6 @@ from agentplane.system_tests.driver.central_sampler import (
     CentralStack,
     capture_sampler_diagnostics,
     central_stack,
-    sampler_caller_after_gateway_roll,
 )
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.executor import Executor
@@ -764,14 +763,7 @@ async def _roll_gateway_for_central_session(
                 outage_seconds = asyncio.get_running_loop().time() - unavailable_started
                 break
             await asyncio.sleep(0.2)
-    return (
-        await sampler_caller_after_gateway_roll(cluster, deployed),
-        outage_seconds,
-        old_uid,
-        new_uid,
-        killed_native,
-        read_failure,
-    )
+    return (deployed, outage_seconds, old_uid, new_uid, killed_native, read_failure)
 
 
 async def _wait_for_folded_turn(deployed: CentralStack, session_id: str, command_id: str) -> None:
