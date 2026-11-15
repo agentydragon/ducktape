@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 )
 
@@ -37,8 +36,7 @@ func TestSettingsLoadFromTheFileAndRuntimeSecretWithTheirDefaults(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(c.ReaderAccounts) != 0 || c.TokenAudience != "" || c.Ingress.TokenAudience != "" ||
-		c.DatabaseURL != "postgres://test-user:never-print-this@test-database/history" ||
+	if c.DatabaseURL != "postgres://test-user:never-print-this@test-database/history" ||
 		c.Ingress.WriterNamespaces[0] != "test-agentplane" {
 		t.Errorf("settings were not read: %+v", c)
 	}
@@ -50,27 +48,20 @@ func TestSettingsLoadFromTheFileAndRuntimeSecretWithTheirDefaults(t *testing.T) 
 	}
 }
 
-func TestRetiredAccountSettingsRemainDecodableAndAreNotRequired(t *testing.T) {
-	file := strings.Replace(requiredFile, "  auth:\n", "  auth:\n    - mode: kubernetes_bearer\n      audiences: [legacy-reader, legacy-ingress]\n", 1)
-	file = strings.Replace(file, "ingress:\n  writer_namespaces: [test-agentplane]\n", `ingress:
-  token_audience: ""
-  writer_namespaces: [test-agentplane]
-  sampler_accounts: []
-  sampler_identity_callers: true
-`, 1)
-	file += `reader_accounts: []
-token_audience: ""
-delegation: {actor: test-agentplane/actions, identity_callers: false, methods: []}
-`
-	c, err := loadTestConfig(t, file)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(c.ReaderAccounts) != 0 || c.TokenAudience != "" || c.Ingress.TokenAudience != "" ||
-		c.Delegation == nil || c.Delegation.Actor != (auth.Account{Namespace: "test-agentplane", Name: "actions"}) ||
-		c.Delegation.IdentityCallers || len(c.Delegation.Methods) != 0 || len(c.Ingress.SamplerAccounts) != 0 ||
-		!c.Ingress.SamplerIdentityCallers {
-		t.Fatalf("legacy settings were not decoded without requiring their old grants: %+v", c)
+func TestRetiredBearerSettingsAreUnknown(t *testing.T) {
+	for name, file := range map[string]string{
+		"reader accounts":    requiredFile + "reader_accounts: []\n",
+		"account delegation": requiredFile + "delegation: {actor: test-agentplane/actions, identity_callers: true, methods: []}\n",
+		"reader audience":    requiredFile + "token_audience: legacy-reader\n",
+		"writer audience":    strings.Replace(requiredFile, "ingress:\n", "ingress:\n  token_audience: legacy-ingress\n", 1),
+		"sampler accounts":   strings.Replace(requiredFile, "ingress:\n", "ingress:\n  sampler_accounts: []\n", 1),
+		"sampler identities": strings.Replace(requiredFile, "ingress:\n", "ingress:\n  sampler_identity_callers: true\n", 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := loadTestConfig(t, file); err == nil || err.Error() != "invalid History Service settings" {
+				t.Fatalf("retired setting error = %v", err)
+			}
+		})
 	}
 }
 
@@ -79,19 +70,14 @@ func TestServiceReaderAndDelegationTrustRequireExactSPIFFECallers(t *testing.T) 
   listen_address: 0.0.0.0:8080
   tls: {cert_file: /test/tls.crt, key_file: /test/tls.key}
   auth:
-    - mode: kubernetes_bearer
-      audiences: [test-history-service, test-runner-ingress]
     - mode: spiffe
       ca_file: /test/workload-ca.crt
-reader_accounts: [test-agentplane/test-app]
 reader_service_callers: [spiffe://agentplane/app, spiffe://agentplane/notifications]
 service_delegation:
   actors: [{spiffe_id: spiffe://agentplane/actions}]
   methods: [/agentplane.history_service.HistoryService/ReadSessionEvents]
-token_audience: test-history-service
 policy_namespace: test-policies
 ingress:
-  token_audience: test-runner-ingress
   writer_namespaces: [test-agentplane]
   sampler_service_actor: spiffe://agentplane/central-sampler
 `
@@ -175,7 +161,6 @@ func TestMigrationTimeoutIsReadFromTheSettingsFile(t *testing.T) {
 func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 	for name, file := range map[string]string{
 		"unknown key":                      requiredFile + "bogus: 1\n",
-		"unknown legacy delegation key":    requiredFile + "delegation: {caller_namespaces: [test-agentplane]}\n",
 		"runtime secret in file":           requiredFile + "database_url: postgres://file.invalid/history\n",
 		"no writer namespaces":             strings.Replace(requiredFile, "  writer_namespaces: [test-agentplane]\n", "", 1),
 		"request timeout too long":         requiredFile + "request_timeout_s: 61\n",

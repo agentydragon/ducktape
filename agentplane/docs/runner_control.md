@@ -203,10 +203,11 @@ bounded only by the state volume, and a Sandbox cannot finish teardown while any
 
 **Endpoint and authentication.** The SandboxTemplate sets the runner's ingress endpoint and private
 control listener: one ingress for every Sandbox (the History Service, or a historyless deployment's own sink). A create request cannot choose either; an ingress per Sandbox is not built. The runner reaches the ingress over its
-egress sidecar's platform route: the sidecar
-attaches the Pod's projected token for that ingress's own audience, `agentplane-runner-ingress` for
-the History Service, and an audience of its own for a historyless client. No other recipient
-can replay a token the ingress saw, and an ingress token opens no control connection.
+egress sidecar's platform route. For History, Runtime presents its workload SVID over end-to-end
+mTLS through the sidecar and central proxy's exact-authority CONNECT passthrough. Runtime verifies
+`spiffe://agentplane/history-ingress`; History resolves the live workload Identity and journal writer
+from the client certificate. No bearer token is attached. A historyless deployment configures its own
+sink's transport and authentication.
 
 **Sealing.** `Quiesce` closes admission and starts draining and sealing every journal, returning the
 current quiesce stage. The runner publishes subsequent stages through

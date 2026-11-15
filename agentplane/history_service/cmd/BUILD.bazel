@@ -64,8 +64,6 @@ go_test(
     ],
     embed = [":main_lib"],
     deps = [
-        "//agentplane/identity/auth",
-        "//agentplane/identity/auth/listener",
         "//agentplane/testing/configtest",
     ],
 )

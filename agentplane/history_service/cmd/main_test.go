@@ -21,7 +21,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/projection"
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing/spans"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
@@ -403,8 +402,6 @@ func TestAWatchRenewsAtTheConfiguredLease(t *testing.T) {
 func TestAListenerThatFailsEndsTheServiceWithItsError(t *testing.T) {
 	c := defaultConfig()
 	c.DatabaseURL = integrationDatabase.URL
-	c.TokenAudience, c.Ingress.TokenAudience = "test-history-service", "test-runner-ingress"
-	c.RPC.Auth = []listener.Authentication{&listener.KubernetesBearerAuth{Audiences: []string{c.TokenAudience, c.Ingress.TokenAudience}}}
 	c.Ingress.WriterNamespaces = []string{"test-sandbox-namespace"}
 	closed, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -469,8 +466,6 @@ func TestRunServesTheReadAPIAndTheIngressOnOneConfiguredListener(t *testing.T) {
 	readerFD := duplicateListenerFD(t, readerListener)
 	c := defaultConfig()
 	c.DatabaseURL = integrationDatabase.URL
-	c.TokenAudience, c.Ingress.TokenAudience = "test-history-service", "test-runner-ingress"
-	c.RPC.Auth = []listener.Authentication{&listener.KubernetesBearerAuth{Audiences: []string{c.TokenAudience, c.Ingress.TokenAudience}}}
 	c.Ingress.WriterNamespaces = []string{"test-sandbox-namespace"}
 	c.RPC.ListenAddress = fmt.Sprintf("fd:%d", readerFD)
 	c.Kubeconfig = kubeconfig

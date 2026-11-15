@@ -23,18 +23,11 @@ const (
 
 // config is the History Service's deployment contract: static settings come from the YAML file named by
 // AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE. The database URL is the only service-specific runtime environment input.
-// An account is written `namespace/name`, or as a `namespace` and `name` pair.
 //
 // The database URL is a Secret, so it is an environment value.
 type config struct {
 	DatabaseURL             string  `mapstructure:"-"`
 	MigrationTimeoutSeconds float64 `mapstructure:"migration_timeout_s"`
-	// CLEANUP(added 2026-11-15): Remove these ignored legacy reader and account-delegation settings after manifests omit them and that rollout completes.
-	// ReaderAccounts and Delegation are decoded for compatibility but do not grant History reads.
-	ReaderAccounts []auth.Account    `mapstructure:"reader_accounts"`
-	Delegation     *delegationConfig `mapstructure:"delegation"`
-	// CLEANUP(added 2026-11-15): Remove after manifests omit token_audience and that rollout completes. Ignored.
-	TokenAudience string `mapstructure:"token_audience"`
 	// ReaderServiceCallers are exact component SPIFFE IDs admitted as backend-wide History readers.
 	ReaderServiceCallers []string                 `mapstructure:"reader_service_callers"`
 	ServiceDelegation    *serviceDelegationConfig `mapstructure:"service_delegation"`
@@ -54,14 +47,6 @@ type config struct {
 	WatchLeaseSeconds float64 `mapstructure:"watch_lease_s"`
 }
 
-// CLEANUP(added 2026-11-15): Remove this ignored account-delegation decoder after manifests omit delegation and that rollout completes.
-type delegationConfig struct {
-	Actor auth.Account `mapstructure:"actor"`
-	// IdentityCallers is retained for compatibility but grants no History read access.
-	IdentityCallers bool     `mapstructure:"identity_callers"`
-	Methods         []string `mapstructure:"methods"`
-}
-
 type serviceDelegationConfig struct {
 	Actors  []auth.ServiceDelegator `mapstructure:"actors"`
 	Methods []string                `mapstructure:"methods"`
@@ -69,14 +54,8 @@ type serviceDelegationConfig struct {
 
 // ingressConfig is the Session journal ingress's authorization and storage policy. Its RPC shares the service listener.
 type ingressConfig struct {
-	// CLEANUP(added 2026-11-15): Remove after manifests omit ingress.token_audience and that rollout completes. Ignored.
-	TokenAudience string `mapstructure:"token_audience"`
 	// WriterNamespaces scopes the live workload Identity credential records resolved for journal writers.
 	WriterNamespaces []string `mapstructure:"writer_namespaces"`
-	// CLEANUP(added 2026-11-15): Remove these ignored legacy sampler settings after manifests omit them and that rollout completes.
-	// SamplerAccounts and SamplerIdentityCallers do not grant ingress access.
-	SamplerAccounts        []auth.Account `mapstructure:"sampler_accounts"`
-	SamplerIdentityCallers bool           `mapstructure:"sampler_identity_callers"`
 	// SamplerServiceActor is the exact service SVID admitted to push central sampler journals.
 	SamplerServiceActor string `mapstructure:"sampler_service_actor"`
 	// SettleDeltas removes an item's streamed delta entries from stored history once its retained completion
