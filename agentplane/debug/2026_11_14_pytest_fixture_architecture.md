@@ -89,9 +89,9 @@ session fixtures. Built-in subtests change independent selection/reporting.
   uses immutable source `5dd6f7cafadeca470fc9134f12be5aee89ca8a51`.
   Both targets pass in 323.360 seconds; platform action 178.793 seconds.
 - [Candidate B2](https://app.buildbuddy.io/invocation/6ccd1da0-a5b1-4a38-ac3f-9c94e461d892)
-  repeats the same source; both targets pass in 319.967 seconds.
+  replays intended source `5dd6f7cafa` as an overlay; both targets pass in 319.967 seconds.
 - [Control A2](https://app.buildbuddy.io/invocation/8a9d655f-e45e-4a92-bd07-38a01547e3e3)
-  repeats A1's source; both targets pass in 317.505 seconds.
+  replays intended source `8751e005b7` as an overlay; both targets pass in 317.505 seconds.
 - [Final focused checks](https://app.buildbuddy.io/invocation/fa68cb7a-5574-48f1-8923-0d17966b8c8b):
   seven targets / 27 JUnit cases pass, including the corrected direct dependency
   and the repeated-cancellation control. Explicit changed-library builds pass.
@@ -124,6 +124,17 @@ complete required PR feedback. Counterbalanced order does not control worker
 warmth, build-cache state, or concurrent CI/experiments. In particular, A2 is
 faster than either B run: the first pair's apparent whole-graph gain does not
 establish a repeatable feedback improvement.
+
+B2/A2 are not clean exact-commit repeats. For these detached local worktrees,
+the remote runner checked out `c98ee8ab9c158ff130bc2ff4b73aba1531837ace`
+and applied patches. The logged patch SHA256 values are
+`349b5d6350480e91b9aa95d4b39e7e272a80c82e5485fdd15da8a09dfd181d09` (B2)
+and `b72ef9fcee30511674def11771edee1abf246fcc40420817f7f38fe210dc2b9e` (A2).
+Bazel's advertised source-file digests for `test_pod.py` and
+`test_pod_platform.py` match the intended revisions in both runs; the complete
+input tree was not independently verified. Git stamping can differ. Require the
+remote checkout/source proof before calling future measurements exact-commit
+comparisons; a local detached `HEAD` alone is insufficient.
 
 The source was subsequently rebased onto `c2549d48c3c3d99e05ceb831f8835f2aa07f4120`.
 The two additional suite renderers now use devel's `finalize_fixture`; native
