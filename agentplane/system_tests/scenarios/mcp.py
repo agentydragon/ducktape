@@ -70,11 +70,7 @@ async def external_mcp_connection_uses_its_consented_identity(
     connections_before = json_format.ParseDict(response.json(), connection_service_pb2.ListConnectionsResponse())
     connection_ids_before = {connection.id for connection in connections_before.connections}
     async with connected_session(
-        server=server,
-        operator=operator_bff,
-        credentials=operator_credentials,
-        identity=identity,
-        ca_bundle=ca_bundle,
+        server=server, operator=operator_bff, credentials=operator_credentials, identity=identity, ca_bundle=ca_bundle
     ) as session:
         catalog = await session.list_tools()
         assert "get_action_policy" in {tool.name for tool in catalog.tools}
