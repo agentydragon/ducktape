@@ -32,6 +32,10 @@ is pinned historical evidence, not a claim about the latest engine.
   property tests cover both finding existing peels and rejecting invalid ones.
   Real CLI regressions and emitted behavior cover realization and application;
   agreement between two implementations of the same heuristic is insufficient.
+- **Usable agent guidance.** Each delivered CLI contract includes corresponding
+  updates to repository-owned skills, `AGENTS.md`, docs and executable examples.
+  Packaged guidance must lead an agent through the supported workflow without
+  relying on superseded commands or overstating a result's guarantees.
 
 ## Workflow and CLI contract
 
@@ -320,6 +324,57 @@ complete invocation has its coverage argument and differential evidence, and an
 accepted plan is applied and materialized end to end. Do not retire existing
 tools based only on happy-path examples or graph-report agreement.
 
+### Agent guidance and documentation migration
+
+Update guidance alongside each implementing change, describing only delivered
+behavior as available. Keep future behavior in this plan until it lands; do not
+rewrite skills to invoke commands that have not shipped. Prefer shared recipes
+with links from role instructions over duplicating command sequences and
+acceptance rules across skills.
+
+| Surface                                                               | Required update                                                                                                                                                                                           |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SPEC.md`, `docs/design.md`                                           | State the shared acceptance contract, permitted move scopes, complete existence guarantee, finite-model/coverage argument and limits of the supported semantics.                                          |
+| `docs/cli.md`, `docs/peel_proposer.md`                                | Document actual arguments, shared context, plan identities, result states, complete versus heuristic search, budgets and output limits. Keep CLI help and examples consistent.                            |
+| `README.md` task chooser, `docs/planning.md`                          | Make extending an accepted partial spec a direct workflow. Explain when to use complete search and how to review a shortlist; replace readiness labels as dispatch authority.                             |
+| `docs/spec_editing.md`, `docs/integration.md`                         | Use exact-batch check/apply for residual and existing claims, including anonymous units. Cover selector realization, unchanged-unit checks, combined-plan validation and refreshing context after edits.  |
+| `docs/bazel_integration.md`, `skills/shared/workflow.md`              | Carry the same source/spec/engine context through native and Bazel commands, snapshots, handoffs, gates, emission and runtime checks. Keep invocation evidence distinct from plans.                       |
+| `AGENTS.md`                                                           | Record the shared-checker invariant, the complete-search contract, prohibition on treating incomplete searches as no-peel proofs, and required behavioral/property tests. Keep procedures in linked docs. |
+| Repository-owned `skills/*/SKILL.md` and packaged references/examples | Route each role through the implemented common workflow and remove obsolete assumptions about binding-only application, independent probes and heuristic landability.                                     |
+
+Review role-specific instructions explicitly:
+
+- `debundle_orchestrator` and `debundle_plan_work`: choose scopes and search
+  modes, preserve accepted baselines, interpret negative conclusions correctly,
+  and use graph/atom inspection as diagnostics rather than an alternate planner.
+- `debundle_intake`: select checked plans, ground semantic ownership and naming,
+  and preserve exact destinations and joint batches in the handoff. Existing
+  `landable_today` rows alone cannot authorize dispatch.
+- `debundle_lane_worker` and `debundle_integrator`: realize and apply exact
+  plans, preserve metadata, recheck combined changes and validate the resulting
+  emission. Neither a worker's old baseline nor independent passes certify the
+  integrated assignment.
+- `debundle_architect` and `debundle_explain`: retain semantic ownership review
+  and use checked incremental extraction for the code under discussion. Update
+  `debundle_mint_names` and `debundle_stabilize` wherever shared context or edit
+  contracts change; do not broaden those roles into placement authority.
+
+Edit the repository sources under `skills/`; do not patch installed skill copies
+as the implementation. Build affected skill packages and test their packaged
+references and runnable examples with the matching engine. Extend the existing
+`skills/shared/examples` tests, including `isolated_edit_test` and
+`contract_examples_test` where affected, rather than maintain an untested prose
+recipe beside the real CLI tests. Add a neutral packaged example for the full
+propose/review/check/dry-run/apply/run loop, its runtime observation and honest
+negative or incomplete outcomes.
+
+Before retiring a command, search CLI callers, docs, examples, role skills and
+their packaged references together. Migrate live callers directly and remove
+obsolete recipes in the same change. A final migration check must demonstrate
+that an agent following the packaged guidance can perform the new workflow from
+its declared starting inputs. Historical audit references remain labeled as
+historical; they are not instructions to use retired paths.
+
 ### Composition and evidence
 
 The normal workflow is:
@@ -391,27 +446,45 @@ shims.
 - [ ] **Correct the demonstrated false positive.** Add P1 as a neutral real-CLI
       regression, with the successful uncapped/grouped control. Retain full
       dependency accounting when a target class is excluded by a size or output
-      cap. This narrow repair does not establish that all proposals are safe.
-- [ ] **Build the common checked-plan path.** Preserve the accepted starting
-      assignment, then support arbitrary batches, the complete checker, spec
-      realization and application. Cover P3's three-unit atom, remote TDZ, a joint
-      move whose individual moves reject, anonymous units, unchanged-unit identity
-      and preview/apply agreement. Use behavioral CLI regressions rather than a
-      second implementation of the checker as the test oracle.
+      cap. Update affected readiness documentation to match the actual guarantee.
+      This narrow repair does not establish that all proposals are safe.
+- [ ] **Establish the common checker and independent reference.** Preserve the
+      accepted starting assignment and prepared context, and expose arbitrary
+      complete-batch checking. Cover P3's three-unit atom, remote TDZ, joint moves,
+      anonymous units and unchanged-unit identity. Build the small-spec reference
+      enumerator and settle the faithful finite representation before relying on
+      search optimizations. Document the checker and its evidence states as they
+      ship, using existing typed APIs rather than a separate graph model.
+- [ ] **Deliver exact-batch realization and application.** Generalize application
+      for residual and existing claims, including anonymous selectors and preserved
+      metadata. Require full post-resolution assignment equality, preview/apply
+      agreement and no edits on validation failure. Add CLI and runtime regressions
+      and update worker/integration guidance and executable examples together.
 - [ ] **Deliver complete fixed-owner discovery.** Implement the exhaustive
       fallback over all permitted residual assignments, including multi-atom and
       multi-destination batches. Supply the representation and coverage arguments,
       exhaustive small-spec reference comparisons and property tests above. Verify
       positive witnesses, exhaustive negative conclusions and incomplete outcomes.
-- [ ] **Add heuristic acceleration and prove useful end-to-end extraction.**
-      Compare every optimization against the complete reference. Apply an accepted
-      plan exactly and materialize it through the normal pipeline, checking emitted
-      behavior where relevant. Record meaningful residual reduction and disturbance.
-- [ ] **Consolidate only after the release gates pass.** Migrate callers and
-      retire duplicate placement implementations. Enable bounded existing-owner
-      rearrangements when they demonstrate additional useful peels, extending the
-      same soundness, completeness and scope tests to each supported mode. Promote
-      delivered contracts to stable docs and burn down this plan.
+      Ship the complete-mode contract, CLI examples and planning/intake guidance
+      with the command. Application and search are separate changes after the
+      common checker; both are required for the end-to-end milestone.
+- [ ] **Prove a useful fixed-owner workflow end to end.** Run the common workflow
+      against a real accepted partial spec, apply a returned plan exactly and
+      materialize it through the normal pipeline. Check relevant emitted behavior
+      and record meaningful residual reduction and disturbance. Exercise the
+      packaged agent recipe too. Keep private source and measurements downstream;
+      public regressions and examples remain neutral.
+- [ ] **Accelerate and consolidate after the release gates pass.** Profile actual
+      search costs, add heuristic ordering and completeness-preserving optimizations,
+      and compare them against the complete reference. Migrate live callers and
+      all agent guidance, remove duplicate placement implementations and obsolete
+      recipes, and verify the affected skill packages and examples in CI. Promote
+      delivered contracts to stable docs as each change lands.
+- [ ] **Enable useful bounded owner reorganization.** Add merge-only or
+      repartition scopes when they demonstrate additional residual extraction.
+      Extend the same soundness, completeness, scope tests and guidance to each
+      supported mode. Retain fixed-owner behavior as the default and burn down
+      this plan as the remaining work closes.
 
 Individual conservative-effect precision remains separate follow-up work.
 Complete discovery is a required deliverable, not a deferred open question.
