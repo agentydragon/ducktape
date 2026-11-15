@@ -1,8 +1,30 @@
 """Host filesystem usage · ext4/XFS dashboard."""
 
-from grafana_foundation_sdk.models import barchart, bargauge, common, dashboard, piechart, prometheus, stat, text
+from grafana_foundation_sdk.models import barchart, bargauge, common, dashboard, piechart, stat, text
 
-from cluster.cdk8s.monitoring.dashboards.foundation import last_value, mimir, mimir_query, series_options
+from cluster.cdk8s.monitoring.dashboards.foundation import (
+    field_override,
+    hide_time,
+    last_value,
+    mimir,
+    mimir_query,
+    mimir_table_query,
+    series_options,
+)
+
+_COMPONENT_BYTES = '(sum by (node, device, component) (disk_usage:component_used_bytes{node=~"$node"}) or label_replace(disk_usage:unattributed_bytes{node=~"$node"}, "component", "Unattributed", "", "") or label_replace(disk_usage:filesystem_free_bytes{node=~"$node"} - disk_usage:filesystem_avail_bytes{node=~"$node"}, "component", "Reserved (root only)", "", "") or label_replace(disk_usage:filesystem_avail_bytes{node=~"$node"}, "component", "Free", "", ""))'
+_MOUNT_MEDIA = '(topk by (node, device) (1, disk_usage:mount:info{node=~"$node"}) * on (node, device) group_left (media) disk_usage:filesystem:info{node=~"$node"})'
+_FILESYSTEM_SIZE = 'disk_usage:filesystem_size_bytes{node=~"$node"}'
+_FILESYSTEM_FREE = 'disk_usage:filesystem_free_bytes{node=~"$node"}'
+_FILESYSTEM_AVAILABLE = 'disk_usage:filesystem_avail_bytes{node=~"$node"}'
+
+
+def _filesystem_bytes_fields() -> dashboard.FieldConfigSource:
+    return dashboard.FieldConfigSource(
+        defaults=dashboard.FieldConfig(
+            unit="bytes", color=dashboard.FieldColor(mode=dashboard.FieldColorModeId.FIXED, fixed_color="#5794F2")
+        )
+    )
 
 
 def build_dashboard() -> dashboard.Dashboard:
@@ -30,39 +52,25 @@ def build_dashboard() -> dashboard.Dashboard:
                 type_val="stat",
                 id_val=2,
                 targets=[
-                    mimir_query(
-                        'sum(disk_usage:filesystem_size_bytes{node=~"$node"} - on (node, device) disk_usage:filesystem_free_bytes{node=~"$node"})'
-                    )
-                    .instant()
-                    .build()
+                    mimir_query(f"sum({_FILESYSTEM_SIZE} - on (node, device) {_FILESYSTEM_FREE})").instant().build()
                 ],
                 title="Host filesystem used (ext4/XFS)",
                 description="Sum of ext4/XFS filesystem size minus free bytes, deduplicated by node and device. This excludes ext4 root-reserved blocks and is host-filesystem accounting, separate from Piraeus thin-pool use.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=5, y=6),
                 options=stat.Options(reduce_options=last_value()),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="bytes",
-                        color=dashboard.FieldColor(mode=dashboard.FieldColorModeId.FIXED, fixed_color="#5794F2"),
-                    )
-                ),
+                field_config=_filesystem_bytes_fields(),
             ),
             dashboard.Panel(
                 type_val="stat",
                 id_val=3,
-                targets=[mimir_query('sum(disk_usage:filesystem_size_bytes{node=~"$node"})').instant().build()],
+                targets=[mimir_query(f"sum({_FILESYSTEM_SIZE})").instant().build()],
                 title="Host filesystem capacity (ext4/XFS)",
                 description="Total ext4/XFS host filesystem capacity from filesystem recording rules, deduplicated by node and device.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=5, x=12, y=6),
                 options=stat.Options(reduce_options=last_value()),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="bytes",
-                        color=dashboard.FieldColor(mode=dashboard.FieldColorModeId.FIXED, fixed_color="#5794F2"),
-                    )
-                ),
+                field_config=_filesystem_bytes_fields(),
             ),
             dashboard.RowPanel(
                 title="Ext4/XFS host filesystem attribution", grid_pos=dashboard.GridPos(h=1, w=24, y=11), id_val=23
@@ -80,15 +88,13 @@ def build_dashboard() -> dashboard.Dashboard:
                     .instant()
                     .build(),
                     mimir_query(
-                        'sum(disk_usage:filesystem_free_bytes{node=~"$node"} - on (node, device) disk_usage:filesystem_avail_bytes{node=~"$node"})',
+                        f"sum({_FILESYSTEM_FREE} - on (node, device) {_FILESYSTEM_AVAILABLE})",
                         legend="Reserved (root only)",
                         ref_id="C",
                     )
                     .instant()
                     .build(),
-                    mimir_query('sum(disk_usage:filesystem_avail_bytes{node=~"$node"})', legend="Free", ref_id="D")
-                    .instant()
-                    .build(),
+                    mimir_query(f"sum({_FILESYSTEM_AVAILABLE})", legend="Free", ref_id="D").instant().build(),
                 ],
                 title="Ext4/XFS filesystem capacity by use",
                 description="Host filesystem components, unattributed use, root-only reserve, and available bytes. Piraeus thin-pool physical use and volume-copy estimates are separate accounting layers.",
@@ -107,30 +113,9 @@ def build_dashboard() -> dashboard.Dashboard:
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="bytes"),
                     overrides=[
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="Free"),
-                            properties=[
-                                dashboard.DynamicConfigValue(
-                                    id_val="color", value={"mode": "fixed", "fixedColor": "rgba(115, 191, 105, 0.35)"}
-                                )
-                            ],
-                        ),
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="Unattributed"),
-                            properties=[
-                                dashboard.DynamicConfigValue(
-                                    id_val="color", value={"mode": "fixed", "fixedColor": "orange"}
-                                )
-                            ],
-                        ),
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="Reserved (root only)"),
-                            properties=[
-                                dashboard.DynamicConfigValue(
-                                    id_val="color", value={"mode": "fixed", "fixedColor": "#8e8e8e"}
-                                )
-                            ],
-                        ),
+                        field_override("Free", {"color": {"mode": "fixed", "fixedColor": "rgba(115, 191, 105, 0.35)"}}),
+                        field_override("Unattributed", {"color": {"mode": "fixed", "fixedColor": "orange"}}),
+                        field_override("Reserved (root only)", {"color": {"mode": "fixed", "fixedColor": "#8e8e8e"}}),
                     ],
                 ),
             ),
@@ -138,16 +123,10 @@ def build_dashboard() -> dashboard.Dashboard:
                 type_val="barchart",
                 id_val=19,
                 targets=[
-                    mimir_query(
-                        'label_join((sum by (node, device, component) (disk_usage:component_used_bytes{node=~"$node"}) or label_replace(disk_usage:unattributed_bytes{node=~"$node"}, "component", "Unattributed", "", "") or label_replace(disk_usage:filesystem_free_bytes{node=~"$node"} - disk_usage:filesystem_avail_bytes{node=~"$node"}, "component", "Reserved (root only)", "", "") or label_replace(disk_usage:filesystem_avail_bytes{node=~"$node"}, "component", "Free", "", "")) * on (node, device) group_left (mountpoint, media) (topk by (node, device) (1, disk_usage:mount:info{node=~"$node"}) * on (node, device) group_left (media) disk_usage:filesystem:info{node=~"$node"}), "disk", " · ", "node", "device", "mountpoint", "media")'
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query('max(disk_usage:filesystem_size_bytes{node=~"$node"})', ref_id="MaxDisk")
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
+                    mimir_table_query(
+                        f'label_join({_COMPONENT_BYTES} * on (node, device) group_left (mountpoint, media) {_MOUNT_MEDIA}, "disk", " · ", "node", "device", "mountpoint", "media")'
+                    ).build(),
+                    mimir_table_query(f"max({_FILESYSTEM_SIZE})", ref_id="MaxDisk").build(),
                 ],
                 title="Host filesystem use by component",
                 description="One bar per scraped ext4/XFS filesystem across the selected machines, labelled node, device, mountpoint, and media. Bars share the largest selected disk as their scale. Components come from existing filesystem rules; Piraeus pool physical use and per-copy estimates are separate.",
@@ -178,8 +157,7 @@ def build_dashboard() -> dashboard.Dashboard:
                         id_val="sortBy", options={"fields": {}, "sort": [{"field": "disk\\component", "desc": False}]}
                     ),
                     dashboard.DataTransformerConfig(
-                        id_val="organize",
-                        options={"excludeByName": {}, "indexByName": {}, "renameByName": {"disk\\component": "Disk"}},
+                        id_val="organize", options={"excludeByName": {}, "renameByName": {"disk\\component": "Disk"}}
                     ),
                 ],
                 options=barchart.Options(
@@ -202,30 +180,9 @@ def build_dashboard() -> dashboard.Dashboard:
                         ),
                     ),
                     overrides=[
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="Free"),
-                            properties=[
-                                dashboard.DynamicConfigValue(
-                                    id_val="color", value={"mode": "fixed", "fixedColor": "rgba(115, 191, 105, 0.35)"}
-                                )
-                            ],
-                        ),
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="Unattributed"),
-                            properties=[
-                                dashboard.DynamicConfigValue(
-                                    id_val="color", value={"mode": "fixed", "fixedColor": "orange"}
-                                )
-                            ],
-                        ),
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="Reserved (root only)"),
-                            properties=[
-                                dashboard.DynamicConfigValue(
-                                    id_val="color", value={"mode": "fixed", "fixedColor": "#8e8e8e"}
-                                )
-                            ],
-                        ),
+                        field_override("Free", {"color": {"mode": "fixed", "fixedColor": "rgba(115, 191, 105, 0.35)"}}),
+                        field_override("Unattributed", {"color": {"mode": "fixed", "fixedColor": "orange"}}),
+                        field_override("Reserved (root only)", {"color": {"mode": "fixed", "fixedColor": "#8e8e8e"}}),
                     ],
                 ),
             ),
@@ -233,19 +190,13 @@ def build_dashboard() -> dashboard.Dashboard:
                 type_val="table",
                 id_val=20,
                 targets=[
-                    mimir_query(
-                        'sort_desc((sum by (node, device, component) (disk_usage:component_used_bytes{node=~"$node"}) or label_replace(disk_usage:unattributed_bytes{node=~"$node"}, "component", "Unattributed", "", "") or label_replace(disk_usage:filesystem_free_bytes{node=~"$node"} - disk_usage:filesystem_avail_bytes{node=~"$node"}, "component", "Reserved (root only)", "", "") or label_replace(disk_usage:filesystem_avail_bytes{node=~"$node"}, "component", "Free", "", "")) * on (node, device) group_left (mountpoint, media) (topk by (node, device) (1, disk_usage:mount:info{node=~"$node"}) * on (node, device) group_left (media) disk_usage:filesystem:info{node=~"$node"}))'
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query(
-                        '(sum by (node, device, component) (disk_usage:component_used_bytes{node=~"$node"}) or label_replace(disk_usage:unattributed_bytes{node=~"$node"}, "component", "Unattributed", "", "") or label_replace(disk_usage:filesystem_free_bytes{node=~"$node"} - disk_usage:filesystem_avail_bytes{node=~"$node"}, "component", "Reserved (root only)", "", "") or label_replace(disk_usage:filesystem_avail_bytes{node=~"$node"}, "component", "Free", "", "")) * on (node, device) group_left (mountpoint, media) (topk by (node, device) (1, disk_usage:mount:info{node=~"$node"}) * on (node, device) group_left (media) disk_usage:filesystem:info{node=~"$node"}) / on (node, device) group_left () disk_usage:filesystem_size_bytes{node=~"$node"}',
+                    mimir_table_query(
+                        f"sort_desc({_COMPONENT_BYTES} * on (node, device) group_left (mountpoint, media) {_MOUNT_MEDIA})"
+                    ).build(),
+                    mimir_table_query(
+                        f"{_COMPONENT_BYTES} * on (node, device) group_left (mountpoint, media) {_MOUNT_MEDIA} / on (node, device) group_left () {_FILESYSTEM_SIZE}",
                         ref_id="B",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
+                    ).build(),
                 ],
                 title="Host filesystem attribution by node and device",
                 description="Ext4/XFS filesystem component estimates, free bytes, and root-only reserve by node and device. Piraeus thin-pool accounting is kept separate; per-copy Piraeus allocation estimates do not form a residual against these filesystem bytes.",
@@ -258,13 +209,10 @@ def build_dashboard() -> dashboard.Dashboard:
                         options={
                             "excludeByName": {"Time": True},
                             "indexByName": {
-                                "node": 0,
-                                "device": 1,
-                                "mountpoint": 2,
-                                "media": 3,
-                                "component": 4,
-                                "Value #A": 5,
-                                "Value #B": 6,
+                                name: index
+                                for index, name in enumerate(
+                                    ("node", "device", "mountpoint", "media", "component", "Value #A", "Value #B")
+                                )
                             },
                             "renameByName": {
                                 "node": "Machine",
@@ -283,15 +231,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 ],
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="bytes"),
-                    overrides=[
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="Share of disk"),
-                            properties=[
-                                dashboard.DynamicConfigValue(id_val="unit", value="percentunit"),
-                                dashboard.DynamicConfigValue(id_val="decimals", value=1),
-                            ],
-                        )
-                    ],
+                    overrides=[field_override("Share of disk", {"unit": "percentunit", "decimals": 1})],
                 ),
             ),
             dashboard.Panel(
@@ -299,7 +239,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 id_val=21,
                 targets=[
                     mimir_query(
-                        'sort_desc(label_join(disk_usage:unattributed_bytes{node=~"$node"} * on (node, device) group_left (mountpoint, media) (topk by (node, device) (1, disk_usage:mount:info{node=~"$node"}) * on (node, device) group_left (media) disk_usage:filesystem:info{node=~"$node"}), "disk", " · ", "node", "device", "mountpoint", "media"))',
+                        f'sort_desc(label_join(disk_usage:unattributed_bytes{{node=~"$node"}} * on (node, device) group_left (mountpoint, media) {_MOUNT_MEDIA}, "disk", " · ", "node", "device", "mountpoint", "media"))',
                         legend="{{disk}}",
                     )
                     .instant()
@@ -327,24 +267,16 @@ def build_dashboard() -> dashboard.Dashboard:
                 type_val="table",
                 id_val=4,
                 targets=[
-                    mimir_query(
-                        'sort_desc((disk_usage:filesystem_size_bytes{node=~"$node"} - on (node, device) disk_usage:filesystem_free_bytes{node=~"$node"}) * on (node, device) group_right disk_usage:mount:info{node=~"$node"})',
+                    mimir_table_query(
+                        f'sort_desc(({_FILESYSTEM_SIZE} - on (node, device) {_FILESYSTEM_FREE}) * on (node, device) group_right disk_usage:mount:info{{node=~"$node"}})',
                         legend="{{node}} {{device}} {{mountpoint}}",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build()
+                    ).build()
                 ],
                 title="Current host filesystem use by mount",
                 description="Per-mount ext4/XFS data used from deduplicated per-device filesystem recordings. Repeated mounts, including bind mounts, are shown as detail rows; dashboard totals count each device once.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(y=44),
-                transformations=[
-                    dashboard.DataTransformerConfig(
-                        id_val="organize",
-                        options={"excludeByName": {"Time": True}, "indexByName": {}, "renameByName": {}},
-                    )
-                ],
+                transformations=[hide_time()],
                 field_config=dashboard.FieldConfigSource(defaults=dashboard.FieldConfig(unit="bytes")),
             ),
             dashboard.Panel(
@@ -352,7 +284,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 id_val=5,
                 targets=[
                     mimir_query(
-                        'topk(10, (disk_usage:filesystem_size_bytes{node=~"$node"} - on (node, device) disk_usage:filesystem_free_bytes{node=~"$node"}) * on (node, device) group_right disk_usage:mount:info{node=~"$node"})',
+                        f'topk(10, ({_FILESYSTEM_SIZE} - on (node, device) {_FILESYSTEM_FREE}) * on (node, device) group_right disk_usage:mount:info{{node=~"$node"}})',
                         legend="{{node}} {{mountpoint}}",
                     ).build()
                 ],

@@ -2,7 +2,43 @@
 
 from grafana_foundation_sdk.models import common, dashboard, statetimeline, timeseries
 
-from cluster.cdk8s.monitoring.dashboards.foundation import loki_datasource, loki_query, mimir_query
+from cluster.cdk8s.monitoring.dashboards.foundation import loki_datasource, loki_query, mimir_query, series_options
+
+
+def _event_options() -> timeseries.Options:
+    return timeseries.Options(
+        legend=common.VizLegendOptions(
+            display_mode=common.LegendDisplayMode.TABLE, calcs=["lastNotNull", "max", "sum"], show_legend=True
+        )
+    )
+
+
+def _event_panel(id: int, title: str, message: str, legend: str, position: dashboard.GridPos) -> dashboard.Panel:
+    return dashboard.Panel(
+        type_val="timeseries",
+        id_val=id,
+        title=title,
+        datasource=loki_datasource(),
+        grid_pos=position,
+        targets=[
+            loki_query(
+                f'sum(count_over_time({{job="systemd-journal",node=~"$node"}} |= "{message}" [5m]))', legend=legend
+            ).build()
+        ],
+        options=_event_options(),
+        field_config=dashboard.FieldConfigSource(
+            defaults=dashboard.FieldConfig(
+                unit="short",
+                decimals=0,
+                custom=common.GraphFieldConfig(
+                    draw_style=common.GraphDrawStyle.BARS,
+                    line_width=1,
+                    fill_opacity=80 if id <= 2 else 60,
+                    span_nulls=True,
+                ),
+            )
+        ),
+    )
 
 
 def build_dashboard() -> dashboard.Dashboard:
@@ -18,122 +54,33 @@ def build_dashboard() -> dashboard.Dashboard:
         schema_version=39,
         version=1,
         panels=[
-            dashboard.Panel(
-                type_val="timeseries",
-                id_val=1,
-                targets=[
-                    loki_query(
-                        'sum(count_over_time({job="systemd-journal",node=~"$node"} |= "entered forwarding state" [5m]))',
-                        legend="veth bring-up events",
-                    ).build()
-                ],
-                title="Veth bring-up events per 5m",
-                datasource=loki_datasource(),
-                grid_pos=dashboard.GridPos(h=8),
-                options=timeseries.Options(
-                    legend=common.VizLegendOptions(
-                        display_mode=common.LegendDisplayMode.TABLE,
-                        calcs=["lastNotNull", "max", "sum"],
-                        show_legend=True,
-                    )
-                ),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="short",
-                        decimals=0,
-                        custom=common.GraphFieldConfig(
-                            draw_style=common.GraphDrawStyle.BARS, line_width=1, fill_opacity=80, span_nulls=True
-                        ),
-                    )
-                ),
-            ),
-            dashboard.Panel(
-                type_val="timeseries",
-                id_val=2,
-                targets=[
-                    loki_query(
-                        'sum(count_over_time({job="systemd-journal",node=~"$node"} |= "unregistering" [5m]))',
-                        legend="veth teardown events",
-                    ).build()
-                ],
-                title="Veth teardown events per 5m",
-                datasource=loki_datasource(),
-                grid_pos=dashboard.GridPos(h=8, x=12),
-                options=timeseries.Options(
-                    legend=common.VizLegendOptions(
-                        display_mode=common.LegendDisplayMode.TABLE,
-                        calcs=["lastNotNull", "max", "sum"],
-                        show_legend=True,
-                    )
-                ),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="short",
-                        decimals=0,
-                        custom=common.GraphFieldConfig(
-                            draw_style=common.GraphDrawStyle.BARS, line_width=1, fill_opacity=80, span_nulls=True
-                        ),
-                    )
-                ),
-            ),
-            dashboard.Panel(
-                type_val="timeseries",
-                id_val=3,
-                targets=[
-                    loki_query(
-                        'sum(count_over_time({job="systemd-journal",node=~"$node"} |= "eth0: renamed from tmp" [5m]))',
-                        legend="CNI interface recreations",
-                    ).build()
-                ],
-                title="CNI interface recreations per 5m",
-                datasource=loki_datasource(),
-                grid_pos=dashboard.GridPos(h=8, w=8, y=8),
-                options=timeseries.Options(
-                    legend=common.VizLegendOptions(
-                        display_mode=common.LegendDisplayMode.TABLE,
-                        calcs=["lastNotNull", "max", "sum"],
-                        show_legend=True,
-                    )
-                ),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="short",
-                        decimals=0,
-                        custom=common.GraphFieldConfig(
-                            draw_style=common.GraphDrawStyle.BARS, line_width=1, fill_opacity=60, span_nulls=True
-                        ),
-                    )
-                ),
-            ),
-            dashboard.Panel(
-                type_val="timeseries",
-                id_val=4,
-                targets=[
-                    loki_query(
-                        'sum(count_over_time({job="systemd-journal",node=~"$node"} |= "tap0" [5m]))',
-                        legend="tap0 events",
-                    ).build()
-                ],
-                title="KubeVirt tap0 events per 5m",
-                datasource=loki_datasource(),
-                grid_pos=dashboard.GridPos(h=8, w=8, x=8, y=8),
-                options=timeseries.Options(
-                    legend=common.VizLegendOptions(
-                        display_mode=common.LegendDisplayMode.TABLE,
-                        calcs=["lastNotNull", "max", "sum"],
-                        show_legend=True,
-                    )
-                ),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="short",
-                        decimals=0,
-                        custom=common.GraphFieldConfig(
-                            draw_style=common.GraphDrawStyle.BARS, line_width=1, fill_opacity=60, span_nulls=True
-                        ),
-                    )
-                ),
-            ),
+            *[
+                _event_panel(id, title, message, legend, position)
+                for id, title, message, legend, position in [
+                    (
+                        1,
+                        "Veth bring-up events per 5m",
+                        "entered forwarding state",
+                        "veth bring-up events",
+                        dashboard.GridPos(h=8),
+                    ),
+                    (
+                        2,
+                        "Veth teardown events per 5m",
+                        "unregistering",
+                        "veth teardown events",
+                        dashboard.GridPos(h=8, x=12),
+                    ),
+                    (
+                        3,
+                        "CNI interface recreations per 5m",
+                        "eth0: renamed from tmp",
+                        "CNI interface recreations",
+                        dashboard.GridPos(h=8, w=8, y=8),
+                    ),
+                    (4, "KubeVirt tap0 events per 5m", "tap0", "tap0 events", dashboard.GridPos(h=8, w=8, x=8, y=8)),
+                ]
+            ],
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=5,
@@ -146,14 +93,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 title="Observed carrier changes per hour",
                 datasource=common.DataSourceRef(type_val="prometheus", uid="${DS_MIMIR}"),
                 grid_pos=dashboard.GridPos(h=8, w=8, x=16, y=8),
-                options=timeseries.Options(
-                    legend=common.VizLegendOptions(
-                        display_mode=common.LegendDisplayMode.TABLE, calcs=["lastNotNull", "max"], show_legend=True
-                    ),
-                    tooltip=common.VizTooltipOptions(
-                        mode=common.TooltipDisplayMode.MULTI, sort=common.SortOrder.DESCENDING
-                    ),
-                ),
+                options=series_options(sort=common.SortOrder.DESCENDING, legend_calcs=("lastNotNull", "max")),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(
                         unit="short",

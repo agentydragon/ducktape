@@ -1,8 +1,37 @@
 """S3 Operations dashboard."""
 
-from grafana_foundation_sdk.models import common, dashboard, stat, text, timeseries
+from grafana_foundation_sdk.models import common, dashboard, stat, text
 
-from cluster.cdk8s.monitoring.dashboards.foundation import last_value, mimir, mimir_query
+from cluster.cdk8s.monitoring.dashboards.foundation import last_value, mimir, mimir_query, series_options
+
+_SERIES_HEIGHT = 8
+_SERIES_WIDTH = 12
+_S3_SERVICES = 'namespace="seaweedfs", service=~"^(public-s3|seaweedfs-s3)$"'
+_BUCKET_FILTER = 'bucket=~"$bucket"'
+
+
+def _metric_panel(
+    id: int, title: str, expr: str, *, description: str, legend: str, unit: str, decimals: int
+) -> dashboard.Panel:
+    index = id - 3
+    return dashboard.Panel(
+        type_val="timeseries",
+        id_val=id,
+        title=title,
+        description=description,
+        datasource=mimir(),
+        targets=[mimir_query(expr, legend=legend).build()],
+        grid_pos=dashboard.GridPos(
+            h=_SERIES_HEIGHT,
+            w=24 if id == 11 else _SERIES_WIDTH,
+            x=(index % 2) * _SERIES_WIDTH,
+            y=10 + (index // 2) * _SERIES_HEIGHT,
+        ),
+        options=series_options(sort=common.SortOrder.DESCENDING, legend_calcs=("lastNotNull", "max")),
+        field_config=dashboard.FieldConfigSource(
+            defaults=dashboard.FieldConfig(unit=unit, decimals=decimals, min_val=0)
+        ),
+    )
 
 
 def build_dashboard() -> dashboard.Dashboard:
@@ -31,7 +60,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 id_val=2,
                 targets=[
                     mimir_query(
-                        'max by (service, pod) (up{namespace="seaweedfs", service=~"^(public-s3|seaweedfs-s3)$"}) or on (service) label_replace(label_replace(vector(2), "service", "public-s3", "", ""), "collection", "not-scraped", "", "") or on (service) label_replace(label_replace(vector(2), "service", "seaweedfs-s3", "", ""), "collection", "not-scraped", "", "")',
+                        f'max by (service, pod) (up{{{_S3_SERVICES}}}) or on (service) label_replace(label_replace(vector(2), "service", "public-s3", "", ""), "collection", "not-scraped", "", "") or on (service) label_replace(label_replace(vector(2), "service", "seaweedfs-s3", "", ""), "collection", "not-scraped", "", "")',
                         legend="{{service}} / {{pod}} {{collection}}",
                     )
                     .instant()
@@ -67,234 +96,89 @@ def build_dashboard() -> dashboard.Dashboard:
                                 dashboard.Threshold(value=2, color="orange"),
                             ]
                         ),
-                        color=dashboard.FieldColor(),
                     )
                 ),
             ),
-            dashboard.Panel(
-                type_val="timeseries",
-                id_val=3,
-                targets=[
-                    mimir_query(
-                        'sum by (service, type) (rate(SeaweedFS_s3_request_total{namespace="seaweedfs", service=~"^(public-s3|seaweedfs-s3)$", bucket=~"$bucket"}[5m]))',
-                        legend="{{service}} / {{type}}",
-                    ).build()
-                ],
-                title="S3 requests/s",
+            _metric_panel(
+                3,
+                "S3 requests/s",
+                f"sum by (service, type) (rate(SeaweedFS_s3_request_total{{{_S3_SERVICES}, {_BUCKET_FILTER}}}[5m]))",
                 description="Request counter rate by S3 service and operation. The Bucket selector applies.",
-                datasource=mimir(),
-                grid_pos=dashboard.GridPos(h=8, y=10),
-                options=timeseries.Options(
-                    legend=common.VizLegendOptions(
-                        display_mode=common.LegendDisplayMode.TABLE, show_legend=True, calcs=["lastNotNull", "max"]
-                    ),
-                    tooltip=common.VizTooltipOptions(
-                        mode=common.TooltipDisplayMode.MULTI, sort=common.SortOrder.DESCENDING
-                    ),
-                ),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(unit="ops", decimals=2, min_val=0)
-                ),
+                legend="{{service}} / {{type}}",
+                unit="ops",
+                decimals=2,
             ),
-            dashboard.Panel(
-                type_val="timeseries",
-                id_val=4,
-                targets=[
-                    mimir_query(
-                        'sum by (service, type) (rate(SeaweedFS_s3_request_total{namespace="seaweedfs", service=~"^(public-s3|seaweedfs-s3)$", bucket=~"$bucket", code=~"5.."}[5m])) or on (service, type) (0 * sum by (service, type) (rate(SeaweedFS_s3_request_total{namespace="seaweedfs", service=~"^(public-s3|seaweedfs-s3)$", bucket=~"$bucket"}[5m])))',
-                        legend="{{service}} / {{type}}",
-                    ).build()
-                ],
-                title="HTTP 5xx requests/s",
+            _metric_panel(
+                4,
+                "HTTP 5xx requests/s",
+                f'sum by (service, type) (rate(SeaweedFS_s3_request_total{{{_S3_SERVICES}, {_BUCKET_FILTER}, code=~"5.."}}[5m])) or on (service, type) (0 * sum by (service, type) (rate(SeaweedFS_s3_request_total{{{_S3_SERVICES}, {_BUCKET_FILTER}}}[5m])))',
                 description="Rate of S3 requests whose response code is 5xx, grouped by service and operation. A real zero is allowed when there are no recent errors. The Bucket selector applies.",
-                datasource=mimir(),
-                grid_pos=dashboard.GridPos(h=8, x=12, y=10),
-                options=timeseries.Options(
-                    legend=common.VizLegendOptions(
-                        display_mode=common.LegendDisplayMode.TABLE, show_legend=True, calcs=["lastNotNull", "max"]
-                    ),
-                    tooltip=common.VizTooltipOptions(
-                        mode=common.TooltipDisplayMode.MULTI, sort=common.SortOrder.DESCENDING
-                    ),
-                ),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(unit="ops", decimals=3, min_val=0)
-                ),
+                legend="{{service}} / {{type}}",
+                unit="ops",
+                decimals=3,
             ),
-            dashboard.Panel(
-                type_val="timeseries",
-                id_val=5,
-                targets=[
-                    mimir_query(
-                        'histogram_quantile(0.95, sum by (service, type, le) (rate(SeaweedFS_s3_request_seconds_bucket{namespace="seaweedfs", service=~"^(public-s3|seaweedfs-s3)$", bucket=~"$bucket"}[5m])))',
-                        legend="{{service}} / {{type}}",
-                    ).build()
-                ],
-                title="Request duration p95",
+            _metric_panel(
+                5,
+                "Request duration p95",
+                f"histogram_quantile(0.95, sum by (service, type, le) (rate(SeaweedFS_s3_request_seconds_bucket{{{_S3_SERVICES}, {_BUCKET_FILTER}}}[5m])))",
                 description="95th percentile of full S3 request processing duration in seconds. This includes response transfer time; large object downloads can dominate it. The Bucket selector applies.",
-                datasource=mimir(),
-                grid_pos=dashboard.GridPos(h=8, y=18),
-                options=timeseries.Options(
-                    legend=common.VizLegendOptions(
-                        display_mode=common.LegendDisplayMode.TABLE, show_legend=True, calcs=["lastNotNull", "max"]
-                    ),
-                    tooltip=common.VizTooltipOptions(
-                        mode=common.TooltipDisplayMode.MULTI, sort=common.SortOrder.DESCENDING
-                    ),
-                ),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(unit="s", decimals=3, min_val=0)
-                ),
+                legend="{{service}} / {{type}}",
+                unit="s",
+                decimals=3,
             ),
-            dashboard.Panel(
-                type_val="timeseries",
-                id_val=6,
-                targets=[
-                    mimir_query(
-                        'histogram_quantile(0.95, sum by (service, type, le) (rate(SeaweedFS_s3_time_to_first_byte_millisecond_bucket{namespace="seaweedfs", service=~"^(public-s3|seaweedfs-s3)$", bucket=~"$bucket"}[5m]))) / 1000',
-                        legend="{{service}} / {{type}}",
-                    ).build()
-                ],
-                title="Time to first byte p95",
+            _metric_panel(
+                6,
+                "Time to first byte p95",
+                f"histogram_quantile(0.95, sum by (service, type, le) (rate(SeaweedFS_s3_time_to_first_byte_millisecond_bucket{{{_S3_SERVICES}, {_BUCKET_FILTER}}}[5m]))) / 1000",
                 description="95th percentile time to first byte, converted from the exporter's millisecond buckets to seconds. Compare with full request duration above. The Bucket selector applies.",
-                datasource=mimir(),
-                grid_pos=dashboard.GridPos(h=8, x=12, y=18),
-                options=timeseries.Options(
-                    legend=common.VizLegendOptions(
-                        display_mode=common.LegendDisplayMode.TABLE, show_legend=True, calcs=["lastNotNull", "max"]
-                    ),
-                    tooltip=common.VizTooltipOptions(
-                        mode=common.TooltipDisplayMode.MULTI, sort=common.SortOrder.DESCENDING
-                    ),
-                ),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(unit="s", decimals=3, min_val=0)
-                ),
+                legend="{{service}} / {{type}}",
+                unit="s",
+                decimals=3,
             ),
-            dashboard.Panel(
-                type_val="timeseries",
-                id_val=7,
-                targets=[
-                    mimir_query(
-                        'sum by (service, bucket) (rate(SeaweedFS_s3_bucket_traffic_received_bytes_total{namespace="seaweedfs", service=~"^(public-s3|seaweedfs-s3)$", bucket=~"$bucket"}[5m]))',
-                        legend="{{service}} / {{bucket}}",
-                    ).build()
-                ],
-                title="S3 bytes received by bucket",
+            _metric_panel(
+                7,
+                "S3 bytes received by bucket",
+                f"sum by (service, bucket) (rate(SeaweedFS_s3_bucket_traffic_received_bytes_total{{{_S3_SERVICES}, {_BUCKET_FILTER}}}[5m]))",
                 description="S3 client-to-gateway bytes per second, grouped by service and bucket. The Bucket selector applies.",
-                datasource=mimir(),
-                grid_pos=dashboard.GridPos(h=8, y=26),
-                options=timeseries.Options(
-                    legend=common.VizLegendOptions(
-                        display_mode=common.LegendDisplayMode.TABLE, show_legend=True, calcs=["lastNotNull", "max"]
-                    ),
-                    tooltip=common.VizTooltipOptions(
-                        mode=common.TooltipDisplayMode.MULTI, sort=common.SortOrder.DESCENDING
-                    ),
-                ),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(unit="Bps", decimals=1, min_val=0)
-                ),
+                legend="{{service}} / {{bucket}}",
+                unit="Bps",
+                decimals=1,
             ),
-            dashboard.Panel(
-                type_val="timeseries",
-                id_val=8,
-                targets=[
-                    mimir_query(
-                        'sum by (service, bucket) (rate(SeaweedFS_s3_bucket_traffic_sent_bytes_total{namespace="seaweedfs", service=~"^(public-s3|seaweedfs-s3)$", bucket=~"$bucket"}[5m]))',
-                        legend="{{service}} / {{bucket}}",
-                    ).build()
-                ],
-                title="S3 bytes sent by bucket",
+            _metric_panel(
+                8,
+                "S3 bytes sent by bucket",
+                f"sum by (service, bucket) (rate(SeaweedFS_s3_bucket_traffic_sent_bytes_total{{{_S3_SERVICES}, {_BUCKET_FILTER}}}[5m]))",
                 description="S3 gateway-to-client bytes per second, grouped by service and bucket. The Bucket selector applies.",
-                datasource=mimir(),
-                grid_pos=dashboard.GridPos(h=8, x=12, y=26),
-                options=timeseries.Options(
-                    legend=common.VizLegendOptions(
-                        display_mode=common.LegendDisplayMode.TABLE, show_legend=True, calcs=["lastNotNull", "max"]
-                    ),
-                    tooltip=common.VizTooltipOptions(
-                        mode=common.TooltipDisplayMode.MULTI, sort=common.SortOrder.DESCENDING
-                    ),
-                ),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(unit="Bps", decimals=1, min_val=0)
-                ),
+                legend="{{service}} / {{bucket}}",
+                unit="Bps",
+                decimals=1,
             ),
-            dashboard.Panel(
-                type_val="timeseries",
-                id_val=9,
-                targets=[
-                    mimir_query(
-                        'sum by (service, type) (SeaweedFS_s3_in_flight_requests{namespace="seaweedfs", service=~"^(public-s3|seaweedfs-s3)$"})',
-                        legend="{{service}} / {{type}}",
-                    ).build()
-                ],
-                title="S3 requests in flight",
+            _metric_panel(
+                9,
+                "S3 requests in flight",
+                f"sum by (service, type) (SeaweedFS_s3_in_flight_requests{{{_S3_SERVICES}}})",
                 description="Current in-flight requests grouped by service and operation. This gauge has no bucket label and is gateway-wide; the Bucket selector does not affect it.",
-                datasource=mimir(),
-                grid_pos=dashboard.GridPos(h=8, y=34),
-                options=timeseries.Options(
-                    legend=common.VizLegendOptions(
-                        display_mode=common.LegendDisplayMode.TABLE, show_legend=True, calcs=["lastNotNull", "max"]
-                    ),
-                    tooltip=common.VizTooltipOptions(
-                        mode=common.TooltipDisplayMode.MULTI, sort=common.SortOrder.DESCENDING
-                    ),
-                ),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(unit="short", decimals=0, min_val=0)
-                ),
+                legend="{{service}} / {{type}}",
+                unit="short",
+                decimals=0,
             ),
-            dashboard.Panel(
-                type_val="timeseries",
-                id_val=10,
-                targets=[
-                    mimir_query(
-                        'sum by (service) (SeaweedFS_s3_in_flight_upload_count{namespace="seaweedfs", service=~"^(public-s3|seaweedfs-s3)$"})',
-                        legend="{{service}}",
-                    ).build()
-                ],
-                title="S3 uploads in flight",
+            _metric_panel(
+                10,
+                "S3 uploads in flight",
+                f"sum by (service) (SeaweedFS_s3_in_flight_upload_count{{{_S3_SERVICES}}})",
                 description="Current upload count grouped by service. This gauge has no bucket label and is gateway-wide; the Bucket selector does not affect it.",
-                datasource=mimir(),
-                grid_pos=dashboard.GridPos(h=8, x=12, y=34),
-                options=timeseries.Options(
-                    legend=common.VizLegendOptions(
-                        display_mode=common.LegendDisplayMode.TABLE, show_legend=True, calcs=["lastNotNull", "max"]
-                    ),
-                    tooltip=common.VizTooltipOptions(
-                        mode=common.TooltipDisplayMode.MULTI, sort=common.SortOrder.DESCENDING
-                    ),
-                ),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(unit="short", decimals=0, min_val=0)
-                ),
+                legend="{{service}}",
+                unit="short",
+                decimals=0,
             ),
-            dashboard.Panel(
-                type_val="timeseries",
-                id_val=11,
-                targets=[
-                    mimir_query(
-                        'sum by (service) (SeaweedFS_s3_in_flight_upload_bytes{namespace="seaweedfs", service=~"^(public-s3|seaweedfs-s3)$"})',
-                        legend="{{service}}",
-                    ).build()
-                ],
-                title="S3 upload bytes in flight",
+            _metric_panel(
+                11,
+                "S3 upload bytes in flight",
+                f"sum by (service) (SeaweedFS_s3_in_flight_upload_bytes{{{_S3_SERVICES}}})",
                 description="Current bytes being uploaded, grouped by service. This gauge has no bucket label and is gateway-wide; the Bucket selector does not affect it.",
-                datasource=mimir(),
-                grid_pos=dashboard.GridPos(h=8, w=24, y=42),
-                options=timeseries.Options(
-                    legend=common.VizLegendOptions(
-                        display_mode=common.LegendDisplayMode.TABLE, show_legend=True, calcs=["lastNotNull", "max"]
-                    ),
-                    tooltip=common.VizTooltipOptions(
-                        mode=common.TooltipDisplayMode.MULTI, sort=common.SortOrder.DESCENDING
-                    ),
-                ),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(unit="bytes", decimals=0, min_val=0)
-                ),
+                legend="{{service}}",
+                unit="bytes",
+                decimals=0,
             ),
         ],
         templating=dashboard.DashboardDashboardTemplating(

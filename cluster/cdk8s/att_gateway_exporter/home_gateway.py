@@ -1,8 +1,30 @@
 """Home gateway dashboard."""
 
-from grafana_foundation_sdk.models import common, dashboard, logs, loki, prometheus, stat, statetimeline
+from grafana_foundation_sdk.cog.variants import Dataquery
+from grafana_foundation_sdk.models import common, dashboard, logs, loki, statetimeline
 
-from cluster.cdk8s.monitoring.dashboards.foundation import last_value, loki_datasource, mimir, mimir_query
+from cluster.cdk8s.monitoring.dashboards.foundation import (
+    loki_datasource,
+    mimir,
+    mimir_query,
+    stat_options,
+    up_down_fields,
+)
+
+
+def _gateway_errors(interface: str, window: str) -> list[Dataquery]:
+    return [
+        mimir_query(
+            f"increase(att_gateway_{interface}_{direction}_{kind}_total[{window}])",
+            legend=("Port {{port}} " if interface == "lan_port" else "") + f"{label} {kind}",
+            ref_id=chr(ord("A") + index),
+        ).build()
+        for index, (direction, label, kind) in enumerate(
+            (direction, label, kind)
+            for direction, label in (("receive", "rx"), ("transmit", "tx"))
+            for kind in ("errors", "drops")
+        )
+    ]
 
 
 def build_dashboard() -> dashboard.Dashboard:
@@ -19,87 +41,32 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="stat",
                 id_val=1,
-                targets=[
-                    mimir_query("att_gateway_wan_up", legend="")
-                    .editor_mode(prometheus.QueryEditorMode.CODE)
-                    .range()
-                    .build()
-                ],
+                targets=[mimir_query("att_gateway_wan_up", legend="").build()],
                 title="WAN",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=4, w=4),
-                options=stat.Options(
-                    graph_mode=common.BigValueGraphMode.NONE,
-                    color_mode=common.BigValueColorMode.BACKGROUND,
-                    reduce_options=last_value(),
-                ),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        mappings=[
-                            dashboard.ValueMap(
-                                options={
-                                    "0": dashboard.ValueMappingResult(text="Down", color="red"),
-                                    "1": dashboard.ValueMappingResult(text="Up", color="green"),
-                                }
-                            )
-                        ],
-                        thresholds=dashboard.ThresholdsConfig(
-                            steps=[dashboard.Threshold(color="red"), dashboard.Threshold(value=1, color="green")]
-                        ),
-                    )
-                ),
+                options=stat_options(common.BigValueColorMode.BACKGROUND),
+                field_config=up_down_fields(),
             ),
             dashboard.Panel(
                 type_val="stat",
                 id_val=2,
-                targets=[
-                    mimir_query("att_gateway_optical_up", legend="")
-                    .editor_mode(prometheus.QueryEditorMode.CODE)
-                    .range()
-                    .build()
-                ],
+                targets=[mimir_query("att_gateway_optical_up", legend="").build()],
                 title="Fiber link",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=4, w=4, x=4),
-                options=stat.Options(
-                    graph_mode=common.BigValueGraphMode.NONE,
-                    color_mode=common.BigValueColorMode.BACKGROUND,
-                    reduce_options=last_value(),
-                ),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        mappings=[
-                            dashboard.ValueMap(
-                                options={
-                                    "0": dashboard.ValueMappingResult(text="Down", color="red"),
-                                    "1": dashboard.ValueMappingResult(text="Up", color="green"),
-                                }
-                            )
-                        ],
-                        thresholds=dashboard.ThresholdsConfig(
-                            steps=[dashboard.Threshold(color="red"), dashboard.Threshold(value=1, color="green")]
-                        ),
-                    )
-                ),
+                options=stat_options(common.BigValueColorMode.BACKGROUND),
+                field_config=up_down_fields(),
             ),
             dashboard.Panel(
                 type_val="stat",
                 id_val=3,
-                targets=[
-                    mimir_query("att_gateway_pon_state", legend="")
-                    .editor_mode(prometheus.QueryEditorMode.CODE)
-                    .range()
-                    .build()
-                ],
+                targets=[mimir_query("att_gateway_pon_state", legend="").build()],
                 title="ONU state",
                 description="ITU-T G.984/G.9807 ONU state; only O5 (Operation) carries traffic.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=4, w=4, x=8),
-                options=stat.Options(
-                    graph_mode=common.BigValueGraphMode.NONE,
-                    color_mode=common.BigValueColorMode.BACKGROUND,
-                    reduce_options=last_value(),
-                ),
+                options=stat_options(common.BigValueColorMode.BACKGROUND),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(
                         mappings=[
@@ -121,36 +88,22 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="stat",
                 id_val=4,
-                targets=[
-                    mimir_query("att_gateway_uptime_seconds", legend="")
-                    .editor_mode(prometheus.QueryEditorMode.CODE)
-                    .range()
-                    .build()
-                ],
+                targets=[mimir_query("att_gateway_uptime_seconds", legend="").build()],
                 title="Uptime",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=4, w=4, x=12),
-                options=stat.Options(graph_mode=common.BigValueGraphMode.NONE, reduce_options=last_value()),
+                options=stat_options(),
                 field_config=dashboard.FieldConfigSource(defaults=dashboard.FieldConfig(unit="s")),
             ),
             dashboard.Panel(
                 type_val="stat",
                 id_val=5,
-                targets=[
-                    mimir_query("att_gateway_optical_rx_power_dbm", legend="")
-                    .editor_mode(prometheus.QueryEditorMode.CODE)
-                    .range()
-                    .build()
-                ],
+                targets=[mimir_query("att_gateway_optical_rx_power_dbm", legend="").build()],
                 title="Fiber Rx power",
                 description="Gateway warns below -28.5 dBm and alarms below -30 dBm.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=4, w=4, x=16),
-                options=stat.Options(
-                    graph_mode=common.BigValueGraphMode.NONE,
-                    color_mode=common.BigValueColorMode.BACKGROUND,
-                    reduce_options=last_value(),
-                ),
+                options=stat_options(common.BigValueColorMode.BACKGROUND),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(
                         unit="dBm",
@@ -168,57 +121,27 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="stat",
                 id_val=6,
-                targets=[
-                    mimir_query("min(att_gateway_scrape_success)", legend="")
-                    .editor_mode(prometheus.QueryEditorMode.CODE)
-                    .range()
-                    .build()
-                ],
+                targets=[mimir_query("min(att_gateway_scrape_success)", legend="").build()],
                 title="Gateway reachable",
                 description="Every status page fetched and parsed on the exporter's last poll.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=4, w=4, x=20),
-                options=stat.Options(
-                    graph_mode=common.BigValueGraphMode.NONE,
-                    color_mode=common.BigValueColorMode.BACKGROUND,
-                    reduce_options=last_value(),
-                ),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        mappings=[
-                            dashboard.ValueMap(
-                                options={
-                                    "0": dashboard.ValueMappingResult(text="Down", color="red"),
-                                    "1": dashboard.ValueMappingResult(text="Up", color="green"),
-                                }
-                            )
-                        ],
-                        thresholds=dashboard.ThresholdsConfig(
-                            steps=[dashboard.Threshold(color="red"), dashboard.Threshold(value=1, color="green")]
-                        ),
-                    )
-                ),
+                options=stat_options(common.BigValueColorMode.BACKGROUND),
+                field_config=up_down_fields(),
             ),
             dashboard.Panel(
                 type_val="state-timeline",
                 id_val=7,
                 targets=[
-                    mimir_query("att_gateway_wan_up", legend="WAN")
-                    .editor_mode(prometheus.QueryEditorMode.CODE)
-                    .range()
-                    .build(),
-                    mimir_query("att_gateway_optical_up", legend="Fiber", ref_id="B")
-                    .editor_mode(prometheus.QueryEditorMode.CODE)
-                    .range()
-                    .build(),
-                    mimir_query("att_gateway_pon_state == bool 5", legend="ONU O5", ref_id="C")
-                    .editor_mode(prometheus.QueryEditorMode.CODE)
-                    .range()
-                    .build(),
-                    mimir_query("min(att_gateway_scrape_success)", legend="Gateway reachable", ref_id="D")
-                    .editor_mode(prometheus.QueryEditorMode.CODE)
-                    .range()
-                    .build(),
+                    mimir_query(expr, legend=legend, ref_id=chr(ord("A") + index)).build()
+                    for index, (expr, legend) in enumerate(
+                        (
+                            ("att_gateway_wan_up", "WAN"),
+                            ("att_gateway_optical_up", "Fiber"),
+                            ("att_gateway_pon_state == bool 5", "ONU O5"),
+                            ("min(att_gateway_scrape_success)", "Gateway reachable"),
+                        )
+                    )
                 ],
                 title="Link state",
                 description="Gaps mean no data reached Mimir for that time.",
@@ -230,37 +153,18 @@ def build_dashboard() -> dashboard.Dashboard:
                     row_height=0.8,
                     tooltip=common.VizTooltipOptions(sort=common.SortOrder.NONE),
                 ),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        mappings=[
-                            dashboard.ValueMap(
-                                options={
-                                    "0": dashboard.ValueMappingResult(text="Down", color="red"),
-                                    "1": dashboard.ValueMappingResult(text="Up", color="green"),
-                                }
-                            )
-                        ],
-                        thresholds=dashboard.ThresholdsConfig(
-                            steps=[dashboard.Threshold(color="red"), dashboard.Threshold(value=1, color="green")]
-                        ),
-                        custom=statetimeline.FieldConfig(fill_opacity=80),
-                    )
-                ),
+                field_config=up_down_fields(timeline=True),
             ),
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=8,
                 targets=[
-                    mimir_query("rate(att_gateway_wan_receive_bytes_total[$__rate_interval]) * 8", legend="Download")
-                    .editor_mode(prometheus.QueryEditorMode.CODE)
-                    .range()
-                    .build(),
+                    mimir_query(
+                        "rate(att_gateway_wan_receive_bytes_total[$__rate_interval]) * 8", legend="Download"
+                    ).build(),
                     mimir_query(
                         "rate(att_gateway_wan_transmit_bytes_total[$__rate_interval]) * 8", legend="Upload", ref_id="B"
-                    )
-                    .editor_mode(prometheus.QueryEditorMode.CODE)
-                    .range()
-                    .build(),
+                    ).build(),
                 ],
                 title="WAN throughput",
                 datasource=mimir(),
@@ -271,16 +175,10 @@ def build_dashboard() -> dashboard.Dashboard:
                 type_val="timeseries",
                 id_val=9,
                 targets=[
-                    mimir_query("att_gateway_optical_rx_power_dbm", legend="Rx power")
-                    .editor_mode(prometheus.QueryEditorMode.CODE)
-                    .range()
-                    .build(),
+                    mimir_query("att_gateway_optical_rx_power_dbm", legend="Rx power").build(),
                     mimir_query(
                         'att_gateway_optical_rx_power_dbm_threshold{bound="low"}', legend="{{level}} (low)", ref_id="B"
-                    )
-                    .editor_mode(prometheus.QueryEditorMode.CODE)
-                    .range()
-                    .build(),
+                    ).build(),
                 ],
                 title="Fiber Rx power vs gateway thresholds",
                 datasource=mimir(),
@@ -290,12 +188,7 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=10,
-                targets=[
-                    mimir_query("att_gateway_uptime_seconds", legend="Uptime")
-                    .editor_mode(prometheus.QueryEditorMode.CODE)
-                    .range()
-                    .build()
-                ],
+                targets=[mimir_query("att_gateway_uptime_seconds", legend="Uptime").build()],
                 title="Gateway uptime",
                 description="Each drop to zero is a gateway reboot.",
                 datasource=mimir(),
@@ -306,14 +199,10 @@ def build_dashboard() -> dashboard.Dashboard:
                 type_val="timeseries",
                 id_val=11,
                 targets=[
-                    mimir_query("att_gateway_optical_tx_power_dbm", legend="Tx power (dBm)")
-                    .editor_mode(prometheus.QueryEditorMode.CODE)
-                    .range()
-                    .build(),
-                    mimir_query("att_gateway_optical_temperature_celsius", legend="Temperature (°C)", ref_id="B")
-                    .editor_mode(prometheus.QueryEditorMode.CODE)
-                    .range()
-                    .build(),
+                    mimir_query("att_gateway_optical_tx_power_dbm", legend="Tx power (dBm)").build(),
+                    mimir_query(
+                        "att_gateway_optical_temperature_celsius", legend="Temperature (°C)", ref_id="B"
+                    ).build(),
                 ],
                 title="Fiber Tx power and temperature",
                 datasource=mimir(),
@@ -322,39 +211,7 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=12,
-                targets=[
-                    mimir_query(
-                        "increase(att_gateway_lan_port_receive_errors_total[$__rate_interval])",
-                        legend="Port {{port}} rx errors",
-                    )
-                    .editor_mode(prometheus.QueryEditorMode.CODE)
-                    .range()
-                    .build(),
-                    mimir_query(
-                        "increase(att_gateway_lan_port_receive_drops_total[$__rate_interval])",
-                        legend="Port {{port}} rx drops",
-                        ref_id="B",
-                    )
-                    .editor_mode(prometheus.QueryEditorMode.CODE)
-                    .range()
-                    .build(),
-                    mimir_query(
-                        "increase(att_gateway_lan_port_transmit_errors_total[$__rate_interval])",
-                        legend="Port {{port}} tx errors",
-                        ref_id="C",
-                    )
-                    .editor_mode(prometheus.QueryEditorMode.CODE)
-                    .range()
-                    .build(),
-                    mimir_query(
-                        "increase(att_gateway_lan_port_transmit_drops_total[$__rate_interval])",
-                        legend="Port {{port}} tx drops",
-                        ref_id="D",
-                    )
-                    .editor_mode(prometheus.QueryEditorMode.CODE)
-                    .range()
-                    .build(),
-                ],
+                targets=_gateway_errors("lan_port", "$__rate_interval"),
                 title="LAN port errors and drops",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, y=26),
@@ -362,34 +219,7 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=13,
-                targets=[
-                    mimir_query("increase(att_gateway_wan_receive_errors_total[$__rate_interval])", legend="rx errors")
-                    .editor_mode(prometheus.QueryEditorMode.CODE)
-                    .range()
-                    .build(),
-                    mimir_query(
-                        "increase(att_gateway_wan_receive_drops_total[$__rate_interval])", legend="rx drops", ref_id="B"
-                    )
-                    .editor_mode(prometheus.QueryEditorMode.CODE)
-                    .range()
-                    .build(),
-                    mimir_query(
-                        "increase(att_gateway_wan_transmit_errors_total[$__rate_interval])",
-                        legend="tx errors",
-                        ref_id="C",
-                    )
-                    .editor_mode(prometheus.QueryEditorMode.CODE)
-                    .range()
-                    .build(),
-                    mimir_query(
-                        "increase(att_gateway_wan_transmit_drops_total[$__rate_interval])",
-                        legend="tx drops",
-                        ref_id="D",
-                    )
-                    .editor_mode(prometheus.QueryEditorMode.CODE)
-                    .range()
-                    .build(),
-                ],
+                targets=_gateway_errors("wan", "$__rate_interval"),
                 title="WAN errors and drops",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, x=12, y=26),
@@ -398,14 +228,8 @@ def build_dashboard() -> dashboard.Dashboard:
                 type_val="timeseries",
                 id_val=14,
                 targets=[
-                    mimir_query("att_gateway_nat_sessions_in_use", legend="All")
-                    .editor_mode(prometheus.QueryEditorMode.CODE)
-                    .range()
-                    .build(),
-                    mimir_query("att_gateway_nat_ipv4_sessions", legend="{{source}}", ref_id="B")
-                    .editor_mode(prometheus.QueryEditorMode.CODE)
-                    .range()
-                    .build(),
+                    mimir_query("att_gateway_nat_sessions_in_use", legend="All").build(),
+                    mimir_query("att_gateway_nat_ipv4_sessions", legend="{{source}}", ref_id="B").build(),
                 ],
                 title="NAT sessions",
                 description="Entries in the gateway's session table, of att_gateway_nat_sessions_available; IPv4 entries per source address.",
@@ -416,12 +240,7 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=15,
-                targets=[
-                    mimir_query("att_gateway_speedtest_throughput_bps", legend="{{direction}}")
-                    .editor_mode(prometheus.QueryEditorMode.CODE)
-                    .range()
-                    .build()
-                ],
+                targets=[mimir_query("att_gateway_speedtest_throughput_bps", legend="{{direction}}").build()],
                 title="Gateway speed tests",
                 description="The gateway's own latest speed test to AT&T's server: line capacity, independent of home traffic.",
                 datasource=mimir(),

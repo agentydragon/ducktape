@@ -1,8 +1,24 @@
 """Zot cache and image pulls dashboard."""
 
-from grafana_foundation_sdk.models import bargauge, common, dashboard, loki, stat, text, timeseries
+from grafana_foundation_sdk.models import bargauge, common, dashboard, loki, text
 
-from cluster.cdk8s.monitoring.dashboards.foundation import HeaderLink, last_value, loki_datasource, mimir, mimir_query
+from cluster.cdk8s.monitoring.dashboards.foundation import (
+    HeaderLink,
+    last_value,
+    loki_datasource,
+    mimir,
+    mimir_query,
+    series_options,
+    stat_options,
+)
+
+
+def _stat_fields(unit: str) -> dashboard.FieldConfigSource:
+    return dashboard.FieldConfigSource(
+        defaults=dashboard.FieldConfig(
+            unit=unit, min_val=0, color=dashboard.FieldColor(mode=dashboard.FieldColorModeId.PALETTE_CLASSIC)
+        )
+    )
 
 
 def build_dashboard() -> dashboard.Dashboard:
@@ -42,14 +58,8 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Successful HTTP GET /v2/.../manifests/... requests in Zot access logs. Excludes HEAD and internal image-store reads. A multi-architecture image can require multiple manifests; this is not a unique or complete image-pull count. Fixed 24h window ending at the selected time.",
                 datasource=loki_datasource(),
                 grid_pos=dashboard.GridPos(h=4, w=6, y=3),
-                options=stat.Options(graph_mode=common.BigValueGraphMode.NONE, reduce_options=last_value()),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="short",
-                        min_val=0,
-                        color=dashboard.FieldColor(mode=dashboard.FieldColorModeId.PALETTE_CLASSIC),
-                    )
-                ),
+                options=stat_options(),
+                field_config=_stat_fields("short"),
             ),
             dashboard.Panel(
                 type_val="stat",
@@ -66,14 +76,8 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Outer-cluster kubelet CRI pull_image calls across all registries, including failures. Does not cover nested K3s or Docker-in-Docker. No registry label is available, so this is not a denominator for Zot cache coverage. Window ends at the selected time.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=4, w=6, x=6, y=3),
-                options=stat.Options(graph_mode=common.BigValueGraphMode.NONE, reduce_options=last_value()),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="short",
-                        min_val=0,
-                        color=dashboard.FieldColor(mode=dashboard.FieldColorModeId.PALETTE_CLASSIC),
-                    )
-                ),
+                options=stat_options(),
+                field_config=_stat_fields("short"),
             ),
             dashboard.Panel(
                 type_val="stat",
@@ -90,14 +94,8 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Kubelet filesystem usage of zot-cache, including indexes, staging and metadata. One filesystem copy; Piraeus replicas are not added.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=4, w=6, x=12, y=3),
-                options=stat.Options(graph_mode=common.BigValueGraphMode.NONE, reduce_options=last_value()),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="bytes",
-                        min_val=0,
-                        color=dashboard.FieldColor(mode=dashboard.FieldColorModeId.PALETTE_CLASSIC),
-                    )
-                ),
+                options=stat_options(),
+                field_config=_stat_fields("bytes"),
             ),
             dashboard.Panel(
                 type_val="stat",
@@ -115,14 +113,8 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Sum of bodySize for successful HTTP GET blob responses (200 or 206) in Zot access logs. Includes repeated and partial transfers. This is client-facing response payload, not upstream bytes avoided; cold-cache responses count too. Excludes HTTP/TLS overhead. Fixed 24h window ending at the selected time.",
                 datasource=loki_datasource(),
                 grid_pos=dashboard.GridPos(h=4, w=6, x=18, y=3),
-                options=stat.Options(graph_mode=common.BigValueGraphMode.NONE, reduce_options=last_value()),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="bytes",
-                        min_val=0,
-                        color=dashboard.FieldColor(mode=dashboard.FieldColorModeId.PALETTE_CLASSIC),
-                    )
-                ),
+                options=stat_options(),
+                field_config=_stat_fields("bytes"),
             ),
             dashboard.Panel(
                 type_val="timeseries",
@@ -131,29 +123,18 @@ def build_dashboard() -> dashboard.Dashboard:
                     mimir_query(
                         'sum(increase(zot_repo_downloads_total{namespace="oci-cache"}[1h]))',
                         legend="Zot manifest reads",
-                    )
-                    .range()
-                    .build(),
+                    ).build(),
                     mimir_query(
                         'sum(increase(kubelet_runtime_operations_total{job="kubelet",operation_type="pull_image"}[1h]))',
                         legend="Outer-cluster runtime pull calls",
                         ref_id="B",
-                    )
-                    .range()
-                    .build(),
+                    ).build(),
                 ],
                 title="Manifest reads and runtime pull calls · rolling 1h",
                 description="Zot counts image-store manifest reads, including HEAD checks, multi-architecture manifests and internal reads. These are not complete image pulls, cache hits or unique images. Outer-cluster kubelet CRI pull_image calls across all registries, including failures. Does not cover nested K3s or Docker-in-Docker. No registry label is available, so this is not a denominator for Zot cache coverage. Each point is the preceding hour, not a disjoint bucket.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, y=7),
-                options=timeseries.Options(
-                    legend=common.VizLegendOptions(
-                        display_mode=common.LegendDisplayMode.TABLE, calcs=["lastNotNull"], show_legend=True
-                    ),
-                    tooltip=common.VizTooltipOptions(
-                        mode=common.TooltipDisplayMode.MULTI, sort=common.SortOrder.DESCENDING
-                    ),
-                ),
+                options=series_options(sort=common.SortOrder.DESCENDING, legend_calcs=("lastNotNull",)),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(
                         unit="short",
@@ -175,29 +156,18 @@ def build_dashboard() -> dashboard.Dashboard:
                     mimir_query(
                         'max(kubelet_volume_stats_used_bytes{namespace="oci-cache",persistentvolumeclaim="zot-cache"})',
                         legend="Used",
-                    )
-                    .range()
-                    .build(),
+                    ).build(),
                     mimir_query(
                         'max(kubelet_volume_stats_capacity_bytes{namespace="oci-cache",persistentvolumeclaim="zot-cache"})',
                         legend="Capacity",
                         ref_id="B",
-                    )
-                    .range()
-                    .build(),
+                    ).build(),
                 ],
                 title="Cache filesystem used and capacity",
                 description="Filesystem metrics for the Zot PVC, measured by kubelet. Filesystem capacity can be slightly below the PVC request. Physical replicated allocation is separate.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, x=12, y=7),
-                options=timeseries.Options(
-                    legend=common.VizLegendOptions(
-                        display_mode=common.LegendDisplayMode.TABLE, calcs=["lastNotNull"], show_legend=True
-                    ),
-                    tooltip=common.VizTooltipOptions(
-                        mode=common.TooltipDisplayMode.MULTI, sort=common.SortOrder.DESCENDING
-                    ),
-                ),
+                options=series_options(sort=common.SortOrder.DESCENDING, legend_calcs=("lastNotNull",)),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(
                         unit="bytes",
@@ -232,13 +202,7 @@ def build_dashboard() -> dashboard.Dashboard:
                     reduce_options=last_value(),
                     orientation=common.VizOrientation.HORIZONTAL,
                 ),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="short",
-                        min_val=0,
-                        color=dashboard.FieldColor(mode=dashboard.FieldColorModeId.PALETTE_CLASSIC),
-                    )
-                ),
+                field_config=_stat_fields("short"),
             ),
             dashboard.Panel(
                 type_val="bargauge",
@@ -259,13 +223,7 @@ def build_dashboard() -> dashboard.Dashboard:
                     reduce_options=last_value(),
                     orientation=common.VizOrientation.HORIZONTAL,
                 ),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="bytes",
-                        min_val=0,
-                        color=dashboard.FieldColor(mode=dashboard.FieldColorModeId.PALETTE_CLASSIC),
-                    )
-                ),
+                field_config=_stat_fields("bytes"),
             ),
             dashboard.Panel(
                 type_val="timeseries",
@@ -273,22 +231,13 @@ def build_dashboard() -> dashboard.Dashboard:
                 targets=[
                     mimir_query(
                         'sum by (type) (increase(zot_gc_deleted_total{namespace="oci-cache"}[1h]))', legend="{{type}}"
-                    )
-                    .range()
-                    .build()
+                    ).build()
                 ],
                 title="GC deletions · rolling 1h",
                 description="Items deleted by Zot GC, split into blobs and manifests. Counts are not bytes reclaimed. Each point is the preceding hour, so a daily sweep appears briefly and zero between sweeps is expected.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, y=25),
-                options=timeseries.Options(
-                    legend=common.VizLegendOptions(
-                        display_mode=common.LegendDisplayMode.TABLE, calcs=["lastNotNull"], show_legend=True
-                    ),
-                    tooltip=common.VizTooltipOptions(
-                        mode=common.TooltipDisplayMode.MULTI, sort=common.SortOrder.DESCENDING
-                    ),
-                ),
+                options=series_options(sort=common.SortOrder.DESCENDING, legend_calcs=("lastNotNull",)),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(
                         unit="short",
@@ -330,13 +279,7 @@ def build_dashboard() -> dashboard.Dashboard:
                         },
                     ),
                 ],
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="short",
-                        min_val=0,
-                        color=dashboard.FieldColor(mode=dashboard.FieldColorModeId.PALETTE_CLASSIC),
-                    )
-                ),
+                field_config=_stat_fields("short"),
             ),
         ],
         links=[
