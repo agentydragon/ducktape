@@ -79,11 +79,13 @@ class CommandSandbox(Construct):
         id: str,
         env: Environment,
         *,
+        runner_zone: str | None,
         image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
         sidecar_resources: k8s.ResourceRequirements | None = None,
         trust_mounts: Sequence[k8s.VolumeMount] | None = None,
     ) -> None:
         super().__init__(scope, id)
+        self.runner_zone = runner_zone
         self.image_pull_secret_name = image_pull_secret_name
         self.sidecar_resources = sidecar_resources
         mounts = trust_mounts if trust_mounts is not None else sandbox_pod.proxy_trust_mounts()
@@ -174,9 +176,7 @@ def _pod_template(
             ],
             image_pull_secret_name=scope.image_pull_secret_name,
             # Keep command boxes in the environment's runner zone alongside LiteLLM.
-            node_selector=(
-                {node_scheduling.ZONE_LABEL: env.app.runner_zone} if env.app.runner_zone is not None else None
-            ),
+            node_selector=({node_scheduling.ZONE_LABEL: scope.runner_zone} if scope.runner_zone is not None else None),
         ),
     )
     # A PodTemplate rather than a Pod spec in the Action Service's ConfigMap: the image pins

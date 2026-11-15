@@ -28,13 +28,7 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.action_service.catalog import ActionGroup
-from agentplane.action_service.orchestration_v1.binding import (
-    LaunchPreset,
-    OrchestrationExecutorBinding,
-    PresetLaunch,
-    PresetSession,
-    PresetSessionSpec,
-)
+from agentplane.action_service.orchestration_v1.binding import OrchestrationExecutorBinding
 from agentplane.action_service.push_settings import WebPushSettings
 from agentplane.action_service.session_delegation.binding import SessionDelegationExecutorBinding
 from agentplane.action_service.settings import ServicePeer, Settings
@@ -147,28 +141,6 @@ def _session_delegation_groups(props: SessionDelegationProps) -> dict[str, Actio
 
 
 def _orchestration_group(env: Environment, props: OrchestrationProps) -> ActionGroup:
-    """The orchestration_v1 group, launching with the app's presets and default PolicySets."""
-    app = env.app_config
-    presets = {}
-    for name, sandbox in app.sandbox_presets.items():
-        thread = app.thread_presets[sandbox.thread_preset]
-        spec = PresetSessionSpec(
-            harness=thread.harness,
-            model=thread.model,
-            cwd=thread.cwd,
-            reasoning_effort=thread.reasoning_effort or "",
-            instructions=thread.instructions,
-        )
-        presets[name] = LaunchPreset(
-            title=sandbox.title,
-            launch=PresetLaunch(
-                template=sandbox.template,
-                policy_sets=sandbox.policy_sets,
-                inbox_tags=sandbox.inbox_tags,
-                bootstrap=sandbox.bootstrap,
-            ),
-            create_session=PresetSession(spec=spec, setup_script=thread.setup_script),
-        )
     return ActionGroup(
         title="Orchestration",
         description=(
@@ -180,7 +152,7 @@ def _orchestration_group(env: Environment, props: OrchestrationProps) -> ActionG
             kind="orchestration_v1",
             description="Run by this service, on each request's Decision, with its own authority.",
             namespace=env.namespace,
-            presets=presets,
+            presets=dict(props.presets),
         ),
         direct_tools=props.direct_tools,
     )

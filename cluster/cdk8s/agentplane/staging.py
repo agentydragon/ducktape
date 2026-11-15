@@ -59,6 +59,7 @@ from cluster.cdk8s import (
 from cluster.cdk8s.agentplane import (
     actions,
     app as app_component,
+    app_settings,
     command_sandbox,
     electric,
     environment_vm,
@@ -444,6 +445,9 @@ def _app_config(*, identity_catalog: bool) -> Settings:
     )
 
 
+_APP_CONFIG = _app_config(identity_catalog=False)
+
+
 ENV = Environment(
     namespace=STAGING_NAMESPACE,
     description=(
@@ -457,7 +461,6 @@ ENV = Environment(
         min_ready=Duration.seconds(5),
         pdb_min_available=1,
     ),
-    app_config=_app_config(identity_catalog=False),
     runtime_catalog=_RUNTIME_CATALOG,
     # Every launch also acts as the shared diagnostics account.
     # CLEANUP(added 2026-11-09): render the identity catalog here, in the staging cutover PR, which also
@@ -581,10 +584,10 @@ ENV = Environment(
         standing_workload_namespaces=(haku_ui_egress.NAMESPACE, runner.NAMESPACE),
     ),
     app=AppProps(
+        config=_APP_CONFIG,
         origin=f"https://{_HOSTNAME}",
         oidc_issuer=f"{_AUTHENTIK}/application/o/agentplane-staging/",
         reach_incluster_authentik=True,
-        runner_zone=node_scheduling.HIL_OVH_ZONE,
         oidc_session_secret_name=_OIDC_SESSION_SECRET,
     ),
     actions=ActionsProps(
@@ -645,6 +648,9 @@ ENV = Environment(
         # Every Action but launch_sandbox, which always waits for the operator: the rest are auto-approved for
         # claude-ai (list_launch_presets) or by a launcher's grants, and answer in one call.
         orchestration_v1=OrchestrationProps(
+            presets=app_settings.orchestration_presets(
+                sandbox_presets=_APP_CONFIG.sandbox_presets, thread_presets=_APP_CONFIG.thread_presets
+            ),
             direct_tools=frozenset(
                 {
                     "list_launch_presets",
@@ -658,7 +664,7 @@ ENV = Environment(
                     "read_turns",
                     "wait_for_turn",
                 }
-            )
+            ),
         ),
         session_delegation=SessionDelegationProps(
             direct_tools_by_group={
@@ -689,7 +695,23 @@ ENV = Environment(
 
 def environment(*, identity_catalog: bool) -> Environment:
     """Staging's environment with its policy catalog in the ServiceAccount or the identity shapes."""
-    return replace(ENV, identity_catalog=identity_catalog, app_config=_app_config(identity_catalog=identity_catalog))
+    config = _app_config(identity_catalog=identity_catalog)
+    assert ENV.app is not None
+    assert ENV.actions.orchestration_v1 is not None
+    return replace(
+        ENV,
+        identity_catalog=identity_catalog,
+        app=replace(ENV.app, config=config),
+        actions=replace(
+            ENV.actions,
+            orchestration_v1=replace(
+                ENV.actions.orchestration_v1,
+                presets=app_settings.orchestration_presets(
+                    sandbox_presets=config.sandbox_presets, thread_presets=config.thread_presets
+                ),
+            ),
+        ),
+    )
 
 
 def assignable_policy_sets() -> dict[str, tuple[KubernetesGrant, ...]]:
@@ -765,7 +787,11 @@ def chart(app: App, env: Environment = ENV) -> Chart:
         ingress=[IngressRule.from_gateway(notification_service.pod_port)],
     )
     command_sandbox.CommandSandbox(
-        chart, "command-sandbox", env, image_pull_secret_name=SANDBOX_SECRET_NAME
+        chart,
+        "command-sandbox",
+        env,
+        runner_zone=node_scheduling.HIL_OVH_ZONE,
+        image_pull_secret_name=SANDBOX_SECRET_NAME,
     ).add_platform_resources()
     # Compose staging's complete PolicySets from the shared grant definitions and its own egress
     # rules before materializing them. The controller workload and its RBAC are separate constructs.

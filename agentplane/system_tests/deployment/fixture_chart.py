@@ -284,6 +284,59 @@ def environment(
     if central_sampler:
         # This fixture exercises the pinned Lite host with its official model.
         assert catalog.harnesses[Harness.CENTRAL_SAMPLER] == [GPT6_LUNA_RESPONSES.id]
+    thread_presets = {launch_preset.THREAD_PRESET: launch_preset.thread_preset(model=GPT6_LUNA_RESPONSES.id)}
+    sandbox_presets = {
+        launch_preset.SANDBOX_PRESET: launch_preset.sandbox_preset(
+            template=POD_TEMPLATE, policy_sets=[egress.PACKAGES_POLICY]
+        )
+    }
+    app_props = None
+    if app_enabled:
+        app_props = AppProps(
+            origin=app_origin,
+            oidc_issuer=DEX_ISSUER,
+            reach_incluster_authentik=False,
+            config=Settings(
+                models=catalog,
+                connection_service_url=AnyHttpUrl(f"https://{MCP_EDGE_SERVICE.fqdn}:{MCP_EDGE_SERVICE.port.number}"),
+                thread_presets=thread_presets,
+                sandbox_presets=sandbox_presets,
+                egress_admin_url=AnyHttpUrl(egress.admin(NAMESPACE).url),
+                sandbox_namespace=NAMESPACE,
+                runner_gateway_target=runner_gateway.target(NAMESPACE),
+                session_dispatcher_target=(
+                    f"{session_dispatcher.service(NAMESPACE).fqdn}:{session_dispatcher.service(NAMESPACE).port.number}"
+                ),
+                runner_gateway_control_target=runner_gateway.control_target(NAMESPACE),
+                history_service_target=(
+                    f"{history_service.service(NAMESPACE).fqdn}:{history_service.service(NAMESPACE).port.number}"
+                ),
+                notifications_url=AnyHttpUrl(notifications.service(NAMESPACE).url),
+                listen_address="0.0.0.0:8080",
+                log_levels={},
+                oidc=OIDCSettings(issuer=DEX_ISSUER, public_base_url=app_origin)
+                if operator_token_key is None
+                else OIDCSettings(
+                    issuer=OPERATOR_TOKENS.issuer,
+                    public_base_url=app_origin,
+                    static_ed25519_keys=frozenset({operator_token_key}),
+                ),
+                action_federation=dex.action_federation(app_operator_oidc),
+                frontend_config=FrontendConfig(
+                    trace_search=TraceSearchSettings(
+                        grafana_base_url=AnyHttpUrl("https://grafana.example.test/"),
+                        tempo_datasource_uid="fixture-tempo",
+                        deployment_environment="system-test",
+                    ),
+                    langfuse_search=LangfuseSearchSettings(
+                        base_url=AnyHttpUrl("https://langfuse.example.test/"),
+                        project_id="fixture-project",
+                        sandbox_namespace_metadata_key="fixture_namespace",
+                        sandbox_service_account_metadata_key="fixture_service_account",
+                    ),
+                ),
+            ),
+        )
     return Environment(
         namespace=NAMESPACE,
         description="Agentplane k3s fixture",
@@ -291,56 +344,6 @@ def environment(
         # These scenarios check delivery and acknowledgement; worker integration tests cover
         # debounce deadlines. Keep batching enabled without a minute-long wait per notice.
         notifications_debounce=NoticeDebounceSettings(quiet_seconds=1, max_wait_seconds=2),
-        app_config=Settings(
-            models=catalog,
-            connection_service_url=AnyHttpUrl(f"https://{MCP_EDGE_SERVICE.fqdn}:{MCP_EDGE_SERVICE.port.number}"),
-            thread_presets={launch_preset.THREAD_PRESET: launch_preset.thread_preset(model=GPT6_LUNA_RESPONSES.id)},
-            sandbox_presets={
-                launch_preset.SANDBOX_PRESET: launch_preset.sandbox_preset(
-                    template=POD_TEMPLATE, policy_sets=[egress.PACKAGES_POLICY]
-                )
-            },
-            egress_admin_url=AnyHttpUrl(egress.admin(NAMESPACE).url),
-            sandbox_namespace=NAMESPACE,
-            runner_gateway_target=runner_gateway.target(NAMESPACE),
-            session_dispatcher_target=(
-                f"{session_dispatcher.service(NAMESPACE).fqdn}:{session_dispatcher.service(NAMESPACE).port.number}"
-            ),
-            runner_gateway_control_target=runner_gateway.control_target(NAMESPACE),
-            history_service_target=(
-                f"{history_service.service(NAMESPACE).fqdn}:{history_service.service(NAMESPACE).port.number}"
-            ),
-            notifications_url=AnyHttpUrl(notifications.service(NAMESPACE).url),
-            listen_address="0.0.0.0:8080",
-            log_levels={},
-            oidc=(
-                OIDCSettings(issuer=DEX_ISSUER, public_base_url=app_origin)
-                if operator_token_key is None
-                else OIDCSettings(
-                    issuer=OPERATOR_TOKENS.issuer,
-                    public_base_url=app_origin,
-                    static_ed25519_keys=frozenset({operator_token_key}),
-                )
-            )
-            if app_enabled
-            else None,
-            # Environment requires a complete App Settings model even when the App is omitted from
-            # the profile. APP_FREE never renders this unused App-only federation configuration.
-            action_federation=dex.action_federation(app_operator_oidc),
-            frontend_config=FrontendConfig(
-                trace_search=TraceSearchSettings(
-                    grafana_base_url=AnyHttpUrl("https://grafana.example.test/"),
-                    tempo_datasource_uid="fixture-tempo",
-                    deployment_environment="system-test",
-                ),
-                langfuse_search=LangfuseSearchSettings(
-                    base_url=AnyHttpUrl("https://langfuse.example.test/"),
-                    project_id="fixture-project",
-                    sandbox_namespace_metadata_key="fixture_namespace",
-                    sandbox_service_account_metadata_key="fixture_service_account",
-                ),
-            ),
-        ),
         runtime_catalog=app_settings.runtime_catalog(
             routes, templates=(POD_TEMPLATE,), central_sampler_enabled=central_sampler
         ),
@@ -356,7 +359,7 @@ def environment(
             replicas=_ONE_REPLICA,
             traffic_distribution=None,
         ),
-        app=AppProps(origin=app_origin, oidc_issuer=DEX_ISSUER, reach_incluster_authentik=False, runner_zone=None),
+        app=app_props,
         actions=ActionsProps(
             central_sampler_session_delegation=central_sampler,
             operator_oidc=operator_oidc,
@@ -378,7 +381,11 @@ def environment(
                 )
             },
             oauth_secret_items=("client-secret",) if app_enabled else (),
-            orchestration_v1=OrchestrationProps(),
+            orchestration_v1=OrchestrationProps(
+                presets=app_settings.orchestration_presets(
+                    sandbox_presets=sandbox_presets, thread_presets=thread_presets
+                )
+            ),
         ),
         mcp_edge=McpEdgeProps(
             replicas=_ONE_REPLICA, operator_oidc=app_operator_oidc, oauth_secret_name=None, hostname=None
@@ -860,7 +867,12 @@ def add_sandbox_templates(chart: Chart, env: Environment) -> None:
         ),
     )
     command_sandbox.CommandSandbox(
-        chart, "command-sandbox", env, image_pull_secret_name=None, trust_mounts=sandbox_pod.egress_proxy_mounts()
+        chart,
+        "command-sandbox",
+        env,
+        runner_zone=None,
+        image_pull_secret_name=None,
+        trust_mounts=sandbox_pod.egress_proxy_mounts(),
     )
 
 
@@ -962,8 +974,8 @@ def build_chart(
         app=app_service,
         actions=action_service,
         mcp_edge=edge_service,
-        app_login=login_client(str(env.app.origin)) if app_enabled else None,
-        mcp_linkage=linkage_client(str(env.app.origin)) if app_enabled else None,
+        app_login=login_client(env.app.origin) if env.app is not None else None,
+        mcp_linkage=linkage_client(env.app.origin) if env.app is not None else None,
     )
 
 

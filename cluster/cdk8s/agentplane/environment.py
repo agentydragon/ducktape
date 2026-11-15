@@ -16,6 +16,7 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 
 from agentplane.action_service.catalog import ActionGroup, Key
 from agentplane.action_service.mcp_settings import McpClientMetadataSettings, McpOAuthServer
+from agentplane.action_service.orchestration_v1.binding import LaunchPreset
 from agentplane.app.settings import Settings
 from agentplane.central_sampler import settings
 from agentplane.env.config import GuestResources
@@ -90,14 +91,13 @@ class EgressProps:
 
 @dataclass(frozen=True)
 class AppProps:
+    config: Settings
     # Where a browser reaches the app, which OIDC redirects return to.
     origin: str
     oidc_issuer: str
     # staging's OIDC provider is the in-cluster Authentik Service, reached both by its
     # public hostname and directly.
     reach_incluster_authentik: bool
-    # Pin runner Pods to a zone (near the database/LiteLLM), or None for no pin.
-    runner_zone: str | None
     # The OIDC client secret and the session signing key can have separate owners.
     # The k3s fixture leaves this at `agentplane-oidc`; staging uses an ESO-generated Secret.
     oidc_session_secret_name: str = "agentplane-oidc"
@@ -134,9 +134,7 @@ class WebPushProps:
 
 @dataclass(frozen=True)
 class OrchestrationProps:
-    """This environment offers the `orchestration_v1` ActionGroup, a stopgap
-    (agentplane/action_service/orchestration_v1/README.md). Its launches take the app's presets and
-    default PolicySets."""
+    presets: Mapping[str, LaunchPreset]
 
     # The group's Actions external Connections also see as MCP tools of their own; None offers none.
     direct_tools: frozenset[Key] | None = None
@@ -203,15 +201,13 @@ class Environment:
     # The Namespace's `description` annotation.
     description: str
     replicas: ReplicaProfile
-    # The ConfigMap-authored portion of agentplane/app/settings.py's `Settings`.
-    app_config: Settings
     # Whether the History Service's writers remove an item's streamed delta entries once its
     # completion provably holds them (agentplane/history_service/README.md#delta-settlement).
     settle_deltas: bool
     compact_deltas: bool
     llm_ingress: LlmIngressProps
     egress: EgressProps
-    app: AppProps
+    app: AppProps | None
     actions: ActionsProps
     mcp_edge: McpEdgeProps
     notifications_debounce: NoticeDebounceSettings
