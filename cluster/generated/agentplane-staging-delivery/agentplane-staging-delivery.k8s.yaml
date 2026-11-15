@@ -438,10 +438,12 @@ data:
     runner_request_timeout_seconds: 10
     central_sampler:
       target: central-sampler.agentplane-staging.svc.cluster.local:8083
-      token_file: /var/run/secrets/agentplane-runner-gateway/central-sampler
       tls:
         ca_file: /run/agentplane/workload-trust/ca-certificates.crt
         server_uri: spiffe://agentplane/central-sampler
+        cert_file: /run/agentplane/runner-gateway-sessions-client-tls/tls.crt
+        key_file: /run/agentplane/runner-gateway-sessions-client-tls/tls.key
+        client_uri: spiffe://agentplane/sessions
     executor_callers:
       - agentplane-staging/central-sampler
     runtime_catalog:
