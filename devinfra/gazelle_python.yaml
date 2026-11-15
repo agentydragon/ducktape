@@ -182,6 +182,7 @@ manifest:
     google.type.timeofday_pb2: googleapis_common_protos
     google_auth_httplib2: google_auth_httplib2
     googleapiclient: google_api_python_client
+    grafana_foundation_sdk: grafana_foundation_sdk
     greenlet: greenlet
     griffe: griffelib
     grpc: grpcio
@@ -482,4 +483,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: b2c166ef97562c5f4a10757fd802fda7fea55278216d13ce7c0c20b2b082ce7e
+integrity: 560d05188a34ac37ad9dfcffe2b8740eee0aa081cbc30c8a06da3e631d262b4e

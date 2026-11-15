@@ -1,36 +1,59 @@
 {
-  "__inputs": [
-    {
-      "name": "DS_MIMIR",
-      "label": "Mimir",
-      "type": "datasource",
-      "pluginId": "prometheus",
-      "pluginName": "Prometheus"
-    }
-  ],
+  "schemaVersion": 39,
+  "templating": {
+    "list": []
+  },
   "annotations": {
     "list": []
   },
+  "uid": "cpap-gateway-disk",
+  "title": "CPAP gateway disk",
   "description": "Guest root filesystem capacity and use for the stateless CPAP gateway VM. The current guest has no separate /boot filesystem mount, so boot-partition usage is not exposed here. This does not measure OptiPlex host storage or Kubernetes pod storage.",
+  "tags": ["cpap", "kubevirt", "storage"],
+  "timezone": "browser",
   "editable": true,
   "graphTooltip": 1,
-  "links": [],
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {
+    "hidden": false,
+    "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"]
+  },
+  "fiscalYearStartMonth": 0,
+  "refresh": "1m",
+  "version": 1,
   "panels": [
     {
-      "datasource": "${DS_MIMIR}",
-      "description": "Guest root filesystem. Used bytes are size minus free; root-reserved blocks are included in free. Capacity is the filesystem visible inside the VM, separate from KubeVirt and host storage. Only the CPAP gateway guest filesystem collector is scraped by monitoring Alloy.",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes",
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never"
-          }
+      "type": "timeseries",
+      "id": 1,
+      "targets": [
+        {
+          "expr": "max by (mountpoint) (node_filesystem_size_bytes{namespace=\"cpap-sync\",service=\"cpap-gateway-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\"})",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "legendFormat": "Capacity",
+          "refId": "A"
         },
-        "overrides": []
+        {
+          "expr": "max by (mountpoint) (node_filesystem_size_bytes{namespace=\"cpap-sync\",service=\"cpap-gateway-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\"}) - max by (mountpoint) (node_filesystem_free_bytes{namespace=\"cpap-sync\",service=\"cpap-gateway-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\"})",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "legendFormat": "Used",
+          "refId": "B"
+        }
+      ],
+      "title": "Guest root filesystem: used and capacity",
+      "description": "Guest root filesystem. Used bytes are size minus free; root-reserved blocks are included in free. Capacity is the filesystem visible inside the VM, separate from KubeVirt and host storage. Only the CPAP gateway guest filesystem collector is scraped by monitoring Alloy.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
       },
       "gridPos": {
         "h": 8,
@@ -38,11 +61,12 @@
         "x": 0,
         "y": 0
       },
-      "id": 1,
+      "repeatDirection": "h",
       "options": {
         "legend": {
           "displayMode": "table",
           "placement": "bottom",
+          "showLegend": true,
           "calcs": ["lastNotNull"]
         },
         "tooltip": {
@@ -50,47 +74,40 @@
           "sort": "desc"
         }
       },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_MIMIR}"
-          },
-          "expr": "max by (mountpoint) (node_filesystem_size_bytes{namespace=\"cpap-sync\",service=\"cpap-gateway-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\"})",
-          "legendFormat": "Capacity",
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_MIMIR}"
-          },
-          "expr": "max by (mountpoint) (node_filesystem_size_bytes{namespace=\"cpap-sync\",service=\"cpap-gateway-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\"}) - max by (mountpoint) (node_filesystem_free_bytes{namespace=\"cpap-sync\",service=\"cpap-gateway-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\"})",
-          "legendFormat": "Used",
-          "refId": "B"
-        }
-      ],
-      "title": "Guest root filesystem: used and capacity",
-      "type": "timeseries"
-    },
-    {
-      "datasource": "${DS_MIMIR}",
-      "description": "Guest root filesystem. Used bytes are size minus free; root-reserved blocks are included in free. Capacity is the filesystem visible inside the VM, separate from KubeVirt and host storage. Only the CPAP gateway guest filesystem collector is scraped by monitoring Alloy.",
       "fieldConfig": {
         "defaults": {
-          "unit": "percent",
+          "unit": "bytes",
           "custom": {
             "drawStyle": "line",
-            "lineInterpolation": "linear",
             "lineWidth": 1,
-            "fillOpacity": 20,
+            "lineInterpolation": "linear",
+            "fillOpacity": 10,
             "showPoints": "never"
-          },
-          "min": 0,
-          "max": 100,
-          "decimals": 1
+          }
         },
         "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "id": 2,
+      "targets": [
+        {
+          "expr": "100 * (1 - max by (mountpoint) (node_filesystem_free_bytes{namespace=\"cpap-sync\",service=\"cpap-gateway-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\"}) / max by (mountpoint) (node_filesystem_size_bytes{namespace=\"cpap-sync\",service=\"cpap-gateway-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\"}))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "legendFormat": "Used",
+          "refId": "A"
+        }
+      ],
+      "title": "Guest root filesystem: used percent",
+      "description": "Guest root filesystem. Used bytes are size minus free; root-reserved blocks are included in free. Capacity is the filesystem visible inside the VM, separate from KubeVirt and host storage. Only the CPAP gateway guest filesystem collector is scraped by monitoring Alloy.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
       },
       "gridPos": {
         "h": 8,
@@ -98,11 +115,12 @@
         "x": 12,
         "y": 0
       },
-      "id": 2,
+      "repeatDirection": "h",
       "options": {
         "legend": {
           "displayMode": "table",
           "placement": "bottom",
+          "showLegend": true,
           "calcs": ["lastNotNull"]
         },
         "tooltip": {
@@ -110,34 +128,23 @@
           "sort": "desc"
         }
       },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_MIMIR}"
-          },
-          "expr": "100 * (1 - max by (mountpoint) (node_filesystem_free_bytes{namespace=\"cpap-sync\",service=\"cpap-gateway-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\"}) / max by (mountpoint) (node_filesystem_size_bytes{namespace=\"cpap-sync\",service=\"cpap-gateway-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\"}))",
-          "legendFormat": "Used",
-          "refId": "A"
-        }
-      ],
-      "title": "Guest root filesystem: used percent",
-      "type": "timeseries"
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "min": 0,
+          "max": 100,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "lineInterpolation": "linear",
+            "fillOpacity": 20,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      }
     }
   ],
-  "refresh": "1m",
-  "schemaVersion": 39,
-  "tags": ["cpap", "kubevirt", "storage"],
-  "templating": {
-    "list": []
-  },
-  "time": {
-    "from": "now-24h",
-    "to": "now"
-  },
-  "timepicker": {},
-  "timezone": "browser",
-  "title": "CPAP gateway disk",
-  "uid": "cpap-gateway-disk",
-  "version": 1
+  "links": []
 }
