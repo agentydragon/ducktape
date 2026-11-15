@@ -136,10 +136,43 @@ pub enum TransformSpecSource {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ApplyProjection {
+    format_version: u8,
     source: TransformSpecSource,
     spec: TransformSpec,
     module_roots_by_chunk: BTreeMap<String, Vec<PathBuf>>,
     rooted_paths: BTreeSet<ApplyPath>,
+}
+
+const APPLY_PROJECTION_FORMAT_VERSION: u8 = 2;
+const APPLY_OUTPUT_ROOT: &str = "__debundle_apply_output_root__";
+
+/// Tree compilation creates these paths from `out_root`. Keep their suffixes
+/// in the projection and bind them to the consuming target's output root.
+/// Authored source paths remain subject to the ordinary projection-root mapping.
+fn map_tree_output_paths(spec: &mut TransformSpec, from: &Path, to: &Path) -> Result<()> {
+    let mut map = |path: &mut Option<PathBuf>| -> Result<()> {
+        if let Some(path) = path {
+            let suffix = path.strip_prefix(from).with_context(|| {
+                format!(
+                    "tree output {} is outside its output root {}",
+                    path.display(),
+                    from.display()
+                )
+            })?;
+            *path = to.join(suffix);
+        }
+        Ok(())
+    };
+    map(&mut spec.swap_vendor_chunks.output_manifest_path)?;
+    map(&mut spec.swap_vendor_chunks.output_wrapper_dir)?;
+    map(&mut spec.materialize_logical_modules.report_out_dir)?;
+    if let Some(write) = &mut spec.write_js_tree {
+        write.out_dir = to.join(write.out_dir.strip_prefix(from)?);
+    }
+    if let Some(browser) = &mut spec.emit_browser_harness {
+        browser.out_dir = to.join(browser.out_dir.strip_prefix(from)?);
+    }
+    Ok(())
 }
 
 /// Which spec paths were absolute beneath the producer root. Relative authored
@@ -163,6 +196,9 @@ enum ApplyPath {
 pub fn project_apply(cli: &TransformRequest, root: &Path, out: &Path) -> Result<()> {
     let mut spec = load_transform_spec_source(&cli.spec_source)?;
     validate_transform_spec(&spec)?;
+    if let TransformSpecSource::Tree(tree) = &cli.spec_source {
+        map_tree_output_paths(&mut spec, &tree.out_root, Path::new(APPLY_OUTPUT_ROOT))?;
+    }
     for modules in spec.logical_modules.values_mut() {
         for module in modules.values_mut() {
             module.note = None;
@@ -179,6 +215,9 @@ pub fn project_apply(cli: &TransformRequest, root: &Path, out: &Path) -> Result<
     };
     let mut source = cli.spec_source.clone();
     map_spec_source_paths(&mut source, &relative)?;
+    if let TransformSpecSource::Tree(tree) = &mut source {
+        tree.out_root = PathBuf::from(APPLY_OUTPUT_ROOT);
+    }
     let mut rooted_paths = BTreeSet::new();
     map_apply_spec_paths(&mut spec, &mut |field, path| {
         if let Ok(relative) = path.strip_prefix(&root) {
@@ -191,6 +230,7 @@ pub fn project_apply(cli: &TransformRequest, root: &Path, out: &Path) -> Result<
     fs::write(
         out,
         serde_json::to_vec(&ApplyProjection {
+            format_version: APPLY_PROJECTION_FORMAT_VERSION,
             source,
             spec,
             module_roots_by_chunk,
@@ -315,15 +355,23 @@ pub fn run_transform_with_projection(
                 "--apply-projection cannot export replayable graphs; use authored spec inputs"
             );
             let mut projection: ApplyProjection = serde_json::from_slice(&fs::read(path)?)?;
+            anyhow::ensure!(
+                projection.format_version == APPLY_PROJECTION_FORMAT_VERSION,
+                "unsupported apply projection format version {}",
+                projection.format_version
+            );
             let root = std::path::absolute(projection_root)?;
             let mut source = cli.spec_source.clone();
             map_spec_source_paths(&mut source, &|path| {
                 let path = std::path::absolute(path)?;
                 Ok(path.strip_prefix(&root).unwrap_or(&path).to_path_buf())
             })?;
+            if let TransformSpecSource::Tree(tree) = &mut source {
+                tree.out_root = PathBuf::from(APPLY_OUTPUT_ROOT);
+            }
             anyhow::ensure!(
                 projection.source == source,
-                "apply projection was compiled for other spec paths or output roots"
+                "apply projection was compiled for other spec paths"
             );
             map_apply_spec_paths(&mut projection.spec, &mut |field, path| {
                 Ok(if projection.rooted_paths.contains(&field) {
@@ -332,6 +380,13 @@ pub fn run_transform_with_projection(
                     path.to_path_buf()
                 })
             })?;
+            if let TransformSpecSource::Tree(tree) = &cli.spec_source {
+                map_tree_output_paths(
+                    &mut projection.spec,
+                    Path::new(APPLY_OUTPUT_ROOT),
+                    &tree.out_root,
+                )?;
+            }
             Ok(projection)
         })
         .transpose()?;

@@ -360,7 +360,11 @@ map entries remain inputs. The internal Bazel `spec project-apply` and `run --ap
 treats the projection as authoritative. Bazel dependencies enforce its freshness;
 context flags retain original authored paths for report locations only; `--projection-root` allows
 paths under that root to move between execution roots. The consumer still checks
-native analysis compatibility. Projected input cannot export full graphs: graph
+native analysis compatibility. For tree specs, the projection records generated
+output paths relative to a placeholder and binds them to the consumer's
+`--out-root`. This lets targets with the same authored tree share canonical
+projection bytes while keeping spec and source-path compatibility checks.
+Flat specs retain their authored output paths. Projected input cannot export full graphs: graph
 export continues to read exact authored files and capture their membership and
 bytes for replay validation.
 
