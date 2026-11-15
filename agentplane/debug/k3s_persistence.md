@@ -2,7 +2,7 @@
 
 ## Expansion to every k3s application suite
 
-Persistence on BuildBuddy executors is the default for every `k3s_suite` declaration: Pod, Dispatcher, all MCP suites,
+Persistence on BuildBuddy executors is enabled explicitly on each ordinary `py_test` target: Pod, Dispatcher, all MCP suites,
 normal VM, manual VM, profile VM and real-model. Their standard targets use retained
 infrastructure directly; the separate manual comparison targets have been removed. Existing manual
 and live-model tags continue to control suite selection. Application fixtures remain fresh per action.
@@ -21,8 +21,8 @@ Failures leave the marker dirty for a cold rebuild.
 
 The current snapshot family prefix is `k3s-persistence-v7-`, followed by authoritative
 infrastructure pin digests; the additional KubeVirt and Kyverno pins distinguish VM families.
-Every application stack uses persistence automatically
-on BuildBuddy executors. Historical commands and commit-pinned links below retain the
+Every application stack target declares the persistence executor properties and its pin-derived
+runner-recycling key in its BUILD rule. Historical commands and commit-pinned links below retain the
 comparison-target names used when those measurements were collected.
 
 ### Executor lifecycle boundary

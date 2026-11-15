@@ -1,9 +1,8 @@
-"""k3s test suite macro and shared infrastructure definitions."""
+"""Shared image inputs and execution properties for k3s system tests."""
 
 load("@artifact_pins//:pins.bzl", "CERT_MANAGER_V1_21_2_RELEASE_SHA256", "HELM_3_20_2_LINUX_AMD64_SHA256", "K3S_LINUX_AMD64_SHA256", "KUBEVIRT_OPERATOR_BUNDLE_SHA256", "KYVERNO_INSTALL_SHA256", "TRUST_MANAGER_CHART_V0_25_0_SHA256")
 load("@aspect_bazel_lib//lib:paths.bzl", "to_rlocation_path")
 load("@image_pins//:pins.bzl", "CERT_MANAGER_CAINJECTOR_DIGEST", "CERT_MANAGER_CAINJECTOR_REFERENCE", "CERT_MANAGER_CONTROLLER_DIGEST", "CERT_MANAGER_CONTROLLER_REFERENCE", "CERT_MANAGER_WEBHOOK_DIGEST", "CERT_MANAGER_WEBHOOK_REFERENCE", "GENERIC_DEVICE_PLUGIN_REFERENCE", "KUBEVIRT_VIRT_API_DIGEST", "KUBEVIRT_VIRT_API_REFERENCE", "KUBEVIRT_VIRT_CONTROLLER_DIGEST", "KUBEVIRT_VIRT_CONTROLLER_REFERENCE", "KUBEVIRT_VIRT_HANDLER_DIGEST", "KUBEVIRT_VIRT_HANDLER_REFERENCE", "KUBEVIRT_VIRT_LAUNCHER_DIGEST", "KUBEVIRT_VIRT_LAUNCHER_REFERENCE", "KUBEVIRT_VIRT_OPERATOR_DIGEST", "KUBEVIRT_VIRT_OPERATOR_REFERENCE", "KYVERNO_KYVERNOPRE_DIGEST", "KYVERNO_KYVERNOPRE_REFERENCE", "KYVERNO_KYVERNO_DIGEST", "KYVERNO_KYVERNO_REFERENCE", "TRUST_MANAGER_DIGEST", "TRUST_MANAGER_REFERENCE")
-load("//devinfra/python:defs.bzl", "py_test")
 
 K3S_EXEC_PROPERTIES = {
     "dockerNetwork": "bridge",
@@ -22,7 +21,6 @@ K3S_PERSISTENCE_PROPERTIES = {
 
 # Where a KVM test runs. Its size is not defaulted here: each KVM suite declares test.EstimatedCPU,
 # test.EstimatedMemory and test.EstimatedFreeDiskBytes in its own exec_properties, beside the test it describes.
-_KVM_SIZE_PROPERTIES = ("test.EstimatedCPU", "test.EstimatedMemory", "test.EstimatedFreeDiskBytes")
 KVM_EXEC_PROPERTIES = {
     "test.Pool": "kvm-vm",
     "test.init-dockerd": "false",
@@ -71,22 +69,14 @@ K3S_BINARY = "@k3s_linux_amd64//file:k3s"
 
 K3S_BINARY_RLOCATION = "$(rlocationpath " + K3S_BINARY + ")"
 
-_POD_FIXTURE = "//agentplane/system_tests/suites:pod_manifests"
-_FIXTURE = "//agentplane/system_tests/suites:probe_manifests"
-_CENTRAL_NATIVE_FIXTURE = "//agentplane/system_tests/suites/mcp:recovery_manifests"
-_CENTRAL_FIXTURE = "//agentplane/system_tests/suites/mcp:history_manifests"
-_MCP_FIXTURE = "//agentplane/system_tests/suites/mcp:mcp_manifests"
-_VM_FIXTURE = "//agentplane/system_tests/suites:vm_manifests"
-_FIRECRACKER_FIXTURE = "//agentplane/system_tests/suites:firecracker_manifests"
-_REAL_MODEL_FIXTURE = "//agentplane/system_tests/suites:real_model_manifests"
-_CERT_MANAGER_INSTALL = "@cert_manager_v1_21_2_release//file"
-_TRUST_MANAGER_INSTALL = "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml"
+CERT_MANAGER_INSTALL = "@cert_manager_v1_21_2_release//file"
+TRUST_MANAGER_INSTALL = "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml"
 
 # Each entry is an OCI image target mapped to the reference used when importing it into k3s.
-# Keep suite selection here so its fixture, PKI, VM and guest import groups stay explicit.
+# Keep shared image facts here; each BUILD target selects the image groups it needs.
 # Fixture and guest references stay under baseline.FIXTURE_IMAGE_REPOSITORY: a stack removes
 # such images that its manifest does not declare.
-_COMMON_SERVICE_IMAGES = {
+COMMON_SERVICE_IMAGES = {
     "//agentplane/action_service:service_image": "git.allegedly.works/ducktape-ci/agentplane-action-service:unset",
     "//agentplane/app:image": "git.allegedly.works/ducktape-ci/agentplane-app:unset",
     "//agentplane/egress/cmd:image": "git.allegedly.works/ducktape-ci/agentplane-egress-proxy:unset",
@@ -99,25 +89,25 @@ _COMMON_SERVICE_IMAGES = {
     "//agentplane/environments:image": "git.allegedly.works/ducktape-ci/agentplane-sandbox-controller:unset",
     "@postgres_18_minimal_linux_amd64": "git.allegedly.works/ducktape-ci/agentplane-postgres:unset",
 }
-_APP_FREE_SERVICE_IMAGES = {image: reference for image, reference in _COMMON_SERVICE_IMAGES.items() if image != "//agentplane/app:image"}
-_HARNESSES_IMAGES = {
+APP_FREE_SERVICE_IMAGES = {image: reference for image, reference in COMMON_SERVICE_IMAGES.items() if image != "//agentplane/app:image"}
+HARNESSES_IMAGES = {
     "//agentplane/system_tests/deployment:environment_tools_harnesses_image": "git.allegedly.works/ducktape-ci/environment-tools:unset",
 }
-_CENTRAL_IMAGES = {
+CENTRAL_IMAGES = {
     "//agentplane/central_sampler/cmd:service_image": "git.allegedly.works/ducktape-ci/agentplane-central-sampler:unset",
 }
-_MCP_FIXTURE_IMAGES = {
+MCP_FIXTURE_IMAGES = {
     "@dex_linux_amd64": "git.allegedly.works/ducktape-ci/agentplane-dex:unset",
     "@mcp_everything_linux_amd64": "git.allegedly.works/ducktape-ci/agentplane-mcp-everything:unset",
     "//agentplane/action_service/testing:oauth_mcp_server_image": "git.allegedly.works/ducktape-ci/agentplane-oauth-fixture:unset",
 }
-_PKI_IMAGES = {
+PKI_IMAGES = {
     "@cert_manager_controller_linux_amd64": CERT_MANAGER_CONTROLLER_REFERENCE,
     "@cert_manager_webhook_linux_amd64": CERT_MANAGER_WEBHOOK_REFERENCE,
     "@cert_manager_cainjector_linux_amd64": CERT_MANAGER_CAINJECTOR_REFERENCE,
     "@trust_manager_linux_amd64": TRUST_MANAGER_REFERENCE,
 }
-_VM_IMAGES = {
+VM_IMAGES = {
     "@kubevirt_virt_api_linux_amd64": KUBEVIRT_VIRT_API_REFERENCE,
     "@kubevirt_virt_controller_linux_amd64": KUBEVIRT_VIRT_CONTROLLER_REFERENCE,
     "@kubevirt_virt_handler_linux_amd64": KUBEVIRT_VIRT_HANDLER_REFERENCE,
@@ -126,57 +116,36 @@ _VM_IMAGES = {
     "@kyverno_kyverno_linux_amd64": KYVERNO_KYVERNO_REFERENCE,
     "@kyverno_kyvernopre_linux_amd64": KYVERNO_KYVERNOPRE_REFERENCE,
 }
-_VM_GUEST_BOOT_IMAGE = {
+VM_GUEST_BOOT_IMAGE = {
     "//agentplane/system_tests/vm/guest:boot_image": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-boot:unset",
 }
-_VM_GUEST_ROOT_IMAGE = {
+VM_GUEST_ROOT_IMAGE = {
     "//agentplane/system_tests/vm/guest:root_image": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset",
 }
-_VM_GUEST_ROOT_PROFILE_IMAGE = {
+VM_GUEST_ROOT_PROFILE_IMAGE = {
     "//agentplane/system_tests/vm/guest:root_profile_image": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root-profile:unset",
 }
-_RUNNER_DISK_IMAGE = {
+RUNNER_DISK_IMAGE = {
     "//agentplane/env/images:disk_image": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset",
 }
-_DELETION_TEST_DISK_IMAGE = {
+DELETION_TEST_DISK_IMAGE = {
     "//agentplane/system_tests/deployment:deletion_test_disk_image": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset",
 }
-_VM_RUNNER_DISK_IMAGE = {
+VM_RUNNER_DISK_IMAGE = {
     "//agentplane/system_tests/vm:test_runner_disk_image": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset",
 }
 
-_FIRECRACKER_GUEST_IMAGES = {
+FIRECRACKER_GUEST_IMAGES = {
     "//agentplane/firecracker:image": "git.allegedly.works/ducktape-ci/agentplane-firecracker-launcher:unset",
     "//agentplane/system_tests/firecracker:boot_image": "git.allegedly.works/ducktape-ci/agentplane-environment-firecracker:unset",
 }
 
-def _merge_image_maps(*groups):
-    images = {}
-    for group in groups:
-        for image, reference in group.items():
-            if image in images:
-                fail("duplicate image target: " + image)
-            images[image] = reference
-    return images
-
 _MCP_EDGE_IMAGES = {
     "//agentplane/mcp_edge:service_image": "git.allegedly.works/ducktape-ci/agentplane-mcp-edge:unset",
 }
-_SERVICE_IMAGES = _merge_image_maps(_COMMON_SERVICE_IMAGES, _MCP_EDGE_IMAGES)
-
-# Each preset explicitly owns the environment its selected scenarios need. Dispatcher failover
-# uses a dedicated stack because it mutates shared controller Deployments.
-_STACKS = {
-    "pod": struct(service_images = _SERVICE_IMAGES, fixture = _FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
-    "pod_scenarios": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _POD_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
-    # Deletion keeps its dedicated runner disk but does not exercise external MCP Connections.
-    "deletion": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _POD_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
-    "central_native": struct(service_images = _APP_FREE_SERVICE_IMAGES, fixture = _CENTRAL_NATIVE_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
-    "central": struct(service_images = _SERVICE_IMAGES, fixture = _CENTRAL_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
-    "mcp": struct(service_images = _SERVICE_IMAGES, fixture = _MCP_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES, _MCP_FIXTURE_IMAGES)),
-    "vm": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _VM_FIXTURE, vm = True, firecracker = False, real_model = False, images = {}),
-    "firecracker": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _FIRECRACKER_FIXTURE, vm = False, firecracker = True, real_model = False, images = {}),
-    "real_model": struct(service_images = _SERVICE_IMAGES, fixture = _REAL_MODEL_FIXTURE, vm = False, firecracker = False, real_model = True, images = _HARNESSES_IMAGES),
+SERVICE_IMAGES = COMMON_SERVICE_IMAGES | _MCP_EDGE_IMAGES
+GENERIC_DEVICE_PLUGIN_IMAGE = {
+    "@generic_device_plugin_linux_amd64": GENERIC_DEVICE_PLUGIN_REFERENCE,
 }
 
 def _image_manifest_impl(ctx):
@@ -204,105 +173,6 @@ image_manifest = rule(
     doc = "Write grouped image references and OCI layout runfiles paths to one JSON manifest.",
 )
 
-def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False, shutdown_diagnostic = False, require_kvm = False, main = None, exec_properties = {}, args = []):
-    """Run one suite with fresh fixture state and the selected executor lifecycle.
-
-    `exec_properties` are added to the test's execution properties. A `require_kvm` suite must set its own
-    `test.EstimatedCPU`, `test.EstimatedMemory` and `test.EstimatedFreeDiskBytes`, so no suite inherits another's size.
-    """
-    if stack not in _STACKS:
-        fail("unknown k3s stack: " + stack)
-    if profile_guest and stack != "vm":
-        fail("profile_guest requires the VM stack")
-    if boot_evidence and stack != "vm":
-        fail("boot_evidence requires the VM stack")
-    if shutdown_diagnostic and stack != "vm":
-        fail("shutdown_diagnostic requires the VM stack")
-    if require_kvm:
-        missing = [key for key in _KVM_SIZE_PROPERTIES if key not in exec_properties]
-        if missing:
-            fail("KVM suite " + name + " must declare its size in exec_properties: " + ", ".join(missing))
-    config = _STACKS[stack]
-    if require_kvm and not (config.vm or config.firecracker):
-        fail("require_kvm requires the VM or Firecracker stack")
-    if config.firecracker and not require_kvm:
-        fail("the Firecracker stack requires require_kvm = True")
-    runner_disk_image = _DELETION_TEST_DISK_IMAGE if stack == "deletion" else _VM_RUNNER_DISK_IMAGE if config.vm else _RUNNER_DISK_IMAGE
-    fixture_images = _merge_image_maps(config.service_images, config.images, runner_disk_image)
-    images = {"fixture": fixture_images, "pki": _PKI_IMAGES, "vm": {}, "guest": {}}
-    data = [config.fixture, K3S_BINARY, _CERT_MANAGER_INSTALL, _TRUST_MANAGER_INSTALL, "//agentplane/crds"]
-    env = {
-        "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
-        "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath " + _CERT_MANAGER_INSTALL + ")",
-        "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath " + _TRUST_MANAGER_INSTALL + ")",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath " + config.fixture + ")",
-    }
-    properties = {}
-    suite_tags = K3S_TAGS + tags
-    if config.vm or config.firecracker:
-        # A guest runs alongside k3s services; reserve the VM lane's larger worker budget.
-        properties["EstimatedComputeUnits"] = "8"
-        if config.vm:
-            images["vm"] = _VM_IMAGES
-            guest_root_image = _VM_GUEST_ROOT_PROFILE_IMAGE if profile_guest else _VM_GUEST_ROOT_IMAGE
-            images["guest"] = _merge_image_maps(_VM_GUEST_BOOT_IMAGE, guest_root_image)
-        else:
-            images["guest"] = _FIRECRACKER_GUEST_IMAGES
-            images["vm"] = {"@generic_device_plugin_linux_amd64": GENERIC_DEVICE_PLUGIN_REFERENCE}
-            env["KVM_DEVICE_PLUGIN_IMAGE"] = GENERIC_DEVICE_PLUGIN_REFERENCE
-        if config.vm:
-            data += ["@kubevirt_operator_bundle//file", "@kyverno_install//file"]
-            env |= {
-                "KUBEVIRT_OPERATOR_RLOCATION": "$(rlocationpath @kubevirt_operator_bundle//file)",
-                "KYVERNO_INSTALL_RLOCATION": "$(rlocationpath @kyverno_install//file)",
-            }
-        env |= {
-            "AGENTPLANE_K3S_REQUIRE_KVM": "1" if require_kvm else "0",
-            "AGENTPLANE_VM_BOOT_EVIDENCE": "1" if boot_evidence else "0",
-            "AGENTPLANE_VM_SHUTDOWN_DIAGNOSTIC": "1" if shutdown_diagnostic else "0",
-            "K3S_PROFILE_GUEST_ROOT": "1" if profile_guest else "0",
-        }
-
-    manifest = name + "_image_manifest"
-    image_manifest(name = manifest, testonly = True, **images)
-    env["K3S_IMAGE_MANIFEST_RLOCATION"] = "$(rlocationpath :" + manifest + ")"
-    data.append(":" + manifest)
-
-    if config.real_model:
-        properties["test.env-secrets"] = "OPENAI_API_KEY"
-        suite_tags.append("live_openai_api")
-
-    if require_kvm:
-        properties |= KVM_EXEC_PROPERTIES
-    else:
-        properties |= K3S_PERSISTENCE_PROPERTIES | {
-            "test.runner-recycling-key": k3s_recycling_key(vm = config.vm),
-        }
-    merged_properties = K3S_EXEC_PROPERTIES | properties
-    if require_kvm:
-        # The suite's own test.-prefixed size replaces these; compute units or the default disk request left here
-        # would be a second, conflicting size.
-        merged_properties = {
-            key: value
-            for key, value in merged_properties.items()
-            if key not in ("EstimatedComputeUnits", "EstimatedFreeDiskBytes")
-        }
-    merged_properties = merged_properties | exec_properties
-    py_test(
-        name = name,
-        size = "enormous",
-        args = args,
-        srcs = srcs,
-        main = main,
-        data = data,
-        env = env,
-        exec_properties = merged_properties,
-        tags = suite_tags,
-        deps = deps + [
-            "//agentplane/system_tests/deployment:pytest_plugin",
-        ],
-    )
-
 def k3s_tcg_vm_image_manifest(name):
     """Declare only the KubeVirt and CI guest image layouts for a standalone TCG VMI test."""
     image_manifest(
@@ -310,10 +180,10 @@ def k3s_tcg_vm_image_manifest(name):
         testonly = True,
         fixture = {},
         pki = {},
-        vm = _VM_IMAGES,
-        guest = _merge_image_maps(_VM_GUEST_BOOT_IMAGE, _VM_GUEST_ROOT_IMAGE, _VM_RUNNER_DISK_IMAGE),
+        vm = VM_IMAGES,
+        guest = VM_GUEST_BOOT_IMAGE | VM_GUEST_ROOT_IMAGE | VM_RUNNER_DISK_IMAGE,
     )
 
 def k3s_pki_image_manifest(name):
     """Declare the retained PKI controllers without application or guest images."""
-    image_manifest(name = name, testonly = True, pki = _PKI_IMAGES)
+    image_manifest(name = name, testonly = True, pki = PKI_IMAGES)
