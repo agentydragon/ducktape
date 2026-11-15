@@ -76,7 +76,11 @@ group, so another service joins as one more group under them.
 
 Every command takes `--json` and `--timeout`; paged lists take `--limit` and `--after`, as does the one-page inbox read.
 
-`environments` uses `AGENTPLANE_SESSIONS_URL` and an optional `AGENTPLANE_SESSIONS_CREDENTIAL` bearer.
+`environments` uses `AGENTPLANE_ENVIRONMENTS_URL` and its optional
+`AGENTPLANE_ENVIRONMENTS_CREDENTIAL` bearer when configured. If the new URL is unset, it keeps using
+`AGENTPLANE_SESSIONS_URL` and `AGENTPLANE_SESSIONS_CREDENTIAL`; a configured environments credential
+without its matching URL is a usage error. The environments credential is never taken from the
+sessions credential when a dedicated URL is set.
 `get` is an immediate current-state read: it reports readiness and resume eligibility as observed, and never
 waits or resumes. Watch-based wait adapters are future work. Use the fresh descriptor's
 `resume_eligibility`, `wake_generation`, and opaque `resume_token` before calling
@@ -205,11 +209,11 @@ The CLI reads the environment of the harness and of every command it runs. There
 no discovery calls, so no command depends on a service it does not talk to. Actions and Sessions use
 generated gRPC over HTTP/2, as do Egress and Notifications.
 
-| Variable                                                                                                                                                                            | Value                                                                                                            |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `AGENTPLANE_ACTIONS_URL`, `AGENTPLANE_SESSIONS_URL`, `AGENTPLANE_HISTORY_URL`, `AGENTPLANE_EGRESS_GRPC_URL`, `AGENTPLANE_NOTIFICATIONS_GRPC_URL`                                    | the gRPC service origin (`http` or `https`; defaults to port 80 or 443), no credentials, path, query or fragment |
-| `AGENTPLANE_ACTIONS_CREDENTIAL`, `AGENTPLANE_SESSIONS_CREDENTIAL`, `AGENTPLANE_HISTORY_CREDENTIAL`, `AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL`, `AGENTPLANE_EGRESS_GRPC_CREDENTIAL` | optional inert placeholder for the egress proxy or direct sidecar route                                          |
-| `AGENTPLANE_SESSION_ID`                                                                                                                                                             | this Session's public ID for `subscribe` and the default `fromSession` label on `send`                           |
+| Variable                                                                                                                                                                                                                  | Value                                                                                                            |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `AGENTPLANE_ACTIONS_URL`, `AGENTPLANE_SESSIONS_URL`, `AGENTPLANE_ENVIRONMENTS_URL`, `AGENTPLANE_HISTORY_URL`, `AGENTPLANE_EGRESS_GRPC_URL`, `AGENTPLANE_NOTIFICATIONS_GRPC_URL`                                           | the gRPC service origin (`http` or `https`; defaults to port 80 or 443), no credentials, path, query or fragment |
+| `AGENTPLANE_ACTIONS_CREDENTIAL`, `AGENTPLANE_SESSIONS_CREDENTIAL`, `AGENTPLANE_ENVIRONMENTS_CREDENTIAL`, `AGENTPLANE_HISTORY_CREDENTIAL`, `AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL`, `AGENTPLANE_EGRESS_GRPC_CREDENTIAL` | optional inert placeholder for the egress proxy or direct sidecar route                                          |
+| `AGENTPLANE_SESSION_ID`                                                                                                                                                                                                   | this Session's public ID for `subscribe` and the default `fromSession` label on `send`                           |
 
 Managed Pod and VM environments supply service URLs through their shared CLI environment and omit
 service bearer credentials on workload SVID routes. When a credential is configured, the CLI sends it

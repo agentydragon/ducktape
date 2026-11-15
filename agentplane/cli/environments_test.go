@@ -13,6 +13,7 @@ import (
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -21,15 +22,20 @@ type environmentFixture struct {
 	environmentpb.UnimplementedEnvironmentServiceServer
 	resumeRequest *environmentpb.ResumeEnvironmentRequest
 	getRequest    *environmentpb.GetEnvironmentRequest
+	authorization chan []string
 	resumeErr     error
 	resumeCalls   int
 }
 
 func (f *environmentFixture) GetEnvironment(
-	_ context.Context,
+	ctx context.Context,
 	request *environmentpb.GetEnvironmentRequest,
 ) (*environmentpb.EnvironmentDescriptor, error) {
 	f.getRequest = request
+	if f.authorization != nil {
+		md, _ := metadata.FromIncomingContext(ctx)
+		f.authorization <- md.Get("authorization")
+	}
 	return &environmentpb.EnvironmentDescriptor{
 		Target: request.GetTarget(),
 		ObservedState: &environmentpb.EnvironmentObservedState{
@@ -219,5 +225,86 @@ func TestEnvironmentGetReturnsCurrentFacts(t *testing.T) {
 	}
 	if !strings.Contains(stdout, `"readiness":{"state":"READINESS_STATE_NOT_READY"}`) {
 		t.Fatalf("get omitted latest readiness facts : %q", stdout)
+	}
+}
+
+func TestEnvironmentUsesDedicatedEndpointAndCredential(t *testing.T) {
+	sessions := &environmentFixture{authorization: make(chan []string, 1)}
+	environments := &environmentFixture{authorization: make(chan []string, 1)}
+	environmentCredential := "environment-only-placeholder"
+	env := environmentVars(environmentEndpoint(t, sessions))
+	env["AGENTPLANE_SESSIONS_CREDENTIAL"] = "sessions-only-placeholder"
+	env["AGENTPLANE_ENVIRONMENTS_URL"] = environmentEndpoint(t, environments)
+	env["AGENTPLANE_ENVIRONMENTS_CREDENTIAL"] = environmentCredential
+
+	code, _, stderr := invoke(env, "--json", "environments", "get", "test-ns", "test-sandbox", "test-uid")
+	if code != 0 || stderr != "" {
+		t.Fatalf("get from dedicated endpoint: exit %d stderr %q", code, stderr)
+	}
+	if got := <-environments.authorization; len(got) != 1 || got[0] != "Bearer "+environmentCredential {
+		t.Fatalf("EnvironmentService authorization=%v", got)
+	}
+	select {
+	case got := <-sessions.authorization:
+		t.Fatalf("used SessionDispatcher endpoint with authorization %v", got)
+	default:
+	}
+}
+
+func TestEnvironmentEndpointDoesNotBorrowSessionsCredential(t *testing.T) {
+	environments := &environmentFixture{authorization: make(chan []string, 1)}
+	env := environmentVars("http://127.0.0.1:1")
+	env["AGENTPLANE_ENVIRONMENTS_URL"] = environmentEndpoint(t, environments)
+	delete(env, "AGENTPLANE_ENVIRONMENTS_CREDENTIAL")
+
+	code, _, stderr := invoke(env, "--json", "environments", "get", "test-ns", "test-sandbox", "test-uid")
+	if code != 0 || stderr != "" {
+		t.Fatalf("get without EnvironmentService credential: exit %d stderr %q", code, stderr)
+	}
+	if got := <-environments.authorization; len(got) != 0 {
+		t.Fatalf("EnvironmentService inherited SessionDispatcher authorization %v", got)
+	}
+}
+
+func TestEnvironmentUsesSessionEndpointAsCompatibilityFallback(t *testing.T) {
+	sessions := &environmentFixture{authorization: make(chan []string, 1)}
+	code, _, stderr := invoke(environmentVars(environmentEndpoint(t, sessions)), "--json", "environments", "get", "test-ns", "test-sandbox", "test-uid")
+	if code != 0 || stderr != "" {
+		t.Fatalf("get through compatibility endpoint: exit %d stderr %q", code, stderr)
+	}
+	if got := <-sessions.authorization; len(got) != 1 || got[0] != "Bearer "+testCredential {
+		t.Fatalf("compatibility endpoint authorization=%v", got)
+	}
+}
+
+func TestEnvironmentCredentialWithoutEndpointIsUsageError(t *testing.T) {
+	sessions := &environmentFixture{authorization: make(chan []string, 1)}
+	env := environmentVars(environmentEndpoint(t, sessions))
+	env["AGENTPLANE_ENVIRONMENTS_CREDENTIAL"] = "environment-only-placeholder"
+
+	code, stdout, stderr := invoke(env, "--json", "environments", "get", "test-ns", "test-sandbox", "test-uid")
+	if code != exitUsage || stdout != "" || !strings.Contains(stderr, "AGENTPLANE_ENVIRONMENTS_URL not set") {
+		t.Fatalf("credential without endpoint: exit %d stdout %q stderr %q", code, stdout, stderr)
+	}
+	select {
+	case got := <-sessions.authorization:
+		t.Fatalf("used compatibility endpoint with authorization %v", got)
+	default:
+	}
+}
+
+func TestInvalidEnvironmentEndpointDoesNotFallBackToSessions(t *testing.T) {
+	sessions := &environmentFixture{authorization: make(chan []string, 1)}
+	env := environmentVars(environmentEndpoint(t, sessions))
+	env["AGENTPLANE_ENVIRONMENTS_URL"] = "not a URL"
+
+	code, stdout, stderr := invoke(env, "--json", "environments", "get", "test-ns", "test-sandbox", "test-uid")
+	if code != exitUsage || stdout != "" || !strings.Contains(stderr, "AGENTPLANE_ENVIRONMENTS_URL") {
+		t.Fatalf("invalid EnvironmentService endpoint: exit %d stdout %q stderr %q", code, stdout, stderr)
+	}
+	select {
+	case got := <-sessions.authorization:
+		t.Fatalf("used compatibility endpoint with authorization %v", got)
+	default:
 	}
 }

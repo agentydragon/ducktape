@@ -25,7 +25,13 @@ type environmentConnection struct {
 }
 
 func (a *app) connectEnvironment() (*environmentConnection, error) {
-	connection, err := a.connectGRPC("SESSIONS")
+	group := "SESSIONS"
+	if a.getenv("AGENTPLANE_ENVIRONMENTS_URL") != "" {
+		group = "ENVIRONMENTS"
+	} else if a.getenv("AGENTPLANE_ENVIRONMENTS_CREDENTIAL") != "" {
+		return nil, usageFailure("AGENTPLANE_ENVIRONMENTS_URL not set")
+	}
+	connection, err := a.connectGRPC(group)
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +40,11 @@ func (a *app) connectEnvironment() (*environmentConnection, error) {
 
 func (a *app) environmentsCommand() *cobra.Command {
 	return group("environments", "Discover existing environments this account may use",
-		"Lists and refreshes exact Sandbox identities (namespace/name/UID) for the authenticated caller. AGENTPLANE_SESSIONS_CREDENTIAL is an optional bearer for forwarders that require it; explicit resume still requires current backend policy.",
+		`Lists and refreshes exact Sandbox identities (namespace/name/UID) for the authenticated caller.
+Uses AGENTPLANE_ENVIRONMENTS_URL and its optional AGENTPLANE_ENVIRONMENTS_CREDENTIAL bearer when
+configured. Otherwise uses AGENTPLANE_SESSIONS_URL and its optional AGENTPLANE_SESSIONS_CREDENTIAL.
+Setting an environments credential without its URL is a usage error. Explicit resume still requires
+current backend policy.`,
 		a.listEnvironmentsCommand(), a.getEnvironmentCommand(), a.resumeEnvironmentCommand())
 }
 

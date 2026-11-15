@@ -72,8 +72,11 @@ opened or replayed.
 The CLI exposes `agentplane environments list` and
 `agentplane environments get NAMESPACE NAME UID`, and
 `agentplane environments resume NAMESPACE NAME UID --resume-token TOKEN`; all use
-`AGENTPLANE_SESSIONS_URL` with an optional `AGENTPLANE_SESSIONS_CREDENTIAL` bearer for forwarders that
-require it. Workload SVID routes need no bearer.
+`AGENTPLANE_ENVIRONMENTS_URL` with an optional `AGENTPLANE_ENVIRONMENTS_CREDENTIAL` bearer when a
+dedicated EnvironmentService route is configured. Otherwise they retain the compatibility behavior
+of using `AGENTPLANE_SESSIONS_URL` and its optional `AGENTPLANE_SESSIONS_CREDENTIAL` bearer. A
+dedicated environments credential is never sent to the Sessions endpoint, and a Sessions credential
+is never sent to a dedicated environments endpoint. Workload SVID routes need no bearer.
 
 The resume response reports acceptance, not readiness. Reconcile an uncertain reply before taking
 another action; wait adapters for the CLI and Action/MCP surfaces remain separate work.
