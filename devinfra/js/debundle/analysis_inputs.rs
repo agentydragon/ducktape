@@ -1114,6 +1114,7 @@ impl AnalysisAssumptions {
 /// call summaries and the caller-selected local-effect policy.
 #[derive(Debug, Clone, Default)]
 pub struct AnalysisInputs {
+    pub executables: Option<Arc<crate::program_execution::ProgramExecutables>>,
     pub native_integrity: Option<NativeIntegrity>,
     /// Source- and explicit-placement-certified spread uses, keyed by the
     /// exact constructor call start. Their dependencies retain the author

@@ -354,6 +354,7 @@ impl<'a> SavedProgramSummary<'a> {
             })
             .collect::<Result<_>>()?;
         Ok(ProgramSummary {
+            executables: None,
             bindings,
             value_inputs,
             values: self.values.into_owned(),
@@ -702,6 +703,7 @@ mod tests {
             )]),
         )]);
         let summary = ProgramSummary {
+            executables: None,
             bindings: BTreeMap::new(),
             values: BTreeMap::new(),
             primitive_reads: primitive_reads.clone(),
