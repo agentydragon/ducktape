@@ -1670,5 +1670,6 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "@crates//:serde_json",
+        "@crates//:serde_yaml",
     ],
 )
