@@ -233,7 +233,7 @@ py_library(
     deps = [
         ":client",
         "//agentplane/history_service/api/history:history_service_pb2",
-        "//agentplane/history_service/testing:unstored_ranges",
+        "//agentplane/history_service/testing:session_events",
         "//agentplane/proto:event_log_pb2",
         "@pypi//httpx",
         "@pypi//protobuf",
@@ -252,6 +252,7 @@ py_test(
         "//agentplane/env/runtime:harness",
         "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/history_service/api/history:history_service_pb2",
+        "//agentplane/history_service/testing:session_events",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:identity_pb2",
         "//agentplane/proto:session_pb2",

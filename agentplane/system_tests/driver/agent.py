@@ -12,16 +12,13 @@ a scenario parametrised over `Harness` gets Claude and Codex from one body.
 from __future__ import annotations
 
 import asyncio
-import re
 import time
-from dataclasses import dataclass, field
 from http import HTTPStatus
-from typing import Any, TypeVar
+from typing import Any
 from uuid import UUID, uuid4
 
 import httpx
 from google.protobuf.json_format import MessageToDict
-from pydantic import BaseModel
 from tenacity import AsyncRetrying, retry_if_exception, retry_if_result, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
@@ -32,11 +29,9 @@ from agentplane.proto import command_pb2, event_log_pb2, event_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.tracing import tracer
+from agentplane.system_tests.driver.turn import TURN_SECONDS, Turn, TurnCollector
 from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
 
-# A turn on the cheap model with a few tool calls. A harness that stops making progress should fail
-# its scenario rather than hold the suite until Bazel's clock runs out.
-TURN_SECONDS = 300.0
 # The runner's writable volume; the image's workspace is not writable by the runner's user.
 WORKING_DIRECTORY = "/state/work"
 # How long a Running sandbox may still be short of a connected runner. Generous because the gap is
@@ -58,55 +53,6 @@ def environment_runtime_startup_retries() -> AsyncRetrying:
         retry=retry_if_exception(_runner_not_answering),
         reraise=True,
     )
-
-
-Reported = TypeVar("Reported", bound=BaseModel)
-
-# The last brace-delimited object in the answer, fenced or not: a model that explains itself before
-# or after the JSON is still answering the question.
-_OBJECT = re.compile(r"\{.*\}", re.DOTALL)
-
-
-@dataclass
-class Turn:
-    """What one turn produced: the harness's own tool outputs and its assistant text."""
-
-    # `time.monotonic()` when the app accepted the turn's input: the Dispatcher holds it, and no
-    # native work need have started.
-    accepted: float
-    tool_outputs: list[str] = field(default_factory=list)
-    text: list[str] = field(default_factory=list)
-    # Every line the harness wrote during the turn, as the runner recorded it.
-    native: list[str] = field(default_factory=list)
-    status: event_pb2.TurnStatus | None = None
-    input_confirmed: bool = False
-    resumed: bool = False
-
-    @property
-    def answer(self) -> str:
-        """The turn's final assistant message: what the agent reports back."""
-        if not self.text:
-            raise AssertionError(f"the turn produced no assistant message:\n{self.transcript}")
-        return self.text[-1]
-
-    def report(self, shape: type[Reported]) -> Reported:
-        """The JSON object the agent was asked to end with, as `shape`.
-
-        A scenario states a goal and asks for a structured report, rather than dictating a command
-        and grepping prose: the agent picks how, and the answer stays machine-checkable.
-        """
-        found = _OBJECT.search(self.answer)
-        if found is None:
-            raise AssertionError(f"the agent reported no JSON object:\n{self.transcript}")
-        try:
-            return shape.model_validate_json(found.group())
-        except (ValueError, TypeError) as error:
-            raise AssertionError(f"the agent's report is not a {shape.__name__}: {error}\n{self.answer}") from error
-
-    @property
-    def transcript(self) -> str:
-        """Everything the turn produced, so a failure says what the agent actually did."""
-        return "\n".join([*(f"[tool] {output}" for output in self.tool_outputs), *(f"[text] {t}" for t in self.text)])
 
 
 class Agent:
@@ -219,75 +165,20 @@ class Agent:
 
     async def _collect(self, *, after: int, awaiting_command_id: str | None) -> Turn:
         with tracer.start_as_current_span("system_test.turn.wait", attributes={"thread.id": str(self._thread_id)}):
-            accepted = time.monotonic()
+            collector = TurnCollector(
+                after_cursor=after, awaiting_command_id=awaiting_command_id, accepted=time.monotonic()
+            )
             reader = SessionEventReader(self._client, self._thread_id, after_cursor=after)
-            async with asyncio.timeout(TURN_SECONDS):
-                while True:
-                    await reader.read_page()
-                    turn = Turn(accepted=accepted)
-                    command_admitted = awaiting_command_id is None
-                    for entry in reader.entries:
-                        event = entry.event
-                        match event.WhichOneof("observation"):
-                            case "command_admitted" if event.command_admitted.command.command_id == awaiting_command_id:
-                                command_admitted = True
-                            case "command_failed" if (
-                                awaiting_command_id is None or event.command_failed.command_id == awaiting_command_id
-                            ):
-                                failed = event.command_failed
-                                self._cursor = entry.cursor
-                                raise AssertionError(f"command {failed.command_id!r} failed: {failed.reason!r}")
-                            case _:
-                                pass
-                        if event.HasField("harness_started"):
-                            # A resumed runner may start before the submitted command is admitted.
-                            turn.resumed = event.harness_started.resumed
-                        elif event.HasField("harness_user_message_confirmed") and (
-                            awaiting_command_id is None
-                            or awaiting_command_id in event.harness_user_message_confirmed.origin_command_ids
-                        ):
-                            turn.input_confirmed = True
-                        # A retained successful turn before this request's exact admission belongs to
-                        # prior work. Do not accept it, its outputs, or its terminal as this result.
-                        if not command_admitted:
-                            if event.HasField("turn_completed"):
-                                # Discard lifecycle metadata that belonged to a prior completed turn.
-                                turn.resumed = False
-                                turn.input_confirmed = False
-                            continue
-                        self._cursor = entry.cursor
-                        match event.WhichOneof("observation"):
-                            case "harness_launch_failed":
-                                raise AssertionError(f"harness launch failed: {event.harness_launch_failed.reason!r}")
-                            case "harness_started" | "harness_user_message_confirmed":
-                                continue
-                            case "item_completed":
-                                _completed(event.item_completed, turn)
-                            case "native" if event.native.direction == event_pb2.DIRECTION_FROM_HARNESS:
-                                turn.native.append(event.native.line)
-                            case "turn_completed":
-                                completed = event.turn_completed
-                                turn.status = completed.status
-                                if turn.status != event_pb2.TURN_STATUS_COMPLETED:
-                                    raise AssertionError(
-                                        f"turn {completed.turn_id!r} ended with "
-                                        f"{event_pb2.TurnStatus.Name(turn.status)}: {completed.error=}"
-                                    )
-                                # A page may include data past the turn we are returning. Re-read it
-                                # on the next call instead of advancing our caller cursor past it.
-                                return turn
-                            case _:
-                                continue
-                    self._cursor = reader.cursor
-                    await reader.wait_for_next_page()
-
-
-def _completed(item: event_pb2.ItemCompleted, turn: Turn) -> None:
-    match item.WhichOneof("outcome"):
-        case "tool":
-            turn.tool_outputs.append(item.tool.output)
-        case "text":
-            turn.text.append(item.text)
+            try:
+                async with asyncio.timeout(TURN_SECONDS):
+                    while True:
+                        await reader.read_page()
+                        if (turn := collector.collect(reader.entries)) is not None:
+                            return turn
+                        collector.cursor = reader.cursor
+                        await reader.wait_for_next_page()
+            finally:
+                self._cursor = collector.cursor
 
 
 async def scripted_turn_with_admission_and_history(
