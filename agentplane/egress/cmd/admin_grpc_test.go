@@ -6,7 +6,9 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/http"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -26,6 +28,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/google/uuid"
@@ -36,10 +39,12 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/rest"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -57,6 +62,18 @@ func TestMain(m *testing.M) {
 		testToken, err = server.WorkloadToken(context.Background(), auth.Account{Namespace: "test-ns", Name: "test-app"}, testAudience)
 		return err
 	}))
+}
+
+type reviewTransport struct {
+	next    http.RoundTripper
+	reviews *atomic.Int32
+}
+
+func (r reviewTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	if request.Method == http.MethodPost && request.URL.Path == "/apis/authentication.k8s.io/v1/tokenreviews" {
+		r.reviews.Add(1)
+	}
+	return r.next.RoundTrip(request)
 }
 
 type noDecisions struct{}
@@ -118,7 +135,7 @@ func testRulesAuthWithCA(t *testing.T, ca *environmentruntimetransporttesting.CA
 	return authentication, policy.NewIndex()
 }
 
-func TestAdminServicePeerTLSIsMethodScopedAndRejectsBearers(t *testing.T) {
+func TestAdminServicePeerTLSIsMethodScopedAndRejectsBearerAccess(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
 	proxySVID := ca.Issue(t, peertls.EgressProxyURI)
 	forward := listener.Config{
@@ -126,7 +143,28 @@ func TestAdminServicePeerTLSIsMethodScopedAndRejectsBearers(t *testing.T) {
 		TLS:           &listener.TLS{CertFile: proxySVID.CertFile, KeyFile: proxySVID.KeyFile},
 		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: ca.RootFile}},
 	}
-	authentication, index := testRulesAuthWithCA(t, ca)
+	valid, err := api.TokenReviews().Create(t.Context(), &authenticationv1.TokenReview{
+		Spec: authenticationv1.TokenReviewSpec{Token: testToken, Audiences: []string{testAudience}},
+	}, metav1.CreateOptions{})
+	if err != nil || !valid.Status.Authenticated {
+		t.Fatalf("legacy bearer is not valid: review=%v, err=%v", valid, err)
+	}
+	// Count all Kubernetes transport requests used by the receiver's live workload resolver.
+	// A valid legacy bearer must never trigger TokenReview, even without a certificate.
+	var reviews atomic.Int32
+	kubeConfig := rest.CopyConfig(api.Config)
+	kubeConfig.Wrap(func(transport http.RoundTripper) http.RoundTripper {
+		return reviewTransport{next: transport, reviews: &reviews}
+	})
+	records, err := resolver.NewKubernetes(kubeConfig, []string{"test-ns"}, &resolver.Identities{PolicyNamespace: testPolicyNS})
+	if err != nil {
+		t.Fatal(err)
+	}
+	authentication, err := identity.NewAuthenticator(forward, records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := policy.NewIndex()
 	server, err := newAdminServer(config{
 		AdminGRPCAudience:       testAudience,
 		AdminGRPCCallers:        []string{"test-ns/test-app"},
@@ -190,22 +228,29 @@ func TestAdminServicePeerTLSIsMethodScopedAndRejectsBearers(t *testing.T) {
 	if _, err := healthpb.NewHealthClient(bearer).Check(context.Background(), &healthpb.HealthCheckRequest{}); err != nil {
 		t.Fatalf("certificate-free TLS probe: %v", err)
 	}
-	if _, err := egressadminpb.NewEgressAdminClient(bearer).GetHealth(
-		metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer "+testToken),
-		&egressadminpb.GetHealthRequest{},
-	); status.Code(err) != codes.Unauthenticated {
-		t.Fatalf("legacy admin bearer over TLS: %v, want Unauthenticated", err)
+	for _, method := range grpcmethods.Of(egressadminpb.EgressAdmin_ServiceDesc) {
+		if err := method.Call(metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer "+testToken), bearer); status.Code(err) != codes.Unauthenticated {
+			t.Fatalf("%s accepted a valid legacy bearer without a certificate: %v", method.Name, err)
+		}
 	}
 
 	untrustedCA := environmentruntimetransporttesting.NewCA(t)
 	untrustedSVID := untrustedCA.Issue(t, peertls.ActionsURI)
-	untrustedTLS, err := untrustedSVID.ClientTLSConfig(peertls.EgressProxyURI)
+	untrustedLeaf, err := tls.LoadX509KeyPair(untrustedSVID.CertFile, untrustedSVID.KeyFile)
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Reuse the legitimate server's verifier and force the invalid client leaf to be offered.
+	untrustedTLS := bearerTLS.Clone()
+	untrustedTLS.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+		return &untrustedLeaf, nil
+	}
 	untrusted := dial(t, untrustedTLS)
-	if _, err := egressadminpb.NewEgressAdminClient(untrusted).GetHealth(context.Background(), &egressadminpb.GetHealthRequest{}); err == nil {
+	if _, err := egressadminpb.NewEgressAdminClient(untrusted).GetHealth(metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer "+testToken), &egressadminpb.GetHealthRequest{}); err == nil {
 		t.Fatal("service certificate from an untrusted CA was admitted")
+	}
+	if got := reviews.Load(); got != 0 {
+		t.Fatalf("TokenReview calls = %d, want zero", got)
 	}
 }
 
