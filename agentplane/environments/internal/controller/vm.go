@@ -98,7 +98,7 @@ func (r *Reconciler) haltVM(ctx context.Context, vm *kubevirtv1.VirtualMachine) 
 // changed image or template applies at this start; a halted VM's disks are kept.
 func (r *Reconciler) startVM(ctx context.Context, sandbox *sandboxapi.Sandbox, w workload, template *sandboxapi.SandboxTemplate) (workload, *unready, error) {
 	if !validRuntimeCredentialID(w.credential.ID) {
-		return w, &unready{reason: "RunnerCredentialMissing", message: "no runner credential is issued for the next VMI"}, nil
+		return w, &unready{reason: "RunnerCredentialMissing", message: "no Environment Runtime credential is issued for the next VMI"}, nil
 	}
 	vm, blocked := renderVM(sandbox, template, w.credential)
 	if blocked != nil {

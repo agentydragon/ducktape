@@ -68,7 +68,7 @@ func firecrackerIdleController(t *testing.T) (*Reconciler, client.Client, *time.
 	setPodReady(t, c, pod, corev1.ConditionTrue)
 	pod = getPod(t, c)
 	status.state.PodUID = string(pod.UID)
-	reconcileOnce(t, r) // Accept and publish this fixture's runner identity before its Runtime facts.
+	reconcileOnce(t, r) // Accept and publish this fixture's Environment Runtime identity before its Runtime facts.
 	connect(t, r, string(pod.UID))
 	setIdleSuspendAfter(t, c, durationPtr(idleSuspendAfter))
 	publishIdleSince(t, r, &runtimeIdleSince)
@@ -103,7 +103,7 @@ func TestFirecrackerLateBusyRuntimeFactRefusesIdleSuspendWithoutCheckpointIntent
 			t.Fatalf("Prepare ran before its admission fence was persisted: attempt=%+v mode=%s", stored.Status.FirecrackerSuspension, stored.Status.OperatingMode)
 		}
 		publishIdleSince(t, r, nil) // The Runtime sees a new busy fact after the controller's idle read.
-		return grpcstatus.Error(codes.Aborted, "runner became busy")
+		return grpcstatus.Error(codes.Aborted, "Environment Runtime became busy")
 	}
 
 	*now = now.Add(idleSuspendAfter)
