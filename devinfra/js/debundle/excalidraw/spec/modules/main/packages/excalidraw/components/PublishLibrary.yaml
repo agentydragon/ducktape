@@ -1,0 +1,31 @@
+# Original home: packages/excalidraw/components/PublishLibrary.tsx
+source_matches:
+  - match: |
+      var selected = ({ onClose, libraryItems, appState, onSuccess, onError, updateItemsInStorage, onRemove }) => {
+        let [libraryData, setLibraryData] = EXPR({
+          authorName: "", githubHandle: "", name: "", description: "", twitterHandle: "", website: ""
+        }), [isSubmitting, setIsSubmitting] = EXPR(!1);
+        STMT_LIST;
+      };
+    bindings:
+      - local: selected
+        name: PublishLibrary
+
+  - match: |
+      var selected = ({ libItem, appState, index, onChange, onRemove }) => {
+        let svgRef = EXPR(null), inputRef = EXPR(null);
+        STMT_LIST;
+      };
+    bindings:
+      - local: selected
+        name: SingleLibraryItem
+
+  - match: |
+      var selected = async (libraryItems) => {
+        let padding = Math.round(8), lineWidth = Math.max(Math.round(128 / 64), 2),
+          rows = EXPR(libraryItems, 6), canvas = document.createElement("canvas");
+        STMT_LIST;
+      };
+    bindings:
+      - local: selected
+        name: generatePreviewImage

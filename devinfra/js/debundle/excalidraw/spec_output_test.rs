@@ -56,6 +56,10 @@ fn claimed_modules_export_their_entry_points() {
             &["ExcalidrawLogo"],
         ),
         (
+            "main/packages/excalidraw/components/PublishLibrary.js",
+            &["PublishLibrary"],
+        ),
+        (
             "main/packages/excalidraw/components/SearchMenu.js",
             &["SearchMenu", "getMatchPreview", "getMatchedLines"],
         ),
