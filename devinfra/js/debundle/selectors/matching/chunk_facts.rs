@@ -500,13 +500,21 @@ impl Extractor {
     }
 
     fn var_decl(&mut self, var: &VarDecl) -> Result<NodeId, Unsupported> {
+        self.var_declarators(var, &var.decls)
+    }
+
+    fn var_declarators(
+        &mut self,
+        var: &VarDecl,
+        declarators: &[VarDeclarator],
+    ) -> Result<NodeId, Unsupported> {
         let id = self.node(NodeKind::VarDecl);
         // The declaration keyword distinguishes `let`/`const`/`var` — a label
         // the matcher compares, so a `let` selector cannot match a `const`.
         self.facts
             .operator
             .push((id, js_ast::var_decl_kind_str(var.kind).to_string()));
-        for (index, declarator) in var.decls.iter().enumerate() {
+        for (index, declarator) in declarators.iter().enumerate() {
             let d = self.var_declarator(declarator)?;
             self.facts.child.push((id, index as u32, d));
         }
@@ -1282,6 +1290,30 @@ pub fn extract_facts_items(items: &[ModuleItem]) -> Result<ChunkFacts, Unsupport
         let ordinal = source_unit_ordinal_for_statement(items, StatementId(body_idx)).0;
         extractor.module_item(item, ordinal)?;
     }
+    Ok(extractor.facts)
+}
+
+/// Project one declarator as its own top-level variable declaration, retaining
+/// the declaration kind and optional export wrapper. Borrow the selected AST
+/// instead of cloning its initializer and all sibling declarators.
+pub fn extract_single_declarator_facts(
+    item: &ModuleItem,
+    declarator: &VarDeclarator,
+) -> Result<ChunkFacts, Unsupported> {
+    let var = js_ast::item_var_decl(item).ok_or(Unsupported {
+        context: "single declarator requires a variable declaration",
+    })?;
+    let mut extractor = Extractor::default();
+    let export = matches!(item, ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(_)))
+        .then(|| extractor.node(NodeKind::ExportDecl));
+    let declaration = extractor.var_declarators(var, std::slice::from_ref(declarator))?;
+    let root = if let Some(export) = export {
+        extractor.facts.child.push((export, 0, declaration));
+        export
+    } else {
+        declaration
+    };
+    extractor.facts.top_level.push((root, 0));
     Ok(extractor.facts)
 }
 

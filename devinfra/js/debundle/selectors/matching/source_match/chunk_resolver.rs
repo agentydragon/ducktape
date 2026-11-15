@@ -120,7 +120,7 @@ impl<'m> ChunkResolver<'m> {
                 continue;
             };
             for (declarator_idx, declarator) in var.decls.iter().enumerate() {
-                if let Some(facts) = item_facts(&single_declarator_item(item, declarator)) {
+                if let Ok(facts) = chunk_facts::extract_single_declarator_facts(item, declarator) {
                     let index = selector_match::Index::build(&facts);
                     let subject_idx = var_declarator_subjects.len();
                     for token in selector_match::subject_tokens(&index) {
