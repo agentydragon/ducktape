@@ -56,11 +56,26 @@ def _annotations(
     }
 
 
+def _cluster_policy_chart(app: App, name: str, *, annotations: dict[str, str], spec: ClusterPolicySpec) -> Chart:
+    chart = _chart(app, name)
+    ClusterPolicy(chart, "policy", metadata=ApiObjectMetadata(name=name, annotations=annotations), spec=spec)
+    return chart
+
+
+def _cleanup_controller_cluster_role_chart(
+    app: App, chart_name: str, role_name: str, *, rules: list[k8s.PolicyRule]
+) -> Chart:
+    chart = _chart(app, chart_name)
+    k8s.KubeClusterRole(
+        chart, "role", metadata=k8s.ObjectMeta(name=role_name, labels=_AGGREGATE_TO_CLEANUP_CONTROLLER), rules=rules
+    )
+    return chart
+
+
 def require_gitops_chart(app: App) -> Chart:
     """Blocks direct kubectl apply for Deployments/StatefulSets/DaemonSets. Allows Flux
     controllers, operators that create child workloads from GitOps-managed CRs, and
     Stakater Reloader (rolling restarts on secret changes)."""
-    chart = _chart(app, "require-gitops")
     exempt_service_accounts = [
         # Flux kustomize-controller, helm-controller, and source-controller (for CRD updates)
         ("kustomize-controller", "flux-system"),
@@ -82,20 +97,17 @@ def require_gitops_chart(app: App) -> Chart:
         # Stakater Reloader (triggers rolling restarts on secret changes)
         ("reloader-reloader", "kube-system"),
     ]
-    ClusterPolicy(
-        chart,
-        "policy",
-        metadata=ApiObjectMetadata(
-            name="require-gitops",
-            annotations=_annotations(
-                title="Require GitOps",
-                category="Best Practices",
-                severity="medium",
-                subject="Deployment, StatefulSet, DaemonSet",
-                description=(
-                    "Enforces that workload resources (Deployments, StatefulSets, DaemonSets) can only be created or "
-                    "modified by Flux GitOps controllers. Direct kubectl apply/create/patch is blocked."
-                ),
+    return _cluster_policy_chart(
+        app,
+        "require-gitops",
+        annotations=_annotations(
+            title="Require GitOps",
+            category="Best Practices",
+            severity="medium",
+            subject="Deployment, StatefulSet, DaemonSet",
+            description=(
+                "Enforces that workload resources (Deployments, StatefulSets, DaemonSets) can only be created or "
+                "modified by Flux GitOps controllers. Direct kubectl apply/create/patch is blocked."
             ),
         ),
         # background: false because this policy uses subjects for exclusions,
@@ -153,7 +165,6 @@ def require_gitops_chart(app: App) -> Chart:
             ],
         ),
     )
-    return chart
 
 
 def default_revision_history_limit_chart(app: App) -> Chart:
@@ -176,22 +187,18 @@ def default_revision_history_limit_chart(app: App) -> Chart:
     StatefulSets/DaemonSets are covered too (same field, bounds ControllerRevision
     history).
     """
-    chart = _chart(app, "default-revision-history-limit")
-    ClusterPolicy(
-        chart,
-        "policy",
-        metadata=ApiObjectMetadata(
-            name="default-revision-history-limit",
-            annotations=_annotations(
-                title="Default revisionHistoryLimit",
-                category="Best Practices",
-                severity="low",
-                subject="Deployment, StatefulSet, DaemonSet",
-                description=(
-                    "Sets spec.revisionHistoryLimit to 3 on Deployments, StatefulSets, and DaemonSets that do not "
-                    "specify it, to bound accumulated revision history (dead ReplicaSets / ControllerRevisions) and "
-                    "the kube-state-metrics series and memory that track them."
-                ),
+    return _cluster_policy_chart(
+        app,
+        "default-revision-history-limit",
+        annotations=_annotations(
+            title="Default revisionHistoryLimit",
+            category="Best Practices",
+            severity="low",
+            subject="Deployment, StatefulSet, DaemonSet",
+            description=(
+                "Sets spec.revisionHistoryLimit to 3 on Deployments, StatefulSets, and DaemonSets that do not "
+                "specify it, to bound accumulated revision history (dead ReplicaSets / ControllerRevisions) and "
+                "the kube-state-metrics series and memory that track them."
             ),
         ),
         spec=ClusterPolicySpec(
@@ -220,7 +227,6 @@ def default_revision_history_limit_chart(app: App) -> Chart:
             ],
         ),
     )
-    return chart
 
 
 def default_disable_service_links_chart(app: App) -> Chart:
@@ -230,22 +236,18 @@ def default_disable_service_links_chart(app: App) -> Chart:
     Flux/SSA ownership conflicts, while every Pod (including Pods created by custom
     operators) still passes through admission.
     """
-    chart = _chart(app, "default-disable-service-links")
-    ClusterPolicy(
-        chart,
-        "policy",
-        metadata=ApiObjectMetadata(
-            name="default-disable-service-links",
-            annotations=_annotations(
-                autogen=False,
-                title="Default Service Links off",
-                category="Best Practices",
-                severity="medium",
-                subject="Pod",
-                description=(
-                    "Sets enableServiceLinks to false on newly created Pods to prevent legacy Service environment "
-                    "variables from colliding with application settings."
-                ),
+    return _cluster_policy_chart(
+        app,
+        "default-disable-service-links",
+        annotations=_annotations(
+            autogen=False,
+            title="Default Service Links off",
+            category="Best Practices",
+            severity="medium",
+            subject="Pod",
+            description=(
+                "Sets enableServiceLinks to false on newly created Pods to prevent legacy Service environment "
+                "variables from colliding with application settings."
             ),
         ),
         spec=ClusterPolicySpec(
@@ -260,7 +262,6 @@ def default_disable_service_links_chart(app: App) -> Chart:
             ],
         ),
     )
-    return chart
 
 
 def default_vpa_requests_only_chart(app: App) -> Chart:
@@ -305,23 +306,19 @@ def default_vpa_requests_only_chart(app: App) -> Chart:
     (an SSA apply is an UPDATE admission), after which goldilocks rebuilds each VPA with
     the new resourcePolicy.
     """
-    chart = _chart(app, "default-vpa-requests-only")
-    ClusterPolicy(
-        chart,
-        "policy",
-        metadata=ApiObjectMetadata(
-            name="default-vpa-requests-only",
-            annotations=_annotations(
-                title="Default VPA to RequestsOnly",
-                category="Best Practices",
-                severity="high",
-                subject="Namespace",
-                description=(
-                    "Adds a goldilocks vpa-resource-policy annotation setting controlledValues: RequestsOnly to "
-                    "namespaces running goldilocks VPA in auto mode, so VPA never scales a container's limits down "
-                    "in proportion to its requests. Only applied when the namespace does not already declare its "
-                    "own policy."
-                ),
+    return _cluster_policy_chart(
+        app,
+        "default-vpa-requests-only",
+        annotations=_annotations(
+            title="Default VPA to RequestsOnly",
+            category="Best Practices",
+            severity="high",
+            subject="Namespace",
+            description=(
+                "Adds a goldilocks vpa-resource-policy annotation setting controlledValues: RequestsOnly to "
+                "namespaces running goldilocks VPA in auto mode, so VPA never scales a container's limits down "
+                "in proportion to its requests. Only applied when the namespace does not already declare its "
+                "own policy."
             ),
         ),
         spec=ClusterPolicySpec(
@@ -356,35 +353,30 @@ def default_vpa_requests_only_chart(app: App) -> Chart:
             ],
         ),
     )
-    return chart
 
 
 def restrict_agent_gateway_routes_chart(app: App) -> Chart:
-    chart = _chart(app, "restrict-agent-gateway-routes")
-    ClusterPolicy(
-        chart,
-        "policy",
-        metadata=ApiObjectMetadata(
-            name="restrict-agent-gateway-routes",
-            annotations=_annotations(
-                title="Restrict Agent Gateway API Routes",
-                category="Access Control",
-                severity="high",
-                subject="HTTPRoute, TLSRoute, TCPRoute, UDPRoute, GRPCRoute, Gateway",
-                description=(
-                    "Blocks creation/modification of any Gateway API route (HTTPRoute, TLSRoute, TCPRoute, "
-                    "UDPRoute, GRPCRoute) or Gateway in the agent-writable sandbox namespaces (claude-sandbox, "
-                    "haku-sandbox). The public `cluster-gateway` listeners use `allowedRoutes.namespaces.from: All`, "
-                    "so without this fence an agent that gained `httproutes`/`gateways` RBAC could publish a route "
-                    "that attaches to the public gateway and bypasses the operator-owned Authentik proxy. Agents "
-                    "have no legitimate need to create routes — their sandbox Roles already omit these resources — "
-                    "so a blanket deny in those namespaces closes the latent hole structurally without touching any "
-                    "existing route (none live in a sandbox namespace). This denylist is preferred over "
-                    "per-listener `allowedRoutes` selectors because the public gateway's listener-level "
-                    "`allowedRoutes` is affected by Cilium bug #42159 (see cluster/docs/plan.md), and the Selector "
-                    "approach would require labeling the built-in `default` and `flux-system` namespaces that host "
-                    "critical routes. For Haku this is an enforcement inventory entry in haku/docs/security.md."
-                ),
+    return _cluster_policy_chart(
+        app,
+        "restrict-agent-gateway-routes",
+        annotations=_annotations(
+            title="Restrict Agent Gateway API Routes",
+            category="Access Control",
+            severity="high",
+            subject="HTTPRoute, TLSRoute, TCPRoute, UDPRoute, GRPCRoute, Gateway",
+            description=(
+                "Blocks creation/modification of any Gateway API route (HTTPRoute, TLSRoute, TCPRoute, "
+                "UDPRoute, GRPCRoute) or Gateway in the agent-writable sandbox namespaces (claude-sandbox, "
+                "haku-sandbox). The public `cluster-gateway` listeners use `allowedRoutes.namespaces.from: All`, "
+                "so without this fence an agent that gained `httproutes`/`gateways` RBAC could publish a route "
+                "that attaches to the public gateway and bypasses the operator-owned Authentik proxy. Agents "
+                "have no legitimate need to create routes — their sandbox Roles already omit these resources — "
+                "so a blanket deny in those namespaces closes the latent hole structurally without touching any "
+                "existing route (none live in a sandbox namespace). This denylist is preferred over "
+                "per-listener `allowedRoutes` selectors because the public gateway's listener-level "
+                "`allowedRoutes` is affected by Cilium bug #42159 (see cluster/docs/plan.md), and the Selector "
+                "approach would require labeling the built-in `default` and `flux-system` namespaces that host "
+                "critical routes. For Haku this is an enforcement inventory entry in haku/docs/security.md."
             ),
         ),
         spec=ClusterPolicySpec(
@@ -420,34 +412,29 @@ def restrict_agent_gateway_routes_chart(app: App) -> Chart:
             ],
         ),
     )
-    return chart
 
 
 def require_secret_store_conditions_chart(app: App) -> Chart:
-    chart = _chart(app, "require-secret-store-conditions")
-    ClusterPolicy(
-        chart,
-        "policy",
-        metadata=ApiObjectMetadata(
-            name="require-secret-store-conditions",
-            annotations=_annotations(
-                title="Require ClusterSecretStore Conditions",
-                category="Access Control",
-                severity="high",
-                subject="ClusterSecretStore",
-                description=(
-                    "A ClusterSecretStore with no `spec.conditions` is usable from every namespace in the cluster. "
-                    "That is not a mild default here: the ESO ServiceAccount holds cluster-wide secret read, so the "
-                    "store — not RBAC — is the only thing bounding what an ExternalSecret can pull out of the "
-                    "store's `remoteNamespace`. An unfenced `kubernetes-flux-system-secret-store` means any "
-                    "namespace can read the GitHub App, the PATs, the AWS Route 53 credentials and `ci-age-key`. "
-                    "This requires every store to name at least one namespace in `conditions[].namespaces`, which "
-                    "rejects the degenerate forms as well: an empty `conditions: []` (ESO treats it exactly like an "
-                    "absent one), a condition carrying no criteria at all, and a bare `namespaceSelector: {}` — an "
-                    "empty LabelSelector matches every namespace by the standard Kubernetes convention, so that one "
-                    "reads as a fence while being the widest setting available. Requiring an explicit list also "
-                    "rules out selector-based fences, which nothing here uses; relax it deliberately if that changes."
-                ),
+    return _cluster_policy_chart(
+        app,
+        "require-secret-store-conditions",
+        annotations=_annotations(
+            title="Require ClusterSecretStore Conditions",
+            category="Access Control",
+            severity="high",
+            subject="ClusterSecretStore",
+            description=(
+                "A ClusterSecretStore with no `spec.conditions` is usable from every namespace in the cluster. "
+                "That is not a mild default here: the ESO ServiceAccount holds cluster-wide secret read, so the "
+                "store — not RBAC — is the only thing bounding what an ExternalSecret can pull out of the "
+                "store's `remoteNamespace`. An unfenced `kubernetes-flux-system-secret-store` means any "
+                "namespace can read the GitHub App, the PATs, the AWS Route 53 credentials and `ci-age-key`. "
+                "This requires every store to name at least one namespace in `conditions[].namespaces`, which "
+                "rejects the degenerate forms as well: an empty `conditions: []` (ESO treats it exactly like an "
+                "absent one), a condition carrying no criteria at all, and a bare `namespaceSelector: {}` — an "
+                "empty LabelSelector matches every namespace by the standard Kubernetes convention, so that one "
+                "reads as a fence while being the widest setting available. Requiring an explicit list also "
+                "rules out selector-based fences, which nothing here uses; relax it deliberately if that changes."
             ),
         ),
         spec=ClusterPolicySpec(
@@ -501,52 +488,42 @@ def require_secret_store_conditions_chart(app: App) -> Chart:
             ],
         ),
     )
-    return chart
 
 
 def cleanup_controller_jobs_chart(app: App) -> Chart:
-    chart = _chart(app, "clusterrole-cleanup-controller-jobs")
-    k8s.KubeClusterRole(
-        chart,
-        "role",
-        metadata=k8s.ObjectMeta(
-            name="kyverno-cleanup-controller-jobs",
-            # Aggregates into the kyverno cleanup controller's ClusterRole. Required
-            # before any CleanupPolicy can target Jobs: kyverno validates at policy
-            # admission that the cleanup controller holds delete permission for the
-            # matched kind. First consumer: gaffer-private's wedged-Job reaper in the
-            # thrive-scraper namespace.
-            labels=_AGGREGATE_TO_CLEANUP_CONTROLLER,
-        ),
+    # Aggregates into the kyverno cleanup controller's ClusterRole. Required before
+    # any CleanupPolicy can target Jobs: kyverno validates at policy admission that
+    # the cleanup controller holds delete permission for the matched kind. First
+    # consumer: gaffer-private's wedged-Job reaper in the thrive-scraper namespace.
+    return _cleanup_controller_cluster_role_chart(
+        app,
+        "clusterrole-cleanup-controller-jobs",
+        "kyverno-cleanup-controller-jobs",
         rules=[k8s.PolicyRule(api_groups=["batch"], resources=["jobs"], verbs=_CLEANUP_VERBS)],
     )
-    return chart
 
 
 def cleanup_controller_workloads_chart(app: App) -> Chart:
     """Consumers: the claude-sandbox janitor (agents/agent-rbac-base/) and the props
     finished-pod reaper (props/app/) — kyverno rejects a CleanupPolicy at admission
     unless the controller can delete every kind it matches."""
-    chart = _chart(app, "clusterrole-cleanup-controller-workloads")
-    k8s.KubeClusterRole(
-        chart,
-        "role",
-        metadata=k8s.ObjectMeta(name="kyverno-cleanup-controller-workloads", labels=_AGGREGATE_TO_CLEANUP_CONTROLLER),
+    return _cleanup_controller_cluster_role_chart(
+        app,
+        "clusterrole-cleanup-controller-workloads",
+        "kyverno-cleanup-controller-workloads",
         rules=[
             k8s.PolicyRule(api_groups=[""], resources=["pods", "services"], verbs=_CLEANUP_VERBS),
             k8s.PolicyRule(api_groups=["apps"], resources=["deployments", "statefulsets"], verbs=_CLEANUP_VERBS),
             k8s.PolicyRule(api_groups=["batch"], resources=["cronjobs"], verbs=_CLEANUP_VERBS),
         ],
     )
-    return chart
 
 
 def cleanup_controller_sandboxes_chart(app: App) -> Chart:
-    chart = _chart(app, "clusterrole-cleanup-controller-sandboxes")
-    k8s.KubeClusterRole(
-        chart,
-        "role",
-        metadata=k8s.ObjectMeta(name="kyverno-cleanup-controller-sandboxes", labels=_AGGREGATE_TO_CLEANUP_CONTROLLER),
+    return _cleanup_controller_cluster_role_chart(
+        app,
+        "clusterrole-cleanup-controller-sandboxes",
+        "kyverno-cleanup-controller-sandboxes",
         rules=[
             k8s.PolicyRule(api_groups=["agents.x-k8s.io"], resources=["sandboxes"], verbs=_CLEANUP_VERBS),
             k8s.PolicyRule(
@@ -554,7 +531,6 @@ def cleanup_controller_sandboxes_chart(app: App) -> Chart:
             ),
         ],
     )
-    return chart
 
 
 CHARTS = (
