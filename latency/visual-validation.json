@@ -79,5 +79,11 @@
     "Presentation proof is a private RBE overlay with a frozen site archive, not a production CI performance experiment.",
     "Only latency card was changed in root index; other report cards preserved.",
     "Raw artifact downloads remain private; reviewed hashes and invocation pointer only."
-  ]
+  ],
+  "post_rebase_validation": {
+    "root_index_sha256": "a779942bb19768850ab5673c0e9bc4dbd2b5f8db6a199c82eb9dd2eb57de177d",
+    "latency_card_identical_to_captured_archive": true,
+    "latency_card_source_sha256": "897fb6f0376e02975429357660645701df77324323b0f9fc1df8978af798e281",
+    "reason": "Concurrent gh-pages root edit only repinned a different report card; latency card and report assets are unchanged."
+  }
 }
