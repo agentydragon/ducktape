@@ -879,6 +879,33 @@ impl RecordFactoryPrototypePremises {
     }
 }
 
+struct TopLevelEffectView<'source> {
+    reads: Vec<&'source Id>,
+    rebinds: Vec<&'source Id>,
+}
+
+struct OwnerLazyEffectViews<'source> {
+    synchronous: Option<TopLevelEffectView<'source>>,
+    incomplete: TopLevelEffectView<'source>,
+}
+
+fn top_level_effect_view<'source>(
+    reads: &'source BTreeSet<Id>,
+    rebinds: &'source BTreeSet<Id>,
+    top_bindings: &FxHashSet<Id>,
+) -> TopLevelEffectView<'source> {
+    TopLevelEffectView {
+        reads: reads
+            .iter()
+            .filter(|id| top_bindings.contains(*id))
+            .collect(),
+        rebinds: rebinds
+            .iter()
+            .filter(|id| top_bindings.contains(*id))
+            .collect(),
+    }
+}
+
 pub(super) struct ExecutionInputs<'source> {
     pub(super) index: &'source ExecutionIndex,
     graph: &'source ChunkCodeGraph,
@@ -909,6 +936,9 @@ pub(super) struct ExecutionInputs<'source> {
     /// with no other declaration site. Only its incoming read edge may wait.
     deferred_read_binding: Vec<Option<Id>>,
     synchronous_owner_effects: Vec<Option<&'source CallablePrefixEffects>>,
+    /// Sorted, borrowed top-level views of the canonical lazy effects used by
+    /// static owner promotion. Each view is built once from its source sets.
+    synchronous_owner_top_effects: Vec<OwnerLazyEffectViews<'source>>,
     pub(super) exported_owners: BTreeSet<SourceUnitOrdinal>,
     /// The exports code that reenters the module during its evaluation can
     /// read: their bindings, and whether the default export is among them.
@@ -1004,6 +1034,20 @@ impl ExecutionInputs<'_> {
         }
         let fact = &self.facts[owner.0];
         (&fact.reads.lazy, &fact.rebinds.lazy)
+    }
+
+    fn synchronous_top_effects(
+        &self,
+        owner: SourceUnitOrdinal,
+        incomplete_reachability: bool,
+    ) -> (&[&Id], &[&Id]) {
+        let views = &self.synchronous_owner_top_effects[owner.0];
+        let effects = if incomplete_reachability {
+            &views.incomplete
+        } else {
+            views.synchronous.as_ref().unwrap_or(&views.incomplete)
+        };
+        (&effects.reads, &effects.rebinds)
     }
 
     /// Expand actual roots immediately. A read of a future sole lexical
@@ -4711,8 +4755,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     ) {
         let (reads, rebinds) = self
             .inputs
-            .synchronous_effects(owner, self.state.world.reachability.incomplete);
-        self.promote_lazy_effects(reads, rebinds, effect_owner, outcome);
+            .synchronous_top_effects(owner, self.state.world.reachability.incomplete);
+        self.promote_top_effects(reads, rebinds, effect_owner, outcome);
     }
 
     /// Attributes `reads` and `rebinds` to `effect_owner`, assumed when a
@@ -4724,12 +4768,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         effect_owner: SourceUnitOrdinal,
         outcome: &mut Outcome,
     ) {
-        self.promote_top_effects(
-            self.top_restricted(reads),
-            self.top_restricted(rebinds),
-            effect_owner,
-            outcome,
-        );
+        let promoted_reads = self.top_restricted(reads);
+        let promoted_rebinds = self.top_restricted(rebinds);
+        self.promote_top_effects(&promoted_reads, &promoted_rebinds, effect_owner, outcome);
     }
 
     /// The top-level bindings among sorted `ids`, in order.
@@ -4743,12 +4784,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// and `promoted_rebinds`.
     pub(super) fn promote_top_effects(
         &self,
-        promoted_reads: Vec<&Id>,
-        promoted_rebinds: Vec<&Id>,
+        promoted_reads: &[&Id],
+        promoted_rebinds: &[&Id],
         effect_owner: SourceUnitOrdinal,
         outcome: &mut Outcome,
     ) {
-        if self.promotes_nothing(&promoted_reads, &promoted_rebinds, effect_owner, outcome) {
+        if self.promotes_nothing(promoted_reads, promoted_rebinds, effect_owner, outcome) {
             return;
         }
         let uninitialized: Vec<&Id> = promoted_reads
@@ -4761,7 +4802,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         match self.state.assumption.as_ref() {
             Some(reason) => {
                 let held = HeldBindings::ByOwner(&effects.reads);
-                note_assumed(&mut assumed.reads, &promoted_reads, held, reason);
+                note_assumed(&mut assumed.reads, promoted_reads, held, reason);
                 let held = HeldBindings::Plain(&effects.uninitialized_reads);
                 note_assumed(
                     &mut assumed.uninitialized_reads,
@@ -4770,19 +4811,19 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     reason,
                 );
                 let held = HeldBindings::ByOwner(&effects.rebinds);
-                note_assumed(&mut assumed.rebinds, &promoted_rebinds, held, reason);
+                note_assumed(&mut assumed.rebinds, promoted_rebinds, held, reason);
             }
             None => {
-                note_observed(&mut assumed.reads, &promoted_reads);
+                note_observed(&mut assumed.reads, promoted_reads);
                 note_observed(&mut assumed.uninitialized_reads, &uninitialized);
-                note_observed(&mut assumed.rebinds, &promoted_rebinds);
+                note_observed(&mut assumed.rebinds, promoted_rebinds);
             }
         }
-        insert_effects(&mut effects.reads, &promoted_reads, |id| {
+        insert_effects(&mut effects.reads, promoted_reads, |id| {
             (id.clone(), effect_owner)
         });
         insert_effects(&mut effects.uninitialized_reads, &uninitialized, Id::clone);
-        insert_effects(&mut effects.rebinds, &promoted_rebinds, |id| {
+        insert_effects(&mut effects.rebinds, promoted_rebinds, |id| {
             (id.clone(), effect_owner)
         });
     }
@@ -9916,9 +9957,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .cloned()
                     .collect()
             };
+            let reads: Vec<&Id> = this.inputs.binding_owner.keys().collect();
+            let rebinds: Vec<&Id> = rebinds.iter().collect();
             this.promote_top_effects(
-                this.inputs.binding_owner.keys().collect(),
-                rebinds.iter().collect(),
+                &reads,
+                &rebinds,
                 this.state
                     .current_top_owner
                     .expect("foreign record use has a top owner"),
@@ -11778,9 +11821,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // A syntactic descendant may be conditional or deferred. This is a
         // may-read constraint, never observed execution or an effect receipt.
         self.assuming(AssumedEffectReason::OpaqueCallbackInvocation, |this| {
+            let reads = this.top_restricted(reads);
             this.promote_top_effects(
-                this.top_restricted(reads),
-                Vec::new(),
+                &reads,
+                &[],
                 this.state.current_top_owner.unwrap_or(call.owner),
                 outcome,
             );
@@ -13864,6 +13908,16 @@ pub(crate) fn annotate_synchronous_calls(
             .filter(|binding| !top_bindings.contains(binding))
             .collect()
     };
+    let synchronous_owner_top_effects = facts
+        .iter()
+        .zip(&prefix_effects)
+        .map(|(fact, synchronous)| OwnerLazyEffectViews {
+            synchronous: synchronous.map(|effects| {
+                top_level_effect_view(&effects.reads, &effects.rebinds, &top_bindings)
+            }),
+            incomplete: top_level_effect_view(&fact.reads.lazy, &fact.rebinds.lazy, &top_bindings),
+        })
+        .collect();
     let inputs = ExecutionInputs {
         index: &index,
         graph: proofs.graph,
@@ -13900,6 +13954,7 @@ pub(crate) fn annotate_synchronous_calls(
         source_unit_read_closure,
         synchronous_owner_adjacency,
         deferred_read_binding,
+        synchronous_owner_top_effects,
         synchronous_owner_effects: prefix_effects,
         exported_owners,
         reentry_bindings,

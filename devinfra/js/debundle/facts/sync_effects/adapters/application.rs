@@ -463,7 +463,7 @@ impl BindingContext for LocalExecutionContext<'_, '_, '_> {
         }
         if self.executor.inputs.top_bindings.contains(binding) {
             self.executor
-                .promote_top_effects(vec![binding], Vec::new(), self.owner, self.outcome);
+                .promote_top_effects(&[binding], &[], self.owner, self.outcome);
         }
         let values = self.executor.evaluate_binding(binding, &frame.environment);
         if self.executor.inputs.top_bindings.contains(binding)
