@@ -15,8 +15,11 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/google/uuid"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
+	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -208,4 +211,30 @@ func svidFixture(t *testing.T) (workloadauthtesting.Workload, *x509.Certificate)
 	t.Helper()
 	workload, leaf := svidWorkload(t)
 	return workload, leaf
+}
+
+// Direct SVID users must retain the same ambiguity rejection as configured listeners.
+func TestDirectSVIDRejectsCredentialMetadataAndRevalidates(t *testing.T) {
+	workload, leaf := svidWorkload(t)
+	svids, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := peer.NewContext(t.Context(), &peer.Peer{AuthInfo: credentials.TLSInfo{
+		State: tls.ConnectionState{PeerCertificates: []*x509.Certificate{leaf}},
+	}})
+	for _, key := range []string{"authorization", auth.DelegationMetadataKey} {
+		for _, values := range [][]string{{""}, {"Bearer test-token"}, {"", "another"}} {
+			if _, err := svids.ResolveSubject(metadata.NewIncomingContext(ctx, metadata.MD{key: values})); status.Code(err) != codes.Unauthenticated {
+				t.Errorf("metadata %s=%q: %v", key, values, err)
+			}
+		}
+	}
+	if got, err := svids.ResolveSubject(ctx); err != nil || got != workload.Subject {
+		t.Fatalf("direct subject = %#v, %v; want %#v", got, err, workload.Subject)
+	}
+	workload.Revoke(t)
+	if _, err := svids.ResolveSubject(ctx); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("revoked direct subject: %v", err)
+	}
 }

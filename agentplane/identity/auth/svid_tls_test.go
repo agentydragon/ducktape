@@ -26,7 +26,7 @@ import (
 )
 
 func TestSVIDListenerRefusesAdversarialLeavesBeforeHandler(t *testing.T) {
-	for _, kind := range []string{"valid", "forged", "expired", "server-only"} {
+	for _, kind := range []string{"valid", "forged", "expired", "server-only", "mixed bearer", "mixed delegation"} {
 		t.Run(kind, func(t *testing.T) {
 			workload, leaf := svidFixture(t)
 			svids, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
@@ -78,7 +78,13 @@ func TestSVIDListenerRefusesAdversarialLeavesBeforeHandler(t *testing.T) {
 			t.Cleanup(func() { _ = connection.Close() })
 			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 			defer cancel()
-			ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("x-agentplane-subject", "test/attacker", "authorization", "Bearer forged"))
+			ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("x-agentplane-subject", "test/attacker"))
+			if kind == "mixed bearer" {
+				ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer forged")
+			}
+			if kind == "mixed delegation" {
+				ctx = metadata.AppendToOutgoingContext(ctx, auth.DelegationMetadataKey, "")
+			}
 			_, err = healthpb.NewHealthClient(connection).Check(ctx, &healthpb.HealthCheckRequest{})
 			if kind == "valid" {
 				if err != nil || handler.calls.Load() != 1 {

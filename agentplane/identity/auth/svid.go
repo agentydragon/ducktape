@@ -45,6 +45,11 @@ func NewKubernetesSVIDResolver(config *rest.Config, namespaces []string, identit
 // ResolveSubject authenticates a gRPC TLS peer. The listener must use the transport
 // package's workload server credentials, which verify its chain and client EKU.
 func (r *SVIDResolver) ResolveSubject(ctx context.Context) (Subject, error) {
+	// This is a direct workload boundary. Service delegation is admitted by the method
+	// rule before reaching this resolver; headers never supplement a workload SVID.
+	if hasDirectBearerCredential(ctx) || hasDelegationCredential(ctx) {
+		return nil, status.Error(codes.Unauthenticated, "ambiguous workload credentials")
+	}
 	remote, ok := peer.FromContext(ctx)
 	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "workload TLS peer is missing")
