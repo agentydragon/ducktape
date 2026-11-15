@@ -9,8 +9,8 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
-from agentplane.app.settings import Settings as AppSettings
 from agentplane.action_service.settings import Settings as ActionSettings
+from agentplane.app.settings import Settings as AppSettings
 from agentplane.environments.settings import Settings
 from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, SANDBOX_CONTROLLER_URI, SESSION_DISPATCHER_URI
 from agentplane.runner_gateway.settings import Settings as GatewaySettings
