@@ -48,7 +48,7 @@ pub use validation::{
     AssignmentReport, AssignmentValidation, AtInitReadPosition, BlockingRejection,
     BlockingSccEntry, CutEdgeExplanation, CycleEdge, CycleReport,
     render_atomic_group_conflict_summary, render_cycle_summary, render_explanations,
-    validate_assignment, validate_assignment_with_verdict,
+    validate_assignment, validate_assignment_with_schedule, validate_assignment_with_verdict,
 };
 
 /// A `define_logical_module` member whose `binding.name` did not

@@ -1278,8 +1278,10 @@ snapshot-bound `.plan`, a scoped `exhausted_no_peel` result, or an explicitly
 incomplete result. It constructs graph-constrained placements directly, including
 joint atoms and multiple destinations; it does not enumerate the Cartesian
 product of atom-to-destination choices. `--max-checks` and `--time-budget-ms`
-limit analyzed partition states and wall-clock time. Work counts summarize
-projections, contractions, branch attempts and final certification. The
+limit analyzed partition states and cooperative placement time after graph and
+baseline preparation. Deadline checks also run inside schedule derivation;
+individual graph operations can finish before the next check. Work counts
+summarize projections, schedule checkpoints, contractions, branch attempts and final certification. The
 explicit `--strategy auto` factorizer remains advisory and cannot establish
 that no peel exists.
 

@@ -197,6 +197,7 @@ struct Candidate {
 
 struct Projection {
     candidate: Candidate,
+    module_paths: Vec<ModulePath>,
     module_assignment: ModuleAssignment,
     block_by_module: BTreeMap<ModuleId, Token>,
     block_by_unit: Vec<Token>,
@@ -557,19 +558,42 @@ impl Solver<'_, '_, '_> {
             if self.stop_if_time() {
                 return Ok(());
             }
-            let schedule = EsmImportSchedule::construct(
+            let started = self.started;
+            let budget = self.options.time_budget;
+            let mut checkpoints = 0u64;
+            let schedule = EsmImportSchedule::construct_with_poll(
                 projection.entry,
                 &projection.pairs,
                 &projection.successors,
                 &projection.nodes,
                 &projection.preferred,
+                || {
+                    checkpoints = checkpoints.saturating_add(1);
+                    if budget.is_some_and(|limit| started.elapsed() >= limit) {
+                        Err(())
+                    } else {
+                        Ok(())
+                    }
+                },
             );
-            if let Err(obstruction) = &schedule {
-                let branches =
-                    self.schedule_obstruction_branches(&state, &projection, obstruction)?;
-                self.visit_branches(branches)?;
-                return Ok(());
-            }
+            self.report.work.schedule_checkpoints = self
+                .report
+                .work
+                .schedule_checkpoints
+                .saturating_add(checkpoints);
+            let schedule = match schedule {
+                Ok(Ok(schedule)) => schedule,
+                Ok(Err(obstruction)) => {
+                    let branches =
+                        self.schedule_obstruction_branches(&state, &projection, &obstruction)?;
+                    self.visit_branches(branches)?;
+                    return Ok(());
+                }
+                Err(()) => {
+                    self.stop_if_time();
+                    return Ok(());
+                }
+            };
 
             let cap_branches = self.new_owner_cap_branches(&state)?;
             if let Some(branches) = cap_branches {
@@ -604,7 +628,7 @@ impl Solver<'_, '_, '_> {
                 return Ok(());
             }
 
-            self.certify_candidate(projection.candidate)?;
+            self.certify_candidate(projection, &schedule)?;
             return Ok(());
         }
     }
@@ -764,6 +788,7 @@ impl Solver<'_, '_, '_> {
 
         Ok(Some(Projection {
             candidate,
+            module_paths: paths,
             module_assignment,
             block_by_module,
             block_by_unit,
@@ -1024,10 +1049,15 @@ impl Solver<'_, '_, '_> {
         Ok(Some(branches))
     }
 
-    fn certify_candidate(&mut self, candidate: Candidate) -> Result<()> {
+    fn certify_candidate(
+        &mut self,
+        projection: Projection,
+        schedule: &EsmImportSchedule,
+    ) -> Result<()> {
         if self.stop_if_time() {
             return Ok(());
         }
+        let candidate = projection.candidate;
         ensure!(
             self.in_scope(&candidate),
             "constructed placement disagreed with its move scope"
@@ -1038,11 +1068,18 @@ impl Solver<'_, '_, '_> {
         }
         self.report.work.final_certifications =
             self.report.work.final_certifications.saturating_add(1);
-        let validation = self.problem.validate(&candidate.assignment)?;
+        let validation = self.problem.validate_constructed(
+            &candidate.assignment,
+            &projection.module_paths,
+            schedule,
+        )?;
         ensure!(
             accepted(&validation),
             "constructive placement disagreed with final assignment certification"
         );
+        if self.stop_if_time() {
+            return Ok(());
+        }
         self.report.status = SearchStatus::Found;
         self.report.residual_units_extracted = gain;
         self.report.existing_units_moved = self.problem.existing_units_moved(&candidate.assignment);

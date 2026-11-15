@@ -698,6 +698,27 @@ pub fn validate_assignment_with_verdict(
     validation_from_verdict(dependency_graph, assignment, module_path, verdict)
 }
 
+/// Independently certify a constructed schedule against the canonical graph,
+/// without deriving the same schedule again. Target validation remains exact.
+pub fn validate_assignment_with_schedule(
+    dependency_graph: &DependencyGraph,
+    assignment: &ModuleAssignment,
+    module_path: &dyn Fn(ModuleId) -> ModulePath,
+    schedule: &crate::esm_schedule::EsmImportSchedule,
+) -> Result<AssignmentValidation, crate::esm_schedule::ImportScheduleError> {
+    let verdict = crate::realizability::check_realizability_with_schedule(
+        dependency_graph,
+        assignment,
+        schedule,
+    )?;
+    Ok(validation_from_verdict(
+        dependency_graph,
+        assignment,
+        module_path,
+        verdict,
+    ))
+}
+
 pub(crate) fn validation_from_verdict(
     dependency_graph: &DependencyGraph,
     assignment: &ModuleAssignment,

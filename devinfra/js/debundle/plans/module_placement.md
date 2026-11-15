@@ -1,6 +1,6 @@
 # Constructive module placement delivery
 
-Status: implementation integrated; combined validation pending, 2026-11-15. This plan replaces
+Status: 331 test targets pass; measured scheduler optimization in progress, 2026-11-15. This plan replaces
 the earlier assignment-enumeration architecture. The mathematical model,
 algorithms and general coverage arguments live in
 [the placement design](../docs/module_placement.md). The pinned historical
@@ -56,7 +56,7 @@ preferences must not silently change these meanings.
    edges, by the final-postorder-rank argument. Include both incoming consumers
    and partners outside an obstructed SCC's forward closure. Resolve only these
    necessary clauses; certify a completed positive witness once.
-5. **Proof implemented; independent evidence pending.** The design supplies
+5. **Proof and independent small-case evidence validated.** The design supplies
    successful-subtree scheduling and partition-coarsening coverage arguments.
    Finite tests support, rather than establish, universal correctness. Compare
    scheduling against raw import-list permutations and construction against raw
@@ -64,14 +64,14 @@ preferences must not silently change these meanings.
    Include every small required-unit subset and fresh-owner cap, multi-unit and
    anonymous atoms, rebinding, lazy/eager reads, conditional promotion, generated
    residual baselines, fixed owners and rejected intermediate moves.
-6. **CLI and packaged workflow — integrated; package validation pending.** Make complete construction the
+6. **CLI and packaged workflow — validated.** Make complete construction the
    default `modules propose`; retain explicitly requested `--strategy auto` only
    as advisory semantic inventory. Reuse `modules check` for exact batches and
    snapshot plans, preview without writes, preserve omitted authored claims while
    allowing configured residual layouts to be regenerated,
    and refuse stale/ambiguous realization before writing. Pin default dispatch,
    explicit advisory mode and contradictory option errors in real CLI tests.
-7. **Performance and downstream acceptance — pending validation.** Run
+7. **Performance and downstream acceptance — measured follow-through in progress.** Run
    chain/fanout work-count regressions, an optimized prepared-query profile and a
    fresh copied-consumer propose/check/preview/apply/materialize workflow. Require
    positive residual gain, no authored-owner disturbance and exact preservation
@@ -79,6 +79,13 @@ preferences must not silently change these meanings.
    timings are not measurements of this implementation. Build affected skill
    archives and execute the packaged recipe on the combined final engine. Publish
    the same PR and verify exact-head CI separately from focused tests.
+
+The first fresh optimized unscoped profile found about 94% of sampled CPU inside
+recursive schedule construction, exceeding a ten-second placement budget because
+the scheduler did not poll it. This is required work in this project: solve
+independent import SCCs locally, add typed cooperative cancellation that returns
+`incomplete`, certify the retained schedule without deriving it twice, and rerun
+the optimized profile and full consumer workflow on the resulting engine.
 
 ## Correctness boundaries
 
@@ -117,8 +124,9 @@ schedule trials can repeat work.
 - [x] Prove exact schedule construction and fresh-name symmetry in the design.
 - [x] Add simultaneous batch/from-scratch verdict differentials.
 - [x] Integrate the constructive generator and complete-default CLI.
-- [ ] Pass raw placement/import permutation oracles and real CLI/Node regressions.
-- [ ] Bound chain/fanout partition work and final certification counts.
+- [x] Pass raw placement/import permutation oracles and real CLI/Node regressions.
+- [x] Bound chain/fanout partition work and final certification counts.
+- [ ] Keep scheduler work local to import SCCs and interruptible by placement deadlines.
 - [x] Reconcile SPEC, design, CLI docs, AGENTS, skills and shipped recipe.
 - [ ] Profile the optimized implementation and complete fresh downstream acceptance.
 - [ ] Publish final commits and verify exact-head CI.

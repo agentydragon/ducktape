@@ -8,7 +8,10 @@ use analysis::{
     ModuleId, StatementKind, compute_atomic_groups,
 };
 use anyhow::{Context, Result, ensure};
-use gate::{AssignmentValidation, validate_assignment_with_verdict};
+use gate::{
+    AssignmentValidation, EsmImportSchedule, validate_assignment_with_schedule,
+    validate_assignment_with_verdict,
+};
 use serde::{Deserialize, Serialize};
 use spec::{ModulePath, is_residual_namespace_path};
 
@@ -166,6 +169,23 @@ impl<'a> AssignmentProblem<'a> {
     }
 
     pub fn validate(&self, candidate: &[Option<ModulePath>]) -> Result<AssignmentValidation> {
+        self.validate_using_schedule(candidate, None)
+    }
+
+    pub(super) fn validate_constructed(
+        &self,
+        candidate: &[Option<ModulePath>],
+        scheduled_paths: &[ModulePath],
+        schedule: &EsmImportSchedule,
+    ) -> Result<AssignmentValidation> {
+        self.validate_using_schedule(candidate, Some((scheduled_paths, schedule)))
+    }
+
+    fn validate_using_schedule(
+        &self,
+        candidate: &[Option<ModulePath>],
+        constructed: Option<(&[ModulePath], &EsmImportSchedule)>,
+    ) -> Result<AssignmentValidation> {
         ensure!(
             candidate.len() == self.baseline.len(),
             "candidate must assign every source unit"
@@ -185,14 +205,24 @@ impl<'a> AssignmentProblem<'a> {
             EntryDestination::from_module_id(residual),
         );
         let residual_path = ModulePath::parse("residual", "")?;
-        let mut validation =
-            validate_assignment_with_verdict(self.input.graph(), &assignment, &|id| {
-                if id == residual {
-                    residual_path.clone()
-                } else {
-                    paths[id.0].clone()
-                }
-            });
+        let module_path = |id: ModuleId| {
+            if id == residual {
+                residual_path.clone()
+            } else {
+                paths[id.0].clone()
+            }
+        };
+        let mut validation = if let Some((scheduled_paths, schedule)) = constructed {
+            let remapped = self.remap_schedule(&paths, &assignment, scheduled_paths, schedule)?;
+            validate_assignment_with_schedule(
+                self.input.graph(),
+                &assignment,
+                &module_path,
+                &remapped,
+            )?
+        } else {
+            validate_assignment_with_verdict(self.input.graph(), &assignment, &module_path)
+        };
         validation.report.atomic_group_conflicts = self
             .atoms
             .iter()
@@ -212,6 +242,65 @@ impl<'a> AssignmentProblem<'a> {
             })
             .collect();
         Ok(validation)
+    }
+
+    /// Provisional schedules include unused explicit fresh anchors. Remap by
+    /// logical owner, dropping only isolated unused anchors and their implicit
+    /// entry imports. Recheck all final target sets against the source graph.
+    fn remap_schedule(
+        &self,
+        paths: &[ModulePath],
+        assignment: &ModuleAssignment,
+        scheduled_paths: &[ModulePath],
+        schedule: &EsmImportSchedule,
+    ) -> Result<EsmImportSchedule> {
+        let old_entry = ModuleId(scheduled_paths.len());
+        let entry = assignment.entry_destination().module_id();
+        let ids: BTreeMap<_, _> = paths
+            .iter()
+            .enumerate()
+            .map(|(i, path)| (path, ModuleId(i)))
+            .collect();
+        ensure!(
+            schedule.modules() == (0..=scheduled_paths.len()).map(ModuleId).collect(),
+            "constructed schedule changed its provisional owner universe"
+        );
+        let mut mapping = BTreeMap::from([(old_entry, entry)]);
+        for (i, path) in scheduled_paths.iter().enumerate() {
+            let old = ModuleId(i);
+            if let Some(&id) = ids.get(path) {
+                mapping.insert(old, id);
+            } else {
+                ensure!(
+                    schedule.imports(old).is_empty(),
+                    "unused fresh owner has imports"
+                );
+            }
+        }
+        let mut imports = BTreeMap::new();
+        for (&old, &new) in &mapping {
+            let mut targets = Vec::new();
+            for &target in schedule.imports(old) {
+                if let Some(&mapped) = mapping.get(&target) {
+                    targets.push(mapped);
+                } else {
+                    ensure!(
+                        old == old_entry,
+                        "a nonentry module imports a removed fresh owner"
+                    );
+                }
+            }
+            imports.insert(new, targets);
+        }
+        let canonical =
+            analysis::graph::chunk_constraining_module_edges(self.input.graph(), assignment);
+        let nodes = (0..=paths.len()).map(ModuleId).collect();
+        Ok(EsmImportSchedule::from_imports(
+            entry,
+            &canonical.i_successors,
+            &nodes,
+            imports,
+        )?)
     }
 
     /// Numeric module identities used by the full gate, in emitter order.
