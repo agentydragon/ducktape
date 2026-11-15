@@ -5,7 +5,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::ids::ModuleId;
-use petgraph::{algo::tarjan_scc, graphmap::DiGraphMap};
+use petgraph::{
+    algo::{tarjan_scc, toposort},
+    graphmap::DiGraphMap,
+};
 
 use super::EsmImportSchedule;
 use crate::esm_import_order::EsmImportOrder;
@@ -26,10 +29,9 @@ struct Traversal {
 }
 
 struct Constructor<'a, E> {
-    preferred: &'a EsmImportSchedule,
+    imports: &'a BTreeMap<ModuleId, Vec<ModuleId>>,
     pairs: &'a BTreeSet<(ModuleId, ModuleId)>,
     poll: &'a mut dyn FnMut() -> Result<(), E>,
-    trials: usize,
 }
 
 impl EsmImportSchedule {
@@ -64,129 +66,207 @@ impl EsmImportSchedule {
     ) -> Result<Result<Self, ScheduleObstruction>, E> {
         poll()?;
         let policy = Self::from_policy(entry, successors, nodes, preferred);
-        let mut constructor = Constructor {
-            preferred: &policy,
-            pairs,
-            poll: &mut poll,
-            trials: 0,
-        };
-        if constructor.is_tdz_free(&policy)? {
+        if is_tdz_free(&policy, pairs, &mut poll)? {
             return Ok(Ok(policy));
         }
-        let mut state = Traversal::default();
-        if constructor.complete(entry, &mut state)? {
-            constructor.poll()?;
-            let result = Self::from_imports(entry, successors, nodes, state.imports)
-                .expect("constructed traversal covers the complete import graph");
-            assert!(
-                constructor.is_tdz_free(&result)?,
-                "constructor returned a TDZ"
-            );
-            return Ok(Ok(result));
+        for &(consumer, dependency) in pairs {
+            poll()?;
+            if dependency == entry {
+                return Ok(Err(obstruction(
+                    BTreeSet::from([consumer]),
+                    entry,
+                    &policy,
+                    &mut poll,
+                )?));
+            }
         }
 
-        // Entry's universal fanout lets it pre-evaluate every downstream SCC.
-        // A failed whole traversal therefore contains an SCC that cannot be
-        // entered at ANY root, with entry gray and everything outside black.
+        // Entry can enter every component after its dependencies have finished.
+        // Keep recursive trials local: downstream components cannot affect the
+        // existence of an internal schedule, and need not be traversed again.
         let mut graph = DiGraphMap::<ModuleId, ()>::new();
         for &node in nodes {
-            constructor.poll()?;
+            poll()?;
             if node != entry {
                 graph.add_node(node);
             }
         }
         for (&from, targets) in successors {
-            constructor.poll()?;
+            poll()?;
             for &to in targets {
-                constructor.poll()?;
+                poll()?;
                 if from != entry && to != entry {
                     graph.add_edge(from, to, ());
                 }
             }
         }
-        constructor.poll()?;
-        for component in tarjan_scc(&graph) {
-            constructor.poll()?;
-            let component: BTreeSet<_> = component.into_iter().collect();
-            let mut completable = false;
-            for &root in &component {
-                constructor.poll()?;
-                let mut state = Traversal {
-                    active: BTreeSet::from([entry]),
-                    finished: nodes
-                        .difference(&component)
-                        .copied()
-                        .filter(|&node| node != entry)
-                        .collect(),
-                    imports: BTreeMap::new(),
-                };
-                if constructor.complete(root, &mut state)? {
-                    completable = true;
-                    break;
+        poll()?;
+        let components = tarjan_scc(&graph);
+        let mut component_of = BTreeMap::new();
+        let mut condensation = DiGraphMap::<usize, ()>::new();
+        for (index, component) in components.iter().enumerate() {
+            poll()?;
+            condensation.add_node(index);
+            for &module in component {
+                poll()?;
+                component_of.insert(module, index);
+            }
+        }
+        let mut internal_imports = vec![BTreeMap::new(); components.len()];
+        for (&module, &index) in &component_of {
+            poll()?;
+            let mut internal = Vec::new();
+            for &target in policy.imports(module) {
+                poll()?;
+                if target == entry {
+                    continue;
+                }
+                let target_index = component_of[&target];
+                if index == target_index {
+                    internal.push(target);
+                } else {
+                    condensation.add_edge(index, target_index, ());
                 }
             }
-            if !completable {
-                let mut forward_closure = component.clone();
-                let mut work: Vec<_> = component.iter().copied().collect();
-                while let Some(node) = work.pop() {
+            internal_imports[index].insert(module, internal);
+        }
+        let mut internal_pairs = vec![BTreeSet::new(); components.len()];
+        for &(consumer, dependency) in pairs {
+            poll()?;
+            if consumer != entry && component_of[&consumer] == component_of[&dependency] {
+                internal_pairs[component_of[&consumer]].insert((consumer, dependency));
+            }
+        }
+        let entry_rank: BTreeMap<_, _> = policy
+            .imports(entry)
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(rank, module)| (module, rank))
+            .collect();
+        poll()?;
+        let order = toposort(&condensation, None).expect("SCC condensation is acyclic");
+        let mut imports = policy.imports.clone();
+        let mut roots = Vec::with_capacity(components.len());
+        for index in order.into_iter().rev() {
+            poll()?;
+            let mut candidates = components[index].clone();
+            candidates.sort_by_key(|module| entry_rank[module]);
+            let pairs = &internal_pairs[index];
+            if pairs.is_empty() {
+                // With no internal constraints every traversal of this SCC is
+                // valid. Its external dependencies are already finished.
+                roots.push(candidates[0]);
+                continue;
+            }
+            let mut constrained_dependencies = BTreeSet::new();
+            for &(_, dependency) in pairs {
+                poll()?;
+                constrained_dependencies.insert(dependency);
+            }
+            let chosen = {
+                let mut constructor = Constructor {
+                    imports: &internal_imports[index],
+                    pairs,
+                    poll: &mut poll,
+                };
+                let mut chosen = None;
+                for root in candidates {
                     constructor.poll()?;
-                    for &target in policy.imports(node) {
-                        constructor.poll()?;
-                        if target != entry && forward_closure.insert(target) {
-                            work.push(target);
-                        }
+                    // Every SCC member must finish before its first root. A
+                    // constraining incoming edge therefore forbids this root.
+                    if constrained_dependencies.contains(&root) {
+                        continue;
+                    }
+                    let mut state = Traversal::default();
+                    if constructor.complete(root, &mut state)? {
+                        chosen = Some((root, state.imports));
+                        break;
                     }
                 }
-                return Ok(Err(ScheduleObstruction {
-                    component,
-                    forward_closure,
-                }));
-            }
-        }
-        // A C edge into entry is an immediate global obstruction even when
-        // its endpoints do not form a source-import SCC.
-        let mut component = BTreeSet::new();
-        for &(from, to) in pairs {
-            constructor.poll()?;
-            if to == entry {
-                component.insert(from);
-            }
-        }
-        assert!(
-            !component.is_empty(),
-            "whole traversal failed but every SCC is schedulable"
-        );
-        let mut forward_closure = component.clone();
-        let mut work: Vec<_> = component.iter().copied().collect();
-        while let Some(node) = work.pop() {
-            constructor.poll()?;
-            for &target in policy.imports(node) {
-                constructor.poll()?;
-                if target != entry && forward_closure.insert(target) {
-                    work.push(target);
+                chosen
+            };
+            let Some((root, local_imports)) = chosen else {
+                return Ok(Err(obstruction(
+                    components[index].iter().copied().collect(),
+                    entry,
+                    &policy,
+                    &mut poll,
+                )?));
+            };
+            roots.push(root);
+            for (module, mut targets) in local_imports {
+                poll()?;
+                for &target in policy.imports(module) {
+                    poll()?;
+                    if target == entry || component_of[&target] != index {
+                        targets.push(target);
+                    }
                 }
+                imports.insert(module, targets);
             }
         }
-        Ok(Err(ScheduleObstruction {
-            component,
-            forward_closure,
-        }))
+        // The first root visits its complete SCC; later entry targets within
+        // that component are mandatory imports but cause no additional DFS.
+        let selected: BTreeSet<_> = roots.iter().copied().collect();
+        for &target in policy.imports(entry) {
+            poll()?;
+            if !selected.contains(&target) {
+                roots.push(target);
+            }
+        }
+        imports.insert(entry, roots);
+        poll()?;
+        let result = Self::from_imports(entry, successors, nodes, imports)
+            .expect("component schedules contain exactly the canonical targets");
+        assert!(
+            is_tdz_free(&result, pairs, &mut poll)?,
+            "constructor returned a TDZ"
+        );
+        Ok(Ok(result))
     }
+}
+
+fn is_tdz_free<E>(
+    schedule: &EsmImportSchedule,
+    pairs: &BTreeSet<(ModuleId, ModuleId)>,
+    poll: &mut impl FnMut() -> Result<(), E>,
+) -> Result<bool, E> {
+    for &(consumer, dependency) in pairs {
+        poll()?;
+        if schedule.post_order()[&dependency] >= schedule.post_order()[&consumer] {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn obstruction<E>(
+    component: BTreeSet<ModuleId>,
+    entry: ModuleId,
+    policy: &EsmImportSchedule,
+    poll: &mut impl FnMut() -> Result<(), E>,
+) -> Result<ScheduleObstruction, E> {
+    let mut forward_closure = component.clone();
+    let mut work: Vec<_> = component.iter().copied().collect();
+    while let Some(node) = work.pop() {
+        poll()?;
+        for &target in policy.imports(node) {
+            poll()?;
+            if target != entry && forward_closure.insert(target) {
+                work.push(target);
+            }
+        }
+    }
+    Ok(ScheduleObstruction {
+        component,
+        forward_closure,
+    })
 }
 
 impl<E> Constructor<'_, E> {
     fn poll(&mut self) -> Result<(), E> {
         (self.poll)()
-    }
-
-    fn is_tdz_free(&mut self, schedule: &EsmImportSchedule) -> Result<bool, E> {
-        for &(consumer, dependency) in self.pairs {
-            self.poll()?;
-            if schedule.post_order()[&dependency] >= schedule.post_order()[&consumer] {
-                return Ok(false);
-            }
-        }
-        Ok(true)
     }
 
     fn white(&self, node: ModuleId, state: &Traversal) -> bool {
@@ -195,12 +275,11 @@ impl<E> Constructor<'_, E> {
 
     fn complete(&mut self, root: ModuleId, state: &mut Traversal) -> Result<bool, E> {
         self.poll()?;
-        self.trials += 1;
         let mut reachable = BTreeSet::from([root]);
         let mut work = vec![root];
         while let Some(node) = work.pop() {
             self.poll()?;
-            for &target in self.preferred.imports(node) {
+            for &target in self.imports[&node].as_slice() {
                 self.poll()?;
                 if self.white(target, state) && reachable.insert(target) {
                     work.push(target);
@@ -224,7 +303,7 @@ impl<E> Constructor<'_, E> {
         loop {
             self.poll()?;
             let mut candidates = Vec::new();
-            for &target in self.preferred.imports(root) {
+            for &target in self.imports[&root].as_slice() {
                 self.poll()?;
                 if self.white(target, state) {
                     candidates.push(target);
@@ -257,7 +336,7 @@ impl<E> Constructor<'_, E> {
             }
         }
         let ordered = state.imports.get_mut(&root).expect("active root");
-        for &target in self.preferred.imports(root) {
+        for &target in self.imports[&root].as_slice() {
             self.poll()?;
             if !ordered.contains(&target) {
                 ordered.push(target);
@@ -353,5 +432,134 @@ mod tests {
             assert_eq!(result, Err(stop_at));
             assert_eq!(polls, stop_at);
         }
+    }
+
+    #[test]
+    fn constrained_components_compose_in_dependency_order() {
+        let entry = ModuleId(6);
+        let nodes = (0..=entry.0).map(ModuleId).collect();
+        let mut pairs = BTreeSet::new();
+        let mut successors = BTreeMap::new();
+        for offset in [0, 3] {
+            let (left, right, dependency) =
+                (ModuleId(offset), ModuleId(offset + 1), ModuleId(offset + 2));
+            pairs.extend([(left, dependency), (right, dependency)]);
+            successors.insert(left, BTreeSet::from([right, dependency]));
+            successors.insert(right, BTreeSet::from([dependency]));
+            successors.insert(dependency, BTreeSet::from([left, right]));
+        }
+        pairs.insert((ModuleId(4), ModuleId(2)));
+        successors
+            .get_mut(&ModuleId(4))
+            .unwrap()
+            .insert(ModuleId(2));
+        let preferred = EsmImportOrder::build(&pairs, &successors, &nodes);
+        let schedule =
+            EsmImportSchedule::construct(entry, &pairs, &successors, &nodes, &preferred).unwrap();
+        assert!(schedule.tdz_pairs(&pairs).next().is_none());
+        schedule.check_targets(entry, &successors, &nodes).unwrap();
+        for dependency in 0..3 {
+            for consumer in 3..6 {
+                assert!(
+                    schedule.post_order()[&ModuleId(dependency)]
+                        < schedule.post_order()[&ModuleId(consumer)]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn independent_components_add_only_linear_scheduler_work() {
+        for independent_components in [0, 32, 512] {
+            let (left, right, dependency) = (ModuleId(0), ModuleId(1), ModuleId(2));
+            let entry = ModuleId(3 + 2 * independent_components);
+            let nodes = (0..=entry.0).map(ModuleId).collect();
+            let pairs = BTreeSet::from([(left, dependency), (right, dependency)]);
+            let mut successors = BTreeMap::from([
+                (left, BTreeSet::from([right, dependency])),
+                (right, BTreeSet::from([dependency])),
+                (dependency, BTreeSet::from([left, right])),
+            ]);
+            for index in 0..independent_components {
+                let first = ModuleId(3 + 2 * index);
+                let second = ModuleId(first.0 + 1);
+                successors.insert(first, BTreeSet::from([second, entry]));
+                successors.insert(second, BTreeSet::from([first]));
+                // These downstream lazy components must finish before the mixed
+                // component. Entry back-imports must stay gray, not join its SCC.
+                successors.get_mut(&left).unwrap().insert(first);
+            }
+            let preferred = EsmImportOrder::build(&pairs, &successors, &nodes);
+            let policy = EsmImportSchedule::from_policy(entry, &successors, &nodes, &preferred);
+            assert!(policy.tdz_pairs(&pairs).next().is_some());
+            let mut checkpoints = 0;
+            let schedule = EsmImportSchedule::construct_with_poll(
+                entry,
+                &pairs,
+                &successors,
+                &nodes,
+                &preferred,
+                || {
+                    checkpoints += 1;
+                    Ok::<_, ()>(())
+                },
+            )
+            .unwrap()
+            .unwrap();
+            assert!(schedule.tdz_pairs(&pairs).next().is_none());
+            schedule.check_targets(entry, &successors, &nodes).unwrap();
+            for index in 0..independent_components {
+                let first = ModuleId(3 + 2 * index);
+                assert!(schedule.post_order()[&first] < schedule.post_order()[&left]);
+            }
+            assert!(
+                checkpoints < 1_000 + 80 * independent_components,
+                "independent components enlarged recursive work: {independent_components} components, {checkpoints} checkpoints",
+            );
+        }
+    }
+
+    #[test]
+    fn obstruction_keeps_forward_dependencies_without_searching_them() {
+        let (left, right, dependency) = (ModuleId(0), ModuleId(1), ModuleId(2));
+        let downstream_count = 512;
+        let entry = ModuleId(3 + downstream_count);
+        let nodes = (0..=entry.0).map(ModuleId).collect();
+        let pairs = BTreeSet::from([(left, dependency), (right, dependency)]);
+        let mut successors = BTreeMap::from([
+            (left, BTreeSet::from([dependency, ModuleId(3)])),
+            (right, BTreeSet::from([dependency])),
+            (dependency, BTreeSet::from([left, right])),
+        ]);
+        for node in 3..entry.0 - 1 {
+            successors.insert(ModuleId(node), BTreeSet::from([ModuleId(node + 1)]));
+        }
+        let preferred = EsmImportOrder::build(&pairs, &successors, &nodes);
+        let mut checkpoints = 0;
+        let obstruction = EsmImportSchedule::construct_with_poll(
+            entry,
+            &pairs,
+            &successors,
+            &nodes,
+            &preferred,
+            || {
+                checkpoints += 1;
+                Ok::<_, ()>(())
+            },
+        )
+        .unwrap()
+        .unwrap_err();
+        assert_eq!(
+            obstruction.component,
+            BTreeSet::from([left, right, dependency])
+        );
+        assert_eq!(
+            obstruction.forward_closure,
+            (0..entry.0).map(ModuleId).collect()
+        );
+        assert!(
+            checkpoints < 1_000 + 40 * downstream_count,
+            "{checkpoints} checkpoints"
+        );
     }
 }
