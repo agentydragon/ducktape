@@ -33,7 +33,6 @@ def build_dashboard() -> dashboard.Dashboard:
         .tags(["laptop", "power", "rapl", "rugged"])
         .refresh("1m")
         .time("now-6h", "now")
-        .timezone("")
         .timepicker(TimePicker().refresh_intervals(["10s", "30s", "1m", "5m", "15m", "1h"]))
         .with_variable(
             QueryVariable("instance")
@@ -49,7 +48,7 @@ def build_dashboard() -> dashboard.Dashboard:
             .id(1)
             .title("Battery charge")
             .datasource(mimir())
-            .grid_pos(dashboard.GridPos(h=8, w=12, x=0, y=0))
+            .grid_pos(dashboard.GridPos(h=8))
             .unit("percent")
             .min(0)
             .max(100)
@@ -76,7 +75,7 @@ def build_dashboard() -> dashboard.Dashboard:
             .id(2)
             .title("Battery and external-power state")
             .datasource(mimir())
-            .grid_pos(dashboard.GridPos(h=8, w=12, x=12, y=0))
+            .grid_pos(dashboard.GridPos(h=8, x=12))
             .with_target(
                 mimir_query('node_power_supply_info{instance=~"$instance",type=~"Battery|Mains|USB"}')
                 .format(prometheus.PromQueryFormat.TABLE)

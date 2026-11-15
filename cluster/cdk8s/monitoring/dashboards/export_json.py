@@ -6,12 +6,9 @@ from pathlib import Path
 from grafana_foundation_sdk.cog.encoder import JSONEncoder
 from grafana_foundation_sdk.models import dashboard
 
-from cluster.cdk8s.att_gateway_exporter import dashboard as gateway_dashboard  # Dashboard modules share a name.
-from cluster.cdk8s.cdviz import (
-    dashboard as ci_dashboard,  # Dashboard modules share a name.
-    feedback_dashboard,
-)
-from cluster.cdk8s.github_exporter import dashboard as github_dashboard  # Dashboard modules share a name.
+from cluster.cdk8s.att_gateway_exporter import home_gateway
+from cluster.cdk8s.cdviz import commit_feedback, workflow_timings
+from cluster.cdk8s.github_exporter import github_api_quotas
 from cluster.cdk8s.monitoring.dashboards import (
     aiquota_history,
     buildbuddy_executor_pool,
@@ -55,10 +52,10 @@ def main() -> None:
     write_dashboard(directory / "flux-cluster.json", flux_cluster.build_dashboard())
     write_dashboard(directory / "rugged-power.json", rugged_power.build_dashboard())
     write_dashboard(directory / "aiquota-history.json", aiquota_history.build_dashboard())
-    write_dashboard(directory / "home-gateway.json", gateway_dashboard.build_dashboard())
-    write_dashboard(directory / "github-api-quotas.json", github_dashboard.build_dashboard())
-    write_dashboard(directory / "ducktape-ci.json", ci_dashboard.build_dashboard())
-    write_dashboard(directory / "ducktape-ci-feedback.json", feedback_dashboard.build_dashboard())
+    write_dashboard(directory / "home-gateway.json", home_gateway.build_dashboard())
+    write_dashboard(directory / "github-api-quotas.json", github_api_quotas.build_dashboard())
+    write_dashboard(directory / "ci-workflow-timings.json", workflow_timings.build_dashboard())
+    write_dashboard(directory / "ci-commit-feedback.json", commit_feedback.build_dashboard())
 
 
 if __name__ == "__main__":

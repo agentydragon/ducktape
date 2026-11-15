@@ -19,7 +19,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":access_code",
-        ":dashboard",
+        ":home_gateway",
         "//att_gateway:settings",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:home_lan",
@@ -45,14 +45,14 @@ py_library(
 grafana_dashboard_visual_test(
     name = "dashboard_visual_test",
     size = "medium",
-    dashboard = "//cluster/cdk8s:home-gateway.json",
+    dashboard = "//cluster/cdk8s/monitoring/dashboards:home-gateway.json",
     fixture_data = ":dashboard_visual_fixture.json",
 )
 
 py_library(
-    name = "dashboard",
-    srcs = ["dashboard.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    name = "home_gateway",
+    srcs = ["home_gateway.py"],
+    visibility = ["//cluster/cdk8s/monitoring/dashboards:__pkg__"],
     deps = [
         "//cluster/cdk8s/monitoring/dashboards:foundation",
         "@pypi//grafana_foundation_sdk",

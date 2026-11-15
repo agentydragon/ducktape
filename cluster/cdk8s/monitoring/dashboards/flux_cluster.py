@@ -15,7 +15,7 @@ def _readiness_stat(zero_color: str = "red", nonzero_color: str = "green") -> st
         stat.Panel()
         .datasource(mimir())
         .unit("short")
-        .color_scheme(FieldColor().mode(dashboard.FieldColorModeId.THRESHOLDS))
+        .color_scheme(FieldColor())
         .thresholds(
             ThresholdsConfig().steps(
                 [dashboard.Threshold(color=zero_color), dashboard.Threshold(color=nonzero_color, value=1)]
@@ -55,7 +55,7 @@ def build_dashboard() -> dashboard.Dashboard:
             .id(1)
             .title("Ready Kustomizations")
             .description("Kustomizations whose Ready condition is True.")
-            .grid_pos(dashboard.GridPos(h=5, w=6, x=0, y=0))
+            .grid_pos(dashboard.GridPos(h=5, w=6))
             .with_target(
                 mimir_query(
                     'count(kube_customresource_flux_kustomization_ready{namespace=~"$namespace",status="True"})',
@@ -68,7 +68,7 @@ def build_dashboard() -> dashboard.Dashboard:
             .id(2)
             .title("Not-ready Kustomizations")
             .description("Kustomizations whose current Ready condition is False or Unknown.")
-            .grid_pos(dashboard.GridPos(h=5, w=6, x=6, y=0))
+            .grid_pos(dashboard.GridPos(h=5, w=6, x=6))
             .with_target(
                 mimir_query(
                     'sum(kube_customresource_flux_kustomization_ready{namespace=~"$namespace",status!="True"})',
@@ -81,7 +81,7 @@ def build_dashboard() -> dashboard.Dashboard:
             .id(3)
             .title("Ready HelmReleases")
             .description("HelmReleases whose Ready condition is True.")
-            .grid_pos(dashboard.GridPos(h=5, w=6, x=12, y=0))
+            .grid_pos(dashboard.GridPos(h=5, w=6, x=12))
             .with_target(
                 mimir_query(
                     'count(kube_customresource_flux_helmrelease_ready{namespace=~"$namespace",status="True"})', "ready"
@@ -93,7 +93,7 @@ def build_dashboard() -> dashboard.Dashboard:
             .id(4)
             .title("Ready GitRepositories")
             .description("GitRepositories whose Ready condition is True.")
-            .grid_pos(dashboard.GridPos(h=5, w=6, x=18, y=0))
+            .grid_pos(dashboard.GridPos(h=5, w=6, x=18))
             .with_target(
                 mimir_query(
                     'count(kube_customresource_flux_gitrepository_ready{namespace=~"$namespace",status="True"})',
@@ -105,7 +105,7 @@ def build_dashboard() -> dashboard.Dashboard:
             _history_panel()
             .id(5)
             .title("Reconciliation duration by resource kind")
-            .grid_pos(dashboard.GridPos(h=9, w=12, x=0, y=5))
+            .grid_pos(dashboard.GridPos(y=5))
             .unit("s")
             .line_interpolation(common.LineInterpolation.SMOOTH)
             .with_target(
@@ -119,7 +119,7 @@ def build_dashboard() -> dashboard.Dashboard:
             _history_panel()
             .id(6)
             .title("Reconciliations per second")
-            .grid_pos(dashboard.GridPos(h=9, w=12, x=12, y=5))
+            .grid_pos(dashboard.GridPos(x=12, y=5))
             .unit("ops")
             .with_target(mimir_query("sum(rate(gotk_reconcile_duration_seconds_count[5m])) by (kind)", "{{kind}}"))
         )
@@ -127,7 +127,7 @@ def build_dashboard() -> dashboard.Dashboard:
             _history_panel()
             .id(7)
             .title("Not-ready resources by namespace")
-            .grid_pos(dashboard.GridPos(h=8, w=12, x=0, y=14))
+            .grid_pos(dashboard.GridPos(h=8, y=14))
             .unit("short")
             .with_target(
                 mimir_query(
@@ -154,7 +154,7 @@ def build_dashboard() -> dashboard.Dashboard:
             _history_panel()
             .id(8)
             .title("GitRepository artifact size")
-            .grid_pos(dashboard.GridPos(h=8, w=12, x=12, y=14))
+            .grid_pos(dashboard.GridPos(h=8, x=12, y=14))
             .unit("decbytes")
             .tooltip(VizTooltipOptions())
             .with_target(

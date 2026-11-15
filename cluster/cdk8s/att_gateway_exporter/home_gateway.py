@@ -2,13 +2,7 @@
 
 from grafana_foundation_sdk.models import common, dashboard, logs, loki, prometheus, stat, statetimeline
 
-from cluster.cdk8s.monitoring.dashboards.foundation import (
-    last_value,
-    loki_datasource,
-    mimir,
-    mimir_query,
-    series_options,
-)
+from cluster.cdk8s.monitoring.dashboards.foundation import last_value, loki_datasource, mimir, mimir_query
 
 
 def build_dashboard() -> dashboard.Dashboard:
@@ -231,6 +225,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=6, w=24, y=4),
                 options=statetimeline.Options(
+                    per_page=None,
                     show_value=common.VisibilityMode.NEVER,
                     row_height=0.8,
                     tooltip=common.VizTooltipOptions(sort=common.SortOrder.NONE),
@@ -270,7 +265,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 title="WAN throughput",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, y=10),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(defaults=dashboard.FieldConfig(unit="bps")),
             ),
             dashboard.Panel(
@@ -291,7 +285,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 title="Fiber Rx power vs gateway thresholds",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, x=12, y=10),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(defaults=dashboard.FieldConfig(unit="dBm", decimals=1)),
             ),
             dashboard.Panel(
@@ -307,7 +300,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Each drop to zero is a gateway reboot.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, y=18),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(defaults=dashboard.FieldConfig(unit="s")),
             ),
             dashboard.Panel(
@@ -326,8 +318,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 title="Fiber Tx power and temperature",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, x=12, y=18),
-                options=series_options(),
-                field_config=dashboard.FieldConfigSource(),
             ),
             dashboard.Panel(
                 type_val="timeseries",
@@ -368,8 +358,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 title="LAN port errors and drops",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, y=26),
-                options=series_options(),
-                field_config=dashboard.FieldConfigSource(),
             ),
             dashboard.Panel(
                 type_val="timeseries",
@@ -405,8 +393,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 title="WAN errors and drops",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, x=12, y=26),
-                options=series_options(),
-                field_config=dashboard.FieldConfigSource(),
             ),
             dashboard.Panel(
                 type_val="timeseries",
@@ -425,7 +411,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Entries in the gateway's session table, of att_gateway_nat_sessions_available; IPv4 entries per source address.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, y=34),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(defaults=dashboard.FieldConfig(unit="short")),
             ),
             dashboard.Panel(
@@ -441,7 +426,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="The gateway's own latest speed test to AT&T's server: line capacity, independent of home traffic.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, x=12, y=34),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(defaults=dashboard.FieldConfig(unit="bps")),
             ),
             dashboard.Panel(
@@ -463,6 +447,4 @@ def build_dashboard() -> dashboard.Dashboard:
                 options=logs.Options(show_time=True, wrap_log_message=True, enable_log_details=True),
             ),
         ],
-        annotations=dashboard.AnnotationContainer(list_val=[]),
-        links=[],
     )

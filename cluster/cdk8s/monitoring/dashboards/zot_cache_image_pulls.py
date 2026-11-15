@@ -1,8 +1,8 @@
 """Zot cache and image pulls dashboard."""
 
-from grafana_foundation_sdk.models import bargauge, common, dashboard, loki, stat, table, text, timeseries
+from grafana_foundation_sdk.models import bargauge, common, dashboard, loki, stat, text, timeseries
 
-from cluster.cdk8s.monitoring.dashboards.foundation import last_value, loki_datasource, mimir, mimir_query
+from cluster.cdk8s.monitoring.dashboards.foundation import HeaderLink, last_value, loki_datasource, mimir, mimir_query
 
 
 def build_dashboard() -> dashboard.Dashboard:
@@ -13,7 +13,6 @@ def build_dashboard() -> dashboard.Dashboard:
         tags=["zot", "oci-cache", "images", "storage"],
         graph_tooltip=dashboard.DashboardCursorSync.CROSSHAIR,
         time=dashboard.DashboardDashboardTime(from_val="now-24h"),
-        timepicker=dashboard.TimePickerConfig(),
         refresh="1m",
         schema_version=39,
         version=1,
@@ -331,7 +330,6 @@ def build_dashboard() -> dashboard.Dashboard:
                         },
                     ),
                 ],
-                options=table.Options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(
                         unit="short",
@@ -341,15 +339,13 @@ def build_dashboard() -> dashboard.Dashboard:
                 ),
             ),
         ],
-        templating=dashboard.DashboardDashboardTemplating(list_val=[]),
-        annotations=dashboard.AnnotationContainer(list_val=[]),
         links=[
-            dashboard.DashboardLink(
+            HeaderLink(
                 title="Cache configuration and retention",
                 url="https://github.com/agentydragon/ducktape/blob/devel/cluster/k8s/oci-cache/README.md",
                 target_blank=True,
             ),
-            dashboard.DashboardLink(
+            HeaderLink(
                 title="Zot manifest counter implementation",
                 url="https://github.com/project-zot/zot/blob/v2.1.21/pkg/storage/imagestore/imagestore.go#L519",
                 target_blank=True,

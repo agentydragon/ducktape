@@ -12,7 +12,6 @@ def build_dashboard() -> dashboard.Dashboard:
         tags=["cluster", "memory", "nodes", "kubernetes"],
         graph_tooltip=dashboard.DashboardCursorSync.CROSSHAIR,
         time=dashboard.DashboardDashboardTime(from_val="now-1h"),
-        timepicker=dashboard.TimePickerConfig(),
         week_start="",
         refresh="1m",
         schema_version=39,
@@ -481,7 +480,6 @@ def build_dashboard() -> dashboard.Dashboard:
                         },
                     ),
                 ],
-                options=table.Options(footer=common.TableFooterOptions()),
                 field_config=dashboard.FieldConfigSource(defaults=dashboard.FieldConfig(unit="bytes", decimals=1)),
             ),
             dashboard.Panel(
@@ -585,7 +583,6 @@ def build_dashboard() -> dashboard.Dashboard:
                         },
                     ),
                 ],
-                options=table.Options(footer=common.TableFooterOptions()),
                 field_config=dashboard.FieldConfigSource(defaults=dashboard.FieldConfig(unit="bytes", decimals=1)),
             ),
         ],

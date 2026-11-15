@@ -182,6 +182,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 datasource=common.DataSourceRef(type_val="prometheus", uid="${DS_MIMIR}"),
                 grid_pos=dashboard.GridPos(h=10, w=24, y=16),
                 options=statetimeline.Options(
+                    per_page=None,
                     show_value=common.VisibilityMode.NEVER,
                     row_height=0.7,
                     align_value=common.TimelineValueAlignment.CENTER,
@@ -234,7 +235,6 @@ def build_dashboard() -> dashboard.Dashboard:
                     query='label_values({job="systemd-journal"}, node)',
                     datasource=loki_datasource(),
                     current=dashboard.VariableOption(text="wyrm2", value="wyrm2"),
-                    options=[],
                     refresh=dashboard.VariableRefresh.ON_DASHBOARD_LOAD,
                     sort=dashboard.VariableSort.ALPHABETICAL_ASC,
                     include_all=True,
@@ -248,7 +248,6 @@ def build_dashboard() -> dashboard.Dashboard:
                     query='label_values(node_uname_info{nodename=~"$node"}, instance)',
                     datasource=common.DataSourceRef(type_val="prometheus", uid="${DS_MIMIR}"),
                     current=dashboard.VariableOption(),
-                    options=[],
                     refresh=dashboard.VariableRefresh.ON_DASHBOARD_LOAD,
                     sort=dashboard.VariableSort.ALPHABETICAL_ASC,
                     include_all=True,
@@ -274,7 +273,6 @@ def build_dashboard() -> dashboard.Dashboard:
                     datasource=common.DataSourceRef(type_val="prometheus", uid="${DS_MIMIR}"),
                     current=dashboard.VariableOption(text="All", value=["$__all"]),
                     multi=True,
-                    options=[],
                     refresh=dashboard.VariableRefresh.ON_DASHBOARD_LOAD,
                     sort=dashboard.VariableSort.ALPHABETICAL_ASC,
                     include_all=True,
@@ -283,5 +281,4 @@ def build_dashboard() -> dashboard.Dashboard:
                 ),
             ]
         ),
-        annotations=dashboard.AnnotationContainer(list_val=[]),
     )

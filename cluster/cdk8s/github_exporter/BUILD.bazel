@@ -6,7 +6,7 @@ py_library(
     srcs = ["app.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        ":dashboard",
+        ":github_api_quotas",
         "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
@@ -26,14 +26,14 @@ py_library(
 
 grafana_dashboard_visual_test(
     name = "dashboard_visual_test",
-    dashboard = "//cluster/cdk8s:github-api-quotas.json",
+    dashboard = "//cluster/cdk8s/monitoring/dashboards:github-api-quotas.json",
     fixture_data = ":dashboard_visual_fixture.json",
 )
 
 py_library(
-    name = "dashboard",
-    srcs = ["dashboard.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    name = "github_api_quotas",
+    srcs = ["github_api_quotas.py"],
+    visibility = ["//cluster/cdk8s/monitoring/dashboards:__pkg__"],
     deps = [
         "//cluster/cdk8s/monitoring/dashboards:foundation",
         "@pypi//grafana_foundation_sdk",

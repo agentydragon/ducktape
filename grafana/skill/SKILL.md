@@ -24,7 +24,7 @@ One test-only exporter supplies candidate JSON and browser-test artifacts, witho
 formatting or checked-in JSON copies:
 
 ```sh
-bbr build //cluster/cdk8s:dashboard_json_files
+bbr build //cluster/cdk8s/monitoring/dashboards:json_files
 ```
 
 For a permitted live candidate check, pass the exported dashboard to `--dashboard` and
@@ -52,7 +52,7 @@ Run the packaged verifier from the repository root:
 
 ```bash
 bb run //grafana/skill:verify_dashboard -- \
-  --dashboard bazel-bin/cluster/cdk8s/<dashboard>.json \
+  --dashboard bazel-bin/cluster/cdk8s/monitoring/dashboards/<dashboard>.json \
   --grafana-dashboard-manifest cluster/generated/monitoring/grafana-instance/grafana-instance.k8s.yaml \
   --screenshot-dir /tmp/agents/YYYY_MM_DD/grafana-<dashboard>-verify
 ```

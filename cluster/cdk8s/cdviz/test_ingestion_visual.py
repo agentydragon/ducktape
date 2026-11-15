@@ -684,7 +684,7 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
                 assert denied.value.sqlstate == "42501"
             _diagnostic(f"pipeline attempts={len(pipeline_rows)} jobs={len(task_rows)}; reader INSERT denied")
 
-            dashboard_path = root / "ducktape/cluster/cdk8s/ducktape-ci.json"
+            dashboard_path = root / "ducktape/cluster/cdk8s/monitoring/dashboards/ci-workflow-timings.json"
             errors: list[str] = []
             query_results: list[dict] = []
             diagnostics_path = undeclared_outputs_dir() / "cdviz-grafana-queries.json"
@@ -755,7 +755,7 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
                     with psycopg.connect(reader_url) as reader:
                         feedback_fixture.assert_histories(reader, _FROZEN)
                     feedback = _provision_grafana(
-                        grafana_url, root / "ducktape/cluster/cdk8s/ducktape-ci-feedback.json"
+                        grafana_url, root / "ducktape/cluster/cdk8s/monitoring/dashboards/ci-commit-feedback.json"
                     )
                     async with (
                         async_playwright() as playwright,

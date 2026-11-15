@@ -12,7 +12,6 @@ def build_dashboard() -> dashboard.Dashboard:
         tags=["cluster", "seaweedfs", "s3", "operations"],
         graph_tooltip=dashboard.DashboardCursorSync.CROSSHAIR,
         time=dashboard.DashboardDashboardTime(from_val="now-1h"),
-        timepicker=dashboard.TimePickerConfig(),
         week_start="",
         refresh="1m",
         schema_version=39,

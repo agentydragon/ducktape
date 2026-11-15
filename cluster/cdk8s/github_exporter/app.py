@@ -1,6 +1,6 @@
 """GitHub API rate-limit exporters for the human and agent accounts: the upstream REST
 exporter and our GraphQL one, their Services, ServiceMonitors, token ExternalSecrets and
-the Grafana dashboard (`dashboard.py` beside this module).
+the Grafana dashboard (`github_api_quotas.py` beside this module).
 
 The GraphQL exporter's image tag is a placeholder; the hand-written `PINS_DIR` Component,
 which the kustomization includes across the roots, sets it via Flux's image-automation marker.
@@ -30,7 +30,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 from cluster.cdk8s import external_creds
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry import pull_credentials
-from cluster.cdk8s.github_exporter import dashboard
+from cluster.cdk8s.github_exporter import github_api_quotas
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
@@ -291,7 +291,7 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name="github-exporter", namespace=_NAMESPACE),
         instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels={"dashboards": "grafana"}),
         folder="GitHub",
-        json=JSONEncoder().encode(dashboard.build_dashboard()),
+        json=JSONEncoder().encode(github_api_quotas.build_dashboard()),
         datasources=[GrafanaDashboardSpecDatasources(input_name="DS_MIMIR", datasource_name="mimir")],
     )
     return chart

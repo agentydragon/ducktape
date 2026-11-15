@@ -2,14 +2,14 @@
 
 from textwrap import dedent
 
-from grafana_foundation_sdk.models import common, dashboard, table, text, timeseries
+from grafana_foundation_sdk.models import common, dashboard, text, timeseries
 
 from cluster.cdk8s.monitoring.dashboards.foundation import postgres_query
 
 
 def build_dashboard() -> dashboard.Dashboard:
     return dashboard.Dashboard(
-        uid="ducktape-ci-feedback",
+        uid="ci-commit-feedback",
         title="Commit to CI feedback",
         description="Exact-head PR feedback clocks, required-gate policy replay, and censored outcomes. Completion timestamps are not check-query or agent-delivery timestamps.",
         tags=["ci", "ci-feedback", "github-actions"],
@@ -61,7 +61,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="P50/P90/P99 from arrival to the first red or green verdict. N counts only heads with a verdict; null quantiles with N=0 are intentionally blank, not zero.",
                 datasource=common.DataSourceRef(type_val="grafana-postgresql-datasource", uid="cdviz"),
                 grid_pos=dashboard.GridPos(h=5, y=6),
-                options=table.Options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(
                         unit="short", decimals=1, custom=common.TableFieldOptions(width=120, min_width=80)
@@ -144,7 +143,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Independent first-red and first-green clocks, so a recovered head contributes to both. N counts heads with that observed timestamp; absent samples stay blank.",
                 datasource=common.DataSourceRef(type_val="grafana-postgresql-datasource", uid="cdviz"),
                 grid_pos=dashboard.GridPos(h=5, x=12, y=6),
-                options=table.Options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(
                         unit="short", decimals=1, custom=common.TableFieldOptions(width=120, min_width=80)
@@ -303,7 +301,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Counts by exact-head state in the arrival cohort. Canceled and superseded are separate from red/green verdicts; pending and unknown remain visible.",
                 datasource=common.DataSourceRef(type_val="grafana-postgresql-datasource", uid="cdviz"),
                 grid_pos=dashboard.GridPos(w=8, x=16, y=11),
-                options=table.Options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(
                         unit="short", decimals=1, custom=common.TableFieldOptions(width=120, min_width=80)
@@ -384,7 +381,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Both rates use every head at least the threshold old as of the dashboard end, including censored heads. Still-observing counts arrivals younger than that threshold. Verdict counts first red or green; green counts heads with observed all-required-gates green. Empty denominators have blank rates, not 0%.",
                 datasource=common.DataSourceRef(type_val="grafana-postgresql-datasource", uid="cdviz"),
                 grid_pos=dashboard.GridPos(h=6, w=24, y=20),
-                options=table.Options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(
                         unit="short", decimals=1, custom=common.TableFieldOptions(width=120, min_width=80)
@@ -492,7 +488,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Latest observed policy replay is taken as of the selected dashboard end; the timestamp is shown in the table. Coverage counts do not establish historical eligibility, and equal gate counts alone do not mean a head is green. The recent-head table retains exact missing gate names and per-head policy observation time.",
                 datasource=common.DataSourceRef(type_val="grafana-postgresql-datasource", uid="cdviz"),
                 grid_pos=dashboard.GridPos(h=4, w=24, y=26),
-                options=table.Options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(
                         unit="short", decimals=1, custom=common.TableFieldOptions(width=120, min_width=80)
@@ -595,7 +590,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="One row per head, newest arrival first. Null timing fields indicate that verdict has not been observed; the URL points to the PR or commit when available.",
                 datasource=common.DataSourceRef(type_val="grafana-postgresql-datasource", uid="cdviz"),
                 grid_pos=dashboard.GridPos(h=10, w=24, y=30),
-                options=table.Options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(
                         unit="short", decimals=1, custom=common.TableFieldOptions(width=120, min_width=80)
