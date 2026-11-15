@@ -86,7 +86,7 @@ func New(config Config, backend environmentruntimepb.EnvironmentRuntimeServer) *
 // Listen opens the configured authenticated control listener and registers the
 // Environment Runtime, executor stream, and standard gRPC health services.
 func (s *Server) Listen(executor executorpb.ExecutorServer) (net.Listener, *grpc.Server, error) {
-	transportCredentials, err := s.config.Security.ServerCredentials(environmentruntimetransport.GatewayURI, environmentruntimetransport.RuntimeProxyURI, environmentruntimetransport.SandboxControllerURI)
+	transportCredentials, err := s.config.Security.ServerCredentials(environmentruntimetransport.RuntimeProxyURI, environmentruntimetransport.SandboxControllerURI)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -142,7 +142,7 @@ func (s *Server) directWatchContext(req *environmentruntimepb.WatchStateRequest,
 // Authorize checks the authenticated peer and fencing metadata for a direct
 // control RPC or executor stream.
 func (s *Server) Authorize(ctx context.Context) (*Authorization, error) {
-	if err := s.authorizeGatewayPeer(ctx); err != nil {
+	if err := s.authorizeProxyPeer(ctx); err != nil {
 		return nil, err
 	}
 	values, ok := metadata.FromIncomingContext(ctx)
@@ -205,11 +205,9 @@ func (s *Server) validateLocked(authorization *Authorization) error {
 	return nil
 }
 
-func (s *Server) authorizeGatewayPeer(ctx context.Context) error {
-	if err := s.config.Security.AuthorizePeer(ctx, environmentruntimetransport.GatewayURI); err != nil {
-		if err := s.config.Security.AuthorizePeer(ctx, environmentruntimetransport.RuntimeProxyURI); err != nil {
-			return status.Error(codes.Unauthenticated, "Runtime control peer is not an admitted Runtime proxy")
-		}
+func (s *Server) authorizeProxyPeer(ctx context.Context) error {
+	if err := s.config.Security.AuthorizePeer(ctx, environmentruntimetransport.RuntimeProxyURI); err != nil {
+		return status.Error(codes.Unauthenticated, "Runtime control peer is not an admitted Runtime proxy")
 	}
 	return nil
 }
@@ -228,7 +226,7 @@ func (s *Server) WatchState(
 	if request == nil {
 		return status.Error(codes.InvalidArgument, "watch request is required")
 	}
-	authorize := s.authorizeGatewayPeer
+	authorize := s.authorizeProxyPeer
 	if request.ObserveOnly {
 		authorize = s.authorizeControllerPeer
 	}

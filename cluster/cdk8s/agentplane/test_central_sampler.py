@@ -28,6 +28,7 @@ from cluster.cdk8s.agentplane import (
     llm_ingress,
     policy_controller,
     runner_gateway,
+    sandbox_controller,
     staging,
     workload_tls,
 )
@@ -195,7 +196,10 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     assert target["tls"]["client_uri"] == GATEWAY_SESSIONS_URI
     for field in ("cert_file", "key_file", "ca_file"):
         assert target["tls"][field] == gateway["gateway_tls"][field]
-    assert gateway["executor_service_callers"] == serving_certificate["spec"]["uris"]
+    controller = yaml.safe_load(
+        _resource(staging_manifests, "ConfigMap", f"{sandbox_controller.NAME}-settings")["data"]["config.yaml"]
+    )
+    assert controller["environment_service"]["runtime_proxy"]["executor_callers"] == serving_certificate["spec"]["uris"]
 
     app_config = yaml.safe_load(_resource(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
     assert app_config["policy_service_target"] == policy_controller.tls_target(namespace)
@@ -215,7 +219,7 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     sampler_policy = _resource(staging_manifests, "CiliumNetworkPolicy", central_sampler.NAME)["spec"]
     assert not _admits(sampler_policy, source=runner_gateway.NAME, port=8080)
     assert _admits(sampler_policy, source=runner_gateway.NAME, port=central_sampler.PORT)
-    assert _admits(
+    assert not _admits(
         _resource(staging_manifests, "CiliumNetworkPolicy", runner_gateway.NAME)["spec"],
         source=central_sampler.NAME,
         port=runner_gateway.service(namespace).pod_port,

@@ -15,7 +15,10 @@ from agentplane.environments.settings import Settings
 from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
+    CENTRAL_SAMPLER_URI,
     GATEWAY_RUNTIME_PROXY_URI,
+    GATEWAY_SESSIONS_URI,
+    NOTIFICATIONS_URI,
     SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
 )
@@ -303,19 +306,14 @@ def test_runtime_proxy_receiver_matches_existing_service_grants_and_separates_bi
             _resource(staging_manifests, "ConfigMap", f"{sandbox_controller.NAME}-settings")["data"]["config.yaml"]
         )
     )
-    gateway = GatewaySettings.model_validate(
-        yaml.safe_load(
-            _resource(staging_manifests, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"]
-        )
-    )
     assert controller.environment_service is not None
     proxy = controller.environment_service.runtime_proxy
     assert proxy is not None
     assert "audience" not in proxy.model_dump(mode="json")
-    assert set(proxy.readers) == set(gateway.runtime_proxy_readers)
-    assert set(proxy.session_callers) == set(gateway.runtime_proxy_session_callers)
-    assert set(proxy.controller_callers) == set(gateway.runtime_proxy_controller_callers)
-    assert set(proxy.executor_callers) == set(gateway.executor_service_callers)
+    assert set(proxy.readers) == {APP_URI, NOTIFICATIONS_URI}
+    assert set(proxy.session_callers) == {GATEWAY_SESSIONS_URI}
+    assert set(proxy.controller_callers) == {SANDBOX_CONTROLLER_URI}
+    assert set(proxy.executor_callers) == {CENTRAL_SAMPLER_URI}
     assert proxy.runner_security.mode == "mtls"
     assert controller.runner_security.mode == "mtls"
     assert proxy.runner_security.tls.cert_file != controller.runner_security.tls.cert_file

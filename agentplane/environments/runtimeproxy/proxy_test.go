@@ -29,7 +29,7 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	credentials, err := f.runnerTLS.ServerCredentials(peertls.GatewayURI)
+	credentials, err := f.runnerTLS.ServerCredentials(peertls.RuntimeProxyURI)
 	if err != nil {
 		t.Fatal(err)
 	}

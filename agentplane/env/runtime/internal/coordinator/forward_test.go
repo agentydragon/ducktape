@@ -53,7 +53,7 @@ func testRuntimeHealthAndFencing(t *testing.T, mode environmentruntimetransport.
 			t.Fatal(err)
 		}
 		runtimeTLS := ca.Issue(t, runtimeURI)
-		gatewayTLS := ca.Issue(t, environmentruntimetransport.GatewayURI)
+		gatewayTLS := ca.Issue(t, environmentruntimetransport.RuntimeProxyURI)
 		controllerTLS := ca.Issue(t, environmentruntimetransport.SandboxControllerURI)
 		runtimeSecurity.TLS, gatewaySecurity.TLS, controllerSecurity.TLS = &runtimeTLS, &gatewayTLS, &controllerTLS
 	}
@@ -209,7 +209,7 @@ func TestForwardRuntimeRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t 
 		t.Fatal(err)
 	}
 	runtimeTLS := ca.Issue(t, runtimeURI)
-	gatewayTLS := ca.Issue(t, environmentruntimetransport.GatewayURI)
+	gatewayTLS := ca.Issue(t, environmentruntimetransport.RuntimeProxyURI)
 	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
 	config.Control = configuration.EnvironmentRuntimeControlConfiguration{ListenAddress: "127.0.0.1:0", Security: environmentruntimetransport.Security{Mode: environmentruntimetransport.MutualTLS, TLS: &runtimeTLS}}
 	r := newLifecycleRuntime(t, config)
@@ -346,7 +346,7 @@ func TestForwardRuntimeRejectsUnconfiguredExecutionSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtimeTLS := ca.Issue(t, runtimeURI)
-	gatewayTLS := ca.Issue(t, environmentruntimetransport.GatewayURI)
+	gatewayTLS := ca.Issue(t, environmentruntimetransport.RuntimeProxyURI)
 	config := lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false")
 	config.Control = configuration.EnvironmentRuntimeControlConfiguration{ListenAddress: "127.0.0.1:0", Security: environmentruntimetransport.Security{Mode: environmentruntimetransport.MutualTLS, TLS: &runtimeTLS}}
 	r := newLifecycleRuntime(t, config)
@@ -522,7 +522,7 @@ func TestForwardRuntimeBackpressuresExecutorOutputBurst(t *testing.T) {
 	}
 }
 
-func TestControllerBindsRuntimeForIndependentAuthenticatedGatewayReplicas(t *testing.T) {
+func TestControllerBindsRuntimeForIndependentAuthenticatedProxyReplicas(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
 	runtimeURI, err := (workloadid.ID{Namespace: "test", Name: "sandbox", CredentialID: "credential-id"}).URI()
 	if err != nil {
@@ -557,8 +557,8 @@ func TestControllerBindsRuntimeForIndependentAuthenticatedGatewayReplicas(t *tes
 	}
 	controllerConn := dial(environmentruntimetransport.SandboxControllerURI)
 	controller := environmentruntimepb.NewEnvironmentRuntimeClient(controllerConn)
-	gateway := environmentruntimepb.NewEnvironmentRuntimeClient(dial(environmentruntimetransport.GatewayURI))
-	gatewayB := environmentruntimepb.NewEnvironmentRuntimeClient(dial(environmentruntimetransport.GatewayURI))
+	gateway := environmentruntimepb.NewEnvironmentRuntimeClient(dial(environmentruntimetransport.RuntimeProxyURI))
+	gatewayB := environmentruntimepb.NewEnvironmentRuntimeClient(dial(environmentruntimetransport.RuntimeProxyURI))
 	ctx, cancel := context.WithTimeout(t.Context(), lifecycleTestTimeout)
 	defer cancel()
 	passiveCtx, cancelPassive := context.WithCancel(ctx)
@@ -672,6 +672,10 @@ func TestControllerBindsRuntimeForIndependentAuthenticatedGatewayReplicas(t *tes
 	}
 	if status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("Runtime proxy must not inherit Controller passive watch: %v", err)
+	}
+	legacy := environmentruntimepb.NewEnvironmentRuntimeClient(dial(environmentruntimetransport.GatewayURI))
+	if _, err := legacy.GetStatus(callCtx, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("retired Gateway peer bypassed the Runtime TLS allowlist: %v", err)
 	}
 	unlisted := environmentruntimepb.NewEnvironmentRuntimeClient(dial(environmentruntimetransport.SessionsURI))
 	if _, err := unlisted.GetStatus(callCtx, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {

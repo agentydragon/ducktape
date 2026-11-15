@@ -175,7 +175,6 @@ class SandboxController(Construct):
         id: str,
         env: Environment,
         *,
-        gateway: ServiceRef,
         gateway_audience: str,
         gateway_control_target: str,
         authority: EnvironmentServiceAuthority,
@@ -184,10 +183,9 @@ class SandboxController(Construct):
         memory_request: Size = _DEFAULT_MEMORY_REQUEST,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
     ) -> None:
-        """The controller quiesces runners through the stable Runner Gateway Service with its SVID."""
+        """The controller quiesces Runtimes through the Environments Service with its SVID."""
         super().__init__(scope, id)
         self.env = env
-        self.gateway = gateway
         self.authority = authority
         namespace = env.namespace
         endpoint = metrics(namespace)
@@ -383,7 +381,6 @@ class SandboxController(Construct):
             egress=[
                 cilium.dns_egress(),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
-                self.gateway.egress(),
                 environment_endpoint.egress(),
                 EgressRule.to_endpoints(
                     environment_sandbox.pods(namespace).cilium, environment_sandbox.ENVIRONMENT_RUNTIME_SERVICE_PORT

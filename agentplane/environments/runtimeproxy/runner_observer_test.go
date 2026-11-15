@@ -109,7 +109,7 @@ func TestRunnerObserverPublishesIdentityAndFencesRPCs(t *testing.T) {
 }
 
 func TestAnyGatewayReplicaObservesAndCallsOneRuntime(t *testing.T) {
-	for _, uri := range []string{peertls.GatewayURI, peertls.RuntimeProxyURI} {
+	for _, uri := range []string{peertls.RuntimeProxyURI} {
 		t.Run(uri, func(t *testing.T) { testAnyReplicaObservesAndCallsOneRuntime(t, uri) })
 	}
 }
@@ -345,7 +345,7 @@ func testRunnerObserver(t *testing.T, mode peertls.SecurityMode) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	creds, err := runnerSecurity.ServerCredentials(peertls.GatewayURI)
+	creds, err := runnerSecurity.ServerCredentials(peertls.RuntimeProxyURI)
 	if err != nil {
 		t.Fatal(err)
 	}

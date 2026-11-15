@@ -271,7 +271,6 @@ def environment_chart(
         chart,
         "sandbox-controller",
         env,
-        gateway=runner_gateway.service(env.namespace),
         gateway_audience=runner_gateway.TOKEN_AUDIENCE,
         gateway_control_target=environment_service.control_target(env.namespace),
         authority=sandbox_controller.environment_service_authority(

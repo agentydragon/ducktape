@@ -60,7 +60,7 @@ func TestWatchStatePublishesChangesAndPeriodicHeartbeat(t *testing.T) {
 		}
 		done := make(chan error, 1)
 		go func() {
-			done <- server.forwardWatchState(ctx, server.authorizeGatewayPeer, func() (*environmentruntimepb.WatchStateResponse, error) {
+			done <- server.forwardWatchState(ctx, server.authorizeProxyPeer, func() (*environmentruntimepb.WatchStateResponse, error) {
 				return &environmentruntimepb.WatchStateResponse{
 					SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid", EnvironmentRuntimeBootId: "environment-runtime-boot-id",
 					Facts: proto.Clone(facts).(*environmentruntimestatepb.EnvironmentRuntimeFacts),

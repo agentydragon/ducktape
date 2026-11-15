@@ -103,24 +103,25 @@ VM fixtures set both explicitly.
 ```
 
 In `mtls` mode, Environment Runtime verifies that its server certificate URI names the Sandbox namespace and UID from `launch.json`;
-the Gateway presents the fixed `spiffe://agentplane/runner-gateway` identity. Both directions require
-mTLS. `ca_file` verifies the local chain and the services the Runtime dials. The optional absolute
-`client_ca_file` replaces it for the Gateway's client certificate, so the control listener can trust
+the Environments proxy presents `spiffe://agentplane/runtime-proxy`, and the Controller presents
+`spiffe://agentplane/sandbox-controller` for observe-only state watches. Both directions require mTLS. `ca_file` verifies the local chain and the services the Runtime dials. The optional absolute
+`client_ca_file` replaces it for control client certificates, so the control listener can trust
 the Agentplane workload CA alone; without it, `ca_file` verifies clients too. It cannot be combined
 with `workload_api_socket`. Missing, malformed or expired credentials fail; they never select plaintext.
 
 Tests may explicitly select `"security": {"mode": "insecure"}` and omit `tls`.
 This serves plaintext without peer authentication. An insecure configuration containing a `tls`
-block is rejected. The Gateway selects the same mode through `runner_security`. Sandbox,
+block is rejected. Environments selects the same mode through its Runtime proxy `runner_security`. Sandbox,
 incarnation and boot-ID fencing still apply; that metadata is not an authenticated identity.
 Sandbox Controller provisioning continues to require cert-manager-issued credentials in every
 cluster/k3s stack. Environment Runtime control has no bearer credential; `ingress.bearer` remains scoped to History ingress.
 
 The control listener serves the standard gRPC health API and reports `SERVING` once local Environment Runtime
-startup completes, before a Gateway state watch connects. The Gateway starts
-`Environment Runtime.WatchState` with the Sandbox UID and current workload incarnation UID.
+startup completes, before a state watch connects. The Controller starts observe-only
+`Environment Runtime.WatchState` with the Sandbox UID and current workload Pod UID.
 The Environment Runtime adopts that incarnation before sending facts, then sends changed state and a ten-second
-heartbeat. Unary calls and executor streams carry the Sandbox UID, incarnation UID and Environment Runtime boot ID.
+heartbeat. Environments proxy replicas watch the accepted binding without replacing it; the retired
+Gateway SVID has no Runtime admission. Unary calls and executor streams carry the Sandbox UID, incarnation UID and Environment Runtime boot ID.
 `Executor.OpenSession` owns one local Codex
 connection per server stream. Typed unary process and file calls use the returned session ID.
 The adapter retains the existing per-Environment Runtime open-connection and per-native-frame limits, without adding

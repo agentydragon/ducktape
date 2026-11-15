@@ -27,9 +27,10 @@ historical setting names remain. Retired `runner_security`, `runtime_proxy_reade
 remain decodable without receiver authority until their manifest omission has rolled out.
 `runner_security` is optional and no credential file it names is opened by this process. Obsolete
 Runtime client certificates and mounts are no longer rendered after the receiver-free image
-was pinned and rolled; the Sessions client and Dispatcher listener certificates remain. Direct Runtime
-network permissions, old Runtime peer admission and obsolete grants retire in the final permission
-cleanup. Restoring the old receiver for rollback requires its image and credentials before callers
+was pinned and rolled; the Sessions client and Dispatcher listener certificates remain. The Gateway has no direct Runtime
+network permission, old Runtime peer admission or proxy grants. Its Kubernetes permissions cover
+Dispatcher inventory, admission, automatic wake and delivery ownership, without Pod/VM discovery
+or TokenReview authority. Restoring the old receiver for rollback requires its image and credentials before callers
 are retargeted.
 
 ## Replica ownership decision

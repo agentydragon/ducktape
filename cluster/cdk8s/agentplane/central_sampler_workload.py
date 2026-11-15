@@ -78,7 +78,6 @@ class CentralSampler(Construct):
         self.service = central_sampler.service(namespace)
         self.llm_ingress = llm_ingress.service(namespace)
         self.history_ingress = history_service.service(namespace)
-        self.runner_gateway = runner_gateway.service(namespace)
 
         token_reviewer_cluster_rbac(
             self,
@@ -194,7 +193,6 @@ class CentralSampler(Construct):
             cilium.dns_egress(),
             EgressRule.to_entities(Entity.KUBE_APISERVER),
             database.egress(namespace),
-            runner_gateway.service(namespace).egress(),
             environment_service.service(namespace).egress(),
             history_service.service(namespace).egress(),
             llm_ingress.service(namespace).egress(),
