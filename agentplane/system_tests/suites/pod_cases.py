@@ -77,8 +77,6 @@ async def a_preset_launches_an_initialized_editable_codex_thread(worker: Worker)
         )
 
 
-
-
 async def pod_mtls_session_survives_replacement_and_keeps_history(worker: Worker) -> None:
     async with worker.fresh_sandboxes() as case:
         async with asyncio.timeout(600):
@@ -178,18 +176,6 @@ async def turns_nobody_watches_are_archived_and_a_failed_turn_leaves_the_next_in
                 )
             ),
         )
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 SCENARIOS = (

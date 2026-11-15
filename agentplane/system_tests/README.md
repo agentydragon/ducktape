@@ -30,11 +30,14 @@ scales the app to zero after OAuth consent.
 
 | Target                                                                 | Coverage                                              |
 | ---------------------------------------------------------------------- | ----------------------------------------------------- |
-| `//agentplane/system_tests/suites:test_pod`                            | Pod Sandbox scenarios                                 |
+| `//agentplane/system_tests/suites:test_pod`                            | App-backed Pod Sandbox scenarios                      |
+| `//agentplane/system_tests/suites:test_pod_platform`                   | Native Pod workload trust and Egress credentials      |
 | `//agentplane/system_tests/suites:test_session_deletion`               | Session deletion and replacement                      |
 | `//agentplane/system_tests/suites:test_dispatcher`                     | Dispatcher queue, wake and replicas                   |
 | `//agentplane/system_tests/suites/mcp:test_actions`                    | MCP Actions and operator decisions                    |
-| `//agentplane/system_tests/suites/mcp:test_services`                   | MCP services and central sampler                      |
+| `//agentplane/system_tests/suites/mcp:test_services`                   | App-backed delegated Action admission                 |
+| `//agentplane/system_tests/suites/mcp:test_services_mcp`               | MCP discovery, consent and policy binding             |
+| `//agentplane/system_tests/suites/mcp:test_services_central`           | Native central-sampler service paths                  |
 | `//agentplane/system_tests/suites/mcp:test_sampler_roll`               | Sampler replacement with live executor work           |
 | `//agentplane/system_tests/suites/mcp:test_gateway_crash`              | Abrupt Gateway loss during a live executor read       |
 | `//agentplane/system_tests/suites/mcp:test_history_outage`             | History outage during an active central-sampler turn  |
@@ -51,6 +54,13 @@ scales the app to zero after OAuth consent.
 [`test_thread_latency`](suites/live/test_thread_latency.py) and
 [`test_ollama_routes`](suites/live/test_ollama_routes.py) carry both `manual` and `no-remote-exec`;
 the [live-test instructions](#running-live) explain how to run them.
+
+The manual `test_pod_sequential_spike`, `test_pod_sequential_a_spike`, and
+`test_pod_sequential_b_spike` targets compare ordinary pytest execution with the bounded Pod
+runner. They call the same scenario functions, retain their marks, and run fresh-inventory storage
+checks first. The A/B targets partition the cases across two independent stacks; the ordinary
+`test_pod` target remains the required witness until feedback, resource cost, and failure isolation
+are qualified.
 
 Pod, MCP Actions, and VM harness cases use the same bounded batch runner. Pytest selection determines
 which callbacks run; each pytest item reports its own result and traced execution time. Fixtures
