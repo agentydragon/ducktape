@@ -733,35 +733,16 @@ spec:
   groups:
     - name: roaming-node-alerts
       rules:
-        - alert: KubeNodeNotReady
+        - alert: RoamingNodeOffline
           annotations:
-            description: "{{ $labels.node }} has been unready for more than 15 minutes. Roaming nodes are excluded, so this is a node that was expected to stay up."
-            runbook_url: https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubenodenotready
-            summary: Node is not ready.
-          expr: |
-            (
-              kube_node_status_condition{condition="Ready",job="kube-state-metrics",status="true"} == 0
-              and on (cluster, node)
-              kube_node_spec_unschedulable{job="kube-state-metrics"} == 0
-            )
-            unless on (node) (kube_node_spec_taint{job="kube-state-metrics",key="node-role.kubernetes.io/roaming"} == 1)
-          for: 15m
+            description: Inhibits alerts about {{ $labels.node }} while it is marked out of service.
+            summary: Roaming node {{ $labels.node }} is offline
+          expr: |-
+            max by (node) (kube_node_spec_taint{job="kube-state-metrics",key="node.kubernetes.io/out-of-service"} == 1)
+            and on (node)
+            max by (node) (kube_node_spec_taint{job="kube-state-metrics",key="node-role.kubernetes.io/roaming"} == 1)
           labels:
-            severity: warning
-        - alert: KubeNodeUnreachable
-          annotations:
-            description: "{{ $labels.node }} is unreachable and some workloads may be rescheduled. Roaming nodes are excluded, so this is a node that was expected to stay up."
-            runbook_url: https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubenodeunreachable
-            summary: Node is unreachable.
-          expr: |
-            (
-              kube_node_spec_taint{effect="NoSchedule",job="kube-state-metrics",key="node.kubernetes.io/unreachable"}
-              unless ignoring (key, value)
-              kube_node_spec_taint{job="kube-state-metrics",key=~"ToBeDeletedByClusterAutoscaler|cloud.google.com/impending-node-termination|aws-node-termination-handler/spot-itn|node-role.kubernetes.io/roaming"}
-            ) == 1
-          for: 15m
-          labels:
-            severity: warning
+            severity: none
     - name: roaming-node-workload-alerts
       rules:
         - alert: AlloyNodeUnavailable
@@ -791,65 +772,19 @@ spec:
           for: 15m
           labels:
             severity: warning
-        - alert: KubePodNotReady
-          annotations:
-            description: Pod {{ $labels.namespace }}/{{ $labels.pod }} has been in a non-ready state for longer than 15 minutes on cluster {{ $labels.cluster }}.
-            runbook_url: https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubepodnotready
-            summary: Pod has been in a non-ready state for more than 15 minutes.
-          expr: |-
-            (
-              sum by (namespace, pod, job, cluster) (
-                max by (namespace, pod, job, cluster) (
-                  kube_pod_status_phase{job="kube-state-metrics", namespace=~".*", phase=~"Pending|Unknown"}
-                  or
-                  (
-                    kube_pod_status_phase{job="kube-state-metrics", namespace=~".*", phase="Running"} == 1
-                    and on (namespace, pod, cluster)
-                    kube_pod_status_ready{job="kube-state-metrics", namespace=~".*", condition="true"} == 0
-                  )
-                ) * on (namespace, pod, cluster) group_left() topk by (namespace, pod, cluster) (
-                  1, max by (namespace, pod, owner_kind, cluster) (kube_pod_owner{owner_kind!="Job"})
-                )
-              ) > 0
-              unless on (namespace, pod, cluster)
-              kube_pod_status_reason{job="kube-state-metrics", namespace=~".*", reason="SchedulingGated"} == 1
-            )
-            unless on (namespace, pod)
-            (
-              kube_pod_info{job="kube-state-metrics", node!=""}
-              and on (node)
-              kube_node_spec_taint{job="kube-state-metrics", key="node-role.kubernetes.io/roaming"} == 1
-            )
-          for: 15m
-          labels:
-            severity: warning
-        - alert: KubeletInstanceUnreachable
-          annotations:
-            description: A Kubelet instance has been unreachable for more than 15 minutes.
-            runbook_url: https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubeletinstanceunreachable
-            summary: Kubelet instance is unreachable.
-          expr: |
-            (
-              up{job="kubelet", metrics_path="/metrics"} == 0
-            )
-            unless on (node)
-            kube_node_spec_taint{job="kube-state-metrics", key="node-role.kubernetes.io/roaming"} == 1
-          for: 15m
-          labels:
-            severity: warning
         - alert: TargetDown
           annotations:
-            description: '{{ printf "%.4g" $value }}% of the {{ $labels.job }}/{{ $labels.service }} targets in {{ $labels.namespace }} namespace are down. Roaming nodes are excluded from both sides of the ratio.'
+            description: '{{ printf "%.4g" $value }}% of the {{ $labels.job }}/{{ $labels.service }} targets in {{ $labels.namespace }} namespace are down. Offline roaming nodes are excluded from both sides of the ratio.'
             runbook_url: https://runbooks.prometheus-operator.dev/runbooks/general/targetdown
             summary: One or more targets are unreachable.
           expr: |
             100 * (
               count by (cluster, job, namespace, service) (
-                (up == 0) unless on (node) (kube_node_spec_taint{key="node-role.kubernetes.io/roaming"} == 1)
+                (up == 0) unless on (node) (kube_node_spec_taint{key="node.kubernetes.io/out-of-service"} == 1)
               )
               /
               count by (cluster, job, namespace, service) (
-                up unless on (node) (kube_node_spec_taint{key="node-role.kubernetes.io/roaming"} == 1)
+                up unless on (node) (kube_node_spec_taint{key="node.kubernetes.io/out-of-service"} == 1)
               )
             ) > 10
           for: 10m

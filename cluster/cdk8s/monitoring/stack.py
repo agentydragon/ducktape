@@ -85,6 +85,12 @@ def _alertmanager_config() -> dict[str, object]:
                 "equal": ["namespace"],
             },
             {"target_matchers": ["alertname = InfoInhibitor"]},
+            # Source: `rules.py`. Alerts without a `node` label are not inhibited.
+            {
+                "source_matchers": ["alertname = RoamingNodeOffline"],
+                "target_matchers": ['node =~ ".+"'],
+                "equal": ["node"],
+            },
         ],
         # ntfy is the default; the denylist below names explicit suppressions. The old
         # null-default allowlist silently dropped new or renamed alerts, including a
@@ -107,21 +113,13 @@ def _alertmanager_config() -> dict[str, object]:
             "routes": [
                 # PERMANENT. Watchdog fires continuously by design and is the heartbeat
                 # for the external dead-man's switch (see cluster/docs/plan.md); paging
-                # on it would be backwards. InfoInhibitor exists only to feed the
-                # inhibit_rules above.
-                {"receiver": "null", "matchers": ['alertname =~ "Watchdog|InfoInhibitor"']},
+                # on it would be backwards. InfoInhibitor and RoamingNodeOffline exist
+                # only to feed the inhibit_rules above.
+                {"receiver": "null", "matchers": ['alertname =~ "Watchdog|InfoInhibitor|RoamingNodeOffline"']},
                 # These are unresolved, continuously firing alerts: each suppression is
                 # a TODO to fix its cause and remove the entry. Never add a new alert to
                 # quiet it; suspended-service alerts exhausted the quota on 2026-08-05.
                 # Counts below are firing minutes over the 7d ending 2026-08-06.
-                # `TargetDown` is suppressed only for `node-exporter`. Historical causes:
-                # kubelet was excluded by the taint-based fork (#3815), `litellm-chatgpt`
-                # was suspended (#3812), and #3818 aligned the SSD metrics port for
-                # `seaweedfs-volume-peer`. #3819 removed duplicate Flux YAML; the operator
-                # owns and recreates its topology-less ServiceMonitor.
-                # `node-exporter` has no `node` label, so roaming exclusion needs an
-                # instance-to-IP-to-node join. Other and newly added target failures page.
-                {"receiver": "null", "matchers": ['alertname = "TargetDown"', 'job = "node-exporter"']},
                 {
                     "receiver": "null",
                     "matchers": [
@@ -138,14 +136,13 @@ def _alertmanager_config() -> dict[str, object]:
                         '|NodeMemoryMajorPagesFaults"'
                     ],
                 },
-                # Same category, but specifically the fallout of roaming laptops
-                # leaving the cluster. Unlike KubeNodeNotReady/KubeNodeUnreachable
-                # (now forked in cluster/cdk8s/monitoring/rules.py
-                # and excluded by taint), these carry no `node` label -- only namespace and
-                # pod -- so there is no way to say "on a roaming node" at the routing
-                # layer. Suppressing by namespace would blind us to real failures in
-                # loki/egress-proxy/gecko. Re-evaluate once the laptops stop flapping;
-                # if still needed, the fix is forking these rules the same way.
+                # Same category: fallout of roaming laptops leaving the cluster. These
+                # carry no `node` label, so the RoamingNodeOffline inhibition cannot
+                # reach them. The out-of-service taint now evicts a laptop's pods, which
+                # should end most of them; Cilium still counts offline laptops
+                # (`KubeDaemonSetRolloutStuck`) and a pod pinned to a laptop stays
+                # Pending. Prune after narrowing Cilium's tolerations and reviewing 7d of
+                # `ALERTS`, per the rule above.
                 {
                     "receiver": "null",
                     "matchers": [
@@ -201,8 +198,6 @@ def _values() -> dict[str, object]:
         "cleanPrometheusOperatorObjectNames": True,
         "defaultRules": {
             "create": True,
-            # Forked in `rules.py` to exclude roaming nodes by taint without silencing
-            # the same alerts for control-plane nodes through the global route.
             "disabled": {
                 # Temporary suppression for the two disabled ServiceMonitors until
                 # issue #8567 restores a valid scrape path. These four rules cover
@@ -212,11 +207,7 @@ def _values() -> dict[str, object]:
                 "KubeControllerManagerInstanceUnreachable": True,
                 "KubeSchedulerDown": True,
                 "KubeSchedulerInstanceUnreachable": True,
-                # Existing node, pod, kubelet, and target exclusions.
-                "KubeNodeNotReady": True,
-                "KubeNodeUnreachable": True,
-                "KubePodNotReady": True,
-                "KubeletInstanceUnreachable": True,
+                # Forked in `rules.py` to exclude offline roaming nodes.
                 "TargetDown": True,
                 # Replaced by NodeIOPressure in cluster/cdk8s/monitoring/rules.py, which measures stalled tasks
                 # per node instead of queue depth per block device (a disk and each dm-* on it fired separately).
