@@ -25,13 +25,13 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgrade,
     HelmReleaseSpecUpgradeCrds,
 )
+from flux_imagerepository_crds.io.fluxcd.toolkit.image import ImageRepository, ImageRepositorySpec
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import flux, terraform
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.image_automation import newest_ci_tag_policy
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
-from cluster.cdk8s.providers.flux.image_repository import ImageRepository
 
 NAME = "tofu-controller"
 NAMESPACE = "flux-system"
@@ -125,8 +125,7 @@ def chart(app: App) -> Chart:
                 chart,
                 f"{name}-image-repository",
                 metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
-                image=image,
-                interval="5m",
+                spec=ImageRepositorySpec(image=image, interval="5m"),
             ),
         )
     return chart

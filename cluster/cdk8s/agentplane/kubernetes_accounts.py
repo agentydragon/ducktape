@@ -9,9 +9,13 @@ ServiceAccounts in this one namespace, so no other account, user or group is rea
 from collections.abc import Sequence
 
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (
+    EgressCredential,
+    EgressCredentialSpec,
     EgressCredentialSpecTargets,
     EgressCredentialSpecTargetsMethod,
 )
+from agentplane_kubernetesroleset_crds.works.allegedly.agentplane import KubernetesRoleSet
+from agentplane_policyset_crds.works.allegedly.agentplane import PolicySet, PolicySetSpec
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, ServiceAccount
 from constructs import Construct
@@ -22,9 +26,7 @@ from cluster.cdk8s.agentplane import egress
 from cluster.cdk8s.agentplane.kubernetes_account_ref import KubernetesAccountRef
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
-from cluster.cdk8s.providers.agentplane.kubernetes_role_set import KubernetesRoleSet
-from cluster.cdk8s.providers.agentplane.policy_set import PolicySet
+from cluster.cdk8s.providers.agentplane.egress_credential import Source
 from cluster.cdk8s.providers.agentplane.service_account_grant import ServiceAccountGrant
 
 
@@ -92,22 +94,24 @@ class KubernetesAccount(Construct):
             self,
             "credential",
             metadata=ApiObjectMetadata(name=account.credential_name, namespace=policy_namespace),
-            description=(
-                f"Kubernetes API server: https://{egress.KUBERNETES_HOST}, acting as the "
-                f"{account.namespace}/{account.name} ServiceAccount: {description} Use "
-                f"kubectl --server https://{egress.KUBERNETES_HOST} --token {placeholder_of(account.credential_name)} "
-                "for Kubernetes commands. Check agentplane egress rules for the live host and placeholder."
+            spec=EgressCredentialSpec(
+                description=(
+                    f"Kubernetes API server: https://{egress.KUBERNETES_HOST}, acting as the "
+                    f"{account.namespace}/{account.name} ServiceAccount: {description} Use "
+                    f"kubectl --server https://{egress.KUBERNETES_HOST} --token {placeholder_of(account.credential_name)} "
+                    "for Kubernetes commands. Check agentplane egress rules for the live host and placeholder."
+                ),
+                source=Source.kubernetes_service_account(service_account=self.service_account),
+                targets=[
+                    EgressCredentialSpecTargets(
+                        header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
+                    )
+                ],
             ),
-            source=Source.kubernetes_service_account(service_account=self.service_account),
-            targets=[
-                EgressCredentialSpecTargets(
-                    header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
-                )
-            ],
         )
         self.use = PolicySet(
             self,
             "use",
             metadata=ApiObjectMetadata(name=account.credential_name, namespace=policy_namespace),
-            rules=[egress.kubernetes_account_rule(account)],
+            spec=PolicySetSpec(rules=[egress.kubernetes_account_rule(account)]),
         )

@@ -15,13 +15,25 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplateEngineVersion,
 )
 from flux_alert_crds.io.fluxcd.toolkit.notification import (
+    Alert,
+    AlertSpec,
     AlertSpecEventSeverity,
     AlertSpecEventSources,
     AlertSpecEventSourcesKind,
     AlertSpecProviderRef,
 )
-from flux_provider_crds.io.fluxcd.toolkit.notification import ProviderSpecSecretRef, ProviderSpecType
-from flux_receiver_crds.io.fluxcd.toolkit.notification import ReceiverSpecSecretRef, ReceiverSpecType
+from flux_provider_crds.io.fluxcd.toolkit.notification import (
+    Provider,
+    ProviderSpec,
+    ProviderSpecSecretRef,
+    ProviderSpecType,
+)
+from flux_receiver_crds.io.fluxcd.toolkit.notification import (
+    Receiver,
+    ReceiverSpec,
+    ReceiverSpecSecretRef,
+    ReceiverSpecType,
+)
 
 from cluster.cdk8s import ntfy
 from cluster.cdk8s.config_format import yaml_config
@@ -31,7 +43,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import flux_annotations, grafana_instance
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
-from cluster.cdk8s.providers.flux.notification import Alert, Provider, Receiver, ReceiverResource
+from cluster.cdk8s.providers.flux.notification import ReceiverResource
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "flux-webhook"
@@ -80,17 +92,19 @@ def chart(app: App) -> Chart:
         chart,
         "github-receiver",
         metadata=ApiObjectMetadata(name="github", namespace=NAMESPACE),
-        type=ReceiverSpecType.GITHUB,
-        events=["push", "registry_package"],
-        secret_ref=ReceiverSpecSecretRef(name="github-webhook-token"),
-        resources=[
-            ReceiverResource.git_repository("flux-system", namespace="flux-system"),
-            # Public Flux control objects retain a dedicated sparse checkout. Reconcile
-            # it immediately on a Ducktape push rather than waiting for its poll.
-            ReceiverResource.git_repository("ducktape", namespace="ducktape-flux"),
-            ReceiverResource.image_repository("tofu-controller", namespace="flux-system"),
-            ReceiverResource.image_repository("tf-runner", namespace="flux-system"),
-        ],
+        spec=ReceiverSpec(
+            type=ReceiverSpecType.GITHUB,
+            events=["push", "registry_package"],
+            secret_ref=ReceiverSpecSecretRef(name="github-webhook-token"),
+            resources=[
+                ReceiverResource.git_repository("flux-system", namespace="flux-system"),
+                # Public Flux control objects retain a dedicated sparse checkout. Reconcile
+                # it immediately on a Ducktape push rather than waiting for its poll.
+                ReceiverResource.git_repository("ducktape", namespace="ducktape-flux"),
+                ReceiverResource.image_repository("tofu-controller", namespace="flux-system"),
+                ReceiverResource.image_repository("tf-runner", namespace="flux-system"),
+            ],
+        ),
     )
     # Forgejo main pushes request a source fetch; the new artifact then triggers
     # the policy Kustomization. Periodic reconciliation remains the fallback.
@@ -107,52 +121,59 @@ def chart(app: App) -> Chart:
         "finance-agent-receiver",
         metadata=ApiObjectMetadata(name="finance-agent", namespace=NAMESPACE),
         # Same token-derived URL authentication as the existing Haku receiver.
-        type=ReceiverSpecType.GENERIC,
-        secret_ref=ReceiverSpecSecretRef(name=finance_token),
-        resources=[ReceiverResource.git_repository("finance-agent", namespace="ducktape-flux")],
+        spec=ReceiverSpec(
+            type=ReceiverSpecType.GENERIC,
+            secret_ref=ReceiverSpecSecretRef(name=finance_token),
+            resources=[ReceiverResource.git_repository("finance-agent", namespace="ducktape-flux")],
+        ),
     )
     grafana = Provider(
         chart,
         "grafana-provider",
         metadata=ApiObjectMetadata(name="grafana", namespace=NAMESPACE),
-        type=ProviderSpecType.GRAFANA,
-        # notification-controller >=1.7 sends the request to `address` as-is (no
-        # auto-append of /api/annotations like older versions did), so the full endpoint
-        # path is required here.
-        address=f"{grafana_instance.GRAFANA_BASE_URL}/api/annotations",
-        secret_ref=ProviderSpecSecretRef(name=flux_annotations.TOKEN.name),
+        spec=ProviderSpec(
+            type=ProviderSpecType.GRAFANA,
+            # notification-controller >=1.7 sends the request to `address` as-is (no
+            # auto-append of /api/annotations like older versions did), so the full endpoint
+            # path is required here.
+            address=f"{grafana_instance.GRAFANA_BASE_URL}/api/annotations",
+            secret_ref=ProviderSpecSecretRef(name=flux_annotations.TOKEN.name),
+        ),
     )
     Alert(
         chart,
         "grafana-alert",
         metadata=ApiObjectMetadata(name="grafana-annotations", namespace=NAMESPACE),
-        provider_ref=AlertSpecProviderRef(name=grafana.name),
-        event_severity=AlertSpecEventSeverity.INFO,
-        event_sources=_alert_sources(
-            (AlertSpecEventSourcesKind.KUSTOMIZATION, "flux-system"),
-            (AlertSpecEventSourcesKind.KUSTOMIZATION, "ducktape-flux"),
-            (AlertSpecEventSourcesKind.HELM_RELEASE, "flux-system"),
+        spec=AlertSpec(
+            provider_ref=AlertSpecProviderRef(name=grafana.name),
+            event_severity=AlertSpecEventSeverity.INFO,
+            event_sources=_alert_sources(
+                (AlertSpecEventSourcesKind.KUSTOMIZATION, "flux-system"),
+                (AlertSpecEventSourcesKind.KUSTOMIZATION, "ducktape-flux"),
+                (AlertSpecEventSourcesKind.HELM_RELEASE, "flux-system"),
+            ),
         ),
     )
     ntfy_provider = Provider(
         chart,
         "ntfy-provider",
         metadata=ApiObjectMetadata(name="ntfy", namespace=NAMESPACE),
-        type=ProviderSpecType.GENERIC,
-        secret_ref=ProviderSpecSecretRef(name=_NTFY_WEBHOOK),
+        spec=ProviderSpec(type=ProviderSpecType.GENERIC, secret_ref=ProviderSpecSecretRef(name=_NTFY_WEBHOOK)),
     )
     Alert(
         chart,
         "ntfy-alert",
         metadata=ApiObjectMetadata(name="on-call", namespace=NAMESPACE),
-        provider_ref=AlertSpecProviderRef(name=ntfy_provider.name),
-        event_severity=AlertSpecEventSeverity.ERROR,
-        event_sources=_alert_sources(
-            (AlertSpecEventSourcesKind.KUSTOMIZATION, "flux-system"),
-            (AlertSpecEventSourcesKind.KUSTOMIZATION, "ducktape-flux"),
-            (AlertSpecEventSourcesKind.HELM_RELEASE, "flux-system"),
-            (AlertSpecEventSourcesKind.GIT_REPOSITORY, "flux-system"),
-            (AlertSpecEventSourcesKind.GIT_REPOSITORY, "ducktape-flux"),
+        spec=AlertSpec(
+            provider_ref=AlertSpecProviderRef(name=ntfy_provider.name),
+            event_severity=AlertSpecEventSeverity.ERROR,
+            event_sources=_alert_sources(
+                (AlertSpecEventSourcesKind.KUSTOMIZATION, "flux-system"),
+                (AlertSpecEventSourcesKind.KUSTOMIZATION, "ducktape-flux"),
+                (AlertSpecEventSourcesKind.HELM_RELEASE, "flux-system"),
+                (AlertSpecEventSourcesKind.GIT_REPOSITORY, "flux-system"),
+                (AlertSpecEventSourcesKind.GIT_REPOSITORY, "ducktape-flux"),
+            ),
         ),
     )
     # Handles the GitHub push and registry_package webhooks.

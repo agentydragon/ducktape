@@ -1,5 +1,9 @@
 # gazelle:ignore
 
+# gazelle:resolve py cert_manager_clusterissuer_crds //cluster/cdk8s/providers/cert_manager:clusterissuer
+# gazelle:resolve py cert_manager_crds //cluster/cdk8s/providers/cert_manager:certificate
+# gazelle:resolve py prometheus_operator_crds //cluster/cdk8s/providers/prometheus_operator:servicemonitor
+# gazelle:resolve py trust_manager_crds //cluster/cdk8s/providers/cert_manager:bundle
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
@@ -30,10 +34,8 @@ py_library(
     deps = [
         ":config",
         "//cluster/cdk8s/providers/cert_manager:bundle",
-        "//cluster/cdk8s/providers/cert_manager:cert_manager_bundle",
-        "//cluster/cdk8s/providers/cert_manager:cert_manager_certificate",
         "//cluster/cdk8s/providers/cert_manager:certificate",
-        "//cluster/cdk8s/providers/cert_manager:cluster_issuer",
+        "//cluster/cdk8s/providers/cert_manager:certificate_private_key",
         "//cluster/cdk8s/providers/cert_manager:clusterissuer",
         "@pypi//cdk8s",
         "@pypi//constructs",
@@ -46,7 +48,6 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         "//cluster/cdk8s:route53",
-        "//cluster/cdk8s/providers/cert_manager:cluster_issuer",
         "//cluster/cdk8s/providers/cert_manager:clusterissuer",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -61,9 +62,8 @@ py_library(
         ":cluster_ca",
         "//cluster/cdk8s:reflector",
         "//cluster/cdk8s/providers/cert_manager:bundle",
-        "//cluster/cdk8s/providers/cert_manager:cert_manager_bundle",
-        "//cluster/cdk8s/providers/cert_manager:cert_manager_certificate",
         "//cluster/cdk8s/providers/cert_manager:certificate",
+        "//cluster/cdk8s/providers/cert_manager:certificate_private_key",
         "@pypi//cdk8s",
         "@pypi//constructs",
     ],

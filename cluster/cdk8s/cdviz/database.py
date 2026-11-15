@@ -7,6 +7,8 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecManagedRolesPasswordSecret,
 )
 from cnpg_database_crds.io.cnpg.postgresql import (
+    Database,
+    DatabaseSpec,
     DatabaseSpecCluster,
     DatabaseSpecDatabaseReclaimPolicy,
     DatabaseSpecExtensions,
@@ -24,7 +26,6 @@ from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.cnpg.database import Database
 
 OUTPUT_DIR = f"{config.OUTPUT_DIR}/database"
 
@@ -65,11 +66,13 @@ def chart(app: App) -> Chart:
         chart,
         "database",
         metadata=ApiObjectMetadata(name=config.DATABASE_NAME, namespace=config.NAMESPACE),
-        cluster=DatabaseSpecCluster(name=config.DATABASE.name),
-        name=config.DATABASE_NAME,
-        owner=config.DATABASE_NAME,
-        database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
-        extensions=[DatabaseSpecExtensions(name="timescaledb", ensure=DatabaseSpecExtensionsEnsure.PRESENT)],
+        spec=DatabaseSpec(
+            cluster=DatabaseSpecCluster(name=config.DATABASE.name),
+            name=config.DATABASE_NAME,
+            owner=config.DATABASE_NAME,
+            database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
+            extensions=[DatabaseSpecExtensions(name="timescaledb", ensure=DatabaseSpecExtensionsEnsure.PRESENT)],
+        ),
     )
     backup.CnpgBackup(chart, "backup", ref=config.DATABASE, retention="30d", adopt_existing=False)
     return chart

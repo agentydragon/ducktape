@@ -20,6 +20,7 @@ connection, under the name the Terraform gives it, and the Terraform installs ea
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
+from cert_manager_crds.io.cert_manager import Certificate, CertificateSpec
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 from pydantic import BaseModel, ConfigDict, Field
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
@@ -37,7 +38,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.monitoring import alloy
-from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
+from cluster.cdk8s.providers.cert_manager.certificate import CertificatePrivateKey
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 
 NAME = "home-switch"
@@ -93,13 +94,15 @@ def chart(app: App, module: ArtifactGeneratorSpecArtifacts, agentplane_ssh_publi
         chart,
         "tls",
         metadata=ApiObjectMetadata(name=TLS_SECRET, namespace=NAMESPACE),
-        secret_name=TLS_SECRET,
-        issuer_ref=cluster_ca.INTERNAL_ISSUER,
-        # main.tf's routeros_system_certificate names the same common name.
-        common_name="CRS310",
-        # The address tf/gitops/home-switch connects to.
-        ip_addresses=[str(HOME_LAN.switch)],
-        private_key=CertificatePrivateKey.rsa_2048(),
+        spec=CertificateSpec(
+            secret_name=TLS_SECRET,
+            issuer_ref=cluster_ca.INTERNAL_ISSUER,
+            # main.tf's routeros_system_certificate names the same common name.
+            common_name="CRS310",
+            # The address tf/gitops/home-switch connects to.
+            ip_addresses=[str(HOME_LAN.switch)],
+            private_key=CertificatePrivateKey.rsa_2048(),
+        ),
     )
     terraform.gitops_terraform(
         chart,

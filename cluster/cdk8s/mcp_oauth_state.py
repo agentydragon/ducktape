@@ -18,6 +18,8 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecManagedRolesPasswordSecret,
 )
 from cnpg_database_crds.io.cnpg.postgresql import (
+    Database,
+    DatabaseSpec,
     DatabaseSpecCluster,
     DatabaseSpecDatabaseReclaimPolicy,
     DatabaseSpecEnsure,
@@ -46,7 +48,6 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.cnpg.database import Database
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/mcp-oauth-state"
@@ -192,12 +193,14 @@ def _db_chart(app: App) -> Chart:
             # CNPG's Database CR metadata.name is a Kubernetes DNS name; the
             # PostgreSQL database name in spec may still contain underscores.
             metadata=ApiObjectMetadata(name=f"mcp-oauth-{store.id}-database", namespace=NAMESPACE),
-            cluster=DatabaseSpecCluster(name=DATABASE.name),
-            name=store.database,
-            owner=store.role,
-            # OAuth associations may be recreated after a deliberate reset, but pruning this
-            # Database CR should not silently remove its backing database.
-            database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
+            spec=DatabaseSpec(
+                cluster=DatabaseSpecCluster(name=DATABASE.name),
+                name=store.database,
+                owner=store.role,
+                # OAuth associations may be recreated after a deliberate reset, but pruning this
+                # Database CR should not silently remove its backing database.
+                database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
+            ),
         )
         _consumer_secret_access(chart, store)
 
@@ -205,10 +208,12 @@ def _db_chart(app: App) -> Chart:
         chart,
         "database-plaid-db-tombstone",
         metadata=ApiObjectMetadata(name=f"mcp-oauth-{_RETIRED_PLAID_DB.id}-database", namespace=NAMESPACE),
-        cluster=DatabaseSpecCluster(name=DATABASE.name),
-        name=_RETIRED_PLAID_DB.database,
-        owner=_RETIRED_PLAID_DB.role,
-        ensure=DatabaseSpecEnsure.ABSENT,
+        spec=DatabaseSpec(
+            cluster=DatabaseSpecCluster(name=DATABASE.name),
+            name=_RETIRED_PLAID_DB.database,
+            owner=_RETIRED_PLAID_DB.role,
+            ensure=DatabaseSpecEnsure.ABSENT,
+        ),
     )
     return chart
 

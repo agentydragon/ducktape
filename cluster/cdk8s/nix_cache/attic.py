@@ -14,7 +14,12 @@ from pathlib import Path
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ClusterRole, ClusterRolePolicyRule, ServiceAccount, k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecPostgresql
-from cnpg_database_crds.io.cnpg.postgresql import DatabaseSpecCluster, DatabaseSpecDatabaseReclaimPolicy
+from cnpg_database_crds.io.cnpg.postgresql import (
+    Database,
+    DatabaseSpec,
+    DatabaseSpecCluster,
+    DatabaseSpecDatabaseReclaimPolicy,
+)
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
@@ -34,7 +39,6 @@ from cluster.cdk8s.github_secrets_sync import workspace
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.nix_cache import ci_token
-from cluster.cdk8s.providers.cnpg.database import Database
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -196,10 +200,12 @@ def _local_server(scope: Construct) -> None:
         scope,
         "local-database",
         metadata=ApiObjectMetadata(name=_NEXT_DATABASE_SECRET, namespace=NAMESPACE),
-        cluster=DatabaseSpecCluster(name=DATABASE.name),
-        name="attic_local",
-        owner="attic",
-        database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
+        spec=DatabaseSpec(
+            cluster=DatabaseSpecCluster(name=DATABASE.name),
+            name="attic_local",
+            owner="attic",
+            database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
+        ),
     )
     reader = k8s.KubeServiceAccount(
         scope, "local-db-reader", metadata=k8s.ObjectMeta(name="attic-local-db-reader", namespace=NAMESPACE)

@@ -15,7 +15,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
-from agentplane_policyset_crds.works.allegedly.agentplane import PolicySetSpecRulesMethods
+from agentplane_policyset_crds.works.allegedly.agentplane import PolicySet, PolicySetSpec, PolicySetSpecRulesMethods
 from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
     ConfigMap,
@@ -31,8 +31,15 @@ from cdk8s_plus_34 import (
     ServiceAccount,
     k8s,
 )
-from cert_manager_clusterissuer_crds.io.cert_manager import ClusterIssuerSpecCa, ClusterIssuerSpecSelfSigned
+from cert_manager_clusterissuer_crds.io.cert_manager import (
+    ClusterIssuer,
+    ClusterIssuerSpec,
+    ClusterIssuerSpecCa,
+    ClusterIssuerSpecSelfSigned,
+)
 from cert_manager_crds.io.cert_manager import (
+    Certificate,
+    CertificateSpec,
     CertificateSpecIssuerRef,
     CertificateSpecPrivateKeyRotationPolicy,
     CertificateSpecUsages,
@@ -45,6 +52,8 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
 )
 from pydantic import AnyHttpUrl
 from trust_manager_crds.io.cert_manager.trust import (
+    Bundle,
+    BundleSpec,
     BundleSpecSources,
     BundleSpecSourcesSecret,
     BundleSpecTarget,
@@ -137,10 +146,8 @@ from cluster.cdk8s.agentplane.model_selections import HarnessRoutes, model_confi
 from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
 from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
 from cluster.cdk8s.cert_manager.cluster_ca import add_workload_ca
-from cluster.cdk8s.providers.agentplane.policy_set import PolicySet, Rule
-from cluster.cdk8s.providers.cert_manager.bundle import Bundle
-from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
-from cluster.cdk8s.providers.cert_manager.cluster_issuer import ClusterIssuer
+from cluster.cdk8s.providers.agentplane.policy_set import Rule
+from cluster.cdk8s.providers.cert_manager.certificate import CertificatePrivateKey
 from cluster.cdk8s.service_ref import Pods, ServiceRef
 from model_catalog.catalog import GPT6_LUNA_RESPONSES, HAIKU_API, Route
 
@@ -453,40 +460,44 @@ def _add_runner_root(chart: Chart) -> None:
         chart,
         "runner-root-bootstrap",
         metadata=ApiObjectMetadata(name="test-runner-root-bootstrap"),
-        self_signed=ClusterIssuerSpecSelfSigned(),
+        spec=ClusterIssuerSpec(self_signed=ClusterIssuerSpecSelfSigned()),
     )
     root_secret = "test-runner-root"
     Certificate(
         chart,
         "runner-root",
         metadata=ApiObjectMetadata(name="test-runner-root", namespace="cert-manager"),
-        secret_name=root_secret,
-        common_name="test-k3s-runner-root",
-        is_ca=True,
-        duration="87600h",
-        renew_before="8760h",
-        # Already-issued intermediates must survive a root reissuance during fixture startup.
-        # Cleanup removes the root Secret between fixtures, so each fixture still gets a fresh key.
-        private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.NEVER),
-        usages=[CertificateSpecUsages.CERT_SIGN, CertificateSpecUsages.CRL_SIGN],
-        issuer_ref=CertificateSpecIssuerRef(name=bootstrap.name, kind="ClusterIssuer"),
+        spec=CertificateSpec(
+            secret_name=root_secret,
+            common_name="test-k3s-runner-root",
+            is_ca=True,
+            duration="87600h",
+            renew_before="8760h",
+            # Already-issued intermediates must survive a root reissuance during fixture startup.
+            # Cleanup removes the root Secret between fixtures, so each fixture still gets a fresh key.
+            private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.NEVER),
+            usages=[CertificateSpecUsages.CERT_SIGN, CertificateSpecUsages.CRL_SIGN],
+            issuer_ref=CertificateSpecIssuerRef(name=bootstrap.name, kind="ClusterIssuer"),
+        ),
     )
     ClusterIssuer(
         chart,
         "runner-internal-issuer",
         # add_workload_ca signs from the production issuer reference.
         metadata=ApiObjectMetadata(name="cluster-internal-ca"),
-        ca=ClusterIssuerSpecCa(secret_name=root_secret),
+        spec=ClusterIssuerSpec(ca=ClusterIssuerSpecCa(secret_name=root_secret)),
     )
     Bundle(
         chart,
         "environment-runtime-trust",
         metadata=ApiObjectMetadata(name=RUNNER_TRUST_BUNDLE),
-        sources=[BundleSpecSources(secret=BundleSpecSourcesSecret(name=root_secret, key="ca.crt"))],
-        target=BundleSpecTarget(
-            config_map=BundleSpecTargetConfigMap(key=RUNNER_TRUST_BUNDLE_KEY),
-            namespace_selector=BundleSpecTargetNamespaceSelector(
-                match_labels={"kubernetes.io/metadata.name": NAMESPACE}
+        spec=BundleSpec(
+            sources=[BundleSpecSources(secret=BundleSpecSourcesSecret(name=root_secret, key="ca.crt"))],
+            target=BundleSpecTarget(
+                config_map=BundleSpecTargetConfigMap(key=RUNNER_TRUST_BUNDLE_KEY),
+                namespace_selector=BundleSpecTargetNamespaceSelector(
+                    match_labels={"kubernetes.io/metadata.name": NAMESPACE}
+                ),
             ),
         ),
     )
@@ -568,14 +579,16 @@ def add_fixture_pki(
         "fixture-egress-trust",
         metadata=ApiObjectMetadata(name=_EGRESS_CA),
         # The fixture's SVID root is independent of its Kubernetes API CA.
-        sources=[
-            BundleSpecSources(in_line=system_roots + ca_cert + cluster_ca),
-            BundleSpecSources(secret=BundleSpecSourcesSecret(name="test-runner-root", key="ca.crt")),
-        ],
-        target=BundleSpecTarget(
-            config_map=BundleSpecTargetConfigMap(key="ca-certificates.crt"),
-            namespace_selector=BundleSpecTargetNamespaceSelector(
-                match_labels={"kubernetes.io/metadata.name": NAMESPACE}
+        spec=BundleSpec(
+            sources=[
+                BundleSpecSources(in_line=system_roots + ca_cert + cluster_ca),
+                BundleSpecSources(secret=BundleSpecSourcesSecret(name="test-runner-root", key="ca.crt")),
+            ],
+            target=BundleSpecTarget(
+                config_map=BundleSpecTargetConfigMap(key="ca-certificates.crt"),
+                namespace_selector=BundleSpecTargetNamespaceSelector(
+                    match_labels={"kubernetes.io/metadata.name": NAMESPACE}
+                ),
             ),
         ),
     )
@@ -806,20 +819,22 @@ def add_app(chart: Chart, env: Environment) -> AppFixture:
             namespace=NAMESPACE,
             annotations={runtime_grant.PORT_ANNOTATION: str(APP_SERVICE.port.number)},
         ),
-        rules=[
-            Rule.egress(
-                hosts=[APP_SERVICE.fqdn],
-                cluster_internal=True,
-                methods=[PolicySetSpecRulesMethods.GET],
-                paths=["/test-runtime-grant"],
-            )
-        ],
+        spec=PolicySetSpec(
+            rules=[
+                Rule.egress(
+                    hosts=[APP_SERVICE.fqdn],
+                    cluster_internal=True,
+                    methods=[PolicySetSpecRulesMethods.GET],
+                    paths=["/test-runtime-grant"],
+                )
+            ]
+        ),
     )
     PolicySet(
         chart,
         f"policy-set-{send_grant.POLICY_SET}",
         metadata=ApiObjectMetadata(name=send_grant.POLICY_SET, namespace=NAMESPACE),
-        rules=[Rule.send_message(inbox_tags=[send_grant.INBOX_TAG])],
+        spec=PolicySetSpec(rules=[Rule.send_message(inbox_tags=[send_grant.INBOX_TAG])]),
     )
     return AppFixture(
         construct=service,
@@ -1038,7 +1053,7 @@ def add_policy_controller(chart: Chart, env: Environment) -> None:
         chart,
         f"policy-set-{sandbox_pod.TOOL_CONFIG_GRANT}",
         metadata=ApiObjectMetadata(name=sandbox_pod.TOOL_CONFIG_GRANT, namespace=NAMESPACE),
-        rules=access.rules_for_grants([tool_config_grant]),
+        spec=PolicySetSpec(rules=access.rules_for_grants([tool_config_grant])),
     )
     controller = policy_controller.PolicyController(
         chart,

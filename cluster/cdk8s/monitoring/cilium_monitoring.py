@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from prometheus_operator_crds.com.coreos.monitoring import (
+    ServiceMonitor,
+    ServiceMonitorSpec,
     ServiceMonitorSpecEndpointsScheme,
     ServiceMonitorSpecNamespaceSelector,
     ServiceMonitorSpecSelector,
 )
 
-from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.service_ref import HostNetworkServiceRef, Pods, Port
 
 NAME = "cilium-monitoring"
@@ -35,26 +37,30 @@ def chart(app: App) -> Chart:
         chart,
         "cilium-agent",
         metadata=ApiObjectMetadata(name="cilium-agent", namespace=NAMESPACE, labels=_labels("cilium-agent")),
-        namespace_selector=ServiceMonitorSpecNamespaceSelector(match_names=[_AGENT_METRICS.pods.namespace]),
-        selector=ServiceMonitorSpecSelector(match_labels=_AGENT_METRICS.labels),
-        endpoints=[
-            Endpoint.plain(
-                port=_AGENT_METRICS.port.name, scheme=ServiceMonitorSpecEndpointsScheme.HTTP, scrape_timeout="10s"
-            )
-        ],
+        spec=ServiceMonitorSpec(
+            namespace_selector=ServiceMonitorSpecNamespaceSelector(match_names=[_AGENT_METRICS.pods.namespace]),
+            selector=ServiceMonitorSpecSelector(match_labels=_AGENT_METRICS.labels),
+            endpoints=[
+                Endpoint.plain(
+                    port=_AGENT_METRICS.port.name, scheme=ServiceMonitorSpecEndpointsScheme.HTTP, scrape_timeout="10s"
+                )
+            ],
+        ),
     )
     ServiceMonitor(
         chart,
         "hubble",
         metadata=ApiObjectMetadata(name="hubble", namespace=NAMESPACE, labels=_labels("hubble")),
-        namespace_selector=ServiceMonitorSpecNamespaceSelector(match_names=[_HUBBLE_METRICS.pods.namespace]),
-        # The chart labels this Service `k8s-app: hubble`, which the agent Pods behind it do not
-        # carry, so `_HUBBLE_METRICS.labels` would not select it.
-        selector=ServiceMonitorSpecSelector(match_labels={"k8s-app": "hubble"}),
-        endpoints=[
-            Endpoint.plain(
-                port=_HUBBLE_METRICS.port.name, scheme=ServiceMonitorSpecEndpointsScheme.HTTP, scrape_timeout="10s"
-            )
-        ],
+        spec=ServiceMonitorSpec(
+            namespace_selector=ServiceMonitorSpecNamespaceSelector(match_names=[_HUBBLE_METRICS.pods.namespace]),
+            # The chart labels this Service `k8s-app: hubble`, which the agent Pods behind it do not
+            # carry, so `_HUBBLE_METRICS.labels` would not select it.
+            selector=ServiceMonitorSpecSelector(match_labels={"k8s-app": "hubble"}),
+            endpoints=[
+                Endpoint.plain(
+                    port=_HUBBLE_METRICS.port.name, scheme=ServiceMonitorSpecEndpointsScheme.HTTP, scrape_timeout="10s"
+                )
+            ],
+        ),
     )
     return chart

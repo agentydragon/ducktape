@@ -14,6 +14,8 @@ from pathlib import Path
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ConfigMap, k8s
 from volsync_replicationdestination_crds.backube.volsync import (
+    ReplicationDestination,
+    ReplicationDestinationSpec,
     ReplicationDestinationSpecRsyncTls,
     ReplicationDestinationSpecRsyncTlsCopyMethod,
     ReplicationDestinationSpecRsyncTlsMoverAffinity,
@@ -38,7 +40,6 @@ from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.volsync.replication_destination import ReplicationDestination
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
@@ -322,12 +323,14 @@ def _backup(chart: Chart, namespace: str) -> None:
         chart,
         f"{name}-destination",
         metadata=ApiObjectMetadata(name=name, namespace=namespace),
-        rsync_tls=ReplicationDestinationSpecRsyncTls(
-            destination_pvc=name,
-            copy_method=ReplicationDestinationSpecRsyncTlsCopyMethod.DIRECT,
-            service_type="ClusterIP",
-            mover_security_context=_destination_mover_security_context(),
-            mover_affinity=_destination_mover_affinity(),
+        spec=ReplicationDestinationSpec(
+            rsync_tls=ReplicationDestinationSpecRsyncTls(
+                destination_pvc=name,
+                copy_method=ReplicationDestinationSpecRsyncTlsCopyMethod.DIRECT,
+                service_type="ClusterIP",
+                mover_security_context=_destination_mover_security_context(),
+                mover_affinity=_destination_mover_affinity(),
+            )
         ),
     )
     ReplicationSource(

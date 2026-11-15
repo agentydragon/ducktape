@@ -5,7 +5,6 @@
 # gazelle:resolve py kubevirt_storageprofile_crds //cluster/cdk8s/providers/kubevirt:storageprofile
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
-load("//devinfra/python:defs.bzl", "py_library")
 
 cdk8s_import(
     name = "kubevirt",
@@ -63,26 +62,4 @@ cdk8s_import(
     module_name = "kubevirt_storageprofile_crds",
     module_path = "io/kubevirt/cdi",
     visibility = ["//cluster/cdk8s:__subpackages__"],
-)
-
-py_library(
-    name = "virtual_machine",
-    srcs = ["virtual_machine.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = [
-        "//cluster/cdk8s/providers/kubevirt:virtualmachine",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
-    ],
-)
-
-py_library(
-    name = "virtual_machine_pool",
-    srcs = ["virtual_machine_pool.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = [
-        "//cluster/cdk8s/providers/kubevirt:virtualmachinepool",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
-    ],
 )

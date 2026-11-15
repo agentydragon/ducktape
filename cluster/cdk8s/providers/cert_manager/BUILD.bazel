@@ -46,34 +46,8 @@ cdk8s_import(
 )
 
 py_library(
-    name = "cert_manager_certificate",
+    name = "certificate_private_key",
     srcs = ["certificate.py"],
     visibility = ["//cluster/cdk8s:deployment_consumers"],
-    deps = [
-        ":certificate",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
-    ],
-)
-
-py_library(
-    name = "cluster_issuer",
-    srcs = ["cluster_issuer.py"],
-    visibility = ["//cluster/cdk8s:deployment_consumers"],
-    deps = [
-        ":clusterissuer",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
-    ],
-)
-
-py_library(
-    name = "cert_manager_bundle",
-    srcs = ["bundle.py"],
-    visibility = ["//cluster/cdk8s:deployment_consumers"],
-    deps = [
-        ":bundle",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
-    ],
+    deps = [":certificate"],
 )

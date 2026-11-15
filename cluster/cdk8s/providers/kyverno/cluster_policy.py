@@ -1,7 +1,4 @@
-"""Ergonomic wrapper for Kyverno's `ClusterPolicy`, following cdk8s-plus's own
-construction pattern: a class named after the kind, and named `@staticmethod` factories
-grouping a spec fragment's real variant shapes under one type, each returning the generated
-struct.
+"""Typed helpers for common Kyverno ClusterPolicy rule shapes.
 
 Fields the CRD schema itself leaves untyped (`x-kubernetes-preserve-unknown-fields`) --
 `preconditions`, `validate.deny.conditions`, `mutate.patchStrategicMerge`,
@@ -12,22 +9,12 @@ guidance.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-
-from cdk8s import ApiObjectMetadata
-from constructs import Construct
 from kyverno_clusterpolicy_crds.io.kyverno import (
-    ClusterPolicy as _ClusterPolicy,
-    ClusterPolicySpec,
-    ClusterPolicySpecFailurePolicy,
-    ClusterPolicySpecRules,
     ClusterPolicySpecRulesMatch,
     ClusterPolicySpecRulesMatchAny,
     ClusterPolicySpecRulesMatchAnyResources,
     ClusterPolicySpecRulesValidate,
     ClusterPolicySpecRulesValidateDeny,
-    ClusterPolicySpecValidationFailureAction,
-    ClusterPolicySpecWebhookConfiguration,
 )
 
 
@@ -55,42 +42,4 @@ class Validate:
         (`x-kubernetes-preserve-unknown-fields`) -- pass it as a raw dict."""
         return ClusterPolicySpecRulesValidate(
             message=message, deny=ClusterPolicySpecRulesValidateDeny(conditions=conditions)
-        )
-
-
-class ClusterPolicy(_ClusterPolicy):
-    """Kyverno's `ClusterPolicy`. Keywords are `ClusterPolicySpec` fields under their
-    own names; `None` leaves a field unset, so Kyverno's own default applies.
-    `validation_failure_action` sets the deprecated but still-served
-    `spec.validationFailureAction`; Kyverno's newer, per-rule `validate.failureAction`
-    supersedes it but is unused by this repo today.
-    """
-
-    def __init__(
-        self,
-        scope: Construct,
-        id: str,
-        *,
-        metadata: ApiObjectMetadata,
-        rules: Sequence[ClusterPolicySpecRules],
-        background: bool | None = None,
-        admission: bool | None = None,
-        mutate_existing_on_policy_update: bool | None = None,
-        validation_failure_action: ClusterPolicySpecValidationFailureAction | None = None,
-        failure_policy: ClusterPolicySpecFailurePolicy | None = None,
-        webhook_configuration: ClusterPolicySpecWebhookConfiguration | None = None,
-    ) -> None:
-        super().__init__(
-            scope,
-            id,
-            metadata=metadata,
-            spec=ClusterPolicySpec(
-                rules=list(rules),
-                background=background,
-                admission=admission,
-                mutate_existing_on_policy_update=mutate_existing_on_policy_update,
-                validation_failure_action=validation_failure_action,
-                failure_policy=failure_policy,
-                webhook_configuration=webhook_configuration,
-            ),
         )

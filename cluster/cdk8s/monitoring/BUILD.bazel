@@ -1,6 +1,14 @@
 # gazelle:resolve py third_party.containers.loki_test //third_party/containers:loki_test
 # gazelle:resolve py third_party.containers.alloy_config //third_party/containers:alloy_config
 # gazelle:resolve py grafana_grafanaserviceaccount_crds //cluster/cdk8s/providers/grafana_operator:grafanaserviceaccount
+# gazelle:resolve py cert_manager_crds //cluster/cdk8s/providers/cert_manager:certificate
+# gazelle:resolve py grafana_grafana_crds //cluster/cdk8s/providers/grafana_operator:grafana
+# gazelle:resolve py grafana_grafanadashboard_crds //cluster/cdk8s/providers/grafana_operator:grafanadashboard
+# gazelle:resolve py grafana_grafanadatasource_crds //cluster/cdk8s/providers/grafana_operator:grafanadatasource
+# gazelle:resolve py prometheus_operator_crds //cluster/cdk8s/providers/prometheus_operator:servicemonitor
+# gazelle:resolve py prometheus_operator_podmonitor_crds //cluster/cdk8s/providers/prometheus_operator:podmonitor
+# gazelle:resolve py prometheus_operator_prometheusrule_crds //cluster/cdk8s/providers/prometheus_operator:prometheusrule
+# gazelle:resolve py tofu_controller //cluster/cdk8s/providers/tofu_controller:terraform
 load("@image_pins//:pins.bzl", "BLACKBOX_EXPORTER_DIGEST", "BLACKBOX_EXPORTER_IMAGE")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
@@ -217,9 +225,6 @@ py_library(
         "//cluster/cdk8s/cnpg:cluster",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/grafana_operator:grafana",
-        "//cluster/cdk8s/providers/grafana_operator:grafana_dashboard",
-        "//cluster/cdk8s/providers/grafana_operator:grafana_datasource",
-        "//cluster/cdk8s/providers/grafana_operator:grafana_operator_grafana",
         "//cluster/cdk8s/providers/grafana_operator:grafanadashboard",
         "//cluster/cdk8s/providers/grafana_operator:grafanadatasource",
         "@pypi//cdk8s",
@@ -253,8 +258,6 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/clickhouse:client",
-        "//cluster/cdk8s/providers/grafana_operator:grafana_dashboard",
-        "//cluster/cdk8s/providers/grafana_operator:grafana_datasource",
         "//cluster/cdk8s/providers/grafana_operator:grafanadashboard",
         "//cluster/cdk8s/providers/grafana_operator:grafanadatasource",
         "@pypi//cdk8s",
@@ -273,7 +276,6 @@ py_library(
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/grafana_operator:grafana",
-        "//cluster/cdk8s/providers/grafana_operator:grafana_operator_grafana",
         "//cluster/cdk8s/providers/grafana_operator:grafanaserviceaccount",
         "@pypi//cdk8s",
     ],
@@ -316,6 +318,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
+        "//cluster/cdk8s/providers/prometheus_operator:prometheusrule",
         "@pypi//cdk8s",
         "@rules_python//python/runfiles",
     ],
@@ -387,7 +390,8 @@ py_library(
         "//cluster/cdk8s:terraform",
         "//cluster/cdk8s/cert_manager:cluster_ca",
         "//cluster/cdk8s/external_secrets:minted_secret",
-        "//cluster/cdk8s/providers/cert_manager:cert_manager_certificate",
+        "//cluster/cdk8s/providers/cert_manager:certificate",
+        "//cluster/cdk8s/providers/cert_manager:certificate_private_key",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/cdk8s/providers/tofu_controller:terraform",
@@ -405,7 +409,6 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
-        "//cluster/cdk8s/providers/prometheus_operator:pod_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:podmonitor",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
         "//cluster/cdk8s/providers/prometheus_operator:prometheusrule",
@@ -432,7 +435,6 @@ py_library(
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:pod_policy",
-        "//cluster/cdk8s/providers/prometheus_operator:pod_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:podmonitor",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -483,7 +485,6 @@ py_library(
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
-        "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -502,9 +503,9 @@ py_library(
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:pod_policy",
         "//cluster/cdk8s:service_ref",
-        "//cluster/cdk8s/providers/prometheus_operator:pod_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:podmonitor",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
+        "//cluster/cdk8s/providers/prometheus_operator:prometheusrule",
         "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

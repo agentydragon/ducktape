@@ -4,6 +4,7 @@
 # gazelle:resolve py flux_receiver_crds //cluster/cdk8s/providers/flux:receiver
 # gazelle:resolve py cilium_envoyconfig_crds //cluster/cdk8s/providers/cilium:ciliumenvoyconfig
 
+# gazelle:resolve py cnpg_database_crds //cluster/cdk8s/providers/cnpg:database
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//cluster/cdk8s:__subpackages__"])
@@ -61,10 +62,7 @@ py_library(
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:image_automation",
-        "//cluster/cdk8s/providers/flux:git_repository",
         "//cluster/cdk8s/providers/flux:gitrepository",
-        "//cluster/cdk8s/providers/flux:image_repository",
-        "//cluster/cdk8s/providers/flux:image_update_automation",
         "//cluster/cdk8s/providers/flux:imagerepository",
         "//cluster/cdk8s/providers/flux:imageupdateautomation",
         "//cluster/cdk8s/providers/flux:kustomization",
@@ -87,7 +85,6 @@ py_library(
         "//cluster/cdk8s/external_secrets:kubernetes_store",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/providers/cnpg:cluster",
-        "//cluster/cdk8s/providers/cnpg:cnpg_database",
         "//cluster/cdk8s/providers/cnpg:database",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",

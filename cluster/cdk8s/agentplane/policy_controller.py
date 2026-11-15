@@ -11,7 +11,12 @@ from pathlib import Path
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, MemoryResources
 from constructs import Construct
-from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
+from prometheus_operator_crds.com.coreos.monitoring import (
+    ServiceMonitor,
+    ServiceMonitorSpec,
+    ServiceMonitorSpecSelector,
+)
+from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 
 from agentplane.net.peertls.config import APP_URI, POLICY_CONTROLLER_URI, ServerTLSListener
 from agentplane.policy_controller.settings import Settings
@@ -23,8 +28,8 @@ from cluster.cdk8s.cert_manager.cluster_ca import WORKLOAD_ISSUER
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
-from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
-from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
@@ -160,8 +165,10 @@ class PolicyController(Construct):
             self,
             "service-monitor",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
-            selector=ServiceMonitorSpecSelector(match_labels=endpoint.pods.selector),
-            endpoints=[Endpoint.plain(port=endpoint.port.name)],
+            spec=ServiceMonitorSpec(
+                selector=ServiceMonitorSpecSelector(match_labels=endpoint.pods.selector),
+                endpoints=[Endpoint.plain(port=endpoint.port.name)],
+            ),
         )
         # kube-state-metrics reports every PolicyBinding's expiresAt (monitoring/stack.py), so this
         # fires even while the controller is down.
@@ -169,23 +176,25 @@ class PolicyController(Construct):
             self,
             "prometheus-rule",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
-            groups=[
-                group(
-                    NAME,
-                    [
-                        Rule.alert(
-                            "AgentplanePolicyBindingExpiryOverdue",
-                            f'time() - kube_customresource_agentplane_policybinding_expires_at{{namespace="{namespace}"}}'
-                            f" > {_OVERDUE_SECONDS}",
-                            labels={"severity": "warning"},
-                            summary="PolicyBinding {{ $labels.name }} still grants after its expiresAt",
-                            description=(
-                                "The Policy Controller deletes a PolicyBinding at its expiresAt; this one has "
-                                "outlived it, so its grants are still live. Check the agentplane-policy-controller "
-                                "Deployment and its logs."
-                            ),
-                        )
-                    ],
-                )
-            ],
+            spec=PrometheusRuleSpec(
+                groups=[
+                    group(
+                        NAME,
+                        [
+                            Rule.alert(
+                                "AgentplanePolicyBindingExpiryOverdue",
+                                f'time() - kube_customresource_agentplane_policybinding_expires_at{{namespace="{namespace}"}}'
+                                f" > {_OVERDUE_SECONDS}",
+                                labels={"severity": "warning"},
+                                summary="PolicyBinding {{ $labels.name }} still grants after its expiresAt",
+                                description=(
+                                    "The Policy Controller deletes a PolicyBinding at its expiresAt; this one has "
+                                    "outlived it, so its grants are still live. Check the agentplane-policy-controller "
+                                    "Deployment and its logs."
+                                ),
+                            )
+                        ],
+                    )
+                ]
+            ),
         )

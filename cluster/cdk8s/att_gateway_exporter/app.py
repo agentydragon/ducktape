@@ -12,10 +12,14 @@ from __future__ import annotations
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from grafana_grafanadashboard_crds.org.integreatly.grafana import (
+    GrafanaDashboard,
+    GrafanaDashboardSpec,
     GrafanaDashboardSpecDatasources,
     GrafanaDashboardSpecInstanceSelector,
 )
 from prometheus_operator_crds.com.coreos.monitoring import (
+    ServiceMonitor,
+    ServiceMonitorSpec,
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecEndpointsScheme,
     ServiceMonitorSpecSelector,
@@ -32,8 +36,6 @@ from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.monitoring import alloy, grafana_instance
 from cluster.cdk8s.node_scheduling import OPTIPLEX
-from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
-from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from util.settings_contract import env_name
 
@@ -186,31 +188,37 @@ def chart(app: App) -> Chart:
         chart,
         "monitor",
         metadata=ApiObjectMetadata(name=NAME, namespace=_NAMESPACE),
-        selector=ServiceMonitorSpecSelector(match_labels=_SERVICE.labels),
-        endpoints=[
-            ServiceMonitorSpecEndpoints(
-                port=_HTTP.name,
-                path="/metrics",
-                scheme=ServiceMonitorSpecEndpointsScheme.HTTP,
-                # The exporter refreshes each page once a minute.
-                interval="60s",
-                scrape_timeout="10s",
-            )
-        ],
+        spec=ServiceMonitorSpec(
+            selector=ServiceMonitorSpecSelector(match_labels=_SERVICE.labels),
+            endpoints=[
+                ServiceMonitorSpecEndpoints(
+                    port=_HTTP.name,
+                    path="/metrics",
+                    scheme=ServiceMonitorSpecEndpointsScheme.HTTP,
+                    # The exporter refreshes each page once a minute.
+                    interval="60s",
+                    scrape_timeout="10s",
+                )
+            ],
+        ),
     )
     GrafanaDashboard(
         chart,
         "dashboard",
         metadata=ApiObjectMetadata(name=NAME, namespace=_NAMESPACE),
-        instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=grafana_instance.INSTANCE_LABELS),
-        folder="Network",
-        datasources=[
-            GrafanaDashboardSpecDatasources(input_name="DS_LOKI", datasource_name=grafana_instance.LOKI_DATASOURCE_UID),
-            GrafanaDashboardSpecDatasources(input_name="DS_MIMIR", datasource_name="mimir"),
-        ],
-        json=(
-            Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/att_gateway_exporter/home-gateway.json"
-        ).read_text(),
+        spec=GrafanaDashboardSpec(
+            instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=grafana_instance.INSTANCE_LABELS),
+            folder="Network",
+            datasources=[
+                GrafanaDashboardSpecDatasources(
+                    input_name="DS_LOKI", datasource_name=grafana_instance.LOKI_DATASOURCE_UID
+                ),
+                GrafanaDashboardSpecDatasources(input_name="DS_MIMIR", datasource_name="mimir"),
+            ],
+            json=(
+                Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/att_gateway_exporter/home-gateway.json"
+            ).read_text(),
+        ),
     )
     return chart
 

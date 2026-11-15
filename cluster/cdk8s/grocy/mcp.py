@@ -18,7 +18,11 @@ from pathlib import Path
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
-from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
+from prometheus_operator_crds.com.coreos.monitoring import (
+    ServiceMonitor,
+    ServiceMonitorSpec,
+    ServiceMonitorSpecSelector,
+)
 
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.authentik import app as authentik  # `app` is the cdk8s App parameter here
@@ -30,7 +34,7 @@ from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.grocy import app as grocy  # `app` is the cdk8s App parameter here
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.mcp_oauth_state import CONSUMER_SECRET, GROCY_SF, GROCY_VALLEJO, add_consumer_credentials
-from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from grocy_mcp.mcp_types import CONFIG_FILE_ENV, ServerSettings
@@ -214,8 +218,10 @@ def _server(scope: Construct, household: str) -> None:
         scope,
         "servicemonitor",
         metadata=ApiObjectMetadata(name=_NAME, namespace=namespace),
-        selector=ServiceMonitorSpecSelector(match_labels=http.labels),
-        endpoints=[Endpoint.plain(port=metrics.port.name, scrape_timeout="10s")],
+        spec=ServiceMonitorSpec(
+            selector=ServiceMonitorSpecSelector(match_labels=http.labels),
+            endpoints=[Endpoint.plain(port=metrics.port.name, scrape_timeout="10s")],
+        ),
     )
 
 

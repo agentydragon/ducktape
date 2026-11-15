@@ -15,7 +15,12 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecManagedRolesPasswordSecret,
     ClusterSpecPostgresql,
 )
-from cnpg_database_crds.io.cnpg.postgresql import DatabaseSpecCluster, DatabaseSpecDatabaseReclaimPolicy
+from cnpg_database_crds.io.cnpg.postgresql import (
+    Database,
+    DatabaseSpec,
+    DatabaseSpecCluster,
+    DatabaseSpecDatabaseReclaimPolicy,
+)
 from constructs import Construct
 
 from cluster.cdk8s.agentplane.environment import Environment
@@ -23,7 +28,6 @@ from cluster.cdk8s.cnpg import cluster as cnpg  # Local `cluster` parameters sha
 from cluster.cdk8s.cnpg.cluster import ClusterPlacement
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule
-from cluster.cdk8s.providers.cnpg.database import Database
 
 _CLUSTER_NAME = "postgres"
 
@@ -142,13 +146,15 @@ class Db(Construct):
                 self,
                 f"database-{role}",
                 metadata=ApiObjectMetadata(name=role.replace("_", "-"), namespace=env.namespace),
-                cluster=DatabaseSpecCluster(name=cluster.name),
-                name=role,
-                owner=role,
-                # Disabling the optional sampler must preserve its authored conversations.
-                database_reclaim_policy=(
-                    DatabaseSpecDatabaseReclaimPolicy.RETAIN
-                    if role == "central_sampler"
-                    else DatabaseSpecDatabaseReclaimPolicy.DELETE
+                spec=DatabaseSpec(
+                    cluster=DatabaseSpecCluster(name=cluster.name),
+                    name=role,
+                    owner=role,
+                    # Disabling the optional sampler must preserve its authored conversations.
+                    database_reclaim_policy=(
+                        DatabaseSpecDatabaseReclaimPolicy.RETAIN
+                        if role == "central_sampler"
+                        else DatabaseSpecDatabaseReclaimPolicy.DELETE
+                    ),
                 ),
             )

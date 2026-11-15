@@ -19,6 +19,8 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
 )
 from prometheus_operator_crds.com.coreos.monitoring import (
+    ServiceMonitor,
+    ServiceMonitorSpec,
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecEndpointsScheme,
     ServiceMonitorSpecSelector,
@@ -40,7 +42,6 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring.home_switch import MONITORING_PASSWORD
 from cluster.cdk8s.node_scheduling import OPTIPLEX
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
-from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "mktxp"
@@ -246,17 +247,19 @@ def chart(app: App) -> Chart:
         chart,
         "monitor",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-        selector=ServiceMonitorSpecSelector(match_labels=_SERVICE.labels),
-        endpoints=[
-            ServiceMonitorSpecEndpoints(
-                port=_HTTP.name,
-                path="/metrics",
-                scheme=ServiceMonitorSpecEndpointsScheme.HTTP,
-                interval="30s",
-                # mktxp queries the switch during the scrape.
-                scrape_timeout="30s",
-            )
-        ],
+        spec=ServiceMonitorSpec(
+            selector=ServiceMonitorSpecSelector(match_labels=_SERVICE.labels),
+            endpoints=[
+                ServiceMonitorSpecEndpoints(
+                    port=_HTTP.name,
+                    path="/metrics",
+                    scheme=ServiceMonitorSpecEndpointsScheme.HTTP,
+                    interval="30s",
+                    # mktxp queries the switch during the scrape.
+                    scrape_timeout="30s",
+                )
+            ],
+        ),
     )
     return chart
 

@@ -6,6 +6,7 @@ import json
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
+from cert_manager_crds.io.cert_manager import Certificate, CertificateSpec
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
@@ -17,9 +18,15 @@ from flux_imagepolicy_crds.io.fluxcd.toolkit.image import (
     ImagePolicySpecPolicyAlphabetical,
     ImagePolicySpecPolicyAlphabeticalOrder,
 )
-from flux_imagerepository_crds.io.fluxcd.toolkit.image import ImageRepositorySpecSecretRef
+from flux_imagerepository_crds.io.fluxcd.toolkit.image import (
+    ImageRepository,
+    ImageRepositorySpec,
+    ImageRepositorySpecSecretRef,
+)
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
+    PodMonitor,
+    PodMonitorSpec,
     PodMonitorSpecPodMetricsEndpoints,
     PodMonitorSpecSelector,
 )
@@ -37,10 +44,7 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.platform_sessions import config
-from cluster.cdk8s.providers.cert_manager.certificate import Certificate
 from cluster.cdk8s.providers.flux.image_policy import ImagePolicy
-from cluster.cdk8s.providers.flux.image_repository import ImageRepository
-from cluster.cdk8s.providers.prometheus_operator.pod_monitor import PodMonitor
 
 NAMESPACE = "platform-sessions"
 NAME = "platform-sessions-remote"
@@ -226,9 +230,9 @@ def _add_provider(chart: Chart, instance: str) -> None:
         chart,
         f"{name}-certificate",
         metadata=ApiObjectMetadata(name=instance, namespace=NAMESPACE),
-        secret_name=f"{name}-tls",
-        issuer_ref=cluster_ca.INTERNAL_ISSUER,
-        dns_names=[_provider_dns(instance)],
+        spec=CertificateSpec(
+            secret_name=f"{name}-tls", issuer_ref=cluster_ca.INTERNAL_ISSUER, dns_names=[_provider_dns(instance)]
+        ),
     )
 
     k8s.KubePersistentVolumeClaim(
@@ -265,9 +269,11 @@ def _image_policy(chart: Chart, name: str) -> None:
         chart,
         f"{name}-image-repository",
         metadata=ApiObjectMetadata(name=name, namespace="flux-system"),
-        image=f"{REGISTRY}/{name}",
-        interval="5m",
-        secret_ref=ImageRepositorySpecSecretRef(name="forgejo-images-creds"),
+        spec=ImageRepositorySpec(
+            image=f"{REGISTRY}/{name}",
+            interval="5m",
+            secret_ref=ImageRepositorySpecSecretRef(name="forgejo-images-creds"),
+        ),
     )
     ImagePolicy(
         chart,
@@ -475,12 +481,14 @@ def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: 
         chart,
         f"{name}-monitor",
         metadata=ApiObjectMetadata(name=instance, namespace=NAMESPACE),
-        selector=PodMonitorSpecSelector(match_labels={"app": name}),
-        pod_metrics_endpoints=[PodMonitorSpecPodMetricsEndpoints(port="metrics", path="/metrics", interval="1m")]
-        + (
-            [PodMonitorSpecPodMetricsEndpoints(port="quest-metrics", path="/metrics", interval="1m")]
-            if instance == "quest-scheduler"
-            else []
+        spec=PodMonitorSpec(
+            selector=PodMonitorSpecSelector(match_labels={"app": name}),
+            pod_metrics_endpoints=[PodMonitorSpecPodMetricsEndpoints(port="metrics", path="/metrics", interval="1m")]
+            + (
+                [PodMonitorSpecPodMetricsEndpoints(port="quest-metrics", path="/metrics", interval="1m")]
+                if instance == "quest-scheduler"
+                else []
+            ),
         ),
     )
 
@@ -505,9 +513,9 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
         chart,
         f"{GATEWAY}-certificate",
         metadata=ApiObjectMetadata(name="gateway", namespace=NAMESPACE),
-        secret_name=f"{GATEWAY}-tls",
-        issuer_ref=cluster_ca.INTERNAL_ISSUER,
-        dns_names=[_GATEWAY_DNS],
+        spec=CertificateSpec(
+            secret_name=f"{GATEWAY}-tls", issuer_ref=cluster_ca.INTERNAL_ISSUER, dns_names=[_GATEWAY_DNS]
+        ),
     )
     provider_credentials = k8s.Volume(
         name="provider-credentials",

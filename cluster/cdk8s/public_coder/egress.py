@@ -7,10 +7,15 @@ isolated namespace; the app receives canonical placeholders under its existing e
 from pathlib import Path
 
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (
+    EgressCredential,
+    EgressCredentialSpec,
     EgressCredentialSpecTargets,
     EgressCredentialSpecTargetsMethod,
 )
+from agentplane_policybinding_crds.works.allegedly.agentplane import PolicyBinding, PolicyBindingSpec
 from agentplane_policyset_crds.works.allegedly.agentplane import (
+    PolicySet,
+    PolicySetSpec,
     PolicySetSpecRulesCredentialRef,
     PolicySetSpecRulesMethods,
 )
@@ -24,13 +29,11 @@ from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions, egress, platform_routes
 from cluster.cdk8s.agentplane.egress_credentials import EXTERNAL_CREDS_STORE, credential_external_secret
-from cluster.cdk8s.agentplane.egress_policies import add_egress_policy
 from cluster.cdk8s.agentplane.standing_caller import StandingCaller
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
-from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
-from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
+from cluster.cdk8s.providers.agentplane.egress_credential import Source
 from cluster.cdk8s.providers.agentplane.policy_set import Rule
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.settings_file import PodWiring, SettingsFile
@@ -175,66 +178,73 @@ def add_gateway_resources(
         scope,
         f"credential-{BRAVE_CREDENTIAL}",
         metadata=ApiObjectMetadata(name=BRAVE_CREDENTIAL, namespace=namespace),
-        description="The shared Brave Search API key, substituted only at Brave's API in X-Subscription-Token.",
-        source=Source.secret_ref(name=BRAVE_CREDENTIAL, key="api-key"),
-        targets=[
-            EgressCredentialSpecTargets(
-                header="X-Subscription-Token", method=EgressCredentialSpecTargetsMethod.WHOLE_VALUE
-            )
-        ],
+        spec=EgressCredentialSpec(
+            description="The shared Brave Search API key, substituted only at Brave's API in X-Subscription-Token.",
+            source=Source.secret_ref(name=BRAVE_CREDENTIAL, key="api-key"),
+            targets=[
+                EgressCredentialSpecTargets(
+                    header="X-Subscription-Token", method=EgressCredentialSpecTargetsMethod.WHOLE_VALUE
+                )
+            ],
+        ),
     )
-    add_egress_policy(
+    PolicySet(
         scope,
         "policy",
         metadata=ApiObjectMetadata(name=POLICY, namespace=namespace),
-        rules=[
-            Rule.egress(
-                hosts=["github.com", "api.github.com", "codeload.github.com"],
-                credential_ref=PolicySetSpecRulesCredentialRef(name=GITHUB_CREDENTIAL),
-            ),
-            Rule.egress(
-                hosts=[client.HTTP.fqdn],
-                cluster_internal=True,
-                credential_ref=PolicySetSpecRulesCredentialRef(name=CLICKHOUSE_CREDENTIAL),
-            ),
-            Rule.egress(
-                hosts=["aiquota.allegedly.works"],
-                methods=[PolicySetSpecRulesMethods.GET],
-                paths=["/v1/quotas", "/v1/providers/*/raw"],
-                credential_ref=PolicySetSpecRulesCredentialRef(name=AIQUOTA_CREDENTIAL),
-            ),
-            Rule.egress(
-                hosts=["api.search.brave.com"], credential_ref=PolicySetSpecRulesCredentialRef(name=BRAVE_CREDENTIAL)
-            ),
-            Rule.egress(
-                hosts=["matrix.allegedly.works"],
-                methods=[PolicySetSpecRulesMethods.POST],
-                paths=["/_matrix/client/v3/login"],
-                credential_ref=PolicySetSpecRulesCredentialRef(name=MATRIX_CREDENTIAL),
-            ),
-            Rule.egress(
-                hosts=[actions.service("agentplane-staging").fqdn],
-                cluster_internal=True,
-                methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.POST],
-                paths=[
-                    "/mcp",
-                    "/openapi.json",
-                    "/v1/action-groups",
-                    "/v1/action-groups/**",
-                    "/v1/action-policy",
-                    "/v1/action-requests",
-                    "/v1/action-requests/**",
-                ],
-                credential_ref=PolicySetSpecRulesCredentialRef(name="agentplane-workload"),
-            ),
-        ],
+        spec=PolicySetSpec(
+            rules=[
+                Rule.egress(
+                    hosts=["github.com", "api.github.com", "codeload.github.com"],
+                    credential_ref=PolicySetSpecRulesCredentialRef(name=GITHUB_CREDENTIAL),
+                ),
+                Rule.egress(
+                    hosts=[client.HTTP.fqdn],
+                    cluster_internal=True,
+                    credential_ref=PolicySetSpecRulesCredentialRef(name=CLICKHOUSE_CREDENTIAL),
+                ),
+                Rule.egress(
+                    hosts=["aiquota.allegedly.works"],
+                    methods=[PolicySetSpecRulesMethods.GET],
+                    paths=["/v1/quotas", "/v1/providers/*/raw"],
+                    credential_ref=PolicySetSpecRulesCredentialRef(name=AIQUOTA_CREDENTIAL),
+                ),
+                Rule.egress(
+                    hosts=["api.search.brave.com"],
+                    credential_ref=PolicySetSpecRulesCredentialRef(name=BRAVE_CREDENTIAL),
+                ),
+                Rule.egress(
+                    hosts=["matrix.allegedly.works"],
+                    methods=[PolicySetSpecRulesMethods.POST],
+                    paths=["/_matrix/client/v3/login"],
+                    credential_ref=PolicySetSpecRulesCredentialRef(name=MATRIX_CREDENTIAL),
+                ),
+                Rule.egress(
+                    hosts=[actions.service("agentplane-staging").fqdn],
+                    cluster_internal=True,
+                    methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.POST],
+                    paths=[
+                        "/mcp",
+                        "/openapi.json",
+                        "/v1/action-groups",
+                        "/v1/action-groups/**",
+                        "/v1/action-policy",
+                        "/v1/action-requests",
+                        "/v1/action-requests/**",
+                    ],
+                    credential_ref=PolicySetSpecRulesCredentialRef(name="agentplane-workload"),
+                ),
+            ]
+        ),
     )
     PolicyBinding(
         scope,
         "binding",
         metadata=ApiObjectMetadata(name=POLICY, namespace=namespace),
-        subject=OPENCLAW.identity_subject(),
-        policy_sets=[POLICY, egress.INFERENCE_EXPERIMENTS_POLICY, egress.PUBLIC_INTERNET_POLICY],
+        spec=PolicyBindingSpec(
+            subject=OPENCLAW.identity_subject(),
+            policy_sets=[POLICY, egress.INFERENCE_EXPERIMENTS_POLICY, egress.PUBLIC_INTERNET_POLICY],
+        ),
     )
     NetworkPolicy(
         scope,
@@ -292,7 +302,7 @@ def _copied_credential(
         scope,
         f"credential-{credential}",
         metadata=ApiObjectMetadata(name=credential, namespace=namespace),
-        description=description,
-        source=Source.secret_ref(name=credential, key=key),
-        targets=[target],
+        spec=EgressCredentialSpec(
+            description=description, source=Source.secret_ref(name=credential, key=key), targets=[target]
+        ),
     )

@@ -4,6 +4,8 @@
 # authoritative YAML source under //agentplane/crds -- see that package's BUILD.bazel header --
 # and this package only depends on those targets.
 
+# gazelle:resolve py agentplane_kubernetesroleset_crds //agentplane/crds:kubernetesroleset
+# gazelle:resolve py agentplane_policybinding_crds //agentplane/crds:policybinding
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
@@ -12,9 +14,7 @@ py_library(
     visibility = ["//cluster/cdk8s:deployment_consumers"],
     deps = [
         "//agentplane/crds:egresscredential",
-        "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
-        "@pypi//constructs",
     ],
 )
 
@@ -37,22 +37,7 @@ py_library(
     name = "policy_set",
     srcs = ["policy_set.py"],
     visibility = ["//cluster/cdk8s:deployment_consumers"],
-    deps = [
-        "//agentplane/crds:policyset",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
-    ],
-)
-
-py_library(
-    name = "policy_binding",
-    srcs = ["policy_binding.py"],
-    visibility = ["//cluster/cdk8s:deployment_consumers"],
-    deps = [
-        "//agentplane/crds:policybinding",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
-    ],
+    deps = ["//agentplane/crds:policyset"],
 )
 
 py_library(
@@ -74,11 +59,7 @@ py_library(
     name = "kubernetes_role_set",
     srcs = ["kubernetes_role_set.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = [
-        "//agentplane/crds:kubernetesroleset",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
-    ],
+    deps = ["//agentplane/crds:kubernetesroleset"],
 )
 
 py_library(
@@ -86,7 +67,7 @@ py_library(
     srcs = ["service_account_grant.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        ":kubernetes_role_set",
+        "//agentplane/crds:kubernetesroleset",
         "//agentplane/crds:serviceaccountgrant",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

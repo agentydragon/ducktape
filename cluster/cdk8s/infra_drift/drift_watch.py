@@ -6,7 +6,7 @@ cluster/cdk8s/infra_drift/README.md."""
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepositorySpecRef
+from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepository, GitRepositorySpec, GitRepositorySpecRef
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from python.runfiles import Runfiles
 from source_watcher_crds.io.fluxcd.extensions.source import (
@@ -26,7 +26,6 @@ from tofu_controller.io.fluxcd.contrib.infra import (
 from cluster.cdk8s import ducktape_flux, terraform
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.providers.flux.git_repository import GitRepository
 from cluster.cdk8s.secret_ref import SecretRef
 
 NAME = "infra-drift"
@@ -50,19 +49,23 @@ def chart(app: App) -> Chart:
                 "and nebula-mesh.json, for the infra-drift plan-only Terraform CR."
             },
         ),
-        interval="10m",
-        ref=GitRepositorySpecRef(branch=ducktape_flux.BRANCH),
-        # This source clones the whole repository history like any other ducktape source, so it
-        # races the same 60s default: it failed `unable to clone ... context deadline exceeded` on
-        # 2026-10-15. Its `ignore` pattern below does not help, because `ignore` filters the
-        # checkout after the fetch, not the transfer. Reasoning in ducktape_flux.CLONE_TIMEOUT.
-        timeout=ducktape_flux.CLONE_TIMEOUT,
-        url=ducktape_flux.REPOSITORY_URL,
-        # `ignore` rather than `sparseCheckout`: nebula.tf's locals read the repo-root
-        # nebula-mesh.json, and sparseCheckout takes directories only. Exclude-all then
-        # re-include, spelling out each parent: gitignore cannot re-include a path whose
-        # parent directory is excluded.
-        ignore=(Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/infra_drift/source.gitignore").read_text(),
+        spec=GitRepositorySpec(
+            interval="10m",
+            ref=GitRepositorySpecRef(branch=ducktape_flux.BRANCH),
+            # This source clones the whole repository history like any other ducktape source, so it
+            # races the same 60s default: it failed `unable to clone ... context deadline exceeded` on
+            # 2026-10-15. Its `ignore` pattern below does not help, because `ignore` filters the
+            # checkout after the fetch, not the transfer. Reasoning in ducktape_flux.CLONE_TIMEOUT.
+            timeout=ducktape_flux.CLONE_TIMEOUT,
+            url=ducktape_flux.REPOSITORY_URL,
+            # `ignore` rather than `sparseCheckout`: nebula.tf's locals read the repo-root
+            # nebula-mesh.json, and sparseCheckout takes directories only. Exclude-all then
+            # re-include, spelling out each parent: gitignore cannot re-include a path whose
+            # parent directory is excluded.
+            ignore=(
+                Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/infra_drift/source.gitignore"
+            ).read_text(),
+        ),
     )
     # The GitRepository's revision is the commit, so every push to the branch would
     # replan. The ExternalArtifact's is a digest of the filtered tree: a plan runs when

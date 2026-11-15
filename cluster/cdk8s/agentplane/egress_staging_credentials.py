@@ -12,10 +12,14 @@ methods and credentials. See cluster/docs/cilium_network_policy.md, "Egress thro
 from collections.abc import Sequence
 
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (
+    EgressCredential,
+    EgressCredentialSpec,
     EgressCredentialSpecTargets,
     EgressCredentialSpecTargetsMethod,
 )
 from agentplane_policyset_crds.works.allegedly.agentplane import (
+    PolicySet,
+    PolicySetSpec,
     PolicySetSpecRules,
     PolicySetSpecRulesCredentialRef,
     PolicySetSpecRulesMethods,
@@ -34,7 +38,6 @@ from cluster.cdk8s.agentplane.egress_credentials import (
     credential_external_secret,
     inference_credentials,
 )
-from cluster.cdk8s.agentplane.egress_policies import add_egress_policy
 from cluster.cdk8s.aiquota import AGENTPLANE_STAGING_BEARER, SERVICE as AIQUOTA_SERVICE
 from cluster.cdk8s.authentik import app as authentik
 from cluster.cdk8s.clickhouse import client as clickhouse
@@ -43,7 +46,7 @@ from cluster.cdk8s.haku import mailbox
 from cluster.cdk8s.home_assistant.app import AGENTPLANE_READER_TOKEN
 from cluster.cdk8s.monitoring import mimir
 from cluster.cdk8s.plaid_mcp import pgweb as plaid_pgweb
-from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
+from cluster.cdk8s.providers.agentplane.egress_credential import Source
 from cluster.cdk8s.providers.agentplane.policy_set import Rule
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.public_coder.egress import add_gateway_resources
@@ -196,9 +199,9 @@ def _credential(
         scope,
         f"egresscredential-{id}",
         metadata=ApiObjectMetadata(name=credential, namespace=namespace),
-        description=description,
-        source=Source.secret_ref(name=secret, key=key),
-        targets=[target],
+        spec=EgressCredentialSpec(
+            description=description, source=Source.secret_ref(name=secret, key=key), targets=[target]
+        ),
     )
 
 
@@ -226,8 +229,11 @@ def _present(
         key=key,
         target=target,
     )
-    add_egress_policy(
-        scope, f"egresspolicy-{policy}", metadata=ApiObjectMetadata(name=policy, namespace=namespace), rules=rules
+    PolicySet(
+        scope,
+        f"egresspolicy-{policy}",
+        metadata=ApiObjectMetadata(name=policy, namespace=namespace),
+        spec=PolicySetSpec(rules=rules),
     )
 
 
@@ -566,34 +572,40 @@ def _aiquota_read(scope: Construct, *, reader: ServiceAccount, namespace: str, c
         target=_BASIC_PASSWORD,
     )
     # Keep this policy in sync with its backend grants in add_staging_egress_credentials.
-    add_egress_policy(
+    PolicySet(
         scope,
         f"egresspolicy-{AIQUOTA_READ_POLICY}",
         metadata=ApiObjectMetadata(name=AIQUOTA_READ_POLICY, namespace=namespace),
-        rules=[
-            _rule(credential, "aiquota.allegedly.works", method=PolicySetSpecRulesMethods.GET, paths=["/v1/**"]),
-            # A second route over the cluster Service, beside the public one, because the public
-            # Gateway leg intermittently loses connections to this API's pod in the other region -- a
-            # flat-5.0 s `503 ... connection timeout`. Bursty, not a steady rate: 3 in its first 40
-            # reads today, none in the 180 after. Budget a couple of retries; trust no fixed rate.
-            # Two spelling traps, both re-verified 2026-10-09: the rule matches the host string
-            # exactly, so the short `aiquota-api.cli-proxy-api` is refused `no-rule`; and the bare
-            # FQDN dials port 80, which this backend's Cilium grant (8080 only) does not admit, so it
-            # blackholes into a client timeout rather than refusing. Spell it
-            # `aiquota-api.cli-proxy-api.svc.cluster.local:8080`.
-            _rule(
-                credential,
-                AIQUOTA_SERVICE.fqdn,
-                cluster_internal=True,
-                method=PolicySetSpecRulesMethods.GET,
-                paths=["/v1/quotas", "/v1/providers/*/raw"],
-            ),
-            # The database's readonly profile and per-table grants (clickhouse/installation.py) bound
-            # what this password reads: the typed history, never raw provider responses.
-            _rule(
-                history, clickhouse.HTTP.fqdn, cluster_internal=True, method=PolicySetSpecRulesMethods.GET, paths=["/"]
-            ),
-        ],
+        spec=PolicySetSpec(
+            rules=[
+                _rule(credential, "aiquota.allegedly.works", method=PolicySetSpecRulesMethods.GET, paths=["/v1/**"]),
+                # A second route over the cluster Service, beside the public one, because the public
+                # Gateway leg intermittently loses connections to this API's pod in the other region -- a
+                # flat-5.0 s `503 ... connection timeout`. Bursty, not a steady rate: 3 in its first 40
+                # reads today, none in the 180 after. Budget a couple of retries; trust no fixed rate.
+                # Two spelling traps, both re-verified 2026-10-09: the rule matches the host string
+                # exactly, so the short `aiquota-api.cli-proxy-api` is refused `no-rule`; and the bare
+                # FQDN dials port 80, which this backend's Cilium grant (8080 only) does not admit, so it
+                # blackholes into a client timeout rather than refusing. Spell it
+                # `aiquota-api.cli-proxy-api.svc.cluster.local:8080`.
+                _rule(
+                    credential,
+                    AIQUOTA_SERVICE.fqdn,
+                    cluster_internal=True,
+                    method=PolicySetSpecRulesMethods.GET,
+                    paths=["/v1/quotas", "/v1/providers/*/raw"],
+                ),
+                # The database's readonly profile and per-table grants (clickhouse/installation.py) bound
+                # what this password reads: the typed history, never raw provider responses.
+                _rule(
+                    history,
+                    clickhouse.HTTP.fqdn,
+                    cluster_internal=True,
+                    method=PolicySetSpecRulesMethods.GET,
+                    paths=["/"],
+                ),
+            ]
+        ),
     )
 
 
@@ -614,43 +626,45 @@ def _quest_scheduler_read(scope: Construct, *, namespace: str) -> None:
         key="token",
         target=_BEARER,
     )
-    add_egress_policy(
+    PolicySet(
         scope,
         "egresspolicy-quest-scheduler-read",
         metadata=ApiObjectMetadata(name=QUEST_SCHEDULER_READ_POLICY, namespace=namespace),
-        rules=[
-            _rule(
-                QUEST_SCHEDULER_READ_POLICY,
-                "platform-sessions.allegedly.works",
-                method=PolicySetSpecRulesMethods.GET,
-                paths=[
-                    "/proxy/quest-scheduler/guest/getReasons/*",
-                    "/proxy/quest-scheduler/guest/getPscDetails/*",
-                    "/proxy/quest-scheduler/api/getInsuranceProfile",
-                    "/proxy/quest-scheduler/guest/getTokenBasicInfoAPI/*",
-                    "/proxy/quest-scheduler/guest/getEncounterInfo/appointment",
-                    "/proxy/quest-scheduler/guest/getEncounterInfo/demographics",
-                    "/proxy/quest-scheduler/guest/getEncounterInfo/insurance",
-                    "/proxy/quest-scheduler/guest/getEncounterInfo/secondaryInsurance",
-                    "/proxy/quest-scheduler/guest/getPayorList/*",
-                    "/proxy/quest-scheduler/guest/getAppointment/*",
-                ],
-            ),
-            # Quest uses POST for these lookups; their inputs and outputs can contain sensitive health data.
-            _rule(
-                QUEST_SCHEDULER_READ_POLICY,
-                "platform-sessions.allegedly.works",
-                method=PolicySetSpecRulesMethods.POST,
-                paths=[
-                    "/proxy/quest-scheduler/guest/getPscsWithAvailability",
-                    "/proxy/quest-scheduler/api/getOpenEorders",
-                    "/proxy/quest-scheduler/api/getUserDemographics",
-                    "/proxy/quest-scheduler/guest/examoneEligibility",
-                    "/proxy/quest-scheduler/guest/verifyInsurance/V2",
-                    "/proxy/quest-scheduler/guest/getPricing",
-                ],
-            ),
-        ],
+        spec=PolicySetSpec(
+            rules=[
+                _rule(
+                    QUEST_SCHEDULER_READ_POLICY,
+                    "platform-sessions.allegedly.works",
+                    method=PolicySetSpecRulesMethods.GET,
+                    paths=[
+                        "/proxy/quest-scheduler/guest/getReasons/*",
+                        "/proxy/quest-scheduler/guest/getPscDetails/*",
+                        "/proxy/quest-scheduler/api/getInsuranceProfile",
+                        "/proxy/quest-scheduler/guest/getTokenBasicInfoAPI/*",
+                        "/proxy/quest-scheduler/guest/getEncounterInfo/appointment",
+                        "/proxy/quest-scheduler/guest/getEncounterInfo/demographics",
+                        "/proxy/quest-scheduler/guest/getEncounterInfo/insurance",
+                        "/proxy/quest-scheduler/guest/getEncounterInfo/secondaryInsurance",
+                        "/proxy/quest-scheduler/guest/getPayorList/*",
+                        "/proxy/quest-scheduler/guest/getAppointment/*",
+                    ],
+                ),
+                # Quest uses POST for these lookups; their inputs and outputs can contain sensitive health data.
+                _rule(
+                    QUEST_SCHEDULER_READ_POLICY,
+                    "platform-sessions.allegedly.works",
+                    method=PolicySetSpecRulesMethods.POST,
+                    paths=[
+                        "/proxy/quest-scheduler/guest/getPscsWithAvailability",
+                        "/proxy/quest-scheduler/api/getOpenEorders",
+                        "/proxy/quest-scheduler/api/getUserDemographics",
+                        "/proxy/quest-scheduler/guest/examoneEligibility",
+                        "/proxy/quest-scheduler/guest/verifyInsurance/V2",
+                        "/proxy/quest-scheduler/guest/getPricing",
+                    ],
+                ),
+            ]
+        ),
     )
 
 
@@ -665,25 +679,27 @@ def _thrive_read(scope: Construct, *, namespace: str) -> None:
         key="token",
         target=_BEARER,
     )
-    add_egress_policy(
+    PolicySet(
         scope,
         "egresspolicy-thrive-read",
         metadata=ApiObjectMetadata(name=THRIVE_READ_POLICY, namespace=namespace),
-        rules=[
-            _rule(
-                THRIVE_READ_POLICY,
-                "platform-sessions.allegedly.works",
-                method=PolicySetSpecRulesMethods.GET,
-                paths=[
-                    "/proxy/thrive/products",
-                    "/proxy/thrive/account/orders",
-                    "/proxy/thrive/account",
-                    "/proxy/thrive/carts",
-                    "/proxy/thrive/autoship/items",
-                    "/proxy/thrive/autoship/schedule/first",
-                ],
-            )
-        ],
+        spec=PolicySetSpec(
+            rules=[
+                _rule(
+                    THRIVE_READ_POLICY,
+                    "platform-sessions.allegedly.works",
+                    method=PolicySetSpecRulesMethods.GET,
+                    paths=[
+                        "/proxy/thrive/products",
+                        "/proxy/thrive/account/orders",
+                        "/proxy/thrive/account",
+                        "/proxy/thrive/carts",
+                        "/proxy/thrive/autoship/items",
+                        "/proxy/thrive/autoship/schedule/first",
+                    ],
+                )
+            ]
+        ),
     )
 
 

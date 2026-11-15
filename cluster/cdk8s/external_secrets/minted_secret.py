@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata
 from constructs import Construct
+from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecRefreshPolicy,
     ExternalSecretSpecTargetCreationPolicy,
@@ -18,7 +19,6 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
-from cluster.cdk8s.providers.external_secrets.password import Password
 
 
 def password_generator(scope: Construct, id: str, *, name: str, namespace: str, length: int, digits: int) -> str:
@@ -28,11 +28,7 @@ def password_generator(scope: Construct, id: str, *, name: str, namespace: str, 
         scope,
         id,
         metadata=ApiObjectMetadata(name=name, namespace=namespace),
-        length=length,
-        digits=digits,
-        symbols=0,
-        no_upper=False,
-        allow_repeat=True,
+        spec=PasswordSpec(length=length, digits=digits, symbols=0, no_upper=False, allow_repeat=True),
     )
     return name
 

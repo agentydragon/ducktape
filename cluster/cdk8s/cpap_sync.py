@@ -21,6 +21,7 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecEgressToServicesK8SService,
 )
 from kubevirt_virtualmachine_crds.io.kubevirt import (
+    VirtualMachine,
     VirtualMachineSpecTemplateSpecDomainCpu,
     VirtualMachineSpecTemplateSpecDomainDevicesHostDevices,
     VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts,
@@ -29,7 +30,12 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachineSpecTemplateSpecVolumes,
     VirtualMachineSpecTemplateSpecVolumesSecret,
 )
-from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
+from prometheus_operator_crds.com.coreos.monitoring import (
+    ServiceMonitor,
+    ServiceMonitorSpec,
+    ServiceMonitorSpecSelector,
+)
+from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 
 from cluster.cdk8s import cilium, namespaces, node_scheduling
 from cluster.cdk8s.forgejo import secret_copy
@@ -38,9 +44,8 @@ from cluster.cdk8s.kubevirt.virtual_machine import container_disk_vm, domain_lab
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
-from cluster.cdk8s.providers.kubevirt.virtual_machine import VirtualMachine
-from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
-from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.vm_image_restart import OPT_IN_ANNOTATION, VmImageRestartController
@@ -293,8 +298,10 @@ def chart(app: App) -> Chart:
             namespace=NAMESPACE,
             annotations={"description": "Scrapes only the CPAP gateway guest's filesystem metrics."},
         ),
-        selector=ServiceMonitorSpecSelector(match_labels=_GUEST_METRICS_SERVICE_LABELS),
-        endpoints=[Endpoint.plain(port=_GUEST_METRICS_PORT_NAME)],
+        spec=ServiceMonitorSpec(
+            selector=ServiceMonitorSpecSelector(match_labels=_GUEST_METRICS_SERVICE_LABELS),
+            endpoints=[Endpoint.plain(port=_GUEST_METRICS_PORT_NAME)],
+        ),
     )
     NetworkPolicy(
         chart,
@@ -321,44 +328,46 @@ def chart(app: App) -> Chart:
         chart,
         "prometheusrule",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-        groups=[
-            group(
-                NAME,
-                [
-                    # The card is only in range while the CPAP is home, and it travels, so failed
-                    # runs are routine. Three weeks without one success is not.
-                    Rule.alert(
-                        "CpapSyncStale",
-                        f'time() - kube_cronjob_status_last_successful_time{{namespace="{NAMESPACE}", cronjob="{NAME}"}}'
-                        " > 21 * 86400",
-                        for_="1h",
-                        labels={"severity": "warning"},
-                        summary="cpap-sync has not succeeded in 3 weeks",
-                        description=(
-                            "No CPAP data has reached the cpap-data repo in over 21 days. If the CPAP has been home, "
-                            "check the gateway's state in Loki: "
-                            '{namespace="cpap-sync", container="guest-console-log"} |= "cpap-gateway-health".\n'
+        spec=PrometheusRuleSpec(
+            groups=[
+                group(
+                    NAME,
+                    [
+                        # The card is only in range while the CPAP is home, and it travels, so failed
+                        # runs are routine. Three weeks without one success is not.
+                        Rule.alert(
+                            "CpapSyncStale",
+                            f'time() - kube_cronjob_status_last_successful_time{{namespace="{NAMESPACE}", cronjob="{NAME}"}}'
+                            " > 21 * 86400",
+                            for_="1h",
+                            labels={"severity": "warning"},
+                            summary="cpap-sync has not succeeded in 3 weeks",
+                            description=(
+                                "No CPAP data has reached the cpap-data repo in over 21 days. If the CPAP has been home, "
+                                "check the gateway's state in Loki: "
+                                '{namespace="cpap-sync", container="guest-console-log"} |= "cpap-gateway-health".\n'
+                            ),
                         ),
-                    ),
-                    # Home Assistant's presence separates "the CPAP is away" from "the gateway is
-                    # broken": three days without a sync while Rai was home most of that time.
-                    Rule.alert(
-                        "CpapSyncFailingWhileHome",
-                        f'(time() - kube_cronjob_status_last_successful_time{{namespace="{NAMESPACE}", cronjob="{NAME}"}}'
-                        " > 3 * 86400)"
-                        ' and on () (avg_over_time(max(hass_person_state{entity="person.rai"})[3d:15m]) > 0.5)',
-                        for_="1h",
-                        labels={"severity": "warning"},
-                        summary="cpap-sync has failed for 3 days while Rai was home",
-                        description=(
-                            "Rai was home for most of the last 3 days, so the CPAP card should have been in range, "
-                            "yet no sync succeeded. The gateway's WiFi is the likely fault; check "
-                            '{namespace="cpap-sync", container="guest-console-log"} |= "cpap-gateway-health".\n'
+                        # Home Assistant's presence separates "the CPAP is away" from "the gateway is
+                        # broken": three days without a sync while Rai was home most of that time.
+                        Rule.alert(
+                            "CpapSyncFailingWhileHome",
+                            f'(time() - kube_cronjob_status_last_successful_time{{namespace="{NAMESPACE}", cronjob="{NAME}"}}'
+                            " > 3 * 86400)"
+                            ' and on () (avg_over_time(max(hass_person_state{entity="person.rai"})[3d:15m]) > 0.5)',
+                            for_="1h",
+                            labels={"severity": "warning"},
+                            summary="cpap-sync has failed for 3 days while Rai was home",
+                            description=(
+                                "Rai was home for most of the last 3 days, so the CPAP card should have been in range, "
+                                "yet no sync succeeded. The gateway's WiFi is the likely fault; check "
+                                '{namespace="cpap-sync", container="guest-console-log"} |= "cpap-gateway-health".\n'
+                            ),
                         ),
-                    ),
-                ],
-            )
-        ],
+                    ],
+                )
+            ]
+        ),
     )
     gateway = _gateway_vm(chart)
     VmImageRestartController(chart, "vm-image-restart-controller", target_vm=gateway)

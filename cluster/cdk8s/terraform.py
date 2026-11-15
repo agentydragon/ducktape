@@ -19,6 +19,8 @@ from constructs import Construct
 from pydantic import BaseModel
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 from tofu_controller.io.fluxcd.contrib.infra import (
+    TerraformV1Alpha2,
+    TerraformV1Alpha2Spec,
     TerraformV1Alpha2SpecBackendConfig,
     TerraformV1Alpha2SpecDependsOn,
     TerraformV1Alpha2SpecRunnerPodTemplate,
@@ -40,7 +42,6 @@ from tofu_controller.io.fluxcd.contrib.infra import (
 from cluster.cdk8s import ducktape_flux, flux
 from cluster.cdk8s.artifact_generators import artifact
 from cluster.cdk8s.flux import artifact_directory
-from cluster.cdk8s.providers.tofu_controller.terraform import Terraform
 from cluster.cdk8s.secret_ref import SecretKey
 from cluster.cdk8s.tofu_state import db
 
@@ -103,40 +104,42 @@ def tofu_state_terraform(
     node_selector: Mapping[str, str] | None = None,
     volumes: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumes] = (),
     volume_mounts: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumeMounts] = (),
-) -> Terraform:
+) -> TerraformV1Alpha2:
     """A `Terraform` in flux-system, run by `tf-runner`, with its state under `schema` in the
     tofu-state Postgres; the runner reads that database's password as `PGPASSWORD`, ahead of `env`.
     Every plan refreshes first: without it a plan trusts the state and misses reality drifting from
     it (cluster/docs/lessons_learned/2026_04_25_tofu_controller_refresh_before_apply.md). The other
     keywords are `TerraformV1Alpha2Spec` fields under their own names.
     """
-    return Terraform(
+    return TerraformV1Alpha2(
         scope,
         id,
         metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE, annotations=annotations),
-        interval=interval,
-        source_ref=source_ref,
-        path=path,
-        approve_plan=approve_plan,
-        plan_only=plan_only,
-        refresh_before_apply=True,
-        store_readable_plan=store_readable_plan,
-        targets=targets,
-        service_account_name="tf-runner",
-        backend_config=TerraformV1Alpha2SpecBackendConfig(
-            custom_configuration=f'backend "pg" {{\n  conn_str    = "{STATE_DATABASE_CONNECTION_STRING}"\n  schema_name = "{schema}"\n}}\n'
-        ),
-        vars=vars,
-        depends_on=depends_on,
-        runner_pod_template=TerraformV1Alpha2SpecRunnerPodTemplate(
-            spec=TerraformV1Alpha2SpecRunnerPodTemplateSpec(
-                env_from=list(env_from) or None,
-                env=[secret_env("PGPASSWORD", STATE_DATABASE_PASSWORD), *env],
-                node_selector=node_selector,
-                resources=_RUNNER_RESOURCES,
-                volumes=list(volumes) or None,
-                volume_mounts=list(volume_mounts) or None,
-            )
+        spec=TerraformV1Alpha2Spec(
+            interval=interval,
+            source_ref=source_ref,
+            path=path,
+            approve_plan=approve_plan,
+            plan_only=plan_only,
+            refresh_before_apply=True,
+            store_readable_plan=store_readable_plan,
+            targets=targets,
+            service_account_name="tf-runner",
+            backend_config=TerraformV1Alpha2SpecBackendConfig(
+                custom_configuration=f'backend "pg" {{\n  conn_str    = "{STATE_DATABASE_CONNECTION_STRING}"\n  schema_name = "{schema}"\n}}\n'
+            ),
+            vars=vars,
+            depends_on=depends_on,
+            runner_pod_template=TerraformV1Alpha2SpecRunnerPodTemplate(
+                spec=TerraformV1Alpha2SpecRunnerPodTemplateSpec(
+                    env_from=list(env_from) or None,
+                    env=[secret_env("PGPASSWORD", STATE_DATABASE_PASSWORD), *env],
+                    node_selector=node_selector,
+                    resources=_RUNNER_RESOURCES,
+                    volumes=list(volumes) or None,
+                    volume_mounts=list(volume_mounts) or None,
+                )
+            ),
         ),
     )
 
@@ -149,7 +152,7 @@ def gitops_terraform(
     variables: BaseModel | None,
     additional_vars: Sequence[TerraformV1Alpha2SpecVars] = (),
     interval: str = "15m",
-    depends_on: Sequence[Terraform] = (),
+    depends_on: Sequence[TerraformV1Alpha2] = (),
     env: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecEnv] = (),
     env_from: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvFrom] = (),
     schema: str | None = None,
@@ -158,7 +161,7 @@ def gitops_terraform(
     node_selector: Mapping[str, str] | None = None,
     volumes: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumes] = (),
     volume_mounts: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumeMounts] = (),
-) -> Terraform:
+) -> TerraformV1Alpha2:
     """The module `module` packages (`gitops_module`), run from that artifact and, unless
     `auto_apply=False`, auto-approved. Without auto-apply each run plans and waits for a person to
     set `approvePlan` to that plan's id, so drift is reported but nothing changes unasked.

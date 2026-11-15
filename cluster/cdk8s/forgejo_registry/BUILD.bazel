@@ -1,5 +1,7 @@
 # gazelle:ignore
 
+# gazelle:resolve py flux_imagerepository_crds //cluster/cdk8s/providers/flux:imagerepository
+# gazelle:resolve py flux_receiver_crds //cluster/cdk8s/providers/flux:receiver
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
@@ -11,7 +13,6 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:image_automation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s/providers/flux:image_repository",
         "//cluster/cdk8s/providers/flux:imagerepository",
         "@pypi//cdk8s",
         "@pypi//constructs",

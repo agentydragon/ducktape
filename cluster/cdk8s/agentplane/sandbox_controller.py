@@ -10,7 +10,11 @@ from pathlib import Path
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, MemoryResources, Role, RoleBinding, RolePolicyRule
 from constructs import Construct
-from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
+from prometheus_operator_crds.com.coreos.monitoring import (
+    ServiceMonitor,
+    ServiceMonitorSpec,
+    ServiceMonitorSpecSelector,
+)
 
 from agentplane.environments.settings import EnvironmentService, ServiceDelegation, ServiceDelegator, Settings
 from agentplane.identity.auth import listener as workload_listener
@@ -40,7 +44,7 @@ from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
-from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 
@@ -363,6 +367,8 @@ class SandboxController(Construct):
             self,
             "service-monitor",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
-            selector=ServiceMonitorSpecSelector(match_labels=endpoint.pods.selector),
-            endpoints=[Endpoint.plain(port=endpoint.port.name)],
+            spec=ServiceMonitorSpec(
+                selector=ServiceMonitorSpecSelector(match_labels=endpoint.pods.selector),
+                endpoints=[Endpoint.plain(port=endpoint.port.name)],
+            ),
         )

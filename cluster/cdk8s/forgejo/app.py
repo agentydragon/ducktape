@@ -30,7 +30,11 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecValuesFrom,
     HelmReleaseSpecValuesFromKind,
 )
-from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
+from prometheus_operator_crds.com.coreos.monitoring import (
+    ServiceMonitor,
+    ServiceMonitorSpec,
+    ServiceMonitorSpecSelector,
+)
 
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
@@ -39,7 +43,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_release, oci_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.seaweedfs import s3
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -446,12 +450,14 @@ def chart(app: App) -> Chart:
         chart,
         "service-monitor",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        selector=ServiceMonitorSpecSelector(match_labels=HTTP.labels),
-        endpoints=[
-            Endpoint.bearer_token_secret(
-                port=HTTP.port.name, secret_name=_METRICS_TOKEN.secret.name, key=_METRICS_TOKEN.key
-            )
-        ],
+        spec=ServiceMonitorSpec(
+            selector=ServiceMonitorSpecSelector(match_labels=HTTP.labels),
+            endpoints=[
+                Endpoint.bearer_token_secret(
+                    port=HTTP.port.name, secret_name=_METRICS_TOKEN.secret.name, key=_METRICS_TOKEN.key
+                )
+            ],
+        ),
     )
     _metrics_token(chart)
     _ssh_listener(chart)

@@ -17,7 +17,11 @@ from __future__ import annotations
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ConfigMap, k8s
 from constructs import Construct
-from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
+from prometheus_operator_crds.com.coreos.monitoring import (
+    ServiceMonitor,
+    ServiceMonitorSpec,
+    ServiceMonitorSpecSelector,
+)
 from seaweed_s3policy_crds.com.seaweedfs.seaweed import (
     S3Policy,
     S3PolicySpec,
@@ -40,7 +44,7 @@ from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.seaweedfs import (
     cluster,
     drivefs_artifacts_bucket,
@@ -250,8 +254,10 @@ def _gateway(scope: Construct) -> None:
         scope,
         "service-monitor",
         metadata=ApiObjectMetadata(name=NAME, namespace=namespace.NAME),
-        selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
-        endpoints=[Endpoint.plain(port=_METRICS.port.name)],
+        spec=ServiceMonitorSpec(
+            selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
+            endpoints=[Endpoint.plain(port=_METRICS.port.name)],
+        ),
     )
     https_route(
         scope,

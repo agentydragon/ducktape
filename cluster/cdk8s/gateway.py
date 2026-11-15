@@ -10,6 +10,8 @@ from collections.abc import Sequence
 from cdk8s import ApiObjectMetadata, App, Chart
 from constructs import Construct
 from gateway_api_crds.io.k8s.networking.gateway import (
+    HttpRoute,
+    HttpRouteSpec,
     HttpRouteSpecParentRefs,
     HttpRouteSpecRules,
     HttpRouteSpecRulesBackendRefs,
@@ -20,6 +22,8 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRulesTimeouts,
 )
 from gateway_api_gateway_crds.io.k8s.networking.gateway import (
+    Gateway,
+    GatewaySpec,
     GatewaySpecListenersAllowedRoutes,
     GatewaySpecListenersAllowedRoutesNamespaces,
     GatewaySpecListenersAllowedRoutesNamespacesFrom,
@@ -29,8 +33,7 @@ from cluster.cdk8s import namespaces
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.gateway_api.gateway import Gateway
-from cluster.cdk8s.providers.gateway_api.http_route import HttpRoute, RouteFilter, RouteMatch
+from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter, RouteMatch
 from cluster.cdk8s.providers.gateway_api.listener import Listener, ListenerTls
 from cluster.cdk8s.service_ref import HostNetworkServiceRef, ServiceRef
 from cluster.scripts import nebula_mesh
@@ -89,16 +92,18 @@ def https_route(
         scope,
         id,
         metadata=metadata,
-        parent_refs=[cluster_gateway_parent_ref(section_name=listener)],
-        hostnames=hostnames,
-        rules=[
-            HttpRouteSpecRules(
-                matches=matches or None,
-                filters=filters or None,
-                backend_refs=[HttpRouteSpecRulesBackendRefs(name=backend.name, port=backend.port.number)],
-                timeouts=HttpRouteSpecRulesTimeouts(request=timeout, backend_request=timeout) if timeout else None,
-            )
-        ],
+        spec=HttpRouteSpec(
+            parent_refs=[cluster_gateway_parent_ref(section_name=listener)],
+            hostnames=hostnames,
+            rules=[
+                HttpRouteSpecRules(
+                    matches=matches or None,
+                    filters=filters or None,
+                    backend_refs=[HttpRouteSpecRulesBackendRefs(name=backend.name, port=backend.port.number)],
+                    timeouts=HttpRouteSpecRulesTimeouts(request=timeout, backend_request=timeout) if timeout else None,
+                )
+            ],
+        ),
     )
 
 
@@ -133,51 +138,55 @@ def chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
                 "external-dns.kubernetes.io/target": ",".join(public_gateway_ips),
             },
         ),
-        gateway_class_name=GATEWAY_CLASS,
-        listeners=[
-            Listener.https(
-                name=HTTPS_LISTENER,
-                hostname="*.allegedly.works",
-                port=443,
-                tls=ListenerTls.terminate("wildcard-allegedly-works-tls"),
-                allowed_routes=all_namespaces,
-            ),
-            Listener.https(
-                name="https-apex",
-                hostname="allegedly.works",
-                port=443,
-                tls=ListenerTls.terminate("apex-allegedly-works-tls"),
-                allowed_routes=all_namespaces,
-            ),
-            # The homepage's own domains; each pair of listeners shares one certificate.
-            *(
+        spec=GatewaySpec(
+            gateway_class_name=GATEWAY_CLASS,
+            listeners=[
                 Listener.https(
-                    name=f"https-{hostname.replace('.', '-')}",
-                    hostname=hostname,
+                    name=HTTPS_LISTENER,
+                    hostname="*.allegedly.works",
                     port=443,
-                    tls=ListenerTls.terminate(f"{domain.replace('.', '-')}-tls"),
+                    tls=ListenerTls.terminate("wildcard-allegedly-works-tls"),
                     allowed_routes=all_namespaces,
-                )
-                for domain in ("agentydragon.com", "adgn.link")
-                for hostname in (domain, f"www.{domain}")
-            ),
-            Listener.http(name=_HTTP_LISTENER, port=80, allowed_routes=all_namespaces),
-        ],
+                ),
+                Listener.https(
+                    name="https-apex",
+                    hostname="allegedly.works",
+                    port=443,
+                    tls=ListenerTls.terminate("apex-allegedly-works-tls"),
+                    allowed_routes=all_namespaces,
+                ),
+                # The homepage's own domains; each pair of listeners shares one certificate.
+                *(
+                    Listener.https(
+                        name=f"https-{hostname.replace('.', '-')}",
+                        hostname=hostname,
+                        port=443,
+                        tls=ListenerTls.terminate(f"{domain.replace('.', '-')}-tls"),
+                        allowed_routes=all_namespaces,
+                    )
+                    for domain in ("agentydragon.com", "adgn.link")
+                    for hostname in (domain, f"www.{domain}")
+                ),
+                Listener.http(name=_HTTP_LISTENER, port=80, allowed_routes=all_namespaces),
+            ],
+        ),
     )
     HttpRoute(
         chart,
         "http-redirect",
         metadata=ApiObjectMetadata(name="http-to-https-redirect", namespace=_NAMESPACE),
-        parent_refs=[HttpRouteSpecParentRefs(name=_NAME, section_name=_HTTP_LISTENER)],
-        rules=[
-            HttpRouteSpecRules(
-                filters=[
-                    RouteFilter.request_redirect(
-                        scheme=HttpRouteSpecRulesFiltersRequestRedirectScheme.HTTPS,
-                        status_code=HttpRouteSpecRulesFiltersRequestRedirectStatusCode.VALUE_301,
-                    )
-                ]
-            )
-        ],
+        spec=HttpRouteSpec(
+            parent_refs=[HttpRouteSpecParentRefs(name=_NAME, section_name=_HTTP_LISTENER)],
+            rules=[
+                HttpRouteSpecRules(
+                    filters=[
+                        RouteFilter.request_redirect(
+                            scheme=HttpRouteSpecRulesFiltersRequestRedirectScheme.HTTPS,
+                            status_code=HttpRouteSpecRulesFiltersRequestRedirectStatusCode.VALUE_301,
+                        )
+                    ]
+                )
+            ],
+        ),
     )
     return chart

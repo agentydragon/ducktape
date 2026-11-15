@@ -6,19 +6,12 @@ construction pattern: a class named after the kind, and a named `@staticmethod` 
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (
-    EgressCredential as _EgressCredential,
-    EgressCredentialSpec,
     EgressCredentialSpecSource,
     EgressCredentialSpecSourceKubernetesServiceAccount,
     EgressCredentialSpecSourceSecretRef,
-    EgressCredentialSpecTargets,
 )
-from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ServiceAccount
-from constructs import Construct
 
 
 class Source:
@@ -39,27 +32,4 @@ class Source:
             kubernetes_service_account=EgressCredentialSpecSourceKubernetesServiceAccount(
                 namespace=namespace, name=service_account.name
             )
-        )
-
-
-class EgressCredential(_EgressCredential):
-    """Agentplane's `EgressCredential`: keywords are `EgressCredentialSpec` fields under their own
-    names. Build `source` with `Source`'s factories.
-    """
-
-    def __init__(
-        self,
-        scope: Construct,
-        id: str,
-        *,
-        metadata: ApiObjectMetadata,
-        description: str,
-        source: EgressCredentialSpecSource,
-        targets: Sequence[EgressCredentialSpecTargets],
-    ) -> None:
-        super().__init__(
-            scope,
-            id,
-            metadata=metadata,
-            spec=EgressCredentialSpec(description=description, source=source, targets=list(targets)),
         )

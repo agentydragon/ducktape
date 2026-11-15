@@ -1,5 +1,10 @@
 # gazelle:ignore
 
+# gazelle:resolve py cert_manager_crds //cluster/cdk8s/providers/cert_manager:certificate
+# gazelle:resolve py cnpg_database_crds //cluster/cdk8s/providers/cnpg:database
+# gazelle:resolve py flux_gitrepository_crds //cluster/cdk8s/providers/flux:gitrepository
+# gazelle:resolve py flux_receiver_crds //cluster/cdk8s/providers/flux:receiver
+# gazelle:resolve py prometheus_operator_crds //cluster/cdk8s/providers/prometheus_operator:servicemonitor
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//cluster/cdk8s:__pkg__"])
@@ -20,7 +25,6 @@ py_library(
         "//cluster/cdk8s/cnpg:cluster",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/providers/cnpg:cluster",
-        "//cluster/cdk8s/providers/cnpg:cnpg_database",
         "//cluster/cdk8s/providers/cnpg:database",
         "@pypi//cdk8s",
         "@pypi//constructs",
@@ -146,7 +150,6 @@ py_library(
         "//agentplane/crds:policyset",
         "//cluster/cdk8s/agentplane:actions",
         "//cluster/cdk8s/agentplane:egress",
-        "//cluster/cdk8s/agentplane:egress_policies",
         "//cluster/cdk8s/providers/agentplane:policy_set",
         "//cluster/cdk8s/providers/agentplane:workload_credential",
         "//cluster/cdk8s/providers/cilium:network_policy",
@@ -189,7 +192,6 @@ py_library(
         ":namespace",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s/providers/flux:git_repository",
         "//cluster/cdk8s/providers/flux:gitrepository",
         "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
@@ -235,7 +237,6 @@ py_library(
         "//cluster/cdk8s/cnpg:backup",
         "//cluster/cdk8s/cnpg:cluster",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
-        "//cluster/cdk8s/providers/cert_manager:cert_manager_certificate",
         "//cluster/cdk8s/providers/cert_manager:certificate",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",

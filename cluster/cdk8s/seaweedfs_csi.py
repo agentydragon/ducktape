@@ -9,14 +9,13 @@ import textwrap
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
-from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepositorySpecRef
+from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepository, GitRepositorySpec, GitRepositorySpecRef
 from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade, HelmReleaseSpecUpgradeRemediation
 
 from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.flux.git_repository import GitRepository
 
 NAME = "seaweedfs-csi"
 NAMESPACE = "seaweedfs-csi-system"
@@ -210,14 +209,16 @@ def chart(app: App) -> Chart:
         chart,
         "source",
         metadata=ApiObjectMetadata(name="seaweedfs-csi-driver", namespace="flux-system"),
-        interval="24h",
-        url="https://github.com/seaweedfs/seaweedfs-csi-driver",
-        ref=GitRepositorySpecRef(tag="v1.4.38"),
-        ignore=textwrap.dedent(
-            """\
+        spec=GitRepositorySpec(
+            interval="24h",
+            url="https://github.com/seaweedfs/seaweedfs-csi-driver",
+            ref=GitRepositorySpecRef(tag="v1.4.38"),
+            ignore=textwrap.dedent(
+                """\
             /*
             !/deploy/helm/seaweedfs-csi-driver
             """
+            ),
         ),
     )
     helm_release(

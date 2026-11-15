@@ -9,6 +9,8 @@ from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 
+from agentplane_kubernetesroleset_crds.works.allegedly.agentplane import KubernetesRoleSet, KubernetesRoleSetSpec
+from agentplane_policyset_crds.works.allegedly.agentplane import PolicySet, PolicySetSpec
 from cdk8s import ApiObjectMetadata, App, Chart, Duration
 from cdk8s_plus_34 import DeploymentStrategy, PercentOrAbsolute, ServiceAccount
 from external_secrets_crds.io.external_secrets import (
@@ -126,8 +128,7 @@ from cluster.cdk8s.haku_ci import egress_gateway, runner
 from cluster.cdk8s.litellm.secrets import ANTHROPIC_API_KEY
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.agentplane.identity import Identity
-from cluster.cdk8s.providers.agentplane.kubernetes_role_set import KubernetesRoleSet
-from cluster.cdk8s.providers.agentplane.policy_set import PolicySet, Rule
+from cluster.cdk8s.providers.agentplane.policy_set import Rule
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.public_coder import egress as public_coder_egress
@@ -807,35 +808,37 @@ def chart(app: App, env: Environment = ENV) -> Chart:
             chart,
             f"kubernetes-role-set-{name}",
             metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
-            rules=agent_access_profiles.role_set_rules_for_grants(grants),
+            spec=KubernetesRoleSetSpec(rules=agent_access_profiles.role_set_rules_for_grants(grants)),
         )
         if not env.identity_catalog:
             PolicySet(
                 chart,
                 f"policy-set-{name}",
                 metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
-                rules=[*agent_access_profiles.rules_for_grants(grants), *egress_rules.get(name, ())],
+                spec=PolicySetSpec(
+                    rules=[*agent_access_profiles.rules_for_grants(grants), *egress_rules.get(name, ())]
+                ),
             )
             if name in egress_rules:
                 PolicySet(
                     chart,
                     f"policy-set-{name}-identity",
                     metadata=ApiObjectMetadata(name=f"{name}-identity", namespace=env.namespace),
-                    rules=egress_rules[name],
+                    spec=PolicySetSpec(rules=egress_rules[name]),
                 )
         elif name in egress_rules:
             PolicySet(
                 chart,
                 f"policy-set-{name}",
                 metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
-                rules=egress_rules[name],
+                spec=PolicySetSpec(rules=egress_rules[name]),
             )
     claude_ai_static_grants = agent_access_profiles.claude_ai_static_grants()
     role_sets[agent_access_profiles.CLAUDE_AI_STATIC_ROLE_SET] = KubernetesRoleSet(
         chart,
         "kubernetes-role-set-claude-ai-static",
         metadata=ApiObjectMetadata(name=agent_access_profiles.CLAUDE_AI_STATIC_ROLE_SET, namespace=env.namespace),
-        rules=agent_access_profiles.role_set_rules_for_grants(claude_ai_static_grants),
+        spec=KubernetesRoleSetSpec(rules=agent_access_profiles.role_set_rules_for_grants(claude_ai_static_grants)),
     )
     _add_launch_accounts(chart, env, role_sets=role_sets)
     _add_standing_identity_access(chart, env, role_sets=role_sets)
@@ -844,7 +847,7 @@ def chart(app: App, env: Environment = ENV) -> Chart:
             chart,
             f"policy-set-{staging_config.send_to(group)}",
             metadata=ApiObjectMetadata(name=staging_config.send_to(group), namespace=env.namespace),
-            rules=[Rule.send_message(inbox_tags=[group])],
+            spec=PolicySetSpec(rules=[Rule.send_message(inbox_tags=[group])]),
         )
     # The issuer serves Sandboxes' own namespace and every namespace holding standing records.
     workload_namespaces = {env.namespace, *env.egress.standing_workload_namespaces}

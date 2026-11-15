@@ -35,6 +35,8 @@ from seaweed_adminscript_crds.com.seaweedfs.seaweed import (
     AdminScriptSpecRestartPolicy,
 )
 from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
+    ResourceReferenceGrant,
+    ResourceReferenceGrantSpec,
     ResourceReferenceGrantSpecFrom,
     ResourceReferenceGrantSpecFromNamespaceSelector,
     ResourceReferenceGrantSpecFromNamespaceSelectorMatchExpressions,
@@ -88,7 +90,6 @@ from seaweed_seaweed_crds.com.seaweedfs.seaweed import (
 from cluster.cdk8s import node_scheduling, stateful_infra
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.providers.seaweedfs.resource_reference_grant import ResourceReferenceGrant
 from cluster.cdk8s.seaweedfs import filer_db, namespace, s3_config
 
 NAME = "seaweedfs"
@@ -571,11 +572,13 @@ def _tenants_grant(scope: Construct) -> None:
                 "description": "Lets the tenant namespaces' Buckets, S3Identities and S3Credentials reference this cluster."
             },
         ),
-        from_=[
-            ResourceReferenceGrantSpecFrom(group=GROUP, kind=kind, namespace_selector=tenants)
-            for kind in ("Bucket", "S3Identity", "S3Credentials")
-        ],
-        to=[ResourceReferenceGrantSpecTo(group=GROUP, kind="Seaweed", name=NAME)],
+        spec=ResourceReferenceGrantSpec(
+            from_=[
+                ResourceReferenceGrantSpecFrom(group=GROUP, kind=kind, namespace_selector=tenants)
+                for kind in ("Bucket", "S3Identity", "S3Credentials")
+            ],
+            to=[ResourceReferenceGrantSpecTo(group=GROUP, kind="Seaweed", name=NAME)],
+        ),
     )
 
 

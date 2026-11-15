@@ -6,6 +6,8 @@ import yaml
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
+    PodMonitor,
+    PodMonitorSpec,
     PodMonitorSpecPodMetricsEndpoints,
     PodMonitorSpecPodMetricsEndpointsRelabelings,
     PodMonitorSpecSelector,
@@ -22,7 +24,6 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import blackbox_exporter
 from cluster.cdk8s.node_scheduling import Placement
-from cluster.cdk8s.providers.prometheus_operator.pod_monitor import PodMonitor
 
 NAME = "home-application-probes"
 NAMESPACE = "monitoring"
@@ -156,8 +157,10 @@ def chart(app: App) -> Chart:
         chart,
         "pod-monitor",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-        selector=PodMonitorSpecSelector(match_labels=_LABELS),
-        pod_metrics_endpoints=[_endpoint(target, module) for target, module in TARGETS],
+        spec=PodMonitorSpec(
+            selector=PodMonitorSpecSelector(match_labels=_LABELS),
+            pod_metrics_endpoints=[_endpoint(target, module) for target, module in TARGETS],
+        ),
     )
     return chart
 

@@ -1,5 +1,7 @@
 # gazelle:ignore
 
+# gazelle:resolve py kyverno_cleanuppolicy_crds //cluster/cdk8s/providers/kyverno:cleanuppolicy
+# gazelle:resolve py kyverno_clusterpolicy_crds //cluster/cdk8s/providers/kyverno:clusterpolicy
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
@@ -21,7 +23,6 @@ py_library(
     srcs = ["janitor.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        "//cluster/cdk8s/providers/kyverno:cleanup_policy",
         "//cluster/cdk8s/providers/kyverno:cleanuppolicy",
         "@pypi//cdk8s",
         "@pypi//constructs",

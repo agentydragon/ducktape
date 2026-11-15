@@ -90,44 +90,11 @@ cdk8s_import(
 )
 
 py_library(
-    name = "git_repository",
-    srcs = ["git_repository.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = [
-        "//cluster/cdk8s/providers/flux:gitrepository",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
-    ],
-)
-
-py_library(
     name = "image_policy",
     srcs = ["image_policy.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         "//cluster/cdk8s/providers/flux:imagepolicy",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
-    ],
-)
-
-py_library(
-    name = "image_repository",
-    srcs = ["image_repository.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = [
-        "//cluster/cdk8s/providers/flux:imagerepository",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
-    ],
-)
-
-py_library(
-    name = "image_update_automation",
-    srcs = ["image_update_automation.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = [
-        "//cluster/cdk8s/providers/flux:imageupdateautomation",
         "@pypi//cdk8s",
         "@pypi//constructs",
     ],
@@ -153,11 +120,5 @@ py_library(
     name = "notification",
     srcs = ["notification.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = [
-        "//cluster/cdk8s/providers/flux:alert",
-        "//cluster/cdk8s/providers/flux:provider",
-        "//cluster/cdk8s/providers/flux:receiver",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
-    ],
+    deps = ["//cluster/cdk8s/providers/flux:receiver"],
 )

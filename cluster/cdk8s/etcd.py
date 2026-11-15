@@ -12,13 +12,14 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import Service, k8s
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import (
+    ServiceMonitor,
+    ServiceMonitorSpec,
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecEndpointsRelabelings,
     ServiceMonitorSpecNamespaceSelector,
     ServiceMonitorSpecSelector,
 )
 
-from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
 from cluster.cdk8s.service_ref import Port
 from cluster.scripts.nebula_mesh import Mesh
 
@@ -68,20 +69,22 @@ class TalosEtcdMetrics(Construct):
             self,
             "servicemonitor",
             metadata=ApiObjectMetadata(name="talos-etcd", namespace=NAMESPACE, labels=_LABELS),
-            namespace_selector=ServiceMonitorSpecNamespaceSelector(match_names=[NAMESPACE]),
-            selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
-            endpoints=[
-                ServiceMonitorSpecEndpoints(
-                    port=_METRICS.name,
-                    path="/metrics",
-                    scrape_timeout="10s",
-                    relabelings=[
-                        ServiceMonitorSpecEndpointsRelabelings(
-                            source_labels=["__meta_kubernetes_endpointslice_endpoint_hostname"], target_label="node"
-                        )
-                    ],
-                )
-            ],
+            spec=ServiceMonitorSpec(
+                namespace_selector=ServiceMonitorSpecNamespaceSelector(match_names=[NAMESPACE]),
+                selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
+                endpoints=[
+                    ServiceMonitorSpecEndpoints(
+                        port=_METRICS.name,
+                        path="/metrics",
+                        scrape_timeout="10s",
+                        relabelings=[
+                            ServiceMonitorSpecEndpointsRelabelings(
+                                source_labels=["__meta_kubernetes_endpointslice_endpoint_hostname"], target_label="node"
+                            )
+                        ],
+                    )
+                ],
+            ),
         )
 
 

@@ -1,8 +1,4 @@
-"""Ergonomic wrapper for Agentplane's own `PolicySet` CRD
-(agentplane/crds/manifests/crd-policysets.yaml), following cdk8s-plus's own construction
-pattern: a class named after the kind, and a `Rule` factory group for the rule types' real
-variant shapes.
-"""
+"""Typed factories for Agentplane's policy rule variants."""
 
 from __future__ import annotations
 
@@ -10,8 +6,6 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from agentplane_policyset_crds.works.allegedly.agentplane import (
-    PolicySet as _PolicySet,
-    PolicySetSpec,
     PolicySetSpecRules,
     PolicySetSpecRulesCredentialRef,
     PolicySetSpecRulesMethods,
@@ -23,8 +17,6 @@ from agentplane_policyset_crds.works.allegedly.agentplane import (
     PolicySetSpecRulesTargets,
     PolicySetSpecRulesType,
 )
-from cdk8s import ApiObjectMetadata
-from constructs import Construct
 
 
 class Rule:
@@ -131,13 +123,3 @@ class AutoApproveIf:
                 type=PolicySetSpecRulesPolicyType.GITHUB_UNDERSCORE_PUBLIC_UNDERSCORE_REPOSITORY, actions=actions
             )
         )
-
-
-class PolicySet(_PolicySet):
-    """Agentplane's `PolicySet`: a reusable, subject-free set of typed rules. Build `rules` with
-    `Rule`'s factories."""
-
-    def __init__(
-        self, scope: Construct, id: str, *, metadata: ApiObjectMetadata, rules: Sequence[PolicySetSpecRules]
-    ) -> None:
-        super().__init__(scope, id, metadata=metadata, spec=PolicySetSpec(rules=list(rules)))

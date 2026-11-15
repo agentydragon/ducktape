@@ -44,7 +44,11 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy, KustomizationSpecHealthChecks
-from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
+from prometheus_operator_crds.com.coreos.monitoring import (
+    ServiceMonitor,
+    ServiceMonitorSpec,
+    ServiceMonitorSpecSelector,
+)
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import node_scheduling, pod_policy
@@ -70,7 +74,7 @@ from cluster.cdk8s.litellm.upstreams import (
 )
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.probes import http_probe
-from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.scripts.nebula_mesh import Mesh
@@ -420,15 +424,17 @@ class LiteLLMServiceMonitor(Construct):
             self,
             "servicemonitor",
             metadata=ApiObjectMetadata(name=service.name, namespace=service.pods.namespace),
-            selector=ServiceMonitorSpecSelector(match_labels=service.labels),
-            endpoints=[
-                Endpoint.bearer_token_secret(
-                    port=service.port.name,
-                    secret_name=_MASTER_KEY.secret.name,
-                    key=_MASTER_KEY.key,
-                    scrape_timeout="10s",
-                )
-            ],
+            spec=ServiceMonitorSpec(
+                selector=ServiceMonitorSpecSelector(match_labels=service.labels),
+                endpoints=[
+                    Endpoint.bearer_token_secret(
+                        port=service.port.name,
+                        secret_name=_MASTER_KEY.secret.name,
+                        key=_MASTER_KEY.key,
+                        scrape_timeout="10s",
+                    )
+                ],
+            ),
         )
 
 

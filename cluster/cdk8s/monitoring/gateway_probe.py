@@ -18,11 +18,17 @@ import yaml
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
+    PodMonitor,
+    PodMonitorSpec,
     PodMonitorSpecPodMetricsEndpoints,
     PodMonitorSpecPodMetricsEndpointsRelabelings,
     PodMonitorSpecSelector,
 )
-from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRuleSpecGroupsRules
+from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import (
+    PrometheusRule,
+    PrometheusRuleSpec,
+    PrometheusRuleSpecGroupsRules,
+)
 
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import (
@@ -34,8 +40,7 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import blackbox_exporter
-from cluster.cdk8s.providers.prometheus_operator.pod_monitor import PodMonitor
-from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
+from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 from cluster.scripts.nebula_mesh import Mesh
 
 NAMESPACE = "monitoring"
@@ -226,22 +231,24 @@ def chart(app: App, mesh: Mesh) -> Chart:
         chart,
         "pod-monitor",
         metadata=ApiObjectMetadata(name=_NAME, namespace=NAMESPACE),
-        selector=PodMonitorSpecSelector(match_labels=_LABELS),
-        pod_metrics_endpoints=[
-            _own_node_endpoint(
-                Dial.OWN_PUBLIC, {name: f"{h.public_ip}:{_GATEWAY_PORT}" for name, h in public_nodes.items()}
-            ),
-            _own_node_endpoint(
-                Dial.OWN_NEBULA, {name: f"{h.nebula_ip}:{_GATEWAY_PORT}" for name, h in public_nodes.items()}
-            ),
-            _endpoint(Dial.GATEWAY_SERVICE, [], {"target": [f"{_GATEWAY_SERVICE}:{_GATEWAY_PORT}"]}),
-        ],
+        spec=PodMonitorSpec(
+            selector=PodMonitorSpecSelector(match_labels=_LABELS),
+            pod_metrics_endpoints=[
+                _own_node_endpoint(
+                    Dial.OWN_PUBLIC, {name: f"{h.public_ip}:{_GATEWAY_PORT}" for name, h in public_nodes.items()}
+                ),
+                _own_node_endpoint(
+                    Dial.OWN_NEBULA, {name: f"{h.nebula_ip}:{_GATEWAY_PORT}" for name, h in public_nodes.items()}
+                ),
+                _endpoint(Dial.GATEWAY_SERVICE, [], {"target": [f"{_GATEWAY_SERVICE}:{_GATEWAY_PORT}"]}),
+            ],
+        ),
     )
     PrometheusRule(
         chart,
         "prometheus-rule",
         metadata=ApiObjectMetadata(name=_NAME, namespace=NAMESPACE),
-        groups=[group(_NAME, _rules(nodes))],
+        spec=PrometheusRuleSpec(groups=[group(_NAME, _rules(nodes))]),
     )
     return chart
 

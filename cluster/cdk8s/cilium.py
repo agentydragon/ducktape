@@ -11,6 +11,8 @@ from collections.abc import Sequence
 
 from cdk8s import ApiObjectMetadata
 from cilium_clusterwide_crds.io.cilium import (
+    CiliumClusterwideNetworkPolicy,
+    CiliumClusterwideNetworkPolicySpec,
     CiliumClusterwideNetworkPolicySpecEgress,
     CiliumClusterwideNetworkPolicySpecEgressToEndpoints,
     CiliumClusterwideNetworkPolicySpecEgressToEntities,
@@ -24,7 +26,6 @@ from cilium_clusterwide_crds.io.cilium import (
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
 
-from cluster.cdk8s.providers.cilium.clusterwide_network_policy import ClusterwideNetworkPolicy
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, Protocol, dns_egress as _dns_egress
 from cluster.cdk8s.service_ref import Pods, ServiceRef
 
@@ -116,47 +117,51 @@ def force_proxy_egress(
     proxy: ServiceRef,
     cluster_ports: Sequence[int] | None,
     kube_apiserver: bool,
-) -> ClusterwideNetworkPolicy:
+) -> CiliumClusterwideNetworkPolicy:
     """Force the external egress of every Pod in `namespaces` through a proxy: admit kube-dns
     (plain L4), in-cluster traffic on TCP `cluster_ports` (any port when `None`), the
     kube-apiserver when `kube_apiserver`, and `proxy`'s Pods on its pod port. Cilium policies are additive, so any other egress policy selecting these
     Pods widens this one.
     """
-    return ClusterwideNetworkPolicy(
+    return CiliumClusterwideNetworkPolicy(
         scope,
         id,
         metadata=ApiObjectMetadata(name=name),
-        endpoint_selector=CiliumClusterwideNetworkPolicySpecEndpointSelector(
-            match_expressions=[
-                CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressions(
-                    key="k8s:io.kubernetes.pod.namespace",
-                    operator=CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressionsOperator.IN,
-                    values=list(namespaces),
-                )
-            ]
-        ),
-        egress=[
-            CiliumClusterwideNetworkPolicySpecEgress(
-                to_endpoints=[CiliumClusterwideNetworkPolicySpecEgressToEndpoints(match_labels=KUBE_DNS_LABELS)],
-                to_ports=_to_ports((53, "UDP"), (53, "TCP")),
-            ),
-            CiliumClusterwideNetworkPolicySpecEgress(
-                to_entities=[CiliumClusterwideNetworkPolicySpecEgressToEntities.CLUSTER],
-                to_ports=_to_ports(*((port, "TCP") for port in cluster_ports)) if cluster_ports is not None else None,
-            ),
-            *(
-                [
-                    CiliumClusterwideNetworkPolicySpecEgress(
-                        to_entities=[CiliumClusterwideNetworkPolicySpecEgressToEntities.KUBE_HYPHEN_APISERVER],
-                        to_ports=_to_ports((6443, "TCP")),
+        spec=CiliumClusterwideNetworkPolicySpec(
+            endpoint_selector=CiliumClusterwideNetworkPolicySpecEndpointSelector(
+                match_expressions=[
+                    CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressions(
+                        key="k8s:io.kubernetes.pod.namespace",
+                        operator=CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressionsOperator.IN,
+                        values=list(namespaces),
                     )
                 ]
-                if kube_apiserver
-                else []
             ),
-            CiliumClusterwideNetworkPolicySpecEgress(
-                to_endpoints=[CiliumClusterwideNetworkPolicySpecEgressToEndpoints(match_labels=proxy.pods.cilium)],
-                to_ports=_to_ports((proxy.pod_port, "TCP")),
-            ),
-        ],
+            egress=[
+                CiliumClusterwideNetworkPolicySpecEgress(
+                    to_endpoints=[CiliumClusterwideNetworkPolicySpecEgressToEndpoints(match_labels=KUBE_DNS_LABELS)],
+                    to_ports=_to_ports((53, "UDP"), (53, "TCP")),
+                ),
+                CiliumClusterwideNetworkPolicySpecEgress(
+                    to_entities=[CiliumClusterwideNetworkPolicySpecEgressToEntities.CLUSTER],
+                    to_ports=_to_ports(*((port, "TCP") for port in cluster_ports))
+                    if cluster_ports is not None
+                    else None,
+                ),
+                *(
+                    [
+                        CiliumClusterwideNetworkPolicySpecEgress(
+                            to_entities=[CiliumClusterwideNetworkPolicySpecEgressToEntities.KUBE_HYPHEN_APISERVER],
+                            to_ports=_to_ports((6443, "TCP")),
+                        )
+                    ]
+                    if kube_apiserver
+                    else []
+                ),
+                CiliumClusterwideNetworkPolicySpecEgress(
+                    to_endpoints=[CiliumClusterwideNetworkPolicySpecEgressToEndpoints(match_labels=proxy.pods.cilium)],
+                    to_ports=_to_ports((proxy.pod_port, "TCP")),
+                ),
+            ],
+        ),
     )

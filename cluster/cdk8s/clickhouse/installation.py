@@ -49,7 +49,7 @@ from clickhouse_keeper_installation_crds.com.altinity.clickhouse_keeper import (
     ClickHouseKeeperInstallationSpecTemplatesVolumeClaimTemplatesReclaimPolicy,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
-from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
+from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitor, PodMonitorSpec, PodMonitorSpecSelector
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import agent_access_profiles as access, cilium, node_scheduling
@@ -57,7 +57,7 @@ from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
+from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/clickhouse/cluster"
@@ -435,8 +435,10 @@ def clickhouse_chart(app: App) -> Chart:
         chart,
         "podmonitor",
         metadata=ApiObjectMetadata(name=client.NAME, namespace=client.NAMESPACE),
-        selector=PodMonitorSpecSelector(match_labels=client.LABELS),
-        pod_metrics_endpoints=[Endpoint.plain(port=_METRICS.name, scrape_timeout="15s")],
+        spec=PodMonitorSpec(
+            selector=PodMonitorSpecSelector(match_labels=client.LABELS),
+            pod_metrics_endpoints=[Endpoint.plain(port=_METRICS.name, scrape_timeout="15s")],
+        ),
     )
     return chart
 

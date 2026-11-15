@@ -37,6 +37,8 @@ from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, ServiceAccount
 from constructs import Construct
 from kyverno_clusterpolicy_crds.io.kyverno import (
+    ClusterPolicy,
+    ClusterPolicySpec,
     ClusterPolicySpecFailurePolicy,
     ClusterPolicySpecRules,
     ClusterPolicySpecRulesContext,
@@ -70,7 +72,7 @@ from agentplane.egress import sidecar_config
 from cluster.cdk8s.agentplane import sandbox_pod
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.cert_manager import cluster_ca
-from cluster.cdk8s.providers.kyverno.cluster_policy import ClusterPolicy, Validate, match_resources
+from cluster.cdk8s.providers.kyverno.cluster_policy import Validate, match_resources
 
 LAUNCHER_LABELS = {"kubevirt.io": "virt-launcher"}
 # Where a masquerade-networked guest reaches its launcher Pod, and so the relay.
@@ -282,220 +284,226 @@ class LauncherRelayPolicy(ClusterPolicy):
             metadata=ApiObjectMetadata(
                 name=f"{namespace}-launcher-relay", annotations={"pod-policies.kyverno.io/autogen-controllers": "none"}
             ),
-            background=False,
-            failure_policy=ClusterPolicySpecFailurePolicy.FAIL,
-            validation_failure_action=ClusterPolicySpecValidationFailureAction.ENFORCE,
-            webhook_configuration=ClusterPolicySpecWebhookConfiguration(
-                match_conditions=[
-                    ClusterPolicySpecWebhookConfigurationMatchConditions(
-                        name="launcher-or-relay-credential-volume",
-                        expression=(
-                            f"{in_namespace} && (request.operation == 'CREATE' ? ({is_launcher}) : ({has_protected_volume}))"
-                        ),
-                    )
-                ]
-            ),
-            rules=[
-                ClusterPolicySpecRules(
-                    name="protect-relay-credentials-on-update",
-                    match=updates,
-                    validate=Validate.deny(
-                        message="Only the launcher relay may mount the runner credential and trust files.",
-                        conditions={"any": [*relay_only]},
-                    ),
-                ),
-                ClusterPolicySpecRules(
-                    name="authenticate-launcher",
-                    match=launchers,
-                    context=_context(),
-                    validate=Validate.deny(
-                        message=(
-                            "A launcher must be created by KubeVirt for a live VirtualMachine controlled by a "
-                            "live Sandbox whose WorkloadCredential accepted its VMI."
-                        ),
-                        conditions={
-                            "any": [
-                                _mismatch("request.userInfo.username", CONTROLLER_USERNAME),
-                                _mismatch("vmiOwner.uid", "{{vmi.metadata.uid}}"),
-                                _mismatch("vmOwner.uid", "{{vm.metadata.uid}}"),
-                                *relay_only,
-                                *runner_tls_checks,
-                                # The guest gets no Kubernetes token of its own.
-                                _mismatch("length(vmi.spec.volumes[?serviceAccount] || `[]`)", 0),
-                            ]
-                        },
-                    ),
-                ),
-                ClusterPolicySpecRules(
-                    name="inject-relay",
-                    match=launchers,
-                    context=_context(),
-                    mutate=ClusterPolicySpecRulesMutate(
-                        patch_strategic_merge={
-                            "spec": {
-                                "serviceAccountName": "default",
-                                "automountServiceAccountToken": False,
-                                **pull_secrets,
-                                # The subsequent daemon move appends without disturbing existing init order.
-                                "+(initContainers)": [],
-                                "volumes": [
-                                    {
-                                        "name": sandbox_pod.SIDECAR_SETTINGS_VOLUME_NAME,
-                                        "configMap": {"name": settings_config_map},
-                                    },
-                                    *tls_volumes,
-                                ],
-                            }
-                        }
-                    ),
-                ),
-                ClusterPolicySpecRules(
-                    name="append-native-relay",
-                    match=launchers,
-                    # Keep the image structured for Kustomize's image-pins transformer.
-                    context=[
-                        ClusterPolicySpecRulesContext(
-                            name="relay", variable=ClusterPolicySpecRulesContextVariable(value=relay)
+            spec=ClusterPolicySpec(
+                background=False,
+                failure_policy=ClusterPolicySpecFailurePolicy.FAIL,
+                validation_failure_action=ClusterPolicySpecValidationFailureAction.ENFORCE,
+                webhook_configuration=ClusterPolicySpecWebhookConfiguration(
+                    match_conditions=[
+                        ClusterPolicySpecWebhookConfigurationMatchConditions(
+                            name="launcher-or-relay-credential-volume",
+                            expression=(
+                                f"{in_namespace} && (request.operation == 'CREATE' ? ({is_launcher}) : ({has_protected_volume}))"
+                            ),
                         )
-                    ],
-                    preconditions={
-                        "all": [
-                            {
-                                "key": (
-                                    "{{ (request.object.spec.initContainers || `[]`)"
-                                    f"[?name=='{relay['name']}'] | length(@)"
-                                    " }}"
-                                ),
-                                "operator": "Equals",
-                                "value": 0,
-                            }
-                        ]
-                    },
-                    mutate=ClusterPolicySpecRulesMutate(
-                        patches_json6902="- op: add\n  path: /spec/initContainers/-\n  value: {{ to_string(relay) }}\n"
-                    ),
+                    ]
                 ),
-                ClusterPolicySpecRules(
-                    name="keep-virtiofs-through-guest-shutdown",
-                    match=launchers,
-                    context=_context(),
-                    mutate=ClusterPolicySpecRulesMutate(
-                        foreach=[
-                            ClusterPolicySpecRulesMutateForeach(
-                                # KubeVirt names each filesystem daemon virtiofs-<volume>. Keep the
-                                # complete container, including its security/resource constraints.
-                                list="request.object.spec.containers",
-                                order=ClusterPolicySpecRulesMutateForeachOrder.DESCENDING,
-                                # ContainerPath daemons must remain ordinary containers for
-                                # KubeVirt's MissingContainerPathContainers reconciliation check.
-                                preconditions=ClusterPolicySpecRulesMutateForeachPreconditions(
-                                    all=[
-                                        ClusterPolicySpecRulesMutateForeachPreconditionsAll(
-                                            key="{{ element.command[0] || '' }}",
-                                            operator=ClusterPolicySpecRulesMutateForeachPreconditionsAllOperator.EQUALS,
-                                            value="/usr/libexec/virtiofsd",
-                                        ),
-                                        ClusterPolicySpecRulesMutateForeachPreconditionsAll(
-                                            key=(
-                                                "{{ contains("
-                                                + _ELIGIBLE_DAEMON_NAMES
-                                                + ", element.name) && contains("
-                                                + _FILESYSTEM_DAEMON_NAMES
-                                                + ", element.name) }}"
-                                            ),
-                                            operator=ClusterPolicySpecRulesMutateForeachPreconditionsAllOperator.EQUALS,
-                                            value=True,
-                                        ),
-                                    ]
-                                ),
-                                # Reverse indexed removals keep positions valid. Appending preserves
-                                # completed initializers, unlike strategic merge's prepend behavior.
-                                patches_json6902=(
-                                    "- op: add\n"
-                                    "  path: /spec/initContainers/-\n"
-                                    '  value: {{ merge(element, `{"restartPolicy":"Always"}`) }}\n'
-                                    "- op: remove\n"
-                                    "  path: /spec/containers/{{elementIndex}}"
-                                ),
-                            )
-                        ]
+                rules=[
+                    ClusterPolicySpecRules(
+                        name="protect-relay-credentials-on-update",
+                        match=updates,
+                        validate=Validate.deny(
+                            message="Only the launcher relay may mount the runner credential and trust files.",
+                            conditions={"any": [*relay_only]},
+                        ),
                     ),
-                ),
-                ClusterPolicySpecRules(
-                    name="require-native-virtiofs-daemons",
-                    match=launchers,
-                    context=_context(),
-                    validate=ClusterPolicySpecRulesValidate(
-                        message="Every PVC-, Secret-, or ConfigMap-backed VMI virtiofs daemon must be one native sidecar.",
-                        foreach=[
-                            ClusterPolicySpecRulesValidateForeach(
-                                list=_ELIGIBLE_VOLUMES,
-                                preconditions=ClusterPolicySpecRulesValidateForeachPreconditions(
-                                    all=[
-                                        ClusterPolicySpecRulesValidateForeachPreconditionsAll(
-                                            key="{{ contains(" + _FILESYSTEM_NAMES + ", element.name) }}",
-                                            operator=ClusterPolicySpecRulesValidateForeachPreconditionsAllOperator.EQUALS,
-                                            value=True,
-                                        )
-                                    ]
-                                ),
-                                context=[
-                                    ClusterPolicySpecRulesValidateForeachContext(
-                                        name="daemonName",
-                                        variable=ClusterPolicySpecRulesValidateForeachContextVariable(
-                                            jmes_path="join('', ['virtiofs-', element.name])"
-                                        ),
-                                    ),
-                                    *[
-                                        ClusterPolicySpecRulesValidateForeachContext(
-                                            name=context_name,
-                                            variable=ClusterPolicySpecRulesValidateForeachContextVariable(
-                                                jmes_path=f"request.object.spec.{containers}[?name=='{{{{ daemonName }}}}']"
-                                            ),
-                                        )
-                                        for context_name, containers in [
-                                            ("ordinaryDaemons", "containers"),
-                                            ("nativeDaemons", "initContainers"),
-                                        ]
+                    ClusterPolicySpecRules(
+                        name="authenticate-launcher",
+                        match=launchers,
+                        context=_context(),
+                        validate=Validate.deny(
+                            message=(
+                                "A launcher must be created by KubeVirt for a live VirtualMachine controlled by a "
+                                "live Sandbox whose WorkloadCredential accepted its VMI."
+                            ),
+                            conditions={
+                                "any": [
+                                    _mismatch("request.userInfo.username", CONTROLLER_USERNAME),
+                                    _mismatch("vmiOwner.uid", "{{vmi.metadata.uid}}"),
+                                    _mismatch("vmOwner.uid", "{{vm.metadata.uid}}"),
+                                    *relay_only,
+                                    *runner_tls_checks,
+                                    # The guest gets no Kubernetes token of its own.
+                                    _mismatch("length(vmi.spec.volumes[?serviceAccount] || `[]`)", 0),
+                                ]
+                            },
+                        ),
+                    ),
+                    ClusterPolicySpecRules(
+                        name="inject-relay",
+                        match=launchers,
+                        context=_context(),
+                        mutate=ClusterPolicySpecRulesMutate(
+                            patch_strategic_merge={
+                                "spec": {
+                                    "serviceAccountName": "default",
+                                    "automountServiceAccountToken": False,
+                                    **pull_secrets,
+                                    # The subsequent daemon move appends without disturbing existing init order.
+                                    "+(initContainers)": [],
+                                    "volumes": [
+                                        {
+                                            "name": sandbox_pod.SIDECAR_SETTINGS_VOLUME_NAME,
+                                            "configMap": {"name": settings_config_map},
+                                        },
+                                        *tls_volumes,
                                     ],
-                                ],
-                                deny=ClusterPolicySpecRulesValidateForeachDeny(
-                                    conditions={
-                                        "any": [
-                                            _mismatch("length(ordinaryDaemons || `[]`)", 0),
-                                            _mismatch("length(nativeDaemons || `[]`)", 1),
-                                            _mismatch("length(nativeDaemons[?restartPolicy=='Always'] || `[]`)", 1),
-                                            _mismatch("nativeDaemons[0].command[0] || ''", "/usr/libexec/virtiofsd"),
-                                        ]
-                                    }
-                                ),
+                                }
+                            }
+                        ),
+                    ),
+                    ClusterPolicySpecRules(
+                        name="append-native-relay",
+                        match=launchers,
+                        # Keep the image structured for Kustomize's image-pins transformer.
+                        context=[
+                            ClusterPolicySpecRulesContext(
+                                name="relay", variable=ClusterPolicySpecRulesContextVariable(value=relay)
                             )
                         ],
-                    ),
-                ),
-                ClusterPolicySpecRules(
-                    name="validate-relay",
-                    match=launchers,
-                    context=_context(),
-                    validate=Validate.deny(
-                        message="The launcher must have exactly one native relay init sidecar.",
-                        conditions={
-                            "any": [
-                                _mismatch("request.object.spec.serviceAccountName", "default"),
-                                _mismatch("request.object.spec.automountServiceAccountToken", False),
-                                _mismatch(f"length(request.object.spec.containers[?name=='{relay['name']}'])", 0),
-                                _mismatch(f"length(request.object.spec.initContainers[?name=='{relay['name']}'])", 1),
-                                _mismatch(
-                                    "length(request.object.spec.initContainers[?name=='"
-                                    f"{relay['name']}' && restartPolicy=='Always'])",
-                                    1,
-                                ),
-                                *relay_only,
+                        preconditions={
+                            "all": [
+                                {
+                                    "key": (
+                                        "{{ (request.object.spec.initContainers || `[]`)"
+                                        f"[?name=='{relay['name']}'] | length(@)"
+                                        " }}"
+                                    ),
+                                    "operator": "Equals",
+                                    "value": 0,
+                                }
                             ]
                         },
+                        mutate=ClusterPolicySpecRulesMutate(
+                            patches_json6902="- op: add\n  path: /spec/initContainers/-\n  value: {{ to_string(relay) }}\n"
+                        ),
                     ),
-                ),
-            ],
+                    ClusterPolicySpecRules(
+                        name="keep-virtiofs-through-guest-shutdown",
+                        match=launchers,
+                        context=_context(),
+                        mutate=ClusterPolicySpecRulesMutate(
+                            foreach=[
+                                ClusterPolicySpecRulesMutateForeach(
+                                    # KubeVirt names each filesystem daemon virtiofs-<volume>. Keep the
+                                    # complete container, including its security/resource constraints.
+                                    list="request.object.spec.containers",
+                                    order=ClusterPolicySpecRulesMutateForeachOrder.DESCENDING,
+                                    # ContainerPath daemons must remain ordinary containers for
+                                    # KubeVirt's MissingContainerPathContainers reconciliation check.
+                                    preconditions=ClusterPolicySpecRulesMutateForeachPreconditions(
+                                        all=[
+                                            ClusterPolicySpecRulesMutateForeachPreconditionsAll(
+                                                key="{{ element.command[0] || '' }}",
+                                                operator=ClusterPolicySpecRulesMutateForeachPreconditionsAllOperator.EQUALS,
+                                                value="/usr/libexec/virtiofsd",
+                                            ),
+                                            ClusterPolicySpecRulesMutateForeachPreconditionsAll(
+                                                key=(
+                                                    "{{ contains("
+                                                    + _ELIGIBLE_DAEMON_NAMES
+                                                    + ", element.name) && contains("
+                                                    + _FILESYSTEM_DAEMON_NAMES
+                                                    + ", element.name) }}"
+                                                ),
+                                                operator=ClusterPolicySpecRulesMutateForeachPreconditionsAllOperator.EQUALS,
+                                                value=True,
+                                            ),
+                                        ]
+                                    ),
+                                    # Reverse indexed removals keep positions valid. Appending preserves
+                                    # completed initializers, unlike strategic merge's prepend behavior.
+                                    patches_json6902=(
+                                        "- op: add\n"
+                                        "  path: /spec/initContainers/-\n"
+                                        '  value: {{ merge(element, `{"restartPolicy":"Always"}`) }}\n'
+                                        "- op: remove\n"
+                                        "  path: /spec/containers/{{elementIndex}}"
+                                    ),
+                                )
+                            ]
+                        ),
+                    ),
+                    ClusterPolicySpecRules(
+                        name="require-native-virtiofs-daemons",
+                        match=launchers,
+                        context=_context(),
+                        validate=ClusterPolicySpecRulesValidate(
+                            message="Every PVC-, Secret-, or ConfigMap-backed VMI virtiofs daemon must be one native sidecar.",
+                            foreach=[
+                                ClusterPolicySpecRulesValidateForeach(
+                                    list=_ELIGIBLE_VOLUMES,
+                                    preconditions=ClusterPolicySpecRulesValidateForeachPreconditions(
+                                        all=[
+                                            ClusterPolicySpecRulesValidateForeachPreconditionsAll(
+                                                key="{{ contains(" + _FILESYSTEM_NAMES + ", element.name) }}",
+                                                operator=ClusterPolicySpecRulesValidateForeachPreconditionsAllOperator.EQUALS,
+                                                value=True,
+                                            )
+                                        ]
+                                    ),
+                                    context=[
+                                        ClusterPolicySpecRulesValidateForeachContext(
+                                            name="daemonName",
+                                            variable=ClusterPolicySpecRulesValidateForeachContextVariable(
+                                                jmes_path="join('', ['virtiofs-', element.name])"
+                                            ),
+                                        ),
+                                        *[
+                                            ClusterPolicySpecRulesValidateForeachContext(
+                                                name=context_name,
+                                                variable=ClusterPolicySpecRulesValidateForeachContextVariable(
+                                                    jmes_path=f"request.object.spec.{containers}[?name=='{{{{ daemonName }}}}']"
+                                                ),
+                                            )
+                                            for context_name, containers in [
+                                                ("ordinaryDaemons", "containers"),
+                                                ("nativeDaemons", "initContainers"),
+                                            ]
+                                        ],
+                                    ],
+                                    deny=ClusterPolicySpecRulesValidateForeachDeny(
+                                        conditions={
+                                            "any": [
+                                                _mismatch("length(ordinaryDaemons || `[]`)", 0),
+                                                _mismatch("length(nativeDaemons || `[]`)", 1),
+                                                _mismatch("length(nativeDaemons[?restartPolicy=='Always'] || `[]`)", 1),
+                                                _mismatch(
+                                                    "nativeDaemons[0].command[0] || ''", "/usr/libexec/virtiofsd"
+                                                ),
+                                            ]
+                                        }
+                                    ),
+                                )
+                            ],
+                        ),
+                    ),
+                    ClusterPolicySpecRules(
+                        name="validate-relay",
+                        match=launchers,
+                        context=_context(),
+                        validate=Validate.deny(
+                            message="The launcher must have exactly one native relay init sidecar.",
+                            conditions={
+                                "any": [
+                                    _mismatch("request.object.spec.serviceAccountName", "default"),
+                                    _mismatch("request.object.spec.automountServiceAccountToken", False),
+                                    _mismatch(f"length(request.object.spec.containers[?name=='{relay['name']}'])", 0),
+                                    _mismatch(
+                                        f"length(request.object.spec.initContainers[?name=='{relay['name']}'])", 1
+                                    ),
+                                    _mismatch(
+                                        "length(request.object.spec.initContainers[?name=='"
+                                        f"{relay['name']}' && restartPolicy=='Always'])",
+                                        1,
+                                    ),
+                                    *relay_only,
+                                ]
+                            },
+                        ),
+                    ),
+                ],
+            ),
         )
         # The built-in view role does not cover Agentplane's CRDs. The injection reads the Sandbox's
         # WorkloadCredential to name the accepted Secret; it never reads Secrets.

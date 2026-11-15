@@ -1,3 +1,4 @@
+# gazelle:resolve py gateway_api_crds //cluster/cdk8s/providers/gateway_api:httproute
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(

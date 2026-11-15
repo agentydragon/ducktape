@@ -1,5 +1,7 @@
 # gazelle:ignore
 
+# gazelle:resolve py prometheus_operator_crds //cluster/cdk8s/providers/prometheus_operator:servicemonitor
+# gazelle:resolve py volsync_replicationdestination_crds //cluster/cdk8s/providers/volsync:replicationdestination
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
@@ -27,7 +29,6 @@ py_library(
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/authentik:app",
-        "//cluster/cdk8s/providers/volsync:replication_destination",
         "//cluster/cdk8s/providers/volsync:replication_source",
         "//cluster/cdk8s/providers/volsync:replicationdestination",
         "//cluster/cdk8s/providers/volsync:replicationsource",

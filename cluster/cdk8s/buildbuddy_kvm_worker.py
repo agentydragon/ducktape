@@ -6,6 +6,8 @@ from cdk8s_plus_34 import Cpu, k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecIgnore, KustomizationSpecIgnoreTarget
 from keda_scaledobject_crds.sh import keda
 from kubevirt_virtualmachinepool_crds.io.kubevirt.pool import (
+    VirtualMachinePool,
+    VirtualMachinePoolSpec,
     VirtualMachinePoolSpecMaxUnavailable,
     VirtualMachinePoolSpecSelector,
     VirtualMachinePoolSpecVirtualMachineTemplate,
@@ -40,7 +42,12 @@ from kubevirt_virtualmachinepool_crds.io.kubevirt.pool import (
     VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumesDataVolume,
     VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumesSecret,
 )
-from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
+from prometheus_operator_crds.com.coreos.monitoring import (
+    ServiceMonitor,
+    ServiceMonitorSpec,
+    ServiceMonitorSpecSelector,
+)
+from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import cilium, node_scheduling, piraeus
@@ -51,9 +58,8 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.monitoring import mimir
 from cluster.cdk8s.oci_cache import zot
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
-from cluster.cdk8s.providers.kubevirt.virtual_machine_pool import VirtualMachinePool
-from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
-from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 
 NAME = "buildbuddy-kvm-worker"
 NAMESPACE = "buildbuddy-executor"
@@ -352,13 +358,15 @@ def chart(app: App) -> Chart:
         chart,
         "pool",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=_WORKER_LABELS),
-        selector=VirtualMachinePoolSpecSelector(match_labels=_WORKER_LABELS),
-        virtual_machine_template=_pool_worker_template(),
-        # The pool controller defaults to one, but the /scale subresource fails
-        # unless the field exists. Flux ignores subsequent HPA updates to it.
-        replicas=1,
-        # A template change replaces at most one VM at a time.
-        max_unavailable=VirtualMachinePoolSpecMaxUnavailable.from_number(1),
+        spec=VirtualMachinePoolSpec(
+            selector=VirtualMachinePoolSpecSelector(match_labels=_WORKER_LABELS),
+            virtual_machine_template=_pool_worker_template(),
+            # The pool controller defaults to one, but the /scale subresource fails
+            # unless the field exists. Flux ignores subsequent HPA updates to it.
+            replicas=1,
+            # A template change replaces at most one VM at a time.
+            max_unavailable=VirtualMachinePoolSpecMaxUnavailable.from_number(1),
+        ),
     )
     NetworkPolicy(
         chart,
@@ -403,47 +411,51 @@ def chart(app: App) -> Chart:
         chart,
         "service-monitor",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-        selector=ServiceMonitorSpecSelector(match_labels=_WORKER_LABELS),
-        endpoints=[Endpoint.plain(port=_METRICS_PORT_NAME), Endpoint.plain(port=_NODE_METRICS_PORT_NAME)],
+        spec=ServiceMonitorSpec(
+            selector=ServiceMonitorSpecSelector(match_labels=_WORKER_LABELS),
+            endpoints=[Endpoint.plain(port=_METRICS_PORT_NAME), Endpoint.plain(port=_NODE_METRICS_PORT_NAME)],
+        ),
     )
     PrometheusRule(
         chart,
         "prometheus-rule",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-        groups=[
-            group(
-                NAME,
-                [
-                    Rule.alert(
-                        "BuildBuddyKvmPoolEmpty",
-                        f"absent({_HEALTHY_WORKERS})",
-                        for_="2m",
-                        labels={"severity": "critical"},
-                        summary="No KVM worker is registered",
-                        description=(
-                            "No BuildBuddy KVM worker has been registered and scrapable for 2 minutes, so tests targeting "
-                            "pool kvm-vm fail immediately instead of queueing."
+        spec=PrometheusRuleSpec(
+            groups=[
+                group(
+                    NAME,
+                    [
+                        Rule.alert(
+                            "BuildBuddyKvmPoolEmpty",
+                            f"absent({_HEALTHY_WORKERS})",
+                            for_="2m",
+                            labels={"severity": "critical"},
+                            summary="No KVM worker is registered",
+                            description=(
+                                "No BuildBuddy KVM worker has been registered and scrapable for 2 minutes, so tests targeting "
+                                "pool kvm-vm fail immediately instead of queueing."
+                            ),
                         ),
-                    ),
-                    Rule.alert(
-                        "BuildBuddyKvmAutoscalerMetricsMissing",
-                        f"absent({_DEMAND_QUERY})",
-                        for_="5m",
-                        labels={"severity": "warning"},
-                        summary="KVM worker autoscaler lacks pool metrics",
-                        description="KEDA holds the current VM count until fresh pool metrics are available.",
-                    ),
-                    Rule.alert(
-                        "BuildBuddyKvmWorkerNotReporting",
-                        f"{_REPORTING_WORKERS} < {_DESIRED_REPLICAS}",
-                        for_="15m",
-                        labels={"severity": "warning"},
-                        summary="KVM worker has not registered or is not scrapable",
-                        description="The autoscaler holds its current size until every requested worker reports metrics.",
-                    ),
-                ],
-            )
-        ],
+                        Rule.alert(
+                            "BuildBuddyKvmAutoscalerMetricsMissing",
+                            f"absent({_DEMAND_QUERY})",
+                            for_="5m",
+                            labels={"severity": "warning"},
+                            summary="KVM worker autoscaler lacks pool metrics",
+                            description="KEDA holds the current VM count until fresh pool metrics are available.",
+                        ),
+                        Rule.alert(
+                            "BuildBuddyKvmWorkerNotReporting",
+                            f"{_REPORTING_WORKERS} < {_DESIRED_REPLICAS}",
+                            for_="15m",
+                            labels={"severity": "warning"},
+                            summary="KVM worker has not registered or is not scrapable",
+                            description="The autoscaler holds its current size until every requested worker reports metrics.",
+                        ),
+                    ],
+                )
+            ]
+        ),
     )
     return chart
 

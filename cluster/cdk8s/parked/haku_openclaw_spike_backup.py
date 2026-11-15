@@ -10,6 +10,8 @@ from __future__ import annotations
 from cdk8s import ApiObjectMetadata, App, Chart
 from seaweed_bucket_crds.com.seaweedfs.seaweed import BucketSpecClusterRef, BucketSpecReclaimPolicy
 from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
+    S3Credentials,
+    S3CredentialsSpec,
     S3CredentialsSpecIdentityRef,
     S3CredentialsSpecReclaimPolicy,
     S3CredentialsSpecSeaweedRef,
@@ -18,7 +20,6 @@ from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
 
 from cluster.cdk8s.manifest_roots import PARKED_ROOT
 from cluster.cdk8s.providers.seaweedfs.bucket import Bucket, BucketAccess
-from cluster.cdk8s.providers.seaweedfs.s3_credentials import S3Credentials
 from cluster.cdk8s.restic_backup import ResticBackup
 
 NAME = "haku-openclaw-spike-backup"
@@ -50,12 +51,14 @@ def chart(app: App) -> Chart:
             namespace=NAMESPACE,
             annotations={"description": "Haku OpenClaw spike VolSync SeaweedFS credentials."},
         ),
-        seaweed_ref=S3CredentialsSpecSeaweedRef(name="seaweedfs", namespace="seaweedfs"),
-        identity_ref=S3CredentialsSpecIdentityRef(name=_IDENTITY),
-        secret_ref=S3CredentialsSpecSecretRef(
-            name=_S3_SECRET, access_key_field="AWS_ACCESS_KEY_ID", secret_key_field="AWS_SECRET_ACCESS_KEY"
+        spec=S3CredentialsSpec(
+            seaweed_ref=S3CredentialsSpecSeaweedRef(name="seaweedfs", namespace="seaweedfs"),
+            identity_ref=S3CredentialsSpecIdentityRef(name=_IDENTITY),
+            secret_ref=S3CredentialsSpecSecretRef(
+                name=_S3_SECRET, access_key_field="AWS_ACCESS_KEY_ID", secret_key_field="AWS_SECRET_ACCESS_KEY"
+            ),
+            reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
         ),
-        reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
     )
     # The source is the optiplex home worker PVC (local-path-home-ssd). No mover affinity: the
     # Direct mover mounts that already-bound PVC, so its PV's node affinity places the mover and
