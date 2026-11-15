@@ -4083,34 +4083,59 @@ typed enum (`entry`, `module`, `runtime` in JSON via snake_case serde). Do not
 encode known roles as raw strings, generic maps, or compatibility-only JSON
 fields.
 
-## Known sharp edges
+## Soundness boundary and regressions
 
-### Side effects we can't see locally
+The guarantee in [Soundness over completeness](#soundness-over-completeness)
+is conditional on the spec's explicit author assertions and the declared host
+behavior being true for this input and runtime. `commuting_statements`, purity
+annotations, native identity inputs and host behavior are premises, not facts
+the validator can derive in every case. A false premise can authorize a
+behavior-changing reorder: the neutral CLI fixture in
+<../e2e/commuting_statements_gate_test.rs> refuses an opaque pair without the
+promise, then emits a changed trace when the author falsely asserts that the
+pair commutes. The validator still rejects a promise contradicted by modeled
+source facts, such as a known global-property write/read pair in the same
+test. The author must audit the remaining unproved behavior of each premise.
 
-`reads_at_init(S)` only catches local-name reads. These ordering
-constraints are real but invisible to the analyzer:
+The analyzer is separately responsible for every dependency it claims to
+infer. `reads_at_init` covers lexical reads, while global-property, heap and
+cross-chunk effect analyses cover other ordering hazards. Direct `eval` in a
+transformed chunk is refused; indirect `eval` and `Function` in a lazy body
+run in global scope as opaque calls (A1 and
+<../e2e/chunk_admission_test.rs>). A known global-property conflict rejects
+an asserted commutation (<../e2e/commuting_statements_gate_test.rs>).
 
-- `globalThis.X = ...` / `window.X = ...` writes that another
-  module reads via `globalThis.X`. Module A "sets" the value, B
-  "reads" it; the dep graph has no edge.
-- `eval(some_string)` running arbitrary code at init.
-- `new Function(...)` likewise.
-- Mutations to objects passed across imports
-  (`vendor.someConfig.foo = bar` — `vendor.someConfig` was
-  imported, the mutation is observable).
+There has been an independent ordinary-gate soundness defect: a reader of
+another chunk's mutable state was classified as pure and could move before
+its writer with no author premise. The source printed `1 1`, and the emitted
+entry printed `1 0`. The [L4c discrepancy audit](../debug/2026_11_09_l4c_discrepancy_audit.md#unsafe-legacy-acceptance)
+records the mechanism and fix. The current gate refuses those unsafe splits;
+<../e2e/foreign_cell_read_order_test.rs> checks the refusal and uses
+`--emit-on-rejection` only to demonstrate the unsafe order. The
+<../e2e/foreign_state_node_differential_sweep_test.rs> checks accepted splits
+of mutable imported bindings, objects and collections against Node. A
+refused split's deliberately emitted divergent output is not a current
+accepted-gate failure. The statement-class counterexamples in
+<../debug/2026_11_10_statement_class_independent_audit.md> concern a
+report-only prototype, not the ordinary gate.
 
-The conservative `has_side_effect = true` for any function call
-catches _some_ of these cases (it forces a side-effect-order
-edge), but won't catch e.g. two pure-looking modules where one
-quietly writes a global and the other reads it. The validator
-will accept a spec that produces wrong observable behaviour at
-runtime.
+The cyclic export-cell observation in
+<../debug/2026_11_14_cyclic_export_cells.md> is a **current** independent
+ordinary-gate defect. The direct named-import route was fenced by merged
+[PR #16539](https://github.com/agentydragon/ducktape/pull/16539), but an
+opaque `globalThis.inspect()` call can still observe an exported `var` before
+its initializer in a cyclic peer. On `devel` at `fc6336654b`, a neutral
+bundle/spec with no author premises was accepted: Node printed `undefined`
+from the source and `function` from the emitted entry. The existing direct-call
+CLI regression is <../e2e/callbacks/availability/publication_order.rs>; the debug note records
+the exact normal-mode probe and RBE invocation for the remaining global-call
+case. The repair remains tracked in
+<../TODO.md#cyclic-export-cell-observation-soundness>.
 
-Mitigation: the conservative side-effect classification is
-already there; bundled output rarely depends on these patterns,
-because bundlers can't preserve them across boundaries either.
-If a real spec ever exhibits this, the response is to surface it
-as a known spec-author-side limitation.
+These fixtures prove their tested cases, not universal equivalence. A newly
+reproduced ordinary-gate acceptance that changes behavior is an engine defect
+to repair conservatively, regardless of how common the input is. Remaining
+contract review is tracked in <../TODO.md> (AR7).
 
 ## Open design questions
 
