@@ -115,9 +115,9 @@ func TestABearerTheServiceDoesNotAcceptIsRefusedWithoutSayingWhy(t *testing.T) {
 		"an unknown token":                         as(t, "test-token-unknown"),
 		"an unlabeled account":                     as(t, unlabeledToken),
 		"an account outside the caller namespaces": as(t, outsiderToken),
-		"an expired operator token":                as(t, s.issuer.token(t, map[string]any{"exp": time.Now().Add(-time.Hour).Unix()})),
-		"another issuer's token":                   as(t, s.issuer.token(t, map[string]any{"iss": "https://test-other-issuer.example/"})),
-		"an operator token for another party":      as(t, s.issuer.token(t, map[string]any{"azp": "test-other-party"})),
+		"an expired operator token":                as(t, s.issuer.Token(t, map[string]any{"exp": time.Now().Add(-time.Hour).Unix()})),
+		"another issuer's token":                   as(t, s.issuer.Token(t, map[string]any{"iss": "https://test-other-issuer.example/"})),
+		"an operator token for another party":      as(t, s.issuer.Token(t, map[string]any{"azp": "test-other-party"})),
 	} {
 		_, err := s.client.ListActionRequests(ctx, &action_servicepb.ListActionRequestsRequest{})
 		wantCode(t, name, err, codes.Unauthenticated)
@@ -381,7 +381,7 @@ func TestServiceActorMustAlsoProveOperatorOIDC(t *testing.T) {
 		{"app alone", peertls.AppURI, "", false},
 		{"app and Kubernetes bearer", peertls.AppURI, validKubernetesToken, false},
 		{"ungranted actor with operator", peertls.NotificationsURI, s.operatorToken, false},
-		{"expired operator", peertls.AppURI, s.issuer.token(t, map[string]any{"exp": time.Now().Add(-time.Hour).Unix()}), false},
+		{"expired operator", peertls.AppURI, s.issuer.Token(t, map[string]any{"exp": time.Now().Add(-time.Hour).Unix()}), false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			files := ca.Issue(t, tc.actor)

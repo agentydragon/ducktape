@@ -171,7 +171,7 @@ func TestAWatchEndsWhenItsCredentialOrIdentityBindingIsRevoked(t *testing.T) {
 	wantEnd(t, "a revoked credential's idle watch", revokedWatch, codes.Unauthenticated)
 
 	// An operator token past its expiry, but within the clock skew for a few seconds more.
-	lapsing := s.issuer.token(t, map[string]any{"exp": time.Now().Add(-operatorClockSkew + 5*time.Second).Unix()})
+	lapsing := s.issuer.Token(t, map[string]any{"exp": time.Now().Add(-operatorClockSkew + 5*time.Second).Unix()})
 	request := s.submit(t, s.caller, "test-watched")
 	receipt, err := s.client.WatchActionRequest(as(t, lapsing), &action_servicepb.WatchActionRequestRequest{RequestId: request.ID.String()})
 	if err != nil {

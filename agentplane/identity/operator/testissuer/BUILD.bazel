@@ -1,0 +1,17 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "testissuer",
+    testonly = True,
+    srcs = ["issuer.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/identity/operator/testissuer",
+    visibility = [
+        "//agentplane/action_service/internal/rpc:__pkg__",
+        "//agentplane/identity/operator:__pkg__",
+    ],
+    deps = [
+        "//agentplane/identity/operator",
+        "@com_github_go_jose_go_jose_v4//:go-jose",
+        "@com_github_go_jose_go_jose_v4//jwt",
+    ],
+)

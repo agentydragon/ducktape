@@ -44,7 +44,7 @@ type pushServed struct {
 // servePush serves WebPushService over s's database and gate, with Web Push configured or not.
 func servePush(t *testing.T, s *served, configured bool) *pushServed {
 	t.Helper()
-	p := &pushServed{served: s, otherOperatorToken: s.issuer.token(t, map[string]any{"sub": otherOperatorSubject})}
+	p := &pushServed{served: s, otherOperatorToken: s.issuer.Token(t, map[string]any{"sub": otherOperatorSubject})}
 	var identity *push.Identity
 	if configured {
 		private, err := ecdh.P256().GenerateKey(rand.Reader)
@@ -280,7 +280,7 @@ func TestASubscriptionWatchSendsTheOperatorsSubscriptionsThenEachChange(t *testi
 	subscriptions := push.NewSubscriptions(p.db)
 	held := snapshotChunk + 1
 	for i := range held {
-		if err := subscriptions.Save(t.Context(), p.issuer.operator(), push.Registration{
+		if err := subscriptions.Save(t.Context(), operatorPrincipal(p.issuer), push.Registration{
 			Endpoint: fmt.Sprintf("https://push.test/test-held-%03d", i), P256dh: "test-p256dh", Auth: "test-auth",
 		}); err != nil {
 			t.Fatal(err)
@@ -335,7 +335,7 @@ func TestASubscriptionWatchSendsTheOperatorsSubscriptionsThenEachChange(t *testi
 func TestASubscriptionWatchEndsUnauthenticatedOnceItsBearerExpires(t *testing.T) {
 	p := servePush(t, serve(t), true)
 	// Past its expiry, but within the clock skew for a few seconds more.
-	lapsing := p.issuer.token(t, map[string]any{"exp": time.Now().Add(-operatorClockSkew + 5*time.Second).Unix()})
+	lapsing := p.issuer.Token(t, map[string]any{"exp": time.Now().Add(-operatorClockSkew + 5*time.Second).Unix()})
 	stream := p.watch(t, lapsing)
 	if frame := nextPushFrame(t, stream); frame.GetSnapshotComplete() == nil {
 		t.Fatalf("frame %v, want snapshot_complete", frame)
