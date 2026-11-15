@@ -32,8 +32,8 @@ fail authorization closed. No RPC uses the leader's in-memory Runtime facts as i
 ## Authority and concurrency
 
 Every replica serves every EnvironmentService RPC, including mutations. Preserve
-[the service's uncached watch client](../runner_gateway/environments/service.go),
-[management authorization](../runner_gateway/environments/management.go), and
+[the service's uncached watch client](../environments/internal/service/service.go),
+[management authorization](../environments/internal/service/management.go), and
 [explicit resume's guarded patch](../runner_gateway/environments/lifecycle/manager.go): exact
 Sandbox UID, live caller and execution Identity, resume-token/wake-generation precondition,
 resource-version conflict checks with reauthorization, and an uncertain outcome without automatic
@@ -119,7 +119,9 @@ Service caller routing:
    on 2026-11-15. After the live CLI cutover and App fixture migration #16598, remove the old
    registration and obsolete decoders;
    then remove unused RBAC only after that accepting image is pinned and running. Move the serving
-   implementation internal once no external importer remains. Preserve automatic wake with Sessions.
+   implementation internal with an Environments-owned test fixture for the remaining Actions
+   consumer tests. Split the still-shared lifecycle manager separately; preserve automatic wake
+   execution and budget ownership with Sessions.
 
 Rollback switches caller configuration back to the still-serving Gateway first, keeping service
 SVID authentication and exact method grants. After Flux applies it, check caller rollouts, list/get

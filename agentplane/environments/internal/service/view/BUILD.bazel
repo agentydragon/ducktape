@@ -1,11 +1,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-package(default_visibility = ["//agentplane/runner_gateway/environments:__subpackages__"])
+package(default_visibility = ["//agentplane/environments/internal/service:__subpackages__"])
 
 go_library(
     name = "view",
     srcs = ["view.go"],
-    importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/internal/view",
+    importpath = "github.com/agentydragon/ducktape/agentplane/environments/internal/service/view",
     deps = [
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/proto:environment_lifecycle_go_proto",

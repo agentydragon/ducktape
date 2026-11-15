@@ -1,4 +1,4 @@
-package environments
+package service
 
 import (
 	"context"
@@ -7,9 +7,9 @@ import (
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
+	"github.com/agentydragon/ducktape/agentplane/environments/internal/service/management"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/internal/management"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

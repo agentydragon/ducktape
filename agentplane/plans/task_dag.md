@@ -4023,17 +4023,16 @@ Ready on that configuration (2026-11-15). App and Actions retargeting landed in 
 both services have rolled on staging. Config-first retirement removes the Gateway component
 EnvironmentService grants before decoder/registration removal, retaining automatic wake grants. CLI support
 (#16550) and route/launch configuration (#16568) landed after the accepting runner-disk pin.
-Config retirement (#16593) is merged and applied on staging; both Gateway Pods rolled Ready at
-06:34 UTC on 2026-11-15. Gateway registration/decoder removal follows the App fixture migration
-(#16598) and the remaining old Sandbox CLI launch moving. RBAC reduction
-follows the removal image pin and rollout.
+Config retirement (#16593) and Gateway registration/decoder removal (#16601, including the App
+fixture migration) are merged. RBAC reduction waits for the removal image pin and rollout.
 The agreed destination remains the Sandbox Controller (operator, 2026-11-14 01:10 UTC).
 Explicit resume already reserves no budget ([lifecycle contract](../runner_gateway/environments/lifecycle/SPEC.md)).
-Then move `runner_gateway/environments` with `lifecycle`,
-`management` and `view` to `environments/internal/service`. The shared policy reader lives at
-`environments/access` (the Sessions binary imports it for `bind_session`). The automatic half of
-`lifecycle` stays with the Dispatcher. orchestration_v1's `fixture_test.go`, the only outside
-importer, is retired with `orchestration_v1` or rewritten against a test server first. No database
+The package-boundary slice moves handlers,
+`management` and `view` into `environments/internal/service`; Actions orchestration tests use an
+Environments-owned fixture exposing only the wire interface. The shared lifecycle manager remains
+at `runner_gateway/environments/lifecycle` for a separate split: explicit resume moves inside
+Environments, while automatic wake execution and budget ownership stay with Dispatcher. The shared
+policy reader remains at `environments/access` (Sessions imports it for `bind_session`). No database
 moves. Image before config; update the [system overview](../docs/system_overview.md) in the same PR.
 **Exit:** the Environments binary serves EnvironmentService on every replica, with its wire API and
 per-method authorization unchanged.

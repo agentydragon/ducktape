@@ -1,4 +1,4 @@
-package lifecycle_test
+package service_test
 
 import (
 	"context"
@@ -11,13 +11,13 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	"github.com/agentydragon/ducktape/agentplane/environments/access"
+	environmentservice "github.com/agentydragon/ducktape/agentplane/environments/internal/service"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
@@ -179,7 +179,7 @@ func serveEnvironmentService(
 	if err != nil {
 		t.Fatal(err)
 	}
-	methods := environments.Methods(resolver)
+	methods := environmentservice.Methods(resolver)
 	if identityDelegation {
 		identities, err := auth.KubernetesIdentityUIDs(object, testNamespace)
 		if err != nil {
@@ -193,7 +193,7 @@ func serveEnvironmentService(
 			t.Fatal(err)
 		}
 	}
-	apiService, err := environments.New(testNamespace, object, runtimeconfig.Catalog{}, lifecycleManager, nil, environments.ManagementOptions{})
+	apiService, err := environmentservice.New(testNamespace, object, runtimeconfig.Catalog{}, lifecycleManager, nil, environmentservice.ManagementOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

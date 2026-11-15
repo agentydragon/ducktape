@@ -3,7 +3,7 @@
 `EnvironmentService` owns managed Sandbox creation, template listing, discovery, watches, and
 separately authorized lifecycle and policy mutations. It is a separate gRPC service from the Session Dispatcher,
 served by every Sandbox Controller replica on its independent listener at `sandbox-controller:8082`. Its public contract is defined in
-[`agentplane/environments/v1/environment_service.proto`](../../environments/v1/environment_service.proto).
+[`agentplane/environments/v1/environment_service.proto`](../../v1/environment_service.proto).
 Its discovery and resume method paths are:
 
 - `/agentplane.environments.v1.EnvironmentService/ListEnvironments`
@@ -43,7 +43,7 @@ entries and cannot widen access. Broad direct readers may page over the namespac
 continuation token.
 
 `ResumeEnvironment` separately checks the exact target and either an explicit Identity `resume`
-rule or direct operator authority through the shared [lifecycle manager](lifecycle/README.md).
+rule or direct operator authority through the shared [lifecycle manager](../../../runner_gateway/environments/lifecycle/README.md).
 Identity grants cannot override operator stops. Ordinary ServiceAccount self-resume remains denied. Listing or reading a target does not authorize
 changing it. The observed wake generation and opaque resume precondition bind an ordinary request to
 that Sandbox UID and generation; the backend rechecks current identity, policy and state when the
@@ -110,3 +110,8 @@ explicitly resume, including a requested stop; delegated callers never inherit t
 never supplies operator authority or waives the resume token. `wake_service_callers` grants automatic broker wake only,
 with budgets keyed by exact service SPIFFE ID. Create receipts retain the typed service actor
 separately from the Action origin.
+
+The implementation is internal to Environments. Consumer tests use the wire interface through
+`environments/testing/servicefixture`; production consumers use gRPC. The shared lifecycle manager
+remains at `runner_gateway/environments/lifecycle` until its explicit and automatic halves are split;
+automatic wake execution and budget ownership stay with Dispatcher.

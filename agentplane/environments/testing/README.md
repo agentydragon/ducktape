@@ -9,3 +9,8 @@ The test binary omits the leader-only reconcilers: these tests set Sandbox statu
 Runtime processes themselves. It implements no replacement RPC handlers or authorization. The k3s
 suites exercise the actual Controller manager and deployment composition. No fixture changes a
 production manifest or deployed identity.
+
+`servicefixture.Launcher` composes the production handlers and method authorization for Actions'
+orchestration tests. It returns only the EnvironmentService wire interface and server options;
+consumers own their test transport and token reviewer without importing the serving implementation.
+It constructs explicit resume without an automatic-wake budget or execution capability.
