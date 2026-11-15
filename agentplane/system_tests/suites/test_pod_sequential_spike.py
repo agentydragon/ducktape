@@ -22,12 +22,10 @@ _CASES = sorted(SCENARIOS, key=lambda case: not any(mark.name == "exclusive_case
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
-async def worker(
-    cluster: Cluster, base_url: str, token: str, scripted_listener: Listener, tmp_path_factory: pytest.TempPathFactory
-) -> AsyncIterator[Worker]:
+async def worker(cluster: Cluster, base_url: str, token: str, scripted_listener: Listener) -> AsyncIterator[Worker]:
     upstream = ScriptedUpstream()
     async with (
-        native_client(cluster, tmp_path_factory.mktemp("pod-sequential-dispatcher") / "token") as dispatcher,
+        native_client(cluster) as dispatcher,
         upstream.serving(listener=scripted_listener.socket),
         Worker.open(cluster, base_url, token, upstream, dispatcher) as owned,
     ):

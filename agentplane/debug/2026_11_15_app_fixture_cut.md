@@ -1,6 +1,8 @@
 # Explicit App fixtures and ordinary-pytest screen
 
-Current experiment for [PR #16489](https://github.com/agentydragon/ducktape/pull/16489).
+Frozen screens for [PR #16489](https://github.com/agentydragon/ducktape/pull/16489).
+The [current branch disposition](2026_11_15_after_native_ports.md) distinguishes the
+merged implementation from the remaining manual comparison targets.
 Goal: at least 30% faster complete required PR feedback with no more than 25%
 extra compute and no lost important-path regression coverage. The goal remains
 unqualified; these small screens do not estimate a flake rate.
@@ -54,7 +56,7 @@ a complete pair. The corrected repeat uses the latest exact Controller edit
 `f1a62b7d43d6dd59f9f8e9362d1316e0219a0e6f`; that is a wording edit used as
 a dependency-selection positive control, not a behavioral regression test.
 
-The corrected [current replay](https://app.buildbuddy.io/invocation/20d7de33-6b2e-4200-b873-2ddc91b8bc18)
+The corrected [pinned replay](https://app.buildbuddy.io/invocation/20d7de33-6b2e-4200-b873-2ddc91b8bc18)
 completed all selection commands with exit zero, using control
 `5dc6d1a567cb9f21db696a9ed26bf36e78c7d8f9` and candidate
 `6e6ad85a4c9c28a86fed31d83a6ea760677c171b`. It confirms 79 to 15 App Client

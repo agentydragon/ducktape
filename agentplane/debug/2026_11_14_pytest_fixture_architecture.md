@@ -1,21 +1,23 @@
 # Agentplane fixture ownership and pytest mechanics
 
-PR [#16489](https://github.com/agentydragon/ducktape/pull/16489) keeps the existing
-required acceptance gate. The objective is 30% faster complete PR feedback with
-at most 25% more compute; this refactor does not establish that improvement.
+Frozen fixture and scheduler experiments for
+[PR #16489](https://github.com/agentydragon/ducktape/pull/16489). The
+[current branch disposition](2026_11_15_after_native_ports.md) records what merged
+and what remains. Measurements below retain their original sources and do not
+validate the rebased branch. The 30% complete-feedback / 1.25 compute objective
+remains unqualified.
 
 ## Recorded integration snapshot
 
 The integration base recorded in this experiment was `bbba97eb686dfee8f25ce9c64209051734e17460`.
-Devel now contains `driver/cleanup.py` and the Scenario, Policy and Sandbox
-callers. Keep that implementation and its distinct cancellation/failure result;
-remove the experiment's duplicate `cleanup_task.py`. The remaining branch change
-adopts the shared helper for private cleanup diagnostics and the reusable Pod's
-owner, and extends its repeated-cancellation and failure-precedence coverage.
-The two new suite recipes also use devel's explicit component props and common
-fixture finalizer. Earlier run records below retain their original inputs.
+At that source, devel contained `driver/cleanup.py` and the Scenario, Policy and
+Sandbox callers. The experiment adopted that owner and its distinct
+cancellation/failure result, replacing duplicate `cleanup_task.py`. Its native
+suite recipes used the explicit component props and common fixture finalizer.
+Those integration changes are now superseded by the merged ports linked in the
+current disposition; they contribute no remaining runtime diff.
 
-The [current follow-up](2026_11_15_app_fixture_cut.md) records explicit fixture
+The [later screen](2026_11_15_app_fixture_cut.md) records explicit fixture
 ownership, the later worker rebase and new screens. The frozen runs below keep
 their original source pins.
 
@@ -50,9 +52,11 @@ two independent tests, and teardown. A negative control demonstrates that
 `CancelScope(shield=True)` does not protect raw `asyncio.Task.cancel()`. It does
 not justify deleting the remaining cleanup drain helper. The real platform
 fixture has no task-group lifetime workaround for AnyIO to remove, so migration
-is deferred. The final shared platform fixtures use pytest-asyncio's existing
-module-loop pattern. Keep the isolated library spike for a future fixture that
-would actually benefit from same-task setup and teardown.
+is deferred. The merged shared platform fixtures use pytest-asyncio's existing
+module-loop pattern. The isolated library spike remains available at its
+[frozen source](https://github.com/agentydragon/ducktape/blob/22f982f5d9557f9844eb9058d62b79ae1e4e5754/agentplane/system_tests/driver/test_async_fixture_lifecycle.py)
+for a future fixture that benefits from same-task setup and teardown; it and the
+global strict-mode override are absent from the current branch diff.
 
 References: [pytest fixture safety](https://docs.pytest.org/en/stable/how-to/fixtures.html#safe-fixture-structure),
 [AnyIO pytest lifecycle](https://anyio.readthedocs.io/en/stable/testing.html),
