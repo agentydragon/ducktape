@@ -184,18 +184,17 @@ its old ordering does not give it precedence over the selected tracks.
 
 The operator released these tracks; Codex workers build them. Each node owns its gates; the Go
 reorganization behind the Runtime proxy move is [section 17](#17-two-binaries-and-the-go-layout).
-States as of 14:35 UTC.
+States as of 15:05 UTC.
 
-| Track                                      | Operator release (UTC)            | Node                             | State                                                                                                                                                                                                                             |
-| ------------------------------------------ | --------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Retire bearer admission (auth stage 5)     | 2026-11-15                        | `PRIVILEGED_BACKEND_AUTH_DESIGN` | Receiver code merged for every receiver except History (#16728, in review); manifests omit the retired keys and the fields are deleted for Policy (#16718), Gateway (#16722) and the sampler (#16729); the other receivers follow |
-| One TLS listener per service               | 2026-11-14 01:41, "dispatch 1, 2" | `PRIVILEGED_BACKEND_AUTH_DESIGN` | Plaintext exposure removed from manifests (#16631, #16632); the transitional plaintext listeners' code was removed (#16661)                                                                                                       |
-| Runtime proxy and Executor to Environments | 2026-11-15                        | `RUNTIME_PROXY_TO_ENVIRONMENTS`  | Callers reach the Runtime through Environments since 14:20 UTC (#16723); retiring the Gateway receiver follows                                                                                                                    |
-| Runtime proxy caller audit                 | 2026-11-15                        | `RUNTIME_PROXY_CALLER_AUDIT`     | In review; the migrations it proposes are not released                                                                                                                                                                            |
-| Sessions binary directory                  | 2026-11-15 11:35                  | `SESSIONS_BINARY_DIRECTORY`      | Starts after the Runtime proxy move's exit                                                                                                                                                                                        |
+| Track                                      | Operator release (UTC) | Node                             | State                                                                                                                                                                                                                                                                          |
+| ------------------------------------------ | ---------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Retire bearer admission (auth stage 5)     | 2026-11-15             | `PRIVILEGED_BACKEND_AUTH_DESIGN` | Receiver code merged for every receiver, History last (#16728, 14:35 UTC); retired keys omitted and fields deleted for Policy (#16718), Gateway (#16722) and the sampler (#16729); the other receivers' key and field removal, the shared TokenReview code and its RBAC follow |
+| Runtime proxy and Executor to Environments | 2026-11-15             | `RUNTIME_PROXY_TO_ENVIRONMENTS`  | Callers reach the Runtime through Environments since 14:20 UTC (#16723); retiring the Gateway receiver follows                                                                                                                                                                 |
+| Runtime proxy caller audit                 | 2026-11-15             | `RUNTIME_PROXY_CALLER_AUDIT`     | Proposal merged (#16643); its dispositions await operator review, and the migrations it proposes are not released                                                                                                                                                              |
+| Sessions binary directory                  | 2026-11-15 11:35       | `SESSIONS_BINARY_DIRECTORY`      | Starts after the Runtime proxy move's exit                                                                                                                                                                                                                                     |
 
 Finished and deleted since the 2026-11-14 ledger: the pre-cutover leftovers, any-replica Gateway
-routing and its cleanup (section 12), auth stages 1 to 4, the stage 2 Go layout fixes and runner-era Go names, the coherence sweep, the app and CLI local extractions (#16717, #16720, #16725),
+routing and its cleanup (section 12), auth stages 1 to 4, one TLS listener per service (#16631, #16632, #16661), the stage 2 Go layout fixes and runner-era Go names, the coherence sweep, the app and CLI local extractions (#16717, #16720, #16725),
 EnvironmentService on every Environments replica (contract in the
 [Environments specification](../environments/SPEC.md)), central code-mode tools as Actions
 (#16418, #16422, #16423) and the dead Dispatcher command states (#16438, then the proto values
@@ -208,7 +207,7 @@ removed). Not released:
 flowchart LR
     PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: stage 5, bearer admission retires]
     RUNTIME_PROXY_TO_ENVIRONMENTS[In flight: Runtime proxy into Environments]
-    RUNTIME_PROXY_CALLER_AUDIT[In review: Runtime-proxy caller dispositions]
+    RUNTIME_PROXY_CALLER_AUDIT[Review: Runtime-proxy caller dispositions]
 ```
 
 ### Sandbox-free central Sessions
@@ -1673,7 +1672,7 @@ cost. **Question for review:** is the payoff lighter tests (O1 and O2), or envir
 Kubernetes as a product capability (O3), which changes the
 [principles](../docs/principles.md)' Kubernetes baseline? Implementation waits on the answer;
 `PRIVILEGED_BACKEND_AUTH_DESIGN` remains independently decidable. The selected Gateway replica
-contract is summarized in section 12; it does not decide the broader Kubernetes direction.
+contract is the [replica ownership decision](../runner_gateway/README.md#replica-ownership-decision); it does not decide the broader Kubernetes direction.
 
 ### `BUILD_BOX_BAZEL` — build Sandboxes can run Bazel
 
@@ -2390,50 +2389,10 @@ after the History representation decision, over journal records?
 
 ## 12. The Runner Gateway serves the runner's own service
 
-The Gateway proxies the runner's `Runner` service with per-method authorization; commands use
-Dispatcher and typed Runner RPCs. The Sandbox Controller's authenticated passive watch binds the
-Runtime workload UID before it publishes facts. Merged #16365
-(`efacbf509178221d60e392168ba812aff360beae`) completes independent Gateway observation and
-stable-Service routing. Gateway calls use the bound Sandbox/incarnation/boot identity; observation
-loss does not revoke another replica's calls or Runtime-owned admitted work. No Gateway connection
-Lease or per-Sandbox control Service/EndpointSlice creation remains, and the route RBAC, Runtime
-connection epochs and `proxy_port` setting are gone (#16388, #16390). Dispatcher delivery Leases
-remain a separate scheduling protocol.
-
-The [service-boundary contract](../docs/service_boundaries.md) and [Runner Gateway README](../runner_gateway/README.md)
-describe the current proxy. Live `Runner.ListSessions` remains part of the app and Notification
-service caller contract. The separate destination-authority decision
-`DELIVERY_DESTINATION_AUTHORITY_DESIGN` (section 13) remains open.
-
-```mermaid
-flowchart TD
-    RUNNER_OBSERVATION_READINESS_RACE[Candidate: investigate runner readiness and routing race]
-```
-
-### `RUNNER_OBSERVATION_READINESS_RACE` — resolve intermittent runner readiness diagnostics
-
-**Candidate; operator follow-up to the observed failure, 2026-11-07 UTC.** The
-[Session deletion system test](../system_tests/scenarios/session_deletion.py) recreated a Sandbox
-with the same name and a new UID, then `ListSessions` returned `UNAVAILABLE: another replica holds
-this Sandbox's runner connection` in a fixture with only one Gateway replica
-([failed invocation](https://app.buildbuddy.io/invocation/737afbc2-7595-5be8-b789-93b6c0a49c74)).
-An [isolated rerun](https://app.buildbuddy.io/invocation/5075b621-94f6-4746-a991-131280be6ec8)
-passed; this establishes intermittent behavior, not its cause. PR #14818 deterministically reproduced
-the same `UNAVAILABLE` symptom by pausing after the first ready Lease update, then closed the
-publication-before-local-installation window by installing the fenced connection first. This proves
-that ordering could cause the symptom, but does not prove it caused the original same-name-replacement
-failure. Readiness remains a recent observation and cannot guarantee a later call after connection
-loss. The Gateway error now reports local connection availability; connection-Lease ownership no longer
-participates in Runtime routing.
-
-If the system-test failure recurs, capture the Sandbox UID, runner incarnation and boot ID, Gateway
-replica, selected Service endpoint, and local observer/connection state at the failed poll.
-PR #14851 adds a bounded retry for transient `UNAVAILABLE` in the test's read-only `ListSessions`
-poll. This handles the test poll only; it does not establish that the publication race caused the
-original same-name-replacement failure or prove the underlying failure is fixed. Do not retry
-mutations with uncertain outcomes. Keep this investigation separate from the selected route contract.
-**Exit:** either capture evidence that distinguishes the remaining failure boundary if the failure
-recurs, or close the incident follow-up if ordinary use shows no recurrence. Preserve UID/incarnation/boot fencing and stale-call denial.
+Finished 2026-11-15: any-replica Gateway routing landed (#16365, #16388, #16390) and its contract is
+the [replica ownership decision](../runner_gateway/README.md#replica-ownership-decision); Runtime
+calls now reach Environments ([section 17](#17-two-binaries-and-the-go-layout)). The number stays so
+later sections keep their anchors.
 
 ## Scope and retirement of stale gates
 
@@ -3926,7 +3885,7 @@ Identity landed in #16373.
 ```mermaid
 flowchart LR
     PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: stage 5, section 15]
-    RUNTIME_PROXY_CALLER_AUDIT[In review: Runtime-proxy caller dispositions]
+    RUNTIME_PROXY_CALLER_AUDIT[Review: Runtime-proxy caller dispositions]
     RUNTIME_PROXY_TO_ENVIRONMENTS[In flight: Runtime proxy and Executor into Environments]
     SESSIONS_BINARY_DIRECTORY[Released after the proxy cutover: the rest moves to session_dispatcher/]
     ENVIRONMENT_KEEP_ALIVE_HOLDS[Proposed design: keep-alive holds]
@@ -3939,10 +3898,10 @@ flowchart LR
 
 ### `RUNTIME_PROXY_TO_ENVIRONMENTS` — the Runtime proxy and Executor move into Environments
 
-**In flight, 2026-11-15: receiver enabled (#16692) and accepting caller images (#16696) pinned and
-rolled; caller target cutover is next.** App, Notifications, Gateway/Sessions,
-Controller and central sampler have accepting images containing #16696 pinned and rolled.
-Retire the Gateway receiver and obsolete grants only after the caller configuration has rolled. The
+**In flight, 2026-11-15: receiver enabled (#16692), accepting caller images (#16696) rolled, and
+callers retargeted to Environments (#16723, 14:20 UTC); retiring the Gateway receiver and its
+obsolete grants is next.** The Gateway still registers the proxy and Executor
+(`runner_gateway/main.go`). The
 proxy lives at `environments/runtimeproxy`, its final home: Go's internal-import rule
 keeps it outside `internal/` while the Gateway still imports it. The Dispatcher already calls the proxy over the network, so
 the move adds no hop. The proxy grants `CreateSession`, `SubmitInput`, `ChangeModel`,
@@ -3960,7 +3919,7 @@ through its Service, and nothing in `runner_gateway/` calls a Runtime.
 
 ### `RUNTIME_PROXY_CALLER_AUDIT` — route callers through their owning APIs
 
-**In review; audit released by operator, 2026-11-15.** The
+**Review; audit released by operator, 2026-11-15; proposal merged in #16643.** The
 [caller inventory and disposition proposal](runtime_proxy_callers.md) records the production paths,
 exact methods and grants, direct Runtime channels and test-only clients. Recommend moving App
 Runtime diagnostics behind EnvironmentService, moving Notifications' subscription validation to
