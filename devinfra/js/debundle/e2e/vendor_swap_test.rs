@@ -3,8 +3,8 @@
 //! asserts the generated wrapper.
 
 use debundle_e2e_support::{
-    CommandResult, assert_module_source, assert_node_output, assert_source_file, read_json,
-    run_debundler, run_debundler_with_args, write_text_file, write_yaml_file,
+    CommandResult, assert_node_output, assert_source_file, read_json, run_debundler,
+    run_debundler_with_args, write_text_file, write_yaml_file,
 };
 use serde_json::{Value, json};
 use spec::{
