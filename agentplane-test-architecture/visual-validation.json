@@ -183,5 +183,152 @@
     "invocation": "6ce4c1af-42d5-4cff-aaa9-9146745fc9b1",
     "reason": "An explicit remote branch disabled scratch mirroring; preview package was absent, so no tests ran. Not a test flake."
   },
-  "source_snapshot_note": "visual-validation.json is intentionally excluded from the rendered asset set; all listed final publication assets match the browser-fetched bytes."
+  "source_snapshot_note": "visual-validation.json is intentionally excluded from the rendered asset set; all listed final publication assets match the browser-fetched bytes.",
+  "current_five_port_dispatch_refresh": {
+    "status": "passed_across_two_runs",
+    "recorded_at_utc": "2026-11-15T02:59:16Z",
+    "scope": "Five-port dispatch page, latency/reliability cross-links and root navigation; desktop/mobile light/dark. Browser captured dispatch record d0544c6b; current PR metadata was refreshed afterward. Presentation validation only; historical fleet windows and denominators are unchanged.",
+    "tested_html_sha256": {
+      "agentplane-test-architecture/index.html": "44a608afe8b6ec279379155ba0bf124af6c76f42803c649299304e1a31ca9e2a",
+      "latency/index.html": "4df5532c904528676680acb1c0dc22f49b6b20e47b223019d1e46ab32a166114",
+      "reliability/index.html": "74b091fdf5cc291354be469d3cded0505eaaffad04f99b46cf17b40dc22f8768"
+    },
+    "dispatch_record_sha256_at_capture": "d0544c6bc1636b7adfdfeb0ac01b62f58763cb706ab9c9f82520d0ebc6259c71",
+    "preview_source_base_commit": "27ebb9531394b0ed63e8f8e251bfbfc6cad079ca",
+    "preview_note": "The RBE preview fetched dispatch JSON d0544c6b with the exact HTML hashes above. The record now contains the rebased #3 head and current pending CI links (current JSON SHA above); the HTML/template bytes did not change. Screenshots represent the capture-time record, with no recapture after this fixed-length metadata update.",
+    "target": "//x/ci_reports_preview:visual_test",
+    "runs": [
+      {
+        "invocation_id": "b815ff20-17c9-44bf-aa73-c9ea68c4c554",
+        "url": "https://app.buildbuddy.io/invocation/b815ff20-17c9-44bf-aa73-c9ea68c4c554",
+        "command": "bbr test //x/ci_reports_preview:visual_test --nocache_test_results --test_output=errors",
+        "native_result": {
+          "cases": 16,
+          "passed": 12,
+          "failed": 4
+        },
+        "disposition": "All 12 affected report-page cases passed, including four each for dispatch, latency, and reliability. The four failures were unchanged-root assertions using stale expected text; no affected report-page case failed."
+      },
+      {
+        "invocation_id": "48221b48-c82b-49ff-9f3f-eafdc62dce62",
+        "url": "https://app.buildbuddy.io/invocation/48221b48-c82b-49ff-9f3f-eafdc62dce62",
+        "command": "bbr test //x/ci_reports_preview:visual_test --nocache_test_results --test_output=errors --test_arg=-k --test_arg=test_root",
+        "native_result": {
+          "cases": 4,
+          "passed": 4,
+          "failed": 0
+        },
+        "disposition": "Corrected root-navigation assertions passed for desktop/mobile and light/dark."
+      }
+    ],
+    "combined_coverage": "All 12 affected report-page cases passed in the first run and all four root-navigation cases passed in the focused run. The four initial root-only failures are preserved above; no single invocation is represented as 16/16 passing.",
+    "prior_attempts": [
+      {
+        "invocation_id": "45389abd-add6-425a-9d1d-c16135b30b15",
+        "child_invocation_id": "751967b7-003b-4dd8-a31d-947576286198",
+        "outcome": "Preliminary capture from prior HTML formatting bytes: 16 cases collected, four root cases passed, and 12 affected-page cases failed because selectors expected stale headings and clicked a hidden App radio input. Superseded by runs above; not evidence for final page bytes."
+      },
+      {
+        "invocation_id": "dbcb2dc1-2fbb-4652-a6fb-a3feff8317e5",
+        "child_invocation_id": "08e476da-08ac-4393-81c5-951b2343be85",
+        "outcome": "Outer runner stopped at SSH host-key prompt and was canceled; requested child never started. No test result."
+      },
+      {
+        "invocation_id": "db7b5d1d-0b50-4436-b632-2133ef34033b",
+        "outcome": "Canceled during source synchronization before Bazel began. No test result."
+      }
+    ],
+    "screenshot_review": {
+      "status": "passed",
+      "reviewed_capture_count": 16,
+      "finding": "Dispatch, latency, and reliability captures were reviewed across both widths and themes; text, links, tables, colors and mobile wrapping are legible, with no clipping. Root navigation screenshots were also checked. This visual review covers the d0544c6b dispatch record captured by RBE; #3 head/check metadata was refreshed afterward with unchanged HTML/template. Browser checks exercised CDN loading, live theme changes, controls and page fit.",
+      "captures": [
+        {
+          "page": "dispatch",
+          "viewport_theme": "desktop-light",
+          "sha256": "0dfb4ec693294bcb813dea502ed0e7741211450c7af6e1e2748d6f7c1fe9c2bf"
+        },
+        {
+          "page": "dispatch",
+          "viewport_theme": "desktop-dark",
+          "sha256": "d394f8a3efc1baba24b055e0dfb5c70ae476a1909147a8d0fed666de2dc60a73"
+        },
+        {
+          "page": "dispatch",
+          "viewport_theme": "mobile-light",
+          "sha256": "d9e194dbcf00dfbcd2e7125e09fb505a9124c28e90ed5012bb6671a0dcd01ca5"
+        },
+        {
+          "page": "dispatch",
+          "viewport_theme": "mobile-dark",
+          "sha256": "291c3abda68aaf68d85c4a441e2e34de46c5e2f1eb4ad1dff3634149be508b42"
+        },
+        {
+          "page": "latency",
+          "viewport_theme": "desktop-light",
+          "sha256": "21ddad70dcea51a4b8a80fc98ef13f7c5c2c5b59a254ed5de0791beeaab9792f"
+        },
+        {
+          "page": "latency",
+          "viewport_theme": "desktop-dark",
+          "sha256": "5c3c57096960c920b2582eba065830c42a2d151bb3f5fa496d2b6d12a97f0c8c"
+        },
+        {
+          "page": "latency",
+          "viewport_theme": "mobile-light",
+          "sha256": "d28045595e487987b741b69f939bbd2fba62216f602cf3b57fa3bc8711470afa"
+        },
+        {
+          "page": "latency",
+          "viewport_theme": "mobile-dark",
+          "sha256": "084d7db6db203d8fcd6a3a4c8567794736f7c79783282c91b36878ff879d93cf"
+        },
+        {
+          "page": "reliability",
+          "viewport_theme": "desktop-light",
+          "sha256": "21ed69207a840a562874a3fb338c7dfeae2f9cb922d493c9487dcd754f4a43b6"
+        },
+        {
+          "page": "reliability",
+          "viewport_theme": "desktop-dark",
+          "sha256": "de174b108b0dba58ebbca7a92790a1f24ba6de474680bb60b6c8128286db8179"
+        },
+        {
+          "page": "reliability",
+          "viewport_theme": "mobile-light",
+          "sha256": "f3966939f5f01bdcac13bd717cddd4e3340cc30b13d86826cc6fa3ce9467f141"
+        },
+        {
+          "page": "reliability",
+          "viewport_theme": "mobile-dark",
+          "sha256": "d5b9c2ee9238576aa2dca947e1dd0677fe64f342ee66eb9d6dfa14fb63b6b9dd"
+        },
+        {
+          "page": "root-navigation",
+          "viewport_theme": "desktop-light",
+          "sha256": "022d66ac9c96275c5f15ef4b39bbadab37443b51a76b0d973f0f84a788bbee96"
+        },
+        {
+          "page": "root-navigation",
+          "viewport_theme": "desktop-dark",
+          "sha256": "b2f0608e1f62f7f22b83653e489785627c537fa907ba522862185a2148245e6e"
+        },
+        {
+          "page": "root-navigation",
+          "viewport_theme": "mobile-light",
+          "sha256": "02f99df69de61c0126c4c673ae0272a2095ecaf47c4ac90ccd491a926147142e"
+        },
+        {
+          "page": "root-navigation",
+          "viewport_theme": "mobile-dark",
+          "sha256": "893358bd9abed1ab46a02342436c509debe7d32e734293b137eb178fb10edfd3"
+        }
+      ]
+    },
+    "historical_visual_records_unchanged": true,
+    "raw_artifacts_disposition": "Raw logs, test XML, browser diagnostics and screenshot files remain private; this record publishes only invocation links, scoped outcomes and hashes.",
+    "page_path": "agentplane-test-architecture/index.html",
+    "page_sha256": "44a608afe8b6ec279379155ba0bf124af6c76f42803c649299304e1a31ca9e2a",
+    "dispatch_record_sha256_current": "b646f8992ccd774f512be2348679c5dbff2d4764a934919414fcef8e5db3838b"
+  }
 }

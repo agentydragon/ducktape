@@ -3,7 +3,7 @@
   "audited_at_utc": "2026-11-14T18:01:04Z",
   "published_at_utc": null,
   "scope": "Supplemental exact-source platform evidence, manual screens, and per-action coverage for the 9b330689 candidate slices. Seven recovered TestRunner ActionResults pass 59 JUnit case results across seven targets, with overlapping logical coverage; a separate complete same-source invocation repeats the MCP3/Pod 20-case subset and builds eight named libraries plus six aspects. The direct 12cdf qualification aggregate is provider-disconnected, while separate same-source invocation b741 completed successfully. GitHub Actions attempt 2 passed all three required checks on synthetic merge 2aec7a80, not direct source 9b330689. Full-feedback/performance qualification is unmet. Fleet populations, rates, and denominators unchanged.",
-  "report_sha256": "f15f1296c4c562b18d40dcebfb3f4faf64cddc16a9abd22096c3e71809abc9f0",
+  "report_sha256": "44a608afe8b6ec279379155ba0bf124af6c76f42803c649299304e1a31ca9e2a",
   "evidence_sha256": "8875b9d2ea91b3feb4e5c692b8d7871ad1a14fdc3e2a72a374af6abaf26d275a",
   "previous_gh_pages_commit": "895a488df402554bf680083d340019d7d95091f5",
   "pilot_branch": "agent/test-architecture-pivot",
@@ -67,7 +67,8 @@
     "iteration14.json": "0d8761ce9542009990b8443174598fefb6b6ffd53e028462a593333a36728c16",
     "iteration15.json": "0e5f99643ef17a6f0044e733de13747aedd2eb1ef67dffdee023e2dad90b0316",
     "evidence.json": "8875b9d2ea91b3feb4e5c692b8d7871ad1a14fdc3e2a72a374af6abaf26d275a",
-    "iteration16.json": "e7e89850197c5ce9e397206bf78a255bb00f7176a4f1089619cc7c4601fb8c93"
+    "iteration16.json": "e7e89850197c5ce9e397206bf78a255bb00f7176a4f1089619cc7c4601fb8c93",
+    "five-port-dispatch.json": "b646f8992ccd774f512be2348679c5dbff2d4764a934919414fcef8e5db3838b"
   },
   "previous_live_verified_at_utc": "2026-11-13T15:04:10.895450+00:00",
   "visual_validation_status": "Report16 visual validation pending; prior screenshot evidence applies only to the previous snapshot.",
@@ -523,5 +524,13 @@
     "MCP3 no-Sampler candidate (per-action cases pass; full-feedback/adoption qualification pending)",
     "App-free Pod trust4 case (per-action cases pass; full-feedback/adoption qualification pending)"
   ],
-  "observed_at_utc": "2026-11-14T18:10:20Z"
+  "observed_at_utc": "2026-11-14T18:10:20Z",
+  "current_dispatch_refresh": {
+    "dispatch_evidence": "five-port-dispatch.json",
+    "dispatch_evidence_sha256": "b646f8992ccd774f512be2348679c5dbff2d4764a934919414fcef8e5db3838b",
+    "visual_dispatch_record_sha256_at_capture": "d0544c6bc1636b7adfdfeb0ac01b62f58763cb706ab9c9f82520d0ebc6259c71",
+    "visual_validation": "visual-validation.json#current_five_port_dispatch_refresh",
+    "page_sha256": "44a608afe8b6ec279379155ba0bf124af6c76f42803c649299304e1a31ca9e2a",
+    "historical_report16_status_preserved": true
+  }
 }

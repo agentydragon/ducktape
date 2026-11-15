@@ -1,0 +1,366 @@
+{
+  "schema_version": 1,
+  "as_of_utc": "2026-11-15T03:04:38Z",
+  "source_devel_commit": "a18b1ea43730e2cd93e6fc187ece230f1ce2dcf7",
+  "scope": "Current dispatch and validation status for five Agentplane test ports. Required acceptance coverage and existing selection policy remain; no selector substitutions or optional tests. Target boundaries are partitioned (14 suite targets to 17 in the measured candidate). No KVM, resource, or concurrency change; historical fleet measurements remain unchanged.",
+  "ports": [
+    {
+      "number": 1,
+      "name": "Gateway replica active-execution continuity",
+      "pr": {
+        "number": 16487,
+        "title": "test(agentplane): verify Gateway replica continuity",
+        "url": "https://github.com/agentydragon/ducktape/pull/16487",
+        "state": "merged",
+        "is_draft": false,
+        "head_sha": "fd2ae57dda160f37f4bffddad647138dc71ced1d",
+        "head_url": "https://github.com/agentydragon/ducktape/commit/fd2ae57dda160f37f4bffddad647138dc71ced1d",
+        "base_branch": "devel",
+        "merge_sha": "851011c9c436f794c2d0f5fe19ae41a25c1c67c5",
+        "merge_url": "https://github.com/agentydragon/ducktape/commit/851011c9c436f794c2d0f5fe19ae41a25c1c67c5",
+        "merged_at_utc": "2026-11-15T01:42:04Z",
+        "merged_by": "agentydragon"
+      },
+      "summary": "An independent production Gateway replica and a restarted Gateway retain the same Runtime binding and active execution session, PID, and output cursor; stale sandbox, incarnation, and Runtime boot identities are denied before process start. Completion waits for process exit, stream closure, and drained output.",
+      "focused_validation": {
+        "status": "passed",
+        "invocation_id": "a0134166-7959-42c2-9944-b7505cdcd0df",
+        "url": "https://app.buildbuddy.io/invocation/a0134166-7959-42c2-9944-b7505cdcd0df",
+        "targets": [
+          "//agentplane/runner_gateway:test_gateway_continuity",
+          "//agentplane/runner_gateway:test_grpc_native"
+        ]
+      },
+      "required_ci": {
+        "status": "passed",
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/43663958176"
+      }
+    },
+    {
+      "number": 2,
+      "name": "Runtime Quiesce History-seal cutoff",
+      "pr": {
+        "number": 16490,
+        "title": "test(agentplane): cover quiesce history seal cutoff",
+        "url": "https://github.com/agentydragon/ducktape/pull/16490",
+        "state": "merged",
+        "is_draft": false,
+        "head_sha": "3c5ed0b77ff366ba9ceb8c90e989ef1b678e26c0",
+        "head_url": "https://github.com/agentydragon/ducktape/commit/3c5ed0b77ff366ba9ceb8c90e989ef1b678e26c0",
+        "base_branch": "devel",
+        "base_sha_observed": "717492f19bd06610ce854122b0b395ba55e75f61",
+        "merge_sha": "2a06cea1dc87e8a3d62220dbd226b1855f56dee2",
+        "merge_url": "https://github.com/agentydragon/ducktape/commit/2a06cea1dc87e8a3d62220dbd226b1855f56dee2",
+        "merged_at_utc": "2026-11-15T01:53:22Z",
+        "merged_by": "agentydragon"
+      },
+      "summary": "Adds the focused Quiesce/History seal cutoff contract.",
+      "required_ci": {
+        "status": "passed",
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/43664688558",
+        "buildbuddy_invocation_id": "d6f3f084-48d5-591d-8fc7-d716a6580651",
+        "buildbuddy_url": "https://app.buildbuddy.io/invocation/d6f3f084-48d5-591d-8fc7-d716a6580651",
+        "other_required_checks": "Pre-commit, Nix artifacts/imports, and PR visual review passed."
+      }
+    },
+    {
+      "number": 3,
+      "name": "App-independent native Session test driver",
+      "pr": {
+        "number": 16485,
+        "title": "Add App-independent Session test driver",
+        "url": "https://github.com/agentydragon/ducktape/pull/16485",
+        "state": "open",
+        "is_draft": false,
+        "head_sha": "b6c2e93fdec51c158ff391ae141e35d403f97ba2",
+        "head_url": "https://github.com/agentydragon/ducktape/commit/b6c2e93fdec51c158ff391ae141e35d403f97ba2",
+        "base_branch": "devel",
+        "base_sha_observed": "1a6a14c481c9b02721abdd01b58fc6881a32bc25",
+        "mergeable": true
+      },
+      "summary": "Adds a native Session test driver without pulling App-owned test fixtures into the backend target. Rebased onto current devel with a range-diff-identical patch; the sole BUILD conflict was resolved by retaining both registrations.",
+      "prior_head_validation": {
+        "source_sha": "acab2f49bfffd5df6d06d98e74e20f28a9e7f953",
+        "status": "passed",
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/43663679218",
+        "buildbuddy_invocation_id": "328aa622-a700-5907-a204-12a1d568b57e",
+        "buildbuddy_url": "https://app.buildbuddy.io/invocation/328aa622-a700-5907-a204-12a1d568b57e",
+        "note": "All required checks passed on the prior head before rebasing; this is not current-head validation."
+      },
+      "required_ci": {
+        "status": "in_progress",
+        "source_sha": "b6c2e93fdec51c158ff391ae141e35d403f97ba2",
+        "base_sha": "1a6a14c481c9b02721abdd01b58fc6881a32bc25",
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/43670308652",
+        "buildbuddy_invocation_id": "97687ff6-5b52-5403-9602-cf77e7fa5e70",
+        "buildbuddy_url": "https://app.buildbuddy.io/invocation/97687ff6-5b52-5403-9602-cf77e7fa5e70",
+        "checks_in_progress": ["Bazel CI", "Build artifacts/imports"],
+        "precommit": "passed",
+        "mergeable": true,
+        "note": "Pre-commit passed on this head at 2026-11-15T03:00:54Z; Bazel CI and artifacts/imports are still running.",
+        "buildbuddy_synthetic_merge_sha": "05d873fc8f5c2284470ad7ed9e626a30cddecf61",
+        "buildbuddy_synthetic_merge_parents": [
+          "1a6a14c481c9b02721abdd01b58fc6881a32bc25",
+          "b6c2e93fdec51c158ff391ae141e35d403f97ba2"
+        ]
+      }
+    },
+    {
+      "number": 4,
+      "name": "App-independent central recovery fixtures",
+      "pr": {
+        "number": 16480,
+        "title": "test(agentplane): remove App from central recovery fixtures",
+        "url": "https://github.com/agentydragon/ducktape/pull/16480",
+        "state": "merged",
+        "is_draft": false,
+        "head_sha": "6e4c9cd639e3d4d5f50838dd2b12717c416a1745",
+        "head_url": "https://github.com/agentydragon/ducktape/commit/6e4c9cd639e3d4d5f50838dd2b12717c416a1745",
+        "base_branch": "devel",
+        "base_sha_observed": "2b7bf073f7d2377ca4581f5937bf1b740060e5dd",
+        "auto_merge_enabled": true,
+        "merge_sha": "216fd70b240e16082b61525403ce4b7ec0be419e",
+        "merge_url": "https://github.com/agentydragon/ducktape/commit/216fd70b240e16082b61525403ce4b7ec0be419e",
+        "merged_at_utc": "2026-11-15T02:01:29Z",
+        "merged_by": "agentydragon"
+      },
+      "summary": "Separates central recovery fixture ownership from App. The focused source proof keeps the full 120-second recovery budget.",
+      "focused_validation": {
+        "status": "passed",
+        "source_sha": "087ecf97",
+        "invocation_id": "2cde3bbe-f376-42d5-9f5c-bd51fde49f66",
+        "url": "https://app.buildbuddy.io/invocation/2cde3bbe-f376-42d5-9f5c-bd51fde49f66",
+        "scope": "Renderer plus three recovery targets; full 120-second budget retained"
+      },
+      "latest_ordinary_tests": {
+        "status": "passed",
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/43665057560",
+        "invocation_id": "d42283de-b481-5034-a275-78f7ae2fa06f",
+        "url": "https://app.buildbuddy.io/invocation/d42283de-b481-5034-a275-78f7ae2fa06f",
+        "source_sha": "6e4c9cd639e3d4d5f50838dd2b12717c416a1745",
+        "note": "The earlier failure at 7bd24aed was superseded by fixes for lost pytest fixture-export test registration and an ActionsProps optional-annotation mismatch.",
+        "result": "Success"
+      },
+      "native_stack": {
+        "registered": false,
+        "attempted_pr_numbers": [16480, 16489],
+        "http_status": 422,
+        "reason": "GitHub rejected stack registration because PR #16480 has user-enabled auto-merge; its setting is preserved.",
+        "dependency": "PR #16480 has merged. PR #16489 has been retargeted and rebased onto devel; no dependency remains."
+      },
+      "direct_validation": {
+        "status": "passed",
+        "source_sha": "6e4c9cd639e3d4d5f50838dd2b12717c416a1745",
+        "invocation_id": "56968e01-4deb-4ccb-ba5f-b1538d6e9321",
+        "url": "https://app.buildbuddy.io/invocation/56968e01-4deb-4ccb-ba5f-b1538d6e9321",
+        "result": "13 named targets passed: 12 libraries plus the real iptables target."
+      },
+      "required_ci_state": {
+        "status": "passed",
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/43665057560",
+        "buildbuddy_invocation_id": "d42283de-b481-5034-a275-78f7ae2fa06f",
+        "buildbuddy_url": "https://app.buildbuddy.io/invocation/d42283de-b481-5034-a275-78f7ae2fa06f",
+        "ordinary_tests": "passed",
+        "precommit": "passed",
+        "nix_artifacts_imports": "passed",
+        "pr_visual_review": "neutral_completed_after_merge"
+      }
+    },
+    {
+      "number": 5,
+      "name": "Native Pod and central Services partitions",
+      "pr": {
+        "number": 16489,
+        "title": "test(agentplane): partition native Pod and central Services acceptance",
+        "url": "https://github.com/agentydragon/ducktape/pull/16489",
+        "state": "open",
+        "is_draft": true,
+        "head_sha": "351a06b05eec53b08104907df155f02164779574",
+        "head_url": "https://github.com/agentydragon/ducktape/commit/351a06b05eec53b08104907df155f02164779574",
+        "base_branch": "devel",
+        "base_sha_observed": "216fd70b240e16082b61525403ce4b7ec0be419e"
+      },
+      "summary": "Partitions the native Pod and central Services acceptance targets (14 to 17) while retaining required acceptance coverage and selection policy; no tests are made optional.",
+      "current_validation": {
+        "status": "passed",
+        "source_sha": "c0f664f850fcb9a37fdb0e7dc93318d4512b35eb",
+        "invocation_id": "0f77ffdd-4fd7-4c29-b50a-00752a5f0903",
+        "url": "https://app.buildbuddy.io/invocation/0f77ffdd-4fd7-4c29-b50a-00752a5f0903",
+        "result": "17/17 passed",
+        "native_seconds": 322.298,
+        "qualification": "No qualified savings claim: one clean exact-a18 repeat had the same 51 cases; the c0f664f850 candidate was 11.56% lower in elapsed time but used 18.9% more observed CPU and 21.2% more summed execution. Firecracker CPU is missing, queue timestamps are invalid, and current PR head differs from the measured candidate source.",
+        "canonical_junit_cases": 51,
+        "physical_execution": {
+          "new_test_runner_actions": 17,
+          "failures": 0,
+          "same_digest_retries": 0
+        },
+        "observed_cpu_seconds": 6233.626204,
+        "cpu_observed_actions": "16/17",
+        "summed_execution_seconds": 3081.945122,
+        "limitations": [
+          "Firecracker CPU is missing.",
+          "Queue aggregate is invalid because Firecracker timestamps are inverted."
+        ],
+        "command": "bbr test //agentplane/system_tests/suites/... --test_tag_filters=-manual,-live_openai_api --nocache_test_results --flaky_test_attempts=1 --runs_per_test=1 --test_output=errors"
+      },
+      "library_and_renderer_validation": {
+        "status": "passed",
+        "source_sha": "c0f664f850fcb9a37fdb0e7dc93318d4512b35eb",
+        "invocation_id": "255c6923-02eb-4051-9dd5-228c823f2ebc",
+        "url": "https://app.buildbuddy.io/invocation/255c6923-02eb-4051-9dd5-228c823f2ebc",
+        "result": "21 named targets: 19 libraries and 2 renderer tests; renderer results were cached, so this is not fresh renderer timing evidence."
+      },
+      "earlier_failures": [
+        {
+          "invocation_id": "30c75688-1ebd-410d-9667-59e52e4087f1",
+          "url": "https://app.buildbuddy.io/invocation/30c75688-1ebd-410d-9667-59e52e4087f1",
+          "result": "Static typechecking failed before the 16-suite comparison began; preserve as a failure, not a test result."
+        },
+        {
+          "invocation_id": "9bd69f69-2c52-4a33-b8f1-78b355268285",
+          "url": "https://app.buildbuddy.io/invocation/9bd69f69-2c52-4a33-b8f1-78b355268285",
+          "result": "An earlier library attempt lacked the explicit Egress reader parameter; corrected in c0f664f."
+        }
+      ],
+      "current_pr_ci": {
+        "status": "passed",
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/43665859402",
+        "source_sha": "351a06b05eec53b08104907df155f02164779574",
+        "synthetic_merge_sha": "268ecaf1197da43fd20d680c4431adb4e61c0292",
+        "bazel_targets_passed": 2014,
+        "fresh_test_targets": 42,
+        "bazel_elapsed_seconds": 401.483,
+        "ordinary_tests": "passed",
+        "pr_visual_review": "neutral_completed",
+        "precommit": "passed",
+        "nix_artifacts_imports": "passed",
+        "failure_note": "Superseded head b3129d8 passed all 2,008 tests but failed static typing from a reused renderer loop variable; names were separated in 351a06b.",
+        "ordinary_tests_invocation_id": "6039d717-e004-59fa-8a06-be5a45925a4d",
+        "ordinary_tests_url": "https://app.buildbuddy.io/invocation/6039d717-e004-59fa-8a06-be5a45925a4d"
+      },
+      "prior_head_validation": {
+        "source_sha": "b3129d8f9784aac2473c6707736c5820a5c1897c",
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/43665080662",
+        "result": "All 2,008 tests passed; Bazel CI failed static typing because a renderer loop reused a variable inferred as the other module enum. The loop-variable names were separated in the new head; this is a superseded validation failure, not the current head result."
+      },
+      "renderer_direct_build": {
+        "status": "passed",
+        "invocation_id": "2d28d788-e6a0-4836-b1be-15ef2ecedb54",
+        "url": "https://app.buildbuddy.io/invocation/2d28d788-e6a0-4836-b1be-15ef2ecedb54",
+        "source_sha": "351a06b05eec53b08104907df155f02164779574"
+      },
+      "benchmark_source_archive_tag_url": "https://github.com/agentydragon/ducktape/tree/agentplane-ci-five-ports-2026-11-14-c0f664f850",
+      "benchmark_source_archive_tag": "agentplane-ci-five-ports-2026-11-14-c0f664f850"
+    }
+  ],
+  "shared_suite_baseline": {
+    "source_commit": "a18b1ea43730e2cd93e6fc187ece230f1ce2dcf7",
+    "source_url": "https://github.com/agentydragon/ducktape/commit/a18b1ea43730e2cd93e6fc187ece230f1ce2dcf7",
+    "mis_scoped_initial_run": {
+      "invocation_id": "320f77a9-1452-420f-8532-3469a2e8f117",
+      "url": "https://app.buildbuddy.io/invocation/320f77a9-1452-420f-8532-3469a2e8f117",
+      "filter": "--test_tag_filters=-manual",
+      "result": "14 passed, 1 failed; the filter included live_openai_api target test_real_model",
+      "native_seconds": 403.172,
+      "disposition": "Exclude from ordinary-CI timing; preserve as a mis-scoped run with an unclassified live-model failure.",
+      "remote_source_reconstruction": {
+        "seed_commit": "c98ee8ab9c158ff130bc2ff4b73aba1531837ace",
+        "reverse_paths_to_expected_source": 281,
+        "expected_source_tree_verified": true,
+        "note": "The runner metadata's c98 seed alone is misleading; the verified submitted tree reconstructed the a18 source."
+      }
+    },
+    "filtered_run": {
+      "invocation_id": "f8142ad8-4a98-4cff-8cfb-cc4a3d31cc13",
+      "url": "https://app.buildbuddy.io/invocation/f8142ad8-4a98-4cff-8cfb-cc4a3d31cc13",
+      "filter": "--test_tag_filters=-manual,-live_openai_api",
+      "junit_cases": 51,
+      "passing_targets": "14/14",
+      "native_seconds": 422.031,
+      "physical_execution": {
+        "new_test_runner_actions": 15,
+        "distinct_labels": 14,
+        "vm_failure_then_retry": "The VM action failed with status 14 / exit -2 at 2026-11-15T01:31:15.796019Z, then the same action digest retried and passed at 2026-11-15T01:35:39.805956Z."
+      },
+      "limitations": [
+        "The 422.031s invocation includes a provider retry; it is not a clean first-attempt baseline for a causal speed comparison.",
+        "Firecracker CPU usage is missing.",
+        "The Firecracker worker-start delta is negative (-1.420455s); queue time is unknown and must not be interpreted as a valid nonnegative queue measurement."
+      ],
+      "command": "bbr --run_from_branch=devel --run_from_commit=a18b1ea43730e2cd93e6fc187ece230f1ce2dcf7 test //agentplane/system_tests/suites/... --test_tag_filters=-manual,-live_openai_api --nocache_test_results --flaky_test_attempts=1 --runs_per_test=1 --test_output=errors"
+    },
+    "repeat": {
+      "status": "passed",
+      "source_commit": "a18b1ea43730e2cd93e6fc187ece230f1ce2dcf7",
+      "invocation_id": "9e1f0bb6-f503-4a98-b9a4-92f67aa71b56",
+      "url": "https://app.buildbuddy.io/invocation/9e1f0bb6-f503-4a98-b9a4-92f67aa71b56",
+      "passing_targets": "14/14",
+      "canonical_junit_cases": 51,
+      "junit_failures_errors_skipped": 0,
+      "physical_execution": {
+        "new_test_runner_actions": 14,
+        "distinct_labels": 14,
+        "failures": 0,
+        "same_digest_retries": 0
+      },
+      "native_seconds": 364.438,
+      "critical_path_seconds": 333.8,
+      "observed_cpu_seconds": 5242.743844,
+      "cpu_observed_actions": "13/14",
+      "limitations": [
+        "Firecracker CPU is missing.",
+        "Queue aggregate is invalid because Firecracker timestamps are inverted."
+      ],
+      "note": "Fresh exact-source repeat passed all 51 canonical cases with 14/14 new physical TestRunner actions and no repeated digests/retries; see paired_comparison for the candidate comparison and missing-resource caveats.",
+      "command": "bbr --run_from_branch=devel --run_from_commit=a18b1ea43730e2cd93e6fc187ece230f1ce2dcf7 test //agentplane/system_tests/suites/... --test_tag_filters=-manual,-live_openai_api --nocache_test_results --flaky_test_attempts=1 --runs_per_test=1 --test_output=errors",
+      "filter": "--test_tag_filters=-manual,-live_openai_api --flaky_test_attempts=1 --runs_per_test=1 --nocache_test_results"
+    },
+    "paired_comparison": {
+      "comparison_summary_sha256": "1c57a06bc2032326ceb1b7828c06e879ddba98366279dd5f1051bd6485fc5f4a",
+      "case_multiset": "Exact match: 51 canonical JUnit cases, with no missing, duplicate, or extra cases.",
+      "elapsed_seconds": {
+        "baseline_repeat": 364.438,
+        "candidate": 322.298,
+        "observed_candidate_delta_seconds": -42.14,
+        "observed_candidate_delta_percent": -11.56
+      },
+      "observed_cpu_seconds": {
+        "baseline_repeat": 5242.743844,
+        "baseline_observed_actions": "13/14",
+        "candidate": 6233.626204,
+        "candidate_observed_actions": "16/17",
+        "observed_candidate_delta_percent": 18.9
+      },
+      "summed_execution_seconds": {
+        "baseline_repeat": 2542.447788,
+        "candidate": 3081.945122,
+        "observed_candidate_delta_percent": 21.2
+      },
+      "physical_attempts": "14/14 baseline-repeat actions and 17/17 candidate actions succeeded without same-digest retries.",
+      "limitations": [
+        "One case-matched pair is not causal or fleet evidence.",
+        "Firecracker CPU is missing from both totals, with different action counts observed.",
+        "Both queue aggregates are invalid because of inverted Firecracker timestamps.",
+        "Candidate source c0f664f850 differs from current PR head 351a06b0."
+      ],
+      "baseline_command": "bbr --run_from_branch=devel --run_from_commit=a18b1ea43730e2cd93e6fc187ece230f1ce2dcf7 test //agentplane/system_tests/suites/... --test_tag_filters=-manual,-live_openai_api --nocache_test_results --flaky_test_attempts=1 --runs_per_test=1 --test_output=errors",
+      "candidate_command": "bbr test //agentplane/system_tests/suites/... --test_tag_filters=-manual,-live_openai_api --nocache_test_results --flaky_test_attempts=1 --runs_per_test=1 --test_output=errors"
+    }
+  },
+  "qualification_follow_up": {
+    "issue_number": 16099,
+    "issue_url": "https://github.com/agentydragon/ducktape/issues/16099",
+    "next_measurements": [
+      "Preserve the clean exact-a18 repeat and all earlier physical failures/retries; do not treat the initial retry-bearing run as the clean baseline.",
+      "Run additional candidate comparisons with identical case identity, source tree, command flags and resource conditions; keep missing CPU and invalid queue deltas explicit.",
+      "Complete at least 30 pinned base/head pairs, 100 fresh contract executions, three busy windows, and a four-PR burst.",
+      "Measure exact-head workflow creation through all required checks, including reruns; report median, p90, physical failure rate, and resource consumption separately.",
+      "Retain current acceptance witnesses and the required gate/selector until complete qualification passes; no current single-run result qualifies a speed or policy change."
+    ],
+    "policy_changes": "No KVM, resource, or concurrency changes; no selector substitutions or optional tests. Ports partition target boundaries while retaining required acceptance coverage and the existing selection policy.",
+    "performance_disposition": "Compared one clean exact-a18 repeat with an exact 51-case match, the c0f664f850 candidate was 11.56% lower in elapsed time, while observed CPU was 18.9% higher and summed execution was 21.2% higher. Firecracker CPU is missing from both totals and queue timestamps are invalid. This is one comparison, not causal or fleet evidence; current PR head differs from the measured candidate source.",
+    "issue_comment_url": "https://github.com/agentydragon/ducktape/issues/16099#issuecomment-6887644871",
+    "issue_comment_summary": "Current measurement update records the clean exact-source repeat, candidate resource tradeoff, failed/invalid resource observations, and further qualification plan."
+  }
+}

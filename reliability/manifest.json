@@ -5,7 +5,7 @@
   "published_at_utc": "2026-11-13T03:43:50.005100+00:00",
   "attribution": "not collected",
   "previous_report_commit": "8032ec1140281be66ee934b69bb71b25f892be82",
-  "report_sha256": "4864af4b5293f4079087628ae6d12c09c7513acc9da2d2c319563e3614db9521",
+  "report_sha256": "74b091fdf5cc291354be469d3cded0505eaaffad04f99b46cf17b40dc22f8768",
   "evidence_sha256": "d53dd888853f2c3a8e53a7a8fc1427a737c989491a5a3185e00cb101b13ebaed",
   "supplemental_followup_observed_at_utc": "2026-11-12T22:55:00Z",
   "client_admission_source_commit": "28dae5ef3ef397393ed4df7f18425d3502ba9f77",
@@ -95,5 +95,13 @@
     "source_head": "d642132a68104a4cfe5a76af15bbf7c7272d8591",
     "source_base": "aa8d1061adb9c7f7fec5db27de4341746f76bac5",
     "scope": "Supplemental same-source Firecracker screen, diagnosed transient route failure, validated bounded repair, rebase and next VM-tail probe. Original fleet windows, populations, rates and denominators unchanged."
+  },
+  "five_port_dispatch_provenance": {
+    "dispatch_evidence": "../agentplane-test-architecture/five-port-dispatch.json",
+    "dispatch_evidence_sha256": "b646f8992ccd774f512be2348679c5dbff2d4764a934919414fcef8e5db3838b",
+    "visual_dispatch_record_sha256_at_capture": "d0544c6bc1636b7adfdfeb0ac01b62f58763cb706ab9c9f82520d0ebc6259c71",
+    "visual_validation": "visual-validation.json#current_five_port_dispatch_refresh",
+    "page_sha256": "74b091fdf5cc291354be469d3cded0505eaaffad04f99b46cf17b40dc22f8768",
+    "historical_windows_and_denominators_unchanged": true
   }
 }

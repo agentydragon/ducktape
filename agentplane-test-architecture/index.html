@@ -165,20 +165,26 @@
         const [selected, setSelected] = useState("Runtime");
         const [data, setData] = useState(null);
         const [manifest, setManifest] = useState(null);
+        const [dispatch, setDispatch] = useState(null);
         const [error, setError] = useState(null);
         useEffect(() => {
           const controller = new AbortController();
           Promise.all(
-            ["evidence.json", "manifest.json"].map(async (path) => {
-              const response = await fetch(path, { signal: controller.signal });
-              if (!response.ok)
-                throw new Error(`${path}: HTTP ${response.status}`);
-              return response.json();
-            }),
+            ["evidence.json", "manifest.json", "five-port-dispatch.json"].map(
+              async (path) => {
+                const response = await fetch(path, {
+                  signal: controller.signal,
+                });
+                if (!response.ok)
+                  throw new Error(`${path}: HTTP ${response.status}`);
+                return response.json();
+              },
+            ),
           )
-            .then(([e, m]) => {
+            .then(([e, m, d]) => {
               setData(e);
               setManifest(m);
+              setDispatch(d);
             })
             .catch((e) => {
               if (e.name !== "AbortError") setError(String(e));
@@ -200,6 +206,80 @@
         const iteration8 = data?.iteration8;
         const iteration7 = data?.iteration7;
         const iteration5Cohort = iteration5?.historical_replay_cohort;
+        const portCards = (dispatch?.ports || []).map((port) => {
+          const merged = port.pr.state === "merged";
+          const draft = port.pr.is_draft;
+          const ciStatus =
+            port.required_ci_state?.status ||
+            port.current_pr_ci?.status ||
+            port.required_ci?.status ||
+            port.latest_ordinary_tests?.status ||
+            "unknown";
+          const ciLabel =
+            ciStatus === "passed"
+              ? "checks passed"
+              : ciStatus === "in_progress" || ciStatus === "pending"
+                ? "checks in progress"
+                : ciStatus === "failure" || ciStatus === "failed"
+                  ? "checks failed"
+                  : "checks unknown";
+          const status = merged
+            ? "Merged"
+            : `${draft ? "Draft" : "Open"} · ${ciLabel}`;
+          const color = merged
+            ? "teal"
+            : ciStatus === "failure" || ciStatus === "failed"
+              ? "red"
+              : draft || ciStatus === "in_progress" || ciStatus === "pending"
+                ? "orange"
+                : "blue";
+          const testEvidence =
+            port.focused_validation ||
+            port.direct_validation ||
+            port.current_validation;
+          const ciEvidence =
+            port.required_ci || port.required_ci_state || port.current_pr_ci;
+          const evidenceLinks = [
+            testEvidence?.url && ["Focused validation", testEvidence.url],
+            ciEvidence?.run_url && ["GitHub Actions", ciEvidence.run_url],
+            (ciEvidence?.buildbuddy_url ||
+              ciEvidence?.ordinary_tests_url ||
+              ciEvidence?.url ||
+              port.latest_ordinary_tests?.url) && [
+              "BuildBuddy",
+              ciEvidence.buildbuddy_url ||
+                ciEvidence.ordinary_tests_url ||
+                ciEvidence.url ||
+                port.latest_ordinary_tests.url,
+            ],
+          ].filter(Boolean);
+          return html`<${Paper}
+            key=${port.number}
+            withBorder
+            radius="md"
+            p="md"
+          >
+            <${Group} justify="space-between" align="flex-start" gap="xs">
+              <${Title} order=${3}>${port.number}. ${port.name}<//>
+              <${Badge} color=${color} variant="light">${status}<//>
+            <//>
+            <${Group} gap="xs" mt="xs" wrap="wrap">
+              <${Anchor} href=${port.pr.url}>PR #${port.pr.number}<//>
+              <${Text} size="sm" c="dimmed">·<//>
+              <${Anchor} href=${port.pr.head_url}
+                >${port.pr.head_sha.slice(0, 10)}<//
+              >
+            <//>
+            ${p(port.summary)}
+            ${
+              evidenceLinks.length
+                ? html`<${Group} gap="md" wrap="wrap"
+                    >${evidenceLinks.map(([label, href]) => html`<${Anchor} key=${label} href=${href}>${label}<//>`)}<//
+                  >`
+                : null
+            }
+          <//>`;
+        });
         const iteration5PairRows = (iteration5Cohort?.pairs || []).map(
           (pair) => [
             html`<${Stack} gap=${0}>
@@ -877,6 +957,7 @@
           >
           <${Group} component="nav" aria-label="Plan contents" gap="md" my="lg">
             ${[
+              ["port-dispatch", "Five-port dispatch"],
               ["iteration16", "Iteration 16 current evidence"],
               ["iteration15", "Historical iteration 15"],
               ["iteration14", "Historical iteration 14"],
@@ -917,6 +998,105 @@
             six slots remain manual. This is one pair, not a complete-feedback
             median, p90, or flake result. The synthetic 29.3% screen remains
             historical. Keep the required gate and contract coverage in place.
+          <//>
+          <${Section}
+            id="port-dispatch"
+            title="Current five-port dispatch and qualification follow-up"
+          >
+            ${p("Five narrowly scoped test and fixture ports have independent PRs. They preserve required acceptance coverage and the existing selection policy while partitioning target boundaries; no tests are made optional. No KVM, resource, or concurrency policy changed, and historical fleet windows and denominators remain unchanged.")}
+            ${
+              dispatch
+                ? html`<${SimpleGrid} cols=${{ base: 1, md: 2 }} spacing="sm"
+                    >${portCards}<//
+                  >`
+                : p("Loading current PR and validation status…")
+            }
+            ${
+              dispatch?.ports?.[3]?.native_stack
+                ? p(
+                    "GitHub rejected the attempted native-stack registration with HTTP 422 while #16480 had user-enabled auto-merge; that setting was preserved. PR #16480 has since merged, and #16489 was rebased onto devel. No native stack was registered and no dependency remains.",
+                  )
+                : null
+            }
+            <${Title} order=${3} mt="lg"
+              >Shared-suite timing and resource evidence<//
+            >
+            ${p(html`The baseline and candidate ran the same 51 canonical JUnit cases, but physical and resource records must stay beside elapsed time. The original 422.031-second filtered baseline includes a VM provider failure and retry; it is not a clean first-attempt comparison. The fresh exact-a18 repeat is clean, while the candidate was measured at c0f664f850, earlier than current PR #16489 head <${Anchor} href=${dispatch?.ports?.[4]?.pr?.head_url}>${dispatch?.ports?.[4]?.pr?.head_sha?.slice(0, 10)}<//>.`)}
+            <${Rows}
+              headers=${["Run", "Source and cases", "Physical execution", "Elapsed and resource observations"]}
+              rows=${[
+                [
+                  "Initial filtered baseline",
+                  html`<${Anchor}
+                    href=${dispatch?.shared_suite_baseline?.filtered_run?.url}
+                    >51 cases · 14/14 targets<//
+                  >`,
+                  "15 new actions / 14 labels; one VM action failed, then the same digest retried and passed.",
+                  "422.031s; provider retry means this is not a clean causal baseline.",
+                ],
+                [
+                  "Fresh exact-source baseline",
+                  html`<${Anchor}
+                    href=${dispatch?.shared_suite_baseline?.repeat?.url}
+                    >51 cases · 14/14 targets<//
+                  >`,
+                  "14 physical actions; all passed with no repeated digests or retries.",
+                  "364.438s elapsed; 333.80s critical path. CPU observed for 13/14 actions; Firecracker CPU missing.",
+                ],
+                [
+                  "Partition candidate",
+                  html`<${Anchor}
+                    href=${dispatch?.ports?.[4]?.current_validation?.url}
+                    >51 cases · 17/17 targets<//
+                  >`,
+                  html`17 physical actions; all passed with no retries.
+                    Benchmark source
+                    <${Anchor}
+                      href=${`${repo}/commit/${dispatch?.ports?.[4]?.current_validation?.source_sha || "c0f664f850fcb9a37fdb0e7dc93318d4512b35eb"}`}
+                      >c0f664f850<//
+                    >; current PR head
+                    <${Anchor}
+                      href=${dispatch?.ports?.[4]?.pr?.head_url || "https://github.com/agentydragon/ducktape/pull/16489"}
+                      >${dispatch?.ports?.[4]?.pr?.head_sha?.slice(0, 10) || "pending"}<//
+                    >.`,
+                  "322.298s elapsed, 42.140s (11.56%) below the single clean repeat; observed CPU was 18.9% higher and summed execution was 21.2% higher. CPU is missing for Firecracker; queue aggregates are invalid from inverted timestamps.",
+                ],
+              ]}
+              minWidth=${920}
+            />
+            ${p("The elapsed difference is a single observed pair, not a qualified speed or fleet result. Candidate CPU is observed on 16/17 actions versus 13/14 on baseline, so totals have a paired missing Firecracker observation; both queue aggregates are invalid. Exact-head CI passes on #16489, which remains draft while the required broader qualification is tracked.")}
+            <${Rows}
+              headers=${["Follow-up", "Required evidence"]}
+              rows=${(
+                dispatch?.qualification_follow_up?.next_measurements || []
+              ).map((item, i) => [
+                [
+                  "Further matched runs",
+                  "Case and resource parity",
+                  "Qualification sample",
+                  "Complete-feedback latency",
+                  "Policy hold",
+                ][i] || "Measurement",
+                item,
+              ])}
+            />
+            <${Group} gap="md" wrap="wrap" mt="sm">
+              <${Anchor}
+                href=${dispatch?.ports?.[4]?.benchmark_source_archive_tag_url || dispatch?.ports?.[4]?.pr?.url || "https://github.com/agentydragon/ducktape/pull/16489"}
+                >Frozen benchmark source archive<//
+              >
+              <${Anchor}
+                href=${dispatch?.qualification_follow_up?.issue_url || issue}
+                >Qualification tracker #16099<//
+              >
+              <${Anchor}
+                href=${dispatch?.qualification_follow_up?.issue_comment_url || dispatch?.qualification_follow_up?.issue_url || issue}
+                >Latest measurement update<//
+              >
+              <${Anchor} href="five-port-dispatch.json"
+                >Curated five-port record<//
+              >
+            <//>
           <//>
           <${Section}
             id="iteration16"
