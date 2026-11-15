@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
@@ -35,7 +34,7 @@ func TestWorkloadModelConfigGRPCUsesVerifiedTLSHTTPPeer(t *testing.T) {
 	service := &countedModelConfigService{delegate: &modelConfigService{
 		models: map[string]modelConfig{"configured": {Model: "configured", TotalContextBudgetTokens: 8192}},
 	}}
-	grpcServer := newModelConfigServer(auth.AnySubject(svidCallers(t, resolver, serverCredentials)), service)
+	grpcServer := newModelConfigServer(auth.AnySubject(resolver), service)
 	address := serveWorkloadModelConfigHTTP2(t, grpcServer, serverCredentials)
 	client := newWorkloadModelConfigGRPCClient(t, address, clientCredentials, clientCredentials)
 
@@ -62,7 +61,7 @@ func TestWorkloadModelConfigGRPCServesAnIdentityCaller(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	grpcServer := newModelConfigServer(auth.AnySubject(svidCallers(t, svid, serverCredentials)), &modelConfigService{
+	grpcServer := newModelConfigServer(auth.AnySubject(svid), &modelConfigService{
 		models: map[string]modelConfig{"configured": {Model: "configured", TotalContextBudgetTokens: 8192}},
 	})
 	client := newWorkloadModelConfigGRPCClient(t, serveWorkloadModelConfigHTTP2(t, grpcServer, serverCredentials), clientCredentials, clientCredentials)
@@ -130,7 +129,7 @@ func TestWorkloadModelConfigGRPCRejectsUntrustedExpiredAndUnacceptedLeavesBefore
 			service := &countedModelConfigService{delegate: &modelConfigService{models: map[string]modelConfig{
 				"configured": {Model: "configured", TotalContextBudgetTokens: 8192},
 			}}}
-			grpcServer := newModelConfigServer(auth.AnySubject(svidCallers(t, resolver, serverCredentials)), service)
+			grpcServer := newModelConfigServer(auth.AnySubject(resolver), service)
 			address := serveWorkloadModelConfigHTTP2(t, grpcServer, serverCredentials)
 			client := newWorkloadModelConfigGRPCClient(t, address, trustedClientCredentials, invalidClientCredentials)
 			if test.mutate != nil {
@@ -156,24 +155,6 @@ func TestWorkloadModelConfigGRPCRejectsUntrustedExpiredAndUnacceptedLeavesBefore
 	}
 }
 
-// svidCallers is the listener's resolver accepting SVIDs alone.
-func svidCallers(t *testing.T, svid *auth.SVIDResolver, serverCredentials peertls.Config) *auth.Resolver {
-	t.Helper()
-	callers, err := auth.NewResolver(api.TokenReviews(), testAudience, []string{testNamespace})
-	if err != nil {
-		t.Fatal(err)
-	}
-	callers, err = callers.WithListenerAuthentication(listener.Config{
-		ListenAddress: ":443",
-		TLS:           &listener.TLS{CertFile: serverCredentials.CertFile, KeyFile: serverCredentials.KeyFile},
-		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: serverCredentials.CAFile}},
-	}, svid)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return callers
-}
-
 type countedModelConfigService struct {
 	modelconfigpb.UnimplementedModelConfigServiceServer
 	delegate modelconfigpb.ModelConfigServiceServer
@@ -194,7 +175,7 @@ func serveWorkloadModelConfigHTTP2(
 	serverCredentials peertls.Config,
 ) string {
 	t.Helper()
-	tlsConfig, err := serverCredentials.WorkloadServerTLSConfig(peertls.LLMIngressURI)
+	tlsConfig, err := serverCredentials.WorkloadServerTLSConfigWithServices(peertls.LLMIngressURI, false)
 	if err != nil {
 		t.Fatal(err)
 	}
