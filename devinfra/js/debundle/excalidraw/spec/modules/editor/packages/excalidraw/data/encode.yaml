@@ -1,0 +1,45 @@
+source_matches:
+  - match: |
+      var ANYTHING = ANYTHING,
+        byteStringToArrayBuffer = (byteString) => {
+          let buffer = new ArrayBuffer(byteString.length),
+            bufferView = new Uint8Array(buffer);
+          for (let i = 0, len = byteString.length; i < len; i++)
+            bufferView[i] = byteString.charCodeAt(i);
+          return buffer;
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - byteStringToArrayBuffer
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        byteStringToString = (byteString) =>
+          new TextDecoder("utf-8").decode(byteStringToArrayBuffer(byteString)),
+        ANYTHING = ANYTHING;
+    bindings:
+      - byteStringToString
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        base64ToString = (base64, isByteString = EXPR) =>
+          isByteString
+            ? window.atob(base64)
+            : byteStringToString(window.atob(base64)),
+        ANYTHING = ANYTHING;
+    bindings:
+      - base64ToString
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        decode = (data) => {
+          let decoded;
+          switch (data.encoding) {
+            case "bstring": STMT_LIST;
+            default: STMT_LIST;
+          }
+          STMT_LIST;
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - decode

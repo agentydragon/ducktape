@@ -351,6 +351,42 @@ async def test_blob_and_file_helpers(playwright_driver: Playwright, origin: str)
         }
 
 
+async def test_data_decoding(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const { base64ToString, decode } = await import('./editor/packages/excalidraw/data/encode.js');
+                const plain = 'aGVsbG8g55WM';
+                const compressed = atob('eJzLSM3JyVd4PrUHABNrBD0=');
+                let invalid;
+                try {
+                    decode({encoding: 'unknown'});
+                } catch (error) {
+                    invalid = error.message;
+                }
+                return {
+                    unicode: base64ToString(plain),
+                    bytes: [...base64ToString(plain, true)].map(char => char.charCodeAt(0)),
+                    plain: decode({encoding: 'bstring', compressed: false, encoded: atob(plain)}),
+                    compressed: decode({encoding: 'bstring', compressed: true, encoded: compressed}),
+                    invalid,
+                };
+            }"""
+        )
+        assert result == {
+            "unicode": "hello 界",
+            "bytes": [104, 101, 108, 108, 111, 32, 231, 149, 140],
+            "plain": "hello 界",
+            "compressed": "hello 界",
+            "invalid": 'decode: unknown encoding "unknown"',
+        }
+
+
 async def test_library_class(playwright_driver: Playwright, origin: str) -> None:
     async with deterministic_browser_context(
         playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
