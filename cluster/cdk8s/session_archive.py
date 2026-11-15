@@ -143,9 +143,7 @@ def _web(chart: Chart) -> None:
         select=False,
         enable_service_links=True,
         docker_registry_auth=pull_credentials.forgejo_images_creds_secret_ref(chart, "forgejo-images-creds-ref"),
-        security_context=PodSecurityContextProps(
-            ensure_non_root=True, user=_UID, group=_UID, fs_group=_UID
-        ),
+        security_context=PodSecurityContextProps(ensure_non_root=True, user=_UID, group=_UID, fs_group=_UID),
     )
     # Deployment selectors are immutable, so keep the existing labels.
     workload.select(LabelSelector.of(labels=_WEB_LABELS))
@@ -165,9 +163,7 @@ def _web(chart: Chart) -> None:
         security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
     )
     # This core typed container is also shared by the importer CronJobs below.
-    ApiObject.of(workload).add_json_patch(
-        JsonPatch.add("/spec/template/spec/initContainers", [_migration_container()])
-    )
+    ApiObject.of(workload).add_json_patch(JsonPatch.add("/spec/template/spec/initContainers", [_migration_container()]))
     pod_policy.harden(workload)
     pod_policy.place(workload, node_scheduling.HIL_OVH)
 
