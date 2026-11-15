@@ -1844,6 +1844,42 @@ mod tests {
         });
     }
 
+    fn collect_test_program_summary(
+        artifact: &ChunkBundle,
+        export_purity_assertions: &BTreeMap<String, ChunkExportPurity>,
+    ) -> ProgramSummary {
+        let indexes = ArtifactIndexes::build(artifact).expect("build indexes");
+        let no_options = BTreeMap::new();
+        let host_behavior = spec::HostBehavior::default();
+        collect_program_summary(
+            artifact,
+            &indexes,
+            &AnalysisProjection::new(
+                &no_options,
+                export_purity_assertions,
+                &host_behavior,
+                None,
+                BTreeMap::new(),
+                analysis_projection::AnalysisSourceSites::default(),
+                BTreeMap::new(),
+            )
+            .expect("empty projection is valid"),
+            ProgramSummaryOptions {
+                graph_provenance: None,
+                vendor_plan: None,
+                replacement_packages: &BTreeMap::new(),
+            },
+            None,
+            &reparse_unretained_entries(
+                artifact,
+                None,
+                &analysis::diagnostics::Diagnostics::default(),
+            ),
+            &analysis::diagnostics::Diagnostics::default(),
+        )
+        .expect("program summary analysis succeeds")
+    }
+
     #[test]
     fn request_only_host_loading_preserves_direct_esm_primitive_facts() {
         js_ast::with_swc_globals(|| {
@@ -1888,37 +1924,7 @@ mod tests {
                     ),
                     ("static/peer", provider),
                 ]);
-                let indexes = ArtifactIndexes::build(&artifact).expect("build indexes");
-                let no_options = BTreeMap::new();
-                let no_export_purity = BTreeMap::new();
-                let host_behavior = spec::HostBehavior::default();
-                let facts = collect_program_summary(
-                    &artifact,
-                    &indexes,
-                    &AnalysisProjection::new(
-                        &no_options,
-                        &no_export_purity,
-                        &host_behavior,
-                        None,
-                        BTreeMap::new(),
-                        analysis_projection::AnalysisSourceSites::default(),
-                        BTreeMap::new(),
-                    )
-                    .expect("empty projection is valid"),
-                    ProgramSummaryOptions {
-                        graph_provenance: None,
-                        vendor_plan: None,
-                        replacement_packages: &BTreeMap::new(),
-                    },
-                    None,
-                    &reparse_unretained_entries(
-                        &artifact,
-                        None,
-                        &analysis::diagnostics::Diagnostics::default(),
-                    ),
-                    &analysis::diagnostics::Diagnostics::default(),
-                )
-                .expect("program summary analysis succeeds");
+                let facts = collect_test_program_summary(&artifact, &BTreeMap::new());
                 let provider_chunk = artifact
                     .chunks
                     .iter()
@@ -1974,37 +1980,7 @@ mod tests {
                 "internal.js",
                 "export const value = {};",
             );
-            let indexes = ArtifactIndexes::build(&artifact).expect("build indexes");
-            let no_options = BTreeMap::new();
-            let no_export_purity = BTreeMap::new();
-            let host_behavior = spec::HostBehavior::default();
-            let facts = collect_program_summary(
-                &artifact,
-                &indexes,
-                &AnalysisProjection::new(
-                    &no_options,
-                    &no_export_purity,
-                    &host_behavior,
-                    None,
-                    BTreeMap::new(),
-                    analysis_projection::AnalysisSourceSites::default(),
-                    BTreeMap::new(),
-                )
-                .expect("empty projection is valid"),
-                ProgramSummaryOptions {
-                    graph_provenance: None,
-                    vendor_plan: None,
-                    replacement_packages: &BTreeMap::new(),
-                },
-                None,
-                &reparse_unretained_entries(
-                    &artifact,
-                    None,
-                    &analysis::diagnostics::Diagnostics::default(),
-                ),
-                &analysis::diagnostics::Diagnostics::default(),
-            )
-            .expect("program summary analysis succeeds");
+            let facts = collect_test_program_summary(&artifact, &BTreeMap::new());
 
             let app_values = facts
                 .values
@@ -2045,36 +2021,7 @@ mod tests {
                 .callback_factory_exports
                 .insert("factory".to_string());
             let assertions = BTreeMap::from([("static/peer".to_string(), assertion)]);
-            let indexes = ArtifactIndexes::build(&artifact).expect("build indexes");
-            let no_options = BTreeMap::new();
-            let host_behavior = spec::HostBehavior::default();
-            let facts = collect_program_summary(
-                &artifact,
-                &indexes,
-                &AnalysisProjection::new(
-                    &no_options,
-                    &assertions,
-                    &host_behavior,
-                    None,
-                    BTreeMap::new(),
-                    analysis_projection::AnalysisSourceSites::default(),
-                    BTreeMap::new(),
-                )
-                .expect("empty projection is valid"),
-                ProgramSummaryOptions {
-                    graph_provenance: None,
-                    vendor_plan: None,
-                    replacement_packages: &BTreeMap::new(),
-                },
-                None,
-                &reparse_unretained_entries(
-                    &artifact,
-                    None,
-                    &analysis::diagnostics::Diagnostics::default(),
-                ),
-                &analysis::diagnostics::Diagnostics::default(),
-            )
-            .expect("program summary analysis succeeds");
+            let facts = collect_test_program_summary(&artifact, &assertions);
 
             assert!(
                 facts
