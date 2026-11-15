@@ -3137,7 +3137,7 @@ data:
           "ca_file": "/run/agentplane/workload-trust/ca-certificates.crt"
         }
       },
-      "listen": "0.0.0.0:8080",
+      "health_listen": "0.0.0.0:8081",
       "listen_tls": {
         "listen": "0.0.0.0:8083",
         "cert_file": "/run/agentplane/workload-tls/tls.crt",
@@ -3558,21 +3558,21 @@ spec:
           livenessProbe:
             failureThreshold: 3
             grpc:
-              port: 8080
+              port: 8081
             initialDelaySeconds: 20
             periodSeconds: 30
           name: central-sampler
           ports:
-            - containerPort: 8080
-              name: grpc
-              protocol: TCP
             - containerPort: 8083
               name: grpc-tls
+              protocol: TCP
+            - containerPort: 8081
+              name: health
               protocol: TCP
           readinessProbe:
             failureThreshold: 3
             grpc:
-              port: 8080
+              port: 8081
             initialDelaySeconds: 3
             periodSeconds: 10
           resources:
@@ -3593,7 +3593,7 @@ spec:
           startupProbe:
             failureThreshold: 60
             grpc:
-              port: 8080
+              port: 8081
             initialDelaySeconds: 0
             periodSeconds: 5
           volumeMounts:
@@ -3684,10 +3684,6 @@ metadata:
 spec:
   externalIPs: []
   ports:
-    - name: grpc
-      port: 8080
-      protocol: TCP
-      targetPort: 8080
     - name: grpc-tls
       port: 8083
       protocol: TCP
@@ -3820,8 +3816,6 @@ spec:
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
-            - port: "8080"
-              protocol: TCP
             - port: "8083"
               protocol: TCP
 ---

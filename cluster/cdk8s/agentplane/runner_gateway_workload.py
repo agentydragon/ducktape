@@ -259,7 +259,7 @@ class RunnerGateway(Construct):
         assert sessions_tls.ca_file is not None
         central_sampler_target = (
             CentralSamplerTarget(
-                target=central_sampler.tls_target(namespace),
+                target=central_sampler.target(namespace),
                 tls=ClientTLS(
                     ca_file=Path(sessions_tls.ca_file),
                     server_uri=CENTRAL_SAMPLER_URI,
@@ -422,7 +422,7 @@ class RunnerGateway(Construct):
                 EgressRule.to_endpoints(
                     environment_sandbox.pods(namespace).cilium, environment_sandbox.ENVIRONMENT_RUNTIME_SERVICE_PORT
                 ),
-                *([central_sampler.tls_service(namespace).egress()] if self.env.central_sampler is not None else []),
+                *([central_sampler.service(namespace).egress()] if self.env.central_sampler is not None else []),
             ],
         )
 

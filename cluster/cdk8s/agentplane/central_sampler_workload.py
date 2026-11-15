@@ -45,6 +45,7 @@ from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.config_format import json_config
 from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
+from cluster.cdk8s.service_ref import Port
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import env_name
@@ -75,7 +76,6 @@ class CentralSampler(Construct):
         namespace = env.namespace
         self.env = env
         self.service = central_sampler.service(namespace)
-        self.tls_service = central_sampler.tls_service(namespace)
         self.llm_ingress = llm_ingress.service(namespace)
         self.history_ingress = history_service.service(namespace)
         self.runner_gateway = runner_gateway.service(namespace)
@@ -89,9 +89,9 @@ class CentralSampler(Construct):
         )
 
         settings = Settings(
-            listen=f"0.0.0.0:{self.service.pod_port}",
+            health_listen=f"0.0.0.0:{central_sampler.HEALTH_PORT}",
             listen_tls=ServerTLSListener(
-                listen=f"0.0.0.0:{self.tls_service.pod_port}",
+                listen=f"0.0.0.0:{self.service.pod_port}",
                 cert_file=Path(workload_tls.CERT_FILE),
                 key_file=Path(workload_tls.KEY_FILE),
                 client_ca_file=Path(workload_tls.TRUST_BUNDLE_FILE),
@@ -133,18 +133,19 @@ class CentralSampler(Construct):
         workload = add_service_workload(
             self,
             env,
-            serves=[self.service, self.tls_service],
+            serves=[self.service],
             container=central_sampler.NAME,
             image=_IMAGE,
+            extra_ports=[Port(name="health", number=central_sampler.HEALTH_PORT).container_port()],
             env_variables={
                 config_env: EnvValue.from_value(_CONFIG_PATH),
                 database_env: database_url,
                 "SSL_CERT_FILE": EnvValue.from_value("/var/run/public-web-pki/ca-certificates.crt"),
             },
-            readiness=grpc_probe(port=self.service.pod_port, initial_delay_seconds=3, period_seconds=10),
-            liveness=grpc_probe(port=self.service.pod_port, initial_delay_seconds=20, period_seconds=30),
+            readiness=grpc_probe(port=central_sampler.HEALTH_PORT, initial_delay_seconds=3, period_seconds=10),
+            liveness=grpc_probe(port=central_sampler.HEALTH_PORT, initial_delay_seconds=20, period_seconds=30),
             startup=grpc_probe(
-                port=self.service.pod_port, initial_delay_seconds=0, period_seconds=5, failure_threshold=60
+                port=central_sampler.HEALTH_PORT, initial_delay_seconds=0, period_seconds=5, failure_threshold=60
             ),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(100), limit=Cpu.millis(2000)),
@@ -224,6 +225,6 @@ class CentralSampler(Construct):
             "network-policy",
             metadata=ApiObjectMetadata(name=central_sampler.NAME, namespace=namespace),
             endpoint_selector=self.service.pods.selector,
-            ingress=[runner_gateway.service(namespace).pods.admit(self.service.pod_port, self.tls_service.pod_port)],
+            ingress=[runner_gateway.service(namespace).pods.admit(self.service.pod_port)],
             egress=egress,
         )

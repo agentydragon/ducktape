@@ -87,9 +87,10 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     )
     service_ports = {port["name"]: port for port in service["ports"]}
     container_ports = {port["name"]: port["containerPort"] for port in container["ports"]}
-    assert service_ports["grpc"]["targetPort"] == container_ports["grpc"] == central_sampler.PORT
-    assert service_ports["grpc-tls"]["targetPort"] == container_ports["grpc-tls"] == central_sampler.TLS_PORT
-    assert container["startupProbe"]["grpc"]["port"] == container["ports"][0]["containerPort"]
+    assert set(service_ports) == {"grpc-tls"}
+    assert service_ports["grpc-tls"]["targetPort"] == container_ports["grpc-tls"] == central_sampler.PORT
+    assert container_ports["health"] == central_sampler.HEALTH_PORT
+    assert container["startupProbe"]["grpc"]["port"] == central_sampler.HEALTH_PORT
     env = {entry["name"]: entry for entry in container["env"]}
     database = env["AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL"]["valueFrom"]["secretKeyRef"]
     assert database == {"key": "uri", "name": "postgres-central-sampler"}
@@ -127,9 +128,10 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     assert config["audience"] == central_sampler.TOKEN_AUDIENCE
     assert config["allowed_accounts"] == [f"{namespace}/{runner_gateway.NAME}"]
     assert config["service_callers"] == [GATEWAY_SESSIONS_URI]
-    assert config["listen"] == f"0.0.0.0:{central_sampler.PORT}"
+    assert "listen" not in config
+    assert config["health_listen"] == f"0.0.0.0:{central_sampler.HEALTH_PORT}"
     assert config["listen_tls"] == {
-        "listen": f"0.0.0.0:{central_sampler.TLS_PORT}",
+        "listen": f"0.0.0.0:{central_sampler.PORT}",
         "cert_file": workload_tls.CERT_FILE,
         "key_file": workload_tls.KEY_FILE,
         "client_ca_file": workload_tls.TRUST_BUNDLE_FILE,
@@ -196,7 +198,7 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
         _resource(staging_manifests, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"]
     )
     target = gateway["central_sampler"]
-    assert target["target"] == central_sampler.tls_target(namespace)
+    assert target["target"] == central_sampler.target(namespace)
     assert "token_file" not in target
     assert target["tls"]["server_uri"] == CENTRAL_SAMPLER_URI
     assert target["tls"]["client_uri"] == GATEWAY_SESSIONS_URI
@@ -219,16 +221,9 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     assert llm["policy_namespace"] == namespace
     assert llm["central_sampler_accounts"] == [f"{namespace}/{central_sampler.NAME}"]
 
-    assert _admits(
-        _resource(staging_manifests, "CiliumNetworkPolicy", central_sampler.NAME)["spec"],
-        source=runner_gateway.NAME,
-        port=central_sampler.PORT,
-    )
-    assert _admits(
-        _resource(staging_manifests, "CiliumNetworkPolicy", central_sampler.NAME)["spec"],
-        source=runner_gateway.NAME,
-        port=central_sampler.TLS_PORT,
-    )
+    sampler_policy = _resource(staging_manifests, "CiliumNetworkPolicy", central_sampler.NAME)["spec"]
+    assert not _admits(sampler_policy, source=runner_gateway.NAME, port=8080)
+    assert _admits(sampler_policy, source=runner_gateway.NAME, port=central_sampler.PORT)
     assert _admits(
         _resource(staging_manifests, "CiliumNetworkPolicy", runner_gateway.NAME)["spec"],
         source=central_sampler.NAME,
