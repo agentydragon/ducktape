@@ -3878,8 +3878,6 @@ spec:
       namespace: ducktape-flux
     - name: crossplane-sso-providers
       namespace: ducktape-flux
-    - name: seaweedfs-operator
-      namespace: ducktape-flux
     - name: flux-image-automation-forgejo
       namespace: ducktape-flux
   interval: 10m

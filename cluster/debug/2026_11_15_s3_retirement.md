@@ -45,10 +45,25 @@ protection finalizer intact.
 Each filer independently reported the identity present with zero keys and the
 retired bucket and related collections absent. The reads repeated after ten
 seconds with the same results. The Action exited 0 without output truncation.
-This permits removal of the dedicated identity. After its finalizer completes,
-verify identity and key absence through both filers again before removing the
-unused tenant admission grant. Preserve the actual Restic repository and its
-credentials.
+The identity-only PR [#16670](https://github.com/agentydragon/ducktape/pull/16670)
+merged at 11:06:55. Final read-only Action
+`6b50427b-2348-41fd-b62a-2120584072c5` passed at 11:11:28 with exit 0 and no
+output truncation. It found zero identity or credential claimants and zero
+Bucket/access/policy/consumer writers. The owned Secret was absent. Both filers
+independently reported the user, all keys, bucket and related collections absent,
+then repeated the same results after ten seconds. All four retiring Flux owners
+were Ready with no retired resources in their inventories.
+
+The active Restic deployment was updated and available at 1/1 replicas, the
+archive at 2/2, and the archive CNPG cluster was Ready. The rugged importer last
+succeeded at 11:07:19 and wyrm2 at 11:09:16. Iguana had no recorded
+`lastSuccessfulTime`; this check does not establish its import path as healthy.
+
+These completed gates permit removal of only the unused `session-backup`
+admission from the shared tenant grant and the archive's obsolete Seaweed
+operator dependency. Preserve all 24 other admitted tenants and every other
+Flux dependency. The actual Restic repository, credentials, delivery Secret,
+PVC and service remain active.
 
 ## Mimir, Tempo and Langfuse: obsolete keys revoked
 
@@ -77,9 +92,11 @@ Only after every probe and the exact two-key IAM preconditions passed did the
 Action revoke the three obsolete keys. Independent reads through both filers
 confirmed exactly one active current key and no obsolete key for every tenant,
 then repeated those checks after ten seconds. The Action exited 0 with no output
-truncation. No credentials were printed or persisted. This permits removal of the
-three legacy rollback Secret resources; preserve all existing data buckets,
-current credentials, identities and grants.
+truncation. No credentials were printed or persisted. The rollback Secret removal
+PR [#16665](https://github.com/agentydragon/ducktape/pull/16665) merged at 10:57:28.
+The final 11:11:28 read confirmed all three legacy Secrets absent and their Flux
+owners Ready with no retired inventory. All existing data buckets, current
+credentials and identities remain preserved.
 
 Initial read-only Action receipts: `41063c2d-ea07-4b7e-b5c5-283bc9490508`
 (inventory) and `6372eb74-3b4d-4f4e-9e96-ab8187612d52` (direct filer and policy

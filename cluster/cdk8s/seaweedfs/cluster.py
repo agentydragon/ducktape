@@ -122,7 +122,6 @@ TENANTS = {
     "ntfy",  # ntfy.py
     "plaid-mcp",  # plaid_mcp/db.py
     "public-coder-agent",  # public_coder/backup.py
-    "session-backup",  # session_backup.py
     "study-casino",  # study_casino/app.py
     "tofu-state",  # tofu_state/db.py
 }
