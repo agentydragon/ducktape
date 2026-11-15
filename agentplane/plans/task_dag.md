@@ -184,19 +184,18 @@ its old ordering does not give it precedence over the selected tracks.
 
 The operator released these tracks; Codex workers build them. Each node owns its gates; the Go
 reorganization behind the Runtime proxy move is [section 17](#17-two-binaries-and-the-go-layout).
-States as of 13:10 UTC.
+States as of 14:35 UTC.
 
-| Track                                      | Operator release (UTC)            | Node                             | State                                                                                                                                                                                                                                                         |
-| ------------------------------------------ | --------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Retire bearer admission (auth stage 5)     | 2026-11-15                        | `PRIVILEGED_BACKEND_AUTH_DESIGN` | Receiver code merged for Notifications, LLM ingress, Policy, Egress Admin, Actions, Gateway and EnvironmentService; the sampler (#16688) in review and History next; manifests omit the retired keys after each pin (#16692 merged; #16699, #16709 in review) |
-| One TLS listener per service               | 2026-11-14 01:41, "dispatch 1, 2" | `PRIVILEGED_BACKEND_AUTH_DESIGN` | Plaintext exposure removed from manifests (#16631, #16632); the transitional plaintext listeners' code was removed (#16661)                                                                                                                                   |
-| Runtime proxy and Executor to Environments | 2026-11-15                        | `RUNTIME_PROXY_TO_ENVIRONMENTS`  | Receiver enabled on Environments; caller code accepting its server identity merged (#16696); retargeting callers and retiring the Gateway receiver follow                                                                                                     |
-| Runtime proxy caller audit                 | 2026-11-15                        | `RUNTIME_PROXY_CALLER_AUDIT`     | In review; the migrations it proposes are not released                                                                                                                                                                                                        |
-| Sessions binary directory                  | 2026-11-15 11:35                  | `SESSIONS_BINARY_DIRECTORY`      | Starts after the Runtime proxy move's exit                                                                                                                                                                                                                    |
-| App and CLI local extractions              | 2026-11-15 12:59, card choice     | `GO_LOCAL_EXTRACTIONS`           | App browser routes, app browser session store and CLI command families started; the other stage 4 extractions are not released                                                                                                                                |
+| Track                                      | Operator release (UTC)            | Node                             | State                                                                                                                                                                                                                             |
+| ------------------------------------------ | --------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Retire bearer admission (auth stage 5)     | 2026-11-15                        | `PRIVILEGED_BACKEND_AUTH_DESIGN` | Receiver code merged for every receiver except History (#16728, in review); manifests omit the retired keys and the fields are deleted for Policy (#16718), Gateway (#16722) and the sampler (#16729); the other receivers follow |
+| One TLS listener per service               | 2026-11-14 01:41, "dispatch 1, 2" | `PRIVILEGED_BACKEND_AUTH_DESIGN` | Plaintext exposure removed from manifests (#16631, #16632); the transitional plaintext listeners' code was removed (#16661)                                                                                                       |
+| Runtime proxy and Executor to Environments | 2026-11-15                        | `RUNTIME_PROXY_TO_ENVIRONMENTS`  | Callers reach the Runtime through Environments since 14:20 UTC (#16723); retiring the Gateway receiver follows                                                                                                                    |
+| Runtime proxy caller audit                 | 2026-11-15                        | `RUNTIME_PROXY_CALLER_AUDIT`     | In review; the migrations it proposes are not released                                                                                                                                                                            |
+| Sessions binary directory                  | 2026-11-15 11:35                  | `SESSIONS_BINARY_DIRECTORY`      | Starts after the Runtime proxy move's exit                                                                                                                                                                                        |
 
 Finished and deleted since the 2026-11-14 ledger: the pre-cutover leftovers, any-replica Gateway
-routing and its cleanup (section 12), auth stages 1 to 4, the stage 2 Go layout fixes (the Go plan keeps the rest of `runner-era-names`),
+routing and its cleanup (section 12), auth stages 1 to 4, the stage 2 Go layout fixes and runner-era Go names, the coherence sweep, the app and CLI local extractions (#16717, #16720, #16725),
 EnvironmentService on every Environments replica (contract in the
 [Environments specification](../environments/SPEC.md)), central code-mode tools as Actions
 (#16418, #16422, #16423) and the dead Dispatcher command states (#16438, then the proto values
@@ -210,7 +209,6 @@ flowchart LR
     PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: stage 5, bearer admission retires]
     RUNTIME_PROXY_TO_ENVIRONMENTS[In flight: Runtime proxy into Environments]
     RUNTIME_PROXY_CALLER_AUDIT[In review: Runtime-proxy caller dispositions]
-    GO_LOCAL_EXTRACTIONS[In flight: app and CLI extractions]
 ```
 
 ### Sandbox-free central Sessions
@@ -3932,7 +3930,7 @@ flowchart LR
     RUNTIME_PROXY_TO_ENVIRONMENTS[In flight: Runtime proxy and Executor into Environments]
     SESSIONS_BINARY_DIRECTORY[Released after the proxy cutover: the rest moves to session_dispatcher/]
     ENVIRONMENT_KEEP_ALIVE_HOLDS[Proposed design: keep-alive holds]
-    GO_LOCAL_EXTRACTIONS[Partly in flight: app and CLI extractions]
+    GO_LOCAL_EXTRACTIONS[Unscheduled: stage 4 local extractions]
     RUNNER_GATEWAY_RENAME[Unscheduled: deployed names, section 15]
     PRIVILEGED_BACKEND_AUTH_DESIGN --> RUNTIME_PROXY_TO_ENVIRONMENTS
     RUNTIME_PROXY_TO_ENVIRONMENTS --> SESSIONS_BINARY_DIRECTORY
@@ -3999,11 +3997,9 @@ authority, then the controller change.
 
 ### `GO_LOCAL_EXTRACTIONS` — stage 4 local extractions
 
-**App browser routes, the app browser session store and CLI command families released by the
-operator, 2026-11-15 12:59 UTC (card choice); the rest unscheduled. Each needs a local contract.**
-The Go plan tracks that split a component's
+**Unscheduled; each needs a local contract.** The Go plan tracks that split a component's
 internals without changing service boundaries: the MCP edge's composition and Action client, the
-Action RPC method gate, app browser routes and session store, CLI command families, five sampler
+Action RPC method gate, five sampler
 extractions (execution state, request preparation, content persistence, Executor boundary, resident
 Session) plus its code host ownership, the Runtime's supervision backends and lifecycle coordinator,
 and the Sandbox Controller's credential and VM child lifetimes. A smaller dependency surface is the
