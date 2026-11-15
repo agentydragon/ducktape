@@ -293,11 +293,13 @@ def app_props(
             sandbox_presets=sandbox_presets,
             egress_admin_url=AnyHttpUrl(egress.admin(NAMESPACE).url),
             sandbox_namespace=NAMESPACE,
-            runner_gateway_target=runner_gateway.target(NAMESPACE),
+            runner_gateway_target=(
+                f"{environment_service.service(NAMESPACE).fqdn}:{environment_service.service(NAMESPACE).pod_port}"
+            ),
             session_dispatcher_target=(
                 f"{session_dispatcher.service(NAMESPACE).fqdn}:{session_dispatcher.service(NAMESPACE).port.number}"
             ),
-            runner_gateway_control_target=runner_gateway.control_target(NAMESPACE),
+            runner_gateway_control_target=environment_service.control_target(NAMESPACE),
             policy_service_target=policy_controller.tls_target(NAMESPACE),
             policy_service_tls=workload_tls.service_client_tls(POLICY_CONTROLLER_URI, client_uri=APP_URI),
             history_service_target=(
@@ -693,7 +695,7 @@ def add_backend_services(
         memory_request=Size.mebibytes(64),
         memory_limit=None,
     )
-    control_target = runner_gateway.control_target(NAMESPACE)
+    control_target = environment_service.control_target(NAMESPACE)
     history_service.HistoryService(
         chart,
         "history-service",

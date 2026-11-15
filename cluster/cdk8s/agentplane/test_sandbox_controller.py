@@ -71,7 +71,7 @@ def test_controller_settings_are_mounted_and_gateway_token_is_projected(
     cert_path = PurePosixPath(cert_mount["mountPath"])
     assert settings["runner_gateway_tls"] == {
         "ca_file": settings["runner_security"]["tls"]["ca_file"],
-        "server_uri": SESSION_DISPATCHER_URI,
+        "server_uri": SANDBOX_CONTROLLER_URI,
         "cert_file": str(cert_path / "tls.crt"),
         "key_file": str(cert_path / "tls.key"),
         "client_uri": certificate_uris[0],
@@ -264,7 +264,7 @@ def test_app_environment_peer_matches_receiver_and_mounted_service_identity(
     assert settings.session_dispatcher_tls is not None
     assert settings.session_dispatcher_tls.server_uri == SESSION_DISPATCHER_URI
     assert settings.session_dispatcher_target != peer.target
-    assert settings.runner_gateway_target != peer.target
+    assert settings.runner_gateway_target == peer.target
 
 
 def test_environment_receiver_can_watch_policy_and_mutate_only_desired_state(

@@ -20,7 +20,7 @@ from agentplane.net.peertls.config import (
     HISTORY_SERVICE_URI,
     LLM_INGRESS_URI,
     POLICY_CONTROLLER_URI,
-    SESSION_DISPATCHER_URI,
+    SANDBOX_CONTROLLER_URI,
 )
 from cluster.cdk8s.agentplane import (
     central_sampler,
@@ -137,7 +137,7 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     mounts = {PurePosixPath(m["mountPath"]): volumes[m["name"]] for m in container["volumeMounts"]}
     for tls, server_uri in (
         (config["history_tls"], HISTORY_SERVICE_URI),
-        (config["gateway_tls"], SESSION_DISPATCHER_URI),
+        (config["gateway_tls"], SANDBOX_CONTROLLER_URI),
         (llm_connection["tls"], LLM_INGRESS_URI),
     ):
         assert tls["server_uri"] == server_uri

@@ -123,7 +123,7 @@ class App(Construct):
         settings = self.props.config.model_copy()
         settings.egress_admin_tls = workload_tls.service_client_tls(EGRESS_PROXY_URI, client_uri=APP_URI)
         settings.egress_admin_token_file = None
-        settings.runner_gateway_tls = workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=APP_URI)
+        settings.runner_gateway_tls = workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=APP_URI)
         settings.runner_gateway_token_file = None
         settings.session_dispatcher_tls = workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=APP_URI)
         settings.session_dispatcher_token_file = None

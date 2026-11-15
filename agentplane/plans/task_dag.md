@@ -3965,9 +3965,10 @@ flowchart LR
 
 ### `RUNTIME_PROXY_TO_ENVIRONMENTS` — the Runtime proxy and Executor move into Environments
 
-**Released by operator, 2026-11-15; accepting receiver code merged (#16656), service-only admission
-follow-up #16685 and receiver enablement in flight.** Configuration must wait for #16685's Controller
-image to be pinned and running; the #16656 image still requires the removed proxy audience. The
+**In flight, 2026-11-15: receiver enabled (#16692) and accepting caller images (#16696) pinned and
+rolled; caller target cutover is next.** Fresh devel pins App, Notifications, Gateway/Sessions,
+Controller and central sampler to `2b41a9b`, containing the accepting caller identity change.
+Retire the Gateway receiver and obsolete grants only after the caller configuration has rolled. The
 proxy lives at `environments/runtimeproxy`, its final home: Go's internal-import rule
 keeps it outside `internal/` while the Gateway still imports it. The Dispatcher already calls the proxy over the network, so
 the move adds no hop. The proxy grants `CreateSession`, `SubmitInput`, `ChangeModel`,

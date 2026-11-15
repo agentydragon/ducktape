@@ -4,7 +4,10 @@ The Runner Gateway combines durable Session Dispatcher admission and delivery wi
 Runner proxy. Dispatcher automatic wake preserves the effective caller and applies the Sandbox's
 `wakeOnSend` setting, configured wake grants and shared budget. EnvironmentService is served by the
 [Sandbox Controller](../environments/README.md) on every replica at `sandbox-controller:8082`;
-the Gateway no longer registers it or accepts its deployment settings.
+the Gateway no longer registers it or accepts its deployment settings. Production Runtime and
+Executor calls now target that Environments listener, including Dispatcher delivery under the
+Sessions SVID. The Gateway proxy below is retained for rollback until callers have rolled; its
+receiver, watches and grants retire separately.
 The Gateway dials each Runner's native gRPC server on private port `9090`. Every Gateway replica
 independently opens a `WatchState` to each current Runtime and may serve calls for it; no Gateway
 connection Lease or per-Sandbox `-control` EndpointSlice participates in routing.

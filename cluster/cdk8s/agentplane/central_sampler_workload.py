@@ -24,7 +24,7 @@ from agentplane.net.peertls.config import (
     CENTRAL_SAMPLER_URI,
     GATEWAY_SESSIONS_URI,
     HISTORY_SERVICE_URI,
-    SESSION_DISPATCHER_URI,
+    SANDBOX_CONTROLLER_URI,
     ServerTLSListener,
 )
 from agentplane.session_instructions.platform_instructions import SessionRuntime
@@ -107,8 +107,8 @@ class CentralSampler(Construct):
             logs=Path(_LOGS_PATH),
             history_target=f"{self.history_ingress.fqdn}:{self.history_ingress.pod_port}",
             history_tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=CENTRAL_SAMPLER_URI),
-            gateway_target=runner_gateway.control_target(namespace),
-            gateway_tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=CENTRAL_SAMPLER_URI),
+            gateway_target=environment_service.control_target(namespace),
+            gateway_tls=workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=CENTRAL_SAMPLER_URI),
             max_live_sessions=props.max_live_sessions,
             rpc_timeout_seconds=props.rpc_timeout_seconds,
             executor_initialize_timeout_seconds=props.executor_initialize_timeout_seconds,

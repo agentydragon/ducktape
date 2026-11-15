@@ -28,9 +28,6 @@ from agentplane.system_tests.driver.tls import service_svid_credentials
 # gazelle:include_dep @pypi//protobuf
 
 DISPATCHER_SERVICE = "session-dispatcher"
-GATEWAY_SERVICE = "runner-gateway"
-# The shared Gateway/Dispatcher listener serves the fixture's Dispatcher DNS certificate.
-GATEWAY_TLS_SERVICE = "session-dispatcher"
 HISTORY_SERVICE = "history-service"
 SERVICE_PORT = 8080
 REQUEST_TIMEOUT_SECONDS = 30.0
@@ -48,7 +45,7 @@ class NativePlatformClients:
     control: SandboxControlClient
 
     def runner(self, target: identity_pb2.EnvironmentTarget) -> SandboxRunner:
-        """Address this exact Sandbox through the stable Gateway Service."""
+        """Address this exact Sandbox through the Environments Service."""
         if target.namespace != self.cluster.namespace or not target.name or not target.uid:
             raise ValueError("runner status requires this cluster's complete Environment target")
         destination = identity_pb2.SandboxDestination(
@@ -79,7 +76,6 @@ async def native_platform_clients(cluster: Cluster) -> AsyncIterator[NativePlatf
     """Open native Environment, Dispatcher, History, and Runner-control clients once."""
     async with AsyncExitStack() as opened:
         credentials = await service_svid_credentials(cluster, NATIVE_CLIENT_SVID_SECRET)
-        gateway_target = await opened.enter_async_context(_service_forward(cluster, GATEWAY_SERVICE, SERVICE_PORT))
         environment_target = await opened.enter_async_context(
             _service_forward(cluster, ENVIRONMENT_SERVICE, ENVIRONMENT_PORT)
         )
@@ -117,11 +113,11 @@ async def native_platform_clients(cluster: Cluster) -> AsyncIterator[NativePlatf
             dispatcher=dispatcher,
             history=history,
             control=SandboxControlClient(
-                control_target=gateway_target,
+                control_target=environment_target,
                 token_file=None,
                 request_timeout_s=REQUEST_TIMEOUT_SECONDS,
                 channel_credentials=credentials,
-                server_name=f"{GATEWAY_TLS_SERVICE}.{cluster.namespace}.svc.cluster.local",
+                server_name=f"{ENVIRONMENT_SERVICE}.{cluster.namespace}.svc.cluster.local",
             ),
         )
 
