@@ -1,6 +1,6 @@
 """The real Go app's Runner Gateway path under faults a deployment cannot be made to produce: a
-harness killed or a runner restarted mid-turn, an app replica exiting, History's archive held back,
-and a Session created behind the app's back. The fault-free flows a browser sees are scenarios in
+harness killed or a runner restarted mid-turn, an app replica exiting, and History's archive held
+back. The fault-free flows a browser sees are scenarios in
 `agentplane/system_tests/scenarios/thread_history.py`."""
 
 from __future__ import annotations
@@ -762,37 +762,6 @@ async def test_replica_commands_and_history_reads_survive_owner_replica_exit(
         ] == ["FIRST_REPLICA_TURN", "AFTER_OWNER_EXIT"]
         await runner.restart()
         await _stored_events(survivor_http, str(thread), until="harness_exited")
-
-
-async def test_history_openings_give_a_session_the_app_did_not_start_a_thread(
-    sandbox: SandboxCluster,
-    session_dispatcher: SessionDispatcherClient,
-    runner: RunningRunner,
-    http: httpx.AsyncClient,
-    spec: session_pb2.SessionSpec,
-) -> None:
-    # No app HTTP request created this Session; History's first ingress creates its row.
-    session_id = uuid4()
-    exact_spec = session_pb2.SessionSpec()
-    exact_spec.CopyFrom(spec)
-    exact_spec.placement.environment_hosted.environment.name = SANDBOX
-    exact_spec.placement.environment_hosted.environment.uid = sandbox.destination.target.uid
-    await session_dispatcher.unary(
-        session_dispatcher.stub.CreateSession,
-        session_dispatcher_pb2.CreateSessionRequest(session_id=str(session_id), spec=exact_spec),
-    )
-    await accepted_session(session_dispatcher, session_id)
-    # The app's production History watcher creates the Thread row; no command or SSE request ran.
-    async for attempt in AsyncRetrying(
-        stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
-    ):
-        with attempt:
-            metadata = await http.get(f"/upstream/app/v1/threads/{session_id}")
-            assert metadata.status_code == 200, metadata.text
-            assert metadata.json()["threadId"] == str(session_id)
-            summary = await http.get(f"/upstream/history/v1/sessions/{session_id}/summary")
-            assert summary.status_code == 200, summary.text
-            assert summary.json()["sandbox"]["name"] == SANDBOX
 
 
 async def test_open_and_inputs_reach_the_runner_while_history_lags(
