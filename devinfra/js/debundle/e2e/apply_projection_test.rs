@@ -431,12 +431,20 @@ fn tree_projection_is_shared_across_consumer_output_roots() {
         output_root
     );
     assert_eq!(
-        projected["spec"]["emit_browser_harness"]["asset_summary_path"],
-        path(&staged.root().join("assets.json"))
+        staged.root().join(
+            projected["spec"]["emit_browser_harness"]["asset_summary_path"]
+                .as_str()
+                .unwrap()
+        ),
+        staged.root().join("assets.json")
     );
     assert_eq!(
-        projected["spec"]["emit_browser_harness"]["snapshot_root"],
-        path(&staged.root().join("snapshot"))
+        staged.root().join(
+            projected["spec"]["emit_browser_harness"]["snapshot_root"]
+                .as_str()
+                .unwrap()
+        ),
+        staged.root().join("snapshot")
     );
 
     let run_args: Vec<&str> = ["run"]
