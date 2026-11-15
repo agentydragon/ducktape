@@ -299,8 +299,10 @@ py_library(
     name = "central_sampler",
     srcs = ["central_sampler.py"],
     deps = [
+        ":cleanup_diagnostics",
         ":cluster",
         ":identity",
+        ":sandbox_ownership",
         ":tls",
         ":tracing",
         "//agentplane:crd_group",
@@ -364,6 +366,7 @@ py_library(
     deps = [
         ":cluster",
         ":identity",
+        ":sandbox_ownership",
         ":tracing",
         "//agentplane:crd_group",
         "//agentplane/app/testing:client",
@@ -376,6 +379,12 @@ py_library(
         "@pypi//opentelemetry_api",
         "@pypi//protobuf",
     ],
+)
+
+py_library(
+    name = "sandbox_ownership",
+    srcs = ["sandbox_ownership.py"],
+    deps = ["//agentplane/proto:identity_pb2"],
 )
 
 py_library(
@@ -398,6 +407,34 @@ py_test(
         "@pypi//httpx",
         "@pypi//opentelemetry_api",
         "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_sandbox_ownership",
+    srcs = ["test_sandbox_ownership.py"],
+    deps = [
+        ":sandbox_ownership",
+        "//:conftest",
+        "//agentplane/proto:identity_pb2",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_central_sampler",
+    srcs = ["test_central_sampler.py"],
+    deps = [
+        ":central_sampler",
+        ":cluster",
+        "//:conftest",
+        "//agentplane/proto:identity_pb2",
+        "//agentplane/system_tests:conftest",
+        "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

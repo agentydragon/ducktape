@@ -27,6 +27,7 @@ from agentplane.system_tests.driver.identity import (
     create_scenario_identity,
     delete_scenario_identity,
 )
+from agentplane.system_tests.driver.sandbox_ownership import release_owned_sandboxes, remember_sandbox
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.vm import boot_rcu
 from agentplane.system_tests.vm.launcher_topology import assert_admitted_launcher_topology, is_vm_template
@@ -44,7 +45,7 @@ Sandboxes = Callable[..., Coroutine[Any, Any, environment_service_pb2.Environmen
 async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tracer) -> AsyncIterator[Sandboxes]:
     """Own every Sandbox created in this scope, including one that never becomes ready."""
     async with AsyncExitStack() as cleanup:
-        owned: list[tuple[str, str]] = []
+        owned: list[identity_pb2.EnvironmentTarget] = []
         failed_vm_readiness: dict[str, tuple[environment_service_pb2.EnvironmentDescriptor, SandboxNotReadyError]] = {}
 
         async def release_owned(
@@ -53,8 +54,8 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
             if not owned:
                 return False
 
-            async def release_one(name: str, uid: str) -> None:
-                failed_readiness = failed_vm_readiness.get(uid)
+            async def release_one(target: identity_pb2.EnvironmentTarget) -> None:
+                failed_readiness = failed_vm_readiness.get(target.uid)
                 if failed_readiness is not None:
                     view, readiness_error = failed_readiness
                     try:
@@ -62,45 +63,16 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
                         readiness_error.add_note(f"Passive host QEMU readiness snapshot: {path}")
                     except Exception as diagnostic_error:
                         readiness_error.add_note(f"Passive host QEMU readiness snapshot failed: {diagnostic_error!r}")
-                await suspend_and_delete(cluster, client, name, uid)
+                await suspend_and_delete(cluster, client, target.name, target.uid)
 
-            async def release_all() -> None:
-                results = await asyncio.gather(
-                    *(release_one(name, uid) for name, uid in reversed(owned)), return_exceptions=True
-                )
-                failures = [result for result in results if isinstance(result, BaseException)]
-                if len(failures) == 1:
-                    raise failures[0]
-                if failures:
-                    raise BaseExceptionGroup("Sandbox cleanup failed", failures)
-
-            closing = asyncio.create_task(release_all())
-            cancellation: asyncio.CancelledError | None = None
-            while not closing.done():
-                try:
-                    await asyncio.shield(closing)
-                except asyncio.CancelledError as error:
-                    task = asyncio.current_task()
-                    if task is not None and task.cancelling():
-                        cancellation = cancellation or error
-                except BaseException:
-                    # Read the task result below so all cleanup failures share one path.
-                    break
-
-            cleanup_error: BaseException | None = None
             try:
-                closing.result()
-            except BaseException as error:
-                cleanup_error = error
-
-            if cancellation is not None:
-                if cleanup_error is not None and cleanup_error is not cancellation:
-                    raise cancellation from cleanup_error
-                raise cancellation
-            if cleanup_error is not None:
+                await release_owned_sandboxes(owned, release_one)
+            except BaseException as cleanup_error:
                 if isinstance(exc, asyncio.CancelledError):
-                    raise exc from cleanup_error
-                raise cleanup_error
+                    if cleanup_error is not exc:
+                        raise exc from cleanup_error
+                    raise
+                raise
             return False
 
         launched_identities: list[ScenarioIdentity] = []
@@ -151,7 +123,7 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
                     raise
                 launched_identities.append(identity)
             # Register the exact acknowledged incarnation before any follow-on watch or Get can fail.
-            owned.append((created.name, created.uid))
+            remember_sandbox(owned, created)
             try:
                 view = await wait_until_running(client, created)
             except SandboxNotReadyError as error:
