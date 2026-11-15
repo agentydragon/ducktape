@@ -84,6 +84,10 @@ fn claimed_modules_export_their_entry_points() {
             &["StatsDragInput"],
         ),
         (
+            "main/packages/excalidraw/components/hyperlink/Hyperlink.js",
+            &["Hyperlink"],
+        ),
+        (
             "main/packages/excalidraw/element/textWysiwyg.js",
             &["textWysiwyg"],
         ),

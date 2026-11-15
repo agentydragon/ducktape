@@ -1,0 +1,9 @@
+# Original home: packages/excalidraw/components/hyperlink/Hyperlink.tsx
+source_matches:
+  - match: |
+      var selected = ({ element, elementsMap, setAppState, onLinkOpen, setToast, updateEmbedValidationStatus }) => {
+        STMT_LIST;
+      };
+    bindings:
+      - local: selected
+        name: Hyperlink
