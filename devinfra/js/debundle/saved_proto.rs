@@ -83,15 +83,6 @@ impl ProtoConvert<u64> for u64 {
     }
 }
 
-impl ProtoConvert<i32> for i32 {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(*self)
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        Ok(value)
-    }
-}
-
 impl ProtoConvert<bool> for bool {
     fn to_proto(&self) -> Result<bool> {
         Ok(*self)
