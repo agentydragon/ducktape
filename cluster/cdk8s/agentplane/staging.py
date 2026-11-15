@@ -30,6 +30,7 @@ from agentplane.action_service.sandbox.contract.actions import Action
 from agentplane.app.action_federation_settings import ExchangeFederationSettings
 from agentplane.app.settings import Settings
 from agentplane.central_sampler.settings import (
+    ActionsConfig,
     AnthropicBlockBindingConfig,
     AnthropicCompactionConfig,
     AnthropicMessagesConfig,
@@ -43,7 +44,7 @@ from agentplane.central_sampler.settings import (
 from agentplane.env.config import GuestResources, ResourceLimits
 from agentplane.identity.operator.settings import OperatorOidcSettings
 from agentplane.llm_ingress.models import AttributionConfig, AttributionField, AttributionJsonHeader, VerifiedClaim
-from agentplane.net.peertls.config import APP_URI, LLM_INGRESS_URI, NOTIFICATIONS_URI
+from agentplane.net.peertls.config import APP_URI, LLM_INGRESS_URI, NOTIFICATIONS_URI, TLS
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
 from agentplane.subjects import ServiceAccountRef
@@ -463,6 +464,12 @@ ENV = Environment(
     #   removes the ServiceAccount-subject rendering and this switch.
     identity_catalog=False,
     central_sampler=CentralSamplerProps(
+        actions=ActionsConfig(
+            target=f"{actions.service(STAGING_NAMESPACE).fqdn}:{actions.service(STAGING_NAMESPACE).port.number}",
+            tls=TLS(
+                cert_file=workload_tls.CERT_FILE, key_file=workload_tls.KEY_FILE, ca_file=workload_tls.TRUST_BUNDLE_FILE
+            ),
+        ),
         models={
             route.id: (
                 ModelConfig(
@@ -582,6 +589,7 @@ ENV = Environment(
         oidc_session_secret_name=_OIDC_SESSION_SECRET,
     ),
     actions=ActionsProps(
+        central_sampler_session_delegation=True,
         hostname=_ACTIONS_HOSTNAME,
         operator_oidc=_FEDERATION_TARGET,
         caller_service_account_namespaces=frozenset({STAGING_NAMESPACE, haku_ui_egress.NAMESPACE}),
