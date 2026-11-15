@@ -12,6 +12,7 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/dispatchstate"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/grpc/codes"
@@ -150,22 +151,12 @@ func (e *Executor) getSession(ctx context.Context, args contract.GetSessionArgs)
 		state.Dispatches = append(state.Dispatches, CommandDelivery{
 			CommandID: dispatch.GetCommandId(), Operation: dispatch.GetOperation().String(), History: history[dispatch.GetCommandId()],
 			Delivery: Delivery{
-				State: deliveryStateName(dispatch.GetState()), Reason: dispatch.Reason,
+				State: dispatchstate.NormalizeDeliveryState(dispatch.GetState()).String(), Reason: dispatch.Reason,
 				CreatedAt: dispatch.GetCreatedAt().AsTime(), UpdatedAt: dispatch.GetUpdatedAt().AsTime(),
 			},
 		})
 	}
 	return state, nil
-}
-
-func deliveryStateName(state dispatcherpb.DeliveryState) string {
-	if state == dispatcherpb.DeliveryState_DELIVERY_STATE_UNSPECIFIED {
-		return dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN.String()
-	}
-	if _, ok := dispatcherpb.DeliveryState_name[int32(state)]; !ok {
-		return dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN.String()
-	}
-	return state.String()
 }
 
 // commandHistory starts before every listed admission. Clamp to the known committed prefix because

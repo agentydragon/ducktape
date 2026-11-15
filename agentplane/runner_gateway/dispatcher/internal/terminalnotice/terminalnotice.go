@@ -8,6 +8,7 @@ import (
 	"time"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/dispatchstate"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/internal/notification"
 	"github.com/google/uuid"
@@ -148,7 +149,7 @@ func (a *Assembler) Add(payload string) (*Event, error) {
 	if err := proto.Unmarshal(serialized, dispatch); err != nil {
 		return nil, err
 	}
-	dispatch.State = normalizeDispatchState(dispatch.GetState())
+	dispatch.State = dispatchstate.NormalizeDeliveryState(dispatch.GetState())
 	if dispatch.GetCommandId() == "" || dispatch.GetReason() != "sandbox_deleted" ||
 		(dispatch.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED && dispatch.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN) {
 		return nil, errors.New("terminal snapshot did not describe Sandbox deletion")
@@ -158,20 +159,6 @@ func (a *Assembler) Add(payload string) (*Event, error) {
 		event.OwnerIdentity = &identitypb.Identity{Name: assembled.identityName, Uid: assembled.identityUID}
 	}
 	return event, nil
-}
-
-func normalizeDispatchState(state dispatcherpb.DeliveryState) dispatcherpb.DeliveryState {
-	switch state {
-	case dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
-		dispatcherpb.DeliveryState_DELIVERY_STATE_DELIVERING_TO_RUNNER,
-		dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED,
-		dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED,
-		dispatcherpb.DeliveryState_DELIVERY_STATE_CANCELLED_IN_DISPATCHER,
-		dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN:
-		return state
-	default:
-		return dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN
-	}
 }
 
 // Reset discards incomplete events after a listener generation change.

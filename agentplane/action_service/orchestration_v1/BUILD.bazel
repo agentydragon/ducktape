@@ -28,6 +28,7 @@ go_library(
         "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:session_go_proto",
         "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_go_proto",
+        "//agentplane/runner_gateway/dispatcher/api/session/dispatchstate",
         "//agentplane/sandboxes/api",
         "//agentplane/session_client",
         "@io_k8s_apimachinery//pkg/api/errors",

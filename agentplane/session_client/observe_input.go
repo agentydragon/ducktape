@@ -15,6 +15,7 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/dispatchstate"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -166,7 +167,7 @@ func ObserveInput(
 			if dispatchTerminal(dispatch) {
 				return result, nil
 			}
-			if normalizeDispatchState(dispatch.GetState()) == dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED {
+			if dispatchstate.NormalizeDeliveryState(dispatch.GetState()) == dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED {
 				result.Dispatch.Kind = "partial"
 				result.Dispatch.Error = &SourceError{Code: codes.DataLoss.String(), Message: "dispatcher admission cursor is missing"}
 			}
@@ -250,7 +251,7 @@ func wakeBlocksDelivery(dispatch *dispatcherpb.Dispatch) bool {
 }
 
 func recordDispatch(dispatch *dispatcherpb.Dispatch, result *InputObservation) error {
-	dispatch.State = normalizeDispatchState(dispatch.GetState())
+	dispatch.State = dispatchstate.NormalizeDeliveryState(dispatch.GetState())
 	encoded, err := protojson.Marshal(dispatch)
 	if err != nil {
 		return fmt.Errorf("marshal Dispatcher receipt: %w", err)
@@ -272,27 +273,13 @@ func setObservation(result *InputObservation, kind ObservationKind, turnID *stri
 }
 
 func dispatchTerminal(dispatch *dispatcherpb.Dispatch) bool {
-	switch normalizeDispatchState(dispatch.GetState()) {
+	switch dispatchstate.NormalizeDeliveryState(dispatch.GetState()) {
 	case dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED,
 		dispatcherpb.DeliveryState_DELIVERY_STATE_CANCELLED_IN_DISPATCHER,
 		dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN:
 		return true
 	default:
 		return false
-	}
-}
-
-func normalizeDispatchState(state dispatcherpb.DeliveryState) dispatcherpb.DeliveryState {
-	switch state {
-	case dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
-		dispatcherpb.DeliveryState_DELIVERY_STATE_DELIVERING_TO_RUNNER,
-		dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED,
-		dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED,
-		dispatcherpb.DeliveryState_DELIVERY_STATE_CANCELLED_IN_DISPATCHER,
-		dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN:
-		return state
-	default:
-		return dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN
 	}
 }
 
