@@ -56,10 +56,7 @@ def begin_suite(*, runtime: SandboxRuntime, backend: Backend, include_mcp_edge: 
         mcp_edge=fixture_chart.mcp_edge_props(operator_oidc=operator_oidc, oauth_secret_name=None),
     )
     chart = fixture_chart.new_chart(env)
-    databases: tuple[fixture_database.Database, ...] = (
-        *fixture_chart.BACKEND_DATABASES,
-        fixture_database.Database.APP,
-    )
+    databases: tuple[fixture_database.Database, ...] = (*fixture_chart.BACKEND_DATABASES, fixture_database.Database.APP)
     if include_mcp_edge:
         databases += (fixture_database.Database.MCP_EDGE,)
     fixture_database.add_database(chart, namespace=env.namespace, databases=databases)
