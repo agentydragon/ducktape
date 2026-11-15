@@ -37,7 +37,10 @@ pub use fixture_spec::{
     source_match_module_yaml, source_match_selector, source_sha256, unassigned_mode_catchall_file,
     unassigned_mode_coarse_atomic_groups, unassigned_mode_inline, unassigned_mode_per_atomic_group,
 };
-pub use fixture_spec::{ChunkRenameEntry, chunk_rename, chunk_rename_with_purity, chunk_renames};
+pub use fixture_spec::{
+    ChunkRenameEntry, chunk_rename, chunk_rename_with_pure_members, chunk_rename_with_purity,
+    chunk_renames,
+};
 pub use runtime::{
     assert_all_emitted_js_checks, assert_compiled_bun_entry_output, assert_entry_output,
     assert_generated_module_after_entry_script, assert_module_exports, assert_node_error,

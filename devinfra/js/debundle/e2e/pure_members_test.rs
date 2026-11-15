@@ -26,20 +26,6 @@ const VENDOR_FILE: &[(&str, &str)] = &[(
      export function forwardRef(render) { return { render }; }\n",
 )];
 
-fn namespace_rename(name: &str, pure_members: &[&str]) -> ChunkRenames {
-    let mut renames =
-        chunk_renames(&[ChunkRenameEntry::new(name, "ns").with_kind("import_specifier")]);
-    renames
-        .annotations
-        .entry(name.to_string())
-        .or_default()
-        .pure_members = pure_members
-        .iter()
-        .map(|name| (*name).to_string())
-        .collect();
-    renames
-}
-
 /// Cycle-forcing fixture body parameterized by the per-case knobs.
 ///
 /// Shared layout across every test:
@@ -71,7 +57,12 @@ export {{ a, b, c }};
         );
         Self {
             source,
-            pure_members: namespace_rename("React", pure_members),
+            pure_members: chunk_rename_with_pure_members(
+                "React",
+                "ns",
+                Some("import_specifier"),
+                pure_members,
+            ),
         }
     }
 
@@ -143,7 +134,12 @@ fn pure_members_call_with_impure_arg_does_not_admit() {
 
 #[test]
 fn pure_members_member_call_does_not_promote_callback_body_reads() {
-    let mut pure_members = namespace_rename("ReactLike", &["forwardRef"]);
+    let mut pure_members = chunk_rename_with_pure_members(
+        "ReactLike",
+        "ns",
+        Some("import_specifier"),
+        &["forwardRef"],
+    );
     pure_members
         .annotations
         .get_mut("ReactLike")

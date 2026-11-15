@@ -178,7 +178,6 @@ impl ChunkDiagnostic {
 pub enum ExportContract {
     PureExports,
     CallbackFactoryExports,
-    PureMembers,
     FluentExports,
     NoReentryCallbackExports,
     RetainedCallbackConstructorExports,

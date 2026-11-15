@@ -1217,6 +1217,9 @@ As with `purity: pure`, the rule wins over the global-shadowing fallback,
 and args are still classified independently. The annotation is
 **per-member**: a sibling member without it stays subject to inferred
 classification. There is no "declare a whole module pure" shorthand.
+The assertion applies only in the annotated chunk. Imported namespace bindings
+must be annotated in each importing chunk; export contracts do not propagate
+member-call purity.
 
 ## Audited namespace calls without reentry
 

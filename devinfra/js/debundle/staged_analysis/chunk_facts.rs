@@ -216,19 +216,6 @@ pub fn compute_logical_chunk_facts(
             .get(chunk_id)
             .cloned()
             .unwrap_or_default();
-        // Definition-side `pure_members` assertions projected onto this
-        // chunk's local import bindings; merged (not overwritten) so spec
-        // member annotations and cross-module assertions coexist.
-        if let Some(member_sets) = program_summary.members.get(chunk_id) {
-            for (binding, members) in member_sets {
-                inputs
-                    .assumptions
-                    .declared_pure_members
-                    .entry(binding.clone())
-                    .or_default()
-                    .extend(members.iter().cloned());
-            }
-        }
         // Definition-side `fluent_exports` assertions projected onto this
         // chunk's local import bindings (deep-purity chain roots).
         if let Some(fluent) = program_summary.fluent.get(chunk_id) {

@@ -1149,16 +1149,6 @@ impl ChunkExportPurityBuilder {
         self
     }
 
-    /// Assert member calls on the named namespace exports are pure
-    /// (see `spec::ChunkExportPurity::pure_members`).
-    pub fn with_pure_members(mut self, export: &str, members: &[&str]) -> Self {
-        self.purity.pure_members.insert(
-            export.to_string(),
-            members.iter().map(|s| (*s).to_string()).collect(),
-        );
-        self
-    }
-
     /// Assert the listed exports are deeply-pure fluent-API roots
     /// (see `spec::ChunkExportPurity::fluent_exports`).
     pub fn with_fluent_exports(mut self, exports: &[&str]) -> Self {
@@ -1597,6 +1587,26 @@ pub fn chunk_rename_with_purity(
         members,
         annotations,
     }
+}
+
+/// Annotate static calls through one selected binding as pure.
+pub fn chunk_rename_with_pure_members(
+    rename_to: &str,
+    from_binding: &str,
+    kind: Option<&'static str>,
+    members: &[&str],
+) -> ChunkRenames {
+    let mut entry = ChunkRenameEntry::new(rename_to, from_binding);
+    entry.kind = kind;
+    let mut renames = chunk_renames(&[entry]);
+    renames.annotations.insert(
+        rename_to.to_string(),
+        BindingAnnotation {
+            pure_members: members.iter().map(|name| (*name).to_string()).collect(),
+            ..Default::default()
+        },
+    );
+    renames
 }
 
 /// One fixture exercising a no-match, an ambiguous selector and a duplicate

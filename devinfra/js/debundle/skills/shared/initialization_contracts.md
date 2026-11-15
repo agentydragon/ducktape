@@ -233,7 +233,8 @@ body, runtime, host setup, or intrinsic integrity.
   structural `source_match` for a minified class.
 - `chunk_export_purity.<provider>.pure_exports` asserts call purity for named
   imports from that provider.
-- Member-level `pure_members` covers listed static calls through a binding.
+- Member-level `pure_members` covers listed static calls through a binding in
+  the annotated chunk, including an imported namespace binding.
   `fluent_exports` asserts the broader transitive derived-value contract;
   audit that complete surface before selecting it.
 
