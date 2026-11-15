@@ -1411,5 +1411,33 @@ async def test_search_menu_preview(playwright_driver: Playwright, origin: str) -
         }
 
 
+async def test_excalidraw_logo(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        logo = await page.evaluate(
+            """async () => {
+                const {ExcalidrawLogo} = await import('./main/packages/excalidraw/components/ExcalidrawLogo.js');
+                const element = ExcalidrawLogo({size: 'large', withText: true});
+                const [icon, text] = element.props.children.map(child => child.type(child.props));
+                return {
+                    className: element.props.className,
+                    iconViewBox: icon.props.viewBox,
+                    textViewBox: text.props.viewBox,
+                    paths: text.props.children.length,
+                };
+            }"""
+        )
+        assert logo == {
+            "className": "ExcalidrawLogo is-large",
+            "iconViewBox": "0 0 40 40",
+            "textViewBox": "0 0 450 55",
+            "paths": 4,
+        }
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
