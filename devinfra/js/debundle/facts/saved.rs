@@ -196,7 +196,7 @@ fn restore_heap_cells(
             "SavedHeapContentCells.observes_external_heap",
         )?,
     })
-
+}
 
 fn snapshot_heap_accesses(
     accesses: &HeapContentAccesses,
