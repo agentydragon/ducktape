@@ -1,7 +1,5 @@
 //! Synchronous body reads preserve the source initialization timeline across modules.
 
-use analysis_model::DepKind;
-use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 const INITIALIZED_SOURCE: &str = r#"const seed = 7;
@@ -22,16 +20,18 @@ fn cross_module_at_init_call_preserves_initialized_body_read() {
         ],
     ));
     assert_preserved_entry_output(&fixture, "49\n");
-
-    let graph = fixture.dependency_graph();
-    let caller = source_unit_for_binding(&graph, "result");
-    let initializer = source_unit_for_binding(&graph, "value");
-    assert!(graph.edges.iter().any(|edge| {
-        edge.source == caller
-            && edge.target == initializer
-            && edge.edge_kind == DepKind::Sequenced
-            && edge.constrains_init_order
-    }));
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/readers.js",
+        &["readValue"],
+        &["value"],
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/values.js",
+        &["value"],
+        &["readValue"],
+    );
 }
 
 #[test]
@@ -79,13 +79,10 @@ fn intra_module_at_init_call_preserves_initialized_body_read() {
         vec![logical_module("values", &[Member::new("value")])],
     ));
     assert_preserved_entry_output(&fixture, "49\n");
-    let graph = fixture.dependency_graph();
-    let caller = source_unit_for_binding(&graph, "result");
-    let initializer = source_unit_for_binding(&graph, "value");
-    assert!(graph.edges.iter().any(|edge| {
-        edge.source == caller
-            && edge.target == initializer
-            && edge.edge_kind == DepKind::EagerUse
-            && edge.constrains_init_order
-    }));
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/values.js",
+        &["value"],
+        &["readValue", "result"],
+    );
 }

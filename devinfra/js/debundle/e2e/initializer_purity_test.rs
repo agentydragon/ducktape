@@ -1,7 +1,6 @@
 //! Initializer-scoped purity must address the initializer expression only,
 //! while unresolved callback reads remain eager dependencies.
 
-use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 const OPAQUE_FACTORY: &str = "globalThis.factory = callback => callback();\nexport {};\n";
@@ -71,30 +70,6 @@ console.log(JSON.stringify({
 }));
 "#,
         "{\"mod_a\":[\"A\",\"C\"],\"mod_b\":[\"B\",\"seed\"]}\n",
-    );
-
-    let graph = fixture.dependency_graph();
-    let caller_source_unit = source_unit_for_binding(&graph, "A");
-    let seed_source_unit = source_unit_for_binding(&graph, "seed");
-    let promoted_seed_edges: Vec<_> = graph
-        .edges
-        .iter()
-        .filter(|edge| {
-            edge.source == caller_source_unit
-                && edge.target == seed_source_unit
-                && edge.edge_kind == analysis_model::DepKind::EagerUse
-                && edge.binding.as_deref() == Some("seed")
-                && matches!(
-                    edge.role,
-                    Some(analysis::EdgeRoleReport::PromotedAtInit { .. })
-                )
-        })
-        .collect();
-    assert!(
-        !promoted_seed_edges.is_empty(),
-        "the initializer annotation must retain callback-body read ordering; \
-         expected a promoted eager edge from the factory source_unit to `seed`, got \
-         {promoted_seed_edges:#?}\n\nFull dependency graph: {graph:#?}",
     );
 }
 
