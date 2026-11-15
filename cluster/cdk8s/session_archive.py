@@ -323,7 +323,6 @@ def archive(
     external_secrets_operator: Kustomization,
     forgejo_images: Kustomization,
     sso_providers: Kustomization,
-    seaweedfs_operator: Kustomization,
     forgejo_image_automation: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
@@ -338,7 +337,6 @@ def archive(
             external_secrets_operator,
             forgejo_images,
             sso_providers,
-            seaweedfs_operator,
             forgejo_image_automation,
         ),
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,

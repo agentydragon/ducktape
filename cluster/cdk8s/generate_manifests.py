@@ -1732,7 +1732,6 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         forgejo_images_kustomization,
         sso_providers_kustomization,
-        seaweedfs_operator_kustomization,
         forgejo_image_automation_kustomization,
     )
     github_exporter_artifact = artifact("github-exporter", github_exporter_app.OUTPUT_DIR, github_exporter_app.PINS_DIR)

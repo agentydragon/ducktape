@@ -426,7 +426,6 @@ spec:
               - ntfy
               - plaid-mcp
               - public-coder-agent
-              - session-backup
               - study-casino
               - tofu-state
     - group: seaweed.seaweedfs.com
@@ -458,7 +457,6 @@ spec:
               - ntfy
               - plaid-mcp
               - public-coder-agent
-              - session-backup
               - study-casino
               - tofu-state
     - group: seaweed.seaweedfs.com
@@ -490,7 +488,6 @@ spec:
               - ntfy
               - plaid-mcp
               - public-coder-agent
-              - session-backup
               - study-casino
               - tofu-state
   to:

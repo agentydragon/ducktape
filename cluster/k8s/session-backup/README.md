@@ -142,9 +142,9 @@ TODO: Consider a separate recovery copy of the Restic repository if needed.
 The separate `ai-session-archive` Flux Kustomization imports each host repository into a CNPG
 database in this namespace and serves the owner-authenticated browser at
 `https://ai-session-archive.allegedly.works`. It depends on this session-backup Kustomization,
-CNPG, External Secrets, the Forgejo image credential and image policies, SSO providers, and the
-SeaweedFS operator. The session-backup Kustomization depends only on Piraeus, so an unavailable
-archive dependency does not suspend the Rest Server.
+CNPG, External Secrets, the Forgejo image credential and image policies, and SSO providers.
+The session-backup Kustomization depends only on Piraeus, so an unavailable archive dependency
+does not suspend the Rest Server.
 
 Each workstation has a 15-minute CronJob that scans all retained snapshots. Failed or interrupted
 imports retry on a later run, and newly uploaded snapshots appear without a one-time backfill
