@@ -19,7 +19,7 @@ use source_identity::SourceUnitId;
 
 use crate::AssignmentInputs;
 use crate::esm_import_order::EsmImportOrder;
-use crate::esm_schedule::EsmImportSchedule;
+use crate::esm_schedule::{EsmImportSchedule, ImportScheduleError};
 use crate::realizability::CrossRebindEdge;
 use crate::realizability::RealizabilityIndex;
 use crate::realizability::{
@@ -715,6 +715,27 @@ impl AssignmentAnalysis {
     /// Concrete schedule retained by the gate, effect sweeps and emitter.
     pub fn import_schedule(&self) -> &EsmImportSchedule {
         &self.import_schedule
+    }
+
+    /// Accepted output must match the retained schedule exactly. Rejected
+    /// assignments can still be lowered for `--emit-on-rejection` diagnostics:
+    /// invalid writes may invent imports and entry constraints may have no
+    /// binding import at all. Such reading-only output has no valid schedule;
+    /// preserve the preferred ordering without certifying its target set.
+    pub fn sort_candidate_imports<T>(
+        &self,
+        module: ModuleId,
+        imports: &mut [(ModuleId, T)],
+    ) -> Result<(), ImportScheduleError> {
+        if self.realizability_verdict().is_realizable() && self.assembly_conflicts.is_empty() {
+            return self.import_schedule.sort_imports(module, imports);
+        }
+        if module == self.assignment.entry_destination().module_id() {
+            self.import_order.sort_entry_imports(imports);
+        } else {
+            self.import_order.sort_module_imports(imports);
+        }
+        Ok(())
     }
 
     /// Validate the assignment and its module quotient. Spec authors consume the

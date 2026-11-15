@@ -93,36 +93,35 @@ pub(crate) fn cross_module_imports_for_plan(
         .collect()
 }
 
-/// Build `import "./<provider>.js";` (side-effect-only, no
-/// specifiers) for each phantom provider, tagged with the provider's
-/// `ModuleId`. The phantom imports surface ducktape's at-init
-/// promotion constraints as real ESM imports so the linker's
-/// DFS visits the providers as dependencies of this module — needed
-/// because the actual bindings being read live in residual function
-/// decls (e.g. a top-level helper → another helper → reads a
-/// logger binding), so the per-module emit path never adds an explicit
-/// import for the logger binding in the consuming module on its own.
-///
-/// UNSORTED — the caller merges these with the cross-module binding
-/// imports and the residual-entry import and orders the whole list
-/// through the shared `EsmImportOrder::sort_module_imports`,
-/// mirroring the gate simulator's neighbor order exactly.
+/// Emit side-effect imports for canonical C/I targets lacking binding imports.
+/// The caller sorts these together with binding imports using the concrete
+/// retained schedule. Entry is a valid target too; importing the active root
+/// is an ESM traversal no-op but must still appear in the verified target list.
 pub(crate) fn phantom_side_effect_imports(
     from_file: &str,
+    entry_file: &str,
     phantom_providers: BTreeSet<usize>,
     assignment_analysis: &AssignmentAnalysis,
 ) -> Vec<(ModuleId, ModuleItem)> {
+    let entry = assignment_analysis
+        .assignment()
+        .entry_destination()
+        .module_id();
     phantom_providers
         .into_iter()
-        .filter_map(|provider_index| {
-            let provider = assignment_analysis
-                .inputs()
-                .planned_module(ModuleId(provider_index))?;
-            let source = super::import_emit::relative_source(from_file, &provider.target_file);
-            Some((
-                ModuleId(provider_index),
-                import_decl_module_item(Vec::new(), &source),
-            ))
+        .map(|provider_index| {
+            let module = ModuleId(provider_index);
+            let target_file = if module == entry {
+                entry_file
+            } else {
+                &assignment_analysis
+                    .inputs()
+                    .planned_module(module)
+                    .expect("scheduled nonentry module has an emitted plan")
+                    .target_file
+            };
+            let source = super::import_emit::relative_source(from_file, target_file);
+            (module, import_decl_module_item(Vec::new(), &source))
         })
         .collect()
 }

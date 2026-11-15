@@ -205,20 +205,30 @@ fn a_dependency_in_generated_residual_is_not_a_fixed_entry_blocker() {
     apply_and_run(&fixture, &report, "3\n");
     fixture.refresh_graph();
     let actual = fixture.dependency_graph();
+    // Generated filenames enumerate the remaining groups and can renumber.
+    // Preserve each omitted group's identity up to a label bijection, as well
+    // as its unassigned provenance; authored owner names must remain exact.
+    let mut residual_labels = std::collections::BTreeMap::new();
+    let mut used_labels = std::collections::BTreeSet::new();
     for node in &actual.nodes {
-        let owner = actual.module(&node.destination).unwrap().path.as_str();
+        let destination = actual.module(&node.destination).unwrap();
+        let owner = destination.path.as_str();
         if node.id == consumer {
             assert_eq!(owner, "extracted_consumer");
         } else {
             let previous = baseline.nodes.iter().find(|old| old.id == node.id).unwrap();
-            assert_eq!(
-                owner,
-                baseline
-                    .module(&previous.destination)
-                    .unwrap()
-                    .path
-                    .as_str()
-            );
+            let original = baseline.module(&previous.destination).unwrap();
+            assert_eq!(destination.kind, original.kind);
+            if owner.starts_with("__auto/") {
+                if let Some(mapped) = residual_labels.get(original.path.as_str()) {
+                    assert_eq!(*mapped, owner);
+                } else {
+                    assert!(used_labels.insert(owner));
+                    residual_labels.insert(original.path.as_str(), owner);
+                }
+            } else {
+                assert_eq!(owner, original.path.as_str());
+            }
         }
     }
 }

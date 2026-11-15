@@ -380,7 +380,7 @@ pub(super) fn prepare_candidate_emission_plan<'output>(
     }
     // Render exactly the schedule retained by validation, including entry's
     // complete fanout. A missing/extra target is an internal emission error.
-    assignment_analysis.import_schedule().sort_imports(
+    assignment_analysis.sort_candidate_imports(
         assignment_analysis
             .assignment()
             .entry_destination()
