@@ -82,6 +82,11 @@ fn external_path(record: &mut RecordedCommand, path: &Path, namespace: &str) -> 
     relative
 }
 
+fn contains_journal(path: &Path, directory: &Path) -> bool {
+    path.canonicalize()
+        .is_ok_and(|path| directory.starts_with(path))
+}
+
 fn case_root(hint: &Path) -> Option<&Path> {
     hint.ancestors().find(|path| {
         fs::read(path.join("case.json"))
@@ -252,7 +257,8 @@ fn snapshot_outputs(root: &Path, directory: &Path, record: &mut RecordedCommand)
         parents.push(output);
     }
     for output in parents {
-        if directory.starts_with(&output) {
+        let output = record.cwd.join(output);
+        if contains_journal(&output, directory) {
             record.snapshot_errors.push(format!(
                 "output {} contains the command journal",
                 output.display()
@@ -371,6 +377,14 @@ fn snapshot_inputs(root: &Path, directory: &Path, record: &mut RecordedCommand) 
     inputs.sort();
     inputs.dedup();
     for input in inputs {
+        let input = record.cwd.join(input);
+        if contains_journal(&input, directory) {
+            record.snapshot_errors.push(format!(
+                "input {} contains the command journal",
+                input.display()
+            ));
+            continue;
+        }
         if !input.exists() {
             continue;
         }

@@ -340,3 +340,42 @@ fn invariant_guard_panics_after_raw_output_has_been_recorded() {
         b"purity-completion-disagreement"
     );
 }
+
+#[test]
+fn an_input_containing_the_journal_does_not_recursively_copy_itself() {
+    let fixture = write_validate_fixture_spec(FixtureOpts::new("console.log(22);", vec![]));
+    let workspace = fixture.workspace();
+    let root = workspace.path();
+    fs::create_dir_all(root.join("static")).unwrap();
+    fs::copy(
+        root.join("snapshot/static/app.js"),
+        root.join("static/app.js"),
+    )
+    .unwrap();
+    let mut spec: serde_json::Value =
+        serde_yaml::from_slice(&fs::read(&fixture.spec_path).unwrap()).unwrap();
+    spec["inputs"]["input_root"] = ".".into();
+    write_yaml_file(&fixture.spec_path, &spec);
+
+    let result = run_debundler(&fixture.spec_path, &[]);
+    assert!(result.status.success(), "{}", result.stderr);
+    assert_node_output(&root.join("out/app/static/app/entry.js"), "22\n", "");
+    let command = recorded_commands(root)
+        .unwrap()
+        .into_iter()
+        .find(|command| command.debundle)
+        .unwrap();
+    assert!(
+        command
+            .snapshot_errors
+            .iter()
+            .any(|error| error.contains("contains the command journal")),
+        "{:?}",
+        command.snapshot_errors
+    );
+    let destination = root.join("unused-replay");
+    let error =
+        replay_command(root, &command.id, &destination, &command.program, false).unwrap_err();
+    assert!(error.to_string().contains("incomplete input snapshot"));
+    assert!(!destination.exists());
+}
