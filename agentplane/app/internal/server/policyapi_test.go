@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
+	streamhttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/streams"
 )
 
 func TestPolicyRoutesArePublishedAndCallerProtected(t *testing.T) {
@@ -14,7 +15,7 @@ func TestPolicyRoutesArePublishedAndCallerProtected(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := newHTTPServer(authentication)
-	registerStreamingRoutes(server, streamingDependencies{})
+	streamhttp.RegisterRoutes(server, server.DrainDone(), streamhttp.Dependencies{})
 	handler := server.Handler(authentication)
 
 	for _, request := range []struct{ method, path string }{

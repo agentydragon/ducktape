@@ -4,10 +4,14 @@ package(default_visibility = ["//agentplane/app:__subpackages__"])
 
 go_library(
     name = "sessions",
-    srcs = ["handler.go"],
+    srcs = [
+        "handler.go",
+        "routes.go",
+    ],
     importpath = "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/sessions",
     deps = [
         "//agentplane/app:app_service_go_proto",
+        "//agentplane/app/internal/httpapi",
         "//agentplane/app/internal/sandboxes",
         "//agentplane/app/internal/sessionclient",
         "//agentplane/app/internal/settings",
@@ -18,10 +22,13 @@ go_library(
         "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_go_proto",
         "//agentplane/sandboxes/api",
         "@com_github_google_uuid//:uuid",
+        "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
         "@io_k8s_apimachinery//pkg/api/errors",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/structpb",
     ],
 )

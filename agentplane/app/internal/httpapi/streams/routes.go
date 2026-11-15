@@ -1,4 +1,9 @@
-package server
+// Package streams owns the app's raw streaming and generated backend facades. It consumes narrow
+// upstream, auth, inventory and console dependencies, and returns browser streams or forwarded
+// HTTP responses. It preserves each facade's route allowlist, method and caller policy, operator
+// logout revocation, request and drain cancellation, and existing SSE and HTTP wire output. The
+// caller registrar supplies authentication; backends keep their own state and authority.
+package streams
 
 import (
 	"context"
@@ -14,6 +19,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/federation"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/httpapi"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/sandboxes"
 	upstreamproxy "github.com/agentydragon/ducktape/agentplane/app/internal/upstream"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
@@ -23,41 +29,39 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type streamingUpstream interface {
+type Upstream interface {
 	ForwardHTTP(http.ResponseWriter, *http.Request, context.Context, string, string) error
 }
 
-type streamSandboxInventory interface {
+type SandboxInventory interface {
 	GetEnvironment(context.Context, *environmentpb.GetEnvironmentRequest, ...grpc.CallOption) (*environmentpb.EnvironmentDescriptor, error)
 }
 
-type actionFederator interface {
+type Federator interface {
 	Exchange(context.Context, federation.SessionLoginRow) (string, error)
 }
 
-// streamingDependencies are the runtime interfaces for the raw facades and console stream.
-// All route authorization goes through httpServer.RegisterRawRoute.
-type streamingDependencies struct {
+// Dependencies are the runtime interfaces for the raw facades and console stream.
+type Dependencies struct {
 	Auth             *auth.Auth
 	SandboxNamespace string
-	Sandboxes        streamSandboxInventory
-	Federator        actionFederator
-	DispatcherHTTP   streamingUpstream
-	EnvironmentHTTP  streamingUpstream
-	PolicyHTTP       streamingUpstream
-	EgressHTTP       streamingUpstream
-	ActionHTTP       streamingUpstream
-	ConnectionHTTP   streamingUpstream
-	HistoryHTTP      streamingUpstream
-	NotificationHTTP streamingUpstream
+	Sandboxes        SandboxInventory
+	Federator        Federator
+	DispatcherHTTP   Upstream
+	EnvironmentHTTP  Upstream
+	PolicyHTTP       Upstream
+	EgressHTTP       Upstream
+	ActionHTTP       Upstream
+	ConnectionHTTP   Upstream
+	HistoryHTTP      Upstream
+	NotificationHTTP Upstream
 	Console          sandboxes.ConsoleSource
 	Logger           *slog.Logger
 }
 
-// registerStreamingRoutes installs raw upstream facades and the console stream.
-// The server owns the shared auth/session middleware and drain gate.
-func registerStreamingRoutes(server *httpServer, dependencies streamingDependencies) {
-	routes := newStreamingRoutes(server, dependencies)
+// RegisterRoutes installs raw upstream facades and the console stream through the caller boundary.
+func RegisterRoutes(server httpapi.RouteRegistrar, drainDone <-chan struct{}, dependencies Dependencies) {
+	routes := newStreamingRoutes(drainDone, dependencies)
 	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodDelete} {
 		server.RegisterRawRoute(method+" /upstream/environments/{path...}", http.HandlerFunc(routes.environmentFacade), false)
 	}
@@ -80,12 +84,12 @@ func registerStreamingRoutes(server *httpServer, dependencies streamingDependenc
 }
 
 type streamingRoutes struct {
-	server *httpServer
-	deps   streamingDependencies
+	drainDone <-chan struct{}
+	deps      Dependencies
 }
 
-func newStreamingRoutes(server *httpServer, deps streamingDependencies) *streamingRoutes {
-	return &streamingRoutes{server: server, deps: deps}
+func newStreamingRoutes(drainDone <-chan struct{}, deps Dependencies) *streamingRoutes {
+	return &streamingRoutes{drainDone: drainDone, deps: deps}
 }
 
 func (r *streamingRoutes) logger() *slog.Logger {
@@ -97,7 +101,7 @@ func (r *streamingRoutes) logger() *slog.Logger {
 
 func (r *streamingRoutes) requestLifetime(request *http.Request) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(request.Context())
-	drain := r.server.DrainDone()
+	drain := r.drainDone
 	go func() {
 		select {
 		case <-drain:
@@ -130,11 +134,11 @@ func (r *streamingRoutes) operatorLifetime(request *http.Request) (context.Conte
 func (r *streamingRoutes) environmentFacade(w http.ResponseWriter, request *http.Request) {
 	path := request.PathValue("path")
 	if !upstreamproxy.GeneratedFacadeRouteAllowed(request.Method, path) {
-		writeDetailError(w, http.StatusNotFound, "unknown Environment Service facade route")
+		httpapi.WriteDetailError(w, http.StatusNotFound, "unknown Environment Service facade route")
 		return
 	}
 	if r.deps.EnvironmentHTTP == nil {
-		writeDetailError(w, http.StatusServiceUnavailable, "Environment Service is not configured")
+		httpapi.WriteDetailError(w, http.StatusServiceUnavailable, "Environment Service is not configured")
 		return
 	}
 	var ctx context.Context
@@ -143,7 +147,7 @@ func (r *streamingRoutes) environmentFacade(w http.ResponseWriter, request *http
 		var err error
 		ctx, cancel, err = r.operatorLifetime(request)
 		if err != nil {
-			writeDetailError(w, http.StatusForbidden, "operator login required")
+			httpapi.WriteDetailError(w, http.StatusForbidden, "operator login required")
 			return
 		}
 	} else {
@@ -156,12 +160,12 @@ func (r *streamingRoutes) environmentFacade(w http.ResponseWriter, request *http
 func (r *streamingRoutes) dispatcher(w http.ResponseWriter, request *http.Request) {
 	ctx, cancel, err := r.operatorLifetime(request)
 	if err != nil {
-		writeDetailError(w, http.StatusForbidden, "operator login required")
+		httpapi.WriteDetailError(w, http.StatusForbidden, "operator login required")
 		return
 	}
 	defer cancel()
 	if r.deps.DispatcherHTTP == nil {
-		writeDetailError(w, http.StatusServiceUnavailable, "Dispatcher is not configured")
+		httpapi.WriteDetailError(w, http.StatusServiceUnavailable, "Dispatcher is not configured")
 		return
 	}
 	r.forwardDispatcher(w, request, ctx)
@@ -186,19 +190,19 @@ func (r *streamingRoutes) egressFacade(w http.ResponseWriter, request *http.Requ
 	r.serviceAccountFacade(w, request, r.deps.EgressHTTP, "Egress Service")
 }
 
-func (r *streamingRoutes) serviceAccountFacade(w http.ResponseWriter, request *http.Request, upstream streamingUpstream, label string) {
+func (r *streamingRoutes) serviceAccountFacade(w http.ResponseWriter, request *http.Request, upstream Upstream, label string) {
 	path := request.PathValue("path")
 	if !upstreamproxy.GeneratedFacadeRouteAllowed(request.Method, path) {
-		writeDetailError(w, http.StatusNotFound, "unknown "+label+" facade route")
+		httpapi.WriteDetailError(w, http.StatusNotFound, "unknown "+label+" facade route")
 		return
 	}
 	if upstream == nil {
-		writeDetailError(w, http.StatusServiceUnavailable, label+" is not configured")
+		httpapi.WriteDetailError(w, http.StatusServiceUnavailable, label+" is not configured")
 		return
 	}
 	ctx, cancel, err := r.operatorLifetime(request)
 	if err != nil {
-		writeDetailError(w, http.StatusForbidden, "operator login required")
+		httpapi.WriteDetailError(w, http.StatusForbidden, "operator login required")
 		return
 	}
 	defer cancel()
@@ -212,40 +216,40 @@ func (r *streamingRoutes) connectionFacade(w http.ResponseWriter, request *http.
 func (r *streamingRoutes) historyFacade(w http.ResponseWriter, request *http.Request) {
 	path := request.PathValue("path")
 	if !upstreamproxy.GeneratedFacadeRouteAllowed(request.Method, path) {
-		writeDetailError(w, http.StatusNotFound, "unknown History facade route")
+		httpapi.WriteDetailError(w, http.StatusNotFound, "unknown History facade route")
 		return
 	}
 	if r.deps.HistoryHTTP == nil {
-		writeDetailError(w, http.StatusServiceUnavailable, "History facade is not configured")
+		httpapi.WriteDetailError(w, http.StatusServiceUnavailable, "History facade is not configured")
 		return
 	}
 	r.forwardFacade(w, request, request.Context(), r.deps.HistoryHTTP, path, "")
 }
 
-func (r *streamingRoutes) operatorFacade(w http.ResponseWriter, request *http.Request, upstream streamingUpstream, label string) {
+func (r *streamingRoutes) operatorFacade(w http.ResponseWriter, request *http.Request, upstream Upstream, label string) {
 	path := request.PathValue("path")
 	if !upstreamproxy.GeneratedFacadeRouteAllowed(request.Method, path) {
-		writeDetailError(w, http.StatusNotFound, "unknown "+label+" route")
+		httpapi.WriteDetailError(w, http.StatusNotFound, "unknown "+label+" route")
 		return
 	}
 	if upstream == nil {
-		writeDetailError(w, http.StatusServiceUnavailable, label+" is not configured")
+		httpapi.WriteDetailError(w, http.StatusServiceUnavailable, label+" is not configured")
 		return
 	}
 	ctx, cancel, err := r.operatorLifetime(request)
 	if err != nil {
-		writeDetailError(w, http.StatusForbidden, "operator login required")
+		httpapi.WriteDetailError(w, http.StatusForbidden, "operator login required")
 		return
 	}
 	defer cancel()
 	caller, _ := auth.CallerFromContext(request.Context())
 	session, _ := auth.SessionFromContext(request.Context())
 	if caller.Kind != auth.CallerOperator || session == nil || session.Row == nil {
-		writeDetailError(w, http.StatusForbidden, "operator login required")
+		httpapi.WriteDetailError(w, http.StatusForbidden, "operator login required")
 		return
 	}
 	if r.deps.Federator == nil {
-		writeDetailError(w, http.StatusServiceUnavailable, `{"code":"operator_federation_not_configured"}`)
+		httpapi.WriteDetailError(w, http.StatusServiceUnavailable, `{"code":"operator_federation_not_configured"}`)
 		return
 	}
 	bearer, err := r.deps.Federator.Exchange(ctx, session.Row)
@@ -256,7 +260,7 @@ func (r *streamingRoutes) operatorFacade(w http.ResponseWriter, request *http.Re
 	r.forwardFacade(w, request, ctx, upstream, path, bearer)
 }
 
-func (r *streamingRoutes) forwardFacade(w http.ResponseWriter, request *http.Request, ctx context.Context, upstream streamingUpstream, path, bearer string) {
+func (r *streamingRoutes) forwardFacade(w http.ResponseWriter, request *http.Request, ctx context.Context, upstream Upstream, path, bearer string) {
 	if err := upstream.ForwardHTTP(w, request, ctx, path, bearer); err != nil {
 		writeUpstreamOpenError(w, request.Method, request, err)
 	}
@@ -293,17 +297,17 @@ func (r *streamingRoutes) notificationFacade(w http.ResponseWriter, request *htt
 
 func (r *streamingRoutes) console(w http.ResponseWriter, request *http.Request) {
 	if r.deps.Sandboxes == nil || r.deps.Console == nil {
-		writeDetailError(w, http.StatusServiceUnavailable, "Sandbox console is unavailable")
+		httpapi.WriteDetailError(w, http.StatusServiceUnavailable, "Sandbox console is unavailable")
 		return
 	}
 	uid := request.URL.Query().Get("sandbox_uid")
 	if uid == "" {
-		writeDetailError(w, http.StatusBadRequest, "sandbox_uid is required")
+		httpapi.WriteDetailError(w, http.StatusBadRequest, "sandbox_uid is required")
 		return
 	}
 	ctx, cancel, err := r.operatorLifetime(request)
 	if err != nil {
-		writeDetailError(w, http.StatusForbidden, "operator login required")
+		httpapi.WriteDetailError(w, http.StatusForbidden, "operator login required")
 		return
 	}
 	defer cancel()
@@ -314,7 +318,7 @@ func (r *streamingRoutes) console(w http.ResponseWriter, request *http.Request) 
 		return
 	}
 	if sandbox == nil || !proto.Equal(sandbox.GetTarget(), target) {
-		writeDetailError(w, http.StatusServiceUnavailable, "Environment identity is incomplete or mismatched")
+		httpapi.WriteDetailError(w, http.StatusServiceUnavailable, "Environment identity is incomplete or mismatched")
 		return
 	}
 	if err := startSSE(w); err != nil {
@@ -373,9 +377,9 @@ func (r *streamingRoutes) relayConsole(w http.ResponseWriter, ctx context.Contex
 func sandboxHTTPErrorToRaw(w http.ResponseWriter, err error) error {
 	switch {
 	case status.Code(err) == codes.NotFound:
-		writeDetailError(w, http.StatusNotFound, err.Error())
+		httpapi.WriteDetailError(w, http.StatusNotFound, err.Error())
 	default:
-		writeDetailError(w, http.StatusServiceUnavailable, "Sandbox inventory is unavailable")
+		httpapi.WriteDetailError(w, http.StatusServiceUnavailable, "Sandbox inventory is unavailable")
 	}
 	return err
 }

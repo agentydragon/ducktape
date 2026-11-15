@@ -2,13 +2,13 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"regexp"
 	"sync"
 	"sync/atomic"
 
 	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
+	apphttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 )
@@ -103,7 +103,7 @@ func (s *httpServer) ProtectedAPI() *huma.Group {
 	group.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
 		if s.authentication == nil {
 			_, writer := humago.Unwrap(ctx)
-			writeDetailError(writer, http.StatusUnauthorized, "no session and no accepted token")
+			apphttp.WriteDetailError(writer, http.StatusUnauthorized, "no session and no accepted token")
 			return
 		}
 		request, writer := humago.Unwrap(ctx)
@@ -128,7 +128,7 @@ func (s *httpServer) OperatorAPI() *huma.Group {
 		request, writer := humago.Unwrap(ctx)
 		session, ok := auth.SessionFromContext(request.Context())
 		if !ok || session.Login == nil {
-			writeDetailError(writer, http.StatusForbidden, "operator login required")
+			apphttp.WriteDetailError(writer, http.StatusForbidden, "operator login required")
 			return
 		}
 		next(ctx)
@@ -141,7 +141,7 @@ func (s *httpServer) OperatorAPI() *huma.Group {
 func (s *httpServer) RegisterRawRoute(pattern string, handler http.Handler, operatorOnly bool) {
 	if s.authentication == nil {
 		handler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			writeDetailError(w, http.StatusUnauthorized, "no session and no accepted token")
+			apphttp.WriteDetailError(w, http.StatusUnauthorized, "no session and no accepted token")
 		})
 	} else {
 		if operatorOnly {
@@ -150,7 +150,7 @@ func (s *httpServer) RegisterRawRoute(pattern string, handler http.Handler, oper
 				caller, ok := auth.CallerFromContext(request.Context())
 				session, hasSession := auth.SessionFromContext(request.Context())
 				if !ok || caller.Kind != auth.CallerOperator || !hasSession || session.Login == nil {
-					writeDetailError(w, http.StatusForbidden, "operator login required")
+					apphttp.WriteDetailError(w, http.StatusForbidden, "operator login required")
 					return
 				}
 				next.ServeHTTP(w, request)
@@ -159,12 +159,6 @@ func (s *httpServer) RegisterRawRoute(pattern string, handler http.Handler, oper
 		handler = s.authentication.RequireCaller(handler)
 	}
 	s.mux.Handle(pattern, handler)
-}
-
-func writeDetailError(w http.ResponseWriter, status int, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{"detail": message})
 }
 
 func (s *httpServer) BeginDrain() {

@@ -5,16 +5,10 @@ package(default_visibility = ["//agentplane/app:__subpackages__"])
 go_library(
     name = "server",
     srcs = [
-        "appservice.go",
-        "environment_runtime_api.go",
-        "operatorapi.go",
+        "routes.go",
         "runtime.go",
-        "sandboxapi.go",
         "schema_export.go",
         "server.go",
-        "sessionapi.go",
-        "streamapi.go",
-        "threadreadapi.go",
         "trace_relay.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/app/internal/server",
@@ -23,7 +17,6 @@ go_library(
         "//agentplane/action_service/api/contracts:linkage_service_go_proto",
         "//agentplane/action_service/api/contracts:operator_action_service_go_proto",
         "//agentplane/action_service/api/web_push:web_push_service_go_proto",
-        "//agentplane/app:app_service_go_proto",
         "//agentplane/app/internal/auth",
         "//agentplane/app/internal/auth/session",
         "//agentplane/app/internal/electricproxy",
@@ -32,7 +25,9 @@ go_library(
         "//agentplane/app/internal/historydata",
         "//agentplane/app/internal/historywatch",
         "//agentplane/app/internal/httpapi",
+        "//agentplane/app/internal/httpapi/operator",
         "//agentplane/app/internal/httpapi/sessions",
+        "//agentplane/app/internal/httpapi/streams",
         "//agentplane/app/internal/httpapi/threads",
         "//agentplane/app/internal/httperror",
         "//agentplane/app/internal/migrations",
@@ -91,6 +86,8 @@ go_test(
     embed = [":server"],
     deps = [
         "//agentplane/app/internal/auth",
+        "//agentplane/app/internal/httpapi/sessions",
+        "//agentplane/app/internal/httpapi/streams",
         "//agentplane/app/internal/settings",
         "//agentplane/net/peertls",
         "//agentplane/net/peertls/testing",
@@ -136,6 +133,7 @@ go_test(
     srcs = ["policy_facade_test.go"],
     embed = [":server"],
     deps = [
+        "//agentplane/app/internal/httpapi/streams",
         "//agentplane/app/internal/upstream",
         "//agentplane/egress/api/admin:egress_admin_go_proto",
         "//agentplane/egress/api/rules:egress_rules_go_proto",
@@ -201,6 +199,7 @@ go_test(
     embed = [":server"],
     deps = [
         "//agentplane/app/internal/auth",
+        "//agentplane/app/internal/httpapi/streams",
     ],
 )
 
@@ -236,27 +235,6 @@ go_test(
 )
 
 go_test(
-    name = "operatorapi_test",
-    srcs = ["operatorapi_test.go"],
-    embed = [":server"],
-    deps = [
-        "//agentplane/action_service/api/contracts:linkage_service_go_proto",
-        "//agentplane/app/internal/auth",
-        "//agentplane/proto:identity_go_proto",
-        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
-        "@io_k8s_apimachinery//pkg/runtime",
-        "@io_k8s_sigs_controller_runtime//pkg/client",
-        "@io_k8s_sigs_controller_runtime//pkg/client/fake",
-        "@org_golang_google_genproto_googleapis_rpc//errdetails",
-        "@org_golang_google_grpc//:grpc",
-        "@org_golang_google_grpc//codes",
-        "@org_golang_google_grpc//credentials/insecure",
-        "@org_golang_google_grpc//metadata",
-        "@org_golang_google_grpc//status",
-    ],
-)
-
-go_test(
     name = "threadreadapi_test",
     srcs = ["threadreadapi_test.go"],
     embed = [":server"],
@@ -282,6 +260,7 @@ go_test(
     srcs = ["streamapi_test.go"],
     embed = [":server"],
     deps = [
+        "//agentplane/app/internal/httpapi/streams",
         "//agentplane/app/internal/server/testauth",
         "//agentplane/app/internal/upstream",
         "//agentplane/environments/v1:environment_service_go_proto",

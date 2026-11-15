@@ -1,4 +1,8 @@
-package server
+// Package operator owns the public MCP linkage callback. It consumes the provider's state and code,
+// completes the one-shot LinkageService exchange, and returns the existing redirect or scrubbed
+// error response. The callback remains public because the provider redirects without app cookies;
+// LinkageService validates the state capability and owns the authorization flow.
+package operator
 
 import (
 	"encoding/json"
@@ -15,17 +19,17 @@ type operatorRoutes struct {
 	callback linkage_servicepb.LinkageServiceClient
 }
 
-// registerOperatorRoutes installs the public MCP OAuth callback bridge. The callback is handled
-// here because it is a third-party redirect endpoint; the app carries it to Action Service over gRPC.
-func registerOperatorRoutes(
-	server *httpServer,
-	callback linkage_servicepb.LinkageServiceClient,
-) {
+type RouteRegistrar interface {
+	Handle(string, http.Handler)
+}
+
+// RegisterRoutes mounts the public MCP OAuth callback on the supplied app mux.
+func RegisterRoutes(server RouteRegistrar, callback linkage_servicepb.LinkageServiceClient) {
 	routes := &operatorRoutes{callback: callback}
 	// Keep the public OAuth callback as a raw route: Huma's normal JSON response machinery
 	// interprets Location/body fields as an API response and cannot preserve the redirect status
 	// plus HTML body contract used by the browser callback.
-	server.mux.Handle("GET /mcp-linkage/callback", http.HandlerFunc(routes.completeMCPLinkage))
+	server.Handle("GET /mcp-linkage/callback", http.HandlerFunc(routes.completeMCPLinkage))
 }
 
 func (routes *operatorRoutes) completeMCPLinkage(w http.ResponseWriter, request *http.Request) {
