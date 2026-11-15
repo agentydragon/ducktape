@@ -37,6 +37,7 @@ def lifecycle(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
                     account=identity_pb2.ServiceAccount(namespace="test", name="runner")
                 ),
             )
+            view.kubernetes_diagnostics.sandbox_status.update({"runnerCredential": {"kind": "Pod"}})
             client.opened_sandbox_uids.add(view.target.uid)
             return view.target
 
