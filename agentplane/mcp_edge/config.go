@@ -33,7 +33,7 @@ type config struct {
 	ActionsTokenFile string `yaml:"actions_token_file"`
 	Host             string `yaml:"host"`
 	// Port is the gRPC listener's: ConnectionService and health. HTTPPort is the HTTP listener's: the facade, /mcp,
-	// OAuth and the metrics.
+	// OAuth, HTTP health and metrics.
 	Port              int               `yaml:"port"`
 	HTTPPort          int               `yaml:"http_port"`
 	OperatorOIDC      operator.Settings `yaml:"operator_oidc"`

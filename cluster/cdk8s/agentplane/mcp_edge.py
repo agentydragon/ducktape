@@ -56,7 +56,7 @@ def service(namespace: str) -> ServiceRef:
 
 
 def http_service(namespace: str) -> ServiceRef:
-    """The HTTP listener: the facade, /mcp, OAuth and metrics."""
+    """The HTTP listener: the facade, /mcp, OAuth, health and metrics."""
     return ServiceRef(name=NAME, port=Port(name="http", number=8081), pods=Pods(namespace, tuple(_LABELS.items())))
 
 

@@ -8,6 +8,10 @@ Connection-backed Identity delegation.
 The Action Service keeps upstream MCP linkage and CIMD, but does not serve external `/mcp`, OAuth,
 or ConnectionService endpoints.
 
+The HTTP listener serves the `/v1/` ConnectionService facade, `/mcp` and OAuth routes, plus
+`GET /healthz` and `GET /readyz`. The generated facade registers against the in-process
+ConnectionService; its wrapper runs the same admission interceptors without a loopback RPC call.
+
 For a failed Action or an unknown execution outcome, `get_action_result` and direct Action tools
 return `isError: true` and structured content containing `request_id`, `state`, and the retained
 execution `error` object when present. These are the same error details included in the text
@@ -30,8 +34,9 @@ instructions point to the guide reader, while detailed workflows stay out of sta
 ## Authority
 
 The MCP edge's admission gate protects the nine `ConnectionService` methods with the configured
-operator OIDC issuer. The existing plaintext gRPC listener accepts one valid operator bearer and
-remains the target of the HTTP facade. An optional `rpc_tls` listener adds mutual TLS; its
+operator OIDC issuer. Native gRPC and the HTTP facade both require one valid operator bearer; the
+facade registers directly against the in-process service and applies the same admission gate. An
+optional `rpc_tls` listener adds mutual TLS; its
 `operator_services` allowlist admits exact service SVIDs as an additional peer check. Calls on that
 listener still require a valid operator bearer, which supplies the operator authority. Certificate-only
 calls, other service SVIDs and all delegation metadata are refused. `Health.Check`, `Health.List` and
@@ -84,13 +89,13 @@ provider bindings in Terraform. Inline and file-based OAuth settings cannot be c
 are absent, the Connection API remains available and external protocol routes are absent. The
 provider settings' `upstream_client_secret_file` names the separately mounted OAuth client Secret
 file. The gRPC listener
-(`port`) defaults to `0.0.0.0:8080`; the HTTP listener (`http_port`: the facade, `/mcp`, OAuth and metrics) to
+(`port`) defaults to `0.0.0.0:8080`; the HTTP listener (`http_port`: the facade, `/mcp`, OAuth, health and metrics) to
 `0.0.0.0:8081`. An optional `rpc_tls` object starts another gRPC listener using its configured `listen`,
 `cert_file` and `key_file`. Setting `operator_services` requires `rpc_tls.client_ca_file`; those exact service
 SVIDs are checked in addition to the operator OIDC bearer. A configured client CA also requires a nonempty
-`operator_services` allowlist. The HTTP facade continues to dial the plaintext gRPC listener. gRPC health uses
-the empty service for readiness and `livez` for liveness. Readiness
-requires PostgreSQL, its notification listener and a synchronized live Identity view.
+`operator_services` allowlist. The HTTP health routes map `GET /readyz` to the empty gRPC health service and
+`GET /healthz` to `livez`; gRPC health remains available on both gRPC listeners. Readiness requires PostgreSQL,
+its notification listener and a synchronized live Identity view.
 
 The published image is `agentplane-mcp-edge`, built from `//agentplane/mcp_edge:service_image`.
 The same binary embeds Goose migrations and applies them before serving. `mcp-edge --migrate-only`

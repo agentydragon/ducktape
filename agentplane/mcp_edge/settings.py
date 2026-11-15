@@ -39,7 +39,10 @@ class Settings(BaseModel):
     host: str = "0.0.0.0"
     port: int = Field(default=8080, ge=1, le=65535, description="The gRPC listener's port.")
     http_port: int = Field(
-        default=8081, ge=1, le=65535, description="The HTTP listener's port: the facade, /mcp, OAuth and metrics."
+        default=8081,
+        ge=1,
+        le=65535,
+        description="The HTTP listener's port: the facade, /mcp, OAuth, health and metrics.",
     )
     operator_oidc: OperatorOidcSettings
     oauth: OAuthSettings | None = None
