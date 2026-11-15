@@ -1,5 +1,7 @@
 """Selected pytest cases sharing a deployment, with bounded case-owned async work."""
 
+from __future__ import annotations
+
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager, suppress
@@ -17,6 +19,19 @@ from agentplane.system_tests.driver.tracing import tracer
 class Case:
     nodeid: str
     run: Callable[[], Awaitable[None]]
+    exclusive: bool = False
+    timeout_seconds: float | None = None
+
+    @classmethod
+    def for_item(cls, item: pytest.Function, run: Callable[[], Awaitable[None]]) -> Case:
+        timeout = item.get_closest_marker("timeout")
+        seconds = float(timeout.args[0] if timeout.args else timeout.kwargs["timeout"]) if timeout else None
+        return cls(
+            nodeid=item.nodeid,
+            run=run,
+            exclusive=item.get_closest_marker("exclusive_case") is not None,
+            timeout_seconds=seconds or None,
+        )
 
 
 @dataclass(frozen=True)
@@ -41,6 +56,12 @@ class CaseBatch:
             if not future.done():
                 future.set_result(Result(error=error, seconds=0))
 
+    async def report(self, request: pytest.FixtureRequest) -> None:
+        result = await self.result(request.node.nodeid)
+        request.node.stash[CASE_RESULT] = result
+        if result.error is not None:
+            raise result.error
+
     async def _run_case(self, name: str, case: Case) -> None:
         error: BaseException | None = None
         with tracer.start_as_current_span(
@@ -48,7 +69,8 @@ class CaseBatch:
         ) as span:
             try:
                 with tracer.start_as_current_span("system_test.scenario", attributes={"pytest.nodeid": case.nodeid}):
-                    await case.run()
+                    async with asyncio.timeout(case.timeout_seconds):
+                        await case.run()
             except (
                 Exception,
                 asyncio.CancelledError,
@@ -75,15 +97,13 @@ class CaseBatch:
         assert span.end_time is not None
         self._results[name].set_result(Result(error=error, seconds=(span.end_time - span.start_time) / 1e9))
 
-    async def _run(self, cases: Mapping[str, Case], *, limit: int, exclusive: str | None) -> None:
-        if exclusive is not None:
-            await self._run_case(exclusive, cases[exclusive])
-            if (await self.result(exclusive)).error is not None:
-                for name, future in self._results.items():
-                    if name != exclusive:
-                        future.set_result(
-                            Result(error=RuntimeError(f"Not run: exclusive case {exclusive} failed"), seconds=0)
-                        )
+    async def _run(self, cases: Mapping[str, Case], *, limit: int) -> None:
+        for name, case in cases.items():
+            if not case.exclusive:
+                continue
+            await self._run_case(name, case)
+            if (await self.result(name)).error is not None:
+                self._finish_pending(RuntimeError(f"Not run: exclusive case {name} failed"))
                 return
         slots = asyncio.Semaphore(limit)
 
@@ -93,12 +113,12 @@ class CaseBatch:
 
         async with asyncio.TaskGroup() as tasks:
             for name, case in cases.items():
-                if name != exclusive:
+                if not case.exclusive:
                     tasks.create_task(bounded(name, case), name=name)
 
     @classmethod
     @asynccontextmanager
-    async def running(cls, cases: Mapping[str, Case], *, limit: int, exclusive: str | None) -> AsyncIterator[CaseBatch]:
+    async def running(cls, cases: Mapping[str, Case], *, limit: int) -> AsyncIterator[CaseBatch]:
         if limit < 1:
             raise ValueError("case concurrency must be positive")
         batch = cls(cases)
@@ -107,7 +127,7 @@ class CaseBatch:
         # setup and finalization themselves run in different tasks.
         async def drive() -> None:
             try:
-                await batch._run(cases, limit=limit, exclusive=exclusive)
+                await batch._run(cases, limit=limit)
             except BaseException as error:
                 # An internal driver error must wake every result waiter as well as
                 # propagate at fixture teardown; otherwise pytest waits until timeout.
@@ -125,3 +145,10 @@ class CaseBatch:
             finally:
                 # The driver can be cancelled before its coroutine starts.
                 batch._finish_pending(asyncio.CancelledError("case batch closed"))
+
+
+def selected_items(request: pytest.FixtureRequest) -> tuple[pytest.Function, ...]:
+    """Collected items for this module, after pytest has applied selection."""
+    return tuple(
+        item for item in request.session.items if isinstance(item, pytest.Function) and item.parent is request.node
+    )

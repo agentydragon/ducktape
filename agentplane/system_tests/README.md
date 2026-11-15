@@ -52,6 +52,12 @@ scales the app to zero after OAuth consent.
 [`test_ollama_routes`](suites/live/test_ollama_routes.py) carry both `manual` and `no-remote-exec`;
 the [live-test instructions](#running-live) explain how to run them.
 
+Pod, MCP Actions, and VM harness cases use the same bounded batch runner. Pytest selection determines
+which callbacks run; each pytest item reports its own result and traced execution time. Fixtures
+own shared deployment/model-server lifetime, while each callback owns its clients, guests, and
+cleanup. The storage case carries an explicit exclusivity marker and runs before the Pod pool is
+used. A case's timeout bounds its own coroutine, even while pytest is awaiting a different case.
+
 For current test names and arguments, inspect the suite modules, such as
 [`test_pod.py`](suites/test_pod.py), [`test_dispatcher.py`](suites/test_dispatcher.py), and
 [`test_actions.py`](suites/mcp/test_actions.py). Scenario modules are libraries called by suite

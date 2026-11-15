@@ -86,11 +86,14 @@ def _assert_stages(
         assert not missing, f"{role} Sandbox {name} ({uid}) is missing Environment Runtime stages: {missing}"
 
 
-def assert_vm_process_trace_contract(output_dir: Path) -> None:
+def assert_vm_process_trace_contract(output_dir: Path, *, sandbox_uids: set[str], require_codex: bool) -> None:
     test_spans = _read_jsonl(output_dir / "test-spans.jsonl")
     process_spans = _read_jsonl(output_dir / "process-spans.jsonl")
     scenario_ready = _sandbox_identities(test_spans, "system_test.sandbox.ready")
-    assert scenario_ready, "no ready VM Sandbox spans reached test-spans.jsonl"
+    assert sandbox_uids, "the VM case created no Sandboxes"
+    scenario_ready = {name: uid for name, uid in scenario_ready.items() if uid in sandbox_uids}
+    assert set(scenario_ready.values()) == sandbox_uids, "a VM case Sandbox has no ready span in test-spans.jsonl"
+    test_spans = [span for span in test_spans if _attributes(span).get("sandbox.name") in scenario_ready]
 
     environment_runtime_spans = [
         span for span in process_spans if span.get("service") == "agentplane-environment-runtime"
@@ -98,6 +101,7 @@ def assert_vm_process_trace_contract(output_dir: Path) -> None:
     assert environment_runtime_spans, "no Environment Runtime spans reached process-spans.jsonl"
     unattributed = sorted({str(span.get("name")) for span in environment_runtime_spans if _resource_uid(span) is None})
     assert not unattributed, "Environment Runtime spans lack resource sandbox.uid: " + ", ".join(unattributed)
+    environment_runtime_spans = [span for span in environment_runtime_spans if _resource_uid(span) in sandbox_uids]
     stages_by_uid: dict[str, set[object]] = {}
     for span in environment_runtime_spans:
         if uid := _resource_uid(span):
@@ -115,7 +119,8 @@ def assert_vm_process_trace_contract(output_dir: Path) -> None:
         "VM",
     )
     codex_uids = _codex_session_uids(test_spans, scenario_ready)
-    assert codex_uids, "no ready Codex VM has a driver session.create span"
+    if require_codex:
+        assert codex_uids == sandbox_uids, "a Codex VM case Sandbox has no driver session.create span"
     codex_identities = {name: uid for name, uid in scenario_ready.items() if uid in codex_uids}
     _assert_stages(
         stages_by_uid,

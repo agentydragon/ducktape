@@ -36,10 +36,10 @@ async def test_exclusive_case_finishes_before_two_slots_open() -> None:
         active -= 1
         finished.add(name)
 
-    cases = {"storage": Case("storage", exclusive)} | {
+    cases = {"storage": Case("storage", exclusive, exclusive=True)} | {
         name: Case(name, partial(peer, name)) for name in ["a", "b", "c"]
     }
-    async with asyncio.timeout(2), CaseBatch.running(cases, limit=2, exclusive="storage") as batch:
+    async with asyncio.timeout(2), CaseBatch.running(cases, limit=2) as batch:
         await exclusive_started.wait()
         assert active == 0
         exclusive_release.set()
@@ -65,7 +65,7 @@ async def test_case_failure_does_not_cancel_its_peer() -> None:
         await peer_finished.wait()
 
     cases = {"bad": Case("bad", bad), "peer": Case("peer", peer)}
-    async with asyncio.timeout(2), CaseBatch.running(cases, limit=2, exclusive=None) as batch:
+    async with asyncio.timeout(2), CaseBatch.running(cases, limit=2) as batch:
         result = await batch.result("bad")
         assert isinstance(result.error, AssertionError)
         peer_finished.set()
@@ -98,7 +98,7 @@ async def test_nested_outcome_group_is_delivered_before_peer_finishes(outcome_ty
             cleanup_drained.set()
 
     cases = {"bad": Case("bad", bad), "peer": Case("peer", peer)}
-    async with asyncio.timeout(2), CaseBatch.running(cases, limit=2, exclusive=None) as batch:
+    async with asyncio.timeout(2), CaseBatch.running(cases, limit=2) as batch:
         await peer_started.wait()
         fail_now.set()
         result = await batch.result("bad")
@@ -145,7 +145,7 @@ async def test_mixed_base_exception_group_wakes_waiter_and_propagates_original()
     result_holder: list[Result] = []
 
     async def run_batch() -> None:
-        async with asyncio.timeout(2), CaseBatch.running(cases, limit=2, exclusive=None) as batch:
+        async with asyncio.timeout(2), CaseBatch.running(cases, limit=2) as batch:
             await peer_started.wait()
             waiter = asyncio.create_task(wait_for_result(batch))
             await waiter_started.wait()
@@ -185,7 +185,7 @@ async def test_caller_cancellation_propagates_and_drains_case_cleanup() -> None:
         return await batch.result("active")
 
     async def use_batch() -> None:
-        async with CaseBatch.running({"active": Case("active", active)}, limit=1, exclusive=None) as batch:
+        async with CaseBatch.running({"active": Case("active", active)}, limit=1) as batch:
             batch_holder.append(batch)
             await started.wait()
             pending_result = asyncio.create_task(wait_for_result(batch))
@@ -212,7 +212,7 @@ async def test_cancelled_case_reports_a_result_without_cancelling_its_peer() -> 
         peer_finished.set()
 
     cases = {"cancelled": Case("cancelled", cancelled), "peer": Case("peer", peer)}
-    async with asyncio.timeout(2), CaseBatch.running(cases, limit=2, exclusive=None) as batch:
+    async with asyncio.timeout(2), CaseBatch.running(cases, limit=2) as batch:
         assert isinstance((await batch.result("cancelled")).error, asyncio.CancelledError)
         assert (await batch.result("peer")).error is None
     assert peer_finished.is_set()
@@ -227,8 +227,8 @@ async def test_exclusive_failure_does_not_run_other_cases() -> None:
     async def peer() -> None:
         peers.append("peer")
 
-    cases = {"storage": Case("storage", bad), "peer": Case("peer", peer)}
-    async with asyncio.timeout(2), CaseBatch.running(cases, limit=2, exclusive="storage") as batch:
+    cases = {"storage": Case("storage", bad, exclusive=True), "peer": Case("peer", peer)}
+    async with asyncio.timeout(2), CaseBatch.running(cases, limit=2) as batch:
         assert isinstance((await batch.result("storage")).error, AssertionError)
         assert isinstance((await batch.result("peer")).error, RuntimeError)
     assert not peers
@@ -251,7 +251,7 @@ async def test_early_exit_cancels_and_drains_active_cleanup() -> None:
 
     cases = {"active": Case("active", active), "queued": Case("queued", queued)}
     async with asyncio.timeout(2):
-        async with CaseBatch.running(cases, limit=1, exclusive=None) as batch:
+        async with CaseBatch.running(cases, limit=1) as batch:
             await started.wait()
         assert cleaned.is_set()
         assert not queued_started.is_set()
@@ -265,7 +265,7 @@ async def test_driver_failure_wakes_result_waiters(monkeypatch: pytest.MonkeyPat
         pass
 
     async def check() -> None:
-        async with CaseBatch.running({"case": Case("case", run)}, limit=1, exclusive=None) as batch:
+        async with CaseBatch.running({"case": Case("case", run)}, limit=1) as batch:
             error = (await batch.result("case")).error
             assert isinstance(error, ExceptionGroup)
 

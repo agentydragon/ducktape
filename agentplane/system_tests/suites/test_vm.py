@@ -1,25 +1,31 @@
-"""Executable vm scenarios sharing one k3s stack."""
+"""Selectable VM harness cases sharing one stack and two concurrent case slots."""
 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from functools import partial
+from typing import cast
 
 import pytest
+import pytest_asyncio
 import pytest_bazel
 
-from agentplane.app.testing.client import Client
 from agentplane.proto import session_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.system_tests.driver import scenario
+from agentplane.system_tests.driver.case_batch import Case, CaseBatch, selected_items
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.dispatcher_transport import native_client
 from agentplane.system_tests.driver.offered_models import models_offered_for
 from agentplane.system_tests.driver.sandbox import VM_TEMPLATE
-from agentplane.system_tests.driver.scenario import ScenarioResources
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
-from agentplane.system_tests.driver.tracing import traced_scenario
+from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.scenarios import vm_sandbox
 from agentplane.system_tests.vm.configuration import SUPERVISION_TEMPLATE
 from agentplane.system_tests.vm.trace_contract import assert_vm_process_trace_contract
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
+from util.net import Listener
 
 # gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
 pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
@@ -27,10 +33,29 @@ pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
 # session_pb2.pyi imports protobuf stubs directly during mypy's dependency traversal.
 # gazelle:include_dep @pypi//protobuf
 
-pytestmark = pytest.mark.vm_sandboxes
+pytestmark = [
+    pytest.mark.vm_sandboxes,
+    pytest.mark.scripted_model,
+    pytest.mark.case_batch,
+    pytest.mark.asyncio(loop_scope="module"),
+    pytest.mark.timeout(600),
+]
 
 
-async def _wait_for_vm_process_trace_contract() -> None:
+@dataclass(frozen=True)
+class VmCase:
+    harness: session_pb2.Harness
+    template: str
+
+
+CASES = (
+    # Only Claude selects the private supervisor checks; both use the ordinary guest image.
+    pytest.param(VmCase(session_pb2.HARNESS_CLAUDE, SUPERVISION_TEMPLATE), id="claude"),
+    pytest.param(VmCase(session_pb2.HARNESS_CODEX, VM_TEMPLATE), id="codex"),
+)
+
+
+async def _wait_for_vm_process_trace_contract(sandbox_uids: set[str], *, require_codex: bool) -> None:
     output_dir = undeclared_outputs_dir()
     loop = asyncio.get_running_loop()
     deadline = loop.time() + 30
@@ -41,7 +66,7 @@ async def _wait_for_vm_process_trace_contract() -> None:
         current_sizes = tuple(path.stat().st_size if path.exists() else 0 for path in artifacts)
         if current_sizes != last_sizes:
             try:
-                assert_vm_process_trace_contract(output_dir)
+                assert_vm_process_trace_contract(output_dir, sandbox_uids=sandbox_uids, require_codex=require_codex)
             except AssertionError as caught:
                 error = caught
             else:
@@ -52,36 +77,43 @@ async def _wait_for_vm_process_trace_contract() -> None:
         await asyncio.sleep(0.5)
 
 
-@pytest.mark.vm_sandboxes
-@pytest.mark.scripted_model
-@pytest.mark.timeout(600)
-async def test_vm_scenarios(
+@pytest_asyncio.fixture(scope="module", loop_scope="module")
+async def vm_cases(
+    request: pytest.FixtureRequest,
     cluster: Cluster,
-    client: Client,
-    dispatcher: SessionDispatcherClient,
-    scenario_resources: ScenarioResources,
-    scripted: ScriptedUpstream,
-) -> None:
-    harnesses = [session_pb2.HARNESS_CLAUDE, session_pb2.HARNESS_CODEX]
-    models = await models_offered_for(client, harnesses)
+    base_url: str,
+    token: str,
+    scripted_listener: Listener,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> AsyncIterator[CaseBatch]:
+    scripted = ScriptedUpstream()
 
-    async def turn(harness: session_pb2.Harness, template: str) -> None:
-        async with scenario_resources() as (owned_client, sandbox):
+    async def turn(case: VmCase) -> None:
+        async with (
+            scripted.case_scope(),
+            scenario.open_resources(cluster, base_url, token, tracer) as (client, sandboxes),
+            native_client(cluster, tmp_path_factory.mktemp("vm-dispatcher") / "token") as dispatcher,
+        ):
+            models = await models_offered_for(client, [case.harness])
             await vm_sandbox.vm_sandbox_turn(
-                cluster, owned_client, dispatcher, sandbox, harness, models[harness], scripted, template
+                cluster, client, dispatcher, sandboxes, case.harness, models[case.harness], scripted, case.template
             )
+            sandbox_uids = set(client.opened_sandbox_uids)
+        # Assert only this case's identities, so harness selection and a failed peer do
+        # not force the other case to wait for evidence it cannot produce.
+        await _wait_for_vm_process_trace_contract(sandbox_uids, require_codex=case.harness == session_pb2.HARNESS_CODEX)
 
-    # pytest-asyncio serializes separate tests. Launch every independent boot here so a
-    # finished scenario never leaves its worker capacity idle behind another test's teardown.
-    # Each task owns its guests and cleanup.
-    async with asyncio.TaskGroup() as scenarios:
-        # Only Claude selects the private supervisor checks; both use the ordinary guest image.
-        scenarios.create_task(
-            traced_scenario("vm-turn-harness_claude", turn(session_pb2.HARNESS_CLAUDE, SUPERVISION_TEMPLATE))
-        )
-        scenarios.create_task(traced_scenario("vm-turn-harness_codex", turn(session_pb2.HARNESS_CODEX, VM_TEMPLATE)))
+    cases = {
+        item.nodeid: Case.for_item(item, partial(turn, cast(VmCase, item.callspec.params["case"])))
+        for item in selected_items(request)
+    }
+    async with scripted.serving(listener=scripted_listener.socket), CaseBatch.running(cases, limit=2) as batch:
+        yield batch
 
-    await _wait_for_vm_process_trace_contract()
+
+@pytest.mark.parametrize("case", CASES)
+async def test_vm_scenarios(case: VmCase, vm_cases: CaseBatch, request: pytest.FixtureRequest) -> None:
+    await vm_cases.report(request)
 
 
 if __name__ == "__main__":
