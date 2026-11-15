@@ -157,7 +157,9 @@ absence. The egress case checks the random ConfigMap value as well as proxy deci
 The k3s case checks the deployed Dispatcher, Gateway, LLM ingress and authenticated History path
 together. Its setup and requested shell command must reach the same executor workspace
 ([`central_sampler.py`](scenarios/central_sampler.py)); the [service guide](../central_sampler/README.md)
-covers the image and runtime contract.
+covers the image and runtime contract. Sampler RPCs admit exact service SVIDs over mTLS; the
+fixture exercises that receiver path while retaining the configured Gateway and History credentials
+for outbound calls.
 
 `test_sampler_roll` owns a separate stack. It abruptly replaces the sampler Pod during a confirmed
 turn with a live JavaScript cell and running executor process, then checks abandonment ordering,

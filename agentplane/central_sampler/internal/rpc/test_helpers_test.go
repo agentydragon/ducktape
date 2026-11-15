@@ -2,25 +2,44 @@ package rpc
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"os"
+	"testing"
 
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
-	authenticationv1 "k8s.io/api/authentication/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/peer"
 )
 
-type fixtureReviews struct {
-	uid, account string
-	failure      error
-}
-
-func (r fixtureReviews) Create(ctx context.Context, request *authenticationv1.TokenReview, options metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
-	if r.failure != nil {
-		return nil, r.failure
+func serviceContext(t *testing.T, caller string) context.Context {
+	t.Helper()
+	ca := transporttesting.NewCA(t)
+	files := ca.Issue(t, caller)
+	certificate, err := tls.LoadX509KeyPair(files.CertFile, files.KeyFile)
+	if err != nil {
+		t.Fatal(err)
 	}
-	return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{Authenticated: request.Spec.Token == "test-token", Audiences: request.Spec.Audiences, User: authenticationv1.UserInfo{Username: r.account, UID: r.uid, Extra: map[string]authenticationv1.ExtraValue{"authentication.kubernetes.io/pod-name": {"test-pod"}, "authentication.kubernetes.io/pod-uid": {"test-pod-uid"}}}}}, nil
+	leaf, err := x509.ParseCertificate(certificate.Certificate[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := x509.NewCertPool()
+	raw, err := os.ReadFile(ca.RootFile)
+	if err != nil || !roots.AppendCertsFromPEM(raw) {
+		t.Fatalf("roots: %v", err)
+	}
+	chains, err := leaf.Verify(x509.VerifyOptions{Roots: roots, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return peer.NewContext(t.Context(), &peer.Peer{AuthInfo: credentials.TLSInfo{State: tls.ConnectionState{
+		PeerCertificates: []*x509.Certificate{leaf}, VerifiedChains: chains,
+	}}})
 }
 
 func fixtureSettings() samplersettings.Settings {
@@ -28,6 +47,6 @@ func fixtureSettings() samplersettings.Settings {
 	return samplersettings.Settings{
 		Models:      map[string]samplersettings.ModelConfig{"test-model": {Connection: "provider", ProviderModel: "test-model", API: protocol.APIStyleResponses, Responses: responses.Config{Dialect: responses.DialectLite}, ExecEncoding: protocol.ExecEncodingFreeform, ReasoningEfforts: []string{"", "high"}}},
 		Connections: map[string]samplersettings.ConnectionConfig{"provider": {BaseURL: "https://model.invalid", Auth: samplersettings.AuthConfig{Type: samplersettings.AuthTypeBearer, Credential: "test-credential"}}},
-		DatabaseURL: "postgresql://fixture.invalid/sampler", ListenTLS: &peertls.ServerTLSListener{Listen: "127.0.0.1:8083", CertFile: "/fixture/tls.crt", KeyFile: "/fixture/tls.key"}, Audience: "test-sampler", AllowedAccounts: []string{"test/client"}, PlatformInstructions: &platformInstructions, CodeModeHost: "/fixture/host", ExecutorCodex: "/fixture/codex", Logs: "/fixture/logs", DirectExecutorTarget: "127.0.0.1:4501", DirectExecutorInsecureLocaltest: true, MaxLiveSessions: 2, RPCTimeoutSeconds: 10, LeaseSeconds: 60,
+		DatabaseURL: "postgresql://fixture.invalid/sampler", ListenTLS: &peertls.ServerTLSListener{Listen: "127.0.0.1:8083", CertFile: "/fixture/tls.crt", KeyFile: "/fixture/tls.key", ClientCAFile: "/fixture/ca.crt"}, Audience: "test-sampler", AllowedAccounts: []string{"test/client"}, ServiceCallers: []string{peertls.SessionsURI}, PlatformInstructions: &platformInstructions, CodeModeHost: "/fixture/host", ExecutorCodex: "/fixture/codex", Logs: "/fixture/logs", DirectExecutorTarget: "127.0.0.1:4501", DirectExecutorInsecureLocaltest: true, MaxLiveSessions: 2, RPCTimeoutSeconds: 10, LeaseSeconds: 60,
 	}
 }

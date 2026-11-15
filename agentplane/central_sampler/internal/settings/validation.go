@@ -97,7 +97,6 @@ func (s Settings) Validate() error {
 	}
 	for name, value := range map[string]string{
 		"database_url":   s.DatabaseURL,
-		"audience":       s.Audience,
 		"code_mode_host": s.CodeModeHost,
 		"executor_codex": s.ExecutorCodex,
 		"logs":           s.Logs,
@@ -106,8 +105,8 @@ func (s Settings) Validate() error {
 			return invalidSetting(name, "is required")
 		}
 	}
-	if len(s.Models) == 0 || len(s.AllowedAccounts) == 0 {
-		return invalidSetting("models,allowed_accounts", "must not be empty")
+	if len(s.Models) == 0 {
+		return invalidSetting("models", "must not be empty")
 	}
 	if len(s.Connections) == 0 {
 		return invalidSetting("connections", "must not be empty")

@@ -791,7 +791,7 @@ async def test_host_loss_settles_and_resets_javascript_session(
             )
             with pytest.raises(grpc.aio.AioRpcError) as rejected:
                 await stub.RecoverSession(recovery, metadata=(("authorization", "Bearer recreated-account-token"),))
-            assert rejected.value.code() == grpc.StatusCode.PERMISSION_DENIED
+            assert rejected.value.code() == grpc.StatusCode.UNAUTHENTICATED
             with pytest.raises(grpc.aio.AioRpcError) as nothing_to_recover:
                 await stub.RecoverSession(recovery, metadata=METADATA)
             assert nothing_to_recover.value.code() == grpc.StatusCode.FAILED_PRECONDITION

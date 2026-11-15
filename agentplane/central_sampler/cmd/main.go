@@ -21,7 +21,6 @@ import (
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/migrations"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
@@ -31,9 +30,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 )
 
 type startupFailure struct {
@@ -102,30 +98,6 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 	if err := os.MkdirAll(settings.Logs, 0700); err != nil {
 		return atStartupStage("logs_directory", err)
 	}
-	var kubeConfig *rest.Config
-	if settings.Kubeconfig != "" {
-		kubeConfig, err = clientcmd.BuildConfigFromFlags("", settings.Kubeconfig)
-	} else {
-		kubeConfig, err = rest.InClusterConfig()
-	}
-	if err != nil {
-		return atStartupStage("kubernetes_config", err)
-	}
-	kubeConfig.QPS = -1
-	kubeConfig.ContentType = "application/json"
-	client, err := kubernetes.NewForConfig(kubeConfig)
-	if err != nil {
-		return atStartupStage("kubernetes_client", err)
-	}
-	namespaces := make([]string, 0, len(settings.AllowedAccounts))
-	for _, account := range settings.AllowedAccounts {
-		namespace, _, _ := strings.Cut(account, "/")
-		namespaces = append(namespaces, namespace)
-	}
-	resolver, err := auth.NewResolver(client.AuthenticationV1().TokenReviews(), settings.Audience, namespaces)
-	if err != nil {
-		return atStartupStage("token_review_resolver", err)
-	}
 	store := sessionstore.New(db, time.Duration(settings.RPCTimeoutSeconds)*time.Second)
 	hub, err := wakeups.Listen(ctx, databaseURL, sessionstore.OutboxChannel, sessionstore.WorkChannel)
 	if err != nil {
@@ -148,7 +120,7 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 	runtime := residentruntime.New(store, settings, residentruntime.NewCodeModeHost(context.Background(), settings, store, actionClient))
 	serverOptions := []grpc.ServerOption{grpc.MaxRecvMsgSize(64 * 1024 * 1024), grpc.MaxSendMsgSize(64 * 1024 * 1024)}
 	register := func(server *grpc.Server) {
-		samplerpb.RegisterSamplerServer(server, &samplerrpc.Sampler{Store: store, Runtime: runtime, Resolver: resolver, Settings: settings, Wakeups: hub})
+		samplerpb.RegisterSamplerServer(server, &samplerrpc.Sampler{Store: store, Runtime: runtime, Settings: settings, Wakeups: hub})
 	}
 	healthServer := health.NewServer()
 	healthOnlyServer := newHealthOnlyServer(healthServer)

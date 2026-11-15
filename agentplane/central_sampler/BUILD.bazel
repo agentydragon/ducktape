@@ -26,7 +26,6 @@ py_library(
         "//agentplane/testing:go_process",
         "//agentplane/testing:tls",
         "//util:net",
-        "@pypi//aiohttp",
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pydantic",

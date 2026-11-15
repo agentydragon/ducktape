@@ -1,4 +1,4 @@
-"""Real sampler fixtures; only provider and TokenReview are external scripted boundaries."""
+"""Real sampler fixtures; provider and service certificates are scripted boundaries."""
 
 import asyncio
 import json
@@ -11,7 +11,6 @@ from typing import Any, Self, override
 from uuid import uuid4
 
 import grpc
-from aiohttp import web
 from pydantic import SecretStr
 from python.runfiles import Runfiles
 from sqlalchemy.engine import make_url
@@ -20,13 +19,13 @@ from agentplane.central_sampler.api import sampler_pb2, sampler_pb2_grpc
 from agentplane.central_sampler.settings import AuthConfig, ConnectionConfig, ModelConfig, ResponsesConfig, Settings
 from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.native.testing.model_endpoint import ModelEndpoint, ModelExchange
-from agentplane.net.peertls.config import ClientTLS, ServerTLSListener
+from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, GATEWAY_SESSIONS_URI, ClientTLS, ServerTLSListener
 from agentplane.proto import event_pb2, identity_pb2, session_pb2
 from agentplane.testing.go_process import go_process
 from agentplane.testing.tls import issue_workload_leaf, make_ca
 from util.net import listen_tcp
 
-METADATA = (("authorization", "Bearer test-token"),)
+METADATA = ()
 # The Session `create_request` creates.
 SESSION_ID = "079bd706-77b3-4b71-8c7e-605a7e19324c"
 
@@ -53,58 +52,6 @@ class Endpoint(ModelEndpoint[Request]):
         await self.stop()
 
 
-@asynccontextmanager
-async def authentication(directory: Path) -> AsyncIterator[Path]:
-    """Only TokenReview is mocked: the Go service still calls the Kubernetes HTTP API."""
-
-    async def review(request: web.Request) -> web.Response:
-        value = await request.json()
-        token = value["spec"]["token"]
-        return web.json_response(
-            {
-                "apiVersion": "authentication.k8s.io/v1",
-                "kind": "TokenReview",
-                "spec": value["spec"],
-                "status": {
-                    "authenticated": token in {"test-token", "recreated-account-token"},
-                    "audiences": ["sampler-test"],
-                    "user": {
-                        "username": "system:serviceaccount:test:client",
-                        "uid": token,
-                        "extra": {
-                            "authentication.kubernetes.io/pod-name": ["test-pod"],
-                            "authentication.kubernetes.io/pod-uid": ["test-pod-uid"],
-                        },
-                    },
-                },
-            }
-        )
-
-    app = web.Application()
-    app.router.add_post("/apis/authentication.k8s.io/v1/tokenreviews", review)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    with listen_tcp() as listener:
-        try:
-            await web.SockSite(runner, listener.socket).start()
-            path = directory / "sampler-kubeconfig.json"
-            path.write_text(
-                json.dumps(
-                    {
-                        "apiVersion": "v1",
-                        "kind": "Config",
-                        "clusters": [{"name": "test", "cluster": {"server": f"http://127.0.0.1:{listener.port}"}}],
-                        "contexts": [{"name": "test", "context": {"cluster": "test", "user": "test"}}],
-                        "current-context": "test",
-                        "users": [{"name": "test", "user": {}}],
-                    }
-                )
-            )
-            yield path
-        finally:
-            await runner.cleanup()
-
-
 def settings(
     database_url: str,
     endpoint: str,
@@ -123,7 +70,7 @@ def settings(
     return Settings(
         database_url=database_url,
         listen_tls=ServerTLSListener(
-            listen="127.0.0.1:0", cert_file=Path("/fixture/tls.crt"), key_file=Path("/fixture/tls.key")
+            listen="127.0.0.1:0", cert_file=Path("/fixture/tls.crt"), key_file=Path("/fixture/tls.key"), client_ca_file=Path("/fixture/ca.crt")
         ),
         connections={
             "provider": ConnectionConfig(
@@ -149,8 +96,7 @@ def settings(
             ),
         },
         platform_instructions="Fixture Agentplane guidance.",
-        audience="sampler-test",
-        allowed_accounts={"test/client"},
+        service_callers=[GATEWAY_SESSIONS_URI],
         code_mode_host=Path(host),
         executor_codex=codex_binary,
         logs=logs,
@@ -189,9 +135,16 @@ def create_request(cwd: Path) -> sampler_pb2.CreateSessionRequest:
     )
 
 
+@dataclass(frozen=True)
+class SamplerEndpoint:
+    target: str
+    channel_credentials: grpc.ChannelCredentials
+    channel: grpc.aio.Channel
+
+
 @asynccontextmanager
-async def go_sampler(config: Settings, kubeconfig: Path, directory: Path) -> AsyncIterator[tuple[str, bytes]]:
-    """Run the Go binary, which migrates before serving."""
+async def go_sampler(config: Settings, directory: Path) -> AsyncIterator[SamplerEndpoint]:
+    """Run the Go binary with a verified service-SVID application listener."""
     await asyncio.to_thread(directory.mkdir, parents=True, exist_ok=True)
     binary = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/central_sampler/cmd/main_bin_/main_bin"
     if config.database_url is None:
@@ -203,11 +156,22 @@ async def go_sampler(config: Settings, kubeconfig: Path, directory: Path) -> Asy
     ):
         health_port = health_listener.port
         health_fd = health_listener.socket.fileno()
-        fd = bound.socket.fileno()
-        ca = make_ca("central sampler fixture")
-        cert_path, key_path = issue_workload_leaf(
-            ca, "spiffe://agentplane/central-sampler", Path(credentials_directory), dns_name="localhost"
+        credential_root = Path(credentials_directory)
+        ca = make_ca("central sampler test CA")
+        ca_file = credential_root / "sampler-ca.pem"
+        ca_file.write_bytes(ca.cert_pem)
+        server_directory = credential_root / "server"
+        client_directory = credential_root / "client"
+        server_directory.mkdir()
+        client_directory.mkdir()
+        server_cert, server_key = issue_workload_leaf(ca, CENTRAL_SAMPLER_URI, server_directory, dns_name="localhost")
+        client_cert, client_key = issue_workload_leaf(ca, GATEWAY_SESSIONS_URI, client_directory, dns_name="localhost")
+        client_credentials = grpc.ssl_channel_credentials(
+            root_certificates=ca.cert_pem,
+            private_key=client_key.read_bytes(),
+            certificate_chain=client_cert.read_bytes(),
         )
+        fd = bound.socket.fileno()
         values = config.model_dump(mode="json", exclude_none=True)
         values["database_url"] = (
             make_url(config.database_url)
@@ -215,9 +179,14 @@ async def go_sampler(config: Settings, kubeconfig: Path, directory: Path) -> Asy
             .update_query_dict({"sslmode": "disable"})
             .render_as_string(hide_password=False)
         )
-        values["listen_tls"].update(listen=f"fd:{fd}", cert_file=str(cert_path), key_file=str(key_path))
         values["health_listen"] = f"fd:{health_fd}"
-        values["kubeconfig"] = str(kubeconfig)
+        values["listen_tls"] = {
+            "listen": f"fd:{fd}",
+            "cert_file": str(server_cert),
+            "key_file": str(server_key),
+            "client_ca_file": str(ca_file),
+        }
+        values["service_callers"] = [GATEWAY_SESSIONS_URI]
         for index, (connection, connection_config) in enumerate(config.connections.items()):
             credential = connection_config.auth.credential
             if credential is not None:
@@ -238,19 +207,19 @@ async def go_sampler(config: Settings, kubeconfig: Path, directory: Path) -> Asy
             grace_s=10,
             pass_fds=(fd, health_fd),
         ):
-            yield f"localhost:{bound.port}", ca.cert_pem
+            channel = grpc.aio.secure_channel(
+                f"localhost:{bound.port}", client_credentials, options=(("grpc.ssl_target_name_override", "localhost"),)
+            )
+            async with channel:
+                yield SamplerEndpoint(f"localhost:{bound.port}", client_credentials, channel)
 
 
 @asynccontextmanager
 async def service(config: Settings) -> AsyncIterator[sampler_pb2_grpc.SamplerAsyncStub]:
     directory = config.logs / ("go-sampler-" + uuid4().hex)
     directory.mkdir(parents=True)
-    async with (
-        authentication(directory) as kubeconfig,
-        go_sampler(config, kubeconfig, directory) as (target, root_certificates),
-        grpc.aio.secure_channel(target, grpc.ssl_channel_credentials(root_certificates=root_certificates)) as channel,
-    ):
-        yield sampler_pb2_grpc.SamplerStub(channel)
+    async with go_sampler(config, directory) as endpoint:
+        yield sampler_pb2_grpc.SamplerStub(endpoint.channel)
 
 
 async def turn_completed(

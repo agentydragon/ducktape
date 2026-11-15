@@ -15,6 +15,30 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 )
 
+func TestLegacyTokenReviewSettingsMayBeOmitted(t *testing.T) {
+	encoded, err := json.Marshal(fixtureSettings())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		t.Fatal(err)
+	}
+	delete(fields, "audience")
+	delete(fields, "allowed_accounts")
+	wire, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings, err := DecodeSettings(strings.NewReader(string(wire)))
+	if err != nil {
+		t.Fatalf("decode configuration without legacy TokenReview settings: %v", err)
+	}
+	if err := settings.Validate(); err != nil {
+		t.Fatalf("validate configuration without legacy TokenReview settings: %v", err)
+	}
+}
+
 func TestSettingsPlatformGuidanceAcceptsOldConfigurationAndRejectsEmptyGuide(t *testing.T) {
 	encoded, err := json.Marshal(fixtureSettings())
 	if err != nil {

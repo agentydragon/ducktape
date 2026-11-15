@@ -4,7 +4,7 @@
 
 `Sampler` is a separate authenticated gRPC API. `CreateSession` binds a canonical public Session UUID
 to a `SessionSpec` whose placement is `central_sampler_v1` with one exact `executor_environment`,
-a typed caller owner (ServiceAccount UID or service SPIFFE ID) and fixed `SandboxDestination` plus expected incarnation UID. The
+the authenticated caller’s exact service SPIFFE ID as its owner key, plus the fixed `SandboxDestination` and expected incarnation UID. The
 Dispatcher and sampler require the spec environment and executor destination to match. The
 Dispatcher requires and supplies the complete execution Identity named by the executor's Sandbox,
 retaining it in the immutable configuration across retries and restarts. The authenticated sampler
@@ -18,10 +18,13 @@ separately configured. During the Runtime proxy cutover, `gateway_tls.server_uri
 receivers. Caller manifests remain on Gateway until the Environments receiver and accepting caller
 images have rolled. The
 Dispatcher uses its one configured central sampler target; callers select the V1 placement, not a
-service endpoint. Model and effort must be server-configured. Every RPC uses the explicit bearer-account policy or the exact service SVID allowlist. Service
-ownership is stored separately from account UIDs; existing account-owned Sessions never become
-service-owned implicitly. Session UUID knowledge grants no authority. Service admission requires
-verified client TLS with the configured trust bundle and never falls back to bearer verification.
+service endpoint. Model and effort must be server-configured. Every RPC requires a verified client
+service SVID in the exact `service_callers` allowlist. The receiver does not use bearer tokens,
+ServiceAccount admission or TokenReview. The admitted service SPIFFE ID is the owner key; it is
+stored separately from account UIDs, and existing account-owned Sessions never become service-owned
+implicitly. Session UUID knowledge grants no authority. Service admission requires verified client
+TLS with the configured trust bundle and never falls back to bearer verification. The legacy
+`audience` and `allowed_accounts` settings remain decodable but are optional and do not grant access.
 
 The sampler acts for that Identity under the [delegated authorization contract](../docs/delegated_authorization.md): it
 authenticates as itself with its own projected token or central sampler service SVID and holds no

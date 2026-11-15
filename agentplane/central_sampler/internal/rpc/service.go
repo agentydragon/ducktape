@@ -32,31 +32,20 @@ type Sampler struct {
 	samplerpb.UnimplementedSamplerServer
 	Store    *sessionstore.Store
 	Runtime  *residentruntime.Runtime
-	Resolver *auth.Resolver
 	Settings samplersettings.Settings
 	Wakeups  *wakeups.Hub
 }
 
-// admitted returns an owner key, never a synthetic Kubernetes principal for a service.
+// admitted returns the exact service SPIFFE ID used as the Session owner key.
 func (s *Sampler) admitted(ctx context.Context) (context.Context, context.CancelFunc, string, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(s.Settings.RPCTimeoutSeconds)*time.Second)
-	accounts := make([]auth.Account, 0, len(s.Settings.AllowedAccounts))
-	for _, name := range s.Settings.AllowedAccounts {
-		var account auth.Account
-		if err := account.UnmarshalText([]byte(name)); err != nil {
-			return ctx, cancel, "", samplerError(ctx, err)
-		}
-		accounts = append(accounts, account)
-	}
-	rule, err := auth.Accounts(s.Resolver, accounts).AllowServiceCallers(s.Settings.ServiceCallers)
+	rule, err := auth.Services(s.Settings.ServiceCallers)
 	if err != nil {
 		return ctx, cancel, "", samplerError(ctx, err)
 	}
 	admitted, err := rule.AdmitContext(ctx, 0)
 	if err != nil {
-		if errors.Is(err, auth.ErrInvalidBearer) {
-			err = status.Error(codes.Unauthenticated, "workload credential refused")
-		} else if status.Code(err) == codes.Unknown {
+		if status.Code(err) == codes.Unknown {
 			err = samplerError(ctx, err)
 		}
 		return ctx, cancel, "", err
@@ -68,10 +57,8 @@ func (s *Sampler) admitted(ctx context.Context) (context.Context, context.Cancel
 	switch caller := proof.(type) {
 	case auth.ServiceAdmission:
 		return admitted, cancel, caller.Caller.SPIFFEID, nil
-	case auth.DirectAdmission:
-		return admitted, cancel, caller.Caller.GetUid(), nil
 	default:
-		return ctx, cancel, "", status.Error(codes.PermissionDenied, "session access refused")
+		return admitted, cancel, "", status.Error(codes.PermissionDenied, "session access refused")
 	}
 }
 
@@ -348,8 +335,8 @@ func (s *Sampler) FollowEvents(r *samplerpb.FollowEventsRequest, stream grpc.Ser
 		if !r.GetFollow() {
 			return nil
 		}
-		// Recheck authentication after the cached TokenReview expires, even without journal traffic.
-		timer := time.NewTimer(auth.DefaultVerdictTTL)
+		// Recheck the TLS peer certificate periodically, even without journal traffic.
+		timer := time.NewTimer(30 * time.Second)
 		select {
 		case <-stream.Context().Done():
 			timer.Stop()
