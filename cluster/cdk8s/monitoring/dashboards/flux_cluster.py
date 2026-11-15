@@ -8,6 +8,7 @@ from grafana_foundation_sdk.models import common, dashboard
 from cluster.cdk8s.monitoring.dashboards.foundation import line_panel, mimir, mimir_query
 
 _NAMESPACE_QUERY = "label_values(kube_customresource_flux_kustomization_ready, namespace)"
+_RESOURCE_KINDS = ("Kustomization", "HelmRelease", "GitRepository")
 
 
 def _readiness_stat(zero_color: str = "red", nonzero_color: str = "green") -> stat.Panel:
@@ -27,6 +28,29 @@ def _readiness_stat(zero_color: str = "red", nonzero_color: str = "green") -> st
 
 def _history_panel() -> timeseries.Panel:
     return line_panel().span_nulls(True).legend(VizLegendOptions().show_legend(True))
+
+
+def _resource_readiness(id: int, kind: str, *, ready: bool = True) -> stat.Panel:
+    plural = "GitRepositories" if kind == "GitRepository" else f"{kind}s"
+    status = 'status="True"' if ready else 'status!="True"'
+    aggregate = "count" if ready else "sum"
+    return (
+        (_readiness_stat() if ready else _readiness_stat("green", "red"))
+        .id(id)
+        .title(f"{'Ready' if ready else 'Not-ready'} {plural}")
+        .description(
+            f"{plural} whose Ready condition is True."
+            if ready
+            else f"{plural} whose current Ready condition is False or Unknown."
+        )
+        .grid_pos(dashboard.GridPos(h=5, w=6, x=(id - 1) * 6))
+        .with_target(
+            mimir_query(
+                f'{aggregate}(kube_customresource_flux_{kind.lower()}_ready{{namespace=~"$namespace",{status}}})',
+                "ready" if ready else "not ready",
+            ).instant()
+        )
+    )
 
 
 def build_dashboard() -> dashboard.Dashboard:
@@ -50,57 +74,10 @@ def build_dashboard() -> dashboard.Dashboard:
             .refresh(dashboard.VariableRefresh.ON_DASHBOARD_LOAD)
             .current(dashboard.VariableOption(text="All", value=["$__all"]))
         )
-        .with_panel(
-            _readiness_stat()
-            .id(1)
-            .title("Ready Kustomizations")
-            .description("Kustomizations whose Ready condition is True.")
-            .grid_pos(dashboard.GridPos(h=5, w=6))
-            .with_target(
-                mimir_query(
-                    'count(kube_customresource_flux_kustomization_ready{namespace=~"$namespace",status="True"})',
-                    "ready",
-                ).instant()
-            )
-        )
-        .with_panel(
-            _readiness_stat("green", "red")
-            .id(2)
-            .title("Not-ready Kustomizations")
-            .description("Kustomizations whose current Ready condition is False or Unknown.")
-            .grid_pos(dashboard.GridPos(h=5, w=6, x=6))
-            .with_target(
-                mimir_query(
-                    'sum(kube_customresource_flux_kustomization_ready{namespace=~"$namespace",status!="True"})',
-                    "not ready",
-                ).instant()
-            )
-        )
-        .with_panel(
-            _readiness_stat()
-            .id(3)
-            .title("Ready HelmReleases")
-            .description("HelmReleases whose Ready condition is True.")
-            .grid_pos(dashboard.GridPos(h=5, w=6, x=12))
-            .with_target(
-                mimir_query(
-                    'count(kube_customresource_flux_helmrelease_ready{namespace=~"$namespace",status="True"})', "ready"
-                ).instant()
-            )
-        )
-        .with_panel(
-            _readiness_stat()
-            .id(4)
-            .title("Ready GitRepositories")
-            .description("GitRepositories whose Ready condition is True.")
-            .grid_pos(dashboard.GridPos(h=5, w=6, x=18))
-            .with_target(
-                mimir_query(
-                    'count(kube_customresource_flux_gitrepository_ready{namespace=~"$namespace",status="True"})',
-                    "ready",
-                ).instant()
-            )
-        )
+        .with_panel(_resource_readiness(1, "Kustomization"))
+        .with_panel(_resource_readiness(2, "Kustomization", ready=False))
+        .with_panel(_resource_readiness(3, "HelmRelease"))
+        .with_panel(_resource_readiness(4, "GitRepository"))
         .with_panel(
             _history_panel()
             .id(5)
@@ -129,25 +106,15 @@ def build_dashboard() -> dashboard.Dashboard:
             .title("Not-ready resources by namespace")
             .grid_pos(dashboard.GridPos(h=8, y=14))
             .unit("short")
-            .with_target(
-                mimir_query(
-                    'sum by (namespace) (kube_customresource_flux_kustomization_ready{namespace=~"$namespace",status!="True"})',
-                    "Kustomization {{namespace}}",
-                )
-            )
-            .with_target(
-                mimir_query(
-                    'sum by (namespace) (kube_customresource_flux_helmrelease_ready{namespace=~"$namespace",status!="True"})',
-                    "HelmRelease {{namespace}}",
-                    "B",
-                )
-            )
-            .with_target(
-                mimir_query(
-                    'sum by (namespace) (kube_customresource_flux_gitrepository_ready{namespace=~"$namespace",status!="True"})',
-                    "GitRepository {{namespace}}",
-                    "C",
-                )
+            .targets(
+                [
+                    mimir_query(
+                        f'sum by (namespace) (kube_customresource_flux_{kind.lower()}_ready{{namespace=~"$namespace",status!="True"}})',
+                        f"{kind} {{{{namespace}}}}",
+                        ref_id=chr(ord("A") + index),
+                    )
+                    for index, kind in enumerate(_RESOURCE_KINDS)
+                ]
             )
         )
         .with_panel(

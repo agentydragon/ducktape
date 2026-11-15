@@ -1,8 +1,64 @@
 """IO pressure dashboard."""
 
-from grafana_foundation_sdk.models import bargauge, common, dashboard, prometheus, table, text, timeseries
+from grafana_foundation_sdk.models import bargauge, common, dashboard, table, text, timeseries
 
-from cluster.cdk8s.monitoring.dashboards.foundation import last_value, mimir, mimir_query
+from cluster.cdk8s.monitoring.dashboards.foundation import (
+    field_override,
+    last_value,
+    mimir,
+    mimir_query,
+    mimir_table_query,
+)
+
+_PHYSICAL_DISKS = 'device!~"^(loop|ram|fd|dm-|sr|nbd|drbd).*"'
+_DISK_MEDIA = 'label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), "media", "hdd", "rotational", "1"), "media", "ssd", "rotational", "0")'
+_EXPORTER_NODES = 'max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"})'
+
+
+def _io_fields(unit: str = "short", min_val: float = 0, max_val: float | None = None) -> dashboard.FieldConfigSource:
+    return dashboard.FieldConfigSource(
+        defaults=dashboard.FieldConfig(
+            unit=unit, min_val=min_val, max_val=max_val, custom=common.GraphFieldConfig(fill_opacity=10)
+        )
+    )
+
+
+def _io_options(placement: common.LegendPlacement = common.LegendPlacement.BOTTOM) -> timeseries.Options:
+    return timeseries.Options(
+        legend=common.VizLegendOptions(
+            display_mode=common.LegendDisplayMode.TABLE,
+            placement=placement,
+            show_legend=True,
+            sort_by="Max",
+            sort_desc=True,
+            calcs=["mean", "max"],
+        ),
+        tooltip=common.VizTooltipOptions(mode=common.TooltipDisplayMode.MULTI, sort=common.SortOrder.DESCENDING),
+    )
+
+
+def _disk_rate(metric: str) -> str:
+    return f"rate({metric}{{{_PHYSICAL_DISKS}}}[5m])"
+
+
+def _disk_series(value: str) -> str:
+    return (
+        f"max by (node, media, device) ((({value})"
+        f" * on (namespace, pod, device) group_left (media) {_DISK_MEDIA})"
+        f" * on (namespace, pod) group_left (node) {_EXPORTER_NODES})"
+    )
+
+
+_DISK_UTILIZATION = _disk_series(_disk_rate("node_disk_io_time_seconds_total"))
+_READ_LATENCY = _disk_series(
+    f"{_disk_rate('node_disk_read_time_seconds_total')} / {_disk_rate('node_disk_reads_completed_total')}"
+)
+_WRITE_LATENCY = _disk_series(
+    f"{_disk_rate('node_disk_write_time_seconds_total')} / {_disk_rate('node_disk_writes_completed_total')}"
+)
+_DISK_IOPS = _disk_series(
+    f"{_disk_rate('node_disk_reads_completed_total')} + {_disk_rate('node_disk_writes_completed_total')}"
+)
 
 
 def build_dashboard() -> dashboard.Dashboard:
@@ -11,7 +67,6 @@ def build_dashboard() -> dashboard.Dashboard:
         title="IO pressure",
         tags=["cluster", "storage", "io", "pressure"],
         graph_tooltip=dashboard.DashboardCursorSync.CROSSHAIR,
-        time=dashboard.DashboardDashboardTime(),
         week_start="",
         refresh="1m",
         schema_version=39,
@@ -40,24 +95,8 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Share of time tasks on the node waited on IO; the IO stall picker at the top switches between some and full.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=24, y=7),
-                options=timeseries.Options(
-                    legend=common.VizLegendOptions(
-                        display_mode=common.LegendDisplayMode.TABLE,
-                        placement=common.LegendPlacement.RIGHT,
-                        show_legend=True,
-                        sort_by="Max",
-                        sort_desc=True,
-                        calcs=["mean", "max"],
-                    ),
-                    tooltip=common.VizTooltipOptions(
-                        mode=common.TooltipDisplayMode.MULTI, sort=common.SortOrder.DESCENDING
-                    ),
-                ),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="percentunit", min_val=0, custom=common.GraphFieldConfig(fill_opacity=10)
-                    )
-                ),
+                options=_io_options(common.LegendPlacement.RIGHT),
+                field_config=_io_fields(unit="percentunit"),
             ),
             dashboard.RowPanel(title="Pod IO pressure", grid_pos=dashboard.GridPos(h=1, w=24, y=15), id_val=4),
             dashboard.Panel(
@@ -73,42 +112,20 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Pod cgroup PSI from cAdvisor; the ${topk} pods with the highest current value.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(w=24, y=16),
-                options=timeseries.Options(
-                    legend=common.VizLegendOptions(
-                        display_mode=common.LegendDisplayMode.TABLE,
-                        placement=common.LegendPlacement.RIGHT,
-                        show_legend=True,
-                        sort_by="Max",
-                        sort_desc=True,
-                        calcs=["mean", "max"],
-                    ),
-                    tooltip=common.VizTooltipOptions(
-                        mode=common.TooltipDisplayMode.MULTI, sort=common.SortOrder.DESCENDING
-                    ),
-                ),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="percentunit", min_val=0, custom=common.GraphFieldConfig(fill_opacity=10)
-                    )
-                ),
+                options=_io_options(common.LegendPlacement.RIGHT),
+                field_config=_io_fields(unit="percentunit"),
             ),
             dashboard.Panel(
                 type_val="table",
                 id_val=6,
                 targets=[
-                    mimir_query(
+                    mimir_table_query(
                         'topk(${topk}, max by (namespace, pod, node) (rate(container_pressure_io_waiting_seconds_total{container="", pod!="", node=~"$node"}[5m])))'
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query(
+                    ).build(),
+                    mimir_table_query(
                         'topk(1000, max by (namespace, pod, node) (rate(container_pressure_io_stalled_seconds_total{container="", pod!="", node=~"$node"}[5m])))',
                         ref_id="B",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
+                    ).build(),
                 ],
                 title="Pods by IO stall now",
                 description="Current 5-minute pod PSI. Rows are the ${topk} pods with the highest 'some' stall.",
@@ -120,7 +137,10 @@ def build_dashboard() -> dashboard.Dashboard:
                         id_val="organize",
                         options={
                             "excludeByName": {"Time 1": True, "Time 2": True, "namespace 2": True, "node 2": True},
-                            "indexByName": {"namespace 1": 0, "pod": 1, "node 1": 2, "Value #A": 3, "Value #B": 4},
+                            "indexByName": {
+                                name: index
+                                for index, name in enumerate(("namespace 1", "pod", "node 1", "Value #A", "Value #B"))
+                            },
                             "renameByName": {
                                 "namespace 1": "namespace",
                                 "node 1": "node",
@@ -130,10 +150,7 @@ def build_dashboard() -> dashboard.Dashboard:
                         },
                     ),
                 ],
-                options=table.Options(
-                    sort_by=[common.TableSortByFieldState(display_name="Some", desc=True)],
-                    footer=common.TableFooterOptions(),
-                ),
+                options=table.Options(sort_by=[common.TableSortByFieldState(display_name="Some", desc=True)]),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="percentunit", decimals=1)
                 ),
@@ -143,33 +160,13 @@ def build_dashboard() -> dashboard.Dashboard:
                 type_val="table",
                 id_val=8,
                 targets=[
-                    mimir_query(
-                        'max by (node, media, device) (((rate(node_disk_io_time_seconds_total{device!~"^(loop|ram|fd|dm-|sr|nbd|drbd).*"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), "media", "hdd", "rotational", "1"), "media", "ssd", "rotational", "0")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))'
+                    mimir_table_query(expr, ref_id=ref_id).build()
+                    for ref_id, expr in (
+                        ("A", _DISK_UTILIZATION),
+                        ("B", _READ_LATENCY),
+                        ("C", _WRITE_LATENCY),
+                        ("D", _DISK_IOPS),
                     )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query(
-                        'max by (node, media, device) (((rate(node_disk_read_time_seconds_total{device!~"^(loop|ram|fd|dm-|sr|nbd|drbd).*"}[5m]) / rate(node_disk_reads_completed_total{device!~"^(loop|ram|fd|dm-|sr|nbd|drbd).*"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), "media", "hdd", "rotational", "1"), "media", "ssd", "rotational", "0")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))',
-                        ref_id="B",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query(
-                        'max by (node, media, device) (((rate(node_disk_write_time_seconds_total{device!~"^(loop|ram|fd|dm-|sr|nbd|drbd).*"}[5m]) / rate(node_disk_writes_completed_total{device!~"^(loop|ram|fd|dm-|sr|nbd|drbd).*"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), "media", "hdd", "rotational", "1"), "media", "ssd", "rotational", "0")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))',
-                        ref_id="C",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query(
-                        'max by (node, media, device) (((rate(node_disk_reads_completed_total{device!~"^(loop|ram|fd|dm-|sr|nbd|drbd).*"}[5m]) + rate(node_disk_writes_completed_total{device!~"^(loop|ram|fd|dm-|sr|nbd|drbd).*"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), "media", "hdd", "rotational", "1"), "media", "ssd", "rotational", "0")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))',
-                        ref_id="D",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
                 ],
                 title="Disks now",
                 description="Current 5-minute values per disk. Latency is empty for a disk with no completed requests in the window.",
@@ -191,29 +188,14 @@ def build_dashboard() -> dashboard.Dashboard:
                         },
                     ),
                 ],
-                options=table.Options(
-                    sort_by=[common.TableSortByFieldState(display_name="Utilization", desc=True)],
-                    footer=common.TableFooterOptions(),
-                ),
+                options=table.Options(sort_by=[common.TableSortByFieldState(display_name="Utilization", desc=True)]),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(decimals=2),
                     overrides=[
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="Utilization"),
-                            properties=[dashboard.DynamicConfigValue(id_val="unit", value="percentunit")],
-                        ),
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="Read latency"),
-                            properties=[dashboard.DynamicConfigValue(id_val="unit", value="s")],
-                        ),
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="Write latency"),
-                            properties=[dashboard.DynamicConfigValue(id_val="unit", value="s")],
-                        ),
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="IOPS"),
-                            properties=[dashboard.DynamicConfigValue(id_val="unit", value="iops")],
-                        ),
+                        field_override("Utilization", {"unit": "percentunit"}),
+                        field_override("Read latency", {"unit": "s"}),
+                        field_override("Write latency", {"unit": "s"}),
+                        field_override("IOPS", {"unit": "iops"}),
                     ],
                 ),
             ),
@@ -223,14 +205,7 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="bargauge",
                 id_val=10,
-                targets=[
-                    mimir_query(
-                        'max by (node, media, device) (((rate(node_disk_io_time_seconds_total{device!~"^(loop|ram|fd|dm-|sr|nbd|drbd).*"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), "media", "hdd", "rotational", "1"), "media", "ssd", "rotational", "0")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))',
-                        legend="{{device}} {{media}}",
-                    )
-                    .instant()
-                    .build()
-                ],
+                targets=[mimir_query(_DISK_UTILIZATION, legend="{{device}} {{media}}").instant().build()],
                 title="Utilization now",
                 description="Fraction of the last 5 minutes each disk had IO in flight.",
                 datasource=mimir(),
@@ -255,132 +230,55 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=11,
-                targets=[
-                    mimir_query(
-                        'max by (node, media, device) (((rate(node_disk_io_time_seconds_total{device!~"^(loop|ram|fd|dm-|sr|nbd|drbd).*"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), "media", "hdd", "rotational", "1"), "media", "ssd", "rotational", "0")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))',
-                        legend="{{device}} ({{media}})",
-                    ).build()
-                ],
+                targets=[mimir_query(_DISK_UTILIZATION, legend="{{device}} ({{media}})").build()],
                 title="Disk utilization",
                 description="Fraction of time the device had IO in flight (node_disk_io_time_seconds_total).",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(w=16, x=8, y=46),
-                options=timeseries.Options(
-                    legend=common.VizLegendOptions(
-                        display_mode=common.LegendDisplayMode.TABLE,
-                        placement=common.LegendPlacement.RIGHT,
-                        show_legend=True,
-                        sort_by="Max",
-                        sort_desc=True,
-                        calcs=["mean", "max"],
-                    ),
-                    tooltip=common.VizTooltipOptions(
-                        mode=common.TooltipDisplayMode.MULTI, sort=common.SortOrder.DESCENDING
-                    ),
-                ),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="percentunit", min_val=0, max_val=1, custom=common.GraphFieldConfig(fill_opacity=10)
-                    )
-                ),
+                options=_io_options(common.LegendPlacement.RIGHT),
+                field_config=_io_fields(unit="percentunit", max_val=1),
             ),
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=12,
-                targets=[
-                    mimir_query(
-                        'max by (node, media, device) (((rate(node_disk_read_time_seconds_total{device!~"^(loop|ram|fd|dm-|sr|nbd|drbd).*"}[5m]) / rate(node_disk_reads_completed_total{device!~"^(loop|ram|fd|dm-|sr|nbd|drbd).*"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), "media", "hdd", "rotational", "1"), "media", "ssd", "rotational", "0")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))',
-                        legend="{{device}} ({{media}})",
-                    ).build()
-                ],
+                targets=[mimir_query(_READ_LATENCY, legend="{{device}} ({{media}})").build()],
                 title="Disk read latency",
                 description="Mean time per completed read over 5 minutes.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(y=55),
-                options=timeseries.Options(
-                    legend=common.VizLegendOptions(
-                        display_mode=common.LegendDisplayMode.TABLE,
-                        placement=common.LegendPlacement.RIGHT,
-                        show_legend=True,
-                        sort_by="Max",
-                        sort_desc=True,
-                        calcs=["mean", "max"],
-                    ),
-                    tooltip=common.VizTooltipOptions(
-                        mode=common.TooltipDisplayMode.MULTI, sort=common.SortOrder.DESCENDING
-                    ),
-                ),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(unit="s", min_val=0, custom=common.GraphFieldConfig(fill_opacity=10))
-                ),
+                options=_io_options(common.LegendPlacement.RIGHT),
+                field_config=_io_fields(unit="s"),
             ),
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=13,
-                targets=[
-                    mimir_query(
-                        'max by (node, media, device) (((rate(node_disk_write_time_seconds_total{device!~"^(loop|ram|fd|dm-|sr|nbd|drbd).*"}[5m]) / rate(node_disk_writes_completed_total{device!~"^(loop|ram|fd|dm-|sr|nbd|drbd).*"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), "media", "hdd", "rotational", "1"), "media", "ssd", "rotational", "0")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))',
-                        legend="{{device}} ({{media}})",
-                    ).build()
-                ],
+                targets=[mimir_query(_WRITE_LATENCY, legend="{{device}} ({{media}})").build()],
                 title="Disk write latency",
                 description="Mean time per completed write over 5 minutes.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(x=12, y=55),
-                options=timeseries.Options(
-                    legend=common.VizLegendOptions(
-                        display_mode=common.LegendDisplayMode.TABLE,
-                        placement=common.LegendPlacement.RIGHT,
-                        show_legend=True,
-                        sort_by="Max",
-                        sort_desc=True,
-                        calcs=["mean", "max"],
-                    ),
-                    tooltip=common.VizTooltipOptions(
-                        mode=common.TooltipDisplayMode.MULTI, sort=common.SortOrder.DESCENDING
-                    ),
-                ),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(unit="s", min_val=0, custom=common.GraphFieldConfig(fill_opacity=10))
-                ),
+                options=_io_options(common.LegendPlacement.RIGHT),
+                field_config=_io_fields(unit="s"),
             ),
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=14,
-                targets=[
-                    mimir_query(
-                        'max by (node, media, device) (((rate(node_disk_reads_completed_total{device!~"^(loop|ram|fd|dm-|sr|nbd|drbd).*"}[5m]) + rate(node_disk_writes_completed_total{device!~"^(loop|ram|fd|dm-|sr|nbd|drbd).*"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), "media", "hdd", "rotational", "1"), "media", "ssd", "rotational", "0")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))',
-                        legend="{{device}} ({{media}})",
-                    ).build()
-                ],
+                targets=[mimir_query(_DISK_IOPS, legend="{{device}} ({{media}})").build()],
                 title="Disk IOPS",
                 description="Completed reads plus writes per second.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(w=8, y=64),
-                options=timeseries.Options(
-                    legend=common.VizLegendOptions(
-                        display_mode=common.LegendDisplayMode.TABLE,
-                        show_legend=True,
-                        sort_by="Max",
-                        sort_desc=True,
-                        calcs=["mean", "max"],
-                    ),
-                    tooltip=common.VizTooltipOptions(
-                        mode=common.TooltipDisplayMode.MULTI, sort=common.SortOrder.DESCENDING
-                    ),
-                ),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="iops", min_val=0, custom=common.GraphFieldConfig(fill_opacity=10)
-                    )
-                ),
+                options=_io_options(),
+                field_config=_io_fields(unit="iops"),
             ),
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=15,
                 targets=[
                     mimir_query(
-                        'max by (node, media, device) (((rate(node_disk_read_bytes_total{device!~"^(loop|ram|fd|dm-|sr|nbd|drbd).*"}[5m]) + rate(node_disk_written_bytes_total{device!~"^(loop|ram|fd|dm-|sr|nbd|drbd).*"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), "media", "hdd", "rotational", "1"), "media", "ssd", "rotational", "0")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))',
+                        _disk_series(
+                            f"{_disk_rate('node_disk_read_bytes_total')} + {_disk_rate('node_disk_written_bytes_total')}"
+                        ),
                         legend="{{device}} ({{media}})",
                     ).build()
                 ],
@@ -388,30 +286,15 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Bytes read plus written per second.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(w=8, x=8, y=64),
-                options=timeseries.Options(
-                    legend=common.VizLegendOptions(
-                        display_mode=common.LegendDisplayMode.TABLE,
-                        show_legend=True,
-                        sort_by="Max",
-                        sort_desc=True,
-                        calcs=["mean", "max"],
-                    ),
-                    tooltip=common.VizTooltipOptions(
-                        mode=common.TooltipDisplayMode.MULTI, sort=common.SortOrder.DESCENDING
-                    ),
-                ),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="Bps", min_val=0, custom=common.GraphFieldConfig(fill_opacity=10)
-                    )
-                ),
+                options=_io_options(),
+                field_config=_io_fields(unit="Bps"),
             ),
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=16,
                 targets=[
                     mimir_query(
-                        'max by (node, media, device) (((rate(node_disk_io_time_weighted_seconds_total{device!~"^(loop|ram|fd|dm-|sr|nbd|drbd).*"}[5m])) * on (namespace, pod, device) group_left (media) label_replace(label_replace(max by (namespace, pod, device, rotational) (node_disk_info), "media", "hdd", "rotational", "1"), "media", "ssd", "rotational", "0")) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))',
+                        _disk_series(_disk_rate("node_disk_io_time_weighted_seconds_total")),
                         legend="{{device}} ({{media}})",
                     ).build()
                 ],
@@ -419,23 +302,8 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Average number of requests in flight (node_disk_io_time_weighted_seconds_total).",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(w=8, x=16, y=64),
-                options=timeseries.Options(
-                    legend=common.VizLegendOptions(
-                        display_mode=common.LegendDisplayMode.TABLE,
-                        show_legend=True,
-                        sort_by="Max",
-                        sort_desc=True,
-                        calcs=["mean", "max"],
-                    ),
-                    tooltip=common.VizTooltipOptions(
-                        mode=common.TooltipDisplayMode.MULTI, sort=common.SortOrder.DESCENDING
-                    ),
-                ),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="short", min_val=0, custom=common.GraphFieldConfig(fill_opacity=10)
-                    )
-                ),
+                options=_io_options(),
+                field_config=_io_fields(),
             ),
             dashboard.RowPanel(title="DRBD logical I/O", grid_pos=dashboard.GridPos(h=1, w=24, y=73), id_val=17),
             dashboard.Panel(
@@ -451,23 +319,8 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Read plus written bytes per second by DRBD device. This is logical block-device I/O and overlaps the backing physical devices; do not add it to physical throughput.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(w=24, y=74),
-                options=timeseries.Options(
-                    legend=common.VizLegendOptions(
-                        display_mode=common.LegendDisplayMode.TABLE,
-                        show_legend=True,
-                        sort_by="Max",
-                        sort_desc=True,
-                        calcs=["mean", "max"],
-                    ),
-                    tooltip=common.VizTooltipOptions(
-                        mode=common.TooltipDisplayMode.MULTI, sort=common.SortOrder.DESCENDING
-                    ),
-                ),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="Bps", min_val=0, custom=common.GraphFieldConfig(fill_opacity=10)
-                    )
-                ),
+                options=_io_options(),
+                field_config=_io_fields(unit="Bps"),
             ),
         ],
         templating=dashboard.DashboardDashboardTemplating(

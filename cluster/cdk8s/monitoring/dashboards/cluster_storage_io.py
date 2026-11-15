@@ -1,15 +1,20 @@
 """Storage I/O dashboard."""
 
-from grafana_foundation_sdk.models import common, dashboard, prometheus, stat, text
+from grafana_foundation_sdk.models import common, dashboard, stat, text
 
 from cluster.cdk8s.monitoring.dashboards.foundation import (
+    hide_time,
     last_value,
     loki_datasource,
     loki_query,
     mimir,
     mimir_query,
+    mimir_table_query,
     series_options,
 )
+
+_STORAGE_TIER = 'max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~"$node", label_storage_allegedly_works_tier=~"$storage_tier"})'
+_EXPORTER_NODES = 'max by (namespace, pod, node) (kube_pod_info{pod=~"prometheus-node-exporter-.+"})'
 
 
 def build_dashboard() -> dashboard.Dashboard:
@@ -38,7 +43,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 id_val=2,
                 targets=[
                     mimir_query(
-                        'sum by (node, device) (((rate(node_disk_written_bytes_total{device!~"^(loop|ram|fd|dm-|sr|drbd).*"}[5m]) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{pod=~"prometheus-node-exporter-.+"})) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~"$node", label_storage_allegedly_works_tier=~"$storage_tier"})))',
+                        f'sum by (node, device) (((rate(node_disk_written_bytes_total{{device!~"^(loop|ram|fd|dm-|sr|drbd).*"}}[5m]) * on (namespace, pod) group_left (node) {_EXPORTER_NODES}) * on (node) group_left () {_STORAGE_TIER}))',
                         legend="{{node}} {{device}}",
                     ).build()
                 ],
@@ -54,7 +59,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 id_val=4,
                 targets=[
                     mimir_query(
-                        'sum by (node, device) (((rate(node_disk_writes_completed_total{device!~"^(loop|ram|fd|dm-|sr|drbd).*"}[5m]) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{pod=~"prometheus-node-exporter-.+"})) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~"$node", label_storage_allegedly_works_tier=~"$storage_tier"})))',
+                        f'sum by (node, device) (((rate(node_disk_writes_completed_total{{device!~"^(loop|ram|fd|dm-|sr|drbd).*"}}[5m]) * on (namespace, pod) group_left (node) {_EXPORTER_NODES}) * on (node) group_left () {_STORAGE_TIER}))',
                         legend="{{node}} {{device}}",
                     ).build()
                 ],
@@ -70,7 +75,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 id_val=6,
                 targets=[
                     mimir_query(
-                        'sum by (node, device) (((rate(node_disk_io_time_seconds_total{device!~"^(loop|ram|fd|dm-|sr|drbd).*"}[5m]) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{pod=~"prometheus-node-exporter-.+"})) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~"$node", label_storage_allegedly_works_tier=~"$storage_tier"})))',
+                        f'sum by (node, device) (((rate(node_disk_io_time_seconds_total{{device!~"^(loop|ram|fd|dm-|sr|drbd).*"}}[5m]) * on (namespace, pod) group_left (node) {_EXPORTER_NODES}) * on (node) group_left () {_STORAGE_TIER}))',
                         legend="{{node}} {{device}}",
                     ).build()
                 ],
@@ -87,48 +92,32 @@ def build_dashboard() -> dashboard.Dashboard:
                 type_val="table",
                 id_val=8,
                 targets=[
-                    mimir_query(
-                        'topk(${topk}, sum by (namespace, pod, container, node, device) (rate(container_fs_writes_bytes_total{namespace!="", pod!="", container!="", container!="POD", node=~"$node"}[5m]) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~"$node", label_storage_allegedly_works_tier=~"$storage_tier"})))',
+                    mimir_table_query(
+                        f'topk(${{topk}}, sum by (namespace, pod, container, node, device) (rate(container_fs_writes_bytes_total{{namespace!="", pod!="", container!="", container!="POD", node=~"$node"}}[5m]) * on (node) group_left () {_STORAGE_TIER}))',
                         legend="{{namespace}}/{{pod}} {{container}} {{node}} {{device}}",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build()
+                    ).build()
                 ],
                 title="Top container writers",
                 description="cAdvisor filesystem writes grouped by namespace, pod, container, node, and device on nodes in the selected storage tier. This is producer attribution, not a physical-block-device total.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=10, w=24, y=29),
-                transformations=[
-                    dashboard.DataTransformerConfig(
-                        id_val="organize",
-                        options={"excludeByName": {"Time": True}, "indexByName": {}, "renameByName": {}},
-                    )
-                ],
+                transformations=[hide_time()],
                 field_config=dashboard.FieldConfigSource(defaults=dashboard.FieldConfig(unit="Bps")),
             ),
             dashboard.Panel(
                 type_val="table",
                 id_val=10,
                 targets=[
-                    mimir_query(
-                        'topk(${topk}, sum by (namespace, pod, container, node, device) (rate(container_fs_writes_total{namespace!="", pod!="", container!="", container!="POD", node=~"$node"}[5m]) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~"$node", label_storage_allegedly_works_tier=~"$storage_tier"})))',
+                    mimir_table_query(
+                        f'topk(${{topk}}, sum by (namespace, pod, container, node, device) (rate(container_fs_writes_total{{namespace!="", pod!="", container!="", container!="POD", node=~"$node"}}[5m]) * on (node) group_left () {_STORAGE_TIER}))',
                         legend="{{namespace}}/{{pod}} {{container}} {{node}} {{device}}",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build()
+                    ).build()
                 ],
                 title="Top container write IOPS",
                 description="cAdvisor filesystem write operations grouped by namespace, pod, container, node, and device on nodes in the selected storage tier.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=10, w=24, y=39),
-                transformations=[
-                    dashboard.DataTransformerConfig(
-                        id_val="organize",
-                        options={"excludeByName": {"Time": True}, "indexByName": {}, "renameByName": {}},
-                    )
-                ],
+                transformations=[hide_time()],
                 field_config=dashboard.FieldConfigSource(defaults=dashboard.FieldConfig(unit="ops")),
             ),
             dashboard.RowPanel(
@@ -140,48 +129,32 @@ def build_dashboard() -> dashboard.Dashboard:
                 type_val="table",
                 id_val=12,
                 targets=[
-                    mimir_query(
+                    mimir_table_query(
                         'topk(${topk}, sum by (bucket) (rate(SeaweedFS_s3_bucket_traffic_received_bytes_total{bucket!=""}[5m])))',
                         legend="{{bucket}}",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build()
+                    ).build()
                 ],
                 title="Cluster-wide S3 bytes received by bucket",
                 description="Cluster-wide service telemetry; storage tier selection does not apply. Logical bytes received by SeaweedFS S3, broken down by bucket. This is ingress to SeaweedFS and is not the same as physical disk writes.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=10, y=50),
-                transformations=[
-                    dashboard.DataTransformerConfig(
-                        id_val="organize",
-                        options={"excludeByName": {"Time": True}, "indexByName": {}, "renameByName": {}},
-                    )
-                ],
+                transformations=[hide_time()],
                 field_config=dashboard.FieldConfigSource(defaults=dashboard.FieldConfig(unit="Bps")),
             ),
             dashboard.Panel(
                 type_val="table",
                 id_val=13,
                 targets=[
-                    mimir_query(
+                    mimir_table_query(
                         'topk(${topk}, sum by (bucket) (rate(SeaweedFS_s3_bucket_traffic_sent_bytes_total{bucket!=""}[5m])))',
                         legend="{{bucket}}",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build()
+                    ).build()
                 ],
                 title="Cluster-wide S3 bytes sent by bucket",
                 description="Cluster-wide service telemetry; storage tier selection does not apply. Logical bytes sent by SeaweedFS S3, broken down by bucket.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=10, x=12, y=50),
-                transformations=[
-                    dashboard.DataTransformerConfig(
-                        id_val="organize",
-                        options={"excludeByName": {"Time": True}, "indexByName": {}, "renameByName": {}},
-                    )
-                ],
+                transformations=[hide_time()],
                 field_config=dashboard.FieldConfigSource(defaults=dashboard.FieldConfig(unit="Bps")),
             ),
             dashboard.Panel(
@@ -216,24 +189,16 @@ def build_dashboard() -> dashboard.Dashboard:
                 type_val="table",
                 id_val=16,
                 targets=[
-                    mimir_query(
+                    mimir_table_query(
                         'topk(${topk}, sum by (job, namespace, service, instance) (sum_over_time(scrape_samples_post_metric_relabeling{job!=""}[5m]) / 300))',
                         legend="{{job}} {{namespace}}/{{service}} {{instance}}",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build()
+                    ).build()
                 ],
                 title="Cluster-wide scraped samples/s by target",
                 description="Cluster-wide service telemetry; storage tier selection does not apply. Estimated samples/s per scrape target, derived from the per-scrape sample count over five minutes. Shows only the selected top rows; this pre-ingestion estimate does not include direct OTLP or Tempo metrics-generator writes counted by Mimir.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=10, y=70),
-                transformations=[
-                    dashboard.DataTransformerConfig(
-                        id_val="organize",
-                        options={"excludeByName": {"Time": True}, "indexByName": {}, "renameByName": {}},
-                    )
-                ],
+                transformations=[hide_time()],
                 field_config=dashboard.FieldConfigSource(defaults=dashboard.FieldConfig(unit="ops")),
             ),
             dashboard.Panel(

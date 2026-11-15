@@ -1,8 +1,8 @@
 """AIQuota history dashboard."""
 
-from grafana_foundation_sdk.models import common, dashboard, timeseries
+from grafana_foundation_sdk.models import common, dashboard
 
-from cluster.cdk8s.monitoring.dashboards.foundation import clickhouse_query
+from cluster.cdk8s.monitoring.dashboards.foundation import clickhouse_query, series_options
 
 
 def build_dashboard() -> dashboard.Dashboard:
@@ -40,12 +40,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 title="Quota remaining by provider and window",
                 datasource=common.DataSourceRef(type_val="grafana-clickhouse-datasource", uid="clickhouse"),
                 grid_pos=dashboard.GridPos(h=10, w=24, y=10),
-                options=timeseries.Options(
-                    legend=common.VizLegendOptions(
-                        display_mode=common.LegendDisplayMode.TABLE, calcs=["lastNotNull", "min"], show_legend=True
-                    ),
-                    tooltip=common.VizTooltipOptions(mode=common.TooltipDisplayMode.MULTI, sort=common.SortOrder.NONE),
-                ),
+                options=series_options(legend_calcs=("lastNotNull", "min")),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(
                         unit="percent",
@@ -79,12 +74,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 title="Claude extra usage (current billing month)",
                 datasource=common.DataSourceRef(type_val="grafana-clickhouse-datasource", uid="clickhouse"),
                 grid_pos=dashboard.GridPos(h=10, w=24, y=30),
-                options=timeseries.Options(
-                    legend=common.VizLegendOptions(
-                        display_mode=common.LegendDisplayMode.TABLE, calcs=["lastNotNull", "max"], show_legend=True
-                    ),
-                    tooltip=common.VizTooltipOptions(mode=common.TooltipDisplayMode.MULTI, sort=common.SortOrder.NONE),
-                ),
+                options=series_options(legend_calcs=("lastNotNull", "max")),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(
                         unit="currencyUSD",

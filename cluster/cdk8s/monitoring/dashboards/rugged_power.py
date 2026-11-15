@@ -3,9 +3,9 @@
 from grafana_foundation_sdk.builders import bargauge, table, timeseries
 from grafana_foundation_sdk.builders.common import ReduceDataOptions, VizLegendOptions
 from grafana_foundation_sdk.builders.dashboard import Dashboard, QueryVariable, ThresholdsConfig, TimePicker
-from grafana_foundation_sdk.models import common, dashboard, prometheus
+from grafana_foundation_sdk.models import common, dashboard
 
-from cluster.cdk8s.monitoring.dashboards.foundation import line_panel, mimir, mimir_query
+from cluster.cdk8s.monitoring.dashboards.foundation import line_panel, mimir, mimir_query, mimir_table_query
 
 _INSTANCE_QUERY = 'label_values(node_uname_info{nodename="rugged"}, instance)'
 
@@ -76,11 +76,7 @@ def build_dashboard() -> dashboard.Dashboard:
             .title("Battery and external-power state")
             .datasource(mimir())
             .grid_pos(dashboard.GridPos(h=8, x=12))
-            .with_target(
-                mimir_query('node_power_supply_info{instance=~"$instance",type=~"Battery|Mains|USB"}')
-                .format(prometheus.PromQueryFormat.TABLE)
-                .instant()
-            )
+            .with_target(mimir_table_query('node_power_supply_info{instance=~"$instance",type=~"Battery|Mains|USB"}'))
             .with_transformation(dashboard.DataTransformerConfig(id_val="labelsToFields", options={}))
         )
         .with_panel(

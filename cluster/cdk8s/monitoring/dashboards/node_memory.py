@@ -1,8 +1,41 @@
 """Node Memory dashboard."""
 
-from grafana_foundation_sdk.models import barchart, common, dashboard, prometheus, table, text, timeseries
+from grafana_foundation_sdk.models import barchart, common, dashboard, table, text, timeseries
 
-from cluster.cdk8s.monitoring.dashboards.foundation import mimir, mimir_query, series_options
+from cluster.cdk8s.monitoring.dashboards.foundation import (
+    field_override,
+    mimir,
+    mimir_query,
+    mimir_table_query,
+    series_options,
+)
+
+_EXPORTER_LABELS = 'namespace="monitoring",pod=~"prometheus-node-exporter-.+"'
+_NODE_INFO = f'max by (namespace, pod, node) (kube_pod_info{{{_EXPORTER_LABELS},node=~"$node"}})'
+_POD_MEMORY_LABELS = 'node=~"$node",pod!="",container!="",container!="POD"'
+_RUNNING_MEMORY_REQUESTS = 'sum by (node) (max by (node, namespace, pod, container) (kube_pod_container_resource_requests{resource="memory",unit="byte",node=~"$node"} and on (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1)))'
+
+
+def _node_memory(metric: str) -> str:
+    return f"max by (node) (node_memory_{metric}_bytes{{{_EXPORTER_LABELS}}} * on (namespace, pod) group_left (node) {_NODE_INFO})"
+
+
+def _pod_working_sets(*, selected: bool = False) -> str:
+    labels = _POD_MEMORY_LABELS + (',namespace=~"$namespace"' if selected else "")
+    return (
+        "sum by (node, namespace, pod) (max by (node, namespace, pod, container) "
+        f"(container_memory_working_set_bytes{{{labels}}}"
+        ' and on (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1)))'
+    )
+
+
+_NODE_TOTAL = _node_memory("MemTotal")
+_NODE_AVAILABLE = _node_memory("MemAvailable")
+_ALL_POD_WORKING_SETS = _pod_working_sets()
+_TOTAL_POD_WORKING_SET = f"sum by (node) ({_ALL_POD_WORKING_SETS})"
+_SELECTED_POD_WORKING_SETS = _pod_working_sets(selected=True)
+
+_MEMORY_PRESSURE = f'max by (node) (kube_node_status_condition{{condition="MemoryPressure",status="true",node=~"$node"}} and on (node) ({_NODE_TOTAL})) or on (node) (0 * max by (node) (kube_node_status_condition{{condition="MemoryPressure",status="false",node=~"$node"}} and on (node) ({_NODE_TOTAL})))'
 
 
 def build_dashboard() -> dashboard.Dashboard:
@@ -31,54 +64,16 @@ def build_dashboard() -> dashboard.Dashboard:
                 type_val="table",
                 id_val=3,
                 targets=[
-                    mimir_query(
-                        'max by (node) (node_memory_MemTotal_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))'
+                    mimir_table_query(expr, ref_id=ref_id).build()
+                    for ref_id, expr in (
+                        ("A", _NODE_TOTAL),
+                        ("B", _NODE_AVAILABLE),
+                        ("C", f"({_TOTAL_POD_WORKING_SET}) and on (node) ({_NODE_TOTAL})"),
+                        ("D", f"({_RUNNING_MEMORY_REQUESTS}) and on (node) ({_NODE_TOTAL})"),
+                        ("E", _MEMORY_PRESSURE),
+                        ("F", f"({_NODE_TOTAL}) - ({_NODE_AVAILABLE})"),
+                        ("G", f"(({_NODE_TOTAL}) - ({_NODE_AVAILABLE})) - ({_TOTAL_POD_WORKING_SET})"),
                     )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query(
-                        'max by (node) (node_memory_MemAvailable_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))',
-                        ref_id="B",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query(
-                        '(sum by (node) (sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~"$node",pod!="",container!="",container!="POD"} and on (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1))))) and on (node) (max by (node) (node_memory_MemTotal_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"})))',
-                        ref_id="C",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query(
-                        '(sum by (node) (max by (node, namespace, pod, container) (kube_pod_container_resource_requests{resource="memory",unit="byte",node=~"$node"} and on (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1)))) and on (node) (max by (node) (node_memory_MemTotal_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"})))',
-                        ref_id="D",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query(
-                        'max by (node) (kube_node_status_condition{condition="MemoryPressure",status="true",node=~"$node"} and on (node) (max by (node) (node_memory_MemTotal_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"})))) or on (node) (0 * max by (node) (kube_node_status_condition{condition="MemoryPressure",status="false",node=~"$node"} and on (node) (max by (node) (node_memory_MemTotal_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"})))))',
-                        ref_id="E",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query(
-                        '(max by (node) (node_memory_MemTotal_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))) - (max by (node) (node_memory_MemAvailable_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"})))',
-                        ref_id="F",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query(
-                        '((max by (node) (node_memory_MemTotal_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))) - (max by (node) (node_memory_MemAvailable_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"})))) - (sum by (node) (sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~"$node",pod!="",container!="",container!="POD"} and on (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1)))))',
-                        ref_id="G",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
                 ],
                 title="Node memory overview",
                 description="One row per node with current physical capacity, MemAvailable, running Pod working sets, declared running-Pod memory requests, MemoryPressure, node used RAM, and the signed host/unattributed remainder. Nodes without current node-exporter memory samples are not synthesized as zero.",
@@ -91,30 +86,27 @@ def build_dashboard() -> dashboard.Dashboard:
                     dashboard.DataTransformerConfig(
                         id_val="organize",
                         options={
-                            "excludeByName": {
-                                "Time 1": True,
-                                "Time 2": True,
-                                "Time 3": True,
-                                "Time 4": True,
-                                "Time 5": True,
-                                "Time 6": True,
-                                "Time 7": True,
-                                "node 2": True,
-                                "node 3": True,
-                                "node 4": True,
-                                "node 5": True,
-                                "node 6": True,
-                                "node 7": True,
-                            },
+                            "excludeByName": dict.fromkeys(
+                                (
+                                    *(f"Time {index}" for index in range(1, 8)),
+                                    *(f"node {index}" for index in range(2, 8)),
+                                ),
+                                True,
+                            ),
                             "indexByName": {
-                                "node": 0,
-                                "Value #A": 1,
-                                "Value #B": 2,
-                                "Value #C": 3,
-                                "Value #D": 4,
-                                "Value #E": 5,
-                                "Value #F": 6,
-                                "Value #G": 7,
+                                name: index
+                                for index, name in enumerate(
+                                    (
+                                        "node",
+                                        "Value #A",
+                                        "Value #B",
+                                        "Value #C",
+                                        "Value #D",
+                                        "Value #E",
+                                        "Value #F",
+                                        "Value #G",
+                                    )
+                                )
                             },
                             "renameByName": {
                                 "Value #A": "Capacity",
@@ -128,25 +120,10 @@ def build_dashboard() -> dashboard.Dashboard:
                         },
                     ),
                 ],
-                options=table.Options(
-                    sort_by=[common.TableSortByFieldState(display_name="Used RAM", desc=True)],
-                    footer=common.TableFooterOptions(),
-                ),
+                options=table.Options(sort_by=[common.TableSortByFieldState(display_name="Used RAM", desc=True)]),
                 field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="bytes",
-                        decimals=1,
-                        custom=common.TableFieldOptions(cell_options=common.TableAutoCellOptions()),
-                    ),
-                    overrides=[
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="Pressure"),
-                            properties=[
-                                dashboard.DynamicConfigValue(id_val="unit", value="short"),
-                                dashboard.DynamicConfigValue(id_val="decimals", value=0),
-                            ],
-                        )
-                    ],
+                    defaults=dashboard.FieldConfig(unit="bytes", decimals=1, custom=common.TableFieldOptions()),
+                    overrides=[field_override("Pressure", {"unit": "short", "decimals": 0})],
                 ),
             ),
             dashboard.RowPanel(
@@ -156,12 +133,9 @@ def build_dashboard() -> dashboard.Dashboard:
                 type_val="barchart",
                 id_val=5,
                 targets=[
-                    mimir_query(
-                        '(label_join(((sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~"$node",pod!="",container!="",container!="POD",namespace=~"$namespace"} and on (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1)))) and on (node, namespace, pod) topk by (node) (6, max_over_time((sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~"$node",pod!="",container!="",container!="POD",namespace=~"$namespace"} and on (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1))))[${__range_s}s:1m] @ end()))), "part", "/", "namespace", "pod") or label_replace(((sum by (node) (sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~"$node",pod!="",container!="",container!="POD"} and on (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1))))) - sum by (node) ((sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~"$node",pod!="",container!="",container!="POD",namespace=~"$namespace"} and on (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1)))) and on (node, namespace, pod) topk by (node) (6, max_over_time((sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~"$node",pod!="",container!="",container!="POD",namespace=~"$namespace"} and on (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1))))[${__range_s}s:1m] @ end())))), "part", "Other Pods", "node", ".*") or label_replace((((max by (node) (node_memory_MemTotal_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))) - (max by (node) (node_memory_MemAvailable_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"})))) - (sum by (node) (sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~"$node",pod!="",container!="",container!="POD"} and on (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1)))))), "part", "Host / unattributed", "node", ".*") or label_replace((max by (node) (node_memory_MemAvailable_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))), "part", "Available to Linux (MemAvailable)", "node", ".*")) and on (node) (max by (node) (node_memory_MemTotal_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"})))'
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build()
+                    mimir_table_query(
+                        f'(label_join((({_SELECTED_POD_WORKING_SETS}) and on (node, namespace, pod) topk by (node) (6, max_over_time(({_SELECTED_POD_WORKING_SETS})[${{__range_s}}s:1m] @ end()))), "part", "/", "namespace", "pod") or label_replace((({_TOTAL_POD_WORKING_SET}) - sum by (node) (({_SELECTED_POD_WORKING_SETS}) and on (node, namespace, pod) topk by (node) (6, max_over_time(({_SELECTED_POD_WORKING_SETS})[${{__range_s}}s:1m] @ end())))), "part", "Other Pods", "node", ".*") or label_replace(((({_NODE_TOTAL}) - ({_NODE_AVAILABLE})) - ({_TOTAL_POD_WORKING_SET})), "part", "Host / unattributed", "node", ".*") or label_replace(({_NODE_AVAILABLE}), "part", "Available to Linux (MemAvailable)", "node", ".*")) and on (node) ({_NODE_TOTAL})'
+                    ).build()
                 ],
                 title="Memory accounting: ${node:text}",
                 description="One stacked horizontal bar per repeated node. Selected Pods are the six largest over the dashboard time range; Other Pods includes all remaining running Pods across every namespace. Host/unattributed is signed node-used RAM minus all Pod working sets and is not clamped. Available is Linux node_memory_MemAvailable_bytes.",
@@ -213,40 +187,29 @@ def build_dashboard() -> dashboard.Dashboard:
                 type_val="table",
                 id_val=6,
                 targets=[
-                    mimir_query(
-                        '(label_join(sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~"$node",pod!="",container!="",container!="POD",namespace=~"$namespace"} and on (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1))), "pod_key", "/", "node", "namespace", "pod")) and on (node) (max by (node) (node_memory_MemTotal_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"})))'
+                    mimir_table_query(expr, ref_id=ref_id).build()
+                    for ref_id, expr in (
+                        (
+                            "A",
+                            f'(label_join({_SELECTED_POD_WORKING_SETS}, "pod_key", "/", "node", "namespace", "pod")) and on (node) ({_NODE_TOTAL})',
+                        ),
+                        (
+                            "B",
+                            f'(label_join(sum by (node, namespace, pod) (max by (node, namespace, pod, container) (kube_pod_container_resource_requests{{resource="memory",unit="byte",node=~"$node",namespace=~"$namespace"}} and on (namespace, pod) (kube_pod_status_phase{{phase="Running"}} == 1))), "pod_key", "/", "node", "namespace", "pod")) and on (node) ({_NODE_TOTAL})',
+                        ),
+                        (
+                            "C",
+                            f'(label_join(sum by (node, namespace, pod) (max by (node, namespace, pod, container) (kube_pod_container_resource_limits{{resource="memory",unit="byte",node=~"$node",namespace=~"$namespace"}} and on (namespace, pod) (kube_pod_status_phase{{phase="Running"}} == 1)) and on (namespace, pod) (kube_pod_status_phase{{phase="Running"}} == 1)), "pod_key", "/", "node", "namespace", "pod")) and on (node) ({_NODE_TOTAL})',
+                        ),
+                        (
+                            "D",
+                            f'(label_join(count by (node, namespace, pod) ((max by (node, namespace, pod, container) (container_memory_working_set_bytes{{node=~"$node",pod!="",container!="",container!="POD",namespace=~"$namespace"}} and on (namespace, pod) (kube_pod_status_phase{{phase="Running"}} == 1))) unless on (node, namespace, pod, container) (max by (node, namespace, pod, container) (kube_pod_container_resource_limits{{resource="memory",unit="byte",node=~"$node",namespace=~"$namespace"}} and on (namespace, pod) (kube_pod_status_phase{{phase="Running"}} == 1)) and on (namespace, pod) (kube_pod_status_phase{{phase="Running"}} == 1))), "pod_key", "/", "node", "namespace", "pod")) and on (node) ({_NODE_TOTAL})',
+                        ),
+                        (
+                            "E",
+                            f'label_join(100 * ({_SELECTED_POD_WORKING_SETS}) / on (node) group_left() ({_NODE_TOTAL}), "pod_key", "/", "node", "namespace", "pod")',
+                        ),
                     )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query(
-                        '(label_join(sum by (node, namespace, pod) (max by (node, namespace, pod, container) (kube_pod_container_resource_requests{resource="memory",unit="byte",node=~"$node",namespace=~"$namespace"} and on (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1))), "pod_key", "/", "node", "namespace", "pod")) and on (node) (max by (node) (node_memory_MemTotal_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"})))',
-                        ref_id="B",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query(
-                        '(label_join(sum by (node, namespace, pod) (max by (node, namespace, pod, container) (kube_pod_container_resource_limits{resource="memory",unit="byte",node=~"$node",namespace=~"$namespace"} and on (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1)) and on (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1)), "pod_key", "/", "node", "namespace", "pod")) and on (node) (max by (node) (node_memory_MemTotal_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"})))',
-                        ref_id="C",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query(
-                        '(label_join(count by (node, namespace, pod) ((max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~"$node",pod!="",container!="",container!="POD",namespace=~"$namespace"} and on (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1))) unless on (node, namespace, pod, container) (max by (node, namespace, pod, container) (kube_pod_container_resource_limits{resource="memory",unit="byte",node=~"$node",namespace=~"$namespace"} and on (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1)) and on (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1))), "pod_key", "/", "node", "namespace", "pod")) and on (node) (max by (node) (node_memory_MemTotal_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"})))',
-                        ref_id="D",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query(
-                        'label_join(100 * (sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~"$node",pod!="",container!="",container!="POD",namespace=~"$namespace"} and on (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1)))) / on (node) group_left() (max by (node) (node_memory_MemTotal_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))), "pod_key", "/", "node", "namespace", "pod")',
-                        ref_id="E",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
                 ],
                 title="Running Pod memory details",
                 description="One row per running Pod, scoped by node and namespace selectors. Working set, declared requests, and configured limits are sums across containers. A blank configured-limit cell means no current aggregate limit series; the adjacent count identifies containers without a current limit series, which may mean either an unset limit or a missing kube-state-metrics sample. Node RAM percentage uses physical node capacity. The outer join keeps Pods with missing requests or limits.",
@@ -259,35 +222,30 @@ def build_dashboard() -> dashboard.Dashboard:
                     dashboard.DataTransformerConfig(
                         id_val="organize",
                         options={
-                            "excludeByName": {
-                                "pod_key": True,
-                                "Time 1": True,
-                                "Time 2": True,
-                                "Time 3": True,
-                                "Time 4": True,
-                                "Time 5": True,
-                                "node 2": True,
-                                "node 3": True,
-                                "node 4": True,
-                                "node 5": True,
-                                "namespace 2": True,
-                                "namespace 3": True,
-                                "namespace 4": True,
-                                "namespace 5": True,
-                                "pod 2": True,
-                                "pod 3": True,
-                                "pod 4": True,
-                                "pod 5": True,
-                            },
+                            "excludeByName": dict.fromkeys(
+                                (
+                                    *("pod_key",),
+                                    *(f"Time {index}" for index in range(1, 6)),
+                                    *(f"node {index}" for index in range(2, 6)),
+                                    *(f"namespace {index}" for index in range(2, 6)),
+                                    *(f"pod {index}" for index in range(2, 6)),
+                                ),
+                                True,
+                            ),
                             "indexByName": {
-                                "node 1": 0,
-                                "namespace 1": 1,
-                                "pod 1": 2,
-                                "Value #A": 3,
-                                "Value #B": 4,
-                                "Value #C": 5,
-                                "Value #D": 6,
-                                "Value #E": 7,
+                                name: index
+                                for index, name in enumerate(
+                                    (
+                                        "node 1",
+                                        "namespace 1",
+                                        "pod 1",
+                                        "Value #A",
+                                        "Value #B",
+                                        "Value #C",
+                                        "Value #D",
+                                        "Value #E",
+                                    )
+                                )
                             },
                             "renameByName": {
                                 "Value #A": "Pod working set",
@@ -303,26 +261,13 @@ def build_dashboard() -> dashboard.Dashboard:
                     ),
                 ],
                 options=table.Options(
-                    sort_by=[common.TableSortByFieldState(display_name="Pod working set", desc=True)],
-                    footer=common.TableFooterOptions(),
+                    sort_by=[common.TableSortByFieldState(display_name="Pod working set", desc=True)]
                 ),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="bytes", decimals=1),
                     overrides=[
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="Node RAM %"),
-                            properties=[
-                                dashboard.DynamicConfigValue(id_val="unit", value="percent"),
-                                dashboard.DynamicConfigValue(id_val="decimals", value=1),
-                            ],
-                        ),
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="Containers without limit"),
-                            properties=[
-                                dashboard.DynamicConfigValue(id_val="unit", value="short"),
-                                dashboard.DynamicConfigValue(id_val="decimals", value=0),
-                            ],
-                        ),
+                        field_override("Node RAM %", {"unit": "percent", "decimals": 1}),
+                        field_override("Containers without limit", {"unit": "short", "decimals": 0}),
                     ],
                 ),
             ),
@@ -331,25 +276,24 @@ def build_dashboard() -> dashboard.Dashboard:
                 type_val="timeseries",
                 id_val=8,
                 targets=[
-                    mimir_query(
-                        '((sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~"$node",pod!="",container!="",container!="POD",namespace=~"$namespace"} and on (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1)))) and on (node, namespace, pod) topk by (node) (6, max_over_time((sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~"$node",pod!="",container!="",container!="POD",namespace=~"$namespace"} and on (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1))))[${__range_s}s:1m] @ end()))) and on (node) (max by (node) (node_memory_MemTotal_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"})))',
-                        legend="{{namespace}}/{{pod}}",
-                    ).build(),
-                    mimir_query(
-                        '((sum by (node) (sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~"$node",pod!="",container!="",container!="POD"} and on (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1))))) - sum by (node) ((sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~"$node",pod!="",container!="",container!="POD",namespace=~"$namespace"} and on (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1)))) and on (node, namespace, pod) topk by (node) (6, max_over_time((sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~"$node",pod!="",container!="",container!="POD",namespace=~"$namespace"} and on (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1))))[${__range_s}s:1m] @ end())))) and on (node) (max by (node) (node_memory_MemTotal_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"})))',
-                        legend="Other Pods",
-                        ref_id="B",
-                    ).build(),
-                    mimir_query(
-                        '(((max by (node) (node_memory_MemTotal_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))) - (max by (node) (node_memory_MemAvailable_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"})))) - (sum by (node) (sum by (node, namespace, pod) (max by (node, namespace, pod, container) (container_memory_working_set_bytes{node=~"$node",pod!="",container!="",container!="POD"} and on (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1)))))) and on (node) (max by (node) (node_memory_MemTotal_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"})))',
-                        legend="Host / unattributed",
-                        ref_id="C",
-                    ).build(),
-                    mimir_query(
-                        'max by (node) (node_memory_MemTotal_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))',
-                        legend="Node capacity",
-                        ref_id="D",
-                    ).build(),
+                    mimir_query(expr, legend=legend, ref_id=chr(ord("A") + index)).build()
+                    for index, (expr, legend) in enumerate(
+                        (
+                            (
+                                f"(({_SELECTED_POD_WORKING_SETS}) and on (node, namespace, pod) topk by (node) (6, max_over_time(({_SELECTED_POD_WORKING_SETS})[${{__range_s}}s:1m] @ end()))) and on (node) ({_NODE_TOTAL})",
+                                "{{namespace}}/{{pod}}",
+                            ),
+                            (
+                                f"(({_TOTAL_POD_WORKING_SET}) - sum by (node) (({_SELECTED_POD_WORKING_SETS}) and on (node, namespace, pod) topk by (node) (6, max_over_time(({_SELECTED_POD_WORKING_SETS})[${{__range_s}}s:1m] @ end())))) and on (node) ({_NODE_TOTAL})",
+                                "Other Pods",
+                            ),
+                            (
+                                f"((({_NODE_TOTAL}) - ({_NODE_AVAILABLE})) - ({_TOTAL_POD_WORKING_SET})) and on (node) ({_NODE_TOTAL})",
+                                "Host / unattributed",
+                            ),
+                            (_NODE_TOTAL, "Node capacity"),
+                        )
+                    )
                 ],
                 title="Pod + host/unattributed working sets: ${node:text}",
                 description="Stacked Pod working sets and signed host/unattributed remainder, with physical node capacity as a non-stacked reference. Largest Pods are selected by maximum one-minute samples over the selected dashboard range and the same membership is held at every graph step. Other Pods includes all running Pod working sets outside the selected named series.",
@@ -382,18 +326,14 @@ def build_dashboard() -> dashboard.Dashboard:
                         ),
                     ),
                     overrides=[
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="Node capacity"),
-                            properties=[
-                                dashboard.DynamicConfigValue(
-                                    id_val="custom.stacking", value={"mode": "none", "group": "B"}
-                                ),
-                                dashboard.DynamicConfigValue(id_val="custom.fillOpacity", value=0),
-                                dashboard.DynamicConfigValue(id_val="custom.lineWidth", value=2),
-                                dashboard.DynamicConfigValue(
-                                    id_val="color", value={"mode": "fixed", "fixedColor": "gray"}
-                                ),
-                            ],
+                        field_override(
+                            "Node capacity",
+                            {
+                                "custom.stacking": {"mode": "none", "group": "B"},
+                                "custom.fillOpacity": 0,
+                                "custom.lineWidth": 2,
+                                "color": {"mode": "fixed", "fixedColor": "gray"},
+                            },
                         )
                     ],
                 ),
@@ -401,12 +341,7 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=9,
-                targets=[
-                    mimir_query(
-                        'max by (node) (node_memory_MemAvailable_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))',
-                        legend="{{node}}",
-                    ).build()
-                ],
+                targets=[mimir_query(_NODE_AVAILABLE, legend="{{node}}").build()],
                 title="Linux available RAM history",
                 description="node_memory_MemAvailable_bytes, the kernel estimate of memory available to new workloads. This is not calculated as node capacity minus a Grafana container working-set total.",
                 datasource=mimir(),
@@ -421,12 +356,7 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=10,
-                targets=[
-                    mimir_query(
-                        'max by (node) (kube_node_status_condition{condition="MemoryPressure",status="true",node=~"$node"} and on (node) (max by (node) (node_memory_MemTotal_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"})))) or on (node) (0 * max by (node) (kube_node_status_condition{condition="MemoryPressure",status="false",node=~"$node"} and on (node) (max by (node) (node_memory_MemTotal_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"})))))',
-                        legend="{{node}}",
-                    ).build()
-                ],
+                targets=[mimir_query(_MEMORY_PRESSURE, legend="{{node}}").build()],
                 title="MemoryPressure state (0 = false, 1 = true)",
                 description="Kubernetes node MemoryPressure condition for nodes with current node-exporter memory samples. The false series is represented as zero only when kube-state-metrics reports the false condition; absent node or condition samples are not synthesized.",
                 datasource=mimir(),
@@ -449,19 +379,8 @@ def build_dashboard() -> dashboard.Dashboard:
                 type_val="table",
                 id_val=12,
                 targets=[
-                    mimir_query(
-                        'max by (node) (node_memory_Cached_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))'
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query(
-                        'max by (node) (node_memory_Buffers_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))',
-                        ref_id="B",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
+                    mimir_table_query(_node_memory("Cached")).build(),
+                    mimir_table_query(_node_memory("Buffers"), ref_id="B").build(),
                 ],
                 title="Host cache and buffers · overlaps Pod accounting",
                 description="Current node-exporter cache and buffers gauges. These host views can overlap cAdvisor working sets and are not separate buckets to add to the Pod accounting bars.",
@@ -486,54 +405,16 @@ def build_dashboard() -> dashboard.Dashboard:
                 type_val="table",
                 id_val=13,
                 targets=[
-                    mimir_query(
-                        'max by (node) (node_memory_Slab_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))'
+                    mimir_table_query(expr, ref_id=ref_id).build()
+                    for ref_id, expr in (
+                        ("A", _node_memory("Slab")),
+                        ("B", _node_memory("SReclaimable")),
+                        ("C", _node_memory("SUnreclaim")),
+                        ("D", _node_memory("KernelStack")),
+                        ("E", _node_memory("PageTables")),
+                        ("F", _node_memory("VmallocUsed")),
+                        ("G", _node_memory("Percpu")),
                     )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query(
-                        'max by (node) (node_memory_SReclaimable_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))',
-                        ref_id="B",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query(
-                        'max by (node) (node_memory_SUnreclaim_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))',
-                        ref_id="C",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query(
-                        'max by (node) (node_memory_KernelStack_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))',
-                        ref_id="D",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query(
-                        'max by (node) (node_memory_PageTables_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))',
-                        ref_id="E",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query(
-                        'max by (node) (node_memory_VmallocUsed_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))',
-                        ref_id="F",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query(
-                        'max by (node) (node_memory_Percpu_bytes{namespace="monitoring",pod=~"prometheus-node-exporter-.+"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"}))',
-                        ref_id="G",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
                 ],
                 title="Host slab and kernel memory · overlaps Pod accounting",
                 description="Current slab, reclaimable and unreclaimable slab, kernel stack, page tables, vmalloc, and per-CPU gauges from node-exporter. Slab contains its reclaimable and unreclaimable components; all these host metrics overlap the broader Pod/host memory accounting and must not be added together as disjoint buckets.",
@@ -546,30 +427,27 @@ def build_dashboard() -> dashboard.Dashboard:
                     dashboard.DataTransformerConfig(
                         id_val="organize",
                         options={
-                            "excludeByName": {
-                                "Time 1": True,
-                                "Time 2": True,
-                                "Time 3": True,
-                                "Time 4": True,
-                                "Time 5": True,
-                                "Time 6": True,
-                                "Time 7": True,
-                                "node 2": True,
-                                "node 3": True,
-                                "node 4": True,
-                                "node 5": True,
-                                "node 6": True,
-                                "node 7": True,
-                            },
+                            "excludeByName": dict.fromkeys(
+                                (
+                                    *(f"Time {index}" for index in range(1, 8)),
+                                    *(f"node {index}" for index in range(2, 8)),
+                                ),
+                                True,
+                            ),
                             "indexByName": {
-                                "node": 0,
-                                "Value #A": 1,
-                                "Value #B": 2,
-                                "Value #C": 3,
-                                "Value #D": 4,
-                                "Value #E": 5,
-                                "Value #F": 6,
-                                "Value #G": 7,
+                                name: index
+                                for index, name in enumerate(
+                                    (
+                                        "node",
+                                        "Value #A",
+                                        "Value #B",
+                                        "Value #C",
+                                        "Value #D",
+                                        "Value #E",
+                                        "Value #F",
+                                        "Value #G",
+                                    )
+                                )
                             },
                             "renameByName": {
                                 "Value #A": "Slab",

@@ -1,8 +1,79 @@
 """Piraeus LVM storage dashboard."""
 
-from grafana_foundation_sdk.models import barchart, common, dashboard, prometheus, stat, text
+from grafana_foundation_sdk.models import barchart, common, dashboard, stat, text
 
-from cluster.cdk8s.monitoring.dashboards.foundation import last_value, mimir, mimir_query, series_options
+from cluster.cdk8s.monitoring.dashboards.foundation import (
+    field_override,
+    last_value,
+    mimir,
+    mimir_query,
+    mimir_table_query,
+    series_options,
+)
+
+_POOL_COLORS = (("ssd", "#5794F2"), ("hdd", "#FF9830"))
+_POOL_SELECTION = 'node=~"$node", storage_pool=~"$storage_pool"'
+_BOUND_PVC_LIMIT = 'max by (namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{phase="Bound", storage_pool=~"$storage_pool"})'
+
+
+def _pool_series_fields() -> dashboard.FieldConfigSource:
+    return dashboard.FieldConfigSource(
+        defaults=dashboard.FieldConfig(
+            unit="bytes", color=dashboard.FieldColor(mode=dashboard.FieldColorModeId.PALETTE_CLASSIC)
+        ),
+        overrides=[
+            *_pool_color_overrides(regex=True),
+            field_override("/ capacity$/", {"custom.lineStyle": {"dash": [10, 10], "fill": "dash"}}, regex=True),
+        ],
+    )
+
+
+def _pool_stat_transforms() -> list[dashboard.DataTransformerConfig]:
+    return [
+        dashboard.DataTransformerConfig(id_val="sortBy", options={"sort": [{"field": "storage_pool", "desc": False}]}),
+        dashboard.DataTransformerConfig(id_val="filterFieldsByName", options={"exclude": {"names": ["Time"]}}),
+        dashboard.DataTransformerConfig(id_val="rowsToFields", options={}),
+    ]
+
+
+def _pool_stat(id: int, title: str, expr: str, description: str, unit: str) -> dashboard.Panel:
+    index = id - 26
+    return dashboard.Panel(
+        type_val="stat",
+        id_val=id,
+        title=title,
+        description=description,
+        datasource=mimir(),
+        targets=[mimir_table_query(expr, legend="{{storage_pool}}").build()],
+        grid_pos=dashboard.GridPos(h=4, w=8, x=(index % 3) * 8, y=7 + (index // 3) * 4),
+        transformations=_pool_stat_transforms(),
+        options=stat.Options(reduce_options=last_value()),
+        field_config=_pool_fields(unit),
+    )
+
+
+def _pool_fields(unit: str = "bytes") -> dashboard.FieldConfigSource:
+    return dashboard.FieldConfigSource(
+        defaults=dashboard.FieldConfig(
+            unit=unit, color=dashboard.FieldColor(mode=dashboard.FieldColorModeId.PALETTE_CLASSIC)
+        ),
+        overrides=_pool_color_overrides(),
+    )
+
+
+def _pool_color_overrides(*, regex: bool = False) -> list[dashboard.DashboardFieldConfigSourceOverrides]:
+    return [
+        field_override(f"/^{pool} /" if regex else pool, {"color": {"mode": "fixed", "fixedColor": color}}, regex=regex)
+        for pool, color in _POOL_COLORS
+    ]
+
+
+def _pool_metric(metric: str, *, node: str = "$node") -> str:
+    return f'disk_usage:pool_{metric}_bytes{{node=~"{node}", storage_pool=~"$storage_pool"}}'
+
+
+def _pool_total(metric: str) -> str:
+    return f"sum by (storage_pool) ({_pool_metric(metric)})"
 
 
 def build_dashboard() -> dashboard.Dashboard:
@@ -27,345 +98,62 @@ def build_dashboard() -> dashboard.Dashboard:
                 ),
             ),
             dashboard.RowPanel(title="Piraeus thin pools", grid_pos=dashboard.GridPos(h=1, w=24, y=6), id_val=25),
-            dashboard.Panel(
-                type_val="stat",
-                id_val=26,
-                targets=[
-                    mimir_query(
-                        'sum by (storage_pool) (disk_usage:pool_used_bytes{node=~"$node", storage_pool=~"$storage_pool"})',
-                        legend="{{storage_pool}}",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build()
-                ],
-                title="Physical pool used",
-                description="Piraeus thin-pool physical use, summed over the selected storage nodes by pool name.",
-                datasource=mimir(),
-                grid_pos=dashboard.GridPos(h=4, w=8, y=7),
-                transformations=[
-                    dashboard.DataTransformerConfig(
-                        id_val="sortBy", options={"sort": [{"field": "storage_pool", "desc": False}]}
-                    ),
-                    dashboard.DataTransformerConfig(
-                        id_val="filterFieldsByName", options={"exclude": {"names": ["Time"]}}
-                    ),
-                    dashboard.DataTransformerConfig(id_val="rowsToFields", options={}),
-                ],
-                options=stat.Options(reduce_options=last_value()),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="bytes", color=dashboard.FieldColor(mode=dashboard.FieldColorModeId.PALETTE_CLASSIC)
-                    ),
-                    overrides=[
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="ssd"),
-                            properties=[
-                                dashboard.DynamicConfigValue(
-                                    id_val="color", value={"mode": "fixed", "fixedColor": "#5794F2"}
-                                )
-                            ],
+            *[
+                _pool_stat(index + 26, title, expr, description, unit)
+                for index, (title, expr, description, unit) in enumerate(
+                    [
+                        (
+                            "Physical pool used",
+                            _pool_total("used"),
+                            "Piraeus thin-pool physical use, summed over the selected storage nodes by pool name.",
+                            "bytes",
                         ),
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="hdd"),
-                            properties=[
-                                dashboard.DynamicConfigValue(
-                                    id_val="color", value={"mode": "fixed", "fixedColor": "#FF9830"}
-                                )
-                            ],
+                        (
+                            "Physical pool capacity",
+                            _pool_total("capacity"),
+                            "Raw Piraeus thin-pool capacity. This is separate from ext4/XFS filesystem capacity.",
+                            "bytes",
                         ),
-                    ],
-                ),
-            ),
-            dashboard.Panel(
-                type_val="stat",
-                id_val=27,
-                targets=[
-                    mimir_query(
-                        'sum by (storage_pool) (disk_usage:pool_capacity_bytes{node=~"$node", storage_pool=~"$storage_pool"})',
-                        legend="{{storage_pool}}",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build()
-                ],
-                title="Physical pool capacity",
-                description="Raw Piraeus thin-pool capacity. This is separate from ext4/XFS filesystem capacity.",
-                datasource=mimir(),
-                grid_pos=dashboard.GridPos(h=4, w=8, x=8, y=7),
-                transformations=[
-                    dashboard.DataTransformerConfig(
-                        id_val="sortBy", options={"sort": [{"field": "storage_pool", "desc": False}]}
-                    ),
-                    dashboard.DataTransformerConfig(
-                        id_val="filterFieldsByName", options={"exclude": {"names": ["Time"]}}
-                    ),
-                    dashboard.DataTransformerConfig(id_val="rowsToFields", options={}),
-                ],
-                options=stat.Options(reduce_options=last_value()),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="bytes", color=dashboard.FieldColor(mode=dashboard.FieldColorModeId.PALETTE_CLASSIC)
-                    ),
-                    overrides=[
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="ssd"),
-                            properties=[
-                                dashboard.DynamicConfigValue(
-                                    id_val="color", value={"mode": "fixed", "fixedColor": "#5794F2"}
-                                )
-                            ],
+                        (
+                            "Physical pool free",
+                            _pool_total("free"),
+                            "Piraeus thin-pool physical free bytes from the pool accounting rules.",
+                            "bytes",
                         ),
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="hdd"),
-                            properties=[
-                                dashboard.DynamicConfigValue(
-                                    id_val="color", value={"mode": "fixed", "fixedColor": "#FF9830"}
-                                )
-                            ],
+                        (
+                            "Diskful copy limits",
+                            _pool_total("committed"),
+                            "Sum of per-copy PV capacity limits committed on the selected pools; this is not physical use.",
+                            "bytes",
                         ),
-                    ],
-                ),
-            ),
-            dashboard.Panel(
-                type_val="stat",
-                id_val=28,
-                targets=[
-                    mimir_query(
-                        'sum by (storage_pool) (disk_usage:pool_free_bytes{node=~"$node", storage_pool=~"$storage_pool"})',
-                        legend="{{storage_pool}}",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build()
-                ],
-                title="Physical pool free",
-                description="Piraeus thin-pool physical free bytes from the pool accounting rules.",
-                datasource=mimir(),
-                grid_pos=dashboard.GridPos(h=4, w=8, x=16, y=7),
-                transformations=[
-                    dashboard.DataTransformerConfig(
-                        id_val="sortBy", options={"sort": [{"field": "storage_pool", "desc": False}]}
-                    ),
-                    dashboard.DataTransformerConfig(
-                        id_val="filterFieldsByName", options={"exclude": {"names": ["Time"]}}
-                    ),
-                    dashboard.DataTransformerConfig(id_val="rowsToFields", options={}),
-                ],
-                options=stat.Options(reduce_options=last_value()),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="bytes", color=dashboard.FieldColor(mode=dashboard.FieldColorModeId.PALETTE_CLASSIC)
-                    ),
-                    overrides=[
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="ssd"),
-                            properties=[
-                                dashboard.DynamicConfigValue(
-                                    id_val="color", value={"mode": "fixed", "fixedColor": "#5794F2"}
-                                )
-                            ],
+                        (
+                            "Uncommitted limit headroom",
+                            f"{_pool_total('capacity')} - {_pool_total('committed')}",
+                            "Raw pool capacity minus diskful copy capacity limits. This limit comparison may be negative; it is not physical free space.",
+                            "bytes",
                         ),
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="hdd"),
-                            properties=[
-                                dashboard.DynamicConfigValue(
-                                    id_val="color", value={"mode": "fixed", "fixedColor": "#FF9830"}
-                                )
-                            ],
+                        (
+                            "Copy limits / pool capacity",
+                            f"{_pool_total('committed')} / {_pool_total('capacity')}",
+                            "Diskful PV capacity limits divided by raw pool capacity. This is not a physical-use percentage and can exceed 100%.",
+                            "percentunit",
                         ),
-                    ],
-                ),
-            ),
-            dashboard.Panel(
-                type_val="stat",
-                id_val=29,
-                targets=[
-                    mimir_query(
-                        'sum by (storage_pool) (disk_usage:pool_committed_bytes{node=~"$node", storage_pool=~"$storage_pool"})',
-                        legend="{{storage_pool}}",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build()
-                ],
-                title="Diskful copy limits",
-                description="Sum of per-copy PV capacity limits committed on the selected pools; this is not physical use.",
-                datasource=mimir(),
-                grid_pos=dashboard.GridPos(h=4, w=8, y=11),
-                transformations=[
-                    dashboard.DataTransformerConfig(
-                        id_val="sortBy", options={"sort": [{"field": "storage_pool", "desc": False}]}
-                    ),
-                    dashboard.DataTransformerConfig(
-                        id_val="filterFieldsByName", options={"exclude": {"names": ["Time"]}}
-                    ),
-                    dashboard.DataTransformerConfig(id_val="rowsToFields", options={}),
-                ],
-                options=stat.Options(reduce_options=last_value()),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="bytes", color=dashboard.FieldColor(mode=dashboard.FieldColorModeId.PALETTE_CLASSIC)
-                    ),
-                    overrides=[
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="ssd"),
-                            properties=[
-                                dashboard.DynamicConfigValue(
-                                    id_val="color", value={"mode": "fixed", "fixedColor": "#5794F2"}
-                                )
-                            ],
-                        ),
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="hdd"),
-                            properties=[
-                                dashboard.DynamicConfigValue(
-                                    id_val="color", value={"mode": "fixed", "fixedColor": "#FF9830"}
-                                )
-                            ],
-                        ),
-                    ],
-                ),
-            ),
-            dashboard.Panel(
-                type_val="stat",
-                id_val=30,
-                targets=[
-                    mimir_query(
-                        'sum by (storage_pool) (disk_usage:pool_capacity_bytes{node=~"$node", storage_pool=~"$storage_pool"}) - sum by (storage_pool) (disk_usage:pool_committed_bytes{node=~"$node", storage_pool=~"$storage_pool"})',
-                        legend="{{storage_pool}}",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build()
-                ],
-                title="Uncommitted limit headroom",
-                description="Raw pool capacity minus diskful copy capacity limits. This limit comparison may be negative; it is not physical free space.",
-                datasource=mimir(),
-                grid_pos=dashboard.GridPos(h=4, w=8, x=8, y=11),
-                transformations=[
-                    dashboard.DataTransformerConfig(
-                        id_val="sortBy", options={"sort": [{"field": "storage_pool", "desc": False}]}
-                    ),
-                    dashboard.DataTransformerConfig(
-                        id_val="filterFieldsByName", options={"exclude": {"names": ["Time"]}}
-                    ),
-                    dashboard.DataTransformerConfig(id_val="rowsToFields", options={}),
-                ],
-                options=stat.Options(reduce_options=last_value()),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="bytes", color=dashboard.FieldColor(mode=dashboard.FieldColorModeId.PALETTE_CLASSIC)
-                    ),
-                    overrides=[
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="ssd"),
-                            properties=[
-                                dashboard.DynamicConfigValue(
-                                    id_val="color", value={"mode": "fixed", "fixedColor": "#5794F2"}
-                                )
-                            ],
-                        ),
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="hdd"),
-                            properties=[
-                                dashboard.DynamicConfigValue(
-                                    id_val="color", value={"mode": "fixed", "fixedColor": "#FF9830"}
-                                )
-                            ],
-                        ),
-                    ],
-                ),
-            ),
-            dashboard.Panel(
-                type_val="stat",
-                id_val=31,
-                targets=[
-                    mimir_query(
-                        'sum by (storage_pool) (disk_usage:pool_committed_bytes{node=~"$node", storage_pool=~"$storage_pool"}) / sum by (storage_pool) (disk_usage:pool_capacity_bytes{node=~"$node", storage_pool=~"$storage_pool"})',
-                        legend="{{storage_pool}}",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build()
-                ],
-                title="Copy limits / pool capacity",
-                description="Diskful PV capacity limits divided by raw pool capacity. This is not a physical-use percentage and can exceed 100%.",
-                datasource=mimir(),
-                grid_pos=dashboard.GridPos(h=4, w=8, x=16, y=11),
-                transformations=[
-                    dashboard.DataTransformerConfig(
-                        id_val="sortBy", options={"sort": [{"field": "storage_pool", "desc": False}]}
-                    ),
-                    dashboard.DataTransformerConfig(
-                        id_val="filterFieldsByName", options={"exclude": {"names": ["Time"]}}
-                    ),
-                    dashboard.DataTransformerConfig(id_val="rowsToFields", options={}),
-                ],
-                options=stat.Options(reduce_options=last_value()),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="percentunit", color=dashboard.FieldColor(mode=dashboard.FieldColorModeId.PALETTE_CLASSIC)
-                    ),
-                    overrides=[
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="ssd"),
-                            properties=[
-                                dashboard.DynamicConfigValue(
-                                    id_val="color", value={"mode": "fixed", "fixedColor": "#5794F2"}
-                                )
-                            ],
-                        ),
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="hdd"),
-                            properties=[
-                                dashboard.DynamicConfigValue(
-                                    id_val="color", value={"mode": "fixed", "fixedColor": "#FF9830"}
-                                )
-                            ],
-                        ),
-                    ],
-                ),
-            ),
+                    ]
+                )
+            ],
             dashboard.Panel(
                 type_val="table",
                 id_val=34,
                 targets=[
-                    mimir_query('disk_usage:pool_capacity_bytes{node=~"$node", storage_pool=~"$storage_pool"}')
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query('disk_usage:pool_used_bytes{node=~"$node", storage_pool=~"$storage_pool"}', ref_id="B")
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query(
-                        'disk_usage:pool_used_bytes{node=~"$node", storage_pool=~"$storage_pool"} / on (node, storage_pool) disk_usage:pool_capacity_bytes{node=~"$node", storage_pool=~"$storage_pool"}',
-                        ref_id="C",
+                    mimir_table_query(expr, ref_id=ref_id).build()
+                    for ref_id, expr in (
+                        ("A", _pool_metric("capacity")),
+                        ("B", _pool_metric("used")),
+                        ("C", f"{_pool_metric('used')} / on (node, storage_pool) {_pool_metric('capacity')}"),
+                        ("D", _pool_metric("committed")),
+                        ("E", f"{_pool_metric('committed')} / on (node, storage_pool) {_pool_metric('capacity')}"),
+                        ("F", f"{_pool_metric('capacity')} - on (node, storage_pool) {_pool_metric('committed')}"),
                     )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query(
-                        'disk_usage:pool_committed_bytes{node=~"$node", storage_pool=~"$storage_pool"}', ref_id="D"
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query(
-                        'disk_usage:pool_committed_bytes{node=~"$node", storage_pool=~"$storage_pool"} / on (node, storage_pool) disk_usage:pool_capacity_bytes{node=~"$node", storage_pool=~"$storage_pool"}',
-                        ref_id="E",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query(
-                        'disk_usage:pool_capacity_bytes{node=~"$node", storage_pool=~"$storage_pool"} - on (node, storage_pool) disk_usage:pool_committed_bytes{node=~"$node", storage_pool=~"$storage_pool"}',
-                        ref_id="F",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
                 ],
                 title="Piraeus thin-pool accounting by storage node",
                 description="Physical pool usage and capacity are shown separately from the sum of diskful PV limits. Uncommitted headroom is capacity minus those limits and may be negative.",
@@ -478,20 +266,8 @@ def build_dashboard() -> dashboard.Dashboard:
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="bytes"),
                     overrides=[
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="Copy limits / capacity"),
-                            properties=[
-                                dashboard.DynamicConfigValue(id_val="unit", value="percentunit"),
-                                dashboard.DynamicConfigValue(id_val="decimals", value=1),
-                            ],
-                        ),
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="Physical used %"),
-                            properties=[
-                                dashboard.DynamicConfigValue(id_val="unit", value="percentunit"),
-                                dashboard.DynamicConfigValue(id_val="decimals", value=1),
-                            ],
-                        ),
+                        field_override("Copy limits / capacity", {"unit": "percentunit", "decimals": 1}),
+                        field_override("Physical used %", {"unit": "percentunit", "decimals": 1}),
                     ],
                 ),
             ),
@@ -505,14 +281,9 @@ def build_dashboard() -> dashboard.Dashboard:
                 type_val="timeseries",
                 id_val=32,
                 targets=[
+                    mimir_query(_pool_metric("used", node="$pool_node"), legend="{{storage_pool}} used").build(),
                     mimir_query(
-                        'disk_usage:pool_used_bytes{node=~"$pool_node", storage_pool=~"$storage_pool"}',
-                        legend="{{storage_pool}} used",
-                    ).build(),
-                    mimir_query(
-                        'disk_usage:pool_capacity_bytes{node=~"$pool_node", storage_pool=~"$storage_pool"}',
-                        legend="{{storage_pool}} capacity",
-                        ref_id="B",
+                        _pool_metric("capacity", node="$pool_node"), legend="{{storage_pool}} capacity", ref_id="B"
                     ).build(),
                 ],
                 title="Physical pool usage",
@@ -520,50 +291,17 @@ def build_dashboard() -> dashboard.Dashboard:
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(y=26),
                 options=series_options(sort=common.SortOrder.DESCENDING),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="bytes", color=dashboard.FieldColor(mode=dashboard.FieldColorModeId.PALETTE_CLASSIC)
-                    ),
-                    overrides=[
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byRegexp", options="/^ssd /"),
-                            properties=[
-                                dashboard.DynamicConfigValue(
-                                    id_val="color", value={"mode": "fixed", "fixedColor": "#5794F2"}
-                                )
-                            ],
-                        ),
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byRegexp", options="/^hdd /"),
-                            properties=[
-                                dashboard.DynamicConfigValue(
-                                    id_val="color", value={"mode": "fixed", "fixedColor": "#FF9830"}
-                                )
-                            ],
-                        ),
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byRegexp", options="/ capacity$/"),
-                            properties=[
-                                dashboard.DynamicConfigValue(
-                                    id_val="custom.lineStyle", value={"dash": [10, 10], "fill": "dash"}
-                                )
-                            ],
-                        ),
-                    ],
-                ),
+                field_config=_pool_series_fields(),
             ),
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=33,
                 targets=[
                     mimir_query(
-                        'disk_usage:pool_committed_bytes{node=~"$pool_node", storage_pool=~"$storage_pool"}',
-                        legend="{{storage_pool}} copy limits",
+                        _pool_metric("committed", node="$pool_node"), legend="{{storage_pool}} copy limits"
                     ).build(),
                     mimir_query(
-                        'disk_usage:pool_capacity_bytes{node=~"$pool_node", storage_pool=~"$storage_pool"}',
-                        legend="{{storage_pool}} capacity",
-                        ref_id="B",
+                        _pool_metric("capacity", node="$pool_node"), legend="{{storage_pool}} capacity", ref_id="B"
                     ).build(),
                 ],
                 title="Diskful copy limits",
@@ -571,37 +309,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(x=12, y=26),
                 options=series_options(sort=common.SortOrder.DESCENDING),
-                field_config=dashboard.FieldConfigSource(
-                    defaults=dashboard.FieldConfig(
-                        unit="bytes", color=dashboard.FieldColor(mode=dashboard.FieldColorModeId.PALETTE_CLASSIC)
-                    ),
-                    overrides=[
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byRegexp", options="/^ssd /"),
-                            properties=[
-                                dashboard.DynamicConfigValue(
-                                    id_val="color", value={"mode": "fixed", "fixedColor": "#5794F2"}
-                                )
-                            ],
-                        ),
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byRegexp", options="/^hdd /"),
-                            properties=[
-                                dashboard.DynamicConfigValue(
-                                    id_val="color", value={"mode": "fixed", "fixedColor": "#FF9830"}
-                                )
-                            ],
-                        ),
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byRegexp", options="/ capacity$/"),
-                            properties=[
-                                dashboard.DynamicConfigValue(
-                                    id_val="custom.lineStyle", value={"dash": [10, 10], "fill": "dash"}
-                                )
-                            ],
-                        ),
-                    ],
-                ),
+                field_config=_pool_series_fields(),
             ),
             dashboard.RowPanel(
                 title="Piraeus diskful volume copies", grid_pos=dashboard.GridPos(h=1, w=24, y=35), id_val=35
@@ -610,13 +318,10 @@ def build_dashboard() -> dashboard.Dashboard:
                 type_val="barchart",
                 id_val=36,
                 targets=[
-                    mimir_query(
-                        'topk(15, (label_join(label_join(label_join(sum by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_allocated_bytes{node=~"$node", storage_pool=~"$storage_pool", persistentvolumeclaim!=""}), "copy", "/", "namespace", "persistentvolumeclaim"), "location", "/", "node", "storage_pool"), "copy", " · ", "copy", "location", "phase")) or (label_join(label_join(label_join(sum by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_allocated_bytes{node=~"$node", storage_pool=~"$storage_pool", persistentvolumeclaim=""}), "copy", "/", "namespace", "resource"), "location", "/", "node", "storage_pool"), "copy", " · ", "copy", "location", "phase")))',
+                    mimir_table_query(
+                        f'topk(15, (label_join(label_join(label_join(sum by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_allocated_bytes{{{_POOL_SELECTION}, persistentvolumeclaim!=""}}), "copy", "/", "namespace", "persistentvolumeclaim"), "location", "/", "node", "storage_pool"), "copy", " · ", "copy", "location", "phase")) or (label_join(label_join(label_join(sum by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_allocated_bytes{{{_POOL_SELECTION}, persistentvolumeclaim=""}}), "copy", "/", "namespace", "resource"), "location", "/", "node", "storage_pool"), "copy", " · ", "copy", "location", "phase")))',
                         legend="{{copy}}",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build()
+                    ).build()
                 ],
                 title="15 largest estimated diskful copy allocations",
                 description="Top 15 per-copy allocation estimates on selected Piraeus storage nodes. Labels show namespace/PVC, node/pool, and PV phase; copies without a PVC use the LINSTOR resource name. These estimates are not a decomposition of pool physical use.",
@@ -660,43 +365,20 @@ def build_dashboard() -> dashboard.Dashboard:
                             line_width=0, fill_opacity=85, axis_placement=common.AxisPlacement.AUTO, axis_soft_min=0
                         ),
                     ),
-                    overrides=[
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="ssd"),
-                            properties=[
-                                dashboard.DynamicConfigValue(
-                                    id_val="color", value={"mode": "fixed", "fixedColor": "#5794F2"}
-                                )
-                            ],
-                        ),
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="hdd"),
-                            properties=[
-                                dashboard.DynamicConfigValue(
-                                    id_val="color", value={"mode": "fixed", "fixedColor": "#FF9830"}
-                                )
-                            ],
-                        ),
-                    ],
+                    overrides=_pool_color_overrides(),
                 ),
             ),
             dashboard.Panel(
                 type_val="table",
                 id_val=37,
                 targets=[
-                    mimir_query(
-                        'sum by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_allocated_bytes{node=~"$node", storage_pool=~"$storage_pool"})'
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query(
-                        'max by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{node=~"$node", storage_pool=~"$storage_pool"})',
+                    mimir_table_query(
+                        f"sum by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_allocated_bytes{{{_POOL_SELECTION}}})"
+                    ).build(),
+                    mimir_table_query(
+                        f"max by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{{{_POOL_SELECTION}}})",
                         ref_id="B",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
+                    ).build(),
                 ],
                 title="Diskful copy allocation estimates and PV limits",
                 description="One row per storage-node copy, including retained or unmounted resources without a current PVC identity. Estimated allocation and PV capacity limit are separate values; PV phase distinguishes Bound, Released, and Available copies.",
@@ -761,15 +443,20 @@ def build_dashboard() -> dashboard.Dashboard:
                         options={
                             "excludeByName": {"Time": True},
                             "indexByName": {
-                                "node": 0,
-                                "storage_pool": 1,
-                                "namespace": 2,
-                                "persistentvolumeclaim": 3,
-                                "Value #A": 4,
-                                "Value #B": 5,
-                                "phase": 6,
-                                "resource": 7,
-                                "persistentvolume": 8,
+                                name: index
+                                for index, name in enumerate(
+                                    (
+                                        "node",
+                                        "storage_pool",
+                                        "namespace",
+                                        "persistentvolumeclaim",
+                                        "Value #A",
+                                        "Value #B",
+                                        "phase",
+                                        "resource",
+                                        "persistentvolume",
+                                    )
+                                )
                             },
                             "renameByName": {
                                 "node": "Storage node",
@@ -800,26 +487,21 @@ def build_dashboard() -> dashboard.Dashboard:
                 type_val="table",
                 id_val=39,
                 targets=[
-                    mimir_query(
-                        'disk_usage:pvc_used_bytes{node=~"$node"} and on (namespace, persistentvolumeclaim) max by (namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{phase="Bound", storage_pool=~"$storage_pool"})'
+                    mimir_table_query(expr, ref_id=ref_id).build()
+                    for ref_id, expr in (
+                        (
+                            "A",
+                            f'disk_usage:pvc_used_bytes{{node=~"$node"}} and on (namespace, persistentvolumeclaim) {_BOUND_PVC_LIMIT}',
+                        ),
+                        (
+                            "B",
+                            f'group by (namespace, persistentvolumeclaim, node) (disk_usage:pvc_used_bytes{{node=~"$node"}}) * on (namespace, persistentvolumeclaim) group_left () {_BOUND_PVC_LIMIT}',
+                        ),
+                        (
+                            "C",
+                            f'(disk_usage:pvc_used_bytes{{node=~"$node"}} and on (namespace, persistentvolumeclaim) {_BOUND_PVC_LIMIT}) / on (namespace, persistentvolumeclaim) group_left() {_BOUND_PVC_LIMIT}',
+                        ),
                     )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query(
-                        'group by (namespace, persistentvolumeclaim, node) (disk_usage:pvc_used_bytes{node=~"$node"}) * on (namespace, persistentvolumeclaim) group_left () max by (namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{phase="Bound", storage_pool=~"$storage_pool"})',
-                        ref_id="B",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
-                    mimir_query(
-                        '(disk_usage:pvc_used_bytes{node=~"$node"} and on (namespace, persistentvolumeclaim) max by (namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{phase="Bound", storage_pool=~"$storage_pool"})) / on (namespace, persistentvolumeclaim) group_left() max by (namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{phase="Bound", storage_pool=~"$storage_pool"})',
-                        ref_id="C",
-                    )
-                    .format(prometheus.PromQueryFormat.TABLE)
-                    .instant()
-                    .build(),
                 ],
                 title="Kubelet filesystem use and Bound Piraeus PVC limit",
                 description="Kubelet filesystem-used bytes and volume capacity limits for measured Bound Piraeus PVCs on the selected consumer nodes. Limits are deduplicated across diskful copies. Raw block PVCs and unmounted volumes have no filesystem-used sample; their limits remain visible in the diskful copy table above.",
@@ -874,12 +556,10 @@ def build_dashboard() -> dashboard.Dashboard:
                         options={
                             "excludeByName": {"Time": True},
                             "indexByName": {
-                                "namespace": 0,
-                                "persistentvolumeclaim": 1,
-                                "node": 2,
-                                "Value #A": 3,
-                                "Value #B": 4,
-                                "Value #C": 5,
+                                name: index
+                                for index, name in enumerate(
+                                    ("namespace", "persistentvolumeclaim", "node", "Value #A", "Value #B", "Value #C")
+                                )
                             },
                             "renameByName": {
                                 "namespace": "Namespace",
@@ -897,15 +577,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 ],
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="bytes"),
-                    overrides=[
-                        dashboard.DashboardFieldConfigSourceOverrides(
-                            matcher=dashboard.MatcherConfig(id_val="byName", options="Filesystem used / PV limit"),
-                            properties=[
-                                dashboard.DynamicConfigValue(id_val="unit", value="percentunit"),
-                                dashboard.DynamicConfigValue(id_val="decimals", value=1),
-                            ],
-                        )
-                    ],
+                    overrides=[field_override("Filesystem used / PV limit", {"unit": "percentunit", "decimals": 1})],
                 ),
             ),
         ],
@@ -938,14 +610,14 @@ def build_dashboard() -> dashboard.Dashboard:
                 dashboard.VariableModel(
                     name="pool_node",
                     hide=dashboard.VariableHide.HIDE_VARIABLE,
-                    query='label_values(disk_usage:pool_capacity_bytes{node=~"$node", storage_pool=~"$storage_pool"}, node)',
+                    query=f"label_values({_pool_metric('capacity')}, node)",
                     datasource=mimir(),
                     current=dashboard.VariableOption(text="All", value=["$__all"]),
                     multi=True,
                     refresh=dashboard.VariableRefresh.ON_DASHBOARD_LOAD,
                     sort=dashboard.VariableSort.ALPHABETICAL_ASC,
                     include_all=True,
-                    definition='label_values(disk_usage:pool_capacity_bytes{node=~"$node", storage_pool=~"$storage_pool"}, node)',
+                    definition=f"label_values({_pool_metric('capacity')}, node)",
                 ),
             ]
         ),

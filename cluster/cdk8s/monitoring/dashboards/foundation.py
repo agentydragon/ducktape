@@ -1,11 +1,16 @@
 """Shared query and presentation defaults for authored Grafana dashboards."""
 
+from collections.abc import Mapping, Sequence
+
 from grafana_foundation_sdk.builders import loki, prometheus, timeseries
 from grafana_foundation_sdk.builders.common import VizTooltipOptions
 from grafana_foundation_sdk.cog.runtime import UnknownDataquery
 from grafana_foundation_sdk.models import (  # Builder/model name collision.
     common,
     dashboard,
+    prometheus as prometheus_model,
+    stat,
+    statetimeline,
     timeseries as timeseries_model,
 )
 
@@ -16,11 +21,15 @@ def mimir() -> common.DataSourceRef:
 
 
 def mimir_query(expr: str, legend: str | None = None, ref_id: str = "A") -> prometheus.Dataquery:
-    """Return a native query builder; callers choose instant/range/format explicitly."""
+    """Grafana defaults to range queries; use .instant() for a current-value query."""
     query = prometheus.Dataquery().datasource(mimir()).expr(expr).ref_id(ref_id)
     if legend is not None:
         query.legend_format(legend)
     return query
+
+
+def mimir_table_query(expr: str, legend: str | None = None, ref_id: str = "A") -> prometheus.Dataquery:
+    return mimir_query(expr, legend, ref_id).format(prometheus_model.PromQueryFormat.TABLE).instant()
 
 
 def line_panel() -> timeseries.Panel:
@@ -58,10 +67,52 @@ def last_value() -> common.ReduceDataOptions:
     return common.ReduceDataOptions(values=False, calcs=["lastNotNull"], fields="")
 
 
-def series_options(sort: common.SortOrder = common.SortOrder.NONE) -> timeseries_model.Options:
+def series_options(
+    sort: common.SortOrder = common.SortOrder.NONE, *, legend_calcs: Sequence[str] | None = None
+) -> timeseries_model.Options:
     return timeseries_model.Options(
-        legend=common.VizLegendOptions(show_legend=True),
+        legend=common.VizLegendOptions(
+            show_legend=True,
+            display_mode=common.LegendDisplayMode.TABLE if legend_calcs is not None else common.LegendDisplayMode.LIST,
+            calcs=list(legend_calcs) if legend_calcs is not None else None,
+        ),
         tooltip=common.VizTooltipOptions(mode=common.TooltipDisplayMode.MULTI, sort=sort),
+    )
+
+
+def stat_options(color_mode: common.BigValueColorMode = common.BigValueColorMode.VALUE) -> stat.Options:
+    return stat.Options(graph_mode=common.BigValueGraphMode.NONE, color_mode=color_mode, reduce_options=last_value())
+
+
+def up_down_fields(*, timeline: bool = False) -> dashboard.FieldConfigSource:
+    return dashboard.FieldConfigSource(
+        defaults=dashboard.FieldConfig(
+            mappings=[
+                dashboard.ValueMap(
+                    options={
+                        "0": dashboard.ValueMappingResult(text="Down", color="red"),
+                        "1": dashboard.ValueMappingResult(text="Up", color="green"),
+                    }
+                )
+            ],
+            thresholds=dashboard.ThresholdsConfig(
+                steps=[dashboard.Threshold(color="red"), dashboard.Threshold(value=1, color="green")]
+            ),
+            custom=statetimeline.FieldConfig(fill_opacity=80) if timeline else None,
+        )
+    )
+
+
+def hide_time() -> dashboard.DataTransformerConfig:
+    return dashboard.DataTransformerConfig(id_val="organize", options={"excludeByName": {"Time": True}})
+
+
+def field_override(
+    name: str, properties: Mapping[str, object], *, regex: bool = False
+) -> dashboard.DashboardFieldConfigSourceOverrides:
+    return dashboard.DashboardFieldConfigSourceOverrides(
+        matcher=dashboard.MatcherConfig(id_val="byRegexp" if regex else "byName", options=name),
+        properties=[dashboard.DynamicConfigValue(id_val=key, value=value) for key, value in properties.items()],
     )
 
 
