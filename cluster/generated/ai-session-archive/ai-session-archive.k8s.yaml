@@ -48,23 +48,6 @@ spec:
     name: seaweedfs
     namespace: seaweedfs
 ---
-apiVersion: seaweed.seaweedfs.com/v1
-kind: S3Credentials
-metadata:
-  name: session-backup-db-backups
-  namespace: session-backup
-spec:
-  identityRef:
-    name: session-backup-db-backups
-  reclaimPolicy: Delete
-  seaweedRef:
-    name: seaweedfs
-    namespace: seaweedfs
-  secretRef:
-    accessKeyField: AWS_ACCESS_KEY_ID
-    name: session-backup-db-backups-s3-credentials
-    secretKeyField: AWS_SECRET_ACCESS_KEY
----
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:

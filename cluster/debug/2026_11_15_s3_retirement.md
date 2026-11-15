@@ -27,11 +27,19 @@ bootstrap; WAL archiving was disabled. The web Deployment and all three importer
 CronJobs referenced the database/Restic credentials, not the retired S3 Secret.
 The actual session Restic repository and its credentials remain active.
 
-The next GitOps change stages `Delete` on the retained IAM resources while
-keeping both present. After merge, verify applied policies, observed generations
-and finalizers. Only then remove the obsolete credential, verify its recorded key
-is absent through both filers and check its owned Secret's deletion. Remove the
-dedicated identity last, then verify no user/key recreation after reconciliation.
+The policy staging PR [#16658](https://github.com/agentydragon/ducktape/pull/16658)
+merged before the next live check. At 10:39:26, Action
+`e2c8d24e-6390-4574-9da8-218488efd66d` independently confirmed exactly one
+identity and one credential claimant. Both retained session resources had
+`reclaimPolicy: Delete`, generation 2 and observed generation 2, Ready, no deletion
+timestamp, and their respective protection finalizers present.
+
+This change removes only the obsolete S3Credentials. Keep the dedicated identity
+present until credential finalization, all-key absence through both filers and
+owned Secret deletion are verified. Remove the identity in a later change, then
+verify no user/key recreation after reconciliation. The Action stopped on an
+unrelated Mimir consumer preflight before any probes or IAM mutations; its
+session policy observations passed independently.
 
 ## Mimir, Tempo and Langfuse: retained keys still require retirement
 

@@ -534,7 +534,6 @@ py_library(
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/flux:kustomization",
-        "//cluster/cdk8s/providers/seaweedfs:s3credentials",
         "//cluster/cdk8s/providers/seaweedfs:s3identity",
         "//cluster/cdk8s/seaweedfs:s3",
         "//util:settings_contract",
