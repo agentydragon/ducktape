@@ -1,30 +1,24 @@
 {
   "schema_version": 3,
   "artifact_kind": "source-grounded organization proposal and file ledger",
-  "source_sha": "55e7df4226dd4d761a72b96ea055a362c953e3ec",
-  "observed_at_utc": "2026-11-14T00:48:53+00:00",
+  "source_sha": "34507c2f0c3756193eab9834e743032ccfb7b99e",
+  "observed_at_utc": "2026-11-15T12:20:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "freshness": {
-    "checked_origin_devel": "01e85fd9d267be8b955d4e3bf753f2051261043f",
-    "checked_at_utc": "2026-11-15T09:00:00+00:00",
-    "previous_pin": "c2549d48c3c3d99e05ceb831f8835f2aa07f4120",
-    "go_or_proto_delta": "Since c2549d48c3, #16613 moved `runner_gateway/environments` (with `internal/management` and `internal/view`) to `environments/internal/service` after the App (#16565), CLI (#16568) and Actions (#16573) callers moved and the Gateway registration retired (#16593, #16601), and added `environments/testing/{servicefixture,serving_fixture}`; #16626 split `lifecycle` into `environments/lifecycle` (`manager.go` became `policy.go`), `environments/internal/resume` and `runner_gateway/dispatcher/wake`; #16607 added `mcp_edge/http_{facade,health}{,_test}.go`; #16614 added `env/runtime/journal/diagnostics{,_test}.go`; #16623 changed Environment Runtime wording in comments and errors; auth stage 4 and plaintext-listener removal edited code only.",
-    "landed": [
-      {
-        "track": "environment-service-to-sandbox-controller",
-        "pr": 16613,
-        "result": "Every Controller replica serves EnvironmentService from `environments/internal/serving` over `environments/internal/service`; the Gateway no longer registers it. Automatic wake is `runner_gateway/dispatcher/wake`, explicit resume `environments/internal/resume`, shared policy `environments/lifecycle`."
-      }
-    ],
-    "interpretation": "Landed work items are removed, not listed as done. Moved and new files are reclassified at their new paths; packages that no longer hold Go files (`runner_gateway/environments` with its `lifecycle`, `internal/management` and `internal/view`) left the ledger."
+    "checked_origin_devel": "34507c2f0c3756193eab9834e743032ccfb7b99e",
+    "checked_at_utc": "2026-11-15T12:20:00+00:00",
+    "previous_pin": "01e85fd9d267be8b955d4e3bf753f2051261043f",
+    "go_or_proto_delta": "Since 01e85fd9d2, #16656 moved `runner_gateway/internal/gateway` whole to `environments/runtimeproxy` (package `gateway` became `runtimeproxy`) and added `environments/internal/serving/runtime_proxy{,_config}.go`; #16685 made that receiver service-only; `env/runtime/internal/coordinator/transition_sequence.go` became `transition_execution.go` (Runtime adoption and Quiesce run as sequential operations); the Action Service's bearer retirement added `action_service/internal/rpc/svid_fixture_test.go`; the other stage 5 bearer retirements, the plaintext-listener removal (#16661) and a `policy_service.proto` comment change edited code only.",
+    "landed": [],
+    "interpretation": "No track landed whole at this pin. The Runtime proxy's package move landed inside its still-open track, so its 15 files are recorded at their final paths under `environments/runtimeproxy` with that track pending; `runner_gateway/internal/gateway` left the ledger. Landed work items are removed, not listed as done."
   },
   "inventory": {
-    "source_sha": "01e85fd9d267be8b955d4e3bf753f2051261043f",
+    "source_sha": "34507c2f0c3756193eab9834e743032ccfb7b99e",
     "counts": {
-      "files": 1316,
+      "files": 1319,
       "directories": 237,
-      "production": 722,
-      "tests": 594
+      "production": 724,
+      "tests": 595
     },
     "all_tracked_go_files_included": true,
     "manifest_path": "agentplane-organization/go-files.json"
