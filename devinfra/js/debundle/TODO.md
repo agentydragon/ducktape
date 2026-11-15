@@ -257,7 +257,6 @@ audit candidates, not a removal decision. Schema: <spec/spec.rs>.
 - **Native call identity variant:** `native_call_identity_inputs`'s
   `set_empty_private_field`.
 - **Native operation variants:** `native_operation_inputs`'s `symbol_for`,
-  `object_own_data_function_read`,
   `symbol_well_known_class_keys`, `symbol_primitive_class_keys`, and
   `promise_resolve`.
 
