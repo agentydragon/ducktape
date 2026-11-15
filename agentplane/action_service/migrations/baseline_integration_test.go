@@ -184,4 +184,23 @@ func TestExecutionHeartbeatMigrationPreservesExecutionsAndExecutorLiveness(t *te
 		WHERE executor_id = 'test-executor' AND heartbeat_at = started_at + interval '1 minute'`); got != 1 {
 		t.Fatalf("live executor heartbeat rows = %d, want 1", got)
 	}
+
+	provider, err := schema.Provider(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.Down(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := priorProvider.Up(t.Context()); err != nil {
+		t.Fatalf("prior image schema could not start after rollback: %v", err)
+	}
+	var heartbeat sql.NullTime
+	if err := db.QueryRowContext(t.Context(), `SELECT heartbeat_at FROM action_execution
+		WHERE id = '00000000-0000-0000-0000-000000000002'`).Scan(&heartbeat); err != nil {
+		t.Fatal(err)
+	}
+	if heartbeat.Valid {
+		t.Fatalf("rollback restored a discarded heartbeat value: %v", heartbeat.Time)
+	}
 }
