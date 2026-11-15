@@ -1554,5 +1554,20 @@ async def test_image_export_dialog(playwright_driver: Playwright, origin: str) -
         assert await page.evaluate("globalThis.__debundleHarness.errors") == []
 
 
+async def test_mobile_toolbar(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 390, "height": 844}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        await expect(page.locator(".App-toolbar--mobile")).to_be_visible()
+        rectangle = page.get_by_test_id("toolbar-rectangle")
+        await page.locator("label", has=rectangle).click()
+        await expect(rectangle).to_be_checked()
+        await expect(page.locator("canvas.excalidraw__canvas.interactive")).to_be_visible()
+        assert await page.evaluate("globalThis.__debundleHarness.errors") == []
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
