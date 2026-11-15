@@ -1,5 +1,6 @@
 pub mod assignment;
 pub mod decompose;
+mod placement;
 pub mod plan;
 pub mod propose;
 pub mod quotient;
