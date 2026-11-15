@@ -25,6 +25,7 @@ from agentplane.native.codex.testing.requests import ResponsesRequest
 from agentplane.proto import event_log_pb2, event_pb2, identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2
 from agentplane.system_tests.deployment import mcp_servers
+from agentplane.system_tests.driver.action_requests import action_request, assert_echoed_result, decide_pending_action
 from agentplane.system_tests.driver.central_sampler import (
     MODEL,
     CentralStack,
@@ -37,7 +38,6 @@ from agentplane.system_tests.driver.executor import Executor
 from agentplane.system_tests.driver.sandbox import SANDBOX_READY_SECONDS, wait_until_running
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
-from agentplane.system_tests.scenarios import mcp
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import ModelRequest, Reasoning, ShellCall, Text, ToolOutput
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -1096,7 +1096,7 @@ async def delegated_action_wait_keeps_code_mode_live(
             assert receipt.delegating_actor.service_spiffe_id == "spiffe://agentplane/central-sampler"
 
         assert_attribution(pending)
-        await mcp._decide_pending(operator_bff, pending.id, action_service_pb2.VERDICT_ALLOW)
+        await decide_pending_action(operator_bff, pending.id, action_service_pb2.VERDICT_ALLOW)
 
         request, action_text, _, action_output = await _follow_code_mode_cell(
             model, request, "submit-echo", timeout_s=120
@@ -1110,12 +1110,12 @@ async def delegated_action_wait_keeps_code_mode_live(
 
         terminal_response = await operator_bff.get(f"/upstream/actions/v1/action-requests/{pending.id}")
         assert terminal_response.status_code == 200
-        terminal = mcp._bff_request(terminal_response)
+        terminal = action_request(terminal_response)
         assert terminal.state == action_service_pb2.ACTION_STATE_SUCCEEDED
         assert terminal.execution.state == action_service_pb2.EXECUTION_STATE_SUCCEEDED
         assert_attribution(terminal)
         assert terminal.arguments.fields["message"].string_value == message
-        mcp._assert_echoed(terminal.execution.result, message)
+        assert_echoed_result(terminal.execution.result, message)
 
 
 async def gateway_crash_settles_live_central_read_and_accepts_next_input(

@@ -17,11 +17,13 @@ from agentplane.net.peertls.config import MCP_EDGE_URI
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.deployment import mcp_servers
 from agentplane.system_tests.deployment.stack import Stack
+from agentplane.system_tests.driver.action_requests import action_request, decide_pending_action
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.executor import Executor
 from agentplane.system_tests.driver.harness_pair import run_harness_pair_in_own_sandboxes
 from agentplane.system_tests.driver.mcp_connection import connected_session
 from agentplane.system_tests.driver.operator_login import OperatorCredentials
+from agentplane.system_tests.driver.policy_objects import PolicyObjects
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.scenarios import central_sampler, dcr, mcp
@@ -92,10 +94,10 @@ async def test_external_mcp_connection_uses_its_consented_identity(
         assert isinstance(request_id, str)
 
         # Keep the case self-contained: deny the pending request before checking its retained receipt.
-        await mcp._decide_pending(operator_bff, request_id, action_service_pb2.VERDICT_DENY)
+        await decide_pending_action(operator_bff, request_id, action_service_pb2.VERDICT_DENY)
         receipt_response = await operator_bff.get(f"/upstream/actions/v1/action-requests/{request_id}")
         assert receipt_response.status_code == 200
-        receipt = mcp._bff_request(receipt_response)
+        receipt = action_request(receipt_response)
         assert receipt.state == action_service_pb2.ACTION_STATE_DENIED
         assert receipt.action.group == mcp_servers.EVERYTHING_GROUP
         assert receipt.action.name == mcp_servers.ECHO
@@ -119,7 +121,7 @@ async def test_policy_binding_auto_approves_the_bound_sandbox(
     client: Client,
     dispatcher: SessionDispatcherClient,
     scripted: ScriptedUpstream,
-    policy_objects: mcp.PolicyObjects,
+    policy_objects: PolicyObjects,
 ) -> None:
     await run_harness_pair_in_own_sandboxes(
         cluster,

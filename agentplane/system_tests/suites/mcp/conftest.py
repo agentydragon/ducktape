@@ -16,16 +16,13 @@ from agentplane.system_tests.driver.operator_login import (
     operator_bff_client,
     read_operator_credentials,
 )
-from agentplane.system_tests.scenarios import mcp
+from agentplane.system_tests.driver.policy_objects import PolicyObjects
 
 
 @pytest.fixture
-async def policy_objects(cluster: Cluster) -> AsyncIterator[mcp.PolicyObjects]:
-    objects = mcp.PolicyObjects(cluster=cluster)
-    try:
+async def policy_objects(cluster: Cluster) -> AsyncIterator[PolicyObjects]:
+    async with PolicyObjects(cluster) as objects:
         yield objects
-    finally:
-        await objects.delete_all()
 
 
 @pytest.fixture

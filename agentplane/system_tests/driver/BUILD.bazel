@@ -588,3 +588,62 @@ py_library(
         "@pypi//pytest",
     ],
 )
+
+py_library(
+    name = "action_requests",
+    srcs = ["action_requests.py"],
+    deps = [
+        ":tracing",
+        "//agentplane/action_service/api/contracts:action_service_pb2",
+        "//agentplane/action_service/api/contracts:operator_action_service_pb2",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "policy_objects",
+    srcs = ["policy_objects.py"],
+    deps = [
+        ":cluster",
+        ":tracing",
+        "//agentplane:crd_group",
+        "//agentplane:policy_sets",
+        "//agentplane/action_service/policies:resources",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "scripted_agent",
+    srcs = ["scripted_agent.py"],
+    deps = [
+        ":agent",
+        ":scripted_upstream",
+        ":tracing",
+        "//agentplane/action_service/api/contracts:action_service_pb2",
+        "//agentplane/app/testing:client",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests/deployment:mcp_servers",
+        "//agentplane/testing:scripted_model",
+        "@pypi//more_itertools",
+        "@pypi//protobuf",
+    ],
+)
+
+py_test(
+    name = "test_policy_objects",
+    srcs = ["test_policy_objects.py"],
+    deps = [
+        ":cluster",
+        ":policy_objects",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
