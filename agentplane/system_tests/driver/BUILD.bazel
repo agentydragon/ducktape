@@ -772,6 +772,7 @@ py_library(
     deps = [
         ":cluster",
         ":native_platform",
+        ":native_pod_pool",
         ":native_sandbox",
         ":sandbox",
         "@pypi//protobuf",
@@ -824,5 +825,68 @@ py_library(
         ":tracing",
         "//agentplane:crd_group",
         "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_library(
+    name = "cleanup_task",
+    srcs = ["cleanup_task.py"],
+)
+
+py_library(
+    name = "native_pod_pool",
+    srcs = ["native_pod_pool.py"],
+    deps = [
+        ":cleanup_diagnostics",
+        ":cleanup_task",
+        ":cluster",
+        ":native_platform",
+        ":native_sandbox",
+        ":sandbox",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "@pypi//protobuf",
+    ],
+)
+
+py_test(
+    name = "test_async_fixture_lifecycle",
+    srcs = ["test_async_fixture_lifecycle.py"],
+    args = ["--asyncio-mode=strict"],
+    deps = [
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//anyio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_cleanup_task",
+    srcs = ["test_cleanup_task.py"],
+    deps = [
+        ":cleanup_task",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_native_pod_pool",
+    srcs = ["test_native_pod_pool.py"],
+    deps = [
+        ":cluster",
+        ":environment_transport",
+        ":native_platform",
+        ":native_pod_pool",
+        ":sandbox",
+        "//:conftest",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/proto:identity_pb2",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

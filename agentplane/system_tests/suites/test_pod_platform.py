@@ -8,58 +8,50 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+import pytest
 import pytest_bazel
 
-from agentplane.environments.v1 import environment_service_pb2
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.native_auth import NATIVE_CLIENT_NAME
-from agentplane.system_tests.driver.native_platform import NativePlatformClients
+from agentplane.system_tests.driver.native_pod_pool import Borrow
 from agentplane.system_tests.driver.policy_objects import PolicyObjects
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes
 from agentplane.system_tests.scenarios import cert_manager_reissue, egress_native, workload_trust
 
-# `environment_service_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
-# gazelle:include_dep @pypi//protobuf
+# AnyIO's pytest plugin is discovered through its package entry point.
+# gazelle:include_dep @pypi//anyio
 
 
 # gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
 # gazelle:include_dep //agentplane/system_tests/driver:native_fixtures
 pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin", "agentplane.system_tests.driver.native_fixtures")
+pytestmark = pytest.mark.anyio
 
 
-async def _ready_pod(
-    native_platform: NativePlatformClients, native_sandbox: Sandboxes
-) -> environment_service_pb2.EnvironmentDescriptor:
-    view = await native_sandbox(f"systest-trust-native-{uuid4().hex[:8]}", template=POD_TEMPLATE)
-    assert view.kubernetes_diagnostics.HasField("pod")
-    observed = await native_platform.environment.get_environment(view.target)
-    assert observed.target == view.target
-    assert observed.kubernetes_diagnostics.HasField("pod")
-    assert observed.kubernetes_diagnostics.pod.uid == view.kubernetes_diagnostics.pod.uid
-    return view
+@pytest.fixture(scope="module")
+def anyio_backend() -> str:
+    return "asyncio"
 
 
-async def test_a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused(
-    cluster: Cluster, native_platform: NativePlatformClients, native_sandbox: Sandboxes
-) -> None:
-    view = await _ready_pod(native_platform, native_sandbox)
-    await workload_trust.a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused(cluster, view)
+async def test_a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused(cluster: Cluster, native_trust_pod: Borrow) -> None:
+    async with native_trust_pod() as view:
+        await workload_trust.a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused(cluster, view)
 
 
 async def test_a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner(
-    cluster: Cluster, native_platform: NativePlatformClients, native_sandbox: Sandboxes
+    cluster: Cluster, native_trust_pod: Borrow
 ) -> None:
-    view = await _ready_pod(native_platform, native_sandbox)
-    await workload_trust.a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner(
-        cluster, view, route=workload_trust.RunnerControlRoute.PORT_FORWARD
-    )
+    async with native_trust_pod() as view:
+        await workload_trust.a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner(
+            cluster, view, route=workload_trust.RunnerControlRoute.PORT_FORWARD
+        )
 
 
 async def test_a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway(
-    cluster: Cluster, native_platform: NativePlatformClients, native_sandbox: Sandboxes
+    cluster: Cluster, native_trust_pod: Borrow
 ) -> None:
-    view = await _ready_pod(native_platform, native_sandbox)
-    await workload_trust.a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway(cluster, view)
+    async with native_trust_pod() as view:
+        await workload_trust.a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway(cluster, view)
 
 
 async def test_cert_manager_reissues_a_deleted_tls_secret(cluster: Cluster) -> None:
