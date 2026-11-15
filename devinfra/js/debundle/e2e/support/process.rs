@@ -82,12 +82,18 @@ pub fn output_with_input(command: &mut Command, input: &[u8]) -> Result<Output, 
         cwd: cwd.clone(),
         source,
     })?;
-    input_result.map_err(|source| ProcessError {
-        operation: "write stdin for",
-        command: description,
-        cwd,
-        source,
-    })?;
+    match input_result {
+        Ok(()) => {}
+        Err(source) if source.kind() == io::ErrorKind::BrokenPipe => {}
+        Err(source) => {
+            return Err(ProcessError {
+                operation: "write stdin for",
+                command: description,
+                cwd,
+                source,
+            });
+        }
+    }
     Ok(output)
 }
 
@@ -169,6 +175,19 @@ mod tests {
         assert!(result.status.success());
         assert_eq!(result.stdout, [0xff, b'\n']);
         assert!(result.stderr.is_empty());
+    }
+
+    #[test]
+    fn output_with_input_preserves_output_when_child_exits_before_reading_stdin() {
+        let mut command = Command::new("/bin/sh");
+        command.args(["-c", "printf stdout; printf stderr >&2; exit 17"]);
+        let input = vec![b'x'; 1024 * 1024];
+        let result = super::output_with_input(&mut command, &input)
+            .expect("return output when the child closes stdin early");
+
+        assert_eq!(result.status.code(), Some(17));
+        assert_eq!(result.stdout, b"stdout");
+        assert_eq!(result.stderr, b"stderr");
     }
 
     #[test]
