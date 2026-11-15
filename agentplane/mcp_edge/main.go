@@ -18,7 +18,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/linkage_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/operator"
@@ -93,8 +92,8 @@ func run(ctx context.Context, c config) error {
 	return serve(ctx, c, kubeConfig, grpcListener, rpcTLSListener, httpListener)
 }
 
-// serve answers gRPC on grpcListener, optional mTLS gRPC on rpcTLSListener, and HTTP (the facade, /mcp, OAuth and
-// metrics) on httpListener until ctx ends or a listener fails.
+// serve answers gRPC on grpcListener, optional mTLS gRPC on rpcTLSListener, and HTTP (the facade, /mcp, OAuth, health
+// and metrics) on httpListener until ctx ends or a listener fails.
 func serve(ctx context.Context, c config, kubeConfig *rest.Config, grpcListener, rpcTLSListener, httpListener net.Listener) error {
 	db, err := openDatabase(ctx, c.DatabaseURL)
 	if err != nil {
@@ -124,9 +123,9 @@ func serve(ctx context.Context, c config, kubeConfig *rest.Config, grpcListener,
 			grpc.ChainUnaryInterceptor(gate.UnaryInterceptor), grpc.ChainStreamInterceptor(gate.StreamInterceptor))
 		return grpc.NewServer(options...)
 	}
-	registerServices := func(server *grpc.Server, gate *admission.Gate, health *probes.Probes) {
+	registerServices := func(server *grpc.Server, serviceGate *admission.Gate, health *probes.Probes) {
 		healthpb.RegisterHealthServer(server, readiness{Probes: health, identities: identities})
-		connection_servicepb.RegisterConnectionServiceServer(server, connections.NewService(connectionStore, gate, hub))
+		connection_servicepb.RegisterConnectionServiceServer(server, connections.NewService(connectionStore, serviceGate, hub))
 	}
 	grpcServer := newGRPCServer(gate)
 	health := probes.New(db, hub)
@@ -144,12 +143,15 @@ func serve(ctx context.Context, c config, kubeConfig *rest.Config, grpcListener,
 	}
 	facadeContext, stopFacade := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopFacade()
-	httpFacade, err := facade.NewHandler(facadeContext, grpcListener.Addr().String(), 0, connection_servicepb.RegisterConnectionServiceHandlerFromEndpoint)
+	connectionService := connections.NewService(connectionStore, gate, hub)
+	httpFacade, err := connectionHTTPHandler(facadeContext, connectionService, gate)
 	if err != nil {
 		return err
 	}
 	routes := http.NewServeMux()
 	routes.Handle("/v1/", httpFacade)
+	routes.Handle("GET /healthz", healthHTTPHandler(readiness{Probes: health, identities: identities}, probes.LivenessService))
+	routes.Handle("GET /readyz", healthHTTPHandler(readiness{Probes: health, identities: identities}, ""))
 	routes.Handle("/metrics", promhttp.Handler())
 	// This public document is owned by Actions; the edge supplies only its HTTP presentation.
 	actionsCredentials, err := c.ActionsTLS.Credentials()
@@ -189,7 +191,6 @@ func serve(ctx context.Context, c config, kubeConfig *rest.Config, grpcListener,
 	}
 	stopped, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
 	defer cancel()
-	// The facade's calls are gRPC calls, so the HTTP listener stops first.
 	if err := server.Shutdown(stopped); err != nil {
 		server.Close()
 	}
