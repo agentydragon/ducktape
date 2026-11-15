@@ -39,6 +39,15 @@ fn claimed_modules_export_their_entry_points() {
             &["base64ToString", "decode"],
         ),
         (
+            "editor/packages/excalidraw/data/json.js",
+            &[
+                "serializeAsJSON",
+                "isValidExcalidrawData",
+                "isValidLibrary",
+                "serializeLibraryAsJSON",
+            ],
+        ),
+        (
             "editor/packages/excalidraw/data/restore.js",
             &["restore", "restoreElements", "restoreLibraryItems"],
         ),
