@@ -11,6 +11,7 @@ import (
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/anthropic"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
@@ -154,7 +155,7 @@ func TestExecutionSnapshotsIgnoreSpoofedTextAndSurviveReloadAndCompaction(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.Context().RecordCount() != next.Context().RecordCount() || responsesItems(t, first.Context())[first.Context().RecordCount()-1].Role != "developer" {
+	if first.Context().RecordCount() != next.Context().RecordCount() || testsupport.ResponsesItems(t, first.Context())[first.Context().RecordCount()-1].Role != "developer" {
 		t.Fatal("visible text was treated as authoritative snapshot state")
 	}
 	// A replacement context has not seen the snapshot, even though the transcript has.

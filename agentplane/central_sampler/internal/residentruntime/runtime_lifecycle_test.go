@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
@@ -124,7 +125,7 @@ func TestRuntimeShutdownWaitsForClaimReturnAndReleasesOwnership(t *testing.T) {
 func TestRuntimeShutdownWaitsForReleaseReturn(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
-	logged := captureLogs(t)
+	logged := testsupport.CaptureLogs(t)
 	runtime := New(store, samplersettings.Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60}, fakeCodeHost(t))
 	releaseCommitted := make(chan sessionstore.Owner, 1)
 	allowReleaseReturn := make(chan struct{})
@@ -498,7 +499,7 @@ func (f *drainFixture) drainWithDispatchedNestedCommand(t *testing.T, cancel con
 
 func TestRuntimeDrainServesLiveCellUntilNestedCommandSettles(t *testing.T) {
 	f := newDrainFixture(t, 20)
-	logged := captureLogs(t)
+	logged := testsupport.CaptureLogs(t)
 	cancel, done := startRuntimeForTest(t, f.runtime)
 	defer cancel()
 	peer, codeSession, waitID := f.drainWithDispatchedNestedCommand(t, cancel)
