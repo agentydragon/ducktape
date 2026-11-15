@@ -6,6 +6,96 @@ metadata:
   labels:
     observability.allegedly.works/journal-collector: alloy
     observability.allegedly.works/pod-collector: alloy
+  name: iguana
+---
+apiVersion: v1
+kind: Node
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    observability.allegedly.works/journal-collector: alloy
+    observability.allegedly.works/pod-collector: alloy
+  name: optiplex
+---
+apiVersion: v1
+kind: Node
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    observability.allegedly.works/journal-collector: alloy
+    observability.allegedly.works/pod-collector: alloy
+  name: ovh-ns1001419
+---
+apiVersion: v1
+kind: Node
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    observability.allegedly.works/journal-collector: alloy
+    observability.allegedly.works/pod-collector: alloy
+  name: ovh-ns102453
+---
+apiVersion: v1
+kind: Node
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    observability.allegedly.works/journal-collector: alloy
+    observability.allegedly.works/pod-collector: alloy
+  name: ovh-ns103656
+---
+apiVersion: v1
+kind: Node
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    observability.allegedly.works/journal-collector: alloy
+    observability.allegedly.works/pod-collector: alloy
+  name: ovh-ns103711
+---
+apiVersion: v1
+kind: Node
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    observability.allegedly.works/journal-collector: alloy
+    observability.allegedly.works/pod-collector: alloy
+  name: ovh-ns104952
+---
+apiVersion: v1
+kind: Node
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    observability.allegedly.works/journal-collector: alloy
+    observability.allegedly.works/pod-collector: alloy
+  name: ovh-ns104963
+---
+apiVersion: v1
+kind: Node
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    observability.allegedly.works/journal-collector: alloy
+    observability.allegedly.works/pod-collector: alloy
+  name: rugged
+---
+apiVersion: v1
+kind: Node
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    observability.allegedly.works/journal-collector: alloy
+    observability.allegedly.works/pod-collector: alloy
   name: wyrm2
 ---
 apiVersion: v1
