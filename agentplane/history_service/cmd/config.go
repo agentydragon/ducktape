@@ -29,14 +29,15 @@ const (
 type config struct {
 	DatabaseURL             string  `mapstructure:"-"`
 	MigrationTimeoutSeconds float64 `mapstructure:"migration_timeout_s"`
-	// ReaderAccounts may call the read API; their namespaces are the ones a reader's token may come from.
-	ReaderAccounts []auth.Account `mapstructure:"reader_accounts"`
+	// CLEANUP(added 2026-11-15): Remove these ignored legacy reader and account-delegation settings after manifests omit them and that rollout completes.
+	// ReaderAccounts and Delegation are decoded for compatibility but do not grant History reads.
+	ReaderAccounts []auth.Account    `mapstructure:"reader_accounts"`
+	Delegation     *delegationConfig `mapstructure:"delegation"`
+	// CLEANUP(added 2026-11-15): Remove after manifests omit token_audience and that rollout completes. Ignored.
+	TokenAudience string `mapstructure:"token_audience"`
 	// ReaderServiceCallers are exact component SPIFFE IDs admitted as backend-wide History readers.
-	ReaderServiceCallers []string `mapstructure:"reader_service_callers"`
-	// Delegation is a separate Action actor grant and only applies to its listed RPC methods.
-	Delegation        *delegationConfig        `mapstructure:"delegation"`
-	ServiceDelegation *serviceDelegationConfig `mapstructure:"service_delegation"`
-	TokenAudience     string                   `mapstructure:"token_audience"`
+	ReaderServiceCallers []string                 `mapstructure:"reader_service_callers"`
+	ServiceDelegation    *serviceDelegationConfig `mapstructure:"service_delegation"`
 	// RequestTimeoutSeconds bounds a call's backend work and each write to a watch stream.
 	RequestTimeoutSeconds float64         `mapstructure:"request_timeout_s"`
 	RPC                   listener.Config `mapstructure:"rpc"`
@@ -53,9 +54,10 @@ type config struct {
 	WatchLeaseSeconds float64 `mapstructure:"watch_lease_s"`
 }
 
+// CLEANUP(added 2026-11-15): Remove this ignored account-delegation decoder after manifests omit delegation and that rollout completes.
 type delegationConfig struct {
 	Actor auth.Account `mapstructure:"actor"`
-	// IdentityCallers lets the actor assert Identities in policy_namespace.
+	// IdentityCallers is retained for compatibility but grants no History read access.
 	IdentityCallers bool     `mapstructure:"identity_callers"`
 	Methods         []string `mapstructure:"methods"`
 }
@@ -67,16 +69,14 @@ type serviceDelegationConfig struct {
 
 // ingressConfig is the Session journal ingress's authorization and storage policy. Its RPC shares the service listener.
 type ingressConfig struct {
+	// CLEANUP(added 2026-11-15): Remove after manifests omit ingress.token_audience and that rollout completes. Ignored.
 	TokenAudience string `mapstructure:"token_audience"`
 	// WriterNamespaces are the namespaces whose ServiceAccounts may push: the ones Sandboxes run in.
 	WriterNamespaces []string `mapstructure:"writer_namespaces"`
-	// Only these service identities may announce centrally hosted Sessions. Empty disables the mode.
-	SamplerAccounts []auth.Account `mapstructure:"sampler_accounts"`
-	// SamplerIdentityCallers lets the sampler accounts push as delegating actors for the Identity a
-	// central Session executes as, which is then retained as verified rather than relayed. A grant
-	// of its own, separate from announcing central Sessions; it requires policy_namespace and the
-	// SPIFFE listener, the one on which Push admits Identity writers.
-	SamplerIdentityCallers bool `mapstructure:"sampler_identity_callers"`
+	// CLEANUP(added 2026-11-15): Remove these ignored legacy sampler settings after manifests omit them and that rollout completes.
+	// SamplerAccounts and SamplerIdentityCallers do not grant ingress access.
+	SamplerAccounts        []auth.Account `mapstructure:"sampler_accounts"`
+	SamplerIdentityCallers bool           `mapstructure:"sampler_identity_callers"`
 	// SamplerServiceActor is the exact service SVID admitted to push central sampler journals.
 	SamplerServiceActor string `mapstructure:"sampler_service_actor"`
 	// SettleDeltas removes an item's streamed delta entries from stored history once its retained completion
@@ -144,19 +144,10 @@ func (c *config) validate() error {
 	for _, required := range []struct{ name, value string }{
 		{"database_url", c.DatabaseURL},
 		{"policy_namespace", c.PolicyNamespace},
-		{"token_audience", c.TokenAudience},
-		{"ingress.token_audience", c.Ingress.TokenAudience},
 	} {
 		if required.value == "" {
 			return fmt.Errorf("%s is required", required.name)
 		}
-	}
-	if len(c.ReaderAccounts) == 0 {
-		return errors.New("reader_accounts must list at least one ServiceAccount")
-	}
-	if c.Delegation != nil && (c.Delegation.Actor.Namespace == "" || c.Delegation.Actor.Name == "" ||
-		!c.Delegation.IdentityCallers || len(c.Delegation.Methods) == 0) {
-		return errors.New("delegation requires an actor, identity_callers, and methods")
 	}
 	if err := auth.ValidateServiceCallers(c.ReaderServiceCallers); err != nil {
 		return fmt.Errorf("invalid reader_service_callers: %w", err)
@@ -179,16 +170,8 @@ func (c *config) validate() error {
 	if err := c.RPC.Validate(); err != nil {
 		return fmt.Errorf("rpc listener: %w", err)
 	}
-	if c.Ingress.SamplerIdentityCallers && (len(c.Ingress.SamplerAccounts) == 0 || !c.RPC.Has(listener.SPIFFE)) {
-		return errors.New("ingress.sampler_identity_callers requires ingress.sampler_accounts and a spiffe rpc listener")
-	}
-	if (len(c.ReaderServiceCallers) > 0 || c.ServiceDelegation != nil || c.Ingress.SamplerServiceActor != "") && !c.RPC.Has(listener.SPIFFE) {
-		return errors.New("service callers require rpc spiffe client trust")
-	}
-	for _, audience := range []string{c.TokenAudience, c.Ingress.TokenAudience} {
-		if !c.RPC.AllowsBearerAudience(audience) {
-			return fmt.Errorf("rpc.auth must allow the %q bearer audience", audience)
-		}
+	if !c.RPC.Has(listener.SPIFFE) {
+		return errors.New("rpc.auth must enable spiffe client trust")
 	}
 	if len(c.Ingress.WriterNamespaces) == 0 {
 		return errors.New("ingress.writer_namespaces must list at least one namespace")

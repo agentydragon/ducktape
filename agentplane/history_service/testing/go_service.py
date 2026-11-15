@@ -31,7 +31,7 @@ from agentplane.proto import event_log_pb2, session_pb2
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.go_process import GoProcess, go_process
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
-from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, write_ca
+from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, make_ca, write_ca
 from util.db_url import render_postgresql_url
 from util.net import listen_tcp
 from util.testing.postgres import PostgresDatabaseTemplate
@@ -61,18 +61,23 @@ def _go_database_url(database_url: str) -> str:
 
 def migrate_history_database(database_url: str) -> None:
     """Bring a database to the History Service's schema with the serving binary's migration-only mode."""
-    settings = Settings(
-        reader_accounts=frozenset((READER,)),
-        token_audience=READER_AUDIENCE,
-        policy_namespace="test-policy-namespace",
-        rpc=workload_listener.Listener(
-            listen_address="127.0.0.1:8080",
-            auth=[workload_listener.KubernetesBearerAuth(audiences=frozenset({READER_AUDIENCE, WRITER_AUDIENCE}))],
-        ),
-        ingress=IngressSettings(token_audience=WRITER_AUDIENCE, writer_namespaces=frozenset((WRITER.namespace,))),
-    )
     with tempfile.TemporaryDirectory() as temporary_directory:
-        config = Path(temporary_directory) / "history-service.yaml"
+        directory = Path(temporary_directory)
+        ca = make_ca("history migration test")
+        ca_file, _ = write_ca(ca, directory, "ca")
+        cert_file, key_file = issue_workload_leaf(
+            ca, "spiffe://agentplane/history-ingress", directory, dns_name="localhost"
+        )
+        settings = Settings(
+            policy_namespace="test-policy-namespace",
+            rpc=workload_listener.Listener(
+                listen_address="127.0.0.1:8080",
+                tls=workload_listener.TLS(cert_file=cert_file, key_file=key_file),
+                auth=[workload_listener.SPIFFEAuth(ca_file=ca_file)],
+            ),
+            ingress=IngressSettings(writer_namespaces=frozenset((WRITER.namespace,))),
+        )
+        config = directory / "history-service.yaml"
         config.write_text(yaml.safe_dump(settings.model_dump(mode="json", exclude_none=True), sort_keys=False))
         result = subprocess.run(
             [_SERVICE, "--migrate-only"],

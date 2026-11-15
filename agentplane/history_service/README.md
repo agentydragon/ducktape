@@ -2,19 +2,18 @@
 
 Serves retained Session history: the raw runner Event log and its observation metadata, keyed by
 public Session ID. An Identity reads Sessions retained under that exact Identity name and UID,
-independently of the original Sandbox remaining. Configured backend readers retain their explicit
-Pod-bound, service-wide read path. Other ServiceAccount calls have no ownership scope, including
-when a retained execution-account tuple matches the caller. A Session UUID by itself grants nothing.
+independently of the original Sandbox remaining. Exact service SVID readers have an explicit
+service-wide read path. Other ServiceAccount calls have no ownership scope, including when a
+retained execution-account tuple matches the caller. A Session UUID by itself grants nothing.
 Consumers use `client.py`; `testing/go_service.py` runs the built Go service over a test database.
 Tests can inspect the fold's storage through `fold/models.py` and use the generated Thread entity
 messages for semantic reads.
 
-An optional, separate `delegation` setting names the Actions actor, whether it may
-assert Identities (`identity_callers`, which requires `policy_namespace`) and exact full History RPC
-method names that admit delegated reads. The shared workload-auth middleware rechecks the asserted
-caller's current UID; a delegated Identity reads only the Sessions recorded with that incarnation,
-as its own workload does. A delegated ServiceAccount has no ownership scope. The actor's configured
-backend reader role never widens a delegated call's read scope.
+Legacy `reader_accounts`, `delegation`, `token_audience`, `ingress.token_audience`,
+`ingress.sampler_accounts`, and `ingress.sampler_identity_callers` settings remain decodable during
+manifest cleanup but grant no read, writer, or bearer access. The required `rpc.auth` must include
+SPIFFE client trust; `policy_namespace` and `ingress.writer_namespaces` remain required for live
+workload credential checks.
 `reader_service_callers` grants named service SPIFFE IDs the backend-wide read scope. The independent
 `service_delegation` setting grants exact service actors read methods as a live effective Identity;
 those calls use only that Identity incarnation's retained Sessions. Service certificates do not
@@ -164,7 +163,7 @@ not reveal gaps from another principal; configured backend service readers retai
 service-wide opening cursor. Each RPC resolves its workload credential against live Kubernetes
 records. Watch/follow streams end at their lease so continued reads require a newly authorized call.
 Legacy `reader_accounts` settings remain decodable for deployment compatibility but do not grant
-bearer access. Errors carry a gRPC status and fixed detail:
+read access. Errors carry a gRPC status and fixed detail:
 
 | Status              | Cause                                                                             |
 | ------------------- | --------------------------------------------------------------------------------- |
@@ -401,16 +400,6 @@ The listener accepts TCP addresses or inherited descriptors as documented by
 [`agentplane/net/listener`](../net/listener/README.md).
 
 ## Optional central producers
-
-`ingress.sampler_accounts` explicitly admits central sampler accounts (empty by default). Their
-`sampler_announce` authenticates the producer separately from the executor Sandbox and keeps both
-identities fixed. A central execution Identity is retained only from the Dispatcher-provided
-Identity on the admitted sampler path; an executor account name cannot establish it.
-Native announcements cannot claim central metadata. The same cursor, exact-replay,
-writer fencing and commit-before-ack rules apply.
-
-The chart retains the legacy `ingress.sampler_identity_callers` setting for YAML compatibility. It no
-longer grants sampler account or bearer writes.
 
 `ingress.sampler_service_actor` admits one exact service SPIFFE ID as a central producer and
 delegating actor. A direct service push can announce a central Session without an execution Identity.
