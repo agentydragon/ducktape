@@ -120,26 +120,55 @@ pub(crate) enum BindingEffectAuthority {
 }
 
 impl BindingEffectCoverage {
-    pub(crate) fn snapshot(
+    pub(crate) fn snapshot_proto(
         &self,
         ordinals: &ContextOrdinals,
-    ) -> Result<SavedBindingEffectCoverage> {
-        Ok(match self {
-            Self::Unclassified => SavedBindingEffectCoverage::Unclassified,
-            Self::LegacyExecution => SavedBindingEffectCoverage::LegacyExecution,
-            Self::OrderedRootInitializer { identity, receipt } => {
-                SavedBindingEffectCoverage::OrderedRootInitializer {
-                    identity: SavedRootInitializerIdentity::snapshot(identity, ordinals)?,
-                    receipt: receipt
-                        .as_deref()
-                        .map(|receipt| {
-                            SavedLexicalBindingEffectReceipt::snapshot(receipt, ordinals)
-                        })
+    ) -> Result<proto::SavedBindingEffectCoverage> {
+        use proto::saved_binding_effect_coverage::{OrderedRootInitializer, Value};
+        Ok(proto::SavedBindingEffectCoverage {
+            value: Some(match self {
+                Self::Unclassified => Value::Unclassified(Default::default()),
+                Self::LegacyExecution => Value::LegacyExecution(Default::default()),
+                Self::OrderedRootInitializer { identity, receipt } => {
+                    Value::OrderedRootInitializer(OrderedRootInitializer {
+                        identity: Some(snapshot_root_initializer_identity(identity, ordinals)?),
+                        receipt: receipt
+                            .as_deref()
+                            .map(|receipt| {
+                                snapshot_lexical_binding_effect_receipt(receipt, ordinals)
+                            })
+                            .transpose()?,
+                    })
+                }
+            }),
+        })
+    }
+
+    pub(crate) fn restore_proto(
+        value: proto::SavedBindingEffectCoverage,
+        ordinals: &ContextOrdinals,
+    ) -> Result<Self> {
+        use proto::saved_binding_effect_coverage::Value;
+        Ok(
+            match required(value.value, "SavedBindingEffectCoverage.value")? {
+                Value::Unclassified(_) => Self::Unclassified,
+                Value::LegacyExecution(_) => Self::LegacyExecution,
+                Value::OrderedRootInitializer(value) => Self::OrderedRootInitializer {
+                    identity: restore_root_initializer_identity(
+                        required(
+                            value.identity,
+                            "SavedBindingEffectCoverage.ordered_root_initializer.identity",
+                        )?,
+                        ordinals,
+                    )?,
+                    receipt: value
+                        .receipt
+                        .map(|receipt| restore_lexical_binding_effect_receipt(receipt, ordinals))
                         .transpose()?
                         .map(Box::new),
-                }
-            }
-        })
+                },
+            },
+        )
     }
 
     pub(crate) fn authority(
@@ -201,87 +230,68 @@ impl BindingEffectCoverage {
     }
 }
 
-/// Process-independent binding-effect authority retained by staged analysis.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum SavedBindingEffectCoverage {
-    Unclassified,
-    LegacyExecution,
-    OrderedRootInitializer {
-        identity: SavedRootInitializerIdentity,
-        receipt: Option<Box<SavedLexicalBindingEffectReceipt>>,
-    },
+fn snapshot_root_initializer_identity(
+    identity: &RootInitializerIdentity,
+    ordinals: &ContextOrdinals,
+) -> Result<proto::SavedRootInitializerIdentity> {
+    Ok(proto::SavedRootInitializerIdentity {
+        owner: Some(identity.owner.to_proto()?),
+        binding: Some(ordinals.snapshot_binding(&identity.binding)?.to_proto()?),
+        initializer_span: identity.initializer_span.to_proto()?,
+    })
 }
 
-impl SavedBindingEffectCoverage {
-    pub(crate) fn restore(self, ordinals: &ContextOrdinals) -> Result<BindingEffectCoverage> {
-        Ok(match self {
-            Self::Unclassified => BindingEffectCoverage::Unclassified,
-            Self::LegacyExecution => BindingEffectCoverage::LegacyExecution,
-            Self::OrderedRootInitializer { identity, receipt } => {
-                BindingEffectCoverage::OrderedRootInitializer {
-                    identity: identity.restore(ordinals)?,
-                    receipt: receipt
-                        .map(|receipt| receipt.restore(ordinals))
-                        .transpose()?
-                        .map(Box::new),
-                }
-            }
-        })
-    }
+fn restore_root_initializer_identity(
+    value: proto::SavedRootInitializerIdentity,
+    ordinals: &ContextOrdinals,
+) -> Result<RootInitializerIdentity> {
+    Ok(RootInitializerIdentity {
+        owner: SourceUnitOrdinal::from_proto(required(
+            value.owner,
+            "SavedRootInitializerIdentity.owner",
+        )?)?,
+        binding: ordinals.restore_binding(SavedBinding::from_proto(required(
+            value.binding,
+            "SavedRootInitializerIdentity.binding",
+        )?)?)?,
+        initializer_span: Option::from_proto(value.initializer_span)?,
+    })
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct SavedRootInitializerIdentity {
-    owner: SourceUnitOrdinal,
-    binding: SavedBinding,
-    initializer_span: Option<Span>,
+fn snapshot_lexical_binding_effect_receipt(
+    receipt: &LexicalBindingEffectReceipt,
+    ordinals: &ContextOrdinals,
+) -> Result<proto::SavedLexicalBindingEffectReceipt> {
+    Ok(proto::SavedLexicalBindingEffectReceipt {
+        identity: Some(snapshot_root_initializer_identity(
+            &receipt.identity,
+            ordinals,
+        )?),
+        read_dependencies: Some(receipt.read_dependencies.to_proto()?),
+        rebind_dependencies: Some(receipt.rebind_dependencies.to_proto()?),
+        calls: receipt.calls.to_proto()?,
+    })
 }
 
-impl SavedRootInitializerIdentity {
-    fn snapshot(identity: &RootInitializerIdentity, ordinals: &ContextOrdinals) -> Result<Self> {
-        Ok(Self {
-            owner: identity.owner,
-            binding: ordinals.snapshot_binding(&identity.binding)?,
-            initializer_span: identity.initializer_span,
-        })
-    }
-
-    fn restore(self, ordinals: &ContextOrdinals) -> Result<RootInitializerIdentity> {
-        Ok(RootInitializerIdentity {
-            owner: self.owner,
-            binding: ordinals.restore_binding(self.binding)?,
-            initializer_span: self.initializer_span,
-        })
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct SavedLexicalBindingEffectReceipt {
-    identity: SavedRootInitializerIdentity,
-    read_dependencies: ProofDependencies,
-    rebind_dependencies: ProofDependencies,
-    calls: Vec<LocalCallReceipt>,
-}
-
-impl SavedLexicalBindingEffectReceipt {
-    fn snapshot(receipt: &LexicalBindingEffectReceipt, ordinals: &ContextOrdinals) -> Result<Self> {
-        Ok(Self {
-            identity: SavedRootInitializerIdentity::snapshot(&receipt.identity, ordinals)?,
-            read_dependencies: receipt.read_dependencies.clone(),
-            rebind_dependencies: receipt.rebind_dependencies.clone(),
-            calls: receipt.calls.clone(),
-        })
-    }
-
-    fn restore(self, ordinals: &ContextOrdinals) -> Result<LexicalBindingEffectReceipt> {
-        Ok(LexicalBindingEffectReceipt {
-            identity: self.identity.restore(ordinals)?,
-            read_dependencies: self.read_dependencies,
-            rebind_dependencies: self.rebind_dependencies,
-            calls: self.calls,
-        })
-    }
+fn restore_lexical_binding_effect_receipt(
+    value: proto::SavedLexicalBindingEffectReceipt,
+    ordinals: &ContextOrdinals,
+) -> Result<LexicalBindingEffectReceipt> {
+    Ok(LexicalBindingEffectReceipt {
+        identity: restore_root_initializer_identity(
+            required(value.identity, "SavedLexicalBindingEffectReceipt.identity")?,
+            ordinals,
+        )?,
+        read_dependencies: ProofDependencies::from_proto(required(
+            value.read_dependencies,
+            "SavedLexicalBindingEffectReceipt.read_dependencies",
+        )?)?,
+        rebind_dependencies: ProofDependencies::from_proto(required(
+            value.rebind_dependencies,
+            "SavedLexicalBindingEffectReceipt.rebind_dependencies",
+        )?)?,
+        calls: Vec::from_proto(value.calls)?,
+    })
 }
 
 impl LexicalBindingEffectReceipt {
@@ -963,99 +973,11 @@ impl ProtoConvert<proto::LocalCallReceipt> for LocalCallReceipt {
     }
 }
 
-impl ProtoConvert<proto::SavedBindingEffectCoverage> for SavedBindingEffectCoverage {
-    fn to_proto(&self) -> Result<proto::SavedBindingEffectCoverage> {
-        use proto::saved_binding_effect_coverage::{OrderedRootInitializer, Value};
-        Ok(proto::SavedBindingEffectCoverage {
-            value: Some(match self {
-                Self::Unclassified => Value::Unclassified(Default::default()),
-                Self::LegacyExecution => Value::LegacyExecution(Default::default()),
-                Self::OrderedRootInitializer { identity, receipt } => {
-                    Value::OrderedRootInitializer(OrderedRootInitializer {
-                        identity: Some(identity.to_proto()?),
-                        receipt: receipt.to_proto()?,
-                    })
-                }
-            }),
-        })
-    }
-
-    fn from_proto(value: proto::SavedBindingEffectCoverage) -> Result<Self> {
-        use proto::saved_binding_effect_coverage::Value;
-        Ok(
-            match required(value.value, "SavedBindingEffectCoverage.value")? {
-                Value::Unclassified(_) => Self::Unclassified,
-                Value::LegacyExecution(_) => Self::LegacyExecution,
-                Value::OrderedRootInitializer(value) => Self::OrderedRootInitializer {
-                    identity: SavedRootInitializerIdentity::from_proto(required(
-                        value.identity,
-                        "SavedBindingEffectCoverage.ordered_root_initializer.identity",
-                    )?)?,
-                    receipt: Option::from_proto(value.receipt)?,
-                },
-            },
-        )
-    }
-}
-
-impl ProtoConvert<proto::SavedLexicalBindingEffectReceipt> for SavedLexicalBindingEffectReceipt {
-    fn to_proto(&self) -> Result<proto::SavedLexicalBindingEffectReceipt> {
-        Ok(proto::SavedLexicalBindingEffectReceipt {
-            identity: Some(self.identity.to_proto()?),
-            read_dependencies: Some(self.read_dependencies.to_proto()?),
-            rebind_dependencies: Some(self.rebind_dependencies.to_proto()?),
-            calls: self.calls.to_proto()?,
-        })
-    }
-
-    fn from_proto(value: proto::SavedLexicalBindingEffectReceipt) -> Result<Self> {
-        Ok(Self {
-            identity: SavedRootInitializerIdentity::from_proto(required(
-                value.identity,
-                "SavedLexicalBindingEffectReceipt.identity",
-            )?)?,
-            read_dependencies: ProofDependencies::from_proto(required(
-                value.read_dependencies,
-                "SavedLexicalBindingEffectReceipt.read_dependencies",
-            )?)?,
-            rebind_dependencies: ProofDependencies::from_proto(required(
-                value.rebind_dependencies,
-                "SavedLexicalBindingEffectReceipt.rebind_dependencies",
-            )?)?,
-            calls: Vec::from_proto(value.calls)?,
-        })
-    }
-}
-
-impl ProtoConvert<proto::SavedRootInitializerIdentity> for SavedRootInitializerIdentity {
-    fn to_proto(&self) -> Result<proto::SavedRootInitializerIdentity> {
-        Ok(proto::SavedRootInitializerIdentity {
-            owner: Some(self.owner.to_proto()?),
-            binding: Some(self.binding.to_proto()?),
-            initializer_span: self.initializer_span.to_proto()?,
-        })
-    }
-
-    fn from_proto(value: proto::SavedRootInitializerIdentity) -> Result<Self> {
-        Ok(Self {
-            owner: SourceUnitOrdinal::from_proto(required(
-                value.owner,
-                "SavedRootInitializerIdentity.owner",
-            )?)?,
-            binding: SavedBinding::from_proto(required(
-                value.binding,
-                "SavedRootInitializerIdentity.binding",
-            )?)?,
-            initializer_span: Option::from_proto(value.initializer_span)?,
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::analysis_inputs::{ProgramPremiseKey, ValueInputRef};
-    use swc_common::BytePos;
+    use swc_common::{BytePos, SyntaxContext};
 
     fn test_callable(key: u32, owner: usize) -> LocalBodyIdentity {
         LocalBodyIdentity::Callable {
@@ -1092,12 +1014,14 @@ mod tests {
     #[test]
     fn saved_receipts_keep_distinct_proofs_and_reject_incomplete_authority() {
         use proto::saved_binding_effect_coverage::Value;
-        let receipt = SavedLexicalBindingEffectReceipt {
-            identity: SavedRootInitializerIdentity {
-                owner: SourceUnitOrdinal(2),
-                binding: SavedBinding::from_parts("value".into(), 0),
-                initializer_span: Some(Span::new(BytePos(3), BytePos(9))),
-            },
+        let ordinals = ContextOrdinals::new(std::iter::empty::<&swc_ecma_ast::Module>());
+        let identity = RootInitializerIdentity {
+            owner: SourceUnitOrdinal(2),
+            binding: ("value".into(), SyntaxContext::empty()),
+            initializer_span: Some(Span::new(BytePos(3), BytePos(9))),
+        };
+        let receipt = LexicalBindingEffectReceipt {
+            identity: identity.clone(),
             read_dependencies: captured_value_input(1),
             rebind_dependencies: captured_value_input(2),
             calls: vec![test_call(
@@ -1108,18 +1032,44 @@ mod tests {
                 captured_value_input(7),
             )],
         };
-        let wire = receipt.to_proto().unwrap();
-        let restored = SavedLexicalBindingEffectReceipt::from_proto(wire.clone()).unwrap();
-        assert_eq!(restored.read_dependencies, receipt.read_dependencies);
-        assert_eq!(restored.rebind_dependencies, receipt.rebind_dependencies);
-        assert_eq!(restored.calls, receipt.calls);
+        let coverage = BindingEffectCoverage::OrderedRootInitializer {
+            identity,
+            receipt: Some(Box::new(receipt)),
+        };
+        let wire = coverage.snapshot_proto(&ordinals).unwrap();
+        let restored = BindingEffectCoverage::restore_proto(wire.clone(), &ordinals).unwrap();
+        let BindingEffectCoverage::OrderedRootInitializer {
+            identity: restored_identity,
+            receipt: Some(restored_receipt),
+        } = restored
+        else {
+            panic!("ordered root initializer coverage restored");
+        };
+        let restored_receipt = *restored_receipt;
+        let receipt = match coverage {
+            BindingEffectCoverage::OrderedRootInitializer {
+                receipt: Some(receipt),
+                ..
+            } => *receipt,
+            _ => unreachable!(),
+        };
         assert_eq!(
-            restored.identity.initializer_span,
-            receipt.identity.initializer_span
+            restored_receipt.read_dependencies,
+            receipt.read_dependencies
         );
+        assert_eq!(
+            restored_receipt.rebind_dependencies,
+            receipt.rebind_dependencies
+        );
+        assert_eq!(restored_receipt.calls, receipt.calls);
+        assert_eq!(restored_identity, receipt.identity);
         let mut incomplete = wire;
-        incomplete.read_dependencies = None;
-        assert!(SavedLexicalBindingEffectReceipt::from_proto(incomplete).is_err());
+        let Some(Value::OrderedRootInitializer(mut ordered)) = incomplete.value else {
+            panic!("ordered root initializer wire");
+        };
+        ordered.receipt.as_mut().unwrap().read_dependencies = None;
+        incomplete.value = Some(Value::OrderedRootInitializer(ordered));
+        assert!(BindingEffectCoverage::restore_proto(incomplete, &ordinals).is_err());
 
         for value in [
             None,
@@ -1131,8 +1081,11 @@ mod tests {
             )),
         ] {
             assert!(
-                SavedBindingEffectCoverage::from_proto(proto::SavedBindingEffectCoverage { value })
-                    .is_err()
+                BindingEffectCoverage::restore_proto(
+                    proto::SavedBindingEffectCoverage { value },
+                    &ordinals
+                )
+                .is_err()
             );
         }
         let mut missing_call_proof = receipt.calls[0].to_proto().unwrap();
