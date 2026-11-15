@@ -60,15 +60,27 @@ _CONFIG_ENV = {
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
     # Flux owns only these migration gates; never prune the kubelet-owned Node.
-    k8s.KubeNode(
-        chart,
-        "wyrm2-log-collectors",
-        metadata=k8s.ObjectMeta(
-            name="wyrm2",
-            labels={loki.POD_COLLECTOR_LABEL: "alloy", loki.JOURNAL_COLLECTOR_LABEL: "alloy"},
-            annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
-        ),
-    )
+    for node in (
+        "iguana",
+        "optiplex",
+        "ovh-ns1001419",
+        "ovh-ns102453",
+        "ovh-ns103656",
+        "ovh-ns103711",
+        "ovh-ns104952",
+        "ovh-ns104963",
+        "rugged",
+        "wyrm2",
+    ):
+        k8s.KubeNode(
+            chart,
+            f"{node}-log-collectors",
+            metadata=k8s.ObjectMeta(
+                name=node,
+                labels={loki.POD_COLLECTOR_LABEL: "alloy", loki.JOURNAL_COLLECTOR_LABEL: "alloy"},
+                annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
+            ),
+        )
     runfiles_root = Runfiles.CreateOrRaise().root()
     config_map, node_config_map, syslog_config_map, journal_config_map = (
         ConfigMap(

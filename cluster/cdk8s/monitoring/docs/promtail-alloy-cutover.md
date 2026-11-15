@@ -3,8 +3,8 @@
 **Live continuity verification and final Promtail retirement are pending.** Do
 not remove the old releases merely because Helm or render checks succeed.
 
-The [wyrm2 canary](wyrm2-alloy-canary.md) uses Flux-managed Node labels to enable
-pod and journal logs on one node. It accepts retained-file duplicates and up to
+The [replay cutover](alloy-replay-cutover.md) uses Flux-managed Node labels to enable
+pod logs on all inventoried nodes and journal logs on NixOS. It accepts retained-file duplicates and up to
 12h journal replay without importing checkpoints or resetting Alloy state. The
 checkpoint-import procedure below is a separate migration option.
 
@@ -29,11 +29,13 @@ Each Node has independent `observability.allegedly.works/pod-collector` and
 | `alloy`                | excluded                  | node-local pod targets enabled / NixOS journal pod scheduled |
 
 For checkpoint import, use `drained` as a real checkpoint before `alloy`.
-The linked wyrm2 replay canary changes directly to `alloy` with duplicates and
+The linked replay cutover changes directly to `alloy` with duplicates and
 transient overlap accepted; it does not require a metrics restart or state reset.
 Manage collector labels through partial, prune-disabled Node manifests in Flux;
 keep existing label ownership in one place. Journal opt-in additionally requires
-NFD's `feature.node.kubernetes.io/system-os_release.ID=nixos`. Offline roaming nodes stay on Promtail until they return and are individually migrated. Keep both
+NFD's `feature.node.kubernetes.io/system-os_release.ID=nixos`. Offline roaming nodes
+are opted in, but their collectors remain excluded by the out-of-service taint
+until they return. Verify each returning node separately. Keep both
 legacy releases and their Loki ingress permission until every node is verified.
 The existing [roaming node controller](../../../docs/plans/roaming_nodes.md)
 marks offline laptops `node.kubernetes.io/out-of-service:NoExecute`; the new
@@ -134,8 +136,8 @@ by this migration. Do not activate this fallback without documenting its exact
 window and confirming every pre-cutover canary remains queryable. If that cannot
 be demonstrated, leave Promtail running and report the node blocked.
 
-For the direct Flux replay canary and its rollback, follow the
-[wyrm2 guide](wyrm2-alloy-canary.md); no checkpoint import/reset is required.
+For the direct Flux replay cutover and its rollback, follow the
+[replay guide](alloy-replay-cutover.md); no checkpoint import/reset is required.
 
 For checkpoint-import rollback, first set the affected labels to `drained` in
 their Flux-managed Node manifests, deploy, verify the new sources stopped, and

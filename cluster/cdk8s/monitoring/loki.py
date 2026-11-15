@@ -329,7 +329,7 @@ def _helm_releases(chart: Chart) -> None:
     )
     # Journal-only deviation: keep NixOS kernel events (including GPU Xid 79) in
     # cluster-retained Loki logs beyond local journal retention. Talos uses
-    # `cluster/cdk8s/vector_talos_logs.py`; pod-log Promtail remains the all-node collector.
+    # `cluster/cdk8s/vector_talos_logs.py`; both Promtails remain available for per-node rollback.
     helm_release(
         chart,
         "promtail-journal",
