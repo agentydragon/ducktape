@@ -152,23 +152,23 @@ be sufficient; every valid completion must satisfy at least one alternative.
    it. This is a graph derivation of leave-entry companion requirements in the
    finest representation: a required extracted atom cannot merge with entry, so
    a forced merge can immediately refute its requirement.
-3. An unconditional directed C cycle forces ALL cycle vertices to share owner.
-   Under any quotient the cycle maps to a closed directed walk, which is acyclic
-   only if every vertex has the same image. A C SCC whose edges cannot deactivate
-   can therefore be contracted wholesale.
-4. For a guarded C cycle, the necessary alternatives are: merge all cycle
-   vertices; OR merge into true entry the caller of a cycle edge that could
-   disappear by fallback-promotion deactivation. A quotient edge with any
-   unconditional supporting source edge cannot disappear this way. All guarded
-   supports of one quotient edge have the same caller BLOCK, so merging that
-   block into entry deactivates them all. Record the precise active supports.
-   This is an OR of contractions, not a blanket SCC merge.
-5. A block with fresh disallowed must merge with one allowed existing anchor.
-6. If more than K blocks remain unanchored, choose any K+1 of them. Every final
+3. Every active directed C SCC forces ALL its vertices to share an owner,
+   including edges that can deactivate through fallback promotion. Let f map
+   current blocks to owners in a valid final placement, and let r be the final
+   schedule's postorder rank, with true entry last. For every current C edge
+   u -> v, r(f(u)) >= r(f(v)): co-location gives equality; a surviving edge
+   gives strict inequality; and a deactivated fallback edge has f(u) equal to
+   true entry, so the inequality still holds. The canonical Gate projection only
+   deactivates such a fallback edge when its caller is true entry. Directed
+   paths both ways in an SCC force equal ranks. Distinct owners have distinct
+   ranks, hence every SCC vertex has the same final owner. Contract the entire
+   SCC and intersect domains; incompatible fixed anchors prove contradiction.
+4. A block with fresh disallowed must merge with one allowed existing anchor.
+5. If more than K blocks remain unanchored, choose any K+1 of them. Every final
    placement with at most K fresh owners must either merge a pair in this chosen
    set, or merge at least one selected block with an allowed existing anchor.
    This is the pigeonhole contraction clause. It need not mention every block.
-7. For an intrinsically UNSAT nonentry I SCC S, form W as its full forward
+6. For an intrinsically UNSAT nonentry I SCC S, form W as its full forward
    reachability closure in the nonentry I graph. Every valid completion must
    contract some pair of distinct current blocks with at least one endpoint in W.
    Include allowed partners both inside AND outside W, including owner anchors
@@ -254,7 +254,7 @@ Independent tiny tests enumerate raw unit assignments and raw import lists; they
 must not reuse contraction clauses or scheduler pruning. Compare existence,
 required-unit queries and owner caps; shrink failures. Include star impossibility,
 its A->B import repair, its outside-x/y contraction repair, entry promotion,
-fixed-anchor contradictions, graph cycles repaired by guard deactivation,
+fixed-anchor contradictions, promoted edges and forced C-SCC co-location,
 existing-owner extensions, simultaneous multi-owner companions, and alternate
 roots/entry routes within an SCC. Preserve current policy schedules when valid
 and verify emitted Node behavior for real-source fixtures.

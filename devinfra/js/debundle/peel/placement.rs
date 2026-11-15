@@ -1,16 +1,15 @@
 //! Constructive residual placement over coarsenings of fixed owner anchors.
 //!
 //! Branches are only the compatible contractions required by a domain,
-//! cardinality, constraining-cycle, or exact ESM-schedule obstruction. The
+//! cardinality or exact ESM-schedule obstruction. Constraining cycles force
+//! co-location, including cycles with fallback-promoted edges. The
 //! concrete full assignment validator is reserved for final certification.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::time::Instant;
 
 use analysis::graph::{EndpointView, chunk_constraining_module_edges, project_endpoints};
-use analysis::{
-    DependencyEdgeId, EdgeRole, EntryDestination, ModuleAssignment, ModuleId, StatementKind,
-};
+use analysis::{EntryDestination, ModuleAssignment, ModuleId, StatementKind};
 use anyhow::{Context, Result, bail, ensure};
 use gate::{EsmImportOrder, EsmImportSchedule, ScheduleObstruction};
 use petgraph::{algo::tarjan_scc, graphmap::DiGraphMap};
@@ -206,7 +205,6 @@ struct Projection {
     pairs: BTreeSet<(ModuleId, ModuleId)>,
     successors: BTreeMap<ModuleId, BTreeSet<ModuleId>>,
     preferred: EsmImportOrder,
-    guard_only_supports: BTreeMap<(ModuleId, ModuleId), Token>,
 }
 
 struct Solver<'p, 'i, 'o> {
@@ -542,9 +540,18 @@ impl Solver<'_, '_, '_> {
                 continue;
             }
 
-            if let Some(branches) = self.constraining_cycle_branches(&state, &projection)? {
-                self.visit_branches(branches)?;
-                return Ok(());
+            if let Some(blocks) = self.constraining_cycle(&projection)? {
+                let first = blocks.first().expect("a constraining cycle has blocks");
+                for block in blocks.iter().skip(1) {
+                    if self.stop_if_time() {
+                        return Ok(());
+                    }
+                    let Some(next) = self.try_forced_merge(&state, first, block) else {
+                        return Ok(());
+                    };
+                    state = next;
+                }
+                continue;
             }
 
             if self.stop_if_time() {
@@ -755,48 +762,6 @@ impl Solver<'_, '_, '_> {
             block_by_module.insert(module, block.key());
         }
 
-        let mut supports =
-            BTreeMap::<(ModuleId, ModuleId), Vec<(DependencyEdgeId, bool, Token)>>::new();
-        for edge in self.problem.input.graph().iter_edges() {
-            if self.stop_if_time() {
-                return Ok(None);
-            }
-            if !edge.reason.constrains_init_order() || edge.reason.is_rebind() {
-                continue;
-            }
-            let Some((from, to)) = project_endpoints(edge, entry, EndpointView::Gate, |unit| {
-                module_assignment.of(unit)
-            }) else {
-                continue;
-            };
-            if !canonical.edges.contains_key(&(from, to)) {
-                continue;
-            }
-            let guard = matches!(
-                edge.reason.role(),
-                EdgeRole::PromotedAtInit { callee_source_unit }
-                    if callee_source_unit == edge.from
-            );
-            let caller = block_by_unit[edge.from.0].clone();
-            supports
-                .entry((from, to))
-                .or_default()
-                .push((edge.id, guard, caller));
-        }
-        let guard_only_supports = supports
-            .into_iter()
-            .filter_map(|(pair, supports)| {
-                if supports.is_empty() || supports.iter().any(|(_, guarded, _)| !guarded) {
-                    return None;
-                }
-                let caller = supports.first()?.2.clone();
-                supports
-                    .iter()
-                    .all(|(_, _, candidate)| *candidate == caller)
-                    .then_some((pair, caller))
-            })
-            .collect();
-
         Ok(Some(Projection {
             candidate,
             module_assignment,
@@ -807,7 +772,6 @@ impl Solver<'_, '_, '_> {
             pairs,
             successors,
             preferred,
-            guard_only_supports,
         }))
     }
 
@@ -902,14 +866,11 @@ impl Solver<'_, '_, '_> {
             })
     }
 
-    fn constraining_cycle_branches(
-        &mut self,
-        state: &Partition,
-        projection: &Projection,
-    ) -> Result<Option<Vec<Partition>>> {
-        if self.stop_if_time() {
-            return Ok(Some(Vec::new()));
-        }
+    /// Every current C edge preserves nonincreasing final postorder rank.
+    /// A fallback edge can disappear only when its caller becomes true entry,
+    /// which finishes last. Both directed paths in an SCC therefore force equal
+    /// ranks, hence the same final owner, even for fallback-promoted edges.
+    fn constraining_cycle(&self, projection: &Projection) -> Result<Option<BTreeSet<Token>>> {
         let mut graph = DiGraphMap::<ModuleId, ()>::new();
         for &node in &projection.nodes {
             graph.add_node(node);
@@ -922,19 +883,10 @@ impl Solver<'_, '_, '_> {
             .filter(|component| component.len() > 1)
             .map(|component| component.into_iter().collect())
             .collect();
-        if self.stop_if_time() {
-            return Ok(Some(Vec::new()));
-        }
         components.sort_by_key(|component| component.iter().next().copied());
         let Some(component) = components.into_iter().next() else {
             return Ok(None);
         };
-        self.report.work.branch_clauses.constraining_scc = self
-            .report
-            .work
-            .branch_clauses
-            .constraining_scc
-            .saturating_add(1);
         let block_keys: BTreeSet<_> = component
             .iter()
             .filter_map(|module| projection.block_by_module.get(module).cloned())
@@ -942,37 +894,7 @@ impl Solver<'_, '_, '_> {
         if block_keys.len() != component.len() {
             bail!("constraining SCC has no unique placement block for each module");
         }
-        let mut branches = Vec::new();
-        if let Some(first) = block_keys.first() {
-            let mut coalesced = Some(state.clone());
-            for key in block_keys.iter().skip(1) {
-                let Some(current) = coalesced.take() else {
-                    break;
-                };
-                coalesced = self.try_branch_merge(&current, first, key);
-            }
-            if let Some(coalesced) = coalesced
-                && coalesced != *state
-            {
-                branches.push(coalesced);
-            }
-        }
-        for (pair, caller) in &projection.guard_only_supports {
-            if component.contains(&pair.0) && component.contains(&pair.1) {
-                if self.stop_if_time() {
-                    return Ok(Some(branches));
-                }
-                let entry = Token::Owner(Owner::Entry);
-                if let Some(merged) = self.try_branch_merge(state, caller, &entry)
-                    && merged != *state
-                {
-                    branches.push(merged);
-                }
-            }
-        }
-        branches.sort_by_key(Partition::key);
-        branches.dedup();
-        Ok(Some(branches))
+        Ok(Some(block_keys))
     }
 
     fn schedule_obstruction_branches(
