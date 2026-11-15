@@ -40,8 +40,23 @@ metadata. No rows were written, backfilled or deleted. There are no missing Sess
 collect creation/activity timestamps or liveness evidence.
 
 The sampler LLM caller configuration now selects `agentplane_ingress`, its existing service SVID,
-and typed execution Identity/Session delegation. Activation still needs merge, rollout and a
-successful central Session provider call. Stage 5 remains held pending that verification and its
+and typed execution Identity/Session delegation. #16624 merged at 08:52 UTC and rolled out at
+08:56 UTC. Both sampler Pods were Ready with zero restarts on image `2b349f4`; their live settings
+selected the sampler certificate and `spiffe://agentplane/central-sampler`, verified the
+`spiffe://agentplane/llm-ingress` server and contained no LLM bearer credential selection.
+
+At 09:00 UTC, an existing central Session completed command
+`77217d0b-e8b6-4e8a-a9e7-3ea2de548670` through that provider configuration. History retained the
+successful `exec` tool result at cursor 821 and the completed turn through cursor 998, with no gaps.
+The tool ran one `printf` and returned the unique marker requested by that command; the final
+assistant message matched. The sampler logged a newly opened Executor session for the same central
+Session. This exercises the provider call, Gateway Executor and History export after the roll.
+Both replicas of sampler, LLM ingress, Gateway and History remained Ready with zero restarts;
+their smoke-window logs contained no x509, Unauthenticated or PermissionDenied errors.
+
+This bounded smoke verifies the remaining sampler provider cutover; it does not exercise every
+method or external provider. History separately logged `executionPrincipal` decode failures while
+folding two other Sessions; the smoke Session folded successfully. Stage 5 still requires its
 separate release. All projected tokens and receiver bearer admission stay in place.
 
 ## Remaining stage 4 callers at the original audit
@@ -75,7 +90,7 @@ substitute for the caller activation and its acceptance.
 | MCP edge                   | MCP edge SVID on Actions with typed Connection delegation. Its ConnectionService TLS listener separately checks the App peer and operator OIDC.                                                                                   |
 | Sandbox Controller         | Controller client SVID on Gateway control; direct Runtime control remains mTLS.                                                                                                                                                   |
 | Dispatcher / Sessions role | `spiffe://agentplane/sessions` on Runtime proxy and sampler. Sampler ownership uses that same URI after the explicit ownership rewrite.                                                                                           |
-| Central sampler            | Sampler SVID on Gateway Executor and History export, and certificate TLS on its Actions client. LLM ingress is the exception above.                                                                                               |
+| Central sampler            | Sampler SVID on Gateway Executor, History export and LLM ingress, and certificate TLS on its Actions client. LLM calls retain typed execution Identity/Session delegation.                                                        |
 
 Keep the role identities separate through the planned binary split: Sessions owns the Dispatcher
 client identity; Environments owns EnvironmentService; Runtime proxy keeps its own role certificate.
@@ -192,5 +207,5 @@ does not execute a receiver cutover or re-run the accepted live smoke.
   rewrite, new required field or environment requirement is introduced. The selected
   [Session model](session_environment_model.md#a-central-session-can-use-zero-one-or-many-environments)
   still permits zero or several central attachments.
-- Release stage 5 only after the two remaining caller families have been activated and verified;
-  the stage 5 receiver/RBAC implementation remains held.
+- The two caller families identified by this audit are now activated and verified as described
+  above. Stage 5 receiver/RBAC implementation still waits for an explicit release.
