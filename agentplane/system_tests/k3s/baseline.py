@@ -141,13 +141,21 @@ def _prepare_docker_namespaces() -> None:
     if not os.statvfs(root).f_flag & os.ST_RDONLY:
         return
     run("mount", "-o", "remount,rw", str(root))
+    _enable_child_cgroup_controllers(root)
+
+
+def _enable_child_cgroup_controllers(root: Path) -> None:
     # Like kind's entrypoint, move existing processes out before enabling child controllers.
     # https://github.com/kubernetes-sigs/kind/blob/main/images/base/files/usr/local/bin/entrypoint
     init = root / "init"
     init.mkdir(exist_ok=True)
-    for pid in (root / "cgroup.procs").read_text().split():
-        with contextlib.suppress(ProcessLookupError):
-            (init / "cgroup.procs").write_text(pid)
+    # A process can fork after the snapshot but before it is moved. Its child remains in
+    # root, so drain again until no parent remains there to fork into it. A single pass can
+    # leave tasks behind and make enabling domain controllers fail with EBUSY.
+    while pids := (root / "cgroup.procs").read_text().split():
+        for pid in pids:
+            with contextlib.suppress(ProcessLookupError):
+                (init / "cgroup.procs").write_text(pid)
     controllers = (root / "cgroup.controllers").read_text().split()
     (root / "cgroup.subtree_control").write_text(" ".join(f"+{controller}" for controller in controllers))
 
