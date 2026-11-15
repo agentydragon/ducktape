@@ -11,7 +11,10 @@ history and browser sync, notifications, actions and egress) and direct API defi
 The Controller serves EnvironmentService on each replica at `sandbox-controller:8082`, with
 `spiffe://agentplane/sandbox-controller`. Its independent policy watches and uncached Kubernetes
 reads do not require leadership. App and Actions use this receiver with service SVIDs; Actions
-preserves typed delegation. Runtime-proxy calls remain at the Gateway, which no longer registers
+preserves typed delegation. EnvironmentService rejects Kubernetes bearer credentials and performs no
+TokenReview; its exact reader, manager, launcher and operator SVID roles remain independent. Legacy
+receiver audience/account/delegation settings decode without authority until manifest omission and
+rollout; RBAC cleanup follows receiver retirement. Runtime-proxy calls remain at the Gateway, which no longer registers
 EnvironmentService.
 
 Managed Sandbox CLIs use a separate `AGENTPLANE_ENVIRONMENTS_URL` on the local platform listener.
@@ -293,7 +296,7 @@ flowchart LR
     k8s[Kubernetes API]
     app -->|Session creation + commands| dispatcher
     app -->|Dispatch watch for the browser: gRPC| dispatcher
-    app -->|operator EnvironmentService facade: App SVID mTLS| sandboxctl
+    app -->|EnvironmentService exact reader/manager/operator roles: App SVID mTLS| sandboxctl
     actions -->|caller-delegated EnvironmentService list/get/resume; reviewed launches: Actions SVID mTLS| sandboxctl
     actions -->|Actions SVID mTLS: Session commands; typed envelope for delegation| dispatcher
     actions -->|Actions SVID mTLS: Session reads; typed envelope for delegation| history

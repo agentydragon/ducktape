@@ -54,19 +54,22 @@ class EnvironmentService(BaseModel):
     model_config = ConfigDict(extra="forbid")
     rpc: Listener
     policy_namespace: str = Field(min_length=1)
-    audience: str = Field(min_length=1)
+    # CLEANUP(added 2026-11-15): Remove legacy audience/account fields after manifest omission and rollout.
+    # These settings decode old deployments but grant no admission.
+    audience: str = ""
     readers: tuple[Account, ...] = ()
     managers: tuple[Account, ...] = ()
     launchers: tuple[Account, ...] = ()
     operators: tuple[Account, ...] = ()
+    wake_callers: tuple[Account, ...] = ()
     service_readers: tuple[ServiceSPIFFEID, ...] = ()
     service_managers: tuple[ServiceSPIFFEID, ...] = ()
     service_launchers: tuple[ServiceSPIFFEID, ...] = ()
     service_operators: tuple[ServiceSPIFFEID, ...] = ()
     # Read-only automatic-wake eligibility must match the Sessions broker grants.
-    wake_callers: tuple[Account, ...] = ()
     wake_service_callers: tuple[ServiceSPIFFEID, ...] = ()
     service_delegation: ServiceDelegation | None = None
+    # CLEANUP(added 2026-11-15): Remove after manifests omit delegation and that rollout completes.
     delegation: Delegation | None = None
     runtime_proxy: RuntimeProxy | None = Field(default=None, exclude_if=lambda value: value is None)
     runtime_catalog: Catalog | None = None
@@ -75,9 +78,6 @@ class EnvironmentService(BaseModel):
     def authentication(self) -> Self:
         if not any(method.mode == "spiffe" for method in self.rpc.auth):
             raise ValueError("EnvironmentService rpc.auth must include spiffe")
-        for method in self.rpc.auth:
-            if method.mode == "kubernetes_bearer" and method.audiences != {self.audience}:
-                raise ValueError("EnvironmentService bearer audience must equal audience")
         if self.service_delegation is not None:
             allowed = {
                 "/agentplane.environments.v1.EnvironmentService/ListEnvironments",
@@ -88,27 +88,6 @@ class EnvironmentService(BaseModel):
             }
             if not set(self.service_delegation.methods) <= allowed:
                 raise ValueError("service_delegation methods must be delegatable EnvironmentService methods")
-        if self.delegation is not None and any(
-            not method.startswith("/agentplane.environments.v1.EnvironmentService/")
-            or method.rsplit("/", 1)[1]
-            not in {
-                "ListEnvironments",
-                "WatchEnvironments",
-                "GetEnvironment",
-                "WatchEnvironment",
-                "ResumeEnvironment",
-                "CreateEnvironment",
-                "DeleteEnvironment",
-                "ListEnvironmentTemplates",
-                "GetEnvironmentIdentityRecord",
-                "SuspendEnvironment",
-                "SetEnvironmentWakeOnSend",
-                "SetEnvironmentIdleSuspend",
-                "SetEnvironmentIdentity",
-            }
-            for method in self.delegation.methods
-        ):
-            raise ValueError("delegation methods must belong to EnvironmentService")
         return self
 
 

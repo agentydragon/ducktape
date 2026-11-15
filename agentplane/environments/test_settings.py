@@ -1,7 +1,5 @@
 """The opt-in receiver settings preserve the existing deployment contract."""
 
-import copy
-
 import pytest
 import pytest_bazel
 from pydantic import ValidationError
@@ -115,7 +113,6 @@ def test_runtime_proxy_rejects_unknown_service_callers(field: str) -> None:
                 "methods": ["/other.Service/ResumeEnvironment"],
             }
         },
-        {"delegation": {"actor": "test/actions", "identity_callers": True, "methods": ["/other.Service/Method"]}},
         {"unknown": True},
     ],
 )
@@ -125,12 +122,15 @@ def test_receiver_rejects_unreviewed_authentication(updates: dict[str, object]) 
         EnvironmentService.model_validate(settings)
 
 
-def test_receiver_bearer_audience_must_match() -> None:
-    settings = EnvironmentService.model_validate(receiver_settings())
-    source = copy.deepcopy(settings.model_dump(mode="json"))
+@pytest.mark.parametrize("audience", ["", "test-dispatcher"])
+def test_receiver_ignores_legacy_bearer_settings(audience: str) -> None:
+    source = EnvironmentService.model_validate(receiver_settings()).model_dump(mode="json")
+    source["audience"] = audience
     source["rpc"]["auth"].append({"mode": "kubernetes_bearer", "audiences": ["wrong-audience"]})
-    with pytest.raises(ValidationError, match="bearer audience"):
-        EnvironmentService.model_validate(source)
+    source["delegation"] = {"actor": "test/actions", "identity_callers": True, "methods": ["/other.Service/Method"]}
+    settings = EnvironmentService.model_validate(source)
+    assert settings.audience == audience
+    assert settings.delegation is not None
 
 
 if __name__ == "__main__":

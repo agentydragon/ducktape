@@ -1,20 +1,17 @@
 package main
 
 import (
-	"context"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/environments/internal/resume"
 	environmentservice "github.com/agentydragon/ducktape/agentplane/environments/internal/service"
 	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
-	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -22,23 +19,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
-
-type configTestTokenReviews struct{}
-
-func (configTestTokenReviews) Create(
-	_ context.Context,
-	request *authenticationv1.TokenReview,
-	_ metav1.CreateOptions,
-) (*authenticationv1.TokenReview, error) {
-	return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
-		Authenticated: true,
-		Audiences:     request.Spec.Audiences,
-		User: authenticationv1.UserInfo{
-			Username: "system:serviceaccount:agentplane:app",
-			UID:      "app-account-uid",
-		},
-	}}, nil
-}
 
 func TestConfiguredHarnessNamesRoundTripThroughEnvironmentService(t *testing.T) {
 	t.Setenv(configFileEnv, writeSettings(t, validSettings+`environment_service:
@@ -48,7 +28,7 @@ func TestConfiguredHarnessNamesRoundTripThroughEnvironmentService(t *testing.T) 
     listen_address: ":8082"
     tls: {cert_file: /tmp/server-cert, key_file: /tmp/server-key}
     auth: [{mode: spiffe, ca_file: /tmp/ca}]
-  readers: [agentplane/app]
+  service_readers: [spiffe://agentplane/app]
   runtime_catalog:
     models:
       models:
@@ -101,20 +81,20 @@ func TestConfiguredHarnessNamesRoundTripThroughEnvironmentService(t *testing.T) 
 	}
 	service, err := environmentservice.New(
 		"agentplane", objects, config.RuntimeCatalog, lifecycleManager,
-		sets.New(config.Readers...), environmentservice.ManagementOptions{},
+		environmentservice.ManagementOptions{ServiceReaders: sets.New(config.ServiceReaders...)},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolver, err := auth.NewResolver(configTestTokenReviews{}, config.Audience, []string{"agentplane"}, auth.WithVerdictTTL(0))
+	methods, err := environmentservice.WithServiceCallers(environmentservice.Methods(nil), config.ServiceReaders, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	connection := grpcmethods.Serve(t, environmentservice.Methods(resolver), func(server *grpc.Server) {
+	connection := grpcmethods.ServeTLS(t, peertls.SandboxControllerURI, methods, func(server *grpc.Server) {
 		environmentpb.RegisterEnvironmentServiceServer(server, service)
-	})
+	}, peertls.AppURI)
 	client := environmentpb.NewEnvironmentServiceClient(connection)
-	ctx := metadata.AppendToOutgoingContext(t.Context(), "authorization", "Bearer test-token")
+	ctx := grpcmethods.Caller(t.Context(), peertls.AppURI)
 	response, err := client.ListEnvironments(ctx, &environmentpb.ListEnvironmentsRequest{Limit: 10})
 	if err != nil {
 		t.Fatal(err)

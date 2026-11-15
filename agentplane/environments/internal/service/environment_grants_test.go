@@ -9,6 +9,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -34,7 +35,7 @@ func TestIdentityResumeProjectionAndDelegatedAdmissionFollowCurrentGrant(t *test
 		t.Fatal(err)
 	}
 	rpc := serveIdentityDiscoveryWithLifecycle(t, objects, runtimeconfig.Catalog{}, nil, manager)
-	ctx := delegatedIdentityBearing(t, actionsToken, auth.Identity{Name: identity.Name, UID: string(identity.UID)})
+	ctx := delegatedServiceContext(t, peertls.ActionsURI, auth.Identity{Name: identity.Name, UID: string(identity.UID)})
 	target := &identitypb.EnvironmentTarget{Namespace: sandbox.Namespace, Name: sandbox.Name, Uid: string(sandbox.UID)}
 	get := &environmentpb.GetEnvironmentRequest{Target: target}
 	view, err := rpc.GetEnvironment(ctx, get)

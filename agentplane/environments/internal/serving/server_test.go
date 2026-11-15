@@ -170,10 +170,16 @@ func TestEveryReplicaServesAndFencesConcurrentResume(t *testing.T) {
 		RPC: listener.Config{
 			ListenAddress: "127.0.0.1:0",
 			TLS:           &listener.TLS{CertFile: serverCertificate.CertFile, KeyFile: serverCertificate.KeyFile},
-			Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: ca.RootFile}},
+			Auth: []listener.Authentication{
+				&listener.SPIFFEAuth{CAFile: ca.RootFile},
+				&listener.KubernetesBearerAuth{Audiences: []string{"environment-serving-test"}},
+			},
 		},
 		PolicyNamespace:  servingTestNamespace,
 		Audience:         "environment-serving-test",
+		Readers:          []auth.Account{{Namespace: servingTestNamespace, Name: "retired-reader"}},
+		Delegation:       &DelegationConfig{Actor: auth.Account{Namespace: servingTestNamespace, Name: "retired-reader"}, IdentityCallers: true, Methods: []string{environmentpb.EnvironmentService_ResumeEnvironment_FullMethodName}},
+		Operators:        []auth.Account{{Namespace: servingTestNamespace, Name: "retired-reader"}},
 		ServiceReaders:   []string{peertls.CentralSamplerURI},
 		ServiceOperators: []string{peertls.ActionsURI},
 		ServiceDelegation: &ServiceDelegationConfig{
@@ -240,6 +246,26 @@ func TestEveryReplicaServesAndFencesConcurrentResume(t *testing.T) {
 	t.Cleanup(func() { stopReplica(second) })
 	eventually(t, func() bool { return first.server.Check(nil) == nil })
 	eventually(t, func() bool { return second.server.Check(nil) == nil })
+
+	// Even a valid token for a decoded legacy grant has no receiver admission.
+	retiredToken, err := kube.WorkloadToken(t.Context(), auth.Account{Namespace: servingTestNamespace, Name: "retired-reader"}, c.Audience)
+	if err != nil {
+		t.Fatal(err)
+	}
+	security, err := (&peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.SandboxControllerURI}).Credentials()
+	if err != nil {
+		t.Fatal(err)
+	}
+	retiredConnection, err := grpc.NewClient(first.server.Address(), grpc.WithNoProxy(), grpc.WithTransportCredentials(security))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = retiredConnection.Close() })
+	retired := environmentpb.NewEnvironmentServiceClient(retiredConnection)
+	retiredCtx := metadata.AppendToOutgoingContext(t.Context(), "authorization", "Bearer "+retiredToken)
+	if _, err := retired.ListEnvironments(retiredCtx, &environmentpb.ListEnvironmentsRequest{Limit: 10}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("legacy reader bearer admitted: %v", err)
+	}
 
 	firstClient, firstConnection := environmentClient(t, ca, first.server)
 	secondClient, secondConnection := environmentClient(t, ca, second.server)

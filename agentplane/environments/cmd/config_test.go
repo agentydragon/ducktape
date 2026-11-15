@@ -242,7 +242,6 @@ func TestEnvironmentServiceIsOptInAndStrict(t *testing.T) {
 		"incomplete":            "environment_service: {}\n",
 		"unknown nested key":    environmentServiceSettings + "  unknown: true\n",
 		"unknown listener key":  strings.Replace(environmentServiceSettings, "    listen_address:", "    misspelled_address:", 1),
-		"wrong bearer audience": strings.Replace(environmentServiceSettings, "audiences: [test-dispatcher]", "audiences: [another-audience]", 1),
 		"wrong service role":    strings.Replace(environmentServiceSettings, "[spiffe://agentplane/app]", "[spiffe://agentplane/test-unknown]", 1),
 		"foreign method":        strings.Replace(environmentServiceSettings, "/agentplane.environments.v1.EnvironmentService/ResumeEnvironment", "/other.Service/Method", 1),
 		"connection provenance": strings.Replace(environmentServiceSettings, "      - spiffe_id: spiffe://agentplane/actions", "      - spiffe_id: spiffe://agentplane/actions\n        connection_provenance: true", 1),

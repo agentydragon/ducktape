@@ -16,9 +16,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	"github.com/agentydragon/ducktape/agentplane/environments/testing/servicefixture"
-	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -28,28 +26,14 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
-	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
-
-type launchTokenReview struct{ namespace string }
-
-func (r launchTokenReview) Create(_ context.Context, request *authenticationv1.TokenReview, _ metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
-	return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
-		Authenticated: request.Spec.Token == "action-fixture-token", Audiences: request.Spec.Audiences,
-		User: authenticationv1.UserInfo{
-			Username: "system:serviceaccount:" + r.namespace + ":actions", UID: "actions-uid",
-			Extra: map[string]authenticationv1.ExtraValue{"authentication.kubernetes.io/pod-name": {"actions-pod"}, "authentication.kubernetes.io/pod-uid": {"actions-pod-uid"}},
-		},
-	}}, nil
-}
 
 const (
 	testGroup         = "test-orchestration"
@@ -119,12 +103,7 @@ func newFixture(t *testing.T) fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolver, err := auth.NewResolver(launchTokenReview{namespace}, "environment-test", []string{namespace}, auth.WithVerdictTTL(0))
-	if err != nil {
-		t.Fatal(err)
-	}
-	service, options := servicefixture.Launcher(t, namespace, objects, resolver, auth.Account{Namespace: namespace, Name: "actions"})
-	environment := environmentpb.NewEnvironmentServiceClient(serve(t, func(s *grpc.Server) { environmentpb.RegisterEnvironmentServiceServer(s, service) }, options...))
+	environment := servicefixture.Launcher(t, namespace, objects)
 	executor, err := NewExecutor(testGroup, catalog.OrchestrationBinding{
 		Description: "test orchestration", Namespace: namespace,
 		Presets: json.RawMessage(testPresets),
@@ -150,10 +129,7 @@ func serve(t *testing.T, register func(*grpc.Server), serverOptions ...grpc.Serv
 	t.Cleanup(grpcServer.Stop)
 	connection, err := grpc.NewClient("passthrough:///test-peer",
 		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return listener.DialContext(ctx) }),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithUnaryInterceptor(func(ctx context.Context, method string, req, reply any, conn *grpc.ClientConn, invoke grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-			return invoke(metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer action-fixture-token"), method, req, reply, conn, opts...)
-		}))
+		grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)
 	}
