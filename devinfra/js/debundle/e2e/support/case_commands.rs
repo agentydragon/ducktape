@@ -1,7 +1,7 @@
 //! Incremental command evidence and input snapshots within an owned case.
 
 use super::failure_workspace::{CaseMetadata, copy_tree};
-use super::process::{self, SpawnError};
+use super::process::{self, ProcessError};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
@@ -107,11 +107,11 @@ pub(super) fn command_hint(command: &Command) -> PathBuf {
 /// A concrete path below a case associates the process with its owner. There is
 /// no global or thread-local current-case state; unrelated commands use the raw
 /// process runner without creating evidence directories.
-pub fn fixture_output(command: &mut Command, hint: &Path) -> Result<Output, SpawnError> {
+pub fn fixture_output(command: &mut Command, hint: &Path) -> Result<Output, ProcessError> {
     output(command, hint, false, false)
 }
 
-pub fn debundle_fixture_output(command: &mut Command, hint: &Path) -> Result<Output, SpawnError> {
+pub fn debundle_fixture_output(command: &mut Command, hint: &Path) -> Result<Output, ProcessError> {
     let output = output(command, hint, true, false)?;
     process::assert_debundle_invariants(&output);
     Ok(output)
@@ -120,7 +120,7 @@ pub fn debundle_fixture_output(command: &mut Command, hint: &Path) -> Result<Out
 pub(super) fn isolated_debundle_output(
     command: &mut Command,
     hint: &Path,
-) -> Result<Output, SpawnError> {
+) -> Result<Output, ProcessError> {
     let output = output(command, hint, true, true)?;
     process::assert_debundle_invariants(&output);
     Ok(output)
@@ -131,7 +131,7 @@ fn output(
     hint: &Path,
     debundle: bool,
     clear_env: bool,
-) -> Result<Output, SpawnError> {
+) -> Result<Output, ProcessError> {
     let journal =
         case_root(hint).and_then(|root| match begin(root, command, debundle, clear_env) {
             Ok(record) => Some(record),
