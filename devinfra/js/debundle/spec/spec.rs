@@ -1441,10 +1441,6 @@ fn is_default_member_effect(effect: &MemberEffect) -> bool {
     matches!(effect, MemberEffect::Default)
 }
 
-fn is_default_vendor_role(role: &VendorRole) -> bool {
-    matches!(role, VendorRole::Module)
-}
-
 // --- Vendor ---------------------------------------------------------------
 
 /// One vendor annotation, keyed in the spec by chunk path
@@ -1455,9 +1451,6 @@ fn is_default_vendor_role(role: &VendorRole) -> bool {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct VendorMark {
     pub identity: String,
-    #[serde(skip_serializing_if = "is_default_vendor_role")]
-    #[serde(default)]
-    pub role: VendorRole,
     #[serde(flatten)]
     pub level: VendorLevel,
 }
@@ -1695,14 +1688,6 @@ pub enum PartialSwapKind {
 
 fn is_default_partial_swap_kind(kind: &PartialSwapKind) -> bool {
     matches!(kind, PartialSwapKind::Member)
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, Eq, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum VendorRole {
-    #[default]
-    Module,
-    Worker,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq)]

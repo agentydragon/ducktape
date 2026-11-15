@@ -252,7 +252,7 @@ audit candidates, not a removal decision. Schema: <spec/spec.rs>.
 - **Callback contracts:** `retained_callback_factory_exports`,
   `descriptor_copy_factory_exports`, and `no_reentry_callback_exports`.
 - **Host contracts:** `host_behavior.reentry_free_operations`.
-- **Vendor variants:** plain `partial_swap` and explicit `role: worker`.
+- **Vendor variants:** plain `partial_swap`.
 - **Decorator effects:** `typescript_decorate_helper`.
 - **Native call identity variant:** `native_call_identity_inputs`'s
   `set_empty_private_field`.

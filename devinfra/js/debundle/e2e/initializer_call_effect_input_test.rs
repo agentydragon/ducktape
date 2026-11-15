@@ -684,7 +684,6 @@ fn selected_bundled_replacement_needs_exact_effective_identity() {
             "static/peer.js",
             VendorMark {
                 identity: "neutral replacement wrapper".into(),
-                role: Default::default(),
                 level: VendorLevel::BundledPartialSwap(BundledPartialSwapMark {
                     bundle: BundledPartialSwapBundle {
                         path: bundle_path.clone(),

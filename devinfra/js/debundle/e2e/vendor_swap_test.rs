@@ -277,7 +277,6 @@ fn run_full_swap_fixture(args: FullSwapFixtureArgs<'_>) -> VendorSwapFixture {
 
     let vendor_mark = VendorMark {
         identity: format!("{PACKAGE_NAME}/{SUBPATH}"),
-        role: Default::default(),
         level: VendorLevel::Swap(SwapMark {
             package: PACKAGE_NAME.into(),
             version: PACKAGE_VERSION.into(),
@@ -2291,7 +2290,6 @@ fn partial_swap_vendor(
 ) -> VendorMark {
     VendorMark {
         identity: identity.into(),
-        role: Default::default(),
         level: VendorLevel::PartialSwap(PartialSwapMark {
             packages: packages
                 .iter()
@@ -2941,7 +2939,6 @@ fn bundled_vendor(
 ) -> VendorMark {
     VendorMark {
         identity: identity.into(),
-        role: Default::default(),
         level: VendorLevel::BundledPartialSwap(BundledPartialSwapMark {
             bundle: BundledPartialSwapBundle {
                 path: bundle.into(),

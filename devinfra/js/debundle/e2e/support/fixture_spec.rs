@@ -22,7 +22,6 @@ use std::collections::BTreeMap;
 pub fn bundled_vendor_mark(bundle_path: std::path::PathBuf, exports: &[&str]) -> spec::VendorMark {
     spec::VendorMark {
         identity: "fixture-provider".into(),
-        role: Default::default(),
         level: spec::VendorLevel::BundledPartialSwap(spec::BundledPartialSwapMark {
             bundle: spec::BundledPartialSwapBundle { path: bundle_path },
             packages: BTreeMap::from([(

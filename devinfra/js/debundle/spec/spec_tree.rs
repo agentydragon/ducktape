@@ -10,7 +10,7 @@ use spec::{
     ChunkRenames, DependencyGraphOptions, EmitBrowserHarnessConfig, LoadJsChunksArgs,
     LogicalModule, MaterializeLogicalModulesConfig, ModulePath, PartialSwapMark,
     PartialSwapPackage, PartialSwapSymbol, SwapMark, SwapVendorChunksConfig, TransformSpec,
-    UnassignedMode, VendorLevel, VendorMark, VendorRole, WrapperShape, WriteJsTreeConfig,
+    UnassignedMode, VendorLevel, VendorMark, WrapperShape, WriteJsTreeConfig,
 };
 use spec_modules::{collect_module_files, module_path_from_file, read_module_file};
 
@@ -178,8 +178,6 @@ struct VendorMarksFile {
 struct VendorMarkSource {
     chunk_path: String,
     identity: String,
-    #[serde(default)]
-    role: VendorRole,
     level: VendorLevelSource,
     #[serde(default)]
     package: Option<String>,
@@ -463,7 +461,6 @@ fn vendor_map(
     for source in sources {
         let chunk_path = source.chunk_path.clone();
         let identity = source.identity.clone();
-        let role = source.role;
         let level = source.into_vendor_level(source_root)?;
         if let Some(prior) = out.get(&chunk_path) {
             bail!(
@@ -472,14 +469,7 @@ fn vendor_map(
                 prior.identity,
             );
         }
-        out.insert(
-            chunk_path,
-            VendorMark {
-                identity,
-                role,
-                level,
-            },
-        );
+        out.insert(chunk_path, VendorMark { identity, level });
     }
     Ok(out)
 }
@@ -716,7 +706,6 @@ chunk_renames:
   - level: swap
     chunk_path: static/vendor.js
     identity: example
-    role: worker
     package: pkg
     version: 1.2.3
     subpath: dist/index.js
