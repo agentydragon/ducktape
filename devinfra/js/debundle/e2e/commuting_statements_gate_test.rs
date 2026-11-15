@@ -919,7 +919,7 @@ fn timeline_between_two_fallback_effects_is_inertable() {
         "{without:#}"
     );
 
-    let fixture = run_fixture(state_split(&source, vec![first_second_pair()]));
+    let fixture = run_fixture_with_graphs(state_split(&source, vec![first_second_pair()]));
     assert_preserved_entry_output(&fixture, "326 326 0\n");
     let timelines = inerted_state_timelines(&fixture);
     assert!(!timelines.is_empty(), "no `state` timeline inerted");
@@ -962,7 +962,7 @@ fn timeline_between_observed_write_and_fallback_read_is_inertable() {
     let source = state_source("bump()", &padded_pool("peek"));
     expect_cycle_rejection(state_split(&source, vec![]), &STATE_MODULES);
 
-    let fixture = run_fixture(state_split(&source, vec![first_second_pair()]));
+    let fixture = run_fixture_with_graphs(state_split(&source, vec![first_second_pair()]));
     assert_preserved_entry_output(&fixture, "1 326 1\n");
     let timelines = inerted_state_timelines(&fixture);
     assert!(!timelines.is_empty(), "no `state` timeline inerted");
@@ -1030,7 +1030,7 @@ fn assert_assumed_pair_accepted(
         }),
         "{without:#}"
     );
-    let fixture = run_fixture(probe_split(source, helpers, vec![first_second_pair()]));
+    let fixture = run_fixture_with_graphs(probe_split(source, helpers, vec![first_second_pair()]));
     assert_preserved_entry_output(&fixture, output);
     let timelines = inerted_state_timelines(&fixture);
     assert!(!timelines.is_empty(), "no `state` timeline inerted");

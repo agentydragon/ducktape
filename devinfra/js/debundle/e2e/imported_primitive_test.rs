@@ -387,7 +387,7 @@ fn object_binary_coercion_fallback_keeps_right_operand_before_value_of() {
                   function add() { return value + right(); }\n\
                   const computed = add();\n\
                   console.log(trace, computed);\n";
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         source,
         vec![logical_module(
             "all",
@@ -412,7 +412,7 @@ fn object_template_coercion_uses_string_hint_before_next_substitution() {
                   function render() { return `${value}:${next()}`; }\n\
                   const computed = render();\n\
                   console.log(trace, computed);\n";
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         source,
         vec![logical_module(
             "all",
@@ -436,7 +436,7 @@ fn symbol_template_coercion_stops_before_the_next_substitution() {
                   function render() { return `${token}${next()}`; }\n\
                   const computed = render();\n\
                   console.log(computed);\n";
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             source,
             vec![logical_module(
@@ -460,7 +460,7 @@ fn possible_bigint_division_throw_does_not_seal_callable_operation_coverage() {
                   function divide() { return 4n / divisor; }\n\
                   const computed = divide();\n\
                   console.log(computed);\n";
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             source,
             vec![logical_module(
@@ -621,7 +621,7 @@ fn split_binding_copies_keep_mutable_import_reads_uncovered() {
         &["compute", "later"],
         &["eager_use"],
     );
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             source,
             vec![logical_module_with_anon(
@@ -648,7 +648,7 @@ fn split_binding_copy_from_a_tdz_cell_keeps_the_root_uncovered() {
     let source = "import { limit as bytes } from './peer.js';\n\
                   let first = second, second = bytes;\n\
                   console.log(first, second);\n";
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             source,
             vec![logical_module(

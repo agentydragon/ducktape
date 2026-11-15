@@ -87,7 +87,7 @@ const later = 42;
 console.log(Boolean(store), later);
 "#;
     expect_atomic_conflict_rejection(split(source, "store"), &["host/value", "host/later"], &[]);
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         split(source, "store")
             .with_host_behavior(policy(&[ReentryFreeOperation::AsyncLocalStorageConstruct])),
     );
@@ -103,7 +103,7 @@ const later = 42;
 console.log(Boolean(gate), later);
 "#;
     expect_atomic_conflict_rejection(split(source, "gate"), &["host/value", "host/later"], &[]);
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         split(source, "gate").with_host_behavior(policy(&[ReentryFreeOperation::PromiseResolve])),
     );
     assert_host_call_remains_impure(&fixture, "gate");

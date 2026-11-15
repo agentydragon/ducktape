@@ -80,7 +80,7 @@ fn unrelated_argument_contract_does_not_admit_enum_plain_data() {
     let source = SOURCE.replace(DECLARATION, &format!("{DECLARATION}\n{declaration}"));
     let mut unrelated = input(&source, declaration);
     unrelated.source_match = source_match_selector(declaration, &["unrelated"]);
-    let fixture = run_fixture(opts(&source, Some(unrelated)));
+    let fixture = run_fixture_with_graphs(opts(&source, Some(unrelated)));
     assert_ne!(purity(&fixture, "preferences"), "pure");
 }
 
@@ -94,7 +94,7 @@ fn two_annotated_parameters_of_one_helper_are_both_protected() {
     first.exact_arity = 2;
     let mut second = first.clone();
     second.parameter_index = 1;
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(&source, vec![]).with_argument_inputs("static/app", vec![first, second]),
     );
     assert_eq!(purity(&fixture, "preferences"), "pure");
@@ -125,14 +125,14 @@ fn visible_mutation_return_and_capture_contradict_the_contract() {
 fn rebind_spread_and_extra_call_argument_do_not_use_the_contract() {
     for call in ["keys(...[Status])", "keys(Status, 2)"] {
         let source = SOURCE.replace("keys(Status)", call);
-        let fixture = run_fixture(opts(&source, Some(input(&source, DECLARATION))));
+        let fixture = run_fixture_with_graphs(opts(&source, Some(input(&source, DECLARATION))));
         assert_ne!(purity(&fixture, "preferences"), "pure", "{call}");
     }
     let source = SOURCE.replace(
         "const names = keys(Status);",
         "keys = (input) => Object.keys(input);\nconst names = keys(Status);",
     );
-    let fixture = run_fixture(opts(&source, Some(input(&source, DECLARATION))));
+    let fixture = run_fixture_with_graphs(opts(&source, Some(input(&source, DECLARATION))));
     assert_ne!(purity(&fixture, "preferences"), "pure");
 }
 

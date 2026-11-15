@@ -305,7 +305,7 @@ c.bump(1);
 console.log(c.read());
 export { counter, Counter, c };
 "#;
-    let rejected = run_emit_on_rejection_fixture_with_graphs(
+    let rejected = run_emit_on_rejection_fixture(
         FixtureOpts::new(
             source,
             vec![logical_module(

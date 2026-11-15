@@ -45,7 +45,7 @@ fn deferred_creation_and_full_scope_facts_do_not_invent_effect_receipts() {
         let source = format!(
             "const seed = 41;\n{helper}\nvar result = (make(), make());\nconsole.log(typeof result);\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(
             &source,
             vec![logical_module(
                 "all",
@@ -427,7 +427,7 @@ fn split_declarator_coverage_stays_local_and_requires_completed_initialization()
 
 #[test]
 fn deferred_callable_creation_coverage_composes_through_calls_and_exact_owners() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "function factory() { return () => 3; }\nfunction nested() { return factory(); }\nconst selected = nested();\nconst result = selected();\nconsole.log(result);\n",
         vec![],
     ));
@@ -482,7 +482,7 @@ fn deferred_callable_creation_does_not_cover_unknown_getter_or_reentry_invocatio
         let source = format!(
             "globalThis.read = () => 3;\nglobalThis.reenter = () => undefined;\n{prefix}function factory() {{ return () => {{ {body} }}; }}\nconst selected = factory();\nconst result = selected();\nconsole.log(result);\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
         assert_preserved_entry_output(&fixture, "3\n");
         let execution = binding_execution_report(&fixture, "result");
         assert_ne!(
@@ -505,7 +505,7 @@ fn deferred_callable_creation_does_not_cover_unknown_getter_or_reentry_invocatio
 #[test]
 fn deferred_callable_operation_receipts_preserve_exact_native_prefix_dependencies() {
     const SOURCE: &str = "const cache = new Map();\nfunction factory() { return () => cache; }\nfunction nested() { return factory(); }\nconst selected = nested();\nconst result = selected();\nconsole.log(result === cache);\n";
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(SOURCE, vec![]).with_native_operation_inputs(
             "static/app",
             vec![native_constructor_input(

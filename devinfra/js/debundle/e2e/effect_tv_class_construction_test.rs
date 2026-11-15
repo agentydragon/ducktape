@@ -15,7 +15,7 @@ fn construction_source(class: &str, construction: &str, print: &str) -> String {
 }
 
 fn construction_fixture(source: &str) -> Fixture {
-    run_fixture(FixtureOpts::new(
+    run_fixture_with_graphs(FixtureOpts::new(
         source,
         vec![logical_module(
             "registry",

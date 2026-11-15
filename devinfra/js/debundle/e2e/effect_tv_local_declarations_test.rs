@@ -66,7 +66,7 @@ fn local_declaration_receipts_preserve_callable_selection_requirements() {
         let source = format!(
             "const seed = 41;\nfunction readSeed() {{ return seed; }}\nconst alias = {{run: readSeed}}.run;\nfunction invoke() {{ const selected = {selection}; return selected(); }}\nvar result = invoke();\nconsole.log(result);\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(
             &source,
             vec![logical_module(
                 "all",
@@ -98,7 +98,7 @@ fn local_declaration_receipts_refuse_captured_cells_and_rebinding() {
         let source = format!(
             "const seed = 41;\nfunction readSeed() {{ {body} }}\nvar result = readSeed();\nconsole.log(result);\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(
             &source,
             vec![logical_module(
                 "all",
@@ -136,7 +136,7 @@ fn abrupt_local_declarations_cannot_seal_binding_effects() {
         let source = format!(
             "const seed = 41;\nfunction throwSeed() {{ throw seed; }}\nfunction readSeed() {{ {body} }}\nvar result = readSeed();\nconsole.log(result);\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(
             &source,
             vec![logical_module(
                 "all",
@@ -170,7 +170,7 @@ fn primitive_leaves_close_scalar_callable_receipts_for_actual_inversions() {
         let source = format!(
             "function compute() {{ return {expression}; }}\nconst independent = 7;\nvar result = compute();\nconsole.log(independent, result);\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(
             &source,
             vec![logical_module(
                 "compute",
@@ -190,7 +190,7 @@ fn primitive_leaves_close_scalar_callable_receipts_for_actual_inversions() {
 
 #[test]
 fn scalar_primitive_result_does_not_cover_a_discarded_call() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "let calls = 0;\nfunction operand() { calls++; return 1; }\nfunction compute() { return void operand(); }\nvar result = compute();\nconsole.log(calls, result);\n",
         vec![logical_module(
             "all",
@@ -231,7 +231,7 @@ fn noncoercing_scalar_results_keep_local_call_receipts() {
         let source = format!(
             "const seed = {seed};\nfunction readSeed() {{ return {expression}; }}\nvar result = readSeed();\nconsole.log(result);\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(
             &source,
             vec![logical_module(
                 "all",
@@ -249,7 +249,7 @@ fn noncoercing_scalar_results_keep_local_call_receipts() {
 
 #[test]
 fn scalar_call_receipt_accepts_independent_statement_inversion() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "const seed = 41;\nfunction readSeed() { return !seed; }\nconst independent = 7;\nvar result = readSeed();\nconsole.log(independent, result);\n",
         vec![logical_module(
             "scalar",
@@ -284,7 +284,7 @@ fn numeric_local_updates_keep_receipts_across_an_independent_inversion() {
         let source = format!(
             "function bump() {{ {body} }}\nconst independent = 7;\nvar result = bump();\nconsole.log(independent, result);\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(
             &source,
             vec![logical_module(
                 "update",
@@ -308,7 +308,7 @@ fn numeric_local_updates_keep_receipts_across_an_independent_inversion() {
 
 #[test]
 fn numeric_parameter_update_store_keeps_receipt_across_an_independent_inversion() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "function bump(value) { value++; return value; }\nfunction invoke() { return bump(1); }\nconst independent = 7;\nvar result = invoke();\nconsole.log(independent, result);\n",
         vec![logical_module(
             "update",
@@ -339,7 +339,7 @@ fn numeric_local_updates_keep_const_tdz_and_symbol_failures_abrupt() {
     ] {
         let source =
             format!("function bump() {{ {body} }}\nvar result = bump();\nconsole.log(result);\n");
-        let fixture = run_fixture(FixtureOpts::new(
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(
             &source,
             vec![logical_module(
                 "all",
@@ -372,7 +372,7 @@ fn numeric_local_updates_refuse_bigint_coercion_and_captured_cells() {
         let source = format!(
             "let calls = 0;\nfunction bump() {{ {body} }}\nvar result = bump();\nconsole.log(result, calls);\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(
             &source,
             vec![logical_module(
                 "all",
@@ -399,7 +399,7 @@ fn noncoercing_scalar_operators_do_not_cover_abrupt_children() {
         let source = format!(
             "const seed = 41;\nfunction readSeed() {{ return {expression}; let later = seed; }}\nvar result = readSeed();\nconsole.log(result);\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(
             &source,
             vec![logical_module(
                 "all",
@@ -430,7 +430,7 @@ fn noncoercing_scalar_operators_refuse_unproved_getters() {
         let source = format!(
             "let counter = 0;\nconst seed = {{ get value() {{ return ++counter; }} }};\nfunction readSeed() {{ return {expression}; }}\nvar result = readSeed();\nconsole.log(result, counter);\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(
             &source,
             vec![logical_module(
                 "all",
@@ -454,7 +454,7 @@ fn noncoercing_scalar_operators_refuse_unproved_getters() {
 
 #[test]
 fn imported_primitive_return_relocates_with_an_operation_receipt() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "import { literal, make } from './peer.js';\nconst first = make(1);\nconst result = literal();\nconsole.log(first.input, result);\n",
             vec![logical_module("result", &[Member::new("result")])],

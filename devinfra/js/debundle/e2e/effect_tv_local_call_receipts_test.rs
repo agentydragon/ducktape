@@ -146,7 +146,7 @@ fn inline_callee_creation_executes_with_exact_operation_receipts() {
         ),
     ] {
         let source = format!("const result = {expression};\nconsole.log(result);\n");
-        let fixture = run_fixture(
+        let fixture = run_fixture_with_graphs(
             FixtureOpts::new(&source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
         );
         assert_preserved_entry_output(&fixture, "42\n");
@@ -484,7 +484,7 @@ fn default_parameter_reads_and_writes_keep_later_parameters_in_tdz() {
         let source = format!(
             "function factory(first = {default}, later = 2) {{ return first; }}\nconst result = factory();\nconsole.log(result);\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(
             &source,
             vec![logical_module(
                 "all",
@@ -1035,7 +1035,7 @@ fn refused_body_after_a_covered_call_leaves_the_root_binding_effects_open() {
         let source = format!(
             "const seed = ({{value: 41}});\nfunction readSeed() {{ return seed; }}\nfunction readSecond() {{ {second} }}\nvar result = (readSeed(), readSecond());\nconsole.log(String(result));\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(
             &source,
             vec![logical_module(
                 "all",

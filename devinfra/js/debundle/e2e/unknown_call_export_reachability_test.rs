@@ -116,7 +116,7 @@ console.log(later);
 
 #[test]
 fn normal_sequel_reads_the_stored_value_after_an_incomplete_initializer() {
-    let fixture = run_fixture(split_fixture(
+    let fixture = run_fixture_with_graphs(split_fixture(
         r#"const prefix = new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
@@ -142,7 +142,7 @@ fn throw_only_initializer_does_not_supply_a_normal_stored_value() {
     ] {
         let source =
             format!("const dynamic = {initializer}; const later = dynamic; console.log(later);\n");
-        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
         assert_preserved_entry_error(&fixture, "TypeError");
         let sequel = binding_execution(&fixture, "later");
         assert!(
@@ -304,7 +304,7 @@ console.log(later);
 
 #[test]
 fn terminal_call_completion_preserves_abrupt_and_callback_reach_boundaries() {
-    let throw_only = run_fixture(FixtureOpts::new(
+    let throw_only = run_fixture_with_graphs(FixtureOpts::new(
         r#"function stop() { throw new TypeError("stopped"); }
 const dynamic = stop();
 const sequel = dynamic(() => later);
@@ -327,7 +327,7 @@ console.log(sequel);
         "a call after the throw-only initializer must not acquire callback reach"
     );
 
-    let normal_return = run_fixture(FixtureOpts::new(
+    let normal_return = run_fixture_with_graphs(FixtureOpts::new(
         r#"function returnCallback() { return callback => callback(); }
 const dynamic = returnCallback();
 const sequel = dynamic(() => later);
@@ -353,7 +353,7 @@ console.log(sequel);
         "a normal returned callable must retain callback reach at its later invocation"
     );
 
-    let incomplete_throw_only = run_fixture(FixtureOpts::new(
+    let incomplete_throw_only = run_fixture_with_graphs(FixtureOpts::new(
         r#"function stopAfterCallback(callback) {
   callback();
   foreignTag`unreached`;
