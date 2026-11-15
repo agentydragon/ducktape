@@ -10,9 +10,11 @@ every rule type, and is the reader of the Kubernetes rule types of `PolicySet`
 
 `AGENTPLANE_POLICY_CONTROLLER_CONFIG_FILE` must name one readable YAML document matching
 [`settings.py`](settings.py). Unknown keys are rejected. Namespace scopes, listener addresses,
-audience and component reader/writer allowlists come only from that file; generic environment
+component service reader/writer allowlists come only from that file; generic environment
 overrides are not supported. This service has no service-specific runtime Secret settings.
 Kubernetes client configuration and telemetry still use their infrastructure environment.
+`grpc_audience`, `reader_accounts` and `writer_accounts` are decoded but ignored until their
+manifest omission has rolled out.
 
 ## Expiry
 
@@ -61,11 +63,11 @@ controller checks this instead. Such an object reports `KubernetesReady` `False`
   several Agentplane instances' controllers share a cluster.
 
 `PolicyService.GrantSandboxPolicyBinding` and `RevokeSandboxPolicyBinding` are the operator write
-boundary. Their Pod-bound writer allowlist is configured independently from the workload read/watch
-resolver; an empty `writer_accounts` list denies both methods. `writer_services` may separately list
-exact service SPIFFE IDs for these write methods. `reader_services` lists exact service SPIFFE IDs
+boundary. `writer_services` lists the exact service SPIFFE IDs allowed to write;
+an empty list denies writes. `reader_services` independently lists the exact service SPIFFE IDs
 for the policy read methods. Neither role implies the other, and both require the gRPC listener to
-verify clients with `grpc_tls.client_ca_file`. A service certificate proves only its listed service
+verify clients with `grpc_tls.client_ca_file`. Bearers, workload SVIDs and delegation envelopes
+are refused. A service certificate proves only its listed service
 identity; it does not prove a Kubernetes account, UID, or Pod. Grant requires the exact live Sandbox
 UID, its controller-owned ServiceAccount, and existing unique PolicySet names. It stores the Sandbox
 UID in a non-controller owner reference. Revoke requires the caller's Sandbox UID and observed
@@ -205,12 +207,10 @@ not exist. It is checked once the subject resolves and holds even when applying 
 observes bindings for one ServiceAccount, one Identity name, or every Identity subject;
 `WatchPolicySets` observes PolicySets; `WatchIdentities` observes Identities; and
 `ListPolicySetNames` returns one sorted snapshot of the PolicySet names visible to the caller. A
-directly configured reader may select another subject or Identities, see every set and watch
-Identities; other authenticated ServiceAccounts may read their own bindings and only sets named by
-those bindings. Losing a binding
-removes a set from that caller's view when no other binding names it. The server reviews the
-PolicyService-audience bearer at admission, before writes, and while idle; a changed or refused
-identity ends the stream.
+configured reader service may select any explicit ServiceAccount or Identity subject, see every
+set and watch Identities. A binding watch requires a selector: the service has no implicit account.
+The server revalidates the service certificate at admission, before each stream frame, and while
+idle; an expired or refused certificate ends the stream.
 
 Each stream sends snapshot chunks, `snapshot_complete`, then coalesced resource upserts and
 UID-fenced removals. It opens Kubernetes watches before reading the snapshot, so an intervening

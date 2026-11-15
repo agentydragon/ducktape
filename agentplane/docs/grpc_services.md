@@ -55,7 +55,8 @@ follows it; code that differs converges on it.
 
 - Backend caller authentication is independent of transport. App → Policy Service and Dispatcher →
   Central Sampler use service SVIDs over mutual TLS, verifying the destination workload-CA SVID, exact service URI
-  and `serverAuth` usage. Their legacy bearer admission remains configured for the separate auth cleanup. Other
+  and `serverAuth` usage. Policy admits only service SVIDs; the sampler retains bearer admission
+  until its receiver cutover. Other
   routes retain their configured caller and transport until their own cutover. A nil `ClientTLS` is an explicit
   plaintext setting for legacy and test routes; an invalid configured TLS value fails without downgrading.
 - Sandbox workload listeners authenticate the Runtime SVID with the shared
@@ -65,7 +66,7 @@ follows it; code that differs converges on it.
   destination TLS through the central proxy's opaque CONNECT tunnel; the proxy asserts no caller.
 - A Go server admits callers in one interceptor, `auth.Methods.ServerOptions`
   (`agentplane/identity/auth`): `auth.Methods` maps every served method's full name to a
-  `Rule` (`Accounts` for an allowlist, `AnySubject` for any workload subject a resolver authenticates,
+  `Rule` (`Services` for exact service SVIDs only, `Accounts` for a bearer account allowlist, `AnySubject` for any workload subject a resolver authenticates,
   `SVIDOrAccounts` for workload SVIDs plus a bearer account allowlist, `ReviewedServiceAccount` when a
   handler needs a verified ServiceAccount UID with an optional Pod proof, `ReviewedServiceAccountOrIdentity`
   when it also serves Identity callers, read

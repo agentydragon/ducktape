@@ -36,7 +36,7 @@ service PolicyService {
   rpc ListPolicySetNames(ListPolicySetNamesRequest) returns (ListPolicySetNamesResponse) {
     option (google.api.http) = {get: "/v1/policy-set-names"};
   }
-  // Every Identity in the policy namespace. Broad readers only.
+  // Every Identity in the policy namespace. Reader services only.
   rpc WatchIdentities(WatchIdentitiesRequest) returns (stream WatchIdentitiesResponse) {
     option (google.api.http) = {get: "/v1/identities:watch"};
   }
@@ -98,14 +98,14 @@ message GrantSandboxPolicyBindingResponse { PolicyBinding binding = 1; }
 message RevokeSandboxPolicyBindingResponse {}
 
 message WatchPolicyBindingsRequest {
-  // Absent selects the authenticated caller's ServiceAccount.
+  // Required: a service caller has no implicit ServiceAccount subject.
   oneof selector {
-    // The bindings naming this ServiceAccount. Broad readers may select one other than their own.
+    // The bindings naming this ServiceAccount.
     agentplane.proto.ServiceAccount subject = 1;
     // The bindings whose subject is the Identity of this name in the policy namespace, of whichever
-    // incarnation. Broad readers only.
+    // incarnation.
     string identity = 2;
-    // Every binding whose subject is an Identity; only true is valid. Broad readers only.
+    // Every binding whose subject is an Identity; only true is valid.
     bool every_identity = 3;
   }
 }

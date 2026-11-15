@@ -27,6 +27,7 @@ const (
 	ruleReviewedServiceAccount
 	ruleReviewedServiceAccountOrIdentity
 	ruleAnySubject
+	ruleServices
 )
 
 // Rule is who may call one gRPC method.
@@ -304,7 +305,7 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 			return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
 		}
 		return ctx, nil
-	case ruleAccounts, ruleSVIDOrAccounts, ruleReviewedServiceAccount, ruleReviewedServiceAccountOrIdentity, ruleAnySubject:
+	case ruleAccounts, ruleSVIDOrAccounts, ruleReviewedServiceAccount, ruleReviewedServiceAccountOrIdentity, ruleAnySubject, ruleServices:
 	default:
 		return nil, errMethodNotAllowed
 	}
@@ -319,6 +320,9 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 	}
 	if admitted, service, err := rule.admitService(ctx, resolveContext); service {
 		return admitted, err
+	}
+	if rule.kind == ruleServices {
+		return nil, status.Error(codes.Unauthenticated, "service certificate required")
 	}
 	md, _ := metadata.FromIncomingContext(ctx)
 	authorization := md.Get("authorization")

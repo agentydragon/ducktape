@@ -14,7 +14,6 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -23,7 +22,6 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/issuer"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
@@ -116,54 +114,15 @@ func run(c config) error {
 	if err != nil {
 		return err
 	}
-	readers := make([]auth.Account, 0, len(c.ReaderAccounts))
-	namespaces := slices.Clone(c.SubjectNamespaces)
-	for _, name := range c.ReaderAccounts {
-		var account auth.Account
-		if err := account.UnmarshalText([]byte(name)); err != nil {
-			return err
-		}
-		readers = append(readers, account)
-		if !slices.Contains(namespaces, account.Namespace) {
-			namespaces = append(namespaces, account.Namespace)
-		}
-	}
-	writers := make([]auth.Account, 0, len(c.WriterAccounts))
-	writerNamespaces := make([]string, 0, len(c.WriterAccounts))
-	for _, name := range c.WriterAccounts {
-		var account auth.Account
-		if err := account.UnmarshalText([]byte(name)); err != nil {
-			return err
-		}
-		writers = append(writers, account)
-		if !slices.Contains(writerNamespaces, account.Namespace) {
-			writerNamespaces = append(writerNamespaces, account.Namespace)
-		}
-	}
-	kube, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return err
-	}
-	readResolver, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.GRPCAudience, namespaces)
-	if err != nil {
-		return err
-	}
-	writeResolver := readResolver
-	if len(writerNamespaces) > 0 {
-		writeResolver, err = auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.GRPCAudience, writerNamespaces)
-		if err != nil {
-			return err
-		}
-	}
 	objects, err := client.NewWithWatch(config, client.Options{Scheme: scheme})
 	if err != nil {
 		return err
 	}
-	api, err := policyrpc.New(c.PolicyNamespace, c.WorkloadNamespaces, objects, readers, writers, c.ReaderServices, c.WriterServices)
+	api, err := policyrpc.New(c.PolicyNamespace, c.WorkloadNamespaces, objects, c.ReaderServices, c.WriterServices)
 	if err != nil {
 		return err
 	}
-	methods, err := api.Methods(readResolver, writeResolver)
+	methods, err := api.Methods()
 	if err != nil {
 		return err
 	}

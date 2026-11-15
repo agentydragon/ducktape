@@ -3,13 +3,13 @@ package rpc
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"reflect"
 	"slices"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -21,16 +21,16 @@ import (
 	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
-	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -40,28 +40,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
-
-type reviews struct{ revoked atomic.Bool }
-
-func (r *reviews) Create(_ context.Context, review *authenticationv1.TokenReview, _ metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
-	if r.revoked.Load() {
-		return &authenticationv1.TokenReview{}, nil
-	}
-	name := review.Spec.Token
-	if name != "app" && name != "alice" {
-		return &authenticationv1.TokenReview{}, nil
-	}
-	return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
-		Authenticated: true, Audiences: review.Spec.Audiences,
-		User: authenticationv1.UserInfo{
-			Username: "system:serviceaccount:tools:" + name, UID: "uid-" + name,
-			Extra: map[string]authenticationv1.ExtraValue{
-				"authentication.kubernetes.io/pod-name": {"policy-test-" + name},
-				"authentication.kubernetes.io/pod-uid":  {"pod-uid-" + name},
-			},
-		},
-	}}, nil
-}
 
 type serviceTestClient struct {
 	client.WithWatch
@@ -101,58 +79,60 @@ func (c *serviceTestClient) Delete(ctx context.Context, object client.Object, op
 	return c.WithWatch.Delete(ctx, object, options...)
 }
 
-func fixture(t *testing.T, objects ...client.Object) (policypb.PolicyServiceClient, *serviceTestClient, *reviews) {
-	return fixtureWithWriters(t, []auth.Account{{Namespace: "tools", Name: "app"}}, objects...)
+type policyClients map[string]policypb.PolicyServiceClient
+
+func fixture(t *testing.T, objects ...client.Object) (policyClients, *serviceTestClient) {
+	return fixtureWithWriters(t, []string{peertls.AppURI}, objects...)
 }
 
-func fixtureWithWriters(t *testing.T, writers []auth.Account, objects ...client.Object) (policypb.PolicyServiceClient, *serviceTestClient, *reviews) {
+func fixtureWithWriters(t *testing.T, writers []string, objects ...client.Object) (policyClients, *serviceTestClient) {
 	t.Helper()
 	scheme := runtime.NewScheme()
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	if err := policyapi.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	if err := sandboxapi.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	if err := workloadapi.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
+	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, policyapi.AddToScheme, sandboxapi.AddToScheme, workloadapi.AddToScheme} {
+		if err := add(scheme); err != nil {
+			t.Fatal(err)
+		}
 	}
 	kube := &serviceTestClient{WithWatch: fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()}
-	readers := []auth.Account{{Namespace: "tools", Name: "app"}}
-	service, err := New("policies", []string{"policies", "fake-workloads"}, kube, readers, writers, nil, nil)
+	service, err := New("policies", []string{"policies", "fake-workloads"}, kube, []string{peertls.AppURI}, writers)
 	if err != nil {
 		t.Fatal(err)
 	}
-	reviews := &reviews{}
-	readResolver, err := auth.NewResolver(reviews, "policy", []string{"tools"}, auth.WithVerdictTTL(0))
+	methods, err := service.Methods()
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeResolver, err := auth.NewResolver(reviews, "policy", []string{"tools"}, auth.WithVerdictTTL(0))
+	ca := transporttesting.NewCA(t)
+	serverSVID := ca.Issue(t, peertls.PolicyControllerURI)
+	serverCredentials, err := (peertls.ServerTLSListener{
+		Listen: ":0", CertFile: serverSVID.CertFile, KeyFile: serverSVID.KeyFile, ClientCAFile: ca.RootFile,
+	}).Credentials(peertls.PolicyControllerURI)
 	if err != nil {
 		t.Fatal(err)
 	}
+	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(serverCredentials))...)
+	policypb.RegisterPolicyServiceServer(server, service)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	methods, err := service.Methods(readResolver, writeResolver)
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := grpc.NewServer(methods.ServerOptions(time.Second)...)
-	policypb.RegisterPolicyServiceServer(server, service)
-	go server.Serve(listener)
+	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
-	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatal(err)
+	clients := policyClients{}
+	for name, uri := range map[string]string{"app": peertls.AppURI, "unlisted": peertls.NotificationsURI} {
+		svid := ca.Issue(t, uri)
+		config, err := svid.ClientTLSConfig(peertls.PolicyControllerURI)
+		if err != nil {
+			t.Fatal(err)
+		}
+		conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(config)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = conn.Close() })
+		clients[name] = policypb.NewPolicyServiceClient(conn)
 	}
-	t.Cleanup(func() { conn.Close() })
-	return policypb.NewPolicyServiceClient(conn), kube, reviews
+	return clients, kube
 }
 
 func TestPolicyServicePeerTLSUsesSeparateReadAndWriteAllowlists(t *testing.T) {
@@ -163,24 +143,21 @@ func TestPolicyServicePeerTLSUsesSeparateReadAndWriteAllowlists(t *testing.T) {
 		}
 	}
 	kube := &serviceTestClient{WithWatch: fake.NewClientBuilder().WithScheme(scheme).WithObjects(policySet("base")).Build()}
-	reader := auth.Account{Namespace: "tools", Name: "app"}
-	service, err := New("policies", []string{"policies", "fake-workloads"}, kube, []auth.Account{reader}, []auth.Account{reader},
+	service, err := New("policies", []string{"policies", "fake-workloads"}, kube,
 		[]string{peertls.ActionsURI}, []string{peertls.EgressProxyURI})
 	if err != nil {
 		t.Fatal(err)
 	}
-	reviews := &reviews{}
-	readResolver, err := auth.NewResolver(reviews, "policy", []string{"tools"}, auth.WithVerdictTTL(0))
+	methods, err := service.Methods()
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeResolver, err := auth.NewResolver(reviews, "policy", []string{"tools"}, auth.WithVerdictTTL(0))
-	if err != nil {
-		t.Fatal(err)
-	}
-	methods, err := service.Methods(readResolver, writeResolver)
-	if err != nil {
-		t.Fatal(err)
+
+	for _, method := range grpcmethods.Of(policypb.PolicyService_ServiceDesc) {
+		ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs("authorization", "Bearer test-token"))
+		if _, err := methods.AdmitContext(ctx, method.Name, time.Second); status.Code(err) != codes.Unauthenticated {
+			t.Errorf("bearer admission for %s: %v", method.Name, err)
+		}
 	}
 
 	ca := transporttesting.NewCA(t)
@@ -247,8 +224,8 @@ func TestPolicyServicePeerTLSUsesSeparateReadAndWriteAllowlists(t *testing.T) {
 		t.Fatal(err)
 	}
 	bearerClient := dial(t, bearerTLS)
-	if _, err := bearerClient.ListPolicySetNames(tokenContext(t, "app"), &policypb.ListPolicySetNamesRequest{}); err != nil {
-		t.Fatalf("legacy bearer read over TLS: %v", err)
+	if _, err := bearerClient.ListPolicySetNames(tokenContext(t, "app"), &policypb.ListPolicySetNamesRequest{}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("bearer read over TLS: %v", err)
 	}
 
 	untrustedCA := transporttesting.NewCA(t)
@@ -261,6 +238,13 @@ func TestPolicyServicePeerTLSUsesSeparateReadAndWriteAllowlists(t *testing.T) {
 	if _, err := untrustedClient.ListPolicySetNames(context.Background(), &policypb.ListPolicySetNamesRequest{}); err == nil {
 		t.Fatal("service certificate from an untrusted CA was admitted")
 	}
+}
+
+func testContext(t *testing.T) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	t.Cleanup(cancel)
+	return ctx
 }
 
 func tokenContext(t *testing.T, token string) context.Context {
@@ -285,43 +269,43 @@ func policySet(name string) *policyapi.PolicySet {
 	return &policyapi.PolicySet{ObjectMeta: metav1.ObjectMeta{Namespace: "policies", Name: name, UID: types.UID("uid-" + name), Generation: 1}, Spec: policyapi.PolicySetSpec{Rules: []policyapi.Rule{{Type: "action_auto_approve", Policy: &policyapi.ActionPolicy{Type: "exact_actions", Actions: map[string]policyapi.ActionNames{"group": {"inspect", "write"}}}}}}}
 }
 
-func TestPolicyWritesAreRestrictedToTheConfiguredWriterAccount(t *testing.T) {
-	api, _, _ := fixture(
+func TestPolicyWritesAreRestrictedToTheConfiguredWriterService(t *testing.T) {
+	api, _ := fixture(
 		t,
 		testSandbox("worker", "sandbox-uid"), testIdentity("agent-worker", nil), policySet("base"),
 	)
 	grant := &policypb.GrantSandboxPolicyBindingRequest{SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-uid", PolicySets: []string{"base"}}
-	if _, err := api.GrantSandboxPolicyBinding(tokenContext(t, "alice"), grant); status.Code(err) != codes.PermissionDenied {
+	if _, err := api["unlisted"].GrantSandboxPolicyBinding(testContext(t), grant); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("non-writer grant: %v", err)
 	}
 	revoke := &policypb.RevokeSandboxPolicyBindingRequest{SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-uid", BindingName: "grant", BindingUid: "binding-uid"}
-	if _, err := api.RevokeSandboxPolicyBinding(tokenContext(t, "alice"), revoke); status.Code(err) != codes.PermissionDenied {
+	if _, err := api["unlisted"].RevokeSandboxPolicyBinding(testContext(t), revoke); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("non-writer revoke: %v", err)
 	}
 }
 
 func TestEmptyWriterAllowlistDeniesPolicyWrites(t *testing.T) {
-	api, _, _ := fixtureWithWriters(
+	api, _ := fixtureWithWriters(
 		t, nil,
 		testSandbox("worker", "sandbox-uid"), testIdentity("agent-worker", nil), policySet("base"),
 	)
 	grant := &policypb.GrantSandboxPolicyBindingRequest{SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-uid", PolicySets: []string{"base"}}
-	if _, err := api.GrantSandboxPolicyBinding(tokenContext(t, "app"), grant); status.Code(err) != codes.PermissionDenied {
+	if _, err := api["app"].GrantSandboxPolicyBinding(testContext(t), grant); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("grant with empty writer allowlist: %v", err)
 	}
 	revoke := &policypb.RevokeSandboxPolicyBindingRequest{SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-uid", BindingName: "grant", BindingUid: "binding-uid"}
-	if _, err := api.RevokeSandboxPolicyBinding(tokenContext(t, "app"), revoke); status.Code(err) != codes.PermissionDenied {
+	if _, err := api["app"].RevokeSandboxPolicyBinding(testContext(t), revoke); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("revoke with empty writer allowlist: %v", err)
 	}
 }
 
 func TestGrantCreatesBindingForExactSandboxIncarnation(t *testing.T) {
-	api, kube, _ := fixture(
+	api, kube := fixture(
 		t,
 		testSandbox("worker", "sandbox-uid"), testIdentity("agent-worker", nil), policySet("base"),
 	)
 	expiresAt := timestamppb.New(time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC))
-	created, err := api.GrantSandboxPolicyBinding(tokenContext(t, "app"), &policypb.GrantSandboxPolicyBindingRequest{
+	created, err := api["app"].GrantSandboxPolicyBinding(testContext(t), &policypb.GrantSandboxPolicyBindingRequest{
 		SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-uid", PolicySets: []string{"base"}, ExpiresAt: expiresAt,
 	})
 	if err != nil {
@@ -348,12 +332,12 @@ func TestGrantCreatesBindingForExactSandboxIncarnation(t *testing.T) {
 }
 
 func TestGrantRejectsStaleSandboxAndInvalidPolicySets(t *testing.T) {
-	api, kube, _ := fixture(
+	api, kube := fixture(
 		t,
 		testSandbox("worker", "sandbox-current"), testIdentity("agent-worker", nil), policySet("base"),
 	)
 	call := func(uid string, sets ...string) error {
-		_, err := api.GrantSandboxPolicyBinding(tokenContext(t, "app"), &policypb.GrantSandboxPolicyBindingRequest{
+		_, err := api["app"].GrantSandboxPolicyBinding(testContext(t), &policypb.GrantSandboxPolicyBindingRequest{
 			SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: uid, PolicySets: sets,
 		})
 		return err
@@ -361,7 +345,7 @@ func TestGrantRejectsStaleSandboxAndInvalidPolicySets(t *testing.T) {
 	if err := call("sandbox-replaced", "base"); status.Code(err) != codes.NotFound {
 		t.Fatalf("stale Sandbox UID grant: %v", err)
 	}
-	if _, err := api.GrantSandboxPolicyBinding(tokenContext(t, "app"), &policypb.GrantSandboxPolicyBindingRequest{
+	if _, err := api["app"].GrantSandboxPolicyBinding(testContext(t), &policypb.GrantSandboxPolicyBindingRequest{
 		SandboxNamespace: "policies", SandboxName: "Upper", SandboxUid: "sandbox-current", PolicySets: []string{"base"},
 	}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("grant with invalid Sandbox name: %v", err)
@@ -381,7 +365,7 @@ func TestGrantRejectsStaleSandboxAndInvalidPolicySets(t *testing.T) {
 }
 
 func TestGrantDetectsSandboxReplacementAfterCreateAndCleansUp(t *testing.T) {
-	api, kube, _ := fixture(
+	api, kube := fixture(
 		t,
 		testSandbox("worker", "sandbox-old"), testIdentity("agent-worker", nil), policySet("base"),
 	)
@@ -399,7 +383,7 @@ func TestGrantDetectsSandboxReplacementAfterCreateAndCleansUp(t *testing.T) {
 		successor.UID, successor.ResourceVersion = "uid-agent-worker-successor", ""
 		return kube.WithWatch.Create(context.Background(), successor)
 	}
-	_, err := api.GrantSandboxPolicyBinding(tokenContext(t, "app"), &policypb.GrantSandboxPolicyBindingRequest{
+	_, err := api["app"].GrantSandboxPolicyBinding(testContext(t), &policypb.GrantSandboxPolicyBindingRequest{
 		SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-old", PolicySets: []string{"base"},
 	})
 	if status.Code(err) != codes.NotFound {
@@ -430,11 +414,11 @@ func operatorBinding(sandboxUID string) *policyapi.PolicyBinding {
 }
 
 func TestRevokeSandboxBindingUsesUIDResourceVersionPreconditions(t *testing.T) {
-	api, kube, _ := fixture(
+	api, kube := fixture(
 		t,
 		testSandbox("worker", "sandbox-uid"), testIdentity("agent-worker", nil), operatorBinding("sandbox-uid"),
 	)
-	_, err := api.RevokeSandboxPolicyBinding(tokenContext(t, "app"), &policypb.RevokeSandboxPolicyBindingRequest{
+	_, err := api["app"].RevokeSandboxPolicyBinding(testContext(t), &policypb.RevokeSandboxPolicyBindingRequest{
 		SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-uid", BindingName: "operator-grant", BindingUid: "uid-operator-grant",
 	})
 	if err != nil {
@@ -477,12 +461,12 @@ func TestRevokeRejectsStaleOrOwnedBindingsAndResourceVersionConflicts(t *testing
 		{name: "resourceVersion changed during delete", binding: func() *policyapi.PolicyBinding { return operatorBinding("sandbox-uid") }, bindingUID: "uid-operator-grant", conflict: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			api, kube, _ := fixture(
+			api, kube := fixture(
 				t,
 				testSandbox("worker", "sandbox-uid"), testIdentity("agent-worker", nil), test.binding(),
 			)
 			kube.forceDeleteConflict = test.conflict
-			_, err := api.RevokeSandboxPolicyBinding(tokenContext(t, "app"), &policypb.RevokeSandboxPolicyBindingRequest{
+			_, err := api["app"].RevokeSandboxPolicyBinding(testContext(t), &policypb.RevokeSandboxPolicyBindingRequest{
 				SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-uid", BindingName: "operator-grant", BindingUid: test.bindingUID,
 			})
 			if status.Code(err) != codes.Aborted {
@@ -547,32 +531,11 @@ func TestGeneratedSpecPreservesCRDJSON(t *testing.T) {
 	}
 }
 
-func TestRevokedCredentialEndsWatchBeforeAnotherFrame(t *testing.T) {
-	api, kube, reviews := fixture(t, binding("one", "alice", "base"))
-	stream, err := api.WatchPolicyBindings(tokenContext(t, "alice"), &policypb.WatchPolicyBindingsRequest{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := stream.Recv(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := stream.Recv(); err != nil {
-		t.Fatal(err)
-	}
-	reviews.revoked.Store(true)
-	if err := kube.Delete(context.Background(), binding("one", "alice", "base")); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := stream.Recv(); status.Code(err) != codes.Unauthenticated {
-		t.Fatalf("revoked watch: %v", err)
-	}
-}
-
 func TestBindingWatchScopeAndChanges(t *testing.T) {
 	otherNamespace := binding("other-namespace", "alice", "base")
 	otherNamespace.Namespace = "other-policies"
-	api, kube, _ := fixture(t, binding("one", "alice", "base"), binding("foreign", "bob", "private"), otherNamespace)
-	stream, err := api.WatchPolicyBindings(tokenContext(t, "alice"), &policypb.WatchPolicyBindingsRequest{})
+	api, kube := fixture(t, binding("one", "alice", "base"), binding("foreign", "bob", "private"), otherNamespace)
+	stream, err := api["app"].WatchPolicyBindings(testContext(t), &policypb.WatchPolicyBindingsRequest{Selector: &policypb.WatchPolicyBindingsRequest_Subject{Subject: &identitypb.ServiceAccount{Namespace: "tools", Name: "alice"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -596,7 +559,7 @@ func TestBindingWatchScopeAndChanges(t *testing.T) {
 	if frame.GetRemoved().GetUid() != "uid-one" {
 		t.Fatalf("removed = %v", frame)
 	}
-	denied, err := api.WatchPolicyBindings(tokenContext(t, "alice"), &policypb.WatchPolicyBindingsRequest{Selector: &policypb.WatchPolicyBindingsRequest_Subject{Subject: &identitypb.ServiceAccount{Namespace: "tools", Name: "bob"}}})
+	denied, err := api["unlisted"].WatchPolicyBindings(testContext(t), &policypb.WatchPolicyBindingsRequest{Selector: &policypb.WatchPolicyBindingsRequest_Subject{Subject: &identitypb.ServiceAccount{Namespace: "tools", Name: "bob"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -605,11 +568,11 @@ func TestBindingWatchScopeAndChanges(t *testing.T) {
 	}
 }
 
-func TestSetWatchRemovesSetsWhenBindingIsRevoked(t *testing.T) {
+func TestSetWatchFollowsPolicySetRemoval(t *testing.T) {
 	otherNamespace := policySet("base")
 	otherNamespace.Namespace = "other-policies"
-	api, kube, _ := fixture(t, binding("one", "alice", "base"), policySet("base"), policySet("private"), otherNamespace)
-	stream, err := api.WatchPolicySets(tokenContext(t, "alice"), &policypb.WatchPolicySetsRequest{})
+	api, kube := fixture(t, policySet("base"), otherNamespace)
+	stream, err := api["app"].WatchPolicySets(testContext(t), &policypb.WatchPolicySetsRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -623,7 +586,7 @@ func TestSetWatchRemovesSetsWhenBindingIsRevoked(t *testing.T) {
 	if frame, err := stream.Recv(); err != nil || frame.GetSnapshotComplete() == nil {
 		t.Fatalf("snapshot complete %v %v", frame, err)
 	}
-	if err := kube.Delete(context.Background(), binding("one", "alice", "base")); err != nil {
+	if err := kube.Delete(context.Background(), policySet("base")); err != nil {
 		t.Fatal(err)
 	}
 	frame, err := stream.Recv()
@@ -638,25 +601,17 @@ func TestSetWatchRemovesSetsWhenBindingIsRevoked(t *testing.T) {
 func TestListPolicySetNamesReturnsOneSortedCallerVisibleSnapshot(t *testing.T) {
 	otherNamespace := policySet("other-namespace")
 	otherNamespace.Namespace = "other-policies"
-	api, _, _ := fixture(
+	api, _ := fixture(
 		t,
 		binding("one", "alice", "base"), policySet("z-private"), policySet("base"), policySet("alpha"), otherNamespace,
 	)
 
-	for _, test := range []struct {
-		token string
-		want  []string
-	}{
-		{token: "app", want: []string{"alpha", "base", "z-private"}},
-		{token: "alice", want: []string{"base"}},
-	} {
-		response, err := api.ListPolicySetNames(tokenContext(t, test.token), &policypb.ListPolicySetNamesRequest{})
-		if err != nil {
-			t.Fatalf("ListPolicySetNames(%s): %v", test.token, err)
-		}
-		if !reflect.DeepEqual(response.GetNames(), test.want) {
-			t.Errorf("ListPolicySetNames(%s) = %v, want %v", test.token, response.GetNames(), test.want)
-		}
+	response, err := api["app"].ListPolicySetNames(testContext(t), &policypb.ListPolicySetNamesRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"alpha", "base", "z-private"}; !slices.Equal(response.GetNames(), want) {
+		t.Errorf("names = %v, want %v", response.GetNames(), want)
 	}
 }
 
@@ -686,7 +641,7 @@ func identityCredential(namespace, name string, identity *policyapi.Identity) *w
 }
 
 func TestIdentityBindingWatchesSelectOnlyIdentitySubjects(t *testing.T) {
-	api, _, _ := fixture(t, identityBinding("names-agent", "fake-agent", nil), identityBinding("names-other", "other-agent", nil), binding("account", "fake-agent", "base"))
+	api, _ := fixture(t, identityBinding("names-agent", "fake-agent", nil), identityBinding("names-other", "other-agent", nil), binding("account", "fake-agent", "base"))
 	byName := &policypb.WatchPolicyBindingsRequest{Selector: &policypb.WatchPolicyBindingsRequest_Identity{Identity: "fake-agent"}}
 	every := &policypb.WatchPolicyBindingsRequest{Selector: &policypb.WatchPolicyBindingsRequest_EveryIdentity{EveryIdentity: true}}
 	for _, tc := range []struct {
@@ -696,7 +651,7 @@ func TestIdentityBindingWatchesSelectOnlyIdentitySubjects(t *testing.T) {
 		{byName, []string{"names-agent"}},
 		{every, []string{"names-agent", "names-other"}},
 	} {
-		stream, err := api.WatchPolicyBindings(tokenContext(t, "app"), tc.request)
+		stream, err := api["app"].WatchPolicyBindings(testContext(t), tc.request)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -713,29 +668,30 @@ func TestIdentityBindingWatchesSelectOnlyIdentitySubjects(t *testing.T) {
 		}
 	}
 	for _, tc := range []struct {
-		token   string
+		caller  string
 		request *policypb.WatchPolicyBindingsRequest
 		want    codes.Code
 	}{
-		{"alice", byName, codes.PermissionDenied},
-		{"alice", every, codes.PermissionDenied},
+		{"unlisted", byName, codes.PermissionDenied},
+		{"unlisted", every, codes.PermissionDenied},
 		{"app", &policypb.WatchPolicyBindingsRequest{Selector: &policypb.WatchPolicyBindingsRequest_EveryIdentity{}}, codes.InvalidArgument},
 		{"app", &policypb.WatchPolicyBindingsRequest{Selector: &policypb.WatchPolicyBindingsRequest_Identity{}}, codes.InvalidArgument},
+		{"app", &policypb.WatchPolicyBindingsRequest{}, codes.InvalidArgument},
 	} {
-		refused, err := api.WatchPolicyBindings(tokenContext(t, tc.token), tc.request)
+		refused, err := api[tc.caller].WatchPolicyBindings(testContext(t), tc.request)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if _, err := refused.Recv(); status.Code(err) != tc.want {
-			t.Errorf("%s watching %v: %v, want %v", tc.token, tc.request, err, tc.want)
+			t.Errorf("%s watching %v: %v, want %v", tc.caller, tc.request, err, tc.want)
 		}
 	}
 }
 
-func TestIdentityWatchFollowsIdentitiesForBroadReadersOnly(t *testing.T) {
+func TestIdentityWatchFollowsIdentitiesForReaderServicesOnly(t *testing.T) {
 	flux := map[string]string{policyapi.FluxKustomizationNameLabel: "fake-kustomization"}
-	api, kube, _ := fixture(t, testIdentity("git-origin-identity", flux))
-	stream, err := api.WatchIdentities(tokenContext(t, "app"), &policypb.WatchIdentitiesRequest{})
+	api, kube := fixture(t, testIdentity("git-origin-identity", flux))
+	stream, err := api["app"].WatchIdentities(testContext(t), &policypb.WatchIdentitiesRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -765,19 +721,19 @@ func TestIdentityWatchFollowsIdentitiesForBroadReadersOnly(t *testing.T) {
 	if frame, err := stream.Recv(); err != nil || frame.GetRemoved().GetUid() != "uid-git-origin-identity" {
 		t.Fatalf("removed = %v %v", frame, err)
 	}
-	denied, err := api.WatchIdentities(tokenContext(t, "alice"), &policypb.WatchIdentitiesRequest{})
+	denied, err := api["unlisted"].WatchIdentities(testContext(t), &policypb.WatchIdentitiesRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := denied.Recv(); status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("narrow reader watching identities: %v", err)
+		t.Fatalf("unlisted service watching identities: %v", err)
 	}
 }
 
 func TestDeleteIdentityRemovesAnUnreferencedIdentityExactly(t *testing.T) {
 	identity := testIdentity("unreferenced-identity", nil)
-	api, kube, _ := fixture(t, identity, identityBinding("own-launch-binding", "unreferenced-identity", identity))
-	_, err := api.DeleteIdentity(tokenContext(t, "app"), &policypb.DeleteIdentityRequest{Namespace: "policies", Name: "unreferenced-identity", Uid: "uid-unreferenced-identity"})
+	api, kube := fixture(t, identity, identityBinding("own-launch-binding", "unreferenced-identity", identity))
+	_, err := api["app"].DeleteIdentity(testContext(t), &policypb.DeleteIdentityRequest{Namespace: "policies", Name: "unreferenced-identity", Uid: "uid-unreferenced-identity"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -794,7 +750,7 @@ func TestDeleteIdentityIgnoresCredentialsActingAsAnotherIdentity(t *testing.T) {
 	identity := testIdentity("unreferenced-identity", nil)
 	previous := testIdentity("unreferenced-identity", nil)
 	previous.UID = "uid-previous-incarnation"
-	api, kube, _ := fixture(
+	api, kube := fixture(
 		t, identity,
 		identityCredential("fake-workloads", "other-agent", testIdentity("other-identity", nil)),
 		identityCredential("fake-workloads", "previous-agent", previous),
@@ -803,7 +759,7 @@ func TestDeleteIdentityIgnoresCredentialsActingAsAnotherIdentity(t *testing.T) {
 			Spec:       workloadapi.WorkloadCredentialSpec{Subject: workloadapi.Subject{}},
 		},
 	)
-	if _, err := api.DeleteIdentity(tokenContext(t, "app"), &policypb.DeleteIdentityRequest{Namespace: "policies", Name: "unreferenced-identity", Uid: "uid-unreferenced-identity"}); err != nil {
+	if _, err := api["app"].DeleteIdentity(testContext(t), &policypb.DeleteIdentityRequest{Namespace: "policies", Name: "unreferenced-identity", Uid: "uid-unreferenced-identity"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := kube.Get(context.Background(), client.ObjectKey{Namespace: "policies", Name: "unreferenced-identity"}, &policyapi.Identity{}); !apierrors.IsNotFound(err) {
@@ -826,7 +782,7 @@ func refusalViolations(err error) []string {
 func TestDeleteIdentityRefusesWhileAWorkloadCredentialActsAsIt(t *testing.T) {
 	credentialed := testIdentity("credentialed-identity", nil)
 	both := testIdentity("doubly-referenced-identity", nil)
-	api, kube, _ := fixture(
+	api, kube := fixture(
 		t, credentialed, both,
 		identityCredential("fake-workloads", "standing-agent", credentialed),
 		identityCredential("policies", "sandbox-agent", credentialed),
@@ -840,7 +796,7 @@ func TestDeleteIdentityRefusesWhileAWorkloadCredentialActsAsIt(t *testing.T) {
 		{credentialed, []string{"WorkloadCredential/fake-workloads/standing-agent", "WorkloadCredential/policies/sandbox-agent"}},
 		{both, []string{"PolicyBinding/standing-grant", "WorkloadCredential/fake-workloads/standing-agent-2"}},
 	} {
-		_, err := api.DeleteIdentity(tokenContext(t, "app"), &policypb.DeleteIdentityRequest{Namespace: "policies", Name: tc.identity.Name, Uid: string(tc.identity.UID)})
+		_, err := api["app"].DeleteIdentity(testContext(t), &policypb.DeleteIdentityRequest{Namespace: "policies", Name: tc.identity.Name, Uid: string(tc.identity.UID)})
 		if status.Code(err) != codes.FailedPrecondition {
 			t.Fatalf("%s: %v, want FailedPrecondition", tc.identity.Name, err)
 		}
@@ -861,9 +817,9 @@ func TestDeleteIdentityRefusesNameOnlyCredentialUntilRemoved(t *testing.T) {
 	identity := testIdentity("credentialed-identity", nil)
 	credential := identityCredential("fake-workloads", "standing-agent", identity)
 	credential.Spec.Subject.Identity.UID = ""
-	api, kube, _ := fixture(t, identity, credential)
+	api, kube := fixture(t, identity, credential)
 	request := &policypb.DeleteIdentityRequest{Namespace: identity.Namespace, Name: identity.Name, Uid: string(identity.UID)}
-	_, err := api.DeleteIdentity(tokenContext(t, "app"), request)
+	_, err := api["app"].DeleteIdentity(testContext(t), request)
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("delete with name-only credential: %v, want FailedPrecondition", err)
 	}
@@ -877,7 +833,7 @@ func TestDeleteIdentityRefusesNameOnlyCredentialUntilRemoved(t *testing.T) {
 	if err := kube.Delete(t.Context(), credential); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := api.DeleteIdentity(tokenContext(t, "app"), request); err != nil {
+	if _, err := api["app"].DeleteIdentity(testContext(t), request); err != nil {
 		t.Fatalf("delete after credential removal: %v", err)
 	}
 	if err := kube.Get(t.Context(), client.ObjectKeyFromObject(identity), &policyapi.Identity{}); !apierrors.IsNotFound(err) {
@@ -890,14 +846,14 @@ func TestDeleteIdentityRefusesWhatItMustNotRemove(t *testing.T) {
 	// A binding owned by another incarnation of the same name is not this identity's own.
 	previous := testIdentity("referenced-identity", nil)
 	previous.UID = "uid-previous-incarnation"
-	api, kube, _ := fixture(
+	api, kube := fixture(
 		t,
 		referenced, identityBinding("standing-grant", "referenced-identity", nil), identityBinding("stale-owner", "referenced-identity", previous),
 		testIdentity("git-origin-identity", map[string]string{policyapi.FluxKustomizationNameLabel: "fake-kustomization"}),
 	)
 	for _, tc := range []struct {
 		name    string
-		token   string
+		caller  string
 		request *policypb.DeleteIdentityRequest
 		want    codes.Code
 	}{
@@ -906,9 +862,9 @@ func TestDeleteIdentityRefusesWhatItMustNotRemove(t *testing.T) {
 		{"replaced incarnation", "app", &policypb.DeleteIdentityRequest{Namespace: "policies", Name: "git-origin-identity", Uid: "uid-replaced"}, codes.Aborted},
 		{"another namespace", "app", &policypb.DeleteIdentityRequest{Namespace: "other-policies", Name: "referenced-identity", Uid: "uid-referenced-identity"}, codes.NotFound},
 		{"missing UID", "app", &policypb.DeleteIdentityRequest{Namespace: "policies", Name: "referenced-identity"}, codes.InvalidArgument},
-		{"non-writer", "alice", &policypb.DeleteIdentityRequest{Namespace: "policies", Name: "referenced-identity", Uid: "uid-referenced-identity"}, codes.PermissionDenied},
+		{"non-writer", "unlisted", &policypb.DeleteIdentityRequest{Namespace: "policies", Name: "referenced-identity", Uid: "uid-referenced-identity"}, codes.PermissionDenied},
 	} {
-		_, err := api.DeleteIdentity(tokenContext(t, tc.token), tc.request)
+		_, err := api[tc.caller].DeleteIdentity(testContext(t), tc.request)
 		if status.Code(err) != tc.want {
 			t.Errorf("%s: %v, want %v", tc.name, err, tc.want)
 		}
@@ -928,8 +884,8 @@ func TestDeleteIdentityRefusesWhatItMustNotRemove(t *testing.T) {
 }
 
 func TestCreateIdentityCreatesAnUnownedIdentityOnce(t *testing.T) {
-	api, kube, _ := fixture(t)
-	created, err := api.CreateIdentity(tokenContext(t, "app"), &policypb.CreateIdentityRequest{Name: "launch-a", Description: "Agent of launch a"})
+	api, kube := fixture(t)
+	created, err := api["app"].CreateIdentity(testContext(t), &policypb.CreateIdentityRequest{Name: "launch-a", Description: "Agent of launch a"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -943,21 +899,21 @@ func TestCreateIdentityCreatesAnUnownedIdentityOnce(t *testing.T) {
 	if len(stored.OwnerReferences) != 0 {
 		t.Fatalf("Identity owners = %v, want none", stored.OwnerReferences)
 	}
-	if _, err := api.CreateIdentity(tokenContext(t, "app"), &policypb.CreateIdentityRequest{Name: "launch-a", Description: "again"}); status.Code(err) != codes.AlreadyExists {
+	if _, err := api["app"].CreateIdentity(testContext(t), &policypb.CreateIdentityRequest{Name: "launch-a", Description: "again"}); status.Code(err) != codes.AlreadyExists {
 		t.Fatalf("second create: %v", err)
 	}
-	if _, err := api.CreateIdentity(tokenContext(t, "app"), &policypb.CreateIdentityRequest{Name: "launch-b"}); status.Code(err) != codes.InvalidArgument {
+	if _, err := api["app"].CreateIdentity(testContext(t), &policypb.CreateIdentityRequest{Name: "launch-b"}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("create without description: %v", err)
 	}
-	if _, err := api.CreateIdentity(tokenContext(t, "alice"), &policypb.CreateIdentityRequest{Name: "launch-c", Description: "x"}); status.Code(err) != codes.PermissionDenied {
+	if _, err := api["unlisted"].CreateIdentity(testContext(t), &policypb.CreateIdentityRequest{Name: "launch-c", Description: "x"}); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("non-writer create: %v", err)
 	}
 }
 
 func TestGrantIdentityPolicyBindingIsOwnedByTheExactIdentity(t *testing.T) {
 	identity := testIdentity("launch-a", nil)
-	api, kube, _ := fixture(t, identity, policySet("base"))
-	granted, err := api.GrantIdentityPolicyBinding(tokenContext(t, "app"), &policypb.GrantIdentityPolicyBindingRequest{
+	api, kube := fixture(t, identity, policySet("base"))
+	granted, err := api["app"].GrantIdentityPolicyBinding(testContext(t), &policypb.GrantIdentityPolicyBindingRequest{
 		IdentityName: "launch-a", IdentityUid: "uid-launch-a", PolicySets: []string{"base"},
 	})
 	if err != nil {
@@ -974,21 +930,66 @@ func TestGrantIdentityPolicyBindingIsOwnedByTheExactIdentity(t *testing.T) {
 		t.Fatalf("owners = %+v, want the Identity", stored.OwnerReferences)
 	}
 	// Owned, so it does not hold the Identity against deletion.
-	if _, err := api.DeleteIdentity(tokenContext(t, "app"), &policypb.DeleteIdentityRequest{Namespace: "policies", Name: "launch-a", Uid: "uid-launch-a"}); err != nil {
+	if _, err := api["app"].DeleteIdentity(testContext(t), &policypb.DeleteIdentityRequest{Namespace: "policies", Name: "launch-a", Uid: "uid-launch-a"}); err != nil {
 		t.Fatalf("delete with only owned grants: %v", err)
 	}
 }
 
 func TestGrantIdentityPolicyBindingRefusesAnotherIncarnationAndUnknownSets(t *testing.T) {
-	api, _, _ := fixture(t, testIdentity("launch-a", nil), policySet("base"))
+	api, _ := fixture(t, testIdentity("launch-a", nil), policySet("base"))
 	for name, request := range map[string]*policypb.GrantIdentityPolicyBindingRequest{
 		"stale UID":   {IdentityName: "launch-a", IdentityUid: "uid-previous", PolicySets: []string{"base"}},
 		"missing":     {IdentityName: "launch-z", IdentityUid: "uid-launch-z", PolicySets: []string{"base"}},
 		"unknown set": {IdentityName: "launch-a", IdentityUid: "uid-launch-a", PolicySets: []string{"nope"}},
 		"no sets":     {IdentityName: "launch-a", IdentityUid: "uid-launch-a"},
 	} {
-		if _, err := api.GrantIdentityPolicyBinding(tokenContext(t, "app"), request); err == nil {
+		if _, err := api["app"].GrantIdentityPolicyBinding(testContext(t), request); err == nil {
 			t.Errorf("%s: granted", name)
 		}
+	}
+}
+
+type bindingFrames struct {
+	grpc.ServerStream
+	frames []*policypb.WatchPolicyBindingsResponse
+}
+
+func (s *bindingFrames) Send(frame *policypb.WatchPolicyBindingsResponse) error {
+	s.frames = append(s.frames, frame)
+	return nil
+}
+
+func TestPolicyWatchRevalidatesServiceCertificateBeforeEachFrame(t *testing.T) {
+	ca := transporttesting.NewCA(t)
+	files := ca.Issue(t, peertls.AppURI)
+	pair, err := tls.LoadX509KeyPair(files.CertFile, files.KeyFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf, err := x509.ParseCertificate(pair.Certificate[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := peer.NewContext(t.Context(), &peer.Peer{AuthInfo: credentials.TLSInfo{State: tls.ConnectionState{PeerCertificates: []*x509.Certificate{leaf}}}})
+	rule, err := auth.Services([]string{peertls.AppURI})
+	if err != nil {
+		t.Fatal(err)
+	}
+	methods := auth.Methods{policypb.PolicyService_WatchPolicyBindings_FullMethodName: rule}
+	ctx, err = methods.AdmitContext(ctx, policypb.PolicyService_WatchPolicyBindings_FullMethodName, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream := &bindingFrames{}
+	frame := &policypb.WatchPolicyBindingsResponse{}
+	if err := send(ctx, stream, frame); err != nil {
+		t.Fatal(err)
+	}
+	leaf.NotAfter = time.Now().Add(-time.Minute)
+	if err := send(ctx, stream, frame); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("expired watch: %v", err)
+	}
+	if len(stream.frames) != 1 {
+		t.Fatalf("sent %d frames", len(stream.frames))
 	}
 }

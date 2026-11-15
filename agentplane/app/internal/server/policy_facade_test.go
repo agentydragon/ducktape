@@ -17,6 +17,9 @@ import (
 	egresspb "github.com/agentydragon/ducktape/agentplane/egress/api/admin/egress_adminpb"
 	rulespb "github.com/agentydragon/ducktape/agentplane/egress/api/rules/egress_rulespb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
@@ -28,14 +31,17 @@ import (
 
 type policyFacadeService struct {
 	policypb.UnimplementedPolicyServiceServer
-	request       *policypb.WatchPolicyBindingsRequest
-	authorization []string
+	request   *policypb.WatchPolicyBindingsRequest
+	admission auth.Admission
 }
 
 func (s *policyFacadeService) WatchPolicyBindings(request *policypb.WatchPolicyBindingsRequest, stream grpc.ServerStreamingServer[policypb.WatchPolicyBindingsResponse]) error {
 	s.request = request
-	md, _ := metadata.FromIncomingContext(stream.Context())
-	s.authorization = md.Get("authorization")
+	var err error
+	s.admission, err = auth.Admitted(stream.Context())
+	if err != nil {
+		return err
+	}
 	return stream.Send(&policypb.WatchPolicyBindingsResponse{Frame: &policypb.WatchPolicyBindingsResponse_SnapshotComplete{SnapshotComplete: &emptypb.Empty{}}})
 }
 
@@ -46,23 +52,36 @@ func policyUpstream(t *testing.T, service policypb.PolicyServiceServer) streamin
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := grpc.NewServer()
+	ca := transporttesting.NewCA(t)
+	serverSVID := ca.Issue(t, peertls.PolicyControllerURI)
+	serverCredentials, err := (peertls.ServerTLSListener{Listen: ":0", CertFile: serverSVID.CertFile, KeyFile: serverSVID.KeyFile, ClientCAFile: ca.RootFile}).Credentials(peertls.PolicyControllerURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule, err := auth.Services([]string{peertls.AppURI})
+	if err != nil {
+		t.Fatal(err)
+	}
+	methods := auth.Methods{
+		policypb.PolicyService_WatchPolicyBindings_FullMethodName: rule,
+		policypb.PolicyService_DeleteIdentity_FullMethodName:      rule,
+	}
+	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(serverCredentials))...)
 	policypb.RegisterPolicyServiceServer(server, service)
 	done := make(chan struct{})
 	go func() { defer close(done); _ = server.Serve(listener) }()
 	t.Cleanup(func() { server.Stop(); listener.Close(); <-done })
-	handler, err := facade.NewHandler(t.Context(), listener.Addr().String(), time.Second, policypb.RegisterPolicyServiceHandlerFromEndpoint)
+	appSVID := ca.Issue(t, peertls.AppURI)
+	handler, err := facade.NewHandlerWithOptions(t.Context(), listener.Addr().String(), time.Second, facade.HandlerOptions{
+		TLS: &peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.PolicyControllerURI, CertFile: appSVID.CertFile, KeyFile: appSVID.KeyFile, ClientURI: peertls.AppURI},
+	}, policypb.RegisterPolicyServiceHandlerFromEndpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
-	token := filepath.Join(t.TempDir(), "token")
-	if err := os.WriteFile(token, []byte("policy-token\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return upstreamproxy.NewHandlerUpstream(handler, token)
+	return upstreamproxy.NewHandlerUpstream(handler, "")
 }
 
-func TestGeneratedPolicyFacadeUsesAppTokenAndSubject(t *testing.T) {
+func TestGeneratedPolicyFacadeUsesAppSVIDAndSubject(t *testing.T) {
 	service := &policyFacadeService{}
 	upstream := policyUpstream(t, service)
 	request := httptest.NewRequest(http.MethodGet, "/upstream/policy/v1/policy-bindings:watch?subject.namespace=agents&subject.name=alice", nil)
@@ -76,8 +95,8 @@ func TestGeneratedPolicyFacadeUsesAppTokenAndSubject(t *testing.T) {
 	if service.request.GetSubject().GetNamespace() != "agents" || service.request.GetSubject().GetName() != "alice" {
 		t.Fatalf("request = %v", service.request)
 	}
-	if len(service.authorization) != 1 || service.authorization[0] != "Bearer policy-token" {
-		t.Fatalf("authorization = %v", service.authorization)
+	if service.admission != (auth.ServiceAdmission{Caller: auth.ServicePrincipal{SPIFFEID: peertls.AppURI}}) {
+		t.Fatalf("admission = %#v", service.admission)
 	}
 }
 

@@ -251,7 +251,9 @@ Kubernetes destination-audience token; they do not project first-party-service a
 
 The proxy's `forward` and services' `rpc` settings use the shared
 [authentication allowlist](../identity/auth/README.md); `forward` names `spiffe` alone. Each
-first-party service uses one TLS RPC listener for workload SVIDs and existing backend bearers. Protected calls reject both a certificate
+first-party service configures its own TLS RPC admission. PolicyService accepts only exact service
+SVIDs with separate reader and writer grants; its bearer path is retired. Other receivers retain
+their configured workload, service and bearer modes until their own cutover. Protected calls reject both a certificate
 and an application credential presented together. Admission stays method-specific: enabling both
 authentication modes on the listener does not grant access to backend-only methods, operator RPCs,
 or delegated calls.
