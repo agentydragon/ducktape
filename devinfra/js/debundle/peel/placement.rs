@@ -557,9 +557,6 @@ impl Solver<'_, '_, '_> {
                 self.visit_branches(branches)?;
                 return Ok(());
             }
-            let Ok(schedule) = schedule else {
-                unreachable!("schedule error was handled above");
-            };
 
             let cap_branches = self.new_owner_cap_branches(&state)?;
             if let Some(branches) = cap_branches {
@@ -594,7 +591,7 @@ impl Solver<'_, '_, '_> {
                 return Ok(());
             }
 
-            self.certify_candidate(projection.candidate, schedule)?;
+            self.certify_candidate(projection.candidate)?;
             return Ok(());
         }
     }
@@ -1099,17 +1096,14 @@ impl Solver<'_, '_, '_> {
         Ok(Some(branches))
     }
 
-    fn certify_candidate(
-        &mut self,
-        candidate: Candidate,
-        _schedule: EsmImportSchedule,
-    ) -> Result<()> {
+    fn certify_candidate(&mut self, candidate: Candidate) -> Result<()> {
         if self.stop_if_time() {
             return Ok(());
         }
-        if !self.in_scope(&candidate) {
-            return Ok(());
-        }
+        ensure!(
+            self.in_scope(&candidate),
+            "constructed placement disagreed with its move scope"
+        );
         let gain = self.problem.residual_gain(&candidate.assignment);
         if gain == 0 {
             return Ok(());
