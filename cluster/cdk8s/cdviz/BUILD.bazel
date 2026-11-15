@@ -1,5 +1,7 @@
+# gazelle:alias_kind grafana_dashboard py_library
 load("@aspect_bazel_lib//lib:copy_file.bzl", "copy_file")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//grafana:dashboard.bzl", "grafana_dashboard")
 
 # CNPG's hand-maintained BUILD is not indexed by Gazelle.
 # gazelle:resolve py cluster.cdk8s.cnpg.cluster //cluster/cdk8s/cnpg:cluster
@@ -87,12 +89,12 @@ py_library(
     name = "dashboards",
     srcs = ["dashboards.py"],
     data = [
+        ":ci-commit-feedback.json",
+        ":ci-workflow-timings.json",
         ":license",
     ],
     deps = [
-        ":commit_feedback",
         ":config",
-        ":workflow_timings",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/monitoring:grafana_instance",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
@@ -103,7 +105,7 @@ py_library(
         "//cluster/cdk8s/providers/grafana_operator:grafanadatasource",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
-        "@pypi//grafana_foundation_sdk",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -144,10 +146,10 @@ py_test(
         "github_api_server.py",
         "github_policy.vrl",
         "grants.sql",
+        ":ci-commit-feedback.json",
+        ":ci-workflow-timings.json",
         ":github_webhook_vrl",
         ":github_workflow_runs_vrl",
-        "//cluster/cdk8s/monitoring/dashboards:ci-commit-feedback.json",
-        "//cluster/cdk8s/monitoring/dashboards:ci-workflow-timings.json",
         "@nodejs_linux_amd64//:bin/node",
     ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
@@ -193,18 +195,20 @@ py_library(
     deps = ["@pypi//psycopg"],
 )
 
-py_library(
+grafana_dashboard(
     name = "workflow_timings",
     srcs = ["workflow_timings.py"],
+    json_name = "ci-workflow-timings.json",
     deps = [
         "//cluster/cdk8s/monitoring/dashboards:foundation",
         "@pypi//grafana_foundation_sdk",
     ],
 )
 
-py_library(
+grafana_dashboard(
     name = "commit_feedback",
     srcs = ["commit_feedback.py"],
+    json_name = "ci-commit-feedback.json",
     deps = [
         "//cluster/cdk8s/monitoring/dashboards:foundation",
         "@pypi//grafana_foundation_sdk",

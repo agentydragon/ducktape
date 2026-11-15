@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from grafana_foundation_sdk.cog.encoder import JSONEncoder
 from grafana_grafanadashboard_crds.org.integreatly.grafana import (
     GrafanaDashboardSpecDatasources,
     GrafanaDashboardSpecInstanceSelector,
@@ -22,10 +21,11 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecSelector,
 )
 from pydantic_settings import BaseSettings
+from python.runfiles import Runfiles
 
 from att_gateway.settings import Settings, SyslogLevel, SyslogSettings
 from cluster.cdk8s import pod_policy
-from cluster.cdk8s.att_gateway_exporter import access_code, home_gateway
+from cluster.cdk8s.att_gateway_exporter import access_code
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.home_lan import HOME_LAN
@@ -208,7 +208,9 @@ def chart(app: App) -> Chart:
             GrafanaDashboardSpecDatasources(input_name="DS_LOKI", datasource_name=grafana_instance.LOKI_DATASOURCE_UID),
             GrafanaDashboardSpecDatasources(input_name="DS_MIMIR", datasource_name="mimir"),
         ],
-        json=JSONEncoder().encode(home_gateway.build_dashboard()),
+        json=(
+            Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/att_gateway_exporter/home-gateway.json"
+        ).read_text(),
     )
     return chart
 

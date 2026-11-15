@@ -3,7 +3,6 @@
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ServiceAccount
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
-from grafana_foundation_sdk.cog.encoder import JSONEncoder
 from grafana_grafanadashboard_crds.org.integreatly.grafana import GrafanaDashboardSpecInstanceSelector
 from grafana_grafanadatasource_crds.org.integreatly.grafana import (
     GrafanaDatasourceSpecDatasource,
@@ -12,14 +11,16 @@ from grafana_grafanadatasource_crds.org.integreatly.grafana import (
     GrafanaDatasourceSpecValuesFromValueFrom,
     GrafanaDatasourceSpecValuesFromValueFromSecretKeyRef,
 )
+from python.runfiles import Runfiles
 
-from cluster.cdk8s.cdviz import commit_feedback, config, workflow_timings
+from cluster.cdk8s.cdviz import config
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.monitoring import grafana_instance
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
 from cluster.cdk8s.providers.grafana_operator.grafana_datasource import GrafanaDatasource
 
+_DASHBOARDS = Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/cdviz"
 _NAMESPACE = grafana_instance.SERVICE.pods.namespace
 _PASSWORD = "cdviz-database"
 
@@ -77,16 +78,13 @@ def chart(app: App) -> Chart:
             )
         ],
     )
-    for name, definition in (
-        ("ci-workflow-timings", workflow_timings.build_dashboard()),
-        ("ci-commit-feedback", commit_feedback.build_dashboard()),
-    ):
+    for name in ("ci-workflow-timings", "ci-commit-feedback"):
         GrafanaDashboard(
             chart,
             name,
             metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE),
             instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=grafana_instance.INSTANCE_LABELS),
             folder="CI",
-            json=JSONEncoder().encode(definition),
+            json=(_DASHBOARDS / f"{name}.json").read_text(),
         )
     return chart

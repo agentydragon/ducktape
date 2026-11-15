@@ -6,7 +6,6 @@ from collections.abc import Mapping
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy, KustomizationSpecHealthChecks
-from grafana_foundation_sdk.cog.encoder import JSONEncoder
 from grafana_grafana_crds.org.integreatly.grafana import (
     GrafanaSpecClient,
     GrafanaSpecDeployment,
@@ -27,34 +26,20 @@ from grafana_grafanadatasource_crds.org.integreatly.grafana import (
     GrafanaDatasourceSpecDatasource,
     GrafanaDatasourceSpecInstanceSelector,
 )
+from python.runfiles import Runfiles
 
 from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import mimir
-from cluster.cdk8s.monitoring.dashboards import (
-    buildbuddy_executor_pool,
-    cluster_disk_usage,
-    cluster_storage_io,
-    cpap_gateway_disk,
-    flux_cluster,
-    home_network_overview,
-    interface_flap_frequency,
-    io_pressure,
-    node_memory,
-    piraeus_storage,
-    rugged_power,
-    s3_operations,
-    storage_service_details,
-    zot_cache_image_pulls,
-)
 from cluster.cdk8s.providers.grafana_operator.grafana import Grafana
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
 from cluster.cdk8s.providers.grafana_operator.grafana_datasource import GrafanaDatasource
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
+_DASHBOARDS = Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/monitoring/dashboards"
 _NAME = "grafana"
 _NAMESPACE = "monitoring"
 HOSTNAME = "grafana.allegedly.works"
@@ -328,98 +313,98 @@ def _dashboards(chart: Chart) -> None:
         "buildbuddy-executor-pool",
         datasources={"DS_MIMIR": "mimir"},
         folder="CI",
-        json=JSONEncoder().encode(buildbuddy_executor_pool.build_dashboard()),
+        json=(_DASHBOARDS / "buildbuddy-executor-pool.json").read_text(),
     )
     _dashboard(
         chart,
         "zot-cache-image-pulls",
         datasources={"DS_LOKI": LOKI_DATASOURCE_UID, "DS_MIMIR": "mimir"},
         folder="Cluster & Platform",
-        json=JSONEncoder().encode(zot_cache_image_pulls.build_dashboard()),
+        json=(_DASHBOARDS / "zot-cache-image-pulls.json").read_text(),
     )
     _dashboard(
         chart,
         "interface-flap-frequency",
         datasources={"DS_LOKI": LOKI_DATASOURCE_UID, "DS_MIMIR": "mimir"},
         folder="Network",
-        json=JSONEncoder().encode(interface_flap_frequency.build_dashboard()),
+        json=(_DASHBOARDS / "interface-flap-frequency.json").read_text(),
     )
     _dashboard(
         chart,
         "node-memory",
         datasources={"DS_MIMIR": "mimir"},
         folder="Nodes & Hardware",
-        json=JSONEncoder().encode(node_memory.build_dashboard()),
+        json=(_DASHBOARDS / "node-memory.json").read_text(),
     )
     _dashboard(
         chart,
         "cluster-storage-io",
         datasources={"DS_LOKI": LOKI_DATASOURCE_UID, "DS_MIMIR": "mimir"},
         folder="Storage",
-        json=JSONEncoder().encode(cluster_storage_io.build_dashboard()),
+        json=(_DASHBOARDS / "cluster-storage-io.json").read_text(),
     )
     _dashboard(
         chart,
         "s3-operations",
         datasources={"DS_MIMIR": "mimir"},
         folder="Storage",
-        json=JSONEncoder().encode(s3_operations.build_dashboard()),
+        json=(_DASHBOARDS / "s3-operations.json").read_text(),
     )
     _dashboard(
         chart,
         "cluster-disk-usage",
         datasources={"DS_MIMIR": "mimir"},
         folder="Storage",
-        json=JSONEncoder().encode(cluster_disk_usage.build_dashboard()),
+        json=(_DASHBOARDS / "cluster-disk-usage.json").read_text(),
     )
     _dashboard(
         chart,
         "piraeus-storage",
         datasources={"DS_MIMIR": "mimir"},
         folder="Storage",
-        json=JSONEncoder().encode(piraeus_storage.build_dashboard()),
+        json=(_DASHBOARDS / "piraeus-storage.json").read_text(),
     )
     _dashboard(
         chart,
         "storage-service-details",
         datasources={"DS_MIMIR": "mimir"},
         folder="Storage",
-        json=JSONEncoder().encode(storage_service_details.build_dashboard()),
+        json=(_DASHBOARDS / "storage-service-details.json").read_text(),
     )
     _dashboard(
         chart,
         "io-pressure",
         datasources={"DS_MIMIR": "mimir"},
         folder="Storage",
-        json=JSONEncoder().encode(io_pressure.build_dashboard()),
+        json=(_DASHBOARDS / "io-pressure.json").read_text(),
     )
     _dashboard(
         chart,
         "home-network-overview",
         datasources={"DS_LOKI": LOKI_DATASOURCE_UID, "DS_MIMIR": "mimir"},
         folder="Network",
-        json=JSONEncoder().encode(home_network_overview.build_dashboard()),
+        json=(_DASHBOARDS / "home-network-overview.json").read_text(),
     )
     _dashboard(
         chart,
         "cpap-gateway-disk",
         datasources={"DS_MIMIR": "mimir"},
         folder="Cluster & Platform",
-        json=JSONEncoder().encode(cpap_gateway_disk.build_dashboard()),
+        json=(_DASHBOARDS / "cpap-gateway-disk.json").read_text(),
     )
     _dashboard(
         chart,
         "flux-cluster",
         datasources={"DS_MIMIR": "mimir"},
         folder="Cluster & Platform",
-        json=JSONEncoder().encode(flux_cluster.build_dashboard()),
+        json=(_DASHBOARDS / "flux-cluster.json").read_text(),
     )
     _dashboard(
         chart,
         "rugged-power",
         datasources={"DS_MIMIR": "mimir"},
         folder="Nodes & Hardware",
-        json=JSONEncoder().encode(rugged_power.build_dashboard()),
+        json=(_DASHBOARDS / "rugged-power.json").read_text(),
     )
     _dashboard(
         chart,
