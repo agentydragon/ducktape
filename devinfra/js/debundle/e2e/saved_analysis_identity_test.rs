@@ -375,6 +375,26 @@ fn identity_mismatch_is_refused() {
 }
 
 #[test]
+fn saved_analysis_rejects_corruption_after_its_complete_value() {
+    let (staged, _fixture) = staged(split_with_pure_import());
+    assert_ok(
+        &staged.run(&["--analysis", path(&staged.artifact)]).result,
+        "unmodified staged artifact",
+    );
+    let mut bytes = fs::read(&staged.artifact).unwrap();
+    // The complete analysis value remains intact. Reading it alone must not
+    // hide an invalid compressed frame after it, even with buffered read-ahead.
+    bytes.extend_from_slice(b"invalid trailing compressed frame");
+    fs::write(&staged.artifact, bytes).unwrap();
+    let refused = staged.run(&["--analysis", path(&staged.artifact)]);
+    assert!(
+        !refused.result.status.success(),
+        "accepted corrupted saved analysis: {}",
+        refused.result.stderr,
+    );
+}
+
+#[test]
 fn source_mismatch_is_refused() {
     let (staged, _fixture) = staged(split_with_pure_import());
     assert_ok(
