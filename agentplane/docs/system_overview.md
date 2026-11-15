@@ -82,7 +82,7 @@ flowchart LR
     edge -->|API, auth and streams| app
     app -->|gRPC health + read-only Runtime diagnostics| gw
     app -->|Dispatcher commands and watches: gRPC| gw
-    app --> hs
+    app -->|History reads: gRPC; service SVID admission available| hs
     app -->|gRPC operator watches + health| notif
     app -->|Action and MCP Linkage RPCs: gRPC| actions
     app -->|ConnectionService RPCs and health: gRPC| edge

@@ -282,7 +282,7 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
 			MinTime: 30 * time.Second, PermitWithoutStream: false,
 		}))
-	security, err := c.RPC.ServerCredentials(peertls.HistoryIngressURI)
+	security, err := c.RPC.ServerCredentialsWithServices(peertls.HistoryIngressURI)
 	if err != nil {
 		return err
 	}
