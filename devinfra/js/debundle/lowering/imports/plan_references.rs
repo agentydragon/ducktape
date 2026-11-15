@@ -3,7 +3,7 @@
 //! walks binding uses that retain both the source and emitted Id.
 
 use crate::body_facts::NaturalizedBodyFacts;
-use analysis::{BindingId, BindingKind, ModuleId};
+use analysis::{BindingId, BindingKind, ImportedSourceTarget, ModuleId};
 use anyhow::{Context, Result};
 use artifact::runtime_resources::{
     RuntimeResourceDestination, RuntimeResourceDestinations, RuntimeResourceKind,
@@ -22,7 +22,7 @@ use swc_ecma_ast::*;
 pub(crate) struct ImportedReexport {
     pub(crate) local: String,
     pub(crate) imported_name: String,
-    pub(crate) imported_from: String,
+    pub(crate) imported_source: ImportedSourceTarget,
     pub(crate) public_name: String,
 }
 
@@ -216,7 +216,7 @@ pub(crate) fn collect_imported_reexports_by_module(
         let local = &id.0;
         let BindingKind::Imported {
             imported_name,
-            imported_from,
+            imported_source,
             re_exporter,
             public_name,
         } = kind
@@ -230,7 +230,7 @@ pub(crate) fn collect_imported_reexports_by_module(
         reexports.push(ImportedReexport {
             local: local.to_string(),
             imported_name: imported_name.to_string(),
-            imported_from: imported_from.clone(),
+            imported_source: imported_source.clone(),
             public_name: public_name.to_string(),
         });
     }

@@ -25,7 +25,7 @@ use crate::plans::ModulePlan;
 use crate::rename_ledger::{RenameLedger, RenameScope, ScopeOccupancy, SealValidation};
 use crate::rewrite_runtime::rewrite_runtime_sources_for_target;
 use crate::visitors::{IdentifierRenamer, RenameCaptureProbe};
-use analysis::{BindingId, ModuleId, ModuleRole, top_level_id};
+use analysis::{BindingId, ImportedSourceTarget, ModuleId, ModuleRole, top_level_id};
 use anyhow::{Result, bail};
 use artifact::paths::join_module_path;
 use artifact::reports::SelectedModuleLowering;
@@ -447,10 +447,9 @@ pub(super) fn prepare_module_emission<'output>(
     // ImportSpecifier-bound members (`BindingKind::Imported` in
     // `assignment_analysis.inputs().binding_catalogue()`): for each `Imported` binding whose
     // `re_exported_by` map names this module, emit a re-import
-    // (using the local name as the alias) plus mirror the
-    // public-name export. Per-destination relative paths are
-    // computed here so multiple modules at different output
-    // depths each get a correctly-relativised path.
+    // (using the local name as the alias) plus mirror the public-name
+    // export. Output paths are rebased here per destination; external
+    // specifiers keep their original loader identity.
     let mut import_member_exports = BTreeMap::<String, String>::new();
     let reexports = imported_reexports;
     if !reexports.is_empty() {
@@ -458,10 +457,9 @@ pub(super) fn prepare_module_emission<'output>(
             .iter()
             .take_while(|item| matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_))))
             .count();
-        // `imported_from` on `BindingKind::Imported` is output-tree-
-        // rooted absolute; `plan.target_file` is chunk-rooted. Lift
-        // the destination to the same coordinate system before
-        // computing the relative path.
+        // Output paths are output-tree-rooted absolute;
+        // `plan.target_file` is chunk-rooted. Lift the destination to
+        // the same coordinate system before computing a relative path.
         let dest_abs = join_module_path(&[chunk_id, &plan.target_file]);
         // Group reexports by rewritten source so multiple bindings
         // re-exported from the same import-from end up in a single
@@ -472,7 +470,10 @@ pub(super) fn prepare_module_emission<'output>(
         // single-sourced with `source_chunk_imports_for_moved_body`.
         let mut pairs: Vec<(String, ImportSpecifier)> = Vec::with_capacity(reexports.len());
         for reexport in reexports {
-            let src = relative_source(&dest_abs, &reexport.imported_from);
+            let src = match &reexport.imported_source {
+                ImportedSourceTarget::OutputPath(path) => relative_source(&dest_abs, path),
+                ImportedSourceTarget::ExternalSpecifier(specifier) => specifier.clone(),
+            };
             let specifier = imported_binding_named_specifier(
                 &reexport.local,
                 &reexport.imported_name,

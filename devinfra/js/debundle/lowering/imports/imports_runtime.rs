@@ -9,6 +9,7 @@ use crate::imports::{
     ArtifactSourceImportResolutionCache, runtime_reimport_named_specifier,
     runtime_reimport_specifier,
 };
+use analysis::ImportedSourceTarget;
 use anyhow::{Context, Result, bail};
 use artifact::paths::{
     join_module_path, module_path_dirname, normalize_relative_module_specifier,
@@ -26,22 +27,22 @@ pub(crate) fn resolve_imported_binding(
     source_chunk_id: &str,
     source_runtime_file: &str,
     source_local: &str,
-    imported_from_by_src: &mut BTreeMap<String, String>,
-) -> Result<(String, String)> {
+    imported_source_by_src: &mut BTreeMap<String, ImportedSourceTarget>,
+) -> Result<(String, ImportedSourceTarget)> {
     let Some(info) = runtime_import_facts.lookup_by_sym(source_local) else {
         bail!("no import specifier found for `{source_local}` in source chunk");
     };
     let RuntimeImportKind::Named { imported } = &info.kind else {
         bail!("no named import specifier found for `{source_local}` in source chunk");
     };
-    let imported_from = if let Some(imported_from) = imported_from_by_src.get(&info.src) {
-        imported_from.clone()
+    let imported_source = if let Some(imported_source) = imported_source_by_src.get(&info.src) {
+        imported_source.clone()
     } else {
-        let imported_from = if let Some(target) =
+        let imported_source = if let Some(target) =
             source_import_cache.resolve(&info.src, source_chunk_id, source_runtime_file)?
         {
-            target.path
-        } else {
+            ImportedSourceTarget::OutputPath(target.path)
+        } else if info.src.starts_with('.') || info.src.starts_with('/') {
             // Source path doesn't reference a known chunk (e.g. a
             // synthetic e2e snapshot file with no entry in the artifact).
             // Resolve relative to the source chunk's directory in the
@@ -51,12 +52,14 @@ pub(crate) fn resolve_imported_binding(
                 &module_path_dirname(source_chunk_id),
                 &module_path_dirname(source_runtime_file),
             ]);
-            join_module_path(&[&chunk_runtime_abs, &info.src])
+            ImportedSourceTarget::OutputPath(join_module_path(&[&chunk_runtime_abs, &info.src]))
+        } else {
+            ImportedSourceTarget::ExternalSpecifier(info.src.clone())
         };
-        imported_from_by_src.insert(info.src.clone(), imported_from.clone());
-        imported_from
+        imported_source_by_src.insert(info.src.clone(), imported_source.clone());
+        imported_source
     };
-    Ok((imported.clone(), imported_from))
+    Ok((imported.clone(), imported_source))
 }
 
 /// Build re-imports for source-chunk ImportSpecifier-bound locals that

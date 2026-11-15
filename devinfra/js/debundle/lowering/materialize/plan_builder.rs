@@ -14,9 +14,9 @@ use crate::util::target_file_for_request;
 use analysis::assignment_assembly::assemble_assignment_with_source_unit_claims;
 use analysis::{
     BindingCatalogue, BindingKind, DependencyGraphAndAtomicGroups, DestructuringDeclaratorGroup,
-    DestructuringGroupOwnerClassification, EntryDestination, ModuleId, ModuleRole,
-    NestedVarDestinationClassification, NestedVarStatement, SourceUnitClass, SourceUnitLayout,
-    chunk_constraining_module_edges, classify_destructuring_group_owners,
+    DestructuringGroupOwnerClassification, EntryDestination, ImportedSourceTarget, ModuleId,
+    ModuleRole, NestedVarDestinationClassification, NestedVarStatement, SourceUnitClass,
+    SourceUnitLayout, chunk_constraining_module_edges, classify_destructuring_group_owners,
     classify_nested_var_placement, top_level_id,
 };
 use anyhow::{Context, Result, bail, ensure};
@@ -369,7 +369,7 @@ impl ChunkPlanBuilder {
         request: &mut LogicalRequest,
         ctx: &ExplicitRequestContext<'_>,
         imported_binding_resolver: &mut ArtifactSourceImportResolutionCache<'_>,
-        imported_from_by_src: &mut BTreeMap<String, String>,
+        imported_source_by_src: &mut BTreeMap<String, ImportedSourceTarget>,
     ) -> Result<()> {
         reject_duplicate_member_bindings(
             selector_outcome::ClaimOperation::LogicalModule,
@@ -460,13 +460,13 @@ impl ChunkPlanBuilder {
                 continue;
             }
             if member.selector.is_import_specifier() {
-                let (imported_name, imported_from) = resolve_imported_binding(
+                let (imported_name, imported_source) = resolve_imported_binding(
                     imported_binding_resolver,
                     ctx.runtime_import_facts,
                     ctx.chunk_id,
                     ctx.target_file,
                     &member.binding,
-                    imported_from_by_src,
+                    imported_source_by_src,
                 )?;
                 self.outcomes.record_selector_result(
                     ctx.chunk_id,
@@ -476,7 +476,7 @@ impl ChunkPlanBuilder {
                 );
                 let kind = BindingKind::Imported {
                     imported_name: imported_name.into(),
-                    imported_from,
+                    imported_source,
                     re_exporter: module_id,
                     public_name: member.export_name.as_str().into(),
                 };

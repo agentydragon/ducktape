@@ -64,8 +64,8 @@ pub use graph::{
     build_module_quotient, chunk_constraining_module_edges, position_lookup,
 };
 pub use ids::{
-    BindingCatalogue, BindingId, BindingKind, BindingScopeError, EntryDestination, LocalBindings,
-    ModuleId, ModuleRole, PlannedModule, top_level_id,
+    BindingCatalogue, BindingId, BindingKind, BindingScopeError, EntryDestination,
+    ImportedSourceTarget, LocalBindings, ModuleId, ModuleRole, PlannedModule, top_level_id,
 };
 pub use module_assignment::ModuleAssignment;
 pub use placement_projection::{

@@ -1098,6 +1098,11 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "import_source_target_test",
+    size = "small",
+)
+
+debundle_e2e_test(
     name = "duplicate_top_level_declaration_test",
     size = "small",
 )
