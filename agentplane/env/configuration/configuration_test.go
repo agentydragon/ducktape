@@ -10,6 +10,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
+	"go.uber.org/zap/zapcore"
 )
 
 func configurationFixture(t *testing.T) (map[string]any, string, string) {
@@ -401,5 +402,39 @@ func TestConfigurationPreservesExplicitPodPID1Mode(t *testing.T) {
 	}
 	if config.Supervision != "pid1" || !config.PodPID1 {
 		t.Fatalf("Pod PID1 mode was not preserved: supervision=%q pid1=%v", config.Supervision, config.PodPID1)
+	}
+}
+
+func TestConfigurationLogLevel(t *testing.T) {
+	t.Setenv("RUNNER_TEST_PROVIDER_TOKEN", "provider-secret")
+	for _, test := range []struct {
+		name       string
+		configured *string
+		want       zapcore.Level
+		valid      bool
+	}{
+		{name: "omitted", want: zapcore.InfoLevel, valid: true},
+		{name: "debug", configured: new("debug"), want: zapcore.DebugLevel, valid: true},
+		{name: "info", configured: new("info"), want: zapcore.InfoLevel, valid: true},
+		{name: "warn", configured: new("warn"), want: zapcore.WarnLevel, valid: true},
+		{name: "error", configured: new("error"), want: zapcore.ErrorLevel, valid: true},
+		{name: "empty", configured: new("")},
+		{name: "unknown", configured: new("trace")},
+		{name: "fatal", configured: new("fatal")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			value, path, launch := configurationFixture(t)
+			if test.configured != nil {
+				value["log_level"] = *test.configured
+			}
+			writeJSONFixture(t, path, value)
+			config, _, _, err := load(path, launch)
+			if (err == nil) != test.valid {
+				t.Fatalf("load error = %v, valid = %t", err, test.valid)
+			}
+			if err == nil && config.LogLevel != test.want {
+				t.Fatalf("log level = %v, want %v", config.LogLevel, test.want)
+			}
+		})
 	}
 }

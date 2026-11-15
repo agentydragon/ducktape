@@ -261,6 +261,10 @@ class Configuration(_RuntimeConfigModel):
     """All Environment Runtime policy supplied by its template, separate from Sandbox launch identity."""
 
     version: Literal[2]
+    log_level: Literal["debug", "info", "warn", "error"] | None = Field(
+        default=None,
+        description="Runtime log threshold; omission keeps info. Debug includes journal failure caller stacks.",
+    )
     session_reconcile_concurrency: int | None = Field(
         default=None,
         gt=0,

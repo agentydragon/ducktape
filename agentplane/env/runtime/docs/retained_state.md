@@ -56,6 +56,21 @@ a DELETE-mode `COMMIT` until the writer fails. SQL diagnostics belong on a consi
 not a live Runtime journal. An ordinary file copy of an actively written database and its sidecars
 does not establish a consistent snapshot.
 
+On a latched storage failure, find the first `Session journal failed` log entry. Its `phase`
+distinguishes writer reservation (`begin`), callback writes (`operation`), batch callback failure
+(`batch_callback`), savepoint creation/release, and `commit`. A `SQLITE_BUSY` at `begin` points to a
+competing writer; at `commit`, a reader can suffice. `sqlite_code` retains the driver's error code.
+`open_path_device`/`open_path_inode` and `failure_path_device`/`failure_path_inode` are pathname stats,
+not descriptor or lock-owner evidence; a stat failure is recorded instead. Combine these with
+contemporaneous descriptors and SQLite byte-range locks to identify a holder. Repeated `ErrFailed`
+messages report the latched failure, not continuing lock contention.
+
+Set the Runtime configuration's optional `log_level` to `debug` before startup to include the
+first failure's caller stack in a separate `Session journal failure caller` entry. The default
+`info` threshold keeps the failure record without the stack. New configuration fields require an
+image that understands them: pin the supporting runner-disk before setting `log_level`, and remove
+the field before rolling back to an older parser. Existing configuration needs no change.
+
 The stdout reader commits in groups (`Journal.WithBatch`): the lines one pipe read delivered and the
 Events derived from them share a transaction, so a burst of output costs one commit rather than one
 per Event. It commits early before writing to the harness, so the record precedes the write, and

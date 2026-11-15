@@ -16,6 +16,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/session_instructions"
+	"go.uber.org/zap/zapcore"
 )
 
 type SandboxIdentity struct {
@@ -54,6 +55,7 @@ type EnvironmentRuntimeControlConfiguration struct {
 }
 
 type Resolved struct {
+	LogLevel                         zapcore.Level
 	Control                          EnvironmentRuntimeControlConfiguration
 	ModelConfigTarget                *string
 	StateDir                         string

@@ -20,11 +20,13 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 // Configuration is the file contract used by every Environment Runtime deployment. Sandbox
 // identity/bootstrap are supplied separately by the Sandbox Controller.
 type Configuration struct {
+	LogLevel                      *string                                `json:"log_level"`
 	Version                       int                                    `json:"version"`
 	SessionReconcileConcurrency   *int                                   `json:"session_reconcile_concurrency"`
 	StateDir                      string                                 `json:"state_dir"`
@@ -336,6 +338,17 @@ func validateEnvironmentRuntimeControl(control EnvironmentRuntimeControlConfigur
 }
 
 func (f Configuration) compose(launchPath string) (Resolved, map[string]string, error) {
+	logLevel := zapcore.InfoLevel
+	if f.LogLevel != nil {
+		switch *f.LogLevel {
+		case "debug", "info", "warn", "error":
+			if err := logLevel.UnmarshalText([]byte(*f.LogLevel)); err != nil {
+				return Resolved{}, nil, err
+			}
+		default:
+			return Resolved{}, nil, errors.New("log_level must be debug, info, warn or error")
+		}
+	}
 	sessionReconcileConcurrency := DefaultSessionReconcileConcurrency
 	if f.SessionReconcileConcurrency != nil {
 		if *f.SessionReconcileConcurrency <= 0 {
@@ -436,6 +449,7 @@ func (f Configuration) compose(launchPath string) (Resolved, map[string]string, 
 	}
 	launch.PlatformInstructions = strings.TrimSpace(f.PlatformInstructions)
 	config := Resolved{
+		LogLevel:                    logLevel,
 		Control:                     f.Control,
 		StateDir:                    f.StateDir,
 		SessionReconcileConcurrency: sessionReconcileConcurrency,
