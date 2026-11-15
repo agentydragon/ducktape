@@ -12,6 +12,7 @@ from cdk8s_plus_34 import EnvValue
 from more_itertools import one
 
 from agentplane.net.peertls.config import (
+    ACTIONS_URI,
     APP_URI,
     CENTRAL_SAMPLER_URI,
     HISTORY_SERVICE_URI,
@@ -356,21 +357,37 @@ def test_session_delegation_offers_all_reviewed_direct_tools(scratch_app: App) -
     }
     dispatcher = session_dispatcher.service(env.namespace)
     history = history_service.service(env.namespace)
-    assert settings["session_delegation_dispatcher"] == {
-        "target": f"{dispatcher.fqdn}:{dispatcher.port.number}",
-        "token_file": "/var/run/secrets/actions/dispatcher",
-        "request_timeout_s": actions._DELEGATED_PEER_TIMEOUT_SECONDS,
-        "tls": {"ca_file": workload_tls.TRUST_BUNDLE_FILE, "server_uri": SESSION_DISPATCHER_URI},
-    }
-    assert settings["session_delegation_history"] == {
-        "target": f"{history.fqdn}:{history.pod_port}",
-        "token_file": "/var/run/secrets/actions/history",
-        "request_timeout_s": actions._DELEGATED_PEER_TIMEOUT_SECONDS,
-        "tls": {"ca_file": workload_tls.TRUST_BUNDLE_FILE, "server_uri": HISTORY_SERVICE_URI},
-    }
     deployment = one(
         doc for doc in documents if doc["kind"] == "Deployment" and doc["metadata"]["name"] == actions.NAME
     )
+    pod = deployment["spec"]["template"]["spec"]
+    container = one(item for item in pod["containers"] if item["name"] == actions.NAME)
+    volumes = {volume["name"]: volume for volume in pod["volumes"]}
+    mounts = {mount["mountPath"]: volumes[mount["name"]] for mount in container["volumeMounts"]}
+    certificate = one(doc for doc in documents if doc["kind"] == "Certificate")
+    assert certificate["spec"]["uris"] == [ACTIONS_URI]
+    for peer_name, server_uri, target in [
+        ("session_dispatcher", SESSION_DISPATCHER_URI, f"{dispatcher.fqdn}:{dispatcher.port.number}"),
+        ("session_delegation_dispatcher", SESSION_DISPATCHER_URI, f"{dispatcher.fqdn}:{dispatcher.port.number}"),
+        ("history_service", HISTORY_SERVICE_URI, f"{history.fqdn}:{history.pod_port}"),
+        ("session_delegation_history", HISTORY_SERVICE_URI, f"{history.fqdn}:{history.pod_port}"),
+    ]:
+        peer = settings[peer_name]
+        assert peer["target"] == target
+        assert peer["token_file"] == ""
+        tls = peer["tls"]
+        assert tls["server_uri"] == server_uri
+        assert certificate["spec"]["uris"] == [tls["client_uri"]]
+        for path_key in ["cert_file", "key_file"]:
+            mount = mounts[tls[path_key].rsplit("/", 1)[0]]
+            assert mount["secret"]["secretName"] == certificate["spec"]["secretName"]
+        trust_mount = mounts[tls["ca_file"].rsplit("/", 1)[0]]
+        assert trust_mount["configMap"]["name"] == "agentplane-workload-ca-bundle"
+        assert peer["request_timeout_s"] == (
+            actions._DELEGATED_PEER_TIMEOUT_SECONDS
+            if peer_name.startswith("session_delegation_")
+            else actions._PEER_TIMEOUT_SECONDS
+        )
     tokens = {
         source["serviceAccountToken"]["path"]: source["serviceAccountToken"]
         for volume in deployment["spec"]["template"]["spec"]["volumes"]

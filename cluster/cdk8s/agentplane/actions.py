@@ -349,29 +349,25 @@ class Actions(Construct):
             groups[ORCHESTRATION_GROUP] = _orchestration_group(env, props.orchestration_v1)
             dispatcher_peer = ServicePeer(
                 target=f"{dispatcher.fqdn}:{dispatcher.port.number}",
-                token_file=f"{_PEER_TOKEN_DIR}/dispatcher",
                 request_timeout_s=_PEER_TIMEOUT_SECONDS,
-                tls=workload_tls.client_tls(SESSION_DISPATCHER_URI),
+                tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=ACTIONS_URI),
             )
             history_peer = ServicePeer(
                 target=f"{history.fqdn}:{history.pod_port}",
-                token_file=f"{_PEER_TOKEN_DIR}/history",
                 request_timeout_s=_PEER_TIMEOUT_SECONDS,
-                tls=workload_tls.client_tls(HISTORY_SERVICE_URI),
+                tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=ACTIONS_URI),
             )
         if props.session_delegation is not None:
             groups.update(_session_delegation_groups(props.session_delegation))
             delegated_dispatcher_peer = ServicePeer(
                 target=f"{dispatcher.fqdn}:{dispatcher.port.number}",
-                token_file=f"{_PEER_TOKEN_DIR}/dispatcher",
                 request_timeout_s=_DELEGATED_PEER_TIMEOUT_SECONDS,
-                tls=workload_tls.client_tls(SESSION_DISPATCHER_URI),
+                tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=ACTIONS_URI),
             )
             delegated_history_peer = ServicePeer(
                 target=f"{history.fqdn}:{history.pod_port}",
-                token_file=f"{_PEER_TOKEN_DIR}/history",
                 request_timeout_s=_DELEGATED_PEER_TIMEOUT_SECONDS,
-                tls=workload_tls.client_tls(HISTORY_SERVICE_URI),
+                tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=ACTIONS_URI),
             )
         settings_name = "actions-settings"
         workload = self._add_workload(settings_name)
