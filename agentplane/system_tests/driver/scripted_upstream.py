@@ -1,8 +1,8 @@
 """The model behind LLM ingress in scripted scenarios: the scenario answers each request itself.
 
 A target whose LLM ingress forwards to this process in place of LiteLLM supplies a held listening
-socket. Requests queue per Sandbox Pod, named by the identity header the ingress stamps, and
-per dialect, so a scenario scripts only its own Sandbox's model. Every request body is kept in the
+socket. Requests queue per Sandbox Pod or central Session, named by the verified attribution the ingress
+stamps, and per dialect, so a scenario scripts only its own model. Every request body is kept in the
 test's undeclared outputs, so a failure shows what the harness actually sent.
 """
 
@@ -31,7 +31,7 @@ from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 # `session_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf
 
-# LLM ingress replaces any caller's value with the verified Pod's (agentplane/llm_ingress/README.md).
+# LLM ingress replaces caller headers with verified attribution (agentplane/llm_ingress/README.md).
 _IDENTITY_HEADER = "x-litellm-spend-logs-metadata"
 
 
@@ -41,35 +41,42 @@ class ScriptedUpstream:
         self._messages: defaultdict[str, AnthropicMessages] = defaultdict(AnthropicMessages)
         self._responses: defaultdict[str, OpenAIResponses] = defaultdict(OpenAIResponses)
         self._received = itertools.count(1)
-        self._case_pods: ContextVar[set[str] | None] = ContextVar("scripted_case_pods", default=None)
+        self._case_routes: ContextVar[set[str] | None] = ContextVar("scripted_case_routes", default=None)
 
     def model(self, pod: str, harness: session_pb2.Harness) -> ScriptedModel[Any]:
         """The model `harness` in Sandbox Pod `pod` talks to."""
-        if (pods := self._case_pods.get()) is not None:
-            pods.add(pod)
+        return self._model(f"pod-{pod}", harness)
+
+    def session_model(self, session_id: str, harness: session_pb2.Harness) -> ScriptedModel[Any]:
+        """The model for a central Session, independent of its sampler Pod or environments."""
+        return self._model(f"session-{session_id}", harness)
+
+    def _model(self, route: str, harness: session_pb2.Harness) -> ScriptedModel[Any]:
+        if (routes := self._case_routes.get()) is not None:
+            routes.add(route)
         match harness:
             case session_pb2.HARNESS_CLAUDE:
-                return ClaudeModel(self._messages[pod])
+                return ClaudeModel(self._messages[route])
             case session_pb2.HARNESS_CODEX:
-                return CodexModel(self._responses[pod])
+                return CodexModel(self._responses[route])
         raise ValueError(f"unsupported {harness=}")
 
     @asynccontextmanager
     async def case_scope(self) -> AsyncIterator[None]:
-        """Check and release this case's queues before its Pod identity can be reused."""
-        if self._case_pods.get() is not None:
+        """Check and release this case's queues before its route can be reused."""
+        if self._case_routes.get() is not None:
             raise RuntimeError("scripted model case scopes cannot nest")
-        pods: set[str] = set()
-        token = self._case_pods.set(pods)
+        routes: set[str] = set()
+        token = self._case_routes.set(routes)
         try:
             yield
         finally:
-            self._case_pods.reset(token)
+            self._case_routes.reset(token)
             async with asyncio.TaskGroup() as checks:
-                for pod in pods:
-                    if (messages := self._messages.pop(pod, None)) is not None:
+                for route in routes:
+                    if (messages := self._messages.pop(route, None)) is not None:
                         checks.create_task(messages.stop())
-                    if (responses := self._responses.pop(pod, None)) is not None:
+                    if (responses := self._responses.pop(route, None)) is not None:
                         checks.create_task(responses.stop())
 
     @asynccontextmanager
@@ -92,16 +99,19 @@ class ScriptedUpstream:
             await endpoint.stop()
 
     async def _serve_messages(self, request: web.Request) -> web.StreamResponse:
-        return await self._messages[await self._pod(request)].serve(request)
+        return await self._messages[await self._route(request)].serve(request)
 
     async def _serve_responses(self, request: web.Request) -> web.StreamResponse:
-        return await self._responses[await self._pod(request)].serve(request)
+        return await self._responses[await self._route(request)].serve(request)
 
-    async def _pod(self, request: web.Request) -> str:
-        """The requesting Pod, after keeping the body under its name."""
-        pod = str(json.loads(request.headers[_IDENTITY_HEADER])["agentplane.pod_name"])
-        kept = undeclared_outputs_dir() / "scripted_upstream" / f"{next(self._received):03}-{pod}.json"
+    async def _route(self, request: web.Request) -> str:
+        claims = json.loads(request.headers[_IDENTITY_HEADER])
+        if "agentplane.session_id" in claims:
+            route = f"session-{claims['agentplane.session_id']}"
+        else:
+            route = f"pod-{claims['agentplane.pod_name']}"
+        kept = undeclared_outputs_dir() / "scripted_upstream" / f"{next(self._received):03}-{route}.json"
         kept.parent.mkdir(exist_ok=True)
         # aiohttp caches the body, so the endpoint parses the same bytes.
         kept.write_bytes(await request.read())
-        return pod
+        return route
