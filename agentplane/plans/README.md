@@ -7,9 +7,10 @@ the [task DAG](task_dag.md) is authoritative for status and dependencies.
 [Maintenance conventions](../docs/task_dag_maintenance.md) distinguish dispatchable phases,
 operator decisions and proportional acceptance from the [low-priority freezer](task_freezer.md).
 
-Start dispatch from the [stakeholder priorities](task_dag.md#stakeholder-priorities-2026-10-30-pdt):
-session resilience first, then the daily CI agent and caller-privilege Session spawning, with small
-launch-UX improvements alongside. Component TODOs and research plans do not set a competing queue.
+Start dispatch from the [stakeholder priorities](task_dag.md#stakeholder-priorities-2026-10-30-pdt),
+stale since their sprint ended on 2026-11-13 until the operator restates them: session resilience
+first, then the daily CI agent and caller-privilege Session spawning, with small launch-UX
+improvements alongside. Component TODOs and research plans do not set a competing queue.
 
 ## Open plans and gates
 
@@ -44,8 +45,10 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
 - [Identities, workload authentication and Kubernetes accounts](identity_and_kubernetes_accounts.md) —
   the target (one `Identity`, three credential forms), identity-lifetime rules and open questions;
   the Sandbox switch is accepted on staging, and question 11 is settled
-- [Service SVID authentication inventory](service_svid_authentication.md) — caller-to-receiver
-  paths, current credential and transport gaps, and the approved component-authentication rollout
+- [Service SVID authentication inventory](service_svid_authentication.md) — the stage 1
+  caller-to-receiver baseline and the target service authentication contract
+- [Service SVID cutover readiness](service_svid_stage5_readiness.md) — stage 5's per-receiver bearer
+  retirement sequence and progress
 - [The `environment` rule type](environment_rules.md) — proposed schema, evaluation points and
   worked examples for explicit environment lifecycle grants to Identities, with the operator's
   remaining questions

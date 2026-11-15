@@ -11,8 +11,8 @@ intra-Sandbox hardening reminder retained here at Rai's request.
 ### Stakeholder priorities, 2026-10-30 PDT
 
 **Stale, 2026-11-14:** these priorities were set for a two-week sprint that ended about 2026-11-13.
-They stand until the operator restates them. The work the operator released on 2026-11-14 is
-listed under [Released 2026-11-14](#released-2026-11-14); releasing work is not a priority statement.
+They stand until the operator restates them. Work the operator has released is
+listed under [Released work in flight](#released-work-in-flight-2026-11-15); releasing work is not a priority statement.
 
 The product goal is reliable long-running agents in the operator's cluster and environments:
 both agents pursuing ongoing goals and standing roles that wake for messages or events. The first
@@ -177,51 +177,35 @@ chosen change actually needs it. Existing technical, authorization, data-preserv
 operator-review gates remain in the owning nodes. Lower-priority maintenance stays in its sections;
 its old ordering does not give it precedence over the selected tracks.
 
-### Released 2026-11-14
+### Released work in flight, 2026-11-15
 
-The operator released these tracks on 2026-11-14; Codex workers build them, and the PR numbers are
-their state at 00:05 UTC. Each row's node owns its gates; the Go reorganization behind several of them
-is [section 17](#17-two-binaries-and-the-go-layout).
+The operator released these tracks; Codex workers build them. Each node owns its gates; the Go
+reorganization behind the Runtime proxy move is [section 17](#17-two-binaries-and-the-go-layout).
+States as of 11:30 UTC.
 
-| Track                              | Operator release (UTC)                  | Node                                                                | State                                                                                                                                                              |
-| ---------------------------------- | --------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Pre-cutover leftovers              | 01:41, "dispatch 1, 2"                  | `REFACTOR_COHERENCE_AUDIT`                                          | Merged #16323, #16331, #16340, #16341; #16336 and #16356 closed (History keeps Sessions without a Sandbox UID)                                                     |
-| TLS on the two plaintext hops      | 01:41, same release                     | `PRIVILEGED_BACKEND_AUTH_DESIGN`                                    | Merged #16332, #16333; #16334 in review                                                                                                                            |
-| Any Gateway replica                | 02:36, card "Any replica, no epoch"     | [Section 12](#12-the-runner-gateway-serves-the-runners-own-service) | Route and stable-Service cutover merged through #16365; final receiver/RBAC/settings cleanup is prepared with image and config rollout gates in the component plan |
-| One service authentication mode    | 04:56, "One auth mode can fire off"     | `PRIVILEGED_BACKEND_AUTH_DESIGN`                                    | Stages 1–2 and stage 3 receivers merged (last: #16354, #16357, #16358, #16364, #16371)                                                                             |
-| Stage 2 Go layout fixes            | 20:04, "3, 4, 5: yes, do dispatch that" | [Section 17](#17-two-binaries-and-the-go-layout)                    | Merged #16394, #16402, #16415, #16427, #16433, #16435, #16441; the Go plan keeps `runner-era-names` open for runner wording in comments and errors                 |
-| Central code-mode tools as Actions | 20:04, same release                     | `CENTRAL_SESSION_DELEGATED_ACTING`                                  | Merged #16418, #16422, #16423                                                                                                                                      |
-| Callers present service SVIDs      | 20:15, "Sounds to me good to dispatch"  | `PRIVILEGED_BACKEND_AUTH_DESIGN` (stage 4)                          | Most callers switched; [readiness audit](service_svid_stage5_readiness.md) finds Actions→Dispatcher/History and sampler→LLM still on bearers; #16467 grant merged  |
-| Dead Dispatcher command states     | 21:15, card "Delete dead states only"   | `DISPATCHER_HARNESS_CONFIRMATION`                                   | Stored rows rewritten (#16438); removing `HARNESS_CONFIRMED` and `NO_OP` follows                                                                                   |
+| Track                                      | Operator release (UTC)            | Node                             | State                                                                                                                                                                                                                 |
+| ------------------------------------------ | --------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Retire bearer admission (auth stage 5)     | 2026-11-15                        | `PRIVILEGED_BACKEND_AUTH_DESIGN` | Token projections removed (#16650); direct SVID admission refuses mixed credentials (#16657); Notifications (#16667) and LLM ingress (#16668) receivers merged; Policy (#16651) in review; the other receivers follow |
+| One TLS listener per service               | 2026-11-14 01:41, "dispatch 1, 2" | `PRIVILEGED_BACKEND_AUTH_DESIGN` | Plaintext exposure removed from manifests (#16631, #16632); the transitional plaintext listeners' code removal is in review (#16661)                                                                                  |
+| Runtime proxy and Executor to Environments | 2026-11-15                        | `RUNTIME_PROXY_TO_ENVIRONMENTS`  | Accepting receiver code with optional settings merged (#16656); enabling it, retargeting callers and retiring the Gateway receiver follow                                                                             |
+| Runtime proxy caller audit                 | 2026-11-15                        | `RUNTIME_PROXY_CALLER_AUDIT`     | In review; the migrations it proposes are not released                                                                                                                                                                |
 
-### Released 2026-11-15
-
-The operator released stage 5 of `PRIVILEGED_BACKEND_AUTH_DESIGN` for implementation on
-2026-11-15, including receiver bearer-admission retirements, their positive test-client cleanups,
-documentation updates, and the planned credential cleanup. This releases the work under the
-existing rollout gates; it does not mark the stage complete. Receiver images and settings must
-accept the reduced configuration before manifests omit legacy keys, projected tokens and minting
-permissions follow caller cutovers, and TokenReview RBAC is removed last.
-
-Finished since and deleted: the environment rule slices (`resume` #16346, `bind_session` #16351),
-Sessions re-checking the live Identity (#16373), explicit resume reserving no wake budget (#16375),
-the Sandbox Controller's move into `agentplane/environments/` (#16407, released at 20:04 with the
-layout fixes and code-mode tools) and the stage 2 layout fixes. The 2026-11-14 ledger left these
-tracks unreleased: the remaining stage 3 moves of section 17 after EnvironmentService,
+Finished and deleted since the 2026-11-14 ledger: the pre-cutover leftovers, any-replica Gateway
+routing and its cleanup (section 12), auth stages 1 to 4, the stage 2 Go layout fixes,
+EnvironmentService on every Environments replica (contract in the
+[Environments specification](../environments/SPEC.md)), central code-mode tools as Actions
+(#16418, #16422, #16423) and the dead Dispatcher command states (#16438, then the proto values
+removed). Not released: the remaining stage 3 moves of section 17 after the Runtime proxy,
 `CommandSettled`, retiring `orchestration_v1` and launcher auto-grants.
-`SAMPLER_STABLE_PROVIDER_PREFIX` waits for the operator to review its design (20:04: "I would want
-to see the design"), in #16401.
+`SAMPLER_STABLE_PROVIDER_PREFIX` waits for the operator to review its design (20:04 on 2026-11-14:
+"I would want to see the design"), in #16401.
 
 ```mermaid
 flowchart LR
-    subgraph AUTH_TRACK[One service authentication mode]
-        PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: service SVIDs and TLS on every hop]
-    end
-    subgraph SPLIT_TRACK[Two-binary split, section 17]
-    end
-    CENTRAL_SESSION_DELEGATED_ACTING[In flight: code-mode tools as Actions]
-    DISPATCHER_HARNESS_CONFIRMATION[In flight: delete the dead command states first]
-    REFACTOR_COHERENCE_AUDIT[Candidate: leftovers and coherence sweep]
+    PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: stage 5, bearer admission retires]
+    RUNTIME_PROXY_TO_ENVIRONMENTS[In flight: Runtime proxy into Environments]
+    RUNTIME_PROXY_CALLER_AUDIT[In review: Runtime-proxy caller dispositions]
+    REFACTOR_COHERENCE_AUDIT[Candidate: coherence sweep]
 ```
 
 ### Sandbox-free central Sessions
@@ -232,19 +216,20 @@ sandbox attachment" (2026-11-14 07:43 UTC). Today `central_sampler_v1` requires 
 Sandbox: Dispatcher admission, the sampler's executor binding and History's sampler ingress all
 assume one. The nodes live in sections 5, 13 and 14; this is their order.
 
-| Step                        | Node                                                                                                                          | State                                                                                                        |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Decide creation             | `CENTRAL_SESSION_CREATION_CONTRACT`                                                                                           | Drafted with the next two in [#15436](https://github.com/agentydragon/ducktape/pull/15436), awaiting review  |
-| Decide attachments          | `SESSION_ATTACHMENT_CONTRACT`                                                                                                 | Same PR                                                                                                      |
-| Decide lifetimes            | `SESSION_AND_INBOX_LIFETIME`                                                                                                  | Same PR; row and inbox retention already implemented                                                         |
-| Decide setup                | `SESSION_ENVIRONMENT_SETUP_DESIGN`                                                                                            | #15436 recommends moving `setup_script` and `cwd` to attachments                                             |
-| Decide identity details     | `SESSION_IDENTITY_CONTRACT`                                                                                                   | Principal decided (an `Identity`); name, incarnation and shared-Environment rules open                       |
-| Tools that need no Sandbox  | `CENTRAL_SESSION_DELEGATED_ACTING`                                                                                            | In flight: code-mode `tools` as Agentplane Actions for the Session's Identity; #16418, #16422, #16423 merged |
-| Zero-Environment path       | `CENTRAL_SESSION_WITHOUT_ENVIRONMENT`                                                                                         | Blocked on the decisions above                                                                               |
-| Follow-ons                  | `CENTRAL_SESSION_NOTIFICATIONS`, `SESSION_HISTORY_PRESENTATION`, `SESSION_ENV_ATTACHMENTS`, `SESSION_LIFETIME_IMPLEMENTATION` | Blocked on the zero-Environment path                                                                         |
-| Code-mode host (not a gate) | `CODE_MODE_HOST_DESIGN`                                                                                                       | Open question: keep Codex's pinned JavaScript host or own a V8 host                                          |
+| Step                        | Node                                                                                                                          | State                                                                                                       |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Decide creation             | `CENTRAL_SESSION_CREATION_CONTRACT`                                                                                           | Drafted with the next two in [#15436](https://github.com/agentydragon/ducktape/pull/15436), awaiting review |
+| Decide attachments          | `SESSION_ATTACHMENT_CONTRACT`                                                                                                 | Same PR                                                                                                     |
+| Decide lifetimes            | `SESSION_AND_INBOX_LIFETIME`                                                                                                  | Same PR; row and inbox retention already implemented                                                        |
+| Decide setup                | `SESSION_ENVIRONMENT_SETUP_DESIGN`                                                                                            | #15436 recommends moving `setup_script` and `cwd` to attachments                                            |
+| Decide identity details     | `SESSION_IDENTITY_CONTRACT`                                                                                                   | Principal decided (an `Identity`); name, incarnation and shared-Environment rules open                      |
+| Zero-Environment path       | `CENTRAL_SESSION_WITHOUT_ENVIRONMENT`                                                                                         | Blocked on the decisions above                                                                              |
+| Follow-ons                  | `CENTRAL_SESSION_NOTIFICATIONS`, `SESSION_HISTORY_PRESENTATION`, `SESSION_ENV_ATTACHMENTS`, `SESSION_LIFETIME_IMPLEMENTATION` | Blocked on the zero-Environment path                                                                        |
+| Code-mode host (not a gate) | `CODE_MODE_HOST_DESIGN`                                                                                                       | Open question: keep Codex's pinned JavaScript host or own a V8 host                                         |
 
-History keeps accepting a Session with no Sandbox UID, which the zero-Environment path needs: #16336
+Central code-mode `tools` already run as Agentplane Actions for the Session's Identity (#16423), so
+that surface needs no Sandbox. History keeps accepting a Session with no Sandbox UID, which the
+zero-Environment path needs: #16336
 and #16356, which would have deleted such rows and refused such writers as pre-cutover leftovers,
 were closed unmerged on 2026-11-14.
 
@@ -257,7 +242,6 @@ flowchart LR
         SESSION_ENVIRONMENT_SETUP_DESIGN[Decision: where setup belongs]
         SESSION_IDENTITY_CONTRACT[Decision: identity details]
     end
-    CENTRAL_SESSION_DELEGATED_ACTING[In flight: code-mode tools as Actions]
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT[Blocked: central Session with zero Environments]
     CODE_MODE_HOST_DESIGN[Open: keep Codex's JS host or own V8]
     CENTRAL_SESSION_CREATION_CONTRACT --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
@@ -265,8 +249,6 @@ flowchart LR
     SESSION_AND_INBOX_LIFETIME --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
     SESSION_IDENTITY_CONTRACT --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
     SESSION_ENVIRONMENT_SETUP_DESIGN -. setup behavior .-> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
-    CENTRAL_SESSION_DELEGATED_ACTING -. what a Sandbox-free Session can call .-> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
-    CODE_MODE_HOST_DESIGN -. not a prerequisite .-> CENTRAL_SESSION_DELEGATED_ACTING
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT --> CENTRAL_SESSION_NOTIFICATIONS[Blocked: inboxes without an Environment]
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT --> SESSION_HISTORY_PRESENTATION[Blocked: app views without a Sandbox]
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT --> SESSION_ENV_ATTACHMENTS[Blocked: attach and detach Environments]
@@ -290,7 +272,6 @@ not as a claim that rollout is currently blocked.
 | Environment lifecycle authority   | Explicit Identity `resume` (#16346) and `bind_session` (#16351) grants landed | The rule's rollout order is in [environment policy rollout](../docs/environment_policy_rollout.md); no PolicySet uses the rule yet.                   |
 | Session inbox cross-Identity send | Inbox owner and History workload reads use recorded Identity                  | Current send rule remains Sandbox/tag-targeted; target/group model and launcher-grant lifetime are unresolved under `SESSION_ACCESS_GROUPING_DESIGN`. |
 | Sub-Session entry                 | Identity `CreateSession` remains separate                                     | `SESSION_SUBAGENT_DELEGATION`; it does not reopen the workload cutover.                                                                               |
-| Central code-mode tools           | Delegated sampler foundation is landed                                        | Finish the remaining tools-as-Actions slice without reopening attribution or service identity.                                                        |
 
 The environment-free central Session has its own track:
 [Sandbox-free central Sessions](#sandbox-free-central-sessions).
@@ -301,7 +282,6 @@ flowchart LR
         STANDING_WORKLOAD_IDENTITY[Standing workload proxy evidence]
         SESSION_ACCESS_GROUPING_DESIGN[Review Session access grouping] --> SESSION_IDENTITY_AUTHZ[Cross-Identity inbox send target]
         SESSION_SUBAGENT_DELEGATION[Identity CreateSession design]
-        CENTRAL_SESSION_DELEGATED_ACTING[In flight: remaining central code-mode tools-as-Actions]
         IDENTITY_SYSTEM_TESTS[Remaining automated identity-boundary acceptance]
         SANDBOX_IDENTITY_CHANGE_CHECKPOINT[Deferred VM checkpoint transition]
     end
@@ -1117,7 +1097,6 @@ flowchart LR
     CENTRAL_SAMPLER_BACKGROUND_COMPACTION[Unscheduled: compact a prefix while sampling continues]
     CENTRAL_SAMPLER_DYNAMIC_TOOLS[Deferred: dynamic tool definitions when needed]
     CODE_MODE_HOST_DESIGN[Decision, unscheduled: keep Codex's code-mode host or own one]
-    CODE_MODE_HOST_DESIGN -. typed errors and tool namespace .-> CENTRAL_SESSION_DELEGATED_ACTING[In flight: code-mode tools as Actions, section 14]
     SAMPLER_NOTIFICATION_JOURNAL[Candidate: investigate executor notification journal deadline]
     CLAUDE_REMOTE_EXECUTION_SPIKE[In review: gated native Claude remote tools]
     CLAUDE_CUSTOM_SAMPLER[In review: custom Claude sampler evidence]
@@ -1826,7 +1805,6 @@ flowchart TD
     VOLUME_LAYOUT_CONVERSION -. future incompatible edits only .-> SANDBOX_SPEC_EDIT
     WORKSPACE_NODE_PORTABILITY -. related .-> SANDBOX_ARCHIVE
     VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
-    DISPATCHER_HARNESS_CONFIRMATION[In flight: retire the unused Dispatcher delivery states]
     DISPATCHER_SEND_AUTHORIZATION_GENERALIZE[Deferred: scoped sender grants beyond v0 service trust]
     STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE[Deferred: retire the superseded state attachment]
     IDLE_SUSPEND_UI_DRIVE[Operator: remaining VM idle-suspend/send-to-wake UI drive]
@@ -2177,16 +2155,6 @@ Runtime busy facts and never this field. Per-Session idle times stay out of Kube
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
-### `DISPATCHER_HARNESS_CONFIRMATION` — retire the unused Dispatcher delivery states
-
-**In flight; operator decision, 2026-11-14: delete the states rather than add a confirmation writer.**
-`HARNESS_CONFIRMED` never had a writer. The historical `NO_OP` writer at `0baeb473c9` settled a queued
-`stop_runner_session` while its Sandbox was suspended and stored no runner admission. Because rows can
-remain for the Sandbox lifetime, the data change maps a row with an admission to `RUNNER_ADMITTED` and
-one without it to `UNKNOWN`; the row count is unknown. The code change removes the proto values and
-readers after carrying the migration. History's separate `no_op` outcome and `CommandSettled` remain
-out of scope. Remove this node after the code change lands.
-
 ### `DISPATCHER_SEND_AUTHORIZATION_GENERALIZE` — replace v0 service trust with scoped sender grants
 
 **Deferred TODO; v0 decision does not block delivery design.** Dispatcher may specifically trust the
@@ -2424,9 +2392,9 @@ Runtime workload UID before it publishes facts. Merged #16365
 (`efacbf509178221d60e392168ba812aff360beae`) completes independent Gateway observation and
 stable-Service routing. Gateway calls use the bound Sandbox/incarnation/boot identity; observation
 loss does not revoke another replica's calls or Runtime-owned admitted work. No Gateway connection
-Lease or per-Sandbox control Service/EndpointSlice creation remains. The
-[runtime state observation plan](runtime_state_observation.md) records the image gates for final
-RBAC and protocol cleanup. Dispatcher delivery Leases remain a separate scheduling protocol.
+Lease or per-Sandbox control Service/EndpointSlice creation remains, and the route RBAC, Runtime
+connection epochs and `proxy_port` setting are gone (#16388, #16390). Dispatcher delivery Leases
+remain a separate scheduling protocol.
 
 The [service-boundary contract](../docs/service_boundaries.md) and [Runner Gateway README](../runner_gateway/README.md)
 describe the current proxy. Live `Runner.ListSessions` remains part of the app and Notification
@@ -3394,8 +3362,7 @@ API alone. The app rejects Kubernetes bearers; component TokenReview is being re
 `PRIVILEGED_BACKEND_AUTH_DESIGN` (operator, 2026-11-14).
 
 **Remaining work.** The standing-workload proxy decision-log observation remains open.
-Cross-Identity inbox target semantics, Identity `CreateSession`, and the central code-mode
-tools-as-Actions slice remain separate items. Identity inventory reads work, and explicit `resume`
+Cross-Identity inbox target semantics and Identity `CreateSession` remain separate items. Identity inventory reads work, and explicit `resume`
 and `bind_session` grants landed (#16346, #16351); the rule's rollout order is in
 [environment policy rollout](../docs/environment_policy_rollout.md). The full transition rollout is
 not a current blocker.
@@ -3403,8 +3370,6 @@ not a current blocker.
 ```mermaid
 flowchart LR
     CENTRAL_SESSION_ACTING_DESIGN[Settled design: a central Session acting as its identity]
-    CENTRAL_SESSION_DELEGATED_ACTING[In flight: remaining code-mode tools-as-Actions slice]
-    CENTRAL_SESSION_ACTING_DESIGN --> CENTRAL_SESSION_DELEGATED_ACTING
     STANDING_WORKLOAD_IDENTITY[Standing workloads run as Identities; proxy observation remains]
     APP_IDENTITIES_UI[Paused: remaining identity slices in the app]
     IDENTITY_CLEANUP_REFERENCE_DECISION[Decision: Identity cleanup reference guarantees]
@@ -3475,24 +3440,9 @@ The sampler currently reuses Codex's pinned code-mode host. Writing an Agentplan
 instead is an option if it becomes worthwhile (for example, to own the delegate protocol, typed
 errors, or the tool namespace); nothing above depends on which host runs the cells.
 
-The design is settled as far as this migration needs; its implementation is
-`CENTRAL_SESSION_DELEGATED_ACTING` below, and the environment-free Session it serves is section 13's
+The design is implemented: central code-mode Actions run as the retained Session Identity (#16418,
+#16422, #16423). The environment-free Session it serves is section 13's
 `CENTRAL_SESSION_WITHOUT_ENVIRONMENT`, whose remaining gates are not identity decisions.
-
-### `CENTRAL_SESSION_DELEGATED_ACTING` — central code-mode tools as Actions
-
-**In flight; operator release 2026-11-14 20:04 UTC. Remaining source slice.** Central Session
-attribution, delegated Identity calls to History and the service configuration that permits them
-have landed. The outstanding work is to route the central
-sampler's code-mode `tools` namespace through Agentplane Actions (`request_action`) for the Session's
-Identity, using the same Action policy, operator decision, receipt and result contract as the MCP
-edge. Preserve environment-bound executor tools (`exec_command`, `apply_patch` and file access) in
-the Gateway executor; this node covers only the Action-backed tools. The central Session can have no
-environment, so the action-backed tools must not depend on one. **Exit:** a code-mode cell invokes an
-Action with the Session's exact Identity and exposes the Action result/error contract without changing
-the existing delegated actor attribution. Merged: #16418 keeps the delegated actor and typed
-provenance on Action receipts, #16422 admits the sampler's service-SVID Session delegation on Action
-RPCs and #16423 runs central code-mode Actions as the retained Session Identity.
 
 ### `STANDING_WORKLOAD_IDENTITY` — standing workloads run as Identities
 
@@ -3763,35 +3713,21 @@ Stages, each a separate set of PRs that is safe to roll and states its rollback:
 
 **Roll gates:** certificates exist before code relies on them; receiver images admitting SVIDs are
 pinned before callers switch; code accepting settings is pinned before manifests set them. No
-fallback from a failed or absent certificate to a bearer. PRs #16333 (Policy Controller and sampler
-server TLS) and #16334 (verified client TLS) are merged foundations. Stage 4 is complete: the
-remaining Actions and sampler caller switches have landed and were verified in staging. Stage 5
-was released for implementation on 2026-11-15; receiver, settings, token and RBAC changes remain
-subject to the gates above and the TokenReview RBAC stays last.
+fallback from a failed or absent certificate to a bearer.
 
 **Exit:** no Agentplane receiver admits a Kubernetes bearer; tests cover peer and actor
 verification, rotation, caller denial and delegation without a bearer fallback.
 
-State at 2026-11-15 09:00 UTC: stages 1–3 and the stage 4 caller switches identified by the
-[cutover readiness audit](service_svid_stage5_readiness.md) have landed and rolled out. Actions'
-direct/delegated Dispatcher and History peers switched in #16620; the sampler's LLM ingress peer
-switched in #16624. The audit records the live delegated reads and completed central Session smoke
-through the SVID provider, Executor and History export. The
-[stage 1 inventory](service_svid_authentication.md) remains a dated baseline. Retained Session shapes
-and zero-or-several central environment attachments are preserved. At this 09:00 UTC snapshot,
-stage 5 was not released; its plan listed receiver-specific admission removal,
-manifests-before-fields gates, token cleanup and RBAC removal last. The operator released stage 5
-for implementation later on 2026-11-15; the stage is not complete. App OIDC, MCP OAuth and
-Kubernetes API credentials retain their own contracts.
+**State, 2026-11-15 11:30 UTC.** Stages 1 to 4 are complete: every first-party caller presents its
+service SVID, verified on staging (#16620, #16624). Stage 5 was released for implementation on
+2026-11-15 and is in flight; the [cutover readiness plan](service_svid_stage5_readiness.md) holds
+the per-receiver sequence and progress. App OIDC, MCP OAuth and Kubernetes API credentials keep
+their own contracts.
 
 #### Authentication: dead or stale today
 
 Live callers checked on devel, 2026-11-10 (`grep` of `auth.<Rule>(` outside tests).
 
-- **`agentplane-runner-ingress`** (`RUNNER_INGRESS_AUDIENCE`, `history_service/settings.py`): runners
-  push by SVID, so its only sender is the central sampler's `history` projected token
-  (`central_sampler_workload.py`). Rename it for the sampler, or fold it into History's own audience;
-  coordinate the sampler's projection and History's listener audiences. No gate.
 - **Stale doc sentences.** `docs/workload_authentication.md` § TokenReview and projected credentials
   says Sandbox Runtime templates "continue to project" the Kubernetes token (none since #15258; only
   command boxes do) and § Service authorization says authentication yields "only the verified Sandbox
@@ -3871,28 +3807,24 @@ a specific stopping condition.
 
 #### Authentication: collapses with a named gate
 
-What each piece serves today, and which behavior still needs a specific gate.
-Every first-party listener is `[kubernetes_bearer, spiffe]` (Action Service and LLM ingress on
-`agentplane-egress`; History on its own and the runner-ingress audiences; Notification and the Gateway
-on theirs); the proxy's `forward` is `spiffe` alone and its admin, the Policy Service and the sampler
-are bearer-only. All receiver bearer admission retires under `PRIVILEGED_BACKEND_AUTH_DESIGN`;
-receivers gain exact component SVID admission before caller cutover and bearer removal.
+What each piece serves today, and which behavior still needs a specific gate. No first-party
+caller presents a Kubernetes bearer any more, and no service-token projection remains (#16650).
+Receiver bearer admission and the listener audiences retire one receiver at a time under stage 5
+of `PRIVILEGED_BACKEND_AUTH_DESIGN`, sequenced in the
+[cutover readiness plan](service_svid_stage5_readiness.md).
 
 - **EnvironmentService:** List, Watch, Get and WatchEnvironment use
   `ReviewedServiceAccountOrIdentity` and exact Identity self-read. `ResumeEnvironment`, suspend,
   delete and settings mutations still use `ReviewedServiceAccount`; direct resume is limited to the
   configured Pod-bound operator. Automatic Identity wake uses the current target
   `resumePolicy.allowOwnServiceAccount` and is not an environment-rule operation.
-- **Central sampler:** its `llm`, `gateway` and `history` credentials are component actor proof.
-  History's `SVIDOrAccounts` push rule remains for runners by SVID and the sampler by bearer; the
-  remaining central code-mode tools-as-Actions implementation is tracked separately above.
 - **Workload and component boundaries:** issued workload credentials name Identities, and retained
   ServiceAccount-subject records fail closed. Replace direct component TokenReview; keep component
   reader/management/writer/waker allowlists with service SVIDs, Kubernetes-account impersonation and historical
   actor/writer/sender attribution.
-- **Audience naming:** `agentplane-egress` (`WORKLOAD_TOKEN_AUDIENCE`) still serves the sampler's
-  `llm` token and Notification's `actions` token. Its rename stays frozen
-  (`WORKLOAD_AUDIENCE_RENAME`); deletion follows the service SVID cutover instead of renaming it.
+- **Audience naming:** `agentplane-egress` (`WORKLOAD_TOKEN_AUDIENCE`) has no presenting caller;
+  it leaves with the Actions and LLM ingress listener settings in stage 5 rather than being renamed
+  (`WORKLOAD_AUDIENCE_RENAME` stays frozen).
 
 #### `K3S_TEST_GUEST_RETIRE` — delete the k3s test guest
 
@@ -4020,16 +3952,16 @@ evidence and line-level steps for every track below; its stages are ordered by c
 | 5. Waiting on service decisions | `NOTIFICATION_SERVICE_SPLIT`, `DISPATCHER_PERSISTENCE_MODEL_DESIGN`, `JOURNAL_REPRESENTATION_DESIGN`, `SERVICE_SETTINGS_RETHINK`    |
 | 6. Deferred                     | `PRIVILEGED_BACKEND_AUTH_DESIGN` (moves no files), `PROTO_PACKAGE_ALIGNMENT`                                                        |
 
-EnvironmentService now serves from Environments under the approved
-[serving contract](environment_service_serving.md), with explicit resume internal and automatic wake
-execution/budgeting beside Dispatcher. The remaining stage 3 moves are not released. Sessions re-checking the live
+EnvironmentService serves from every Environments replica
+([Environments specification](../environments/SPEC.md)), with explicit resume internal and automatic
+wake execution/budgeting beside Dispatcher. The remaining stage 3 moves are not released. Sessions re-checking the live
 Identity landed in #16373.
 
 ```mermaid
 flowchart LR
-    PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: service SVIDs, section 15]
+    PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: stage 5, section 15]
     RUNTIME_PROXY_CALLER_AUDIT[In review: Runtime-proxy caller dispositions]
-    RUNTIME_PROXY_TO_ENVIRONMENTS[Agreed: Runtime proxy and Executor into Environments]
+    RUNTIME_PROXY_TO_ENVIRONMENTS[In flight: Runtime proxy and Executor into Environments]
     SESSIONS_BINARY_DIRECTORY[Held: the rest moves to session_dispatcher/]
     ENVIRONMENT_KEEP_ALIVE_HOLDS[Proposed design: keep-alive holds]
     GO_LOCAL_EXTRACTIONS[Unscheduled: stage 4 local extractions]
@@ -4041,7 +3973,9 @@ flowchart LR
 
 ### `RUNTIME_PROXY_TO_ENVIRONMENTS` — the Runtime proxy and Executor move into Environments
 
-**Released by operator, 2026-11-15; receiver implementation in flight.** The Dispatcher already calls the proxy over the network, so
+**Released by operator, 2026-11-15; accepting receiver code merged (#16656), optional and not yet
+enabled.** The proxy lives at `environments/runtimeproxy`, its final home: Go's internal-import rule
+keeps it outside `internal/` while the Gateway still imports it. The Dispatcher already calls the proxy over the network, so
 the move adds no hop. The proxy grants `CreateSession`, `SubmitInput`, `ChangeModel`,
 `ChangeReasoningEffort` and `InterruptTurn` to the Sessions binary's service SVID instead of the
 combined Gateway account; receivers before senders. Sequence: accepting receiver code with optional

@@ -1,36 +1,24 @@
 # Service SVID cutover readiness
 
-Stage 5 was released for implementation on 2026-11-15. This audit records the caller verification
-and receiver removal sequence; it changes no code, admission, settings, images or RBAC. The release
-authorizes implementation under the existing rollout gates; stage 5 remains incomplete.
+Stage 5 was released for implementation on 2026-11-15 and is in flight. This plan holds the caller
+audit it rests on and the receiver removal sequence with each receiver's progress. The release
+authorizes implementation under the existing rollout gates.
+
+Stage 4 is complete and was verified on staging on 2026-11-15: Actions' direct and delegated
+Dispatcher and History peers (#16620; a live delegated `sessions/get` Action at 07:59 UTC), and the
+sampler's LLM ingress peer (#16624; a central Session command at 09:00 UTC exercised the provider
+call, Executor and History export with no auth or TLS errors). A read-only inventory before the
+sampler switch found every retained sampler Session carrying its execution Identity name and UID;
+no data was written.
 The selected decision and rollout gates remain in
 [`PRIVILEGED_BACKEND_AUTH_DESIGN`](task_dag.md#privileged_backend_auth_design--one-service-authentication-mode).
-
-## Evidence and limits
-
-Source audit: devel `2b349f4116`, 2026-11-15. Live snapshot: `agentplane-staging`
-Deployments, Pods and mounted-settings ConfigMaps read at approximately 07:08 UTC through the
-read-only shared-diagnostics Kubernetes route. No Secret contents or database rows were read.
-
-The eleven auth-related Deployments were Ready: Egress 3/3; App, Actions, sampler, History,
-LLM ingress, MCP edge, Notifications, Policy Controller, Sandbox Controller and Runner Gateway
-2/2 each. Their Pods reported zero restarts. The image pins and actual Pod tags agreed:
-Runner Gateway ran `devel-20261115070016-fe1f0b6`; the other ten ran their respective
-`devel-202611150427xx-08f5e49` tags, with App at `devel-20261115042801-08f5e49`.
-Both Gateway Pods already had the Actions Dispatcher grant from #16467.
-
-SVID client settings below point at mounted certificate Secrets and workload trust bundles.
-This verifies deployment configuration, not successful execution of every RPC. The coordinator
-accepted the central Session smoke and the empty post-switch ownership inventory at 04:20 UTC;
-this audit did not repeat them. No claim that every caller has switched follows from Ready Pods.
 
 ## Refreshed audit, 2026-11-15 09:34 UTC
 
 Source: fresh devel `aaa39328e439c7ceda96588ef7bd9b0d55c0125e`. Read-only Kubernetes
 snapshot: Deployments, Pods and mounted-settings ConfigMaps at 09:34 UTC, and Services at
 09:40 UTC. No credential values, Secret contents or database rows were read. No workloads,
-settings, admission, RBAC or stored data were changed. This snapshot's held status is historical;
-the implementation release is recorded at the top of this plan.
+settings, admission, RBAC or stored data were changed.
 
 The eleven auth-related Deployments and their 23 Pods were Ready, with zero container restarts.
 Their image tags matched the devel pins: Actions, Egress, History, LLM ingress and Notifications
@@ -57,11 +45,9 @@ path and service certificate, and a partial certificate configuration selects va
 not bearer fallback. `DialDelegated` emits only the typed envelope in SVID mode. An obsolete
 mounted token does not establish an active bearer caller.
 
-The Deployment templates retain **19 explicit first-party token projections**, replicated to 38
-projected token files across their current Pods: App 6, Actions 2, Notifications 4, MCP edge 1,
-sampler 3, Gateway 2 and Controller 1. Their audiences are listed below. No other Pod in this
-namespace snapshot had an explicit service-token audience. Standard Kubernetes API token
-projections are separate and are not included in these counts.
+The first-party service-token projections this snapshot found (19 in templates) were removed in
+#16650; every affected Deployment rolled Ready at 10:27 UTC with no auth or TLS errors. Standard
+Kubernetes API token projections are separate and stay.
 
 The sampler has **no plaintext application listener configured**: `listen` is absent, its pinned
 loader supplies no default, and its Service exposes only TLS port 8083. Its health-only listener
@@ -124,83 +110,6 @@ allowlists and typed delegation. No new Session field, Sandbox requirement or da
 needed. This audit ran source searches and live read-only checks; it did not rerun system tests or
 the previously accepted service smoke.
 
-## Stage 4 follow-up, 2026-11-15
-
-Actions' four Dispatcher/History peers switched in #16620. At 07:56 UTC, both Actions Pods were
-Ready with zero restarts, and the live settings selected the Actions SVID and no token file on
-those peers. The typed delegation grants and envelopes remain unchanged.
-A live `sessions/get` Action at 07:59 UTC succeeded with both Dispatcher Session and History
-sources reported as `observed`, exercising the delegated SVID reads.
-
-Before the sampler LLM caller switch, the approved read-only Job
-`sampler-identity-inventory-20261115-0750-v3` inspected every retained sampler Session at 07:55 UTC.
-It decoded `CreateSessionRequest.execution_identity` and checked both name and UID, without any
-environment filter. Its result was `{"inspected_count":2,"missing_count":0,"sessions":[]}`.
-The snapshot stayed inside the Job's emptyDir; the logs contain only the count and missing-record
-metadata. No rows were written, backfilled or deleted. There are no missing Sessions for which to
-collect creation/activity timestamps or liveness evidence.
-
-The sampler LLM caller configuration now selects `agentplane_ingress`, its existing service SVID,
-and typed execution Identity/Session delegation. #16624 merged at 08:52 UTC and rolled out at
-08:56 UTC. Both sampler Pods were Ready with zero restarts on image `2b349f4`; their live settings
-selected the sampler certificate and `spiffe://agentplane/central-sampler`, verified the
-`spiffe://agentplane/llm-ingress` server and contained no LLM bearer credential selection.
-
-At 09:00 UTC, an existing central Session completed command
-`77217d0b-e8b6-4e8a-a9e7-3ea2de548670` through that provider configuration. History retained the
-successful `exec` tool result at cursor 821 and the completed turn through cursor 998, with no gaps.
-The tool ran one `printf` and returned the unique marker requested by that command; the final
-assistant message matched. The sampler logged a newly opened Executor session for the same central
-Session. This exercises the provider call, Gateway Executor and History export after the roll.
-Both replicas of sampler, LLM ingress, Gateway and History remained Ready with zero restarts;
-their smoke-window logs contained no x509, Unauthenticated or PermissionDenied errors.
-
-This bounded smoke verifies the remaining sampler provider cutover; it does not exercise every
-method or external provider. History separately logged `executionPrincipal` decode failures while
-folding two other Sessions; the smoke Session folded successfully. As recorded at 09:00 UTC, stage 5
-still required its separate release, and all projected tokens and receiver bearer admission stayed
-in place. The Actions and sampler caller switches complete the stage 4 caller work identified by
-the original audit; they do not establish that every method has been exercised.
-
-## Stage 4 caller state at the original audit
-
-At the 07:08 UTC snapshot, stage 4 was **incomplete**: two caller families still selected Kubernetes
-bearer authentication in both source and live settings. This is the historical state from the
-original audit. Their caller cutovers are now merged, applied and verified in the stage 4 follow-up
-above; stage 4 is complete.
-
-| Caller and target                                              | Live selection and source                                                                                                                                                                                                       | Remaining work                                                                                                                                                           |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Actions → Dispatcher, direct orchestration                     | `session_dispatcher.token_file=/var/run/secrets/actions/dispatcher`; server-only TLS. [`actions.py`](../../cluster/cdk8s/agentplane/actions.py), `dispatcher_peer`.                                                             | Switch this peer to Actions SVID after checking the direct Dispatcher grant; #16467 is merged and that grant is live.                                                    |
-| Actions → History, direct orchestration                        | `history_service.token_file=/var/run/secrets/actions/history`; server-only TLS. Same composition root, `history_peer`.                                                                                                          | Switch to Actions SVID; History's live `reader_service_callers` already includes Actions.                                                                                |
-| Actions → Dispatcher and History, delegated Session operations | `session_delegation_dispatcher` and `session_delegation_history` use those same token paths and server-only TLS. Same composition root, `delegated_*_peer`.                                                                     | Switch to Actions SVID and retain the exact typed Action/Identity envelope and method grants. Direct service authority must not become the effective caller's authority. |
-| Central sampler → LLM ingress                                  | `connections.llm-ingress.auth.type=bearer`, `credential_file=/var/run/secrets/central-sampler/llm`; TLS verifies the server only. [`staging.py`](../../cluster/cdk8s/agentplane/staging.py), `CentralSamplerProps.connections`. | A separate caller PR selects `agentplane_ingress` with the sampler SVID and typed Session/Identity delegation. See the question below before opening it.                 |
-
-The pinned Actions configuration code already supports `ClientTLS.UsesSVID` and validates the exact
-Actions URI. The pinned sampler contains the SVID branch in
-[`providerAuthorization`](../central_sampler/internal/residentruntime/protocol_adapter.go) and
-[`ConnectionConfig.Validate`](../central_sampler/internal/settings/model.go). The sampler's
-certificate/trust mounts exist. LLM ingress already has
-`central_sampler_services=[spiffe://agentplane/central-sampler]` and
-`central_sampler_identity_callers=true` in its live settings. These are preconditions, not a
-substitute for the caller activation and its acceptance.
-
-## Callers already configured for SVIDs
-
-| Caller                     | Live outgoing SVID configuration                                                                                                                                                                                                  |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| App                        | App SVID on Dispatcher, EnvironmentService, Runtime proxy, History, Notifications, Policy and Egress Admin. Actions and MCP ConnectionService additionally retain operator OIDC authority. No backend token-file setting remains. |
-| Notifications              | Notifications SVID on Actions, Dispatcher, Runtime proxy and History.                                                                                                                                                             |
-| MCP edge                   | MCP edge SVID on Actions with typed Connection delegation. Its ConnectionService TLS listener separately checks the App peer and operator OIDC.                                                                                   |
-| Sandbox Controller         | Controller client SVID on Gateway control; direct Runtime control remains mTLS.                                                                                                                                                   |
-| Dispatcher / Sessions role | `spiffe://agentplane/sessions` on Runtime proxy and sampler. Sampler ownership uses that same URI after the explicit ownership rewrite.                                                                                           |
-| Central sampler            | Sampler SVID on Gateway Executor, History export and LLM ingress, and certificate TLS on its Actions client. LLM calls retain typed execution Identity/Session delegation.                                                        |
-
-Keep the role identities separate through the planned binary split: Sessions owns the Dispatcher
-client identity; Environments owns EnvironmentService; Runtime proxy keeps its own role certificate.
-Do not collapse them into a new Gateway-wide identity or mechanism. Workload SVIDs still resolve
-through `WorkloadCredential` to an Identity; these component service SVIDs do not.
-
 ## External callers and the retired App token
 
 A source search across `haku/`, `tf/` and `cluster/cdk8s/` outside Agentplane found no active
@@ -227,9 +136,15 @@ live. The existing operator OIDC and MCP OAuth contracts remain unchanged.
 
 ## Receiver-specific removal sequence
 
-Stage 5 is released, and the caller gates above are complete. Implement one receiver per PR, with its
-own rollback and relevant system suites. The shared TokenReview implementation goes only after its
-last consumer.
+Implement one receiver per PR, with its own rollback and relevant system suites. The shared
+TokenReview implementation goes only after its last consumer. Shared groundwork merged: direct
+workload SVID admission refuses requests that also carry bearer or delegation metadata (#16657).
+
+Progress at 11:30 UTC: Notifications (#16667) and LLM ingress (#16668) receiver code merged with
+their legacy keys still decoded and ignored, so manifest omission comes next for each after its
+image is pinned; Policy (#16651) is in review; History's positive workload-ingress tests run
+SVID-only (#16666). Egress Admin, Actions, sampler, History admission, Gateway and
+EnvironmentService have not started.
 
 | Receiver                                      | Remaining bearer surface                                                                                                                                                                                                    | Cutover constraint                                                                                                                                                                                                                                                                                                                   |
 | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -238,7 +153,7 @@ last consumer.
 | Notifications                                 | `rpc.auth` bearer mode, token audience, operator reader account and TokenReview dependency in [`main.go`](../notification_service/main.go).                                                                                 | App already uses SVID. Preserve workload Identity routes, inbox ownership and automatic wake authorization.                                                                                                                                                                                                                          |
 | Actions                                       | `rpc.auth` bearer mode, account/delegation actor settings and mandatory resolver in [`cmd/main.go`](../action_service/cmd/main.go).                                                                                         | Current incoming App/Notifications/MCP edge/sampler paths use certificates or the separately retained operator/OAuth contracts. Its Dispatcher and History callers are verified in SVID mode (#16620); retire their old token projections with stage 5 cleanup. Preserve effective Identity and typed Connection/Session provenance. |
 | Central sampler                               | Account allowlist and audience on the TLS serving path in [`cmd/main.go`](../central_sampler/cmd/main.go) and [`rpc`](../central_sampler/internal/rpc). The optional plaintext application listener is disabled in staging. | Gateway uses the Sessions SVID on 8083. Preserve the rewritten service owner and retained Sessions; preserve the separate health-only listener.                                                                                                                                                                                      |
-| History                                       | `rpc.auth` bearer mode, reader/writer audiences, account grants and bearer delegation in [`cmd/main.go`](../history_service/cmd/main.go).                                                                                   | Actions' direct and delegated callers are verified in SVID mode (#16620). `serve` synthesizes a bearer reader listener in code, so a manifest-only mode removal is insufficient. Preserve journal writer ownership and Sessions without a Sandbox.                                                                                   |
+| History                                       | `rpc.auth` bearer mode, reader/writer audiences (including `agentplane-runner-ingress`, which has had no sender since #16650), account grants and bearer delegation in [`cmd/main.go`](../history_service/cmd/main.go).     | Actions' direct and delegated callers are verified in SVID mode (#16620). `serve` synthesizes a bearer reader listener in code, so a manifest-only mode removal is insufficient. Preserve journal writer ownership and Sessions without a Sandbox.                                                                                   |
 | LLM ingress                                   | `rpc.auth` bearer mode, `central_sampler_accounts`, token audience and resolver in [`runtime.go`](../llm_ingress/internal/server/runtime.go).                                                                               | The sampler provider cutover is verified (#16624). Keep workload Identity admission and provider authorization; the actor certificate supplies no effective-caller grant.                                                                                                                                                            |
 | Gateway Dispatcher / Runtime proxy / Executor | Bearer listener modes, two audiences, account grants and bearer delegation in [`main.go`](../runner_gateway/main.go).                                                                                                       | The Actions caller cutover is verified (#16620). Preserve separate peer grants for App, Notifications, Sessions, Controller and sampler, and effective Identity delegation. `rpcForMethodAudience` respects configured bearer modes; startup validation and the resolver dependencies also need retirement.                          |
 | Extracted EnvironmentService                  | [`serving/server.go`](../environments/internal/serving/server.go) still constructs a TokenReview resolver.                                                                                                                  | The live Controller-hosted 8082 listener is already SPIFFE-only. Retire the unused resolver/account machinery without adding environment requirements to Sessions or changing lifecycle grants.                                                                                                                                      |
@@ -258,25 +173,10 @@ Do not run that Job as part of this audit.
 
 ## Token and RBAC cleanup, last
 
-The live Deployment templates still project the following service audiences. Some are now unused;
-their presence alone does not prove that a caller still sends them. The Actions Dispatcher/History
-tokens and the sampler LLM token were still selected at the original snapshot above; see the
-stage 4 follow-up for their caller switches.
-
-| Workload           | Projected service-token audiences                                                                                                                           |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| App                | `agentplane-runner-gateway`, `agentplane-history-service`, `agentplane-egress-admin`, `session-dispatcher`, `agentplane-notifications`, `agentplane-policy` |
-| Actions            | `session-dispatcher`, `agentplane-history-service`                                                                                                          |
-| Notifications      | `agentplane-egress`, `agentplane-runner-gateway`, `agentplane-history-service`, `session-dispatcher`                                                        |
-| MCP edge           | `agentplane-egress`                                                                                                                                         |
-| Central sampler    | `agentplane-egress`, `agentplane-runner-gateway`, `agentplane-runner-ingress`                                                                               |
-| Runner Gateway     | `agentplane-runner-gateway`, `central-sampler`                                                                                                              |
-| Sandbox Controller | `agentplane-runner-gateway`                                                                                                                                 |
-
-Remove the service projections, matching mounts, audience constants and service-token minting
-permissions only after every affected caller image/configuration has switched. Keep provider API
-keys, external MCP OAuth/static credentials and Kubernetes API authentication separate. In
-particular, Egress's `local_api_server.token_file` authenticates to Kubernetes; it stays.
+Service-token projections, their mounts and the callers' token settings are gone (#16650). Keep
+provider API keys, external MCP OAuth/static credentials and Kubernetes API authentication
+separate; in particular, Egress's `local_api_server.token_file` authenticates to Kubernetes and
+stays. Audience constants and service-token minting permissions go with their receivers.
 
 Remove the shared `kubernetes_bearer` mode, resolvers and obsolete account admission paths when
 their final consumers are gone. EnvironmentService's code residue does not establish a ninth
@@ -303,14 +203,3 @@ History outage and Gateway recovery suites for central Sessions. Use envtest whe
 depends on Kubernetes behavior. Update focused system-overview edges with each actual cutover.
 No unchanged reruns, timeout increases or skipped assertions. This documentation audit itself
 does not execute a receiver cutover or re-run the accepted live smoke.
-
-## Questions for Claude
-
-- Resolved: the coordinator authorized a read-only inventory before the sampler caller switch.
-  The inventory above found no retained Session missing execution Identity name/UID. No data
-  rewrite, new required field or environment requirement is introduced. The selected
-  [Session model](session_environment_model.md#a-central-session-can-use-zero-one-or-many-environments)
-  still permits zero or several central attachments.
-- The two caller families identified by this audit are now activated and verified as described
-  above, completing stage 4. Stage 5 was released for implementation on 2026-11-15; receiver and
-  RBAC work remains in progress under the rollout sequence above.

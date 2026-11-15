@@ -77,8 +77,7 @@ own:
    are published. Observation loss does not revoke another Gateway replica's calls or Runtime-owned
    work. Existing per-Sandbox route objects are unused. Only deleting their Sandbox owner triggers
    garbage collection; unowned objects require manual deletion. The Dispatcher delivery Lease is a separate scheduling protocol and remains
-   unchanged. See the [runtime state observation plan](runtime_state_observation.md) for the image
-   pin gate before RBAC contraction.
+   unchanged ([replica ownership](../runner_gateway/README.md#replica-ownership-decision)).
 
 Service tests could then run against one fake `PolicyService` instead of envtest. The store stays
 an API server.
