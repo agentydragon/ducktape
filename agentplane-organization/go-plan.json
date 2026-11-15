@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
-  "source_sha": "c2549d48c3c3d99e05ceb831f8835f2aa07f4120",
-  "observed_at_utc": "2026-11-15T05:12:19Z",
+  "source_sha": "01e85fd9d267be8b955d4e3bf753f2051261043f",
+  "observed_at_utc": "2026-11-15T08:55:26Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1304,
-    "directories": 233,
-    "production": 715,
-    "tests": 589
+    "files": 1316,
+    "directories": 237,
+    "production": 722,
+    "tests": 594
   },
   "legend": {
     "=": "Intentional retained owner with an explicit package rationale",
@@ -38,7 +38,7 @@
     "today": [
       {
         "name": "runner-gateway",
-        "text": "One TLS gRPC listener serves the Session Dispatcher (PostgreSQL queue, per-Sandbox delivery Leases, routing to the central sampler or a Runtime), EnvironmentService (inventory, management, explicit resume, and the lifecycle code the Dispatcher's automatic wake calls in process), the Runtime proxy and the code-mode Executor. Only this Pod's own account may proxy Runtime Session creation and commands, proven at startup by TokenReview and Pod UID, or an exact service SVID in `runtime_proxy_session_callers` (#16364, unset on staging).",
+        "text": "One TLS gRPC listener serves the Session Dispatcher (with automatic wake in `dispatcher/wake`) (PostgreSQL queue, per-Sandbox delivery Leases, routing to the central sampler or a Runtime), the Runtime proxy and the code-mode Executor. Only this Pod's own account may proxy Runtime Session creation and commands, proven at startup by TokenReview and Pod UID, or an exact service SVID in `runtime_proxy_session_callers` (#16364, unset on staging). EnvironmentService left in #16601 and #16613.",
         "evidence_paths": [
           "agentplane/runner_gateway/main.go",
           "agentplane/runner_gateway/internal/gateway/gateway.go"
@@ -46,7 +46,7 @@
       },
       {
         "name": "sandbox-controller",
-        "text": "Leader-elected controller-runtime manager with no database. Since #16324 it observes each Runtime's `WatchState` directly with its own certificate and keeps idle timers in memory; it still asks Runtimes to quiesce through the Gateway proxy. Since #16542 and #16556 every replica also serves EnvironmentService on 8082; reconcilers stay leader-only.",
+        "text": "Leader-elected controller-runtime manager with no database. Since #16324 it observes each Runtime's `WatchState` directly with its own certificate and keeps idle timers in memory; it still asks Runtimes to quiesce through the Gateway proxy. Since #16542 and #16556 every replica also serves EnvironmentService on 8082 for every caller (App #16565, CLI #16568, Actions #16573); reconcilers stay leader-only.",
         "evidence_paths": [
           "agentplane/environments/cmd/main.go",
           "agentplane/environments/internal/runtimecontrol/observer.go",
@@ -69,7 +69,6 @@
         ],
         "from_paths": [
           "agentplane/environments",
-          "agentplane/runner_gateway/environments",
           "agentplane/runner_gateway/internal/gateway"
         ],
         "callers": "The app, the app's `sessionclient`, the Notification Service, the central sampler and the Sessions binary.",
@@ -114,10 +113,10 @@
         "status": "DECIDED",
         "decision": "Operator, 2026-11-14 05:19 UTC, card \"Choose which binary performs automatic wakes after the split\": \"Sessions binary wakes\".",
         "today": "The delivery worker calls `lifecycle.Manager.RequestWake` in process. It checks `wakeOnSend`, the Identity's `resumePolicy.allowOwnServiceAccount` or the `wake_callers` broker grant, refuses after a requested stop, reserves the budget (10 distinct wake generations per effective caller per 60 s) in the Dispatcher's PostgreSQL and patches `spec.running` and `spec.wakeGeneration`.",
-        "proposal": "The Sessions binary keeps that policy check and the budget and writes the Sandbox spec itself, so nothing calls across for a wake and the Environments binary needs no budget call back (the controller-only budget RPC in #16318 is closed). The automatic path of `lifecycle` stays with the Dispatcher and explicit resume moves with EnvironmentService. `environments/internal` is not importable from the Dispatcher, so split `lifecycle` along that line or keep the shared policy outside both `internal/` trees.",
+        "proposal": "The Sessions binary keeps that policy check and the budget and writes the Sandbox spec itself, so nothing calls across for a wake and the Environments binary needs no budget call back (the controller-only budget RPC in #16318 is closed). #16626 split `lifecycle` along that line: shared policy and types in `environments/lifecycle`, explicit resume in `environments/internal/resume`, automatic wake in `dispatcher/wake`.",
         "evidence_paths": [
-          "agentplane/runner_gateway/environments/lifecycle/manager.go",
-          "agentplane/runner_gateway/dispatcher/wake.go",
+          "agentplane/environments/lifecycle/policy.go",
+          "agentplane/runner_gateway/dispatcher/wake/manager.go",
           "agentplane/runner_gateway/dispatcher/delivery_wake.go"
         ]
       },
@@ -128,8 +127,8 @@
         "today": "Since #16346 an Identity with a live `environment` grant for `resume` may call `ResumeEnvironment`. Since #16375 explicit resume, operator or Identity grant, reserves no wake budget and is unaffected by its exhaustion; automatic wake still reserves the budget in the Dispatcher's PostgreSQL (`lifecycle/SPEC.md`).",
         "proposal": "Explicit resume reserves no wake budget, before and after the split; only the Sessions binary's automatic wake keeps one. A resume acts only on a fully stopped Sandbox (idle suspend of at least a minute, or a requested stop), so a Sandbox is resumed at most once per stop, and an Identity's `resume` grant scopes which Sandboxes it may wake. #16375 made that the behavior before the move.",
         "evidence_paths": [
-          "agentplane/runner_gateway/environments/lifecycle/manager.go",
-          "agentplane/runner_gateway/environments/lifecycle/SPEC.md"
+          "agentplane/environments/internal/resume/manager.go",
+          "agentplane/environments/lifecycle/policy.go"
         ],
         "decision": "Operator, 2026-11-14 07:41 UTC, card \"Choose how explicit resume is rate-bounded once EnvironmentService has no database\": \"No budget for explicit resume\"."
       },
@@ -141,7 +140,7 @@
         "proposal": "No call between the binaries. EnvironmentService patches `spec.identity` under optimistic locking; the Sandbox CRD already admits the change only while nothing runs (before the first status report or at `stopStage: Stopped`). Sessions re-checks the live Identity at admission, placement and every delivery (`executionCurrent`), so commands of Sessions recorded under the old Identity fail `execution_identity_changed` instead of the change being refused. The refusal goes: Session rows are never deleted, so it blocked any rebind once a Session had existed. #16373 (merged 2026-11-14) made this the behavior. Proposed addition, not decided: the Runtime refuses to run a retained Session whose recorded Identity is not its own credential's.",
         "evidence_paths": [
           "agentplane/runner_gateway/dispatcher/store.go",
-          "agentplane/runner_gateway/environments/management.go",
+          "agentplane/environments/internal/service/management.go",
           "agentplane/runner_gateway/dispatcher/delivery.go",
           "agentplane/sandboxes/api/types.go"
         ],
@@ -161,8 +160,8 @@
       {
         "id": "serving",
         "title": "Every-replica serving in the Environments binary",
-        "status": "PROPOSED",
-        "today": "Since #16542 (merged 2026-11-15) and #16556 (enabled on staging) every Controller replica serves EnvironmentService on 8082 from `environments/internal/serving`, as `plans/environment_service_serving.md` (#16437) specifies; the Runtime proxy and Executor are still served only by the Gateway.",
+        "status": "DECIDED",
+        "today": "Every Controller replica serves EnvironmentService on 8082 from `environments/internal/serving` (#16542, #16556), as `plans/environment_service_serving.md` (#16437) specifies; the Gateway no longer does (#16601). The Runtime proxy and Executor are still served only by the Gateway.",
         "proposal": "Carried from #16311. EnvironmentService's part landed as written; the proxy and Executor follow (runner-gateway-connections-proxy, agreed, not released). The gRPC server (EnvironmentService, proxy, Executor) gets its own non-leader-elected lifecycle, readiness, TLS identity, audience, TokenReview/SVID and delegation settings, Service and projected credentials. Readiness means the listener and its dependencies work and never waits for leadership. Shutdown stops accepting, drains streams and joins serving work without holding up reconciliation handoff. Watches and live reads keep today's freshness and stream re-authorization.",
         "evidence_paths": [
           "agentplane/environments/cmd/main.go",
@@ -173,7 +172,7 @@
         "id": "rollout",
         "title": "Rollout order",
         "status": "PROPOSED",
-        "today": "EnvironmentService is served by the Gateway and by every Controller replica; the App (#16565) and Actions launcher (#16566) cutovers are open. Every other call still goes to the Gateway.",
+        "today": "EnvironmentService finished this order: receivers first (#16542, #16556, #16566), then the App (#16565), CLI (#16568) and Actions (#16573), then Gateway retirement (#16593, #16601). The Runtime proxy and Executor are next.",
         "proposal": "Carried from #16311. Receivers before senders; settings in code before manifests set them. Deploy the Environments serving path behind an unused Service and exercise auth, readiness and multi-replica behaviour with the app unavailable; then retarget callers (destination audiences, credentials, cdk8s, RBAC, the system overview diagram). Remove old wiring only after traffic has left and the last safe rollback image and config pair is recorded, and never combine an RBAC removal with a deployment that still needs the grant. Acceptance: identity change raced against admission in both orders, explicit and automatic wake from different replicas, non-leader serving and leader handoff, and a mixed-version rollout and rollback.",
         "evidence_paths": ["agentplane/runner_gateway/README.md"]
       }
@@ -3202,7 +3201,7 @@
       "id": "env",
       "path": "agentplane/env",
       "counts": {
-        "files": 204,
+        "files": 206,
         "directories": 30
       },
       "directories": [
@@ -3507,10 +3506,12 @@
         },
         {
           "path": "agentplane/env/runtime/journal",
-          "production": 4,
-          "tests": 5,
+          "production": 5,
+          "tests": 6,
           "files": [
             "agentplane/env/runtime/journal/configuration_test.go",
+            "agentplane/env/runtime/journal/diagnostics.go",
+            "agentplane/env/runtime/journal/diagnostics_test.go",
             "agentplane/env/runtime/journal/journal.go",
             "agentplane/env/runtime/journal/journal_test.go",
             "agentplane/env/runtime/journal/migrations.go",
@@ -4145,8 +4146,8 @@
           "declared_packages": ["journal"],
           "pending_tracks": ["env-runtime-coordinator"],
           "counts": {
-            "non_test": 4,
-            "tests": 5
+            "non_test": 5,
+            "tests": 6
           }
         },
         {
@@ -4258,8 +4259,8 @@
       "id": "environments",
       "path": "agentplane/environments",
       "counts": {
-        "files": 44,
-        "directories": 5
+        "files": 66,
+        "directories": 12
       },
       "directories": [
         {
@@ -4274,10 +4275,12 @@
         {
           "path": "agentplane/environments/cmd",
           "production": 2,
-          "tests": 1,
+          "tests": 3,
           "files": [
+            "agentplane/environments/cmd/catalog_test.go",
             "agentplane/environments/cmd/config.go",
             "agentplane/environments/cmd/config_test.go",
+            "agentplane/environments/cmd/delegation_test.go",
             "agentplane/environments/cmd/main.go"
           ]
         },
@@ -4320,6 +4323,12 @@
           ]
         },
         {
+          "path": "agentplane/environments/internal/resume",
+          "production": 1,
+          "tests": 0,
+          "files": ["agentplane/environments/internal/resume/manager.go"]
+        },
+        {
           "path": "agentplane/environments/internal/runtimecontrol",
           "production": 3,
           "tests": 2,
@@ -4332,6 +4341,42 @@
           ]
         },
         {
+          "path": "agentplane/environments/internal/service",
+          "production": 4,
+          "tests": 6,
+          "files": [
+            "agentplane/environments/internal/service/collection.go",
+            "agentplane/environments/internal/service/delegated_resume_envtest_test.go",
+            "agentplane/environments/internal/service/environment_grants_test.go",
+            "agentplane/environments/internal/service/lifecycle_test.go",
+            "agentplane/environments/internal/service/management.go",
+            "agentplane/environments/internal/service/service.go",
+            "agentplane/environments/internal/service/service_svid_test.go",
+            "agentplane/environments/internal/service/service_test.go",
+            "agentplane/environments/internal/service/watch.go",
+            "agentplane/environments/internal/service/watch_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/environments/internal/service/management",
+          "production": 2,
+          "tests": 1,
+          "files": [
+            "agentplane/environments/internal/service/management/access.go",
+            "agentplane/environments/internal/service/management/access_test.go",
+            "agentplane/environments/internal/service/management/errors.go"
+          ]
+        },
+        {
+          "path": "agentplane/environments/internal/service/view",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/environments/internal/service/view/view.go",
+            "agentplane/environments/internal/service/view/view_test.go"
+          ]
+        },
+        {
           "path": "agentplane/environments/internal/serving",
           "production": 2,
           "tests": 1,
@@ -4340,18 +4385,40 @@
             "agentplane/environments/internal/serving/server.go",
             "agentplane/environments/internal/serving/server_test.go"
           ]
+        },
+        {
+          "path": "agentplane/environments/lifecycle",
+          "production": 2,
+          "tests": 0,
+          "files": [
+            "agentplane/environments/lifecycle/policy.go",
+            "agentplane/environments/lifecycle/types.go"
+          ]
+        },
+        {
+          "path": "agentplane/environments/testing/servicefixture",
+          "production": 1,
+          "tests": 0,
+          "files": [
+            "agentplane/environments/testing/servicefixture/launcher.go"
+          ]
+        },
+        {
+          "path": "agentplane/environments/testing/serving_fixture",
+          "production": 1,
+          "tests": 0,
+          "files": ["agentplane/environments/testing/serving_fixture/main.go"]
         }
       ],
       "context_paths": ["agentplane/environments/v1/environment_service.proto"],
       "pending_tracks": [
         "runner-era-names",
-        "environment-service-to-sandbox-controller",
         "sandbox-controller-lifecycle",
         "runner-gateway-connections-proxy",
         "settings-single-source",
         "protobuf-alignment"
       ],
-      "goal_note": "Sandbox reconciler for claims, credentials, runtime control, Firecracker VM lifecycle, workspace, and status: the Sandbox Controller, at `agentplane/environments/` since #16407 (deployed names unchanged), beside the EnvironmentService API at `v1/`. Receives EnvironmentService, the Runtime proxy and the Executor (agreed direction, stage 3).",
+      "goal_note": "Sandbox reconciler for claims, credentials, runtime control, Firecracker VM lifecycle, workspace, and status: the Sandbox Controller, at `agentplane/environments/` since #16407 (deployed names unchanged), beside the EnvironmentService API at `v1/`. Serves EnvironmentService on every replica since #16613; receives the Runtime proxy and the Executor (agreed direction, stage 3).",
       "decision": {
         "state": "REWORK",
         "role": "The Environments binary: Sandbox Pod/VM/resource reconciliation today",
@@ -4367,8 +4434,15 @@
           "agentplane/environments/access",
           "agentplane/environments/cmd",
           "agentplane/environments/internal/controller",
+          "agentplane/environments/internal/resume",
           "agentplane/environments/internal/runtimecontrol",
-          "agentplane/environments/internal/serving"
+          "agentplane/environments/internal/service",
+          "agentplane/environments/internal/service/management",
+          "agentplane/environments/internal/service/view",
+          "agentplane/environments/internal/serving",
+          "agentplane/environments/lifecycle",
+          "agentplane/environments/testing/servicefixture",
+          "agentplane/environments/testing/serving_fixture"
         ]
       },
       "package_decisions": [
@@ -4392,7 +4466,7 @@
           "role": "Sandbox Controller config and controller-runtime manager process assembly.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "The Environments binary's command (executable `sandbox-controller`): Sandbox Controller config and controller-runtime manager assembly, here since #16407. EnvironmentService's every-replica listener is added here.",
+          "reason": "The Environments binary's command (executable `sandbox-controller`): Sandbox Controller config, controller-runtime manager and the every-replica EnvironmentService listener (#16542).",
           "gate": "",
           "evidence_paths": [
             "agentplane/environments/cmd/config.go",
@@ -4400,10 +4474,10 @@
             "agentplane/environments/cmd/main.go"
           ],
           "declared_packages": ["main"],
-          "pending_tracks": ["environment-service-to-sandbox-controller"],
+          "pending_tracks": [],
           "counts": {
             "non_test": 2,
-            "tests": 1
+            "tests": 3
           }
         },
         {
@@ -4424,13 +4498,27 @@
             "agentplane/environments/internal/controller/children_integration_test.go"
           ],
           "declared_packages": ["sandboxcontroller"],
-          "pending_tracks": [
-            "environment-service-to-sandbox-controller",
-            "sandbox-controller-lifecycle"
-          ],
+          "pending_tracks": ["sandbox-controller-lifecycle"],
           "counts": {
             "non_test": 17,
             "tests": 14
+          }
+        },
+        {
+          "path": "agentplane/environments/internal/resume",
+          "role": "Explicit `ResumeEnvironment`: the guarded Sandbox patch, reserving no wake budget.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Split from the lifecycle manager by #16626.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/environments/internal/resume/manager.go"
+          ],
+          "declared_packages": ["resume"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
           }
         },
         {
@@ -4453,21 +4541,128 @@
           }
         },
         {
+          "path": "agentplane/environments/internal/service",
+          "role": "EnvironmentService handlers: inventory, watches, management and explicit resume over Sandbox resources.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Moved from `runner_gateway/environments` by #16613 after callers left the Gateway (#16565 App, #16573 Actions, #16568 CLI; Gateway registration retired in #16601). Package `environments` became `service`.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/environments/internal/service/collection.go",
+            "agentplane/environments/internal/service/management.go",
+            "agentplane/environments/internal/service/service.go",
+            "agentplane/environments/internal/service/watch.go"
+          ],
+          "declared_packages": ["service", "service_test"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 4,
+            "tests": 6
+          }
+        },
+        {
+          "path": "agentplane/environments/internal/service/management",
+          "role": "Kubernetes mutations implementing EnvironmentService management operations.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Moved from `runner_gateway/environments/internal/management` by #16613.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/environments/internal/service/management/access.go",
+            "agentplane/environments/internal/service/management/errors.go"
+          ],
+          "declared_packages": ["management"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 2,
+            "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/environments/internal/service/view",
+          "role": "Converts Sandbox resources into EnvironmentService views.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Moved from `runner_gateway/environments/internal/view` by #16613.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/environments/internal/service/view/view.go"
+          ],
+          "declared_packages": ["view"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 1
+          }
+        },
+        {
           "path": "agentplane/environments/internal/serving",
           "role": "Every-replica EnvironmentService gRPC listener on 8082: settings, auth, policy watches, readiness and graceful stop.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Added by #16542 and enabled on staging by #16556. It serves the `runner_gateway/environments` handlers from the Environments binary until those packages move under `environments/internal/service`.",
+          "reason": "Added by #16542 and enabled on staging by #16556; serves `environments/internal/service` since #16613. The Runtime proxy and Executor join it in runner-gateway-connections-proxy.",
           "gate": "",
           "evidence_paths": [
             "agentplane/environments/internal/serving/config.go",
             "agentplane/environments/internal/serving/server.go"
           ],
           "declared_packages": ["serving"],
-          "pending_tracks": ["environment-service-to-sandbox-controller"],
+          "pending_tracks": ["runner-gateway-connections-proxy"],
           "counts": {
             "non_test": 2,
             "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/environments/lifecycle",
+          "role": "Lifecycle policy and types shared by explicit resume and the Sessions binary's automatic wake: eligibility and wake assessment.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Split from `runner_gateway/environments/lifecycle` by #16626; outside `internal/` because the Dispatcher imports it.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/environments/lifecycle/policy.go",
+            "agentplane/environments/lifecycle/types.go"
+          ],
+          "declared_packages": ["lifecycle"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 2,
+            "tests": 0
+          }
+        },
+        {
+          "path": "agentplane/environments/testing/servicefixture",
+          "role": "Composes the production EnvironmentService handlers for consumer tests.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Added by #16613 so orchestration_v1's `fixture_test.go` needs no `internal/` import; it goes or changes with orchestration-v1-retirement.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/environments/testing/servicefixture/launcher.go"
+          ],
+          "declared_packages": ["servicefixture"],
+          "pending_tracks": ["orchestration-v1-retirement"],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
+          }
+        },
+        {
+          "path": "agentplane/environments/testing/serving_fixture",
+          "role": "Test fixture running the production every-replica listener without the leader-only reconcilers.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Added by #16601 for App process fixtures.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/environments/testing/serving_fixture/main.go"
+          ],
+          "declared_packages": ["main"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
           }
         }
       ],
@@ -5913,14 +6108,14 @@
       "id": "mcp_edge",
       "path": "agentplane/mcp_edge",
       "counts": {
-        "files": 46,
+        "files": 50,
         "directories": 6
       },
       "directories": [
         {
           "path": "agentplane/mcp_edge",
-          "production": 5,
-          "tests": 3,
+          "production": 7,
+          "tests": 5,
           "files": [
             "agentplane/mcp_edge/action_metadata.go",
             "agentplane/mcp_edge/action_metadata_test.go",
@@ -5929,6 +6124,10 @@
             "agentplane/mcp_edge/config_test.go",
             "agentplane/mcp_edge/core_client.go",
             "agentplane/mcp_edge/core_client_test.go",
+            "agentplane/mcp_edge/http_facade.go",
+            "agentplane/mcp_edge/http_facade_test.go",
+            "agentplane/mcp_edge/http_health.go",
+            "agentplane/mcp_edge/http_health_test.go",
             "agentplane/mcp_edge/main.go"
           ]
         },
@@ -6057,8 +6256,8 @@
           "declared_packages": ["main"],
           "pending_tracks": ["mcp-edge-command-action-client"],
           "counts": {
-            "non_test": 5,
-            "tests": 3
+            "non_test": 7,
+            "tests": 5
           }
         },
         {
@@ -7764,8 +7963,8 @@
       "id": "runner_gateway",
       "path": "agentplane/runner_gateway",
       "counts": {
-        "files": 73,
-        "directories": 12
+        "files": 57,
+        "directories": 9
       },
       "directories": [
         {
@@ -7839,49 +8038,12 @@
           ]
         },
         {
-          "path": "agentplane/runner_gateway/environments",
-          "production": 4,
-          "tests": 5,
-          "files": [
-            "agentplane/runner_gateway/environments/collection.go",
-            "agentplane/runner_gateway/environments/delegated_resume_envtest_test.go",
-            "agentplane/runner_gateway/environments/environment_grants_test.go",
-            "agentplane/runner_gateway/environments/management.go",
-            "agentplane/runner_gateway/environments/service.go",
-            "agentplane/runner_gateway/environments/service_svid_test.go",
-            "agentplane/runner_gateway/environments/service_test.go",
-            "agentplane/runner_gateway/environments/watch.go",
-            "agentplane/runner_gateway/environments/watch_test.go"
-          ]
-        },
-        {
-          "path": "agentplane/runner_gateway/environments/internal/management",
+          "path": "agentplane/runner_gateway/dispatcher/wake",
           "production": 2,
-          "tests": 1,
+          "tests": 0,
           "files": [
-            "agentplane/runner_gateway/environments/internal/management/access.go",
-            "agentplane/runner_gateway/environments/internal/management/access_test.go",
-            "agentplane/runner_gateway/environments/internal/management/errors.go"
-          ]
-        },
-        {
-          "path": "agentplane/runner_gateway/environments/internal/view",
-          "production": 1,
-          "tests": 1,
-          "files": [
-            "agentplane/runner_gateway/environments/internal/view/view.go",
-            "agentplane/runner_gateway/environments/internal/view/view_test.go"
-          ]
-        },
-        {
-          "path": "agentplane/runner_gateway/environments/lifecycle",
-          "production": 3,
-          "tests": 1,
-          "files": [
-            "agentplane/runner_gateway/environments/lifecycle/environment_service.go",
-            "agentplane/runner_gateway/environments/lifecycle/manager.go",
-            "agentplane/runner_gateway/environments/lifecycle/service_test.go",
-            "agentplane/runner_gateway/environments/lifecycle/types.go"
+            "agentplane/runner_gateway/dispatcher/wake/budget.go",
+            "agentplane/runner_gateway/dispatcher/wake/manager.go"
           ]
         },
         {
@@ -7931,7 +8093,6 @@
         "agentplane/runner_gateway/dispatcher/internal/notification/dispatcher_notification.proto"
       ],
       "pending_tracks": [
-        "environment-service-to-sandbox-controller",
         "runner-gateway-command",
         "runner-gateway-app",
         "gateway-replica-ownership",
@@ -7940,11 +8101,11 @@
         "settings-single-source",
         "protobuf-alignment"
       ],
-      "goal_note": "Sessions binary (today's Runner Gateway) deployment configuration, service startup and process assembly.; Durable Session dispatch API, Store, caller/ownership leases, delivery, watch, wake, and terminal settlement.; Environment Service discovery, management, and watch APIs over Sandbox resources.; Kubernetes mutations implementing EnvironmentService management operations.; Converts Sandbox resources into EnvironmentService API views.; Policy and guarded desired-state transitions for existing Sandboxes.; Runtime proxy, Executor, peer authentication and Sandbox/Pod validation; Runner observers. The agreed two-binary shape splits this component: EnvironmentService, the Runtime proxy and the Executor go to the Environments binary (stage 3); the Dispatcher, its migrations and the command become the Sessions binary at `agentplane/session_dispatcher/` (stage 3).",
+      "goal_note": "Sessions binary (today's Runner Gateway) deployment configuration, service startup and process assembly.; Durable Session dispatch API, Store, caller/ownership leases, delivery, watch, wake, and terminal settlement.; Runtime proxy, Executor, peer authentication and Sandbox/Pod validation; Runner observers. The agreed two-binary shape splits this component: EnvironmentService left for `environments/` (#16613); the Runtime proxy and the Executor follow (stage 3); the Dispatcher, its migrations and the command become the Sessions binary at `agentplane/session_dispatcher/` (stage 3).",
       "decision": {
         "state": "REWORK",
         "role": "Session dispatch authority, Environment API and gateway adapters",
-        "goal_summary": "Sessions binary (today's Runner Gateway) deployment configuration, service startup and process assembly.; Durable Session dispatch API, Store, caller/ownership leases, delivery, watch, wake, and terminal settlement.; Environment Service discovery, management, and watch APIs over Sandbox resources.; Kubernetes mutations implementing EnvironmentService management operations.; Converts Sandbox resources into EnvironmentService API views.; Policy and guarded desired-state transitions for existing Sandboxes.; Runtime proxy, Executor, peer authentication and Sandbox/Pod validation; Runner observers.",
+        "goal_summary": "Sessions binary (today's Runner Gateway) deployment configuration, service startup and process assembly.; Durable Session dispatch API, Store, caller/ownership leases, delivery, watch, wake, and terminal settlement.; Runtime proxy, Executor, peer authentication and Sandbox/Pod validation; Runner observers.",
         "reason": "Package decisions below name each current responsibility, proposed targets and its extraction/naming gate. Existing shared transactions and mutable lifecycle state are constraints to resolve, not blanket reasons to retain every file arrangement.",
         "evidence_paths": [
           "agentplane/runner_gateway/config.go",
@@ -7962,10 +8123,7 @@
           "agentplane/runner_gateway/dispatcher/api/session/dispatchstate",
           "agentplane/runner_gateway/dispatcher/internal/placement",
           "agentplane/runner_gateway/dispatcher/internal/terminalnotice",
-          "agentplane/runner_gateway/environments",
-          "agentplane/runner_gateway/environments/internal/management",
-          "agentplane/runner_gateway/environments/internal/view",
-          "agentplane/runner_gateway/environments/lifecycle",
+          "agentplane/runner_gateway/dispatcher/wake",
           "agentplane/runner_gateway/internal/gateway",
           "agentplane/runner_gateway/internal/sandboxinventory",
           "agentplane/runner_gateway/migrations"
@@ -7986,7 +8144,6 @@
           ],
           "declared_packages": ["main"],
           "pending_tracks": [
-            "environment-service-to-sandbox-controller",
             "runner-gateway-command",
             "runner-gateway-app",
             "settings-single-source"
@@ -8014,7 +8171,6 @@
           ],
           "declared_packages": ["dispatcher"],
           "pending_tracks": [
-            "environment-service-to-sandbox-controller",
             "runner-gateway-command",
             "gateway-replica-ownership",
             "runner-gateway-dispatcher-store"
@@ -8051,7 +8207,7 @@
             "agentplane/session_dispatcher/dispatcher/internal/placement"
           ],
           "reason": "Maps dispatch/session identities to stable placement records. Moves unchanged with the Sessions binary's directory; its path below `session_dispatcher/` and its package name stay.",
-          "gate": "Moves in runner-gateway-command, after EnvironmentService and the Runtime proxy leave.",
+          "gate": "Moves in runner-gateway-command, after the Runtime proxy leaves.",
           "evidence_paths": [
             "agentplane/runner_gateway/dispatcher/internal/placement/placement.go",
             "agentplane/runner_gateway/dispatcher/internal/placement/placement_test.go"
@@ -8074,7 +8230,7 @@
             "agentplane/session_dispatcher/dispatcher/internal/terminalnotice"
           ],
           "reason": "Encodes terminal dispatch outcomes into notification records. Moves unchanged with the Sessions binary's directory; its path below `session_dispatcher/` and its package name stay.",
-          "gate": "Moves in runner-gateway-command, after EnvironmentService and the Runtime proxy leave.",
+          "gate": "Moves in runner-gateway-command, after the Runtime proxy leaves.",
           "evidence_paths": [
             "agentplane/runner_gateway/dispatcher/internal/terminalnotice/terminalnotice.go"
           ],
@@ -8089,83 +8245,21 @@
           }
         },
         {
-          "path": "agentplane/runner_gateway/environments",
-          "role": "Environment Service discovery, management, and watch APIs over Sandbox resources.",
+          "path": "agentplane/runner_gateway/dispatcher/wake",
+          "role": "The Dispatcher's automatic wake: policy check, shared reservation budget and the guarded Sandbox patch.",
           "decision": "move",
-          "target_paths": ["agentplane/environments/internal/service"],
-          "reason": "Environment Service discovery, management, and watch APIs over Sandbox resources. Moves whole into the Environments binary as `environments/internal/service` (package `service`), beside its API at `environments/v1`.",
-          "gate": "Agreed direction; the merge contract (wake call, wake budget, identity fence, serving) comes first. Target path proposed.",
+          "target_paths": ["agentplane/session_dispatcher/dispatcher/wake"],
+          "reason": "Split from the lifecycle manager by #16626. It moves with `dispatcher/` to `session_dispatcher/`.",
+          "gate": "",
           "evidence_paths": [
-            "agentplane/runner_gateway/environments/collection.go",
-            "agentplane/runner_gateway/environments/management.go",
-            "agentplane/runner_gateway/environments/service.go",
-            "agentplane/runner_gateway/environments/service_test.go"
+            "agentplane/runner_gateway/dispatcher/wake/budget.go",
+            "agentplane/runner_gateway/dispatcher/wake/manager.go"
           ],
-          "declared_packages": ["environments"],
-          "pending_tracks": ["environment-service-to-sandbox-controller"],
-          "counts": {
-            "non_test": 4,
-            "tests": 5
-          }
-        },
-        {
-          "path": "agentplane/runner_gateway/environments/internal/management",
-          "role": "Kubernetes mutations implementing EnvironmentService management operations.",
-          "decision": "move",
-          "target_paths": [
-            "agentplane/environments/internal/service/management"
-          ],
-          "reason": "Kubernetes mutations implementing EnvironmentService management operations. Moves whole under `environments/internal/service/`; package name unchanged.",
-          "gate": "Agreed direction; the merge contract (wake call, wake budget, identity fence, serving) comes first. Target path proposed.",
-          "evidence_paths": [
-            "agentplane/runner_gateway/environments/internal/management/access.go",
-            "agentplane/runner_gateway/environments/internal/management/access_test.go",
-            "agentplane/runner_gateway/environments/internal/management/errors.go"
-          ],
-          "declared_packages": ["management"],
-          "pending_tracks": ["environment-service-to-sandbox-controller"],
+          "declared_packages": ["wake"],
+          "pending_tracks": ["runner-gateway-command"],
           "counts": {
             "non_test": 2,
-            "tests": 1
-          }
-        },
-        {
-          "path": "agentplane/runner_gateway/environments/internal/view",
-          "role": "Converts Sandbox resources into EnvironmentService API views.",
-          "decision": "move",
-          "target_paths": ["agentplane/environments/internal/service/view"],
-          "reason": "Converts Sandbox resources into EnvironmentService API views. Moves whole under `environments/internal/service/`; package name unchanged.",
-          "gate": "Agreed direction; the merge contract (wake call, wake budget, identity fence, serving) comes first. Target path proposed.",
-          "evidence_paths": [
-            "agentplane/runner_gateway/environments/internal/view/view.go",
-            "agentplane/runner_gateway/environments/internal/view/view_test.go"
-          ],
-          "declared_packages": ["view"],
-          "pending_tracks": ["environment-service-to-sandbox-controller"],
-          "counts": {
-            "non_test": 1,
-            "tests": 1
-          }
-        },
-        {
-          "path": "agentplane/runner_gateway/environments/lifecycle",
-          "role": "Policy and guarded desired-state transitions for existing Sandboxes.",
-          "decision": "move",
-          "target_paths": [
-            "agentplane/environments/internal/service/lifecycle"
-          ],
-          "reason": "Policy and guarded desired-state transitions for existing Sandboxes. Moves whole under `environments/internal/service/`; package name unchanged.",
-          "gate": "Agreed direction; the merge contract (wake call, wake budget, identity fence, serving) comes first. Target path proposed.",
-          "evidence_paths": [
-            "agentplane/runner_gateway/environments/lifecycle/manager.go",
-            "agentplane/runner_gateway/environments/lifecycle/service_test.go",
-            "agentplane/runner_gateway/environments/lifecycle/types.go"
-          ],
-          "declared_packages": ["lifecycle", "lifecycle_test"],
-          "pending_tracks": ["environment-service-to-sandbox-controller"],
-          "counts": {
-            "non_test": 3,
-            "tests": 1
+            "tests": 0
           }
         },
         {
@@ -8174,7 +8268,7 @@
           "decision": "move",
           "target_paths": ["agentplane/environments/internal/runtimeproxy"],
           "reason": "The agreed two-binary shape puts every Runtime caller path in the Environments binary. After the connection Lease goes the package is a stateless forwarder with no per-Sandbox state to split. It becomes `environments/internal/runtimeproxy` (package `runtimeproxy`).",
-          "gate": "Moves after EnvironmentService's every-replica listener (runner-gateway-connections-proxy).",
+          "gate": "Moves in runner-gateway-connections-proxy, onto the every-replica listener.",
           "evidence_paths": [
             "agentplane/runner_gateway/internal/gateway/connections.go",
             "agentplane/runner_gateway/internal/gateway/executor.go",
@@ -8199,7 +8293,7 @@
             "agentplane/session_dispatcher/internal/sandboxinventory"
           ],
           "reason": "Informer-backed Sandbox reads and the uncached Identity reader behind the Dispatcher's catalog; stays with the Sessions binary. Moves unchanged with the Sessions binary's directory; its path below `session_dispatcher/` and its package name stay.",
-          "gate": "Moves in runner-gateway-command, after EnvironmentService and the Runtime proxy leave.",
+          "gate": "Moves in runner-gateway-command, after the Runtime proxy leaves.",
           "evidence_paths": [
             "agentplane/runner_gateway/internal/sandboxinventory/sandbox_kubernetes.go",
             "agentplane/runner_gateway/internal/sandboxinventory/sandbox_kubernetes_test.go"
@@ -8217,7 +8311,7 @@
           "decision": "move",
           "target_paths": ["agentplane/session_dispatcher/migrations"],
           "reason": "Goose migration set for the Dispatcher database. Moves unchanged with the Sessions binary's directory; its path below `session_dispatcher/` and its package name stay.",
-          "gate": "Moves in runner-gateway-command, after EnvironmentService and the Runtime proxy leave.",
+          "gate": "Moves in runner-gateway-command, after the Runtime proxy leaves.",
           "evidence_paths": [
             "agentplane/runner_gateway/migrations/integration_testmain_test.go",
             "agentplane/runner_gateway/migrations/migrations.go",
@@ -8955,7 +9049,7 @@
       "kind": "naming",
       "stage": 2,
       "priority": 3,
-      "summary": "The Runner became the Environment Runtime (#13435), and the DAG's `RUNNER_GATEWAY_RENAME` records the Runtime protocol and resource cutovers as complete, yet Go package, file and private identifier names still say runner. At the pin, 232 non-generated Go files mention runner beyond the Gateway's own name. That count mixes three kinds: (1) leftover Go names for the Environment Runtime, which this track renames, such as the Environment Runtime's and Sandbox Controller's private identifiers, which #16427 (merged 2026-11-14) renamed in `env` and `environments/` after #16407 made `runnercontrol` `runtimecontrol`; comments there (for example `environments/internal/controller/controller.go`) and error messages (`env/runtime/control/server.go`) still say runner; and the app's, which #16394 (merged 2026-11-14) renamed with its Session client (`app/internal/sessionclient`, `server/environment_runtime_api.go`); (2) wire, stored and security names (protobuf fields and RPCs, the Notification Service's stored `runner_entry`/`runner_cursor`, annotation and metadata keys, SPIFFE URIs), which stay until their own migration; (3) generic job runners such as History's `FoldRunner`, which are not leftovers.",
+      "summary": "The Runner became the Environment Runtime (#13435), and the DAG's `RUNNER_GATEWAY_RENAME` records the Runtime protocol and resource cutovers as complete, yet Go package, file and private identifier names still say runner. At the pin, 232 non-generated Go files mention runner beyond the Gateway's own name. That count mixes three kinds: (1) leftover Go names for the Environment Runtime, which this track renames, such as the Environment Runtime's and Sandbox Controller's private identifiers, which #16427 (merged 2026-11-14) renamed in `env` and `environments/` after #16407 made `runnercontrol` `runtimecontrol`; #16623 (merged 2026-11-15) then changed their comments and error strings, leaving kind (2) there, such as the Sandbox status's `RunnerCredential`; and the app's, which #16394 (merged 2026-11-14) renamed with its Session client (`app/internal/sessionclient`, `server/environment_runtime_api.go`); (2) wire, stored and security names (protobuf fields and RPCs, the Notification Service's stored `runner_entry`/`runner_cursor`, annotation and metadata keys, SPIFFE URIs), which stay until their own migration; (3) generic job runners such as History's `FoldRunner`, which are not leftovers.",
       "how": [
         "Classify every occurrence into the three kinds, per component.",
         "Rename kind (1) per component in coherent PRs outside the Runner Gateway and Notification Service; files and private identifiers follow.",
@@ -8977,100 +9071,6 @@
       "review_size": "One PR per component; avoid clause-only PRs below 200 changed LOC by grouping a component's names."
     },
     {
-      "source_paths": [
-        "agentplane/runner_gateway/environments/collection.go",
-        "agentplane/runner_gateway/environments/management.go",
-        "agentplane/runner_gateway/environments/service.go",
-        "agentplane/runner_gateway/environments/service_test.go",
-        "agentplane/runner_gateway/environments/watch.go",
-        "agentplane/runner_gateway/environments/watch_test.go",
-        "agentplane/runner_gateway/environments/lifecycle/manager.go",
-        "agentplane/runner_gateway/environments/lifecycle/service_test.go",
-        "agentplane/runner_gateway/environments/lifecycle/types.go",
-        "agentplane/runner_gateway/environments/internal/management/access.go",
-        "agentplane/runner_gateway/environments/internal/management/access_test.go",
-        "agentplane/runner_gateway/environments/internal/management/errors.go",
-        "agentplane/runner_gateway/environments/internal/view/view.go",
-        "agentplane/runner_gateway/environments/internal/view/view_test.go",
-        "agentplane/runner_gateway/main.go",
-        "agentplane/runner_gateway/dispatcher/delivery.go",
-        "agentplane/runner_gateway/dispatcher/delivery_wake.go",
-        "agentplane/runner_gateway/dispatcher/wake.go",
-        "agentplane/runner_gateway/dispatcher/store.go",
-        "agentplane/environments/cmd/main.go",
-        "agentplane/runner_gateway/environments/lifecycle/environment_service.go",
-        "agentplane/environments/internal/serving/server.go"
-      ],
-      "target_paths": [
-        "agentplane/environments/internal/service",
-        "agentplane/environments/internal/service/lifecycle",
-        "agentplane/environments/internal/service/management",
-        "agentplane/environments/internal/service/view",
-        "agentplane/environments/cmd"
-      ],
-      "dependencies": [],
-      "path_moves": [],
-      "file_splits": [],
-      "deleted_paths": [],
-      "proposed_file_targets": [],
-      "source_owner": "agentplane/runner_gateway/environments",
-      "id": "environment-service-to-sandbox-controller",
-      "title": "Move EnvironmentService into the Environments binary",
-      "components": ["runner_gateway", "environments"],
-      "status": "READY",
-      "kind": "service boundary move",
-      "stage": 3,
-      "priority": 1,
-      "summary": "Released by the operator to Codex worker 539294ae (\"okay - let's go implement this\", relayed 2026-11-15 05:08 UTC) and in progress. #16542 (merged 2026-11-15) serves EnvironmentService on every Controller replica on 8082 from `environments/internal/serving`, behind opt-in settings, and moved `environmentaccess` to `environments/access`; #16556 enabled it on staging with both Controller Pods Ready. Reconcilers and Runtime observation stay leader-only. The handlers still live in `runner_gateway/environments` (with `lifecycle`, `internal/management` and `internal/view`), and both the Gateway and the Controller serve them until callers move. Automatic wake stays with the Dispatcher (operator, 2026-11-14 05:19 UTC, card \"Choose which binary performs automatic wakes after the split\": \"Sessions binary wakes\"); explicit resume reserves no budget (#16375) and Sessions re-check the live Identity (#16373).",
-      "how": [
-        "Move callers, receivers before senders: the App to `sandbox-controller:8082` with its SVID (#16565, open); the Actions launcher grant on both receivers (#16566, open), then the Actions caller; then the Sandbox CLI route, keeping the Gateway API for existing Sandboxes.",
-        "Retire the Gateway's EnvironmentService registration, settings and RBAC once its traffic has left and the last safe rollback image and config pair is recorded.",
-        "Move the four packages whole, with tests, to `environments/internal/service` (package `environments` becomes `service`), with `lifecycle`, `management` and `view` under it, beside the API at `environments/v1`; `environments/internal/serving` then imports them from there. The only importer outside the Gateway, orchestration_v1's `fixture_test.go` (`environments` and `lifecycle`), must first be retired (orchestration-v1-retirement) or rewritten against a test server, since `internal/` closes those packages. The automatic half of `lifecycle` stays with the Dispatcher. Update RBAC, manifests and the system overview diagram, image before config, with the rollback stated."
-      ],
-      "gate": "Released; serving and `environments/access` landed (#16542, #16556). Each caller cutover lands only after its receiver grant is live on both receivers. No database moves.",
-      "preserve": "The EnvironmentService wire API and per-method authorization; identity changes only while nothing runs, and no delivery under a changed Identity; automatic wake's rate limit; wake assessments; resume authorization.",
-      "validation": [
-        "//agentplane/runner_gateway/environments:environments_test",
-        "//agentplane/runner_gateway/environments/lifecycle:lifecycle_test",
-        "//agentplane/runner_gateway/environments/internal/management:unit_test",
-        "//agentplane/runner_gateway/environments/internal/view:view_test",
-        "//agentplane/runner_gateway/dispatcher:store_integration_test",
-        "//agentplane/environments/internal/controller:controller_test",
-        "//agentplane/environments/cmd:config_test"
-      ],
-      "evidence_paths": [
-        "agentplane/runner_gateway/main.go",
-        "agentplane/runner_gateway/dispatcher/delivery.go",
-        "agentplane/runner_gateway/dispatcher/delivery_wake.go",
-        "agentplane/runner_gateway/dispatcher/wake.go",
-        "agentplane/runner_gateway/dispatcher/store.go",
-        "agentplane/environments/cmd/main.go",
-        "agentplane/runner_gateway/environments/service.go",
-        "agentplane/runner_gateway/environments/lifecycle/manager.go",
-        "agentplane/runner_gateway/environments/management.go",
-        "agentplane/action_service/orchestration_v1/fixture_test.go"
-      ],
-      "candidate_owner_paths": [
-        "agentplane/environments/internal/service",
-        "agentplane/environments/internal/service/lifecycle",
-        "agentplane/environments/internal/service/management",
-        "agentplane/environments/internal/service/view"
-      ],
-      "review_size": "Contract review first; then one move PR with caller closure, separate from the rollout config.",
-      "package_renames": [
-        {
-          "path": "agentplane/environments/internal/service",
-          "from": "environments",
-          "to": "service"
-        },
-        {
-          "path": "agentplane/environments/access",
-          "from": "environmentaccess",
-          "to": "access"
-        }
-      ]
-    },
-    {
       "id": "runner-gateway-command",
       "title": "Move the Sessions binary to `session_dispatcher/`",
       "status": "HELD",
@@ -9085,14 +9085,14 @@
         "agentplane/session_dispatcher/internal/sandboxinventory",
         "agentplane/session_dispatcher/migrations"
       ],
-      "summary": "Operator, 2026-11-14 05:49 UTC, card \"Choose directory names for the Sessions and Environments binaries\": \"session_dispatcher + environments\". Once EnvironmentService and the Runtime proxy have left, what remains of `runner_gateway/` is the Sessions binary: the Dispatcher, its migrations, the Sandbox inventory behind its catalog, the command and its Python test support. It moves to `agentplane/session_dispatcher/`, named for the `SessionDispatcher` service it serves.",
+      "summary": "Operator, 2026-11-14 05:49 UTC, card \"Choose directory names for the Sessions and Environments binaries\": \"session_dispatcher + environments\". Once the Runtime proxy has left (EnvironmentService left in #16613), what remains of `runner_gateway/` is the Sessions binary: the Dispatcher, its migrations, the Sandbox inventory behind its catalog, the command and its Python test support. It moves to `agentplane/session_dispatcher/`, named for the `SessionDispatcher` service it serves.",
       "how": [
         "Move `dispatcher/` (with its `api/session` and `internal/notification` protos, `internal/placement` and `internal/terminalnotice`), `internal/sandboxinventory` and `migrations/` to the same relative paths under `session_dispatcher/`. `dispatcher/` and `migrations/` stay outside `internal/`: the Action Service's `session_delegation` integration tests import them.",
         "The root package moves through runner-gateway-app's split, as the second commit of the same PR, so `config.go`, `main.go` and `config_test.go` land once in `cmd/` and `internal/app/`.",
         "The two `.proto` files move with their directory, so their file paths, `go_package` and the generated Go, TypeScript and Python import paths change in the same PR. The proto package `agentplane.runner_gateway.dispatcher` and its service and message names are wire names; they stay for protobuf-alignment.",
         "Move the Python client, settings model, test support (`testing/`, `conftest.py`, tests), README.md, SPEC.md and BUILD files with it, and update Bazel labels, CI image targets, cdk8s, system tests and docs in the same PR. Keep deployed names: the `runner-gateway` image, Deployment and Service, its SPIFFE ID and the `AGENTPLANE_RUNNER_GATEWAY_*` settings keys."
       ],
-      "gate": "Decided 2026-11-14 05:49 UTC. Held so its files move once: it lands after EnvironmentService and the Runtime proxy have left `runner_gateway/`. A pure move: the generated manifests must not change.",
+      "gate": "Decided 2026-11-14 05:49 UTC. Held so its files move once: it lands after the Runtime proxy has left `runner_gateway/`. A pure move: the generated manifests must not change.",
       "preserve": "Wire names (proto package, services, methods, messages); deployed names; YAML/env configuration precedence and validation; migration and startup exit behavior; existing trust and account checks.",
       "validation": [
         "//agentplane/runner_gateway/dispatcher:store_integration_test",
@@ -9108,10 +9108,7 @@
         "agentplane/action_service/session_delegation/dispatcher_integration_test.go",
         "agentplane/action_service/session_delegation/dispatcher_integration_testmain_test.go"
       ],
-      "dependencies": [
-        "environment-service-to-sandbox-controller",
-        "runner-gateway-connections-proxy"
-      ],
+      "dependencies": ["runner-gateway-connections-proxy"],
       "priority": 2,
       "review_size": "One rename PR with runner-gateway-app's split as its second commit; with rename detection the first commit changes only imports, labels and doc links.",
       "path_moves": [
@@ -9250,6 +9247,14 @@
         {
           "from": "agentplane/runner_gateway/dispatcher/api/session/dispatchstate/state_test.go",
           "to": "agentplane/session_dispatcher/dispatcher/api/session/dispatchstate/state_test.go"
+        },
+        {
+          "from": "agentplane/runner_gateway/dispatcher/wake/budget.go",
+          "to": "agentplane/session_dispatcher/dispatcher/wake/budget.go"
+        },
+        {
+          "from": "agentplane/runner_gateway/dispatcher/wake/manager.go",
+          "to": "agentplane/session_dispatcher/dispatcher/wake/manager.go"
         }
       ],
       "package_renames": [],
@@ -9281,7 +9286,7 @@
         "Keep cmd/main.go minimal. The same-Pod delivery-account proof (`dispatcherAccount`) leaves with the proxy; the Sessions binary presents its own workload identity to the Environments proxy.",
         "Land as the second commit of runner-gateway-command's PR, so the root package's files move once, from `runner_gateway/` straight to `session_dispatcher/cmd` and `session_dispatcher/internal/app`."
       ],
-      "gate": "Test config precedence and server wiring; preserve bounded shutdown. Waits, with runner-gateway-command, for EnvironmentService and the proxy to leave.",
+      "gate": "Test config precedence and server wiring; preserve bounded shutdown. Waits, with runner-gateway-command, for the proxy to leave.",
       "preserve": "Namespace scoping; listener readiness before serving; bounded shutdown of delivery workers",
       "validation": [
         "//agentplane/runner_gateway:config_test",
@@ -9293,7 +9298,6 @@
         "agentplane/runner_gateway/config_test.go"
       ],
       "dependencies": [
-        "environment-service-to-sandbox-controller",
         "runner-gateway-connections-proxy",
         "runner-gateway-command"
       ],
@@ -9376,7 +9380,7 @@
         "agentplane/action_service/cmd/main.go",
         "agentplane/action_service/cmd/config.go",
         "agentplane/action_service/internal/admission/catalog/catalog.go",
-        "agentplane/runner_gateway/environments/service_test.go"
+        "agentplane/environments/internal/service/service_test.go"
       ],
       "target_paths": [],
       "dependencies": [],
@@ -9409,7 +9413,7 @@
       "how": [
         "Record the interface review's result; fix what it finds in the owning API, not in an adapter.",
         "Land the replacements: Identity resume and native `CreateSession` through the environment rule, an approval-gated launch through PolicyService and EnvironmentService instead of direct Kubernetes writes, model and effort changes, and Session and preset listing.",
-        "Move callers to the replacements, then delete orchestration_v1, its contract, `binding.py`, catalog entries, docs and goldens in one PR. `runner_gateway/environments/service_test.go` imports its fixture and changes with it."
+        "Move callers to the replacements, then delete orchestration_v1, its contract, `binding.py`, catalog entries, docs and goldens in one PR. `environments/internal/service/service_test.go` imports its fixture, and `environments/testing/servicefixture` exists for its `fixture_test.go`; both change with it."
       ],
       "gate": "Two operator answers are open: the interface sanity check, and the environment-rule slices (`ENVIRONMENT_RULE_TYPE_DESIGN`). Nothing here is dispatchable before both.",
       "preserve": "Operator approval for launches, Identity-scoped authorization and existing Session records.",
@@ -10122,7 +10126,7 @@
         "Define runtimecredentials inputs/results around object UID, incarnation and expected revision; it cannot independently publish reconciler status.",
         "Define VM create/update/stop/cleanup outcomes with one owner for fencing and child deletion. Extract one bounded path and its failure/rollback tests per PR."
       ],
-      "gate": "No transfer of receiver methods with the whole mutable Reconciler. Prove retry/idempotency, identity replacement, stale-version rejection and teardown ordering before either candidate becomes a package. Map owners after EnvironmentService joins the controller, so the map covers the merged process.",
+      "gate": "No transfer of receiver methods with the whole mutable Reconciler. Prove retry/idempotency, identity replacement, stale-version rejection and teardown ordering before either candidate becomes a package. Map owners over the merged process: EnvironmentService joined the controller in #16613.",
       "preserve": "Object UID/resource-version checks; identity and incarnation fences; credential revocation; finalizer and child cleanup ordering; retained user state.",
       "validation": [
         "//agentplane/environments/internal/controller:controller_test",
@@ -10139,7 +10143,7 @@
         "agentplane/environments/internal/controller/firecracker_suspend.go",
         "agentplane/environments/internal/controller/state_volume.go"
       ],
-      "dependencies": ["environment-service-to-sandbox-controller"],
+      "dependencies": [],
       "priority": 14,
       "kind": "responsibility extraction",
       "path_moves": [],
@@ -10629,12 +10633,12 @@
       "summary": "Agreed with the two-binary shape (Operator, 2026-11-14 05:29 UTC, card \"Adopt the two-binary shape as the agreed reorg direction?\": \"Adopt it\".) `internal/gateway` holds the Runtime proxy (native Session creation, commands and read-only diagnostics), the Executor behind the central sampler's code mode, peer authentication, Sandbox and Pod validation, and the Runner observers, which since #16361 run on every replica with no Lease or epoch (#16365). Per call the proxy validates the Sandbox and its current Pod, dials the Runtime with mutual TLS and forwards once, never replaying an uncertain mutation.",
       "how": [
         "Re-inventory `internal/gateway` now that the connection Lease is gone (#16365): the proxy, the Executor, the observers, peer authentication and Sandbox/Pod validation remain.",
-        "Move it whole into the Environments binary as `environments/internal/runtimeproxy` (package `gateway` becomes `runtimeproxy`), served by the every-replica listener EnvironmentService brings (target binaries cut line: serving).",
+        "Move it whole into the Environments binary as `environments/internal/runtimeproxy` (package `gateway` becomes `runtimeproxy`), served by the every-replica listener in `environments/internal/serving` (#16542).",
         "Grant the proxy's mutating methods to the Sessions binary's service SVID (privileged-auth) in place of the same-Pod account proof (`dispatcherAccount`), receivers before senders (cut line: Runtime calls).",
         "Retarget callers: the Dispatcher's `ProxyRunner`, the app's `sessionclient`, the Notification Service's `ProxyRunner` and the central sampler's Executor client. The controller's quiesce calls the Runtime directly, as its `WatchState` observer already does.",
         "Update RBAC, certificate identities, cdk8s and settings (code before manifests) and the README system diagram; remove the old serving path after traffic has left (cut line: rollout)."
       ],
-      "gate": "Direction agreed. No Lease or epoch code is left to move (#16365, #16388); waits for EnvironmentService's every-replica listener. Cross-service protocol change: system tests covering command delivery, quiesce, suspend and the central sampler's code mode must pass, and each PR states its rollback.",
+      "gate": "Direction agreed. No Lease or epoch code is left to move (#16365, #16388); the every-replica listener it needs landed (#16542). Cross-service protocol change: system tests covering command delivery, quiesce, suspend and the central sampler's code mode must pass, and each PR states its rollback.",
       "preserve": "Per-method caller authorization; Sandbox UID, incarnation and boot-ID fencing; at-most-once forwarding of execution mutations; Executor stream semantics.",
       "validation": [
         "//agentplane/runner_gateway/internal/gateway:gateway_test",
@@ -10653,7 +10657,7 @@
         "agentplane/central_sampler/internal/executor/executor.go",
         "agentplane/environments/internal/runtimecontrol/quiescer.go"
       ],
-      "dependencies": ["environment-service-to-sandbox-controller"],
+      "dependencies": [],
       "priority": 9,
       "review_size": "One PR moving the package and retargeting callers behind the new Service; one removing the old serving path after the pins.",
       "candidate_owner_paths": [
@@ -10965,13 +10969,12 @@
       "stage": 3,
       "title": "Follow the agreed service directions",
       "work": [
-        "environment-service-to-sandbox-controller",
         "runner-gateway-connections-proxy",
         "runner-gateway-command",
         "runner-gateway-app",
         "orchestration-v1-retirement"
       ],
-      "result": "The Sandbox Controller is at `environments/` (#16407); EnvironmentService follows after its merge contract (automatic wake stays with the Dispatcher, decided 2026-11-14), then the Runtime proxy and Executor. What remains of the Runner Gateway then moves to `session_dispatcher/` as the Sessions binary. Retire orchestration_v1 once its interface review and the environment-rule slices are answered."
+      "result": "The Sandbox Controller is at `environments/` (#16407); EnvironmentService followed (#16613; automatic wake stays with the Dispatcher, #16626), then the Runtime proxy and Executor. What remains of the Runner Gateway then moves to `session_dispatcher/` as the Sessions binary. Retire orchestration_v1 once its interface review and the environment-rule slices are answered."
     },
     {
       "stage": 4,
@@ -11021,12 +11024,12 @@
   ],
   "scope_coverage": {
     "top_level_areas": 36,
-    "go_packages": 233,
-    "go_files": 1304,
+    "go_packages": 237,
+    "go_files": 1316,
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "c2549d48c3c3d99e05ceb831f8835f2aa07f4120",
+    "review_source_sha": "01e85fd9d267be8b955d4e3bf753f2051261043f",
     "review_slices": [
       {
         "slice": "action_service",
@@ -11080,13 +11083,13 @@
         "slice": "env",
         "components": ["env"],
         "packages": 30,
-        "go_files": 204
+        "go_files": 206
       },
       {
         "slice": "environments",
         "components": ["environments"],
-        "packages": 5,
-        "go_files": 44
+        "packages": 12,
+        "go_files": 66
       },
       {
         "slice": "firecracker",
@@ -11134,7 +11137,7 @@
         "slice": "mcp_edge",
         "components": ["mcp_edge"],
         "packages": 6,
-        "go_files": 46
+        "go_files": 50
       },
       {
         "slice": "native",
@@ -11193,8 +11196,8 @@
       {
         "slice": "runner_gateway",
         "components": ["runner_gateway"],
-        "packages": 12,
-        "go_files": 73
+        "packages": 9,
+        "go_files": 57
       },
       {
         "slice": "sandboxes",
@@ -11250,24 +11253,17 @@
     },
     {
       "id": "next-2",
-      "track": "environment-service-to-sandbox-controller",
-      "title": "Move EnvironmentService into the Environments binary",
-      "readiness": "READY",
-      "first_step": "Land the open caller PRs (#16565 App, #16566 Actions launcher grant), then the Actions caller and the Sandbox CLI route; the every-replica listener landed in #16542 and runs on staging (#16556)."
-    },
-    {
-      "id": "next-3",
       "track": "runner-gateway-connections-proxy",
       "title": "Move the Runtime proxy and Executor into the Environments binary",
       "readiness": "AGREED DIRECTION",
-      "first_step": "After the connection Lease removal, move internal/gateway into the Environments binary behind EnvironmentService's listener."
+      "first_step": "Move internal/gateway into the Environments binary behind its every-replica listener (`environments/internal/serving`)."
     },
     {
-      "id": "next-4",
+      "id": "next-3",
       "track": "runner-gateway-command",
       "title": "Move the Sessions binary to `session_dispatcher/`",
       "readiness": "HELD",
-      "first_step": "After EnvironmentService and the Runtime proxy leave, move the rest of `runner_gateway/` to `session_dispatcher/`, with the app split as the PR's second commit."
+      "first_step": "After the Runtime proxy leaves, move the rest of `runner_gateway/` to `session_dispatcher/`, with the app split as the PR's second commit."
     }
   ],
   "maintenance": {
