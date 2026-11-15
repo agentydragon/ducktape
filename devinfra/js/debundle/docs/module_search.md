@@ -95,8 +95,8 @@ Preflight, unsupported scope, malformed input, execution and serialization error
 fail without a no-placement result. Interruption cannot become exhaustion.
 `--limit` and `--size-cap-lines` remain advisory output controls and are rejected
 in complete mode. The report records the move scope, work counts for partition
-states, quotient projections, forced contractions, branch attempts, final
-certifications and clause categories, plus residual gain and existing-unit
+states, quotient projections, cooperative schedule checkpoints, forced
+contractions, branch attempts, final certifications and clause categories, plus residual gain and existing-unit
 disturbance.
 
 ## How the search works
