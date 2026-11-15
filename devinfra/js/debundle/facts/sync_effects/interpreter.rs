@@ -8334,29 +8334,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 proof,
                 dependencies,
             );
-            if let Some((span, _)) = self.inputs.index.private_empty_set_sites.get(&key)
-                && let Some(evidence) = self
-                    .inputs
-                    .index
-                    .native_operation_input_evidence
-                    .get(&CallSite::from(*span))
-                && evidence.operation
-                    == NativeInputKind::CallIdentity(
-                        spec::NativeCallIdentityKind::SetEmptyPrivateField,
-                    )
-                && dependencies
-                    .native_operation_inputs
-                    .contains(&evidence.reference)
-            {
-                self.observations.record_native_operation_input_use(
-                    *span,
-                    crate::reports::schema::NativeOperationInputUse {
-                        evidence: evidence.clone(),
-                        source_location: None,
-                        span: *span,
-                    },
-                );
-            }
         }
         Ok(constructor)
     }

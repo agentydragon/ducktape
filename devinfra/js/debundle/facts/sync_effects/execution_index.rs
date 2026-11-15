@@ -6100,7 +6100,6 @@ pub(super) struct ExecutionIndex {
     /// Receivers of member targets in destructuring assignments, per
     /// top-level owner; a callable's own are on `Callable`.
     pub(super) top_destructuring_member_receivers: Vec<Vec<ValueExpr>>,
-    pub(super) private_empty_set_sites: BTreeMap<u32, (Span, Id)>,
     class_ids: BTreeSet<Id>,
     /// Top-level `const` declarations, exported or not: a store throws.
     pub(super) top_const_bindings: BTreeSet<Id>,
@@ -6363,7 +6362,6 @@ impl Default for ExecutionIndex {
             top_destructuring_member_receivers: Vec::new(),
             this_reading_accessor_objects: BTreeSet::new(),
             literal_prototypes: BTreeMap::new(),
-            private_empty_set_sites: BTreeMap::new(),
             class_ids: BTreeSet::new(),
             top_const_bindings: BTreeSet::new(),
             captured_bindings: BTreeSet::new(),
@@ -7476,11 +7474,6 @@ impl ExecutionIndex {
                         input.call_span,
                         vec![Global(Object), Static(Object, "freeze")],
                     ),
-                    // The empty-collection premise of the local-class proof;
-                    // `Set.prototype` methods are not asserted.
-                    NativeInputKind::CallIdentity(Callee::SetEmptyPrivateField) => {
-                        (input.call_span, vec![Global(Set)])
-                    }
                 };
                 (
                     site.lo.0,
@@ -7880,41 +7873,6 @@ impl ExecutionIndex {
         for input in selected {
             let request = &input.evidence.spec_location;
             if input.evidence.operation
-                == NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::SetEmptyPrivateField)
-            {
-                if let Some(owner) = self.known_global_set_mutation() {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} is contradicted by a positively identified global Set slot write in source unit {}",
-                        owner.0
-                    ));
-                    continue;
-                }
-                let Some((binding, declaration_span, call)) = self.private_empty_set_field_call(
-                    &input.selected_binding,
-                    input.selected_statement_span,
-                ) else {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} requires one stable non-derived implicit-constructor class with exactly one direct zero-argument unshadowed private-field new Set site"
-                    ));
-                    continue;
-                };
-                let mut evidence = input.evidence.clone();
-                evidence.selected_binding = input.selected_binding.clone();
-                self.native_operation_input_evidence
-                    .insert(call.span.into(), evidence.clone());
-                self.resolved_native_operation_inputs
-                    .push(ResolvedNativeOperationInput {
-                        evidence,
-                        binding,
-                        selected_statement_span: input.selected_statement_span,
-                        declaration_span,
-                        initializer_span: call.span,
-                        call_span: call.span,
-                        initializer_ordinal: call.owner,
-                    });
-                continue;
-            }
-            if input.evidence.operation
                 == NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::ObjectFreeze)
             {
                 if let Some(owner) = self.known_object_freeze_mutation() {
@@ -8173,39 +8131,6 @@ impl ExecutionIndex {
 
         for input in resolved {
             let request = &input.evidence.spec_location;
-            if input.evidence.operation
-                == NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::SetEmptyPrivateField)
-            {
-                if let Some(owner) = self.known_global_set_mutation() {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} is contradicted by a positively identified global Set slot write in source unit {}",
-                        owner.0
-                    ));
-                    continue;
-                }
-                let is_same = self
-                    .private_empty_set_field_call(
-                        &input.evidence.selected_binding,
-                        input.selected_statement_span,
-                    )
-                    .is_some_and(|(binding, declaration_span, call)| {
-                        binding == input.binding
-                            && declaration_span == input.declaration_span
-                            && call.span == input.call_span
-                            && call.span == input.initializer_span
-                            && call.owner == input.initializer_ordinal
-                    });
-                if !is_same {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} no longer identifies the same stable private-field new Set site"
-                    ));
-                    continue;
-                }
-                self.native_operation_input_evidence
-                    .insert(input.call_span.into(), input.evidence.clone());
-                self.resolved_native_operation_inputs.push(input.clone());
-                continue;
-            }
             if input.evidence.operation
                 == NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::ObjectFreeze)
             {
@@ -8583,16 +8508,6 @@ impl ExecutionIndex {
         }
     }
 
-    fn known_global_set_mutation(&self) -> Option<SourceUnitOrdinal> {
-        match self.source_slot_overlap(&NativeWriteSlot {
-            receiver: NativeReceiverPath::GlobalObject,
-            key: NativePropertyKey::String("Set".to_owned()),
-        }) {
-            NativeSlotOverlap::Known(owner) => Some(owner),
-            NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
-        }
-    }
-
     fn known_object_freeze_mutation(&self) -> Option<SourceUnitOrdinal> {
         [
             NativeWriteSlot {
@@ -8692,49 +8607,6 @@ impl ExecutionIndex {
         (row.op == IntrinsicOp::ObjectFreeze).then(|| call.clone())
     }
 
-    fn private_empty_set_field_call(
-        &self,
-        selected_binding: &str,
-        selected_span: Span,
-    ) -> Option<(Id, Span, Call)> {
-        let candidates: Vec<_> = self
-            .class_bindings
-            .iter()
-            .filter(|(key, binding)| {
-                binding.0.as_ref() == selected_binding
-                    && self
-                        .class_spans
-                        .get(key)
-                        .is_some_and(|span| span_contains(selected_span, *span))
-            })
-            .collect();
-        let [(key, binding)] = candidates.as_slice() else {
-            return None;
-        };
-        let key = **key;
-        let binding = *binding;
-        if self.reassigned_bindings.contains(binding) {
-            return None;
-        }
-        let (site, set_binding) = self.private_empty_set_sites.get(&key)?;
-        if self.declared_bindings().contains(set_binding) {
-            return None;
-        }
-        let call = self
-            .callables
-            .values()
-            .flat_map(|callable| &callable.calls)
-            .find(|call| call.span == *site)?;
-        if call.kind != CallKind::New
-            || call.has_spread
-            || !call.args.is_empty()
-            || !matches!(&call.callee, ValueExpr::Binding(binding) if binding == set_binding)
-            || call.owner != *self.class_owners.get(&key)?
-        {
-            return None;
-        }
-        Some((binding.clone(), self.class_spans[&key], call.clone()))
-    }
     fn known_array_iterator_protocol_mutation_with(
         &self,
         integrity: &ArraySpreadProtocolIntegrity,
@@ -11444,9 +11316,6 @@ impl Visit for ExecutionIndex {
         if let Some(heritage) = &class.super_class {
             self.class_heritage_spans
                 .insert(class.span.lo.0, heritage.span());
-        }
-        if let Some(site) = LocalClassConstructionShapes::private_empty_set_site(class) {
-            self.private_empty_set_sites.insert(class.span.lo.0, site);
         }
         self.class_values
             .insert(class.span.lo.0, collect_class_value_facts(class));
@@ -14313,10 +14182,6 @@ impl PreparedCallableCapabilities {
 
     pub(crate) fn known_symbol_for_mutation_owner(&self) -> Option<SourceUnitOrdinal> {
         self.index.known_symbol_for_mutation()
-    }
-
-    pub(crate) fn known_global_set_mutation_owner(&self) -> Option<SourceUnitOrdinal> {
-        self.index.known_global_set_mutation()
     }
 
     pub(crate) fn known_object_freeze_mutation_owner(&self) -> Option<SourceUnitOrdinal> {

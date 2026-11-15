@@ -137,8 +137,7 @@ author premises resolved through the same canonical selector and call index;
 each validated entry becomes an `IntrinsicIntact(slots, site)` axiom that sets
 those slots' integrity flags at its site (SPEC § Native integrity inputs).
 The first certifies selected initializer operations; the second certifies only
-the original callee at a selected direct call in a top-level function body or
-at the zero-argument Set constructor in a checked private class field.
+the original callee at a selected direct call in a top-level function body.
 Both retain exact-site evidence separately from inferred native integrity.
 `initializer_call_effect_inputs` is a separate AUTHOR operation-domain input
 for one direct imported-call initializer with one fresh anonymous ordinary
@@ -172,11 +171,6 @@ under the explicit author assertion. The interpreter consumes this evidence
 only at the selected call span; its existing argument-shape, return, heap,
 throw and purity checks are unchanged. Neither input promotes a family-wide
 native-integrity fact.
-The `set_empty_private_field` input uses the same source selector, exact call
-span and known-write census, but requires only the global `Set` binding slot.
-Its input-dependent shared empty-collection certificate feeds the existing
-local-class construction proof; it does not certify Set methods or grant
-native integrity to other Set sites.
 The `native_operation_inputs` selector may be a direct `source_match` or a
 reference to one already resolved logical member in the same provider chunk.
 The latter reuses the member's canonical selector result, including relational
