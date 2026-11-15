@@ -44,10 +44,6 @@ const sandboxUID = "00000000-0000-4000-8000-000000000001"
 // caller supplies the legacy account provenance and namespace used by retained-row fixtures.
 var caller = auth.Account{Namespace: "test-callers", Name: "test-app"}
 
-func configuredDispatcherCallers() sets.Set[auth.Account] {
-	return sets.New(caller)
-}
-
 type admissionContextCapture struct {
 	dispatcherpb.UnimplementedSessionDispatcherServer
 	captured chan context.Context
