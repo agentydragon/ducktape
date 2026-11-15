@@ -31,7 +31,8 @@ import (
 )
 
 func main() {
-	ctrl.SetLogger(logr.FromSlogHandler(slog.NewJSONHandler(os.Stderr, nil)))
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
+	ctrl.SetLogger(logr.FromSlogHandler(slog.Default().Handler()))
 	log := ctrl.Log.WithName("sandbox-controller")
 	c, err := loadConfig()
 	if err == nil {

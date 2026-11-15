@@ -27,6 +27,7 @@ from agentplane.system_tests.driver.cleanup_diagnostics import capture_without_m
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.dispatcher_operations import session_until
 from agentplane.system_tests.driver.dispatcher_transport import Caller, forward, service_caller
+from agentplane.system_tests.driver.environment_transport import ENVIRONMENT_PORT, ENVIRONMENT_SERVICE
 from agentplane.system_tests.driver.identity import (
     LAUNCH_DEFAULT_POLICY_SETS,
     ScenarioIdentity,
@@ -281,11 +282,21 @@ async def deployed_session_command_cannot_cross_deletion(
                 server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
             )
         )
+        runtime_target = await stack.enter_async_context(
+            forward(cluster, f"service/{ENVIRONMENT_SERVICE}", remote_port=ENVIRONMENT_PORT)
+        )
         runtime_channel = await stack.enter_async_context(
             dial(
-                target,
+                runtime_target,
                 channel_credentials=gateway.channel_credentials,
-                server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+                server_name=f"{ENVIRONMENT_SERVICE}.{cluster.namespace}.svc.cluster.local",
+            )
+        )
+        runtime_reader_channel = await stack.enter_async_context(
+            dial(
+                runtime_target,
+                channel_credentials=app.channel_credentials,
+                server_name=f"{ENVIRONMENT_SERVICE}.{cluster.namespace}.svc.cluster.local",
             )
         )
         history_target = await stack.enter_async_context(forward(cluster, "service/history-service"))
@@ -305,7 +316,7 @@ async def deployed_session_command_cannot_cross_deletion(
         runner: environment_runtime_pb2_grpc.EnvironmentRuntimeAsyncStub = (
             environment_runtime_pb2_grpc.EnvironmentRuntimeStub(runtime_channel)
         )
-        runner_reader = environment_runtime_pb2_grpc.EnvironmentRuntimeStub(channel)
+        runner_reader = environment_runtime_pb2_grpc.EnvironmentRuntimeStub(runtime_reader_channel)
         metadata = _metadata(gateway, cluster, name, uid)
         await dispatcher.CreateSession(
             session_dispatcher_pb2.CreateSessionRequest(session_id=session, spec=spec),
@@ -402,7 +413,7 @@ async def deployed_session_command_cannot_cross_deletion(
                     )
                 assert deleting["metadata"]["deletionTimestamp"]
                 evidence["deletion_timestamp"] = deleting["metadata"]["deletionTimestamp"]
-                # A new mutation proves this Gateway observed deletion while the earlier call stays held.
+                # A new mutation proves this proxy observed deletion while the earlier call stays held.
                 async for attempt in AsyncRetrying(
                     stop=stop_after_delay(30), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
                 ):
@@ -416,7 +427,7 @@ async def deployed_session_command_cannot_cross_deletion(
                                 timeout=15,
                             )
                         assert refused.value.code() == grpc.StatusCode.FAILED_PRECONDITION
-                evidence["gateway_observed_deletion"] = True
+                evidence["proxy_observed_deletion"] = True
                 async with cluster.api_client() as client:
                     objects = k8s.CustomObjectsApi(client)
                     async for attempt in AsyncRetrying(
@@ -673,6 +684,7 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
         )
         async with (
             forward(cluster) as dispatcher_target,
+            forward(cluster, f"service/{ENVIRONMENT_SERVICE}", remote_port=ENVIRONMENT_PORT) as runtime_target,
             forward(cluster, "service/history-service") as history_target,
             AsyncExitStack() as identities,
         ):
@@ -685,9 +697,16 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
             )
             runtime_channel = await identities.enter_async_context(
                 dial(
-                    dispatcher_target,
+                    runtime_target,
                     channel_credentials=gateway.channel_credentials,
-                    server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+                    server_name=f"{ENVIRONMENT_SERVICE}.{cluster.namespace}.svc.cluster.local",
+                )
+            )
+            runtime_reader_channel = await identities.enter_async_context(
+                dial(
+                    runtime_target,
+                    channel_credentials=app.channel_credentials,
+                    server_name=f"{ENVIRONMENT_SERVICE}.{cluster.namespace}.svc.cluster.local",
                 )
             )
             history_channel = await identities.enter_async_context(
@@ -699,7 +718,7 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
             )
             dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherStub(dispatcher_channel)
             runner = environment_runtime_pb2_grpc.EnvironmentRuntimeStub(runtime_channel)
-            runner_reader = environment_runtime_pb2_grpc.EnvironmentRuntimeStub(dispatcher_channel)
+            runner_reader = environment_runtime_pb2_grpc.EnvironmentRuntimeStub(runtime_reader_channel)
             history: history_service_pb2_grpc.HistoryServiceAsyncStub = history_service_pb2_grpc.HistoryServiceStub(
                 history_channel
             )

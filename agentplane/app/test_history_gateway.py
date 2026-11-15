@@ -164,7 +164,7 @@ async def test_production_bridge_reads_runner_history_across_gateway_restarts(
             assert any(entry.event.HasField("harness_exited") for entry in archived)
 
 
-async def test_runner_client_does_not_fall_back_after_gateway_stops(
+async def test_runtime_proxy_is_independent_of_dispatcher_and_never_bypasses_environments(
     sandbox: SandboxCluster,
     sandbox_control: SandboxControlClient,
     gateway_service: GatewayProcess,
@@ -172,8 +172,17 @@ async def test_runner_client_does_not_fall_back_after_gateway_stops(
 ) -> None:
     assert await sandbox_control.runner(sandbox.destination).list_sessions() == []
     await gateway_service.stop()
-    with pytest.raises(ServiceError):
-        await sandbox_control.runner(sandbox.destination).list_sessions()
+    assert await sandbox_control.runner(sandbox.destination).list_sessions() == []
+
+    async def check_proxy_unavailable() -> None:
+        assert runner.process.exit_code is None
+        client = gateway_service.environment_runtime_client(request_timeout_s=0.25)
+        with pytest.raises((ServiceError, TimeoutError)):
+            await client.runner(sandbox.destination).list_sessions()
+
+    await gateway_service.environment_service.restart(while_stopped=check_proxy_unavailable)
+    await gateway_service.environment_service.wait_for_runner(sandbox_control, sandbox.destination)
+    assert await sandbox_control.runner(sandbox.destination).list_sessions() == []
 
 
 async def test_dispatcher_resumes_a_dormant_session_and_proxy_reports_it(

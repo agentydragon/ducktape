@@ -59,11 +59,11 @@ async def test_a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner(
         )
 
 
-async def test_a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway(
+async def test_a_cluster_ca_leaf_at_a_runner_address_is_refused_by_runtime_proxy(
     cluster: Cluster, native_trust_pod: Borrow
 ) -> None:
     async with native_trust_pod() as view:
-        await workload_trust.a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway(cluster, view)
+        await workload_trust.a_cluster_ca_leaf_at_a_runner_address_is_refused_by_runtime_proxy(cluster, view)
 
 
 async def test_cert_manager_reissues_a_deleted_tls_secret(cluster: Cluster) -> None:
