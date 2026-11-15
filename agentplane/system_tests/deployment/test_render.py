@@ -1016,7 +1016,12 @@ def test_gateway_budget_fixture_changes_only_the_executor_reconnect_deadline(run
     central_settings = json.loads(central_config["data"]["settings.json"])
     budget_settings = json.loads(budget_config["data"]["settings.json"])
     assert "executor_reconnect_timeout_seconds" not in central_settings
-    assert CentralSamplerSettings.model_validate(budget_settings).executor_reconnect_timeout_seconds == 45
+    assert (
+        CentralSamplerSettings.model_validate_json(
+            budget_config["data"]["settings.json"]
+        ).executor_reconnect_timeout_seconds
+        == 45
+    )
     assert budget_settings == central_settings | {"executor_reconnect_timeout_seconds": 45}
     budget_config["data"] = central_config["data"]
     assert budget == central

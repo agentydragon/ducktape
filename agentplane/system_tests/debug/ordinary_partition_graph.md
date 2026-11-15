@@ -35,6 +35,10 @@ remains in `test_services` on its existing full fixture; the seven older cases
 run only in the two partitions. The frozen 3+4 comparison does not measure this
 additional case or qualify the current rebased graph.
 
+The current extracted MCP helper also inherits devel's `service_spiffe_id`
+delegating-actor assertion. The byte-identity and 30-assertion audit above applies
+to its recorded earlier source, before that devel contract changed.
+
 Each ordinary target collects its own complete roster. Duplicate Pod bindings
 and superseded manual partition/capacity targets are removed. Historical experiments remain reproducible at
 their immutable recorded source, including `22014e7b` on
