@@ -596,6 +596,7 @@ flowchart LR
     frontend[Static frontend]
     app[Integration app]
     history[History Service]
+    probe[Opt-in packing probe]
     history_db[(History PostgreSQL)]
     electric[Electric]
     subgraph pod[Sandbox Pod]
@@ -620,6 +621,7 @@ flowchart LR
     sidecar -.->|outbound platform route| history
     guest -.->|opens SessionJournalIngress.Push| relay
     relay -.->|outbound platform route| history
+    probe -->|sampler SVID journal push + reader service SVID reads: mTLS| history
     history -->|archive and fold reads / writes| history_db
     history_db -->|logical replication data| electric
 ```

@@ -240,13 +240,17 @@ packing does not itself shrink relation files. Disabling ingress packing keeps a
 ### Live ingress packing probe
 
 `bb run //agentplane/history_service/ops:probe_ingress -- --target HOST:PORT --ca-file PATH
---writer-token-file PATH --reader-token-file PATH --session-id UUID` writes a dedicated synthetic
+--writer-cert-file PATH --writer-key-file PATH --reader-cert-file PATH --reader-key-file PATH
+--reader-uri spiffe://agentplane/app --session-id UUID` writes a dedicated synthetic
 162-event journal through the deployed ingress, seals it, and checks exact protobuf readback of the
 whole journal and a page starting at cursor 18. It starts no harness and calls no provider.
-Supply an explicit new Session UUID and short-lived, Pod-bound tokens for a configured sampler writer
-(ingress audience) and backend reader (History audience). The CA and server URI use the ordinary
-verified History transport; a localhost port-forward can supply the target. Keep token files private
-and delete them after use. Retrying the same UUID resumes from the acknowledged cursor or reads the
+Supply an explicit new Session UUID and certificate/key files for `spiffe://agentplane/central-sampler`
+(the configured ingress actor) and an exact `reader_service_callers` service (App by default).
+Each connection verifies the History server URI using the workload trust bundle; a localhost
+port-forward can supply the target. The shared TLS client validates the local certificate URI and
+reloads rotating files. This tool sends no bearer metadata and has no token fallback. Supply files
+through the operator's authorized maintenance environment; keep private keys in their mounted files.
+Retrying the same UUID resumes from the acknowledged cursor or reads the
 already sealed journal. The synthetic Session remains in History with `history-compaction-probe`
 executor metadata.
 
