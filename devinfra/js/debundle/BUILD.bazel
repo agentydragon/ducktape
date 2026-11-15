@@ -1251,6 +1251,7 @@ rust_library(
         ":program_summary_rust_proto",
         ":source_identity",
         ":spec",
+        ":spec_wire",
         ":vendor",
         "@crates//:anyhow",
         "@crates//:rayon",

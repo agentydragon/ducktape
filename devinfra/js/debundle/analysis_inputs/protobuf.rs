@@ -194,9 +194,11 @@ impl ProtoConvert<proto::NativeOperationSelectorProvenance> for NativeOperationS
         use proto::native_operation_selector_provenance::Value;
         Ok(proto::NativeOperationSelectorProvenance {
             value: Some(match self {
-                Self::SourceMatch(claim) => Value::SourceMatch(claim.to_proto()?),
+                Self::SourceMatch(claim) => Value::SourceMatch(spec_wire::Wire::to_proto(claim)),
                 Self::Declaration(declaration) => Value::Declaration(declaration.to_proto()?),
-                Self::ResolvedMember(member) => Value::ResolvedMember(member.to_proto()?),
+                Self::ResolvedMember(member) => {
+                    Value::ResolvedMember(spec_wire::Wire::to_proto(member))
+                }
             }),
         })
     }
@@ -205,14 +207,12 @@ impl ProtoConvert<proto::NativeOperationSelectorProvenance> for NativeOperationS
         use proto::native_operation_selector_provenance::Value;
         Ok(
             match required(value.value, "NativeOperationSelectorProvenance.value")? {
-                Value::SourceMatch(value) => {
-                    Self::SourceMatch(spec::SourceMatchClaim::from_proto(value)?)
-                }
+                Value::SourceMatch(value) => Self::SourceMatch(spec_wire::Wire::from_proto(value)?),
                 Value::Declaration(value) => {
                     Self::Declaration(SourceDeclaration::from_proto(value)?)
                 }
                 Value::ResolvedMember(value) => {
-                    Self::ResolvedMember(spec::ResolvedMemberSelector::from_proto(value)?)
+                    Self::ResolvedMember(spec_wire::Wire::from_proto(value)?)
                 }
             },
         )
@@ -268,7 +268,7 @@ impl ProtoConvert<proto::ImportedPrimitiveArrayOperandEvidence>
             provider_export: Some(self.provider_export.clone()),
             provider_local: Some(self.provider_local.clone()),
             source_specifier: Some(self.source_specifier.clone()),
-            provider_source_match: Some(self.provider_source_match.to_proto()?),
+            provider_source_match: Some(spec_wire::Wire::to_proto(&self.provider_source_match)),
             provider_source_sha256: Some(self.provider_source_sha256.clone()),
             primitive_slots: self
                 .primitive_slots
@@ -309,7 +309,7 @@ impl ProtoConvert<proto::ImportedPrimitiveArrayOperandEvidence>
                 value.source_specifier,
                 "ImportedPrimitiveArrayOperandEvidence.source_specifier",
             )?,
-            provider_source_match: ProtoConvert::from_proto(required(
+            provider_source_match: spec_wire::Wire::from_proto(required(
                 value.provider_source_match,
                 "ImportedPrimitiveArrayOperandEvidence.provider_source_match",
             )?)?,
@@ -438,7 +438,7 @@ impl ProtoConvert<proto::ArgumentInputEvidence> for ArgumentInputEvidence {
         Ok(proto::ArgumentInputEvidence {
             reference: Some(self.reference.to_proto()?),
             spec_location: Some(self.spec_location.clone()),
-            source_match: Some(self.source_match.to_proto()?),
+            source_match: Some(spec_wire::Wire::to_proto(&self.source_match)),
             source_path: Some(self.source_path.clone()),
             audited_source_sha256: Some(self.audited_source_sha256.clone()),
             selected_binding: Some(self.selected_binding.clone()),
@@ -459,7 +459,7 @@ impl ProtoConvert<proto::ArgumentInputEvidence> for ArgumentInputEvidence {
                 "ArgumentInputEvidence.reference",
             )?)?,
             spec_location: required(value.spec_location, "ArgumentInputEvidence.spec_location")?,
-            source_match: ProtoConvert::from_proto(required(
+            source_match: spec_wire::Wire::from_proto(required(
                 value.source_match,
                 "ArgumentInputEvidence.source_match",
             )?)?,
@@ -738,7 +738,7 @@ impl ProtoConvert<proto::ImportedPrimitiveArraySpreadInputEvidence>
         Ok(proto::ImportedPrimitiveArraySpreadInputEvidence {
             reference: Some(self.reference.to_proto()?),
             spec_location: Some(self.spec_location.clone()),
-            consumer_source_match: Some(self.consumer_source_match.to_proto()?),
+            consumer_source_match: Some(spec_wire::Wire::to_proto(&self.consumer_source_match)),
             consumer_source_sha256: Some(self.consumer_source_sha256.clone()),
             selected_consumer_binding: Some(self.selected_consumer_binding.clone()),
             consumer_source_location: self
@@ -751,7 +751,7 @@ impl ProtoConvert<proto::ImportedPrimitiveArraySpreadInputEvidence>
                 .iter()
                 .map(ProtoConvert::to_proto)
                 .collect::<Result<_>>()?,
-            lifetime: Some(self.lifetime.to_proto()?),
+            lifetime: Some(spec_wire::Wire::to_proto(&self.lifetime)),
         })
     }
 
@@ -765,7 +765,7 @@ impl ProtoConvert<proto::ImportedPrimitiveArraySpreadInputEvidence>
                 value.spec_location,
                 "ImportedPrimitiveArraySpreadInputEvidence.spec_location",
             )?,
-            consumer_source_match: ProtoConvert::from_proto(required(
+            consumer_source_match: spec_wire::Wire::from_proto(required(
                 value.consumer_source_match,
                 "ImportedPrimitiveArraySpreadInputEvidence.consumer_source_match",
             )?)?,
@@ -786,7 +786,7 @@ impl ProtoConvert<proto::ImportedPrimitiveArraySpreadInputEvidence>
                 .into_iter()
                 .map(ProtoConvert::from_proto)
                 .collect::<Result<_>>()?,
-            lifetime: ProtoConvert::from_proto(required(
+            lifetime: spec_wire::Wire::from_proto(required(
                 value.lifetime,
                 "ImportedPrimitiveArraySpreadInputEvidence.lifetime",
             )?)?,
@@ -804,7 +804,7 @@ impl ProtoConvert<proto::ValueInputEvidence> for ValueInputEvidence {
         Ok(proto::ValueInputEvidence {
             reference: Some(self.reference.to_proto()?),
             spec_location: Some(self.spec_location.clone()),
-            source_match: Some(self.source_match.to_proto()?),
+            source_match: Some(spec_wire::Wire::to_proto(&self.source_match)),
             value_kind: Some(self.value_kind as i32),
             source_path: Some(self.source_path.clone()),
             audited_source_sha256: Some(self.audited_source_sha256.clone()),
@@ -830,7 +830,7 @@ impl ProtoConvert<proto::ValueInputEvidence> for ValueInputEvidence {
                 "ValueInputEvidence.reference",
             )?)?,
             spec_location: required(value.spec_location, "ValueInputEvidence.spec_location")?,
-            source_match: ProtoConvert::from_proto(required(
+            source_match: spec_wire::Wire::from_proto(required(
                 value.source_match,
                 "ValueInputEvidence.source_match",
             )?)?,

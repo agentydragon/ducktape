@@ -11,7 +11,7 @@ import "google/protobuf/empty.proto";
 message ArgumentInputEvidence {
   optional .ducktape.debundle.saved_analysis.ArgumentInputRef reference = 1;
   optional string spec_location = 2;
-  optional .ducktape.debundle.saved_analysis.SourceMatchClaim source_match = 3;
+  optional .debundle.spec.SourceMatchClaim source_match = 3;
   optional string source_path = 4;
   optional string audited_source_sha256 = 5;
   optional string selected_binding = 6;
@@ -483,8 +483,8 @@ message ExportReentryPolicy {
 }
 
 message ExportReentryReport {
-  .ducktape.debundle.saved_analysis.HostBehavior host_behavior = 1;
-  .ducktape.debundle.saved_analysis.ProgramPremises program_premises = 2;
+  .debundle.spec.HostBehavior host_behavior = 1;
+  .debundle.spec.ProgramPremises program_premises = 2;
   .ducktape.debundle.saved_analysis.ExportReentryPolicy policy = 3;
   .ducktape.debundle.saved_analysis.ExportReentryLoaderDerivation loader = 4;
   repeated .ducktape.debundle.saved_analysis.ExportReentryGlobalBlocker global_blockers = 5;
@@ -583,20 +583,6 @@ message HavocReach {
   }
 }
 
-message HostBehavior {
-  optional .debundle.spec.SynchronousModuleLoader synchronous_module_loader = 1;
-  optional .debundle.spec.LoaderResultForEvaluatingModule loader_result_for_evaluating_module = 2;
-  optional .debundle.spec.SynchronousLoadRunsAppCallbacks synchronous_load_runs_app_callbacks = 3;
-  optional .debundle.spec.SynchronousLoadDrainsMicrotasks synchronous_load_drains_microtasks = 4;
-  // Empty collections grant no host permissions.
-  repeated .debundle.spec.NodeBuiltinModule reentry_free_builtin_modules = 5;
-  repeated .debundle.spec.BunModule reentry_free_bun_modules = 6;
-  repeated .debundle.spec.EmbeddedLoader reentry_free_embedded_loaders = 7;
-  repeated .debundle.spec.ReentryFreeOperation reentry_free_operations = 8;
-  optional .debundle.spec.PredefinedGlobals predefined_globals = 9;
-  optional string note = 10;
-}
-
 message HostBehaviorKey {
   oneof value {
     google.protobuf.Empty loader_result_for_evaluating_module = 1;
@@ -617,14 +603,6 @@ message HostModule {
   }
 }
 
-message ImportedPrimitiveArrayLifetimeContract {
-  optional bool identity_unchanged_through_spread = 1;
-  optional bool dense_own_data_primitive_contents_unchanged_through_spread = 2;
-  optional bool ordinary_array_prototype_chain_unchanged_through_spread = 3;
-  optional bool no_own_iterator_or_accessors_through_spread = 4;
-  optional bool no_rebinding_through_spread = 5;
-}
-
 message ImportedPrimitiveArrayOperandEvidence {
   optional string selector_local = 1;
   optional string consumer_binding = 2;
@@ -632,7 +610,7 @@ message ImportedPrimitiveArrayOperandEvidence {
   optional string provider_export = 4;
   optional string provider_local = 5;
   optional string source_specifier = 6;
-  optional .ducktape.debundle.saved_analysis.SourceMatchClaim provider_source_match = 7;
+  optional .debundle.spec.SourceMatchClaim provider_source_match = 7;
   optional string provider_source_sha256 = 8;
   repeated uint32 primitive_slots = 9;
   SourceLocation provider_source_location = 10;
@@ -641,12 +619,12 @@ message ImportedPrimitiveArrayOperandEvidence {
 message ImportedPrimitiveArraySpreadInputEvidence {
   optional .ducktape.debundle.saved_analysis.ImportedPrimitiveArraySpreadInputRef reference = 1;
   optional string spec_location = 2;
-  optional .ducktape.debundle.saved_analysis.SourceMatchClaim consumer_source_match = 3;
+  optional .debundle.spec.SourceMatchClaim consumer_source_match = 3;
   optional string consumer_source_sha256 = 4;
   optional string selected_consumer_binding = 5;
   SourceLocation consumer_source_location = 6;
   repeated ImportedPrimitiveArrayOperandEvidence operands = 7;
-  optional .ducktape.debundle.saved_analysis.ImportedPrimitiveArrayLifetimeContract lifetime = 8;
+  optional .debundle.spec.ImportedPrimitiveArrayLifetimeContract lifetime = 8;
 }
 
 message ImportedPrimitiveArraySpreadInputRef {
@@ -746,22 +724,6 @@ enum InteropUseKind {
   INTEROP_USE_KIND_TS_IMPORT_EQUALS = 14;
   INTEROP_USE_KIND_TS_EXPORT_ASSIGNMENT = 15;
   INTEROP_USE_KIND_DYNAMIC_IMPORT = 16;
-}
-
-message IntrinsicFamilies {
-  // Selecting a list, including an empty list, differs from selecting all.
-  message ListedIntrinsics {
-    repeated .debundle.spec.IntrinsicFamily families = 1;
-  }
-  oneof value {
-    .debundle.spec.AllIntrinsicFamilies all = 1;
-    ListedIntrinsics listed = 2;
-  }
-}
-
-message IntrinsicsNeverWritten {
-  optional .ducktape.debundle.saved_analysis.IntrinsicFamilies families = 1;
-  optional string note = 2;
 }
 
 // Kind of a source allocation in the abstract value domain.
@@ -1041,9 +1003,9 @@ message NativeOperationInputUse {
 
 message NativeOperationSelectorProvenance {
   oneof value {
-    .ducktape.debundle.saved_analysis.SourceMatchClaim source_match = 1;
+    .debundle.spec.SourceMatchClaim source_match = 1;
     .ducktape.debundle.saved_analysis.SourceDeclaration declaration = 2;
-    .ducktape.debundle.saved_analysis.ResolvedMemberSelector resolved_member = 3;
+    .debundle.spec.ResolvedMemberSelector resolved_member = 3;
   }
 }
 
@@ -1274,13 +1236,6 @@ enum ProgramPremiseKey {
   PROGRAM_PREMISE_KEY_INTRINSICS_NEVER_WRITTEN = 2;
 }
 
-message ProgramPremises {
-  optional .debundle.spec.ProcessPrototypeChainAccessors process_prototype_chain_accessors = 1;
-  optional .debundle.spec.NonLiteralLoaderCalls non_literal_loader_calls = 2;
-  optional .ducktape.debundle.saved_analysis.IntrinsicsNeverWritten intrinsics_never_written = 3;
-  optional string note = 4;
-}
-
 message ProofDependencies {
   repeated ValueInputRef value_inputs = 1;
   repeated NativeOperationInputRef native_operation_inputs = 2;
@@ -1437,11 +1392,6 @@ message ReentryFreeOperationUse {
   optional .debundle.spec.ReentryFreeOperation operation = 1;
   optional .ducktape.debundle.saved_analysis.SourceLocation source_location = 2;
   optional .ducktape.debundle.saved_analysis.SourceSpan span = 3;
-}
-
-message ResolvedMemberSelector {
-  optional string module = 1;
-  optional string name = 2;
 }
 
 message RetainedCallbackSignature {
@@ -1740,25 +1690,6 @@ message SourceLocation {
   optional uint64 start_column = 4;
 }
 
-message SourceMatchBinding {
-  oneof value {
-    string local = 1;
-    .ducktape.debundle.saved_analysis.SourceMatchBindingDetail detailed = 2;
-  }
-}
-
-message SourceMatchBindingDetail {
-  optional string local = 1;
-  optional string name = 2;
-}
-
-message SourceMatchClaim {
-  optional .debundle.spec.SourceMatchIdentifierMode identifiers = 1;
-  optional string match_source = 2;
-  repeated .ducktape.debundle.saved_analysis.SourceMatchBinding bindings = 3;
-  optional string note = 4;
-}
-
 message SourceSpan { optional uint32 lo = 1; optional uint32 hi = 2; }
 
 enum StatementKind {
@@ -1794,7 +1725,7 @@ message Value {
 message ValueInputEvidence {
   optional .ducktape.debundle.saved_analysis.ValueInputRef reference = 1;
   optional string spec_location = 2;
-  optional .ducktape.debundle.saved_analysis.SourceMatchClaim source_match = 3;
+  optional .debundle.spec.SourceMatchClaim source_match = 3;
   optional .debundle.spec.CapturedValueKind value_kind = 4;
   optional string source_path = 5;
   optional string audited_source_sha256 = 6;

@@ -370,94 +370,6 @@ impl ProtoConvert<proto::DescriptorCopyFactorySignature> for spec::DescriptorCop
     }
 }
 
-impl ProtoConvert<proto::HostBehavior> for spec::HostBehavior {
-    fn to_proto(&self) -> Result<proto::HostBehavior> {
-        Ok(proto::HostBehavior {
-            synchronous_module_loader: Some(self.synchronous_module_loader as i32),
-            loader_result_for_evaluating_module: self
-                .loader_result_for_evaluating_module
-                .map(|value| value as i32),
-            synchronous_load_runs_app_callbacks: self
-                .synchronous_load_runs_app_callbacks
-                .map(|value| value as i32),
-            synchronous_load_drains_microtasks: self
-                .synchronous_load_drains_microtasks
-                .map(|value| value as i32),
-            reentry_free_builtin_modules: self
-                .reentry_free_builtin_modules
-                .iter()
-                .map(|module| *module as i32)
-                .collect(),
-            reentry_free_bun_modules: self
-                .reentry_free_bun_modules
-                .iter()
-                .map(|module| *module as i32)
-                .collect(),
-            reentry_free_embedded_loaders: self
-                .reentry_free_embedded_loaders
-                .iter()
-                .map(|value| *value as i32)
-                .collect(),
-            reentry_free_operations: self
-                .reentry_free_operations
-                .iter()
-                .map(|operation| *operation as i32)
-                .collect(),
-            predefined_globals: Some(self.predefined_globals as i32),
-            note: self.note.clone(),
-        })
-    }
-    fn from_proto(value: proto::HostBehavior) -> Result<Self> {
-        Ok(Self {
-            synchronous_module_loader: spec::SynchronousModuleLoader::try_from(required(
-                value.synchronous_module_loader,
-                "HostBehavior.synchronous_module_loader",
-            )?)?,
-            loader_result_for_evaluating_module: value
-                .loader_result_for_evaluating_module
-                .map(spec::LoaderResultForEvaluatingModule::try_from)
-                .transpose()?,
-            synchronous_load_runs_app_callbacks: value
-                .synchronous_load_runs_app_callbacks
-                .map(spec::SynchronousLoadRunsAppCallbacks::try_from)
-                .transpose()?,
-            synchronous_load_drains_microtasks: value
-                .synchronous_load_drains_microtasks
-                .map(spec::SynchronousLoadDrainsMicrotasks::try_from)
-                .transpose()?,
-            reentry_free_builtin_modules: spec_wire::unique_set(
-                value
-                    .reentry_free_builtin_modules
-                    .into_iter()
-                    .map(|value| Ok(spec::NodeBuiltinModule::try_from(value)?)),
-            )?,
-            reentry_free_bun_modules: spec_wire::unique_set(
-                value
-                    .reentry_free_bun_modules
-                    .into_iter()
-                    .map(|value| Ok(spec::BunModule::try_from(value)?)),
-            )?,
-            reentry_free_embedded_loaders: spec_wire::unique_set(
-                value
-                    .reentry_free_embedded_loaders
-                    .into_iter()
-                    .map(|value| Ok(spec::EmbeddedLoader::try_from(value)?)),
-            )?,
-            reentry_free_operations: spec_wire::unique_set(
-                value
-                    .reentry_free_operations
-                    .into_iter()
-                    .map(|value| Ok(spec::ReentryFreeOperation::try_from(value)?)),
-            )?,
-            predefined_globals: spec::PredefinedGlobals::try_from(required(
-                value.predefined_globals,
-                "HostBehavior.predefined_globals",
-            )?)?,
-            note: value.note,
-        })
-    }
-}
-
 impl ProtoConvert<proto::HostModule> for spec::HostModule {
     fn to_proto(&self) -> Result<proto::HostModule> {
         use proto::host_module::Value;
@@ -477,206 +389,6 @@ impl ProtoConvert<proto::HostModule> for spec::HostModule {
     }
 }
 
-impl ProtoConvert<proto::ImportedPrimitiveArrayLifetimeContract>
-    for spec::ImportedPrimitiveArrayLifetimeContract
-{
-    fn to_proto(&self) -> Result<proto::ImportedPrimitiveArrayLifetimeContract> {
-        Ok(proto::ImportedPrimitiveArrayLifetimeContract {
-            identity_unchanged_through_spread: Some(self.identity_unchanged_through_spread),
-            dense_own_data_primitive_contents_unchanged_through_spread: Some(
-                self.dense_own_data_primitive_contents_unchanged_through_spread,
-            ),
-            ordinary_array_prototype_chain_unchanged_through_spread: Some(
-                self.ordinary_array_prototype_chain_unchanged_through_spread,
-            ),
-            no_own_iterator_or_accessors_through_spread: Some(
-                self.no_own_iterator_or_accessors_through_spread,
-            ),
-            no_rebinding_through_spread: Some(self.no_rebinding_through_spread),
-        })
-    }
-    fn from_proto(value: proto::ImportedPrimitiveArrayLifetimeContract) -> Result<Self> {
-        Ok(Self {
-            identity_unchanged_through_spread: required(
-                value.identity_unchanged_through_spread,
-                "ImportedPrimitiveArrayLifetimeContract.identity_unchanged_through_spread",
-            )?,
-            dense_own_data_primitive_contents_unchanged_through_spread: required(
-                value.dense_own_data_primitive_contents_unchanged_through_spread,
-                "ImportedPrimitiveArrayLifetimeContract.dense_own_data_primitive_contents_unchanged_through_spread",
-            )?,
-            ordinary_array_prototype_chain_unchanged_through_spread: required(
-                value.ordinary_array_prototype_chain_unchanged_through_spread,
-                "ImportedPrimitiveArrayLifetimeContract.ordinary_array_prototype_chain_unchanged_through_spread",
-            )?,
-            no_own_iterator_or_accessors_through_spread: required(
-                value.no_own_iterator_or_accessors_through_spread,
-                "ImportedPrimitiveArrayLifetimeContract.no_own_iterator_or_accessors_through_spread",
-            )?,
-            no_rebinding_through_spread: required(
-                value.no_rebinding_through_spread,
-                "ImportedPrimitiveArrayLifetimeContract.no_rebinding_through_spread",
-            )?,
-        })
-    }
-}
-
-impl ProtoConvert<proto::IntrinsicFamilies> for spec::IntrinsicFamilies {
-    fn to_proto(&self) -> Result<proto::IntrinsicFamilies> {
-        use proto::intrinsic_families::{ListedIntrinsics, Value};
-        Ok(proto::IntrinsicFamilies {
-            value: Some(match self {
-                Self::All(all) => Value::All(*all as i32),
-                Self::Listed(families) => Value::Listed(ListedIntrinsics {
-                    families: families.iter().map(|family| *family as i32).collect(),
-                }),
-            }),
-        })
-    }
-    fn from_proto(value: proto::IntrinsicFamilies) -> Result<Self> {
-        use proto::intrinsic_families::Value;
-        Ok(match required(value.value, "IntrinsicFamilies.value")? {
-            Value::All(value) => Self::All(spec::AllIntrinsicFamilies::try_from(value)?),
-            Value::Listed(value) => Self::Listed(spec_wire::unique_set(
-                value
-                    .families
-                    .into_iter()
-                    .map(|value| Ok(spec::IntrinsicFamily::try_from(value)?)),
-            )?),
-        })
-    }
-}
-
-impl ProtoConvert<proto::IntrinsicsNeverWritten> for spec::IntrinsicsNeverWritten {
-    fn to_proto(&self) -> Result<proto::IntrinsicsNeverWritten> {
-        Ok(proto::IntrinsicsNeverWritten {
-            families: Some(self.families.to_proto()?),
-            note: self.note.clone(),
-        })
-    }
-    fn from_proto(value: proto::IntrinsicsNeverWritten) -> Result<Self> {
-        Ok(Self {
-            families: read_domain(value.families, "IntrinsicsNeverWritten.families")?,
-            note: value.note,
-        })
-    }
-}
-
-impl ProtoConvert<proto::ProgramPremises> for spec::ProgramPremises {
-    fn to_proto(&self) -> Result<proto::ProgramPremises> {
-        Ok(proto::ProgramPremises {
-            process_prototype_chain_accessors: Some(self.process_prototype_chain_accessors as i32),
-            non_literal_loader_calls: Some(self.non_literal_loader_calls as i32),
-            intrinsics_never_written: self
-                .intrinsics_never_written
-                .as_ref()
-                .map(ProtoConvert::to_proto)
-                .transpose()?,
-            note: self.note.clone(),
-        })
-    }
-    fn from_proto(value: proto::ProgramPremises) -> Result<Self> {
-        Ok(Self {
-            process_prototype_chain_accessors: spec::ProcessPrototypeChainAccessors::try_from(
-                required(
-                    value.process_prototype_chain_accessors,
-                    "ProgramPremises.process_prototype_chain_accessors",
-                )?,
-            )?,
-            non_literal_loader_calls: spec::NonLiteralLoaderCalls::try_from(required(
-                value.non_literal_loader_calls,
-                "ProgramPremises.non_literal_loader_calls",
-            )?)?,
-            intrinsics_never_written: value
-                .intrinsics_never_written
-                .map(spec::IntrinsicsNeverWritten::from_proto)
-                .transpose()?,
-            note: value.note,
-        })
-    }
-}
-
-impl ProtoConvert<proto::ResolvedMemberSelector> for spec::ResolvedMemberSelector {
-    fn to_proto(&self) -> Result<proto::ResolvedMemberSelector> {
-        Ok(proto::ResolvedMemberSelector {
-            module: Some(self.module.clone()),
-            name: Some(self.name.clone()),
-        })
-    }
-    fn from_proto(value: proto::ResolvedMemberSelector) -> Result<Self> {
-        Ok(Self {
-            module: required(value.module, "ResolvedMemberSelector.module")?,
-            name: required(value.name, "ResolvedMemberSelector.name")?,
-        })
-    }
-}
-
-impl ProtoConvert<proto::SourceMatchBinding> for spec::SourceMatchBinding {
-    fn to_proto(&self) -> Result<proto::SourceMatchBinding> {
-        use proto::source_match_binding::Value;
-        Ok(proto::SourceMatchBinding {
-            value: Some(match self {
-                Self::Local(local) => Value::Local(local.clone()),
-                Self::Detailed(detail) => Value::Detailed(detail.to_proto()?),
-            }),
-        })
-    }
-    fn from_proto(value: proto::SourceMatchBinding) -> Result<Self> {
-        use proto::source_match_binding::Value;
-        Ok(match required(value.value, "SourceMatchBinding.value")? {
-            Value::Local(value) => Self::Local(value),
-            Value::Detailed(value) => {
-                Self::Detailed(spec::SourceMatchBindingDetail::from_proto(value)?)
-            }
-        })
-    }
-}
-
-impl ProtoConvert<proto::SourceMatchBindingDetail> for spec::SourceMatchBindingDetail {
-    fn to_proto(&self) -> Result<proto::SourceMatchBindingDetail> {
-        Ok(proto::SourceMatchBindingDetail {
-            local: Some(self.local.clone()),
-            name: self.name.clone(),
-        })
-    }
-    fn from_proto(value: proto::SourceMatchBindingDetail) -> Result<Self> {
-        Ok(Self {
-            local: required(value.local, "SourceMatchBindingDetail.local")?,
-            name: value.name,
-        })
-    }
-}
-
-impl ProtoConvert<proto::SourceMatchClaim> for spec::SourceMatchClaim {
-    fn to_proto(&self) -> Result<proto::SourceMatchClaim> {
-        Ok(proto::SourceMatchClaim {
-            identifiers: Some(self.identifiers as i32),
-            match_source: Some(self.match_source.clone()),
-            bindings: self
-                .bindings
-                .iter()
-                .map(ProtoConvert::to_proto)
-                .collect::<Result<_>>()?,
-            note: self.note.clone(),
-        })
-    }
-    fn from_proto(value: proto::SourceMatchClaim) -> Result<Self> {
-        Ok(Self {
-            identifiers: spec::SourceMatchIdentifierMode::try_from(required(
-                value.identifiers,
-                "SourceMatchClaim.identifiers",
-            )?)?,
-            match_source: required(value.match_source, "SourceMatchClaim.match_source")?,
-            bindings: value
-                .bindings
-                .into_iter()
-                .map(spec::SourceMatchBinding::from_proto)
-                .collect::<Result<_>>()?,
-            note: value.note,
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -690,6 +402,16 @@ mod tests {
         let bytes = analysis_codec::encode_protobuf(&value.to_proto().unwrap()).unwrap();
         let wire: P = analysis_codec::decode_protobuf(&bytes).unwrap();
         assert_eq!(&T::from_proto(wire).unwrap(), value);
+    }
+
+    fn round_trip_spec_wire<T>(value: &T)
+    where
+        T: spec_wire::Wire + std::fmt::Debug + PartialEq,
+        T::Proto: prost::Message + Default,
+    {
+        let bytes = analysis_codec::encode_protobuf(&spec_wire::Wire::to_proto(value)).unwrap();
+        let wire: T::Proto = analysis_codec::decode_protobuf(&bytes).unwrap();
+        assert_eq!(&spec_wire::Wire::from_proto(wire).unwrap(), value);
     }
 
     #[test]
@@ -710,8 +432,8 @@ mod tests {
             ],
             note: None,
         };
-        round_trip(&claim);
-        round_trip(&spec::ResolvedMemberSelector {
+        round_trip_spec_wire(&claim);
+        round_trip_spec_wire(&spec::ResolvedMemberSelector {
             module: "provider".into(),
             name: "factory".into(),
         });
@@ -726,7 +448,7 @@ mod tests {
             spec::IntrinsicFamilies::Listed(BTreeSet::new()),
             spec::IntrinsicFamilies::Listed(BTreeSet::from([spec::IntrinsicFamily::Array])),
         ] {
-            round_trip(&spec::ProgramPremises {
+            round_trip_spec_wire(&spec::ProgramPremises {
                 process_prototype_chain_accessors: spec::ProcessPrototypeChainAccessors::None,
                 non_literal_loader_calls: spec::NonLiteralLoaderCalls::NativeAddonsOnly,
                 intrinsics_never_written: Some(spec::IntrinsicsNeverWritten {
@@ -736,7 +458,7 @@ mod tests {
                 note: None,
             });
         }
-        round_trip(&spec::ProgramPremises::default());
+        round_trip_spec_wire(&spec::ProgramPremises::default());
         round_trip(&spec::HostModule::Node(spec::NodeBuiltinModule::Fs));
         round_trip(&spec::HostModule::Bun(spec::BunModule::BunFfi));
     }
@@ -757,22 +479,29 @@ mod tests {
             predefined_globals: spec::PredefinedGlobals::Standard,
             note: None,
         };
-        let wire = asserted_host.to_proto().unwrap();
+        let wire = spec_wire::Wire::to_proto(&asserted_host);
         let bytes = analysis_codec::encode_protobuf(&wire).unwrap();
-        let decoded: proto::HostBehavior = analysis_codec::decode_protobuf(&bytes).unwrap();
-        let restored = spec::HostBehavior::from_proto(decoded).unwrap();
+        let decoded: <spec::HostBehavior as spec_wire::Wire>::Proto =
+            analysis_codec::decode_protobuf(&bytes).unwrap();
+        let restored = spec_wire::Wire::from_proto(decoded).unwrap();
         assert!(restored.note.is_none());
-        assert_eq!(restored.to_proto().unwrap(), wire);
-        let mut host = spec::HostBehavior::default().to_proto().unwrap();
-        assert!(spec::HostBehavior::from_proto(host.clone()).is_ok());
+        assert_eq!(spec_wire::Wire::to_proto(&restored), wire);
+        let mut host = spec_wire::Wire::to_proto(&spec::HostBehavior::default());
+        assert!(<spec::HostBehavior as spec_wire::Wire>::from_proto(host.clone()).is_ok());
         host.synchronous_module_loader = None;
-        assert!(spec::HostBehavior::from_proto(host).is_err());
-        let mut host = spec::HostBehavior::default().to_proto().unwrap();
+        assert!(<spec::HostBehavior as spec_wire::Wire>::from_proto(host).is_err());
+        let mut host = spec_wire::Wire::to_proto(&spec::HostBehavior::default());
         host.loader_result_for_evaluating_module = Some(i32::MAX);
-        assert!(spec::HostBehavior::from_proto(host).is_err());
-        let mut premises = spec::ProgramPremises::default().to_proto().unwrap();
+        assert!(<spec::HostBehavior as spec_wire::Wire>::from_proto(host).is_err());
+        let mut host = spec_wire::Wire::to_proto(&spec::HostBehavior::default());
+        host.reentry_free_builtin_modules
+            .push(spec::NodeBuiltinModule::Fs as i32);
+        host.reentry_free_builtin_modules
+            .push(spec::NodeBuiltinModule::Fs as i32);
+        assert!(<spec::HostBehavior as spec_wire::Wire>::from_proto(host).is_err());
+        let mut premises = spec_wire::Wire::to_proto(&spec::ProgramPremises::default());
         premises.process_prototype_chain_accessors = None;
-        assert!(spec::ProgramPremises::from_proto(premises).is_err());
+        assert!(<spec::ProgramPremises as spec_wire::Wire>::from_proto(premises).is_err());
         assert!(spec::HostModule::from_proto(proto::HostModule { value: None }).is_err());
         assert_eq!(
             spec::HostModule::from_proto(proto::HostModule {
@@ -787,77 +516,68 @@ mod tests {
             })
             .is_err()
         );
-        assert!(
-            spec::IntrinsicFamilies::from_proto(proto::IntrinsicFamilies { value: None }).is_err()
-        );
-        let family = spec::IntrinsicFamily::Array as i32;
-        assert!(
-            spec::IntrinsicFamilies::from_proto(proto::IntrinsicFamilies {
-                value: Some(proto::intrinsic_families::Value::Listed(
-                    proto::intrinsic_families::ListedIntrinsics {
-                        families: vec![family, family],
-                    }
-                )),
-            })
-            .is_err()
-        );
-        assert!(
-            spec::SourceMatchBinding::from_proto(proto::SourceMatchBinding {
-                value: Some(proto::source_match_binding::Value::Detailed(
-                    proto::SourceMatchBindingDetail {
-                        local: None,
-                        name: None
-                    }
-                )),
-            })
-            .is_err()
-        );
-        assert!(
-            spec::SourceMatchClaim::from_proto(proto::SourceMatchClaim {
-                identifiers: None,
-                match_source: Some(String::new()),
-                bindings: Vec::new(),
-                note: None,
-            })
-            .is_err()
-        );
+        let mut families = spec_wire::Wire::to_proto(&spec::IntrinsicFamilies::All(
+            spec::AllIntrinsicFamilies::All,
+        ));
+        families.value = None;
+        assert!(<spec::IntrinsicFamilies as spec_wire::Wire>::from_proto(families).is_err());
+        let mut families =
+            spec_wire::Wire::to_proto(&spec::IntrinsicFamilies::Listed(BTreeSet::from([
+                spec::IntrinsicFamily::Array,
+            ])));
+        if let Some(spec_wire_proto::debundle::spec::intrinsic_families::Value::Listed(selection)) =
+            families.value.as_mut()
+        {
+            selection.families.push(spec::IntrinsicFamily::Array as i32);
+        } else {
+            panic!("listed intrinsic family selection should encode as Listed");
+        }
+        assert!(<spec::IntrinsicFamilies as spec_wire::Wire>::from_proto(families).is_err());
+        let mut source_match = spec_wire::Wire::to_proto(&spec::SourceMatchClaim {
+            identifiers: spec::SourceMatchIdentifierMode::Exact,
+            match_source: String::new(),
+            bindings: Vec::new(),
+            note: None,
+        });
+        source_match.identifiers = None;
+        assert!(<spec::SourceMatchClaim as spec_wire::Wire>::from_proto(source_match).is_err());
     }
 
     #[test]
     fn protobuf_optionals_and_empty_selections_keep_their_domain_meaning() {
         let host = spec::HostBehavior::default();
-        let wire = host.to_proto().unwrap();
+        let wire = spec_wire::Wire::to_proto(&host);
         assert!(wire.loader_result_for_evaluating_module.is_none());
         assert!(wire.reentry_free_builtin_modules.is_empty());
-        let restored = spec::HostBehavior::from_proto(wire).unwrap();
+        let restored = <spec::HostBehavior as spec_wire::Wire>::from_proto(wire).unwrap();
         assert!(restored.loader_result_for_evaluating_module.is_none());
         assert!(restored.reentry_free_operations.is_empty());
 
         let mut no_intrinsic_promise = spec::ProgramPremises::default();
-        let absent = no_intrinsic_promise.to_proto().unwrap();
+        let absent = spec_wire::Wire::to_proto(&no_intrinsic_promise);
         assert!(absent.intrinsics_never_written.is_none());
         no_intrinsic_promise.intrinsics_never_written = Some(spec::IntrinsicsNeverWritten {
             families: spec::IntrinsicFamilies::Listed(BTreeSet::new()),
             note: None,
         });
-        let explicitly_empty = no_intrinsic_promise.to_proto().unwrap();
+        let explicitly_empty = spec_wire::Wire::to_proto(&no_intrinsic_promise);
         assert_ne!(absent, explicitly_empty);
-        round_trip(&no_intrinsic_promise);
+        round_trip_spec_wire(&no_intrinsic_promise);
+        let mut missing_families = spec_wire::Wire::to_proto(&spec::IntrinsicFamilies::All(
+            spec::AllIntrinsicFamilies::All,
+        ));
+        missing_families.value = None;
         assert!(
-            spec::IntrinsicsNeverWritten::from_proto(proto::IntrinsicsNeverWritten {
-                families: None,
-                note: None,
-            })
-            .is_err()
+            <spec::IntrinsicFamilies as spec_wire::Wire>::from_proto(missing_families).is_err()
         );
 
         for name in [None, Some(String::new()), Some("renamed".into())] {
-            round_trip(&spec::SourceMatchBindingDetail {
+            round_trip_spec_wire(&spec::SourceMatchBindingDetail {
                 local: "value".into(),
                 name,
             });
         }
-        round_trip(&spec::SourceMatchClaim {
+        round_trip_spec_wire(&spec::SourceMatchClaim {
             identifiers: spec::SourceMatchIdentifierMode::Exact,
             match_source: "run();".into(),
             bindings: Vec::new(),
@@ -899,10 +619,13 @@ mod tests {
             no_own_iterator_or_accessors_through_spread: true,
             no_rebinding_through_spread: false,
         };
-        round_trip(&contract);
-        let mut wire = contract.to_proto().unwrap();
+        round_trip_spec_wire(&contract);
+        let mut wire = spec_wire::Wire::to_proto(&contract);
         wire.no_rebinding_through_spread = None;
-        assert!(spec::ImportedPrimitiveArrayLifetimeContract::from_proto(wire).is_err());
+        assert!(
+            <spec::ImportedPrimitiveArrayLifetimeContract as spec_wire::Wire>::from_proto(wire)
+                .is_err()
+        );
     }
 
     #[test]
@@ -911,11 +634,6 @@ mod tests {
             note: Some("host audit".into()),
             ..Default::default()
         };
-        let saved = host.to_proto().unwrap();
-        assert_eq!(
-            spec::HostBehavior::from_proto(saved).unwrap().note,
-            host.note
-        );
         let host_wire = spec_wire::Wire::to_proto(&host);
         let host_restored: spec::HostBehavior = spec_wire::Wire::from_proto(host_wire).unwrap();
         assert_eq!(host_restored.note, host.note);
@@ -924,7 +642,7 @@ mod tests {
             note: Some("program audit".into()),
             ..Default::default()
         };
-        round_trip(&premises);
+        round_trip_spec_wire(&premises);
         let wire = spec_wire::Wire::to_proto(&premises);
         let restored: spec::ProgramPremises = spec_wire::Wire::from_proto(wire).unwrap();
         assert_eq!(restored, premises);
@@ -933,7 +651,7 @@ mod tests {
             families: spec::IntrinsicFamilies::All(spec::AllIntrinsicFamilies::All),
             note: Some("intrinsic audit".into()),
         });
-        round_trip(&premises);
+        round_trip_spec_wire(&premises);
         let wire = spec_wire::Wire::to_proto(&premises);
         let restored: spec::ProgramPremises = spec_wire::Wire::from_proto(wire).unwrap();
         assert_eq!(restored, premises);

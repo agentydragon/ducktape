@@ -684,8 +684,8 @@ impl ProtoConvert<proto::ExportReentryHostBuiltinLeaf> for ExportReentryHostBuil
 impl ProtoConvert<proto::ExportReentryReport> for ExportReentryReport {
     fn to_proto(&self) -> Result<proto::ExportReentryReport> {
         Ok(proto::ExportReentryReport {
-            host_behavior: Some(self.host_behavior.to_proto()?),
-            program_premises: Some(self.program_premises.to_proto()?),
+            host_behavior: Some(spec_wire::Wire::to_proto(&self.host_behavior)),
+            program_premises: Some(spec_wire::Wire::to_proto(&self.program_premises)),
             policy: Some(self.policy.to_proto()?),
             loader: Some(self.loader.to_proto()?),
             global_blockers: self
@@ -707,11 +707,11 @@ impl ProtoConvert<proto::ExportReentryReport> for ExportReentryReport {
     }
     fn from_proto(value: proto::ExportReentryReport) -> Result<Self> {
         Ok(Self {
-            host_behavior: ProtoConvert::from_proto(required(
+            host_behavior: spec_wire::Wire::from_proto(required(
                 value.host_behavior,
                 "ExportReentryReport.host_behavior",
             )?)?,
-            program_premises: ProtoConvert::from_proto(required(
+            program_premises: spec_wire::Wire::from_proto(required(
                 value.program_premises,
                 "ExportReentryReport.program_premises",
             )?)?,
