@@ -244,11 +244,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     fn program_cell_target(&self, target: &ProgramValueSource) -> Option<ProgramCellTarget> {
         if let ProgramValueSource::DefaultValue { module, .. } = target {
-            let source = if Some(module.as_str()) == self.inputs.root.module_id {
-                self.inputs.root
-            } else {
-                self.inputs.program_sources?.get(module)?
-            };
+            let source = self.inputs.source_for_module(module)?;
             let (owner, _, _) = source.index.default_export_value.as_ref()?;
             return Some(ProgramCellTarget::Default(
                 source.index.source_scope().unit(*owner),
@@ -265,11 +261,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let ProgramValueSource::Binding { module, local } = target else {
             return None;
         };
-        let source = if Some(module.as_str()) == self.inputs.root.module_id {
-            self.inputs.root
-        } else {
-            self.inputs.program_sources?.get(module)?
-        };
+        let source = self.inputs.source_for_module(module)?;
         let binding = source.top_bindings_by_name.get(local.as_str())?.as_ref()?;
         Some((source.index.source_scope(), binding.clone()))
     }
@@ -319,11 +311,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return Some((values, cell.initialized));
         }
         if let ProgramValueSource::Namespace { module } = target {
-            let source = if Some(module.as_str()) == self.inputs.root.module_id {
-                self.inputs.root
-            } else {
-                self.inputs.program_sources?.get(module)?
-            };
+            let source = self.inputs.source_for_module(module)?;
             // An incomplete namespace is handled by the ordinary conservative
             // import fallback, never as a partial exhaustive property surface.
             let source_identity::ProgramLinkResolution::Resolved(_) =
@@ -711,14 +699,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return Some(action(self));
         }
         let source = self.inputs.source_for_scope(scope)?;
-        let module = source.module_id?.to_owned();
-        if source.index.source_scope() != scope
+        if source.module_id.is_none()
+            || source.index.source_scope() != scope
             || !self.state.world.inactive_modules.contains_key(&scope)
             || !self.state.source_controls.contains_key(&scope)
         {
             return None;
         }
-        let outer_program = self.state.current_program.clone();
+        let outer_source = self.state.current_source;
         let mut semantics = self.state.world_mut().inactive_modules.remove(&scope)?;
         let mut controls = self.state.source_controls.remove(&scope)?;
         semantics.exchange(self.state.world_mut());
@@ -728,10 +716,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .inactive_modules
             .insert(current_scope, semantics);
         self.state.source_controls.insert(current_scope, controls);
-        self.state.current_program = if scope == self.inputs.root.index.source_scope() {
+        self.state.current_source = if scope == self.inputs.root.index.source_scope() {
             None
         } else {
-            Some(module)
+            Some(scope)
         };
         let outer_query_source = self.queries.exchange_source(scope);
         let result = action(self);
@@ -756,7 +744,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .inactive_modules
             .insert(scope, semantics);
         self.state.source_controls.insert(scope, controls);
-        self.state.current_program = outer_program;
+        self.state.current_source = outer_source;
         Some(result)
     }
 }

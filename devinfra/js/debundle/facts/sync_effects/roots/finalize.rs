@@ -25,7 +25,7 @@ pub(super) fn finalize(
     root: RootOperands<'_>,
     assigned: RootAssignment,
 ) -> SynchronousCalls {
-    let inputs = program_inputs.active_source(state.current_program.as_deref());
+    let inputs = program_inputs.active_source(state.current_source);
     let index = inputs.index;
     let RootOperands {
         owner,

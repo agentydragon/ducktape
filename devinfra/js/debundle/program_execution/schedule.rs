@@ -531,10 +531,16 @@ impl ProgramExecutables {
             let (mut view, initial) = prepared.execution_inputs(hints, policy);
             view.executables = Some(self);
             state.install_source(view.index.source_scope(), initial);
-            sources.insert(module.to_owned(), view);
+            sources.insert(view.index.source_scope(), view);
         }
         let private_cells: BTreeMap<_, _> = std::iter::once((entry, &root))
-            .chain(sources.iter().map(|(module, view)| (module.as_str(), view)))
+            .chain(sources.values().map(|view| {
+                (
+                    view.module_id()
+                        .expect("prepared source has a module identity"),
+                    view,
+                )
+            }))
             .flat_map(|(module, view)| {
                 view.unobservable_initialization_cells()
                     .into_iter()

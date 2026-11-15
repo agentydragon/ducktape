@@ -135,6 +135,27 @@ impl Values {
     pub(super) fn is_disjoint(&self, other: &Self) -> bool {
         self.iter().all(|value| !other.contains(value))
     }
+
+    /// Union shared sets without cloning values that the union will discard.
+    pub(super) fn union_borrowed<'values>(values: impl IntoIterator<Item = &'values Self>) -> Self {
+        let mut values = values.into_iter().filter(|values| !values.is_empty());
+        let Some(first) = values.next() else {
+            return Self::new();
+        };
+        let Some(second) = values.next() else {
+            return first.clone();
+        };
+
+        let mut borrowed = Vec::with_capacity(first.len() + second.len());
+        borrowed.extend(first.iter());
+        borrowed.extend(second.iter());
+        for values in values {
+            borrowed.extend(values.iter());
+        }
+        borrowed.sort_unstable();
+        borrowed.dedup();
+        Self(Some(Arc::new(borrowed.into_iter().cloned().collect())))
+    }
 }
 
 /// A transient value set as a sorted, deduplicated vector: the elements and
@@ -2184,5 +2205,30 @@ mod tests {
         assert!(iter.next_back().is_none());
         drop(retained);
         assert_eq!(Arc::strong_count(&captured.values), owners);
+    }
+
+    #[test]
+    fn borrowed_union_matches_ordered_set_union_and_shares_empty_and_single_inputs() {
+        let universe = universe();
+        let empty = Values::new();
+        let left = Values::from([
+            universe[3].clone(),
+            universe[0].clone(),
+            universe[3].clone(),
+        ]);
+        let right = Values::from([
+            universe[3].clone(),
+            universe[2].clone(),
+            universe[1].clone(),
+        ]);
+
+        let empty_union = Values::union_borrowed([&empty, &Values::new()]);
+        assert!(empty_union.ptr_eq(&empty));
+        let single_union = Values::union_borrowed([&empty, &left, &empty]);
+        assert!(single_union.ptr_eq(&left));
+
+        let union = Values::union_borrowed([&empty, &left, &right, &empty]);
+        let expected: OrdSet<_> = left.iter().chain(right.iter()).cloned().collect();
+        assert_contents(&union, &expected);
     }
 }

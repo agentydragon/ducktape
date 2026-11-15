@@ -1663,16 +1663,20 @@ pub(super) struct OwnPropertyQuery {
 /// without making any module borrow the map that owns its view.
 pub(crate) struct ExecutionProgramInputs<'source> {
     pub(crate) root: &'source ExecutionInputs<'source>,
-    pub(crate) program_sources: Option<&'source BTreeMap<String, ExecutionInputs<'source>>>,
+    pub(crate) program_sources:
+        Option<&'source BTreeMap<RuntimeSourceScope, ExecutionInputs<'source>>>,
 }
 
 impl<'source> ExecutionProgramInputs<'source> {
-    pub(super) fn active_source(&self, module: Option<&str>) -> &'source ExecutionInputs<'source> {
-        match module {
-            Some(module) => self
+    pub(super) fn active_source(
+        &self,
+        scope: Option<RuntimeSourceScope>,
+    ) -> &'source ExecutionInputs<'source> {
+        match scope {
+            Some(scope) => self
                 .program_sources
                 .expect("a foreign activation has prepared program source views")
-                .get(module)
+                .get(&scope)
                 .expect("an active module has a prepared source view"),
             None => self.root,
         }
@@ -1687,13 +1691,25 @@ impl<'source> ExecutionProgramInputs<'source> {
         if self.root.index.source_scope() == scope {
             return Some(self.root);
         }
-        self.program_sources?
-            .values()
-            .find(|source| source.index.source_scope() == scope)
+        self.program_sources?.get(&scope)
+    }
+
+    pub(super) fn source_for_module(
+        &self,
+        module: &str,
+    ) -> Option<&'source ExecutionInputs<'source>> {
+        if self.root.module_id == Some(module) {
+            return Some(self.root);
+        }
+        self.source_for_scope(self.root.executables?.source_scope(module)?)
     }
 }
 
 impl<'source> ExecutionInputs<'source> {
+    pub(crate) fn module_id(&self) -> Option<&'source str> {
+        self.module_id
+    }
+
     /// A host callback cannot observe these module cells, even if it reenters:
     /// none is exported or mentioned in any callable body. Dynamic lexical
     /// access invalidates this source proof for the entire module.
@@ -2082,7 +2098,7 @@ impl std::ops::DerefMut for ExecutionState {
 
 #[derive(Clone, Default)]
 pub(crate) struct ExecutionControls {
-    pub(super) current_program: Option<String>,
+    pub(super) current_source: Option<RuntimeSourceScope>,
     /// Global scheduling owner, retained across lexical source activation.
     pub(super) effect_owner: Option<RuntimeSourceUnitId>,
     pub(super) source_controls:
@@ -2365,7 +2381,7 @@ impl ExecutionState {
         outcome: &Outcome,
     ) -> ExecutionPath {
         let ExecutionControls {
-            current_program: _,
+            current_source: _,
             effect_owner: _,
             source_controls: _,
             callback_fallback,
@@ -2456,7 +2472,7 @@ impl Executor<'_, '_> {
     /// compile until it is placed.
     pub(super) fn checkpoint_root_attempt(&self) -> RootAttemptCheckpoint {
         let ExecutionControls {
-            current_program: _,
+            current_source: _,
             effect_owner: _,
             source_controls: _,
             callback_fallback: _,
@@ -2776,7 +2792,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         .extend(view.owners.iter().map(|owner| key.source.unit(*owner)));
                     if this.state.effect_owner.is_some() || this.state.current_top_owner.is_some() {
                         for binding in &view.reads {
-                            referenced.extend(this.evaluate_binding(binding, &Context::new()));
+                            referenced.push(this.evaluate_binding(binding, &Context::new()));
                         }
                         let reads: Vec<_> = view.reads.iter().collect();
                         let rebinds: Vec<_> = view.rebinds.iter().collect();
@@ -2793,12 +2809,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                                 this.state.world.reachability.incomplete,
                             );
                             for binding in reads {
-                                referenced.extend(this.evaluate_binding(binding, &Context::new()));
+                                referenced.push(this.evaluate_binding(binding, &Context::new()));
                             }
                             this.promote_top_effects(reads, rebinds, *lexical_owner, outcome);
                         }
                     }
-                    let referenced: Values = referenced.into_iter().collect();
+                    let referenced = Values::union_borrowed(&referenced);
                     // A truncated body can read a module-held record and run a
                     // stored callback/accessor. Follow that actual retained graph,
                     // rather than replacing a known source with a universal fence.
@@ -3092,8 +3108,7 @@ pub(super) struct SuppliedCallSelections {
 
 impl<'source, 'rule> Executor<'source, 'rule> {
     pub(super) fn source_inputs(&self) -> &'rule ExecutionInputs<'source> {
-        self.inputs
-            .active_source(self.state.current_program.as_deref())
+        self.inputs.active_source(self.state.current_source)
     }
 
     pub(super) fn source_index(&self) -> &'source ExecutionIndex {
@@ -11499,7 +11514,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if let Some(module) = named {
             return Some(Some(module.to_owned()));
         }
-        (source == self.source_index().source_scope() && self.state.current_program.is_none())
+        (source == self.source_index().source_scope() && self.state.current_source.is_none())
             .then_some(None)
     }
 
@@ -15665,7 +15680,7 @@ pub(crate) fn prepare_execution_inputs<'source>(
         .collect();
     let state = ExecutionState {
         controls: Arc::new(ExecutionControls {
-            current_program: None,
+            current_source: None,
             effect_owner: None,
             source_controls: OrdMap::new(),
             native_point_effects: index.initial_native_point_effects.clone(),
@@ -15809,14 +15824,14 @@ pub(crate) fn run_prepared_synchronous_execution(
 ) -> SynchronousExecutionResult {
     let mut sources = BTreeMap::new();
     if let Some(program) = inputs.executables {
-        for (module, prepared, hints, policy) in program.sources() {
+        for (_, prepared, hints, policy) in program.sources() {
             let (mut view, initial) = prepared.execution_inputs(hints, policy);
             if view.index.source_scope() == inputs.index.source_scope() {
                 continue;
             }
             view.executables = Some(program);
             state.install_source(view.index.source_scope(), initial);
-            sources.insert(module.to_owned(), view);
+            sources.insert(view.index.source_scope(), view);
         }
     }
     let program_inputs = ExecutionProgramInputs {

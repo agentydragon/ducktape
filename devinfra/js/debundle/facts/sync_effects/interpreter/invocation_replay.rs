@@ -620,7 +620,7 @@ impl IdentityReplay<'_> {
     }
     fn controls(&mut self, controls: &mut ExecutionControls) {
         let ExecutionControls {
-            current_program: _,
+            current_source: _,
             effect_owner: _,
             source_controls: _,
             native_point_effects: _,

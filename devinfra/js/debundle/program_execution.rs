@@ -644,6 +644,17 @@ impl ProgramExecutables {
         self.modules.get(module)
     }
 
+    pub(crate) fn source_scope(&self, module: &str) -> Option<RuntimeSourceScope> {
+        Some(
+            self.sources
+                .get(module)?
+                .prepared
+                .prepared_sync_index
+                .execution_index()
+                .source_scope(),
+        )
+    }
+
     pub(crate) fn module_for_scope(&self, scope: RuntimeSourceScope) -> Option<&ExecutableModule> {
         self.modules
             .values()

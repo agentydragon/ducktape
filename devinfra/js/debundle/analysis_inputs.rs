@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
@@ -940,6 +940,13 @@ pub enum ProvenSetAllocation {
     Inferred(Box<InferredSetConstruction>),
 }
 
+/// A cached histogram tied to the immutable mutation vector it describes.
+#[derive(Debug)]
+pub(crate) struct NativePrototypeMutationCensusCache {
+    source: Arc<Vec<crate::reports::schema::NativePrototypeMutation>>,
+    census: Arc<crate::facts::abstract_domain::integrity::NativePrototypeMutationCensus>,
+}
+
 /// Resolved whole-program native integrity, derived from source facts and any
 /// explicitly recorded author input dependencies. This is never a serialized
 /// spec assertion.
@@ -947,6 +954,8 @@ pub enum ProvenSetAllocation {
 pub struct NativeIntegrity {
     pub mutated: BTreeSet<NativeIntrinsic>,
     pub prototype_mutations: Arc<Vec<crate::reports::schema::NativePrototypeMutation>>,
+    #[serde(skip)]
+    pub(crate) prototype_mutation_census: Arc<OnceLock<NativePrototypeMutationCensusCache>>,
     pub witnesses: Arc<Vec<crate::reports::schema::NativeMutationWitness>>,
     /// Validated inputs by stable reference. Consumers report a dependency only
     /// when a receiver refinement was actually used.
@@ -959,6 +968,34 @@ pub struct NativeIntegrity {
     pub never_written: BTreeSet<NativeIntrinsic>,
     /// The witnesses that premise overrides: the author's audit list.
     pub never_written_overrides: Vec<crate::reports::schema::NeverWrittenOverride>,
+}
+
+impl NativeIntegrity {
+    pub(crate) fn prototype_mutation_census(
+        &self,
+    ) -> Arc<crate::facts::abstract_domain::integrity::NativePrototypeMutationCensus> {
+        let cached = self.prototype_mutation_census.get_or_init(|| {
+            NativePrototypeMutationCensusCache {
+                source: Arc::clone(&self.prototype_mutations),
+                census: Arc::new(
+                    crate::facts::abstract_domain::integrity::NativePrototypeMutationCensus::from_mutations(
+                        &self.prototype_mutations,
+                    ),
+                ),
+            }
+        });
+        if Arc::ptr_eq(&cached.source, &self.prototype_mutations) {
+            Arc::clone(&cached.census)
+        } else {
+            // The public vector can be replaced after first use. Keep that
+            // caller correct without invalidating clones' immutable snapshot.
+            Arc::new(
+                crate::facts::abstract_domain::integrity::NativePrototypeMutationCensus::from_mutations(
+                    &self.prototype_mutations,
+                ),
+            )
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

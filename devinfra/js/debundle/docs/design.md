@@ -153,6 +153,44 @@ local facts cannot stand in for a program execution world. Refusals carry
 `EvaluationScheduleRefusal` and, when reports are enabled,
 `evaluation_schedule.json`; no accepted program output is written.
 
+### Host-setter alias writes preserve initialization phase
+
+A host can install a setter for a property that module code later assigns. If
+the assigned value is a callback over a lexical cell, that setter can invoke
+the callback between the cell's initialization and a later update:
+
+```js
+Object.defineProperty(globalThis, "saved", {
+  set(callback) {
+    console.log("setter", callback());
+  },
+  configurable: true,
+});
+
+let later = 0;
+const callback = () => later;
+globalThis.saved = callback;
+const computed = 264;
+later = 42;
+console.log(computed, callback());
+```
+
+The source observes `setter 0` and then `264 42`. Moving `later` to a static
+dependency can make the setter run while that dependency's lexical cell is in
+the TDZ. The real CLI/Node regression
+<../e2e/evaluation_schedule_test.rs>
+(`a_host_setter_observes_the_original_captured_cell_before_its_later_update`)
+refuses that schedule; its marked rejected output demonstrates the TDZ
+divergence and is not an accepted bundle. A separate selected-`Symbol` case
+shows that proving one native operation does not certify this setter's timing
+(<../e2e/native_operation_input_test.rs>,
+`a_selected_native_call_does_not_authorize_a_changed_host_setter_phase`).
+
+The host setter is a possible external observer at the property write. A
+qualified cell identity says which live cell the callback reads, not whether
+the refactor preserves the phase in which the host can read it. The final
+schedule comparison supplies that check.
+
 ## Soundness over completeness
 
 The debundler's contract: **any spec the validator accepts must emit a
@@ -727,9 +765,12 @@ effects start active. These observations are diagnostic only: a clean source
 prefix does not certify an emitted module layout, which may reorder a later
 native mutation before the guarded read. The whole-program guard remains in
 force until the graph preserves those read/write orders. The report describes
-modeled evaluations, not an exhaustive runtime call trace: invocation memo hits
-do not replay observations. A later guard relaxation must include native effect
-state in invocation memo validity as well as preserve emitted read/write order.
+modeled evaluations, not an exhaustive runtime call trace. Invocation memo
+reuse requires an unchanged semantic world, control/admission state, read
+dependencies and allocation judgment; a hit replays the completed transition
+and its ordered observations at the current request. See
+<../SPEC.md#dependency-graph-array-ordering> for the runtime identity and replay
+contract.
 
 ### Saved-graph input contract
 
@@ -4106,6 +4147,31 @@ ordered root's binding-effect receipt, or its completed initialization.
 It never replaces `complete`. `complete` can be false without a recorded
 precision loss: the terminal-call stop in the application adapter clears it
 and records none.
+
+### Prepared callback reachability stays prefix-aware
+
+Following a callable into its defining prepared source can identify the
+callable's own effects without making every lexical initializer reachable.
+When a traversed source owner reads a future lexical binding, keep that binding
+read but stop before promoting deferred bodies held by the not-yet-initialized
+cell. Recheck availability at each later promotion and expand the callback
+closure after the cell initializes. Incomplete reachability retains the full
+conservative closure. This keeps execution readiness separate from source
+metadata and from later callback behavior.
+
+A retained-callback memo caches only the callback graph reached from the exact
+evaluated roots. Reuse requires its live-read witness to remain unchanged,
+including escaped callbacks, heap properties, accessors and descriptors,
+captured cells, and namespace exports in active and inactive module banks.
+Native activation, current binding availability, class promotion, source-owner
+effects and the actual callable's heap ledger still run for each use. The memo
+avoids a repeated graph walk; it grants neither readiness nor effect coverage.
+The future-binding CLI controls are in
+<../e2e/callback_future_availability_test.rs>; namespace-cell invalidation is
+covered by the `CallbackGraphReads` tests in
+<../facts/sync_effects/interpreter/callback_reads.rs>. Runtime allocation
+identity, qualified ledgers and replay details remain specified in
+<../SPEC.md#dependency-graph-array-ordering>.
 
 ## Vendor chunk swapping
 

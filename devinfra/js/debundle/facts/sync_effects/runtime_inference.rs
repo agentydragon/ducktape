@@ -646,15 +646,12 @@ impl RuntimeRules<'_, '_> {
         let queries = RuntimeQueries {
             inputs,
             point: point.clone(),
-            active_source: Cell::new(match &state.current_program {
-                Some(module) => inputs
-                    .program_sources
-                    .and_then(|sources| sources.get(module))
-                    .expect("an active source has a prepared view")
+            active_source: Cell::new(
+                inputs
+                    .active_source(state.current_source)
                     .index
                     .source_scope(),
-                None => inputs.root.index.source_scope(),
-            }),
+            ),
             next_child: Cell::new(0),
             next_allocation: Cell::new(0),
             dependencies: RefCell::default(),
@@ -796,32 +793,26 @@ pub(super) fn infer_synchronous_execution(
         inputs.root.module_id,
         inputs.program_sources,
     ) {
-        (Some(program), Some(entry), Some(sources)) => {
-            match program.source_evaluation_order(entry) {
-                source_identity::ProgramLinkResolution::Resolved(order) => order
-                    .into_iter()
-                    .flat_map(|module| {
-                        let source = if module == entry {
-                            inputs.root
-                        } else {
-                            sources
-                                .get(&module)
-                                .expect("linked modules have prepared source views")
-                        };
-                        (0..source.facts.len()).map(move |ordinal| SourceOwner {
-                            source: source.index.source_scope(),
-                            ordinal: SourceUnitOrdinal(ordinal),
-                        })
-                    })
-                    .collect(),
-                _ => (0..owner_count)
-                    .map(|ordinal| SourceOwner {
-                        source: root_scope,
+        (Some(program), Some(entry), Some(_)) => match program.source_evaluation_order(entry) {
+            source_identity::ProgramLinkResolution::Resolved(order) => order
+                .into_iter()
+                .flat_map(|module| {
+                    let source = inputs
+                        .source_for_module(&module)
+                        .expect("linked modules have prepared source views");
+                    (0..source.facts.len()).map(move |ordinal| SourceOwner {
+                        source: source.index.source_scope(),
                         ordinal: SourceUnitOrdinal(ordinal),
                     })
-                    .collect(),
-            }
-        }
+                })
+                .collect(),
+            _ => (0..owner_count)
+                .map(|ordinal| SourceOwner {
+                    source: root_scope,
+                    ordinal: SourceUnitOrdinal(ordinal),
+                })
+                .collect(),
+        },
         _ => (0..owner_count)
             .map(|ordinal| SourceOwner {
                 source: root_scope,

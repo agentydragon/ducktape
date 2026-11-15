@@ -27,7 +27,7 @@ use crate::facts::abstract_domain::builtins::{
     self, ArgSel, IntrinsicOp, Invocation, Row, iteration_row,
 };
 use crate::facts::abstract_domain::integrity::{
-    IntegrityFlags, IntrinsicIntact, IntrinsicSlot, PrototypeWrites,
+    IntegrityFlags, IntrinsicIntact, IntrinsicSlot, NativePrototypeMutationCensus, PrototypeWrites,
 };
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::at_init_fallback::{
@@ -4438,16 +4438,56 @@ pub(super) struct IntrinsicWriteTarget {
 /// Conservative effects activated before a top-level item or callable body.
 /// This deliberately has no within-body ordering: all of a body's writes
 /// precede its first modeled native guard.
+#[derive(Clone)]
+struct ForeignPrototypeCensusContribution {
+    census: Arc<NativePrototypeMutationCensus>,
+    source_chunk_id: Option<String>,
+    weight: usize,
+}
+
 #[derive(Clone, Default)]
 pub(super) struct NativePointEffects {
     pub(super) roots: IntrinsicRoots,
+    foreign_prototype_censuses:
+        BTreeMap<(usize, Option<String>), ForeignPrototypeCensusContribution>,
     prototype_site_count: usize,
     prototype_any_key: usize,
     prototype_known_keys: BTreeMap<String, usize>,
 }
 
 impl NativePointEffects {
+    fn add_foreign_prototype_census(
+        &mut self,
+        census: Option<Arc<NativePrototypeMutationCensus>>,
+        source_chunk_id: Option<String>,
+    ) {
+        let Some(census) = census else {
+            return;
+        };
+        let census_id = Arc::as_ptr(&census) as usize;
+        let key = (census_id, source_chunk_id.clone());
+        let contribution = self.foreign_prototype_censuses.entry(key).or_insert(
+            ForeignPrototypeCensusContribution {
+                census,
+                source_chunk_id,
+                weight: 0,
+            },
+        );
+        contribution.weight += 1;
+    }
+
     pub(super) fn extend(&mut self, other: &Self) {
+        for (key, other_contribution) in &other.foreign_prototype_censuses {
+            let contribution = self
+                .foreign_prototype_censuses
+                .entry(key.clone())
+                .or_insert_with(|| ForeignPrototypeCensusContribution {
+                    census: Arc::clone(&other_contribution.census),
+                    source_chunk_id: other_contribution.source_chunk_id.clone(),
+                    weight: 0,
+                });
+            contribution.weight += other_contribution.weight;
+        }
         self.roots.extend(&other.roots);
         self.prototype_site_count += other.prototype_site_count;
         self.prototype_any_key += other.prototype_any_key;
@@ -4474,17 +4514,136 @@ impl NativePointEffects {
     }
 
     pub(super) fn blocking_prototype_mutations(&self, property: Option<&str>) -> usize {
-        match property {
-            Some(property) => {
-                self.prototype_any_key
-                    + self
-                        .prototype_known_keys
-                        .get(property)
-                        .copied()
-                        .unwrap_or(0)
+        let foreign = self
+            .foreign_prototype_censuses
+            .values()
+            .map(|contribution| {
+                contribution
+                    .census
+                    .foreign_blocking(contribution.source_chunk_id.as_deref(), property)
+                    * contribution.weight
+            })
+            .sum::<usize>();
+        foreign
+            + match property {
+                Some(property) => {
+                    self.prototype_any_key
+                        + self
+                            .prototype_known_keys
+                            .get(property)
+                            .copied()
+                            .unwrap_or(0)
+                }
+                None => self.prototype_site_count,
             }
-            None => self.prototype_site_count,
+    }
+}
+
+#[cfg(test)]
+mod native_point_effects_census_tests {
+    use super::*;
+
+    fn mutation(chunk_id: &str, properties: Option<BTreeSet<&str>>) -> NativePrototypeMutation {
+        NativePrototypeMutation {
+            chunk_id: chunk_id.to_owned(),
+            statement_ordinal: SourceUnitOrdinal(0),
+            source_location: None,
+            kind: NativePrototypeMutationKind::Write,
+            properties: properties
+                .map(|properties| properties.into_iter().map(str::to_owned).collect()),
+            key_dependencies: BTreeSet::new(),
+            span: DUMMY_SP,
         }
+    }
+
+    #[test]
+    fn foreign_prototype_census_is_active_at_entry_and_local_writes_are_activation_deltas() {
+        let census = Arc::new(NativePrototypeMutationCensus::from_mutations(&[
+            mutation("foreign.js", Some(BTreeSet::from(["x"]))),
+            mutation("foreign.js", Some(BTreeSet::from(["x"]))),
+            mutation("foreign.js", None),
+            mutation("foreign.js", Some(BTreeSet::new())),
+            mutation("consumer.js", Some(BTreeSet::from(["x"]))),
+            mutation("consumer.js", None),
+            mutation("consumer.js", Some(BTreeSet::new())),
+            mutation("provider.js", Some(BTreeSet::from(["x"]))),
+            mutation("provider.js", None),
+            mutation("provider.js", Some(BTreeSet::new())),
+        ]));
+
+        let mut initial = NativePointEffects::default();
+        initial.add_foreign_prototype_census(Some(Arc::clone(&census)), Some("consumer.js".into()));
+        assert_eq!(initial.blocking_prototype_mutations(Some("x")), 5);
+        assert_eq!(initial.blocking_prototype_mutations(None), 7);
+
+        let mut activated = NativePointEffects::default();
+        activated.add_prototype_mutation(&mutation("consumer.js", Some(BTreeSet::from(["x"]))));
+        activated.add_prototype_mutation(&mutation("consumer.js", None));
+        activated.add_prototype_mutation(&mutation("consumer.js", Some(BTreeSet::new())));
+
+        // A local write does not enter the module's initial guard state.
+        assert_eq!(initial.blocking_prototype_mutations(Some("x")), 5);
+        assert_eq!(initial.blocking_prototype_mutations(None), 7);
+
+        let mut provider_initial = NativePointEffects::default();
+        provider_initial.add_foreign_prototype_census(Some(census), Some("provider.js".into()));
+        let mut combined = initial.clone();
+        combined.extend(&provider_initial);
+        assert_eq!(combined.blocking_prototype_mutations(Some("x")), 10);
+        assert_eq!(combined.blocking_prototype_mutations(None), 14);
+
+        combined.extend(&activated);
+        assert_eq!(combined.blocking_prototype_mutations(Some("x")), 12);
+        assert_eq!(combined.blocking_prototype_mutations(None), 17);
+
+        // Extending the same source component twice remains additive, matching
+        // the old map-based NativePointEffects::extend behavior.
+        combined.extend(&provider_initial);
+        assert_eq!(combined.blocking_prototype_mutations(Some("x")), 17);
+        assert_eq!(combined.blocking_prototype_mutations(None), 24);
+    }
+
+    #[test]
+    fn locating_native_mutations_keeps_named_shared_census_and_fills_missing_local_records() {
+        let mut fully_located = ExecutionIndex::default();
+        let named = Arc::new(vec![mutation("foreign.js", Some(BTreeSet::from(["x"])))]);
+        fully_located.native_prototype_mutations = Arc::clone(&named);
+        fully_located.locate_native_integrity_witnesses(|_| {
+            panic!("a named whole-program mutation does not need source location repair")
+        });
+        assert!(Arc::ptr_eq(
+            &fully_located.native_prototype_mutations,
+            &named
+        ));
+
+        let local = mutation("", Some(BTreeSet::from(["local"])));
+        let mut foreign = mutation("foreign.js", Some(BTreeSet::from(["x"])));
+        foreign.source_location = Some(crate::execution_evidence::SourceLocation {
+            source_path: "foreign.js".to_owned(),
+            start_line: 20,
+            end_line: 20,
+            start_column: Some(3),
+        });
+        let original = Arc::new(vec![local.clone(), foreign.clone()]);
+        let mut index = ExecutionIndex {
+            native_prototype_mutations: Arc::clone(&original),
+            ..Default::default()
+        };
+        let located = crate::execution_evidence::SourceLocation {
+            source_path: "local.js".to_owned(),
+            start_line: 2,
+            end_line: 2,
+            start_column: Some(5),
+        };
+        index.locate_native_integrity_witnesses(|_| Some(located.clone()));
+
+        assert!(!Arc::ptr_eq(&index.native_prototype_mutations, &original));
+        assert_eq!(
+            index.native_prototype_mutations[0].source_location,
+            Some(located)
+        );
+        assert_eq!(index.native_prototype_mutations[1], foreign);
+        assert_eq!(original[0], local, "the shared census remains immutable");
     }
 }
 
@@ -4524,6 +4683,7 @@ pub(crate) struct NativeWriteCensus {
     /// Host claims a receiver discharge consumed.
     host_behavior: BTreeSet<HostBehaviorKey>,
     prototype_mutations: Arc<Vec<NativePrototypeMutation>>,
+    prototype_mutation_census: Option<Arc<NativePrototypeMutationCensus>>,
     witnesses: Arc<Vec<NativeMutationWitness>>,
     conditional: Vec<ConditionalIntrinsicWrite>,
 }
@@ -4682,6 +4842,7 @@ pub(crate) fn resolve_native_integrity<'a>(
                 })
                 .collect(),
         ),
+        prototype_mutation_census: Arc::default(),
         mutated,
         witnesses: Arc::new(witnesses),
         value_input_evidence,
@@ -6083,6 +6244,7 @@ pub(crate) struct ExecutionIndex {
     mutated_intrinsic_roots: IntrinsicRoots,
     native_integrity_witnesses: Arc<Vec<NativeMutationWitness>>,
     native_prototype_mutations: Arc<Vec<NativePrototypeMutation>>,
+    native_prototype_mutation_census: Option<Arc<NativePrototypeMutationCensus>>,
     source_chunk_id: Option<String>,
     pub(super) native_point_effects: BTreeMap<(SourceUnitOrdinal, Option<u32>), NativePointEffects>,
     pub(super) initial_native_point_effects: NativePointEffects,
@@ -7246,17 +7408,24 @@ impl ExecutionIndex {
     /// The completed census as slot flags, with the `IntrinsicIntact` axioms
     /// of every validated native input.
     pub(super) fn integrity_flags(&self) -> IntegrityFlags {
+        let prototype_writes = self
+            .native_prototype_mutation_census
+            .as_ref()
+            .map(|census| census.total_writes())
+            .unwrap_or_else(|| {
+                Arc::new(PrototypeWrites::new(
+                    self.native_prototype_mutations
+                        .iter()
+                        .map(|mutation| mutation.properties.as_ref()),
+                ))
+            });
         IntegrityFlags::new(
             self.dynamic_scope_owners.is_empty(),
             self.mutated_intrinsic_roots.clone(),
             &self.native_integrity_witnesses,
             self.native_integrity_dependencies(),
             self.intrinsic_axioms(),
-            PrototypeWrites::new(
-                self.native_prototype_mutations
-                    .iter()
-                    .map(|mutation| mutation.properties.as_ref()),
-            ),
+            prototype_writes,
         )
         .with_never_written(self.never_written.clone())
     }
@@ -8597,6 +8766,10 @@ impl ExecutionIndex {
                 .as_ref()
                 .map(|integrity| integrity.consumed_host_behavior.clone())
                 .unwrap_or_default(),
+            native_prototype_mutation_census: hints
+                .native_integrity
+                .as_ref()
+                .map(NativeIntegrity::prototype_mutation_census),
             ..Self::default()
         };
         index.bind_runtime_source();
@@ -9432,6 +9605,10 @@ impl ExecutionIndex {
                 .as_ref()
                 .map(|integrity| integrity.prototype_mutations.clone())
                 .unwrap_or_default(),
+            prototype_mutation_census: hints
+                .native_integrity
+                .as_ref()
+                .map(NativeIntegrity::prototype_mutation_census),
             witnesses: hints
                 .native_integrity
                 .as_ref()
@@ -10249,18 +10426,14 @@ impl ExecutionIndex {
                 })
         };
         let mut initial = NativePointEffects::default();
-        let is_foreign = |chunk_id: &str| self.source_chunk_id.as_deref() != Some(chunk_id);
-        for mutation in external
-            .prototype_mutations
-            .iter()
-            .filter(|mutation| is_foreign(&mutation.chunk_id))
-        {
-            initial.add_prototype_mutation(mutation);
-        }
+        initial.add_foreign_prototype_census(
+            external.prototype_mutation_census.clone(),
+            self.source_chunk_id.clone(),
+        );
         for witness in external
             .witnesses
             .iter()
-            .filter(|witness| is_foreign(&witness.chunk_id))
+            .filter(|witness| self.source_chunk_id.as_deref() != Some(&witness.chunk_id))
         {
             if witness.unreachable_branch.is_none() {
                 initial.roots.extend(&witness.affected_roots);
@@ -10301,12 +10474,22 @@ impl ExecutionIndex {
         );
         // Dynamic scope is the only unconditional root without a source
         // witness. Keep it active even if another write has the same family.
+        let external_dynamic_scope = external
+            .prototype_mutation_census
+            .as_ref()
+            .map(|census| census.has_dynamic_scope())
+            .unwrap_or_else(|| {
+                external
+                    .prototype_mutations
+                    .iter()
+                    .any(|mutation| mutation.kind == NativePrototypeMutationKind::DynamicScope)
+            });
         if self
             .native_write_census
             .prototype_mutations
             .iter()
-            .chain(external.prototype_mutations.iter())
             .any(|mutation| mutation.kind == NativePrototypeMutationKind::DynamicScope)
+            || external_dynamic_scope
         {
             initial.roots.insert(NativeIntrinsic::GlobalObject);
         }
@@ -10399,9 +10582,15 @@ impl ExecutionIndex {
                 }
             }
         }
-        for mutation in Arc::make_mut(&mut self.native_prototype_mutations) {
-            if mutation.chunk_id.is_empty() {
-                mutation.source_location = locate(mutation.span);
+        if self
+            .native_prototype_mutations
+            .iter()
+            .any(|mutation| mutation.chunk_id.is_empty())
+        {
+            for mutation in Arc::make_mut(&mut self.native_prototype_mutations) {
+                if mutation.chunk_id.is_empty() {
+                    mutation.source_location = locate(mutation.span);
+                }
             }
         }
     }
@@ -13975,18 +14164,14 @@ impl PreparedCallableCapabilities {
             },
             ..ProofDependencies::default()
         };
+        let prototype_writes = integrity.prototype_mutation_census().total_writes();
         let flags = IntegrityFlags::new(
             self.index.dynamic_scope_owners.is_empty(),
             integrity.mutated.clone(),
             &integrity.witnesses,
             dependencies,
             BTreeMap::new(),
-            PrototypeWrites::new(
-                integrity
-                    .prototype_mutations
-                    .iter()
-                    .map(|write| write.properties.as_ref()),
-            ),
+            prototype_writes,
         )
         .with_never_written(integrity.never_written.clone());
         self.index.infer_set_constructions(&flags)

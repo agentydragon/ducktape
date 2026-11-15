@@ -1184,10 +1184,10 @@ fn drops_specifier_for_imported_binding_claimed_and_unused_in_residual() {
     // (with its own re-import of `dep`), and the residual's
     // re-export references `composed`. The trim drops the dead
     // `dep` specifier from the residual's vendor import; the
-    // directive is preserved as a side-effect-only
-    // `import "./vendor.js";`. The schedule also loads `mod_dep`,
+    // directive is preserved as a side-effect-only import of the
+    // indexed vendor entry. The schedule also loads `mod_dep`,
     // whose empty body re-exports the claimed import specifier, so
-    // that module must resolve the same runtime-only sibling from its
+    // that module must resolve the same indexed vendor chunk from its
     // deeper output directory.
     let mut opts = FixtureOpts::new(
         r#"import { dep } from "./vendor.js";
