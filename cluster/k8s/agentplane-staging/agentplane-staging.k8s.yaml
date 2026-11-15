@@ -3114,6 +3114,14 @@ data:
         "ca_file": "/run/agentplane/workload-trust/ca-certificates.crt",
         "server_uri": "spiffe://agentplane/session-dispatcher"
       },
+      "actions": {
+        "target": "actions.agentplane-staging.svc.cluster.local:8080",
+        "tls": {
+          "cert_file": "/run/agentplane/workload-tls/tls.crt",
+          "key_file": "/run/agentplane/workload-tls/tls.key",
+          "ca_file": "/run/agentplane/workload-trust/ca-certificates.crt"
+        }
+      },
       "listen": "0.0.0.0:8080",
       "listen_tls": {
         "listen": "0.0.0.0:8083",
@@ -3751,6 +3759,14 @@ spec:
     - toEndpoints:
         - matchLabels:
             app.kubernetes.io/name: llm-ingress
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: actions
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
@@ -7161,6 +7177,7 @@ data:
     operator_services:
       - spiffe://agentplane/app
     connection_delegation_service: spiffe://agentplane/mcp-edge
+    session_delegation_service: spiffe://agentplane/central-sampler
     reader_accounts:
       - namespace: agentplane-staging
         name: notifications
@@ -8212,6 +8229,14 @@ spec:
     - fromEndpoints:
         - matchLabels:
             app.kubernetes.io/name: mcp-edge
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: central-sampler
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
