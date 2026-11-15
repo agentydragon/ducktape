@@ -1367,3 +1367,485 @@ fn gate_bypassing_assignment_cycle_surfaces_and_recovers() {
         "dissolving the cycle must restore realizability",
     );
 }
+
+#[cfg(test)]
+mod placement_kernel_tests {
+    //! Small placement-kernel regressions for graph-derived repair clauses.
+    //!
+    //! The search is compared with an independent finite enumeration of complete
+    //! source-unit assignments. Each oracle candidate is checked by
+    //! `AssignmentProblem::validate`, which invokes the authoritative full gate;
+    //! it does not use the placement search's projection, scheduler, or clauses.
+
+    use std::collections::BTreeSet;
+
+    use analysis::{DependencyGraphInput, DependencyGraphReport, ModuleDestinationKind};
+    use analysis_model::DepKind;
+    use report_fixtures::{
+        active_source_unit, dependency_edge, promoted_dependency_edge, residual_source_unit,
+        singleton_graph,
+    };
+
+    use crate::assignment::{AssignmentProblem, SourceUnitAssignment, accepted};
+    use crate::search::{Destinations, SearchOptions, SearchStatus, search};
+
+    fn options(
+        destinations: Destinations,
+        into: &[&str],
+        required: &[&str],
+        max_new_modules: usize,
+        max_checks: Option<u64>,
+    ) -> SearchOptions {
+        SearchOptions {
+            destinations,
+            into: into.iter().map(|path| (*path).to_string()).collect(),
+            required: required.iter().map(|id| (*id).to_string()).collect(),
+            only_units: None,
+            max_new_modules: Some(max_new_modules),
+            max_checks,
+            time_budget: None,
+        }
+    }
+
+    /// Exhaust every raw assignment of residual source units into permitted
+    /// existing or fresh destinations, checking each complete assignment through
+    /// the public full-gate validator. Fresh names are arbitrary representatives
+    /// because owner renaming does not change gate acceptance.
+    fn raw_full_gate_has_placement(
+        report: &DependencyGraphReport,
+        problem: &AssignmentProblem<'_>,
+        options: &SearchOptions,
+    ) -> bool {
+        let movable: Vec<_> = report
+            .nodes
+            .iter()
+            .filter(|unit| report.is_unassigned_or_entry(&unit.destination))
+            .filter(|unit| {
+                options
+                    .only_units
+                    .as_ref()
+                    .is_none_or(|only| only.contains(&unit.id))
+            })
+            .map(|unit| unit.id.clone())
+            .collect();
+        let required: BTreeSet<_> = options.required.iter().cloned().collect();
+        assert!(required.iter().all(|id| movable.contains(id)));
+
+        let existing: BTreeSet<_> = report
+            .quotient
+            .nodes
+            .iter()
+            .filter(|module| module.kind == ModuleDestinationKind::Specified)
+            .map(|module| module.path.as_str().to_string())
+            .collect();
+        let mut existing_targets: BTreeSet<_> = if options.into.is_empty() {
+            match options.destinations {
+                Destinations::New => BTreeSet::new(),
+                Destinations::Existing | Destinations::Both => existing.clone(),
+            }
+        } else {
+            options
+                .into
+                .iter()
+                .filter(|path| existing.contains(*path))
+                .cloned()
+                .collect()
+        };
+        if matches!(options.destinations, Destinations::New) {
+            existing_targets.clear();
+        }
+
+        let fresh_limit = options.max_new_modules.unwrap_or(movable.len());
+        let mut fresh_targets: Vec<String> = if options.into.is_empty() {
+            if matches!(options.destinations, Destinations::Existing) {
+                Vec::new()
+            } else {
+                (0..movable.len())
+                    .map(|index| format!("oracle_fresh_{index}"))
+                    .collect()
+            }
+        } else if fresh_limit == 0 || matches!(options.destinations, Destinations::Existing) {
+            Vec::new()
+        } else {
+            options
+                .into
+                .iter()
+                .filter(|path| !existing.contains(*path))
+                .cloned()
+                .collect()
+        };
+        let fresh_cap = if options.into.is_empty() {
+            fresh_limit
+        } else {
+            fresh_limit.min(fresh_targets.len())
+        };
+        fresh_targets.truncate(movable.len());
+
+        let mut destinations = vec![None];
+        destinations.extend(existing_targets.into_iter().map(Some));
+        destinations.extend(fresh_targets.into_iter().map(Some));
+        let mut chosen = vec![None; movable.len()];
+
+        fn enumerate(
+            index: usize,
+            movable: &[String],
+            required: &BTreeSet<String>,
+            destinations: &[Option<String>],
+            fresh_cap: usize,
+            fresh_targets: &BTreeSet<String>,
+            chosen: &mut [Option<String>],
+            problem: &AssignmentProblem<'_>,
+        ) -> bool {
+            if index == movable.len() {
+                if required.iter().any(|id| {
+                    movable
+                        .iter()
+                        .position(|candidate| candidate == id)
+                        .is_some_and(|position| chosen[position].is_none())
+                }) {
+                    return false;
+                }
+                let changes: Vec<_> = movable
+                    .iter()
+                    .zip(chosen.iter())
+                    .filter_map(|(unit_id, path)| {
+                        path.as_ref().map(|module| SourceUnitAssignment {
+                            unit_id: unit_id.clone(),
+                            module: module.clone(),
+                        })
+                    })
+                    .collect();
+                let Ok(candidate) = problem.candidate(&changes) else {
+                    return false;
+                };
+                if problem.residual_gain(&candidate) == 0 {
+                    return false;
+                }
+                return problem
+                    .validate(&candidate)
+                    .is_ok_and(|validation| accepted(&validation));
+            }
+
+            if required.contains(&movable[index]) {
+                for destination in destinations
+                    .iter()
+                    .filter(|destination| destination.is_some())
+                {
+                    chosen[index] = destination.clone();
+                    let fresh_count = chosen
+                        .iter()
+                        .flatten()
+                        .filter(|path| fresh_targets.contains(*path))
+                        .collect::<BTreeSet<_>>()
+                        .len();
+                    if fresh_count <= fresh_cap
+                        && enumerate(
+                            index + 1,
+                            movable,
+                            required,
+                            destinations,
+                            fresh_cap,
+                            fresh_targets,
+                            chosen,
+                            problem,
+                        )
+                    {
+                        return true;
+                    }
+                }
+            } else {
+                for destination in destinations {
+                    chosen[index] = destination.clone();
+                    let fresh_count = chosen
+                        .iter()
+                        .flatten()
+                        .filter(|path| fresh_targets.contains(*path))
+                        .collect::<BTreeSet<_>>()
+                        .len();
+                    if fresh_count <= fresh_cap
+                        && enumerate(
+                            index + 1,
+                            movable,
+                            required,
+                            destinations,
+                            fresh_cap,
+                            fresh_targets,
+                            chosen,
+                            problem,
+                        )
+                    {
+                        return true;
+                    }
+                }
+            }
+            chosen[index] = None;
+            false
+        }
+
+        let fresh_set: BTreeSet<_> = destinations
+            .iter()
+            .flatten()
+            .filter(|path| !existing.contains(*path))
+            .cloned()
+            .collect();
+        enumerate(
+            0,
+            &movable,
+            &required,
+            &destinations,
+            fresh_cap,
+            &fresh_set,
+            &mut chosen,
+            problem,
+        )
+    }
+
+    fn assert_search_matches_raw_gate(
+        report: &DependencyGraphReport,
+        problem: &AssignmentProblem<'_>,
+        options: &SearchOptions,
+    ) {
+        let expected = raw_full_gate_has_placement(report, problem, options);
+        let actual = search(problem, options).unwrap();
+        assert_eq!(
+            matches!(actual.status, SearchStatus::Found),
+            expected,
+            "search and raw full-gate assignment enumeration disagree: status={:?}, checks={}, work={:?}",
+            actual.status,
+            actual.checks,
+            actual.work.partition_states,
+        );
+        if actual.status == SearchStatus::Found {
+            let candidate = problem
+                .candidate(&actual.changes)
+                .expect("reported search changes form a complete candidate");
+            assert!(accepted(&problem.validate(&candidate).unwrap()));
+        }
+    }
+
+    fn guarded_cycle_report() -> DependencyGraphReport {
+        singleton_graph(
+            vec![
+                residual_source_unit("unit:a", 1, &["A"], 1),
+                residual_source_unit("unit:b", 2, &["B"], 1),
+                residual_source_unit("unit:c", 3, &["C"], 1),
+                active_source_unit("unit:home", 4, &["Home"], 1, "home"),
+            ],
+            vec![
+                dependency_edge("edge:a-b", "unit:a", "unit:b", DepKind::EagerUse, true),
+                promoted_dependency_edge(
+                    "edge:b-c",
+                    "unit:b",
+                    "unit:c",
+                    DepKind::EagerUse,
+                    true,
+                    "unit:b",
+                ),
+            ],
+        )
+    }
+
+    #[test]
+    fn guarded_fallback_cycle_forces_whole_quotient_cycle_together() {
+        let report = guarded_cycle_report();
+        let input = DependencyGraphInput::from_report(report.clone()).unwrap();
+        let problem = AssignmentProblem::new(&input).unwrap();
+
+        // Required A and C atoms are pinned to one named fresh owner, quotienting
+        // the source DAG A -> B -> C into a module C-cycle. B remains allowed to
+        // stay at entry, but that branch would make A -> entry and be rejected.
+        // The accepted placement must therefore co-locate the whole quotient
+        // cycle, even though B -> C is a guarded fallback promotion.
+        let forced = options(
+            Destinations::New,
+            &["extracted/cycle"],
+            &["unit:a", "unit:c"],
+            1,
+            None,
+        );
+        let forced_report = search(&problem, &forced).unwrap();
+        assert_eq!(forced_report.status, SearchStatus::Found);
+        let forced_candidate = problem.candidate(&forced_report.changes).unwrap();
+        assert!(accepted(&problem.validate(&forced_candidate).unwrap()));
+        let owner_a = forced_candidate[input.source_unit_id("unit:a").unwrap().0].clone();
+        let owner_b = forced_candidate[input.source_unit_id("unit:b").unwrap().0].clone();
+        let owner_c = forced_candidate[input.source_unit_id("unit:c").unwrap().0].clone();
+        assert_eq!(owner_a, owner_b);
+        assert_eq!(owner_b, owner_c);
+        assert_eq!(owner_a.as_ref().unwrap().as_str(), "extracted/cycle");
+
+        // The raw oracle enumerates complete assignments into the named fresh
+        // target for required subsets, independently checking each through the
+        // full gate. At least one placement co-locates the quotient endpoints.
+        for required in [
+            &["unit:a"][..],
+            &["unit:b"][..],
+            &["unit:c"][..],
+            &["unit:a", "unit:c"][..],
+            &["unit:a", "unit:b", "unit:c"][..],
+        ] {
+            let query = options(Destinations::New, &["extracted/cycle"], required, 1, None);
+            assert_search_matches_raw_gate(&report, &problem, &query);
+        }
+
+        // The same source DAG can be coarsened into a named existing owner too.
+        let existing = options(
+            Destinations::Existing,
+            &["home"],
+            &["unit:a", "unit:c"],
+            0,
+            None,
+        );
+        assert_search_matches_raw_gate(&report, &problem, &existing);
+
+        // Pin the obstruction against the authoritative gate: with A and C
+        // required in the fresh owner and B left at entry, A -> entry is an
+        // active constraining edge even though B -> C is a fallback promotion.
+        let split = problem
+            .candidate(&[
+                SourceUnitAssignment {
+                    unit_id: "unit:a".to_owned(),
+                    module: "extracted/cycle".to_owned(),
+                },
+                SourceUnitAssignment {
+                    unit_id: "unit:c".to_owned(),
+                    module: "extracted/cycle".to_owned(),
+                },
+            ])
+            .unwrap();
+        assert!(!accepted(&problem.validate(&split).unwrap()));
+        let coalesced = problem
+            .candidate(&[
+                SourceUnitAssignment {
+                    unit_id: "unit:a".to_owned(),
+                    module: "extracted/cycle".to_owned(),
+                },
+                SourceUnitAssignment {
+                    unit_id: "unit:b".to_owned(),
+                    module: "extracted/cycle".to_owned(),
+                },
+                SourceUnitAssignment {
+                    unit_id: "unit:c".to_owned(),
+                    module: "extracted/cycle".to_owned(),
+                },
+            ])
+            .unwrap();
+        assert!(accepted(&problem.validate(&coalesced).unwrap()));
+    }
+
+    fn closure_repair_report() -> DependencyGraphReport {
+        singleton_graph(
+            vec![
+                residual_source_unit("unit:a", 1, &["A"], 1),
+                residual_source_unit("unit:b", 2, &["B"], 1),
+                residual_source_unit("unit:v", 3, &["V"], 1),
+                residual_source_unit("unit:x", 4, &["X"], 1),
+                residual_source_unit("unit:y", 5, &["Y"], 1),
+                residual_source_unit("unit:z", 6, &["Z"], 1),
+                active_source_unit("unit:home", 7, &["Home"], 1, "home"),
+            ],
+            vec![
+                dependency_edge("edge:a-v", "unit:a", "unit:v", DepKind::EagerUse, true),
+                dependency_edge("edge:b-v", "unit:b", "unit:v", DepKind::EagerUse, true),
+                dependency_edge("edge:v-a", "unit:v", "unit:a", DepKind::LazyUse, false),
+                dependency_edge("edge:v-b", "unit:v", "unit:b", DepKind::LazyUse, false),
+                dependency_edge("edge:a-x", "unit:a", "unit:x", DepKind::LazyUse, false),
+                dependency_edge("edge:y-b", "unit:y", "unit:b", DepKind::LazyUse, false),
+            ],
+        )
+    }
+
+    #[test]
+    fn schedule_obstruction_counts_partner_outside_its_scc_inside_forward_closure() {
+        let report = closure_repair_report();
+        let input = DependencyGraphInput::from_report(report.clone()).unwrap();
+        let problem = AssignmentProblem::new(&input).unwrap();
+
+        // The intrinsic bad I-SCC is {A, B, V}; its forward closure also contains
+        // X. Y and Z are outside that closure. With two fixed owner anchors
+        // (entry and home), the sound clause considers every pair touching the
+        // four closure blocks: C(8,2) - C(4,2) = 22 attempts. In particular it
+        // includes X/Y, which creates A -> X/Y -> B without merging any two SCC
+        // members, and omits the irrelevant Y/Z pair.
+        let bounded = options(Destinations::Both, &[], &[], 1, Some(1));
+        let bounded_report = search(&problem, &bounded).unwrap();
+        assert!(matches!(bounded_report.status, SearchStatus::Incomplete));
+        assert_eq!(bounded_report.checks, 1);
+        assert_eq!(bounded_report.work.branch_clauses.schedule_closure, 1);
+        assert_eq!(bounded_report.work.contraction_attempts, 22);
+
+        // The explicit X/Y contraction is a concrete gate-accepted repair while
+        // all three intrinsic-SCC owners remain distinct.
+        let repaired = problem
+            .candidate(&[
+                SourceUnitAssignment {
+                    unit_id: "unit:a".into(),
+                    module: "owner_a".into(),
+                },
+                SourceUnitAssignment {
+                    unit_id: "unit:b".into(),
+                    module: "owner_b".into(),
+                },
+                SourceUnitAssignment {
+                    unit_id: "unit:v".into(),
+                    module: "owner_v".into(),
+                },
+                SourceUnitAssignment {
+                    unit_id: "unit:x".into(),
+                    module: "owner_xy".into(),
+                },
+                SourceUnitAssignment {
+                    unit_id: "unit:y".into(),
+                    module: "owner_xy".into(),
+                },
+                SourceUnitAssignment {
+                    unit_id: "unit:z".into(),
+                    module: "owner_z".into(),
+                },
+            ])
+            .unwrap();
+        assert!(accepted(&problem.validate(&repaired).unwrap()));
+
+        // The split X/Y assignment leaves the intrinsic SCC unschedulable under
+        // the full gate; search existence still agrees with an exhaustive raw
+        // complete-assignment oracle over fresh and existing destinations.
+        let unrepaired = problem
+            .candidate(&[
+                SourceUnitAssignment {
+                    unit_id: "unit:a".into(),
+                    module: "owner_a".into(),
+                },
+                SourceUnitAssignment {
+                    unit_id: "unit:b".into(),
+                    module: "owner_b".into(),
+                },
+                SourceUnitAssignment {
+                    unit_id: "unit:v".into(),
+                    module: "owner_v".into(),
+                },
+                SourceUnitAssignment {
+                    unit_id: "unit:x".into(),
+                    module: "owner_x".into(),
+                },
+                SourceUnitAssignment {
+                    unit_id: "unit:y".into(),
+                    module: "owner_y".into(),
+                },
+                SourceUnitAssignment {
+                    unit_id: "unit:z".into(),
+                    module: "owner_z".into(),
+                },
+            ])
+            .unwrap();
+        assert!(!accepted(&problem.validate(&unrepaired).unwrap()));
+
+        let query = options(
+            Destinations::New,
+            &[],
+            &["unit:a", "unit:b", "unit:v", "unit:x", "unit:y", "unit:z"],
+            2,
+            None,
+        );
+        assert_search_matches_raw_gate(&report, &problem, &query);
+    }
+}
