@@ -44,12 +44,9 @@ func startWithSVIDs(t *testing.T, ca *peertlstesting.CA, tune func(*config)) run
 	}
 	c := defaultConfig()
 	c.DatabaseURL = integrationDatabase.URL
-	c.TokenAudience, c.Ingress.TokenAudience = "test-history-service", "test-runner-ingress"
 	c.Kubeconfig, c.PolicyNamespace = kubeconfig, testPolicyNamespace
 	c.RPC.TLS = &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile}
-	// Retain the legacy declaration for compatibility coverage; serve builds History admission from SVID rules.
 	c.RPC.Auth = []listener.Authentication{
-		&listener.KubernetesBearerAuth{Audiences: []string{c.TokenAudience, c.Ingress.TokenAudience}},
 		&listener.SPIFFEAuth{CAFile: serving.CAFile},
 	}
 	c.ReaderServiceCallers = []string{peertls.AppURI}

@@ -9,11 +9,8 @@ Consumers use `client.py`; `testing/go_service.py` runs the built Go service ove
 Tests can inspect the fold's storage through `fold/models.py` and use the generated Thread entity
 messages for semantic reads.
 
-Legacy `reader_accounts`, `delegation`, `token_audience`, `ingress.token_audience`,
-`ingress.sampler_accounts`, and `ingress.sampler_identity_callers` settings remain decodable during
-manifest cleanup but grant no read, writer, or bearer access. The required `rpc.auth` must include
-SPIFFE client trust; `policy_namespace` and `ingress.writer_namespaces` remain required for live
-workload credential checks.
+The required `rpc.auth` enables SPIFFE client trust; `policy_namespace` and
+`ingress.writer_namespaces` are required for live workload credential checks.
 `reader_service_callers` grants named service SPIFFE IDs the backend-wide read scope. The independent
 `service_delegation` setting grants exact service actors read methods as a live effective Identity;
 those calls use only that Identity incarnation's retained Sessions. Service certificates do not

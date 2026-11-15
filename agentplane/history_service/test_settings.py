@@ -1,4 +1,4 @@
-"""History settings retain retired YAML keys while requiring live workload SVID trust."""
+"""History settings require live workload SVID trust and reject retired bearer keys."""
 
 from typing import Any
 
@@ -10,34 +10,21 @@ from agentplane.history_service.settings import Settings
 
 
 def _settings_source(
-    *,
-    sampler_identity_callers: bool = False,
-    policy_namespace: str = "test-policies",
-    sampler_accounts: list[dict[str, str]] | None = None,
-    sampler_service_actor: str | None = None,
-    spiffe_listener: bool = True,
+    *, policy_namespace: str = "test-policies", sampler_service_actor: str | None = None, spiffe_listener: bool = True
 ) -> dict[str, Any]:
-    auth: list[dict[str, Any]] = [{"mode": "kubernetes_bearer", "audiences": ["test-history", "test-ingress"]}]
-    if spiffe_listener:
-        auth.append({"mode": "spiffe", "ca_file": "/test/workload-ca.crt"})
+    auth = (
+        [{"mode": "spiffe", "ca_file": "/test/workload-ca.crt"}]
+        if spiffe_listener
+        else [{"mode": "kubernetes_bearer", "audiences": ["legacy-reader"]}]
+    )
     return {
-        "reader_accounts": [{"namespace": "test-agentplane", "name": "test-reader"}],
-        "token_audience": "test-history",
         "policy_namespace": policy_namespace,
         "rpc": {
             "listen_address": "0.0.0.0:8080",
             "tls": {"cert_file": "/test/history.crt", "key_file": "/test/history.key"},
             "auth": auth,
         },
-        "ingress": {
-            "token_audience": "test-ingress",
-            "writer_namespaces": ["test-agentplane"],
-            "sampler_accounts": sampler_accounts
-            if sampler_accounts is not None
-            else [{"namespace": "test-agentplane", "name": "test-sampler"}],
-            "sampler_identity_callers": sampler_identity_callers,
-            "sampler_service_actor": sampler_service_actor,
-        },
+        "ingress": {"writer_namespaces": ["test-agentplane"], "sampler_service_actor": sampler_service_actor},
     }
 
 
@@ -52,37 +39,23 @@ def test_policy_namespace_is_required(value: str) -> None:
         Settings.model_validate(source)
 
 
-def test_retired_settings_are_optional_without_bearer_listener() -> None:
+@pytest.mark.parametrize(
+    ("scope", "key", "value"),
+    [
+        ("reader", "reader_accounts", []),
+        ("reader", "delegation", {"actor": "test-agentplane/actions", "identity_callers": True, "methods": []}),
+        ("reader", "token_audience", "legacy-reader"),
+        ("ingress", "token_audience", "legacy-ingress"),
+        ("ingress", "sampler_accounts", []),
+        ("ingress", "sampler_identity_callers", True),
+    ],
+)
+def test_retired_bearer_settings_are_unknown(scope: str, key: str, value: Any) -> None:
     source = _settings_source()
-    del source["reader_accounts"]
-    del source["token_audience"]
-    del source["ingress"]["token_audience"]
-    del source["ingress"]["sampler_accounts"]
-    del source["ingress"]["sampler_identity_callers"]
-    source["rpc"]["auth"] = [{"mode": "spiffe", "ca_file": "/test/workload-ca.crt"}]
-    settings = Settings.model_validate(source)
-    assert not settings.reader_accounts
-    assert not settings.token_audience
-    assert not settings.ingress.token_audience
-    assert not settings.ingress.sampler_accounts
-    assert not settings.ingress.sampler_identity_callers
-
-
-def test_retired_settings_accept_empty_and_incomplete_legacy_values() -> None:
-    source = _settings_source(sampler_identity_callers=True, sampler_accounts=[])
-    source["reader_accounts"] = []
-    source["token_audience"] = ""
-    source["delegation"] = {"actor": "", "identity_callers": False, "methods": []}
-    source["ingress"]["token_audience"] = ""
-    settings = Settings.model_validate(source)
-    assert not settings.reader_accounts
-    assert not settings.token_audience
-    assert settings.delegation is not None
-    assert settings.delegation.actor == ""
-    assert not settings.delegation.identity_callers
-    assert not settings.delegation.methods
-    assert not settings.ingress.sampler_accounts
-    assert settings.ingress.sampler_identity_callers
+    target = source["ingress"] if scope == "ingress" else source
+    target[key] = value
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        Settings.model_validate(source)
 
 
 def test_settings_reject_runtime_secrets() -> None:
@@ -127,36 +100,10 @@ def test_disabled_service_callers_are_absent_from_serialized_settings() -> None:
     assert "sampler_service_actor" not in serialized["ingress"]
 
 
-def test_spiffe_trust_is_required_and_account_delegation_is_ignored() -> None:
-    source = _settings_source(sampler_service_actor="spiffe://agentplane/central-sampler", spiffe_listener=False)
-    with pytest.raises(ValidationError, match=r"rpc.auth must enable spiffe client trust"):
-        Settings.model_validate(source)
-
-    source = _settings_source()
-    source["delegation"] = {
-        "actor": "test-agentplane/actions",
-        "identity_callers": False,
-        "methods": ["/agentplane.history_service.HistoryService/ReadSessionEvents"],
-    }
-    settings = Settings.model_validate(source)
-    assert settings.delegation is not None
-    assert not settings.delegation.identity_callers
-
-    source = _settings_source()
-    source["delegation"] = {
-        "actor": "test-agentplane/actions",
-        "identity_callers": True,
-        "methods": ["/agentplane.history_service.HistoryService/ReadSessionEvents"],
-        "caller_namespaces": ["test-agentplane"],
-    }
-    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-        Settings.model_validate(source)
-
-
 def test_file_settings_do_not_read_static_environment_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AGENTPLANE_HISTORY_SERVICE_TOKEN_AUDIENCE", "environment-value")
+    monkeypatch.setenv("AGENTPLANE_HISTORY_SERVICE_POLICY_NAMESPACE", "environment-value")
     settings = Settings.model_validate(_settings_source())
-    assert settings.token_audience == "test-history"
+    assert settings.policy_namespace == "test-policies"
     assert "database_url" not in Settings.model_fields
     assert Settings.config_file_env == "AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE"
 

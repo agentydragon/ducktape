@@ -424,7 +424,7 @@ def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dic
         for source in volume.get("projected", {}).get("sources", [])
     )
     assert all(
-        source.get("serviceAccountToken", {}).get("audience") != history_service.TOKEN_AUDIENCE
+        source.get("serviceAccountToken", {}).get("audience") != "agentplane-history-service"
         for volume in pod_template["spec"]["pod"]["spec"]["volumes"]
         for source in volume.get("projected", {}).get("sources", [])
     )

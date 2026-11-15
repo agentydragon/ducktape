@@ -9,16 +9,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_valid
 
 from agentplane.identity.auth.listener import Listener, SPIFFEAuth
 from agentplane.net.peertls.config import ServiceSPIFFEID
-from agentplane.subjects import ServiceAccountRef
-
-RUNNER_INGRESS_AUDIENCE = "agentplane-runner-ingress"
-
-
-class DelegationSettings(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    actor: str | None = None
-    identity_callers: bool = False
-    methods: tuple[str, ...] = ()
 
 
 class ServiceDelegator(BaseModel):
@@ -37,24 +27,9 @@ class ServiceDelegationSettings(BaseModel):
 
 class IngressSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    # CLEANUP(added 2026-11-15): Remove after manifests omit ingress.token_audience and that rollout completes.
-    token_audience: str = Field(
-        default="", exclude_if=lambda value: not value, description="Ignored legacy bearer audience."
-    )
     writer_namespaces: frozenset[str] = Field(
         min_length=1,
         description="Namespaces in which live workload Identity credential records are resolved for journal writers.",
-    )
-    # CLEANUP(added 2026-11-15): Remove these ignored legacy sampler settings after manifests omit them and that rollout completes.
-    sampler_accounts: frozenset[ServiceAccountRef] = Field(
-        default_factory=frozenset,
-        exclude_if=lambda value: not value,
-        description="Ignored legacy ServiceAccount sampler allowlist.",
-    )
-    sampler_identity_callers: bool = Field(
-        default=False,
-        exclude_if=lambda value: not value,
-        description="Ignored legacy sampler Identity delegation setting.",
     )
     sampler_service_actor: ServiceSPIFFEID | None = Field(
         default=None,
@@ -76,10 +51,6 @@ class IngressSettings(BaseModel):
     def sorted_writer_namespaces(self, value: frozenset[str]) -> list[str]:
         return sorted(value)
 
-    @field_serializer("sampler_accounts")
-    def sorted_sampler_accounts(self, value: frozenset[ServiceAccountRef]) -> list[ServiceAccountRef]:
-        return sorted(value, key=lambda account: (account.namespace, account.name))
-
 
 class Settings(BaseModel):
     """Complete non-secret runtime settings, authored in the mounted YAML file."""
@@ -87,28 +58,15 @@ class Settings(BaseModel):
     config_file_env: ClassVar[str] = "AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE"
     model_config = ConfigDict(extra="forbid")
 
-    # CLEANUP(added 2026-11-15): Remove these ignored legacy reader and account-delegation settings after manifests omit them and that rollout completes.
-    reader_accounts: frozenset[ServiceAccountRef] = Field(
-        default_factory=frozenset,
-        exclude_if=lambda value: not value,
-        description="Ignored legacy ServiceAccount reader allowlist.",
-    )
     reader_service_callers: frozenset[ServiceSPIFFEID] = Field(
         default=frozenset(),
         exclude_if=lambda value: not value,
         description="Exact component SVIDs granted backend-wide History read access.",
     )
-    delegation: DelegationSettings | None = Field(
-        default=None, exclude_if=lambda value: value is None, description="Ignored legacy ServiceAccount delegation."
-    )
     service_delegation: ServiceDelegationSettings | None = Field(
         default=None,
         exclude_if=lambda value: not value,
         description="Independent exact service actors allowed to read History as a live effective Identity.",
-    )
-    # CLEANUP(added 2026-11-15): Remove after manifests omit token_audience and that rollout completes.
-    token_audience: str = Field(
-        default="", exclude_if=lambda value: not value, description="Ignored legacy bearer audience."
     )
     request_timeout_s: float = Field(default=15, gt=0, le=60)
     migration_timeout_s: float = Field(default=600, ge=0.001, le=86400)
@@ -126,10 +84,6 @@ class Settings(BaseModel):
     watch_lease_s: float = Field(
         default=300, gt=0, description="Seconds a WatchSessionSummaries stream lasts before planned renewal."
     )
-
-    @field_serializer("reader_accounts")
-    def sorted_reader_accounts(self, value: frozenset[ServiceAccountRef]) -> list[ServiceAccountRef]:
-        return sorted(value, key=lambda account: (account.namespace, account.name))
 
     @field_serializer("reader_service_callers")
     def sorted_reader_service_callers(self, value: frozenset[ServiceSPIFFEID]) -> list[ServiceSPIFFEID]:
