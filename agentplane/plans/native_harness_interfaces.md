@@ -64,8 +64,9 @@ The central sampler writes the same vocabulary directly as its own output, plus 
 | History [fold](../history_service/internal/threadfold/fold.go), synced to the app's conversation view         | everything                                                                                       | yes                    |
 | History [summaries](../history_service/internal/projection/summary.go) (sidebar)                              | last turn status, `idle_since`; "model activity" recency from content Events                     | yes                    |
 
-Dispatcher's `HARNESS_CONFIRMED` and `NO_OP` delivery states have no writer
-([`DISPATCHER_HARNESS_CONFIRMATION`](task_dag.md#dispatcher_harness_confirmation--settle-admitted-inputs-on-a-canonical-confirmation)).
+The Dispatcher reads no Events and records nothing past `RUNNER_ADMITTED`; a harness-confirmation
+state stays with
+[`DISPATCHER_HARNESS_CONFIRMATION`](task_dag.md#dispatcher_harness_confirmation--settle-admitted-inputs-on-a-canonical-confirmation).
 
 Harness knowledge already lives past the neutral layer. History's delta
 [settlement](../history_service/internal/storage/settlement.go) matches Claude and Codex native
@@ -139,8 +140,7 @@ The sampler's `BoundaryRecord` and `ExecutionProgress` are its kind's own record
 Tracked today, per layer:
 
 - **Dispatcher:** `QUEUED_IN_DISPATCHER` → `DELIVERING_TO_RUNNER` → `RUNNER_ADMITTED`, which stores
-  the Runtime's `CommandAdmitted` receipt, or `FAILED`, `CANCELLED_IN_DISPATCHER`, `UNKNOWN`. The
-  `HARNESS_CONFIRMED` and `NO_OP` states have no writer.
+  the Runtime's `CommandAdmitted` receipt, or `FAILED`, `CANCELLED_IN_DISPATCHER`, `UNKNOWN`.
 - **Runtime:** its journal's `command` row records admission, whether a native write was planned,
   and a terminal cursor. Five signals settle a command: `HarnessUserMessageConfirmed` (inputs),
   `ModelChanged`, `ReasoningEffortChanged`, `TurnCompleted.interrupted_by_command_id`, and
@@ -181,9 +181,8 @@ command IDs on `ModelChanged`, `ReasoningEffortChanged` and `TurnCompleted`.
 its harness-coalesced text and grouping, but stops settling. One behavior changes: when a sampler
 Session blocks, the sampler fails inputs it had already confirmed and the fold skips that failure
 (`blockedInputFailureReason`); instead the sampler settles an input at confirmation, and the block
-stays on the failed turn. It does not set the Dispatcher's `HARNESS_CONFIRMED`, because the
-Dispatcher reads no Events; the writerless `HARNESS_CONFIRMED` and `NO_OP` states can be deleted on
-their own. Rollout: readers (History fold, notices, `session_client`, `orchestration_v1`) accept
+stays on the failed turn. It gives the Dispatcher no harness-confirmation state, because the Dispatcher
+reads no Events. Rollout: readers (History fold, notices, `session_client`, `orchestration_v1`) accept
 `CommandSettled` first and keep the old signals while any Sandbox runs an older Runtime image, since
 a Sandbox reads its template's image only when it starts; then the sampler and the template image;
 then the old reads go.
