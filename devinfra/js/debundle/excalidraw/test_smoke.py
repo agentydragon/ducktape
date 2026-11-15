@@ -2,7 +2,6 @@
 
 # gazelle:include_dep //util/testing/frontend_visual:fixtures
 
-import asyncio
 import json
 import os
 from collections.abc import AsyncIterator
@@ -1563,6 +1562,24 @@ async def test_image_export_dialog(playwright_driver: Playwright, origin: str) -
         playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
     ) as context:
         page = await context.new_page()
+        await page.add_init_script(
+            """(() => {
+                window.showSaveFilePicker = async ({suggestedName}) => ({
+                    name: suggestedName,
+                    kind: 'file',
+                    async createWritable() {
+                        const chunks = [];
+                        const close = async () => {
+                            window.__savedSvg = {name: suggestedName, text: await new Blob(chunks).text()};
+                        };
+                        const stream = new WritableStream({write: chunk => chunks.push(chunk), close});
+                        stream.write = async chunk => chunks.push(chunk);
+                        stream.close = close;
+                        return stream;
+                    },
+                });
+            })()"""
+        )
         await page.goto(origin)
         await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
         await expect(page.locator(".App-toolbar")).to_be_visible()
@@ -1578,11 +1595,11 @@ async def test_image_export_dialog(playwright_driver: Playwright, origin: str) -
         dialog = page.locator(".ImageExportModal")
         await expect(dialog).to_be_visible()
         await expect(dialog.locator(".ImageExportModal__settings")).to_be_visible()
-        async with page.expect_download() as download_info:
-            await dialog.get_by_role("button", name="Export to SVG").click()
-        download = await download_info.value
-        assert download.suggested_filename.endswith(".svg")
-        svg = await asyncio.to_thread(Path(await download.path()).read_text)
+        await dialog.get_by_role("button", name="Export to SVG").click()
+        await page.wait_for_function("window.__savedSvg !== undefined")
+        saved = await page.evaluate("window.__savedSvg")
+        assert saved["name"].endswith(".svg")
+        svg = saved["text"]
         assert "<svg" in svg
         assert "<path" in svg
         await page.keyboard.press("Escape")
