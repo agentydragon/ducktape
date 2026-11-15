@@ -1017,13 +1017,6 @@ impl Solver<'_, '_, '_> {
                 }
             }
         }
-        let nonnew_owners: Vec<_> = self
-            .scope
-            .baseline_owners
-            .iter()
-            .filter(|&owner| !matches!(owner, Owner::Module(path) if self.scope.explicit_fresh_targets.contains(path)))
-            .cloned()
-            .collect();
         for key in &selected_set {
             if self.stop_if_time() {
                 break;
@@ -1034,7 +1027,12 @@ impl Solver<'_, '_, '_> {
             if block.owner.is_some() {
                 continue;
             }
-            for owner in &nonnew_owners {
+            // Read compatible anchors directly from the block's domain;
+            // unrelated baseline owners cannot satisfy this clause.
+            for owner in &block.allowed_owners {
+                if !self.scope.baseline_owners.contains(owner) {
+                    continue;
+                }
                 if self.stop_if_time() {
                     break;
                 }
