@@ -9,6 +9,8 @@ from collections.abc import Sequence
 from cdk8s import ApiObjectMetadata
 from constructs import Construct
 from flux_gitrepository_crds.io.fluxcd.toolkit.source import (
+    GitRepository,
+    GitRepositorySpec,
     GitRepositorySpecProvider,
     GitRepositorySpecRef,
     GitRepositorySpecSecretRef,
@@ -20,7 +22,10 @@ from flux_imagepolicy_crds.io.fluxcd.toolkit.image import (
     ImagePolicySpecPolicyAlphabetical,
     ImagePolicySpecPolicyAlphabeticalOrder,
 )
+from flux_imagerepository_crds.io.fluxcd.toolkit.image import ImageRepository
 from flux_imageupdateautomation_crds.io.fluxcd.toolkit.image import (
+    ImageUpdateAutomation,
+    ImageUpdateAutomationSpec,
     ImageUpdateAutomationSpecGit,
     ImageUpdateAutomationSpecGitCheckout,
     ImageUpdateAutomationSpecGitCheckoutRef,
@@ -33,10 +38,7 @@ from flux_imageupdateautomation_crds.io.fluxcd.toolkit.image import (
     ImageUpdateAutomationSpecUpdateStrategy,
 )
 
-from cluster.cdk8s.providers.flux.git_repository import GitRepository
 from cluster.cdk8s.providers.flux.image_policy import ImagePolicy
-from cluster.cdk8s.providers.flux.image_repository import ImageRepository
-from cluster.cdk8s.providers.flux.image_update_automation import ImageUpdateAutomation
 
 # CI pushes {branch}-YYYYMMDDHHMMSS-{sha7}; among devel builds, alphabetical order is chronological.
 _CI_TAG_PATTERN = r"^devel-\d{14}-[0-9a-f]{7}$"
@@ -102,13 +104,15 @@ class ImageUpdatePush(Construct):
             metadata=ApiObjectMetadata(
                 name=source_name, namespace=_GITHUB_APP_NAMESPACE, annotations={"description": source_description}
             ),
-            interval=source_interval,
-            provider=GitRepositorySpecProvider.GITHUB,
-            ref=GitRepositorySpecRef(branch=branch),
-            secret_ref=GitRepositorySpecSecretRef(name=_GITHUB_APP_SECRET),
-            sparse_checkout=sparse_checkout,
-            timeout=source_timeout,
-            url=url,
+            spec=GitRepositorySpec(
+                interval=source_interval,
+                provider=GitRepositorySpecProvider.GITHUB,
+                ref=GitRepositorySpecRef(branch=branch),
+                secret_ref=GitRepositorySpecSecretRef(name=_GITHUB_APP_SECRET),
+                sparse_checkout=sparse_checkout,
+                timeout=source_timeout,
+                url=url,
+            ),
         )
         self.automation = ImageUpdateAutomation(
             self,
@@ -118,21 +122,25 @@ class ImageUpdatePush(Construct):
                 namespace=_GITHUB_APP_NAMESPACE,
                 annotations=None if description is None else {"description": description},
             ),
-            interval="5m",
-            source_ref=ImageUpdateAutomationSpecSourceRef(
-                kind=ImageUpdateAutomationSpecSourceRefKind.GIT_REPOSITORY, name=self.source.name
-            ),
-            git=ImageUpdateAutomationSpecGit(
-                checkout=ImageUpdateAutomationSpecGitCheckout(
-                    ref=ImageUpdateAutomationSpecGitCheckoutRef(branch=branch)
+            spec=ImageUpdateAutomationSpec(
+                interval="5m",
+                source_ref=ImageUpdateAutomationSpecSourceRef(
+                    kind=ImageUpdateAutomationSpecSourceRefKind.GIT_REPOSITORY, name=self.source.name
                 ),
-                commit=ImageUpdateAutomationSpecGitCommit(
-                    author=ImageUpdateAutomationSpecGitCommitAuthor(
-                        name="flux-image-automation", email="flux@allegedly.works"
+                git=ImageUpdateAutomationSpecGit(
+                    checkout=ImageUpdateAutomationSpecGitCheckout(
+                        ref=ImageUpdateAutomationSpecGitCheckoutRef(branch=branch)
                     ),
-                    message_template=_COMMIT_MESSAGE,
+                    commit=ImageUpdateAutomationSpecGitCommit(
+                        author=ImageUpdateAutomationSpecGitCommitAuthor(
+                            name="flux-image-automation", email="flux@allegedly.works"
+                        ),
+                        message_template=_COMMIT_MESSAGE,
+                    ),
+                    push=ImageUpdateAutomationSpecGitPush(branch=branch),
                 ),
-                push=ImageUpdateAutomationSpecGitPush(branch=branch),
+                update=ImageUpdateAutomationSpecUpdate(
+                    strategy=ImageUpdateAutomationSpecUpdateStrategy.SETTERS, path=path
+                ),
             ),
-            update=ImageUpdateAutomationSpecUpdate(strategy=ImageUpdateAutomationSpecUpdateStrategy.SETTERS, path=path),
         )

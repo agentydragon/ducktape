@@ -1,5 +1,15 @@
 # gazelle:ignore
 
+# gazelle:resolve py agentplane_kubernetesroleset_crds //agentplane/crds:kubernetesroleset
+# gazelle:resolve py agentplane_policybinding_crds //agentplane/crds:policybinding
+# gazelle:resolve py cert_manager_crds //cluster/cdk8s/providers/cert_manager:certificate
+# gazelle:resolve py cnpg_database_crds //cluster/cdk8s/providers/cnpg:database
+# gazelle:resolve py gateway_api_crds //cluster/cdk8s/providers/gateway_api:httproute
+# gazelle:resolve py kubevirt_virtualmachine_crds //cluster/cdk8s/providers/kubevirt:virtualmachine
+# gazelle:resolve py kyverno_clusterpolicy_crds //cluster/cdk8s/providers/kyverno:clusterpolicy
+# gazelle:resolve py prometheus_operator_crds //cluster/cdk8s/providers/prometheus_operator:servicemonitor
+# gazelle:resolve py prometheus_operator_prometheusrule_crds //cluster/cdk8s/providers/prometheus_operator:prometheusrule
+# gazelle:resolve py trust_manager_crds //cluster/cdk8s/providers/cert_manager:bundle
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = [
@@ -78,7 +88,6 @@ py_library(
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/cnpg:cluster",
-        "//cluster/cdk8s/providers/cnpg:cnpg_database",
         "//cluster/cdk8s/providers/cnpg:database",
         "@pypi//cdk8s",
         "@pypi//constructs",
@@ -99,7 +108,6 @@ py_library(
         ":actions",
         ":database",
         ":egress_credentials",
-        ":egress_policies",
         ":environment",
         ":environment_service",
         ":kubernetes_account_ref",
@@ -138,7 +146,8 @@ py_library(
         "//cluster/cdk8s/providers/agentplane:egress_credential",
         "//cluster/cdk8s/providers/agentplane:policy_set",
         "//cluster/cdk8s/providers/cert_manager:bundle",
-        "//cluster/cdk8s/providers/cert_manager:cert_manager_bundle",
+        "//cluster/cdk8s/providers/cert_manager:certificate",
+        "//cluster/cdk8s/providers/cert_manager:certificate_private_key",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -236,6 +245,7 @@ py_library(
         "//cluster/cdk8s/cert_manager:cluster_ca",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
+        "//cluster/cdk8s/providers/prometheus_operator:prometheusrule",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",
@@ -562,6 +572,7 @@ py_library(
         "//cluster/cdk8s:token_reviewer_rbac",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
+        "//cluster/cdk8s/providers/prometheus_operator:prometheusrule",
         "//cluster/cdk8s/ssh_mcp:config",
         "//util:settings_contract",
         "@pypi//cdk8s",
@@ -577,6 +588,7 @@ py_library(
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/providers/gateway_api:http_route",
+        "//cluster/cdk8s/providers/gateway_api:httproute",
         "@pypi//cdk8s",
         "@pypi//constructs",
     ],
@@ -618,24 +630,11 @@ py_library(
 )
 
 py_library(
-    name = "egress_policies",
-    srcs = ["egress_policies.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = [
-        "//agentplane/crds:policyset",
-        "//cluster/cdk8s/providers/agentplane:policy_set",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
-    ],
-)
-
-py_library(
     name = "actions_staging_policies",
     srcs = ["actions_staging_policies.py"],
     deps = [
         ":actions",
         ":egress",
-        ":egress_policies",
         ":egress_staging_credentials",
         ":kubernetes_account_ref",
         ":standing_caller",
@@ -651,9 +650,9 @@ py_library(
         "//cluster/cdk8s/haku_ci:egress_gateway",
         "//cluster/cdk8s/haku_ci:runner",
         "//cluster/cdk8s/monitoring:mimir",
-        "//cluster/cdk8s/providers/agentplane:policy_binding",
         "//cluster/cdk8s/providers/agentplane:policy_set",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
+        "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/public_coder:egress",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -807,6 +806,7 @@ py_library(
     name = "chart",
     srcs = ["chart.py"],
     deps = [
+        "//cluster/cdk8s/providers/cert_manager:certificate_private_key",
         ":environment_service",
         ":workload_certificate_admission",
         ":actions",
@@ -840,7 +840,6 @@ py_library(
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/cert_manager:cluster_ca",
-        "//cluster/cdk8s/providers/cert_manager:cert_manager_certificate",
         # chart.py imports enum types from these generated bindings directly.
         "//cluster/cdk8s/providers/cert_manager:certificate",
         "//agentplane/session_instructions:platform_instructions",
@@ -896,6 +895,7 @@ py_library(
         "//agentplane/app:action_federation_settings",
         "//agentplane/app:settings",
         "//agentplane/central_sampler:settings",
+        "//agentplane/crds:policyset",
         "//agentplane/env:config",
         "//agentplane/identity/operator:settings",
         "//agentplane/net/peertls:config",
@@ -925,6 +925,7 @@ py_library(
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/cdk8s/public_coder:egress",
         "//cluster/cdk8s/ssh_mcp:config",
@@ -1168,12 +1169,12 @@ py_library(
         ":egress",
         ":kubernetes_account_ref",
         "//agentplane/crds:egresscredential",
+        "//agentplane/crds:policyset",
         "//agentplane/egress:resources",
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s/providers/agentplane:egress_credential",
         "//cluster/cdk8s/providers/agentplane:kubernetes_role_set",
-        "//cluster/cdk8s/providers/agentplane:policy_set",
         "//cluster/cdk8s/providers/agentplane:service_account_grant",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -1187,7 +1188,6 @@ py_library(
     deps = [
         ":egress",
         ":egress_credentials",
-        ":egress_policies",
         "//agentplane/crds:egresscredential",
         "//agentplane/crds:policyset",
         "//cluster/cdk8s:aiquota",
@@ -1786,8 +1786,8 @@ py_library(
         "//agentplane/net/peertls:config",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/cert_manager:cluster_ca",
-        "//cluster/cdk8s/providers/cert_manager:cert_manager_certificate",
         "//cluster/cdk8s/providers/cert_manager:certificate",
+        "//cluster/cdk8s/providers/cert_manager:certificate_private_key",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

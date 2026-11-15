@@ -9,9 +9,10 @@ independent public S3 gateway and its ServiceMonitor belong to `public_s3.py`.
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
+from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 from python.runfiles import Runfiles
 
-from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
+from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 from cluster.cdk8s.seaweedfs import cluster, namespace, public_s3
 
 NAME = "seaweedfs-monitoring"
@@ -127,52 +128,56 @@ def chart(app: App) -> Chart:
         chart,
         "seaweedfs-replication",
         metadata=ApiObjectMetadata(name="replication", namespace=namespace.NAME),
-        groups=[
-            group(
-                "seaweedfs-replication",
-                [
-                    # SeaweedFS master does not self-heal under-replicated volumes. The operator's
-                    # replication-repair AdminScript attempts hourly, copy-only repair; this alert
-                    # still exposes stalled jobs, missing destination slots, and any excess or
-                    # misplaced replicas, which the script deliberately does not delete.
-                    #
-                    # `SeaweedFS_master_replica_placement_mismatch` is a leader-only, per-volume
-                    # gauge (labels: collection, id) = 1 when a volume's replica count/placement
-                    # does not match its target (under- or over-replicated), else 0. Only the
-                    # leader emits it, so `sum()` counts mismatched volumes cluster-wide.
-                    Rule.alert(
-                        "SeaweedFSReplicaPlacementMismatch",
-                        "sum(SeaweedFS_master_replica_placement_mismatch) > 0",
-                        for_="15m",
-                        labels={"severity": "warning"},
-                        summary="SeaweedFS has {{ $value }} volume(s) off their replica count",
-                        description=(
-                            "{{ $value }} SeaweedFS volume(s) have not matched their target replica "
-                            "placement for 15m (replication 001 = 2 copies). The replication-repair "
-                            "AdminScript attempts copy-only repair hourly; check its CronJob/Job status and "
-                            "available volume slots if the mismatch persists. It never trims excess or "
-                            "misplaced replicas, so review those deliberately. Suspend the AdminScript and "
-                            "wait for any active Job before planned volume-server maintenance. For an "
-                            "immediate manual repair, inspect `volume.list` and run "
-                            "`volume.fix.replication -apply -doDelete=false` under `lock` from a master pod "
-                            "(`weed shell` reads commands on stdin)."
-                        ),
-                    )
-                ],
-            )
-        ],
+        spec=PrometheusRuleSpec(
+            groups=[
+                group(
+                    "seaweedfs-replication",
+                    [
+                        # SeaweedFS master does not self-heal under-replicated volumes. The operator's
+                        # replication-repair AdminScript attempts hourly, copy-only repair; this alert
+                        # still exposes stalled jobs, missing destination slots, and any excess or
+                        # misplaced replicas, which the script deliberately does not delete.
+                        #
+                        # `SeaweedFS_master_replica_placement_mismatch` is a leader-only, per-volume
+                        # gauge (labels: collection, id) = 1 when a volume's replica count/placement
+                        # does not match its target (under- or over-replicated), else 0. Only the
+                        # leader emits it, so `sum()` counts mismatched volumes cluster-wide.
+                        Rule.alert(
+                            "SeaweedFSReplicaPlacementMismatch",
+                            "sum(SeaweedFS_master_replica_placement_mismatch) > 0",
+                            for_="15m",
+                            labels={"severity": "warning"},
+                            summary="SeaweedFS has {{ $value }} volume(s) off their replica count",
+                            description=(
+                                "{{ $value }} SeaweedFS volume(s) have not matched their target replica "
+                                "placement for 15m (replication 001 = 2 copies). The replication-repair "
+                                "AdminScript attempts copy-only repair hourly; check its CronJob/Job status and "
+                                "available volume slots if the mismatch persists. It never trims excess or "
+                                "misplaced replicas, so review those deliberately. Suspend the AdminScript and "
+                                "wait for any active Job before planned volume-server maintenance. For an "
+                                "immediate manual repair, inspect `volume.list` and run "
+                                "`volume.fix.replication -apply -doDelete=false` under `lock` from a master pod "
+                                "(`weed shell` reads commands on stdin)."
+                            ),
+                        )
+                    ],
+                )
+            ]
+        ),
     )
     PrometheusRule(
         chart,
         "seaweedfs-s3-gateway-alerts",
         metadata=ApiObjectMetadata(name="s3-gateway-alerts", namespace=namespace.NAME),
-        groups=[
-            group("seaweedfs-s3-gateway", _S3_GATEWAY_REQUEST_ERRORS),
-            group("seaweedfs-s3-gateway-latency", _S3_GATEWAY_LATENCY),
-            group(
-                "seaweedfs-s3-gateway-metrics",
-                _S3_GATEWAY_TARGETS_MISSING + _S3_GATEWAY_TARGET_COUNT_LOW + _S3_GATEWAY_METRICS_MISSING,
-            ),
-        ],
+        spec=PrometheusRuleSpec(
+            groups=[
+                group("seaweedfs-s3-gateway", _S3_GATEWAY_REQUEST_ERRORS),
+                group("seaweedfs-s3-gateway-latency", _S3_GATEWAY_LATENCY),
+                group(
+                    "seaweedfs-s3-gateway-metrics",
+                    _S3_GATEWAY_TARGETS_MISSING + _S3_GATEWAY_TARGET_COUNT_LOW + _S3_GATEWAY_METRICS_MISSING,
+                ),
+            ]
+        ),
     )
     return chart

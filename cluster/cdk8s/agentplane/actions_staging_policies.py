@@ -8,8 +8,17 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from agentplane_policybinding_crds.works.allegedly.agentplane import PolicyBindingSpecSubject
-from agentplane_policyset_crds.works.allegedly.agentplane import PolicySetSpecRules, PolicySetSpecRulesMethods
+from agentplane_policybinding_crds.works.allegedly.agentplane import (
+    PolicyBinding,
+    PolicyBindingSpec,
+    PolicyBindingSpecSubject,
+)
+from agentplane_policyset_crds.works.allegedly.agentplane import (
+    PolicySet,
+    PolicySetSpec,
+    PolicySetSpecRules,
+    PolicySetSpecRulesMethods,
+)
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
 from constructs import Construct
@@ -34,7 +43,6 @@ from cluster.cdk8s.agentplane.egress import (
     INFERENCE_EXPERIMENTS_POLICY,
     PACKAGES_POLICY,
 )
-from cluster.cdk8s.agentplane.egress_policies import add_egress_policy
 from cluster.cdk8s.agentplane.egress_staging_credentials import (
     ACTIVITYWATCH_READ_POLICY,
     AIQUOTA_READ_POLICY,
@@ -49,9 +57,7 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
 from cluster.cdk8s.agentplane.standing_caller import StandingCaller
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.monitoring import mimir
-from cluster.cdk8s.providers.agentplane import policy_set
 from cluster.cdk8s.providers.agentplane.identity import Identity
-from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
 from cluster.cdk8s.providers.agentplane.policy_set import AutoApproveIf, Rule
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.public_coder.egress import OPENCLAW
@@ -166,20 +172,9 @@ def _policy_set(scope: Construct, id: str, *, metadata: ApiObjectMetadata, rules
     # The Action Service parses a rule more strictly than the CRD schema (an unknown policy
     # kind or key, an invalid JSON Schema); a set it refuses grants nothing on the cluster, so
     # it fails here instead.
-    policy_set_object = policy_set.PolicySet(scope, id, metadata=metadata, rules=rules)
+    policy_set_object = PolicySet(scope, id, metadata=metadata, spec=PolicySetSpec(rules=rules))
     for rule in policy_set_object.to_json()["spec"]["rules"]:
         parse_action_rule(rule)
-
-
-def _binding(
-    scope: Construct,
-    id: str,
-    *,
-    metadata: ApiObjectMetadata,
-    subject: PolicyBindingSpecSubject,
-    policy_sets: Sequence[str],
-) -> None:
-    PolicyBinding(scope, id, metadata=metadata, subject=subject, policy_sets=policy_sets)
 
 
 def _account_binding(
@@ -196,8 +191,7 @@ def _account_binding(
                 "description": f"What the {account.name} ServiceAccount, and sandboxes running as it, may reach and have auto-approved."
             },
         ),
-        subject=subject,
-        policy_sets=policies,
+        spec=PolicyBindingSpec(subject=subject, policy_sets=policies),
     )
 
 
@@ -667,42 +661,46 @@ def add_staging_action_policies(
     )
     # GitHub downloads with nothing substituted: a release asset or a tag archive, which is what a
     # Bazel `http_archive` fetches, without the write-capable PAT `github-agentydragon-agent` carries.
-    add_egress_policy(
+    PolicySet(
         scope,
         "egresspolicy-github-downloads",
         metadata=ApiObjectMetadata(name=_GITHUB_DOWNLOADS_POLICY, namespace=_NAMESPACE),
-        rules=[
-            Rule.egress(
-                hosts=[
-                    "github.com",
-                    # Where `github.com/.../archive/...` redirects.
-                    "codeload.github.com",
-                    # Where `github.com/.../releases/download/...` redirects.
-                    "objects.githubusercontent.com",
-                    "release-assets.githubusercontent.com",
-                    # Raw file content off a ref, e.g. `raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>`.
-                    "raw.githubusercontent.com",
-                ],
-                methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.HEAD],
-            )
-        ],
+        spec=PolicySetSpec(
+            rules=[
+                Rule.egress(
+                    hosts=[
+                        "github.com",
+                        # Where `github.com/.../archive/...` redirects.
+                        "codeload.github.com",
+                        # Where `github.com/.../releases/download/...` redirects.
+                        "objects.githubusercontent.com",
+                        "release-assets.githubusercontent.com",
+                        # Raw file content off a ref, e.g. `raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>`.
+                        "raw.githubusercontent.com",
+                    ],
+                    methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.HEAD],
+                )
+            ]
+        ),
     )
 
     # Mimir's Prometheus-compatible read API over the cluster Service, with no credential: the
     # gateway admits any in-cluster caller, and this rule is the whole fence. GET only, so a
     # sandbox can query metrics but not push samples or reach the ruler and admin routes.
-    add_egress_policy(
+    PolicySet(
         scope,
         f"egresspolicy-{MIMIR_READS_POLICY}",
         metadata=ApiObjectMetadata(name=MIMIR_READS_POLICY, namespace=_NAMESPACE),
-        rules=[
-            Rule.egress(
-                hosts=[mimir.GATEWAY.fqdn],
-                methods=[PolicySetSpecRulesMethods.GET],
-                paths=["/prometheus/api/v1/**"],
-                cluster_internal=True,
-            )
-        ],
+        spec=PolicySetSpec(
+            rules=[
+                Rule.egress(
+                    hosts=[mimir.GATEWAY.fqdn],
+                    methods=[PolicySetSpecRulesMethods.GET],
+                    paths=["/prometheus/api/v1/**"],
+                    cluster_internal=True,
+                )
+            ]
+        ),
     )
 
     # What a box of this Identity may reach. Egress and Action grants bind to the Identity;
@@ -783,38 +781,40 @@ def add_staging_action_policies(
     # can read Home Assistant and Grocy and submit Action requests. This is the one grant claude-ai lacks.
     # Split the account if either
     # workload ever holds something the other must not.
-    add_egress_policy(
+    PolicySet(
         scope,
         "egresspolicy-ankiweb-sync",
         metadata=ApiObjectMetadata(name=ANKIWEB_SYNC_POLICY, namespace=_NAMESPACE),
-        rules=[Rule.egress(hosts=["*.ankiweb.net"])],
+        spec=PolicySetSpec(rules=[Rule.egress(hosts=["*.ankiweb.net"])]),
     )
     # haku-jupyter, Haku's notebook server, runs as this account too. It showed no public traffic through
     # haku-egress-proxy (2026-11-08/09), so these hosts are a starting point the operator widens: the package
     # indexes and code hosts a notebook plausibly installs or reads from, GET/HEAD only, nothing presented.
     # The haku-ui and haku-anki Pods gain them too; all are within claude-ai's `github-downloads` and `packages`.
-    add_egress_policy(
+    PolicySet(
         scope,
         f"egresspolicy-{HAKU_NOTEBOOK_FETCH_POLICY}",
         metadata=ApiObjectMetadata(name=HAKU_NOTEBOOK_FETCH_POLICY, namespace=_NAMESPACE),
-        rules=[
-            Rule.egress(
-                hosts=[
-                    # keep-sorted start
-                    "codeload.github.com",
-                    "files.pythonhosted.org",
-                    "github.com",
-                    "objects.githubusercontent.com",
-                    "pypi.org",
-                    "raw.githubusercontent.com",
-                    "registry.npmjs.org",
-                    # keep-sorted end
-                ],
-                methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.HEAD],
-            )
-        ],
+        spec=PolicySetSpec(
+            rules=[
+                Rule.egress(
+                    hosts=[
+                        # keep-sorted start
+                        "codeload.github.com",
+                        "files.pythonhosted.org",
+                        "github.com",
+                        "objects.githubusercontent.com",
+                        "pypi.org",
+                        "raw.githubusercontent.com",
+                        "registry.npmjs.org",
+                        # keep-sorted end
+                    ],
+                    methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.HEAD],
+                )
+            ]
+        ),
     )
-    _binding(
+    PolicyBinding(
         scope,
         "policybinding-haku-ui",
         metadata=ApiObjectMetadata(
@@ -824,47 +824,51 @@ def add_staging_action_policies(
                 "description": "What Haku's standing workloads (haku-sandbox), acting as this Identity, may reach and have auto-approved."
             },
         ),
-        subject=haku_ui.binding_subject(),
-        policy_sets=[HOME_ASSISTANT_READS_SET, GROCY_SF_READS_SET, ANKIWEB_SYNC_POLICY, HAKU_NOTEBOOK_FETCH_POLICY],
+        spec=PolicyBindingSpec(
+            subject=haku_ui.binding_subject(),
+            policy_sets=[HOME_ASSISTANT_READS_SET, GROCY_SF_READS_SET, ANKIWEB_SYNC_POLICY, HAKU_NOTEBOOK_FETCH_POLICY],
+        ),
     )
 
     # haku-ci's builds, through its egress relay (haku_ci/egress_gateway.py): exactly the hosts haku-ci
     # reached through its former mitmproxy (haku-egress-proxy) over 2026-11-08/09 (about 60 CI jobs), each with the methods it
     # used. Add a host when its `no-rule` decision for the haku-ci-egress Identity appears. Docker Hub
     # stays out: dind pulls it through oci-cache, in-cluster.
-    add_egress_policy(
+    PolicySet(
         scope,
         "egresspolicy-haku-ci-build-fetch",
         metadata=ApiObjectMetadata(name=HAKU_CI_BUILD_FETCH_POLICY, namespace=_NAMESPACE),
-        rules=[
-            Rule.egress(
-                hosts=[
-                    # keep-sorted start
-                    # Bazel's registry and its own releases.
-                    "bcr.bazel.build",
-                    # Forgejo Actions job images (dind pulls).
-                    "code.forgejo.org",
-                    "codeload.github.com",
-                    "files.pythonhosted.org",
-                    "github.com",
-                    # rules_oci's gawk source.
-                    "mirrors.kernel.org",
-                    "nodejs.org",
-                    "pypi.org",
-                    "registry.npmjs.org",
-                    "release-assets.githubusercontent.com",
-                    "releases.bazel.build",
-                    # keep-sorted end
-                ],
-                methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.HEAD],
-            ),
-            # `uses:` actions, which forgejo-runner clones over smart HTTP (`git-upload-pack` is a POST).
-            Rule.egress(
-                hosts=["data.forgejo.org"], methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.POST]
-            ),
-        ],
+        spec=PolicySetSpec(
+            rules=[
+                Rule.egress(
+                    hosts=[
+                        # keep-sorted start
+                        # Bazel's registry and its own releases.
+                        "bcr.bazel.build",
+                        # Forgejo Actions job images (dind pulls).
+                        "code.forgejo.org",
+                        "codeload.github.com",
+                        "files.pythonhosted.org",
+                        "github.com",
+                        # rules_oci's gawk source.
+                        "mirrors.kernel.org",
+                        "nodejs.org",
+                        "pypi.org",
+                        "registry.npmjs.org",
+                        "release-assets.githubusercontent.com",
+                        "releases.bazel.build",
+                        # keep-sorted end
+                    ],
+                    methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.HEAD],
+                ),
+                # `uses:` actions, which forgejo-runner clones over smart HTTP (`git-upload-pack` is a POST).
+                Rule.egress(
+                    hosts=["data.forgejo.org"], methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.POST]
+                ),
+            ]
+        ),
     )
-    _binding(
+    PolicyBinding(
         scope,
         "policybinding-haku-ci-egress",
         metadata=ApiObjectMetadata(
@@ -874,8 +878,7 @@ def add_staging_action_policies(
                 "description": "What haku-ci's builds (haku-ci namespace), acting as this Identity, may reach."
             },
         ),
-        subject=haku_ci.binding_subject(),
-        policy_sets=[HAKU_CI_BUILD_FETCH_POLICY],
+        spec=PolicyBindingSpec(subject=haku_ci.binding_subject(), policy_sets=[HAKU_CI_BUILD_FETCH_POLICY]),
     )
 
     # Haku-like sandboxes get Coinbase only through this explicit combined PolicySet selection.
@@ -1039,7 +1042,7 @@ def add_staging_action_policies(
 
     # The OpenClaw Pod is hosted in its own namespace; keep its Action authorization here with
     # the shared policy sets, addressed by its standing Identity.
-    _binding(
+    PolicyBinding(
         scope,
         "policybinding-public-coder-openclaw-actions",
         metadata=ApiObjectMetadata(
@@ -1047,6 +1050,5 @@ def add_staging_action_policies(
             namespace=_NAMESPACE,
             annotations={"description": "Auto-approves the reviewed common GitHub reads for the OpenClaw Identity."},
         ),
-        subject=OPENCLAW.identity_subject(),
-        policy_sets=[COMMON_GITHUB_READ_SET],
+        spec=PolicyBindingSpec(subject=OPENCLAW.identity_subject(), policy_sets=[COMMON_GITHUB_READ_SET]),
     )

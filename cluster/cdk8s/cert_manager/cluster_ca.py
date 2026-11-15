@@ -16,8 +16,15 @@ from __future__ import annotations
 from typing import TypedDict
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cert_manager_clusterissuer_crds.io.cert_manager import ClusterIssuerSpecCa, ClusterIssuerSpecSelfSigned
+from cert_manager_clusterissuer_crds.io.cert_manager import (
+    ClusterIssuer,
+    ClusterIssuerSpec,
+    ClusterIssuerSpecCa,
+    ClusterIssuerSpecSelfSigned,
+)
 from cert_manager_crds.io.cert_manager import (
+    Certificate,
+    CertificateSpec,
     CertificateSpecIssuerRef,
     CertificateSpecPrivateKey,
     CertificateSpecPrivateKeyAlgorithm,
@@ -26,6 +33,8 @@ from cert_manager_crds.io.cert_manager import (
 )
 from constructs import Construct
 from trust_manager_crds.io.cert_manager.trust import (
+    Bundle,
+    BundleSpec,
     BundleSpecSources,
     BundleSpecSourcesSecret,
     BundleSpecTarget,
@@ -34,9 +43,7 @@ from trust_manager_crds.io.cert_manager.trust import (
 )
 
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
-from cluster.cdk8s.providers.cert_manager.bundle import Bundle
-from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
-from cluster.cdk8s.providers.cert_manager.cluster_issuer import ClusterIssuer
+from cluster.cdk8s.providers.cert_manager.certificate import CertificatePrivateKey
 
 NAME = "cluster-ca"
 ROOT_CA_SECRET = "cluster-root-ca-secret"
@@ -69,20 +76,22 @@ def add_workload_ca(scope: Construct) -> None:
         "workload-ca",
         # A ClusterIssuer reads its CA from cert-manager's cluster resource namespace.
         metadata=ApiObjectMetadata(name=_WORKLOAD_CA_SECRET, namespace="cert-manager"),
-        is_ca=True,
-        common_name=_WORKLOAD_CA_SECRET,
-        secret_name=_WORKLOAD_CA_SECRET,
-        **LONG_LIVED_CA,
-        # A renewal keeps the key, so leaves issued before it still verify against the Bundles.
-        private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.NEVER),
-        usages=[CertificateSpecUsages.CERT_SIGN, CertificateSpecUsages.CRL_SIGN],
-        issuer_ref=INTERNAL_ISSUER,
+        spec=CertificateSpec(
+            is_ca=True,
+            common_name=_WORKLOAD_CA_SECRET,
+            secret_name=_WORKLOAD_CA_SECRET,
+            **LONG_LIVED_CA,
+            # A renewal keeps the key, so leaves issued before it still verify against the Bundles.
+            private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.NEVER),
+            usages=[CertificateSpecUsages.CERT_SIGN, CertificateSpecUsages.CRL_SIGN],
+            issuer_ref=INTERNAL_ISSUER,
+        ),
     )
     ClusterIssuer(
         scope,
         "workload-issuer",
         metadata=ApiObjectMetadata(name=WORKLOAD_ISSUER.name),
-        ca=ClusterIssuerSpecCa(secret_name=_WORKLOAD_CA_SECRET),
+        spec=ClusterIssuerSpec(ca=ClusterIssuerSpecCa(secret_name=_WORKLOAD_CA_SECRET)),
     )
     Bundle(
         scope,
@@ -90,14 +99,18 @@ def add_workload_ca(scope: Construct) -> None:
         metadata=ApiObjectMetadata(name=WORKLOAD_BUNDLE),
         # `tls.crt` of a CA the cluster root signs holds that CA alone: cert-manager leaves the
         # self-signed root out of the chain, and `ca.crt` is the root.
-        sources=[BundleSpecSources(secret=BundleSpecSourcesSecret(name=_WORKLOAD_CA_SECRET, key="tls.crt"))],
-        target=BundleSpecTarget(
-            config_map=BundleSpecTargetConfigMap(
-                key=BUNDLE_KEY,
-                metadata=BundleSpecTargetConfigMapMetadata(
-                    annotations={"description": "The Agentplane workload CA, which client SVID verifiers trust alone"}
-                ),
-            )
+        spec=BundleSpec(
+            sources=[BundleSpecSources(secret=BundleSpecSourcesSecret(name=_WORKLOAD_CA_SECRET, key="tls.crt"))],
+            target=BundleSpecTarget(
+                config_map=BundleSpecTargetConfigMap(
+                    key=BUNDLE_KEY,
+                    metadata=BundleSpecTargetConfigMapMetadata(
+                        annotations={
+                            "description": "The Agentplane workload CA, which client SVID verifiers trust alone"
+                        }
+                    ),
+                )
+            ),
         ),
     )
 
@@ -108,43 +121,49 @@ def chart(app: App) -> Chart:
         chart,
         "bootstrap",
         metadata=ApiObjectMetadata(name="cluster-ca-bootstrap"),
-        self_signed=ClusterIssuerSpecSelfSigned(),
+        spec=ClusterIssuerSpec(self_signed=ClusterIssuerSpecSelfSigned()),
     )
     Certificate(
         chart,
         "root-ca",
         metadata=ApiObjectMetadata(name="cluster-root-ca", namespace="cert-manager"),
-        is_ca=True,
-        common_name="cluster-root-ca",
-        secret_name=ROOT_CA_SECRET,
-        **LONG_LIVED_CA,
-        private_key=CertificateSpecPrivateKey(algorithm=CertificateSpecPrivateKeyAlgorithm.RSA, size=4096),
-        issuer_ref=CertificateSpecIssuerRef(name=bootstrap.name, kind="ClusterIssuer"),
+        spec=CertificateSpec(
+            is_ca=True,
+            common_name="cluster-root-ca",
+            secret_name=ROOT_CA_SECRET,
+            **LONG_LIVED_CA,
+            private_key=CertificateSpecPrivateKey(algorithm=CertificateSpecPrivateKeyAlgorithm.RSA, size=4096),
+            issuer_ref=CertificateSpecIssuerRef(name=bootstrap.name, kind="ClusterIssuer"),
+        ),
     )
     # Issues internal service certificates from the root CA.
     ClusterIssuer(
         chart,
         "internal",
         metadata=ApiObjectMetadata(name=INTERNAL_ISSUER.name),
-        ca=ClusterIssuerSpecCa(secret_name=ROOT_CA_SECRET),
+        spec=ClusterIssuerSpec(ca=ClusterIssuerSpecCa(secret_name=ROOT_CA_SECRET)),
     )
     Bundle(
         chart,
         "bundle",
         metadata=ApiObjectMetadata(name=BUNDLE),
-        sources=[
-            BundleSpecSources(secret=BundleSpecSourcesSecret(name=ROOT_CA_SECRET, key="ca.crt")),
-            # The active issuer's root, from `config`.
-            BundleSpecSources(secret=BundleSpecSourcesSecret(name=f"{LETSENCRYPT_ISSUER}-root-ca", key="ca.crt")),
-        ],
-        target=BundleSpecTarget(config_map=BundleSpecTargetConfigMap(key=BUNDLE_KEY)),
+        spec=BundleSpec(
+            sources=[
+                BundleSpecSources(secret=BundleSpecSourcesSecret(name=ROOT_CA_SECRET, key="ca.crt")),
+                # The active issuer's root, from `config`.
+                BundleSpecSources(secret=BundleSpecSourcesSecret(name=f"{LETSENCRYPT_ISSUER}-root-ca", key="ca.crt")),
+            ],
+            target=BundleSpecTarget(config_map=BundleSpecTargetConfigMap(key=BUNDLE_KEY)),
+        ),
     )
     Bundle(
         chart,
         "public-web-pki",
         metadata=ApiObjectMetadata(name=PUBLIC_BUNDLE),
-        sources=[BundleSpecSources(use_default_c_as=True)],
-        target=BundleSpecTarget(config_map=BundleSpecTargetConfigMap(key=BUNDLE_KEY)),
+        spec=BundleSpec(
+            sources=[BundleSpecSources(use_default_c_as=True)],
+            target=BundleSpecTarget(config_map=BundleSpecTargetConfigMap(key=BUNDLE_KEY)),
+        ),
     )
     add_workload_ca(chart)
     return chart

@@ -10,6 +10,8 @@ from collections.abc import Sequence
 from cdk8s import ApiObjectMetadata
 from constructs import Construct
 from kyverno_cleanuppolicy_crds.io.kyverno import (
+    CleanupPolicy,
+    CleanupPolicySpec,
     CleanupPolicySpecConditions,
     CleanupPolicySpecConditionsAll,
     CleanupPolicySpecConditionsAllOperator,
@@ -17,8 +19,6 @@ from kyverno_cleanuppolicy_crds.io.kyverno import (
     CleanupPolicySpecMatchAny,
     CleanupPolicySpecMatchAnyResources,
 )
-
-from cluster.cdk8s.providers.kyverno.cleanup_policy import CleanupPolicy
 
 
 def janitor(
@@ -30,17 +30,19 @@ def janitor(
         scope,
         id,
         metadata=ApiObjectMetadata(name=name, namespace=namespace),
-        schedule=schedule,
-        match=CleanupPolicySpecMatch(
-            any=[CleanupPolicySpecMatchAny(resources=CleanupPolicySpecMatchAnyResources(kinds=list(kinds)))]
-        ),
-        conditions=CleanupPolicySpecConditions(
-            all=[
-                CleanupPolicySpecConditionsAll(
-                    key="{{ time_since('', '{{ target.metadata.creationTimestamp }}', '') }}",
-                    operator=CleanupPolicySpecConditionsAllOperator.GREATER_THAN,
-                    value="168h",
-                )
-            ]
+        spec=CleanupPolicySpec(
+            schedule=schedule,
+            match=CleanupPolicySpecMatch(
+                any=[CleanupPolicySpecMatchAny(resources=CleanupPolicySpecMatchAnyResources(kinds=list(kinds)))]
+            ),
+            conditions=CleanupPolicySpecConditions(
+                all=[
+                    CleanupPolicySpecConditionsAll(
+                        key="{{ time_since('', '{{ target.metadata.creationTimestamp }}', '') }}",
+                        operator=CleanupPolicySpecConditionsAllOperator.GREATER_THAN,
+                        value="168h",
+                    )
+                ]
+            ),
         ),
     )

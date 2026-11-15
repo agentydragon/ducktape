@@ -17,7 +17,12 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ConfigMap, k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
-from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
+from prometheus_operator_crds.com.coreos.monitoring import (
+    ServiceMonitor,
+    ServiceMonitorSpec,
+    ServiceMonitorSpecSelector,
+)
+from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 from pydantic import BaseModel
 from python.runfiles import Runfiles
 from volsync_replicationsource_crds.backube.volsync import (
@@ -47,8 +52,8 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.home_assistant.db import DATABASE
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
-from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import HostNetworkServiceRef, Pods, Port
@@ -476,35 +481,39 @@ def _monitoring(scope: Construct) -> None:
         scope,
         "service-monitor",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        selector=ServiceMonitorSpecSelector(match_labels=SERVICE.labels),
-        endpoints=[
-            Endpoint.bearer_authorization(
-                port=SERVICE.port.name,
-                path="/api/prometheus",
-                secret_name=_METRICS_TOKEN.secret.name,
-                key=_METRICS_TOKEN.key,
-            )
-        ],
+        spec=ServiceMonitorSpec(
+            selector=ServiceMonitorSpecSelector(match_labels=SERVICE.labels),
+            endpoints=[
+                Endpoint.bearer_authorization(
+                    port=SERVICE.port.name,
+                    path="/api/prometheus",
+                    secret_name=_METRICS_TOKEN.secret.name,
+                    key=_METRICS_TOKEN.key,
+                )
+            ],
+        ),
     )
     PrometheusRule(
         scope,
         "prometheus-rule",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        groups=[
-            group(
-                _NAME,
-                [
-                    Rule.alert(
-                        "HomeAssistantUnavailable",
-                        f'up{{namespace="{SERVICE.pods.namespace}", service="{SERVICE.name}"}} == 0',
-                        for_="10m",
-                        labels={"severity": "warning"},
-                        summary="Home Assistant is unavailable",
-                        description="Prometheus has been unable to scrape Home Assistant for 10 minutes.",
-                    )
-                ],
-            )
-        ],
+        spec=PrometheusRuleSpec(
+            groups=[
+                group(
+                    _NAME,
+                    [
+                        Rule.alert(
+                            "HomeAssistantUnavailable",
+                            f'up{{namespace="{SERVICE.pods.namespace}", service="{SERVICE.name}"}} == 0',
+                            for_="10m",
+                            labels={"severity": "warning"},
+                            summary="Home Assistant is unavailable",
+                            description="Prometheus has been unable to scrape Home Assistant for 10 minutes.",
+                        )
+                    ],
+                )
+            ]
+        ),
     )
 
 

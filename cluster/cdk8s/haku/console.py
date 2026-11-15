@@ -49,7 +49,11 @@ from cdk8s_plus_34 import (
     Volume,
 )
 from constructs import Construct
-from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
+from prometheus_operator_crds.com.coreos.monitoring import (
+    ServiceMonitor,
+    ServiceMonitorSpec,
+    ServiceMonitorSpecSelector,
+)
 
 from cluster.cdk8s import agent_access_profiles as access, node_scheduling, pod_policy, service_ref
 from cluster.cdk8s.config_format import yaml_config
@@ -57,7 +61,7 @@ from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.haku import console_config, database
 from cluster.cdk8s.probes import http_probe
-from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.settings_file import SettingsFile
 from haku.console.config import CONFIG_FILE_ENV
@@ -333,8 +337,10 @@ class Console(Construct):
             self,
             "servicemonitor",
             metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-            selector=ServiceMonitorSpecSelector(match_labels=_API.labels),
-            endpoints=[Endpoint.plain(port=_METRICS.port.name)],
+            spec=ServiceMonitorSpec(
+                selector=ServiceMonitorSpecSelector(match_labels=_API.labels),
+                endpoints=[Endpoint.plain(port=_METRICS.port.name)],
+            ),
         )
 
     def _add_static(self) -> None:

@@ -37,7 +37,11 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
-from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
+from prometheus_operator_crds.com.coreos.monitoring import (
+    ServiceMonitor,
+    ServiceMonitorSpec,
+    ServiceMonitorSpecSelector,
+)
 
 from cluster.cdk8s import cilium, namespaces, pod_policy
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
@@ -53,7 +57,7 @@ from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
-from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
@@ -296,8 +300,10 @@ class HaMcpApp(Construct):
             self,
             "servicemonitor",
             metadata=ApiObjectMetadata(name=_APP_NAME, namespace=_NAMESPACE),
-            selector=ServiceMonitorSpecSelector(match_labels=FACADE.labels),
-            endpoints=[Endpoint.plain(port=_METRICS.port.name)],
+            spec=ServiceMonitorSpec(
+                selector=ServiceMonitorSpecSelector(match_labels=FACADE.labels),
+                endpoints=[Endpoint.plain(port=_METRICS.port.name)],
+            ),
         )
 
 

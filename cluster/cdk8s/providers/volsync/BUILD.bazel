@@ -20,17 +20,6 @@ cdk8s_import(
 )
 
 py_library(
-    name = "replication_destination",
-    srcs = ["replication_destination.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = [
-        "//cluster/cdk8s/providers/volsync:replicationdestination",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
-    ],
-)
-
-py_library(
     name = "replication_source",
     srcs = ["replication_source.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],

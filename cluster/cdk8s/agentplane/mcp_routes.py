@@ -2,9 +2,9 @@
 
 from cdk8s import ApiObjectMetadata
 from constructs import Construct
+from gateway_api_crds.io.k8s.networking.gateway import HttpRoute
 
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.providers.gateway_api.http_route import HttpRoute
 from cluster.cdk8s.service_ref import ServiceRef
 
 PUBLIC_PATHS = (

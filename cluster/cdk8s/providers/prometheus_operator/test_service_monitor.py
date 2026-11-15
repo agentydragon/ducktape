@@ -1,8 +1,12 @@
 import pytest_bazel
 from cdk8s import ApiObjectMetadata, Chart, Testing as Cdk8sTesting
-from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
+from prometheus_operator_crds.com.coreos.monitoring import (
+    ServiceMonitor,
+    ServiceMonitorSpec,
+    ServiceMonitorSpecSelector,
+)
 
-from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 
 
 def test_bearer_token_secret_endpoint_wire_shape(scratch_chart: Chart) -> None:
@@ -10,8 +14,10 @@ def test_bearer_token_secret_endpoint_wire_shape(scratch_chart: Chart) -> None:
         scratch_chart,
         "test",
         metadata=ApiObjectMetadata(name="test-monitor"),
-        selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/name": "test"}),
-        endpoints=[Endpoint.bearer_token_secret(port="http", secret_name="metrics-token", key="token")],
+        spec=ServiceMonitorSpec(
+            selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/name": "test"}),
+            endpoints=[Endpoint.bearer_token_secret(port="http", secret_name="metrics-token", key="token")],
+        ),
     )
     (manifest,) = Cdk8sTesting.synth(scratch_chart)
     (endpoint,) = manifest["spec"]["endpoints"]

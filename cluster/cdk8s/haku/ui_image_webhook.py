@@ -21,12 +21,17 @@ mints and derives the Forgejo webhook URLs' path from; this chart copies it into
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from flux_receiver_crds.io.fluxcd.toolkit.notification import ReceiverSpecSecretRef, ReceiverSpecType
+from flux_receiver_crds.io.fluxcd.toolkit.notification import (
+    Receiver,
+    ReceiverSpec,
+    ReceiverSpecSecretRef,
+    ReceiverSpecType,
+)
 
 from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.providers.flux.notification import Receiver, ReceiverResource
+from cluster.cdk8s.providers.flux.notification import ReceiverResource
 
 NAME = "haku-ui-image-webhook"
 OUTPUT_DIR = f"{GENERATED_ROOT}/haku/ui-image-webhook"
@@ -41,20 +46,22 @@ def chart(app: App) -> Chart:
         chart,
         "receiver",
         metadata=ApiObjectMetadata(name="haku-ui-forgejo", namespace=_RECEIVER_NAMESPACE),
-        type=ReceiverSpecType.GENERIC,
-        secret_ref=ReceiverSpecSecretRef(name=_TOKEN_SECRET),
-        resources=[
-            ReceiverResource.image_repository("haku-ui", namespace=NAMESPACE),
-            # haku-anki's registry scan rides the same package webhook.
-            ReceiverResource.image_repository("haku-anki", namespace=NAMESPACE),
-            ReceiverResource.image_update_automation("haku-ui", namespace=NAMESPACE),
-            # The apply leg: fetch the tag-bump commit (and any haku-state push)
-            # immediately; the haku-state-workloads Kustomization then reconciles off the
-            # fresh artifact.
-            ReceiverResource.git_repository("haku-state", namespace="flux-system"),
-            # ImageUpdateAutomation's own git source. It clones directly when reconciling,
-            # but a fresh artifact keeps anything else consuming this source current too.
-            ReceiverResource.git_repository("haku-state-write", namespace=NAMESPACE),
-        ],
+        spec=ReceiverSpec(
+            type=ReceiverSpecType.GENERIC,
+            secret_ref=ReceiverSpecSecretRef(name=_TOKEN_SECRET),
+            resources=[
+                ReceiverResource.image_repository("haku-ui", namespace=NAMESPACE),
+                # haku-anki's registry scan rides the same package webhook.
+                ReceiverResource.image_repository("haku-anki", namespace=NAMESPACE),
+                ReceiverResource.image_update_automation("haku-ui", namespace=NAMESPACE),
+                # The apply leg: fetch the tag-bump commit (and any haku-state push)
+                # immediately; the haku-state-workloads Kustomization then reconciles off the
+                # fresh artifact.
+                ReceiverResource.git_repository("haku-state", namespace="flux-system"),
+                # ImageUpdateAutomation's own git source. It clones directly when reconciling,
+                # but a fresh artifact keeps anything else consuming this source current too.
+                ReceiverResource.git_repository("haku-state-write", namespace=NAMESPACE),
+            ],
+        ),
     )
     return chart

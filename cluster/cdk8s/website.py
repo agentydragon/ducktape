@@ -5,6 +5,8 @@ from __future__ import annotations
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from gateway_api_crds.io.k8s.networking.gateway import (
+    HttpRoute,
+    HttpRouteSpec,
     HttpRouteSpecRules,
     HttpRouteSpecRulesFilters,
     HttpRouteSpecRulesFiltersRequestRedirectPath,
@@ -19,7 +21,7 @@ from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref, https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.gateway_api.http_route import HttpRoute, RouteFilter, RouteMatch
+from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter, RouteMatch
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/website"
@@ -126,25 +128,29 @@ def chart(app: App) -> Chart:
         chart,
         "apex-redirect",
         metadata=ApiObjectMetadata(name="apex-redirect", namespace=_NAMESPACE),
-        parent_refs=[cluster_gateway_parent_ref()],
-        hostnames=["agentydragon.com"],
-        rules=[HttpRouteSpecRules(filters=[_redirect(_CANONICAL_HOSTNAME, None, _MOVED_PERMANENTLY)])],
+        spec=HttpRouteSpec(
+            parent_refs=[cluster_gateway_parent_ref()],
+            hostnames=["agentydragon.com"],
+            rules=[HttpRouteSpecRules(filters=[_redirect(_CANONICAL_HOSTNAME, None, _MOVED_PERMANENTLY)])],
+        ),
     )
     HttpRoute(
         chart,
         "short-links",
         metadata=ApiObjectMetadata(name="short-links", namespace=_NAMESPACE),
-        parent_refs=[cluster_gateway_parent_ref()],
-        hostnames=["adgn.link", "www.adgn.link"],
-        rules=[
-            HttpRouteSpecRules(filters=[_redirect(_CANONICAL_HOSTNAME, "/", _MOVED_PERMANENTLY)]),
-            *(
-                HttpRouteSpecRules(
-                    matches=[RouteMatch.path_prefix(path)], filters=[_redirect(hostname, target, _FOUND)]
-                )
-                for path, (hostname, target) in _SHORT_LINKS.items()
-            ),
-        ],
+        spec=HttpRouteSpec(
+            parent_refs=[cluster_gateway_parent_ref()],
+            hostnames=["adgn.link", "www.adgn.link"],
+            rules=[
+                HttpRouteSpecRules(filters=[_redirect(_CANONICAL_HOSTNAME, "/", _MOVED_PERMANENTLY)]),
+                *(
+                    HttpRouteSpecRules(
+                        matches=[RouteMatch.path_prefix(path)], filters=[_redirect(hostname, target, _FOUND)]
+                    )
+                    for path, (hostname, target) in _SHORT_LINKS.items()
+                ),
+            ],
+        ),
     )
     return chart
 

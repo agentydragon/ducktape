@@ -1,18 +1,10 @@
-"""Ergonomic wrapper for Prometheus Operator's `PrometheusRule`, following cdk8s-plus's own
-construction pattern: a class named after the kind, a `Rule` factory group for
-`PrometheusRuleSpecGroupsRules`'s real variant shapes, and a plain `group(...)` helper for the
-common single-group-per-resource case.
-"""
+"""Factories for PrometheusRule rule variants and named groups."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from cdk8s import ApiObjectMetadata
-from constructs import Construct
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import (
-    PrometheusRule as _PrometheusRule,
-    PrometheusRuleSpec,
     PrometheusRuleSpecGroups,
     PrometheusRuleSpecGroupsRules,
     PrometheusRuleSpecGroupsRulesExpr,
@@ -65,12 +57,3 @@ class Rule:
 
 def group(name: str, rules: Sequence[PrometheusRuleSpecGroupsRules]) -> PrometheusRuleSpecGroups:
     return PrometheusRuleSpecGroups(name=name, rules=list(rules))
-
-
-class PrometheusRule(_PrometheusRule):
-    """Prometheus Operator's `PrometheusRule`. `groups` is `spec.groups`."""
-
-    def __init__(
-        self, scope: Construct, id: str, *, metadata: ApiObjectMetadata, groups: Sequence[PrometheusRuleSpecGroups]
-    ) -> None:
-        super().__init__(scope, id, metadata=metadata, spec=PrometheusRuleSpec(groups=list(groups)))

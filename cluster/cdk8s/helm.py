@@ -7,6 +7,7 @@ from collections.abc import Sequence
 
 from cdk8s import ApiObjectMetadata
 from constructs import Construct
+from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepository
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmRelease,
     HelmReleaseSpec,
@@ -22,8 +23,6 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecValuesFrom,
 )
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec, HelmRepositorySpecType
-
-from cluster.cdk8s.providers.flux.git_repository import GitRepository
 
 # Uninstall and retry a failed install three times before the release stalls.
 RETRY_FAILED_INSTALL = HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3))

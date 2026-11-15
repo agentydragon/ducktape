@@ -1,3 +1,4 @@
+# gazelle:resolve py seaweed_s3credentials_crds //cluster/cdk8s/providers/seaweedfs:s3credentials
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
@@ -32,7 +33,6 @@ py_library(
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:restic_backup",
         "//cluster/cdk8s/providers/seaweedfs:bucket",
-        "//cluster/cdk8s/providers/seaweedfs:s3_credentials",
         "//cluster/cdk8s/providers/seaweedfs:s3credentials",
         "//cluster/cdk8s/providers/seaweedfs:seaweedfs_bucket",
         "@pypi//cdk8s",

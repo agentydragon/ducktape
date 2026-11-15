@@ -8,6 +8,8 @@ from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 from kubevirt_virtualmachine_crds.io.kubevirt import (
+    VirtualMachine,
+    VirtualMachineSpec,
     VirtualMachineSpecTemplate,
     VirtualMachineSpecTemplateSpec,
     VirtualMachineSpecTemplateSpecAffinity,
@@ -29,8 +31,6 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachineSpecTemplateSpecVolumes,
     VirtualMachineSpecTemplateSpecVolumesContainerDisk,
 )
-
-from cluster.cdk8s.providers.kubevirt.virtual_machine import VirtualMachine
 
 _ROOT_DISK = "rootdisk"
 _NETWORK = "default"
@@ -151,18 +151,20 @@ def container_disk_vm(
         scope,
         id,
         metadata=ApiObjectMetadata(name=name, namespace=namespace, labels=labels, annotations=annotations),
-        run_strategy=run_strategy,
-        template=container_disk_template(
-            labels=domain_labels(name) | labels,
-            image=image,
-            cpu=cpu,
-            resources=resources,
-            node_selector=node_selector,
-            ports=ports,
-            disks=disks,
-            affinity=affinity,
-            tolerations=tolerations,
-            host_devices=host_devices,
-            autoattach_graphics_device=autoattach_graphics_device,
+        spec=VirtualMachineSpec(
+            run_strategy=run_strategy,
+            template=container_disk_template(
+                labels=domain_labels(name) | labels,
+                image=image,
+                cpu=cpu,
+                resources=resources,
+                node_selector=node_selector,
+                ports=ports,
+                disks=disks,
+                affinity=affinity,
+                tolerations=tolerations,
+                host_devices=host_devices,
+                autoattach_graphics_device=autoattach_graphics_device,
+            ),
         ),
     )

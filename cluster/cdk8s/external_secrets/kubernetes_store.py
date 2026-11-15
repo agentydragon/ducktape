@@ -14,6 +14,8 @@ from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 from external_secret_store_crds.io.external_secrets import (
+    ClusterSecretStore,
+    ClusterSecretStoreSpec,
     ClusterSecretStoreSpecConditions,
     ClusterSecretStoreSpecProvider,
     ClusterSecretStoreSpecProviderKubernetes,
@@ -24,6 +26,8 @@ from external_secret_store_crds.io.external_secrets import (
     ClusterSecretStoreSpecProviderKubernetesServerCaProviderType,
 )
 from external_secrets_secretstore_crds.io.external_secrets import (
+    SecretStore,
+    SecretStoreSpec,
     SecretStoreSpecProvider,
     SecretStoreSpecProviderKubernetes,
     SecretStoreSpecProviderKubernetesAuth,
@@ -32,8 +36,6 @@ from external_secrets_secretstore_crds.io.external_secrets import (
     SecretStoreSpecProviderKubernetesServerCaProvider,
     SecretStoreSpecProviderKubernetesServerCaProviderType,
 )
-
-from cluster.cdk8s.providers.external_secrets.secret_store import ClusterSecretStore, SecretStore
 
 # ESO's own ServiceAccount, which holds cluster-wide Secret read.
 ESO_SERVICE_ACCOUNT = ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount(
@@ -60,20 +62,22 @@ def cluster_secret_store(
         scope,
         id,
         metadata=metadata,
-        conditions=[ClusterSecretStoreSpecConditions(namespaces=list(namespaces))],
-        provider=ClusterSecretStoreSpecProvider(
-            kubernetes=ClusterSecretStoreSpecProviderKubernetes(
-                server=ClusterSecretStoreSpecProviderKubernetesServer(
-                    ca_provider=ClusterSecretStoreSpecProviderKubernetesServerCaProvider(
-                        type=ClusterSecretStoreSpecProviderKubernetesServerCaProviderType.CONFIG_MAP,
-                        name=_ROOT_CA_CONFIG_MAP,
-                        key=_ROOT_CA_KEY,
-                        namespace="default",
-                    )
-                ),
-                auth=ClusterSecretStoreSpecProviderKubernetesAuth(service_account=service_account),
-                remote_namespace=remote_namespace,
-            )
+        spec=ClusterSecretStoreSpec(
+            conditions=[ClusterSecretStoreSpecConditions(namespaces=list(namespaces))],
+            provider=ClusterSecretStoreSpecProvider(
+                kubernetes=ClusterSecretStoreSpecProviderKubernetes(
+                    server=ClusterSecretStoreSpecProviderKubernetesServer(
+                        ca_provider=ClusterSecretStoreSpecProviderKubernetesServerCaProvider(
+                            type=ClusterSecretStoreSpecProviderKubernetesServerCaProviderType.CONFIG_MAP,
+                            name=_ROOT_CA_CONFIG_MAP,
+                            key=_ROOT_CA_KEY,
+                            namespace="default",
+                        )
+                    ),
+                    auth=ClusterSecretStoreSpecProviderKubernetesAuth(service_account=service_account),
+                    remote_namespace=remote_namespace,
+                )
+            ),
         ),
     )
 
@@ -89,21 +93,23 @@ def secret_store(
         scope,
         id,
         metadata=metadata,
-        provider=SecretStoreSpecProvider(
-            kubernetes=SecretStoreSpecProviderKubernetes(
-                server=SecretStoreSpecProviderKubernetesServer(
-                    ca_provider=SecretStoreSpecProviderKubernetesServerCaProvider(
-                        type=SecretStoreSpecProviderKubernetesServerCaProviderType.CONFIG_MAP,
-                        name=_ROOT_CA_CONFIG_MAP,
-                        key=_ROOT_CA_KEY,
-                    )
-                ),
-                auth=SecretStoreSpecProviderKubernetesAuth(
-                    service_account=SecretStoreSpecProviderKubernetesAuthServiceAccount(
-                        name=reader.name, namespace=namespace
-                    )
-                ),
-                remote_namespace=namespace,
+        spec=SecretStoreSpec(
+            provider=SecretStoreSpecProvider(
+                kubernetes=SecretStoreSpecProviderKubernetes(
+                    server=SecretStoreSpecProviderKubernetesServer(
+                        ca_provider=SecretStoreSpecProviderKubernetesServerCaProvider(
+                            type=SecretStoreSpecProviderKubernetesServerCaProviderType.CONFIG_MAP,
+                            name=_ROOT_CA_CONFIG_MAP,
+                            key=_ROOT_CA_KEY,
+                        )
+                    ),
+                    auth=SecretStoreSpecProviderKubernetesAuth(
+                        service_account=SecretStoreSpecProviderKubernetesAuthServiceAccount(
+                            name=reader.name, namespace=namespace
+                        )
+                    ),
+                    remote_namespace=namespace,
+                )
             )
         ),
     )

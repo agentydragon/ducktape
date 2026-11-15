@@ -20,7 +20,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeStrategyName,
 )
 from gateway_api_crds.io.k8s.networking.gateway import HttpRouteSpecRulesFiltersResponseHeaderModifierSet
-from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
+from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitor, PodMonitorSpec, PodMonitorSpecSelector
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import cilium, opentofu
@@ -32,7 +32,7 @@ from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter
-from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
+from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "authentik"
@@ -291,9 +291,11 @@ def _pod_monitor(chart: Chart) -> None:
         chart,
         "server-podmonitor",
         metadata=ApiObjectMetadata(name="server", namespace=NAMESPACE),
-        selector=PodMonitorSpecSelector(match_labels=_SERVER_LABELS),
-        # TODO: Consider adding bearer token auth if Authentik metrics require authentication.
-        pod_metrics_endpoints=[Endpoint.plain(port="metrics")],
+        spec=PodMonitorSpec(
+            selector=PodMonitorSpecSelector(match_labels=_SERVER_LABELS),
+            # TODO: Consider adding bearer token auth if Authentik metrics require authentication.
+            pod_metrics_endpoints=[Endpoint.plain(port="metrics")],
+        ),
     )
 
 

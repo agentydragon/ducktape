@@ -7,6 +7,8 @@ from collections.abc import Mapping
 from cdk8s import ApiObjectMetadata, App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy, KustomizationSpecHealthChecks
 from grafana_grafana_crds.org.integreatly.grafana import (
+    Grafana,
+    GrafanaSpec,
     GrafanaSpecClient,
     GrafanaSpecDeployment,
     GrafanaSpecDeploymentSpec,
@@ -18,11 +20,15 @@ from grafana_grafana_crds.org.integreatly.grafana import (
     GrafanaSpecDeploymentSpecTemplateSpecContainersEnvValueFromSecretKeyRef,
 )
 from grafana_grafanadashboard_crds.org.integreatly.grafana import (
+    GrafanaDashboard,
+    GrafanaDashboardSpec,
     GrafanaDashboardSpecDatasources,
     GrafanaDashboardSpecGrafanaCom,
     GrafanaDashboardSpecInstanceSelector,
 )
 from grafana_grafanadatasource_crds.org.integreatly.grafana import (
+    GrafanaDatasource,
+    GrafanaDatasourceSpec,
     GrafanaDatasourceSpecDatasource,
     GrafanaDatasourceSpecInstanceSelector,
 )
@@ -33,9 +39,6 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import mimir
-from cluster.cdk8s.providers.grafana_operator.grafana import Grafana
-from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
-from cluster.cdk8s.providers.grafana_operator.grafana_datasource import GrafanaDatasource
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
@@ -106,86 +109,88 @@ def _grafana(chart: Chart) -> None:
         chart,
         "grafana",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE, labels=INSTANCE_LABELS),
-        client=GrafanaSpecClient(use_kube_auth=True),
-        config={
-            "server": {"root_url": GRAFANA_BASE_URL},
-            "security": {
-                # Expanded at runtime from GF_SECURITY_ADMIN_{USER,PASSWORD} env vars below.
-                # init-time only: Grafana writes the admin user to PostgreSQL on first boot.
-                "admin_user": "${GF_SECURITY_ADMIN_USER}",
-                "admin_password": "${GF_SECURITY_ADMIN_PASSWORD}",
+        spec=GrafanaSpec(
+            client=GrafanaSpecClient(use_kube_auth=True),
+            config={
+                "server": {"root_url": GRAFANA_BASE_URL},
+                "security": {
+                    # Expanded at runtime from GF_SECURITY_ADMIN_{USER,PASSWORD} env vars below.
+                    # init-time only: Grafana writes the admin user to PostgreSQL on first boot.
+                    "admin_user": "${GF_SECURITY_ADMIN_USER}",
+                    "admin_password": "${GF_SECURITY_ADMIN_PASSWORD}",
+                },
+                "database": {
+                    "type": "postgres",
+                    "host": f"{DATABASE.rw.host}:{DATABASE.rw.port.number}",
+                    "name": _NAME,
+                    "user": _NAME,
+                    "password": "${GF_DATABASE_PASSWORD}",
+                    "ssl_mode": "require",
+                },
+                "plugins": {"preinstall": "grafana-clock-panel,grafana-clickhouse-datasource@4.20.0"},
+                "auth.generic_oauth": {
+                    "enabled": "true",
+                    "name": "Authentik",
+                    "scopes": "openid email profile",
+                    "auth_url": "https://auth.allegedly.works/application/o/authorize/",
+                    "token_url": "http://authentik-server.authentik/application/o/token/",
+                    "api_url": "http://authentik-server.authentik/application/o/userinfo/",
+                    "client_id": "${GF_AUTH_GENERIC_OAUTH_CLIENT_ID}",
+                    "client_secret": "${GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET}",
+                    "role_attribute_path": "contains(groups[*], 'Grafana Admins') && 'Admin' || 'Viewer'",
+                    "allow_sign_up": "true",
+                },
+                "auth.jwt": {
+                    # Operator authenticates via K8s projected service account token (audience:
+                    # operator.grafana.com). No admin password required for automation.
+                    "enabled": "true",
+                    "header_name": "Authorization",
+                    "username_claim": "sub",
+                    "email_claim": "sub",
+                    # auto_sign_up: creates the operator's K8s identity as a Grafana user on first
+                    # auth. Scoped to JWT auth only — does not affect Authentik OAuth logins.
+                    "auto_sign_up": "true",
+                    "jwk_set_url": "https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT_HTTPS}/openid/v1/jwks",
+                    "jwk_set_bearer_token_file": "/var/run/secrets/kubernetes.io/serviceaccount/token",
+                    "expect_claims": '{"aud": "operator.grafana.com"}',
+                    "role_attribute_path": (
+                        "contains(sub, 'system:serviceaccount:monitoring:grafana-operator') && 'GrafanaAdmin' || 'None'"
+                    ),
+                },
             },
-            "database": {
-                "type": "postgres",
-                "host": f"{DATABASE.rw.host}:{DATABASE.rw.port.number}",
-                "name": _NAME,
-                "user": _NAME,
-                "password": "${GF_DATABASE_PASSWORD}",
-                "ssl_mode": "require",
-            },
-            "plugins": {"preinstall": "grafana-clock-panel,grafana-clickhouse-datasource@4.20.0"},
-            "auth.generic_oauth": {
-                "enabled": "true",
-                "name": "Authentik",
-                "scopes": "openid email profile",
-                "auth_url": "https://auth.allegedly.works/application/o/authorize/",
-                "token_url": "http://authentik-server.authentik/application/o/token/",
-                "api_url": "http://authentik-server.authentik/application/o/userinfo/",
-                "client_id": "${GF_AUTH_GENERIC_OAUTH_CLIENT_ID}",
-                "client_secret": "${GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET}",
-                "role_attribute_path": "contains(groups[*], 'Grafana Admins') && 'Admin' || 'Viewer'",
-                "allow_sign_up": "true",
-            },
-            "auth.jwt": {
-                # Operator authenticates via K8s projected service account token (audience:
-                # operator.grafana.com). No admin password required for automation.
-                "enabled": "true",
-                "header_name": "Authorization",
-                "username_claim": "sub",
-                "email_claim": "sub",
-                # auto_sign_up: creates the operator's K8s identity as a Grafana user on first
-                # auth. Scoped to JWT auth only — does not affect Authentik OAuth logins.
-                "auto_sign_up": "true",
-                "jwk_set_url": "https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT_HTTPS}/openid/v1/jwks",
-                "jwk_set_bearer_token_file": "/var/run/secrets/kubernetes.io/serviceaccount/token",
-                "expect_claims": '{"aud": "operator.grafana.com"}',
-                "role_attribute_path": (
-                    "contains(sub, 'system:serviceaccount:monitoring:grafana-operator') && 'GrafanaAdmin' || 'None'"
-                ),
-            },
-        },
-        deployment=GrafanaSpecDeployment(
-            spec=GrafanaSpecDeploymentSpec(
-                template=GrafanaSpecDeploymentSpecTemplate(
-                    spec=GrafanaSpecDeploymentSpecTemplateSpec(
-                        containers=[
-                            GrafanaSpecDeploymentSpecTemplateSpecContainers(
-                                name=_NAME,
-                                env=[
-                                    # Extend Go TLS trust to include the cluster CA (required for JWKS
-                                    # endpoint verification). SSL_CERT_DIR is a Go standard env var —
-                                    # overrides the default cert dir search list.
-                                    GrafanaSpecDeploymentSpecTemplateSpecContainersEnv(
-                                        name="SSL_CERT_DIR",
-                                        value="/etc/ssl/certs:/var/run/secrets/kubernetes.io/serviceaccount",
-                                    ),
-                                    # Secret key names don't match GF_* env var names — explicit mapping.
-                                    _secret_env("GF_SECURITY_ADMIN_USER", _ADMIN.key("admin-user")),
-                                    _secret_env("GF_SECURITY_ADMIN_PASSWORD", _ADMIN.key("admin-password")),
-                                    _secret_env("GF_DATABASE_PASSWORD", DATABASE.app_secret.key("password")),
-                                    *(
-                                        _secret_env(key, _OIDC.key(key))
-                                        for key in (
-                                            "GF_AUTH_GENERIC_OAUTH_CLIENT_ID",
-                                            "GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET",
-                                        )
-                                    ),
-                                ],
-                            )
-                        ]
+            deployment=GrafanaSpecDeployment(
+                spec=GrafanaSpecDeploymentSpec(
+                    template=GrafanaSpecDeploymentSpecTemplate(
+                        spec=GrafanaSpecDeploymentSpecTemplateSpec(
+                            containers=[
+                                GrafanaSpecDeploymentSpecTemplateSpecContainers(
+                                    name=_NAME,
+                                    env=[
+                                        # Extend Go TLS trust to include the cluster CA (required for JWKS
+                                        # endpoint verification). SSL_CERT_DIR is a Go standard env var —
+                                        # overrides the default cert dir search list.
+                                        GrafanaSpecDeploymentSpecTemplateSpecContainersEnv(
+                                            name="SSL_CERT_DIR",
+                                            value="/etc/ssl/certs:/var/run/secrets/kubernetes.io/serviceaccount",
+                                        ),
+                                        # Secret key names don't match GF_* env var names — explicit mapping.
+                                        _secret_env("GF_SECURITY_ADMIN_USER", _ADMIN.key("admin-user")),
+                                        _secret_env("GF_SECURITY_ADMIN_PASSWORD", _ADMIN.key("admin-password")),
+                                        _secret_env("GF_DATABASE_PASSWORD", DATABASE.app_secret.key("password")),
+                                        *(
+                                            _secret_env(key, _OIDC.key(key))
+                                            for key in (
+                                                "GF_AUTH_GENERIC_OAUTH_CLIENT_ID",
+                                                "GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET",
+                                            )
+                                        ),
+                                    ],
+                                )
+                            ]
+                        )
                     )
                 )
-            )
+            ),
         ),
     )
     https_route(
@@ -204,8 +209,9 @@ def _datasource(chart: Chart, name: str, datasource: GrafanaDatasourceSpecDataso
         chart,
         f"datasource-{name}",
         metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE),
-        instance_selector=GrafanaDatasourceSpecInstanceSelector(match_labels=INSTANCE_LABELS),
-        datasource=datasource,
+        spec=GrafanaDatasourceSpec(
+            instance_selector=GrafanaDatasourceSpecInstanceSelector(match_labels=INSTANCE_LABELS), datasource=datasource
+        ),
     )
 
 
@@ -294,16 +300,18 @@ def _dashboard(
         chart,
         f"dashboard-{name}",
         metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE),
-        instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=INSTANCE_LABELS),
-        folder=folder,
-        datasources=[
-            GrafanaDashboardSpecDatasources(input_name=input_name, datasource_name=datasource)
-            for input_name, datasource in datasources.items()
-        ]
-        if datasources
-        else None,
-        json=json,
-        grafana_com=grafana_com,
+        spec=GrafanaDashboardSpec(
+            instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=INSTANCE_LABELS),
+            folder=folder,
+            datasources=[
+                GrafanaDashboardSpecDatasources(input_name=input_name, datasource_name=datasource)
+                for input_name, datasource in datasources.items()
+            ]
+            if datasources
+            else None,
+            json=json,
+            grafana_com=grafana_com,
+        ),
     )
 
 

@@ -14,6 +14,8 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecManagedRolesPasswordSecret,
 )
 from cnpg_database_crds.io.cnpg.postgresql import (
+    Database,
+    DatabaseSpec,
     DatabaseSpecCluster,
     DatabaseSpecDatabaseReclaimPolicy,
     DatabaseSpecExtensions,
@@ -30,7 +32,6 @@ from cluster.cdk8s.external_secrets.kubernetes_store import secret_store
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.gitlab_spike import app
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.providers.cnpg.database import Database
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.seaweedfs import s3
 from cluster.cdk8s.valkey import valkey_instance
@@ -79,10 +80,12 @@ def _databases(chart: Chart) -> None:
         chart,
         "praefect-database",
         metadata=ApiObjectMetadata(name="praefect", namespace=app.NAMESPACE),
-        cluster=DatabaseSpecCluster(name=app.GITLAB_DB.name),
-        name=app.PRAEFECT_DATABASE,
-        owner=app.PRAEFECT_DATABASE,
-        database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
+        spec=DatabaseSpec(
+            cluster=DatabaseSpecCluster(name=app.GITLAB_DB.name),
+            name=app.PRAEFECT_DATABASE,
+            owner=app.PRAEFECT_DATABASE,
+            database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
+        ),
     )
     # Adopt the bootstrap-created database so CNPG installs and keeps these extensions.
     # Retain prevents deleting the Database CR from deleting GitLab's data.
@@ -90,14 +93,16 @@ def _databases(chart: Chart) -> None:
         chart,
         "gitlab-extensions",
         metadata=ApiObjectMetadata(name="gitlab-extensions", namespace=app.NAMESPACE),
-        cluster=DatabaseSpecCluster(name=app.GITLAB_DB.name),
-        name=app.GITLAB_DATABASE,
-        owner=app.GITLAB_DATABASE,
-        database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
-        extensions=[
-            DatabaseSpecExtensions(name=name, ensure=DatabaseSpecExtensionsEnsure.PRESENT)
-            for name in ("amcheck", "pg_trgm", "btree_gist")
-        ],
+        spec=DatabaseSpec(
+            cluster=DatabaseSpecCluster(name=app.GITLAB_DB.name),
+            name=app.GITLAB_DATABASE,
+            owner=app.GITLAB_DATABASE,
+            database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
+            extensions=[
+                DatabaseSpecExtensions(name=name, ensure=DatabaseSpecExtensionsEnsure.PRESENT)
+                for name in ("amcheck", "pg_trgm", "btree_gist")
+            ],
+        ),
     )
 
 

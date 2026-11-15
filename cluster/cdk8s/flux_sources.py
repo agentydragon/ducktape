@@ -12,12 +12,11 @@ import textwrap
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepositorySpecRef
+from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepository, GitRepositorySpec, GitRepositorySpecRef
 
 from cluster.cdk8s.flux import NAMESPACE
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.providers.flux.git_repository import GitRepository
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/flux/sources"
 
@@ -31,10 +30,7 @@ def _source(
         metadata=ApiObjectMetadata(
             name=name, namespace=NAMESPACE, annotations={"description": description} if description else None
         ),
-        interval="1h",
-        url=url,
-        ref=GitRepositorySpecRef(tag=tag),
-        ignore=ignore,
+        spec=GitRepositorySpec(interval="1h", url=url, ref=GitRepositorySpecRef(tag=tag), ignore=ignore),
     )
 
 

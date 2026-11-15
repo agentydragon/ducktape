@@ -12,7 +12,12 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepositorySpecRef, GitRepositorySpecSecretRef
+from flux_gitrepository_crds.io.fluxcd.toolkit.source import (
+    GitRepository,
+    GitRepositorySpec,
+    GitRepositorySpecRef,
+    GitRepositorySpecSecretRef,
+)
 
 from cluster.cdk8s import agent_access_profiles as access, namespaces
 from cluster.cdk8s.flux import NAMESPACE
@@ -20,7 +25,6 @@ from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, PARKED_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.flux.git_repository import GitRepository
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/flux/ducktape-flux"
 SOURCE_NAME = "ducktape"
@@ -110,11 +114,13 @@ def chart(app: App) -> Chart:
         chart,
         "finance-agent-source",
         metadata=ApiObjectMetadata(name=_FINANCE_SOURCE, namespace=NAMESPACE),
-        interval="5m",
-        ref=GitRepositorySpecRef(branch="main"),
-        sparse_checkout=["config/plaid-spend/"],
-        secret_ref=GitRepositorySpecSecretRef(name=_FINANCE_READER_SECRET),
-        url="http://forgejo-http.forgejo:3000/finance-agent/finance-agent.git",
+        spec=GitRepositorySpec(
+            interval="5m",
+            ref=GitRepositorySpecRef(branch="main"),
+            sparse_checkout=["config/plaid-spend/"],
+            secret_ref=GitRepositorySpecSecretRef(name=_FINANCE_READER_SECRET),
+            url="http://forgejo-http.forgejo:3000/finance-agent/finance-agent.git",
+        ),
     )
 
     k8s.KubeServiceAccount(
@@ -133,47 +139,49 @@ def chart(app: App) -> Chart:
         # The `github` Receiver (cluster/generated/flux-webhook) reconciles this source within seconds of
         # every push, so polling is only the net for a lost delivery. flux-system's source carries the
         # same interval (cluster/k8s/flux/flux-system/gotk-sync.yaml); keep the two in step.
-        interval="30m",
-        # `CLONE_TIMEOUT`, because a clone of this repository does not fit in the 60s that
-        # `GitRepository.spec.timeout` defaults to.
-        #
-        # Measured on 2026-10-15: a bare clone is ~519 MB and takes ~60 seconds, so under the
-        # default this source raced its own deadline once a minute and usually lost. On the losing
-        # side `source-controller` reports `GitOperationFailed: failed to checkout and determine
-        # revision: ... context deadline exceeded` and keeps serving the last artifact it managed
-        # to store, which stops 164 generated artifacts and 74 direct Kustomizations from advancing
-        # with no PR at fault and nothing else saying so.
-        #
-        # Not fixed by narrowing `sparseCheckout`: that filters the checked-out working tree, not
-        # what git transfers, so the whole history crosses the wire whatever the list says. A
-        # partial/shallow clone is what would help and this CRD (source-controller v1.9.5) offers
-        # no field for it. The history is the cost, and most of it is paths no longer in the tree:
-        # ~233 MB `augur` and ~121 MB `adgn` are deleted, and 74 revisions of MODULE.bazel.lock
-        # alone are ~130 MB. Slimming that is the durable fix; this line is what makes the clone
-        # fit until someone does.
-        #
-        # 5m is an order of magnitude over the measurement while still bounding one attempt.
-        # Nothing set a clone timeout before this one; the 2m-30m timeouts elsewhere in the tree are
-        # `Kustomization.spec.timeout`, how long an apply may take, which is a different knob
-        # answering a different question.
-        timeout=CLONE_TIMEOUT,
-        ref=GitRepositorySpecRef(branch=BRANCH),
-        sparse_checkout=[
-            f"{HAND_WRITTEN_ROOT}/",
-            f"{GENERATED_ROOT}/",
-            f"{PARKED_ROOT}/",
-            # sparseCheckout accepts directories, so this brings the encrypted shared-credential
-            # subtree into the source artifact. ai-session-archive's ArtifactGenerator still
-            # copies only session-backup.yaml into its own Kustomize directory; omitting this
-            # source would make that exact-file copy fail.
-            "secrets/shared/",
-            "agentplane/crds/manifests/",
-            "cluster/charts/browsertrix/",
-            "loom/wayback/deploy/",
-            "props/deploy/",
-            f"{TF_GITOPS_ROOT}/",
-        ],
-        url=REPOSITORY_URL,
+        spec=GitRepositorySpec(
+            interval="30m",
+            # `CLONE_TIMEOUT`, because a clone of this repository does not fit in the 60s that
+            # `GitRepository.spec.timeout` defaults to.
+            #
+            # Measured on 2026-10-15: a bare clone is ~519 MB and takes ~60 seconds, so under the
+            # default this source raced its own deadline once a minute and usually lost. On the losing
+            # side `source-controller` reports `GitOperationFailed: failed to checkout and determine
+            # revision: ... context deadline exceeded` and keeps serving the last artifact it managed
+            # to store, which stops 164 generated artifacts and 74 direct Kustomizations from advancing
+            # with no PR at fault and nothing else saying so.
+            #
+            # Not fixed by narrowing `sparseCheckout`: that filters the checked-out working tree, not
+            # what git transfers, so the whole history crosses the wire whatever the list says. A
+            # partial/shallow clone is what would help and this CRD (source-controller v1.9.5) offers
+            # no field for it. The history is the cost, and most of it is paths no longer in the tree:
+            # ~233 MB `augur` and ~121 MB `adgn` are deleted, and 74 revisions of MODULE.bazel.lock
+            # alone are ~130 MB. Slimming that is the durable fix; this line is what makes the clone
+            # fit until someone does.
+            #
+            # 5m is an order of magnitude over the measurement while still bounding one attempt.
+            # Nothing set a clone timeout before this one; the 2m-30m timeouts elsewhere in the tree are
+            # `Kustomization.spec.timeout`, how long an apply may take, which is a different knob
+            # answering a different question.
+            timeout=CLONE_TIMEOUT,
+            ref=GitRepositorySpecRef(branch=BRANCH),
+            sparse_checkout=[
+                f"{HAND_WRITTEN_ROOT}/",
+                f"{GENERATED_ROOT}/",
+                f"{PARKED_ROOT}/",
+                # sparseCheckout accepts directories, so this brings the encrypted shared-credential
+                # subtree into the source artifact. ai-session-archive's ArtifactGenerator still
+                # copies only session-backup.yaml into its own Kustomize directory; omitting this
+                # source would make that exact-file copy fail.
+                "secrets/shared/",
+                "agentplane/crds/manifests/",
+                "cluster/charts/browsertrix/",
+                "loom/wayback/deploy/",
+                "props/deploy/",
+                f"{TF_GITOPS_ROOT}/",
+            ],
+            url=REPOSITORY_URL,
+        ),
     )
     # Only the two public control-plane CRDs in this namespace. In particular no access to
     # the controller-only SOPS key Secret, ConfigMaps, Pods, logs, exec, or writes.

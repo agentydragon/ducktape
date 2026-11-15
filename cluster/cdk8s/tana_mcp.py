@@ -19,7 +19,12 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
-from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
+from prometheus_operator_crds.com.coreos.monitoring import (
+    ServiceMonitor,
+    ServiceMonitorSpec,
+    ServiceMonitorSpecSelector,
+)
+from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import external_creds, namespaces, node_scheduling
@@ -31,8 +36,8 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.mcp_oauth_state import CONSUMER_SECRET, TANA, add_consumer_credentials
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
-from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
-from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
@@ -377,58 +382,62 @@ def _facade(chart: Chart) -> None:
         chart,
         "facade-servicemonitor",
         metadata=ApiObjectMetadata(name=_FACADE_HTTP.name, namespace=_NAMESPACE),
-        selector=ServiceMonitorSpecSelector(match_labels=_FACADE_HTTP.labels),
-        endpoints=[Endpoint.plain(port=_FACADE_METRICS.port.name, scrape_timeout="10s")],
+        spec=ServiceMonitorSpec(
+            selector=ServiceMonitorSpecSelector(match_labels=_FACADE_HTTP.labels),
+            endpoints=[Endpoint.plain(port=_FACADE_METRICS.port.name, scrape_timeout="10s")],
+        ),
     )
     PrometheusRule(
         chart,
         "facade-prometheusrule",
         metadata=ApiObjectMetadata(name=_FACADE_HTTP.name, namespace=_NAMESPACE),
-        groups=[
-            group(
-                _FACADE,
-                [
-                    # The facade can be "up" (process healthy) while serving zero tools
-                    # because the upstream Tana MCP rejects the server-held PAT. These
-                    # alerts fire on that condition — the recurring failure that silently
-                    # leaves claude.ai with no Tana tools.
-                    Rule.alert(
-                        "TanaMcpFacadeUpstreamDown",
-                        "mcp_facade_upstream_up == 0",
-                        for_="5m",
-                        labels={"severity": "warning"},
-                        summary="MCP facade {{ $labels.facade }} cannot reach its upstream",
-                        description=(
-                            "The upstream tools/list probe for facade {{ $labels.facade }} has been failing for >5m. Clients see no "
-                            "tools. For Tana this usually means the desktop renderer is rejecting the PAT (validateToken); check the "
-                            "firebase-resigner logs and the tana-mcp pod sign-in.\n"
+        spec=PrometheusRuleSpec(
+            groups=[
+                group(
+                    _FACADE,
+                    [
+                        # The facade can be "up" (process healthy) while serving zero tools
+                        # because the upstream Tana MCP rejects the server-held PAT. These
+                        # alerts fire on that condition — the recurring failure that silently
+                        # leaves claude.ai with no Tana tools.
+                        Rule.alert(
+                            "TanaMcpFacadeUpstreamDown",
+                            "mcp_facade_upstream_up == 0",
+                            for_="5m",
+                            labels={"severity": "warning"},
+                            summary="MCP facade {{ $labels.facade }} cannot reach its upstream",
+                            description=(
+                                "The upstream tools/list probe for facade {{ $labels.facade }} has been failing for >5m. Clients see no "
+                                "tools. For Tana this usually means the desktop renderer is rejecting the PAT (validateToken); check the "
+                                "firebase-resigner logs and the tana-mcp pod sign-in.\n"
+                            ),
                         ),
-                    ),
-                    Rule.alert(
-                        "TanaMcpFacadeNoTools",
-                        "mcp_facade_upstream_up == 1 and mcp_facade_upstream_tools == 0",
-                        for_="5m",
-                        labels={"severity": "warning"},
-                        summary="MCP facade {{ $labels.facade }} reachable but exposes zero tools",
-                        description=(
-                            "Facade {{ $labels.facade }} reached its upstream but it advertised no tools for >5m. The upstream MCP "
-                            "server is up but empty.\n"
+                        Rule.alert(
+                            "TanaMcpFacadeNoTools",
+                            "mcp_facade_upstream_up == 1 and mcp_facade_upstream_tools == 0",
+                            for_="5m",
+                            labels={"severity": "warning"},
+                            summary="MCP facade {{ $labels.facade }} reachable but exposes zero tools",
+                            description=(
+                                "Facade {{ $labels.facade }} reached its upstream but it advertised no tools for >5m. The upstream MCP "
+                                "server is up but empty.\n"
+                            ),
                         ),
-                    ),
-                    Rule.alert(
-                        "TanaMcpFacadeProbeStale",
-                        "time() - mcp_facade_upstream_last_success_timestamp_seconds > 600",
-                        for_="5m",
-                        labels={"severity": "warning"},
-                        summary="MCP facade {{ $labels.facade }} has no recent successful probe",
-                        description=(
-                            "No successful upstream probe for facade {{ $labels.facade }} in >10m (probe loop wedged or upstream "
-                            "persistently failing).\n"
+                        Rule.alert(
+                            "TanaMcpFacadeProbeStale",
+                            "time() - mcp_facade_upstream_last_success_timestamp_seconds > 600",
+                            for_="5m",
+                            labels={"severity": "warning"},
+                            summary="MCP facade {{ $labels.facade }} has no recent successful probe",
+                            description=(
+                                "No successful upstream probe for facade {{ $labels.facade }} in >10m (probe loop wedged or upstream "
+                                "persistently failing).\n"
+                            ),
                         ),
-                    ),
-                ],
-            )
-        ],
+                    ],
+                )
+            ]
+        ),
     )
 
 

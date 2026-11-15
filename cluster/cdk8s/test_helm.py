@@ -7,10 +7,10 @@ import pytest
 import pytest_bazel
 from cdk8s import ApiObjectMetadata, Chart, Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from constructs import Construct
+from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepository, GitRepositorySpec
 from flux_source.io.fluxcd.toolkit.source import HelmRepository
 
 from cluster.cdk8s.helm import helm_release, https_helm_repository
-from cluster.cdk8s.providers.flux.git_repository import GitRepository
 
 
 def _helm_repository(scope: Construct) -> HelmRepository:
@@ -22,8 +22,7 @@ def _git_repository(scope: Construct) -> GitRepository:
         scope,
         "source",
         metadata=ApiObjectMetadata(name="test-source", namespace="test-namespace"),
-        url="https://git.test.invalid/test-chart.git",
-        interval="1h",
+        spec=GitRepositorySpec(url="https://git.test.invalid/test-chart.git", interval="1h"),
     )
 
 

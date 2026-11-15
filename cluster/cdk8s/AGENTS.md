@@ -308,8 +308,10 @@ dict fails only at apply, if at all. Tiers, in order:
    — never a ducktape namespace, secret name, hostname, topology fact, or one caller's use
    of a field the schema leaves untyped (a freeform `metadata: map[string]string`); those
    stay in the ducktape module, passed as parameters (`haku_ci/runner.py` owns its KEDA
-   `forgejo-runner` scaler `metadata`, agentydragon/ducktape#7952). Wrapper design: the
-   `cdk8s_builders` skill.
+   `forgejo-runner` scaler `metadata`, agentydragon/ducktape#7952). Use the generated resource
+   and spec directly unless a helper adds validation, policy defaults, references, typed
+   variants, or coordinated construction; forwarding spec fields alone adds no value.
+   Wrapper design: the `cdk8s_builders` skill.
 
 Check `dir(...)` on the tier before going raw; if inconclusive, grep a clone of
 `https://github.com/cdk8s-team/cdk8s-plus` — `src/*.ts` (tier 1) or `src/imports/k8s.ts`

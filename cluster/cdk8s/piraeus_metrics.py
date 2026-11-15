@@ -7,13 +7,18 @@ import re
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ConfigMap, k8s
 from constructs import Construct
-from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
+from prometheus_operator_crds.com.coreos.monitoring import (
+    ServiceMonitor,
+    ServiceMonitorSpec,
+    ServiceMonitorSpecSelector,
+)
+from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
-from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
-from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 
 _NAME = "piraeus-lvm-metrics"
 _METRICS_PORT_NAME = "metrics"
@@ -203,8 +208,10 @@ def add_thin_pool_monitoring(
         scope,
         "service-monitor",
         metadata=ApiObjectMetadata(name=name, namespace=namespace),
-        selector=ServiceMonitorSpecSelector(match_labels=pod_labels),
-        endpoints=[Endpoint.plain(port=_METRICS_PORT_NAME)],
+        spec=ServiceMonitorSpec(
+            selector=ServiceMonitorSpecSelector(match_labels=pod_labels),
+            endpoints=[Endpoint.plain(port=_METRICS_PORT_NAME)],
+        ),
     )
 
     labels = f'namespace="{namespace}",service="{name}",vg="{volume_group}",pool="{thin_pool}"'
@@ -221,77 +228,79 @@ def add_thin_pool_monitoring(
         scope,
         "prometheus-rule",
         metadata=ApiObjectMetadata(name=name, namespace=namespace),
-        groups=[
-            group(
-                name,
-                [
-                    Rule.alert(
-                        "PiraeusThinPoolDataUsageWarning",
-                        f"(lvm_thin_pool_data_percent{{{labels}}} >= 80) and (lvm_thin_pool_data_percent{{{labels}}} < 90)",
-                        for_="2m",
-                        labels={"severity": "warning"},
-                        summary="Piraeus thin-pool data usage is high",
-                        description=f"Thin-pool {volume_group}/{thin_pool} data usage has been at least 80% for 2 minutes.",
-                    ),
-                    Rule.alert(
-                        "PiraeusThinPoolDataUsageCritical",
-                        f"lvm_thin_pool_data_percent{{{labels}}} >= 90",
-                        for_="2m",
-                        labels={"severity": "critical"},
-                        summary="Piraeus thin-pool data usage is critical",
-                        description=f"Thin-pool {volume_group}/{thin_pool} data usage has been at least 90% for 2 minutes.",
-                    ),
-                    Rule.alert(
-                        "PiraeusThinPoolMetadataUsageWarning",
-                        f"(lvm_thin_pool_metadata_percent{{{labels}}} >= 70) and (lvm_thin_pool_metadata_percent{{{labels}}} < 85)",
-                        for_="2m",
-                        labels={"severity": "warning"},
-                        summary="Piraeus thin-pool metadata usage is high",
-                        description=f"Thin-pool {volume_group}/{thin_pool} metadata usage has been at least 70% for 2 minutes.",
-                    ),
-                    Rule.alert(
-                        "PiraeusThinPoolMetadataUsageCritical",
-                        f"lvm_thin_pool_metadata_percent{{{labels}}} >= 85",
-                        for_="2m",
-                        labels={"severity": "critical"},
-                        summary="Piraeus thin-pool metadata usage is critical",
-                        description=f"Thin-pool {volume_group}/{thin_pool} metadata usage has been at least 85% for 2 minutes.",
-                    ),
-                    Rule.alert(
-                        "PiraeusThinPoolCollectorFailed",
-                        f"lvm_thin_pool_collector_success{{{labels}}} == 0",
-                        for_="2m",
-                        labels={"severity": "warning"},
-                        summary="Piraeus thin-pool metrics collection is failing",
-                        description=f"Reporting lvs has not returned both usage fields for {volume_group}/{thin_pool} for 2 minutes.",
-                    ),
-                    Rule.alert(
-                        "PiraeusThinPoolCollectorStale",
-                        "("
-                        + " or ".join(
-                            [
-                                f"time() - lvm_thin_pool_collector_last_success_timestamp_seconds{{{labels}}} > 90",
-                                f"absent(lvm_thin_pool_collector_last_success_timestamp_seconds{{{labels}}})",
-                                f'time() - node_textfile_mtime_seconds{{{target},file="{_TEXTFILE_PATH}"}} > 90',
-                            ]
-                        )
-                        + f") and on(namespace) ({expected})",
-                        for_="2m",
-                        labels={"severity": "warning"},
-                        summary="Piraeus thin-pool metrics are stale",
-                        description=(
-                            f"The last successful sample or textfile update for {volume_group}/{thin_pool} is missing or older than 90 seconds."
+        spec=PrometheusRuleSpec(
+            groups=[
+                group(
+                    name,
+                    [
+                        Rule.alert(
+                            "PiraeusThinPoolDataUsageWarning",
+                            f"(lvm_thin_pool_data_percent{{{labels}}} >= 80) and (lvm_thin_pool_data_percent{{{labels}}} < 90)",
+                            for_="2m",
+                            labels={"severity": "warning"},
+                            summary="Piraeus thin-pool data usage is high",
+                            description=f"Thin-pool {volume_group}/{thin_pool} data usage has been at least 80% for 2 minutes.",
                         ),
-                    ),
-                    Rule.alert(
-                        "PiraeusThinPoolScrapeMissing",
-                        f"((up{{{target}}} == 0) or absent(up{{{target}}})) and on(namespace) ({expected})",
-                        for_="2m",
-                        labels={"severity": "warning"},
-                        summary="Piraeus thin-pool exporter is not being scraped",
-                        description="Alloy has not scraped the Piraeus thin-pool exporter successfully for 2 minutes.",
-                    ),
-                ],
-            )
-        ],
+                        Rule.alert(
+                            "PiraeusThinPoolDataUsageCritical",
+                            f"lvm_thin_pool_data_percent{{{labels}}} >= 90",
+                            for_="2m",
+                            labels={"severity": "critical"},
+                            summary="Piraeus thin-pool data usage is critical",
+                            description=f"Thin-pool {volume_group}/{thin_pool} data usage has been at least 90% for 2 minutes.",
+                        ),
+                        Rule.alert(
+                            "PiraeusThinPoolMetadataUsageWarning",
+                            f"(lvm_thin_pool_metadata_percent{{{labels}}} >= 70) and (lvm_thin_pool_metadata_percent{{{labels}}} < 85)",
+                            for_="2m",
+                            labels={"severity": "warning"},
+                            summary="Piraeus thin-pool metadata usage is high",
+                            description=f"Thin-pool {volume_group}/{thin_pool} metadata usage has been at least 70% for 2 minutes.",
+                        ),
+                        Rule.alert(
+                            "PiraeusThinPoolMetadataUsageCritical",
+                            f"lvm_thin_pool_metadata_percent{{{labels}}} >= 85",
+                            for_="2m",
+                            labels={"severity": "critical"},
+                            summary="Piraeus thin-pool metadata usage is critical",
+                            description=f"Thin-pool {volume_group}/{thin_pool} metadata usage has been at least 85% for 2 minutes.",
+                        ),
+                        Rule.alert(
+                            "PiraeusThinPoolCollectorFailed",
+                            f"lvm_thin_pool_collector_success{{{labels}}} == 0",
+                            for_="2m",
+                            labels={"severity": "warning"},
+                            summary="Piraeus thin-pool metrics collection is failing",
+                            description=f"Reporting lvs has not returned both usage fields for {volume_group}/{thin_pool} for 2 minutes.",
+                        ),
+                        Rule.alert(
+                            "PiraeusThinPoolCollectorStale",
+                            "("
+                            + " or ".join(
+                                [
+                                    f"time() - lvm_thin_pool_collector_last_success_timestamp_seconds{{{labels}}} > 90",
+                                    f"absent(lvm_thin_pool_collector_last_success_timestamp_seconds{{{labels}}})",
+                                    f'time() - node_textfile_mtime_seconds{{{target},file="{_TEXTFILE_PATH}"}} > 90',
+                                ]
+                            )
+                            + f") and on(namespace) ({expected})",
+                            for_="2m",
+                            labels={"severity": "warning"},
+                            summary="Piraeus thin-pool metrics are stale",
+                            description=(
+                                f"The last successful sample or textfile update for {volume_group}/{thin_pool} is missing or older than 90 seconds."
+                            ),
+                        ),
+                        Rule.alert(
+                            "PiraeusThinPoolScrapeMissing",
+                            f"((up{{{target}}} == 0) or absent(up{{{target}}})) and on(namespace) ({expected})",
+                            for_="2m",
+                            labels={"severity": "warning"},
+                            summary="Piraeus thin-pool exporter is not being scraped",
+                            description="Alloy has not scraped the Piraeus thin-pool exporter successfully for 2 minutes.",
+                        ),
+                    ],
+                )
+            ]
+        ),
     )

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from cert_manager_crds.io.cert_manager import CertificateSpecIssuerRef
+from cert_manager_crds.io.cert_manager import Certificate, CertificateSpec, CertificateSpecIssuerRef
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngress,
     CiliumNetworkPolicySpecIngressFromEntities,
@@ -27,7 +27,6 @@ from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.haku import namespace
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.cert_manager.certificate import Certificate
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import (
     ClusterExternalSecret,
@@ -430,9 +429,11 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        secret_name=_TLS_SECRET,
-        dns_names=["mx.allegedly.works"],
-        issuer_ref=CertificateSpecIssuerRef(name=LETSENCRYPT_ISSUER, kind="ClusterIssuer"),
+        spec=CertificateSpec(
+            secret_name=_TLS_SECRET,
+            dns_names=["mx.allegedly.works"],
+            issuer_ref=CertificateSpecIssuerRef(name=LETSENCRYPT_ISSUER, kind="ClusterIssuer"),
+        ),
     )
     _add_deployment(chart)
     _add_services(chart)

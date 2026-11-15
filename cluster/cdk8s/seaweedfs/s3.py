@@ -27,21 +27,27 @@ from cdk8s import ApiObjectMetadata
 from constructs import Construct
 from seaweed_bucket_crds.com.seaweedfs.seaweed import BucketSpecAccess, BucketSpecClusterRef, BucketSpecReclaimPolicy
 from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
+    ResourceReferenceGrant,
+    ResourceReferenceGrantSpec,
     ResourceReferenceGrantSpecFrom,
     ResourceReferenceGrantSpecTo,
 )
 from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
+    S3Credentials,
+    S3CredentialsSpec,
     S3CredentialsSpecIdentityRef,
     S3CredentialsSpecReclaimPolicy,
     S3CredentialsSpecSeaweedRef,
     S3CredentialsSpecSecretRef,
 )
-from seaweed_s3identity_crds.com.seaweedfs.seaweed import S3IdentitySpecReclaimPolicy, S3IdentitySpecSeaweedRef
+from seaweed_s3identity_crds.com.seaweedfs.seaweed import (
+    S3Identity,
+    S3IdentitySpec,
+    S3IdentitySpecReclaimPolicy,
+    S3IdentitySpecSeaweedRef,
+)
 
 from cluster.cdk8s.providers.seaweedfs.bucket import Bucket, BucketAccess
-from cluster.cdk8s.providers.seaweedfs.resource_reference_grant import ResourceReferenceGrant
-from cluster.cdk8s.providers.seaweedfs.s3_credentials import S3Credentials
-from cluster.cdk8s.providers.seaweedfs.s3_identity import S3Identity
 
 # Aliased: the functions' own `namespace` parameter is the tenant's.
 from cluster.cdk8s.seaweedfs import cluster, namespace as seaweedfs_namespace
@@ -118,8 +124,10 @@ def identity(
         scope,
         id,
         metadata=ApiObjectMetadata(name=name, namespace=_tenant(namespace), annotations=_description(description)),
-        seaweed_ref=S3IdentitySpecSeaweedRef(name=cluster.NAME, namespace=_seaweed_ref_namespace(namespace)),
-        reclaim_policy=reclaim_policy,
+        spec=S3IdentitySpec(
+            seaweed_ref=S3IdentitySpecSeaweedRef(name=cluster.NAME, namespace=_seaweed_ref_namespace(namespace)),
+            reclaim_policy=reclaim_policy,
+        ),
     )
 
 
@@ -144,15 +152,17 @@ def credentials(
         scope,
         id,
         metadata=ApiObjectMetadata(name=identity, namespace=_tenant(namespace), annotations=_description(description)),
-        seaweed_ref=S3CredentialsSpecSeaweedRef(name=cluster.NAME, namespace=_seaweed_ref_namespace(namespace)),
-        identity_ref=S3CredentialsSpecIdentityRef(name=identity),
-        secret_ref=S3CredentialsSpecSecretRef(
-            name=secret,
-            namespace=secret_namespace,
-            access_key_field=key_fields.access_key if key_fields else None,
-            secret_key_field=key_fields.secret_key if key_fields else None,
+        spec=S3CredentialsSpec(
+            seaweed_ref=S3CredentialsSpecSeaweedRef(name=cluster.NAME, namespace=_seaweed_ref_namespace(namespace)),
+            identity_ref=S3CredentialsSpecIdentityRef(name=identity),
+            secret_ref=S3CredentialsSpecSecretRef(
+                name=secret,
+                namespace=secret_namespace,
+                access_key_field=key_fields.access_key if key_fields else None,
+                secret_key_field=key_fields.secret_key if key_fields else None,
+            ),
+            reclaim_policy=reclaim_policy,
         ),
-        reclaim_policy=reclaim_policy,
     )
 
 
@@ -162,12 +172,14 @@ def secret_grant(scope: Construct, *, secret: str, namespace: str) -> ResourceRe
         scope,
         f"secret-grant-{namespace}-{secret}",
         metadata=ApiObjectMetadata(name=secret, namespace=namespace),
-        from_=[
-            ResourceReferenceGrantSpecFrom(
-                group=cluster.GROUP, kind="S3Credentials", namespace=seaweedfs_namespace.NAME
-            )
-        ],
-        to=[ResourceReferenceGrantSpecTo(group="", kind="Secret", name=secret)],
+        spec=ResourceReferenceGrantSpec(
+            from_=[
+                ResourceReferenceGrantSpecFrom(
+                    group=cluster.GROUP, kind="S3Credentials", namespace=seaweedfs_namespace.NAME
+                )
+            ],
+            to=[ResourceReferenceGrantSpecTo(group="", kind="Secret", name=secret)],
+        ),
     )
 
 

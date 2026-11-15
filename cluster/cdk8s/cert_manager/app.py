@@ -7,7 +7,11 @@ ServiceMonitors for the controller and webhook metrics Services the chart create
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
+from prometheus_operator_crds.com.coreos.monitoring import (
+    ServiceMonitor,
+    ServiceMonitorSpec,
+    ServiceMonitorSpecSelector,
+)
 
 from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
@@ -15,7 +19,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository_source_ref, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "cert-manager"
@@ -106,8 +110,10 @@ def _service_monitor(chart: Chart, name: str, service: ServiceRef) -> None:
         chart,
         name,
         metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
-        selector=ServiceMonitorSpecSelector(match_labels=service.labels),
-        endpoints=[Endpoint.plain(port=service.port.name)],
+        spec=ServiceMonitorSpec(
+            selector=ServiceMonitorSpecSelector(match_labels=service.labels),
+            endpoints=[Endpoint.plain(port=service.port.name)],
+        ),
     )
 
 

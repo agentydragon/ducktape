@@ -16,6 +16,8 @@ from pathlib import Path
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cert_manager_crds.io.cert_manager import (
+    Certificate,
+    CertificateSpec,
     CertificateSpecIssuerRef,
     CertificateSpecPrivateKeyRotationPolicy,
     CertificateSpecUsages,
@@ -28,6 +30,8 @@ from cilium_crds.io.cilium import (
 )
 from constructs import Construct
 from gateway_api_gateway_crds.io.k8s.networking.gateway import (
+    Gateway,
+    GatewaySpec,
     GatewaySpecListeners,
     GatewaySpecListenersAllowedRoutes,
     GatewaySpecListenersAllowedRoutesNamespaces,
@@ -42,7 +46,8 @@ from gateway_api_tlsroute_crds.io.k8s.networking.gateway import (
     TlsRouteSpecRules,
     TlsRouteSpecRulesBackendRefs,
 )
-from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
+from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitor, PodMonitorSpec, PodMonitorSpecSelector
+from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 
 from cluster.cdk8s import cilium, namespaces
 from cluster.cdk8s.cert_manager.cluster_ca import LONG_LIVED_CA
@@ -52,11 +57,10 @@ from cluster.cdk8s.gateway import GATEWAY_CLASS
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
+from cluster.cdk8s.providers.cert_manager.certificate import CertificatePrivateKey
 from cluster.cdk8s.providers.cilium.network_policy import Entity, IngressRule, NetworkPolicy
-from cluster.cdk8s.providers.gateway_api.gateway import Gateway
-from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
-from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
+from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint
+from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _IDENTITY_DIR = f"{HAND_WRITTEN_ROOT}/github-api-proxy/identity"
@@ -138,11 +142,15 @@ def _certificates(scope: Construct) -> None:
         scope,
         "server",
         metadata=ApiObjectMetadata(name="github-api-proxy-server", namespace=_NAMESPACE),
-        secret_name=_SERVER_TLS_SECRET,
-        dns_names=[_HOSTNAME],
-        private_key=CertificatePrivateKey.ecdsa_p256(rotation_policy=CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
-        usages=[CertificateSpecUsages.SERVER_AUTH],
-        issuer_ref=CertificateSpecIssuerRef(name=LETSENCRYPT_ISSUER, kind="ClusterIssuer"),
+        spec=CertificateSpec(
+            secret_name=_SERVER_TLS_SECRET,
+            dns_names=[_HOSTNAME],
+            private_key=CertificatePrivateKey.ecdsa_p256(
+                rotation_policy=CertificateSpecPrivateKeyRotationPolicy.ALWAYS
+            ),
+            usages=[CertificateSpecUsages.SERVER_AUTH],
+            issuer_ref=CertificateSpecIssuerRef(name=LETSENCRYPT_ISSUER, kind="ClusterIssuer"),
+        ),
     )
     Certificate(
         scope,
@@ -157,14 +165,16 @@ def _certificates(scope: Construct) -> None:
                 )
             },
         ),
-        is_ca=True,
-        common_name="ducktape-github-api-proxy-interception-ca",
-        secret_name=_INTERCEPTION_CA,
-        **LONG_LIVED_CA,
-        # A signing-key rotation requires an explicit client trust migration.
-        private_key=CertificatePrivateKey.ecdsa_p256(rotation_policy=CertificateSpecPrivateKeyRotationPolicy.NEVER),
-        usages=[CertificateSpecUsages.CERT_SIGN, CertificateSpecUsages.CRL_SIGN],
-        issuer_ref=CertificateSpecIssuerRef(name="cluster-ca-bootstrap", kind="ClusterIssuer"),
+        spec=CertificateSpec(
+            is_ca=True,
+            common_name="ducktape-github-api-proxy-interception-ca",
+            secret_name=_INTERCEPTION_CA,
+            **LONG_LIVED_CA,
+            # A signing-key rotation requires an explicit client trust migration.
+            private_key=CertificatePrivateKey.ecdsa_p256(rotation_policy=CertificateSpecPrivateKeyRotationPolicy.NEVER),
+            usages=[CertificateSpecUsages.CERT_SIGN, CertificateSpecUsages.CRL_SIGN],
+            issuer_ref=CertificateSpecIssuerRef(name="cluster-ca-bootstrap", kind="ClusterIssuer"),
+        ),
     )
 
 
@@ -381,21 +391,23 @@ def _gateway(scope: Construct) -> None:
                 )
             },
         ),
-        gateway_class_name=GATEWAY_CLASS,
-        listeners=[
-            GatewaySpecListeners(
-                name=_TLS_LISTENER,
-                hostname=_HOSTNAME,
-                port=8443,
-                protocol="TLS",
-                tls=GatewaySpecListenersTls(mode=GatewaySpecListenersTlsMode.PASSTHROUGH),
-                allowed_routes=GatewaySpecListenersAllowedRoutes(
-                    namespaces=GatewaySpecListenersAllowedRoutesNamespaces(
-                        from_=GatewaySpecListenersAllowedRoutesNamespacesFrom.SAME
-                    )
-                ),
-            )
-        ],
+        spec=GatewaySpec(
+            gateway_class_name=GATEWAY_CLASS,
+            listeners=[
+                GatewaySpecListeners(
+                    name=_TLS_LISTENER,
+                    hostname=_HOSTNAME,
+                    port=8443,
+                    protocol="TLS",
+                    tls=GatewaySpecListenersTls(mode=GatewaySpecListenersTlsMode.PASSTHROUGH),
+                    allowed_routes=GatewaySpecListenersAllowedRoutes(
+                        namespaces=GatewaySpecListenersAllowedRoutesNamespaces(
+                            from_=GatewaySpecListenersAllowedRoutesNamespacesFrom.SAME
+                        )
+                    ),
+                )
+            ],
+        ),
     )
     TlsRoute(
         scope,
@@ -418,14 +430,16 @@ def _monitoring(scope: Construct) -> None:
         scope,
         "pod-monitor",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        selector=PodMonitorSpecSelector(match_labels=_SERVICE.pods.selector),
-        pod_metrics_endpoints=[Endpoint.plain(port=_METRICS.name, scrape_timeout="10s")],
+        spec=PodMonitorSpec(
+            selector=PodMonitorSpecSelector(match_labels=_SERVICE.pods.selector),
+            pod_metrics_endpoints=[Endpoint.plain(port=_METRICS.name, scrape_timeout="10s")],
+        ),
     )
     PrometheusRule(
         scope,
         "prometheus-rule",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        groups=[group(_NAME, _RULES)],
+        spec=PrometheusRuleSpec(groups=[group(_NAME, _RULES)]),
     )
 
 

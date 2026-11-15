@@ -33,6 +33,16 @@
 # gazelle:resolve py tofu_controller //cluster/cdk8s/providers/tofu_controller:terraform
 # gazelle:resolve py volsync_replicationsource_crds //cluster/cdk8s/providers/volsync:replicationsource
 
+# gazelle:resolve py cilium_clusterwide_crds //cluster/cdk8s/providers/cilium:ciliumclusterwidenetworkpolicy
+# gazelle:resolve py flux_alert_crds //cluster/cdk8s/providers/flux:alert
+# gazelle:resolve py flux_gitrepository_crds //cluster/cdk8s/providers/flux:gitrepository
+# gazelle:resolve py flux_imagerepository_crds //cluster/cdk8s/providers/flux:imagerepository
+# gazelle:resolve py flux_imageupdateautomation_crds //cluster/cdk8s/providers/flux:imageupdateautomation
+# gazelle:resolve py flux_provider_crds //cluster/cdk8s/providers/flux:provider
+# gazelle:resolve py flux_receiver_crds //cluster/cdk8s/providers/flux:receiver
+# gazelle:resolve py gateway_api_gateway_crds //cluster/cdk8s/providers/gateway_api:gateway
+# gazelle:resolve py kubevirt_virtualmachine_crds //cluster/cdk8s/providers/kubevirt:virtualmachine
+# gazelle:resolve py kubevirt_virtualmachinepool_crds //cluster/cdk8s/providers/kubevirt:virtualmachinepool
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package_group(
@@ -88,9 +98,9 @@ py_library(
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/keda:scaledobject",
-        "//cluster/cdk8s/providers/kubevirt:virtual_machine_pool",
         "//cluster/cdk8s/providers/kubevirt:virtualmachinepool",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
+        "//cluster/cdk8s/providers/prometheus_operator:prometheusrule",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",
@@ -176,8 +186,8 @@ py_library(
         "//cluster/cdk8s/external_secrets:kubernetes_store",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/providers/cnpg:cluster",
-        "//cluster/cdk8s/providers/cnpg:cnpg_database",
         "//cluster/cdk8s/providers/cnpg:database",
+        "//cluster/cdk8s/providers/external_secrets:clustersecretstore",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/flux:kustomization",
@@ -259,7 +269,7 @@ py_library(
     srcs = ["helm.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        "//cluster/cdk8s/providers/flux:git_repository",
+        "//cluster/cdk8s/providers/flux:gitrepository",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:helmrepository",
         "@pypi//cdk8s",
@@ -276,7 +286,7 @@ py_test(
         ":conftest",
         ":helm",
         "//:conftest",
-        "//cluster/cdk8s/providers/flux:git_repository",
+        "//cluster/cdk8s/providers/flux:gitrepository",
         "//cluster/cdk8s/providers/flux:helmrepository",
         "@pypi//cdk8s",
         "@pypi//constructs",
@@ -467,7 +477,6 @@ py_library(
         ":service_ref",
         "//cluster/cdk8s/providers/cilium:ciliumclusterwidenetworkpolicy",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
-        "//cluster/cdk8s/providers/cilium:clusterwide_network_policy",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "@pypi//cdk8s",
         "@pypi//constructs",
@@ -600,7 +609,7 @@ py_library(
         ":pod_policy",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/cilium:network_policy",
-        "//cluster/cdk8s/providers/kubevirt:virtual_machine",
+        "//cluster/cdk8s/providers/kubevirt:virtualmachine",
         "//cluster/controllers/vm_image_restart:settings",
         "//util:settings_contract",
         "@pypi//cdk8s",
@@ -621,7 +630,6 @@ py_library(
         ":service_ref",
         "//cluster/cdk8s/cert_manager:config",
         "//cluster/cdk8s/providers/gateway_api:gateway",
-        "//cluster/cdk8s/providers/gateway_api:gateway_api_gateway",
         "//cluster/cdk8s/providers/gateway_api:http_route",
         "//cluster/cdk8s/providers/gateway_api:httproute",
         "//cluster/cdk8s/providers/gateway_api:listener",
@@ -638,7 +646,6 @@ py_library(
         ":flux",
         ":generation",
         ":manifest_roots",
-        "//cluster/cdk8s/providers/flux:git_repository",
         "//cluster/cdk8s/providers/flux:gitrepository",
         "@pypi//cdk8s",
     ],
@@ -675,7 +682,6 @@ py_library(
         ":manifest_roots",
         ":namespaces",
         "//cluster/cdk8s/forgejo:secret_copy",
-        "//cluster/cdk8s/providers/flux:git_repository",
         "//cluster/cdk8s/providers/flux:gitrepository",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -1038,8 +1044,10 @@ py_library(
         ":service_ref",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
+        "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
+        "//cluster/cdk8s/providers/prometheus_operator:prometheusrule",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
@@ -1059,7 +1067,6 @@ py_library(
         ":secret_ref",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/cdk8s/providers/tofu_controller:terraform",
-        "//cluster/cdk8s/providers/tofu_controller:tofu_controller_terraform",
         "//cluster/cdk8s/tofu_state:db",
         "@pypi//cdk8s",
         "@pypi//constructs",
@@ -1097,12 +1104,10 @@ py_library(
     srcs = ["image_automation.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        "//cluster/cdk8s/providers/flux:git_repository",
         "//cluster/cdk8s/providers/flux:gitrepository",
         "//cluster/cdk8s/providers/flux:image_policy",
-        "//cluster/cdk8s/providers/flux:image_repository",
-        "//cluster/cdk8s/providers/flux:image_update_automation",
         "//cluster/cdk8s/providers/flux:imagepolicy",
+        "//cluster/cdk8s/providers/flux:imagerepository",
         "//cluster/cdk8s/providers/flux:imageupdateautomation",
         "@pypi//cdk8s",
         "@pypi//constructs",
@@ -1458,6 +1463,7 @@ py_library(
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
+        "//cluster/cdk8s/providers/prometheus_operator:prometheusrule",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -1827,9 +1833,9 @@ py_library(
         "//cluster/cdk8s/kubevirt:virtual_machine",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",
-        "//cluster/cdk8s/providers/kubevirt:virtual_machine",
         "//cluster/cdk8s/providers/kubevirt:virtualmachine",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
+        "//cluster/cdk8s/providers/prometheus_operator:prometheusrule",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",
@@ -1932,7 +1938,6 @@ py_library(
         ":manifest_roots",
         ":namespaces",
         ":node_scheduling",
-        "//cluster/cdk8s/providers/flux:git_repository",
         "//cluster/cdk8s/providers/flux:gitrepository",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "@pypi//cdk8s",
@@ -1952,7 +1957,7 @@ py_library(
         ":manifest_roots",
         ":terraform",
         "//cluster/cdk8s/providers/flux:helmrelease",
-        "//cluster/cdk8s/providers/flux:image_repository",
+        "//cluster/cdk8s/providers/flux:imagerepository",
         "@pypi//cdk8s",
         "@rules_python//python/runfiles",
     ],
@@ -2073,6 +2078,7 @@ py_library(
         ":node_scheduling",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
+        "//cluster/cdk8s/providers/prometheus_operator:prometheusrule",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",

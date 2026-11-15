@@ -1,5 +1,10 @@
 # gazelle:ignore
 
+# gazelle:resolve py prometheus_operator_crds //cluster/cdk8s/providers/prometheus_operator:servicemonitor
+# gazelle:resolve py prometheus_operator_prometheusrule_crds //cluster/cdk8s/providers/prometheus_operator:prometheusrule
+# gazelle:resolve py seaweed_resourcereferencegrant_crds //cluster/cdk8s/providers/seaweedfs:resourcereferencegrant
+# gazelle:resolve py seaweed_s3credentials_crds //cluster/cdk8s/providers/seaweedfs:s3credentials
+# gazelle:resolve py seaweed_s3identity_crds //cluster/cdk8s/providers/seaweedfs:s3identity
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
@@ -34,7 +39,6 @@ py_library(
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:stateful_infra",
         "//cluster/cdk8s/providers/seaweedfs:adminscript",
-        "//cluster/cdk8s/providers/seaweedfs:resource_reference_grant",
         "//cluster/cdk8s/providers/seaweedfs:resourcereferencegrant",
         "//cluster/cdk8s/providers/seaweedfs:seaweed",
         "//cluster/cdk8s/seaweedfs:filer_db",
@@ -90,6 +94,7 @@ py_library(
         ":cluster",
         ":public_s3",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
+        "//cluster/cdk8s/providers/prometheus_operator:prometheusrule",
         "//cluster/cdk8s/seaweedfs:namespace",
         "@pypi//cdk8s",
         "@rules_python//python/runfiles",
@@ -200,10 +205,7 @@ py_library(
     deps = [
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s/providers/seaweedfs:bucket",
-        "//cluster/cdk8s/providers/seaweedfs:resource_reference_grant",
         "//cluster/cdk8s/providers/seaweedfs:resourcereferencegrant",
-        "//cluster/cdk8s/providers/seaweedfs:s3_credentials",
-        "//cluster/cdk8s/providers/seaweedfs:s3_identity",
         "//cluster/cdk8s/providers/seaweedfs:s3credentials",
         "//cluster/cdk8s/providers/seaweedfs:s3identity",
         "//cluster/cdk8s/providers/seaweedfs:seaweedfs_bucket",

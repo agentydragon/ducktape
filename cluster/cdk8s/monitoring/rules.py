@@ -5,9 +5,10 @@ from __future__ import annotations
 from textwrap import dedent
 
 from cdk8s import ApiObjectMetadata, App, Chart
+from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 from python.runfiles import Runfiles
 
-from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
+from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 
 NAME = "monitoring-rules"
 _PROMQL_DIR = Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/monitoring"
@@ -540,57 +541,59 @@ def chart(app: App) -> Chart:
         chart,
         "control-plane-io-alerts",
         metadata=ApiObjectMetadata(name="control-plane-io-alerts", namespace=NAMESPACE),
-        groups=[group("control-plane-io", _CONTROL_PLANE_IO)],
+        spec=PrometheusRuleSpec(groups=[group("control-plane-io", _CONTROL_PLANE_IO)]),
     )
     PrometheusRule(
         chart,
         "disk-usage-rules",
         metadata=ApiObjectMetadata(name="disk-usage-rules", namespace=NAMESPACE),
-        groups=[group("disk-usage", _DISK_USAGE), group("piraeus-storage", _PIRAEUS)],
+        spec=PrometheusRuleSpec(groups=[group("disk-usage", _DISK_USAGE), group("piraeus-storage", _PIRAEUS)]),
     )
     PrometheusRule(
         chart,
         "external-secrets-alerts",
         metadata=ApiObjectMetadata(name="external-secrets-alerts", namespace=NAMESPACE),
-        groups=[group("external-secrets", _EXTERNAL_SECRETS)],
+        spec=PrometheusRuleSpec(groups=[group("external-secrets", _EXTERNAL_SECRETS)]),
     )
     PrometheusRule(
         chart,
         "flux-alerts",
         metadata=ApiObjectMetadata(name="flux-alerts", namespace=NAMESPACE),
-        groups=[group("flux", _FLUX)],
+        spec=PrometheusRuleSpec(groups=[group("flux", _FLUX)]),
     )
     PrometheusRule(
         chart,
         "github-quota-alerts",
         metadata=ApiObjectMetadata(name="github-quota-alerts", namespace=NAMESPACE),
-        groups=[group("github-quota", _GITHUB_QUOTA)],
+        spec=PrometheusRuleSpec(groups=[group("github-quota", _GITHUB_QUOTA)]),
     )
     PrometheusRule(
         chart,
         "grocy-mcp-alerts",
         metadata=ApiObjectMetadata(name="grocy-mcp-alerts", namespace=NAMESPACE),
-        groups=[group("grocy-mcp", _GROCY_MCP)],
+        spec=PrometheusRuleSpec(groups=[group("grocy-mcp", _GROCY_MCP)]),
     )
     PrometheusRule(
         chart,
         "io-pressure-alerts",
         metadata=ApiObjectMetadata(name="io-pressure-alerts", namespace=NAMESPACE),
-        groups=[group("io-pressure", _IO_PRESSURE)],
+        spec=PrometheusRuleSpec(groups=[group("io-pressure", _IO_PRESSURE)]),
     )
     PrometheusRule(
         chart,
         "mcp-auth-alerts",
         metadata=ApiObjectMetadata(name="mcp-auth-alerts", namespace=NAMESPACE),
-        groups=[group("mcp-auth", _MCP_AUTH)],
+        spec=PrometheusRuleSpec(groups=[group("mcp-auth", _MCP_AUTH)]),
     )
     PrometheusRule(
         chart,
         "roaming-node-alerts",
         metadata=ApiObjectMetadata(name="roaming-node-alerts", namespace=NAMESPACE),
-        groups=[
-            group("roaming-node-alerts", _ROAMING_NODE),
-            group("roaming-node-workload-alerts", _ROAMING_NODE_WORKLOAD),
-        ],
+        spec=PrometheusRuleSpec(
+            groups=[
+                group("roaming-node-alerts", _ROAMING_NODE),
+                group("roaming-node-workload-alerts", _ROAMING_NODE_WORKLOAD),
+            ]
+        ),
     )
     return chart

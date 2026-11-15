@@ -24,13 +24,14 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeCrds,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
+from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 
 from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
+from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 
 NAME = "volsync"
 NAMESPACE = "volsync-system"
@@ -101,39 +102,41 @@ def chart(app: App) -> Chart:
         chart,
         "alerts",
         metadata=ApiObjectMetadata(name="volsync-alerts", namespace=NAMESPACE),
-        groups=[
-            group(
-                "volsync",
-                [
-                    # VolSync sets the gauge when a scheduled sync is still unfinished at its next
-                    # scheduled start, and clears it when a sync completes. Schedule-less objects
-                    # (rsync-tls destinations) never set it. A paused source keeps its last value,
-                    # so it is excluded via kube-state-metrics' spec.paused (monitoring/stack.py).
-                    Rule.alert(
-                        "VolSyncVolumeOutOfSync",
-                        dedent(
-                            """\
+        spec=PrometheusRuleSpec(
+            groups=[
+                group(
+                    "volsync",
+                    [
+                        # VolSync sets the gauge when a scheduled sync is still unfinished at its next
+                        # scheduled start, and clears it when a sync completes. Schedule-less objects
+                        # (rsync-tls destinations) never set it. A paused source keeps its last value,
+                        # so it is excluded via kube-state-metrics' spec.paused (monitoring/stack.py).
+                        Rule.alert(
+                            "VolSyncVolumeOutOfSync",
+                            dedent(
+                                """\
                             volsync_volume_out_of_sync == 1
                             unless on (obj_namespace, obj_name, role) (kube_customresource_volsync_replicationsource_paused == 1)
                             """
-                        ),
-                        for_="1h",
-                        labels={"severity": "warning"},
-                        summary=(
-                            "VolSync {{ $labels.role }} {{ $labels.obj_namespace }}/{{ $labels.obj_name }} "
-                            "missed its sync schedule"
-                        ),
-                        description=(
-                            "{{ $labels.method }} {{ $labels.role }} "
-                            "{{ $labels.obj_namespace }}/{{ $labels.obj_name }} has not completed a sync within its "
-                            "schedule interval. Check status.lastSyncTime and the mover pod logs; a restic mover "
-                            "failing with `repository is already locked` needs `restic unlock` once no mover is "
-                            "running."
-                        ),
-                    )
-                ],
-            )
-        ],
+                            ),
+                            for_="1h",
+                            labels={"severity": "warning"},
+                            summary=(
+                                "VolSync {{ $labels.role }} {{ $labels.obj_namespace }}/{{ $labels.obj_name }} "
+                                "missed its sync schedule"
+                            ),
+                            description=(
+                                "{{ $labels.method }} {{ $labels.role }} "
+                                "{{ $labels.obj_namespace }}/{{ $labels.obj_name }} has not completed a sync within its "
+                                "schedule interval. Check status.lastSyncTime and the mover pod logs; a restic mover "
+                                "failing with `repository is already locked` needs `restic unlock` once no mover is "
+                                "running."
+                            ),
+                        )
+                    ],
+                )
+            ]
+        ),
     )
     return chart
 

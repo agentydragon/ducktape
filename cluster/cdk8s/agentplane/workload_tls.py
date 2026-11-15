@@ -9,13 +9,18 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ConfigMap, Container, Secret, Volume
-from cert_manager_crds.io.cert_manager import CertificateSpecPrivateKeyRotationPolicy, CertificateSpecUsages
+from cert_manager_crds.io.cert_manager import (
+    Certificate,
+    CertificateSpec,
+    CertificateSpecPrivateKeyRotationPolicy,
+    CertificateSpecUsages,
+)
 from constructs import Construct
 
 from agentplane.net.peertls.config import TLS, ClientTLS
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.cert_manager import cluster_ca
-from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
+from cluster.cdk8s.providers.cert_manager.certificate import CertificatePrivateKey
 
 _CERT_PATH = "/run/agentplane/workload-tls"
 _TRUST_PATH = "/run/agentplane/workload-trust"
@@ -59,17 +64,19 @@ def service_certificate(scope: Construct, env: Environment, *, container: Contai
         scope,
         "workload-certificate",
         metadata=ApiObjectMetadata(name=f"{name}-workload", namespace=env.namespace),
-        secret_name=secret_name,
-        uris=[uri],
-        duration="24h",
-        renew_before="8h",
-        private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
-        usages=[
-            CertificateSpecUsages.DIGITAL_SIGNATURE,
-            CertificateSpecUsages.CLIENT_AUTH,
-            CertificateSpecUsages.SERVER_AUTH,
-        ],
-        issuer_ref=cluster_ca.WORKLOAD_ISSUER,
+        spec=CertificateSpec(
+            secret_name=secret_name,
+            uris=[uri],
+            duration="24h",
+            renew_before="8h",
+            private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
+            usages=[
+                CertificateSpecUsages.DIGITAL_SIGNATURE,
+                CertificateSpecUsages.CLIENT_AUTH,
+                CertificateSpecUsages.SERVER_AUTH,
+            ],
+            issuer_ref=cluster_ca.WORKLOAD_ISSUER,
+        ),
     )
     certificate = Volume.from_secret(
         scope,
@@ -90,17 +97,19 @@ def client_certificate(scope: Construct, env: Environment, *, container: Contain
         scope,
         f"{name}-client-workload-certificate",
         metadata=ApiObjectMetadata(name=f"{name}-client-workload", namespace=env.namespace),
-        secret_name=secret_name,
-        uris=[uri],
-        duration="24h",
-        renew_before="8h",
-        private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
-        usages=[
-            CertificateSpecUsages.DIGITAL_SIGNATURE,
-            CertificateSpecUsages.CLIENT_AUTH,
-            CertificateSpecUsages.SERVER_AUTH,
-        ],
-        issuer_ref=cluster_ca.WORKLOAD_ISSUER,
+        spec=CertificateSpec(
+            secret_name=secret_name,
+            uris=[uri],
+            duration="24h",
+            renew_before="8h",
+            private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
+            usages=[
+                CertificateSpecUsages.DIGITAL_SIGNATURE,
+                CertificateSpecUsages.CLIENT_AUTH,
+                CertificateSpecUsages.SERVER_AUTH,
+            ],
+            issuer_ref=cluster_ca.WORKLOAD_ISSUER,
+        ),
     )
     certificate = Volume.from_secret(
         scope,

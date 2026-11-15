@@ -8,10 +8,14 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (
+    EgressCredential,
+    EgressCredentialSpec,
     EgressCredentialSpecTargets,
     EgressCredentialSpecTargetsMethod,
 )
 from agentplane_policyset_crds.works.allegedly.agentplane import (
+    PolicySet,
+    PolicySetSpec,
     PolicySetSpecRules,
     PolicySetSpecRulesCredentialRef,
     PolicySetSpecRulesMethods,
@@ -36,9 +40,16 @@ from cdk8s_plus_34 import (
     TaintEffect,
     Volume,
 )
-from cert_manager_crds.io.cert_manager import CertificateSpecPrivateKeyRotationPolicy, CertificateSpecUsages
+from cert_manager_crds.io.cert_manager import (
+    Certificate,
+    CertificateSpec,
+    CertificateSpecPrivateKeyRotationPolicy,
+    CertificateSpecUsages,
+)
 from constructs import Construct
 from trust_manager_crds.io.cert_manager.trust import (
+    Bundle,
+    BundleSpec,
     BundleSpecSources,
     BundleSpecSourcesConfigMap,
     BundleSpecTarget,
@@ -58,7 +69,6 @@ from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import actions, database, environment_service, llm_ingress, notifications, runner_gateway
 from cluster.cdk8s.agentplane.egress_credentials import BUILDBUDDY_API_KEY_SECRET, GITHUB_PAT_SECRET
-from cluster.cdk8s.agentplane.egress_policies import add_egress_policy
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.kubernetes_account_ref import KubernetesAccountRef
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
@@ -72,10 +82,9 @@ from cluster.cdk8s.litellm import proxy as litellm_proxy
 from cluster.cdk8s.litellm.credentials import CHEAP_EXPERIMENTS_KEY
 from cluster.cdk8s.ollama import app as ollama
 from cluster.cdk8s.probes import tls_grpc_probe
-from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
+from cluster.cdk8s.providers.agentplane.egress_credential import Source
 from cluster.cdk8s.providers.agentplane.policy_set import AutoApproveIf, Rule
-from cluster.cdk8s.providers.cert_manager.bundle import Bundle
-from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
+from cluster.cdk8s.providers.cert_manager.certificate import CertificatePrivateKey
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
@@ -187,39 +196,43 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
         scope,
         "egresscredential-github-pat",
         metadata=ApiObjectMetadata(name="github-pat", namespace=namespace),
-        description=(
-            "A GitHub personal access token belonging to the bot account agentydragon-agent. "
-            "Requests carrying it act as that account and are attributable to it. The proxy does "
-            "not narrow what the token itself may do — the rule's hosts and methods are the only "
-            "limit it adds, so treat anything the token can reach on those hosts as reachable."
+        spec=EgressCredentialSpec(
+            description=(
+                "A GitHub personal access token belonging to the bot account agentydragon-agent. "
+                "Requests carrying it act as that account and are attributable to it. The proxy does "
+                "not narrow what the token itself may do — the rule's hosts and methods are the only "
+                "limit it adds, so treat anything the token can reach on those hosts as reachable."
+            ),
+            source=Source.secret_ref(name=GITHUB_PAT_SECRET, key="token"),
+            targets=[
+                EgressCredentialSpecTargets(
+                    header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
+                ),
+                EgressCredentialSpecTargets(
+                    header="Authorization", method=EgressCredentialSpecTargetsMethod.BASIC_PASSWORD
+                ),
+            ],
         ),
-        source=Source.secret_ref(name=GITHUB_PAT_SECRET, key="token"),
-        targets=[
-            EgressCredentialSpecTargets(
-                header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
-            ),
-            EgressCredentialSpecTargets(
-                header="Authorization", method=EgressCredentialSpecTargetsMethod.BASIC_PASSWORD
-            ),
-        ],
     )
 
     EgressCredential(
         scope,
         "egresscredential-buildbuddy",
         metadata=ApiObjectMetadata(name=BUILDBUDDY_POLICY, namespace=namespace),
-        description=(
-            "The shared BuildBuddy API key, copied into this environment's isolated egress-credentials "
-            "namespace by ESO. BuildBuddy uses this key for its JSON-over-HTTP API and gRPC services, "
-            "presented as the literal value of the `x-buildbuddy-api-key` header/metadata entry. Its "
-            "authority is the account's BuildBuddy permissions; the egress policy limits where it is sent."
+        spec=EgressCredentialSpec(
+            description=(
+                "The shared BuildBuddy API key, copied into this environment's isolated egress-credentials "
+                "namespace by ESO. BuildBuddy uses this key for its JSON-over-HTTP API and gRPC services, "
+                "presented as the literal value of the `x-buildbuddy-api-key` header/metadata entry. Its "
+                "authority is the account's BuildBuddy permissions; the egress policy limits where it is sent."
+            ),
+            source=Source.secret_ref(name=BUILDBUDDY_API_KEY_SECRET, key="api-key"),
+            targets=[
+                EgressCredentialSpecTargets(
+                    header="x-buildbuddy-api-key", method=EgressCredentialSpecTargetsMethod.WHOLE_VALUE
+                )
+            ],
         ),
-        source=Source.secret_ref(name=BUILDBUDDY_API_KEY_SECRET, key="api-key"),
-        targets=[
-            EgressCredentialSpecTargets(
-                header="x-buildbuddy-api-key", method=EgressCredentialSpecTargetsMethod.WHOLE_VALUE
-            )
-        ],
     )
 
     for name, source, description in (
@@ -241,76 +254,80 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
             scope,
             f"egresscredential-{name}",
             metadata=ApiObjectMetadata(name=name, namespace=namespace),
-            description=description,
-            source=Source.secret_ref(name=source.secret.name, key=source.key),
-            targets=[
-                EgressCredentialSpecTargets(
-                    header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
-                )
-            ],
+            spec=EgressCredentialSpec(
+                description=description,
+                source=Source.secret_ref(name=source.secret.name, key=source.key),
+                targets=[
+                    EgressCredentialSpecTargets(
+                        header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
+                    )
+                ],
+            ),
         )
 
 
 def _egress_policies(scope: Construct, *, namespace: str, litellm_host: str, litellm_cluster_internal: bool) -> None:
-    add_egress_policy(
+    PolicySet(
         scope,
         "egresspolicy-inference-experiments",
         metadata=ApiObjectMetadata(name=INFERENCE_EXPERIMENTS_POLICY, namespace=namespace),
-        rules=[
-            Rule.egress(
-                hosts=[ollama.AUTH_PROXY.fqdn],
-                cluster_internal=True,
-                methods=[PolicySetSpecRulesMethods.GET],
-                paths=["/api/tags", "/api/ps", "/api/version", "/v1/models"],
-                credential_ref=PolicySetSpecRulesCredentialRef(name="ollama"),
-            ),
-            Rule.egress(
-                hosts=[ollama.AUTH_PROXY.fqdn],
-                cluster_internal=True,
-                methods=[PolicySetSpecRulesMethods.POST],
-                paths=[
-                    "/api/show",
-                    "/api/chat",
-                    "/api/generate",
-                    "/api/embed",
-                    "/api/embeddings",
-                    "/v1/chat/completions",
-                    "/v1/completions",
-                    "/v1/responses",
-                    "/v1/embeddings",
-                ],
-                credential_ref=PolicySetSpecRulesCredentialRef(name="ollama"),
-            ),
-            Rule.egress(
-                hosts=[litellm_host],
-                cluster_internal=litellm_cluster_internal,
-                methods=[PolicySetSpecRulesMethods.GET],
-                paths=["/v1/models", "/models", "/model/info"],
-                credential_ref=PolicySetSpecRulesCredentialRef(name="litellm-cheap-experiments"),
-            ),
-            Rule.egress(
-                hosts=[litellm_host],
-                cluster_internal=litellm_cluster_internal,
-                methods=[PolicySetSpecRulesMethods.POST],
-                paths=[
-                    "/v1/chat/completions",
-                    "/v1/completions",
-                    "/v1/responses",
-                    "/v1/messages",
-                    "/v1/messages/count_tokens",
-                    "/v1/embeddings",
-                    "/v1/audio/transcriptions",
-                ],
-                credential_ref=PolicySetSpecRulesCredentialRef(name="litellm-cheap-experiments"),
-            ),
-        ],
+        spec=PolicySetSpec(
+            rules=[
+                Rule.egress(
+                    hosts=[ollama.AUTH_PROXY.fqdn],
+                    cluster_internal=True,
+                    methods=[PolicySetSpecRulesMethods.GET],
+                    paths=["/api/tags", "/api/ps", "/api/version", "/v1/models"],
+                    credential_ref=PolicySetSpecRulesCredentialRef(name="ollama"),
+                ),
+                Rule.egress(
+                    hosts=[ollama.AUTH_PROXY.fqdn],
+                    cluster_internal=True,
+                    methods=[PolicySetSpecRulesMethods.POST],
+                    paths=[
+                        "/api/show",
+                        "/api/chat",
+                        "/api/generate",
+                        "/api/embed",
+                        "/api/embeddings",
+                        "/v1/chat/completions",
+                        "/v1/completions",
+                        "/v1/responses",
+                        "/v1/embeddings",
+                    ],
+                    credential_ref=PolicySetSpecRulesCredentialRef(name="ollama"),
+                ),
+                Rule.egress(
+                    hosts=[litellm_host],
+                    cluster_internal=litellm_cluster_internal,
+                    methods=[PolicySetSpecRulesMethods.GET],
+                    paths=["/v1/models", "/models", "/model/info"],
+                    credential_ref=PolicySetSpecRulesCredentialRef(name="litellm-cheap-experiments"),
+                ),
+                Rule.egress(
+                    hosts=[litellm_host],
+                    cluster_internal=litellm_cluster_internal,
+                    methods=[PolicySetSpecRulesMethods.POST],
+                    paths=[
+                        "/v1/chat/completions",
+                        "/v1/completions",
+                        "/v1/responses",
+                        "/v1/messages",
+                        "/v1/messages/count_tokens",
+                        "/v1/embeddings",
+                        "/v1/audio/transcriptions",
+                    ],
+                    credential_ref=PolicySetSpecRulesCredentialRef(name="litellm-cheap-experiments"),
+                ),
+            ]
+        ),
     )
     # Available for explicit grants only: no defaults, presets or standing bindings opt in.
-    add_egress_policy(
+    PolicySet(
         scope,
         "public-internet-policy",
         metadata=ApiObjectMetadata(name=PUBLIC_INTERNET_POLICY, namespace=namespace),
-        rules=[Rule.egress(hosts=["*"])],
+        spec=PolicySetSpec(rules=[Rule.egress(hosts=["*"])]),
     )
     basic_action_rules = [
         # These caller-authorized Action adapters use the same Dispatcher/Discovery APIs at the
@@ -331,168 +348,182 @@ def _egress_policies(scope: Construct, *, namespace: str, litellm_host: str, lit
             }
         )
     ]
-    add_egress_policy(
+    PolicySet(
         scope,
         "egresspolicy-basic",
         metadata=ApiObjectMetadata(name=BASIC_POLICY, namespace=namespace),
-        rules=basic_action_rules,
+        spec=PolicySetSpec(rules=basic_action_rules),
     )
-    add_egress_policy(
+    PolicySet(
         scope,
         "egresspolicy-packages",
         metadata=ApiObjectMetadata(name=PACKAGES_POLICY, namespace=namespace),
-        rules=[
-            # The package and toolchain mirrors a box needs to install anything: without them
-            # `pip install`, `npm install`, a cargo fetch, a Go module fetch and every Bazel download fail in a
-            # sandbox whose whole purpose is running commands.
-            #
-            # No credentialRef: these are public, unauthenticated reads, so there is nothing to
-            # substitute and a compromised box gains no identity here. That is also why the
-            # methods are narrowed, unlike the Kubernetes and Forgejo rules -- with no
-            # credential behind it, GET and HEAD genuinely bound what this admits rather than
-            # bounding the request while the authority stays whole. HEAD is here because an OCI
-            # pull checks a manifest with it before fetching.
-            #
-            # Deliberately absent: `codeload.github.com` and the `objects`/`release-assets`
-            # githubusercontent hosts, which are where an `http_archive` of a GitHub tag
-            # actually downloads from. They belong with the GitHub policy below, whose rule
-            # substitutes a PAT on the same hosts; claude-ai's boxes, which are not bound to
-            # it, get them without a credential from `github-downloads`
-            # (actions_staging_policies.py).
-            Rule.egress(
-                hosts=[
-                    # keep-sorted start
-                    "bcr.bazel.build",
-                    "cache.nixos.org",
-                    "channels.nixos.org",
-                    "code.forgejo.org",
-                    "data.forgejo.org",
-                    "dl.google.com",
-                    "files.pythonhosted.org",
-                    "ftp.gnu.org",
-                    # Base images Bazel's rules_oci pulls (mirror.gcr.io fronts Docker Hub).
-                    "gcr.io",
-                    "ghcr.io",
-                    "go.dev",
-                    "index.crates.io",
-                    "mirror.gcr.io",
-                    "nixos.org",
-                    "nodejs.org",
-                    # ghcr.io redirects blob reads here, so a pull fails without it. A
-                    # githubusercontent host in this policy rather than the GitHub one because
-                    # it carries container layers, not repository content, and needs no token.
-                    "pkg-containers.githubusercontent.com",
-                    "proxy.golang.org",
-                    "pypi.org",
-                    "registry.npmjs.org",
-                    "releases.bazel.build",
-                    "snapshot.debian.org",
-                    "static.crates.io",
-                    "static.rust-lang.org",
-                    # keep-sorted end
-                ],
-                methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.HEAD],
-            ),
-            # proxy.golang.org answers a module zip with a signed redirect into its own bucket, so
-            # a Go module fetch fails without it. Only that bucket: the host serves every GCS bucket.
-            Rule.egress(
-                hosts=["storage.googleapis.com"],
-                methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.HEAD],
-                paths=["/proxy-golang-org-prod/**"],
-            ),
-        ],
+        spec=PolicySetSpec(
+            rules=[
+                # The package and toolchain mirrors a box needs to install anything: without them
+                # `pip install`, `npm install`, a cargo fetch, a Go module fetch and every Bazel download fail in a
+                # sandbox whose whole purpose is running commands.
+                #
+                # No credentialRef: these are public, unauthenticated reads, so there is nothing to
+                # substitute and a compromised box gains no identity here. That is also why the
+                # methods are narrowed, unlike the Kubernetes and Forgejo rules -- with no
+                # credential behind it, GET and HEAD genuinely bound what this admits rather than
+                # bounding the request while the authority stays whole. HEAD is here because an OCI
+                # pull checks a manifest with it before fetching.
+                #
+                # Deliberately absent: `codeload.github.com` and the `objects`/`release-assets`
+                # githubusercontent hosts, which are where an `http_archive` of a GitHub tag
+                # actually downloads from. They belong with the GitHub policy below, whose rule
+                # substitutes a PAT on the same hosts; claude-ai's boxes, which are not bound to
+                # it, get them without a credential from `github-downloads`
+                # (actions_staging_policies.py).
+                Rule.egress(
+                    hosts=[
+                        # keep-sorted start
+                        "bcr.bazel.build",
+                        "cache.nixos.org",
+                        "channels.nixos.org",
+                        "code.forgejo.org",
+                        "data.forgejo.org",
+                        "dl.google.com",
+                        "files.pythonhosted.org",
+                        "ftp.gnu.org",
+                        # Base images Bazel's rules_oci pulls (mirror.gcr.io fronts Docker Hub).
+                        "gcr.io",
+                        "ghcr.io",
+                        "go.dev",
+                        "index.crates.io",
+                        "mirror.gcr.io",
+                        "nixos.org",
+                        "nodejs.org",
+                        # ghcr.io redirects blob reads here, so a pull fails without it. A
+                        # githubusercontent host in this policy rather than the GitHub one because
+                        # it carries container layers, not repository content, and needs no token.
+                        "pkg-containers.githubusercontent.com",
+                        "proxy.golang.org",
+                        "pypi.org",
+                        "registry.npmjs.org",
+                        "releases.bazel.build",
+                        "snapshot.debian.org",
+                        "static.crates.io",
+                        "static.rust-lang.org",
+                        # keep-sorted end
+                    ],
+                    methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.HEAD],
+                ),
+                # proxy.golang.org answers a module zip with a signed redirect into its own bucket, so
+                # a Go module fetch fails without it. Only that bucket: the host serves every GCS bucket.
+                Rule.egress(
+                    hosts=["storage.googleapis.com"],
+                    methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.HEAD],
+                    paths=["/proxy-golang-org-prod/**"],
+                ),
+            ]
+        ),
     )
-    add_egress_policy(
+    PolicySet(
         scope,
         "egresspolicy-github-agentydragon-agent",
         metadata=ApiObjectMetadata(name=GITHUB_AGENTYDRAGON_AGENT_POLICY, namespace=namespace),
-        rules=[
-            # The bot across GitHub's REST API and git protocol, including the verbs that let it
-            # finish a change it already opened: PATCH on a pull request's body, PUT on
-            # `update-branch` and `merge`, DELETE on a review comment or a head branch. GET and POST
-            # alone leave a sandbox that can file a PR and cannot correct one; the first time it
-            # mattered it worked around the refusal by commenting beside a stale description instead
-            # of editing it, which costs the reviewer more than the edit (#10625).
-            #
-            # DELETE deserves a look, because it is the verb that destroys. It is here deliberately:
-            # an unpathed rule that substitutes a write-capable PAT does not bound what the bot may
-            # do, only how it asks, so a verb list narrower than the Secret behind it is a second,
-            # weaker copy of that boundary rather than the boundary. A real limit here would be
-            # paths, which this rule has never carried; if one is wanted, add paths, do not trim
-            # verbs.
-            Rule.egress(
-                hosts=["api.github.com", "github.com", "codeload.github.com", "*.githubusercontent.com"],
-                methods=[
-                    PolicySetSpecRulesMethods.GET,
-                    PolicySetSpecRulesMethods.POST,
-                    PolicySetSpecRulesMethods.PUT,
-                    PolicySetSpecRulesMethods.PATCH,
-                    PolicySetSpecRulesMethods.DELETE,
-                ],
-                credential_ref=PolicySetSpecRulesCredentialRef(name="github-pat"),
-            )
-        ],
+        spec=PolicySetSpec(
+            rules=[
+                # The bot across GitHub's REST API and git protocol, including the verbs that let it
+                # finish a change it already opened: PATCH on a pull request's body, PUT on
+                # `update-branch` and `merge`, DELETE on a review comment or a head branch. GET and POST
+                # alone leave a sandbox that can file a PR and cannot correct one; the first time it
+                # mattered it worked around the refusal by commenting beside a stale description instead
+                # of editing it, which costs the reviewer more than the edit (#10625).
+                #
+                # DELETE deserves a look, because it is the verb that destroys. It is here deliberately:
+                # an unpathed rule that substitutes a write-capable PAT does not bound what the bot may
+                # do, only how it asks, so a verb list narrower than the Secret behind it is a second,
+                # weaker copy of that boundary rather than the boundary. A real limit here would be
+                # paths, which this rule has never carried; if one is wanted, add paths, do not trim
+                # verbs.
+                Rule.egress(
+                    hosts=["api.github.com", "github.com", "codeload.github.com", "*.githubusercontent.com"],
+                    methods=[
+                        PolicySetSpecRulesMethods.GET,
+                        PolicySetSpecRulesMethods.POST,
+                        PolicySetSpecRulesMethods.PUT,
+                        PolicySetSpecRulesMethods.PATCH,
+                        PolicySetSpecRulesMethods.DELETE,
+                    ],
+                    credential_ref=PolicySetSpecRulesCredentialRef(name="github-pat"),
+                )
+            ]
+        ),
     )
-    add_egress_policy(
+    PolicySet(
         scope,
         "egresspolicy-github-actions-logs",
         metadata=ApiObjectMetadata(name=GITHUB_ACTIONS_LOGS_POLICY, namespace=namespace),
-        rules=[
-            # A workflow run's job logs (`GET .../actions/jobs/{id}/logs`) and artifacts
-            # (`GET .../actions/artifacts/{id}/zip`) answer from api.github.com with a 302 to
-            # a presigned Azure Blob Storage URL rather than the log bytes themselves; without
-            # this, following that redirect fails and a sandbox reviewing its own PR's CI
-            # cannot read why a check failed. The URL's SAS token is in the query string, not
-            # a header, so there is nothing for the PAT substitution to attach and no
-            # credentialRef here -- this is the same shape as `packages` below. GET-only:
-            # retrieving a log or artifact archive, never uploading one.
-            Rule.egress(hosts=["*.blob.core.windows.net"], methods=[PolicySetSpecRulesMethods.GET])
-        ],
+        spec=PolicySetSpec(
+            rules=[
+                # A workflow run's job logs (`GET .../actions/jobs/{id}/logs`) and artifacts
+                # (`GET .../actions/artifacts/{id}/zip`) answer from api.github.com with a 302 to
+                # a presigned Azure Blob Storage URL rather than the log bytes themselves; without
+                # this, following that redirect fails and a sandbox reviewing its own PR's CI
+                # cannot read why a check failed. The URL's SAS token is in the query string, not
+                # a header, so there is nothing for the PAT substitution to attach and no
+                # credentialRef here -- this is the same shape as `packages` below. GET-only:
+                # retrieving a log or artifact archive, never uploading one.
+                Rule.egress(hosts=["*.blob.core.windows.net"], methods=[PolicySetSpecRulesMethods.GET])
+            ]
+        ),
     )
-    add_egress_policy(
+    PolicySet(
         scope,
         "egresspolicy-public-coder-pr-visuals",
         metadata=ApiObjectMetadata(name=PUBLIC_CODER_VISUALS_POLICY, namespace=namespace),
-        rules=[
-            # PR visual review publishes public before/after screenshots under this path.
-            # No credential is sent: GET-only for the report and its image assets, not
-            # general access to the S3 host or arbitrary object storage operations.
-            Rule.egress(hosts=["s3.allegedly.works"], methods=[PolicySetSpecRulesMethods.GET], paths=["/pr-visuals/**"])
-        ],
+        spec=PolicySetSpec(
+            rules=[
+                # PR visual review publishes public before/after screenshots under this path.
+                # No credential is sent: GET-only for the report and its image assets, not
+                # general access to the S3 host or arbitrary object storage operations.
+                Rule.egress(
+                    hosts=["s3.allegedly.works"], methods=[PolicySetSpecRulesMethods.GET], paths=["/pr-visuals/**"]
+                )
+            ]
+        ),
     )
-    add_egress_policy(
+    PolicySet(
         scope,
         "egresspolicy-buildbuddy",
         metadata=ApiObjectMetadata(name=BUILDBUDDY_POLICY, namespace=namespace),
-        rules=[
-            # app.buildbuddy.io serves the HTTP API (including invocation details and logs);
-            # remote.buildbuddy.io serves Build Event Service, Remote Execution and remote cache.
-            # The API key itself limits BuildBuddy authority to the account's configured access.
-            Rule.egress(
-                hosts=["app.buildbuddy.io", "remote.buildbuddy.io"],
-                credential_ref=PolicySetSpecRulesCredentialRef(name=BUILDBUDDY_POLICY),
-            )
-        ],
+        spec=PolicySetSpec(
+            rules=[
+                # app.buildbuddy.io serves the HTTP API (including invocation details and logs);
+                # remote.buildbuddy.io serves Build Event Service, Remote Execution and remote cache.
+                # The API key itself limits BuildBuddy authority to the account's configured access.
+                Rule.egress(
+                    hosts=["app.buildbuddy.io", "remote.buildbuddy.io"],
+                    credential_ref=PolicySetSpecRulesCredentialRef(name=BUILDBUDDY_POLICY),
+                )
+            ]
+        ),
     )
-    add_egress_policy(
+    PolicySet(
         scope,
         "egresspolicy-github-clone",
         metadata=ApiObjectMetadata(name=GITHUB_CLONE_POLICY, namespace=namespace),
-        rules=[
-            # `git clone`/`fetch` over the smart-HTTP protocol: ref discovery (GET) then the
-            # pack negotiation and transfer (POST), for a repository addressed with or without
-            # the `.git` suffix. Only github.com serves this protocol -- the CDN hosts in
-            # `github-downloads` never see it. No credentialRef: this is the anonymous surface
-            # any unauthenticated client has for a public repository, so a sandbox holding it
-            # gains no identity, only the ability to attempt the same request GitHub already
-            # answers for a public repo (or 401s/404s for a private one it has no other access
-            # to).
-            Rule.egress(
-                hosts=["github.com"],
-                methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.POST],
-                paths=["/*/*.git/info/refs", "/*/*.git/git-upload-pack", "/*/*/info/refs", "/*/*/git-upload-pack"],
-            )
-        ],
+        spec=PolicySetSpec(
+            rules=[
+                # `git clone`/`fetch` over the smart-HTTP protocol: ref discovery (GET) then the
+                # pack negotiation and transfer (POST), for a repository addressed with or without
+                # the `.git` suffix. Only github.com serves this protocol -- the CDN hosts in
+                # `github-downloads` never see it. No credentialRef: this is the anonymous surface
+                # any unauthenticated client has for a public repository, so a sandbox holding it
+                # gains no identity, only the ability to attempt the same request GitHub already
+                # answers for a public repo (or 401s/404s for a private one it has no other access
+                # to).
+                Rule.egress(
+                    hosts=["github.com"],
+                    methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.POST],
+                    paths=["/*/*.git/info/refs", "/*/*.git/git-upload-pack", "/*/*/info/refs", "/*/*/git-upload-pack"],
+                )
+            ]
+        ),
     )
 
 
@@ -537,17 +568,19 @@ class Egress(Construct):
             self,
             "svid-listener-certificate",
             metadata=ApiObjectMetadata(name="agentplane-egress-proxy", namespace=self.env.namespace),
-            secret_name=PROXY_MTLS_SECRET,
-            uris=[EGRESS_PROXY_URI],
-            duration="24h",
-            renew_before="8h",
-            private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
-            usages=[
-                CertificateSpecUsages.DIGITAL_SIGNATURE,
-                CertificateSpecUsages.CLIENT_AUTH,
-                CertificateSpecUsages.SERVER_AUTH,
-            ],
-            issuer_ref=cluster_ca.WORKLOAD_ISSUER,
+            spec=CertificateSpec(
+                secret_name=PROXY_MTLS_SECRET,
+                uris=[EGRESS_PROXY_URI],
+                duration="24h",
+                renew_before="8h",
+                private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
+                usages=[
+                    CertificateSpecUsages.DIGITAL_SIGNATURE,
+                    CertificateSpecUsages.CLIENT_AUTH,
+                    CertificateSpecUsages.SERVER_AUTH,
+                ],
+                issuer_ref=cluster_ca.WORKLOAD_ISSUER,
+            ),
         )
 
         settings = Settings(
@@ -710,28 +743,30 @@ class Egress(Construct):
             self,
             "upstream-bundle",
             metadata=ApiObjectMetadata(name=f"{self.env.namespace}-egress-upstream-ca"),
-            sources=[
-                BundleSpecSources(use_default_c_as=True),
-                BundleSpecSources(config_map=BundleSpecSourcesConfigMap(name="kube-root-ca.crt", key="ca.crt")),
-            ],
-            target=BundleSpecTarget(
-                config_map=BundleSpecTargetConfigMap(
-                    key=CA_BUNDLE_KEY,
-                    metadata=BundleSpecTargetConfigMapMetadata(
-                        annotations={
-                            "description": (
-                                f"Trust bundle the {self.env.namespace} egress proxy verifies "
-                                "destinations with: public roots plus this cluster's CA"
-                            )
-                        }
+            spec=BundleSpec(
+                sources=[
+                    BundleSpecSources(use_default_c_as=True),
+                    BundleSpecSources(config_map=BundleSpecSourcesConfigMap(name="kube-root-ca.crt", key="ca.crt")),
+                ],
+                target=BundleSpecTarget(
+                    config_map=BundleSpecTargetConfigMap(
+                        key=CA_BUNDLE_KEY,
+                        metadata=BundleSpecTargetConfigMapMetadata(
+                            annotations={
+                                "description": (
+                                    f"Trust bundle the {self.env.namespace} egress proxy verifies "
+                                    "destinations with: public roots plus this cluster's CA"
+                                )
+                            }
+                        ),
                     ),
-                ),
-                namespace_selector=BundleSpecTargetNamespaceSelector(
-                    match_expressions=[
-                        BundleSpecTargetNamespaceSelectorMatchExpressions(
-                            key="kubernetes.io/metadata.name", operator="In", values=[self.env.namespace]
-                        )
-                    ]
+                    namespace_selector=BundleSpecTargetNamespaceSelector(
+                        match_expressions=[
+                            BundleSpecTargetNamespaceSelectorMatchExpressions(
+                                key="kubernetes.io/metadata.name", operator="In", values=[self.env.namespace]
+                            )
+                        ]
+                    ),
                 ),
             ),
         )

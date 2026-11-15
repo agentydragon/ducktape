@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from agentplane_kubernetesroleset_crds.works.allegedly.agentplane import KubernetesRoleSet
 from agentplane_serviceaccountgrant_crds.works.allegedly.agentplane import (
     ServiceAccountGrant as _ServiceAccountGrant,
     ServiceAccountGrantSpec,
@@ -15,8 +16,6 @@ from agentplane_serviceaccountgrant_crds.works.allegedly.agentplane import (
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ServiceAccount
 from constructs import Construct
-
-from cluster.cdk8s.providers.agentplane.kubernetes_role_set import KubernetesRoleSet
 
 
 class ServiceAccountGrant(_ServiceAccountGrant):

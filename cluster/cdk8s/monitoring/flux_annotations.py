@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
-from grafana_grafana_crds.org.integreatly.grafana import GrafanaSpecClient, GrafanaSpecExternal
+from grafana_grafana_crds.org.integreatly.grafana import Grafana, GrafanaSpec, GrafanaSpecClient, GrafanaSpecExternal
 from grafana_grafanaserviceaccount_crds.org.integreatly.grafana import (
     GrafanaServiceAccount,
     GrafanaServiceAccountSpec,
@@ -17,7 +17,6 @@ from grafana_grafanaserviceaccount_crds.org.integreatly.grafana import (
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import grafana_instance
-from cluster.cdk8s.providers.grafana_operator.grafana import Grafana
 from cluster.cdk8s.secret_ref import SecretRef
 
 NAME = "flux-grafana-secrets"
@@ -34,11 +33,13 @@ def chart(app: App) -> Chart:
         chart,
         "grafana",
         metadata=ApiObjectMetadata(name=_GRAFANA, namespace=_NAMESPACE),
-        external=GrafanaSpecExternal(
-            url=f"http://{grafana_instance.SERVICE.fqdn}:{grafana_instance.SERVICE.port.number}",
-            tenant_namespace=_NAMESPACE,
+        spec=GrafanaSpec(
+            external=GrafanaSpecExternal(
+                url=f"http://{grafana_instance.SERVICE.fqdn}:{grafana_instance.SERVICE.port.number}",
+                tenant_namespace=_NAMESPACE,
+            ),
+            client=GrafanaSpecClient(use_kube_auth=True),
         ),
-        client=GrafanaSpecClient(use_kube_auth=True),
     )
     GrafanaServiceAccount(
         chart,

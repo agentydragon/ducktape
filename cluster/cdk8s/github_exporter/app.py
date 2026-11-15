@@ -16,10 +16,14 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
 )
 from grafana_grafanadashboard_crds.org.integreatly.grafana import (
+    GrafanaDashboard,
+    GrafanaDashboardSpec,
     GrafanaDashboardSpecDatasources,
     GrafanaDashboardSpecInstanceSelector,
 )
 from prometheus_operator_crds.com.coreos.monitoring import (
+    ServiceMonitor,
+    ServiceMonitorSpec,
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecEndpointsRelabelings,
     ServiceMonitorSpecEndpointsScheme,
@@ -32,8 +36,6 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
-from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
-from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/github-exporter"
@@ -226,8 +228,9 @@ def _service_monitor(chart: Chart, app: str, endpoint: ServiceMonitorSpecEndpoin
         chart,
         f"{app}-monitor",
         metadata=ApiObjectMetadata(name=app, namespace=_NAMESPACE),
-        selector=ServiceMonitorSpecSelector(match_labels=_app_labels(app)),
-        endpoints=[endpoint],
+        spec=ServiceMonitorSpec(
+            selector=ServiceMonitorSpecSelector(match_labels=_app_labels(app)), endpoints=[endpoint]
+        ),
     )
 
 
@@ -288,12 +291,14 @@ def chart(app: App) -> Chart:
         chart,
         "dashboard",
         metadata=ApiObjectMetadata(name="github-exporter", namespace=_NAMESPACE),
-        instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels={"dashboards": "grafana"}),
-        folder="GitHub",
-        json=(
-            Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/github_exporter/github-api-quotas.json"
-        ).read_text(),
-        datasources=[GrafanaDashboardSpecDatasources(input_name="DS_MIMIR", datasource_name="mimir")],
+        spec=GrafanaDashboardSpec(
+            instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels={"dashboards": "grafana"}),
+            folder="GitHub",
+            json=(
+                Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/github_exporter/github-api-quotas.json"
+            ).read_text(),
+            datasources=[GrafanaDashboardSpecDatasources(input_name="DS_MIMIR", datasource_name="mimir")],
+        ),
     )
     return chart
 

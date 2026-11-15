@@ -1,5 +1,7 @@
 # gazelle:ignore
 
+# gazelle:resolve py kubevirt_virtualmachine_crds //cluster/cdk8s/providers/kubevirt:virtualmachine
+# gazelle:resolve py kubevirt_virtualmachinepool_crds //cluster/cdk8s/providers/kubevirt:virtualmachinepool
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
@@ -48,7 +50,6 @@ py_library(
     srcs = ["virtual_machine.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        "//cluster/cdk8s/providers/kubevirt:virtual_machine",
         "//cluster/cdk8s/providers/kubevirt:virtualmachine",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

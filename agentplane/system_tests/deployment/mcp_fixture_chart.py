@@ -6,6 +6,8 @@ from dataclasses import replace
 from pathlib import Path
 
 import bcrypt
+from agentplane_policybinding_crds.works.allegedly.agentplane import PolicyBinding, PolicyBindingSpec
+from agentplane_policyset_crds.works.allegedly.agentplane import PolicySet, PolicySetSpec
 from cdk8s import ApiObjectMetadata, Chart
 from cdk8s_plus_34 import ConfigMap, Deployment, EnvValue, Volume
 from constructs import Construct
@@ -19,8 +21,7 @@ from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from cluster.cdk8s.agentplane import actions, mcp_edge
 from cluster.cdk8s.agentplane.environment import ActionsProps, SessionDelegationProps
 from cluster.cdk8s.providers.agentplane.identity import Identity
-from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
-from cluster.cdk8s.providers.agentplane.policy_set import AutoApproveIf, PolicySet
+from cluster.cdk8s.providers.agentplane.policy_set import AutoApproveIf
 
 DEX_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-dex:unset"
 MCP_EVERYTHING_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-mcp-everything:unset"
@@ -109,14 +110,15 @@ def add_mcp_fixtures(
         chart,
         "mcp-edge-test-caller-session-delegation",
         metadata=ApiObjectMetadata(name=_MCP_EDGE_TEST_POLICY, namespace=NAMESPACE),
-        rules=[AutoApproveIf.exact_actions(actions={"environments": ["list", "get"], "sessions": ["create"]})],
+        spec=PolicySetSpec(
+            rules=[AutoApproveIf.exact_actions(actions={"environments": ["list", "get"], "sessions": ["create"]})]
+        ),
     )
     PolicyBinding(
         chart,
         "mcp-edge-test-caller-session-delegation-binding",
         metadata=ApiObjectMetadata(name=_MCP_EDGE_TEST_CALLER, namespace=NAMESPACE),
-        subject=caller.binding_subject(),
-        policy_sets=[_MCP_EDGE_TEST_POLICY],
+        spec=PolicyBindingSpec(subject=caller.binding_subject(), policy_sets=[_MCP_EDGE_TEST_POLICY]),
     )
     _add_mcp_fixtures(
         chart,

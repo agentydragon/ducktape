@@ -1,5 +1,8 @@
 # gazelle:ignore
 
+# gazelle:resolve py cert_manager_crds //cluster/cdk8s/providers/cert_manager:certificate
+# gazelle:resolve py flux_imagerepository_crds //cluster/cdk8s/providers/flux:imagerepository
+# gazelle:resolve py prometheus_operator_podmonitor_crds //cluster/cdk8s/providers/prometheus_operator:podmonitor
 load("@image_pins//:pins.bzl", "MITMPROXY_12_2_3_REFERENCE")
 load("//devinfra/oci:defs.bzl", "oci_layout_py")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
@@ -38,10 +41,10 @@ py_library(
         "//cluster/cdk8s/cert_manager:interception_ca",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
-        "//cluster/cdk8s/providers/cert_manager:cert_manager_certificate",
+        "//cluster/cdk8s/providers/cert_manager:certificate",
+        "//cluster/cdk8s/providers/cert_manager:certificate_private_key",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/flux:image_policy",
-        "//cluster/cdk8s/providers/flux:image_repository",
         "//cluster/cdk8s/providers/flux:imagepolicy",
         "//cluster/cdk8s/providers/flux:imagerepository",
         "//cluster/cdk8s/providers/flux:kustomization",
