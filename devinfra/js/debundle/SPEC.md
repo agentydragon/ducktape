@@ -1166,18 +1166,24 @@ batches. The exact combined assignment requires its own check.
 
 `modules apply --assignments` realizes that explicit batch, including new
 residual declarations and anonymous units, while moving existing selectors and
-binding/statement metadata intact. After synthesis the entire spec must resolve
-to exactly the requested complete assignment, then pass the common graph check.
-Dry-run and write use the same validation, and a failed check writes no spec
-edits. Empty authored owners remain in this mode. Selector synthesis can fail
-for a graph-accepted placement; this is a separate realization failure.
+binding/statement metadata intact. After synthesis the complete authored-claim
+map must equal the graph-baseline claim map overlaid with the requested logical
+destination changes; entry and unassigned source units have no authored claim.
+Unclaimed units still follow the configured residual policy, so generated
+physical paths need not retain their previous labels. The result then passes the
+common graph check. Dry-run and write use the same validation, and a failed check
+writes no spec edits. Empty authored owners remain in this mode. Selector
+synthesis can fail for a graph-accepted placement; this is a separate realization
+failure.
 
 The shared saved-plan shape binds dependency/program graph digests and explicit
 logical destination changes. `modules check --plan` and `modules apply --plan`
 verify that identity in addition to current-input graph preflight. A refreshed
 graph with reused unit IDs cannot silently retarget a saved plan. After synthesis
-the entire resolved assignment must still equal the plan, including retained
-residual and authored units.
+the complete authored-claim map must equal the starting claim map overlaid with
+the plan's logical destination changes. Omitted authored claims are retained;
+unclaimed units remain under `unassigned_mode`, whose generated physical paths
+may change when residual groups are regenerated.
 
 ## Delegated input snapshots
 
@@ -1230,6 +1236,12 @@ Every configured chunk selects one `unassigned_mode` destination policy:
 | `catchall_file`        | Collect it in `target`, defaulting to `residual/unhandled`.                                                                                                                                                                                                                                                                                                                  |
 | `per_atomic_group`     | Emit one module at `__auto/atomic_groups/NNNN` per wholly unclaimed atomic group.                                                                                                                                                                                                                                                                                            |
 | `coarse_atomic_groups` | Optionally complete atoms for listed sole authored owners, then group remaining wholly unclaimed atoms by strict fixed-owner reachability and fine evaluation interval when their public export names have compatible origins; then co-locate complete actual mutual SCCs made only of generated residual modules when their combined public export names remain compatible. |
+
+Generated numeric path suffixes are layout labels, not stable owner identities.
+In particular, extracting atoms under `per_atomic_group` can change which groups
+remain unclaimed and renumber their emitted filenames. Saved plans preserve
+logical authored destinations; they do not promise that generated output paths
+remain unchanged.
 
 The optional owner list is an array of chunk-local authored module paths:
 

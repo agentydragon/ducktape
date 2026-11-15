@@ -1326,12 +1326,15 @@ their owner, and this mode keeps empty authored owners so its module order agree
 with the checked assignment. A JSON map supplied with `--readable-names FILE`
 can name newly claimed bindings; omitted names retain their source spelling.
 
-Before writing, the complete scoped spec resolves again and must match every
-requested and retained source-unit destination. The common graph checker then
-checks that exact assignment. Failure leaves the spec unchanged. JSON reports
-new residual claims, existing units moved, synthesized claims and changed files.
-Graph/selector acceptance still requires normal materialization and relevant
-runtime checks. Refresh the graph after applying an edit.
+Before writing, the complete scoped spec resolves again and its authored-claim
+map must equal the starting graph's claims overlaid with the requested logical
+destination changes. Omitted authored claims remain; unclaimed units continue
+through the configured residual policy, whose generated filenames may be
+regenerated or renumbered. The common graph checker then validates the candidate
+assignment. Failure leaves the spec unchanged. JSON reports new residual claims,
+existing units moved, synthesized claims and changed files. Graph/selector
+acceptance still requires normal materialization and relevant runtime checks.
+Refresh the graph after applying an edit.
 
 ## Claiming fresh proposals (`modules apply --batch`)
 
