@@ -50,8 +50,9 @@ preferences must not silently change these meanings.
 4. **Constraint construction — integrating.** Start at the finest permitted
    partition: fixed owner anchors plus whole movable atoms. Propagate domain,
    entry, mandatory ownership and constraining-cycle equalities. Derive explicit
-   necessary contraction clauses for guarded promotion cycles, fresh-owner caps
-   and intrinsic import-schedule obstructions. Include both incoming consumers
+   necessary contraction clauses for fresh-owner caps and intrinsic import-schedule
+   obstructions. All active C SCCs force co-location, including fallback-promoted
+   edges, by the final-postorder-rank argument. Include both incoming consumers
    and partners outside an obstructed SCC's forward closure. Resolve only these
    necessary clauses; certify a completed positive witness once.
 5. **Proof and independent evidence — integrating.** The design supplies

@@ -66,7 +66,7 @@ pub struct SearchWorkReport {
     pub partition_states: u64,
     /// Direct C/I graph projections constructed from typed source edges.
     pub quotient_projections: u64,
-    /// Equality contractions forced by domains, structural edges, or C->entry.
+    /// Equality contractions forced by domains, structural edges, C SCCs, or C->entry.
     pub forced_contractions: u64,
     /// Candidate equality contractions considered by obstruction clauses.
     pub contraction_attempts: u64,
@@ -78,7 +78,6 @@ pub struct SearchWorkReport {
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct PlacementBranchClauseCounts {
     pub owner_domain: u64,
-    pub constraining_scc: u64,
     pub schedule_closure: u64,
     pub fresh_owner_cap: u64,
 }
