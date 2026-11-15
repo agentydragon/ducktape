@@ -856,6 +856,41 @@ async def test_font_face_class(playwright_driver: Playwright, origin: str) -> No
         }
 
 
+async def test_static_scene_renders_grid(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const { renderStaticScene } = await import(
+                    './editor/packages/excalidraw/renderer/staticScene.js'
+                );
+                const canvas = document.createElement('canvas');
+                canvas.width = canvas.height = 120;
+                const config = {
+                    canvas, rc: null, elementsMap: new Map(), allElementsMap: new Map(),
+                    visibleElements: [], scale: 1,
+                    appState: {zoom: {value: 1}, gridSize: 20, gridStep: 5,
+                        scrollX: 0, scrollY: 0, theme: 'light',
+                        viewBackgroundColor: '#ffffff'},
+                    renderConfig: {renderGrid: false},
+                };
+                const pixel = (x, y) => [...canvas.getContext('2d').getImageData(x, y, 1, 1).data];
+                renderStaticScene(config);
+                const withoutGrid = [pixel(100, 100), pixel(50, 50)];
+                renderStaticScene({...config, renderConfig: {renderGrid: true}});
+                const withGrid = [pixel(100, 100), pixel(50, 50)];
+                return {withoutGrid, withGrid};
+            }"""
+        )
+        assert result["withoutGrid"] == [[255, 255, 255, 255]] * 2
+        assert result["withGrid"][0] == [221, 221, 221, 255]
+        assert result["withGrid"][1] == [255, 255, 255, 255]
+
+
 async def test_renderer_filters_and_memoizes_elements(playwright_driver: Playwright, origin: str) -> None:
     async with deterministic_browser_context(
         playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None

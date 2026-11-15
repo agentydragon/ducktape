@@ -1,0 +1,68 @@
+source_matches:
+  - match: |
+      var ANYTHING = ANYTHING,
+        GridLineColor = { Bold: "#dddddd", Regular: "#e5e5e5" },
+        ANYTHING = ANYTHING;
+    bindings:
+      - GridLineColor
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        strokeGrid = (context, gridSize, gridStep, scrollX, scrollY, zoom, width, height) => {
+          let startX = scrollX % gridSize - gridSize, startY = scrollY % gridSize - gridSize, ANYTHING = ANYTHING;
+          STMT_LIST;
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - strokeGrid
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        frameClip = (frame, context, renderConfig, appState) => {
+          context.translate(frame.x + appState.scrollX, frame.y + appState.scrollY),
+            context.beginPath(),
+            context.roundRect
+              ? context.roundRect(0, 0, frame.width, frame.height, EXPR)
+              : context.rect(0, 0, frame.width, frame.height),
+            context.clip(),
+            context.translate(-(frame.x + appState.scrollX), -(frame.y + appState.scrollY));
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - frameClip
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        linkIconCanvasCache = { regularLink: null, elementLink: null },
+        ANYTHING = ANYTHING;
+    bindings:
+      - linkIconCanvasCache
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        renderLinkIcon = (element, context, appState, elementsMap) => {
+          if (element.link && !appState.selectedElementIds[element.id]) { STMT_LIST; }
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - renderLinkIcon
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        _renderStaticScene = ({ canvas, rc, elementsMap, allElementsMap, visibleElements, scale, appState, renderConfig }) => {
+          if (canvas === null) return;
+          STMT_LIST;
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - _renderStaticScene
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        renderStaticScene = (renderConfig, throttle) => {
+          if (throttle) { ANYTHING(renderConfig); return; }
+          _renderStaticScene(renderConfig);
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - renderStaticScene
