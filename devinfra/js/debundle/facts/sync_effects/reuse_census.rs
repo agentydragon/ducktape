@@ -70,6 +70,28 @@ enum Snapshot {
     Properties(Vec<(Option<String>, Vec<Token>)>),
     Accessors(Vec<(String, Vec<Token>, Vec<Token>)>),
 }
+impl Snapshot {
+    fn edges(&self) -> BTreeSet<(u8, Option<String>, Token)> {
+        match self {
+            Self::Missing => BTreeSet::new(),
+            Self::Values(v) => v.iter().cloned().map(|v| (0, None, v)).collect(),
+            Self::Properties(m) => m
+                .iter()
+                .flat_map(|(k, v)| v.iter().cloned().map(|v| (0, k.clone(), v)))
+                .collect(),
+            Self::Accessors(m) => m
+                .iter()
+                .flat_map(|(k, g, s)| {
+                    g.iter()
+                        .cloned()
+                        .map(|v| (0, Some(k.clone()), v))
+                        .chain(s.iter().cloned().map(|v| (1, Some(k.clone()), v)))
+                })
+                .collect(),
+        }
+    }
+}
+
 impl Dep {
     fn read(&self, w: &World) -> Snapshot {
         match self {
@@ -120,6 +142,9 @@ struct Counts {
     changed_roots: u64,
     changed_dependencies: u64,
     previous_dependencies: u64,
+    changed_input_previous_edges: u64,
+    changed_input_added_edges: u64,
+    changed_input_removed_edges: u64,
     changed_dependency_histogram: BTreeMap<usize, u64>,
     expansion_events: u64,
     repeated_expansions: u64,
@@ -277,11 +302,21 @@ impl Probe {
         let result = tokens(result);
         if let Some(old) = state.walks.get(&trace.roots) {
             let total = old.deps.len();
-            let changed = old
-                .deps
-                .iter()
-                .filter(|(k, v)| k.read(world) != **v)
-                .count();
+            let mut changed = 0usize;
+            let mut previous_edges = 0u64;
+            let mut added_edges = 0u64;
+            let mut removed_edges = 0u64;
+            for (key, previous) in &old.deps {
+                let current = key.read(world);
+                if current != *previous {
+                    changed += 1;
+                    let before = previous.edges();
+                    let after = current.edges();
+                    previous_edges += before.len() as u64;
+                    added_edges += after.difference(&before).count() as u64;
+                    removed_edges += before.difference(&after).count() as u64;
+                }
+            }
             let cross = old.owner != owner;
             if changed == 0 {
                 assert!(
@@ -300,6 +335,9 @@ impl Probe {
                 }
             } else {
                 state.counts.changed_roots += 1;
+                state.counts.changed_input_previous_edges += previous_edges;
+                state.counts.changed_input_added_edges += added_edges;
+                state.counts.changed_input_removed_edges += removed_edges;
                 state.counts.changed_dependencies += changed as u64;
                 state.counts.previous_dependencies += total as u64;
                 *state
