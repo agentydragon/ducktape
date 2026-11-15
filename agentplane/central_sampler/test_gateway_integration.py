@@ -7,7 +7,6 @@ import json
 import os
 import signal
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -22,6 +21,7 @@ from agentplane.central_sampler.testing_store import Store
 from agentplane.env import config as configuration
 from agentplane.env.e2e.testing import launches
 from agentplane.env.e2e.testing.gateway import serve_gateway
+from agentplane.env.e2e.testing.history_tunnel import history_tunnel
 from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.env.runtime.execution import executor_pb2, executor_pb2_grpc
@@ -45,63 +45,6 @@ from util.testing.sqlalchemy_engines import postgres_async_engine
 
 # gazelle:include_dep //agentplane/env/runtime/execution/testing:codex_exec_server_container
 pytest_plugins = ("agentplane.env.runtime.execution.testing.codex_exec_server_container",)
-
-
-@asynccontextmanager
-async def _history_tunnel(target: str) -> AsyncIterator[str]:
-    """Forward CONNECT to the History test listener while preserving end-to-end TLS."""
-    tasks: set[asyncio.Task[None]] = set()
-    host, port = target.rsplit(":", 1)
-
-    async def pump(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        while data := await reader.read(65536):
-            writer.write(data)
-            await writer.drain()
-
-    async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        upstream: asyncio.StreamWriter | None = None
-        try:
-            async with asyncio.timeout(10):
-                headers = await reader.readuntil(b"\r\n\r\n")
-            if headers.split(b"\r\n", 1)[0] != f"CONNECT {target} HTTP/1.1".encode():
-                writer.write(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n")
-                await writer.drain()
-                return
-            remote, upstream = await asyncio.open_connection(host, int(port))
-            writer.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
-            await writer.drain()
-            forward = asyncio.create_task(pump(reader, upstream))
-            backward = asyncio.create_task(pump(remote, writer))
-            try:
-                await asyncio.wait((forward, backward), return_when=asyncio.FIRST_COMPLETED)
-            finally:
-                forward.cancel()
-                backward.cancel()
-                await asyncio.gather(forward, backward, return_exceptions=True)
-        finally:
-            writer.close()
-            if upstream is not None:
-                upstream.close()
-                with suppress(ConnectionError):
-                    await upstream.wait_closed()
-            with suppress(ConnectionError):
-                await writer.wait_closed()
-
-    def accept(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        task = asyncio.create_task(handle(reader, writer))
-        tasks.add(task)
-        task.add_done_callback(tasks.discard)
-
-    server = await asyncio.start_server(accept, "127.0.0.1", 0)
-    address = server.sockets[0].getsockname()
-    try:
-        yield f"{address[0]}:{address[1]}"
-    finally:
-        server.close()
-        await server.wait_closed()
-        for task in tuple(tasks):
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 @pytest.fixture
@@ -175,7 +118,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 ),
             )
             async with (
-                _history_tunnel(history.ingress_target) as history_proxy,
+                history_tunnel(history.ingress_target) as history_proxy,
                 RunningRunner(
                     config,
                     runner_gateway,
