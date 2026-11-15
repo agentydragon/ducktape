@@ -1083,6 +1083,7 @@ py_test(
         ":history_service",
         ":kubernetes_account_ref",
         ":kubernetes_accounts",
+        ":launcher_relay",
         ":llm_ingress",
         ":namespaces",
         ":notifications",
