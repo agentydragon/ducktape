@@ -62,14 +62,11 @@ floors and Helm `disableWait` are gone.
 
 - **Cilium:** verify on the next laptop resume that its agent and envoy, which no longer
   tolerate the taint, come back and the laptop's pods get networking.
-- **Alerts:** key node-level exclusions on the out-of-service taint instead of the static
-  roaming taint, so an online laptop alerts like any node. Prefer one Alertmanager
-  inhibition (a `RoamingNodeOffline` source alert with a `node` label) over forked rules.
-  Remove the null routes for pod and DaemonSet alerts once their sources vanish with the
-  pods. The taint lands 5 minutes after the kubelet goes silent, so an alert with a
-  shorter `for` still fires in between: the Piraeus `lvm-metrics` alerts (2m) keep their
-  `only_when_node_ready` guard until the inhibition's source keys on NotReady plus the
-  roaming taint and covers that window.
+- **Alerts:** node-labelled alerts are inhibited by `RoamingNodeOffline`. Remove the
+  null routes for pod, DaemonSet, Deployment and Job alerts in `monitoring/stack.py` after
+  the Cilium check above and a review of 7 days of `ALERTS`. The taint lands 5 minutes
+  after the kubelet goes silent, so an alert with a shorter `for` still fires in between:
+  the Piraeus `lvm-metrics` alerts (2m) keep their `only_when_node_ready` guard.
 
 Out of scope: `KubeVersionMismatch` (NixOS kubelets ahead of Talos) is version drift, not
 absence.

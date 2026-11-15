@@ -309,43 +309,23 @@ _MCP_AUTH = [
     )
 ]
 
-# Fork only the kube-prometheus-stack rules that need roaming exclusions; they are
-# disabled in `stack.py`. Node rules match chart 82.3.0; workload/kubelet rules match
-# 91.3.0. `kubernetes-system-kubelet` supplies `KubeNodeNotReady`/`KubeNodeUnreachable`;
-# `general.rules` supplies `TargetDown`. Re-diff these expressions on every chart bump.
-# Match the operational `node-role.kubernetes.io/roaming=true:NoSchedule` taint, not
-# host names: it marks nodes expected to disappear and covers any newly tainted laptop.
-# A global Alertmanager denylist would also silence failures on always-on nodes; the
-# region label and mesh roster describe location/membership, not this rule's key.
+# Source of the `RoamingNodeOffline` inhibition in `stack.py`: while the roaming node
+# controller marks a laptop out of service, every alert carrying its `node` label is
+# inhibited, so stock node and kubelet rules need no fork. The taint lands 5 minutes
+# after the kubelet goes silent, inside those rules' 15m `for`. A roaming node that is
+# online, or offline without the taint, alerts like any node.
 _ROAMING_NODE = [
     Rule.alert(
-        "KubeNodeNotReady",
-        (_PROMQL_DIR / "kube-node-not-ready-warning.promql").read_text(),
-        for_="15m",
-        labels={"severity": "warning"},
-        summary="Node is not ready.",
-        description=(
-            "{{ $labels.node }} has been unready for more than 15 minutes. Roaming nodes are excluded, so this is a "
-            "node that was expected to stay up."
-        ),
-        annotations={"runbook_url": "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubenodenotready"},
-    ),
-    # Upstream already excludes nodes carrying a "this node is going away"
-    # taint (cluster-autoscaler, spot termination). Roaming laptops are the
-    # same category, so this adds one key to that existing regex rather than
-    # bolting on a second mechanism.
-    Rule.alert(
-        "KubeNodeUnreachable",
-        (_PROMQL_DIR / "kube-node-unreachable-warning.promql").read_text(),
-        for_="15m",
-        labels={"severity": "warning"},
-        summary="Node is unreachable.",
-        description=(
-            "{{ $labels.node }} is unreachable and some workloads may be rescheduled. Roaming nodes are excluded, so "
-            "this is a node that was expected to stay up."
-        ),
-        annotations={"runbook_url": "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubenodeunreachable"},
-    ),
+        "RoamingNodeOffline",
+        dedent("""\
+            max by (node) (kube_node_spec_taint{job="kube-state-metrics",key="node.kubernetes.io/out-of-service"} == 1)
+            and on (node)
+            max by (node) (kube_node_spec_taint{job="kube-state-metrics",key="node-role.kubernetes.io/roaming"} == 1)
+        """).strip(),
+        labels={"severity": "none"},
+        summary="Roaming node {{ $labels.node }} is offline",
+        description="Inhibits alerts about {{ $labels.node }} while it is marked out of service.",
+    )
 ]
 
 # Physical disk attribution for the cluster-disk-usage dashboard: which component holds how many bytes on
@@ -534,41 +514,11 @@ _ROAMING_NODE_WORKLOAD = [
             "but an updated pod on an offline node can mask an outdated online pod; check revisions after upgrades."
         ),
     ),
-    # The stock rule has no node label. Join through kube_pod_info so a pod
-    # on a tainted roaming node disappears from the alert, while the same
-    # pod condition remains alertable on ordinary nodes.
-    Rule.alert(
-        "KubePodNotReady",
-        (_PROMQL_DIR / "kube-pod-not-ready-warning.promql").read_text().removesuffix("\n"),
-        for_="15m",
-        labels={"severity": "warning"},
-        description=(
-            "Pod {{ $labels.namespace }}/{{ $labels.pod }} has been in a non-ready state for longer than 15 minutes "
-            "on cluster {{ $labels.cluster }}."
-        ),
-        summary="Pod has been in a non-ready state for more than 15 minutes.",
-        annotations={"runbook_url": "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubepodnotready"},
-    ),
-    # The kubelet target already carries the node label, so the same taint
-    # exclusion used by KubeNodeNotReady applies directly here.
-    Rule.alert(
-        "KubeletInstanceUnreachable",
-        (_PROMQL_DIR / "kubelet-instance-unreachable-warning.promql").read_text(),
-        for_="15m",
-        labels={"severity": "warning"},
-        description="A Kubelet instance has been unreachable for more than 15 minutes.",
-        summary="Kubelet instance is unreachable.",
-        annotations={
-            "runbook_url": "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubeletinstanceunreachable"
-        },
-    ),
-    # The `unless` filters targets only when `up` carries `node`; at the 2026-08-06
-    # check only kubelet did. Missing labels cannot match a real taint, so others pass.
-    # Apply it to both sides or roaming targets pad the denominator and dilute outages.
-    # Verified 2026-08-06: kubelet's down-ratio fell 22.2% -> 0%; node-exporter and
-    # seaweedfs-volume-peer still fired. At that check, the remaining causes were
-    # node-exporter's missing `node` label (requiring an instance -> IP -> node join)
-    # and a genuinely down SeaweedFS peer; re-check both before removing the denylist.
+    # Forked: the kubelet target follows the Node object, not a pod, so it stays down
+    # while a laptop is offline and the ratio has no `node` label to inhibit on. Targets
+    # without `node` (pods, which the taint evicts) pass the `unless`. Apply it to both
+    # sides or offline targets pad the denominator and dilute outages. Matches chart
+    # 91.3.0 `general.rules`; re-diff on chart bumps.
     Rule.alert(
         "TargetDown",
         (_PROMQL_DIR / "target-down-warning.promql").read_text(),
@@ -577,7 +527,7 @@ _ROAMING_NODE_WORKLOAD = [
         summary="One or more targets are unreachable.",
         description=(
             '{{ printf "%.4g" $value }}% of the {{ $labels.job }}/{{ $labels.service }} targets in '
-            "{{ $labels.namespace }} namespace are down. Roaming nodes are excluded from both sides of the ratio."
+            "{{ $labels.namespace }} namespace are down. Offline roaming nodes are excluded from both sides of the ratio."
         ),
         annotations={"runbook_url": "https://runbooks.prometheus-operator.dev/runbooks/general/targetdown"},
     ),

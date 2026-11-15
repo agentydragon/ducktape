@@ -97,6 +97,12 @@ spec:
               - severity = info
           - target_matchers:
               - alertname = InfoInhibitor
+          - equal:
+              - node
+            source_matchers:
+              - alertname = RoamingNodeOffline
+            target_matchers:
+              - node =~ ".+"
         receivers:
           - name: "null"
           - name: ntfy
@@ -118,11 +124,7 @@ spec:
           repeat_interval: 2h
           routes:
             - matchers:
-                - alertname =~ "Watchdog|InfoInhibitor"
-              receiver: "null"
-            - matchers:
-                - alertname = "TargetDown"
-                - job = "node-exporter"
+                - alertname =~ "Watchdog|InfoInhibitor|RoamingNodeOffline"
               receiver: "null"
             - matchers:
                 - alertname =~ "CDIStorageProfilesIncomplete|KubeVersionMismatch|NodeFilesystemAlmostOutOfSpace|TanaMcpFacadeProbeStale|CPUThrottlingHigh|KubeQuotaFullyUsed|KubeContainerWaiting|NodeMemoryMajorPagesFaults"
@@ -150,12 +152,8 @@ spec:
       disabled:
         KubeControllerManagerDown: true
         KubeControllerManagerInstanceUnreachable: true
-        KubeNodeNotReady: true
-        KubeNodeUnreachable: true
-        KubePodNotReady: true
         KubeSchedulerDown: true
         KubeSchedulerInstanceUnreachable: true
-        KubeletInstanceUnreachable: true
         NodeDiskIOSaturation: true
         TargetDown: true
       rules:

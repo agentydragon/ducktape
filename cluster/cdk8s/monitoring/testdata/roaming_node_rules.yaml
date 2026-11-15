@@ -1,0 +1,49 @@
+rule_files:
+  - roaming-node.yaml
+evaluation_interval: 1m
+tests:
+  - name: only a roaming node marked out of service is offline
+    interval: 1m
+    input_series:
+      - series: kube_node_spec_taint{job="kube-state-metrics",node="laptop-away",key="node-role.kubernetes.io/roaming"}
+        values: 1+0x5
+      - series: kube_node_spec_taint{job="kube-state-metrics",node="laptop-away",key="node.kubernetes.io/out-of-service"}
+        values: 1+0x5
+      - series: kube_node_spec_taint{job="kube-state-metrics",node="laptop-home",key="node-role.kubernetes.io/roaming"}
+        values: 1+0x5
+      - series: kube_node_spec_taint{job="kube-state-metrics",node="fixed-fenced",key="node.kubernetes.io/out-of-service"}
+        values: 1+0x5
+    promql_expr_test:
+      - expr: ALERTS{alertname="RoamingNodeOffline",alertstate="firing"}
+        eval_time: 2m
+        exp_samples:
+          - labels: ALERTS{alertname="RoamingNodeOffline",alertstate="firing",node="laptop-away",severity="none"}
+            value: 1
+  - name: an offline laptop's kubelet target is excluded
+    interval: 1m
+    input_series:
+      - series: kube_node_spec_taint{node="laptop-away",key="node.kubernetes.io/out-of-service"}
+        values: 1+0x15
+      - series: up{job="kubelet",namespace="kube-system",service="kubelet",node="laptop-away"}
+        values: 0+0x15
+      - series: up{job="kubelet",namespace="kube-system",service="kubelet",node="fixed"}
+        values: 1+0x15
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: TargetDown
+        exp_alerts: []
+  - name: an online laptop's kubelet target counts
+    interval: 1m
+    input_series:
+      - series: kube_node_spec_taint{node="laptop-home",key="node-role.kubernetes.io/roaming"}
+        values: 1+0x15
+      - series: up{job="kubelet",namespace="kube-system",service="kubelet",node="laptop-home"}
+        values: 0+0x15
+      - series: up{job="kubelet",namespace="kube-system",service="kubelet",node="fixed"}
+        values: 1+0x15
+    promql_expr_test:
+      - expr: ALERTS{alertname="TargetDown",alertstate="firing"}
+        eval_time: 12m
+        exp_samples:
+          - labels: ALERTS{alertname="TargetDown",alertstate="firing",job="kubelet",namespace="kube-system",service="kubelet",severity="warning"}
+            value: 1
