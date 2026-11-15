@@ -1486,13 +1486,17 @@ mod placement_kernel_tests {
         destinations.extend(fresh_targets.into_iter().map(Some));
         let mut chosen = vec![None; movable.len()];
 
+        struct FreshOwners<'a> {
+            cap: usize,
+            targets: &'a BTreeSet<String>,
+        }
+
         fn enumerate(
             index: usize,
             movable: &[String],
             required: &BTreeSet<String>,
             destinations: &[Option<String>],
-            fresh_cap: usize,
-            fresh_targets: &BTreeSet<String>,
+            fresh: &FreshOwners<'_>,
             chosen: &mut [Option<String>],
             problem: &AssignmentProblem<'_>,
         ) -> bool {
@@ -1535,17 +1539,16 @@ mod placement_kernel_tests {
                     let fresh_count = chosen
                         .iter()
                         .flatten()
-                        .filter(|path| fresh_targets.contains(*path))
+                        .filter(|path| fresh.targets.contains(*path))
                         .collect::<BTreeSet<_>>()
                         .len();
-                    if fresh_count <= fresh_cap
+                    if fresh_count <= fresh.cap
                         && enumerate(
                             index + 1,
                             movable,
                             required,
                             destinations,
-                            fresh_cap,
-                            fresh_targets,
+                            fresh,
                             chosen,
                             problem,
                         )
@@ -1559,17 +1562,16 @@ mod placement_kernel_tests {
                     let fresh_count = chosen
                         .iter()
                         .flatten()
-                        .filter(|path| fresh_targets.contains(*path))
+                        .filter(|path| fresh.targets.contains(*path))
                         .collect::<BTreeSet<_>>()
                         .len();
-                    if fresh_count <= fresh_cap
+                    if fresh_count <= fresh.cap
                         && enumerate(
                             index + 1,
                             movable,
                             required,
                             destinations,
-                            fresh_cap,
-                            fresh_targets,
+                            fresh,
                             chosen,
                             problem,
                         )
@@ -1593,8 +1595,10 @@ mod placement_kernel_tests {
             &movable,
             &required,
             &destinations,
-            fresh_cap,
-            &fresh_set,
+            &FreshOwners {
+                cap: fresh_cap,
+                targets: &fresh_set,
+            },
             &mut chosen,
             problem,
         )
