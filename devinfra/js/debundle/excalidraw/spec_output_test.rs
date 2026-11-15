@@ -55,6 +55,14 @@ fn claimed_modules_export_their_entry_points() {
             "editor/packages/excalidraw/element/textWrapping.js",
             &["containsCJK", "wrapText"],
         ),
+        (
+            "editor/packages/excalidraw/renderer/renderElement.js",
+            &[
+                "getRenderOpacity",
+                "renderElement",
+                "renderSelectionElement",
+            ],
+        ),
         ("editor/packages/excalidraw/scene/Scene.js", &["Scene"]),
         (
             "editor/packages/excalidraw/snapping.js",

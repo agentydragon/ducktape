@@ -1,0 +1,121 @@
+source_matches:
+  - match: |
+      var ANYTHING = ANYTHING,
+        isPendingImageElement = (element, renderConfig) =>
+          isInitializedImageElement(element) && !renderConfig.imageCache.has(element.fileId),
+        ANYTHING = ANYTHING;
+    bindings:
+      - isPendingImageElement
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        getCanvasPadding = (element) => {
+          switch (element.type) {
+            case "freedraw": return element.strokeWidth * 12;
+            case "text": return element.fontSize / 2;
+            default: return 20;
+          }
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - getCanvasPadding
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        getRenderOpacity = (element, containingFrame, elementsPendingErasure, pendingNodes, globalAlpha = 1) => {
+          let opacity = (containingFrame?.opacity ?? 100) * element.opacity / EXPR * globalAlpha;
+          STMT_LIST;
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - getRenderOpacity
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        renderSelectionElement = (element, context, appState, selectionColor) => {
+          context.save(), context.translate(element.x + appState.scrollX, element.y + appState.scrollY), context.fillStyle = "rgba(0, 0, 200, 0.04)";
+          STMT_LIST;
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - renderSelectionElement
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        renderElement = (element, elementsMap, allElementsMap, rc, context, renderConfig, appState) => {
+          let reduceAlphaForSelection = appState.openDialog?.name === "elementLinkSelector" && !appState.selectedElementIds[element.id] && !appState.hoveredElementIds[element.id];
+          STMT_LIST;
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - renderElement
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        shouldResetImageFilter = (element, renderConfig, appState) =>
+          appState.theme === THEME.DARK && isInitializedImageElement(element) &&
+          !isPendingImageElement(element, renderConfig) &&
+          renderConfig.imageCache.get(element.fileId)?.mimeType !== MIME_TYPES.svg,
+        ANYTHING = ANYTHING;
+    bindings:
+      - shouldResetImageFilter
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        cappedElementCanvasSize = (element, elementsMap, zoom) => {
+          let padding = getCanvasPadding(element), ANYTHING = ANYTHING;
+          STMT_LIST;
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - cappedElementCanvasSize
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        generateElementCanvas = (element, elementsMap, zoom, renderConfig, appState) => {
+          let canvas = document.createElement("canvas"), context = canvas.getContext("2d"), ANYTHING = ANYTHING;
+          STMT_LIST;
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - generateElementCanvas
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        generateElementWithCanvas = (element, elementsMap, renderConfig, appState) => {
+          let zoom = renderConfig ? appState.zoom : EXPR, previous = EXPR.get(element), ANYTHING = ANYTHING;
+          STMT_LIST;
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - generateElementWithCanvas
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        drawElementFromCanvas = (elementWithCanvas, context, renderConfig, appState, allElementsMap) => {
+          let element = elementWithCanvas.element, padding = getCanvasPadding(element), ANYTHING = ANYTHING;
+          STMT_LIST;
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - drawElementFromCanvas
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        drawElementOnCanvas = (element, rc, context, renderConfig, appState) => {
+          switch (element.type) {
+            case "rectangle":
+            case "iframe":
+            case "embeddable":
+            case "diamond":
+            case "ellipse": STMT_LIST;
+            case "arrow":
+            case "line": STMT_LIST;
+            case "freedraw": STMT_LIST;
+            case "image": STMT_LIST;
+            default: STMT_LIST;
+          }
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - drawElementOnCanvas

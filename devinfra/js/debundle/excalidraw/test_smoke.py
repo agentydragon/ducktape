@@ -1302,5 +1302,43 @@ async def test_text_measurements(playwright_driver: Playwright, origin: str) -> 
         assert measurements["supported"] is True
 
 
+async def test_element_render_helpers(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const renderer = await import('./editor/packages/excalidraw/renderer/renderElement.js');
+                const element = {id: 'element', opacity: 50};
+                const frame = {id: 'frame', opacity: 50};
+                const canvas = document.createElement('canvas');
+                canvas.width = canvas.height = 80;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#008000';
+                renderer.renderSelectionElement(
+                    {x: 10, y: 10, width: 20, height: 10}, ctx,
+                    {scrollX: 5, scrollY: 3, zoom: {value: 1}}, '#ff0000');
+                return {
+                    opacities: [
+                        renderer.getRenderOpacity(element, frame, new Set(), null, 0.5),
+                        renderer.getRenderOpacity(element, frame, new Set(['element']), null, 0.5),
+                        renderer.getRenderOpacity(element, frame, new Set(), [{id: 'element'}], 0.5),
+                        renderer.getRenderOpacity(element, frame, new Set(['frame']), null, 0.5),
+                    ],
+                    selectionPainted: ctx.getImageData(20, 15, 1, 1).data[3] > 0,
+                    outsideUntouched: ctx.getImageData(2, 2, 1, 1).data[3] === 0,
+                    fillRestored: ctx.fillStyle,
+                };
+            }"""
+        )
+        assert result["opacities"] == pytest.approx([0.125, 0.025, 0.025, 0.025])
+        assert result["selectionPainted"] is True
+        assert result["outsideUntouched"] is True
+        assert result["fillRestored"] == "#008000"
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
