@@ -31,7 +31,7 @@ from agentplane.action_service.catalog import ActionGroup
 from agentplane.action_service.orchestration_v1.binding import OrchestrationExecutorBinding
 from agentplane.action_service.push_settings import WebPushSettings
 from agentplane.action_service.session_delegation.binding import SessionDelegationExecutorBinding
-from agentplane.action_service.settings import ServicePeer, Settings
+from agentplane.action_service.settings import EnvironmentServicePeer, ServicePeer, Settings
 from agentplane.crd_group import GROUP
 from agentplane.identity.auth import listener
 from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
@@ -42,6 +42,7 @@ from agentplane.net.peertls.config import (
     HISTORY_SERVICE_URI,
     MCP_EDGE_URI,
     NOTIFICATIONS_URI,
+    SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
 )
 from agentplane.subjects import ServiceAccountRef
@@ -409,6 +410,19 @@ class Actions(Construct):
                     mcp_client_metadata=props.mcp_client_metadata,
                     mcp_servers=dict(props.mcp_servers),
                     action_groups=groups,
+                    environment_service=(
+                        EnvironmentServicePeer(
+                            target=f"{environment_service_endpoint.fqdn}:{environment_service_endpoint.port.number}",
+                            request_timeout_s=(
+                                _DELEGATED_PEER_TIMEOUT_SECONDS
+                                if props.session_delegation is not None
+                                else _PEER_TIMEOUT_SECONDS
+                            ),
+                            tls=workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=ACTIONS_URI),
+                        )
+                        if environment_service_endpoint is not None
+                        else None
+                    ),
                     session_dispatcher=dispatcher_peer,
                     history_service=history_peer,
                     session_delegation_dispatcher=delegated_dispatcher_peer,

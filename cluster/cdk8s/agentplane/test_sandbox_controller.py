@@ -10,6 +10,7 @@ import yaml
 from more_itertools import one
 
 from agentplane.app.settings import Settings as AppSettings
+from agentplane.action_service.settings import Settings as ActionSettings
 from agentplane.environments.settings import Settings
 from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, SANDBOX_CONTROLLER_URI, SESSION_DISPATCHER_URI
 from agentplane.runner_gateway.settings import Settings as GatewaySettings
@@ -167,6 +168,41 @@ def test_environment_receiver_preserves_gateway_authority_and_uses_controller_ce
     deployment = _resource(staging_manifests, "Deployment", sandbox_controller.NAME)
     container = one(deployment["spec"]["template"]["spec"]["containers"])
     assert port["targetPort"] in {entry["containerPort"] for entry in container["ports"]}
+
+
+def test_actions_environment_peer_matches_receiver_and_separates_dispatcher(
+    staging_manifests: list[dict[str, Any]],
+) -> None:
+    settings = ActionSettings.model_validate(
+        yaml.safe_load(_resource(staging_manifests, "ConfigMap", "actions-settings")["data"]["settings.yaml"])
+    )
+    peer = settings.environment_service
+    assert peer is not None
+    service = _resource(staging_manifests, "Service", sandbox_controller.NAME)
+    port = one(port for port in service["spec"]["ports"] if port["name"] == "grpc")
+    assert (
+        peer.target
+        == f"{service['metadata']['name']}.{service['metadata']['namespace']}.svc.cluster.local:{port['port']}"
+    )
+    receiver = Settings.model_validate(
+        yaml.safe_load(
+            _resource(staging_manifests, "ConfigMap", f"{sandbox_controller.NAME}-settings")["data"]["config.yaml"]
+        )
+    ).environment_service
+    assert receiver is not None
+    assert peer.tls is not None
+    assert peer.tls.client_uri in receiver.service_launchers
+    assert receiver.service_delegation is not None
+    assert peer.tls.client_uri in {actor.spiffe_id for actor in receiver.service_delegation.actors}
+    certificate = _resource(staging_manifests, "Certificate", f"{sandbox_controller.NAME}-client-workload")
+    assert certificate["spec"]["uris"] == [peer.tls.server_uri]
+    client_certificate = _resource(staging_manifests, "Certificate", f"{actions.NAME}-workload")
+    assert client_certificate["spec"]["uris"] == [peer.tls.client_uri]
+    for dispatcher in (settings.session_dispatcher, settings.session_delegation_dispatcher):
+        assert dispatcher is not None
+        assert dispatcher.target != peer.target
+        assert dispatcher.tls is not None
+        assert dispatcher.tls.server_uri == SESSION_DISPATCHER_URI
 
 
 @pytest.mark.parametrize(
