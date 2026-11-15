@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
-from pathlib import Path
 from types import TracebackType
 from typing import Self
 from uuid import UUID
@@ -13,7 +12,7 @@ from uuid import UUID
 import grpc
 from google.protobuf.message import Message
 
-from agentplane.grpc.calls import bearer, dial, raise_status
+from agentplane.grpc.calls import dial, raise_status
 from agentplane.history_service.api.history import history_service_pb2, history_service_pb2_grpc
 
 
@@ -29,13 +28,11 @@ class HistoryServiceClient:
         self,
         target: str,
         *,
-        token_file: Path | None,
         request_timeout_s: float,
-        channel_credentials: grpc.ChannelCredentials | None = None,
+        channel_credentials: grpc.ChannelCredentials,
         server_name: str | None = None,
     ) -> None:
         self.target = target
-        self.token_file = token_file
         self.request_timeout_s = request_timeout_s
         self.channel_credentials = channel_credentials
         self.server_name = server_name
@@ -55,7 +52,7 @@ class HistoryServiceClient:
 
     async def unary[T](self, call: Callable[..., Awaitable[T]], request: Message) -> T:
         try:
-            return await call(request, metadata=await bearer(self.token_file), timeout=self.request_timeout_s)
+            return await call(request, timeout=self.request_timeout_s)
         except grpc.aio.AioRpcError as error:
             raise_status(error)
 
@@ -63,7 +60,6 @@ class HistoryServiceClient:
         """Create an independent channel with this client's endpoint and credentials."""
         return HistoryServiceClient(
             self.target,
-            token_file=self.token_file,
             request_timeout_s=self.request_timeout_s,
             channel_credentials=self.channel_credentials,
             server_name=self.server_name,
@@ -88,7 +84,7 @@ class HistoryServiceClient:
         request = history_service_pb2.FollowSessionRequest(
             session_id=session_id, after_cursor=after_cursor, follow=True
         )
-        call = self.stub.FollowSession(request, metadata=await bearer(self.token_file))
+        call = self.stub.FollowSession(request)
         handshake: float | None = self.request_timeout_s
         try:
             while True:
@@ -137,7 +133,7 @@ class HistoryServiceClient:
     ) -> AsyncIterator[history_service_pb2.WatchSessionSummariesResponse]:
         # A long-lived stream: no call deadline. The server's opening notice bounds the handshake,
         # and its lease ends the stream with reconnect_required.
-        call = self.stub.WatchSessionSummaries(request, metadata=await bearer(self.token_file))
+        call = self.stub.WatchSessionSummaries(request)
         handshake: float | None = self.request_timeout_s
         try:
             while True:

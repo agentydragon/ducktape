@@ -31,14 +31,13 @@ from agentplane.system_tests.driver.identity import (
     delete_scenario_identity,
 )
 from agentplane.system_tests.driver.sandbox_ownership import release_owned_sandboxes, remember_sandbox
-from agentplane.system_tests.driver.tls import service_credentials, service_svid_credentials
+from agentplane.system_tests.driver.tls import service_svid_credentials
 from agentplane.system_tests.driver.tracing import tracer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from model_catalog.catalog import GPT6_LUNA_RESPONSES
 
 SERVICE = "central-sampler"
 MODEL = GPT6_LUNA_RESPONSES.id
-HISTORY_READER_AUDIENCE = "agentplane-history-service"
 
 
 @dataclass(frozen=True)
@@ -209,7 +208,7 @@ async def capture_sampler_diagnostics(cluster: Cluster, core: k8s.CoreV1Api | No
 
 @asynccontextmanager
 async def central_stack(
-    cluster: Cluster, directory: Path, *, template: str, history_account: str = "app"
+    cluster: Cluster, directory: Path, *, template: str
 ) -> AsyncIterator[CentralStack]:
     async with AsyncExitStack() as cleanup, AsyncExitStack() as stack:
         with tracer.start_as_current_span(
@@ -218,9 +217,6 @@ async def central_stack(
             stack.push_async_callback(_diagnostics, cluster)
             connection = await stack.enter_async_context(cluster.api_client())
             core = k8s.CoreV1Api(connection)
-            caller = await _pod(cluster, core, history_account)
-            reader_token = directory / "history-reader-token"
-            reader_token.write_text(await _bound_token(cluster, core, history_account, caller, HISTORY_READER_AUDIENCE))
             sandbox = "systest-central-" + uuid4().hex[:8]
             sandbox_target = await cleanup.enter_async_context(_owned_native_sandbox(cluster, sandbox, template))
             sandbox, uid = sandbox_target.name, sandbox_target.uid
@@ -247,11 +243,11 @@ async def central_stack(
                 private_key=base64.b64decode(sampler_client.data["tls.key"]),
                 certificate_chain=base64.b64decode(sampler_client.data["tls.crt"]),
             )
-            server_credentials = await service_credentials(cluster)
+            history_credentials = await service_svid_credentials(cluster, "central-sampler-workload-tls")
             # Sandbox Ready proves leader observation; independently prove the every-replica
             # Environments proxy has a callable snapshot before starting setup.
-            # Dispatcher commands and Runtime diagnostics use the App role. The separate
-            # history_account selects only the still-legacy History reader token binding.
+            # Dispatcher commands and Runtime diagnostics use the App role. History reads use
+            # the central sampler's exact service identity.
             caller_credentials = await service_svid_credentials(cluster, "app-workload-tls")
             gateway = SandboxControlClient(
                 control_target=gateway_target,
@@ -282,9 +278,8 @@ async def central_stack(
             history = await stack.enter_async_context(
                 HistoryServiceClient(
                     await _address(cluster, core, "history-service", 8080),
-                    token_file=reader_token,
                     request_timeout_s=20,
-                    channel_credentials=server_credentials,
+                    channel_credentials=history_credentials,
                     server_name=f"history-service.{cluster.namespace}.svc.cluster.local",
                 )
             )

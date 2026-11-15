@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from types import TracebackType
 from typing import Self
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy import func, select, text
@@ -40,6 +40,7 @@ class History:
         # The runner's latest snapshot per Session, announced again with every push: an announcement replaces the
         # stored feed state, and the service stores it only once the committed entries cover its cursor.
         self._attached: dict[UUID, session_pb2.Attached] = {}
+        self._writers: dict[UUID, ServiceAccountRef] = {}
 
     async def open(
         self, session_id: UUID, *, sandbox_name: str | None = None, sandbox_namespace: str | None = None
@@ -50,6 +51,7 @@ class History:
         writer = WRITER if sandbox_name is None else ServiceAccountRef(namespace=WRITER.namespace, name=sandbox_name)
         if sandbox_name is not None and sandbox_namespace is not None:
             writer = await self._associate_writer_with_sandbox(writer, sandbox_name, sandbox_namespace)
+        self._writers[session_id] = writer
         await self.service.push(session_id, [], writer=writer)
 
     async def _associate_writer_with_sandbox(
@@ -58,7 +60,7 @@ class History:
         """Give scripted writers the live Sandbox identity when a fixture Sandbox exists."""
         custom = k8s_client.CustomObjectsApi(self.service.api.api)
         try:
-            sandbox = await custom.get_namespaced_custom_object(
+            await custom.get_namespaced_custom_object(
                 sandbox_resource.GROUP,
                 sandbox_resource.VERSION,
                 sandbox_namespace,
@@ -70,19 +72,7 @@ class History:
                 raise
             return writer
         writer = ServiceAccountRef(namespace=sandbox_namespace, name=sandbox_name)
-        await self.service.writer_token(writer, pod_name=f"history-writer-{uuid4().hex[:12]}")
-        core = k8s_client.CoreV1Api(self.service.api.api)
-        account = await core.read_namespaced_service_account(writer.name, writer.namespace)
-        account.metadata.owner_references = [
-            k8s_client.V1OwnerReference(
-                api_version=sandbox_resource.SANDBOX_API_VERSION,
-                kind=sandbox_resource.SANDBOX_KIND,
-                name=sandbox_name,
-                uid=sandbox["metadata"]["uid"],
-                controller=True,
-            )
-        ]
-        await core.replace_namespaced_service_account(writer.name, writer.namespace, account)
+        await self.service.writer_channel_credentials(writer)
         return writer
 
     async def record(
@@ -177,10 +167,14 @@ class History:
                     text("SELECT writer_namespace, writer_name FROM session_history WHERE id = :id"), {"id": session_id}
                 )
             ).first()
-        return None if row is None else ServiceAccountRef(namespace=row.writer_namespace, name=row.writer_name)
+        if row is None:
+            return None
+        if row.writer_namespace is None or row.writer_name is None:
+            return self._writers.get(session_id)
+        return ServiceAccountRef(namespace=row.writer_namespace, name=row.writer_name)
 
     async def _bound_writer(self, session_id: UUID) -> ServiceAccountRef:
-        writer = await self._writer(session_id)
+        writer = self._writers.get(session_id) or await self._writer(session_id)
         if writer is None:
             raise ValueError("record the Session first")
         return writer

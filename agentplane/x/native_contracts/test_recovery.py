@@ -290,7 +290,6 @@ async def test_history_outage_replays_the_runtime_journal_and_resumes_the_reader
     remote = gateway_service.gateway_client()
     async with HistoryServiceClient(
         history_service.read_target,
-        token_file=history_service.reader_token_file,
         request_timeout_s=0.5,
         channel_credentials=history_service.reader.channel_credentials,
     ) as reader:
