@@ -21,6 +21,10 @@ fn claimed_modules_export_their_entry_points() {
     let app = out_root().join("app");
     for (module, names) in [
         (
+            "main/packages/excalidraw/components/HelpDialog.js",
+            &["HelpDialog"][..],
+        ),
+        (
             "editor/packages/excalidraw/appState.js",
             &["getDefaultAppState"][..],
         ),
