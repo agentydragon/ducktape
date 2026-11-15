@@ -1,0 +1,10 @@
+# Original home: packages/excalidraw/components/MobileMenu.tsx
+source_matches:
+  - match: |
+      var selected = ({ appState, elements, actionManager, setAppState, onLockToggle, onHandToolToggle, onPenModeToggle, renderTopRightUI, renderCustomStats, renderSidebars, device, renderWelcomeScreen, UIOptions, app }) => {
+        let { WelcomeScreenCenterTunnel, MainMenuTunnel, DefaultSidebarTriggerTunnel } = EXPR(), ANYTHING = ANYTHING;
+        STMT_LIST;
+      };
+    bindings:
+      - local: selected
+        name: MobileMenu
