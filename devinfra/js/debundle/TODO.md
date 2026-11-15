@@ -237,6 +237,57 @@ to one exact source/spec pair and held to the interactive budget in
    Assumption-core localization remains rejected for its measured cost
    (<docs/selector_resolution.md> § Unsatisfiable programs).
 
+### Audit features unused by gaffer-private
+
+Audit whether these supported opt-ins should still exist. They have no explicit
+configured use in `gaffer-private/main` at `ecb2fe1f1a6e` (2026-11-14), including
+the authored specs, Tana canonical, baselines and fixtures. This is a list of
+audit candidates, not a removal decision. Schema: <spec/spec.rs>.
+
+- **Selectors:** `member_of_module`, `passed_to_call`, and `cross_ref.aliases`.
+- **Analysis contracts:** `value_inputs`, `argument_inputs`, and
+  `imported_primitive_array_spread_inputs`.
+- **Purity assertions:** `chunk_export_purity`'s `pure_new_exports` and
+  `pure_members`, plus local binding annotations' `pure_members`.
+- **Callback contracts:** `retained_callback_factory_exports`,
+  `descriptor_copy_factory_exports`, and `no_reentry_callback_exports`.
+- **Host contracts:** `host_behavior.reentry_free_operations`.
+- **Vendor variants:** plain `partial_swap` and explicit `role: worker`.
+- **Decorator effects:** `typescript_decorate_helper`.
+- **Native call identity variant:** `native_call_identity_inputs`'s
+  `set_empty_private_field`.
+- **Native operation variants:** `native_operation_inputs`'s `symbol_for`,
+  `set_from_set_spread`, `object_own_data_function_read`,
+  `symbol_well_known_class_keys`, `symbol_primitive_class_keys`,
+  `array_spread_from_primitive_arrays`, and `promise_resolve`.
+
+For each candidate, check consumers in both repositories, including public
+specs and generated configuration; compare existing e2e contracts with simpler
+alternatives; then decide whether to remove it, consolidate it, or retain it
+with a concrete justification. Absence from private specs alone is insufficient:
+
+- Plain `partial_swap` is used by
+  <excalidraw/spec/vendor_marks.yaml>; preserve that caller when considering
+  consolidation.
+- The `passed_to_call` replacement experiment
+  ([#16600](https://github.com/agentydragon/ducktape/pull/16600)) found that a
+  call-only source template loses the nonlocal declaration-kind filter: a
+  registered class and function make it ambiguous, while a class-only template
+  also matches an unregistered identical class. An undeclared receiver name in
+  a template alpha-renames, unlike the selector's explicit `object` reference.
+  Weigh the value of those distinctions against their maintenance cost rather
+  than expanding the matcher just to delete the selector. Audit
+  `member_of_module`'s import-source identity separately.
+- Unused native-operation annotations do not imply unused automatic native
+  recognition. Unused `pure_new_exports` does not imply unused constructor
+  purity: local `purity: pure_new` annotations are used. The stronger decorator
+  metadata variants also have different promises from the unused weaker one.
+
+Close this item when every remaining candidate has an explicit disposition.
+For removals or consolidation, update schema, implementation, consumers,
+documentation and affected tests together; remove resolved entries from this
+list, recording the rationale for retaining or dropping distinct capabilities.
+
 ### Test infrastructure
 
 1. **Runtime resource controls.** `url_rebase_test` covers lazy JavaScript and
